@@ -1,0 +1,34 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+database:
+  path: "data/llmcoc.db"
+
+jwt:
+  secret: "change-me-to-a-long-random-secret-in-production"
+  expire_hours: 168   # 7 days
+
+llm:
+  provider: "openai"           # openai | anthropic | ollama | custom
+  base_url: ""                 # Leave empty for OpenAI default; set for Ollama/custom
+  api_key: ""                  # Or use env: LLM_API_KEY
+  model: "gpt-4o"
+  max_tokens: 2048
+  temperature: 0.8
+
+  # Example: use Ollama locally
+  # provider: "ollama"
+  # base_url: "http://localhost:11434/v1"
+  # api_key: "ollama"
+  # model: "qwen2.5:14b"
+
+  # Example: use Anthropic via openai-compatible proxy
+  # provider: "anthropic"
+  # base_url: "https://api.anthropic.com/v1"
+  # api_key: "sk-ant-..."
+  # model: "claude-3-5-sonnet-20241022"
+
+shop:
+  initial_coins: 0
+  initial_card_slots: 3

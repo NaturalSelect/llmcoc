@@ -1,0 +1,288 @@
+package handlers
+
+import (
+	"fmt"
+	"net/http"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/game"
+	"github.com/llmcoc/server/internal/services/llm"
+)
+
+type CreateCharacterReq struct {
+	Name       string                 `json:"name" binding:"required,max=100"`
+	Age        int                    `json:"age"`
+	Gender     string                 `json:"gender"`
+	Occupation string                 `json:"occupation"`
+	Birthplace string                 `json:"birthplace"`
+	Residence  string                 `json:"residence"`
+	Backstory  string                 `json:"backstory"`
+	Appearance string                 `json:"appearance"`
+	Traits     string                 `json:"traits"`
+	Stats      *models.CharacterStats `json:"stats"`
+	Skills     map[string]int         `json:"skills"`
+}
+
+type GenerateCharacterReq struct {
+	Occupation string `json:"occupation"`
+	Background string `json:"background"`
+	Era        string `json:"era"`
+}
+
+func ListCharacters(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var cards []models.CharacterCard
+	models.DB.Where("user_id = ? AND is_active = ?", userID, true).
+		Order("created_at DESC").
+		Find(&cards)
+	c.JSON(http.StatusOK, cards)
+}
+
+func GetCharacter(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此人物卡"})
+		return
+	}
+	c.JSON(http.StatusOK, card)
+}
+
+func CreateCharacter(c *gin.Context) {
+	userID := c.GetUint("user_id")
+
+	// Check card slot limit
+	var user models.User
+	models.DB.First(&user, userID)
+
+	var cardCount int64
+	models.DB.Model(&models.CharacterCard{}).Where("user_id = ? AND is_active = ?", userID, true).Count(&cardCount)
+	if int(cardCount) >= user.CardSlots {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":     "人物卡槽位已满",
+			"current":   cardCount,
+			"max_slots": user.CardSlots,
+		})
+		return
+	}
+
+	var req CreateCharacterReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Use provided stats or generate
+	stats := models.CharacterStats{}
+	if req.Stats != nil {
+		stats = *req.Stats
+	} else {
+		stats = game.GenerateStats()
+	}
+
+	// Default skills with EDU/DEX adjustments
+	skills := game.DefaultSkills()
+	skills["母语"] = stats.EDU * 1 // EDU×5 but stored as actual value
+	skills["闪避"] = stats.DEX / 2
+	// Merge provided skills
+	for k, v := range req.Skills {
+		skills[k] = v
+	}
+
+	card := models.CharacterCard{
+		UserID:     userID,
+		Name:       req.Name,
+		Age:        req.Age,
+		Gender:     req.Gender,
+		Occupation: req.Occupation,
+		Birthplace: req.Birthplace,
+		Residence:  req.Residence,
+		Backstory:  req.Backstory,
+		Appearance: req.Appearance,
+		Traits:     req.Traits,
+		Stats:      models.JSONField[models.CharacterStats]{Data: stats},
+		Skills:     models.JSONField[map[string]int]{Data: skills},
+		IsActive:   true,
+	}
+
+	if err := models.DB.Create(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建人物卡失败"})
+		return
+	}
+	c.JSON(http.StatusCreated, card)
+}
+
+func GenerateCharacter(c *gin.Context) {
+	userID := c.GetUint("user_id")
+
+	// Check slot limit
+	var user models.User
+	models.DB.First(&user, userID)
+	var cardCount int64
+	models.DB.Model(&models.CharacterCard{}).Where("user_id = ? AND is_active = ?", userID, true).Count(&cardCount)
+	if int(cardCount) >= user.CardSlots {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":     "人物卡槽位已满",
+			"current":   cardCount,
+			"max_slots": user.CardSlots,
+		})
+		return
+	}
+
+	var req GenerateCharacterReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Generate base stats
+	stats := game.GenerateStats()
+	skills := game.DefaultSkills()
+	skills["母语"] = stats.EDU
+	skills["闪避"] = stats.DEX / 2
+
+	// Ask LLM to fill out backstory, name, traits
+	provider := llm.GetProvider()
+	generated, err := provider.GenerateCharacter(c.Request.Context(), llm.GenerateCharacterReq{
+		Occupation: req.Occupation,
+		Background: req.Background,
+		Era:        req.Era,
+		Stats:      stats,
+	})
+	if err != nil {
+		// Fallback to minimal character
+		generated = &llm.GeneratedCharacter{
+			Name:       "未知调查员",
+			Age:        25,
+			Gender:     "未知",
+			Backstory:  "背景故事生成失败，请手动填写。",
+			Appearance: "外貌描述待填写。",
+			Traits:     "性格特征待填写。",
+		}
+	}
+
+	card := models.CharacterCard{
+		UserID:     userID,
+		Name:       generated.Name,
+		Age:        generated.Age,
+		Gender:     generated.Gender,
+		Occupation: req.Occupation,
+		Backstory:  generated.Backstory,
+		Appearance: generated.Appearance,
+		Traits:     generated.Traits,
+		Stats:      models.JSONField[models.CharacterStats]{Data: stats},
+		Skills:     models.JSONField[map[string]int]{Data: skills},
+		IsActive:   true,
+	}
+
+	if err := models.DB.Create(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建人物卡失败"})
+		return
+	}
+	c.JSON(http.StatusCreated, card)
+}
+
+func UpdateCharacter(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+		return
+	}
+
+	var req CreateCharacterReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	card.Name = req.Name
+	card.Age = req.Age
+	card.Gender = req.Gender
+	card.Occupation = req.Occupation
+	card.Birthplace = req.Birthplace
+	card.Residence = req.Residence
+	card.Backstory = req.Backstory
+	card.Appearance = req.Appearance
+	card.Traits = req.Traits
+	if req.Stats != nil {
+		card.Stats = models.JSONField[models.CharacterStats]{Data: *req.Stats}
+	}
+	if req.Skills != nil {
+		card.Skills = models.JSONField[map[string]int]{Data: req.Skills}
+	}
+
+	models.DB.Save(&card)
+	c.JSON(http.StatusOK, card)
+}
+
+func DeleteCharacter(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权删除此人物卡"})
+		return
+	}
+
+	// Soft delete: set is_active = false
+	models.DB.Model(&card).Update("is_active", false)
+	c.JSON(http.StatusOK, gin.H{"message": "人物卡已删除"})
+}
+
+func RollDice(c *gin.Context) {
+	notation := c.Query("notation") // e.g. "1d20", "3d6"
+	if notation == "" {
+		notation = "1d100"
+	}
+
+	var n, m int
+	if _, err := parseNotation(notation, &n, &m); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的骰子格式，使用如 1d100 或 3d6"})
+		return
+	}
+
+	total, dice := game.Roll(n, m)
+	c.JSON(http.StatusOK, gin.H{
+		"notation": notation,
+		"total":    total,
+		"dice":     dice,
+	})
+}
+
+func SkillCheck(c *gin.Context) {
+	skillVal, err := strconv.Atoi(c.Query("skill"))
+	if err != nil || skillVal < 1 || skillVal > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "skill 参数须为 1-100 的整数"})
+		return
+	}
+	result := game.SkillCheck(skillVal)
+	c.JSON(http.StatusOK, result)
+}
+
+func parseNotation(s string, n, m *int) (string, error) {
+	_, err := fmt.Sscanf(s, "%dd%d", n, m)
+	if err != nil || *n < 1 || *n > 100 || *m < 2 || *m > 1000 {
+		return "", err
+	}
+	return s, nil
+}
