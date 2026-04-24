@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/llmcoc/server/internal/config"
 	"github.com/llmcoc/server/internal/models"
 )
 
@@ -42,30 +41,29 @@ type Provider interface {
 	GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*GeneratedCharacter, error)
 }
 
-var defaultProvider Provider
-
-// GetProvider returns the configured LLM provider (singleton backed by config.yaml)
-func GetProvider() Provider {
-	if defaultProvider == nil {
-		defaultProvider = newOpenAIProvider(
-			config.Global.LLM.APIKey,
-			config.Global.LLM.BaseURL,
-			config.Global.LLM.Model,
-			config.Global.LLM.MaxTokens,
-			config.Global.LLM.Temperature,
-		)
-	}
-	return defaultProvider
-}
-
-// SetProvider allows overriding the default provider (useful for tests)
-func SetProvider(p Provider) {
-	defaultProvider = p
-}
-
 // NewProviderFromConfig creates a provider from a DB-stored LLMProviderConfig.
 func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32) Provider {
 	return newOpenAIProvider(cfg.APIKey, cfg.BaseURL, modelName, maxTokens, temperature)
+}
+
+// LoadProviderFromDB loads an LLM provider for the given agent role from the database.
+// Returns an error if the role has no active config or no active linked provider.
+func LoadProviderFromDB(role models.AgentRole) (Provider, error) {
+	var cfg models.AgentConfig
+	err := models.DB.Preload("ProviderConfig").
+		Where("role = ? AND is_active = ?", role, true).
+		First(&cfg).Error
+	if err != nil {
+		return nil, fmt.Errorf("agent %q 未配置，请在管理面板中配置 LLM provider", role)
+	}
+	if cfg.ProviderConfigID == nil || cfg.ProviderConfig == nil || !cfg.ProviderConfig.IsActive {
+		return nil, fmt.Errorf("agent %q 未绑定可用的 LLM provider", role)
+	}
+	maxTok := cfg.MaxTokens
+	if maxTok == 0 {
+		maxTok = 1024
+	}
+	return newOpenAIProvider(cfg.ProviderConfig.APIKey, cfg.ProviderConfig.BaseURL, cfg.ModelName, maxTok, cfg.Temperature), nil
 }
 
 // StripCodeFence removes markdown code fences from an LLM response.

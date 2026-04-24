@@ -111,6 +111,7 @@ func EvalMadness(loss, newSAN, dailyLoss, maxSAN int) MadnessKind {
 	if newSAN <= 0 {
 		return MadnessPermanent
 	}
+	// Check for indefinite first, as it's more severe than temporary
 	if maxSAN > 0 && dailyLoss >= maxSAN/5 {
 		return MadnessIndefinite
 	}

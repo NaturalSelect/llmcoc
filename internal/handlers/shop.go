@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +24,7 @@ func PurchaseItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("[shop] purchase user_id=%d item_id=%d", userID, req.ItemID)
 
 	var item models.ShopItem
 	if err := models.DB.First(&item, req.ItemID).Error; err != nil || !item.IsActive {
@@ -79,6 +81,7 @@ func PurchaseItem(c *gin.Context) {
 
 	// Reload user
 	models.DB.First(&user, userID)
+	log.Printf("[shop] purchase ok user_id=%d item_id=%d coins_left=%d", userID, req.ItemID, user.Coins)
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "购买成功",
 		"coins":      user.Coins,

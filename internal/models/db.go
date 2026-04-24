@@ -85,30 +85,29 @@ func seedDefaultShopItems() {
 }
 
 func seedDefaultAgentConfigs() {
-	// Create a default LLMProviderConfig from config.yaml if API key is set and none exist
+	// Create a default LLMProviderConfig from env vars if none exist yet
 	var provCount int64
 	DB.Model(&LLMProviderConfig{}).Count(&provCount)
-	if provCount == 0 && config.Global.LLM.APIKey != "" {
-		providerType := config.Global.LLM.Provider
-		if providerType == "" {
-			providerType = "openai"
+	if provCount == 0 {
+		apiKey := os.Getenv("LLM_API_KEY")
+		if apiKey != "" {
+			providerType := os.Getenv("LLM_PROVIDER")
+			if providerType == "" {
+				providerType = "openai"
+			}
+			defProv := LLMProviderConfig{
+				Name:     "默认",
+				Provider: providerType,
+				BaseURL:  os.Getenv("LLM_BASE_URL"),
+				APIKey:   apiKey,
+				IsActive: true,
+			}
+			DB.Create(&defProv)
 		}
-		defProv := LLMProviderConfig{
-			Name:     "默认",
-			Provider: providerType,
-			BaseURL:  config.Global.LLM.BaseURL,
-			APIKey:   config.Global.LLM.APIKey,
-			IsActive: true,
-		}
-		DB.Create(&defProv)
 	}
 
-	// Seed 4 default AgentConfigs if none exist
-	var agentCount int64
-	DB.Model(&AgentConfig{}).Count(&agentCount)
-	if agentCount != 0 {
-		return
-	}
+	// Remove obsolete agent roles that no longer exist in the pipeline.
+	DB.Where("role IN ?", []string{"judger", "scripter", "editor"}).Delete(&AgentConfig{})
 
 	var provID *uint
 	var prov LLMProviderConfig
@@ -117,60 +116,24 @@ func seedDefaultAgentConfigs() {
 		provID = &id
 	}
 
-	model := config.Global.LLM.Model
+	model := os.Getenv("LLM_MODEL")
 	if model == "" {
 		model = "gpt-4o"
 	}
 
-	agents := []AgentConfig{
-		{
-			Role:             AgentRoleDirector,
-			ProviderConfigID: provID,
-			ModelName:        model,
-			MaxTokens:        1500,
-			Temperature:      0.7,
-			IsActive:         true,
-		},
-		{
-			Role:             AgentRoleJudger,
-			ProviderConfigID: provID,
-			ModelName:        model,
-			MaxTokens:        512,
-			Temperature:      0.2,
-			IsActive:         true,
-		},
-		{
-			Role:             AgentRoleScripter,
-			ProviderConfigID: provID,
-			ModelName:        model,
-			MaxTokens:        600,
-			Temperature:      0.5,
-			IsActive:         true,
-		},
-		{
-			Role:             AgentRoleWriter,
-			ProviderConfigID: provID,
-			ModelName:        model,
-			MaxTokens:        800,
-			Temperature:      0.85,
-			IsActive:         true,
-		},
-		{
-			Role:             AgentRoleEvaluator,
-			ProviderConfigID: provID,
-			ModelName:        model,
-			MaxTokens:        1200,
-			Temperature:      0.5,
-			IsActive:         true,
-		},
-		{
-			Role:             AgentRoleGrowth,
-			ProviderConfigID: provID,
-			ModelName:        model,
-			MaxTokens:        1000,
-			Temperature:      0.4,
-			IsActive:         true,
-		},
+	// Ensure each active agent has a config row (upsert-style: create only if missing).
+	required := []AgentConfig{
+		{Role: AgentRoleDirector, ProviderConfigID: provID, ModelName: model, MaxTokens: 1500, Temperature: 0.7, IsActive: true},
+		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.85, IsActive: true},
+		{Role: AgentRoleLawyer, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.3, IsActive: true},
+		{Role: AgentRoleNPC, ProviderConfigID: provID, ModelName: model, MaxTokens: 600, Temperature: 0.9, IsActive: true},
+		{Role: AgentRoleEvaluator, ProviderConfigID: provID, ModelName: model, MaxTokens: 1200, Temperature: 0.5, IsActive: true},
+		{Role: AgentRoleGrowth, ProviderConfigID: provID, ModelName: model, MaxTokens: 1000, Temperature: 0.4, IsActive: true},
 	}
-	DB.Create(&agents)
+	for _, ag := range required {
+		var existing AgentConfig
+		if DB.Where("role = ?", ag.Role).First(&existing).Error != nil {
+			DB.Create(&ag)
+		}
+	}
 }

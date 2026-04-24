@@ -41,6 +41,7 @@ func runNPC(
 	tempNPCs []models.SessionNPC,
 ) (NPCAction, error) {
 	log.Printf("[npc] acting: %s", npcName)
+	debugf("NPC", "name=%q ctx=%s", npcName, npcCtx)
 
 	// Build NPC profile from DB/scenario lookup (profile only, no scenario background).
 	npcProfile := buildNPCProfile(npcName, gctx, tempNPCs)
@@ -78,6 +79,7 @@ func runNPC(
 	if action.NPCName == "" {
 		action.NPCName = npcName
 	}
+	debugf("NPC", "name=%q action=%s dialogue=%s", npcName, action.Action, action.Dialogue)
 	return action, nil
 }
 

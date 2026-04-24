@@ -11,6 +11,17 @@ type GameContext struct {
 	History   []models.Message // recent messages, system role excluded
 	UserInput string
 	UserName  string
+	// PendingActions holds all player actions collected for the current round.
+	// Populated only in multi-player sessions once all players have submitted;
+	// when non-empty the KP prompt shows a combined action summary instead of
+	// the single UserInput/UserName fields.
+	PendingActions []PlayerAction
+}
+
+// PlayerAction is one player's submitted action for the current round.
+type PlayerAction struct {
+	PlayerName string
+	Content    string
 }
 
 // ── Master-Slave Tool Call Types ─────────────────────────────────────────────
@@ -26,6 +37,8 @@ const (
 	ToolTriggerMadness   ToolCallType = "trigger_madness"   // 触发疯狂发作
 	ToolWrite            ToolCallType = "write"             // 生成叙事段落
 	ToolAdvanceTime      ToolCallType = "advance_time"      // 推进游戏内时间
+	ToolQueryClues       ToolCallType = "query_clues"       // 查询剧本线索
+	ToolQueryCharacter   ToolCallType = "query_character"   // 查询调查员完整人物卡
 	ToolEnd              ToolCallType = "end"               // 结束本轮
 )
 
@@ -37,11 +50,12 @@ type ToolCall struct {
 	NPCName       string       `json:"npc_name,omitempty"`       // npc_act: NPC名称
 	NPCCtx        string       `json:"npc_ctx,omitempty"`        // npc_act: 当前情境简述
 	Changes       []string     `json:"changes,omitempty"`        // update_characters: 状态变化列表
-	CharacterName string       `json:"character_name,omitempty"` // trigger_madness: 调查员名称
+	CharacterName string       `json:"character_name,omitempty"` // trigger_madness / query_character: 角色名称
 	IsBystander   bool         `json:"is_bystander,omitempty"`   // trigger_madness: 是否有旁观者
 	Direction     string       `json:"direction,omitempty"`      // write: 叙事方向（供Writer参考）
 	TimeRounds    int          `json:"time_rounds,omitempty"`    // advance_time: 推进的回合数
 	TimeReason    string       `json:"time_reason,omitempty"`    // advance_time: 原因（如"睡觉"/"吃饭"）
+	Keyword       string       `json:"keyword,omitempty"`        // query_clues: 可选关键词过滤
 	Narration     string       `json:"narration,omitempty"`      // end: 旁白总结（KP收尾语）
 }
 
@@ -77,6 +91,7 @@ type DiceCheck struct {
 	PenaltyDice    int    `json:"penalty_dice"` // 惩罚骰数量
 	SanSuccessLoss string `json:"san_success_loss"`
 	SanFailLoss    string `json:"san_fail_loss"`
+	MonsterName    string `json:"monster_name,omitempty"` // sanity检定：引发检定的神话存在名称（见过的存在不掉SAN）
 }
 
 // DiceCheckResult is the outcome of an auto-executed dice check.
@@ -89,29 +104,17 @@ type DiceCheckResult struct {
 	SanLoss int    `json:"san_loss"` // only for check_type="sanity"
 }
 
-// ── Editor types ─────────────────────────────────────────────────────────────
+// ── Character update types ────────────────────────────────────────────────────
 
 // CharacterUpdate describes a single field update to a character card or NPC.
+// Director change strings ("HP -3（角色名）") are parsed into this struct by
+// parseStateChange in editor.go and applied directly without an LLM intermediary.
 type CharacterUpdate struct {
 	CharacterName string `json:"character_name"` // 目标角色/NPC名称
-	Field         string `json:"field"`          // san/hp/mp/spells/social_relations/skills/cthulhu_mythos
+	Field         string `json:"field"`          // san/hp/mp/cthulhu_mythos
 	Delta         int    `json:"delta"`          // 数值变化量
-	AddValue      string `json:"add_value"`      // 新增条目
+	AddValue      string `json:"add_value"`      // 新增条目（保留用于未来扩展）
 	IsNPC         bool   `json:"is_npc"`         // true = 临时NPC卡
-}
-
-// NewNPCCard describes a new temporary NPC to create.
-type NewNPCCard struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Stats       map[string]int `json:"stats"`
-	Skills      map[string]int `json:"skills"`
-}
-
-// EditorResult is the full output from the Editor agent.
-type EditorResult struct {
-	Updates []CharacterUpdate `json:"updates"`
-	NewNPCs []NewNPCCard      `json:"new_npcs"`
 }
 
 // ── NPC types ─────────────────────────────────────────────────────────────────

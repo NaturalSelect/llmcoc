@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -10,6 +9,30 @@ import (
 	"github.com/llmcoc/server/internal/services/game"
 	"github.com/llmcoc/server/internal/services/llm"
 )
+
+// CharacterLLMFactory lets tests inject a fake LLM provider.
+type CharacterLLMFactory interface {
+	LoadProvider(role models.AgentRole) (llm.Provider, error)
+}
+
+type defaultCharacterLLMFactory struct{}
+
+func (defaultCharacterLLMFactory) LoadProvider(role models.AgentRole) (llm.Provider, error) {
+	return llm.LoadProviderFromDB(role)
+}
+
+// DefaultCharacterLLMFactory is the production implementation.
+var DefaultCharacterLLMFactory CharacterLLMFactory = defaultCharacterLLMFactory{}
+
+// CharacterHandlers holds handlers that depend on an LLM factory.
+type CharacterHandlers struct {
+	LLMFactory CharacterLLMFactory
+}
+
+// NewCharacterHandlers creates a CharacterHandlers with the given factory.
+func NewCharacterHandlers(f CharacterLLMFactory) *CharacterHandlers {
+	return &CharacterHandlers{LLMFactory: f}
+}
 
 type CreateCharacterReq struct {
 	Name       string                 `json:"name" binding:"required,max=100"`
@@ -120,7 +143,7 @@ func CreateCharacter(c *gin.Context) {
 	c.JSON(http.StatusCreated, card)
 }
 
-func GenerateCharacter(c *gin.Context) {
+func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
 	// Check slot limit
@@ -150,15 +173,9 @@ func GenerateCharacter(c *gin.Context) {
 	skills["闪避"] = stats.DEX / 2
 
 	// Ask LLM to fill out backstory, name, traits
-	provider := llm.GetProvider()
-	generated, err := provider.GenerateCharacter(c.Request.Context(), llm.GenerateCharacterReq{
-		Occupation: req.Occupation,
-		Background: req.Background,
-		Era:        req.Era,
-		Stats:      stats,
-	})
+	provider, err := h.LLMFactory.LoadProvider(models.AgentRoleWriter)
+	var generated *llm.GeneratedCharacter
 	if err != nil {
-		// Fallback to minimal character
 		generated = &llm.GeneratedCharacter{
 			Name:       "未知调查员",
 			Age:        25,
@@ -166,6 +183,23 @@ func GenerateCharacter(c *gin.Context) {
 			Backstory:  "背景故事生成失败，请手动填写。",
 			Appearance: "外貌描述待填写。",
 			Traits:     "性格特征待填写。",
+		}
+	} else {
+		generated, err = provider.GenerateCharacter(c.Request.Context(), llm.GenerateCharacterReq{
+			Occupation: req.Occupation,
+			Background: req.Background,
+			Era:        req.Era,
+			Stats:      stats,
+		})
+		if err != nil {
+			generated = &llm.GeneratedCharacter{
+				Name:       "未知调查员",
+				Age:        25,
+				Gender:     "未知",
+				Backstory:  "背景故事生成失败，请手动填写。",
+				Appearance: "外貌描述待填写。",
+				Traits:     "性格特征待填写。",
+			}
 		}
 	}
 
@@ -247,42 +281,4 @@ func DeleteCharacter(c *gin.Context) {
 	// Soft delete: set is_active = false
 	models.DB.Model(&card).Update("is_active", false)
 	c.JSON(http.StatusOK, gin.H{"message": "人物卡已删除"})
-}
-
-func RollDice(c *gin.Context) {
-	notation := c.Query("notation") // e.g. "1d20", "3d6"
-	if notation == "" {
-		notation = "1d100"
-	}
-
-	var n, m int
-	if _, err := parseNotation(notation, &n, &m); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的骰子格式，使用如 1d100 或 3d6"})
-		return
-	}
-
-	total, dice := game.Roll(n, m)
-	c.JSON(http.StatusOK, gin.H{
-		"notation": notation,
-		"total":    total,
-		"dice":     dice,
-	})
-}
-
-func SkillCheck(c *gin.Context) {
-	skillVal, err := strconv.Atoi(c.Query("skill"))
-	if err != nil || skillVal < 1 || skillVal > 100 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "skill 参数须为 1-100 的整数"})
-		return
-	}
-	result := game.SkillCheck(skillVal)
-	c.JSON(http.StatusOK, result)
-}
-
-func parseNotation(s string, n, m *int) (string, error) {
-	_, err := fmt.Sscanf(s, "%dd%d", n, m)
-	if err != nil || *n < 1 || *n > 100 || *m < 2 || *m > 1000 {
-		return "", err
-	}
-	return s, nil
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -29,6 +30,7 @@ func Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("[register] username=%q email=%q", req.Username, req.Email)
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -46,6 +48,7 @@ func Register(c *gin.Context) {
 	}
 
 	if err := models.DB.Create(&user).Error; err != nil {
+		log.Printf("[register] conflict username=%q: %v", req.Username, err)
 		c.JSON(http.StatusConflict, gin.H{"error": "用户名或邮箱已存在"})
 		return
 	}
@@ -56,6 +59,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	log.Printf("[register] ok user_id=%d username=%q", user.ID, user.Username)
 	c.JSON(http.StatusCreated, gin.H{
 		"token": token,
 		"user":  user,
@@ -68,14 +72,17 @@ func Login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("[login] username=%q", req.Username)
 
 	var user models.User
 	if err := models.DB.Where("username = ? OR email = ?", req.Username, req.Username).First(&user).Error; err != nil {
+		log.Printf("[login] not_found username=%q", req.Username)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		log.Printf("[login] wrong_password user_id=%d", user.ID)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
@@ -86,6 +93,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	log.Printf("[login] ok user_id=%d username=%q role=%s", user.ID, user.Username, user.Role)
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user":  user,

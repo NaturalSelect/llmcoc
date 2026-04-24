@@ -6,9 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"os"
+	"strings"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 )
+
+// llmDebug controls per-request LLM timing logs (set LLM_DEBUG=1 to enable).
+var llmDebug = func() bool {
+	v := strings.ToLower(os.Getenv("AGENT_DEBUG"))
+	return v == "1" || v == "true" || v == "yes"
+}()
 
 type openAIProvider struct {
 	client      *openai.Client
@@ -86,6 +96,7 @@ func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage)
 }
 
 func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (string, error) {
+	start := time.Now()
 	resp, err := p.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model:       p.model,
 		Messages:    p.toOpenAIMessages(messages),
@@ -98,7 +109,13 @@ func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (stri
 	if len(resp.Choices) == 0 {
 		return "", errors.New("LLM returned no choices")
 	}
-	return resp.Choices[0].Message.Content, nil
+	result := resp.Choices[0].Message.Content
+	if llmDebug {
+		elapsed := time.Since(start)
+		log.Printf("[llm] Chat done model=%s elapsed=%.0fms response_len=%d",
+			p.model, float64(elapsed.Microseconds())/1000, len([]rune(result)))
+	}
+	return result, nil
 }
 
 func (p *openAIProvider) GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*GeneratedCharacter, error) {

@@ -36,7 +36,10 @@ const evaluatorDefaultPrompt = `你是COC TRPG的游戏结算员。游戏结束�
 // RunEvaluator runs the evaluator agent at the end of a session.
 // Returns an EvaluationResult; on failure, falls back to a default reward for each player.
 func RunEvaluator(ctx context.Context, session *models.GameSession, messages []models.Message) (EvaluationResult, error) {
-	handle := loadSingleAgent(models.AgentRoleEvaluator)
+	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
+	if err != nil {
+		return fallbackEvaluation(session), nil
+	}
 
 	// Build a condensed chat log
 	var logBuilder strings.Builder
@@ -113,22 +116,23 @@ func fallbackEvaluation(session *models.GameSession) EvaluationResult {
 	return result
 }
 
-// loadSingleAgent loads an agentHandle for the given role, falling back to the global provider.
-func loadSingleAgent(role models.AgentRole) agentHandle {
+// loadSingleAgent loads an agentHandle for the given role from the database.
+// Returns an error if the role has no active config or no active provider config.
+func loadSingleAgent(role models.AgentRole) (agentHandle, error) {
 	var cfg models.AgentConfig
 	err := models.DB.Preload("ProviderConfig").
 		Where("role = ? AND is_active = ?", role, true).
 		First(&cfg).Error
 	if err != nil {
-		return agentHandle{provider: llm.GetProvider()}
+		return agentHandle{}, fmt.Errorf("agent %q 未配置，请在管理面板配置 LLM provider", role)
 	}
-	if cfg.ProviderConfigID != nil && cfg.ProviderConfig != nil && cfg.ProviderConfig.IsActive {
-		maxTok := cfg.MaxTokens
-		if maxTok == 0 {
-			maxTok = 1024
-		}
-		p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, cfg.Temperature)
-		return agentHandle{provider: p, config: &cfg}
+	if cfg.ProviderConfigID == nil || cfg.ProviderConfig == nil || !cfg.ProviderConfig.IsActive {
+		return agentHandle{}, fmt.Errorf("agent %q 未绑定可用的 LLM provider", role)
 	}
-	return agentHandle{provider: llm.GetProvider(), config: &cfg}
+	maxTok := cfg.MaxTokens
+	if maxTok == 0 {
+		maxTok = 1024
+	}
+	p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, cfg.Temperature)
+	return agentHandle{provider: p, config: &cfg}, nil
 }

@@ -1,135 +1,43 @@
 package agent
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
-	"github.com/llmcoc/server/internal/services/llm"
 )
 
-const editorDefaultPrompt = `你是COC TRPG人物卡编辑器。你会收到一组状态变化指令，和当前所有角色的状态。
-请解析每条变化，输出精确的JSON更新列表。
-
-仅输出JSON，不要任何额外文字：
-{
-  "updates": [
-    {
-      "character_name": "角色名",
-      "field": "字段名",
-      "delta": 0,
-      "add_value": "",
-      "is_npc": false
-    }
-  ],
-  "new_npcs": []
-}
-
-field 可选值和说明：
-- "san" / "hp" / "mp"：数值变化，填 delta（正数增加，负数减少）
-- "cthulhu_mythos"：克苏鲁神话技能提升（阅读神话典籍/首次目击怪物），填 delta=提升点数
-- "skills"：技能变化，填 add_value="技能名" + delta=变化量
-- "spells"：学会新法术，填 add_value="法术名"，delta=0
-- "social_relations"：添加社会关系，填 add_value="姓名|关系|备注"，delta=0
-
-new_npcs 在需要创建新临时NPC时填写（如引入新怪物、新NPC）：
-[{"name":"xxx","description":"xxx","stats":{"hp":10},"skills":{"格斗":40}}]
-
-注意：
-- 若同一角色有多项变化，输出多条记录
-- 若变化描述的对象是临时NPC（怪物/配角），设 is_npc=true
-- 若变化不涉及任何数值更新（如纯叙事），则 updates 和 new_npcs 均为空数组`
-
-func runEditor(
-	ctx context.Context,
-	h agentHandle,
-	stateChanges []string,
-	players []models.SessionPlayer,
-	tempNPCs []models.SessionNPC,
-) (EditorResult, error) {
-	if len(stateChanges) == 0 {
-		return EditorResult{}, nil
-	}
-
-	// Build a compact snapshot of current character states.
-	var sb strings.Builder
-	sb.WriteString("当前调查员状态：\n")
-	for _, p := range players {
-		card := p.CharacterCard
-		sb.WriteString(fmt.Sprintf("• %s  HP:%d/%d SAN:%d/%d MP:%d/%d\n",
-			card.Name,
-			card.Stats.Data.HP, card.Stats.Data.MaxHP,
-			card.Stats.Data.SAN, card.Stats.Data.MaxSAN,
-			card.Stats.Data.MP, card.Stats.Data.MaxMP,
-		))
-		if len(card.Spells.Data) > 0 {
-			sb.WriteString(fmt.Sprintf("  已知法术：%s\n", strings.Join(card.Spells.Data, "、")))
-		}
-	}
-	if len(tempNPCs) > 0 {
-		sb.WriteString("\n临时NPC状态：\n")
-		for _, npc := range tempNPCs {
-			alive := "存活"
-			if !npc.IsAlive {
-				alive = "已死亡"
-			}
-			hp := npc.Stats.Data["hp"]
-			sb.WriteString(fmt.Sprintf("• %s [%s] HP:%d\n", npc.Name, alive, hp))
-		}
-	}
-
-	changesText := strings.Join(stateChanges, "\n")
-	userPrompt := fmt.Sprintf("状态变化指令：\n%s\n\n%s", changesText, sb.String())
-
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: h.systemPrompt(editorDefaultPrompt)},
-		{Role: "user", Content: userPrompt},
-	}
-
-	resp, err := h.provider.Chat(ctx, msgs)
-	if err != nil {
-		return EditorResult{}, fmt.Errorf("editor LLM error: %w", err)
-	}
-
-	resp = llm.StripCodeFence(resp)
-	var result EditorResult
-	if err := json.Unmarshal([]byte(resp), &result); err != nil {
-		log.Printf("[editor] JSON parse error: %v (response: %.200s)", err, resp)
-		return EditorResult{}, fmt.Errorf("editor JSON parse error: %w", err)
-	}
-	return result, nil
-}
-
-// applyEditorResult writes all updates from EditorResult to the database.
-// It updates CharacterCard stats/spells/social_relations and creates new SessionNPCs.
-func applyEditorResult(result EditorResult, sessionID uint, players []models.SessionPlayer, tempNPCs []models.SessionNPC) {
-	for _, upd := range result.Updates {
-		if upd.IsNPC {
-			applyNPCUpdate(upd, sessionID, tempNPCs)
-		} else {
-			applyCharacterUpdate(upd, players)
-		}
-	}
-
-	for _, newNPC := range result.NewNPCs {
-		if newNPC.Name == "" {
+// parseStateChange parses a director change string (e.g. "HP -3（角色名）" or
+// "cthulhu_mythos +1（角色名）") into a CharacterUpdate.
+// Supported fields: HP, SAN, MP, cthulhu_mythos.
+// Returns false if the string cannot be matched to a known field.
+func parseStateChange(change string) (CharacterUpdate, bool) {
+	change = strings.TrimSpace(change)
+	// Check longest field name first to avoid prefix collisions.
+	for _, field := range []string{"cthulhu_mythos", "HP", "SAN", "MP"} {
+		if !strings.HasPrefix(strings.ToUpper(change), strings.ToUpper(field)) {
 			continue
 		}
-		log.Printf("[editor] creating new NPC: %s", newNPC.Name)
-		npc := models.SessionNPC{
-			SessionID:   sessionID,
-			Name:        newNPC.Name,
-			Description: newNPC.Description,
-			IsAlive:     true,
+		rest := strings.TrimSpace(change[len(field):])
+		var deltaStr, charName string
+		if idx := strings.Index(rest, "（"); idx >= 0 {
+			deltaStr = strings.TrimSpace(rest[:idx])
+			charName = strings.TrimSuffix(strings.TrimPrefix(rest[idx:], "（"), "）")
+		} else {
+			deltaStr = rest
 		}
-		npc.Stats.Data = newNPC.Stats
-		npc.Skills.Data = newNPC.Skills
-		models.DB.Create(&npc)
+		var delta int
+		fmt.Sscanf(deltaStr, "%d", &delta)
+		return CharacterUpdate{
+			CharacterName: charName,
+			Field:         strings.ToLower(field),
+			Delta:         delta,
+		}, true
 	}
+	log.Printf("[editor] unrecognised change string: %q", change)
+	return CharacterUpdate{}, false
 }
 
 func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {

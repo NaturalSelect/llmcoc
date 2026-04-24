@@ -14,6 +14,7 @@ import (
 	"github.com/llmcoc/server/internal/handlers"
 	"github.com/llmcoc/server/internal/middleware"
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
@@ -78,21 +79,15 @@ func main() {
 	}
 
 	// Characters (authenticated)
+	chh := handlers.NewCharacterHandlers(handlers.DefaultCharacterLLMFactory)
 	chars := api.Group("/characters", middleware.AuthRequired())
 	{
 		chars.GET("", handlers.ListCharacters)
 		chars.POST("", handlers.CreateCharacter)
-		chars.POST("/generate", handlers.GenerateCharacter)
+		chars.POST("/generate", chh.GenerateCharacter)
 		chars.GET("/:id", handlers.GetCharacter)
 		chars.PUT("/:id", handlers.UpdateCharacter)
 		chars.DELETE("/:id", handlers.DeleteCharacter)
-	}
-
-	// Dice
-	dice := api.Group("/dice", middleware.AuthRequired())
-	{
-		dice.GET("/roll", handlers.RollDice)
-		dice.GET("/skill", handlers.SkillCheck)
 	}
 
 	// Scenarios
@@ -104,6 +99,7 @@ func main() {
 	}
 
 	// Sessions
+	sh := handlers.NewSessionHandlers(agent.DefaultRunner{})
 	sessions := api.Group("/sessions", middleware.AuthRequired())
 	{
 		sessions.GET("", handlers.ListSessions)
@@ -113,7 +109,7 @@ func main() {
 		sessions.POST("/:id/start", handlers.StartSession)
 		sessions.POST("/:id/end", handlers.EndSession)
 		sessions.GET("/:id/messages", handlers.GetMessages)
-		sessions.POST("/:id/chat", handlers.ChatStream)
+		sessions.POST("/:id/chat", sh.ChatStream)
 	}
 
 	// Shop
@@ -137,6 +133,7 @@ func main() {
 		admin.POST("/config/providers", handlers.AdminCreateProvider)
 		admin.PUT("/config/providers/:id", handlers.AdminUpdateProvider)
 		admin.DELETE("/config/providers/:id", handlers.AdminDeleteProvider)
+		admin.POST("/config/providers/:id/ping", handlers.AdminPingProvider)
 		// Agent config
 		admin.GET("/config/agents", handlers.AdminListAgents)
 		admin.PUT("/config/agents/:role", handlers.AdminUpdateAgent)

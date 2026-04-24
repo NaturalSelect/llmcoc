@@ -10,7 +10,6 @@ type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
 	JWT      JWTConfig      `yaml:"jwt"`
-	LLM      LLMConfig      `yaml:"llm"`
 	Shop     ShopConfig     `yaml:"shop"`
 }
 
@@ -24,24 +23,8 @@ type DatabaseConfig struct {
 }
 
 type JWTConfig struct {
-	Secret     string `yaml:"secret"`
-	ExpireHours int   `yaml:"expire_hours"`
-}
-
-type LLMConfig struct {
-	Provider    string            `yaml:"provider"` // openai | anthropic | ollama | custom
-	BaseURL     string            `yaml:"base_url"`
-	APIKey      string            `yaml:"api_key"`
-	Model       string            `yaml:"model"`
-	MaxTokens   int               `yaml:"max_tokens"`
-	Temperature float32           `yaml:"temperature"`
-	Providers   map[string]ProviderConfig `yaml:"providers"`
-}
-
-type ProviderConfig struct {
-	BaseURL string `yaml:"base_url"`
-	APIKey  string `yaml:"api_key"`
-	Model   string `yaml:"model"`
+	Secret      string `yaml:"secret"`
+	ExpireHours int    `yaml:"expire_hours"`
 }
 
 type ShopConfig struct {
@@ -65,15 +48,6 @@ func Load(path string) error {
 }
 
 func applyEnvOverrides() {
-	if v := os.Getenv("LLM_API_KEY"); v != "" {
-		Global.LLM.APIKey = v
-	}
-	if v := os.Getenv("LLM_BASE_URL"); v != "" {
-		Global.LLM.BaseURL = v
-	}
-	if v := os.Getenv("LLM_MODEL"); v != "" {
-		Global.LLM.Model = v
-	}
 	if v := os.Getenv("JWT_SECRET"); v != "" {
 		Global.JWT.Secret = v
 	}
@@ -91,15 +65,6 @@ func setDefaults() {
 	}
 	if Global.JWT.ExpireHours == 0 {
 		Global.JWT.ExpireHours = 168
-	}
-	if Global.LLM.Model == "" {
-		Global.LLM.Model = "gpt-4o"
-	}
-	if Global.LLM.MaxTokens == 0 {
-		Global.LLM.MaxTokens = 2048
-	}
-	if Global.LLM.Temperature == 0 {
-		Global.LLM.Temperature = 0.8
 	}
 	if Global.Shop.InitialCoins == 0 {
 		Global.Shop.InitialCoins = 0

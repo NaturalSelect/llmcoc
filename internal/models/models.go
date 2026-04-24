@@ -69,6 +69,7 @@ type CharacterCard struct {
 	Traits          string                      `gorm:"type:text" json:"traits"`
 	SocialRelations JSONField[[]SocialRelation] `gorm:"type:text" json:"social_relations"`
 	Spells          JSONField[[]string]         `gorm:"type:text" json:"spells"`
+	SeenMonsters    JSONField[[]string]         `gorm:"type:text" json:"seen_monsters"` // 已见过的神话存在（见过的不掉SAN）
 	IsActive        bool                        `gorm:"default:true" json:"is_active"`
 	AvatarURL       string                      `gorm:"size:500" json:"avatar_url"`
 	// COC 理智与疯狂状态

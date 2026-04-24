@@ -79,54 +79,27 @@ func SkillCheck(skillValue int) SkillCheckResult {
 // Case-insensitive ("1d6" and "1D6" are equivalent).
 func RollDiceExpr(expr string) int {
 	expr = strings.TrimSpace(strings.ToUpper(expr))
-	if expr == "" || expr == "0" {
+	if expr == "" {
 		return 0
 	}
 	// Plain integer
 	if v, err := strconv.Atoi(expr); err == nil {
 		return v
 	}
-	dIdx := strings.Index(expr, "D")
-	if dIdx < 0 {
-		return 0
+
+	// Use the same tokenizer as DamageRoll
+	tokens := tokenizeDamageFormula(expr)
+	total := 0
+	for _, tok := range tokens {
+		// evalDamageToken handles "1D6", "+2D4", "-1", etc.
+		val, err := evalDamageToken(tok)
+		if err != nil {
+			// On simple dice expression error, return 0 as per original function's contract
+			return 0
+		}
+		total += val
 	}
-	nStr := expr[:dIdx]
-	rest := expr[dIdx+1:]
-	n := 1
-	if nStr != "" {
-		if v, err := strconv.Atoi(nStr); err == nil {
-			n = v
-		}
-	}
-	m := 0
-	mod := 0
-	if plusIdx := strings.Index(rest, "+"); plusIdx >= 0 {
-		if v, err := strconv.Atoi(rest[:plusIdx]); err == nil {
-			m = v
-		}
-		if v, err := strconv.Atoi(rest[plusIdx+1:]); err == nil {
-			mod = v
-		}
-	} else if minusIdx := strings.LastIndex(rest, "-"); minusIdx >= 0 {
-		if v, err := strconv.Atoi(rest[:minusIdx]); err == nil {
-			m = v
-		}
-		if v, err := strconv.Atoi(rest[minusIdx+1:]); err == nil {
-			mod = -v
-		}
-	} else {
-		if v, err := strconv.Atoi(rest); err == nil {
-			m = v
-		}
-	}
-	if m <= 0 {
-		m = 6
-	}
-	if n <= 0 {
-		n = 1
-	}
-	total, _ := Roll(n, m)
-	return total + mod
+	return total
 }
 
 // GenerateStats generates COC 7th edition character statistics
@@ -180,12 +153,13 @@ func GenerateStats() models.CharacterStats {
 }
 
 func calcMOV(str, dex, siz int) int {
+	if str > siz && dex > siz {
+		return 9
+	}
 	if str < siz && dex < siz {
 		return 7
-	} else if str >= siz || dex >= siz {
-		return 8
 	}
-	return 9
+	return 8
 }
 
 func calcBuildAndDB(str, siz int) (int, string) {
@@ -204,7 +178,9 @@ func calcBuildAndDB(str, siz int) (int, string) {
 	case combined <= 284:
 		return 3, "2D6"
 	default:
-		return 4, "3D6"
+		// 规则书：合计值≥285时每超过80点（不足80按80算）增加+1体格和+1D6伤害加值
+		build := 4 + (combined-285)/80
+		return build, fmt.Sprintf("%dD6", build-1)
 	}
 }
 
@@ -405,7 +381,7 @@ func tokenizeDamageFormula(f string) []string {
 	return tokens
 }
 
-// evalDamageToken evaluates one token like "+2D6", "-1", "1D4".
+// evalDamageToken evaluates one token like "+2D6", "-1", "1D4", "D6".
 func evalDamageToken(tok string) (int, error) {
 	sign := 1
 	tok = strings.TrimSpace(tok)
@@ -418,9 +394,19 @@ func evalDamageToken(tok string) (int, error) {
 	if dIdx := strings.Index(tok, "D"); dIdx >= 0 {
 		nStr := tok[:dIdx]
 		mStr := tok[dIdx+1:]
-		n, err1 := strconv.Atoi(nStr)
-		m, err2 := strconv.Atoi(mStr)
-		if err1 != nil || err2 != nil || n <= 0 || m <= 0 {
+		var n int
+		var err error
+		if nStr == "" {
+			n = 1
+		} else {
+			n, err = strconv.Atoi(nStr)
+			if err != nil {
+				return 0, fmt.Errorf("invalid dice count in token: %q", tok)
+			}
+		}
+
+		m, err := strconv.Atoi(mStr)
+		if err != nil || n <= 0 || m <= 0 {
 			return 0, fmt.Errorf("invalid damage token: %q", tok)
 		}
 		sum, _ := Roll(n, m)

@@ -29,6 +29,8 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 		direction = "继续描述当前场景，保持克苏鲁氛围。"
 	}
 
+	debugf("Writer", "direction=%s history_msgs=%d", direction, len(state.History))
+
 	// Seed history with session context on the first call so Writer knows
 	// the immediate situation (players, recent chat) without the full scenario.
 	if len(state.History) == 0 {
@@ -80,6 +82,8 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	if err != nil {
 		return err
 	}
+
+	debugf("Writer", "response len=%d preview=%s", len([]rune(resp)), resp)
 
 	// Update history with this exchange for continuity in subsequent calls.
 	state.History = append(state.History,

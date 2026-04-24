@@ -23,8 +23,9 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
    - 示例："施放绑缚术需要消耗多少MP和SAN？"
 
 2. roll_dice — 执行骰子检定
-   {"action":"roll_dice","dice":{"skill":"技能名","value":技能值,"character":"角色名","check_type":"standard|sanity|luck|opposed","hidden":false,"bonus_dice":0,"penalty_dice":0,"san_success_loss":"0","san_fail_loss":"1D6"}}
+   {"action":"roll_dice","dice":{"skill":"技能名","value":技能值,"character":"角色名","check_type":"standard|sanity|luck|opposed","hidden":false,"bonus_dice":0,"penalty_dice":0,"san_success_loss":"0","san_fail_loss":"1D6","monster_name":""}}
    - sanity检定必须填写 san_success_loss 和 san_fail_loss
+   - monster_name：若sanity检定由特定神话存在/怪物引发，填写其名称；已见过同一存在的调查员将自动跳过SAN损失
    - hidden=true：暗骰，玩家不知晓检定发生
    - bonus_dice/penalty_dice：奖励/惩罚骰数量
 
@@ -39,7 +40,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 
 5. trigger_madness — 触发调查员的疯狂发作（COC第八章疯狂机制）
    {"action":"trigger_madness","character_name":"角色名","is_bystander":true}
-   - is_bystander=true：现场有旁观者，触发即时症状（持续1D10轮）
+   - is_bystander=true：现场有旁观者，触发即时症状（持续10轮）
    - is_bystander=false：调查员独处，触发总结症状（时间跳过1D10小时）
    - 系统会随机抽取症状并返回给你，将其融入叙事
 
@@ -54,8 +55,20 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
    - 普通行动（对话/搜索/战斗等）无需调用，系统自动推进1回合
    - 若跳过多个回合，在 write 中交代时间流逝
 
-8. end — 结束本轮，旁白收尾
-   {"action":"end","narration":"KP旁白（可选，50字以内，作为本轮结尾）"}
+8. query_clues — 查询剧本线索库
+   {"action":"query_clues","keyword":"可选关键词，留空返回全部线索"}
+   - 调查员触发/发现/询问线索时调用，按需获取，勿在每轮开头无脑查询
+   - 示例：{"action":"query_clues","keyword":"灯塔"}
+   - 示例：{"action":"query_clues","keyword":""}（返回所有线索）
+
+9. query_character — 查询调查员完整人物卡
+   {"action":"query_character","character_name":"角色名，留空返回所有调查员"}
+   - 需要具体技能值、背景故事、社会关系、咒语等详细信息时调用
+   - 示例：{"action":"query_character","character_name":"Alice"}
+   - 示例：{"action":"query_character","character_name":""}（返回全部调查员详情）
+
+10. end — 结束本轮，旁白收尾
+    {"action":"end","narration":"KP旁白（可选，50字以内，作为本轮结尾）"}
 
 【执行规则】
 - 每次输出必须以 end 结尾
@@ -65,6 +78,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 - 仅在有实质数值变化时调用 update_characters
 - 仅输出JSON数组，不加任何说明文字
 - 调查员吃饭/睡觉/长途跋涉等耗时活动，调用 advance_time 再调用 write/end
+- query_clues / query_character 可穿插在任意轮中；收到结果后再出 write/end
 
 【KP核心准则】
 - 仅在结果有实质意义时要求检定，日常事务无需掷骰
@@ -75,10 +89,31 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 - 孤注一掷（玩家拼命重试）仅限调查/探索/社交/学术技能，战斗/理智/幸运/对立不可孤注
 - 克苏鲁神话典籍/首次目睹神话怪物：给对应调查员加 cthulhu_mythos
 - 规则有疑问时先调用 check_rule 再行动，不要凭印象判断
+- 需要调查员技能值/背景时先调用 query_character，需要线索细节时先调用 query_clues
 
 【示例：简单情境（无需骰子）】
 [
   {"action":"write","direction":"描述玩家进入废弃图书馆，发现地板上散落的血迹和翻乱的书架，气氛压抑诡异"},
+  {"action":"end","narration":""}
+]
+
+【示例：先查线索再叙事】
+第一轮（先取线索）：
+[{"action":"query_clues","keyword":"图书馆"}]
+收到线索结果后第二轮：
+[
+  {"action":"write","direction":"根据查到的线索，描述调查员在图书馆书架后发现的关键物证"},
+  {"action":"end","narration":""}
+]
+
+【示例：先查人物卡再做技能检定】
+第一轮（查技能值）：
+[{"action":"query_character","character_name":"Alice"}]
+收到人物卡后第二轮（使用实际技能值）：
+[{"action":"roll_dice","dice":{"skill":"图书馆使用","value":65,"character":"Alice","check_type":"standard","hidden":false}}]
+收到骰子结果后第三轮：
+[
+  {"action":"write","direction":"Alice查阅成功，找到关键古籍，章节记载了某神话存在的封印方法"},
   {"action":"end","narration":""}
 ]
 
@@ -105,91 +140,114 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
   {"action":"end","narration":""}
 ]`
 
-// runKP is the master agent that drives the entire turn.
-// It receives full scenario context and the tool results from the previous iteration,
-// and outputs a JSON array of ToolCall instructions.
-func runKP(ctx context.Context, h agentHandle, gctx GameContext, prevResults []ToolResult) ([]ToolCall, error) {
-	// Build the scenario context (only the KP receives this).
+// buildKPMessages constructs the initial conversation message list for the KP agent.
+// The system prompt encodes the tool interface and COC rules guidelines.
+// The user message provides scenario context, player state, game time, history, and the current action.
+// Subsequent iterations append assistant (KP response) and user (tool results) messages to the
+// returned slice, giving the model proper multi-turn context instead of a flat text dump.
+func buildKPMessages(gctx GameContext, systemPrompt string, prev []llm.ChatMessage) []llm.ChatMessage {
+	message := append([]llm.ChatMessage{}, prev...)
 	content := gctx.Session.Scenario.Content.Data
-
-	var scenarioSB strings.Builder
-	scenarioSB.WriteString(fmt.Sprintf("【剧本：%s】\n", gctx.Session.Scenario.Name))
-	if content.Setting != "" {
-		scenarioSB.WriteString("背景设定：" + content.Setting + "\n")
-	}
-	if content.WinCondition != "" {
-		scenarioSB.WriteString("胜利条件：" + content.WinCondition + "\n")
-	}
-	if content.SystemPrompt != "" {
-		scenarioSB.WriteString("KP特殊指令：" + content.SystemPrompt + "\n")
-	}
-	if len(content.NPCs) > 0 {
-		scenarioSB.WriteString("NPC列表：\n")
-		for _, npc := range content.NPCs {
-			desc := npc.Description
-			if len([]rune(desc)) > 100 {
-				desc = string([]rune(desc)[:100]) + "…"
+	if len(message) == 0 {
+		// NOTE: empty, add system prompt
+		message = append(message, llm.ChatMessage{
+			Role:    "system",
+			Content: systemPrompt,
+		})
+		// NOTE: add scenario context as the first user message for the KP to understand the setting and current situation.
+		var scenarioSB strings.Builder
+		scenarioSB.WriteString(fmt.Sprintf("【剧本：%s】\n", gctx.Session.Scenario.Name))
+		if content.Setting != "" {
+			scenarioSB.WriteString("背景设定：" + content.Setting + "\n")
+		}
+		if content.WinCondition != "" {
+			scenarioSB.WriteString("胜利条件：" + content.WinCondition + "\n")
+		}
+		if content.SystemPrompt != "" {
+			scenarioSB.WriteString("KP特殊指令：" + content.SystemPrompt + "\n")
+		}
+		if len(content.NPCs) > 0 {
+			scenarioSB.WriteString("NPC列表：\n")
+			for _, npc := range content.NPCs {
+				desc := npc.Description
+				if len([]rune(desc)) > 100 {
+					desc = string([]rune(desc)[:100]) + "…"
+				}
+				scenarioSB.WriteString(fmt.Sprintf("  • %s（%s）：%s\n", npc.Name, npc.Attitude, desc))
 			}
-			scenarioSB.WriteString(fmt.Sprintf("  • %s（%s）：%s\n", npc.Name, npc.Attitude, desc))
 		}
-	}
-	if len(content.Clues) > 0 {
-		scenarioSB.WriteString("线索：\n")
-		for _, clue := range content.Clues {
-			scenarioSB.WriteString(fmt.Sprintf("  • %s\n", clue))
-		}
+		message = append(message, llm.ChatMessage{
+			Role:    "user",
+			Content: scenarioSB.String(),
+		})
 	}
 
-	// Player status.
-	playerStatus := buildPlayerStatus(gctx.Session.Players)
-
-	// Recent conversation history.
-	recent := tailMessages(gctx.History, 10)
-	histSummary := buildHistorySummary(recent)
-
+	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
 	var userSB strings.Builder
-	userSB.WriteString(scenarioSB.String())
-	userSB.WriteString("\n")
-	userSB.WriteString(playerStatus)
+	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
 	userSB.WriteString("\n\n【当前游戏时间】" + formatGameTime(gctx.Session.TurnRound) + "\n")
-	userSB.WriteString("\n【近期对话】\n")
-	userSB.WriteString(histSummary)
-	userSB.WriteString(fmt.Sprintf("\n【当前行动】[%s]: %s", gctx.UserName, gctx.UserInput))
 
-	// Append tool results from the previous iteration if any.
-	if len(prevResults) > 0 {
-		userSB.WriteString("\n\n【上轮工具执行结果】\n")
-		for _, r := range prevResults {
-			userSB.WriteString(fmt.Sprintf("[%s] %s\n", r.Action, r.Result))
+	// Show all players' actions when everyone has submitted (multi-player),
+	// otherwise show the single triggering player's action.
+	if len(gctx.PendingActions) > 1 {
+		userSB.WriteString("\n【本轮所有玩家行动】\n")
+		for _, a := range gctx.PendingActions {
+			userSB.WriteString(fmt.Sprintf("[%s]: %s\n", a.PlayerName, a.Content))
 		}
+	} else {
+		userSB.WriteString(fmt.Sprintf("\n【当前行动】[%s]: %s", gctx.UserName, gctx.UserInput))
 	}
+	messages := append(message, llm.ChatMessage{
+		Role:    "user",
+		Content: userSB.String(),
+	})
+	return messages
+}
 
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: h.systemPrompt(kpSystemPrompt)},
-		{Role: "user", Content: userSB.String()},
-	}
+// runKP sends the current conversation messages to the KP model and returns the parsed tool calls
+// together with the raw response string. The caller is responsible for appending:
+//  1. {Role:"assistant", Content: rawResp}  — the KP's decision
+//  2. {Role:"user",      Content: <tool results>} — feedback for the next iteration
+//
+// This keeps the conversation history accurate across multiple tool-call iterations.
+func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCall, string, error) {
+	debugf("KP", "Chat: %d messages, last_user=%s",
+		len(msgs), lastUserContent(msgs))
 
 	resp, err := h.provider.Chat(ctx, msgs)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	resp = llm.StripCodeFence(resp)
+	debugf("KP", "raw_response len=%d, preview=%s", len([]rune(resp)), resp)
+
+	stripped := llm.StripCodeFence(resp)
 	var calls []ToolCall
-	if err := json.Unmarshal([]byte(resp), &calls); err != nil {
+	if err := json.Unmarshal([]byte(stripped), &calls); err != nil {
 		// If JSON parsing fails, try to extract a JSON array from the response.
-		if start := strings.Index(resp, "["); start >= 0 {
-			if end := strings.LastIndex(resp, "]"); end > start {
-				if err2 := json.Unmarshal([]byte(resp[start:end+1]), &calls); err2 == nil {
-					return calls, nil
+		if start := strings.Index(stripped, "["); start >= 0 {
+			if end := strings.LastIndex(stripped, "]"); end > start {
+				if err2 := json.Unmarshal([]byte(stripped[start:end+1]), &calls); err2 == nil {
+					return calls, resp, nil
 				}
 			}
 		}
 		// Fall back: produce a minimal write+end sequence.
-		return []ToolCall{
+		fallback := []ToolCall{
 			{Action: ToolWrite, Direction: "继续当前剧情走向，保持克苏鲁氛围。"},
 			{Action: ToolEnd, Narration: ""},
-		}, fmt.Errorf("KP JSON parse error: %w", err)
+		}
+		return fallback, resp, fmt.Errorf("KP JSON parse error: %w", err)
 	}
-	return calls, nil
+	return calls, resp, nil
+}
+
+// lastUserContent returns the content of the last user message in msgs.
+func lastUserContent(msgs []llm.ChatMessage) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			return msgs[i].Content
+		}
+	}
+	return ""
 }

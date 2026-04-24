@@ -354,37 +354,22 @@
 
                 <!-- Input -->
                 <div class="coc-card border-t p-3">
-                    <!-- Dice buttons -->
-                    <div class="flex gap-2 mb-2 flex-wrap">
-                        <span class="text-xs text-amber-700 self-center">快速骰子：</span>
-                        <template x-for="d in [4,6,8,10,20,100]" :key="d">
-                            <button @click="rollDice('1d'+d)"
-                                class="text-xs bg-amber-900/30 hover:bg-amber-900/60 px-2 py-1 rounded text-amber-400 transition">D<span
-                                    x-text="d"></span></button>
-                        </template>
-                        <button @click="showSkillCheck=!showSkillCheck"
-                            class="text-xs bg-blue-900/30 hover:bg-blue-900/60 px-2 py-1 rounded text-blue-400 transition">技能检定</button>
-                    </div>
-                    <!-- Skill check input -->
-                    <div x-show="showSkillCheck" class="flex gap-2 mb-2">
-                        <input x-model="skillCheckVal" type="number" placeholder="技能值 (1-100)"
-                            class="coc-input text-sm px-2 py-1 rounded w-36" />
-                        <input x-model="skillCheckName" placeholder="技能名称"
-                            class="coc-input text-sm px-2 py-1 rounded w-28" />
-                        <button @click="doSkillCheck()" class="coc-btn text-xs px-3 py-1 rounded">掷骰!</button>
-                    </div>
                     <div class="flex gap-2">
                         <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()"
                             placeholder="描述你的行动… (Ctrl+Enter 发送)" rows="2"
-                            :disabled="currentSession?.status !== 'playing' || streaming"
+                            :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers"
                             class="coc-input flex-1 px-3 py-2 rounded text-sm resize-none"></textarea>
                         <button @click="sendChat()"
-                            :disabled="currentSession?.status !== 'playing' || streaming || !chatInput.trim()"
+                            :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || !chatInput.trim()"
                             class="coc-btn px-4 rounded font-semibold transition self-end">
-                            <span x-show="!streaming">发送</span>
+                            <span x-show="!streaming && !waitingForPlayers">发送</span>
                             <span x-show="streaming">…</span>
+                            <span x-show="waitingForPlayers">等待中</span>
                         </button>
                     </div>
+                    <p x-show="waitingForPlayers" class="text-xs text-amber-500 mt-1 italic">
+                        已提交行动，等待其他调查员…（还差 <span x-text="waitingInfo.pending"></span> 人）
+                    </p>
                     <p x-show="currentSession?.status === 'lobby'" class="text-xs text-amber-700 mt-1">等待房主开始游戏…</p>
                 </div>
             </div>
@@ -534,6 +519,9 @@
                                     x-text="p.api_key_set?'✓ API Key 已配置':'✗ 未配置 API Key'"></p>
                             </div>
                             <div class="flex gap-2 shrink-0">
+                                <button @click="pingProvider(p.id)" :disabled="pingLoading===p.id"
+                                    class="text-xs coc-btn px-2 py-1 rounded"
+                                    x-text="pingLoading===p.id?'测试中…':'测试'"></button>
                                 <button @click="openEditProvider(p)"
                                     class="text-xs coc-btn px-2 py-1 rounded">编辑</button>
                                 <button @click="deleteProvider(p.id)"
@@ -563,9 +551,9 @@
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
                                 <div>
                                     <label class="text-xs text-amber-700 mb-1 block">提供商</label>
-                                    <select x-model.number="ag.provider_config_id"
+                                    <select x-model="ag.provider_config_id"
                                         class="coc-input w-full px-2 py-1.5 rounded text-sm">
-                                        <option :value="null">使用全局配置</option>
+                                        <option value="">使用全局配置</option>
                                         <template x-for="p in adminProviders" :key="p.id">
                                             <option :value="p.id" x-text="p.name"></option>
                                         </template>
@@ -889,6 +877,8 @@
                 adminTab: 'users',
                 providerForm: { name: '', provider: 'openai', base_url: '', api_key: '', is_active: true },
                 editingProvider: null,
+                pingLoading: null,
+                pingLoading: null,
                 newShopItem: { name: '', description: '', item_type: 'card_slot', price: 0, value: 1, is_active: true },
 
                 currentSession: null,
@@ -897,9 +887,8 @@
                 streaming: false,
                 streamBuffer: '',
                 thinkingStage: '',
-                showSkillCheck: false,
-                skillCheckVal: '',
-                skillCheckName: '',
+                waitingForPlayers: false,
+                waitingInfo: { pending: 0, total: 0 },
 
                 editChar: null,
                 charForm: { name: '', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' },
@@ -976,20 +965,33 @@
 
                 // ── Navigation ──
                 goTo(p) {
+                    if (this.page === 'game') {
+                        this.streaming = false;
+                        this.streamBuffer = '';
+                        this.waitingForPlayers = false;
+                        this.thinkingStage = '';
+                    }
                     this.page = p;
-                    if (p === 'sessions') this.loadSessions();
-                    if (p === 'shop') this.loadShop();
+                    if (p === 'sessions') this.loadSessions().catch(e => this.showToast(e.message, 'error'));
+                    if (p === 'shop') this.loadShop().catch(e => this.showToast(e.message, 'error'));
                     if (p === 'admin') {
-                        this.loadAdminUsers();
-                        this.loadAdminProviders();
-                        this.loadAdminAgents();
+                        this.loadAdminUsers().catch(e => this.showToast(e.message, 'error'));
+                        this.loadAdminProviders().catch(e => this.showToast(e.message, 'error'));
+                        this.loadAdminAgents().catch(e => this.showToast(e.message, 'error'));
                     }
                 },
                 async goToSession(id) {
-                    this.currentSession = await this.api('GET', '/api/sessions/' + id);
-                    this.messages = await this.api('GET', '/api/sessions/' + id + '/messages?limit=100');
-                    this.page = 'game';
-                    this.$nextTick(() => this.scrollChat());
+                    this.streaming = false;
+                    this.streamBuffer = '';
+                    this.waitingForPlayers = false;
+                    this.waitingInfo = { pending: 0, total: 0 };
+                    this.thinkingStage = '';
+                    try {
+                        this.currentSession = await this.api('GET', '/api/sessions/' + id);
+                        this.messages = await this.api('GET', '/api/sessions/' + id + '/messages?limit=100');
+                        this.page = 'game';
+                        this.$nextTick(() => this.scrollChat());
+                    } catch (e) { this.showToast(e.message, 'error'); }
                 },
 
                 // ── Characters ──
@@ -1071,97 +1073,119 @@
                 // ── Chat / SSE ──
                 async sendChat() {
                     const content = this.chatInput.trim();
-                    if (!content || this.streaming) return;
+                    if (!content || this.streaming || this.waitingForPlayers) return;
                     this.chatInput = '';
                     this.streaming = true;
                     this.streamBuffer = '';
                     this.thinkingStage = 'thinking';
 
                     // Optimistic add user message
-                    this.messages.push({ id: Date.now(), role: 'user', username: this.user.username, content, created_at: new Date().toISOString() });
+                    const submittedAt = new Date();
+                    this.messages.push({ id: Date.now(), role: 'user', username: this.user.username, content, created_at: submittedAt.toISOString() });
                     this.$nextTick(() => this.scrollChat());
 
                     const formData = new FormData();
                     formData.append('content', content);
 
-                    const resp = await fetch('/api/sessions/' + this.currentSession.id + '/chat', {
-                        method: 'POST',
-                        headers: { 'Authorization': 'Bearer ' + this.token },
-                        body: formData,
-                    });
+                    let isWaiting = false;
+                    try {
+                        const resp = await fetch('/api/sessions/' + this.currentSession.id + '/chat', {
+                            method: 'POST',
+                            headers: { 'Authorization': 'Bearer ' + this.token },
+                            body: formData,
+                        });
 
-                    if (!resp.ok) {
-                        const err = await resp.json().catch(() => ({ error: '请求失败' }));
-                        this.showToast(err.error || '发送失败', 'error');
-                        this.streaming = false;
-                        return;
-                    }
+                        if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({ error: '请求失败' }));
+                            this.showToast(err.error || '发送失败', 'error');
+                            return;
+                        }
 
-                    const reader = resp.body.getReader();
-                    const decoder = new TextDecoder();
-                    let buf = '';
+                        const reader = resp.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buf = '';
 
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-                        buf += decoder.decode(value, { stream: true });
-                        const lines = buf.split('\n');
-                        buf = lines.pop();
-                        for (const line of lines) {
-                            if (line.startsWith('event: thinking')) {
-                                this.thinkingStage = 'thinking';
-                            }
-                            if (line.startsWith('event: token')) {
-                                this.thinkingStage = 'writing';
-                            }
-                            if (line.startsWith('data: ')) {
-                                const data = line.slice(6);
-                                if (data === '' || data === 'done') continue;
-                                if (data.startsWith('[ERROR]')) { this.showToast(data, 'error'); continue; }
-                                this.streamBuffer += data;
-                                this.$nextTick(() => this.scrollChat());
-                            }
-                            if (line.startsWith('event: done')) {
-                                this.messages.push({ id: Date.now() + 1, role: 'assistant', username: 'KP', content: this.streamBuffer, created_at: new Date().toISOString() });
-                                this.streamBuffer = '';
-                                this.$nextTick(() => this.scrollChat());
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            buf += decoder.decode(value, { stream: true });
+                            const lines = buf.split('\n');
+                            buf = lines.pop();
+                            for (const line of lines) {
+                                if (line.startsWith('event: waiting')) {
+                                    isWaiting = true;
+                                    this.thinkingStage = '';
+                                }
+                                if (line.startsWith('event: thinking')) {
+                                    this.thinkingStage = 'thinking';
+                                }
+                                if (line.startsWith('event: token')) {
+                                    this.thinkingStage = 'writing';
+                                }
+                                if (line.startsWith('data: ')) {
+                                    const data = line.slice(6);
+                                    if (data === '' || data === 'done') continue;
+                                    if (data.startsWith('[ERROR]')) { this.showToast(data, 'error'); continue; }
+                                    if (isWaiting) {
+                                        try {
+                                            const info = JSON.parse(data);
+                                            if (info.pending !== undefined) this.waitingInfo = info;
+                                        } catch (_) { }
+                                    } else {
+                                        this.streamBuffer += data;
+                                        this.$nextTick(() => this.scrollChat());
+                                    }
+                                }
+                                if (line.startsWith('event: done') && !isWaiting) {
+                                    if (this.streamBuffer) {
+                                        this.messages.push({ id: Date.now() + 1, role: 'assistant', username: 'KP', content: this.streamBuffer, created_at: new Date().toISOString() });
+                                        this.streamBuffer = '';
+                                        this.$nextTick(() => this.scrollChat());
+                                    }
+                                }
                             }
                         }
+                    } catch (e) {
+                        this.showToast(e.message || '网络错误', 'error');
+                    } finally {
+                        this.streaming = false;
+                        this.thinkingStage = '';
                     }
-                    this.streaming = false;
-                    this.thinkingStage = '';
-                    if (this.streamBuffer) {
-                        this.messages.push({ id: Date.now() + 2, role: 'assistant', username: 'KP', content: this.streamBuffer, created_at: new Date().toISOString() });
-                        this.streamBuffer = '';
+
+                    if (isWaiting) {
+                        // Enter waiting state: poll messages until a KP reply appears.
+                        this.waitingForPlayers = true;
+                        this.pollForKPResponse(submittedAt);
+                    } else {
+                        if (this.streamBuffer) {
+                            this.messages.push({ id: Date.now() + 2, role: 'assistant', username: 'KP', content: this.streamBuffer, created_at: new Date().toISOString() });
+                            this.streamBuffer = '';
+                        }
+                        this.$nextTick(() => this.scrollChat());
                     }
-                    this.$nextTick(() => this.scrollChat());
                 },
 
-                // ── Dice ──
-                async rollDice(notation) {
+                async pollForKPResponse(since) {
+                    if (!this.waitingForPlayers) return;
                     try {
-                        const r = await this.api('GET', '/api/dice/roll?notation=' + notation);
-                        const msg = `🎲 掷出 ${notation}：[${r.dice.join(', ')}] = **${r.total}**`;
-                        this.appendDiceResult(msg);
-                    } catch (e) { this.showToast(e.message, 'error'); }
+                        const msgs = await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages?limit=5');
+                        const newKP = msgs.find(m => m.role === 'assistant' && new Date(m.created_at) > since);
+                        if (newKP) {
+                            this.waitingForPlayers = false;
+                            this.waitingInfo = { pending: 0, total: 0 };
+                            if (!this.messages.find(m => m.id === newKP.id)) {
+                                this.messages.push(newKP);
+                                this.$nextTick(() => this.scrollChat());
+                            }
+                            return;
+                        }
+                    } catch (_) { }
+                    // Retry after 2 s.
+                    setTimeout(() => this.pollForKPResponse(since), 2000);
                 },
-                async doSkillCheck() {
-                    const val = parseInt(this.skillCheckVal);
-                    if (!val || val < 1 || val > 100) { this.showToast('请输入1-100的技能值', 'error'); return; }
-                    try {
-                        const r = await this.api('GET', '/api/dice/skill?skill=' + val);
-                        const name = this.skillCheckName ? `${this.skillCheckName}检定` : '技能检定';
-                        this.appendDiceResult(`🎲 ${name}（${val}）：${r.message}`);
-                    } catch (e) { this.showToast(e.message, 'error'); }
-                },
-                appendDiceResult(content) {
-                    if (this.page === 'game') {
-                        this.messages.push({ id: Date.now(), role: 'system', username: '骰子', content, created_at: new Date().toISOString() });
-                        this.$nextTick(() => this.scrollChat());
-                    } else {
-                        this.showToast(content.replace(/\*\*/g, ''));
-                    }
-                },
+
+                // ── Dice (removed – dice checks are handled by the KP agent pipeline) ──
+
                 scrollChat() {
                     const el = document.getElementById('chatBox');
                     if (el) el.scrollTop = el.scrollHeight;
@@ -1199,7 +1223,9 @@
                     this.adminProviders = await this.api('GET', '/api/admin/config/providers');
                 },
                 async loadAdminAgents() {
-                    this.adminAgents = await this.api('GET', '/api/admin/config/agents');
+                    const agents = await this.api('GET', '/api/admin/config/agents');
+                    agents.forEach(ag => { if (ag.provider_config_id == null) ag.provider_config_id = ''; });
+                    this.adminAgents = agents;
                 },
                 openCreateProvider() {
                     this.editingProvider = null;
@@ -1234,6 +1260,16 @@
                         await this.loadAdminProviders();
                     } catch (e) { this.showToast(e.message, 'error'); }
                 },
+                async pingProvider(id) {
+                    this.pingLoading = id;
+                    try {
+                        const r = await this.api('POST', '/api/admin/config/providers/' + id + '/ping', {});
+                        this.showToast(`连通正常，延迟 ${r.latency_ms} ms`);
+                    } catch (e) {
+                        this.showToast('连接失败：' + e.message, 'error');
+                    }
+                    this.pingLoading = null;
+                },
                 async saveAgent(ag) {
                     try {
                         await this.api('PUT', '/api/admin/config/agents/' + ag.role, {
@@ -1256,22 +1292,30 @@
                     } catch (e) { this.showToast(e.message, 'error'); }
                 },
                 agentLabel(role) {
-                    return { director: '🎬 Director（总导演）', judger: '⚖️ Judger（规则裁判）', scripter: '📝 Scripter（剧本统筹）', writer: '✍️ Writer（叙事撰写）' }[role] || role;
+                    return {
+                        director: '🎬 Director（总导演）', writer: '✍️ Writer（叙事撰写）',
+                        lawyer: '⚖️ Lawyer（规则顾问）', npc: '🎭 NPC（角色扮演）',
+                        evaluator: '📊 Evaluator（成长评估）', growth: '🌱 Growth（成长应用）',
+                    }[role] || role;
                 },
                 agentDesc(role) {
                     return {
                         director: '负责决策场景走向、NPC行动、骰子检定需求',
-                        judger: '判断玩家是否超游，建议剧情内应对方式',
-                        scripter: '将导演决策转化为内部剧情要点（不直接给玩家）',
                         writer: '根据剧情要点生成面向玩家的叙事文字（流式输出）',
+                        lawyer: '查阅规则书并提供规则裁决依据',
+                        npc: '扮演场景中的NPC，给出对话与行动',
+                        evaluator: '评估本场游戏玩家表现与技能成长',
+                        growth: '将评估结果应用到角色卡属性上',
                     }[role] || '';
                 },
                 agentDefaultHint(role) {
                     return {
                         director: '（留空）使用内置：场景导演系统提示词，输出 JSON 决策',
-                        judger: '（留空）使用内置：规则仲裁系统提示词，输出 JSON 判断',
-                        scripter: '（留空）使用内置：剧本统筹系统提示词，输出纯文本要点',
                         writer: '（留空）使用内置：KP 叙事系统提示词，200-300字克苏鲁风格散文',
+                        lawyer: '（留空）使用内置：规则顾问系统提示词，tool-call循环查规则',
+                        npc: '（留空）使用内置：NPC扮演系统提示词',
+                        evaluator: '（留空）使用内置：成长评估系统提示词',
+                        growth: '（留空）使用内置：成长应用系统提示词',
                     }[role] || '留空使用默认';
                 },
 

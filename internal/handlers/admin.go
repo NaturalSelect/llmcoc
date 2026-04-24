@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -26,6 +27,7 @@ func AdminRechargeCoins(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("[admin] recharge admin_id=%d target_user=%d amount=%d", adminID, req.UserID, req.Amount)
 
 	var user models.User
 	if err := models.DB.First(&user, req.UserID).Error; err != nil {
@@ -54,6 +56,7 @@ func AdminRechargeCoins(c *gin.Context) {
 	tx.Commit()
 
 	models.DB.First(&user, req.UserID)
+	log.Printf("[admin] recharge ok admin_id=%d target_user=%d amount=%d new_coins=%d", adminID, req.UserID, req.Amount, user.Coins)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "充值成功",
 		"user":    user,
@@ -61,6 +64,7 @@ func AdminRechargeCoins(c *gin.Context) {
 }
 
 func AdminSetRole(c *gin.Context) {
+	adminID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var req struct {
 		Role string `json:"role" binding:"required,oneof=user admin"`
@@ -69,6 +73,7 @@ func AdminSetRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("[admin] set_role admin_id=%d target_user=%d new_role=%s", adminID, id, req.Role)
 
 	var user models.User
 	if err := models.DB.First(&user, id).Error; err != nil {
@@ -76,6 +81,7 @@ func AdminSetRole(c *gin.Context) {
 		return
 	}
 	models.DB.Model(&user).Update("role", req.Role)
+	log.Printf("[admin] set_role ok user_id=%d role=%s", id, req.Role)
 	c.JSON(http.StatusOK, gin.H{"message": "角色已更新", "user": user})
 }
 
@@ -91,9 +97,11 @@ func AdminCreateShopItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("[admin] create_shop_item name=%q price=%d type=%s", item.Name, item.Price, item.ItemType)
 	if err := models.DB.Create(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建商品失败"})
 		return
 	}
+	log.Printf("[admin] create_shop_item ok item_id=%d", item.ID)
 	c.JSON(http.StatusCreated, item)
 }

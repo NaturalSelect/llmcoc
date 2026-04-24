@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,6 +14,16 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// SessionHandlers holds injectable dependencies for session-related handlers.
+type SessionHandlers struct {
+	Runner agent.AgentRunner
+}
+
+// NewSessionHandlers returns a SessionHandlers wired to the given runner.
+func NewSessionHandlers(r agent.AgentRunner) *SessionHandlers {
+	return &SessionHandlers{Runner: r}
+}
 
 type CreateSessionReq struct {
 	Name       string `json:"name" binding:"required,max=200"`
@@ -163,6 +174,19 @@ func JoinSession(c *gin.Context) {
 		return
 	}
 
+	// Lock check: a character card may only participate in one active session at a time.
+	// Query whether this card already appears in any non-ended session.
+	var lockedCount int64
+	models.DB.Model(&models.SessionPlayer{}).
+		Joins("JOIN game_sessions ON game_sessions.id = session_players.session_id").
+		Where("session_players.character_card_id = ? AND game_sessions.status != ?",
+			req.CharacterCardID, models.SessionStatusEnded).
+		Count(&lockedCount)
+	if lockedCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "该人物卡正在另一场游戏中使用，副本结束后才能再次使用"})
+		return
+	}
+
 	player := models.SessionPlayer{
 		SessionID:       uint(sessionID),
 		UserID:          userID,
@@ -266,7 +290,14 @@ func GetMessages(c *gin.Context) {
 }
 
 // ChatStream handles SSE streaming for game chat using the multi-agent pipeline.
-func ChatStream(c *gin.Context) {
+//
+// Multi-player turn flow:
+//  1. Each player submits their action; it is saved to DB and recorded in SessionTurnAction.
+//  2. If not all players have acted yet, the handler sends a "waiting" SSE event and returns.
+//     The player's frontend then polls /messages to pick up the KP response when it arrives.
+//  3. Once the last player submits, all pending actions are collected and the agent pipeline
+//     runs once, producing a single KP response for the entire round.
+func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID := c.GetUint("user_id")
 	username := c.GetString("username")
@@ -299,7 +330,10 @@ func ChatStream(c *gin.Context) {
 		return
 	}
 
-	// Save user message
+	log.Printf("[chat] session=%d user=%q content_len=%d round=%d",
+		sessionID, username, len([]rune(content)), session.TurnRound)
+
+	// Save user message to DB.
 	userMsg := models.Message{
 		SessionID: uint(sessionID),
 		UserID:    &userID,
@@ -309,34 +343,118 @@ func ChatStream(c *gin.Context) {
 	}
 	models.DB.Create(&userMsg)
 
-	// Load recent history for agent context
-	var recentMsgs []models.Message
-	models.DB.Where("session_id = ? AND role != ?", sessionID, models.MessageRoleSystem).
-		Order("created_at DESC").
-		Limit(15).
-		Find(&recentMsgs)
-	// Reverse to chronological order
-	for i, j := 0, len(recentMsgs)-1; i < j; i, j = i+1, j-1 {
-		recentMsgs[i], recentMsgs[j] = recentMsgs[j], recentMsgs[i]
-	}
-
-	gctx := agent.GameContext{
-		Session:   session,
-		History:   recentMsgs,
-		UserInput: content,
-		UserName:  username,
-	}
-
-	// Set SSE headers
+	// Set SSE headers before any response path (including the "waiting" path).
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 
-	// Launch agent pipeline asynchronously
-	resultCh := agent.RunAsync(c.Request.Context(), gctx)
+	// ── Multi-player turn-collection ────────────────────────────────────────
+	playerCount := len(session.Players)
 
-	// Send periodic thinking events while pipeline runs
+	// Determine whether the sender is a tracked player (vs. creator-only / spectator).
+	isTrackedPlayer := false
+	for _, p := range session.Players {
+		if p.UserID == userID {
+			isTrackedPlayer = true
+			break
+		}
+	}
+
+	var pendingActions []agent.PlayerAction
+
+	if playerCount > 1 && isTrackedPlayer {
+		// Use a DB transaction so that record + count is atomic, preventing the
+		// race where two simultaneous last-submitters both try to run the agent.
+		var isLastToSubmit bool
+		_ = models.DB.Transaction(func(tx *gorm.DB) error {
+			// Idempotent: only insert if this player has not yet acted this round.
+			var existing models.SessionTurnAction
+			if tx.Where("session_id = ? AND round = ? AND user_id = ?",
+				session.ID, session.TurnRound, userID).First(&existing).Error != nil {
+				tx.Create(&models.SessionTurnAction{
+					SessionID:     session.ID,
+					Round:         session.TurnRound,
+					UserID:        userID,
+					Username:      username,
+					ActionSummary: chatTruncate(content, 500),
+				})
+			}
+			var submitted int64
+			tx.Model(&models.SessionTurnAction{}).
+				Where("session_id = ? AND round = ?", session.ID, session.TurnRound).
+				Count(&submitted)
+			isLastToSubmit = submitted >= int64(playerCount)
+			return nil
+		})
+
+		if !isLastToSubmit {
+			// Tell the player how many are still pending and let them poll.
+			var submitted int64
+			models.DB.Model(&models.SessionTurnAction{}).
+				Where("session_id = ? AND round = ?", session.ID, session.TurnRound).
+				Count(&submitted)
+			pending := int64(playerCount) - submitted
+			log.Printf("[chat] session=%d user=%q waiting pending=%d/%d",
+				sessionID, username, pending, playerCount)
+			c.SSEvent("waiting", fmt.Sprintf(`{"pending":%d,"total":%d}`, pending, playerCount))
+			c.Writer.Flush()
+			c.SSEvent("done", "")
+			c.Writer.Flush()
+			return
+		}
+
+		// Last to submit: load all actions for the KP prompt.
+		var turnActions []models.SessionTurnAction
+		models.DB.Where("session_id = ? AND round = ?", session.ID, session.TurnRound).
+			Order("created_at ASC").
+			Find(&turnActions)
+		for _, ta := range turnActions {
+			pendingActions = append(pendingActions, agent.PlayerAction{
+				PlayerName: ta.Username,
+				Content:    ta.ActionSummary,
+			})
+		}
+	} else {
+		// Single-player or creator/spectator: record action (idempotent) and run immediately.
+		var existing models.SessionTurnAction
+		if models.DB.Where("session_id = ? AND round = ? AND user_id = ?",
+			session.ID, session.TurnRound, userID).First(&existing).Error != nil {
+			models.DB.Create(&models.SessionTurnAction{
+				SessionID:     session.ID,
+				Round:         session.TurnRound,
+				UserID:        userID,
+				Username:      username,
+				ActionSummary: chatTruncate(content, 500),
+			})
+		}
+	}
+
+	// ── Load recent history for agent context ─────────────────────────────────
+	var recentMsgs []models.Message
+	models.DB.Where("session_id = ? AND role != ?", sessionID, models.MessageRoleSystem).
+		Order("created_at DESC").
+		Limit(15).
+		Find(&recentMsgs)
+	// Reverse to chronological order.
+	for i, j := 0, len(recentMsgs)-1; i < j; i, j = i+1, j-1 {
+		recentMsgs[i], recentMsgs[j] = recentMsgs[j], recentMsgs[i]
+	}
+
+	gctx := agent.GameContext{
+		Session:        session,
+		History:        recentMsgs,
+		UserInput:      content,
+		UserName:       username,
+		PendingActions: pendingActions,
+	}
+
+	// ── Run agent pipeline ────────────────────────────────────────────────────
+	log.Printf("[chat] session=%d user=%q pipeline start round=%d", sessionID, username, session.TurnRound)
+	pipelineStart := time.Now()
+	resultCh := h.Runner.RunAsync(c.Request.Context(), gctx)
+
+	// Send periodic thinking events while pipeline runs.
 	ticker := time.NewTicker(600 * time.Millisecond)
 	var writerStream <-chan string
 loop:
@@ -345,6 +463,8 @@ loop:
 		case res := <-resultCh:
 			ticker.Stop()
 			if res.Err != nil {
+				log.Printf("[chat] session=%d user=%q pipeline error (%.0fms): %v",
+					sessionID, username, float64(time.Since(pipelineStart).Milliseconds()), res.Err)
 				c.SSEvent("error", res.Err.Error())
 				c.Writer.Flush()
 				return
@@ -360,7 +480,7 @@ loop:
 		}
 	}
 
-	// Stream Writer output token by token
+	// Stream Writer output token by token.
 	var fullReply string
 	for token := range writerStream {
 		fullReply += token
@@ -368,7 +488,7 @@ loop:
 		c.Writer.Flush()
 	}
 
-	// Persist the full KP reply
+	// Persist the full KP reply so polling players can retrieve it.
 	if fullReply != "" {
 		assistantMsg := models.Message{
 			SessionID: uint(sessionID),
@@ -377,13 +497,21 @@ loop:
 			Username:  "KP",
 		}
 		models.DB.Create(&assistantMsg)
-
-		// Apply stat changes are now handled by the Editor agent inside the pipeline.
-		// The Director result is kept for potential future use.
 	}
 
+	log.Printf("[chat] session=%d user=%q done tokens=%d elapsed=%.0fms",
+		sessionID, username, len([]rune(fullReply)), float64(time.Since(pipelineStart).Milliseconds()))
 	c.SSEvent("done", "")
 	c.Writer.Flush()
+}
+
+// chatTruncate truncates s to at most maxLen runes, appending "…" when trimmed.
+func chatTruncate(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) > maxLen {
+		return string(runes[:maxLen]) + "…"
+	}
+	return s
 }
 
 func isInSession(userID, sessionID uint) bool {
