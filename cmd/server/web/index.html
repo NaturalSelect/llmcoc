@@ -461,7 +461,6 @@
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-lg font-bold text-amber-100">我的调查员</h2>
                         <div class="flex gap-2">
-                            <button @click="openCreateChar()" class="btn btn-amber">手动创建</button>
                             <button @click="openGenerateChar()" class="btn btn-amber">✨ AI生成</button>
                         </div>
                     </div>
@@ -1218,13 +1217,31 @@
                 <button @click="modal=null" class="text-amber-800 hover:text-amber-400 text-xl leading-none">✕</button>
             </div>
             <div class="space-y-3">
+                <input x-model="genForm.name" placeholder="姓名 *" class="inp" />
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="text-xs text-amber-800 mb-1 block" style="font-family:system-ui">性别</label>
+                        <select x-model="genForm.gender" class="inp">
+                            <option value="">不指定</option>
+                            <option value="男">男</option>
+                            <option value="女">女</option>
+                            <option value="其他">其他</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-amber-800 mb-1 block" style="font-family:system-ui">年龄</label>
+                        <input x-model.number="genForm.age" type="number" min="16" max="90" placeholder="如：28"
+                            class="inp" />
+                    </div>
+                </div>
                 <input x-model="genForm.occupation" placeholder="职业（如：记者、医生、考古学家）" class="inp" />
                 <input x-model="genForm.era" placeholder="时代（默认：1920年代）" class="inp" />
                 <textarea x-model="genForm.background" placeholder="背景提示（可选）" rows="3"
                     class="inp resize-none"></textarea>
                 <div class="flex gap-2 pt-1">
                     <button @click="modal=null" class="btn btn-ghost flex-1">取消</button>
-                    <button @click="generateChar()" :disabled="loading" class="btn btn-amber flex-1">
+                    <button @click="generateChar()" :disabled="loading || !genForm.name.trim()"
+                        class="btn btn-amber flex-1">
                         <span x-show="!loading">✨ AI 生成</span>
                         <span x-show="loading">生成中…</span>
                     </button>
@@ -1482,7 +1499,7 @@
                 // Characters
                 // ══════════════════════════════════════════════════════════════════════
                 openCreateChar() { this.charForm = { name: '', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' }; this.modal = 'createChar'; },
-                openGenerateChar() { this.genForm = { occupation: '', era: '', background: '' }; this.modal = 'generateChar'; },
+                openGenerateChar() { this.genForm = { name: '', gender: '', age: '', occupation: '', era: '', background: '' }; this.modal = 'generateChar'; },
                 openCharDetail(c) { this.editChar = c; this.modal = 'charDetail'; },
 
                 async createChar() {

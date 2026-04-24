@@ -43,6 +43,7 @@ func InitDB() error {
 		&LLMProviderConfig{},
 		&AgentConfig{},
 		&GameEvaluation{},
+		&SessionGrowthMark{},
 	); err != nil {
 		return err
 	}

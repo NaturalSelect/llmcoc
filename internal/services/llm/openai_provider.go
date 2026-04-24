@@ -138,9 +138,6 @@ func (p *openAIProvider) GenerateCharacter(ctx context.Context, req GenerateChar
 
 请返回如下JSON格式（所有字段都用中文）：
 {
-  "name": "调查员全名",
-  "age": 25,
-  "gender": "男/女/其他",
   "backstory": "200字以内的背景故事",
   "appearance": "100字以内的外貌描述",
   "traits": "性格特征与信念，50字以内"

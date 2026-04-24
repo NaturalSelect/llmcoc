@@ -24,9 +24,6 @@ type GenerateCharacterReq struct {
 
 // GeneratedCharacter is the output from AI character generation
 type GeneratedCharacter struct {
-	Name       string `json:"name"`
-	Age        int    `json:"age"`
-	Gender     string `json:"gender"`
 	Backstory  string `json:"backstory"`
 	Appearance string `json:"appearance"`
 	Traits     string `json:"traits"`

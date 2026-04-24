@@ -311,6 +311,15 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
 	}
+
+	// Use character card name as the display name; fall back to account username.
+	playerDisplayName := username
+	for _, p := range session.Players {
+		if p.UserID == userID && p.CharacterCard.Name != "" {
+			playerDisplayName = p.CharacterCard.Name
+			break
+		}
+	}
 	if session.Status != models.SessionStatusPlaying {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏尚未开始"})
 		return
@@ -339,7 +348,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		UserID:    &userID,
 		Role:      models.MessageRoleUser,
 		Content:   content,
-		Username:  username,
+		Username:  playerDisplayName,
 	}
 	models.DB.Create(&userMsg)
 
@@ -376,7 +385,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 					SessionID:     session.ID,
 					Round:         session.TurnRound,
 					UserID:        userID,
-					Username:      username,
+					Username:      playerDisplayName,
 					ActionSummary: chatTruncate(content, 500),
 				})
 			}
@@ -424,7 +433,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 				SessionID:     session.ID,
 				Round:         session.TurnRound,
 				UserID:        userID,
-				Username:      username,
+				Username:      playerDisplayName,
 				ActionSummary: chatTruncate(content, 500),
 			})
 		}
@@ -444,7 +453,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		Session:        session,
 		History:        recentMsgs,
 		UserInput:      content,
-		UserName:       username,
+		UserName:       playerDisplayName,
 		PendingActions: pendingActions,
 	}
 

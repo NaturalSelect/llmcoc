@@ -11,6 +11,11 @@ const (
 	RoleAdmin Role = "admin"
 )
 
+const (
+	GenderMale   = "男"
+	GenderFemale = "女"
+)
+
 type User struct {
 	ID           uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Username     string    `gorm:"uniqueIndex;not null;size:50" json:"username"`
@@ -140,21 +145,21 @@ type ChatMsg struct {
 }
 
 type GameSession struct {
-	ID             uint                    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name           string                  `gorm:"not null;size:200" json:"name"`
-	ScenarioID     uint                    `gorm:"not null" json:"scenario_id"`
-	Status         SessionStatus           `gorm:"default:'lobby'" json:"status"`
-	MaxPlayers     int                     `gorm:"default:4" json:"max_players"`
-	Password       string                  `gorm:"size:100" json:"-"`
-	HasPassword    bool                    `gorm:"default:false" json:"has_password"`
-	CreatedBy      uint                    `gorm:"not null" json:"created_by"`
-	TurnRound      int                     `gorm:"default:1" json:"turn_round"`
-	WriterHistory  JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
-	CreatedAt      time.Time               `json:"created_at"`
-	UpdatedAt      time.Time               `json:"updated_at"`
-	Scenario       Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
-	Creator        User                    `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
-	Players        []SessionPlayer         `gorm:"foreignKey:SessionID" json:"players,omitempty"`
+	ID            uint                 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name          string               `gorm:"not null;size:200" json:"name"`
+	ScenarioID    uint                 `gorm:"not null" json:"scenario_id"`
+	Status        SessionStatus        `gorm:"default:'lobby'" json:"status"`
+	MaxPlayers    int                  `gorm:"default:4" json:"max_players"`
+	Password      string               `gorm:"size:100" json:"-"`
+	HasPassword   bool                 `gorm:"default:false" json:"has_password"`
+	CreatedBy     uint                 `gorm:"not null" json:"created_by"`
+	TurnRound     int                  `gorm:"default:1" json:"turn_round"`
+	WriterHistory JSONField[[]ChatMsg] `gorm:"type:text" json:"-"`
+	CreatedAt     time.Time            `json:"created_at"`
+	UpdatedAt     time.Time            `json:"updated_at"`
+	Scenario      Scenario             `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
+	Creator       User                 `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
+	Players       []SessionPlayer      `gorm:"foreignKey:SessionID" json:"players,omitempty"`
 }
 
 // SessionNPC is a temporary NPC card created during a session (e.g. monsters, minor NPCs).
@@ -180,6 +185,16 @@ type SessionTurnAction struct {
 	Username      string    `gorm:"size:50" json:"username"`
 	ActionSummary string    `gorm:"type:text" json:"action_summary"`
 	CreatedAt     time.Time `json:"created_at"`
+}
+
+// SessionGrowthMark records a successful skill check during a session.
+// At session end these marks are used to run COC classic growth checks.
+// A skill appears at most once per character per session (duplicates are ignored).
+type SessionGrowthMark struct {
+	ID            uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID     uint   `gorm:"not null;index" json:"session_id"`
+	CharacterName string `gorm:"not null;size:100" json:"character_name"`
+	Skill         string `gorm:"not null;size:100" json:"skill"`
 }
 
 type SessionPlayer struct {

@@ -247,9 +247,6 @@ func TestGenerateCharacter_LLMSuccess(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockProv := mocks.NewMockProvider(ctrl)
 	mockProv.EXPECT().GenerateCharacter(gomock.Any(), gomock.Any()).Return(&llm.GeneratedCharacter{
-		Name:       "阿加莎",
-		Age:        28,
-		Gender:     "女",
 		Backstory:  "神秘的背景",
 		Appearance: "优雅的外貌",
 		Traits:     "好奇心旺盛",

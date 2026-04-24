@@ -49,6 +49,9 @@ type CreateCharacterReq struct {
 }
 
 type GenerateCharacterReq struct {
+	Name       string `json:"name"`
+	Age        int    `json:"age"`
+	Gender     string `json:"gender"`
 	Occupation string `json:"occupation"`
 	Background string `json:"background"`
 	Era        string `json:"era"`
@@ -100,6 +103,11 @@ func CreateCharacter(c *gin.Context) {
 	var req CreateCharacterReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Gender != models.GenderMale && req.Gender != models.GenderFemale {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别"})
 		return
 	}
 
@@ -166,6 +174,11 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		return
 	}
 
+	if req.Gender != models.GenderMale && req.Gender != models.GenderFemale {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别"})
+		return
+	}
+
 	// Generate base stats
 	stats := game.GenerateStats()
 	skills := game.DefaultSkills()
@@ -176,38 +189,25 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 	provider, err := h.LLMFactory.LoadProvider(models.AgentRoleWriter)
 	var generated *llm.GeneratedCharacter
 	if err != nil {
-		generated = &llm.GeneratedCharacter{
-			Name:       "未知调查员",
-			Age:        25,
-			Gender:     "未知",
-			Backstory:  "背景故事生成失败，请手动填写。",
-			Appearance: "外貌描述待填写。",
-			Traits:     "性格特征待填写。",
-		}
-	} else {
-		generated, err = provider.GenerateCharacter(c.Request.Context(), llm.GenerateCharacterReq{
-			Occupation: req.Occupation,
-			Background: req.Background,
-			Era:        req.Era,
-			Stats:      stats,
-		})
-		if err != nil {
-			generated = &llm.GeneratedCharacter{
-				Name:       "未知调查员",
-				Age:        25,
-				Gender:     "未知",
-				Backstory:  "背景故事生成失败，请手动填写。",
-				Appearance: "外貌描述待填写。",
-				Traits:     "性格特征待填写。",
-			}
-		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "加载LLM提供者失败: " + err.Error()})
+		return
+	}
+	generated, err = provider.GenerateCharacter(c.Request.Context(), llm.GenerateCharacterReq{
+		Occupation: req.Occupation,
+		Background: req.Background,
+		Era:        req.Era,
+		Stats:      stats,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
+		return
 	}
 
 	card := models.CharacterCard{
 		UserID:     userID,
-		Name:       generated.Name,
-		Age:        generated.Age,
-		Gender:     generated.Gender,
+		Name:       req.Name,
+		Age:        req.Age,
+		Gender:     req.Gender,
 		Occupation: req.Occupation,
 		Backstory:  generated.Backstory,
 		Appearance: generated.Appearance,

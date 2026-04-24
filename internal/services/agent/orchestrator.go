@@ -212,6 +212,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 						gctx.Session.Players,
 					)
 				}
+				// Record growth mark for successful standard skill checks (COC classic rule).
+				recordGrowthMark(gctx.Session.ID, dcr)
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolRollDice,
 					Result: formatSingleDiceResult(dcr),
@@ -883,4 +885,48 @@ func llmToChatMsgs(msgs []llm.ChatMessage) []models.ChatMsg {
 		out[i] = models.ChatMsg{Role: m.Role, Content: m.Content}
 	}
 	return out
+}
+
+// skillsExcludedFromGrowth lists skills that never receive growth marks per COC rules.
+var skillsExcludedFromGrowth = map[string]bool{
+	"克苏鲁神话": true,
+	"信用评级":  true,
+}
+
+// recordGrowthMark saves a growth mark if the check qualifies under COC rules:
+// - must be a success
+// - must be a standard skill check (not sanity / luck)
+// - must not have used bonus dice
+// - skill must not be on the exclusion list
+// - character must be named
+// Duplicate marks for the same session+character+skill are silently ignored.
+func recordGrowthMark(sessionID uint, dcr DiceCheckResult) {
+	if !dcr.Success {
+		return
+	}
+	if dcr.CheckType == "sanity" || dcr.CheckType == "luck" {
+		return
+	}
+	if dcr.BonusDice > 0 {
+		return
+	}
+	skill := dcr.Skill
+	charName := dcr.Character
+	if skill == "" || charName == "" {
+		return
+	}
+	if skillsExcludedFromGrowth[skill] {
+		return
+	}
+	// Upsert: only insert if no mark exists yet for this session+character+skill.
+	var existing models.SessionGrowthMark
+	result := models.DB.Where("session_id = ? AND character_name = ? AND skill = ?",
+		sessionID, charName, skill).First(&existing)
+	if result.Error != nil {
+		models.DB.Create(&models.SessionGrowthMark{
+			SessionID:     sessionID,
+			CharacterName: charName,
+			Skill:         skill,
+		})
+	}
 }
