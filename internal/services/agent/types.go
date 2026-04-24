@@ -34,6 +34,11 @@ const (
 	ToolRollDice         ToolCallType = "roll_dice"         // 骰子检定
 	ToolNPCAct           ToolCallType = "npc_act"           // NPC行动
 	ToolUpdateCharacters ToolCallType = "update_characters" // 更新角色状态
+	ToolManageInventory  ToolCallType = "manage_inventory"  // 角色物品增删
+	ToolRecordMonster    ToolCallType = "record_monster"    // 记录已见神话存在
+	ToolManageSpell      ToolCallType = "manage_spell"      // 管理已掌握法术
+	ToolManageRelation   ToolCallType = "manage_relation"   // 管理社会关系
+	ToolEndGame          ToolCallType = "end_game"          // 结束游戏
 	ToolTriggerMadness   ToolCallType = "trigger_madness"   // 触发疯狂发作
 	ToolWrite            ToolCallType = "write"             // 生成叙事段落
 	ToolAdvanceTime      ToolCallType = "advance_time"      // 推进游戏内时间
@@ -44,19 +49,25 @@ const (
 
 // ToolCall is one item in the master KP agent's output sequence.
 type ToolCall struct {
-	Action        ToolCallType `json:"action"`
-	Question      string       `json:"question,omitempty"`       // check_rule: 规则问题的语义描述
-	Dice          *DiceCheck   `json:"dice,omitempty"`           // roll_dice: 骰子检定请求
-	NPCName       string       `json:"npc_name,omitempty"`       // npc_act: NPC名称
-	NPCCtx        string       `json:"npc_ctx,omitempty"`        // npc_act: 当前情境简述
-	Changes       []string     `json:"changes,omitempty"`        // update_characters: 状态变化列表
-	CharacterName string       `json:"character_name,omitempty"` // trigger_madness / query_character: 角色名称
-	IsBystander   bool         `json:"is_bystander,omitempty"`   // trigger_madness: 是否有旁观者
-	Direction     string       `json:"direction,omitempty"`      // write: 叙事方向（供Writer参考）
-	TimeRounds    int          `json:"time_rounds,omitempty"`    // advance_time: 推进的回合数
-	TimeReason    string       `json:"time_reason,omitempty"`    // advance_time: 原因（如"睡觉"/"吃饭"）
-	Keyword       string       `json:"keyword,omitempty"`        // query_clues: 可选关键词过滤
-	Reply         string       `json:"reply"`                    // answer: KP对玩家说的话（必填）
+	Action        ToolCallType           `json:"action"`
+	Question      string                 `json:"question,omitempty"`       // check_rule: 规则问题的语义描述
+	Dice          *DiceCheck             `json:"dice,omitempty"`           // roll_dice: 骰子检定请求
+	NPCName       string                 `json:"npc_name,omitempty"`       // npc_act: NPC名称
+	NPCCtx        string                 `json:"npc_ctx,omitempty"`        // npc_act: 当前情境简述
+	Changes       []string               `json:"changes,omitempty"`        // update_characters: 状态变化列表
+	CharacterName string                 `json:"character_name,omitempty"` // trigger_madness / query_character: 角色名称
+	Operate       string                 `json:"operate,omitempty"`        // 通用操作: add/remove
+	Item          string                 `json:"item,omitempty"`           // manage_inventory: 物品名称
+	Monster       string                 `json:"monster,omitempty"`        // record_monster: 神话存在名称
+	Spell         string                 `json:"spell,omitempty"`          // manage_spell: 法术名称
+	Relation      *models.SocialRelation `json:"relation,omitempty"`       // manage_relation: 社会关系条目
+	IsBystander   bool                   `json:"is_bystander,omitempty"`   // trigger_madness: 是否有旁观者
+	Direction     string                 `json:"direction,omitempty"`      // write: 叙事方向（供Writer参考）
+	TimeRounds    int                    `json:"time_rounds,omitempty"`    // advance_time: 推进的回合数
+	TimeReason    string                 `json:"time_reason,omitempty"`    // advance_time: 原因（如"睡觉"/"吃饭"）
+	Keyword       string                 `json:"keyword,omitempty"`        // query_clues: 可选关键词过滤
+	Reply         string                 `json:"reply"`                    // answer: KP对玩家说的话（必填）
+	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结（可选）
 }
 
 // ToolResult wraps the result of executing one ToolCall.

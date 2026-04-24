@@ -72,6 +72,7 @@ type CharacterCard struct {
 	Backstory       string                      `gorm:"type:text" json:"backstory"`
 	Appearance      string                      `gorm:"type:text" json:"appearance"`
 	Traits          string                      `gorm:"type:text" json:"traits"`
+	Inventory       JSONField[[]string]         `gorm:"type:text" json:"inventory"`
 	SocialRelations JSONField[[]SocialRelation] `gorm:"type:text" json:"social_relations"`
 	Spells          JSONField[[]string]         `gorm:"type:text" json:"spells"`
 	SeenMonsters    JSONField[[]string]         `gorm:"type:text" json:"seen_monsters"` // 已见过的神话存在（见过的不掉SAN）

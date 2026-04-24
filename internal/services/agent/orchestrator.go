@@ -266,6 +266,46 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					Result: "已更新：" + strings.Join(call.Changes, "、"),
 				})
 
+			case ToolManageInventory:
+				result := manageInventory(gctx.Session.Players, call.CharacterName, call.Operate, call.Item)
+				toolResults = append(toolResults, ToolResult{Action: ToolManageInventory, Result: result})
+
+			case ToolRecordMonster:
+				result := manageSeenMonster(gctx.Session.Players, call.CharacterName, call.Operate, call.Monster)
+				toolResults = append(toolResults, ToolResult{Action: ToolRecordMonster, Result: result})
+
+			case ToolManageSpell:
+				result := manageSpell(gctx.Session.Players, call.CharacterName, call.Operate, call.Spell)
+				toolResults = append(toolResults, ToolResult{Action: ToolManageSpell, Result: result})
+
+			case ToolManageRelation:
+				result := manageSocialRelation(gctx.Session.Players, call.CharacterName, call.Operate, call.Relation)
+				toolResults = append(toolResults, ToolResult{Action: ToolManageRelation, Result: result})
+
+			case ToolEndGame:
+				// End game immediately when KP decides the scenario has reached its conclusion.
+				if call.EndSummary != "" {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolEndGame,
+						Result: "剧本结局：" + call.EndSummary,
+					})
+				}
+				models.DB.Model(&models.GameSession{}).
+					Where("id = ?", gctx.Session.ID).
+					Update("status", models.SessionStatusEnded)
+				// Clear remaining round actions for safety; no further rounds after end_game.
+				models.DB.Where("session_id = ?", gctx.Session.ID).Delete(&models.SessionTurnAction{})
+				gctx.Session.Status = models.SessionStatusEnded
+				hasEnd = true
+				if call.Reply != "" {
+					kpNarration = call.Reply
+				} else if call.EndSummary != "" {
+					kpNarration = "本次冒险结束。" + call.EndSummary
+				} else {
+					kpNarration = "本次冒险到此结束，感谢各位调查员。"
+				}
+				debugf("tool", "session=%d end_game summary=%s", sid, call.EndSummary)
+
 			case ToolTriggerMadness:
 				// Roll on the appropriate COC 7th edition madness table.
 				who := call.CharacterName
@@ -762,6 +802,11 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		} else {
 			sb.WriteString("特征：无\n")
 		}
+		if items := card.Inventory.Data; len(items) > 0 {
+			sb.WriteString("物品栏：" + strings.Join(items, "、") + "\n")
+		} else {
+			sb.WriteString("物品栏：无\n")
+		}
 		if rels := card.SocialRelations.Data; len(rels) > 0 {
 			sb.WriteString("社会关系：")
 			for _, r := range rels {
@@ -883,6 +928,139 @@ func llmToChatMsgs(msgs []llm.ChatMessage) []models.ChatMsg {
 	out := make([]models.ChatMsg, len(msgs))
 	for i, m := range msgs {
 		out[i] = models.ChatMsg{Role: m.Role, Content: m.Content}
+	}
+	return out
+}
+
+func manageInventory(players []models.SessionPlayer, characterName, operate, item string) string {
+	if characterName == "" || item == "" {
+		return "物品操作失败：缺少角色名或物品名"
+	}
+	for i := range players {
+		card := &players[i].CharacterCard
+		if card.Name != characterName {
+			continue
+		}
+		list := card.Inventory.Data
+		if operate == "remove" {
+			list = removeString(list, item)
+			card.Inventory.Data = list
+			models.DB.Save(card)
+			return fmt.Sprintf("%s 失去物品：%s", card.Name, item)
+		}
+		list = appendUniqueString(list, item)
+		card.Inventory.Data = list
+		models.DB.Save(card)
+		return fmt.Sprintf("%s 获得物品：%s", card.Name, item)
+	}
+	return fmt.Sprintf("物品操作失败：未找到角色 %s", characterName)
+}
+
+func manageSeenMonster(players []models.SessionPlayer, characterName, operate, monster string) string {
+	if characterName == "" || monster == "" {
+		return "神话存在记录失败：缺少角色名或神话存在名称"
+	}
+	for i := range players {
+		card := &players[i].CharacterCard
+		if card.Name != characterName {
+			continue
+		}
+		list := card.SeenMonsters.Data
+		if operate == "remove" {
+			list = removeString(list, monster)
+			card.SeenMonsters.Data = list
+			models.DB.Save(card)
+			return fmt.Sprintf("%s 已移除神话存在记录：%s", card.Name, monster)
+		}
+		list = appendUniqueString(list, monster)
+		card.SeenMonsters.Data = list
+		models.DB.Save(card)
+		return fmt.Sprintf("%s 已记录神话存在：%s", card.Name, monster)
+	}
+	return fmt.Sprintf("神话存在记录失败：未找到角色 %s", characterName)
+}
+
+func manageSpell(players []models.SessionPlayer, characterName, operate, spell string) string {
+	if characterName == "" || spell == "" {
+		return "法术操作失败：缺少角色名或法术名"
+	}
+	for i := range players {
+		card := &players[i].CharacterCard
+		if card.Name != characterName {
+			continue
+		}
+		list := card.Spells.Data
+		if operate == "remove" {
+			list = removeString(list, spell)
+			card.Spells.Data = list
+			models.DB.Save(card)
+			return fmt.Sprintf("%s 遗失法术：%s", card.Name, spell)
+		}
+		list = appendUniqueString(list, spell)
+		card.Spells.Data = list
+		models.DB.Save(card)
+		return fmt.Sprintf("%s 学会法术：%s", card.Name, spell)
+	}
+	return fmt.Sprintf("法术操作失败：未找到角色 %s", characterName)
+}
+
+func manageSocialRelation(players []models.SessionPlayer, characterName, operate string, rel *models.SocialRelation) string {
+	if characterName == "" || rel == nil || rel.Name == "" {
+		return "社会关系操作失败：缺少角色名或关系条目"
+	}
+	for i := range players {
+		card := &players[i].CharacterCard
+		if card.Name != characterName {
+			continue
+		}
+		list := card.SocialRelations.Data
+		if operate == "remove" {
+			filtered := make([]models.SocialRelation, 0, len(list))
+			for _, existing := range list {
+				if existing.Name == rel.Name {
+					continue
+				}
+				filtered = append(filtered, existing)
+			}
+			card.SocialRelations.Data = filtered
+			models.DB.Save(card)
+			return fmt.Sprintf("%s 移除社会关系：%s", card.Name, rel.Name)
+		}
+
+		updated := false
+		for idx := range list {
+			if list[idx].Name == rel.Name {
+				list[idx] = *rel
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			list = append(list, *rel)
+		}
+		card.SocialRelations.Data = list
+		models.DB.Save(card)
+		return fmt.Sprintf("%s 更新社会关系：%s（%s）", card.Name, rel.Name, rel.Relationship)
+	}
+	return fmt.Sprintf("社会关系操作失败：未找到角色 %s", characterName)
+}
+
+func appendUniqueString(list []string, value string) []string {
+	for _, item := range list {
+		if item == value {
+			return list
+		}
+	}
+	return append(list, value)
+}
+
+func removeString(list []string, value string) []string {
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		if item == value {
+			continue
+		}
+		out = append(out, item)
 	}
 	return out
 }
