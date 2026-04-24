@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/llmcoc/server/internal/models"
 )
@@ -87,6 +88,16 @@ func StripCodeFence(s string) string {
 	}
 	if start > 0 {
 		return s[start:end]
+	}
+	return s
+}
+
+func JsonArryProtect(s string) string {
+	if !strings.HasPrefix(s, "[") {
+		s = "[" + s
+	}
+	if !strings.HasSuffix(s, "]") {
+		s = s + "]"
 	}
 	return s
 }

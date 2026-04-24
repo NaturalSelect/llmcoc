@@ -172,6 +172,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 		var toolResults []ToolResult
 		hasEnd := false
+		hasWrite := false
 
 		for _, call := range calls {
 			if ctx.Err() != nil {
@@ -331,6 +332,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 			case ToolWrite:
 				// Writer slave: no scenario info; receives direction + its own history.
+				hasWrite = true
 				debugf("tool", "session=%d write direction=%s", sid, call.Direction)
 				doneW := timedDebug("Writer", "session=%d direction=%s", sid, call.Direction)
 				writeErr := appendWriter(ctx, handles[models.AgentRoleWriter], writerState, call.Direction, gctx)
@@ -377,7 +379,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 
 		if hasEnd {
-			if !timeAdvancedInTurn && checkTurnReady(gctx) {
+			if !timeAdvancedInTurn && checkTurnReady(gctx) && hasWrite {
 				advanceTurnRound(gctx)
 			}
 			saveWriterHistory(gctx.Session.ID, writerState)
@@ -745,12 +747,18 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 				i++
 			}
 			sb.WriteString("\n")
+		} else {
+			sb.WriteString("技能：无\n")
 		}
 		if card.Backstory != "" {
 			sb.WriteString("背景：" + card.Backstory + "\n")
+		} else {
+			sb.WriteString("背景：无\n")
 		}
 		if card.Traits != "" {
 			sb.WriteString("特征：" + card.Traits + "\n")
+		} else {
+			sb.WriteString("特征：无\n")
 		}
 		if rels := card.SocialRelations.Data; len(rels) > 0 {
 			sb.WriteString("社会关系：")
@@ -762,12 +770,18 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 				sb.WriteString("  ")
 			}
 			sb.WriteString("\n")
+		} else {
+			sb.WriteString("社会关系：无\n")
 		}
 		if spells := card.Spells.Data; len(spells) > 0 {
-			sb.WriteString("已知法术：" + strings.Join(spells, "、") + "\n")
+			sb.WriteString("掌握法术：" + strings.Join(spells, "、") + "\n")
+		} else {
+			sb.WriteString("掌握法术：无\n")
 		}
 		if monsters := card.SeenMonsters.Data; len(monsters) > 0 {
 			sb.WriteString("已见神话存在：" + strings.Join(monsters, "、") + "\n")
+		} else {
+			sb.WriteString("已见神话存在：无\n")
 		}
 		if card.MadnessState != "" && card.MadnessState != "none" {
 			sb.WriteString(fmt.Sprintf("疯狂状态：%s——%s\n", card.MadnessState, card.MadnessSymptom))

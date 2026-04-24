@@ -7,13 +7,10 @@ import (
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
-const writerDefaultPrompt = `你是COC 7版TRPG的KP（游戏主持人）。根据提供的叙事指令，以第二人称视角为玩家描述当前场景。
+const writerDefaultPrompt = `你是COC风格的文字编辑。根据导演提供的叙事指令，为RPG玩家描述当前场景。
 
 要求：
-- 150-250字中文叙事散文
-- 克苏鲁神话风格：神秘压抑、宇宙恐惧感、充满未知
-- NPC对话用引号标注，场景描写具体生动
-- SAN/HP变化用【SAN -N】【HP -N】格式标注在对应叙述后
+- NPC对话用引号标注，场景描写具体生动(100字以内，高信息密度)
 - 不得出现"SAN值""HP""技能值""检定""孤注一掷"等游戏术语
 - 直接输出叙事文字，不加任何前言或格式标记
 - 与上文保持连贯，不重复已描述的内容`
@@ -58,13 +55,6 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 			Role:    "assistant",
 			Content: "（已了解当前游戏状态，准备续写叙事。）",
 		})
-
-		// Inject recent conversation as real multi-turn messages (not a text dump)
-		// so the Writer sees the actual dialogue flow and avoids repeating content.
-		recentHistory := convertHistory(gctx.History)
-		if len(recentHistory) > 0 {
-			state.History = append(state.History, recentHistory...)
-		}
 	}
 
 	// Build messages: system + accumulated history + new direction.
