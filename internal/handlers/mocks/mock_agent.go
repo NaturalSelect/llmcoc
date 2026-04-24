@@ -41,16 +41,17 @@ func (m *MockAgentRunner) EXPECT() *MockAgentRunnerMockRecorder {
 	return m.recorder
 }
 
-// RunAsync mocks base method.
-func (m *MockAgentRunner) RunAsync(ctx context.Context, gctx agent.GameContext) <-chan agent.RunResult {
+// Run mocks base method.
+func (m *MockAgentRunner) Run(ctx context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunAsync", ctx, gctx)
-	ret0, _ := ret[0].(<-chan agent.RunResult)
-	return ret0
+	ret := m.ctrl.Call(m, "Run", ctx, gctx)
+	ret0, _ := ret[0].(agent.RunOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
-// RunAsync indicates an expected call of RunAsync.
-func (mr *MockAgentRunnerMockRecorder) RunAsync(ctx, gctx any) *gomock.Call {
+// Run indicates an expected call of Run.
+func (mr *MockAgentRunnerMockRecorder) Run(ctx, gctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunAsync", reflect.TypeOf((*MockAgentRunner)(nil).RunAsync), ctx, gctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockAgentRunner)(nil).Run), ctx, gctx)
 }

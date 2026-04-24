@@ -34,16 +34,10 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	// Seed history with session context on the first call so Writer knows
 	// the immediate situation (players, recent chat) without the full scenario.
 	if len(state.History) == 0 {
-		recentSummary := buildHistorySummary(tailMessages(gctx.History, 4))
 		playerStatus := buildPlayerStatus(gctx.Session.Players)
 
-		// Build context hint for Writer (no scenario content — scenario is KP-only).
-		var contextHint string
-		if recentSummary != "" {
-			contextHint = fmt.Sprintf("【游戏状态参考】\n%s\n\n【最近对话（勿重复）】\n%s", playerStatus, recentSummary)
-		} else {
-			contextHint = fmt.Sprintf("【游戏状态参考】\n%s", playerStatus)
-		}
+		// Inject player status as a context message.
+		contextHint := "【游戏状态参考】\n" + playerStatus
 
 		// Inject madness symptoms if any player is in a madness state.
 		for _, p := range gctx.Session.Players {
@@ -64,6 +58,13 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 			Role:    "assistant",
 			Content: "（已了解当前游戏状态，准备续写叙事。）",
 		})
+
+		// Inject recent conversation as real multi-turn messages (not a text dump)
+		// so the Writer sees the actual dialogue flow and avoids repeating content.
+		recentHistory := convertHistory(gctx.History)
+		if len(recentHistory) > 0 {
+			state.History = append(state.History, recentHistory...)
+		}
 	}
 
 	// Build messages: system + accumulated history + new direction.

@@ -4,12 +4,12 @@ import "context"
 
 // AgentRunner abstracts pipeline execution so handlers can be unit-tested with mock runners.
 type AgentRunner interface {
-	RunAsync(ctx context.Context, gctx GameContext) <-chan RunResult
+	Run(ctx context.Context, gctx GameContext) (RunOutput, error)
 }
 
-// DefaultRunner delegates to the package-level RunAsync function.
+// DefaultRunner delegates to the package-level Run function.
 type DefaultRunner struct{}
 
-func (DefaultRunner) RunAsync(ctx context.Context, gctx GameContext) <-chan RunResult {
-	return RunAsync(ctx, gctx)
+func (DefaultRunner) Run(ctx context.Context, gctx GameContext) (RunOutput, error) {
+	return Run(ctx, gctx)
 }

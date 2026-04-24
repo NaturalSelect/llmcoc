@@ -39,7 +39,7 @@ const (
 	ToolAdvanceTime      ToolCallType = "advance_time"      // 推进游戏内时间
 	ToolQueryClues       ToolCallType = "query_clues"       // 查询剧本线索
 	ToolQueryCharacter   ToolCallType = "query_character"   // 查询调查员完整人物卡
-	ToolEnd              ToolCallType = "end"               // 结束本轮
+	ToolAnswer           ToolCallType = "answer"            // 结束本轮并给出回复
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
@@ -56,7 +56,7 @@ type ToolCall struct {
 	TimeRounds    int          `json:"time_rounds,omitempty"`    // advance_time: 推进的回合数
 	TimeReason    string       `json:"time_reason,omitempty"`    // advance_time: 原因（如"睡觉"/"吃饭"）
 	Keyword       string       `json:"keyword,omitempty"`        // query_clues: 可选关键词过滤
-	Narration     string       `json:"narration,omitempty"`      // end: 旁白总结（KP收尾语）
+	Reply         string       `json:"reply"`                    // answer: KP对玩家说的话（必填）
 }
 
 // ToolResult wraps the result of executing one ToolCall.
@@ -72,10 +72,13 @@ type WriterState struct {
 	Buffer  string            // accumulated narrative text; streamed to player at turn end
 }
 
-// RunResult is returned by RunAsync once the pipeline completes.
-type RunResult struct {
-	Stream <-chan string
-	Err    error
+// RunOutput is the structured result of a single agent pipeline run.
+// WriterText and KPReply are kept separate so the handler can send them
+// as distinct SSE event types, allowing the frontend to render them differently
+// (e.g. writer narrative in large text, KP's spoken reply in smaller text).
+type RunOutput struct {
+	WriterText string // narrative from the Writer agent
+	KPReply    string // KP's direct reply to the player (like a friend at the table)
 }
 
 // ── Dice types ────────────────────────────────────────────────────────────────

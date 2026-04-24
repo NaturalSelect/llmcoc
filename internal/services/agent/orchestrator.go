@@ -78,22 +78,15 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 	return result, nil
 }
 
-// RunAsync starts the agent pipeline in a goroutine and returns a channel that
-// emits one RunResult containing the Writer's stream (or an error).
+// Run executes the agent pipeline synchronously and returns the structured output.
 // Only one pipeline may run per session at a time; concurrent calls receive an error.
-func RunAsync(ctx context.Context, gctx GameContext) <-chan RunResult {
-	ch := make(chan RunResult, 1)
-	go func() {
-		if _, loaded := activeSessions.LoadOrStore(gctx.Session.ID, struct{}{}); loaded {
-			ch <- RunResult{Err: fmt.Errorf("当前房间正在处理上一条消息，请稍候")}
-			return
-		}
-		defer activeSessions.Delete(gctx.Session.ID)
+func Run(ctx context.Context, gctx GameContext) (RunOutput, error) {
+	if _, loaded := activeSessions.LoadOrStore(gctx.Session.ID, struct{}{}); loaded {
+		return RunOutput{}, fmt.Errorf("当前房间正在处理上一条消息，请稍候")
+	}
+	defer activeSessions.Delete(gctx.Session.ID)
 
-		stream, err := run(ctx, gctx)
-		ch <- RunResult{Stream: stream, Err: err}
-	}()
-	return ch
+	return run(ctx, gctx)
 }
 
 // run implements the master-slave agent loop.
@@ -102,16 +95,16 @@ func RunAsync(ctx context.Context, gctx GameContext) <-chan RunResult {
 //   - Master (KP/Director): Has full scenario info. Outputs JSON arrays of tool calls.
 //   - Slaves (Writer, Lawyer, Editor, NPC): No scenario info; provide specific services.
 //
-// The loop continues until the KP issues an "end" tool call or max iterations reached.
+// The loop continues until the KP issues an "answer" tool call or max iterations reached.
 // Writer maintains conversation history across write calls for narrative continuity.
-// At "end", the accumulated writer buffer is streamed to the player.
+// At "answer", the accumulated writer buffer is returned to the caller.
 //
 // Turn-action recording is handled by the caller (ChatStream handler) before run() is
 // invoked, so run() does not call recordTurnAction itself.
-func run(ctx context.Context, gctx GameContext) (<-chan string, error) {
+func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	handles, err := batchLoadAgents()
 	if err != nil {
-		return nil, err
+		return RunOutput{}, err
 	}
 
 	sid := gctx.Session.ID
@@ -126,23 +119,28 @@ func run(ctx context.Context, gctx GameContext) (<-chan string, error) {
 	models.DB.Where("session_id = ?", gctx.Session.ID).Find(&tempNPCs)
 
 	// Writer state accumulates narrative across multiple write calls.
+	// Load persisted history from DB so the Writer has continuity across rounds.
 	writerState := &WriterState{}
+	if len(gctx.Session.WriterHistory.Data) > 0 {
+		writerState.History = chatMsgsToLLM(gctx.Session.WriterHistory.Data)
+	}
 
 	rbIdx := rulebook.GlobalIndex
 
 	// timeAdvancedInTurn tracks whether advance_time was called so we can skip the
 	// normal per-turn +1 advancement at the end (the KP already pushed the clock).
 	timeAdvancedInTurn := false
+	var kpNarration string
 
-	var kpMsgs []llm.ChatMessage
-	// NOTE: load from DB
+	// Seed kpMsgs with the real conversation history from DB so the KP has
+	// multi-turn context from previous rounds (not just the current action).
+	kpMsgs := convertHistory(gctx.History)
 
-	// NOTE: build message chain
 	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(kpSystemPrompt), kpMsgs)
 
 	for iter := 0; iter < MaxKpRound; iter++ {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return RunOutput{}, ctx.Err()
 		}
 
 		debugf("KP", "session=%d iter=%d/%d — calling LLM", sid, iter+1, MaxKpRound)
@@ -159,7 +157,7 @@ func run(ctx context.Context, gctx GameContext) (<-chan string, error) {
 		if err != nil {
 			log.Printf("[agent] KP iter %d error: %v", iter+1, err)
 			if iter == 0 {
-				return nil, fmt.Errorf("KP agent failed: %w", err)
+				return RunOutput{}, fmt.Errorf("KP agent failed: %w", err)
 			}
 			break
 		}
@@ -177,7 +175,7 @@ func run(ctx context.Context, gctx GameContext) (<-chan string, error) {
 
 		for _, call := range calls {
 			if ctx.Err() != nil {
-				return nil, ctx.Err()
+				return RunOutput{}, ctx.Err()
 			}
 
 			switch call.Action {
@@ -367,16 +365,10 @@ func run(ctx context.Context, gctx GameContext) (<-chan string, error) {
 					Result: fmt.Sprintf("时间推进%d回合（%s），当前时间：%s", rounds, reason, formatGameTime(newRound)),
 				})
 
-			case ToolEnd:
+			case ToolAnswer:
 				hasEnd = true
-				debugf("tool", "session=%d end narration=%s", sid, call.Narration)
-				// Append KP narration after writer text.
-				if call.Narration != "" {
-					if writerState.Buffer != "" {
-						writerState.Buffer += "\n\n"
-					}
-					writerState.Buffer += call.Narration
-				}
+				kpNarration = call.Reply
+				debugf("tool", "session=%d answer narration=%s", sid, call.Reply)
 			}
 
 			if hasEnd {
@@ -388,8 +380,10 @@ func run(ctx context.Context, gctx GameContext) (<-chan string, error) {
 			if !timeAdvancedInTurn && checkTurnReady(gctx) {
 				advanceTurnRound(gctx)
 			}
-			debugf("run", "session=%d completed iter=%d buffer_len=%d", sid, iter+1, len([]rune(writerState.Buffer)))
-			return streamBuffer(writerState.Buffer), nil
+			saveWriterHistory(gctx.Session.ID, writerState)
+			debugf("run", "session=%d completed iter=%d writer_len=%d narration_len=%d",
+				sid, iter+1, len([]rune(writerState.Buffer)), len([]rune(kpNarration)))
+			return RunOutput{WriterText: writerState.Buffer, KPReply: kpNarration}, nil
 		}
 
 		// Feed tool results back as a user message so the next KP call has proper
@@ -404,30 +398,22 @@ func run(ctx context.Context, gctx GameContext) (<-chan string, error) {
 		}
 	}
 
-	// Max iterations reached — stream whatever Writer produced.
+	// Max iterations reached — return whatever Writer produced.
 	if writerState.Buffer == "" {
 		writerState.Buffer = "（KP思考中，请稍后重试。）"
 	}
-	return streamBuffer(writerState.Buffer), nil
+	saveWriterHistory(gctx.Session.ID, writerState)
+	return RunOutput{WriterText: writerState.Buffer, KPReply: kpNarration}, nil
 }
 
-// streamBuffer creates a channel that emits the text in small chunks,
-// providing a natural streaming experience to the frontend.
-func streamBuffer(text string) <-chan string {
-	ch := make(chan string, 256)
-	go func() {
-		defer close(ch)
-		runes := []rune(text)
-		for i := 0; i < len(runes); {
-			end := i + 4
-			if end > len(runes) {
-				end = len(runes)
-			}
-			ch <- string(runes[i:end])
-			i = end
-		}
-	}()
-	return ch
+// saveWriterHistory persists the Writer's conversation history to the session
+// so it carries over across rounds for narrative continuity.
+func saveWriterHistory(sessionID uint, state *WriterState) {
+	models.DB.Model(&models.GameSession{}).
+		Where("id = ?", sessionID).
+		Update("writer_history", models.JSONField[[]models.ChatMsg]{
+			Data: llmToChatMsgs(state.History),
+		})
 }
 
 // formatSingleDiceResult formats a single dice result as a brief string for the KP.
@@ -468,36 +454,6 @@ func executeSingleDiceCheck(dc DiceCheck, players []models.SessionPlayer) DiceCh
 }
 
 // ── Turn tracking ─────────────────────────────────────────────────────────────
-
-// recordTurnAction inserts a SessionTurnAction row for the current player/round.
-func recordTurnAction(gctx GameContext) {
-	var userID uint
-	for _, p := range gctx.Session.Players {
-		if p.User.Username == gctx.UserName {
-			userID = p.UserID
-			break
-		}
-	}
-	if userID == 0 {
-		return // session creator / spectator – don't track
-	}
-	// Upsert: one record per (session, round, user).
-	var existing models.SessionTurnAction
-	result := models.DB.Where(
-		"session_id = ? AND round = ? AND user_id = ?",
-		gctx.Session.ID, gctx.Session.TurnRound, userID,
-	).First(&existing)
-	if result.Error != nil {
-		action := models.SessionTurnAction{
-			SessionID:     gctx.Session.ID,
-			Round:         gctx.Session.TurnRound,
-			UserID:        userID,
-			Username:      gctx.UserName,
-			ActionSummary: truncate(gctx.UserInput, 200),
-		}
-		models.DB.Create(&action)
-	}
-}
 
 // checkTurnReady returns true when every player in the session has a
 // SessionTurnAction record for the current round.
@@ -861,38 +817,56 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 	return s
 }
 
-func buildHistorySummary(history []models.Message) string {
-	var s string
+// convertHistory maps []models.Message to []llm.ChatMessage, preserving the
+// original multi-turn structure. User messages include the player name prefix
+// so the model can distinguish speakers in multi-player sessions.
+//
+// Trailing user messages without a following assistant response are trimmed
+// to ensure the KP never sees an incomplete conversation round (e.g. when a
+// previous pipeline run failed after the user message was already persisted).
+func convertHistory(history []models.Message) []llm.ChatMessage {
+	msgs := make([]llm.ChatMessage, 0, len(history))
 	for _, m := range history {
-		role := "KP"
-		if m.Role == models.MessageRoleUser {
-			role = m.Username
-			if role == "" {
-				role = "玩家"
+		switch m.Role {
+		case models.MessageRoleUser:
+			name := m.Username
+			if name == "" {
+				name = "玩家"
 			}
+			msgs = append(msgs, llm.ChatMessage{
+				Role:    "user",
+				Content: fmt.Sprintf("[%s]: %s", name, m.Content),
+			})
+		case models.MessageRoleAssistant:
+			msgs = append(msgs, llm.ChatMessage{
+				Role:    "assistant",
+				Content: m.Content,
+			})
+			// Skip system messages — they are not part of the conversation context.
 		}
-		s += fmt.Sprintf("[%s]: %s\n", role, m.Content)
 	}
-	return s
+
+	// Trim trailing user messages that lack an assistant response.
+	for len(msgs) > 0 && msgs[len(msgs)-1].Role == "user" {
+		msgs = msgs[:len(msgs)-1]
+	}
+	return msgs
 }
 
-// tailMessages returns the last n messages; returns all if len ≤ n.
-func tailMessages(msgs []models.Message, n int) []models.Message {
-	if len(msgs) <= n {
-		return msgs
+// chatMsgsToLLM converts persisted []models.ChatMsg to []llm.ChatMessage.
+func chatMsgsToLLM(msgs []models.ChatMsg) []llm.ChatMessage {
+	out := make([]llm.ChatMessage, len(msgs))
+	for i, m := range msgs {
+		out[i] = llm.ChatMessage{Role: m.Role, Content: m.Content}
 	}
-	return msgs[len(msgs)-n:]
+	return out
 }
 
-// buildLawyerSituation creates a concise situation description for a rule query.
-func buildLawyerSituation(gctx GameContext, query string) string {
-	return fmt.Sprintf("当前游戏情境：\n玩家行动：%s\n规则查询：%s", gctx.UserInput, query)
-}
-
-func formatDiceResults(results []DiceCheckResult) string {
-	parts := make([]string, 0, len(results))
-	for _, r := range results {
-		parts = append(parts, formatSingleDiceResult(r))
+// llmToChatMsgs converts []llm.ChatMessage to persistable []models.ChatMsg.
+func llmToChatMsgs(msgs []llm.ChatMessage) []models.ChatMsg {
+	out := make([]models.ChatMsg, len(msgs))
+	for i, m := range msgs {
+		out[i] = models.ChatMsg{Role: m.Role, Content: m.Content}
 	}
-	return strings.Join(parts, "；")
+	return out
 }

@@ -133,21 +133,28 @@ const (
 	SessionStatusEnded   SessionStatus = "ended"
 )
 
+// ChatMsg is a minimal role+content pair for persisting LLM conversation history as JSON.
+type ChatMsg struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 type GameSession struct {
-	ID          uint            `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name        string          `gorm:"not null;size:200" json:"name"`
-	ScenarioID  uint            `gorm:"not null" json:"scenario_id"`
-	Status      SessionStatus   `gorm:"default:'lobby'" json:"status"`
-	MaxPlayers  int             `gorm:"default:4" json:"max_players"`
-	Password    string          `gorm:"size:100" json:"-"`
-	HasPassword bool            `gorm:"default:false" json:"has_password"`
-	CreatedBy   uint            `gorm:"not null" json:"created_by"`
-	TurnRound   int             `gorm:"default:1" json:"turn_round"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
-	Scenario    Scenario        `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
-	Creator     User            `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
-	Players     []SessionPlayer `gorm:"foreignKey:SessionID" json:"players,omitempty"`
+	ID             uint                    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name           string                  `gorm:"not null;size:200" json:"name"`
+	ScenarioID     uint                    `gorm:"not null" json:"scenario_id"`
+	Status         SessionStatus           `gorm:"default:'lobby'" json:"status"`
+	MaxPlayers     int                     `gorm:"default:4" json:"max_players"`
+	Password       string                  `gorm:"size:100" json:"-"`
+	HasPassword    bool                    `gorm:"default:false" json:"has_password"`
+	CreatedBy      uint                    `gorm:"not null" json:"created_by"`
+	TurnRound      int                     `gorm:"default:1" json:"turn_round"`
+	WriterHistory  JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
+	CreatedAt      time.Time               `json:"created_at"`
+	UpdatedAt      time.Time               `json:"updated_at"`
+	Scenario       Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
+	Creator        User                    `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
+	Players        []SessionPlayer         `gorm:"foreignKey:SessionID" json:"players,omitempty"`
 }
 
 // SessionNPC is a temporary NPC card created during a session (e.g. monsters, minor NPCs).

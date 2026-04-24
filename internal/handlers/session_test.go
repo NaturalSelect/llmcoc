@@ -132,16 +132,6 @@ func makeTestRouter(h *SessionHandlers, userID uint, username string) *gin.Engin
 	return r
 }
 
-// makeStream creates a closed channel pre-loaded with the given tokens.
-func makeStream(tokens ...string) <-chan string {
-	ch := make(chan string, len(tokens))
-	for _, t := range tokens {
-		ch <- t
-	}
-	close(ch)
-	return ch
-}
-
 // parseSSE returns a map[eventType][]data parsed from an SSE response body.
 // Gin's SSE encoder writes "event:name" and "data:value" (no space after colon).
 func parseSSE(body string) map[string][]string {
@@ -269,9 +259,7 @@ func TestChatStream_AgentError(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	runner := mocks.NewMockAgentRunner(ctrl)
-	errCh := make(chan agent.RunResult, 1)
-	errCh <- agent.RunResult{Err: fmt.Errorf("LLM timeout")}
-	runner.EXPECT().RunAsync(gomock.Any(), gomock.Any()).Return(errCh)
+	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{}, fmt.Errorf("LLM timeout"))
 
 	h := NewSessionHandlers(runner)
 	r := makeTestRouter(h, userID, "tester")
@@ -301,9 +289,10 @@ func TestChatStream_Success(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	runner := mocks.NewMockAgentRunner(ctrl)
-	okCh := make(chan agent.RunResult, 1)
-	okCh <- agent.RunResult{Stream: makeStream("克苏鲁", "觉醒了")}
-	runner.EXPECT().RunAsync(gomock.Any(), gomock.Any()).Return(okCh)
+	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
+		WriterText: "克苏鲁觉醒了",
+		KPReply:    "恐惧正在蔓延。",
+	}, nil)
 
 	h := NewSessionHandlers(runner)
 	r := makeTestRouter(h, userID, "tester")
@@ -316,12 +305,24 @@ func TestChatStream_Success(t *testing.T) {
 	}
 	events := parseSSE(w.Body.String())
 
-	if len(events["token"]) != 2 {
-		t.Errorf("want 2 token events, got %d; body:\n%s", len(events["token"]), w.Body.String())
+	// Concatenate token events (Writer text).
+	var gotWriter string
+	for _, tok := range events["token"] {
+		gotWriter += tok
 	}
-	if events["token"][0] != "克苏鲁" || events["token"][1] != "觉醒了" {
-		t.Errorf("unexpected token data: %v", events["token"])
+	if gotWriter != "克苏鲁觉醒了" {
+		t.Errorf("writer tokens = %q, want %q", gotWriter, "克苏鲁觉醒了")
 	}
+
+	// Concatenate narration events (KP narration).
+	var gotNarration string
+	for _, tok := range events["narration"] {
+		gotNarration += tok
+	}
+	if gotNarration != "恐惧正在蔓延。" {
+		t.Errorf("narration tokens = %q, want %q", gotNarration, "恐惧正在蔓延。")
+	}
+
 	if len(events["done"]) == 0 {
 		t.Errorf("expected SSE done event; body:\n%s", w.Body.String())
 	}
@@ -332,8 +333,10 @@ func TestChatStream_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no assistant message persisted: %v", err)
 	}
-	if msg.Content != "克苏鲁觉醒了" {
-		t.Errorf("persisted content = %q, want %q", msg.Content, "克苏鲁觉醒了")
+	// DB stores writer + narration combined.
+	wantContent := "克苏鲁觉醒了\n\n恐惧正在蔓延。"
+	if msg.Content != wantContent {
+		t.Errorf("persisted content = %q, want %q", msg.Content, wantContent)
 	}
 }
 
@@ -343,9 +346,7 @@ func TestChatStream_UserMessagePersisted(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	runner := mocks.NewMockAgentRunner(ctrl)
-	okCh := make(chan agent.RunResult, 1)
-	okCh <- agent.RunResult{Stream: makeStream("ok")}
-	runner.EXPECT().RunAsync(gomock.Any(), gomock.Any()).Return(okCh)
+	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{WriterText: "ok"}, nil)
 
 	h := NewSessionHandlers(runner)
 	r := makeTestRouter(h, userID, "tester")

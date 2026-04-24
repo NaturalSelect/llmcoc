@@ -45,25 +45,26 @@ func runNPC(
 
 	// Build NPC profile from DB/scenario lookup (profile only, no scenario background).
 	npcProfile := buildNPCProfile(npcName, gctx, tempNPCs)
-	recent := tailMessages(gctx.History, 6)
-	histSummary := buildHistorySummary(recent)
 
 	situationLine := fmt.Sprintf("当前玩家行动：[%s]: %s", gctx.UserName, gctx.UserInput)
 	if npcCtx != "" {
 		situationLine = fmt.Sprintf("当前情境：%s\n玩家行动：[%s]: %s", npcCtx, gctx.UserName, gctx.UserInput)
 	}
 
-	userPrompt := fmt.Sprintf(
-		"NPC资料：\n%s\n\n近期对话：\n%s\n\n%s\n\n请给出该NPC本轮的行动和对话。",
-		npcProfile,
-		histSummary,
-		situationLine,
-	)
-
+	// System prompt + NPC profile as static context.
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(npcDefaultPrompt)},
-		{Role: "user", Content: userPrompt},
+		{Role: "user", Content: "NPC资料：\n" + npcProfile},
 	}
+	// Inject recent conversation as real multi-turn messages so the NPC
+	// sees the actual dialogue flow rather than a compressed text dump.
+	recentHistory := convertHistory(gctx.History)
+	msgs = append(msgs, recentHistory...)
+	// Current situation as the final user message.
+	msgs = append(msgs, llm.ChatMessage{
+		Role:    "user",
+		Content: situationLine + "\n\n请给出该NPC本轮的行动和对话。",
+	})
 
 	resp, err := h.provider.Chat(ctx, msgs)
 	if err != nil {

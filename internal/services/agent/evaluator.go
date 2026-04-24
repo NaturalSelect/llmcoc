@@ -65,12 +65,12 @@ func RunEvaluator(ctx context.Context, session *models.GameSession, messages []m
 			card.Stats.Data.SAN, card.Stats.Data.MaxSAN))
 	}
 
-	userPrompt := fmt.Sprintf("剧本：%s\n\n%s\n\n聊天记录：\n%s",
-		session.Scenario.Name, playerInfo.String(), logBuilder.String())
-
+	// Separate static context (scenario + player info) from dynamic context (chat log)
+	// into distinct messages, following the buildKPMessages pattern.
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: handle.systemPrompt(evaluatorDefaultPrompt)},
-		{Role: "user", Content: userPrompt},
+		{Role: "user", Content: fmt.Sprintf("剧本：%s\n\n%s", session.Scenario.Name, playerInfo.String())},
+		{Role: "user", Content: "聊天记录：\n" + logBuilder.String()},
 	}
 
 	resp, err := handle.provider.Chat(ctx, msgs)

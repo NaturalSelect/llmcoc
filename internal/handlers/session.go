@@ -434,7 +434,6 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	var recentMsgs []models.Message
 	models.DB.Where("session_id = ? AND role != ?", sessionID, models.MessageRoleSystem).
 		Order("created_at DESC").
-		Limit(15).
 		Find(&recentMsgs)
 	// Reverse to chronological order.
 	for i, j := 0, len(recentMsgs)-1; i < j; i, j = i+1, j-1 {
@@ -452,24 +451,35 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	// ── Run agent pipeline ────────────────────────────────────────────────────
 	log.Printf("[chat] session=%d user=%q pipeline start round=%d", sessionID, username, session.TurnRound)
 	pipelineStart := time.Now()
-	resultCh := h.Runner.RunAsync(c.Request.Context(), gctx)
+
+	// Run the synchronous agent pipeline in a goroutine so we can send
+	// "thinking" heartbeats while it executes.
+	type runResult struct {
+		output agent.RunOutput
+		err    error
+	}
+	resultCh := make(chan runResult, 1)
+	go func() {
+		out, err := h.Runner.Run(c.Request.Context(), gctx)
+		resultCh <- runResult{output: out, err: err}
+	}()
 
 	// Send periodic thinking events while pipeline runs.
 	ticker := time.NewTicker(600 * time.Millisecond)
-	var writerStream <-chan string
+	var output agent.RunOutput
 loop:
 	for {
 		select {
 		case res := <-resultCh:
 			ticker.Stop()
-			if res.Err != nil {
+			if res.err != nil {
 				log.Printf("[chat] session=%d user=%q pipeline error (%.0fms): %v",
-					sessionID, username, float64(time.Since(pipelineStart).Milliseconds()), res.Err)
-				c.SSEvent("error", res.Err.Error())
+					sessionID, username, float64(time.Since(pipelineStart).Milliseconds()), res.err)
+				c.SSEvent("error", res.err.Error())
 				c.Writer.Flush()
 				return
 			}
-			writerStream = res.Stream
+			output = res.output
 			break loop
 		case <-ticker.C:
 			c.SSEvent("thinking", "")
@@ -480,15 +490,34 @@ loop:
 		}
 	}
 
-	// Stream Writer output token by token.
-	var fullReply string
-	for token := range writerStream {
-		fullReply += token
-		c.SSEvent("token", token)
-		c.Writer.Flush()
+	// Emit Writer narrative as "token" events (large text on frontend).
+	sseChunk := func(eventType, text string) {
+		runes := []rune(text)
+		for i := 0; i < len(runes); {
+			end := i + 4
+			if end > len(runes) {
+				end = len(runes)
+			}
+			c.SSEvent(eventType, string(runes[i:end]))
+			c.Writer.Flush()
+			i = end
+		}
+	}
+	sseChunk("token", output.WriterText)
+
+	// Emit KP narration as "narration" events (small text on frontend).
+	if output.KPReply != "" {
+		sseChunk("narration", output.KPReply)
 	}
 
-	// Persist the full KP reply so polling players can retrieve it.
+	// Persist the full KP reply (writer + narration) so polling players can retrieve it.
+	fullReply := output.WriterText
+	if output.KPReply != "" {
+		if fullReply != "" {
+			fullReply += "\n\n"
+		}
+		fullReply += output.KPReply
+	}
 	if fullReply != "" {
 		assistantMsg := models.Message{
 			SessionID: uint(sessionID),
