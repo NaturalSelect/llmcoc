@@ -359,7 +359,7 @@ func TestChatStream_UserMessagePersisted(t *testing.T) {
 	}
 	var msg models.Message
 	err := models.DB.Where("session_id = ? AND role = ? AND username = ?",
-		sessionID, models.MessageRoleUser, "tester").First(&msg).Error
+		sessionID, models.MessageRoleUser, "Test Char").First(&msg).Error
 	if err != nil {
 		t.Fatalf("user message not persisted: %v", err)
 	}

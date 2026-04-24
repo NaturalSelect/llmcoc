@@ -93,13 +93,14 @@ type CharacterCard struct {
 }
 
 type ScenarioContent struct {
-	SystemPrompt string      `json:"system_prompt"`
-	Setting      string      `json:"setting"`
-	Intro        string      `json:"intro"`
-	Scenes       []SceneData `json:"scenes"`
-	NPCs         []NPCData   `json:"npcs"`
-	Clues        []string    `json:"clues"`
-	WinCondition string      `json:"win_condition"`
+	SystemPrompt  string      `json:"system_prompt"`
+	Setting       string      `json:"setting"`
+	Intro         string      `json:"intro"`
+	GameStartSlot int         `json:"game_start_slot,omitempty"` // 开局时间槽位(0-47)，每槽30分钟
+	Scenes        []SceneData `json:"scenes"`
+	NPCs          []NPCData   `json:"npcs"`
+	Clues         []string    `json:"clues"`
+	WinCondition  string      `json:"win_condition"`
 }
 
 type SceneData struct {
@@ -171,9 +172,20 @@ type SessionNPC struct {
 	Description string                    `gorm:"type:text" json:"description"`
 	Stats       JSONField[map[string]int] `gorm:"type:text" json:"stats"`
 	Skills      JSONField[map[string]int] `gorm:"type:text" json:"skills"`
+	AgentCtx    JSONField[[]ChatMsg]      `gorm:"type:text" json:"agent_ctx"`
 	IsAlive     bool                      `gorm:"default:true" json:"is_alive"`
 	CreatedAt   time.Time                 `json:"created_at"`
 	UpdatedAt   time.Time                 `json:"updated_at"`
+}
+
+// SessionNPCMemory stores compacted memory for destroyed temporary NPCs.
+// Used to restore personality/continuity when the same NPC is recreated later.
+type SessionNPCMemory struct {
+	ID            uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID     uint      `gorm:"not null;index" json:"session_id"`
+	Name          string    `gorm:"not null;size:100;index" json:"name"`
+	MemorySummary string    `gorm:"type:text" json:"memory_summary"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // SessionTurnAction records that a player has submitted their action in a given round.

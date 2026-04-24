@@ -1362,6 +1362,8 @@
                 endingSession: false,
                 sessionRefreshTimer: null,
                 refreshingSession: false,
+                refreshingMessages: false,
+                waitingSince: null,
 
                 // SSE streaming
                 streaming: false,
@@ -1468,6 +1470,7 @@
                         this.stopGameAutoRefresh();
                         this.streaming = false; this.writerBuffer = ''; this.narrationBuffer = '';
                         this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0 };
+                        this.waitingSince = null;
                     }
                     this.page = p;
                     if (p === 'sessions') this.loadSessions().catch(e => this.showToast(e.message, 'error'));
@@ -1482,6 +1485,7 @@
                 async goToSession(id) {
                     this.streaming = false; this.writerBuffer = ''; this.narrationBuffer = '';
                     this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0 };
+                    this.waitingSince = null;
                     try {
                         const [session, msgs] = await Promise.all([
                             this.api('GET', '/api/sessions/' + id),
@@ -1615,7 +1619,7 @@
                     // Optimistic: show user message immediately
                     this.messages.push({
                         id: Date.now(), role: 'user',
-                        username: this.user.username, content,
+                        username: this.currentPlayerDisplayName(), content,
                         created_at: submittedAt.toISOString(),
                     });
                     this.$nextTick(() => this.scrollChat());
@@ -1723,6 +1727,7 @@
 
                     if (receivedWaiting) {
                         this.waitingForPlayers = true;
+                        this.waitingSince = submittedAt;
                         this.pollForKPResponse(submittedAt);
                     } else if (receivedDone) {
                         // Flush any remaining buffers (done arrived but buffer not yet committed).
@@ -1743,23 +1748,24 @@
                 },
 
                 async _recoverFromDrop(since) {
-                    // Try up to 5 times, 2 s apart, to find the KP reply written to the DB.
-                    for (let i = 0; i < 5; i++) {
-                        await new Promise(r => setTimeout(r, 2000));
-                        try {
-                            const msgs = this.normalizeMessages(
-                                (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages?limit=10')) || []
-                            );
-                            const kp = msgs.find(m => m.role === 'assistant' && new Date(m.created_at) > since);
-                            if (kp) {
-                                await this.refreshCurrentSession(true);
-                                if (!this.messages.find(m => m.id === kp.id)) {
-                                    this.messages.push(kp);
-                                    this.$nextTick(() => this.scrollChat());
-                                }
-                                return;
-                            }
-                        } catch (_) { }
+                    // Keep recovering until page/session changes, so transient errors do not
+                    // leave the player with a stale chat view.
+                    if (!this.currentSession?.id || this.page !== 'game') return;
+                    await new Promise(r => setTimeout(r, 2000));
+                    try {
+                        const msgs = this.normalizeMessages(
+                            (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages?limit=10')) || []
+                        );
+                        const kp = msgs.find(m => m.role === 'assistant' && new Date(m.created_at) > since);
+                        if (kp) {
+                            await this.refreshCurrentSession(true);
+                            await this.refreshCurrentMessages(true);
+                            return;
+                        }
+                    } catch (_) { }
+
+                    if (this.currentSession?.id && this.page === 'game') {
+                        this._recoverFromDrop(since);
                     }
                 },
 
@@ -1788,12 +1794,10 @@
                         const newKP = msgs.find(m => m.role === 'assistant' && new Date(m.created_at) > since);
                         if (newKP) {
                             this.waitingForPlayers = false;
+                            this.waitingSince = null;
                             this.waitingInfo = { pending: 0, total: 0 };
                             await this.refreshCurrentSession(true);
-                            if (!this.messages.find(m => m.id === newKP.id)) {
-                                this.messages.push(newKP);
-                                this.$nextTick(() => this.scrollChat());
-                            }
+                            await this.refreshCurrentMessages(true);
                             return;
                         }
                     } catch (_) { }
@@ -1817,11 +1821,38 @@
                     }
                 },
 
+                async refreshCurrentMessages(silent = true) {
+                    if (!this.currentSession?.id || this.refreshingMessages) return;
+                    this.refreshingMessages = true;
+                    try {
+                        const msgs = this.normalizeMessages(
+                            (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages?limit=100')) || []
+                        );
+                        this.messages = msgs;
+
+                        if (this.waitingForPlayers && this.waitingSince) {
+                            const gotKP = msgs.some(m => m.role === 'assistant' && new Date(m.created_at) > this.waitingSince);
+                            if (gotKP) {
+                                this.waitingForPlayers = false;
+                                this.waitingSince = null;
+                                this.waitingInfo = { pending: 0, total: 0 };
+                            }
+                        }
+
+                        this.$nextTick(() => this.scrollChat());
+                    } catch (e) {
+                        if (!silent) this.showToast(e.message, 'error');
+                    } finally {
+                        this.refreshingMessages = false;
+                    }
+                },
+
                 startGameAutoRefresh() {
                     this.stopGameAutoRefresh();
                     this.sessionRefreshTimer = setInterval(() => {
                         if (!this.currentSession?.id || this.page !== 'game' || this.streaming) return;
                         this.refreshCurrentSession(true).catch(() => { });
+                        this.refreshCurrentMessages(true).catch(() => { });
                     }, 3000);
                 },
 
@@ -1829,6 +1860,12 @@
                     if (!this.sessionRefreshTimer) return;
                     clearInterval(this.sessionRefreshTimer);
                     this.sessionRefreshTimer = null;
+                },
+
+                currentPlayerDisplayName() {
+                    const uid = this.user?.id;
+                    const player = this.currentSession?.players?.find(p => p.user_id === uid);
+                    return player?.character_card?.name || this.user?.username || '玩家';
                 },
 
                 normalizeMessages(messages) {

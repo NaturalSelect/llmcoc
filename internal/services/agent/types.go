@@ -33,6 +33,10 @@ const (
 	ToolCheckRule        ToolCallType = "check_rule"        // 查阅规则书
 	ToolRollDice         ToolCallType = "roll_dice"         // 骰子检定
 	ToolNPCAct           ToolCallType = "npc_act"           // NPC行动
+	ToolCreateNPC        ToolCallType = "create_npc"        // 创建临时NPC
+	ToolDestroyNPC       ToolCallType = "destroy_npc"       // 销毁临时NPC
+	ToolDestoryNPC       ToolCallType = "destory_npc"       // 兼容拼写错误: destroy_npc
+	ToolActNPC           ToolCallType = "act_npc"           // 与指定NPC对话并获取反应
 	ToolUpdateCharacters ToolCallType = "update_characters" // 更新角色状态
 	ToolManageInventory  ToolCallType = "manage_inventory"  // 角色物品增删
 	ToolRecordMonster    ToolCallType = "record_monster"    // 记录已见神话存在
@@ -52,8 +56,10 @@ type ToolCall struct {
 	Action        ToolCallType           `json:"action"`
 	Question      string                 `json:"question,omitempty"`       // check_rule: 规则问题的语义描述
 	Dice          *DiceCheck             `json:"dice,omitempty"`           // roll_dice: 骰子检定请求
+	CharCard      *NPCCard               `json:"char_card,omitempty"`      // create_npc: NPC角色卡
 	NPCName       string                 `json:"npc_name,omitempty"`       // npc_act: NPC名称
 	NPCCtx        string                 `json:"npc_ctx,omitempty"`        // npc_act: 当前情境简述
+	DestroyReason string                 `json:"destroy_reason,omitempty"` // destroy_npc: dead|out_of_range|cleanup
 	Changes       []string               `json:"changes,omitempty"`        // update_characters: 状态变化列表
 	CharacterName string                 `json:"character_name,omitempty"` // trigger_madness / query_character: 角色名称
 	Operate       string                 `json:"operate,omitempty"`        // 通用操作: add/remove
@@ -138,6 +144,15 @@ type NPCAction struct {
 	NPCName  string `json:"npc_name"`
 	Action   string `json:"action"`
 	Dialogue string `json:"dialogue"`
+}
+
+// NPCCard is the input schema for create_npc(char_card).
+type NPCCard struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Attitude    string         `json:"attitude"`
+	Stats       map[string]int `json:"stats,omitempty"`
+	Skills      map[string]int `json:"skills,omitempty"`
 }
 
 // ── Lawyer types ─────────────────────────────────────────────────────────────

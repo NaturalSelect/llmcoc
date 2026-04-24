@@ -35,6 +35,7 @@ func InitDB() error {
 		&GameSession{},
 		&SessionPlayer{},
 		&SessionNPC{},
+		&SessionNPCMemory{},
 		&SessionTurnAction{},
 		&Message{},
 		&ShopItem{},

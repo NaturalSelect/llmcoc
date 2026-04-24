@@ -125,7 +125,8 @@ func TestCreateCharacter_Success(t *testing.T) {
 	r := charRouter(uid)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("POST", "/characters", map[string]any{
-		"name": "Investigator",
+		"name":   "Investigator",
+		"gender": "男",
 	}))
 
 	if w.Code != http.StatusCreated {
@@ -259,6 +260,8 @@ func TestGenerateCharacter_LLMSuccess(t *testing.T) {
 	r := charRouterWithGenerate(uid, h)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("POST", "/characters/generate", map[string]any{
+		"name":       "阿加莎",
+		"gender":     "女",
 		"occupation": "侦探",
 		"era":        "1920s",
 	}))
@@ -289,17 +292,13 @@ func TestGenerateCharacter_LLMError_Fallback(t *testing.T) {
 	r := charRouterWithGenerate(uid, h)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("POST", "/characters/generate", map[string]any{
+		"name":       "测试调查员",
+		"gender":     "男",
 		"occupation": "医生",
 	}))
 
-	// Fallback: still creates a card with default values.
-	if w.Code != http.StatusCreated {
-		t.Fatalf("want 201 (fallback), got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]any
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp["name"] != "未知调查员" {
-		t.Errorf("name = %v, want 未知调查员", resp["name"])
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -314,10 +313,13 @@ func TestGenerateCharacter_NoProvider_Fallback(t *testing.T) {
 	h := NewCharacterHandlers(mockFac)
 	r := charRouterWithGenerate(uid, h)
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq("POST", "/characters/generate", map[string]any{}))
+	r.ServeHTTP(w, jsonReq("POST", "/characters/generate", map[string]any{
+		"name":   "测试调查员",
+		"gender": "男",
+	}))
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("want 201 (fallback), got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

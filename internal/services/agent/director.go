@@ -29,67 +29,82 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
    - hidden=true：暗骰，玩家不知晓检定发生
    - bonus_dice/penalty_dice：奖励/惩罚骰数量
 
-3. npc_act — 让NPC进行行动
-   {"action":"npc_act","npc_name":"NPC名称","npc_ctx":"当前情境简述（50字以内）"}
+3. create_npc — 创建一个临时NPC（每个NPC独立agent）
+	{"action":"create_npc","char_card":{"name":"NPC名","description":"描述","attitude":"态度","stats":{"STR":50},"skills":{"聆听":40}}}
+	- 用于现场生成剧本外NPC（路人、守卫、目击者、怪物化身等）
 
-4. update_characters — 更新调查员或NPC的状态
+4. destroy_npc / destory_npc — 销毁一个临时NPC
+	{"action":"destroy_npc","npc_name":"NPC名称","destroy_reason":"dead|out_of_range|cleanup"}
+	- destory_npc 为兼容拼写，语义等同 destroy_npc
+	- destroy_reason=dead：按死亡销毁，不保留后续记忆
+	- 非 dead：会把NPC上下文压缩为NPC记忆；同名NPC再次create时自动继承
+
+5. act_npc — 打开与指定NPC的一轮对话（该NPC独立记忆）
+	{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题"}
+	- 例如：调查员闯入了你的房子，你要做什么吗？
+	- 返回该NPC的行动与发言
+
+6. npc_act（兼容旧格式）— 等价于 act_npc
+	{"action":"npc_act","npc_name":"NPC名称","npc_ctx":"问题或情境"}
+
+7. update_characters — 更新调查员或NPC的状态
    {"action":"update_characters","changes":["HP -3（角色名）","SAN -2（角色名）","cthulhu_mythos +1（角色名）"]}
    - 格式：字段 ±数值（角色名）
    - 可用字段：HP/SAN/MP/cthulhu_mythos
    - 不要写SAN变化——sanity检定的SAN损失由系统自动计算
 
-5. manage_inventory — 管理调查员物品栏（获得/丢失）
+8. manage_inventory — 管理调查员物品栏（获得/丢失）
 	{"action":"manage_inventory","character_name":"角色名","operate":"add|remove","item":"物品名"}
 	- add：获得物品；remove：丢失物品
 
-6. record_monster — 记录调查员已见神话存在
+9. record_monster — 记录调查员已见神话存在
 	{"action":"record_monster","character_name":"角色名","operate":"add|remove","monster":"神话存在名"}
 	- 首次目睹神话存在时，优先调用 add 做记录
 
-7. manage_spell — 管理调查员已掌握法术
+10. manage_spell — 管理调查员已掌握法术
 	{"action":"manage_spell","character_name":"角色名","operate":"add|remove","spell":"法术名"}
 	- 学会新法术时调用 add
 
-8. manage_relation — 管理调查员社会关系（新增/修改/删除）
+11. manage_relation — 管理调查员社会关系（新增/修改/删除）
 	{"action":"manage_relation","character_name":"角色名","operate":"add|remove","relation":{"name":"条目名","relationship":"关系类型","note":"备注"}}
 	- add：新增或按 name 覆盖更新（例如：父母、养父、导师）
 	- remove：按 relation.name 删除条目
 
-9. end_game — 结束当前剧本/房间
+12. end_game — 结束当前剧本/房间
 	{"action":"end_game","end_summary":"结局总结（可选）","reply":"对玩家的收尾发言（可选）"}
 	- 当你判断剧本已达结局（成功/失败/团灭/主动撤离）时调用
 	- 调用后本轮将直接结束并关闭房间状态，不再继续后续工具调用
 
-10. trigger_madness — 触发调查员的疯狂发作（COC第八章疯狂机制）
+13. trigger_madness — 触发调查员的疯狂发作（COC第八章疯狂机制）
    {"action":"trigger_madness","character_name":"角色名","is_bystander":true}
    - is_bystander=true：现场有旁观者，触发即时症状（持续10轮）
    - is_bystander=false：调查员独处，触发总结症状（时间跳过1D10小时）
    - 系统会随机抽取症状并返回给你，将其融入叙事
 
-11. write — 指示叙事代理生成文本段落
+14. write — 指示叙事代理生成文本段落
    {"action":"write","direction":"叙事方向，描述本段需要呈现的内容（100字以内）"}
    - write可以多次调用，叙事代理会保持连贯
 
-12. advance_time — 推进游戏内时间（耗时活动）
+15. advance_time — 推进游戏内时间（耗时活动）
    {"action":"advance_time","time_rounds":N,"time_reason":"原因"}
    - 每回合代表0.5小时；一天共48回合（00:00–23:30）
    - 吃饭：1回合；睡觉：16回合（8小时）；其他活动按实际耗时换算
    - 普通行动（对话/搜索/战斗等）无需调用，系统自动推进1回合
    - 若跳过多个回合，在 write 中交代时间流逝
 
-13. query_clues — 查询剧本线索库
+16. query_clues — 查询剧本线索库
    {"action":"query_clues","keyword":"可选关键词，留空返回全部线索"}
    - 调查员触发/发现/询问线索时调用，按需获取，勿在每轮开头无脑查询
    - 示例：{"action":"query_clues","keyword":"灯塔"}
    - 示例：{"action":"query_clues","keyword":""}（返回所有线索）
 
-14. query_character — 查询调查员完整人物卡
+17. query_character — 查询调查员完整人物卡
    {"action":"query_character","character_name":"角色名，留空返回所有调查员"}
 	- 需要具体技能值、背景故事、社会关系、咒语、物品栏、已见神话存在等详细信息时调用
    - 示例：{"action":"query_character","character_name":"Alice"}
    - 示例：{"action":"query_character","character_name":""}（返回全部调查员详情）
 
-15. answer — 结束本轮，以KP身份对玩家说话
+18. answer — 结束本轮，以KP身份对玩家说话
     {"action":"answer","reply":"像朋友一样对玩家说的回复（必填，口语化，包含骰子结果，行动结果等）"}
 
 【执行规则】
@@ -121,6 +136,17 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 [
   {"action":"write","direction":"描述玩家进入废弃图书馆，发现地板上散落的血迹和翻乱的书架，气氛压抑诡异"},
   {"action":"answer","reply":"你们推开图书馆的大门——里面的景象可不太妙。接下来打算怎么做？"}
+]
+
+【示例：创建并驱动NPC独立对话】
+第一轮（创建NPC）：
+[{"action":"create_npc","char_card":{"name":"NPC_A","description":"多疑且护短的屋主","attitude":"敌对","stats":{"STR":60,"DEX":45},"skills":{"恐吓":55}}}]
+第二轮（向NPC发问）：
+[{"action":"act_npc","npc_name":"NPC_A","question":"调查员闯入了你的房子，你要做什么吗?"}]
+第三轮（根据NPC回答继续处理）：
+[
+	{"action":"roll_dice","dice":{"skill":"恐吓","value":55,"character":"NPC_A","check_type":"standard","hidden":false}},
+	{"action":"answer","reply":"屋主抄起炉钩逼近你们，厉声喝问你们的来意。"}
 ]
 
 【示例：先查线索再叙事】
@@ -213,7 +239,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
 	var userSB strings.Builder
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
-	userSB.WriteString("\n\n【当前游戏时间】" + formatGameTime(gctx.Session.TurnRound) + "\n")
+	userSB.WriteString("\n\n【当前游戏时间】" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "\n")
 
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.

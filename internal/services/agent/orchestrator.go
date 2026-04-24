@@ -220,10 +220,14 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				})
 
 			case ToolNPCAct:
-				// NPC slave: receives NPC profile + context brief, no scenario text.
-				debugf("tool", "session=%d npc_act npc=%q ctx=%s", sid, call.NPCName, call.NPCCtx)
+				// Backward compatibility: map legacy npc_act to act_npc style.
+				question := call.Question
+				if question == "" {
+					question = call.NPCCtx
+				}
+				debugf("tool", "session=%d npc_act npc=%q question=%s", sid, call.NPCName, question)
 				doneNPC := timedDebug("NPC", "session=%d npc=%s", sid, call.NPCName)
-				action, npcErr := runNPC(ctx, handles[models.AgentRoleNPC], gctx, call.NPCName, call.NPCCtx, tempNPCs)
+				action, npcErr := actNPC(ctx, handles[models.AgentRoleNPC], gctx, call.NPCName, question, tempNPCs)
 				doneNPC()
 				if npcErr != nil {
 					log.Printf("[agent] NPC %q error: %v", call.NPCName, npcErr)
@@ -233,6 +237,34 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					Action: ToolNPCAct,
 					Result: formatNPCAction(action),
 				})
+
+			case ToolCreateNPC:
+				result := createNPC(gctx.Session.ID, call.CharCard)
+				// Reload temp NPCs so later calls in this round can see the new NPC.
+				tempNPCs = nil
+				models.DB.Where("session_id = ?", gctx.Session.ID).Find(&tempNPCs)
+				toolResults = append(toolResults, ToolResult{Action: ToolCreateNPC, Result: result})
+
+			case ToolDestroyNPC, ToolDestoryNPC:
+				result := destroyNPC(gctx.Session.ID, call.NPCName, call.DestroyReason)
+				// Reload temp NPCs after destruction.
+				tempNPCs = nil
+				models.DB.Where("session_id = ?", gctx.Session.ID).Find(&tempNPCs)
+				toolResults = append(toolResults, ToolResult{Action: call.Action, Result: result})
+
+			case ToolActNPC:
+				question := call.Question
+				if question == "" {
+					question = call.NPCCtx
+				}
+				debugf("tool", "session=%d act_npc npc=%q question=%s", sid, call.NPCName, question)
+				doneNPC := timedDebug("NPC", "session=%d npc=%s", sid, call.NPCName)
+				action, npcErr := actNPC(ctx, handles[models.AgentRoleNPC], gctx, call.NPCName, question, tempNPCs)
+				doneNPC()
+				if npcErr != nil {
+					log.Printf("[agent] act_npc %q error: %v", call.NPCName, npcErr)
+				}
+				toolResults = append(toolResults, ToolResult{Action: ToolActNPC, Result: formatNPCAction(action)})
 
 			case ToolUpdateCharacters:
 				if len(call.Changes) == 0 {
@@ -403,10 +435,10 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					reason = "时间推进"
 				}
 				log.Printf("[agent] session %d advance_time +%d rounds (%s) → %s",
-					gctx.Session.ID, rounds, reason, formatGameTime(newRound))
+					gctx.Session.ID, rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session)))
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolAdvanceTime,
-					Result: fmt.Sprintf("时间推进%d回合（%s），当前时间：%s", rounds, reason, formatGameTime(newRound)),
+					Result: fmt.Sprintf("时间推进%d回合（%s），当前时间：%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session))),
 				})
 
 			case ToolAnswer:
@@ -531,18 +563,26 @@ func formatCallNames(calls []ToolCall) string {
 }
 
 // formatGameTime converts an absolute round number to a human-readable game time string.
-// Each round = 30 minutes; 48 rounds = 1 day (00:00–23:30).
-// Round 1 = Day 1 00:00, Round 2 = Day 1 00:30, ..., Round 49 = Day 2 00:00.
-func formatGameTime(round int) string {
+// Each round = 30 minutes; 48 rounds = 1 day.
+// startSlot is the scenario start slot in [0,47], where each slot is 30 minutes.
+// Default start slot is 16 (08:00) when input is out of range.
+func formatGameTime(round int, startSlot int) string {
 	if round <= 0 {
 		round = 1
 	}
+	if startSlot < 0 || startSlot > 47 {
+		startSlot = 16 // 08:00
+	}
 	zi := round - 1 // zero-indexed
-	day := zi/48 + 1
-	slot := zi % 48
+	day := (zi+startSlot)/48 + 1
+	slot := (zi + startSlot) % 48
 	hour := slot / 2
 	min := (slot % 2) * 30
 	return fmt.Sprintf("第%d天 %02d:%02d（今日第%d回合）", day, hour, min, slot+1)
+}
+
+func scenarioStartSlot(session models.GameSession) int {
+	return session.Scenario.Content.Data.GameStartSlot
 }
 
 func truncate(s string, maxLen int) string {
