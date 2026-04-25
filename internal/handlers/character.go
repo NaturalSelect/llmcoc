@@ -199,6 +199,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		Occupation: req.Occupation,
 		Background: req.Background,
 		Era:        req.Era,
+		Gender:     req.Gender,
 		Stats:      stats,
 	})
 	if err != nil {

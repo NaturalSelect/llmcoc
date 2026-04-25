@@ -20,6 +20,7 @@ type GenerateCharacterReq struct {
 	Occupation string
 	Background string
 	Era        string
+	Gender     string
 	Stats      models.CharacterStats
 }
 

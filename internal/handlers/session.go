@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -360,6 +362,17 @@ func GetMessages(c *gin.Context) {
 	c.JSON(http.StatusOK, messages)
 }
 
+var sessionMutex = sync.Map{}
+
+func getSessionLock(sessionID uint) *sync.Mutex {
+	val, _ := sessionMutex.LoadOrStore(sessionID, &sync.Mutex{})
+	return val.(*sync.Mutex)
+}
+
+func removeSessionLock(sessionID uint) {
+	sessionMutex.Delete(sessionID)
+}
+
 // ChatStream handles SSE streaming for game chat using the multi-agent pipeline.
 //
 // Multi-player turn flow:
@@ -410,6 +423,10 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		return
 	}
 
+	lock := getSessionLock(uint(sessionID))
+	lock.Lock()
+	defer lock.Unlock()
+
 	log.Printf("[chat] session=%d user=%q content_len=%d round=%d",
 		sessionID, username, len([]rune(content)), session.TurnRound)
 
@@ -443,6 +460,19 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 
 	var pendingActions []agent.PlayerAction
 
+	// Count only players who can still act (alive and not unconscious).
+	activePlayerCount := 0
+	for _, p := range session.Players {
+		card := p.CharacterCard
+		if card.WoundState != "dead" && !card.IsUnconscious {
+			activePlayerCount++
+		}
+	}
+	// Fall back to total count if everyone is incapacitated (edge case).
+	if activePlayerCount == 0 {
+		activePlayerCount = playerCount
+	}
+
 	if playerCount > 1 && isTrackedPlayer {
 		// Use a DB transaction so that record + count is atomic, preventing the
 		// race where two simultaneous last-submitters both try to run the agent.
@@ -464,7 +494,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			tx.Model(&models.SessionTurnAction{}).
 				Where("session_id = ? AND round = ?", session.ID, session.TurnRound).
 				Count(&submitted)
-			isLastToSubmit = submitted >= int64(playerCount)
+			isLastToSubmit = submitted >= int64(activePlayerCount)
 			return nil
 		})
 
@@ -474,10 +504,10 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			models.DB.Model(&models.SessionTurnAction{}).
 				Where("session_id = ? AND round = ?", session.ID, session.TurnRound).
 				Count(&submitted)
-			pending := int64(playerCount) - submitted
+			pending := int64(activePlayerCount) - submitted
 			log.Printf("[chat] session=%d user=%q waiting pending=%d/%d",
-				sessionID, username, pending, playerCount)
-			c.SSEvent("waiting", fmt.Sprintf(`{"pending":%d,"total":%d}`, pending, playerCount))
+				sessionID, username, pending, activePlayerCount)
+			c.SSEvent("waiting", fmt.Sprintf(`{"pending":%d,"total":%d}`, pending, activePlayerCount))
 			c.Writer.Flush()
 			c.SSEvent("done", "")
 			c.Writer.Flush()
@@ -593,10 +623,14 @@ loop:
 	// Persist the full KP reply (writer + narration) so polling players can retrieve it.
 	fullReply := output.WriterText
 	if output.KPReply != "" {
+		narration := output.KPReply
+		if !strings.HasPrefix(narration, "KP：") && !strings.HasPrefix(narration, "KP:") {
+			narration = "KP：" + narration
+		}
 		if fullReply != "" {
 			fullReply += "\n\n"
 		}
-		fullReply += output.KPReply
+		fullReply += narration
 	}
 	if fullReply != "" {
 		assistantMsg := models.Message{
@@ -779,6 +813,8 @@ func EndSession(c *gin.Context) {
 		})
 		return
 	}
+
+	removeSessionLock(session.ID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "游戏已结束",

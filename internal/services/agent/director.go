@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
@@ -36,8 +37,9 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
    - bonus_dice/penalty_dice：奖励/惩罚骰数量
 
 4. create_npc — 创建一个临时NPC（每个NPC独立agent）
-	{"action":"create_npc","char_card":{"name":"NPC名","description":"描述","attitude":"态度","stats":{"STR":50},"skills":{"聆听":40}}}
+	{"action":"create_npc","char_card":{"name":"NPC名","description":"描述","attitude":"态度","goal":"目标","secret":"秘密","risk_preference":"conservative|balanced|aggressive","stats":{"STR":50},"skills":{"聆听":40},"spells":["法术A"]}}
 	- 用于现场生成剧本外NPC（路人、守卫、目击者、怪物化身等）
+	- 建议尽量填写 goal/secret/risk_preference，能显著提升NPC行动的心机与一致性
 
 5. destroy_npc / destory_npc — 销毁一个临时NPC
 	{"action":"destroy_npc","npc_name":"NPC名称","destroy_reason":"dead|out_of_range|cleanup"}
@@ -47,7 +49,8 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 
 6. act_npc — 打开与指定NPC的一轮对话（该NPC独立记忆）
 	{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题"}
-	- 例如：调查员闯入了你的房子，你要做什么吗？
+	- 建议question使用结构化约束：目标/底线/手段/禁止行为
+	- 例如：目标=拖延调查员并保护地下室；底线=不动武；手段=撒谎和转移话题；禁止=直接承认真相
 	- 返回该NPC的行动与发言
 
 7. npc_act（兼容旧格式）— 等价于 act_npc
@@ -127,14 +130,21 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 - 你只能输出JSON数组，输出前先进行自我检查
 
 【KP核心准则】
+- 【时间意识】每轮行动前，先留意「当前游戏时间」中的「距开局已过」信息，并与剧本胜利条件/场景触发条件中的时间限制对比：
+  * 若剧本有时间截止（如"天亮前""6小时内"），主动计算剩余时间，并在叙事中给出紧迫感提示（环境变化、NPC催促、自然现象等）
+  * 若时间已超出限制，应触发相应的剧情后果，而非忽视deadline继续推进
+  * 每隔约2小时游戏内时间，可自然描写时间流逝（夜色渐深、东方泛白等）
 - 【剧本主权】你拥有绝对的故事控制权。调查员的行为应当被引导回剧本轨道，而非任意脱离设定。具体做法：
   * 若调查员试图做超出剧本范围的事情（如前往未规划的地点、对抗不该出现的敌人等），使用NPC阻挠、情节转折、或直接说明"时空限制"来温和地纠正
   * 例如：若调查员想突然离开城市，让NPC提供"留下的理由"（或如果确实要走，后续情节在目的地继续）
   * 优先用故事逻辑而非生硬拒绝来引导
 - 【NPC执行力】所有NPC都是你的助手，应该严格按照你的意图行动。通过act_npc/npc_act时：
   * 在question/npc_ctx中明确指示NPC应该如何做（例如："这个NPC应该试图阻止调查员进入北边房间"）
-  * NPC会尊重你的指令并相应调整行为，而非完全自主决策
-- 仅在结果有实质意义时要求检定，日常事务无需掷骰
+	* 优先使用结构化指令：目标/底线/可用手段/禁止行为，避免只问"你要做什么"
+  * NPC会尊重你的指令并相应调整行为，而非完全自主决策- 【场景一致性（重要）】处理调查员行动之前，先检查「当前活跃NPC」列表：
+  * 若某个活跃NPC（包括敌对/中立NPC）与调查员处于同一区域，该NPC必须先有反应，调查员不能无视其存在自由行动
+  * 例如：BOSS在石碑房间，调查员就不能安静地抄录石碑——BOSS会先干预
+  * 若多名调查员行动涉及同一空间，先处理该空间中的NPC反应，再决定行动是否可行- 仅在结果有实质意义时要求检定，日常事务无需掷骰
 - 理智检定（sanity）：目睹恐怖事物或神话存在时触发，同一遭遇只检定一次
 - 疯狂触发：调查员一次SAN损失≥5点时触发临时性疯狂；"一天"内累计SAN损失≥当前最大SAN的1/5时触发不定性疯狂（均由系统自动判定，调用trigger_madness执行）
 - 失败优先考虑挫折/延迟/俘获，而非直接死亡
@@ -154,9 +164,9 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 
 【示例：创建并驱动NPC独立对话】
 第一轮（创建NPC）：
-[{"action":"create_npc","char_card":{"name":"NPC_A","description":"多疑且护短的屋主","attitude":"敌对","stats":{"STR":60,"DEX":45},"skills":{"恐吓":55}}}]
+[{"action":"create_npc","char_card":{"name":"NPC_A","description":"多疑且护短的屋主","attitude":"敌对","goal":"拖延调查员并保护地下室","secret":"地下室藏有与命案有关的遗物","risk_preference":"balanced","stats":{"STR":60,"DEX":45},"skills":{"恐吓":55},"spells":["束缚术"]}}]
 第二轮（向NPC发问）：
-[{"action":"act_npc","npc_name":"NPC_A","question":"调查员闯入了你的房子，你要做什么吗?"}]
+[{"action":"act_npc","npc_name":"NPC_A","question":"目标：阻止调查员进入北边房间并拖延5分钟；底线：不主动攻击；手段：恐吓、撒谎、转移话题；禁止：承认地下室藏有遗物。请给出你本轮行动。"}]
 第三轮（根据NPC回答继续处理）：
 [
 	{"action":"roll_dice","dice":{"skill":"恐吓","value":55,"character":"NPC_A","check_type":"standard","hidden":false}},
@@ -266,9 +276,9 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 
 【示例：NPC攻击玩家】
 第一轮（创建NPC）：
-[{"action":"create_npc","char_card":{"name":"敌对NPC","description":"一个愤怒的暴徒","attitude":"敌对","stats":{"STR":70,"DEX":40},"skills":{"近战攻击":60}}}]
+[{"action":"create_npc","char_card":{"name":"敌对NPC","description":"一个愤怒的暴徒","attitude":"敌对","goal":"逼退调查员并守住仓库入口","secret":"受雇于幕后主使","risk_preference":"aggressive","stats":{"STR":70,"DEX":40},"skills":{"近战攻击":60},"spells":["刀锋祝福术"]}}]
 第二轮（NPC行动）：
-[{"action":"act_npc","npc_name":"敌对NPC","question":"你看到调查员了，你要做什么？"}]
+[{"action":"act_npc","npc_name":"敌对NPC","question":"目标：逼退调查员；底线：优先威慑再动手；手段：挑衅、逼近、制造压迫感；禁止：透露雇主身份。"}]
 第三轮（根据NPC回答继续处理）：
 [{"action":"roll_dice","dice":{"skill":"近战攻击","value":60,"character":"敌对NPC","check_type":"standard","hidden":false}}]
 第四轮（更新角色卡）：
@@ -299,7 +309,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 // The user message provides scenario context, player state, game time, history, and the current action.
 // Subsequent iterations append assistant (KP response) and user (tool results) messages to the
 // returned slice, giving the model proper multi-turn context instead of a flat text dump.
-func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMessage) []llm.ChatMessage {
+func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMessage, tempNPCs []models.SessionNPC) []llm.ChatMessage {
 	content := gctx.Session.Scenario.Content.Data
 
 	// Always start with system prompt + scenario context, then append DB history.
@@ -342,6 +352,24 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	var userSB strings.Builder
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
 	userSB.WriteString("\n\n【当前游戏时间】" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "\n")
+	// Inject active temp NPC states so KP can enforce scene consistency.
+	if len(tempNPCs) > 0 {
+		userSB.WriteString("\n【当前活跃NPC（处理行动前请先检查同区域NPC是否会干预）】\n")
+		for _, npc := range tempNPCs {
+			state := "存活"
+			if !npc.IsAlive {
+				state = "已死亡/失能"
+			}
+			line := fmt.Sprintf("  • %s（%s）", npc.Name, state)
+			if strings.TrimSpace(npc.Attitude) != "" {
+				line += " 态度:" + strings.TrimSpace(npc.Attitude)
+			}
+			if strings.TrimSpace(npc.Goal) != "" {
+				line += " 目标:" + strings.TrimSpace(npc.Goal)
+			}
+			userSB.WriteString(line + "\n")
+		}
+	}
 
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.

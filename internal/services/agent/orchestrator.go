@@ -136,7 +136,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	// multi-turn context from previous rounds (not just the current action).
 	kpMsgs := convertHistory(gctx.History)
 
-	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(kpSystemPrompt), kpMsgs)
+	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(kpSystemPrompt), kpMsgs, tempNPCs)
 
 	for iter := 0; iter < MaxKpRound; iter++ {
 		if ctx.Err() != nil {
@@ -574,6 +574,7 @@ func formatCallNames(calls []ToolCall) string {
 // Each round = 30 minutes; 48 rounds = 1 day.
 // startSlot is the scenario start slot in [0,47], where each slot is 30 minutes.
 // Default start slot is 16 (08:00) when input is out of range.
+// Also includes elapsed time since game start so the KP can track time-sensitive deadlines.
 func formatGameTime(round int, startSlot int) string {
 	if round <= 0 {
 		round = 1
@@ -586,7 +587,17 @@ func formatGameTime(round int, startSlot int) string {
 	slot := (zi + startSlot) % 48
 	hour := slot / 2
 	min := (slot % 2) * 30
-	return fmt.Sprintf("第%d天 %02d:%02d（今日第%d回合）", day, hour, min, slot+1)
+	// Elapsed time since game start (round 1 = 0 elapsed).
+	elapsedMins := zi * 30
+	elapsedH := elapsedMins / 60
+	elapsedM := elapsedMins % 60
+	var elapsed string
+	if elapsedH > 0 {
+		elapsed = fmt.Sprintf("距开局已过%dh%02dm", elapsedH, elapsedM)
+	} else {
+		elapsed = fmt.Sprintf("距开局已过%dm", elapsedM)
+	}
+	return fmt.Sprintf("第%d天 %02d:%02d（%s）", day, hour, min, elapsed)
 }
 
 func scenarioStartSlot(session models.GameSession) int {

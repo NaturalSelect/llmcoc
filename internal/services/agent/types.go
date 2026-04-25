@@ -150,11 +150,15 @@ type NPCAction struct {
 
 // NPCCard is the input schema for create_npc(char_card).
 type NPCCard struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Attitude    string         `json:"attitude"`
-	Stats       map[string]int `json:"stats,omitempty"`
-	Skills      map[string]int `json:"skills,omitempty"`
+	Name           string         `json:"name"`
+	Description    string         `json:"description"`
+	Attitude       string         `json:"attitude"`
+	Goal           string         `json:"goal,omitempty"`
+	Secret         string         `json:"secret,omitempty"`
+	RiskPreference string         `json:"risk_preference,omitempty"`
+	Stats          map[string]int `json:"stats,omitempty"`
+	Skills         map[string]int `json:"skills,omitempty"`
+	Spells         []string       `json:"spells,omitempty"`
 }
 
 // ── Lawyer types ─────────────────────────────────────────────────────────────

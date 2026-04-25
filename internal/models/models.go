@@ -175,8 +175,13 @@ type SessionNPC struct {
 	SessionID   uint                      `gorm:"not null;index" json:"session_id"`
 	Name        string                    `gorm:"not null;size:100" json:"name"`
 	Description string                    `gorm:"type:text" json:"description"`
+	Attitude    string                    `gorm:"size:100" json:"attitude"`
+	Goal        string                    `gorm:"size:200" json:"goal"`
+	Secret      string                    `gorm:"type:text" json:"secret"`
+	RiskPref    string                    `gorm:"size:50" json:"risk_preference"`
 	Stats       JSONField[map[string]int] `gorm:"type:text" json:"stats"`
 	Skills      JSONField[map[string]int] `gorm:"type:text" json:"skills"`
+	Spells      JSONField[[]string]       `gorm:"type:text" json:"spells"`
 	AgentCtx    JSONField[[]ChatMsg]      `gorm:"type:text" json:"agent_ctx"`
 	IsAlive     bool                      `gorm:"default:true" json:"is_alive"`
 	CreatedAt   time.Time                 `json:"created_at"`

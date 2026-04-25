@@ -2471,19 +2471,34 @@
                 },
 
                 splitAssistantContent(content) {
-                    const marker = '\n\n';
-                    const splitAt = content.lastIndexOf(marker);
+                    const kpMarkers = ['\n\nKP：', '\n\nKP:', '\nKP：', '\nKP:', 'KP：', 'KP:'];
+                    let marker = '';
+                    let splitAt = -1;
+                    for (const m of kpMarkers) {
+                        const idx = content.lastIndexOf(m);
+                        if (idx > splitAt) {
+                            splitAt = idx;
+                            marker = m;
+                        }
+                    }
+
+                    if (splitAt >= 0) {
+                        const writerText = content.slice(0, splitAt).trim();
+                        const narrationText = content.slice(splitAt + marker.length).trim();
+                        if (narrationText) {
+                            return { writerText, narrationText };
+                        }
+                    }
+
+                    const sep = '\n\n';
+                    splitAt = content.lastIndexOf(sep);
                     if (splitAt <= 0) {
                         return null;
                     }
 
                     const writerText = content.slice(0, splitAt).trim();
-                    const narrationText = content.slice(splitAt + marker.length).trim();
+                    const narrationText = content.slice(splitAt + sep.length).trim();
                     if (!writerText || !narrationText) {
-                        return null;
-                    }
-
-                    if (narrationText.length > 140 || narrationText.includes(marker)) {
                         return null;
                     }
 

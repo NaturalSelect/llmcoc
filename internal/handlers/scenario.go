@@ -483,7 +483,7 @@ func SeedShopItems() {
 			IsActive:    true,
 		},
 		{
-			Name:        "火焰枪",
+			Name:        "火焰枪（5次）",
 			Description: "重型火焰喷枪，群体伤害武器",
 			ItemType:    models.ItemTypeWeapon,
 			Price:       150,
