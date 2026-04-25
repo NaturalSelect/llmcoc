@@ -56,6 +56,25 @@ func (p *openAIProvider) toOpenAIMessages(msgs []ChatMessage) []openai.ChatCompl
 	return out
 }
 
+const maxRetries = 3
+
+// isRetryableError checks if the error is a 5xx or transient error worth retrying.
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *openai.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.HTTPStatusCode >= 500
+	}
+	// Also retry on generic request errors (timeouts, connection resets, etc.)
+	var reqErr *openai.RequestError
+	if errors.As(err, &reqErr) {
+		return reqErr.HTTPStatusCode >= 500
+	}
+	return false
+}
+
 func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage) (<-chan string, error) {
 	ch := make(chan string, 64)
 
@@ -68,7 +87,21 @@ func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage)
 		Stream:          true,
 	}
 
-	stream, err := p.client.CreateChatCompletionStream(ctx, req)
+	var stream *openai.ChatCompletionStream
+	var err error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		stream, err = p.client.CreateChatCompletionStream(ctx, req)
+		if err == nil || !isRetryableError(err) {
+			break
+		}
+		log.Printf("[llm] ChatStream attempt %d/%d failed (5xx), retrying in 2s: %v", attempt+1, maxRetries, err)
+		select {
+		case <-ctx.Done():
+			close(ch)
+			return ch, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 	if err != nil {
 		close(ch)
 		return ch, fmt.Errorf("LLM stream error: %w", err)
@@ -100,13 +133,27 @@ func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage)
 
 func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (string, error) {
 	start := time.Now()
-	resp, err := p.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+	chatReq := openai.ChatCompletionRequest{
 		Model:           p.model,
 		Messages:        p.toOpenAIMessages(messages),
 		MaxTokens:       p.maxTokens,
 		Temperature:     p.temperature,
 		ReasoningEffort: defaultReasoningEffort,
-	})
+	}
+	var resp openai.ChatCompletionResponse
+	var err error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		resp, err = p.client.CreateChatCompletion(ctx, chatReq)
+		if err == nil || !isRetryableError(err) {
+			break
+		}
+		log.Printf("[llm] Chat attempt %d/%d failed (5xx), retrying in 2s: %v", attempt+1, maxRetries, err)
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("LLM chat error: %w", err)
 	}
@@ -152,7 +199,7 @@ func (p *openAIProvider) GenerateCharacter(ctx context.Context, req GenerateChar
 		req.Stats.POW, req.Stats.EDU,
 	)
 
-	resp, err := p.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+	genReq := openai.ChatCompletionRequest{
 		Model: p.model,
 		Messages: []openai.ChatCompletionMessage{
 			{Role: openai.ChatMessageRoleSystem, Content: "你是一名克苏鲁神话TRPG专家，只输出JSON，不输出任何其他内容。"},
@@ -161,7 +208,21 @@ func (p *openAIProvider) GenerateCharacter(ctx context.Context, req GenerateChar
 		MaxTokens:       800,
 		Temperature:     0.9,
 		ReasoningEffort: defaultReasoningEffort,
-	})
+	}
+	var resp openai.ChatCompletionResponse
+	var err error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		resp, err = p.client.CreateChatCompletion(ctx, genReq)
+		if err == nil || !isRetryableError(err) {
+			break
+		}
+		log.Printf("[llm] GenerateCharacter attempt %d/%d failed (5xx), retrying in 2s: %v", attempt+1, maxRetries, err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
