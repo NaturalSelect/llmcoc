@@ -298,7 +298,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 						applyCharacterUpdate(upd, gctx.Session.Players)
 					} else {
 						upd.IsNPC = true
-						applyNPCUpdate(upd, gctx.Session.ID, tempNPCs)
+						applyNPCUpdate(upd, gctx.Session.ID, tempNPCs, gctx.Session.Scenario.Content.Data.NPCs)
 					}
 				}
 				toolResults = append(toolResults, ToolResult{
@@ -411,6 +411,43 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					Action: ToolQueryCharacter,
 					Result: buildCharacterDetail(call.CharacterName, gctx.Session.Players),
 				})
+
+			case ToolQueryNPCCard:
+				debugf("tool", "session=%d query_npc_card npc=%q", sid, call.NPCName)
+				toolResults = append(toolResults, ToolResult{
+					Action: ToolQueryNPCCard,
+					Result: buildNPCDetail(call.NPCName, tempNPCs, gctx.Session.Scenario.Content.Data.NPCs),
+				})
+
+			case ToolUpdateNPCCard:
+				if call.NPCName == "" || len(call.Changes) == 0 {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolUpdateNPCCard,
+						Result: "update_npc_card 参数不足：需要 npc_name 和 changes",
+					})
+					continue
+				}
+				debugf("tool", "session=%d update_npc_card npc=%q changes=%v", sid, call.NPCName, call.Changes)
+				applied := make([]string, 0, len(call.Changes))
+				for _, change := range call.Changes {
+					upd, ok := parseStateChange(change)
+					if !ok {
+						continue
+					}
+					if upd.CharacterName == "" {
+						upd.CharacterName = call.NPCName
+					}
+					upd.IsNPC = true
+					applyNPCUpdate(upd, gctx.Session.ID, tempNPCs, gctx.Session.Scenario.Content.Data.NPCs)
+					applied = append(applied, change)
+				}
+				tempNPCs = nil
+				models.DB.Where("session_id = ?", gctx.Session.ID).Find(&tempNPCs)
+				if len(applied) == 0 {
+					toolResults = append(toolResults, ToolResult{Action: ToolUpdateNPCCard, Result: "未识别可应用的变更"})
+				} else {
+					toolResults = append(toolResults, ToolResult{Action: ToolUpdateNPCCard, Result: "已更新NPC：" + strings.Join(applied, "、")})
+				}
 
 			case ToolWrite:
 				// Writer slave: no scenario info; receives direction + its own history.
@@ -897,6 +934,111 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		return fmt.Sprintf("（未找到角色：%s）", characterName)
 	}
 	return sb.String()
+}
+
+// buildNPCDetail returns a detailed NPC card dump for temporary/session NPCs.
+// If npcName is empty, returns all known NPC details in this session context.
+func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs []models.NPCData) string {
+	findStat := func(stats map[string]int, key string) (int, bool) {
+		if stats == nil {
+			return 0, false
+		}
+		if v, ok := stats[key]; ok {
+			return v, true
+		}
+		if v, ok := stats[strings.ToUpper(key)]; ok {
+			return v, true
+		}
+		if v, ok := stats[strings.ToLower(key)]; ok {
+			return v, true
+		}
+		return 0, false
+	}
+
+	// Prefer session NPC cards (dynamic state, HP changes, alive/dead).
+	var sb strings.Builder
+	matched := false
+	for _, npc := range tempNPCs {
+		if npcName != "" && npc.Name != npcName {
+			continue
+		}
+		matched = true
+		status := "存活"
+		if !npc.IsAlive {
+			status = "已死亡/失能"
+		}
+		sb.WriteString(fmt.Sprintf("=== %s（临时NPC，%s）===\n", npc.Name, status))
+		sb.WriteString("描述：" + npc.Description + "\n")
+		if strings.TrimSpace(npc.Attitude) != "" {
+			sb.WriteString("态度：" + strings.TrimSpace(npc.Attitude) + "\n")
+		}
+		if strings.TrimSpace(npc.Goal) != "" {
+			sb.WriteString("目标：" + strings.TrimSpace(npc.Goal) + "\n")
+		}
+		if strings.TrimSpace(npc.Secret) != "" {
+			sb.WriteString("秘密：" + strings.TrimSpace(npc.Secret) + "\n")
+		}
+		if strings.TrimSpace(npc.RiskPref) != "" {
+			sb.WriteString("风险偏好：" + strings.TrimSpace(npc.RiskPref) + "\n")
+		}
+		if hp, ok := findStat(npc.Stats.Data, "HP"); ok {
+			sb.WriteString(fmt.Sprintf("HP：%d\n", hp))
+		}
+		if san, ok := findStat(npc.Stats.Data, "SAN"); ok {
+			sb.WriteString(fmt.Sprintf("SAN：%d\n", san))
+		}
+		if mp, ok := findStat(npc.Stats.Data, "MP"); ok {
+			sb.WriteString(fmt.Sprintf("MP：%d\n", mp))
+		}
+		if len(npc.Stats.Data) > 0 {
+			parts := make([]string, 0, len(npc.Stats.Data))
+			for k, v := range npc.Stats.Data {
+				parts = append(parts, fmt.Sprintf("%s:%d", k, v))
+			}
+			sb.WriteString("属性：" + strings.Join(parts, " ") + "\n")
+		}
+		if len(npc.Skills.Data) > 0 {
+			parts := make([]string, 0, len(npc.Skills.Data))
+			for k, v := range npc.Skills.Data {
+				parts = append(parts, fmt.Sprintf("%s:%d", k, v))
+			}
+			sb.WriteString("技能：" + strings.Join(parts, " ") + "\n")
+		}
+		if len(npc.Spells.Data) > 0 {
+			sb.WriteString("法术：" + strings.Join(npc.Spells.Data, "、") + "\n")
+		} else {
+			sb.WriteString("法术：无\n")
+		}
+	}
+	if matched {
+		return sb.String()
+	}
+
+	// Fallback: static scenario NPCs (read-only baseline from module).
+	for _, npc := range scenarioNPCs {
+		if npcName != "" && npc.Name != npcName {
+			continue
+		}
+		matched = true
+		sb.WriteString(fmt.Sprintf("=== %s（剧本静态NPC）===\n", npc.Name))
+		sb.WriteString("描述：" + npc.Description + "\n")
+		sb.WriteString("态度：" + npc.Attitude + "\n")
+		if len(npc.Stats) > 0 {
+			parts := make([]string, 0, len(npc.Stats))
+			for k, v := range npc.Stats {
+				parts = append(parts, fmt.Sprintf("%s:%d", k, v))
+			}
+			sb.WriteString("属性：" + strings.Join(parts, " ") + "\n")
+		}
+	}
+
+	if matched {
+		return sb.String()
+	}
+	if npcName == "" {
+		return "（当前无可查询NPC）"
+	}
+	return fmt.Sprintf("（未找到NPC：%s）", npcName)
 }
 
 // buildPlayerBrief returns a minimal one-line summary of all players for the KP context.

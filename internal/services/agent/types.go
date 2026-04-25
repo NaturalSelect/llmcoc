@@ -49,6 +49,8 @@ const (
 	ToolAdvanceTime       ToolCallType = "advance_time"        // 推进游戏内时间
 	ToolQueryClues        ToolCallType = "query_clues"         // 查询剧本线索
 	ToolQueryCharacter    ToolCallType = "query_character"     // 查询调查员完整人物卡
+	ToolQueryNPCCard      ToolCallType = "query_npc_card"      // 查询NPC完整角色卡
+	ToolUpdateNPCCard     ToolCallType = "update_npc_card"     // 更新NPC角色卡状态
 	ToolAnswer            ToolCallType = "answer"              // 结束本轮并给出回复
 )
 

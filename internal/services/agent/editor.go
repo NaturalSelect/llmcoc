@@ -210,7 +210,7 @@ func applyMadnessToCard(card *models.CharacterCard, kind game.MadnessKind) {
 	}
 }
 
-func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.SessionNPC) {
+func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.SessionNPC, scenarioNPCs []models.NPCData) {
 	// Try in-memory list first (same pipeline run), then fall back to DB.
 	for i := range tempNPCs {
 		if tempNPCs[i].Name == upd.CharacterName {
@@ -222,8 +222,28 @@ func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.Sessi
 	// DB lookup.
 	var npc models.SessionNPC
 	if err := models.DB.Where("session_id = ? AND name = ?", sessionID, upd.CharacterName).First(&npc).Error; err != nil {
-		log.Printf("[editor] NPC %q not found in session %d", upd.CharacterName, sessionID)
-		return
+		// If not found in session, materialize from static scenario NPC so KP can update/kill it.
+		for _, sNPC := range scenarioNPCs {
+			if sNPC.Name != upd.CharacterName {
+				continue
+			}
+			npc = models.SessionNPC{
+				SessionID:   sessionID,
+				Name:        sNPC.Name,
+				Description: sNPC.Description,
+				Attitude:    sNPC.Attitude,
+				Stats:       models.JSONField[map[string]int]{Data: sNPC.Stats},
+				Skills:      models.JSONField[map[string]int]{Data: map[string]int{}},
+				Spells:      models.JSONField[[]string]{Data: []string{}},
+				IsAlive:     true,
+			}
+			models.DB.Create(&npc)
+			break
+		}
+		if npc.ID == 0 {
+			log.Printf("[editor] NPC %q not found in session %d", upd.CharacterName, sessionID)
+			return
+		}
 	}
 	applyNPCStatUpdate(&npc, upd)
 	models.DB.Save(&npc)
@@ -237,12 +257,23 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 	}
 	field := strings.ToLower(upd.Field)
 	if field == "hp" || field == "san" || field == "mp" {
-		stats[field] = stats[field] + upd.Delta
-		if stats[field] < 0 {
-			stats[field] = 0
+		key := strings.ToUpper(field)
+		curr := 0
+		if v, ok := stats[key]; ok {
+			curr = v
+		} else if v, ok := stats[field]; ok {
+			curr = v
 		}
-		if field == "hp" && stats["hp"] == 0 {
+		curr += upd.Delta
+		if curr < 0 {
+			curr = 0
+		}
+		stats[key] = curr
+		delete(stats, field)
+		if field == "hp" && curr == 0 {
 			npc.IsAlive = false
+		} else if field == "hp" && curr > 0 {
+			npc.IsAlive = true
 		}
 		npc.Stats.Data = stats
 	}

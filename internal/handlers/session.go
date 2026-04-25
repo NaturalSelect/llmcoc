@@ -430,16 +430,6 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	log.Printf("[chat] session=%d user=%q content_len=%d round=%d",
 		sessionID, username, len([]rune(content)), session.TurnRound)
 
-	// Save user message to DB.
-	userMsg := models.Message{
-		SessionID: uint(sessionID),
-		UserID:    &userID,
-		Role:      models.MessageRoleUser,
-		Content:   content,
-		Username:  playerDisplayName,
-	}
-	models.DB.Create(&userMsg)
-
 	// Set SSE headers before any response path (including the "waiting" path).
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -459,6 +449,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	}
 
 	var pendingActions []agent.PlayerAction
+	var turnActions []models.SessionTurnAction
 
 	// Count only players who can still act (alive and not unconscious).
 	activePlayerCount := 0
@@ -487,7 +478,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 					Round:         session.TurnRound,
 					UserID:        userID,
 					Username:      playerDisplayName,
-					ActionSummary: chatTruncate(content, 500),
+					ActionSummary: content,
 				})
 			}
 			var submitted int64
@@ -515,7 +506,6 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		}
 
 		// Last to submit: load all actions for the KP prompt.
-		var turnActions []models.SessionTurnAction
 		models.DB.Where("session_id = ? AND round = ?", session.ID, session.TurnRound).
 			Order("created_at ASC").
 			Find(&turnActions)
@@ -535,7 +525,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 				Round:         session.TurnRound,
 				UserID:        userID,
 				Username:      playerDisplayName,
-				ActionSummary: chatTruncate(content, 500),
+				ActionSummary: content,
 			})
 		}
 	}
@@ -633,13 +623,36 @@ loop:
 		fullReply += narration
 	}
 	if fullReply != "" {
-		assistantMsg := models.Message{
+		// Save user message(s) first, then KP response, so chat history is ordered correctly.
+		if len(turnActions) > 0 {
+			// Multi-player: persist each player's action from the collected turn actions.
+			for _, ta := range turnActions {
+				uid := ta.UserID
+				models.DB.Create(&models.Message{
+					SessionID: uint(sessionID),
+					UserID:    &uid,
+					Role:      models.MessageRoleUser,
+					Content:   ta.ActionSummary,
+					Username:  ta.Username,
+				})
+			}
+		} else {
+			// Single-player: persist the triggering player's message.
+			uid := userID
+			models.DB.Create(&models.Message{
+				SessionID: uint(sessionID),
+				UserID:    &uid,
+				Role:      models.MessageRoleUser,
+				Content:   content,
+				Username:  playerDisplayName,
+			})
+		}
+		models.DB.Create(&models.Message{
 			SessionID: uint(sessionID),
 			Role:      models.MessageRoleAssistant,
 			Content:   fullReply,
 			Username:  "KP",
-		}
-		models.DB.Create(&assistantMsg)
+		})
 	}
 
 	log.Printf("[chat] session=%d user=%q done tokens=%d elapsed=%.0fms",
