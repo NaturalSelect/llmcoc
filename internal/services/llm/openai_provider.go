@@ -65,12 +65,12 @@ func isRetryableError(err error) bool {
 	}
 	var apiErr *openai.APIError
 	if errors.As(err, &apiErr) {
-		return apiErr.HTTPStatusCode >= 500 || apiErr.HTTPStatusCode == 429
+		return apiErr.HTTPStatusCode >= 500 || apiErr.HTTPStatusCode == 429 || apiErr.HTTPStatusCode == 400
 	}
 	// Also retry on generic request errors (timeouts, connection resets, etc.)
 	var reqErr *openai.RequestError
 	if errors.As(err, &reqErr) {
-		return reqErr.HTTPStatusCode >= 500 || reqErr.HTTPStatusCode == 429
+		return reqErr.HTTPStatusCode >= 500 || reqErr.HTTPStatusCode == 429 || reqErr.HTTPStatusCode == 400
 	}
 	return false
 }
