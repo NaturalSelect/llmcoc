@@ -339,7 +339,7 @@ func buildDraft(ctx context.Context, architect agentHandle, outline string, targ
 	}
 
 	var draft ScenarioDraft
-	if err := chatAndParseJSON(ctx, architect, msgs, &draft); err != nil {
+	if err := chatAndParseDraft(ctx, architect, msgs, &draft); err != nil {
 		return ScenarioDraft{}, err
 	}
 	return draft, nil
@@ -421,7 +421,7 @@ func reviseDraft(ctx context.Context, architect agentHandle, draft ScenarioDraft
 	}
 
 	var revised ScenarioDraft
-	if err := chatAndParseJSON(ctx, architect, msgs, &revised); err != nil {
+	if err := chatAndParseDraft(ctx, architect, msgs, &revised); err != nil {
 		return ScenarioDraft{}, err
 	}
 	return revised, nil
@@ -466,7 +466,48 @@ func executeSearchCalls(calls []pipelineToolCall, idx rulebook.Index, tag string
 // Helpers
 // ---------------------------------------------------------------------------
 
-// chatAndParseJSON calls the LLM and parses the response as JSON, with retries.
+// chatAndParseDraft calls the LLM, parses as ScenarioDraft, and uses a
+// JSON-fixer agent call if unmarshal fails (schema mismatch, wrong types, etc.).
+func chatAndParseDraft(ctx context.Context, h agentHandle, msgs []llm.ChatMessage, out *ScenarioDraft) error {
+	const maxRetries = 3
+	var lastRaw string
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		raw, err := h.provider.Chat(ctx, msgs)
+		if err != nil {
+			return err
+		}
+		lastRaw = raw
+
+		if err := parseJSONObject(raw, out); err == nil {
+			return nil
+		} else {
+			lastErr = err
+			log.Printf("[draft] JSON parse attempt=%d err=%v", attempt, err)
+		}
+
+		// Ask the same LLM to fix the JSON, providing the error and the schema example.
+		fixPrompt := fmt.Sprintf(
+			"你上一次输出的 JSON 无法解析，错误信息：\n%s\n\n"+
+				"请修复以下 JSON，使其严格匹配示例格式。仅输出修正后的 JSON，不要有任何其他文字。\n\n"+
+				"【你的输出】\n%s\n\n"+
+				"【正确格式示例】\n%s",
+			lastErr.Error(), raw, scenarioExample)
+
+		msgs = append(msgs,
+			llm.ChatMessage{Role: "assistant", Content: raw},
+			llm.ChatMessage{Role: "user", Content: fixPrompt},
+		)
+	}
+	return fmt.Errorf("draft JSON 解析失败（%d次重试）: %w\nraw=%s", maxRetries, lastErr, truncateForLog(lastRaw, 500))
+}
+
+// chatAndParseJSON calls the LLM and parses the response as JSON with retries.
+// Used for non-draft types (e.g. qaGuardResult) where schema is simpler.
 func chatAndParseJSON[T any](ctx context.Context, h agentHandle, msgs []llm.ChatMessage, out *T) error {
 	const maxRetries = 3
 	var lastErr error
@@ -485,11 +526,10 @@ func chatAndParseJSON[T any](ctx context.Context, h agentHandle, msgs []llm.Chat
 			lastErr = err
 			log.Printf("[scripter] JSON parse attempt=%d err=%v", attempt, err)
 		}
-		// Retry with correction prompt
 		if attempt < maxRetries {
 			msgs = append(msgs,
 				llm.ChatMessage{Role: "assistant", Content: raw},
-				llm.ChatMessage{Role: "user", Content: "你的上一条输出不是合法的JSON对象，请只输出合法JSON，不要包含其他内容。"},
+				llm.ChatMessage{Role: "user", Content: "你的上一条输出不是合法的JSON对象。错误：" + lastErr.Error() + "\n请只输出合法JSON，不要包含其他内容。"},
 			)
 		}
 	}
@@ -510,6 +550,13 @@ func parseJSONObject[T any](raw string, out *T) error {
 		}
 	}
 	return fmt.Errorf("JSON 解析失败: %w", err)
+}
+
+func truncateForLog(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // lengthSpec returns scene/clue count requirements based on target_length.
