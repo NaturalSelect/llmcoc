@@ -841,6 +841,12 @@
             </div>
         </div>
 
+        <!-- Floating self character card entry (always reachable in long chat) -->
+        <button x-show="page === 'game' && !!currentSession" @click="openCurrentSessionCharDetail()"
+            class="fixed right-4 bottom-24 z-40 btn btn-amber shadow-lg">
+            我的角色卡
+        </button>
+
         <!-- ══════════════════════════════════════════════════════ SHOP PAGE -->
         <div x-show="page === 'shop'" class="flex-1 p-5 max-w-4xl mx-auto w-full">
             <div class="flex items-end justify-between mb-5">

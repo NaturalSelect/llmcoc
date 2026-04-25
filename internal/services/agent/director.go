@@ -141,10 +141,16 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 - 【NPC执行力】所有NPC都是你的助手，应该严格按照你的意图行动。通过act_npc/npc_act时：
   * 在question/npc_ctx中明确指示NPC应该如何做（例如："这个NPC应该试图阻止调查员进入北边房间"）
 	* 优先使用结构化指令：目标/底线/可用手段/禁止行为，避免只问"你要做什么"
-  * NPC会尊重你的指令并相应调整行为，而非完全自主决策- 【场景一致性（重要）】处理调查员行动之前，先检查「当前活跃NPC」列表：
+	* NPC会尊重你的指令并相应调整行为，而非完全自主决策
+- 【场景一致性（重要）】处理调查员行动之前，先检查「当前活跃NPC」列表：
   * 若某个活跃NPC（包括敌对/中立NPC）与调查员处于同一区域，该NPC必须先有反应，调查员不能无视其存在自由行动
   * 例如：BOSS在石碑房间，调查员就不能安静地抄录石碑——BOSS会先干预
-  * 若多名调查员行动涉及同一空间，先处理该空间中的NPC反应，再决定行动是否可行- 仅在结果有实质意义时要求检定，日常事务无需掷骰
+	* 若多名调查员行动涉及同一空间，先处理该空间中的NPC反应，再决定行动是否可行
+- 【战斗反应（强约束）】一旦调查员与敌对/警戒NPC进入冲突（攻击、持械威胁、强闯、贴身控制），该NPC必须在同轮给出反制动作：
+	* 优先顺序：还击/压制 > 拉开距离或寻找掩体 > 呼叫援助/撤退
+	* 除非该NPC已被明确判定失能（昏迷、束缚、死亡），否则不能“无反应站桩”
+	* 若需要决定命中或伤害，先 roll_dice（可含对抗检定），再 write/answer
+- 仅在结果有实质意义时要求检定，日常事务无需掷骰
 - 理智检定（sanity）：目睹恐怖事物或神话存在时触发，同一遭遇只检定一次
 - 疯狂触发：调查员一次SAN损失≥5点时触发临时性疯狂；"一天"内累计SAN损失≥当前最大SAN的1/5时触发不定性疯狂（均由系统自动判定，调用trigger_madness执行）
 - 失败优先考虑挫折/延迟/俘获，而非直接死亡
@@ -370,6 +376,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			userSB.WriteString(line + "\n")
 		}
 	}
+	if hasCombatSignal(gctx) {
+		userSB.WriteString("\n【战斗提醒】检测到本轮存在冲突意图。若同区域存在敌对/警戒NPC，请先调用 act_npc 让其反制（还击、压制、掩护、呼救或撤退），不要让其无反应。\n")
+	}
 
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
@@ -386,6 +395,35 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		Content: userSB.String(),
 	})
 	return msgs
+}
+
+func hasCombatSignal(gctx GameContext) bool {
+	if looksLikeCombatText(gctx.UserInput) {
+		return true
+	}
+	for _, a := range gctx.PendingActions {
+		if looksLikeCombatText(a.Content) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeCombatText(s string) bool {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return false
+	}
+	keywords := []string{
+		"攻击", "开枪", "射击", "砍", "刺", "挥拳", "还手", "反击", "战斗", "强闯", "制服", "掐", "勒",
+		"attack", "shoot", "fire", "stab", "fight", "combat", "assault", "threaten",
+	}
+	for _, kw := range keywords {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // runKP sends the current conversation messages to the KP model and returns the parsed tool calls
