@@ -293,7 +293,6 @@ type AgentRole string
 
 const (
 	AgentRoleDirector  AgentRole = "director"
-	AgentRoleScripter  AgentRole = "scripter"
 	AgentRoleArchitect AgentRole = "architect"
 	AgentRoleLore      AgentRole = "lore_researcher"
 	AgentRoleEncounter AgentRole = "encounter_designer"

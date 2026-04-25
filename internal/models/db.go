@@ -141,7 +141,6 @@ func seedDefaultAgentConfigs() {
 	// Ensure each active agent has a config row (upsert-style: create only if missing).
 	required := []AgentConfig{
 		{Role: AgentRoleDirector, ProviderConfigID: provID, ModelName: model, MaxTokens: 1500, Temperature: 0.7, IsActive: true},
-		{Role: AgentRoleScripter, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, IsActive: true},
 		{Role: AgentRoleArchitect, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.7, IsActive: true},
 		{Role: AgentRoleQAGuard, ProviderConfigID: provID, ModelName: model, MaxTokens: 2000, Temperature: 0.3, IsActive: true},
 		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.85, IsActive: true},
