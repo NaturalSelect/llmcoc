@@ -16,6 +16,7 @@ type ChatMessage struct {
 
 // GenerateCharacterReq is the input for AI character generation
 type GenerateCharacterReq struct {
+	Name       string
 	Occupation string
 	Background string
 	Era        string
@@ -24,9 +25,20 @@ type GenerateCharacterReq struct {
 
 // GeneratedCharacter is the output from AI character generation
 type GeneratedCharacter struct {
-	Backstory  string `json:"backstory"`
-	Appearance string `json:"appearance"`
-	Traits     string `json:"traits"`
+	Backstory  string                 `json:"backstory"`
+	Appearance string                 `json:"appearance"`
+	Traits     string                 `json:"traits"`
+	Stats      *models.CharacterStats `json:"stats,omitempty"` // LLM-adjusted attributes (optional)
+}
+
+// AdjustSkillsReq is the input for AI skill adjustment
+type AdjustSkillsReq struct {
+	Name       string
+	Occupation string
+	Background string
+	Era        string
+	Stats      models.CharacterStats
+	BaseSkills map[string]int // current skill values (all skills)
 }
 
 // Provider defines the interface for LLM providers
@@ -37,6 +49,8 @@ type Provider interface {
 	Chat(ctx context.Context, messages []ChatMessage) (string, error)
 	// GenerateCharacter uses AI to fill in character details
 	GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*GeneratedCharacter, error)
+	// AdjustSkills uses AI to redistribute skill points to fit the character's occupation and background
+	AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, error)
 }
 
 // NewProviderFromConfig creates a provider from a DB-stored LLMProviderConfig.

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -194,6 +195,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		return
 	}
 	generated, err = provider.GenerateCharacter(c.Request.Context(), llm.GenerateCharacterReq{
+		Name:       req.Name,
 		Occupation: req.Occupation,
 		Background: req.Background,
 		Era:        req.Era,
@@ -202,6 +204,36 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
 		return
+	}
+
+	// Apply LLM-adjusted stats if valid (total unchanged, all values multiples of 5 within range)
+	if s := generated.Stats; s != nil {
+		if applyAdjustedStats(&stats, s) {
+			// Recalculate derived values
+			skills["母语"] = stats.EDU
+			skills["闪避"] = stats.DEX / 2
+		}
+	}
+
+	provider, err = h.LLMFactory.LoadProvider(models.AgentRoleDirector)
+	if err != nil {
+		log.Printf("[character] failed to load LLM provider for skill adjustment: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "加载LLM提供者失败: " + err.Error()})
+		return
+	}
+	// Second LLM call: adjust skill levels based on occupation and background
+	adjustedSkills, skillErr := provider.AdjustSkills(c.Request.Context(), llm.AdjustSkillsReq{
+		Name:       req.Name,
+		Occupation: req.Occupation,
+		Background: req.Background,
+		Era:        req.Era,
+		Stats:      stats,
+		BaseSkills: skills,
+	})
+	if skillErr != nil {
+		log.Printf("[character] AdjustSkills failed (using base skills): %v", skillErr)
+	} else {
+		applyAdjustedSkills(skills, adjustedSkills, stats)
 	}
 
 	card := models.CharacterCard{
@@ -383,4 +415,106 @@ func RemoveCharacterInventoryItem(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, card)
+}
+
+// applyAdjustedStats validates and applies LLM-returned stat adjustments.
+// Rules:
+//   - Group A (STR/CON/DEX/APP/POW) total must equal original Group A total.
+//   - Group B (SIZ/INT/EDU) total must equal original Group B total.
+//   - Every value must be a multiple of 5.
+//   - STR/CON/DEX/APP/POW: 15–90; SIZ/INT/EDU: 40–90.
+//
+// Returns true and mutates base if valid, false otherwise (base unchanged).
+func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats) bool {
+	// Group totals must be preserved.
+	origA := base.STR + base.CON + base.DEX + base.APP + base.POW
+	adjA := adj.STR + adj.CON + adj.DEX + adj.APP + adj.POW
+	origB := base.SIZ + base.INT + base.EDU
+	adjB := adj.SIZ + adj.INT + adj.EDU
+	if origA != adjA || origB != adjB {
+		return false
+	}
+
+	// Validate individual ranges and multiples of 5.
+	type check struct{ v, lo, hi int }
+	checks := []check{
+		{adj.STR, 15, 90}, {adj.CON, 15, 90}, {adj.DEX, 15, 90},
+		{adj.APP, 15, 90}, {adj.POW, 15, 90},
+		{adj.SIZ, 40, 90}, {adj.INT, 40, 90}, {adj.EDU, 40, 90},
+	}
+	for _, ck := range checks {
+		if ck.v%5 != 0 || ck.v < ck.lo || ck.v > ck.hi {
+			return false
+		}
+	}
+
+	// Apply core attributes; recalculate derived values.
+	base.STR = adj.STR
+	base.CON = adj.CON
+	base.SIZ = adj.SIZ
+	base.DEX = adj.DEX
+	base.APP = adj.APP
+	base.INT = adj.INT
+	base.POW = adj.POW
+	base.EDU = adj.EDU
+
+	hp := (base.CON + base.SIZ) / 10
+	base.HP, base.MaxHP = hp, hp
+	mp := base.POW / 5
+	base.MP, base.MaxMP = mp, mp
+	base.SAN = base.POW
+	base.MaxSAN = 99
+
+	// MOV
+	if base.STR > base.SIZ && base.DEX > base.SIZ {
+		base.MOV = 9
+	} else if base.STR < base.SIZ && base.DEX < base.SIZ {
+		base.MOV = 7
+	} else {
+		base.MOV = 8
+	}
+
+	// Build & DB
+	combined := base.STR + base.SIZ
+	switch {
+	case combined <= 64:
+		base.Build, base.DB = -2, "-2"
+	case combined <= 84:
+		base.Build, base.DB = -1, "-1"
+	case combined <= 124:
+		base.Build, base.DB = 0, "0"
+	case combined <= 164:
+		base.Build, base.DB = 1, "1D4"
+	case combined <= 204:
+		base.Build, base.DB = 2, "1D6"
+	case combined <= 284:
+		base.Build, base.DB = 3, "2D6"
+	default:
+		base.Build, base.DB = 4, "2D6+1D6"
+	}
+	return true
+}
+
+// applyAdjustedSkills validates and applies LLM-returned skill adjustments.
+// Only skills already present in base are updated; values are clamped to [1, 90].
+// 母语 and 闪避 are derived from stats and are not overridden.
+func applyAdjustedSkills(base map[string]int, adjusted map[string]int, stats models.CharacterStats) {
+	for k, v := range adjusted {
+		if k == "母语" || k == "闪避" {
+			continue
+		}
+		if _, exists := base[k]; !exists {
+			continue // don't add unknown skills
+		}
+		if v < 1 {
+			v = 1
+		}
+		if v > 90 {
+			v = 90
+		}
+		base[k] = v
+	}
+	// always keep derived skills correct
+	base["母语"] = stats.EDU
+	base["闪避"] = stats.DEX / 2
 }

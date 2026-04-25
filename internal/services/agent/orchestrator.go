@@ -193,6 +193,14 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				})
 				debugf("tool", "session=%d check_rule result=%s", sid, formatLawyerResults(results))
 
+			case ToolReadRulebookConst:
+				debugf("tool", "session=%d read_rulebook_const constant=%q", sid, call.Constant)
+				result := rulebook.ReadConstant(call.Constant)
+				toolResults = append(toolResults, ToolResult{
+					Action: ToolReadRulebookConst,
+					Result: result,
+				})
+
 			case ToolRollDice:
 				if call.Dice == nil {
 					continue

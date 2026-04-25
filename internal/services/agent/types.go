@@ -30,31 +30,33 @@ type PlayerAction struct {
 type ToolCallType string
 
 const (
-	ToolCheckRule        ToolCallType = "check_rule"        // 查阅规则书
-	ToolRollDice         ToolCallType = "roll_dice"         // 骰子检定
-	ToolNPCAct           ToolCallType = "npc_act"           // NPC行动
-	ToolCreateNPC        ToolCallType = "create_npc"        // 创建临时NPC
-	ToolDestroyNPC       ToolCallType = "destroy_npc"       // 销毁临时NPC
-	ToolDestoryNPC       ToolCallType = "destory_npc"       // 兼容拼写错误: destroy_npc
-	ToolActNPC           ToolCallType = "act_npc"           // 与指定NPC对话并获取反应
-	ToolUpdateCharacters ToolCallType = "update_characters" // 更新角色状态
-	ToolManageInventory  ToolCallType = "manage_inventory"  // 角色物品增删
-	ToolRecordMonster    ToolCallType = "record_monster"    // 记录已见神话存在
-	ToolManageSpell      ToolCallType = "manage_spell"      // 管理已掌握法术
-	ToolManageRelation   ToolCallType = "manage_relation"   // 管理社会关系
-	ToolEndGame          ToolCallType = "end_game"          // 结束游戏
-	ToolTriggerMadness   ToolCallType = "trigger_madness"   // 触发疯狂发作
-	ToolWrite            ToolCallType = "write"             // 生成叙事段落
-	ToolAdvanceTime      ToolCallType = "advance_time"      // 推进游戏内时间
-	ToolQueryClues       ToolCallType = "query_clues"       // 查询剧本线索
-	ToolQueryCharacter   ToolCallType = "query_character"   // 查询调查员完整人物卡
-	ToolAnswer           ToolCallType = "answer"            // 结束本轮并给出回复
+	ToolCheckRule         ToolCallType = "check_rule"          // 查阅规则书
+	ToolReadRulebookConst ToolCallType = "read_rulebook_const" // 读取规则书常量目录/列表
+	ToolRollDice          ToolCallType = "roll_dice"           // 骰子检定
+	ToolNPCAct            ToolCallType = "npc_act"             // NPC行动
+	ToolCreateNPC         ToolCallType = "create_npc"          // 创建临时NPC
+	ToolDestroyNPC        ToolCallType = "destroy_npc"         // 销毁临时NPC
+	ToolDestoryNPC        ToolCallType = "destory_npc"         // 兼容拼写错误: destroy_npc
+	ToolActNPC            ToolCallType = "act_npc"             // 与指定NPC对话并获取反应
+	ToolUpdateCharacters  ToolCallType = "update_characters"   // 更新角色状态
+	ToolManageInventory   ToolCallType = "manage_inventory"    // 角色物品增删
+	ToolRecordMonster     ToolCallType = "record_monster"      // 记录已见神话存在
+	ToolManageSpell       ToolCallType = "manage_spell"        // 管理已掌握法术
+	ToolManageRelation    ToolCallType = "manage_relation"     // 管理社会关系
+	ToolEndGame           ToolCallType = "end_game"            // 结束游戏
+	ToolTriggerMadness    ToolCallType = "trigger_madness"     // 触发疯狂发作
+	ToolWrite             ToolCallType = "write"               // 生成叙事段落
+	ToolAdvanceTime       ToolCallType = "advance_time"        // 推进游戏内时间
+	ToolQueryClues        ToolCallType = "query_clues"         // 查询剧本线索
+	ToolQueryCharacter    ToolCallType = "query_character"     // 查询调查员完整人物卡
+	ToolAnswer            ToolCallType = "answer"              // 结束本轮并给出回复
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
 type ToolCall struct {
 	Action        ToolCallType           `json:"action"`
 	Question      string                 `json:"question,omitempty"`       // check_rule: 规则问题的语义描述
+	Constant      string                 `json:"constant,omitempty"`       // read_rulebook_const: 常量名
 	Dice          *DiceCheck             `json:"dice,omitempty"`           // roll_dice: 骰子检定请求
 	CharCard      *NPCCard               `json:"char_card,omitempty"`      // create_npc: NPC角色卡
 	NPCName       string                 `json:"npc_name,omitempty"`       // npc_act: NPC名称

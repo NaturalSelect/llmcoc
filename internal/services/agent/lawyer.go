@@ -15,7 +15,7 @@ var lawyerSystemPrompt = `你是COC TRPG（克苏鲁的呼唤7版）规则专家
 每次输出必须是一个JSON数组，包含按顺序执行的工具调用列表。
 
 【规则书目录】
-` + rulebookDir + `
+` + rulebook.RulebookDir + `
 
 【可用工具】
 1. search — 检索规则书原文
@@ -24,22 +24,28 @@ var lawyerSystemPrompt = `你是COC TRPG（克苏鲁的呼唤7版）规则专家
    示例：{"action":"search","keyword":"理智损失参考值"}
    示例：{"action":"search","keyword":"推进骰限制条件"}
 
-2. answer — 给出最终规则裁定，结束本次查询
+2. read_rulebook_const — 读取规则书内置常量目录/列表，存在假阴性风险（但不存在假阳性）
+	{"action":"read_rulebook_const","constant":"常量名"}
+	- 常量名：rulebook_dir / rulebook_detail_dir / aliens / books / great_old_ones_and_gods / monsters / mythos_creatures / spells
+
+3. answer — 给出最终规则裁定，结束本次查询
    {"action":"answer","ruling":"规则裁定内容（200字以内）"}
    - 直接引用关键规则数值和判定条件
    - 若原文未覆盖该问题，明确说明"规则书未明确规定"
 
 【执行规则】
 - 先调用 search（至少一次，但可多次），再调用 answer
+- 当需要目录、法术清单、怪物清单等静态信息时，可先调用 read_rulebook_const
 - 若情境无规则疑问，直接输出 [{"action":"answer","ruling":"无需特殊规则裁定。"}]
 - 每轮只包含 search 调用（可多个），或只包含单个 answer，不混用
 - 仅输出JSON数组，不加任何说明文字`
 
 // lawyerCall is one item in the Lawyer's tool-call output sequence.
 type lawyerCall struct {
-	Action  string `json:"action"`
-	Keyword string `json:"keyword,omitempty"` // search
-	Ruling  string `json:"ruling,omitempty"`  // answer
+	Action   string `json:"action"`
+	Keyword  string `json:"keyword,omitempty"`  // search
+	Constant string `json:"constant,omitempty"` // read_rulebook_const
+	Ruling   string `json:"ruling,omitempty"`   // answer
 }
 
 // runLawyer is an autonomous rule consultant that mirrors the Director's tool-call loop.
@@ -101,21 +107,30 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 			}
 		}
 
-		// ── search: execute and feed results back ─────────────────────────────
+		// ── search/read_rulebook_const: execute and feed results back ─────────
 		var resultSB strings.Builder
 		for _, c := range calls {
-			if c.Action != "search" || c.Keyword == "" {
-				continue
+			switch c.Action {
+			case "search":
+				if c.Keyword == "" {
+					continue
+				}
+				log.Printf("[lawyer] search: %s", c.Keyword)
+				debugf("Lawyer", "iter=%d search keyword=%q", iter+1, c.Keyword)
+				sections := rulebook.Search(idx, c.Keyword, 5)
+				text := rulebook.Format(sections, 2000)
+				if text == "" {
+					text = "（规则书中未找到相关内容）"
+				}
+				resultSB.WriteString(fmt.Sprintf("【search:%s】\n%s\n\n", c.Keyword, text))
+				debugf("Search", "Search keyword: %v result: %v", c.Keyword, text)
+			case "read_rulebook_const":
+				if c.Constant == "" {
+					continue
+				}
+				text := rulebook.ReadConstant(c.Constant)
+				resultSB.WriteString(fmt.Sprintf("【read_rulebook_const:%s】\n%s\n\n", c.Constant, text))
 			}
-			log.Printf("[lawyer] search: %s", c.Keyword)
-			debugf("Lawyer", "iter=%d search keyword=%q", iter+1, c.Keyword)
-			sections := rulebook.Search(idx, c.Keyword, 5)
-			text := rulebook.Format(sections, 2000)
-			if text == "" {
-				text = "（规则书中未找到相关内容）"
-			}
-			resultSB.WriteString(fmt.Sprintf("【%s】\n%s\n\n", c.Keyword, text))
-			debugf("Search", "Search keyword: %v result: %v", c.Keyword, text)
 		}
 		if resultSB.Len() == 0 {
 			// No valid search calls and no answer — give up.

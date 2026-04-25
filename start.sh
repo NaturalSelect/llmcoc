@@ -43,7 +43,10 @@ for arg in "$@"; do
       echo "[start.sh] Debug mode enabled (AGENT_DEBUG=1, GIN_MODE=debug)"
       ;;
     --dev)
+      DEBUG=1
       MODE="dev"
+      GIN_MODE="debug"
+      AGENT_DEBUG="1"
       echo "[start.sh] Dev mode: using 'go run'"
       ;;
     --help|-h)

@@ -365,24 +365,6 @@ func SeedScenarios(dir string) {
 // SeedShopItems initializes default shop items with basic equipment from COC rules
 func SeedShopItems() {
 	defaultItems := []models.ShopItem{
-		// 金币相关
-		{
-			Name:        "100金币",
-			Description: "补充100金币用于购买装备",
-			ItemType:    models.ItemTypeCoins,
-			Price:       0,
-			Value:       100,
-			IsActive:    true,
-		},
-		{
-			Name:        "500金币",
-			Description: "补充500金币，适合配置多个角色",
-			ItemType:    models.ItemTypeCoins,
-			Price:       0,
-			Value:       500,
-			IsActive:    true,
-		},
-
 		// 卡槽相关
 		{
 			Name:        "卡槽扩展（+1）",

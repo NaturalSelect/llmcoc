@@ -68,6 +68,13 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	// NOTE: first user should be admin
+	if user.ID == 1 {
+		user.Role = models.RoleAdmin
+		models.DB.Save(&user)
+		log.Printf("[register] first user, set as admin: username=%q", req.Username)
+	}
+
 	// Mark invite code as used
 	if requireInvite {
 		now := time.Now()

@@ -195,10 +195,14 @@
             font-size: 0.825rem;
             color: #c09060;
             font-style: italic;
+            white-space: pre-wrap;
+        }
+
+        /* separator only when writer narrative precedes narration */
+        .narration-sep {
             border-top: 1px solid #3a1a1a;
             margin-top: 0.625rem;
             padding-top: 0.625rem;
-            white-space: pre-wrap;
         }
 
         /* Player action */
@@ -678,6 +682,7 @@
                                         <div>
                                             <p x-show="msg.writer_text" class="narrative" x-text="msg.writer_text"></p>
                                             <p x-show="msg.narration_text" class="narration"
+                                                :class="msg.writer_text ? 'narration-sep' : ''"
                                                 x-text="'KP：' + msg.narration_text"></p>
                                         </div>
                                     </template>
@@ -718,7 +723,8 @@
                             x-text="writerBuffer"></p>
 
                         <!-- KP narration streaming -->
-                        <p x-show="narrationBuffer" class="narration cursor" x-text="'KP：' + narrationBuffer"></p>
+                        <p x-show="narrationBuffer" class="narration cursor"
+                            :class="writerBuffer ? 'narration-sep' : ''" x-text="'KP：' + narrationBuffer"></p>
                     </div>
 
                     <!-- Waiting for other players -->
@@ -1063,6 +1069,7 @@
                                         x-text="(s.difficulty||'normal') + ' · ' + (s.min_players||1) + '-' + (s.max_players||4) + '人' + (s.author ? ' · ' + s.author : '')">
                                     </p>
                                 </div>
+                                <button @click="viewScenario(s)" class="btn btn-ghost text-xs shrink-0">查看</button>
                                 <button @click="deleteScenario(s.id)" class="btn btn-red text-xs shrink-0">删除</button>
                             </div>
                         </template>
@@ -1092,7 +1099,7 @@
                 <div class="card rounded p-5 lg:col-span-2">
                     <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">AI 生成模组</h3>
                     <p class="text-xs text-amber-800 mb-3" style="font-family:system-ui">
-                        3阶段流水线：大纲生成 → JSON构建 → QA审查（自动迭代修订）。需要 Architect 和 QA Guard 角色已配置并启用。
+                        3阶段流水线：大纲生成 → JSON构建 → QA审查（自动迭代修订）。需要 Architect、QA Guard、Parser 角色已配置并启用。
                     </p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                         <div>
@@ -1418,20 +1425,11 @@
             <div class="mb-4">
                 <h3 class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider"
                     style="font-family:system-ui">物品栏</h3>
-                <div class="flex gap-2 mb-2">
-                    <input x-model="inventoryInput" @keydown.enter.prevent="addInventoryItem()" placeholder="输入物品名并回车"
-                        class="inp flex-1" />
-                    <button @click="addInventoryItem()" class="btn btn-amber">添加</button>
-                </div>
+                <p class="text-xs text-amber-800 mb-2" style="font-family:system-ui">人物卡界面仅展示物品，变更请通过商店购买或剧情流程。</p>
                 <div x-show="(editChar?.inventory||[]).length" class="flex flex-wrap gap-1.5">
                     <template x-for="(item, idx) in (editChar?.inventory||[])" :key="idx">
-                        <span
-                            class="text-xs bg-amber-950/20 text-amber-300 px-2 py-1 rounded inline-flex items-center gap-1"
-                            style="font-family:system-ui">
-                            <span x-text="item"></span>
-                            <button @click="removeInventoryItem(item)"
-                                class="text-amber-700 hover:text-red-400">×</button>
-                        </span>
+                        <span class="text-xs bg-amber-950/20 text-amber-300 px-2 py-1 rounded"
+                            style="font-family:system-ui" x-text="item"></span>
                     </template>
                 </div>
                 <p x-show="!(editChar?.inventory||[]).length" class="text-xs text-amber-800"
@@ -1618,6 +1616,123 @@
         </div>
     </div>
 
+    <!-- Scenario detail modal -->
+    <div x-show="modal === 'scenarioDetail'" class="backdrop" @click.self="modal=null">
+        <div class="modal max-w-2xl p-6" style="max-height:80vh;overflow-y:auto">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 class="text-xl font-bold text-amber-100" x-text="viewingScenario?.name"></h2>
+                    <p class="text-amber-700 text-xs mt-0.5" style="font-family:system-ui"
+                        x-text="[(viewingScenario?.difficulty||'normal'), (viewingScenario?.min_players||1)+'-'+(viewingScenario?.max_players||4)+'人', viewingScenario?.author ? '作者: '+viewingScenario.author : ''].filter(Boolean).join(' · ')">
+                    </p>
+                </div>
+                <button @click="modal=null"
+                    class="text-amber-800 hover:text-amber-400 text-xl leading-none ml-4">✕</button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 mb-4">
+                <div class="card rounded p-2 text-center">
+                    <div class="text-[10px] text-amber-800 mb-0.5" style="font-family:system-ui">开局时间</div>
+                    <div class="text-sm font-bold text-amber-300"
+                        x-text="slotToTime(viewingScenario?.content?.data?.game_start_slot)"></div>
+                </div>
+                <div class="card rounded p-2 text-center">
+                    <div class="text-[10px] text-amber-800 mb-0.5" style="font-family:system-ui">场景数</div>
+                    <div class="text-sm font-bold text-amber-300"
+                        x-text="viewingScenario?.content?.data?.scenes?.length ?? 0"></div>
+                </div>
+                <div class="card rounded p-2 text-center">
+                    <div class="text-[10px] text-amber-800 mb-0.5" style="font-family:system-ui">NPC数</div>
+                    <div class="text-sm font-bold text-amber-300"
+                        x-text="viewingScenario?.content?.data?.npcs?.length ?? 0"></div>
+                </div>
+            </div>
+
+            <template x-if="viewingScenario?.description">
+                <div class="mb-3">
+                    <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">模组简介</div>
+                    <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
+                        x-text="viewingScenario.description"></p>
+                </div>
+            </template>
+
+            <template x-if="viewingScenario?.content?.data?.setting">
+                <div class="mb-3">
+                    <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">背景设定</div>
+                    <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
+                        x-text="viewingScenario.content.data.setting"></p>
+                </div>
+            </template>
+
+            <template x-if="viewingScenario?.content?.data?.intro">
+                <div class="mb-3">
+                    <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">开场叙事</div>
+                    <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
+                        x-text="viewingScenario.content.data.intro"></p>
+                </div>
+            </template>
+
+            <template x-if="viewingScenario?.content?.data?.win_condition">
+                <div class="mb-3">
+                    <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">胜利条件</div>
+                    <p class="text-xs text-amber-200" style="font-family:system-ui"
+                        x-text="viewingScenario.content.data.win_condition"></p>
+                </div>
+            </template>
+
+            <template x-if="viewingScenario?.content?.data?.scenes?.length">
+                <div class="mb-3">
+                    <div class="text-xs font-bold text-amber-500 mb-2" style="font-family:system-ui">场景列表</div>
+                    <div class="space-y-1.5">
+                        <template x-for="sc in viewingScenario.content.data.scenes" :key="sc.id">
+                            <div class="rounded p-2" style="background:#0e0d0b;border:1px solid #1e1c17">
+                                <div class="text-xs font-bold text-amber-300" style="font-family:system-ui"
+                                    x-text="sc.name"></div>
+                                <div class="text-[11px] text-amber-800 mt-0.5" style="font-family:system-ui"
+                                    x-text="sc.description"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <template x-if="viewingScenario?.content?.data?.npcs?.length">
+                <div class="mb-3">
+                    <div class="text-xs font-bold text-amber-500 mb-2" style="font-family:system-ui">NPC 列表</div>
+                    <div class="space-y-1.5">
+                        <template x-for="npc in viewingScenario.content.data.npcs" :key="npc.name">
+                            <div class="rounded p-2" style="background:#0e0d0b;border:1px solid #1e1c17">
+                                <div class="text-xs font-bold text-amber-300" style="font-family:system-ui"
+                                    x-text="npc.name"></div>
+                                <div class="text-[11px] text-amber-700 mt-0.5" style="font-family:system-ui"
+                                    x-text="npc.description"></div>
+                                <div class="text-[11px] text-amber-900 mt-0.5" style="font-family:system-ui"
+                                    x-text="npc.attitude"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <template x-if="viewingScenario?.content?.data?.clues?.length">
+                <div class="mb-3">
+                    <div class="text-xs font-bold text-amber-500 mb-2" style="font-family:system-ui">线索（<span
+                            x-text="viewingScenario.content.data.clues.length"></span>条）</div>
+                    <ul class="space-y-1">
+                        <template x-for="(cl, i) in viewingScenario.content.data.clues" :key="i">
+                            <li class="text-[11px] text-amber-700" style="font-family:system-ui" x-text="'• ' + cl">
+                            </li>
+                        </template>
+                    </ul>
+                </div>
+            </template>
+
+            <div class="flex justify-end mt-4">
+                <button @click="modal=null" class="btn btn-ghost">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Join session modal -->
     <div x-show="modal === 'joinSession'" class="backdrop" @click.self="modal=null">
         <div class="modal max-w-sm p-6">
@@ -1718,6 +1833,7 @@
                 adminAgents: [],
                 adminScenarios: [],
                 scenarioUploadFile: null,
+                viewingScenario: null,
                 scenarioGenForm: { name: '', theme: '', era: '', brief: '', target_length: 'short', min_players: 1, max_players: 4, difficulty: 'normal' },
                 rechargeForm: { user_id: '', amount: 100, note: '' },
                 providerForm: { name: '', provider: 'openai', base_url: '', api_key: '', is_active: true },
@@ -1738,7 +1854,7 @@
                     try {
                         const ps = await this.api('GET', '/api/auth/settings/public');
                         this.requireInviteCode = !!ps.require_invite_code;
-                    } catch {}
+                    } catch { }
                     if (this.token) {
                         try {
                             await this.loadMe();
@@ -1813,6 +1929,38 @@
                 async loadAdminAgents() {
                     const agents = (await this.api('GET', '/api/admin/config/agents')) || [];
                     agents.forEach(ag => { if (ag.provider_config_id == null) ag.provider_config_id = ''; });
+
+                    // Ensure all configurable roles exist in UI, even if DB row is missing.
+                    const roleDefaults = {
+                        director: { max_tokens: 1500, temperature: 0.7 },
+                        writer: { max_tokens: 800, temperature: 0.85 },
+                        lawyer: { max_tokens: 800, temperature: 0.3 },
+                        npc: { max_tokens: 600, temperature: 0.9 },
+                        evaluator: { max_tokens: 1200, temperature: 0.5 },
+                        growth: { max_tokens: 1000, temperature: 0.4 },
+                        scripter: { max_tokens: 1800, temperature: 0.5 },
+                        architect: { max_tokens: 4000, temperature: 0.7 },
+                        qa_guard: { max_tokens: 2000, temperature: 0.3 },
+                        parser: { max_tokens: 4000, temperature: 0.1 },
+                    };
+                    const expectedRoles = Object.keys(roleDefaults);
+                    const byRole = new Map(agents.map(a => [a.role, a]));
+
+                    for (const role of expectedRoles) {
+                        if (byRole.has(role)) continue;
+                        const d = roleDefaults[role] || { max_tokens: 1024, temperature: 0.7 };
+                        agents.push({
+                            id: 'new-' + role,
+                            role,
+                            provider_config_id: '',
+                            model_name: '',
+                            max_tokens: d.max_tokens,
+                            temperature: d.temperature,
+                            system_prompt: '',
+                            is_active: true,
+                        });
+                    }
+
                     this.adminAgents = agents;
                 },
 
@@ -2518,9 +2666,17 @@
                             difficulty: this.scenarioGenForm.difficulty || 'normal',
                         });
                         this.showToast('AI 模组生成并入库成功');
-                        await this.loadScenarios();
+                        await Promise.all([this.loadScenarios(), this.loadAdminScenarios()]);
                     } catch (e) { this.showToast(e.message, 'error'); }
                     this.loading = false;
+                },
+
+                viewScenario(s) { this.viewingScenario = s; this.modal = 'scenarioDetail'; },
+                slotToTime(slot) {
+                    if (!slot && slot !== 0) return '未设置';
+                    const h = Math.floor(slot / 2);
+                    const m = (slot % 2) * 30;
+                    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
                 },
 
                 agentLabel(role) {
