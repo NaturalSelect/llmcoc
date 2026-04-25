@@ -618,6 +618,8 @@
                             <div class="flex flex-col gap-1.5 shrink-0">
                                 <button x-show="s.status==='lobby' && !isInSession(s)" @click="openJoinSession(s)"
                                     class="btn btn-amber">加入</button>
+                                <button x-show="s.status==='lobby' && isInSession(s)" @click="leaveSession(s)"
+                                    :disabled="leavingSession" class="btn btn-red">退出</button>
                                 <button @click="goToSession(s.id)" class="btn btn-ghost">进入</button>
                             </div>
                         </div>
@@ -649,6 +651,11 @@
                         x-text="currentSession?.status==='lobby'?'等待中':currentSession?.status==='playing'?'游戏中':'已结束'">
                     </span>
                     <button @click="openCurrentSessionCharDetail()" class="btn btn-ghost shrink-0">我的角色卡</button>
+                    <button x-show="currentSession?.status==='lobby' && isInSession(currentSession)"
+                        @click="leaveCurrentSession()" :disabled="leavingSession" class="btn btn-red shrink-0">
+                        <span x-show="!leavingSession">退出房间</span>
+                        <span x-show="leavingSession">退出中…</span>
+                    </button>
                     <button x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
                         @click="startSession()" class="btn btn-green shrink-0">▶ 开始游戏</button>
                     <button
@@ -1807,6 +1814,7 @@
                 messages: [],
                 chatInput: '',
                 endingSession: false,
+                leavingSession: false,
                 sessionRefreshTimer: null,
                 refreshingSession: false,
                 refreshingMessages: false,
@@ -2115,6 +2123,30 @@
                         }
                     } catch (e) { this.showToast(e.message, 'error'); }
                     this.loading = false;
+                },
+
+                async leaveSession(session) {
+                    if (!session?.id) return;
+                    if (!confirm('确认退出该房间？')) return;
+                    this.leavingSession = true;
+                    try {
+                        const r = await this.api('POST', '/api/sessions/' + session.id + '/leave');
+                        this.showToast(r.message || '已退出房间');
+                        await this.loadSessions();
+                        if (this.currentSession?.id === session.id) {
+                            this.currentSession = null;
+                            this.messages = [];
+                            this.goTo('sessions');
+                        }
+                    } catch (e) {
+                        this.showToast(e.message, 'error');
+                    }
+                    this.leavingSession = false;
+                },
+
+                async leaveCurrentSession() {
+                    if (!this.currentSession?.id) return;
+                    await this.leaveSession(this.currentSession);
                 },
 
                 isInSession(s) { return s.players?.some(p => p.user_id === this.user?.id); },
