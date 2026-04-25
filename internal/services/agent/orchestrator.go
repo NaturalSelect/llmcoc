@@ -931,6 +931,25 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 
 // buildNPCDetail returns a detailed NPC card dump for temporary/session NPCs.
 // If npcName is empty, returns all known NPC details in this session context.
+// npcNameMatch returns true when query is empty, is an exact match, or is a
+// substring of name. For ASCII names, comparison is case-insensitive;
+// for Chinese (and other non-ASCII) names, direct substring matching is used
+// since they have no concept of case.
+func npcNameMatch(name, query string) bool {
+	if query == "" {
+		return true
+	}
+	if name == query {
+		return true
+	}
+	// Case-insensitive ASCII fallback.
+	if strings.Contains(strings.ToLower(name), strings.ToLower(query)) {
+		return true
+	}
+	// Direct substring match for Chinese / non-ASCII names.
+	return strings.Contains(name, query)
+}
+
 func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs []models.NPCData) string {
 	findStat := func(stats map[string]int, key string) (int, bool) {
 		if stats == nil {
@@ -952,7 +971,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 	var sb strings.Builder
 	matched := false
 	for _, npc := range tempNPCs {
-		if npcName != "" && npc.Name != npcName {
+		if !npcNameMatch(npc.Name, npcName) {
 			continue
 		}
 		matched = true
@@ -1009,7 +1028,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 
 	// Fallback: static scenario NPCs (read-only baseline from module).
 	for _, npc := range scenarioNPCs {
-		if npcName != "" && npc.Name != npcName {
+		if !npcNameMatch(npc.Name, npcName) {
 			continue
 		}
 		matched = true

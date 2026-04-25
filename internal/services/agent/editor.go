@@ -213,7 +213,7 @@ func applyMadnessToCard(card *models.CharacterCard, kind game.MadnessKind) {
 func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.SessionNPC, scenarioNPCs []models.NPCData) {
 	// Try in-memory list first (same pipeline run), then fall back to DB.
 	for i := range tempNPCs {
-		if tempNPCs[i].Name == upd.CharacterName {
+		if npcNameMatch(tempNPCs[i].Name, upd.CharacterName) {
 			applyNPCStatUpdate(&tempNPCs[i], upd)
 			models.DB.Save(&tempNPCs[i])
 			return
@@ -222,9 +222,17 @@ func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.Sessi
 	// DB lookup.
 	var npc models.SessionNPC
 	if err := models.DB.Where("session_id = ? AND name = ?", sessionID, upd.CharacterName).First(&npc).Error; err != nil {
+		// Exact DB match failed — try fuzzy match against in-memory session NPCs first.
+		for i := range tempNPCs {
+			if npcNameMatch(tempNPCs[i].Name, upd.CharacterName) {
+				applyNPCStatUpdate(&tempNPCs[i], upd)
+				models.DB.Save(&tempNPCs[i])
+				return
+			}
+		}
 		// If not found in session, materialize from static scenario NPC so KP can update/kill it.
 		for _, sNPC := range scenarioNPCs {
-			if sNPC.Name != upd.CharacterName {
+			if !npcNameMatch(sNPC.Name, upd.CharacterName) {
 				continue
 			}
 			npc = models.SessionNPC{
