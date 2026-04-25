@@ -1,3 +1,4 @@
+// NOTE: Package models defines utility types for the GORM database.
 package models
 
 import (
@@ -7,6 +8,8 @@ import (
 )
 
 // JSONField is a generic GORM type that serializes T to/from JSON text column.
+// NOTE: It implements the database/sql/driver Scanner and Valuer interfaces,
+// as well as the json.Marshaler and json.Unmarshaler interfaces.
 type JSONField[T any] struct {
 	Data T
 }

@@ -1,3 +1,4 @@
+// NOTE: Package models handles database initialization and schema migrations.
 package models
 
 import (
@@ -13,6 +14,8 @@ import (
 
 var DB *gorm.DB
 
+// NOTE: InitDB connects to the SQLite database, configures it with WAL mode,
+// runs auto-migrations for all known models, and seeds default data.
 func InitDB() error {
 	dbPath := config.Global.Database.Path
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {

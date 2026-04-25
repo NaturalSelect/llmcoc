@@ -1,3 +1,4 @@
+// NOTE: Package models defines the core data structures and database schema for the application.
 package models
 
 import (
@@ -5,6 +6,7 @@ import (
 	"time"
 )
 
+// NOTE: Role distinguishes between regular users and administrators.
 type Role string
 
 const (
@@ -17,6 +19,7 @@ const (
 	GenderFemale = "女"
 )
 
+// NOTE: User represents a registered user account in the system.
 type User struct {
 	ID           uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Username     string    `gorm:"uniqueIndex;not null;size:50" json:"username"`
@@ -30,6 +33,7 @@ type User struct {
 }
 
 // COC 7th character attributes
+// NOTE: CharacterStats holds the core attributes and derived stats for a Call of Cthulhu investigator.
 type CharacterStats struct {
 	STR int `json:"str"` // 力量
 	CON int `json:"con"` // 体质
@@ -53,12 +57,14 @@ type CharacterStats struct {
 }
 
 // SocialRelation represents a named relationship on a character card.
+// NOTE: Tracks connections an investigator has to other people or entities.
 type SocialRelation struct {
 	Name         string `json:"name"`
 	Relationship string `json:"relationship"`
 	Note         string `json:"note"`
 }
 
+// NOTE: CharacterCard represents a player's investigator, containing all their stats, skills, inventory, and current state.
 type CharacterCard struct {
 	ID              uint                        `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID          uint                        `gorm:"not null;index" json:"user_id"`
@@ -93,6 +99,7 @@ type CharacterCard struct {
 	User          User      `gorm:"foreignKey:UserID" json:"-"`
 }
 
+// NOTE: ScenarioContent defines the narrative and structural elements of a playable scenario.
 type ScenarioContent struct {
 	SystemPrompt  string      `json:"system_prompt"`
 	Setting       string      `json:"setting"`
@@ -104,6 +111,7 @@ type ScenarioContent struct {
 	WinCondition  string      `json:"win_condition"`
 }
 
+// NOTE: SceneData describes a specific location or event in a scenario.
 type SceneData struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
@@ -111,6 +119,7 @@ type SceneData struct {
 	Triggers    []string `json:"triggers"`
 }
 
+// NOTE: NPCData provides a template for a non-player character within a scenario.
 type NPCData struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
@@ -118,6 +127,7 @@ type NPCData struct {
 	Stats       map[string]int `json:"stats,omitempty"`
 }
 
+// NOTE: Scenario is the database representation of a playable module or adventure.
 type Scenario struct {
 	ID   uint   `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name string `gorm:"not null;size:200;uniqueIndex" json:"name"`
@@ -151,6 +161,7 @@ type ChatMsg struct {
 	Content string `json:"content"`
 }
 
+// NOTE: GameSession tracks an active or completed run of a scenario with players.
 type GameSession struct {
 	ID            uint                 `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name          string               `gorm:"not null;size:200" json:"name"`
@@ -238,6 +249,7 @@ const (
 	MessageRoleSystem    MessageRole = "system"
 )
 
+// NOTE: Message records a single chat message sent within a game session.
 type Message struct {
 	ID        uint        `gorm:"primaryKey;autoIncrement" json:"id"`
 	SessionID uint        `gorm:"not null;index" json:"session_id"`

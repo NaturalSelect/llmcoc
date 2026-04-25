@@ -1,3 +1,6 @@
+// NOTE: Package main is the entry point for the LLM-COC server application.
+// It initializes the database, configures the Gin router, sets up all API
+// endpoints, and embeds the frontend web assets.
 package main
 
 import (
