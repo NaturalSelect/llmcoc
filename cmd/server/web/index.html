@@ -2107,7 +2107,12 @@
                     this.loading = true;
                     try {
                         await this.api('POST', '/api/sessions/' + this.joinTargetSession.id + '/join', this.joinForm);
-                        this.modal = null; this.showToast('加入成功！'); await this.loadSessions();
+                        this.modal = null; this.showToast('加入成功！');
+                        await this.loadSessions();
+                        // If there's an active game session, refresh its players list immediately
+                        if (this.currentSession?.id) {
+                            await this.refreshCurrentSession(true);
+                        }
                     } catch (e) { this.showToast(e.message, 'error'); }
                     this.loading = false;
                 },
@@ -2390,11 +2395,14 @@
 
                 startGameAutoRefresh() {
                     this.stopGameAutoRefresh();
+                    // Always refresh session (to show new players), but skip messages during streaming
                     this.sessionRefreshTimer = setInterval(() => {
-                        if (!this.currentSession?.id || this.page !== 'game' || this.streaming) return;
+                        if (!this.currentSession?.id || this.page !== 'game') return;
                         this.refreshCurrentSession(true).catch(() => { });
-                        this.refreshCurrentMessages(true).catch(() => { });
-                    }, 3000);
+                        if (!this.streaming) {
+                            this.refreshCurrentMessages(true).catch(() => { });
+                        }
+                    }, 2000);
                 },
 
                 stopGameAutoRefresh() {

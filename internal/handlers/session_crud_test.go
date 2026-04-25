@@ -21,6 +21,7 @@ func sessionCRUDRouter(userID uint, username, role string) *gin.Engine {
 	r.GET("/sessions/:id", auth, GetSession)
 	r.POST("/sessions", auth, CreateSession)
 	r.POST("/sessions/:id/join", auth, JoinSession)
+	r.POST("/sessions/:id/leave", auth, LeaveSession)
 	r.POST("/sessions/:id/start", auth, StartSession)
 	r.POST("/sessions/:id/end", auth, EndSession)
 	r.GET("/sessions/:id/messages", auth, GetMessages)
@@ -263,6 +264,78 @@ func TestJoinSession_WrongPassword(t *testing.T) {
 	}))
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("want 401, got %d", w.Code)
+	}
+}
+
+// ── LeaveSession ───────────────────────────────────────────────────────────────
+
+func TestLeaveSession_Success(t *testing.T) {
+	initTestDB(t)
+	sessID, _ := setupLobbySession(t)
+	uid := seedUser(t, "leaver", "user", 0, 3)
+	cardID := seedCard(t, uid, "Card")
+	models.DB.Create(&models.SessionPlayer{SessionID: sessID, UserID: uid, CharacterCardID: cardID})
+
+	r := sessionCRUDRouter(uid, "leaver", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/leave", sessID), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int64
+	models.DB.Model(&models.SessionPlayer{}).Where("session_id = ? AND user_id = ?", sessID, uid).Count(&count)
+	if count != 0 {
+		t.Errorf("want player removed, count=%d", count)
+	}
+}
+
+func TestLeaveSession_NotInSession(t *testing.T) {
+	initTestDB(t)
+	sessID, _ := setupLobbySession(t)
+	uid := seedUser(t, "outsider", "user", 0, 3)
+
+	r := sessionCRUDRouter(uid, "outsider", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/leave", sessID), nil))
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("want 400, got %d", w.Code)
+	}
+}
+
+func TestLeaveSession_NotFound(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+
+	r := sessionCRUDRouter(uid, "u", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/sessions/9999/leave", nil))
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("want 404, got %d", w.Code)
+	}
+}
+
+func TestLeaveSession_PlayingDenied(t *testing.T) {
+	initTestDB(t)
+	sID := seedScenario(t, "S")
+	uid := seedUser(t, "u", "user", 0, 3)
+	cardID := seedCard(t, uid, "Card")
+	sess := models.GameSession{
+		Name: "Playing", ScenarioID: sID,
+		Status: models.SessionStatusPlaying, MaxPlayers: 4, CreatedBy: uid,
+	}
+	models.DB.Create(&sess)
+	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: uid, CharacterCardID: cardID})
+
+	r := sessionCRUDRouter(uid, "u", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/leave", sess.ID), nil))
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("want 400, got %d", w.Code)
 	}
 }
 

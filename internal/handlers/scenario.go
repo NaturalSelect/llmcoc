@@ -501,7 +501,7 @@ func SeedShopItems() {
 
 		// 配件
 		{
-			Name:        "弹药包（手枪）",
+			Name:        "弹药包（手枪，50发）",
 			Description: "手枪弹药补充，50发装",
 			ItemType:    models.ItemTypeAccessory,
 			Price:       15,
@@ -509,7 +509,7 @@ func SeedShopItems() {
 			IsActive:    true,
 		},
 		{
-			Name:        "弹药包（步枪）",
+			Name:        "弹药包（步枪，100发）",
 			Description: "步枪弹药补充，100发装",
 			ItemType:    models.ItemTypeAccessory,
 			Price:       25,
@@ -521,6 +521,14 @@ func SeedShopItems() {
 			Description: "便携式照相机，用于记录证据",
 			ItemType:    models.ItemTypeAccessory,
 			Price:       40,
+			Value:       1,
+			IsActive:    true,
+		},
+		{
+			Name:        "钢笔",
+			Description: "精致钢笔，用于记录调查细节",
+			ItemType:    models.ItemTypeAccessory,
+			Price:       10,
 			Value:       1,
 			IsActive:    true,
 		},

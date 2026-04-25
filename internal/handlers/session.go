@@ -211,6 +211,50 @@ func JoinSession(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "加入成功"})
 }
 
+func LeaveSession(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var session models.GameSession
+	if err := models.DB.First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+	if session.Status != models.SessionStatusLobby {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏已开始或已结束，无法退出房间"})
+		return
+	}
+
+	var player models.SessionPlayer
+	if err := models.DB.
+		Preload("CharacterCard").
+		Where("session_id = ? AND user_id = ?", sessionID, userID).
+		First(&player).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "你不在此房间中"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询房间成员失败"})
+		return
+	}
+
+	if err := models.DB.Delete(&player).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "退出房间失败"})
+		return
+	}
+
+	username := c.GetString("username")
+	leaveMsg := models.Message{
+		SessionID: uint(sessionID),
+		Role:      models.MessageRoleSystem,
+		Content:   fmt.Sprintf("「%s」退出了房间。", username),
+		Username:  "系统",
+	}
+	models.DB.Create(&leaveMsg)
+
+	c.JSON(http.StatusOK, gin.H{"message": "退出房间成功"})
+}
+
 func StartSession(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)

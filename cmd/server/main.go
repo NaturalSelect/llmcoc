@@ -119,6 +119,7 @@ func main() {
 		sessions.POST("", handlers.CreateSession)
 		sessions.GET("/:id", handlers.GetSession)
 		sessions.POST("/:id/join", handlers.JoinSession)
+		sessions.POST("/:id/leave", handlers.LeaveSession)
 		sessions.POST("/:id/start", handlers.StartSession)
 		sessions.POST("/:id/end", handlers.EndSession)
 		sessions.GET("/:id/messages", handlers.GetMessages)
