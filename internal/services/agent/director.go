@@ -35,6 +35,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
    - monster_name：若sanity检定由特定神话存在/怪物引发，填写其名称；已见过同一存在的调查员将自动跳过SAN损失
    - hidden=true：暗骰，玩家不知晓检定发生
    - bonus_dice/penalty_dice：奖励/惩罚骰数量
+   - 需要等待骰子结果反馈后再继续write/answer，不能在同轮同时输出roll_dice和write/answer
 
 4. create_npc — 创建一个临时NPC（每个NPC独立agent）
 	{"action":"create_npc","char_card":{"name":"NPC名","description":"描述","attitude":"态度","goal":"目标","secret":"秘密","risk_preference":"conservative|balanced|aggressive","stats":{"STR":50},"skills":{"聆听":40},"spells":["法术A"]}}
@@ -122,7 +123,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 	- 可用字段：HP/SAN/MP
 	- 若目标仅存在于剧本静态NPC，系统会自动生成会话NPC卡后再应用变更
 
-21. answer — 结束本轮，以KP身份对玩家说话
+21. answer — 结束本回合并给出KP对玩家的回复
     {"action":"answer","reply":"像朋友一样对玩家说的回复（必填，口语化，包含骰子结果，行动结果，战斗结果等）"}
 
 【执行规则】
@@ -191,9 +192,11 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 第二轮（向NPC发问）：
 [{"action":"act_npc","npc_name":"NPC_A","question":"目标：阻止调查员进入北边房间并拖延5分钟；底线：不主动攻击；手段：恐吓、撒谎、转移话题；禁止：承认地下室藏有遗物。请给出你本轮行动。"}]
 第三轮（根据NPC回答继续处理）：
+[{"action":"roll_dice","dice":{"skill":"恐吓","value":55,"character":"NPC_A","check_type":"standard","hidden":false}}]
+第四轮（根据骰子结果继续处理）：
 [
-	{"action":"roll_dice","dice":{"skill":"恐吓","value":55,"character":"NPC_A","check_type":"standard","hidden":false}},
-	{"action":"answer","reply":"屋主抄起炉钩逼近你们，厉声喝问你们的来意。"}
+  {"action":"write","direction":"NPC_A恐吓检定成功，吼叫着威胁调查员不要靠近北边房间"},
+  {"action":"answer","reply":"NPC_A突然爆发出一阵怒吼，警告你们不要靠近北边的房间。你们感觉到一股压迫感，似乎他真的不想让你们进去。"}
 ]
 
 【示例：先查线索再叙事】
