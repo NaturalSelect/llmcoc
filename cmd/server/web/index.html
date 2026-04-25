@@ -1835,6 +1835,11 @@
                 // Multi-player waiting
                 waitingForPlayers: false,
                 waitingInfo: { pending: 0, total: 0 },
+                refreshIntervals: {
+                    gameAuto: 5000,
+                    waitingPoll: 4000,
+                    recoveryPoll: 4000,
+                },
 
                 // ── Shop ──────────────────────────────────────────────────────────────
                 purchasing: false,
@@ -2347,7 +2352,7 @@
                     // Keep recovering until page/session changes, so transient errors do not
                     // leave the player with a stale chat view.
                     if (!this.currentSession?.id || this.page !== 'game') return;
-                    await new Promise(r => setTimeout(r, 2000));
+                    await new Promise(r => setTimeout(r, this.refreshIntervals.recoveryPoll));
                     try {
                         const msgs = this.normalizeMessages(
                             (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
@@ -2397,7 +2402,7 @@
                             return;
                         }
                     } catch (_) { }
-                    setTimeout(() => this.pollForKPResponse(since), 2000);
+                    setTimeout(() => this.pollForKPResponse(since), this.refreshIntervals.waitingPoll);
                 },
 
                 scrollChat() {
@@ -2445,14 +2450,14 @@
 
                 startGameAutoRefresh() {
                     this.stopGameAutoRefresh();
-                    // Always refresh session (to show new players), but skip messages during streaming
+                    // Keep normal refresh low-frequency. Waiting/streaming paths have their own polling.
                     this.sessionRefreshTimer = setInterval(() => {
                         if (!this.currentSession?.id || this.page !== 'game') return;
                         this.refreshCurrentSession(true).catch(() => { });
-                        if (!this.streaming) {
+                        if (!this.streaming && !this.waitingForPlayers) {
                             this.refreshCurrentMessages(true).catch(() => { });
                         }
-                    }, 2000);
+                    }, this.refreshIntervals.gameAuto);
                 },
 
                 stopGameAutoRefresh() {
