@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LLM-COC · 克苏鲁跑团</title>
+    <title>LLM-COC</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
@@ -886,7 +886,7 @@
 
             <div class="flex gap-0 mb-5 border-b" style="border-color:#252018">
                 <template
-                    x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'shop',label:'商城管理'}]"
+                    x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'}]"
                     :key="t.id">
                     <button @click="adminTab=t.id" class="tab" :class="adminTab===t.id?'active':''"
                         x-text="t.label"></button>
@@ -1037,6 +1037,126 @@
                     </template>
                     <p x-show="adminAgents.length===0" class="text-amber-900 text-sm" style="font-family:system-ui">加载中…
                     </p>
+                </div>
+            </div>
+
+            <!-- Scenario management -->
+            <div x-show="adminTab==='scenarios'" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+                <!-- Scenario list -->
+                <div class="card rounded p-5 lg:col-span-2">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">已有模组</h3>
+                        <button @click="loadAdminScenarios()" class="btn btn-ghost text-xs">刷新</button>
+                    </div>
+                    <div x-show="adminScenarios.length === 0" class="text-amber-900 text-xs"
+                        style="font-family:system-ui">暂无模组</div>
+                    <div class="space-y-2">
+                        <template x-for="s in adminScenarios" :key="s.id">
+                            <div class="flex items-center gap-3 p-2 rounded"
+                                style="background:#0e0d0b;border:1px solid #1e1c17">
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm text-amber-200 truncate" style="font-family:system-ui"
+                                        x-text="s.name"></p>
+                                    <p class="text-[11px] text-amber-900 mt-0.5" style="font-family:system-ui"
+                                        x-text="(s.difficulty||'normal') + ' · ' + (s.min_players||1) + '-' + (s.max_players||4) + '人' + (s.author ? ' · ' + s.author : '')">
+                                    </p>
+                                </div>
+                                <button @click="deleteScenario(s.id)" class="btn btn-red text-xs shrink-0">删除</button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="card rounded p-5">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">下载模组模板</h3>
+                    <p class="text-xs text-amber-800 mb-3" style="font-family:system-ui">
+                        下载标准 JSON 模板，填写后可用于导入模组。
+                    </p>
+                    <button @click="downloadScenarioTemplate()" class="btn btn-amber">下载模板</button>
+                </div>
+
+                <div class="card rounded p-5">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">上传模组 JSON</h3>
+                    <p class="text-xs text-amber-800 mb-2" style="font-family:system-ui">支持单个 JSON 文件上传。</p>
+                    <input type="file" accept="application/json,.json" @change="onScenarioFilePicked($event)"
+                        class="inp mb-3" />
+                    <button @click="uploadScenarioFile()" class="btn btn-amber"
+                        :disabled="!scenarioUploadFile || loading">
+                        <span x-show="!loading">上传并导入</span>
+                        <span x-show="loading">导入中…</span>
+                    </button>
+                </div>
+
+                <div class="card rounded p-5 lg:col-span-2">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">AI 生成模组</h3>
+                    <p class="text-xs text-amber-800 mb-3" style="font-family:system-ui">
+                        只需设置玩家人数和难度，AI 会自动生成可直接入库的模组。
+                    </p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1"
+                                style="font-family:system-ui">模组名称（可选）</label>
+                            <input x-model="scenarioGenForm.name" type="text" placeholder="留空由AI命名" class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">留空则AI自动命名。</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1" style="font-family:system-ui">主题 /
+                                风格</label>
+                            <input x-model="scenarioGenForm.theme" type="text" placeholder="例如：海洋、都市传说、古埃及"
+                                class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">引导AI的神话题材与氛围。</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1" style="font-family:system-ui">时代背景</label>
+                            <input x-model="scenarioGenForm.era" type="text" placeholder="例如：1920s 波士顿、现代东京"
+                                class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">年代地点，影响NPC和道具。</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1" style="font-family:system-ui">篇幅</label>
+                            <select x-model="scenarioGenForm.target_length" class="inp">
+                                <option value="short">短篇（1-2小时）</option>
+                                <option value="medium">中篇（3-4小时）</option>
+                                <option value="long">长篇（5小时以上）</option>
+                            </select>
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">影响场景数量和线索密度。</p>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="block text-xs text-amber-700 mb-1" style="font-family:system-ui">创意简报（可选）</label>
+                        <textarea x-model="scenarioGenForm.brief" rows="2" placeholder="例如：调查员受雇寻找失踪的渔夫，背后隐藏着古老渔村的祭祀秘密…"
+                            class="inp resize-none"></textarea>
+                        <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">一两句话描述核心剧情或特殊要求。</p>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1" style="font-family:system-ui">最小玩家数</label>
+                            <input x-model.number="scenarioGenForm.min_players" type="number" min="1" placeholder="例如：1"
+                                class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">建议能开团的最低人数。</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1" style="font-family:system-ui">最大玩家数</label>
+                            <input x-model.number="scenarioGenForm.max_players" type="number" min="1" placeholder="例如：4"
+                                class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">建议不影响节奏的上限人数。</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1" style="font-family:system-ui">难度等级</label>
+                            <select x-model="scenarioGenForm.difficulty" class="inp">
+                                <option value="easy">easy（入门，容错高）</option>
+                                <option value="normal">normal（标准）</option>
+                                <option value="hard">hard（高压，高风险）</option>
+                            </select>
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">影响线索密度、危机强度与生存压力。
+                            </p>
+                        </div>
+                    </div>
+                    <button @click="generateScenarioByAgents()" class="btn btn-amber" :disabled="loading">
+                        <span x-show="!loading">生成并入库</span>
+                        <span x-show="loading">生成中…</span>
+                    </button>
                 </div>
             </div>
 
@@ -1541,6 +1661,9 @@
                 adminUsers: [],
                 adminProviders: [],
                 adminAgents: [],
+                adminScenarios: [],
+                scenarioUploadFile: null,
+                scenarioGenForm: { name: '', theme: '', era: '', brief: '', target_length: 'short', min_players: 1, max_players: 4, difficulty: 'normal' },
                 rechargeForm: { user_id: '', amount: 100, note: '' },
                 providerForm: { name: '', provider: 'openai', base_url: '', api_key: '', is_active: true },
                 editingProvider: null,
@@ -1615,6 +1738,16 @@
                 },
                 async loadAdminUsers() { this.adminUsers = (await this.api('GET', '/api/admin/users')) || []; },
                 async loadAdminProviders() { this.adminProviders = (await this.api('GET', '/api/admin/config/providers')) || []; },
+                async loadAdminScenarios() { this.adminScenarios = (await this.api('GET', '/api/scenarios')) || []; },
+                async deleteScenario(id) {
+                    if (!confirm('确认删除该模组？此操作不可逆。')) return;
+                    try {
+                        await this.api('DELETE', '/api/scenarios/' + id);
+                        this.showToast('模组已删除');
+                        await this.loadAdminScenarios();
+                        await this.loadScenarios();
+                    } catch (e) { this.showToast(e.message, 'error'); }
+                },
                 async loadAdminAgents() {
                     const agents = (await this.api('GET', '/api/admin/config/agents')) || [];
                     agents.forEach(ag => { if (ag.provider_config_id == null) ag.provider_config_id = ''; });
@@ -1638,6 +1771,7 @@
                         this.loadAdminUsers().catch(e => this.showToast(e.message, 'error'));
                         this.loadAdminProviders().catch(e => this.showToast(e.message, 'error'));
                         this.loadAdminAgents().catch(e => this.showToast(e.message, 'error'));
+                        this.loadAdminScenarios().catch(e => this.showToast(e.message, 'error'));
                     }
                 },
 
@@ -2216,6 +2350,79 @@
                         this.showToast('商品已创建');
                         this.newShopItem = { name: '', description: '', item_type: 'card_slot', price: 0, value: 1, is_active: true };
                     } catch (e) { this.showToast(e.message, 'error'); }
+                },
+
+                async downloadScenarioTemplate() {
+                    try {
+                        const resp = await fetch('/api/scenarios/template', {
+                            method: 'GET',
+                            headers: { ...(this.token ? { 'Authorization': 'Bearer ' + this.token } : {}) },
+                        });
+                        if (!resp.ok) {
+                            const data = await resp.json().catch(() => ({}));
+                            throw new Error(data.error || `HTTP ${resp.status}`);
+                        }
+                        const blob = await resp.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'scenario_template.json';
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                        this.showToast('模板下载成功');
+                    } catch (e) { this.showToast(e.message, 'error'); }
+                },
+
+                onScenarioFilePicked(e) {
+                    const f = e?.target?.files?.[0] || null;
+                    this.scenarioUploadFile = f;
+                },
+
+                async uploadScenarioFile() {
+                    if (!this.scenarioUploadFile) return;
+                    this.loading = true;
+                    try {
+                        const form = new FormData();
+                        form.append('file', this.scenarioUploadFile);
+                        const resp = await fetch('/api/scenarios/upload', {
+                            method: 'POST',
+                            headers: { ...(this.token ? { 'Authorization': 'Bearer ' + this.token } : {}) },
+                            body: form,
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+                        this.scenarioUploadFile = null;
+                        this.showToast('模组导入成功');
+                        await this.loadScenarios();
+                    } catch (e) { this.showToast(e.message, 'error'); }
+                    this.loading = false;
+                },
+
+                async generateScenarioByAgents() {
+                    const minPlayers = Number(this.scenarioGenForm.min_players || 1);
+                    const maxPlayers = Number(this.scenarioGenForm.max_players || 4);
+                    if (maxPlayers < minPlayers) {
+                        this.showToast('最大玩家数不能小于最小玩家数', 'error');
+                        return;
+                    }
+                    this.loading = true;
+                    try {
+                        await this.api('POST', '/api/scenarios/generate', {
+                            name: this.scenarioGenForm.name || '',
+                            theme: this.scenarioGenForm.theme || '',
+                            era: this.scenarioGenForm.era || '',
+                            brief: this.scenarioGenForm.brief || '',
+                            target_length: this.scenarioGenForm.target_length || 'short',
+                            min_players: minPlayers,
+                            max_players: maxPlayers,
+                            difficulty: this.scenarioGenForm.difficulty || 'normal',
+                        });
+                        this.showToast('AI 模组生成并入库成功');
+                        await this.loadScenarios();
+                    } catch (e) { this.showToast(e.message, 'error'); }
+                    this.loading = false;
                 },
 
                 agentLabel(role) {

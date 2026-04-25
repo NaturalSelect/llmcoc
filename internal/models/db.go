@@ -109,7 +109,7 @@ func seedDefaultAgentConfigs() {
 	}
 
 	// Remove obsolete agent roles that no longer exist in the pipeline.
-	DB.Where("role IN ?", []string{"judger", "scripter", "editor"}).Delete(&AgentConfig{})
+	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer"}).Delete(&AgentConfig{})
 
 	var provID *uint
 	var prov LLMProviderConfig
@@ -126,6 +126,9 @@ func seedDefaultAgentConfigs() {
 	// Ensure each active agent has a config row (upsert-style: create only if missing).
 	required := []AgentConfig{
 		{Role: AgentRoleDirector, ProviderConfigID: provID, ModelName: model, MaxTokens: 1500, Temperature: 0.7, IsActive: true},
+		{Role: AgentRoleScripter, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, IsActive: true},
+		{Role: AgentRoleArchitect, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.6, IsActive: true},
+		{Role: AgentRoleQAGuard, ProviderConfigID: provID, ModelName: model, MaxTokens: 1200, Temperature: 0.3, IsActive: true},
 		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.85, IsActive: true},
 		{Role: AgentRoleLawyer, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.3, IsActive: true},
 		{Role: AgentRoleNPC, ProviderConfigID: provID, ModelName: model, MaxTokens: 600, Temperature: 0.9, IsActive: true},

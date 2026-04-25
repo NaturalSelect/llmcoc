@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -100,8 +101,13 @@ func main() {
 	scenarios := api.Group("/scenarios", middleware.AuthRequired())
 	{
 		scenarios.GET("", handlers.ListScenarios)
+		scenarios.GET("/:id/module", handlers.GetScenarioModule)
 		scenarios.GET("/:id", handlers.GetScenario)
+		scenarios.GET("/template", handlers.DownloadScenarioTemplate)
 		scenarios.POST("", middleware.AdminRequired(), handlers.CreateScenario)
+		scenarios.POST("/generate", middleware.AdminRequired(), handlers.GenerateScenarioByAgents)
+		scenarios.POST("/upload", middleware.AdminRequired(), handlers.UploadScenario)
+		scenarios.DELETE("/:id", middleware.AdminRequired(), handlers.DeleteScenario)
 	}
 
 	// Sessions
@@ -172,7 +178,14 @@ func main() {
 
 	addr := fmt.Sprintf("%s:%d", config.Global.Server.Host, config.Global.Server.Port)
 	log.Printf("🎲 LLM-COC server starting on http://%s", addr)
-	if err := r.Run(addr); err != nil {
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      r,
+		ReadTimeout:  5 * time.Minute,  // header + body read
+		WriteTimeout: 30 * time.Minute, // long AI generation won't be cut off
+		IdleTimeout:  90 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

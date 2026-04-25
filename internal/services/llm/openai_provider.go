@@ -20,6 +20,8 @@ var llmDebug = func() bool {
 	return v == "1" || v == "true" || v == "yes"
 }()
 
+const defaultReasoningEffort = "high"
+
 type openAIProvider struct {
 	client      *openai.Client
 	model       string
@@ -58,11 +60,12 @@ func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage)
 	ch := make(chan string, 64)
 
 	req := openai.ChatCompletionRequest{
-		Model:       p.model,
-		Messages:    p.toOpenAIMessages(messages),
-		MaxTokens:   p.maxTokens,
-		Temperature: p.temperature,
-		Stream:      true,
+		Model:           p.model,
+		Messages:        p.toOpenAIMessages(messages),
+		MaxTokens:       p.maxTokens,
+		Temperature:     p.temperature,
+		ReasoningEffort: defaultReasoningEffort,
+		Stream:          true,
 	}
 
 	stream, err := p.client.CreateChatCompletionStream(ctx, req)
@@ -98,10 +101,11 @@ func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage)
 func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (string, error) {
 	start := time.Now()
 	resp, err := p.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model:       p.model,
-		Messages:    p.toOpenAIMessages(messages),
-		MaxTokens:   p.maxTokens,
-		Temperature: p.temperature,
+		Model:           p.model,
+		Messages:        p.toOpenAIMessages(messages),
+		MaxTokens:       p.maxTokens,
+		Temperature:     p.temperature,
+		ReasoningEffort: defaultReasoningEffort,
 	})
 	if err != nil {
 		return "", fmt.Errorf("LLM chat error: %w", err)
@@ -154,8 +158,9 @@ func (p *openAIProvider) GenerateCharacter(ctx context.Context, req GenerateChar
 			{Role: openai.ChatMessageRoleSystem, Content: "你是一名克苏鲁神话TRPG专家，只输出JSON，不输出任何其他内容。"},
 			{Role: openai.ChatMessageRoleUser, Content: prompt},
 		},
-		MaxTokens:   800,
-		Temperature: 0.9,
+		MaxTokens:       800,
+		Temperature:     0.9,
+		ReasoningEffort: defaultReasoningEffort,
 	})
 	if err != nil {
 		return nil, err

@@ -161,7 +161,10 @@ func AdminListAgents(c *gin.Context) {
 func AdminUpdateAgent(c *gin.Context) {
 	role := c.Param("role")
 	log.Printf("[admin_config] update_agent role=%s", role)
-	validRoles := map[string]bool{"director": true, "writer": true, "lawyer": true, "npc": true, "evaluator": true, "growth": true}
+	validRoles := map[string]bool{
+		"director": true, "writer": true, "lawyer": true, "npc": true, "evaluator": true, "growth": true,
+		"scripter": true, "architect": true, "lore_researcher": true, "encounter_designer": true, "qa_guard": true,
+	}
 	if !validRoles[role] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent 角色"})
 		return
