@@ -391,7 +391,7 @@ func runQA(ctx context.Context, qaAgent agentHandle, parser agentHandle, req Sce
 		{Role: "user", Content: userMsg},
 	}
 
-	const maxIter = 6
+	const maxIter = 30
 	for iter := 0; iter < maxIter; iter++ {
 		if ctx.Err() != nil {
 			return qaGuardResult{}, ctx.Err()
