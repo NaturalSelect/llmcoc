@@ -1637,19 +1637,33 @@
 
     <!-- Scenario detail modal -->
     <div x-show="modal === 'scenarioDetail'" class="backdrop" @click.self="modal=null">
-        <div class="modal max-w-2xl p-6" style="max-height:80vh;overflow-y:auto">
-            <div class="flex justify-between items-start mb-4">
+        <div class="modal max-w-2xl p-6" style="max-height:85vh;overflow-y:auto">
+            <!-- Header -->
+            <div class="flex justify-between items-start mb-3">
                 <div>
                     <h2 class="text-xl font-bold text-amber-100" x-text="viewingScenario?.name"></h2>
-                    <p class="text-amber-700 text-xs mt-0.5" style="font-family:system-ui"
-                        x-text="[(viewingScenario?.difficulty||'normal'), (viewingScenario?.min_players||1)+'-'+(viewingScenario?.max_players||4)+'人', viewingScenario?.author ? '作者: '+viewingScenario.author : ''].filter(Boolean).join(' · ')">
-                    </p>
+                    <div class="flex flex-wrap gap-1.5 mt-1.5 items-center">
+                        <span class="text-[11px] px-1.5 py-0.5 rounded" style="background:#1e1c17;color:#92400e;font-family:system-ui"
+                            x-text="viewingScenario?.difficulty || 'normal'"></span>
+                        <span class="text-[11px] text-amber-700" style="font-family:system-ui"
+                            x-text="(viewingScenario?.min_players||1) + '-' + (viewingScenario?.max_players||4) + '人'"></span>
+                        <template x-if="viewingScenario?.author">
+                            <span class="text-[11px] text-amber-800" style="font-family:system-ui"
+                                x-text="'作者: ' + viewingScenario.author"></span>
+                        </template>
+                        <template x-if="viewingScenario?.tags">
+                            <template x-for="tag in (viewingScenario.tags||'').split(',').map(t=>t.trim()).filter(Boolean)" :key="tag">
+                                <span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background:#1a1408;border:1px solid #2d2410;color:#a16207;font-family:system-ui" x-text="tag"></span>
+                            </template>
+                        </template>
+                    </div>
                 </div>
                 <button @click="modal=null"
-                    class="text-amber-800 hover:text-amber-400 text-xl leading-none ml-4">✕</button>
+                    class="text-amber-800 hover:text-amber-400 text-xl leading-none ml-4 shrink-0">✕</button>
             </div>
 
-            <div class="grid grid-cols-3 gap-2 mb-4">
+            <!-- Stats bar -->
+            <div class="grid grid-cols-4 gap-2 mb-4">
                 <div class="card rounded p-2 text-center">
                     <div class="text-[10px] text-amber-800 mb-0.5" style="font-family:system-ui">开局时间</div>
                     <div class="text-sm font-bold text-amber-300"
@@ -1661,92 +1675,159 @@
                         x-text="viewingScenario?.content?.scenes?.length ?? 0"></div>
                 </div>
                 <div class="card rounded p-2 text-center">
-                    <div class="text-[10px] text-amber-800 mb-0.5" style="font-family:system-ui">NPC数</div>
+                    <div class="text-[10px] text-amber-800 mb-0.5" style="font-family:system-ui">NPC 数</div>
                     <div class="text-sm font-bold text-amber-300"
                         x-text="viewingScenario?.content?.npcs?.length ?? 0"></div>
                 </div>
+                <div class="card rounded p-2 text-center">
+                    <div class="text-[10px] text-amber-800 mb-0.5" style="font-family:system-ui">线索数</div>
+                    <div class="text-sm font-bold text-amber-300"
+                        x-text="viewingScenario?.content?.clues?.length ?? 0"></div>
+                </div>
             </div>
 
+            <!-- 简介 -->
             <template x-if="viewingScenario?.description">
-                <div class="mb-3">
-                    <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">模组简介</div>
-                    <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
+                <div class="mb-4 p-3 rounded" style="background:#0e0d0b;border-left:3px solid #92400e">
+                    <div class="text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider" style="font-family:system-ui">模组简介</div>
+                    <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.7"
                         x-text="viewingScenario.description"></p>
                 </div>
             </template>
 
+            <!-- 背景设定 -->
             <template x-if="viewingScenario?.content?.setting">
-                <div class="mb-3">
-                    <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">背景设定</div>
-                    <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
+                <div class="mb-4">
+                    <div class="text-xs font-bold text-amber-500 mb-1.5 flex items-center gap-1.5" style="font-family:system-ui">
+                        <span style="color:#78350f">▍</span>背景设定
+                    </div>
+                    <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.7;padding-left:0.75rem"
                         x-text="viewingScenario.content.setting"></p>
                 </div>
             </template>
 
+            <!-- 开场叙事 -->
             <template x-if="viewingScenario?.content?.intro">
-                <div class="mb-3">
-                    <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">开场叙事</div>
-                    <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
+                <div class="mb-4">
+                    <div class="text-xs font-bold text-amber-500 mb-1.5 flex items-center gap-1.5" style="font-family:system-ui">
+                        <span style="color:#78350f">▍</span>开场叙事
+                    </div>
+                    <p class="text-xs text-amber-300" style="font-family:system-ui;line-height:1.7;padding-left:0.75rem;font-style:italic"
                         x-text="viewingScenario.content.intro"></p>
                 </div>
             </template>
 
+            <!-- 胜利条件 -->
             <template x-if="viewingScenario?.content?.win_condition">
-                <div class="mb-3">
-                    <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">胜利条件</div>
-                    <p class="text-xs text-amber-200" style="font-family:system-ui"
+                <div class="mb-4 p-2.5 rounded" style="background:#0e0d0b;border:1px solid #1e1c17">
+                    <div class="text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider" style="font-family:system-ui">胜利条件</div>
+                    <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
                         x-text="viewingScenario.content.win_condition"></p>
                 </div>
             </template>
 
+            <!-- 场景列表 -->
             <template x-if="viewingScenario?.content?.scenes?.length">
-                <div class="mb-3">
-                    <div class="text-xs font-bold text-amber-500 mb-2" style="font-family:system-ui">场景列表</div>
-                    <div class="space-y-1.5">
-                        <template x-for="sc in viewingScenario.content.scenes" :key="sc.id">
-                            <div class="rounded p-2" style="background:#0e0d0b;border:1px solid #1e1c17">
-                                <div class="text-xs font-bold text-amber-300" style="font-family:system-ui"
-                                    x-text="sc.name"></div>
-                                <div class="text-[11px] text-amber-800 mt-0.5" style="font-family:system-ui"
-                                    x-text="sc.description"></div>
+                <div class="mb-4">
+                    <div class="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1.5" style="font-family:system-ui">
+                        <span style="color:#78350f">▍</span>场景列表
+                        <span class="text-[10px] text-amber-800 font-normal" x-text="'共 ' + viewingScenario.content.scenes.length + ' 个'"></span>
+                    </div>
+                    <div class="space-y-2">
+                        <template x-for="(sc, si) in viewingScenario.content.scenes" :key="sc.id">
+                            <div class="rounded p-2.5" style="background:#0e0d0b;border:1px solid #1e1c17">
+                                <div class="flex items-start gap-2">
+                                    <span class="text-[10px] font-bold shrink-0 mt-0.5" style="color:#44320a;font-family:system-ui" x-text="(si+1) + '.'"></span>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-xs font-bold text-amber-300" style="font-family:system-ui" x-text="sc.name"></div>
+                                        <template x-if="sc.description">
+                                            <div class="text-[11px] text-amber-700 mt-0.5" style="font-family:system-ui;line-height:1.5" x-text="sc.description"></div>
+                                        </template>
+                                        <template x-if="sc.triggers?.length">
+                                            <div class="flex flex-wrap gap-1 mt-1.5">
+                                                <template x-for="tr in sc.triggers" :key="tr">
+                                                    <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:#1a1408;border:1px solid #2a1f0a;color:#78350f;font-family:system-ui" x-text="tr"></span>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
                             </div>
                         </template>
                     </div>
                 </div>
             </template>
 
+            <!-- NPC 列表 -->
             <template x-if="viewingScenario?.content?.npcs?.length">
-                <div class="mb-3">
-                    <div class="text-xs font-bold text-amber-500 mb-2" style="font-family:system-ui">NPC 列表</div>
-                    <div class="space-y-1.5">
+                <div class="mb-4">
+                    <div class="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1.5" style="font-family:system-ui">
+                        <span style="color:#78350f">▍</span>NPC 列表
+                        <span class="text-[10px] text-amber-800 font-normal" x-text="'共 ' + viewingScenario.content.npcs.length + ' 人'"></span>
+                    </div>
+                    <div class="space-y-2">
                         <template x-for="npc in viewingScenario.content.npcs" :key="npc.name">
-                            <div class="rounded p-2" style="background:#0e0d0b;border:1px solid #1e1c17">
-                                <div class="text-xs font-bold text-amber-300" style="font-family:system-ui"
-                                    x-text="npc.name"></div>
-                                <div class="text-[11px] text-amber-700 mt-0.5" style="font-family:system-ui"
-                                    x-text="npc.description"></div>
-                                <div class="text-[11px] text-amber-900 mt-0.5" style="font-family:system-ui"
-                                    x-text="npc.attitude"></div>
+                            <div class="rounded p-2.5" style="background:#0e0d0b;border:1px solid #1e1c17">
+                                <div class="flex items-start justify-between gap-2 mb-1">
+                                    <div class="text-xs font-bold text-amber-300" style="font-family:system-ui" x-text="npc.name"></div>
+                                    <template x-if="npc.attitude">
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                                            :style="{'background': npc.attitude==='hostile'?'#1f0a0a': npc.attitude==='friendly'?'#0a1a0a':'#1a1408',
+                                                     'border': '1px solid ' + (npc.attitude==='hostile'?'#3d1515': npc.attitude==='friendly'?'#153d15':'#2d2410'),
+                                                     'color': npc.attitude==='hostile'?'#dc2626': npc.attitude==='friendly'?'#16a34a':'#a16207',
+                                                     'font-family':'system-ui'}"
+                                            x-text="npc.attitude"></span>
+                                    </template>
+                                </div>
+                                <template x-if="npc.description">
+                                    <div class="text-[11px] text-amber-700 mb-1.5" style="font-family:system-ui;line-height:1.5" x-text="npc.description"></div>
+                                </template>
+                                <template x-if="npc.stats && Object.keys(npc.stats).length">
+                                    <div class="flex flex-wrap gap-1.5 mt-1">
+                                        <template x-for="[k,v] in Object.entries(npc.stats)" :key="k">
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:#1a1408;border:1px solid #2a1f0a;color:#a16207;font-family:system-ui">
+                                                <span class="text-amber-800" x-text="k + ' '"></span><span class="font-bold text-amber-500" x-text="v"></span>
+                                            </span>
+                                        </template>
+                                    </div>
+                                </template>
                             </div>
                         </template>
                     </div>
                 </div>
             </template>
 
+            <!-- 线索 -->
             <template x-if="viewingScenario?.content?.clues?.length">
-                <div class="mb-3">
-                    <div class="text-xs font-bold text-amber-500 mb-2" style="font-family:system-ui">线索（<span
-                            x-text="viewingScenario.content.clues.length"></span>条）</div>
-                    <ul class="space-y-1">
+                <div class="mb-4">
+                    <div class="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1.5" style="font-family:system-ui">
+                        <span style="color:#78350f">▍</span>线索
+                        <span class="text-[10px] text-amber-800 font-normal" x-text="'共 ' + viewingScenario.content.clues.length + ' 条'"></span>
+                    </div>
+                    <div class="space-y-1.5">
                         <template x-for="(cl, i) in viewingScenario.content.clues" :key="i">
-                            <li class="text-[11px] text-amber-700" style="font-family:system-ui" x-text="'• ' + cl">
-                            </li>
+                            <div class="flex gap-2 items-start rounded p-2" style="background:#0e0d0b;border:1px solid #1e1c17">
+                                <span class="text-[10px] font-bold shrink-0 mt-0.5" style="color:#44320a;font-family:system-ui" x-text="i+1"></span>
+                                <span class="text-[11px] text-amber-600" style="font-family:system-ui;line-height:1.5" x-text="cl"></span>
+                            </div>
                         </template>
-                    </ul>
+                    </div>
                 </div>
             </template>
 
-            <div class="flex justify-end mt-4">
+            <!-- system_prompt 折叠 -->
+            <template x-if="viewingScenario?.content?.system_prompt">
+                <div class="mb-4" x-data="{open:false}">
+                    <button @click="open=!open" class="text-[10px] text-amber-900 hover:text-amber-700 flex items-center gap-1" style="font-family:system-ui">
+                        <span x-text="open ? '▾' : '▸'"></span> KP 系统提示词
+                    </button>
+                    <template x-if="open">
+                        <pre class="mt-1.5 text-[10px] text-amber-900 rounded p-2 overflow-x-auto" style="background:#0a0908;border:1px solid #1e1c17;font-family:monospace;line-height:1.5;white-space:pre-wrap" x-text="viewingScenario.content.system_prompt"></pre>
+                    </template>
+                </div>
+            </template>
+
+            <div class="flex justify-end mt-2">
                 <button @click="modal=null" class="btn btn-ghost">关闭</button>
             </div>
         </div>
