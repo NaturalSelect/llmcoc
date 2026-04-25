@@ -173,6 +173,80 @@ func TestMe_NotFound(t *testing.T) {
 	}
 }
 
+// ── Invite code tests ────────────────────────────────────────────────────────
+
+func TestRegister_SucceedsWithoutInviteCode_WhenSettingOff(t *testing.T) {
+	initTestDB(t)
+	// Setting is off by default (not seeded), so registration should work.
+	r := authRouter()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/auth/register", map[string]any{
+		"username": "nocode", "email": "nocode@test.com", "password": "secret123",
+	}))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRegister_FailsWithoutInviteCode_WhenSettingOn(t *testing.T) {
+	initTestDB(t)
+	models.SetSiteSetting("require_invite_code", "true")
+	r := authRouter()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/auth/register", map[string]any{
+		"username": "nocode2", "email": "nocode2@test.com", "password": "secret123",
+	}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRegister_SucceedsWithValidInviteCode(t *testing.T) {
+	initTestDB(t)
+	models.SetSiteSetting("require_invite_code", "true")
+	// Seed an unused invite code
+	code := models.InviteCode{Code: "TESTCODE", CreatedBy: 0}
+	models.DB.Create(&code)
+
+	r := authRouter()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/auth/register", map[string]any{
+		"username": "withcode", "email": "withcode@test.com", "password": "secret123",
+		"invite_code": "TESTCODE",
+	}))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify code is marked as used
+	var ic models.InviteCode
+	models.DB.First(&ic, code.ID)
+	if ic.UsedBy == nil {
+		t.Error("invite code should be marked as used")
+	}
+	if ic.UsedAt == nil {
+		t.Error("invite code should have used_at set")
+	}
+}
+
+func TestRegister_FailsWithUsedInviteCode(t *testing.T) {
+	initTestDB(t)
+	models.SetSiteSetting("require_invite_code", "true")
+	uid := seedUser(t, "existing", "user", 0, 3)
+	code := models.InviteCode{Code: "USEDCODE", CreatedBy: 0, UsedBy: &uid}
+	models.DB.Create(&code)
+
+	r := authRouter()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/auth/register", map[string]any{
+		"username": "newuser", "email": "newuser@test.com", "password": "secret123",
+		"invite_code": "USEDCODE",
+	}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 // seedUserWithHash creates a user with a specific bcrypt hash.
 func seedUserWithHash(t *testing.T, username, hash string) {
 	t.Helper()

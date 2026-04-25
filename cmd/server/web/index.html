@@ -414,6 +414,7 @@
                 <input x-model="regForm.username" placeholder="用户名（3-50字符）" class="inp" />
                 <input x-model="regForm.email" type="email" placeholder="邮箱" class="inp" />
                 <input x-model="regForm.password" type="password" placeholder="密码（至少6位）" class="inp" />
+                <input x-show="requireInviteCode" x-model="regForm.invite_code" placeholder="邀请码" class="inp" />
                 <button @click="register()" :disabled="loading" class="btn btn-amber w-full mt-1">
                     <span x-show="!loading">创建账号</span>
                     <span x-show="loading">注册中…</span>
@@ -886,7 +887,7 @@
 
             <div class="flex gap-0 mb-5 border-b" style="border-color:#252018">
                 <template
-                    x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'}]"
+                    x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'settings',label:'系统设置'}]"
                     :key="t.id">
                     <button @click="adminTab=t.id" class="tab" :class="adminTab===t.id?'active':''"
                         x-text="t.label"></button>
@@ -1179,6 +1180,59 @@
                         <input x-model.number="newShopItem.value" type="number" placeholder="效果值" class="inp" />
                     </div>
                     <button @click="adminCreateShopItem()" class="btn btn-amber w-full">创建商品</button>
+                </div>
+            </div>
+
+            <!-- System settings & invite codes -->
+            <div x-show="adminTab==='settings'" class="space-y-5">
+                <!-- Toggle: require invite code -->
+                <div class="card rounded p-5 max-w-md">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">站点设置</h3>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm" style="font-family:system-ui">注册需要邀请码</span>
+                        <button @click="toggleInviteCodeSetting()"
+                            class="w-12 h-6 rounded-full relative transition-colors"
+                            :class="siteSettings.require_invite_code ? 'bg-amber-700' : 'bg-gray-700'">
+                            <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform"
+                                :class="siteSettings.require_invite_code ? 'translate-x-6' : ''"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Invite codes -->
+                <div class="card rounded p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">邀请码管理</h3>
+                        <div class="flex items-center gap-2">
+                            <input x-model.number="inviteCodeCount" type="number" min="1" max="100"
+                                class="inp w-20 text-center text-xs" placeholder="数量" />
+                            <button @click="generateInviteCodes()" class="btn btn-amber text-xs">批量生成</button>
+                            <button @click="loadInviteCodes()" class="text-xs text-amber-800 hover:text-amber-500"
+                                style="font-family:system-ui">刷新</button>
+                        </div>
+                    </div>
+                    <div x-show="inviteCodes.length === 0" class="text-amber-900 text-xs" style="font-family:system-ui">
+                        暂无邀请码</div>
+                    <div class="space-y-2 max-h-96 overflow-y-auto">
+                        <template x-for="ic in inviteCodes" :key="ic.id">
+                            <div class="flex items-center justify-between text-xs border-b pb-2"
+                                style="border-color:#252018;font-family:system-ui">
+                                <div class="flex items-center gap-3">
+                                    <code class="text-amber-200 font-mono tracking-wider" x-text="ic.code"></code>
+                                    <span x-show="!ic.used_by" class="text-green-500">未使用</span>
+                                    <span x-show="ic.used_by" class="text-amber-800">
+                                        已使用 · <span x-text="ic.used_user?.username || ('用户#'+ic.used_by)"></span>
+                                    </span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-amber-900 text-xs"
+                                        x-text="new Date(ic.created_at).toLocaleDateString()"></span>
+                                    <button x-show="!ic.used_by" @click="deleteInviteCode(ic.id)"
+                                        class="text-red-700 hover:text-red-400">删除</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1613,7 +1667,8 @@
                 token: localStorage.getItem('coc_token') || '',
                 user: null,
                 loginForm: { username: '', password: '' },
-                regForm: { username: '', email: '', password: '' },
+                regForm: { username: '', email: '', password: '', invite_code: '' },
+                requireInviteCode: false,
 
                 // ── Data ──────────────────────────────────────────────────────────────
                 characters: [],
@@ -1669,6 +1724,9 @@
                 editingProvider: null,
                 pingLoading: null,
                 newShopItem: { name: '', description: '', item_type: 'card_slot', price: 0, value: 1, is_active: true },
+                siteSettings: { require_invite_code: false },
+                inviteCodes: [],
+                inviteCodeCount: 5,
 
                 // ── Toast ─────────────────────────────────────────────────────────────
                 toast: { show: false, message: '', type: 'success' },
@@ -1677,6 +1735,10 @@
                 // Init
                 // ══════════════════════════════════════════════════════════════════════
                 async init() {
+                    try {
+                        const ps = await this.api('GET', '/api/auth/settings/public');
+                        this.requireInviteCode = !!ps.require_invite_code;
+                    } catch {}
                     if (this.token) {
                         try {
                             await this.loadMe();
@@ -1772,6 +1834,8 @@
                         this.loadAdminProviders().catch(e => this.showToast(e.message, 'error'));
                         this.loadAdminAgents().catch(e => this.showToast(e.message, 'error'));
                         this.loadAdminScenarios().catch(e => this.showToast(e.message, 'error'));
+                        this.loadSiteSettings().catch(e => this.showToast(e.message, 'error'));
+                        this.loadInviteCodes().catch(e => this.showToast(e.message, 'error'));
                     }
                 },
 
@@ -2349,6 +2413,40 @@
                         await this.api('POST', '/api/admin/shop/items', this.newShopItem);
                         this.showToast('商品已创建');
                         this.newShopItem = { name: '', description: '', item_type: 'card_slot', price: 0, value: 1, is_active: true };
+                    } catch (e) { this.showToast(e.message, 'error'); }
+                },
+
+                // ── Site settings & invite codes ─────────────────────────────────────
+                async loadSiteSettings() {
+                    const settings = (await this.api('GET', '/api/admin/config/settings')) || [];
+                    const map = {};
+                    settings.forEach(s => map[s.key] = s.value);
+                    this.siteSettings.require_invite_code = map.require_invite_code === 'true';
+                },
+                async toggleInviteCodeSetting() {
+                    const newVal = this.siteSettings.require_invite_code ? 'false' : 'true';
+                    try {
+                        await this.api('PUT', '/api/admin/config/settings/require_invite_code', { value: newVal });
+                        this.siteSettings.require_invite_code = newVal === 'true';
+                        this.showToast('设置已更新');
+                    } catch (e) { this.showToast(e.message, 'error'); }
+                },
+                async loadInviteCodes() {
+                    this.inviteCodes = (await this.api('GET', '/api/admin/invite-codes')) || [];
+                },
+                async generateInviteCodes() {
+                    try {
+                        await this.api('POST', '/api/admin/invite-codes', { count: this.inviteCodeCount || 5 });
+                        this.showToast('邀请码已生成');
+                        await this.loadInviteCodes();
+                    } catch (e) { this.showToast(e.message, 'error'); }
+                },
+                async deleteInviteCode(id) {
+                    if (!confirm('确认删除该邀请码？')) return;
+                    try {
+                        await this.api('DELETE', '/api/admin/invite-codes/' + id);
+                        this.showToast('已删除');
+                        await this.loadInviteCodes();
                     } catch (e) { this.showToast(e.message, 'error'); }
                 },
 

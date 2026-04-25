@@ -356,3 +356,37 @@ type PlayerEvalContent struct {
 	BaseCoins     int    `json:"base_coins"`
 	BonusCoins    int    `json:"bonus_coins"`
 }
+
+// ── Site settings & invite codes ─────────────────────────────────────────────
+
+// SiteSetting is a simple key/value store for site-wide configuration.
+type SiteSetting struct {
+	Key   string `gorm:"primaryKey;size:100" json:"key"`
+	Value string `gorm:"not null" json:"value"`
+}
+
+// InviteCode is a single-use registration invite code.
+type InviteCode struct {
+	ID        uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	Code      string     `gorm:"uniqueIndex;not null;size:20" json:"code"`
+	CreatedBy uint       `gorm:"not null" json:"created_by"`
+	UsedBy    *uint      `json:"used_by"`
+	UsedAt    *time.Time `json:"used_at"`
+	CreatedAt time.Time  `json:"created_at"`
+	Creator   User       `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
+	UsedUser  *User      `gorm:"foreignKey:UsedBy" json:"used_user,omitempty"`
+}
+
+// GetSiteSetting returns the value for the given key, or defaultVal if not found.
+func GetSiteSetting(key, defaultVal string) string {
+	var s SiteSetting
+	if err := DB.Where("key = ?", key).First(&s).Error; err != nil {
+		return defaultVal
+	}
+	return s.Value
+}
+
+// SetSiteSetting upserts a site setting.
+func SetSiteSetting(key, val string) error {
+	return DB.Where("key = ?", key).Assign(SiteSetting{Value: val}).FirstOrCreate(&SiteSetting{Key: key}).Error
+}

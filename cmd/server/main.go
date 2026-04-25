@@ -80,6 +80,7 @@ func main() {
 		auth.POST("/register", handlers.Register)
 		auth.POST("/login", handlers.Login)
 		auth.GET("/me", middleware.AuthRequired(), handlers.Me)
+		auth.GET("/settings/public", handlers.PublicSettings)
 	}
 
 	// Characters (authenticated)
@@ -149,6 +150,12 @@ func main() {
 		// Agent config
 		admin.GET("/config/agents", handlers.AdminListAgents)
 		admin.PUT("/config/agents/:role", handlers.AdminUpdateAgent)
+		// Site settings & invite codes
+		admin.GET("/config/settings", handlers.AdminGetSiteSettings)
+		admin.PUT("/config/settings/:key", handlers.AdminUpdateSiteSetting)
+		admin.GET("/invite-codes", handlers.AdminListInviteCodes)
+		admin.POST("/invite-codes", handlers.AdminCreateInviteCodes)
+		admin.DELETE("/invite-codes/:id", handlers.AdminDeleteInviteCode)
 	}
 
 	// ─── Frontend (embedded) ─────────────────────────────────────────────────

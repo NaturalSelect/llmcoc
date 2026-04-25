@@ -48,6 +48,8 @@ func initTestDB(t *testing.T) {
 		&models.ShopItem{},
 		&models.Transaction{},
 		&models.CoinRecharge{},
+		&models.SiteSetting{},
+		&models.InviteCode{},
 	); err != nil {
 		t.Fatalf("auto-migrate: %v", err)
 	}

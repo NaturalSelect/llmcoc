@@ -45,6 +45,8 @@ func InitDB() error {
 		&AgentConfig{},
 		&GameEvaluation{},
 		&SessionGrowthMark{},
+		&SiteSetting{},
+		&InviteCode{},
 	); err != nil {
 		return err
 	}
@@ -57,6 +59,19 @@ func InitDB() error {
 func seedDefaultData() {
 	seedDefaultShopItems()
 	seedDefaultAgentConfigs()
+	seedDefaultSiteSettings()
+}
+
+func seedDefaultSiteSettings() {
+	defaults := map[string]string{
+		"require_invite_code": "false",
+	}
+	for k, v := range defaults {
+		var s SiteSetting
+		if DB.Where("key = ?", k).First(&s).Error != nil {
+			DB.Create(&SiteSetting{Key: k, Value: v})
+		}
+	}
 }
 
 func seedDefaultShopItems() {

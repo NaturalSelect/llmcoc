@@ -14,9 +14,10 @@ import (
 )
 
 type RegisterReq struct {
-	Username string `json:"username" binding:"required,min=3,max=50"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Username   string `json:"username" binding:"required,min=3,max=50"`
+	Email      string `json:"email" binding:"required,email"`
+	Password   string `json:"password" binding:"required,min=6"`
+	InviteCode string `json:"invite_code"`
 }
 
 type LoginReq struct {
@@ -31,6 +32,20 @@ func Register(c *gin.Context) {
 		return
 	}
 	log.Printf("[register] username=%q email=%q", req.Username, req.Email)
+
+	// Check invite code if required
+	var inviteCode models.InviteCode
+	requireInvite := models.GetSiteSetting("require_invite_code", "false") == "true"
+	if requireInvite {
+		if req.InviteCode == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "需要邀请码才能注册"})
+			return
+		}
+		if err := models.DB.Where("code = ? AND used_by IS NULL", req.InviteCode).First(&inviteCode).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "邀请码无效或已被使用"})
+			return
+		}
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -51,6 +66,12 @@ func Register(c *gin.Context) {
 		log.Printf("[register] conflict username=%q: %v", req.Username, err)
 		c.JSON(http.StatusConflict, gin.H{"error": "用户名或邮箱已存在"})
 		return
+	}
+
+	// Mark invite code as used
+	if requireInvite {
+		now := time.Now()
+		models.DB.Model(&inviteCode).Updates(map[string]any{"used_by": user.ID, "used_at": now})
 	}
 
 	token, err := generateToken(&user)
@@ -108,6 +129,13 @@ func Me(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, user)
+}
+
+// PublicSettings returns non-sensitive site settings for unauthenticated clients.
+func PublicSettings(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"require_invite_code": models.GetSiteSetting("require_invite_code", "false") == "true",
+	})
 }
 
 func generateToken(user *models.User) (string, error) {
