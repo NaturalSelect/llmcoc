@@ -330,6 +330,26 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 						Result: "剧本结局：" + call.EndSummary,
 					})
 				}
+				cleared := 0
+				players := gctx.Session.Players
+				if len(players) == 0 {
+					models.DB.Preload("CharacterCard").
+						Where("session_id = ?", gctx.Session.ID).
+						Find(&players)
+				}
+				for i := range players {
+					card := &players[i].CharacterCard
+					if ResetMadnessAfterSession(card) {
+						models.DB.Save(card)
+						cleared++
+					}
+				}
+				if cleared > 0 {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolEndGame,
+						Result: fmt.Sprintf("已清理%d名调查员的非永久疯狂状态", cleared),
+					})
+				}
 				models.DB.Model(&models.GameSession{}).
 					Where("id = ?", gctx.Session.ID).
 					Update("status", models.SessionStatusEnded)
@@ -640,6 +660,23 @@ func truncate(s string, maxLen int) string {
 		return string(runes[:maxLen]) + "…"
 	}
 	return s
+}
+
+// ResetMadnessAfterSession clears non-permanent madness state on session end.
+// Returns true when any field was changed.
+func ResetMadnessAfterSession(card *models.CharacterCard) bool {
+	if card == nil {
+		return false
+	}
+	if card.MadnessState == "permanent" {
+		return false
+	}
+	changed := card.MadnessState != "none" || card.MadnessSymptom != "" || card.MadnessDuration != 0 || card.DailySanLoss != 0
+	card.MadnessState = "none"
+	card.MadnessSymptom = ""
+	card.MadnessDuration = 0
+	card.DailySanLoss = 0
+	return changed
 }
 
 // applyStateChangesFallback is the simple regex-based stat applier used when

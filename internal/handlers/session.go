@@ -791,6 +791,10 @@ func EndSession(c *gin.Context) {
 				card.Skills.Data = skills
 			}
 
+			// End-of-session cleanup: clear temporary/indefinite madness,
+			// while preserving permanent madness.
+			agent.ResetMadnessAfterSession(card)
+
 			// Always save the character card to persist all in-game changes:
 			// - Inventory (物品), SeenMonsters (已见神话存在), Spells (已掌握法术),
 			// - SocialRelations (社会关系), HP/SAN/MP (stats changes from gameplay)
