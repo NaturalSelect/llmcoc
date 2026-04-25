@@ -1,3 +1,4 @@
+// NOTE: Parses and evaluates game rules and conditions.
 // Package rulebook provides loading and keyword-based searching of the COC rulebook.
 package rulebook
 

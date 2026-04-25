@@ -1,3 +1,4 @@
+// NOTE: Provides HTTP middleware for authentication and authorization.
 package middleware
 
 import (
@@ -9,6 +10,7 @@ import (
 	"github.com/llmcoc/server/internal/config"
 )
 
+// NOTE: Claims represents the JWT payload containing user identity and role.
 type Claims struct {
 	UserID   uint   `json:"user_id"`
 	Username string `json:"username"`
@@ -16,6 +18,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// NOTE: AuthRequired is a Gin middleware that verifies JWT tokens and sets user context.
 func AuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := extractToken(c)

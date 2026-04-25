@@ -1,3 +1,4 @@
+// NOTE: Defines AI agent roles and their interactions.
 package agent
 
 import "context"

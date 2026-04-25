@@ -1,3 +1,4 @@
+// NOTE: Implements the OpenAI-compatible LLM provider.
 package llm
 
 import (

@@ -1,3 +1,4 @@
+// NOTE: Provides integration with Large Language Models (LLMs).
 package llm
 
 import (
@@ -42,6 +43,7 @@ type AdjustSkillsReq struct {
 	BaseSkills map[string]int // current skill values (all skills)
 }
 
+// NOTE: Provider defines the interface for interacting with various LLM backends.
 // Provider defines the interface for LLM providers
 type Provider interface {
 	// ChatStream sends a conversation and streams tokens to a channel (for real-time output)

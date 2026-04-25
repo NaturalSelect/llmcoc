@@ -1,3 +1,4 @@
+// NOTE: Implements sanity and madness mechanics for Call of Cthulhu.
 package game
 
 import "math/rand"

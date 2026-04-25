@@ -1,3 +1,4 @@
+// NOTE: Implements core game mechanics such as dice rolling.
 package game
 
 import (
