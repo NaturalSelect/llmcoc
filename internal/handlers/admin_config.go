@@ -164,6 +164,7 @@ func AdminUpdateAgent(c *gin.Context) {
 	validRoles := map[string]bool{
 		"director": true, "writer": true, "lawyer": true, "npc": true, "evaluator": true, "growth": true,
 		"scripter": true, "architect": true, "lore_researcher": true, "encounter_designer": true, "qa_guard": true,
+		"parser": true,
 	}
 	if !validRoles[role] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent 角色"})

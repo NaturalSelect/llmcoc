@@ -303,6 +303,7 @@ const (
 	AgentRoleGrowth    AgentRole = "growth"
 	AgentRoleLawyer    AgentRole = "lawyer"
 	AgentRoleNPC       AgentRole = "npc"
+	AgentRoleParser    AgentRole = "parser"
 )
 
 // LLMProviderConfig stores a named LLM API endpoint configuration.

@@ -2430,6 +2430,7 @@
                         director: '🎬 Director', writer: '✍️ Writer', lawyer: '⚖️ Lawyer',
                         npc: '🎭 NPC', evaluator: '📊 Evaluator', growth: '🌱 Growth',
                         scripter: '📋 Scripter', architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
+                        parser: '🔧 Parser',
                     }[role] || role;
                 },
                 agentDesc(role) {
@@ -2443,6 +2444,7 @@
                         scripter: '编导（已废弃）— 旧流程协调者，新流程不再使用',
                         architect: '模组设计 — 生成大纲并转化为完整JSON模组',
                         qa_guard: '质量审查 — 审查模组可玩性、规则合规与线索设计',
+                        parser: 'JSON修复 — 低温度结构化输出，修复其他Agent的JSON格式错误',
                     }[role] || '';
                 },
                 agentDefaultHint(role) {
@@ -2456,6 +2458,7 @@
                         scripter: '（新流程不再使用此角色）',
                         architect: '留空使用内置 Architect 提示词（大纲+JSON生成）',
                         qa_guard: '留空使用内置 QA Guard 提示词（模组质量审查）',
+                        parser: '留空使用内置 Parser 提示词（JSON格式修复）',
                     }[role] || '留空使用默认';
                 },
 

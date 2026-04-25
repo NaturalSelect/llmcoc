@@ -207,12 +207,16 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	reqJSON, _ := json.Marshal(req)
 	log.Printf("[scripter] 开始3阶段生成 req=%s", reqJSON)
 
-	// Load agents: architect + qa_guard
+	// Load agents: architect + qa_guard + parser (JSON fixer)
 	architect, err := loadSingleAgent(models.AgentRoleArchitect)
 	if err != nil {
 		return ScenarioCreationOutput{}, err
 	}
 	qaAgent, err := loadSingleAgent(models.AgentRoleQAGuard)
+	if err != nil {
+		return ScenarioCreationOutput{}, err
+	}
+	parser, err := loadSingleAgent(models.AgentRoleParser)
 	if err != nil {
 		return ScenarioCreationOutput{}, err
 	}
@@ -226,8 +230,8 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 	log.Printf("[scripter] phase1 outline len=%d", len(outline))
 
-	// Phase 2: Draft (pure JSON generation)
-	draft, err := buildDraft(ctx, architect, outline, req.TargetLength)
+	// Phase 2: Draft (pure JSON generation; parser as JSON fixer)
+	draft, err := buildDraft(ctx, architect, parser, outline, req.TargetLength)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("phase2 draft 失败: %w", err)
 	}
@@ -259,7 +263,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		}
 
 		// Revise draft based on QA feedback
-		revised, revErr := reviseDraft(ctx, architect, draft, qaResult.MustFix, outline)
+		revised, revErr := reviseDraft(ctx, architect, parser, draft, qaResult.MustFix, outline)
 		if revErr != nil {
 			log.Printf("[scripter] revision 失败 iter=%d: %v", i, revErr)
 			break // return best effort
@@ -331,7 +335,7 @@ func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCre
 // Phase 2: Build Draft (pure JSON, no tool calls)
 // ---------------------------------------------------------------------------
 
-func buildDraft(ctx context.Context, architect agentHandle, outline string, targetLength string) (ScenarioDraft, error) {
+func buildDraft(ctx context.Context, architect, fixer agentHandle, outline string, targetLength string) (ScenarioDraft, error) {
 	userMsg := fmt.Sprintf(draftPrompt, outline, scenarioExample, lengthSpec(targetLength))
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: "你是 COC TRPG 模组 JSON 生成器。仅输出合法 JSON，不要有任何其他文字。"},
@@ -339,7 +343,7 @@ func buildDraft(ctx context.Context, architect agentHandle, outline string, targ
 	}
 
 	var draft ScenarioDraft
-	if err := chatAndParseDraft(ctx, architect, msgs, &draft); err != nil {
+	if err := chatAndParseDraft(ctx, architect, fixer, msgs, &draft); err != nil {
 		return ScenarioDraft{}, err
 	}
 	return draft, nil
@@ -410,7 +414,7 @@ func runQA(ctx context.Context, qaAgent agentHandle, req ScenarioCreationRequest
 // Revision: targeted fix based on QA feedback (pure JSON, no tool calls)
 // ---------------------------------------------------------------------------
 
-func reviseDraft(ctx context.Context, architect agentHandle, draft ScenarioDraft, mustFix []string, outline string) (ScenarioDraft, error) {
+func reviseDraft(ctx context.Context, architect, fixer agentHandle, draft ScenarioDraft, mustFix []string, outline string) (ScenarioDraft, error) {
 	draftJSON, _ := json.Marshal(draft)
 	issues := strings.Join(mustFix, "\n- ")
 
@@ -421,7 +425,7 @@ func reviseDraft(ctx context.Context, architect agentHandle, draft ScenarioDraft
 	}
 
 	var revised ScenarioDraft
-	if err := chatAndParseDraft(ctx, architect, msgs, &revised); err != nil {
+	if err := chatAndParseDraft(ctx, architect, fixer, msgs, &revised); err != nil {
 		return ScenarioDraft{}, err
 	}
 	return revised, nil
@@ -466,74 +470,97 @@ func executeSearchCalls(calls []pipelineToolCall, idx rulebook.Index, tag string
 // Helpers
 // ---------------------------------------------------------------------------
 
-// chatAndParseDraft calls the LLM, parses as ScenarioDraft, and uses a
-// JSON-fixer agent call if unmarshal fails (schema mismatch, wrong types, etc.).
-func chatAndParseDraft(ctx context.Context, h agentHandle, msgs []llm.ChatMessage, out *ScenarioDraft) error {
-	const maxRetries = 3
-	var lastRaw string
-	var lastErr error
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		raw, err := h.provider.Chat(ctx, msgs)
-		if err != nil {
-			return err
-		}
-		lastRaw = raw
-
-		if err := parseJSONObject(raw, out); err == nil {
-			return nil
-		} else {
-			lastErr = err
-			log.Printf("[draft] JSON parse attempt=%d err=%v", attempt, err)
-		}
-
-		// Ask the same LLM to fix the JSON, providing the error and the schema example.
-		fixPrompt := fmt.Sprintf(
-			"你上一次输出的 JSON 无法解析，错误信息：\n%s\n\n"+
-				"请修复以下 JSON，使其严格匹配示例格式。仅输出修正后的 JSON，不要有任何其他文字。\n\n"+
-				"【你的输出】\n%s\n\n"+
-				"【正确格式示例】\n%s",
-			lastErr.Error(), raw, scenarioExample)
-
-		msgs = append(msgs,
-			llm.ChatMessage{Role: "assistant", Content: raw},
-			llm.ChatMessage{Role: "user", Content: fixPrompt},
-		)
+// chatAndParseDraft calls the generator LLM once, then hands JSON repair to
+// the parser agent when unmarshal fails.
+func chatAndParseDraft(ctx context.Context, generator agentHandle, parser agentHandle, msgs []llm.ChatMessage, out *ScenarioDraft) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
-	return fmt.Errorf("draft JSON 解析失败（%d次重试）: %w\nraw=%s", maxRetries, lastErr, truncateForLog(lastRaw, 500))
+
+	// Step 1: generator produces the draft
+	raw, err := generator.provider.Chat(ctx, msgs)
+	if err != nil {
+		return err
+	}
+	parseErr := parseJSONObject(raw, out)
+	if parseErr == nil {
+		return nil
+	}
+	log.Printf("[draft] generator JSON parse failed: %v", parseErr)
+
+	// Step 2: parser agent repairs the JSON
+	fixed, repairErr := repairJSONWith(ctx, parser, raw, parseErr, scenarioExample)
+	if repairErr != nil {
+		return fmt.Errorf("draft JSON 修复失败: %w (原始错误: %v)", repairErr, parseErr)
+	}
+	if err := json.Unmarshal([]byte(fixed), out); err != nil {
+		return fmt.Errorf("修复后的 JSON 仍无法解析为 ScenarioDraft: %w", err)
+	}
+	return nil
 }
 
-// chatAndParseJSON calls the LLM and parses the response as JSON with retries.
-// Used for non-draft types (e.g. qaGuardResult) where schema is simpler.
-func chatAndParseJSON[T any](ctx context.Context, h agentHandle, msgs []llm.ChatMessage, out *T) error {
-	const maxRetries = 3
-	var lastErr error
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		raw, err := h.provider.Chat(ctx, msgs)
-		if err != nil {
-			return err
-		}
-		if err := parseJSONObject(raw, out); err == nil {
-			return nil
-		} else {
-			lastErr = err
-			log.Printf("[scripter] JSON parse attempt=%d err=%v", attempt, err)
-		}
-		if attempt < maxRetries {
-			msgs = append(msgs,
-				llm.ChatMessage{Role: "assistant", Content: raw},
-				llm.ChatMessage{Role: "user", Content: "你的上一条输出不是合法的JSON对象。错误：" + lastErr.Error() + "\n请只输出合法JSON，不要包含其他内容。"},
-			)
-		}
+// RepairJSON uses the parser agent to fix malformed JSON. Exported so other
+// subsystems (e.g. director) can reuse the same low-temperature fixer.
+// rawJSON is the broken output, parseErr is the error from json.Unmarshal,
+// schemaExample is a correct JSON example showing the expected structure.
+// Returns the repaired JSON string, or an error if repair fails.
+func RepairJSON(ctx context.Context, rawJSON string, parseErr error, schemaExample string) (string, error) {
+	parser, err := loadSingleAgent(models.AgentRoleParser)
+	if err != nil {
+		return "", fmt.Errorf("parser agent 未配置: %w", err)
 	}
-	return fmt.Errorf("JSON 解析失败（%d次重试）: %w", maxRetries, lastErr)
+	return repairJSONWith(ctx, parser, rawJSON, parseErr, schemaExample)
+}
+
+func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, parseErr error, schemaExample string) (string, error) {
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: "你是 JSON 修复工具。用户会给你一段有问题的 JSON 和错误信息，你需要修复它使其匹配目标格式。仅输出修正后的合法 JSON，不要有任何其他文字。"},
+	}
+
+	const maxAttempts = 2
+	currentErr := parseErr
+	raw := rawJSON
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		fixPrompt := fmt.Sprintf(
+			"以下 JSON 无法解析为目标结构。\n\n"+
+				"【解析错误】\n%s\n\n"+
+				"【原始 JSON】\n%s\n\n"+
+				"【目标格式示例】\n%s\n\n"+
+				"请修复并输出完整的合法 JSON。",
+			currentErr.Error(), raw, schemaExample)
+		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fixPrompt})
+
+		fixed, chatErr := parser.provider.Chat(ctx, msgs)
+		if chatErr != nil {
+			return "", fmt.Errorf("parser 调用失败: %w", chatErr)
+		}
+
+		// Verify the fix by stripping code fences
+		stripped := llm.StripCodeFence(strings.TrimSpace(fixed))
+		if json.Valid([]byte(stripped)) {
+			log.Printf("[parser] JSON 修复成功 attempt=%d", attempt)
+			return stripped, nil
+		}
+		// Extract {...} if surrounded by text
+		if s := strings.Index(stripped, "{"); s >= 0 {
+			if e := strings.LastIndex(stripped, "}"); e > s {
+				candidate := stripped[s : e+1]
+				if json.Valid([]byte(candidate)) {
+					log.Printf("[parser] JSON 修复成功（提取） attempt=%d", attempt)
+					return candidate, nil
+				}
+			}
+		}
+
+		currentErr = fmt.Errorf("修复后的 JSON 仍然无效")
+		raw = fixed
+		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: fixed})
+		log.Printf("[parser] attempt=%d 修复后仍无效", attempt)
+	}
+	return "", fmt.Errorf("parser 修复失败（%d次尝试）", maxAttempts)
 }
 
 func parseJSONObject[T any](raw string, out *T) error {
