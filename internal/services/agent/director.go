@@ -67,7 +67,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 	- add：获得物品；remove：丢失物品
 
 10. record_monster — 记录调查员已见神话存在
-	{"action":"record_monster","character_name":"角色名","operate":"add|remove","monster":"神话存在名"}
+	{"action":"record_monster","character_name":"角色名","operate":"add|remove","monster":"神话存在类型名称"}
 	- 首次目睹神话存在时，优先调用 add 做记录
 
 11. manage_spell — 管理调查员已掌握法术
@@ -123,7 +123,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 	- 若目标仅存在于剧本静态NPC，系统会自动生成会话NPC卡后再应用变更
 
 21. answer — 结束本轮，以KP身份对玩家说话
-    {"action":"answer","reply":"像朋友一样对玩家说的回复（必填，口语化，包含骰子结果，行动结果等）"}
+    {"action":"answer","reply":"像朋友一样对玩家说的回复（必填，口语化，包含骰子结果，行动结果，战斗结果等）"}
 
 【执行规则】
 - 如果要结束处理，使用 answer 或 end_game 之一作为收尾（end_game 用于结束整场游戏）
