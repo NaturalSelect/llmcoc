@@ -52,6 +52,7 @@ const (
 	ToolQueryCharacter    ToolCallType = "query_character"     // 查询调查员完整人物卡
 	ToolQueryNPCCard      ToolCallType = "query_npc_card"      // 查询NPC完整角色卡
 	ToolUpdateNPCCard     ToolCallType = "update_npc_card"     // 更新NPC角色卡状态
+	ToolUpdateLLMNote     ToolCallType = "update_llm_note"     // 更新Session级玩家LLMNote记录
 	ToolAnswer            ToolCallType = "answer"              // 结束本轮并给出回复
 )
 
@@ -77,6 +78,7 @@ type ToolCall struct {
 	TimeRounds    int                    `json:"time_rounds,omitempty"`    // advance_time: 推进的回合数
 	TimeReason    string                 `json:"time_reason,omitempty"`    // advance_time: 原因（如"睡觉"/"吃饭"）
 	Keyword       string                 `json:"keyword,omitempty"`        // query_clues: 已废弃（保留仅为兼容旧输出）
+	LLMNoteUpd    *ToolCallUpdateLLMNote `json:"llm_note_upd,omitempty"`   // update_llm_note: LLM Note update
 	Reply         string                 `json:"reply"`                    // answer: KP对玩家说的话（必填）
 	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结（可选）
 }
@@ -207,4 +209,10 @@ type CharacterGrowth struct {
 // GrowthResult is the full output from the Growth agent.
 type GrowthResult struct {
 	Characters []CharacterGrowth `json:"characters"`
+}
+
+// ToolCallUpdateLLMNote represents a request to update a session player's LLMNote.
+type ToolCallUpdateLLMNote struct {
+	CharacterName string `json:"character_name"`
+	Note          string `json:"note"`
 }

@@ -247,6 +247,7 @@ func TestGenerateCharacter_LLMSuccess(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	mockProv := mocks.NewMockProvider(ctrl)
+	mockProv.EXPECT().AdjustSkills(gomock.Any(), gomock.Any()).Return(map[string]int{"侦查": 50, "聆听": 50}, nil).AnyTimes()
 	mockProv.EXPECT().GenerateCharacter(gomock.Any(), gomock.Any()).Return(&llm.GeneratedCharacter{
 		Backstory:  "神秘的背景",
 		Appearance: "优雅的外貌",
@@ -255,6 +256,7 @@ func TestGenerateCharacter_LLMSuccess(t *testing.T) {
 
 	mockFac := mocks.NewMockCharacterLLMFactory(ctrl)
 	mockFac.EXPECT().LoadProvider(models.AgentRoleWriter).Return(mockProv, nil)
+	mockFac.EXPECT().LoadProvider(models.AgentRoleDirector).Return(mockProv, nil).AnyTimes()
 
 	h := NewCharacterHandlers(mockFac)
 	r := charRouterWithGenerate(uid, h)
@@ -287,6 +289,7 @@ func TestGenerateCharacter_LLMError_Fallback(t *testing.T) {
 
 	mockFac := mocks.NewMockCharacterLLMFactory(ctrl)
 	mockFac.EXPECT().LoadProvider(models.AgentRoleWriter).Return(mockProv, nil)
+	mockFac.EXPECT().LoadProvider(models.AgentRoleDirector).Return(mockProv, nil).AnyTimes()
 
 	h := NewCharacterHandlers(mockFac)
 	r := charRouterWithGenerate(uid, h)
@@ -309,6 +312,7 @@ func TestGenerateCharacter_NoProvider_Fallback(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockFac := mocks.NewMockCharacterLLMFactory(ctrl)
 	mockFac.EXPECT().LoadProvider(models.AgentRoleWriter).Return(nil, errors.New("no provider"))
+	mockFac.EXPECT().LoadProvider(models.AgentRoleDirector).Return(nil, nil).AnyTimes()
 
 	h := NewCharacterHandlers(mockFac)
 	r := charRouterWithGenerate(uid, h)

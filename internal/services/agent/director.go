@@ -120,12 +120,17 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 	- 可读取HP/SAN/MP与当前存活状态（若该NPC已进入会话临时卡）
 
 20. update_npc_card — 操作NPC角色卡数值（推荐用于战斗伤害/治疗/法术消耗）
-	{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"]}
-	- 可用字段：HP/SAN/MP
-	- 若目标仅存在于剧本静态NPC，系统会自动生成会话NPC卡后再应用变更
+    {"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"]}
+    - 可用字段：HP/SAN/MP
+    - 若目标仅存在于剧本静态NPC，系统会自动生成会话NPC卡后再应用变更
 
-21. answer — 结束本回合并给出KP对玩家的回复
-    {"action":"answer","reply":"像朋友一样对玩家说的回复（必填，口语化，包含骰子结果，行动结果，战斗结果等）"}
+21. update_llm_note — 更新调查员的当前状态备忘（Session级，随Session结束销毁）
+    {"action":"update_llm_note","llm_note_upd":{"character_name":"角色名","note":"状态描述"}}
+    - 用于记录调查员在当前团中的临时状态、特殊Buff/Debuff、是否持有关键任务物品、被特定神话生物标记等。
+    - 注意：调用会覆盖已有备忘，若需追加请先query_character获取旧备忘再合并更新。
+    - 示例：{"action":"update_llm_note","llm_note_upd":{"character_name":"Alice","note":"被食尸鬼诅咒（右臂溃烂）；持有绿宝石"}}
+
+22. answer — 结束本回合并给出KP对玩家的回复    {"action":"answer","reply":"像朋友一样对玩家说的回复（必填，口语化，包含骰子结果，行动结果，战斗结果等）"}
 
 【执行规则】
 - 如果要结束处理，使用 answer 或 end_game 之一作为收尾（end_game 用于结束整场游戏）

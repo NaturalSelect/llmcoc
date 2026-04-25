@@ -500,6 +500,37 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					Result: fmt.Sprintf("时间推进%d回合（%s），当前时间：%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session))),
 				})
 
+			case ToolUpdateLLMNote:
+				if call.LLMNoteUpd == nil {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolUpdateLLMNote,
+						Result: "错误：缺少 llm_note_upd 参数",
+					})
+					continue
+				}
+				who := call.LLMNoteUpd.CharacterName
+				debugf("tool", "session=%d update_llm_note char=%q note=%q", sid, who, call.LLMNoteUpd.Note)
+				var updated bool
+				for i := range gctx.Session.Players {
+					if gctx.Session.Players[i].CharacterCard.Name == who {
+						gctx.Session.Players[i].LLMNote = call.LLMNoteUpd.Note
+						models.DB.Save(&gctx.Session.Players[i])
+						updated = true
+						break
+					}
+				}
+				if updated {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolUpdateLLMNote,
+						Result: fmt.Sprintf("已记录 %s 的状态（Session级备忘）", who),
+					})
+				} else {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolUpdateLLMNote,
+						Result: fmt.Sprintf("找不到名为 %s 的调查员", who),
+					})
+				}
+
 			case ToolAnswer:
 				hasEnd = true
 				kpNarration = call.Reply
@@ -898,6 +929,9 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		}
 		st := card.Stats.Data
 		sb.WriteString(fmt.Sprintf("=== %s（%s，%d岁，%s）===\n", card.Name, card.Occupation, card.Age, card.Gender))
+		if p.LLMNote != "" {
+			sb.WriteString(fmt.Sprintf("⚠️ 当前状态（会话级备忘）：%s\n", p.LLMNote))
+		}
 		sb.WriteString(fmt.Sprintf("基础属性：STR%d CON%d SIZ%d DEX%d APP%d INT%d POW%d EDU%d\n",
 			st.STR, st.CON, st.SIZ, st.DEX, st.APP, st.INT, st.POW, st.EDU))
 		sb.WriteString(fmt.Sprintf("衍生属性：HP%d/%d MP%d/%d SAN%d/%d Luck%d MOV%d Build%d DB%s\n",

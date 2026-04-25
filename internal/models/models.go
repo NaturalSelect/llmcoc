@@ -237,6 +237,7 @@ type SessionPlayer struct {
 	UserID          uint          `gorm:"not null" json:"user_id"`
 	CharacterCardID uint          `gorm:"not null" json:"character_card_id"`
 	JoinedAt        time.Time     `json:"joined_at"`
+	LLMNote         string        `gorm:"type:text" json:"llm_note"`
 	User            User          `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	CharacterCard   CharacterCard `gorm:"foreignKey:CharacterCardID" json:"character_card,omitempty"`
 }
