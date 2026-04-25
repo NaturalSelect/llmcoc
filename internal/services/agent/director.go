@@ -325,6 +325,9 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 	{"action":"write","direction":"Alice成功学会了《死灵之书》中的一个咒语，记下了咒语的名称和效果"},
 	{"action":"answer","reply":"Alice成功学会了《死灵之书》中的一个咒语！你感觉自己掌握了一些禁忌的力量，但同时也感到一阵不安。"}
 ]
+
+【示例：查看规则书常量】
+[{"action":"read_rulebook_const","constant":"spells"}]
 `
 
 // buildKPMessages constructs the initial conversation message list for the KP agent.
