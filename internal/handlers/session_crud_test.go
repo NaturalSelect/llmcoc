@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // sessionCRUDRouter builds a router for session CRUD endpoints (no agent required).
@@ -288,6 +289,45 @@ func TestLeaveSession_Success(t *testing.T) {
 	models.DB.Model(&models.SessionPlayer{}).Where("session_id = ? AND user_id = ?", sessID, uid).Count(&count)
 	if count != 0 {
 		t.Errorf("want player removed, count=%d", count)
+	}
+
+	var sess models.GameSession
+	err := models.DB.First(&sess, sessID).Error
+	if err == nil {
+		t.Fatalf("want room deleted when empty")
+	}
+	if err != gorm.ErrRecordNotFound {
+		t.Fatalf("want record not found, got %v", err)
+	}
+}
+
+func TestLeaveSession_RoomKeptWhenOthersRemain(t *testing.T) {
+	initTestDB(t)
+	sessID, _ := setupLobbySession(t)
+	uid1 := seedUser(t, "u1", "user", 0, 3)
+	uid2 := seedUser(t, "u2", "user", 0, 3)
+	card1 := seedCard(t, uid1, "Card1")
+	card2 := seedCard(t, uid2, "Card2")
+	models.DB.Create(&models.SessionPlayer{SessionID: sessID, UserID: uid1, CharacterCardID: card1})
+	models.DB.Create(&models.SessionPlayer{SessionID: sessID, UserID: uid2, CharacterCardID: card2})
+
+	r := sessionCRUDRouter(uid1, "u1", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/leave", sessID), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var sess models.GameSession
+	if err := models.DB.First(&sess, sessID).Error; err != nil {
+		t.Fatalf("want room kept, got err=%v", err)
+	}
+
+	var remain int64
+	models.DB.Model(&models.SessionPlayer{}).Where("session_id = ?", sessID).Count(&remain)
+	if remain != 1 {
+		t.Fatalf("want 1 player remain, got %d", remain)
 	}
 }
 

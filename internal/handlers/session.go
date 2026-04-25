@@ -237,20 +237,47 @@ func LeaveSession(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询房间成员失败"})
 		return
 	}
+	username := c.GetString("username")
+	deletedSession := false
+	if err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&player).Error; err != nil {
+			return err
+		}
 
-	if err := models.DB.Delete(&player).Error; err != nil {
+		var remain int64
+		if err := tx.Model(&models.SessionPlayer{}).
+			Where("session_id = ?", sessionID).
+			Count(&remain).Error; err != nil {
+			return err
+		}
+
+		if remain == 0 {
+			if err := tx.Where("session_id = ?", sessionID).Delete(&models.Message{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Delete(&models.GameSession{}, uint(sessionID)).Error; err != nil {
+				return err
+			}
+			deletedSession = true
+			return nil
+		}
+
+		leaveMsg := models.Message{
+			SessionID: uint(sessionID),
+			Role:      models.MessageRoleSystem,
+			Content:   fmt.Sprintf("「%s」退出了房间。", username),
+			Username:  "系统",
+		}
+		return tx.Create(&leaveMsg).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "退出房间失败"})
 		return
 	}
 
-	username := c.GetString("username")
-	leaveMsg := models.Message{
-		SessionID: uint(sessionID),
-		Role:      models.MessageRoleSystem,
-		Content:   fmt.Sprintf("「%s」退出了房间。", username),
-		Username:  "系统",
+	if deletedSession {
+		c.JSON(http.StatusOK, gin.H{"message": "退出房间成功，房间无人已自动解散"})
+		return
 	}
-	models.DB.Create(&leaveMsg)
 
 	c.JSON(http.StatusOK, gin.H{"message": "退出房间成功"})
 }
