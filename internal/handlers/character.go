@@ -154,6 +154,8 @@ func CreateCharacter(c *gin.Context) {
 	c.JSON(http.StatusCreated, card)
 }
 
+// NOTE: GenerateCharacter uses LLMs to flesh out a character's backstory, traits,
+// and adjusts base skills/stats according to their chosen occupation and background.
 func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 	userID := c.GetUint("user_id")
 

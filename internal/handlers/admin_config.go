@@ -1,3 +1,4 @@
+// NOTE: Package handlers implements the HTTP request handlers for the application's REST API.
 package handlers
 
 import (
@@ -36,6 +37,8 @@ func toProviderView(p models.LLMProviderConfig) providerView {
 
 // ── LLM Provider handlers ─────────────────────────────────────────────────────
 
+// NOTE: AdminListProviders handles GET /admin/config/providers.
+// Returns a list of configured LLM providers, hiding sensitive API keys.
 func AdminListProviders(c *gin.Context) {
 	var providers []models.LLMProviderConfig
 	models.DB.Order("id ASC").Find(&providers)

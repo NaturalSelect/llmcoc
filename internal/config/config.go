@@ -1,3 +1,4 @@
+// NOTE: Package config loads and parses the application's configuration from YAML and environment variables.
 package config
 
 import (

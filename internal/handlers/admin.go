@@ -15,6 +15,8 @@ func AdminListUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
+// NOTE: AdminRechargeCoins handles POST /admin/recharge.
+// Allows administrators to add coins to a user's account manually.
 func AdminRechargeCoins(c *gin.Context) {
 	adminID := c.GetUint("user_id")
 

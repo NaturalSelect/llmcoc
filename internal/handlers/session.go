@@ -368,6 +368,10 @@ func removeSessionLock(sessionID uint) {
 
 // ChatStream handles SSE streaming for game chat using the multi-agent pipeline.
 //
+// NOTE: This is the core gameplay loop endpoint. It handles receiving player actions,
+// coordinating multi-player turns, invoking the agent pipeline, and streaming
+// the Keeper's narrative responses back to the clients via Server-Sent Events.
+//
 // Multi-player turn flow:
 //  1. Each player submits their action; it is saved to DB and recorded in SessionTurnAction.
 //  2. If not all players have acted yet, the handler sends a "waiting" SSE event and returns.
