@@ -348,16 +348,9 @@ func GetMessages(c *gin.Context) {
 		return
 	}
 
-	limitStr := c.DefaultQuery("limit", "100")
-	limit, _ := strconv.Atoi(limitStr)
-	if limit > 200 {
-		limit = 200
-	}
-
 	var messages []models.Message
 	models.DB.Where("session_id = ? AND role != ?", sessionID, models.MessageRoleSystem).
 		Order("created_at ASC").
-		Limit(limit).
 		Find(&messages)
 	c.JSON(http.StatusOK, messages)
 }
@@ -469,16 +462,23 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		// race where two simultaneous last-submitters both try to run the agent.
 		var isLastToSubmit bool
 		_ = models.DB.Transaction(func(tx *gorm.DB) error {
-			// Idempotent: only insert if this player has not yet acted this round.
+			// Same-round resubmission should overwrite the player's pending action,
+			// so only the latest action is persisted with the KP reply.
 			var existing models.SessionTurnAction
-			if tx.Where("session_id = ? AND round = ? AND user_id = ?",
-				session.ID, session.TurnRound, userID).First(&existing).Error != nil {
+			err := tx.Where("session_id = ? AND round = ? AND user_id = ?",
+				session.ID, session.TurnRound, userID).First(&existing).Error
+			if err != nil {
 				tx.Create(&models.SessionTurnAction{
 					SessionID:     session.ID,
 					Round:         session.TurnRound,
 					UserID:        userID,
 					Username:      playerDisplayName,
 					ActionSummary: content,
+				})
+			} else {
+				tx.Model(&existing).Updates(map[string]any{
+					"username":       playerDisplayName,
+					"action_summary": content,
 				})
 			}
 			var submitted int64
@@ -516,16 +516,22 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			})
 		}
 	} else {
-		// Single-player or creator/spectator: record action (idempotent) and run immediately.
+		// Single-player or creator/spectator: keep only the latest action for this round.
 		var existing models.SessionTurnAction
-		if models.DB.Where("session_id = ? AND round = ? AND user_id = ?",
-			session.ID, session.TurnRound, userID).First(&existing).Error != nil {
+		err := models.DB.Where("session_id = ? AND round = ? AND user_id = ?",
+			session.ID, session.TurnRound, userID).First(&existing).Error
+		if err != nil {
 			models.DB.Create(&models.SessionTurnAction{
 				SessionID:     session.ID,
 				Round:         session.TurnRound,
 				UserID:        userID,
 				Username:      playerDisplayName,
 				ActionSummary: content,
+			})
+		} else {
+			models.DB.Model(&existing).Updates(map[string]any{
+				"username":       playerDisplayName,
+				"action_summary": content,
 			})
 		}
 	}
