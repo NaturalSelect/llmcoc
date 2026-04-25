@@ -1091,7 +1091,7 @@
                 <div class="card rounded p-5 lg:col-span-2">
                     <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">AI 生成模组</h3>
                     <p class="text-xs text-amber-800 mb-3" style="font-family:system-ui">
-                        只需设置玩家人数和难度，AI 会自动生成可直接入库的模组。
+                        3阶段流水线：大纲生成 → JSON构建 → QA审查（自动迭代修订）。需要 Architect 和 QA Guard 角色已配置并启用。
                     </p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                         <div>
@@ -2428,7 +2428,8 @@
                 agentLabel(role) {
                     return {
                         director: '🎬 Director', writer: '✍️ Writer', lawyer: '⚖️ Lawyer',
-                        npc: '🎭 NPC', evaluator: '📊 Evaluator', growth: '🌱 Growth'
+                        npc: '🎭 NPC', evaluator: '📊 Evaluator', growth: '🌱 Growth',
+                        scripter: '📋 Scripter', architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
                     }[role] || role;
                 },
                 agentDesc(role) {
@@ -2439,6 +2440,9 @@
                         npc: 'NPC扮演 — 给出场景NPC的行动与对话',
                         evaluator: '成长评估 — 分析本场表现建议奖励',
                         growth: '成长应用 — 将评估结果写入角色卡',
+                        scripter: '编导（已废弃）— 旧流程协调者，新流程不再使用',
+                        architect: '模组设计 — 生成大纲并转化为完整JSON模组',
+                        qa_guard: '质量审查 — 审查模组可玩性、规则合规与线索设计',
                     }[role] || '';
                 },
                 agentDefaultHint(role) {
@@ -2449,6 +2453,9 @@
                         npc: '留空使用内置 NPC 提示词',
                         evaluator: '留空使用内置 Evaluator 提示词',
                         growth: '留空使用内置 Growth 提示词',
+                        scripter: '（新流程不再使用此角色）',
+                        architect: '留空使用内置 Architect 提示词（大纲+JSON生成）',
+                        qa_guard: '留空使用内置 QA Guard 提示词（模组质量审查）',
                     }[role] || '留空使用默认';
                 },
 

@@ -21114,11 +21114,7 @@ Sussex Manuscript 萨塞克斯手稿
 
 Testament of Carnamagos 卡纳玛戈斯圣约书
 
-Thaumaturgical Prodigies in the
-
-New… 新英格兰乐土
-
-上的奇术异事
+Thaumaturgical Prodigies in the New… 新英格兰乐土上的奇术异事
 
 True Magick 真实的魔法
 
@@ -21134,9 +21130,7 @@ Uralte Schrecken 远古的恐怖
 
 Visions from Yaddith 来自亚狄斯的幻象
 
-VondenenVerdammtenOder来自被诅咒
-
-者，或（关于古老而恐怖的教团的论文）
+VondenenVerdammtenOder来自被诅咒者，或（关于古老而恐怖的教团的论文）
 
 VonderenVerdammten 来自被诅咒者
 
@@ -21160,9 +21154,7 @@ the Gloden Bough 金枝
 
 I Ching 易经
 
-Isis Unveiled 揭开面纱的伊
-
-西斯
+Isis Unveiled 揭开面纱的伊西斯
 
 The Key of Solomon 所罗门之钥
 
@@ -21172,9 +21164,7 @@ Oracle of Nostradamus 诺查丹玛斯的预言
 
 The Witch-Cult in Western Europe
 
-西欧的异教巫
-
-术崇拜
+西欧的异教巫术崇拜
 
 the Zohar 光明篇
 
@@ -21204,9 +21194,7 @@ Call Hastur 哈斯塔请神术
 
 Call Ithaque 伊塔库亚请神术
 
-Call Nyogth 尼约格萨请神
-
-术
+Call Nyogth 尼约格萨请神术
 
 Call Shub-Niggurath 莎布-尼古拉丝请神术
 
@@ -21248,17 +21236,13 @@ Contact Rat-Thing 人面鼠联络术
 
 Contact Sand-Dwelle 潜沙怪联络术
 
-Contact Servitor of the Outer God 外神仆役联络
-
-术
+Contact Servitor of the Outer God 外神仆役联络术
 
 Contact Spirits of the Dead 死灵联络术
 
 Contact Star-Spawn of Cthulhu
 
-克苏鲁的星之
-
-眷族联络术
+克苏鲁的星之眷族联络术
 
 Contact Yithian 伊斯人联络术
 
@@ -21266,9 +21250,7 @@ Contact Deity Spells 通神术
 
 Contact Deity: Chaugnar Faugn
 
-昌格纳·方庚通
-
-神术
+昌格纳·方庚通神术
 
 Contact Deity: Cthulhu 克苏鲁通神术
 
@@ -21321,9 +21303,7 @@ Enthrall Victim 迷身术
 
 Evil Eye 邪眼术
 
-Fist of Yog-Sothoth 犹格-索
-
-# 托斯之拳
+Fist of Yog-Sothoth 犹格-索托斯之拳
 
 Flesh Ward 血肉防护术
 

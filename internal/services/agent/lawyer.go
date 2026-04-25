@@ -11,12 +11,16 @@ import (
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
-const lawyerSystemPrompt = `你是COC TRPG（克苏鲁的呼唤7版）规则专家，通过调用工具来回答规则问题。
+var lawyerSystemPrompt = `你是COC TRPG（克苏鲁的呼唤7版）规则专家，通过调用工具来回答规则问题。
 每次输出必须是一个JSON数组，包含按顺序执行的工具调用列表。
+
+【规则书目录】
+` + rulebookDir + `
 
 【可用工具】
 1. search — 检索规则书原文
    {"action":"search","keyword":"精确关键词（15字以内）"}
+   参考上方目录选择合适的关键词进行搜索。
    示例：{"action":"search","keyword":"理智损失参考值"}
    示例：{"action":"search","keyword":"推进骰限制条件"}
 

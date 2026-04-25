@@ -9,6 +9,42 @@ import (
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
+const rulebookDir = `
+第一章 介绍
+
+第二章 爱手艺与克苏鲁神话
+
+第三章 创建调查员 23
+
+第四章 技能 40
+
+第五章 游戏系统 71
+
+第六章 战斗 85
+
+第七章 追逐 109
+
+第八章 理智 129
+
+第九章 魔法 143
+
+第十章 主持游戏 153
+
+第十一章 可怖传说书籍 189
+
+第十二章 法术 205
+
+第十三章 外星科技及其造物 230
+
+第十四章 怪物、野兽和异界诸神 238
+
+第十五章 模组 312
+
+第十六章 附录 355
+
+译名表 392
+`
+
 // kpSystemPrompt is the static system prompt for the master KP agent.
 // It defines the tool interface and COC rules guidelines.
 // The KP receives full scenario context in the user prompt on each call.

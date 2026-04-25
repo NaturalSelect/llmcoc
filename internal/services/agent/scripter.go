@@ -12,104 +12,145 @@ import (
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
-const scripterSystemPrompt = `你是 COC TRPG 模组创作的编导者（scripter）。
-你的职责是协调整个创作流程，最终生成通过质检的完整模组 JSON。
+// ---------------------------------------------------------------------------
+// Prompts for the 3-phase pipeline
+// ---------------------------------------------------------------------------
 
-【工作流程】
-1. 调用 generate_architect：让 architect 生成模组框架和大纲（包括结构、场景顺序、NPC关系、线索逻辑）
-2. 填充内容：基于 architect 的框架，自行填充具体的场景描述、对白、规则细节等，形成完整可玩的模组
-3. 调用 check_qa：让 qa_guard 审查完整模组
-4. 迭代修正：根据 QA 反馈，针对性地改进模组内容直到通过审查
+var outlineSystemPrompt = `你是 COC TRPG（克苏鲁的呼唤第7版）模组设计师。
+根据用户需求生成一个详细的模组大纲。
 
-【可用工具】
-1) generate_architect
-{"action":"generate_architect","input":"基于创作需求生成模组框架和大纲"}
-
-2) check_qa
-{"action":"check_qa","input":"对完整模组进行可玩性和规则一致性审查"}
-
-【输出规则】
-- 仅输出 JSON 数组，不要输出额外文字
-- 每轮可调用多个工具
-- 任务完成条件：hasDraft=true ∧ hasQA=true ∧ qaResult.pass=true
-
-【创作指导】
-- architect 生成框架时会自行咨询 lawyer 保证规则合规
-- 你在填充内容时要确保：场景描述生动、NPC 有个性、线索清晰、难度与人数匹配
-- 重视 must_fix 反馈，每轮迭代要针对性地解决指出的问题，不要重复提交相同内容`
-
-const architectSystemPrompt = `你是 COC 模组的框架设计者（architect）。
-你的职责是设计模组的整体框架和大纲结构，为编导者提供创意方向。
-
-【设计输出结构】
-你的 answer 应包含：
-- 模组基本信息（名称、难度、人数、主题）
-- 核心设定和背景（历史、地理、势力关系）
-- 三幕结构（引入→冲突→高潮）
-- 主要 NPC 及其动机
-- 关键线索与证据链条
-- 胜负条件及可能结局
-
-不需要生成完整的 JSON，只需提供清晰的框架大纲和指导方向。
+【规则书目录】
+` + rulebookDir + `
 
 【可用工具】
-1) call_lawyer
-{"action":"call_lawyer","question":"规则相关的设计问题"}
+1) search_rule — 搜索 COC 规则书原文
+{"action":"search_rule","keyword":"关键词（15字以内）"}
+参考上方目录选择合适的关键词进行搜索。
 
-2) answer
-{"action":"answer","result":{
-  "name":"模组名",
-  "theme":"主题",
-  "difficulty":"normal",
-  "min_players":1,
-  "max_players":4,
-  "framework":{
-    "setting":"背景设定与历史背景",
-    "three_acts":["第一幕：引入事件与冲突起源","第二幕：调查与冲突升级","第三幕：高潮与解决"],
-    "key_npcs":["NPC1：身份与动机","NPC2：身份与动机"],
-    "clue_chain":["线索1→线索2→线索3..."],
-    "win_condition":"胜利条件",
-    "failure_condition":"失败条件"
+2) answer — 输出最终大纲
+{"action":"answer","outline":"大纲纯文本"}
+
+【执行规则】
+- 每次输出必须是 JSON 数组
+- 先通过 search_rule 查阅相关规则（怪物、法术、技能等），再输出 answer
+- 一轮可包含多个 search_rule，或单个 answer，不混用
+- 仅输出 JSON 数组，不加任何说明文字
+
+【大纲要求】
+- 包含：背景设定、三幕结构、主要NPC（含动机和属性范围）、线索链条、胜负条件
+- 所有神话元素必须来自 COC 规则书（深潜者、米·戈、食尸鬼等），不要杜撰
+- NPC 属性值必须符合 COC 7版标准（人类 15-90，怪物参考规则书）
+- 线索设计要有冗余（至少2条路径通向关键信息）`
+
+// draftPrompt has 3 format args: outline, scenarioExample, lengthSpec
+const draftPrompt = `将以下模组大纲转换为完整的 JSON 模组。严格遵循示例格式。
+
+【大纲】
+%s
+
+【JSON 格式示例】
+%s
+
+【输出要求】
+- 仅输出 JSON，不要有其他文字
+- system_prompt: 简洁的 KP 指导（2-3句）
+- setting: 详细的时代/地点背景（100-200字）
+- intro: 开场叙事（200-400字），以第二人称描写
+%s
+- npcs: 每个NPC有 name/description/attitude/stats
+- win_condition: 明确的胜利条件`
+
+var qaSystemPrompt = `你是 COC TRPG 模组质量审查员（qa_guard）。
+审查模组的可玩性、一致性和规则合规性。
+
+【规则书目录】
+` + rulebookDir + `
+
+【可用工具】
+1) search_rule — 搜索 COC 规则书原文以核实规则合规性
+{"action":"search_rule","keyword":"关键词（15字以内）"}
+参考上方目录选择合适的关键词进行搜索。
+
+2) answer — 输出审查结果
+{"action":"answer","result":{"score":N,"pass":bool,"strengths":[...],"issues":[...],"must_fix":[...]}}
+
+【执行规则】
+- 每次输出必须是 JSON 数组
+- 先通过 search_rule 核实模组中涉及的怪物、法术、技能等是否合规，再输出 answer
+- 一轮可包含多个 search_rule，或单个 answer，不混用
+- 仅输出 JSON 数组，不加任何说明文字
+
+【审查维度（总分100）】
+1. 结构完整性（20分）
+2. 线索设计（25分）
+3. 规则合规（20分）
+4. 可玩性（20分）
+5. 文本质量（15分）
+
+score >= 80 且 must_fix 为空则 pass=true`
+
+const revisionPrompt = `根据 QA 反馈修订以下模组 JSON。仅输出修订后的完整 JSON，不要有其他文字。
+
+【原始大纲】
+%s
+
+【当前草案】
+%s
+
+【必须修复的问题】
+%s
+
+【JSON 格式示例】
+%s`
+
+// scenarioExample is the anonymised lonely_island.json used as a structural reference.
+const scenarioExample = `{
+  "name": "示例模组名",
+  "description": "模组简介",
+  "author": "agent-team",
+  "tags": "标签1,标签2",
+  "min_players": 1,
+  "max_players": 4,
+  "difficulty": "normal",
+  "content": {
+    "system_prompt": "你是本场COC跑团的主持人（KP），你将主持名为《模组名》的剧本。保持克苏鲁宇宙恐怖的风格，营造神秘、压抑的氛围。",
+    "setting": "1923年，某地。详细的时代/地点背景描述（100-200字）……",
+    "intro": "开场叙事（200-400字），以第二人称描写……",
+    "scenes": [
+      {"id": "arrival", "name": "场景名称", "description": "场景描述", "triggers": ["start"]},
+      {"id": "explore", "name": "场景名称", "description": "场景描述", "triggers": ["arrived"]},
+      {"id": "climax", "name": "场景名称", "description": "场景描述", "triggers": ["clue_found"]}
+    ],
+    "npcs": [
+      {
+        "name": "NPC名",
+        "description": "年龄、外貌、身份背景描述",
+        "attitude": "对调查员的态度和行为模式",
+        "stats": {"STR": 60, "CON": 65, "SIZ": 55, "DEX": 50, "APP": 40, "INT": 70, "POW": 75, "EDU": 80, "HP": 12, "MP": 15}
+      }
+    ],
+    "clues": [
+      "线索名（发现地点）：线索详细描述",
+      "线索名（发现地点）：线索详细描述"
+    ],
+    "win_condition": "明确的胜利条件描述"
   }
-}}
+}`
 
-【执行规则】
-- 每次输出必须是 JSON 数组
-- 可先多轮 call_lawyer，再输出 answer
-- 涉及规则内容时必须先咨询 lawyer
-- 禁止杜撰不存在的神话元素`
+// ---------------------------------------------------------------------------
+// Tool-call types for outline & QA phases
+// ---------------------------------------------------------------------------
 
-const qaGuardSystemPrompt = `你是质量把控员（qa_guard），负责确保模组的可玩性、一致性和规则合规。
+type pipelineToolCall struct {
+	Action  string         `json:"action"`
+	Keyword string         `json:"keyword,omitempty"`  // search_rule
+	Outline string         `json:"outline,omitempty"`  // answer (phase 1)
+	Result  *qaGuardResult `json:"result,omitempty"`   // answer (phase 3)
+}
 
-【审查维度】
-1. 结构完整性（20分）：框架清晰、场景逻辑顺畅、转折自然
-2. 线索设计（25分）：线索完整闭环、证据链清晰、难度适中
-3. 规则合规（20分）：涉及的怪物/法术/神话元素都来自 COC 规则，无原创杜撰
-4. 可玩性（20分）：NPC 有个性、选项多样、结局开放，适合目标玩家数
-5. 文本质量（15分）：描述生动、对白自然、易于理解
-
-【评分标准】
-- score >= 85 且 must_fix 为空才通过（pass=true）
-- must_fix 中列出的是"必须修正"的阻断项，不是建议
-- issues 中可列出"可改进"的地方
-
-【可用工具】
-1) call_lawyer
-{"action":"call_lawyer","question":"规则相关的审查问题"}
-
-2) answer
-{"action":"answer","result":{
-	"score":85,
-	"pass":true,
-	"strengths":["优点1","优点2"],
-	"issues":["可改进项1","可改进项2"],
-	"must_fix":[]
-}}
-
-【执行规则】
-- 每次输出必须是 JSON 数组
-- 可先多轮 call_lawyer，再输出 answer
-- 仅输出 JSON 数组，不要输出额外说明`
+// ---------------------------------------------------------------------------
+// Types (kept from original)
+// ---------------------------------------------------------------------------
 
 type ScenarioCreationRequest struct {
 	Name         string `json:"name"`
@@ -126,11 +167,6 @@ type ScenarioCreationOutput struct {
 	Draft      ScenarioDraft `json:"draft"`
 	QA         qaGuardResult `json:"qa"`
 	Iterations int           `json:"iterations"`
-}
-
-type scripterToolCall struct {
-	Action string `json:"action"`
-	Input  string `json:"input,omitempty"`
 }
 
 type qaGuardResult struct {
@@ -152,36 +188,12 @@ type ScenarioDraft struct {
 	Content     models.ScenarioContent `json:"content"`
 }
 
-type qaToolCall struct {
-	Action   string         `json:"action"`
-	Question string         `json:"question,omitempty"`
-	Result   *qaGuardResult `json:"result,omitempty"`
-}
-
-type architectToolCall struct {
-	Action   string         `json:"action"`
-	Question string         `json:"question,omitempty"`
-	Result   *ScenarioDraft `json:"result,omitempty"`
-}
+// ---------------------------------------------------------------------------
+// Entry point: 3-phase pipeline
+// ---------------------------------------------------------------------------
 
 func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (ScenarioCreationOutput, error) {
-	scripter, err := loadSingleAgent(models.AgentRoleScripter)
-	if err != nil {
-		return ScenarioCreationOutput{}, err
-	}
-	architect, err := loadSingleAgent(models.AgentRoleArchitect)
-	if err != nil {
-		return ScenarioCreationOutput{}, err
-	}
-	lawyer, err := loadSingleAgent(models.AgentRoleLawyer)
-	if err != nil {
-		return ScenarioCreationOutput{}, err
-	}
-	qa, err := loadSingleAgent(models.AgentRoleQAGuard)
-	if err != nil {
-		return ScenarioCreationOutput{}, err
-	}
-
+	// Defaults
 	if req.MinPlayers <= 0 {
 		req.MinPlayers = 1
 	}
@@ -193,371 +205,295 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 
 	reqJSON, _ := json.Marshal(req)
-	log.Printf("[scripter] 开始生成模组 req=%s", reqJSON)
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: scripter.systemPrompt(scripterSystemPrompt)},
-		{Role: "user", Content: "创作需求如下（JSON）：\n" + string(reqJSON)},
+	log.Printf("[scripter] 开始3阶段生成 req=%s", reqJSON)
+
+	// Load agents: architect + qa_guard
+	architect, err := loadSingleAgent(models.AgentRoleArchitect)
+	if err != nil {
+		return ScenarioCreationOutput{}, err
 	}
-	// Keep per-agent memory only in-process for this run; no DB persistence.
-	architectHistory := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(architectSystemPrompt)}}
-	qaHistory := []llm.ChatMessage{{Role: "system", Content: qa.systemPrompt(qaGuardSystemPrompt)}}
+	qaAgent, err := loadSingleAgent(models.AgentRoleQAGuard)
+	if err != nil {
+		return ScenarioCreationOutput{}, err
+	}
 
-	var (
-		draft     ScenarioDraft
-		qaResult  qaGuardResult
-		hasDraft  bool
-		hasQA     bool
-		iterCount int
-	)
+	idx := rulebook.GlobalIndex
 
-	for iter := 0; iter < 8; iter++ {
+	// Phase 1: Outline (with search_rule tool calls)
+	outline, err := generateOutline(ctx, architect, req, idx)
+	if err != nil {
+		return ScenarioCreationOutput{}, fmt.Errorf("phase1 outline 失败: %w", err)
+	}
+	log.Printf("[scripter] phase1 outline len=%d", len(outline))
+
+	// Phase 2: Draft (pure JSON generation)
+	draft, err := buildDraft(ctx, architect, outline, req.TargetLength)
+	if err != nil {
+		return ScenarioCreationOutput{}, fmt.Errorf("phase2 draft 失败: %w", err)
+	}
+	applyGuardrails(&draft, req)
+	log.Printf("[scripter] phase2 draft name=%q scenes=%d npcs=%d clues=%d",
+		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+
+	// Phase 3: QA + Iteration (up to 2 revisions, with search_rule tool calls)
+	var qaResult qaGuardResult
+	for i := 0; i < 3; i++ {
 		if ctx.Err() != nil {
 			return ScenarioCreationOutput{}, ctx.Err()
 		}
-		iterCount = iter + 1
-		log.Printf("[scripter] 主循环 iter=%d", iterCount)
-
-		raw, err := scripter.provider.Chat(ctx, msgs)
+		qaResult, err = runQA(ctx, qaAgent, req, draft, idx)
 		if err != nil {
-			log.Printf("[scripter] iter=%d scripter LLM 调用失败: %v", iterCount, err)
-			return ScenarioCreationOutput{}, fmt.Errorf("scripter 调用失败: %w", err)
+			log.Printf("[scripter] phase3 QA失败 iter=%d: %v", i, err)
+			return ScenarioCreationOutput{}, fmt.Errorf("phase3 QA 失败: %w", err)
 		}
-		calls := parseScripterCalls(raw)
-		if len(calls) == 0 {
-			log.Printf("[scripter] iter=%d 未解析到 tool call，raw=%s", iterCount, raw)
-			return ScenarioCreationOutput{}, fmt.Errorf("scripter 未返回可执行 tool call")
+		log.Printf("[scripter] phase3 QA iter=%d score=%d pass=%v must_fix=%d",
+			i, qaResult.Score, qaResult.Pass, len(qaResult.MustFix))
+
+		if qaResult.Pass {
+			return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: i + 1}, nil
 		}
-		log.Printf("[scripter] iter=%d tool_calls=%d: %s", iterCount, len(calls), formatScripterCallNames(calls))
+
+		// Last iteration — don't revise, just return best effort
+		if i == 2 {
+			break
+		}
+
+		// Revise draft based on QA feedback
+		revised, revErr := reviseDraft(ctx, architect, draft, qaResult.MustFix, outline)
+		if revErr != nil {
+			log.Printf("[scripter] revision 失败 iter=%d: %v", i, revErr)
+			break // return best effort
+		}
+		applyGuardrails(&revised, req)
+		draft = revised
+		log.Printf("[scripter] revision iter=%d done", i)
+	}
+
+	// Return best effort even if QA didn't pass
+	return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: 3}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1: Generate Outline (with tool-call loop for search_rule)
+// ---------------------------------------------------------------------------
+
+func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, idx rulebook.Index) (string, error) {
+	reqJSON, _ := json.Marshal(req)
+
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: architect.systemPrompt(outlineSystemPrompt)},
+		{Role: "user", Content: "创作需求如下（JSON）：\n" + string(reqJSON)},
+	}
+
+	const maxIter = 6
+	for iter := 0; iter < maxIter; iter++ {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		log.Printf("[outline] iter=%d", iter+1)
+
+		raw, err := architect.provider.Chat(ctx, msgs)
+		if err != nil {
+			return "", err
+		}
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
-		var toolFeedback []string
+		calls := parsePipelineCalls(raw)
+		if len(calls) == 0 {
+			// If no tool calls parsed, treat raw text as outline directly
+			log.Printf("[outline] iter=%d 无tool call，使用原始文本作为大纲", iter+1)
+			return strings.TrimSpace(raw), nil
+		}
 
+		// Check for answer
 		for _, c := range calls {
-			action := strings.TrimSpace(c.Action)
-			switch action {
-			case "generate_architect":
-				log.Printf("[scripter] iter=%d → generate_architect input=%q", iterCount, c.Input)
-				prompt := "根据以下创作指令生成完整模组JSON：\n" + c.Input
-				if err := runArchitectWithTools(ctx, architect, lawyer, &architectHistory, prompt, &draft); err != nil {
-					log.Printf("[scripter] iter=%d architect 失败: %v", iterCount, err)
-					toolFeedback = append(toolFeedback, "generate_architect: 调用失败 - "+err.Error())
-					continue
-				}
-				// Apply deterministic guardrails from request.
-				draft.Name = firstNonEmpty(req.Name, draft.Name)
-				draft.MinPlayers = req.MinPlayers
-				draft.MaxPlayers = req.MaxPlayers
-				draft.Difficulty = firstNonEmpty(req.Difficulty, draft.Difficulty)
-				if draft.Author == "" {
-					draft.Author = "agent-team"
-				}
-				hasDraft = true
-				draftJSON, _ := json.Marshal(draft)
-				log.Printf("[scripter] iter=%d generate_architect 完成 name=%q scenes=%d", iterCount, draft.Name, len(draft.Content.Scenes))
-				toolFeedback = append(toolFeedback, "generate_architect: "+string(draftJSON))
-
-			case "ask_lawyer":
-				log.Printf("[scripter] iter=%d → ask_lawyer input=%q", iterCount, c.Input)
-				// Lawyer is queried with search_rule tool in architect's loop
-				// Here we just log that the request was made
-				toolFeedback = append(toolFeedback, "ask_lawyer: 规则咨询将在 architect 的工具调用中处理（search_rule/call_lawyer）")
-
-			case "check_qa":
-				if !hasDraft {
-					log.Printf("[scripter] iter=%d check_qa 跳过: 尚无模组", iterCount)
-					toolFeedback = append(toolFeedback, "check_qa: 当前没有可审查的模组")
-					continue
-				}
-				log.Printf("[scripter] iter=%d → check_qa input=%q", iterCount, c.Input)
-				prompt := "请对以下模组进行可玩性和一致性审查：\n" + c.Input
-				if err := runQAGuardWithTools(ctx, qa, lawyer, &qaHistory, prompt, &qaResult); err != nil {
-					log.Printf("[scripter] iter=%d qa_guard 失败: %v", iterCount, err)
-					toolFeedback = append(toolFeedback, "check_qa: 调用失败 - "+err.Error())
-					continue
-				}
-				hasQA = true
-				qaJSON, _ := json.Marshal(qaResult)
-				log.Printf("[scripter] iter=%d check_qa 完成 score=%d pass=%v must_fix=%d", iterCount, qaResult.Score, qaResult.Pass, len(qaResult.MustFix))
-				toolFeedback = append(toolFeedback, "check_qa: "+string(qaJSON))
-
-				// If QA passes, we can finalize immediately
-				if qaResult.Pass {
-					log.Printf("[scripter] QA通过，生成完成 iter=%d name=%q qa_score=%d", iterCount, draft.Name, qaResult.Score)
-					return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: iterCount}, nil
-				}
-
-			default:
-				log.Printf("[scripter] iter=%d 未知 tool: %s", iterCount, action)
-				toolFeedback = append(toolFeedback, "unknown_tool: "+action)
+			if c.Action == "answer" && c.Outline != "" {
+				log.Printf("[outline] iter=%d answer 完成", iter+1)
+				return strings.TrimSpace(c.Outline), nil
 			}
 		}
 
-		if len(toolFeedback) == 0 {
-			toolFeedback = append(toolFeedback, "本轮无有效工具输出")
+		// Execute search_rule calls
+		feedback := executeSearchCalls(calls, idx, "outline")
+		if feedback == "" {
+			return "", fmt.Errorf("outline 未返回有效 tool call")
 		}
-		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "工具执行结果：\n" + strings.Join(toolFeedback, "\n")})
+		msgs = append(msgs, llm.ChatMessage{
+			Role:    "user",
+			Content: "规则书搜索结果如下，请继续：\n\n" + feedback,
+		})
 	}
 
-	if hasDraft && hasQA && qaResult.Pass {
-		log.Printf("[scripter] 达到最大迭代但QA已通过，返回结果 name=%q qa_score=%d", draft.Name, qaResult.Score)
-		return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: iterCount}, nil
-	}
-
-	if hasDraft {
-		if hasQA && !qaResult.Pass {
-			log.Printf("[scripter] 达到最大迭代，qa 未通过 score=%d must_fix=%v", qaResult.Score, qaResult.MustFix)
-			return ScenarioCreationOutput{}, fmt.Errorf("scripter 达到最大迭代，qa 未通过：%s", strings.Join(qaResult.MustFix, "；"))
-		}
-		log.Printf("[scripter] 达到最大迭代，返回已有草案 name=%q（QA未执行）", draft.Name)
-		return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: iterCount}, nil
-	}
-	log.Printf("[scripter] 达到最大迭代仍未产出模组")
-	return ScenarioCreationOutput{}, fmt.Errorf("scripter 达到最大迭代仍未产出模组")
+	return "", fmt.Errorf("outline 达到最大迭代仍未返回 answer")
 }
 
-func runJSONAgentWithHistory[T any](ctx context.Context, h agentHandle, history *[]llm.ChatMessage, input string, out *T) error {
-	if history == nil || len(*history) == 0 {
-		return fmt.Errorf("agent history 未初始化")
+// ---------------------------------------------------------------------------
+// Phase 2: Build Draft (pure JSON, no tool calls)
+// ---------------------------------------------------------------------------
+
+func buildDraft(ctx context.Context, architect agentHandle, outline string, targetLength string) (ScenarioDraft, error) {
+	userMsg := fmt.Sprintf(draftPrompt, outline, scenarioExample, lengthSpec(targetLength))
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: "你是 COC TRPG 模组 JSON 生成器。仅输出合法 JSON，不要有任何其他文字。"},
+		{Role: "user", Content: userMsg},
 	}
 
-	var roleTag string
-	if h.config != nil {
-		roleTag = string(h.config.Role)
+	var draft ScenarioDraft
+	if err := chatAndParseJSON(ctx, architect, msgs, &draft); err != nil {
+		return ScenarioDraft{}, err
 	}
-	*history = append(*history, llm.ChatMessage{Role: "user", Content: input})
-	log.Printf("[agent:%s] Chat history_len=%d", roleTag, len(*history))
+	return draft, nil
+}
 
-	const maxRetries = 5
+// ---------------------------------------------------------------------------
+// Phase 3: QA (with tool-call loop for search_rule)
+// ---------------------------------------------------------------------------
+
+func runQA(ctx context.Context, qaAgent agentHandle, req ScenarioCreationRequest, draft ScenarioDraft, idx rulebook.Index) (qaGuardResult, error) {
+	reqJSON, _ := json.Marshal(req)
+	draftJSON, _ := json.Marshal(draft)
+
+	userMsg := fmt.Sprintf("审查以下 COC 模组的质量。\n\n【原始需求】\n%s\n\n【模组草案】\n%s",
+		string(reqJSON), string(draftJSON))
+
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: qaAgent.systemPrompt(qaSystemPrompt)},
+		{Role: "user", Content: userMsg},
+	}
+
+	const maxIter = 6
+	for iter := 0; iter < maxIter; iter++ {
+		if ctx.Err() != nil {
+			return qaGuardResult{}, ctx.Err()
+		}
+		log.Printf("[qa] iter=%d", iter+1)
+
+		raw, err := qaAgent.provider.Chat(ctx, msgs)
+		if err != nil {
+			return qaGuardResult{}, err
+		}
+		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
+
+		calls := parsePipelineCalls(raw)
+		if len(calls) == 0 {
+			// Try direct JSON parse as fallback
+			var result qaGuardResult
+			if err := parseJSONObject(raw, &result); err == nil {
+				return result, nil
+			}
+			return qaGuardResult{}, fmt.Errorf("qa_guard 未返回可解析的 tool call 或 JSON")
+		}
+
+		// Check for answer
+		for _, c := range calls {
+			if c.Action == "answer" && c.Result != nil {
+				log.Printf("[qa] iter=%d answer score=%d pass=%v", iter+1, c.Result.Score, c.Result.Pass)
+				return *c.Result, nil
+			}
+		}
+
+		// Execute search_rule calls
+		feedback := executeSearchCalls(calls, idx, "qa")
+		if feedback == "" {
+			return qaGuardResult{}, fmt.Errorf("qa_guard 未返回有效 tool call")
+		}
+		msgs = append(msgs, llm.ChatMessage{
+			Role:    "user",
+			Content: "规则书搜索结果如下，请据此完成审查：\n\n" + feedback,
+		})
+	}
+
+	return qaGuardResult{}, fmt.Errorf("qa_guard 达到最大迭代仍未返回 answer")
+}
+
+// ---------------------------------------------------------------------------
+// Revision: targeted fix based on QA feedback (pure JSON, no tool calls)
+// ---------------------------------------------------------------------------
+
+func reviseDraft(ctx context.Context, architect agentHandle, draft ScenarioDraft, mustFix []string, outline string) (ScenarioDraft, error) {
+	draftJSON, _ := json.Marshal(draft)
+	issues := strings.Join(mustFix, "\n- ")
+
+	userMsg := fmt.Sprintf(revisionPrompt, outline, string(draftJSON), issues, scenarioExample)
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: "你是 COC TRPG 模组修订器。根据QA反馈修订模组。仅输出修订后的完整 JSON，不要有其他文字。"},
+		{Role: "user", Content: userMsg},
+	}
+
+	var revised ScenarioDraft
+	if err := chatAndParseJSON(ctx, architect, msgs, &revised); err != nil {
+		return ScenarioDraft{}, err
+	}
+	return revised, nil
+}
+
+// ---------------------------------------------------------------------------
+// Shared: parse tool calls & execute search_rule
+// ---------------------------------------------------------------------------
+
+func parsePipelineCalls(raw string) []pipelineToolCall {
+	stripped := llm.StripCodeFence(raw)
+	var calls []pipelineToolCall
+	if err := json.Unmarshal([]byte(stripped), &calls); err == nil && len(calls) > 0 {
+		return calls
+	}
+	if s := strings.Index(stripped, "["); s >= 0 {
+		if e := strings.LastIndex(stripped, "]"); e > s {
+			_ = json.Unmarshal([]byte(stripped[s:e+1]), &calls)
+		}
+	}
+	return calls
+}
+
+func executeSearchCalls(calls []pipelineToolCall, idx rulebook.Index, tag string) string {
+	var sb strings.Builder
+	for _, c := range calls {
+		if c.Action != "search_rule" || c.Keyword == "" {
+			continue
+		}
+		log.Printf("[%s] search_rule keyword=%q", tag, c.Keyword)
+		sections := rulebook.Search(idx, c.Keyword, 5)
+		text := rulebook.Format(sections, 2000)
+		if text == "" {
+			text = "（规则书中未找到相关内容）"
+		}
+		sb.WriteString(fmt.Sprintf("【%s】\n%s\n\n", c.Keyword, text))
+	}
+	return sb.String()
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// chatAndParseJSON calls the LLM and parses the response as JSON, with retries.
+func chatAndParseJSON[T any](ctx context.Context, h agentHandle, msgs []llm.ChatMessage, out *T) error {
+	const maxRetries = 3
 	var lastErr error
-	var raw string
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		resp, err := h.provider.Chat(ctx, *history)
+		raw, err := h.provider.Chat(ctx, msgs)
 		if err != nil {
-			log.Printf("[agent:%s] Chat 失败: %v", roleTag, err)
 			return err
 		}
-		raw = resp
-		log.Printf("[agent:%s] attempt=%d resp_len=%d", roleTag, attempt, len([]rune(raw)))
-
 		if err := parseJSONObject(raw, out); err == nil {
-			// Success: commit assistant message and return.
-			*history = append(*history, llm.ChatMessage{Role: "assistant", Content: raw})
-			log.Printf("[agent:%s] 完成 attempt=%d", roleTag, attempt)
 			return nil
 		} else {
 			lastErr = err
-			log.Printf("[agent:%s] JSON 解析失败 attempt=%d err=%v raw=%s", roleTag, attempt, err, raw)
-			if attempt < maxRetries {
-				// Ask model to fix output without polluting history.
-				retryMsgs := make([]llm.ChatMessage, len(*history))
-				copy(retryMsgs, *history)
-				retryMsgs = append(retryMsgs,
-					llm.ChatMessage{Role: "assistant", Content: raw},
-					llm.ChatMessage{Role: "user", Content: "你的上一条输出不是合法的JSON对象，请只输出合法JSON，不要包含其他内容。"},
-				)
-				if resp2, err2 := h.provider.Chat(ctx, retryMsgs); err2 == nil {
-					if err3 := parseJSONObject(resp2, out); err3 == nil {
-						*history = append(*history, llm.ChatMessage{Role: "assistant", Content: resp2})
-						log.Printf("[agent:%s] JSON 修复成功 attempt=%d", roleTag, attempt)
-						return nil
-					}
-					raw = resp2
-				}
-			}
+			log.Printf("[scripter] JSON parse attempt=%d err=%v", attempt, err)
+		}
+		// Retry with correction prompt
+		if attempt < maxRetries {
+			msgs = append(msgs,
+				llm.ChatMessage{Role: "assistant", Content: raw},
+				llm.ChatMessage{Role: "user", Content: "你的上一条输出不是合法的JSON对象，请只输出合法JSON，不要包含其他内容。"},
+			)
 		}
 	}
-
-	return fmt.Errorf("[agent:%s] JSON 解析失败（%d次重试）: %w", roleTag, maxRetries, lastErr)
-}
-
-func runArchitectWithTools(ctx context.Context, architect agentHandle, lawyer agentHandle, history *[]llm.ChatMessage, input string, out *ScenarioDraft) error {
-	if history == nil || len(*history) == 0 {
-		return fmt.Errorf("architect history 未初始化")
-	}
-
-	*history = append(*history, llm.ChatMessage{Role: "user", Content: input})
-	log.Printf("[architect] 开始 history_len=%d", len(*history))
-
-	const maxIter = 6
-	for iter := 0; iter < maxIter; iter++ {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		log.Printf("[architect] iter=%d", iter+1)
-
-		raw, err := architect.provider.Chat(ctx, *history)
-		if err != nil {
-			log.Printf("[architect] iter=%d Chat 失败: %v", iter+1, err)
-			return err
-		}
-		*history = append(*history, llm.ChatMessage{Role: "assistant", Content: raw})
-
-		calls := parseArchitectCalls(raw)
-		if len(calls) == 0 {
-			if err := parseJSONObject(raw, out); err == nil {
-				log.Printf("[architect] iter=%d 直接解析 JSON 成功", iter+1)
-				return nil
-			}
-			return fmt.Errorf("architect 未返回可执行 tool call")
-		}
-
-		var feedback []string
-		for _, c := range calls {
-			action := strings.TrimSpace(c.Action)
-			switch action {
-			case "call_lawyer":
-				question := strings.TrimSpace(c.Question)
-				if question == "" {
-					feedback = append(feedback, "call_lawyer: question 为空")
-					continue
-				}
-				results := runLawyer(ctx, lawyer, question, rulebook.GlobalIndex)
-				text := formatLawyerResults(results)
-				if text == "" {
-					text = "（lawyer 未给出可用规则结论）"
-				}
-				feedback = append(feedback, "call_lawyer["+question+"]: "+text)
-
-			case "answer":
-				if c.Result == nil {
-					return fmt.Errorf("architect answer 缺少 result")
-				}
-				*out = *c.Result
-				return nil
-
-			default:
-				feedback = append(feedback, "unknown_tool: "+action)
-			}
-		}
-
-		if len(feedback) == 0 {
-			feedback = append(feedback, "本轮无有效工具输出")
-		}
-		*history = append(*history, llm.ChatMessage{Role: "user", Content: "工具执行结果：\n" + strings.Join(feedback, "\n")})
-	}
-
-	return fmt.Errorf("architect 达到最大迭代仍未返回 answer")
-}
-
-func runQAGuardWithTools(ctx context.Context, qa agentHandle, lawyer agentHandle, history *[]llm.ChatMessage, input string, out *qaGuardResult) error {
-	if history == nil || len(*history) == 0 {
-		return fmt.Errorf("qa history 未初始化")
-	}
-
-	*history = append(*history, llm.ChatMessage{Role: "user", Content: input})
-	log.Printf("[qa_guard] 开始 history_len=%d", len(*history))
-
-	const maxIter = 5
-	for iter := 0; iter < maxIter; iter++ {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		log.Printf("[qa_guard] iter=%d", iter+1)
-
-		raw, err := qa.provider.Chat(ctx, *history)
-		if err != nil {
-			log.Printf("[qa_guard] iter=%d Chat 失败: %v", iter+1, err)
-			return err
-		}
-		*history = append(*history, llm.ChatMessage{Role: "assistant", Content: raw})
-
-		calls := parseQACalls(raw)
-		if len(calls) == 0 {
-			if err := parseJSONObject(raw, out); err == nil {
-				log.Printf("[qa_guard] iter=%d 直接解析 JSON 成功", iter+1)
-				return nil
-			}
-			log.Printf("[qa_guard] iter=%d 未解析到 tool call，raw=%s", iter+1, raw)
-			return fmt.Errorf("qa_guard 未返回可执行 tool call")
-		}
-
-		var feedback []string
-		for _, c := range calls {
-			action := strings.TrimSpace(c.Action)
-			switch action {
-			case "call_lawyer":
-				question := strings.TrimSpace(c.Question)
-				if question == "" {
-					feedback = append(feedback, "call_lawyer: question 为空")
-					continue
-				}
-				log.Printf("[qa_guard] call_lawyer question=%q", question)
-				results := runLawyer(ctx, lawyer, question, rulebook.GlobalIndex)
-				text := formatLawyerResults(results)
-				if text == "" {
-					text = "（lawyer 未给出可用规则结论）"
-				}
-				log.Printf("[qa_guard] call_lawyer 结果 len=%d", len(text))
-				feedback = append(feedback, "call_lawyer["+question+"]: "+text)
-
-			case "answer":
-				if c.Result == nil {
-					return fmt.Errorf("qa_guard answer 缺少 result")
-				}
-				log.Printf("[qa_guard] answer 完成 score=%d pass=%v must_fix=%d", c.Result.Score, c.Result.Pass, len(c.Result.MustFix))
-				*out = *c.Result
-				return nil
-
-			default:
-				log.Printf("[qa_guard] 未知 tool: %s", action)
-				feedback = append(feedback, "unknown_tool: "+action)
-			}
-		}
-
-		if len(feedback) == 0 {
-			feedback = append(feedback, "本轮无有效工具输出")
-		}
-		*history = append(*history, llm.ChatMessage{Role: "user", Content: "工具执行结果：\n" + strings.Join(feedback, "\n")})
-	}
-
-	log.Printf("[qa_guard] 达到最大迭代未返回 answer")
-	return fmt.Errorf("qa_guard 达到最大迭代仍未返回 answer")
-}
-
-func parseScripterCalls(raw string) []scripterToolCall {
-	stripped := llm.StripCodeFence(raw)
-	var calls []scripterToolCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err == nil && len(calls) > 0 {
-		return calls
-	}
-	if s := strings.Index(stripped, "["); s >= 0 {
-		if e := strings.LastIndex(stripped, "]"); e > s {
-			_ = json.Unmarshal([]byte(stripped[s:e+1]), &calls)
-		}
-	}
-	return calls
-}
-
-func parseQACalls(raw string) []qaToolCall {
-	stripped := llm.StripCodeFence(raw)
-	var calls []qaToolCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err == nil && len(calls) > 0 {
-		return calls
-	}
-	if s := strings.Index(stripped, "["); s >= 0 {
-		if e := strings.LastIndex(stripped, "]"); e > s {
-			_ = json.Unmarshal([]byte(stripped[s:e+1]), &calls)
-		}
-	}
-	return calls
-}
-
-func parseArchitectCalls(raw string) []architectToolCall {
-	stripped := llm.StripCodeFence(raw)
-	var calls []architectToolCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err == nil && len(calls) > 0 {
-		return calls
-	}
-	if s := strings.Index(stripped, "["); s >= 0 {
-		if e := strings.LastIndex(stripped, "]"); e > s {
-			_ = json.Unmarshal([]byte(stripped[s:e+1]), &calls)
-		}
-	}
-	return calls
+	return fmt.Errorf("JSON 解析失败（%d次重试）: %w", maxRetries, lastErr)
 }
 
 func parseJSONObject[T any](raw string, out *T) error {
@@ -576,22 +512,26 @@ func parseJSONObject[T any](raw string, out *T) error {
 	return fmt.Errorf("JSON 解析失败: %w", err)
 }
 
-func buildQAInput(req ScenarioCreationRequest, draft ScenarioDraft, extra string) string {
-	reqJSON, _ := json.Marshal(req)
-	draftJSON, _ := json.Marshal(draft)
-	base := "请对以下模组草案做质量审查。\n需求：" + string(reqJSON) + "\n草案：" + string(draftJSON)
-	if strings.TrimSpace(extra) != "" {
-		base += "\n额外审查维度：" + extra
+// lengthSpec returns scene/clue count requirements based on target_length.
+func lengthSpec(targetLength string) string {
+	switch targetLength {
+	case "long":
+		return "- scenes: 6-10个场景，每个有 id/name/description/triggers\n- clues: 10-15条线索，格式为\"线索名（地点）：描述\""
+	case "medium":
+		return "- scenes: 4-6个场景，每个有 id/name/description/triggers\n- clues: 7-10条线索，格式为\"线索名（地点）：描述\""
+	default: // short
+		return "- scenes: 3-4个场景，每个有 id/name/description/triggers\n- clues: 5-7条线索，格式为\"线索名（地点）：描述\""
 	}
-	return base
 }
 
-func formatScripterCallNames(calls []scripterToolCall) string {
-	names := make([]string, len(calls))
-	for i, c := range calls {
-		names[i] = c.Action
+func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest) {
+	draft.Name = firstNonEmpty(req.Name, draft.Name)
+	draft.MinPlayers = req.MinPlayers
+	draft.MaxPlayers = req.MaxPlayers
+	draft.Difficulty = firstNonEmpty(req.Difficulty, draft.Difficulty)
+	if draft.Author == "" {
+		draft.Author = "agent-team"
 	}
-	return strings.Join(names, ", ")
 }
 
 func firstNonEmpty(values ...string) string {
@@ -601,15 +541,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func requirePersistedSystemPrompt(h agentHandle, role models.AgentRole) (string, error) {
-	if h.config == nil {
-		return "", fmt.Errorf("agent %q 缺少配置", role)
-	}
-	prompt := strings.TrimSpace(h.config.SystemPrompt)
-	if prompt == "" {
-		return "", fmt.Errorf("agent %q 未配置 system_prompt，请在管理面板保存后重试", role)
-	}
-	return prompt, nil
 }
