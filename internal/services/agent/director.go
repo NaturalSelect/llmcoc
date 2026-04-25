@@ -162,6 +162,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 	* 优先顺序：还击/压制 > 拉开距离或寻找掩体 > 呼叫援助/撤退
 	* 除非该NPC已被明确判定失能（昏迷、束缚、死亡），否则不能“无反应站桩”
 	* 若需要决定命中或伤害，先 roll_dice（可含对抗检定），再用 update_npc_card/update_characters 落地数值，最后 write/answer
+	* 若调查员被命中或伤害，先 update_characters 落地数值，再 write/answer 描述结果
 - 仅在结果有实质意义时要求检定，日常事务无需掷骰
 - 理智检定（sanity）：目睹恐怖事物或神话存在时触发，同一遭遇只检定一次
 - 疯狂触发：调查员一次SAN损失≥5点时触发临时性疯狂；"一天"内累计SAN损失≥当前最大SAN的1/5时触发不定性疯狂（均由系统自动判定，调用trigger_madness执行）
