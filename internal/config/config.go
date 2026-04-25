@@ -67,7 +67,7 @@ func setDefaults() {
 		Global.JWT.ExpireHours = 168
 	}
 	if Global.Shop.InitialCoins == 0 {
-		Global.Shop.InitialCoins = 0
+		Global.Shop.InitialCoins = 600
 	}
 	if Global.Shop.InitialCardSlots == 0 {
 		Global.Shop.InitialCardSlots = 3

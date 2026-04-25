@@ -39,6 +39,9 @@ func main() {
 	// Seed scenarios from scenarios/ directory
 	handlers.SeedScenarios("scenarios")
 
+	// Seed default shop items
+	handlers.SeedShopItems()
+
 	// Load COC rulebook for the Lawyer agent.
 	rbPath := os.Getenv("RULEBOOK_PATH")
 	if rbPath == "" {
@@ -88,6 +91,9 @@ func main() {
 		chars.GET("/:id", handlers.GetCharacter)
 		chars.PUT("/:id", handlers.UpdateCharacter)
 		chars.DELETE("/:id", handlers.DeleteCharacter)
+		chars.GET("/:id/inventory", handlers.GetCharacterInventory)
+		chars.POST("/:id/inventory", handlers.AddCharacterInventoryItem)
+		chars.DELETE("/:id/inventory/:item", handlers.RemoveCharacterInventoryItem)
 	}
 
 	// Scenarios

@@ -4,7 +4,9 @@ package rulebook
 import (
 	"bufio"
 	"os"
+	"sort"
 	"strings"
+	"unicode"
 )
 
 // Section represents a single top-level chapter/section of the rulebook.
@@ -20,7 +22,7 @@ type Index []Section
 var GlobalIndex Index
 
 // Load reads a Markdown file at the given path and splits it into sections
-// wherever a top-level heading (lines starting with "# ") appears.
+// at any Markdown heading level (lines starting with one or more '#').
 func Load(path string) (Index, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -38,12 +40,13 @@ func Load(path string) (Index, error) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "# ") {
+		trimmed := strings.TrimSpace(line)
+		if title, ok := parseHeading(trimmed); ok {
 			// Save previous section.
 			if current != nil {
 				sections = append(sections, *current)
 			}
-			current = &Section{Title: strings.TrimPrefix(line, "# ")}
+			current = &Section{Title: title}
 		} else if current != nil {
 			current.Content += line + "\n"
 		}
@@ -59,14 +62,36 @@ func Load(path string) (Index, error) {
 	return sections, nil
 }
 
-// Search returns up to maxResults sections whose title or content contains
-// any of the space-separated keywords in query (case-insensitive).
-// Results are ordered by the number of keyword matches (most matches first).
+func parseHeading(line string) (string, bool) {
+	if line == "" || line[0] != '#' {
+		return "", false
+	}
+	i := 0
+	for i < len(line) && line[i] == '#' {
+		i++
+	}
+	if i >= len(line) || line[i] != ' ' {
+		return "", false
+	}
+	title := strings.TrimSpace(line[i:])
+	if title == "" {
+		return "", false
+	}
+	return title, true
+}
+
+// Search returns up to maxResults sections ranked by multi-strategy matching:
+// exact phrase, keyword hits, title boosts, and Chinese fragment fuzzy overlap.
 func Search(idx Index, query string, maxResults int) []Section {
 	if maxResults <= 0 {
 		maxResults = 3
 	}
-	keywords := splitKeywords(query)
+	qRaw := strings.TrimSpace(strings.ToLower(query))
+	if qRaw == "" {
+		return nil
+	}
+	qNorm := normalizeForMatch(qRaw)
+	keywords := splitKeywords(qRaw)
 	if len(keywords) == 0 {
 		return nil
 	}
@@ -78,26 +103,21 @@ func Search(idx Index, query string, maxResults int) []Section {
 	var hits []scored
 
 	for _, sec := range idx {
-		lower := strings.ToLower(sec.Title + " " + sec.Content)
-		score := 0
-		for _, kw := range keywords {
-			if strings.Contains(lower, kw) {
-				score++
-			}
-		}
+		titleLower := strings.ToLower(sec.Title)
+		contentLower := strings.ToLower(sec.Content)
+		wholeLower := titleLower + "\n" + contentLower
+		titleNorm := normalizeForMatch(titleLower)
+		wholeNorm := normalizeForMatch(wholeLower)
+
+		score := scoreSection(titleLower, contentLower, wholeLower, titleNorm, wholeNorm, qRaw, qNorm, keywords)
 		if score > 0 {
 			hits = append(hits, scored{sec, score})
 		}
 	}
 
-	// Sort by score descending (simple selection-style since lists are small).
-	for i := 0; i < len(hits); i++ {
-		for j := i + 1; j < len(hits); j++ {
-			if hits[j].score > hits[i].score {
-				hits[i], hits[j] = hits[j], hits[i]
-			}
-		}
-	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		return hits[i].score > hits[j].score
+	})
 
 	if len(hits) > maxResults {
 		hits = hits[:maxResults]
@@ -108,6 +128,83 @@ func Search(idx Index, query string, maxResults int) []Section {
 		result = append(result, h.sec)
 	}
 	return result
+}
+
+func scoreSection(titleLower, contentLower, wholeLower, titleNorm, wholeNorm, qRaw, qNorm string, keywords []string) int {
+	score := 0
+
+	// Exact phrase has highest weight.
+	if strings.Contains(wholeLower, qRaw) {
+		score += 120
+	}
+	if qNorm != "" && strings.Contains(wholeNorm, qNorm) {
+		score += 120
+	}
+	if strings.Contains(titleLower, qRaw) {
+		score += 180
+	}
+	if qNorm != "" && strings.Contains(titleNorm, qNorm) {
+		score += 180
+	}
+
+	for _, kw := range keywords {
+		kwNorm := normalizeForMatch(kw)
+		if strings.Contains(titleLower, kw) || (kwNorm != "" && strings.Contains(titleNorm, kwNorm)) {
+			score += 40
+		}
+		if strings.Contains(contentLower, kw) || (kwNorm != "" && strings.Contains(wholeNorm, kwNorm)) {
+			score += 18
+		}
+
+		// Fuzzy fallback for long Chinese phrases: overlap on 2-rune fragments.
+		if kwNorm != "" && len([]rune(kwNorm)) >= 4 {
+			overlap := bigramOverlap(wholeNorm, kwNorm)
+			if overlap >= 0.5 {
+				score += int(overlap * 20)
+			}
+		}
+	}
+
+	return score
+}
+
+func normalizeForMatch(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func bigramOverlap(haystack, needle string) float64 {
+	hRunes := []rune(haystack)
+	nRunes := []rune(needle)
+	if len(nRunes) < 2 || len(hRunes) < 2 {
+		return 0
+	}
+
+	total := len(nRunes) - 1
+	if total <= 0 {
+		return 0
+	}
+
+	hSet := make(map[string]struct{}, len(hRunes)-1)
+	for i := 0; i < len(hRunes)-1; i++ {
+		hSet[string(hRunes[i:i+2])] = struct{}{}
+	}
+
+	matched := 0
+	for i := 0; i < len(nRunes)-1; i++ {
+		if _, ok := hSet[string(nRunes[i:i+2])]; ok {
+			matched++
+		}
+	}
+
+	return float64(matched) / float64(total)
 }
 
 // Format converts sections to plain text suitable for an LLM prompt, with a
@@ -133,18 +230,56 @@ func Format(sections []Section, maxChars int) string {
 	return strings.TrimSpace(sb.String())
 }
 
-// splitKeywords lowercases the query and splits on whitespace / Chinese punctuation.
+// splitKeywords lowercases query and splits on whitespace / punctuation,
+// then expands long tokens into smaller Chinese fragments for better recall.
 func splitKeywords(query string) []string {
 	// Replace common Chinese punctuation with spaces, then split on whitespace.
 	replacer := strings.NewReplacer(
 		"，", " ", "。", " ", "、", " ", "：", " ",
 		"；", " ", "（", " ", "）", " ", "【", " ", "】", " ",
+		"？", " ", "！", " ", ",", " ", ".", " ", ";", " ",
+		":", " ", "(", " ", ")", " ", "[", " ", "]", " ",
 	)
 	cleaned := replacer.Replace(strings.ToLower(query))
-	parts := strings.Fields(cleaned)
-	// Also add the whole query as one keyword to catch exact phrases.
-	if len(parts) > 1 {
-		parts = append(parts, strings.ToLower(strings.TrimSpace(query)))
+	rawParts := strings.Fields(cleaned)
+	out := make([]string, 0, len(rawParts)+8)
+
+	seen := map[string]struct{}{}
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		out = append(out, v)
+		seen[v] = struct{}{}
 	}
-	return parts
+
+	base := append([]string(nil), rawParts...)
+	for _, p := range base {
+		add(p)
+		r := []rune(normalizeForMatch(p))
+		if len(r) >= 4 {
+			// Add 2~4 rune fragments from long phrases to improve recall for Chinese.
+			for i := 0; i < len(r); i++ {
+				for w := 2; w <= 4; w++ {
+					if i+w <= len(r) {
+						add(string(r[i : i+w]))
+					}
+				}
+			}
+		}
+	}
+
+	// Also add the whole query as one keyword to catch exact phrases.
+	if len(base) > 1 {
+		add(strings.ToLower(strings.TrimSpace(query)))
+		qNorm := normalizeForMatch(query)
+		if qNorm != "" {
+			add(qNorm)
+		}
+	}
+	return out
 }

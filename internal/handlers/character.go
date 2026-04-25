@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
@@ -281,4 +282,105 @@ func DeleteCharacter(c *gin.Context) {
 	// Soft delete: set is_active = false
 	models.DB.Model(&card).Update("is_active", false)
 	c.JSON(http.StatusOK, gin.H{"message": "人物卡已删除"})
+}
+
+type manageInventoryReq struct {
+	Item string `json:"item" binding:"required"`
+}
+
+func GetCharacterInventory(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此人物卡"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"character_id": card.ID,
+		"inventory":    card.Inventory.Data,
+	})
+}
+
+func AddCharacterInventoryItem(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+		return
+	}
+
+	var req manageInventoryReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	item := strings.TrimSpace(req.Item)
+	if item == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "物品名不能为空"})
+		return
+	}
+
+	list := card.Inventory.Data
+	for _, v := range list {
+		if v == item {
+			c.JSON(http.StatusOK, card)
+			return
+		}
+	}
+	list = append(list, item)
+	card.Inventory = models.JSONField[[]string]{Data: list}
+
+	if err := models.DB.Save(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存物品栏失败"})
+		return
+	}
+	c.JSON(http.StatusOK, card)
+}
+
+func RemoveCharacterInventoryItem(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	item := strings.TrimSpace(c.Param("item"))
+	if item == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "物品名不能为空"})
+		return
+	}
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+		return
+	}
+
+	list := card.Inventory.Data
+	out := make([]string, 0, len(list))
+	for _, v := range list {
+		if v != item {
+			out = append(out, v)
+		}
+	}
+	card.Inventory = models.JSONField[[]string]{Data: out}
+
+	if err := models.DB.Save(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存物品栏失败"})
+		return
+	}
+	c.JSON(http.StatusOK, card)
 }

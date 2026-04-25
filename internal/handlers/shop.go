@@ -18,7 +18,8 @@ func PurchaseItem(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
 	var req struct {
-		ItemID uint `json:"item_id" binding:"required"`
+		ItemID          uint  `json:"item_id" binding:"required"`
+		CharacterCardID *uint `json:"character_card_id,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -51,7 +52,11 @@ func PurchaseItem(c *gin.Context) {
 		}
 	}()
 
-	if err := tx.Model(&user).Update("coins", user.Coins-item.Price).Error; err != nil {
+	newCoins := user.Coins - item.Price
+	newCardSlots := user.CardSlots
+	var updatedCard *models.CharacterCard
+
+	if err := tx.Model(&user).Update("coins", newCoins).Error; err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
 		return
@@ -59,11 +64,53 @@ func PurchaseItem(c *gin.Context) {
 
 	switch item.ItemType {
 	case models.ItemTypeCardSlot:
-		if err := tx.Model(&user).Update("card_slots", user.CardSlots+item.Value).Error; err != nil {
+		newCardSlots = user.CardSlots + item.Value
+		if err := tx.Model(&user).Update("card_slots", newCardSlots).Error; err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "增加槽位失败"})
 			return
 		}
+
+	case models.ItemTypeCoins:
+		newCoins += item.Value
+		if err := tx.Model(&user).Update("coins", newCoins).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "增加金币失败"})
+			return
+		}
+
+	case models.ItemTypeEquipment, models.ItemTypeWeapon, models.ItemTypeAccessory:
+		if req.CharacterCardID == nil || *req.CharacterCardID == 0 {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该商品需要指定人物卡"})
+			return
+		}
+
+		var card models.CharacterCard
+		if err := tx.Where("id = ? AND user_id = ? AND is_active = ?", *req.CharacterCardID, userID, true).First(&card).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "人物卡不存在或无权使用"})
+			return
+		}
+
+		inv := card.Inventory.Data
+		exists := false
+		for _, v := range inv {
+			if v == item.Name {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			inv = append(inv, item.Name)
+			card.Inventory = models.JSONField[[]string]{Data: inv}
+			if err := tx.Save(&card).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "更新人物卡物品栏失败"})
+				return
+			}
+		}
+		updatedCard = &card
 	}
 
 	transaction := models.Transaction{
@@ -77,17 +124,24 @@ func PurchaseItem(c *gin.Context) {
 		return
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交交易失败"})
+		return
+	}
 
 	// Reload user
 	models.DB.First(&user, userID)
 	log.Printf("[shop] purchase ok user_id=%d item_id=%d coins_left=%d", userID, req.ItemID, user.Coins)
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"message":    "购买成功",
 		"coins":      user.Coins,
 		"card_slots": user.CardSlots,
 		"item":       item,
-	})
+	}
+	if updatedCard != nil {
+		resp["character_card"] = updatedCard
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func GetMyTransactions(c *gin.Context) {

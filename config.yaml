@@ -10,5 +10,5 @@ jwt:
   expire_hours: 168   # 7 days
 
 shop:
-  initial_coins: 0
+  initial_coins: 600
   initial_card_slots: 3

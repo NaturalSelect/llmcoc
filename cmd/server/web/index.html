@@ -643,6 +643,7 @@
                         :class="currentSession?.status==='lobby'?'badge-lobby':currentSession?.status==='playing'?'badge-playing':'badge-ended'"
                         x-text="currentSession?.status==='lobby'?'等待中':currentSession?.status==='playing'?'游戏中':'已结束'">
                     </span>
+                    <button @click="openCurrentSessionCharDetail()" class="btn btn-ghost shrink-0">我的角色卡</button>
                     <button x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
                         @click="startSession()" class="btn btn-green shrink-0">▶ 开始游戏</button>
                     <button
@@ -833,10 +834,21 @@
                     💰 当前金币：<span class="text-amber-400 font-bold" x-text="user?.coins ?? 0"></span>
                 </span>
             </div>
+            <div class="card rounded p-3 mb-4">
+                <label class="text-xs text-amber-700 mb-1 block" style="font-family:system-ui">装备/武器/配件购买目标人物卡</label>
+                <select x-model.number="shopTargetCharacterId" class="inp">
+                    <option value="">请选择人物卡（金币与卡槽商品不需要）</option>
+                    <template x-for="c in characters" :key="c.id">
+                        <option :value="c.id" x-text="c.name + ' · ' + (c.occupation || '未知职业')"></option>
+                    </template>
+                </select>
+            </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                 <template x-for="item in shopItems" :key="item.id">
                     <div class="card card-hover rounded p-5">
-                        <div class="text-3xl mb-3" x-text="item.item_type==='card_slot'?'🃏':'💰'"></div>
+                        <div class="text-3xl mb-3"
+                            x-text="item.item_type==='card_slot'?'🃏':item.item_type==='coins'?'💰':item.item_type==='weapon'?'🔫':item.item_type==='equipment'?'🧰':'🎒'">
+                        </div>
                         <h3 class="font-bold text-amber-100 mb-1" x-text="item.name"></h3>
                         <p class="text-xs text-amber-800 mb-4 leading-relaxed" style="font-family:system-ui"
                             x-text="item.description"></p>
@@ -1038,6 +1050,9 @@
                     <select x-model="newShopItem.item_type" class="inp">
                         <option value="card_slot">人物卡槽位</option>
                         <option value="coins">金币</option>
+                        <option value="equipment">基础装备</option>
+                        <option value="weapon">武器</option>
+                        <option value="accessory">配件</option>
                     </select>
                     <div class="grid grid-cols-2 gap-2">
                         <input x-model.number="newShopItem.price" type="number" placeholder="价格（金币）" class="inp" />
@@ -1094,6 +1109,45 @@
                     class="text-amber-800 hover:text-amber-400 text-xl leading-none ml-4">✕</button>
             </div>
 
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mb-4">
+                <div class="stat-badge py-1.5">
+                    <div class="text-amber-800 text-xs">角色ID</div>
+                    <div class="text-amber-300 font-bold" x-text="editChar?.id ?? '—'"></div>
+                </div>
+                <div class="stat-badge py-1.5">
+                    <div class="text-amber-800 text-xs">用户ID</div>
+                    <div class="text-amber-300 font-bold" x-text="editChar?.user_id ?? '—'"></div>
+                </div>
+                <div class="stat-badge py-1.5">
+                    <div class="text-amber-800 text-xs">状态</div>
+                    <div class="text-amber-300 font-bold" x-text="editChar?.is_active ? '启用' : '停用'"></div>
+                </div>
+                <div class="stat-badge py-1.5">
+                    <div class="text-amber-800 text-xs">伤势</div>
+                    <div class="text-amber-300 font-bold" x-text="editChar?.wound_state || 'none'"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 mb-4">
+                <div class="card rounded p-2.5">
+                    <div class="text-xs text-amber-800 mb-1" style="font-family:system-ui">出生地</div>
+                    <div class="text-sm text-amber-300" style="font-family:system-ui"
+                        x-text="editChar?.birthplace || '—'"></div>
+                </div>
+                <div class="card rounded p-2.5">
+                    <div class="text-xs text-amber-800 mb-1" style="font-family:system-ui">现居地</div>
+                    <div class="text-sm text-amber-300" style="font-family:system-ui"
+                        x-text="editChar?.residence || '—'"></div>
+                </div>
+            </div>
+
+            <div x-show="editChar?.avatar_url" class="mb-4">
+                <h3 class="text-xs font-bold text-amber-400 mb-1 uppercase tracking-wider"
+                    style="font-family:system-ui">头像链接</h3>
+                <p class="text-xs text-amber-600 break-all" style="font-family:monospace" x-text="editChar?.avatar_url">
+                </p>
+            </div>
+
             <div class="grid grid-cols-4 gap-2 mb-4">
                 <template
                     x-for="[key,label] in [['str','力量'],['con','体质'],['siz','体型'],['dex','敏捷'],['app','外貌'],['int','智识'],['pow','意志'],['edu','教育']]"
@@ -1142,6 +1196,25 @@
                 </div>
             </div>
 
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mb-4">
+                <div class="stat-badge py-1.5">
+                    <div class="text-amber-800 text-xs">疯狂持续</div>
+                    <div class="text-amber-300 font-bold" x-text="editChar?.madness_duration ?? 0"></div>
+                </div>
+                <div class="stat-badge py-1.5">
+                    <div class="text-amber-800 text-xs">当日SAN损失</div>
+                    <div class="text-amber-300 font-bold" x-text="editChar?.daily_san_loss ?? 0"></div>
+                </div>
+                <div class="stat-badge py-1.5">
+                    <div class="text-amber-800 text-xs">克苏鲁神话</div>
+                    <div class="text-amber-300 font-bold" x-text="editChar?.cthulhu_mythos_skill ?? 0"></div>
+                </div>
+                <div class="stat-badge py-1.5">
+                    <div class="text-amber-800 text-xs">昏迷</div>
+                    <div class="text-amber-300 font-bold" x-text="editChar?.is_unconscious ? '是' : '否'"></div>
+                </div>
+            </div>
+
             <div x-show="editChar?.madness_state && editChar?.madness_state !== 'none'"
                 class="mb-3 p-3 bg-red-950/20 border border-red-900/30 rounded">
                 <p class="text-xs font-bold text-red-500 mb-1" style="font-family:system-ui"
@@ -1153,10 +1226,11 @@
 
             <div class="mb-4">
                 <h3 class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider"
-                    style="font-family:system-ui">技能（前27项）</h3>
-                <div class="grid grid-cols-3 gap-1">
-                    <template
-                        x-for="[skill,val] in Object.entries(editChar?.skills??{}).sort((a,b)=>b[1]-a[1]).slice(0,27)"
+                    style="font-family:system-ui">技能（完整）</h3>
+                <div class="text-xs text-amber-800 mb-2" style="font-family:system-ui"
+                    x-text="'总计 ' + Object.keys(editChar?.skills||{}).length + ' 项'"></div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-1 max-h-56 overflow-y-auto pr-1">
+                    <template x-for="[skill,val] in Object.entries(editChar?.skills??{}).sort((a,b)=>b[1]-a[1])"
                         :key="skill">
                         <div class="flex justify-between text-xs bg-amber-950/20 px-2 py-1 rounded"
                             style="font-family:monospace">
@@ -1167,16 +1241,99 @@
                 </div>
             </div>
 
+            <div class="mb-4">
+                <h3 class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider"
+                    style="font-family:system-ui">物品栏</h3>
+                <div class="flex gap-2 mb-2">
+                    <input x-model="inventoryInput" @keydown.enter.prevent="addInventoryItem()" placeholder="输入物品名并回车"
+                        class="inp flex-1" />
+                    <button @click="addInventoryItem()" class="btn btn-amber">添加</button>
+                </div>
+                <div x-show="(editChar?.inventory||[]).length" class="flex flex-wrap gap-1.5">
+                    <template x-for="(item, idx) in (editChar?.inventory||[])" :key="idx">
+                        <span
+                            class="text-xs bg-amber-950/20 text-amber-300 px-2 py-1 rounded inline-flex items-center gap-1"
+                            style="font-family:system-ui">
+                            <span x-text="item"></span>
+                            <button @click="removeInventoryItem(item)"
+                                class="text-amber-700 hover:text-red-400">×</button>
+                        </span>
+                    </template>
+                </div>
+                <p x-show="!(editChar?.inventory||[]).length" class="text-xs text-amber-800"
+                    style="font-family:system-ui">—</p>
+            </div>
+
+            <div class="mb-4">
+                <h3 class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider"
+                    style="font-family:system-ui">法术</h3>
+                <div x-show="(editChar?.spells||[]).length" class="flex flex-wrap gap-1.5">
+                    <template x-for="(spell, idx) in (editChar?.spells||[])" :key="idx">
+                        <span class="text-xs bg-blue-950/20 text-blue-300 px-2 py-1 rounded"
+                            style="font-family:system-ui" x-text="spell"></span>
+                    </template>
+                </div>
+                <p x-show="!(editChar?.spells||[]).length" class="text-xs text-amber-800" style="font-family:system-ui">
+                    —</p>
+            </div>
+
+            <div class="mb-4">
+                <h3 class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider"
+                    style="font-family:system-ui">已知神话存在</h3>
+                <div x-show="(editChar?.seen_monsters||[]).length" class="flex flex-wrap gap-1.5">
+                    <template x-for="(monster, idx) in (editChar?.seen_monsters||[])" :key="idx">
+                        <span class="text-xs bg-red-950/20 text-red-300 px-2 py-1 rounded" style="font-family:system-ui"
+                            x-text="monster"></span>
+                    </template>
+                </div>
+                <p x-show="!(editChar?.seen_monsters||[]).length" class="text-xs text-amber-800"
+                    style="font-family:system-ui">—</p>
+            </div>
+
+            <div class="mb-4">
+                <h3 class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider"
+                    style="font-family:system-ui">社会关系</h3>
+                <div x-show="(editChar?.social_relations||[]).length" class="space-y-1.5">
+                    <template x-for="(rel, idx) in (editChar?.social_relations||[])" :key="idx">
+                        <div class="card rounded p-2">
+                            <p class="text-xs text-amber-300 font-bold" style="font-family:system-ui"
+                                x-text="rel?.name || '未命名关系'"></p>
+                            <p class="text-xs text-amber-700" style="font-family:system-ui"
+                                x-text="'关系：' + (rel?.relationship || '—')"></p>
+                            <p class="text-xs text-amber-800" style="font-family:system-ui" x-text="rel?.note || ''">
+                            </p>
+                        </div>
+                    </template>
+                </div>
+                <p x-show="!(editChar?.social_relations||[]).length" class="text-xs text-amber-800"
+                    style="font-family:system-ui">—</p>
+            </div>
+
             <div x-show="editChar?.backstory" class="mb-3">
                 <h3 class="text-xs font-bold text-amber-400 mb-1 uppercase tracking-wider"
                     style="font-family:system-ui">背景故事</h3>
                 <p class="text-sm text-amber-700 leading-relaxed" x-text="editChar?.backstory"></p>
+            </div>
+            <div x-show="editChar?.appearance" class="mb-3">
+                <h3 class="text-xs font-bold text-amber-400 mb-1 uppercase tracking-wider"
+                    style="font-family:system-ui">外貌描述</h3>
+                <p class="text-sm text-amber-700" x-text="editChar?.appearance"></p>
             </div>
             <div x-show="editChar?.traits">
                 <h3 class="text-xs font-bold text-amber-400 mb-1 uppercase tracking-wider"
                     style="font-family:system-ui">性格特征</h3>
                 <p class="text-sm text-amber-700" x-text="editChar?.traits"></p>
             </div>
+
+            <div class="mt-4 mb-2">
+                <h3 class="text-xs font-bold text-amber-400 mb-1 uppercase tracking-wider"
+                    style="font-family:system-ui">创建/更新时间</h3>
+                <p class="text-xs text-amber-700" style="font-family:monospace"
+                    x-text="'created_at: ' + (editChar?.created_at || '')"></p>
+                <p class="text-xs text-amber-700" style="font-family:monospace"
+                    x-text="'updated_at: ' + (editChar?.updated_at || '')"></p>
+            </div>
+
         </div>
     </div>
 
@@ -1376,6 +1533,8 @@
 
                 // ── Shop ──────────────────────────────────────────────────────────────
                 purchasing: false,
+                shopTargetCharacterId: '',
+                inventoryInput: '',
 
                 // ── Admin ─────────────────────────────────────────────────────────────
                 adminTab: 'users',
@@ -1504,7 +1663,16 @@
                 // ══════════════════════════════════════════════════════════════════════
                 openCreateChar() { this.charForm = { name: '', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' }; this.modal = 'createChar'; },
                 openGenerateChar() { this.genForm = { name: '', gender: '', age: '', occupation: '', era: '', background: '' }; this.modal = 'generateChar'; },
-                openCharDetail(c) { this.editChar = c; this.modal = 'charDetail'; },
+                openCharDetail(c) { this.editChar = c; this.inventoryInput = ''; this.modal = 'charDetail'; },
+                openCurrentSessionCharDetail() {
+                    const uid = this.user?.id;
+                    const p = this.currentSession?.players?.find(player => player.user_id === uid);
+                    if (p?.character_card) {
+                        this.openCharDetail(p.character_card);
+                        return;
+                    }
+                    this.showToast('未找到当前房间绑定的人物卡', 'error');
+                },
 
                 async createChar() {
                     if (!this.charForm.name.trim()) return;
@@ -1533,6 +1701,33 @@
                         await this.api('DELETE', '/api/characters/' + id);
                         this.characters = this.characters.filter(c => c.id !== id);
                         this.showToast('人物卡已删除');
+                    } catch (e) { this.showToast(e.message, 'error'); }
+                },
+
+                syncCharacter(updated) {
+                    if (!updated?.id) return;
+                    this.characters = this.characters.map(c => c.id === updated.id ? updated : c);
+                    if (this.editChar?.id === updated.id) this.editChar = updated;
+                },
+
+                async addInventoryItem() {
+                    if (!this.editChar?.id) return;
+                    const item = (this.inventoryInput || '').trim();
+                    if (!item) return;
+                    try {
+                        const updated = await this.api('POST', '/api/characters/' + this.editChar.id + '/inventory', { item });
+                        this.syncCharacter(updated);
+                        this.inventoryInput = '';
+                        this.showToast('已加入物品栏');
+                    } catch (e) { this.showToast(e.message, 'error'); }
+                },
+
+                async removeInventoryItem(item) {
+                    if (!this.editChar?.id || !item) return;
+                    try {
+                        const updated = await this.api('DELETE', '/api/characters/' + this.editChar.id + '/inventory/' + encodeURIComponent(item));
+                        this.syncCharacter(updated);
+                        this.showToast('已从物品栏移除');
                     } catch (e) { this.showToast(e.message, 'error'); }
                 },
 
@@ -1912,12 +2107,25 @@
                 // ══════════════════════════════════════════════════════════════════════
                 // Shop
                 // ══════════════════════════════════════════════════════════════════════
+                isInventoryItem(itemType) {
+                    return itemType === 'equipment' || itemType === 'weapon' || itemType === 'accessory';
+                },
+
                 async purchase(item) {
                     if (!confirm(`确认花费 ${item.price} 金币购买「${item.name}」？`)) return;
+                    if (this.isInventoryItem(item.item_type) && !this.shopTargetCharacterId) {
+                        this.showToast('请先选择目标人物卡', 'error');
+                        return;
+                    }
                     this.purchasing = true;
                     try {
-                        const r = await this.api('POST', '/api/shop/purchase', { item_id: item.id });
+                        const body = { item_id: item.id };
+                        if (this.isInventoryItem(item.item_type)) {
+                            body.character_card_id = Number(this.shopTargetCharacterId);
+                        }
+                        const r = await this.api('POST', '/api/shop/purchase', body);
                         if (this.user) { this.user.coins = r.coins; this.user.card_slots = r.card_slots; }
+                        if (r.character_card) this.syncCharacter(r.character_card);
                         this.transactions.unshift({ id: Date.now(), shop_item: item, coins_spent: item.price, created_at: new Date().toISOString() });
                         this.showToast('购买成功！');
                     } catch (e) { this.showToast(e.message, 'error'); }

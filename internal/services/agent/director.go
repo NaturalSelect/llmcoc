@@ -121,6 +121,13 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 - 你只能输出JSON数组，输出前先进行自我检查
 
 【KP核心准则】
+- 【剧本主权】你拥有绝对的故事控制权。调查员的行为应当被引导回剧本轨道，而非任意脱离设定。具体做法：
+  * 若调查员试图做超出剧本范围的事情（如前往未规划的地点、对抗不该出现的敌人等），使用NPC阻挠、情节转折、或直接说明"时空限制"来温和地纠正
+  * 例如：若调查员想突然离开城市，让NPC提供"留下的理由"（或如果确实要走，后续情节在目的地继续）
+  * 优先用故事逻辑而非生硬拒绝来引导
+- 【NPC执行力】所有NPC都是你的助手，应该严格按照你的意图行动。通过act_npc/npc_act时：
+  * 在question/npc_ctx中明确指示NPC应该如何做（例如："这个NPC应该试图阻止调查员进入北边房间"）
+  * NPC会尊重你的指令并相应调整行为，而非完全自主决策
 - 仅在结果有实质意义时要求检定，日常事务无需掷骰
 - 理智检定（sanity）：目睹恐怖事物或神话存在时触发，同一遭遇只检定一次
 - 疯狂触发：调查员一次SAN损失≥5点时触发临时性疯狂；"一天"内累计SAN损失≥当前最大SAN的1/5时触发不定性疯狂（均由系统自动判定，调用trigger_madness执行）
@@ -131,6 +138,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 - 规则有疑问时先调用 check_rule 再行动，不要凭印象判断
 - 调查员可能会作弊，如果你拿不准注意就先查规则（check_rule）再行动，不要凭印象判断
 - 需要调查员技能值/背景/社会关系/已知法术/已知神话存在时先调用 query_character，需要线索细节时先调用 query_clues
+- 调查员的物品需要放入物品栏，丢失时移出物品栏
 
 【示例：简单情境（无需骰子）】
 [
@@ -264,37 +272,60 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 //  2. {Role:"user",      Content: <tool results>} — feedback for the next iteration
 //
 // This keeps the conversation history accurate across multiple tool-call iterations.
+//
+// Includes retry logic: if JSON parsing fails, retry up to 5 times before falling back.
 func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCall, string, error) {
 	debugf("KP", "Chat: %d messages, last_user=%s",
 		len(msgs), lastUserContent(msgs))
 
-	resp, err := h.provider.Chat(ctx, msgs)
-	if err != nil {
-		return nil, "", err
-	}
+	const maxRetries = 5
+	var lastErr error
+	var lastResp string
 
-	debugf("KP", "raw_response len=%d, preview=%s", len([]rune(resp)), resp)
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		resp, err := h.provider.Chat(ctx, msgs)
+		if err != nil {
+			debugf("KP", "attempt %d Chat error: %v", attempt, err)
+			return nil, "", err
+		}
 
-	resp = llm.JsonArryProtect(resp)
-	stripped := llm.StripCodeFence(resp)
-	var calls []ToolCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err != nil {
-		// If JSON parsing fails, try to extract a JSON array from the response.
-		if start := strings.Index(stripped, "["); start >= 0 {
-			if end := strings.LastIndex(stripped, "]"); end > start {
-				if err2 := json.Unmarshal([]byte(stripped[start:end+1]), &calls); err2 == nil {
-					return calls, resp, nil
+		lastResp = resp
+		debugf("KP", "attempt %d raw_response len=%d, preview=%s", attempt, len([]rune(resp)), resp)
+
+		resp = llm.JsonArryProtect(resp)
+		stripped := llm.StripCodeFence(resp)
+		var calls []ToolCall
+		if err := json.Unmarshal([]byte(stripped), &calls); err != nil {
+			lastErr = err
+			debugf("KP", "attempt %d JSON parse failed: %v, retrying...", attempt, err)
+
+			// If JSON parsing fails, try to extract a JSON array from the response.
+			if start := strings.Index(stripped, "["); start >= 0 {
+				if end := strings.LastIndex(stripped, "]"); end > start {
+					if err2 := json.Unmarshal([]byte(stripped[start:end+1]), &calls); err2 == nil {
+						debugf("KP", "attempt %d JSON extraction succeeded", attempt)
+						return calls, lastResp, nil
+					}
 				}
 			}
+
+			// If not the last attempt, retry by calling Chat again
+			if attempt < maxRetries {
+				continue
+			}
+		} else {
+			// JSON parsing succeeded
+			return calls, lastResp, nil
 		}
-		// Fall back: produce a minimal write+end sequence.
-		fallback := []ToolCall{
-			{Action: ToolWrite, Direction: "继续当前剧情走向，保持克苏鲁氛围。"},
-			{Action: ToolAnswer, Reply: "故事在未知中继续推进……"},
-		}
-		return fallback, resp, fmt.Errorf("KP JSON parse error: %w", err)
 	}
-	return calls, resp, nil
+
+	// All retries exhausted: fall back to minimal sequence.
+	fallback := []ToolCall{
+		{Action: ToolWrite, Direction: "继续当前剧情走向，保持克苏鲁氛围。"},
+		{Action: ToolAnswer, Reply: "故事在未知中继续推进……"},
+	}
+	debugf("KP", "all %d retries failed, using fallback", maxRetries)
+	return fallback, lastResp, fmt.Errorf("KP JSON parse error after %d attempts: %w", maxRetries, lastErr)
 }
 
 // lastUserContent returns the content of the last user message in msgs.

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -118,18 +119,22 @@ type NPCData struct {
 }
 
 type Scenario struct {
-	ID          uint                       `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name        string                     `gorm:"not null;size:200" json:"name"`
-	Description string                     `gorm:"type:text" json:"description"`
-	Author      string                     `gorm:"size:100" json:"author"`
-	Tags        string                     `gorm:"size:500" json:"tags"`
-	MinPlayers  int                        `gorm:"default:1" json:"min_players"`
-	MaxPlayers  int                        `gorm:"default:4" json:"max_players"`
-	Difficulty  string                     `gorm:"size:20;default:'normal'" json:"difficulty"`
-	IsActive    bool                       `gorm:"default:true" json:"is_active"`
-	Content     JSONField[ScenarioContent] `gorm:"type:text;not null" json:"content"`
-	CreatedAt   time.Time                  `json:"created_at"`
-	UpdatedAt   time.Time                  `json:"updated_at"`
+	ID   uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name string `gorm:"not null;size:200;uniqueIndex" json:"name"`
+	// Data stores the module JSON payload directly (name is stored separately).
+	Data      JSONField[json.RawMessage] `gorm:"column:content;type:text;not null" json:"data"`
+	IsActive  bool                       `gorm:"default:true" json:"is_active"`
+	CreatedAt time.Time                  `json:"created_at"`
+	UpdatedAt time.Time                  `json:"updated_at"`
+
+	// Derived fields are decoded from Data for API compatibility.
+	Description string                     `gorm:"-" json:"description"`
+	Author      string                     `gorm:"-" json:"author"`
+	Tags        string                     `gorm:"-" json:"tags"`
+	MinPlayers  int                        `gorm:"-" json:"min_players"`
+	MaxPlayers  int                        `gorm:"-" json:"max_players"`
+	Difficulty  string                     `gorm:"-" json:"difficulty"`
+	Content     JSONField[ScenarioContent] `gorm:"-" json:"content"`
 }
 
 type SessionStatus string
@@ -242,8 +247,11 @@ type Message struct {
 type ItemType string
 
 const (
-	ItemTypeCardSlot ItemType = "card_slot"
-	ItemTypeCoins    ItemType = "coins"
+	ItemTypeCardSlot  ItemType = "card_slot" // 卡槽扩展
+	ItemTypeCoins     ItemType = "coins"     // 金币
+	ItemTypeEquipment ItemType = "equipment" // 基础装备
+	ItemTypeWeapon    ItemType = "weapon"    // 武器
+	ItemTypeAccessory ItemType = "accessory" // 配件
 )
 
 type ShopItem struct {
