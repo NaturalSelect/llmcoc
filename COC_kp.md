@@ -21074,9 +21074,7 @@ Ponape Scripture 波纳佩圣典
 
 Prehistoric Pacific in the Light of...
 
-《波纳佩圣
-
-典》所述的史前太平洋
+《波纳佩圣典》所述的史前太平洋
 
 Prehistoric in the Pacific: … 太平
 
@@ -21094,9 +21092,7 @@ R'lyeh Text 拉莱耶文本
 
 Saducismus Triumphatus 撒都该人的胜利
 
-Sapientia Maglorum 智者玛格
-
-洛鲁姆
+Sapientia Maglorum 智者玛格洛鲁姆
 
 Saracenic Rituals 撒拉逊人的宗教仪式
 
@@ -21148,7 +21144,7 @@ Zanthu Tablets 赞苏石板
 
 Beatus Methodivo 宣福者美多狄乌斯
 
-the Emerald Tablet翡翠石板
+the Emerald Tablet 翡翠石板
 
 the Gloden Bough 金枝
 
@@ -21162,9 +21158,7 @@ Malleus Maleficarum 女巫之锤
 
 Oracle of Nostradamus 诺查丹玛斯的预言
 
-The Witch-Cult in Western Europe
-
-西欧的异教巫术崇拜
+The Witch-Cult in Western Europe 西欧的异教巫术崇拜
 
 the Zohar 光明篇
 
@@ -21240,17 +21234,13 @@ Contact Servitor of the Outer God 外神仆役联络术
 
 Contact Spirits of the Dead 死灵联络术
 
-Contact Star-Spawn of Cthulhu
-
-克苏鲁的星之眷族联络术
+Contact Star-Spawn of Cthulhu 克苏鲁的星之眷族联络术
 
 Contact Yithian 伊斯人联络术
 
 Contact Deity Spells 通神术
 
-Contact Deity: Chaugnar Faugn
-
-昌格纳·方庚通神术
+Contact Deity: Chaugnar Faugn 昌格纳·方庚通神术
 
 Contact Deity: Cthulhu 克苏鲁通神术
 
@@ -21277,15 +21267,18 @@ Death Spell 致死术 Dominate 支配术
 Dread Curse of Azathoth 阿撒托斯的恐怖诅咒
 
 Dust of Suleiman 苏莱曼之尘  
+
 Elder Sign 旧印开光术
 
 Enchantment Spells 附魔法术
 
-Enchant Book 书册附魔术 Enchant Knife 刀具附魔术
+Enchant Book 书册附魔术 
 
-Enchant Pipes 箔子附魔术 Enchant Sacrificial Dagger 祭
+Enchant Knife 刀具附魔术
 
-附魔术
+Enchant Pipes 箔子附魔术 
+
+Enchant Sacrificial Dagger 祭附魔术
 
 Enchant Whistle 嗽子附魔术
 
@@ -21323,17 +21316,11 @@ Mind Transfer 精神转移术
 
 Mirror of Tarkhun A tep 塔昆·阿提普之镜
 
-Powder of Ibn-Ghazi 伊本-加
+Powder of Ibn-Ghazi 伊本-加齐之粉
 
-齐之粉
+Prinn's Crux Ansata 蒲林的埃及十字架
 
-Prinn's Crux Ansata 蒲林的埃
-
-及十字架
-
-Red Sign of Shuddle M'ell 修
-
-德·梅尔之赤印
+Red Sign of Shuddle M'ell 修德·梅尔之赤印
 
 Resurrection 复活术
 
@@ -21345,57 +21332,37 @@ Summoning Spells 召唤法术
 
 Summon Byakhee 拜亚基召唤术
 
-Summon Dark Youn 黑山羊幼
+Summon Dark Youn 黑山羊幼惠召唤术
 
-惠召唤术
-
-Summon Dimensional Shambler
-
-空鬼召唤术
+Summon Dimensional Shambler空鬼召唤术
 
 Summon Fire Vampire 炎之精召唤术
 
-Summon Hunting Horror 恐怖
-
-猎手召唤术
+Summon Hunting Horror 恐怖猎手召唤术
 
 Summon Nightgaun 夜魔召唤术
 
-Summon Servitor Of The Outer
+Summon Servitor Of The Outer Gods 外神仆役召唤术
 
-Gods 外神仆役召唤
-
-术
-
-Summon Star Vampire 星之精召
-
-# 唤术
+Summon Star Vampire 星之精召唤术
 
 Separate Binding 独立束缚术
 
 Bind Byakhee 拜亚基束缚术
 
-Bind Dark Young 黑山羊幼崽束
+Bind Dark Young 黑山羊幼崽束缚术
 
-# 缚术
-
-Bind Dimensional Shambler 空鬼
-
-# 束缚术
+Bind Dimensional Shambler 空鬼束缚术
 
 Bind Fire Vampire 炎之精束缚术
 
-Bind Hunting Horror 恐怖猎手
-
-# 束缚术
+Bind Hunting Horror 恐怖猎手束缚术
 
 Bind Nightgaun 夜魔束缚术
 
 Bind Servitor Of The Outer Gods
 
-外神仆役束缚
-
-# 术
+外神仆役束缚术
 
 Voorish Sign 维瑞之印
 
@@ -21457,9 +21424,7 @@ Lloigor 罗伊格尔
 
 Mi-Go, the Fungi from Yuggoth
 
-米-戈，来自
-
-# 犹格斯的真菌
+米-戈，来自犹格斯的真菌
 
 Nightgaunt 夜魔
 
