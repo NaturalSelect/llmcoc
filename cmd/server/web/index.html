@@ -1653,17 +1653,17 @@
                 <div class="card rounded p-2 text-center">
                     <div class="text-[10px] text-amber-800 mb-0.5" style="font-family:system-ui">开局时间</div>
                     <div class="text-sm font-bold text-amber-300"
-                        x-text="slotToTime(viewingScenario?.content?.data?.game_start_slot)"></div>
+                        x-text="slotToTime(viewingScenario?.content?.game_start_slot)"></div>
                 </div>
                 <div class="card rounded p-2 text-center">
                     <div class="text-[10px] text-amber-800 mb-0.5" style="font-family:system-ui">场景数</div>
                     <div class="text-sm font-bold text-amber-300"
-                        x-text="viewingScenario?.content?.data?.scenes?.length ?? 0"></div>
+                        x-text="viewingScenario?.content?.scenes?.length ?? 0"></div>
                 </div>
                 <div class="card rounded p-2 text-center">
                     <div class="text-[10px] text-amber-800 mb-0.5" style="font-family:system-ui">NPC数</div>
                     <div class="text-sm font-bold text-amber-300"
-                        x-text="viewingScenario?.content?.data?.npcs?.length ?? 0"></div>
+                        x-text="viewingScenario?.content?.npcs?.length ?? 0"></div>
                 </div>
             </div>
 
@@ -1675,35 +1675,35 @@
                 </div>
             </template>
 
-            <template x-if="viewingScenario?.content?.data?.setting">
+            <template x-if="viewingScenario?.content?.setting">
                 <div class="mb-3">
                     <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">背景设定</div>
                     <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
-                        x-text="viewingScenario.content.data.setting"></p>
+                        x-text="viewingScenario.content.setting"></p>
                 </div>
             </template>
 
-            <template x-if="viewingScenario?.content?.data?.intro">
+            <template x-if="viewingScenario?.content?.intro">
                 <div class="mb-3">
                     <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">开场叙事</div>
                     <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
-                        x-text="viewingScenario.content.data.intro"></p>
+                        x-text="viewingScenario.content.intro"></p>
                 </div>
             </template>
 
-            <template x-if="viewingScenario?.content?.data?.win_condition">
+            <template x-if="viewingScenario?.content?.win_condition">
                 <div class="mb-3">
                     <div class="text-xs font-bold text-amber-500 mb-1" style="font-family:system-ui">胜利条件</div>
                     <p class="text-xs text-amber-200" style="font-family:system-ui"
-                        x-text="viewingScenario.content.data.win_condition"></p>
+                        x-text="viewingScenario.content.win_condition"></p>
                 </div>
             </template>
 
-            <template x-if="viewingScenario?.content?.data?.scenes?.length">
+            <template x-if="viewingScenario?.content?.scenes?.length">
                 <div class="mb-3">
                     <div class="text-xs font-bold text-amber-500 mb-2" style="font-family:system-ui">场景列表</div>
                     <div class="space-y-1.5">
-                        <template x-for="sc in viewingScenario.content.data.scenes" :key="sc.id">
+                        <template x-for="sc in viewingScenario.content.scenes" :key="sc.id">
                             <div class="rounded p-2" style="background:#0e0d0b;border:1px solid #1e1c17">
                                 <div class="text-xs font-bold text-amber-300" style="font-family:system-ui"
                                     x-text="sc.name"></div>
@@ -1715,11 +1715,11 @@
                 </div>
             </template>
 
-            <template x-if="viewingScenario?.content?.data?.npcs?.length">
+            <template x-if="viewingScenario?.content?.npcs?.length">
                 <div class="mb-3">
                     <div class="text-xs font-bold text-amber-500 mb-2" style="font-family:system-ui">NPC 列表</div>
                     <div class="space-y-1.5">
-                        <template x-for="npc in viewingScenario.content.data.npcs" :key="npc.name">
+                        <template x-for="npc in viewingScenario.content.npcs" :key="npc.name">
                             <div class="rounded p-2" style="background:#0e0d0b;border:1px solid #1e1c17">
                                 <div class="text-xs font-bold text-amber-300" style="font-family:system-ui"
                                     x-text="npc.name"></div>
@@ -1733,12 +1733,12 @@
                 </div>
             </template>
 
-            <template x-if="viewingScenario?.content?.data?.clues?.length">
+            <template x-if="viewingScenario?.content?.clues?.length">
                 <div class="mb-3">
                     <div class="text-xs font-bold text-amber-500 mb-2" style="font-family:system-ui">线索（<span
-                            x-text="viewingScenario.content.data.clues.length"></span>条）</div>
+                            x-text="viewingScenario.content.clues.length"></span>条）</div>
                     <ul class="space-y-1">
-                        <template x-for="(cl, i) in viewingScenario.content.data.clues" :key="i">
+                        <template x-for="(cl, i) in viewingScenario.content.clues" :key="i">
                             <li class="text-[11px] text-amber-700" style="font-family:system-ui" x-text="'• ' + cl">
                             </li>
                         </template>
