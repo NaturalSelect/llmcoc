@@ -2009,7 +2009,7 @@
                     try {
                         const [session, msgs] = await Promise.all([
                             this.api('GET', '/api/sessions/' + id),
-                            this.api('GET', '/api/sessions/' + id + '/messages?limit=100'),
+                            this.api('GET', '/api/sessions/' + id + '/messages'),
                         ]);
                         this.currentSession = session;
                         this.messages = this.normalizeMessages(msgs || []);
@@ -2173,7 +2173,7 @@
                     try {
                         await this.api('POST', '/api/sessions/' + this.currentSession.id + '/start');
                         await this.refreshCurrentSession(true);
-                        this.messages = this.normalizeMessages((await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages?limit=100')) || []);
+                        this.messages = this.normalizeMessages((await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []);
                         this.$nextTick(() => this.scrollChat());
                         this.showToast('游戏已开始！');
                     } catch (e) { this.showToast(e.message, 'error'); }
@@ -2350,7 +2350,7 @@
                     await new Promise(r => setTimeout(r, 2000));
                     try {
                         const msgs = this.normalizeMessages(
-                            (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages?limit=10')) || []
+                            (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
                         );
                         const kp = msgs.find(m => m.role === 'assistant' && new Date(m.created_at) > since);
                         if (kp) {
@@ -2386,7 +2386,7 @@
                 async pollForKPResponse(since) {
                     if (!this.waitingForPlayers) return;
                     try {
-                        const msgs = this.normalizeMessages((await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages?limit=5')) || []);
+                        const msgs = this.normalizeMessages((await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []);
                         const newKP = msgs.find(m => m.role === 'assistant' && new Date(m.created_at) > since);
                         if (newKP) {
                             this.waitingForPlayers = false;
@@ -2422,7 +2422,7 @@
                     this.refreshingMessages = true;
                     try {
                         const msgs = this.normalizeMessages(
-                            (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages?limit=100')) || []
+                            (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
                         );
                         this.messages = msgs;
 
