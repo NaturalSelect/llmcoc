@@ -11,6 +11,7 @@ import (
 	"github.com/llmcoc/server/internal/middleware"
 	"github.com/llmcoc/server/internal/models"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type RegisterReq struct {
@@ -62,16 +63,22 @@ func Register(c *gin.Context) {
 		CardSlots:    config.Global.Shop.InitialCardSlots,
 	}
 
-	if err := models.DB.Create(&user).Error; err != nil {
-		log.Printf("[register] conflict username=%q: %v", req.Username, err)
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		var userCount int64
+		if err := tx.Model(&models.User{}).Count(&userCount).Error; err != nil {
+			return err
+		}
+		if userCount == 0 {
+			user.Role = models.RoleAdmin
+		}
+		return tx.Create(&user).Error
+	})
+	if txErr != nil {
+		log.Printf("[register] create user failed username=%q: %v", req.Username, txErr)
 		c.JSON(http.StatusConflict, gin.H{"error": "用户名或邮箱已存在"})
 		return
 	}
-
-	// NOTE: first user should be admin
-	if user.ID == 1 {
-		user.Role = models.RoleAdmin
-		models.DB.Save(&user)
+	if user.Role == models.RoleAdmin {
 		log.Printf("[register] first user, set as admin: username=%q", req.Username)
 	}
 
