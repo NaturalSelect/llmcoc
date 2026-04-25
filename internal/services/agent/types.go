@@ -75,7 +75,7 @@ type ToolCall struct {
 	Direction     string                 `json:"direction,omitempty"`      // write: 叙事方向（供Writer参考）
 	TimeRounds    int                    `json:"time_rounds,omitempty"`    // advance_time: 推进的回合数
 	TimeReason    string                 `json:"time_reason,omitempty"`    // advance_time: 原因（如"睡觉"/"吃饭"）
-	Keyword       string                 `json:"keyword,omitempty"`        // query_clues: 可选关键词过滤
+	Keyword       string                 `json:"keyword,omitempty"`        // query_clues: 已废弃（保留仅为兼容旧输出）
 	Reply         string                 `json:"reply"`                    // answer: KP对玩家说的话（必填）
 	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结（可选）
 }

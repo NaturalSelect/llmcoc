@@ -383,25 +383,18 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				})
 
 			case ToolQueryClues:
-				// Return scenario clues filtered by optional keyword.
-				debugf("tool", "session=%d query_clues keyword=%q", sid, call.Keyword)
+				// Return full scenario clues.
+				debugf("tool", "session=%d query_clues all", sid)
 				clues := gctx.Session.Scenario.Content.Data.Clues
-				keyword := strings.ToLower(call.Keyword)
-				var matched []string
-				for _, c := range clues {
-					if keyword == "" || strings.Contains(strings.ToLower(c), keyword) {
-						matched = append(matched, c)
-					}
-				}
 				var clueResult string
-				if len(matched) == 0 {
+				if len(clues) == 0 {
 					clueResult = "（无匹配线索）"
 				} else {
-					clueResult = strings.Join(matched, "\n")
+					clueResult = strings.Join(clues, "\n")
 				}
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolQueryClues,
-					Result: fmt.Sprintf("线索查询结果（关键词：%q）：\n%s", call.Keyword, clueResult),
+					Result: fmt.Sprintf("线索查询结果（全部）：\n%s", clueResult),
 				})
 
 			case ToolQueryCharacter:
