@@ -155,6 +155,7 @@ func main() {
 		admin.PUT("/users/:id/role", handlers.AdminSetRole)
 		admin.GET("/recharges", handlers.AdminGetRechargeHistory)
 		admin.POST("/shop/items", handlers.AdminCreateShopItem)
+		admin.DELETE("/shop/items/:id", handlers.AdminDeleteShopItem)
 		// LLM provider config
 		admin.GET("/config/providers", handlers.AdminListProviders)
 		admin.POST("/config/providers", handlers.AdminCreateProvider)

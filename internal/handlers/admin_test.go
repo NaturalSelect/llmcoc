@@ -19,6 +19,7 @@ func adminRouter() *gin.Engine {
 	admin.PUT("/users/:id/role", AdminSetRole)
 	admin.GET("/recharge/history", AdminGetRechargeHistory)
 	admin.POST("/shop/items", AdminCreateShopItem)
+	admin.DELETE("/shop/items/:id", AdminDeleteShopItem)
 	return r
 }
 
@@ -210,5 +211,36 @@ func TestAdminCreateShopItem_InvalidBody(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("want 400, got %d", w.Code)
+	}
+}
+
+func TestAdminDeleteShopItem_Success(t *testing.T) {
+	initTestDB(t)
+	r := adminRouter()
+	itemID := seedShopItem(t, "左轮手枪（.38）", 120, models.ItemTypeWeapon, 1)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/admin/shop/items/%d", itemID), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var item models.ShopItem
+	models.DB.First(&item, itemID)
+	if item.IsActive {
+		t.Fatalf("want inactive item after delete")
+	}
+}
+
+func TestAdminDeleteShopItem_NotFound(t *testing.T) {
+	initTestDB(t)
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", "/admin/shop/items/9999", nil))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
 	}
 }

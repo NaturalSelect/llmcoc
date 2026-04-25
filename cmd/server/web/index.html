@@ -909,7 +909,7 @@
                 <template
                     x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'settings',label:'系统设置'}]"
                     :key="t.id">
-                    <button @click="adminTab=t.id" class="tab" :class="adminTab===t.id?'active':''"
+                    <button @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems()" class="tab" :class="adminTab===t.id?'active':''"
                         x-text="t.label"></button>
                 </template>
             </div>
@@ -1183,24 +1183,60 @@
             </div>
 
             <!-- Shop management -->
-            <div x-show="adminTab==='shop'" class="card rounded p-5 max-w-md">
-                <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">创建商品</h3>
-                <div class="space-y-2.5">
-                    <input x-model="newShopItem.name" placeholder="商品名称 *" class="inp" />
-                    <textarea x-model="newShopItem.description" placeholder="商品描述" rows="2"
-                        class="inp resize-none"></textarea>
-                    <select x-model="newShopItem.item_type" class="inp">
-                        <option value="card_slot">人物卡槽位</option>
-                        <option value="coins">金币</option>
-                        <option value="equipment">基础装备</option>
-                        <option value="weapon">武器</option>
-                        <option value="accessory">配件</option>
-                    </select>
-                    <div class="grid grid-cols-2 gap-2">
-                        <input x-model.number="newShopItem.price" type="number" placeholder="价格（金币）" class="inp" />
-                        <input x-model.number="newShopItem.value" type="number" placeholder="效果值" class="inp" />
+            <div x-show="adminTab==='shop'" class="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-5">
+                <div class="card rounded p-5">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">创建商品</h3>
+                    <div class="space-y-2.5">
+                        <input x-model="newShopItem.name" placeholder="商品名称 *" class="inp" />
+                        <textarea x-model="newShopItem.description" placeholder="商品描述" rows="2"
+                            class="inp resize-none"></textarea>
+                        <select x-model="newShopItem.item_type" class="inp">
+                            <option value="card_slot">人物卡槽位</option>
+                            <option value="coins">金币</option>
+                            <option value="equipment">基础装备</option>
+                            <option value="weapon">武器</option>
+                            <option value="accessory">配件</option>
+                        </select>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input x-model.number="newShopItem.price" type="number" placeholder="价格（金币）" class="inp" />
+                            <input x-model.number="newShopItem.value" type="number" placeholder="效果值" class="inp" />
+                        </div>
+                        <button @click="adminCreateShopItem()" class="btn btn-amber w-full">创建商品</button>
                     </div>
-                    <button @click="adminCreateShopItem()" class="btn btn-amber w-full">创建商品</button>
+                </div>
+
+                <div class="card rounded p-5 min-w-0">
+                    <div class="flex justify-between items-center mb-4 gap-3">
+                        <div>
+                            <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">已上架商品</h3>
+                            <p class="text-xs text-amber-800 mt-1" style="font-family:system-ui">删除后会从商城下架，历史购买记录会保留。</p>
+                        </div>
+                        <button @click="loadAdminShopItems()" class="text-xs text-amber-800 hover:text-amber-500 shrink-0"
+                            style="font-family:system-ui">刷新</button>
+                    </div>
+
+                    <div x-show="adminShopItems.length === 0" class="text-amber-900 text-xs py-8 text-center"
+                        style="font-family:system-ui">暂无已上架商品</div>
+
+                    <div x-show="adminShopItems.length > 0" class="space-y-2 max-h-[30rem] overflow-y-auto pr-1">
+                        <template x-for="item in adminShopItems" :key="item.id">
+                            <div class="card rounded p-3 flex items-start justify-between gap-3">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                                        <span class="text-sm font-bold text-amber-200" style="font-family:system-ui" x-text="item.name"></span>
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:#1e1c17;color:#92400e;font-family:system-ui" x-text="item.item_type"></span>
+                                        <span class="text-[10px] text-amber-700" style="font-family:system-ui" x-text="'ID ' + item.id"></span>
+                                    </div>
+                                    <p x-show="item.description" class="text-xs text-amber-700 break-words" style="font-family:system-ui" x-text="item.description"></p>
+                                    <div class="flex flex-wrap gap-3 mt-2 text-xs" style="font-family:system-ui">
+                                        <span class="text-amber-500" x-text="'价格: ' + item.price + ' 金币'"></span>
+                                        <span class="text-amber-800" x-text="'效果值: ' + item.value"></span>
+                                    </div>
+                                </div>
+                                <button @click="adminDeleteShopItem(item)" class="btn btn-danger text-xs shrink-0">删除</button>
+                            </div>
+                        </template>
+                    </div>
                 </div>
             </div>
 
@@ -1938,6 +1974,7 @@
                 adminProviders: [],
                 adminAgents: [],
                 adminScenarios: [],
+                adminShopItems: [],
                 scenarioUploadFile: null,
                 viewingScenario: null,
                 scenarioGenForm: { name: '', theme: '', era: '', brief: '', target_length: 'short', min_players: 1, max_players: 4, difficulty: 'normal' },
@@ -2023,6 +2060,7 @@
                 async loadAdminUsers() { this.adminUsers = (await this.api('GET', '/api/admin/users')) || []; },
                 async loadAdminProviders() { this.adminProviders = (await this.api('GET', '/api/admin/config/providers')) || []; },
                 async loadAdminScenarios() { this.adminScenarios = (await this.api('GET', '/api/scenarios')) || []; },
+                async loadAdminShopItems() { this.adminShopItems = (await this.api('GET', '/api/shop/items')) || []; },
                 async deleteScenario(id) {
                     if (!confirm('确认删除该模组？此操作不可逆。')) return;
                     try {
@@ -2088,6 +2126,7 @@
                         this.loadAdminProviders().catch(e => this.showToast(e.message, 'error'));
                         this.loadAdminAgents().catch(e => this.showToast(e.message, 'error'));
                         this.loadAdminScenarios().catch(e => this.showToast(e.message, 'error'));
+                        this.loadAdminShopItems().catch(e => this.showToast(e.message, 'error'));
                         this.loadSiteSettings().catch(e => this.showToast(e.message, 'error'));
                         this.loadInviteCodes().catch(e => this.showToast(e.message, 'error'));
                     }
@@ -2725,6 +2764,19 @@
                         await this.api('POST', '/api/admin/shop/items', this.newShopItem);
                         this.showToast('商品已创建');
                         this.newShopItem = { name: '', description: '', item_type: 'card_slot', price: 0, value: 1, is_active: true };
+                        await this.loadAdminShopItems();
+                        this.shopItems = this.adminShopItems.slice();
+                    } catch (e) { this.showToast(e.message, 'error'); }
+                },
+
+                async adminDeleteShopItem(item) {
+                    if (!item?.id) return;
+                    if (!confirm('确认删除商品“' + item.name + '”？删除后将从商城下架。')) return;
+                    try {
+                        await this.api('DELETE', '/api/admin/shop/items/' + item.id);
+                        this.showToast('商品已删除');
+                        await this.loadAdminShopItems();
+                        this.shopItems = this.adminShopItems.slice();
                     } catch (e) { this.showToast(e.message, 'error'); }
                 },
 

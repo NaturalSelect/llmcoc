@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -147,7 +148,7 @@ func GenerateScenarioByAgents(c *gin.Context) {
 		return
 	}
 
-	gen, err := agent.RunScripterScenarioTeam(c.Request.Context(), agent.ScenarioCreationRequest{
+	gen, err := agent.RunScripterScenarioTeam(context.Background(), agent.ScenarioCreationRequest{
 		Name:         req.Name,
 		Theme:        req.Theme,
 		Era:          req.Era,

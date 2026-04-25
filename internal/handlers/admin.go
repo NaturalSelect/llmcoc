@@ -105,3 +105,18 @@ func AdminCreateShopItem(c *gin.Context) {
 	log.Printf("[admin] create_shop_item ok item_id=%d", item.ID)
 	c.JSON(http.StatusCreated, item)
 }
+
+func AdminDeleteShopItem(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var item models.ShopItem
+	if err := models.DB.First(&item, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商品不存在"})
+		return
+	}
+	if err := models.DB.Model(&item).Update("is_active", false).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除商品失败"})
+		return
+	}
+	log.Printf("[admin] delete_shop_item ok item_id=%d", item.ID)
+	c.JSON(http.StatusOK, gin.H{"message": "商品已删除"})
+}
