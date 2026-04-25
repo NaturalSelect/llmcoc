@@ -302,6 +302,8 @@ func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCre
 		}
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
+		debugf("outline", "raw: %v", raw)
+
 		calls := parsePipelineCalls(raw)
 		if len(calls) == 0 {
 			// If no tool calls parsed, treat raw text as outline directly

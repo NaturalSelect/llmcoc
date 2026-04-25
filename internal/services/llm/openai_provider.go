@@ -56,7 +56,7 @@ func (p *openAIProvider) toOpenAIMessages(msgs []ChatMessage) []openai.ChatCompl
 	return out
 }
 
-const maxRetries = 3
+const maxRetries = 20
 
 // isRetryableError checks if the error is a 5xx or transient error worth retrying.
 func isRetryableError(err error) bool {
@@ -99,7 +99,7 @@ func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage)
 		case <-ctx.Done():
 			close(ch)
 			return ch, ctx.Err()
-		case <-time.After(2 * time.Second):
+		case <-time.After(5 * time.Second):
 		}
 	}
 	if err != nil {
