@@ -60,7 +60,20 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
+	r.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
+		// WARN-level behavior: only keep client/server error request logs.
+		if param.StatusCode < http.StatusBadRequest {
+			return ""
+		}
+		return fmt.Sprintf("[GIN-WARN] %s | %3d | %13v | %15s | %-7s %s\n",
+			param.TimeStamp.Format("2006/01/02 - 15:04:05"),
+			param.StatusCode,
+			param.Latency,
+			param.ClientIP,
+			param.Method,
+			param.Path,
+		)
+	}), gin.Recovery())
 
 	// CORS
 	r.Use(cors.New(cors.Config{

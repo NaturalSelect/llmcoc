@@ -453,7 +453,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 	debugf("KP", "Chat: %d messages, last_user=%s",
 		len(msgs), lastUserContent(msgs))
 
-	const maxRetries = 5
+	const maxRetries = 20
 	var lastErr error
 	var lastResp string
 
