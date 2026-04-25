@@ -1439,11 +1439,16 @@
             <div class="mb-4">
                 <h3 class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider"
                     style="font-family:system-ui">物品栏</h3>
-                <p class="text-xs text-amber-800 mb-2" style="font-family:system-ui">人物卡界面仅展示物品，变更请通过商店购买或剧情流程。</p>
+                <p class="text-xs text-amber-800 mb-2" style="font-family:system-ui">点击物品右侧按钮可直接丢弃。</p>
                 <div x-show="(editChar?.inventory||[]).length" class="flex flex-wrap gap-1.5">
                     <template x-for="(item, idx) in (editChar?.inventory||[])" :key="idx">
-                        <span class="text-xs bg-amber-950/20 text-amber-300 px-2 py-1 rounded"
-                            style="font-family:system-ui" x-text="item"></span>
+                        <span
+                            class="inline-flex items-center gap-2 text-xs bg-amber-950/20 text-amber-300 px-2 py-1 rounded"
+                            style="font-family:system-ui">
+                            <span x-text="item"></span>
+                            <button @click="removeInventoryItem(item)"
+                                class="text-red-700 hover:text-red-400 transition leading-none">丢弃</button>
+                        </span>
                     </template>
                 </div>
                 <p x-show="!(editChar?.inventory||[]).length" class="text-xs text-amber-800"
