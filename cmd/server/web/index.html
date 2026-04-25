@@ -782,7 +782,8 @@
                 </div>
                 <div class="flex-1 overflow-y-auto p-2 space-y-2">
                     <template x-for="p in (currentSession?.players??[])" :key="p.id">
-                        <div class="card rounded p-2.5">
+                        <div class="card card-hover rounded p-2.5 cursor-pointer"
+                            @click="openSessionPlayerCharDetail(p)">
                             <p class="text-xs font-bold text-amber-300 truncate" style="font-family:system-ui"
                                 x-text="p.character_card?.name || p.user?.username"></p>
                             <p class="text-xs text-amber-800 truncate" style="font-family:system-ui"
@@ -2018,6 +2019,17 @@
                 openCreateChar() { this.charForm = { name: '', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' }; this.modal = 'createChar'; },
                 openGenerateChar() { this.genForm = { name: '', gender: '', age: '', occupation: '', era: '', background: '' }; this.modal = 'generateChar'; },
                 openCharDetail(c) { this.editChar = c; this.inventoryInput = ''; this.modal = 'charDetail'; },
+                openSessionPlayerCharDetail(player) {
+                    if (!player?.character_card) {
+                        this.showToast('该玩家未绑定人物卡', 'error');
+                        return;
+                    }
+                    if (player.user_id !== this.user?.id) {
+                        this.showToast('只能查看自己的角色详细信息', 'error');
+                        return;
+                    }
+                    this.openCharDetail(player.character_card);
+                },
                 openCurrentSessionCharDetail() {
                     const uid = this.user?.id;
                     const p = this.currentSession?.players?.find(player => player.user_id === uid);
