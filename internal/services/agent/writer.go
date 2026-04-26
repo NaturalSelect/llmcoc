@@ -3,8 +3,11 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 
+	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
@@ -89,4 +92,67 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	}
 	state.Buffer += resp
 	return nil
+}
+
+const characterEvolutionPrompt = `你是COC TRPG的角色成长编辑。根据角色原有的背景故事、性格特征，以及本次冒险的叙事经历，更新角色的背景故事和性格特征，体现冒险对角色的影响和成长。
+
+要求：
+- 保留角色的核心身份，但反映冒险带来的变化
+- 背景故事可以追加新的经历，性格特征可以加深或改变某些方面
+- 篇幅与原有内容相近，不要过度冗长
+- 仅输出JSON，不要任何额外文字：
+{"new_backstory": "更新后的背景故事", "new_traits": "更新后的性格特征"}`
+
+// CharacterEvolutionResult is the writer agent output for a single character's evolution.
+type CharacterEvolutionResult struct {
+	NewBackstory string `json:"new_backstory"`
+	NewTraits    string `json:"new_traits"`
+}
+
+// RunCharacterEvolution uses the Writer agent to generate an updated backstory and traits
+// for the given character card, based on the session's WriterHistory.
+// The full WriterHistory is reused as conversation context (all messages are already cached
+// by the provider from the game session). Only the final evolution request is a new message.
+// Returns an error if the Writer agent is not configured or the LLM call fails.
+func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writerHistory []models.ChatMsg) (CharacterEvolutionResult, error) {
+	if len(writerHistory) == 0 {
+		return CharacterEvolutionResult{NewBackstory: card.Backstory, NewTraits: card.Traits}, nil
+	}
+
+	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	if err != nil {
+		return CharacterEvolutionResult{}, fmt.Errorf("writer agent 未配置: %w", err)
+	}
+
+	// Copy WriterHistory as-is — all messages hit the provider's prompt cache.
+	msgs := make([]llm.ChatMessage, 0, len(writerHistory)+2)
+	msgs = append(msgs, llm.ChatMessage{
+		Role:    "system",
+		Content: handle.systemPrompt(characterEvolutionPrompt),
+	})
+	for _, m := range writerHistory {
+		msgs = append(msgs, llm.ChatMessage{Role: m.Role, Content: m.Content})
+	}
+	// Append the evolution request as the only new (non-cached) message.
+	msgs = append(msgs, llm.ChatMessage{
+		Role: "user",
+		Content: fmt.Sprintf(
+			"根据以上冒险叙事，更新调查员【%s】的背景故事和性格特征。\n原背景故事：%s\n原性格特征：%s\n\n仅输出JSON：{\"new_backstory\": \"...\", \"new_traits\": \"...\"}",
+			card.Name, card.Backstory, card.Traits,
+		),
+	})
+
+	resp, err := handle.provider.Chat(ctx, msgs)
+	if err != nil {
+		return CharacterEvolutionResult{}, fmt.Errorf("character evolution LLM error: %w", err)
+	}
+
+	resp = llm.StripCodeFence(resp)
+	var result CharacterEvolutionResult
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		log.Printf("[agent] character evolution JSON parse error for %q: %v", card.Name, err)
+		return CharacterEvolutionResult{}, fmt.Errorf("character evolution JSON parse error: %w", err)
+	}
+
+	return result, nil
 }

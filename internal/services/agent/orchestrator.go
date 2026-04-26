@@ -332,33 +332,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 						Result: "剧本结局：" + call.EndSummary,
 					})
 				}
-				cleared := 0
-				players := gctx.Session.Players
-				if len(players) == 0 {
+				// Ensure players with CharacterCard are loaded.
+				if len(gctx.Session.Players) == 0 {
 					models.DB.Preload("CharacterCard").
 						Where("session_id = ?", gctx.Session.ID).
-						Find(&players)
-				}
-				for i := range players {
-					card := &players[i].CharacterCard
-					if ResetMadnessAfterSession(card) {
-						models.DB.Save(card)
-						cleared++
-					}
-				}
-				if cleared > 0 {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolEndGame,
-						Result: fmt.Sprintf("已清理%d名调查员的非永久疯狂状态", cleared),
-					})
-				}
-				// 撕卡：战死的调查员软删除人物卡
-				torn := TearDeadInvestigators(players)
-				if len(torn) > 0 {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolEndGame,
-						Result: fmt.Sprintf("调查员%v在本次冒险中牺牲，人物卡已撕除", torn),
-					})
+						Find(&gctx.Session.Players)
 				}
 				models.DB.Model(&models.GameSession{}).
 					Where("id = ?", gctx.Session.ID).
@@ -375,6 +353,17 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					kpNarration = "本次冒险到此结束，感谢各位调查员。"
 				}
 				debugf("tool", "session=%d end_game summary=%s", sid, call.EndSummary)
+
+				// Run full settlement (evaluator + growth + character evolution) synchronously.
+				var msgs []models.Message
+				models.DB.Where("session_id = ? AND role != ?", gctx.Session.ID, models.MessageRoleSystem).
+					Order("created_at ASC").
+					Limit(150).
+					Find(&msgs)
+				sessionSnap := gctx.Session
+				if _, err := RunEndSession(ctx, &sessionSnap, msgs); err != nil {
+					debugf("tool", "session=%d RunEndSession error: %v", gctx.Session.ID, err)
+				}
 
 			case ToolTriggerMadness:
 				// Roll on the appropriate COC 7th edition madness table.

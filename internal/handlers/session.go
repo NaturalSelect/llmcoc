@@ -743,126 +743,22 @@ func EndSession(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// ── Evaluator: score players and suggest rewards ──────────────────────────
-	evalResult, err := agent.RunEvaluator(ctx, &session, messages)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "评价失败"})
-		return
-	}
+	result, txErr := agent.RunEndSession(ctx, &session, messages)
 
-	// ── Growth: determine skill improvements ─────────────────────────────────
-	growthResult, _ := agent.RunGrowth(ctx, &session, messages)
-
-	// Build lookup maps for fast access
-	evalByChar := make(map[string]agent.PlayerEvaluation, len(evalResult.Players))
-	for _, pe := range evalResult.Players {
-		evalByChar[pe.CharacterName] = pe
-	}
-	growthByChar := make(map[string]agent.CharacterGrowth, len(growthResult.Characters))
-	for _, cg := range growthResult.Characters {
-		growthByChar[cg.CharacterName] = cg
-	}
-
-	// ── DB transaction: coins + skills + evaluation record ────────────────────
-	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
-		// Distribute coins and apply skill growth for each player
-		for i := range session.Players {
-			player := &session.Players[i]
-			card := &player.CharacterCard
-
-			// Award coins
-			if pe, ok := evalByChar[card.Name]; ok {
-				award := pe.BaseCoins + pe.BonusCoins
-				if award > 0 {
-					if err := tx.Model(&models.User{}).
-						Where("id = ?", player.UserID).
-						Update("coins", gorm.Expr("coins + ?", award)).Error; err != nil {
-						return err
-					}
-				}
-			} else {
-				// Fallback: award base coins even without an evaluation entry
-				if err := tx.Model(&models.User{}).
-					Where("id = ?", player.UserID).
-					Update("coins", gorm.Expr("coins + ?", 20)).Error; err != nil {
-					return err
-				}
-			}
-
-			// Apply skill growth (capped at 99)
-			if cg, ok := growthByChar[card.Name]; ok && len(cg.SkillChanges) > 0 {
-				skills := card.Skills.Data
-				if skills == nil {
-					skills = make(map[string]int)
-				}
-				for _, sc := range cg.SkillChanges {
-					current := skills[sc.Skill]
-					newVal := current + sc.Delta
-					if newVal > 99 {
-						newVal = 99
-					}
-					skills[sc.Skill] = newVal
-				}
-				card.Skills.Data = skills
-			}
-
-			// End-of-session cleanup: clear temporary/indefinite madness,
-			// while preserving permanent madness.
-			agent.ResetMadnessAfterSession(card)
-
-			// 撕卡：战死的调查员软删除人物卡（WoundState=dead → IsActive=false）。
-			// Skills/coins are still saved to record the final adventure.
-			if card.WoundState == "dead" {
-				card.IsActive = false
-			}
-
-			// Always save the character card to persist all in-game changes:
-			// - Inventory (物品), SeenMonsters (已见神话存在), Spells (已掌握法术),
-			// - SocialRelations (社会关系), HP/SAN/MP (stats changes from gameplay)
-			// Even if no skill growth, other fields may have been updated during gameplay.
-			if err := tx.Save(card).Error; err != nil {
-				return err
-			}
-		}
-
-		// Persist evaluation record (upsert by session_id)
-		evalContent := models.EvaluationContent{
-			Summary: evalResult.Summary,
-		}
-		for _, pe := range evalResult.Players {
-			evalContent.Players = append(evalContent.Players, models.PlayerEvalContent{
-				CharacterName: pe.CharacterName,
-				Comment:       pe.Comment,
-				Score:         pe.Score,
-				BaseCoins:     pe.BaseCoins,
-				BonusCoins:    pe.BonusCoins,
-			})
-		}
-		gameEval := models.GameEvaluation{
-			SessionID: uint(sessionID),
-		}
-		gameEval.Content.Data = evalContent
-		return tx.
-			Where(models.GameEvaluation{SessionID: uint(sessionID)}).
-			Assign(models.GameEvaluation{Content: gameEval.Content}).
-			FirstOrCreate(&gameEval).Error
-	})
+	removeSessionLock(session.ID)
 
 	if txErr != nil {
-		// Session is already ended; log the error but still return success
 		c.JSON(http.StatusOK, gin.H{
 			"message":    "游戏已结束（奖励结算失败，请联系管理员）",
-			"evaluation": evalResult,
-			"growth":     growthResult,
+			"evaluation": result.Evaluation,
+			"growth":     result.Growth,
 		})
 		return
 	}
 
-	removeSessionLock(session.ID)
-
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "游戏已结束",
-		"evaluation": evalResult,
-		"growth":     growthResult,
+		"evaluation": result.Evaluation,
+		"growth":     result.Growth,
 	})
 }
