@@ -47,7 +47,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 
 	for i := range session.Players {
 		card := &session.Players[i].CharacterCard
-		if card.WoundState == "dead" {
+		if card.WoundState == "dead" || card.Stats.Data.HP <= 0 {
 			continue // dead investigators do not get an evolution
 		}
 		evo, evoErr := RunCharacterEvolution(ctx, card, writerHistory)
@@ -91,6 +91,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 						Update("coins", gorm.Expr("coins + ?", award)).Error; err != nil {
 						return err
 					}
+					debugf("award", "player %d (%s) awarded %d coins (base %d + bonus %d)", player.ID, card.Name, award, pe.BaseCoins, pe.BonusCoins)
 				}
 			} else {
 				// Fallback: 20 base coins even without an evaluation entry.
@@ -99,6 +100,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 					Update("coins", gorm.Expr("coins + ?", 20)).Error; err != nil {
 					return err
 				}
+				debugf("award", "player %d (%s) awarded fallback 20 coins (no evaluation entry)", player.ID, card.Name)
 			}
 
 			// Apply skill growth (capped at 99).
