@@ -489,9 +489,6 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 					Username:      playerDisplayName,
 					ActionSummary: content,
 				})
-			} else {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "你已提交过行动了，请等待其他玩家。"})
-				return fmt.Errorf("player %d already submitted action for round %d", userID, session.TurnRound)
 			}
 			var submitted int64
 			tx.Model(&models.SessionTurnAction{}).

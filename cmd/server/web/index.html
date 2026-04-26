@@ -654,125 +654,129 @@
             <!-- 游戏主区域：聊天区 + 侧边栏 -->
             <div class="flex-1 flex overflow-hidden">
 
-                <!-- 聊天区域 -->
-                <div class="flex-1 flex flex-col min-w-0">
-                    <!-- 会话头部 -->
-                    <div
-                        class="card border-b px-3 py-2 flex items-center gap-2 shrink-0 bg-[#131110] z-10 border-[#252018] text-sm flex-wrap">
-                        <button @click="goTo('sessions')"
-                            class="text-amber-800 hover:text-amber-400 transition">←</button>
-                        <span class="font-bold text-amber-100 truncate hidden sm:inline"
-                            x-text="currentSession?.name"></span>
-                        <span class="text-xs text-amber-800 truncate hidden md:inline"
-                            x-text="currentSession?.scenario?.name"></span>
-                        <span class="badge ml-auto"
-                            :class="currentSession?.status==='lobby'?'badge-lobby':currentSession?.status==='playing'?'badge-playing':'badge-ended'"
-                            x-text="currentSession?.status==='lobby'?'等待中':currentSession?.status==='playing'?'游戏中':'已结束'">
-                        </span>
-                        <button @click="openCurrentSessionCharDetail()"
-                            class="btn btn-ghost shrink-0 text-xs">我的角色</button>
-                        <button x-show="currentSession?.status==='lobby' && isInSession(currentSession)"
-                            @click="leaveCurrentSession()" :disabled="leavingSession"
-                            class="btn btn-red shrink-0 text-xs">
-                            退出
-                        </button>
-                        <button x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
-                            @click="startSession()" class="btn btn-green shrink-0 text-xs">▶ 开始</button>
-                        <button
-                            x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
-                            @click="endSession()" :disabled="endingSession" class="btn btn-red shrink-0 text-xs">
-                            结束
-                        </button>
-                    </div>
+                <!-- 聊天区域（宽度限制 + 居中） -->
+                <div class="flex-1 flex min-w-0 overflow-hidden">
+                    <div class="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col h-full">
 
-                    <!-- 消息区域（用 Flex 自动拉伸，不再使用 absolute 定位） -->
-                    <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar bg-[#0a0908]" id="chatBox">
-                        <template x-for="msg in messages" :key="msg.id">
-                            <div class="msg fade-up shadow-sm border border-[#1e1c17]"
-                                :class="msg.role==='assistant'?'msg-kp':msg.role==='user'?'msg-user':'msg-sys'">
-
-                                <div class="flex items-baseline gap-2 mb-1.5 border-b border-[#252018] pb-1">
-                                    <span class="text-xs font-bold" style="font-family:monospace"
-                                        :class="msg.role==='assistant'?'text-red-500':msg.role==='user'?'text-green-500':'text-blue-500'"
-                                        x-text="msg.role==='assistant'?'🎭 KP':msg.role==='system'?'⚙ 系统':('👤 '+(msg.username||'玩家'))">
-                                    </span>
-                                    <span class="text-[10px] text-amber-900" style="font-family:monospace"
-                                        x-text="fmtTime(msg.created_at)"></span>
-                                </div>
-
-                                <template x-if="msg.role === 'assistant'">
-                                    <div class="narrative-container">
-                                        <template x-if="msg.writer_text || msg.narration_text">
-                                            <div>
-                                                <p x-show="msg.writer_text" class="narrative" x-text="msg.writer_text">
-                                                </p>
-                                                <p x-show="msg.narration_text" class="narration"
-                                                    :class="msg.writer_text ? 'narration-sep' : ''"
-                                                    x-text="'KP：' + msg.narration_text"></p>
-                                            </div>
-                                        </template>
-                                        <template x-if="!msg.writer_text && !msg.narration_text">
-                                            <p class="narrative" x-text="msg.content"></p>
-                                        </template>
-                                    </div>
-                                </template>
-
-                                <template x-if="msg.role !== 'assistant'">
-                                    <p class="action"
-                                        :class="msg.role==='system'?'text-blue-300/70 text-xs italic':'text-green-200/90'"
-                                        x-text="msg.content"></p>
-                                </template>
-                            </div>
-                        </template>
-
-                        <!-- 流式输出 -->
-                        <div x-show="streaming" class="msg msg-kp fade-up shadow-sm border border-[#3a1515]">
-                            <div class="flex items-baseline gap-2 mb-1.5 border-b border-[#3a1515] pb-1">
-                                <span class="text-xs font-bold text-red-500" style="font-family:monospace">🎭 KP</span>
-                                <span class="text-[10px] text-red-900" style="font-family:monospace">正在回应…</span>
-                            </div>
-                            <div x-show="!writerBuffer && !narrationBuffer" class="flex items-center gap-3 py-1">
-                                <div class="flex gap-1">
-                                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-                                </div>
-                                <span class="text-xs text-red-900 italic" style="font-family:system-ui">
-                                    Agent 团队运行中，请稍候…
-                                </span>
-                            </div>
-                            <p x-show="writerBuffer" class="narrative" :class="narrationBuffer ? '' : 'cursor'"
-                                x-text="writerBuffer"></p>
-                            <p x-show="narrationBuffer" class="narration cursor"
-                                :class="writerBuffer ? 'narration-sep' : ''" x-text="'KP：' + narrationBuffer"></p>
-                        </div>
-
-                        <!-- 等待其他玩家 -->
-                        <div x-show="waitingForPlayers" class="msg msg-sys fade-up border border-[#1a2d4a]">
-                            <p class="text-blue-300/70 text-xs italic" style="font-family:system-ui">
-                                ⏳ 已提交行动，等待其他调查员…（还差
-                                <span class="font-bold text-blue-400" x-text="waitingInfo.pending"></span> 人）
-                            </p>
-                        </div>
-                    </div>
-
-                    <!-- 底部输入区 -->
-                    <div class="card border-t p-3 bg-[#131110] border-[#252018] shrink-0">
-                        <div class="flex flex-col sm:flex-row gap-2">
-                            <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()"
-                                placeholder="描述你的行动… (Ctrl+Enter 发送)" rows="2"
-                                :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers"
-                                class="inp flex-1 resize-none bg-[#0a0908] focus:border-amber-700 transition-colors"
-                                style="line-height:1.5"></textarea>
-                            <button @click="sendChat()"
-                                :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || !chatInput.trim()"
-                                class="btn btn-amber self-stretch sm:self-end px-5 py-2 h-auto sm:h-[48px] shadow-lg min-w-[80px] flex items-center justify-center">
-                                <span x-show="!streaming && !waitingForPlayers">发送</span>
-                                <span x-show="streaming" class="flex gap-1 items-center">
-                                    <span class="dot" style="width:4px;height:4px"></span>
-                                    <span class="dot" style="width:4px;height:4px"></span>
-                                    <span class="dot" style="width:4px;height:4px"></span>
-                                </span>
-                                <span x-show="waitingForPlayers && !streaming">等待中</span>
+                        <!-- 会话头部 -->
+                        <div
+                            class="card border-b px-3 py-2 flex items-center gap-2 shrink-0 bg-[#131110] z-10 border-[#252018] text-sm flex-wrap">
+                            <button @click="goTo('sessions')"
+                                class="text-amber-800 hover:text-amber-400 transition text-xs px-1">← 返回</button>
+                            <span class="font-bold text-amber-100 truncate" x-text="currentSession?.name"></span>
+                            <span class="text-xs text-amber-800 truncate hidden sm:inline"
+                                x-text="currentSession?.scenario?.name"></span>
+                            <span class="badge ml-auto"
+                                :class="currentSession?.status==='lobby'?'badge-lobby':currentSession?.status==='playing'?'badge-playing':'badge-ended'"
+                                x-text="currentSession?.status==='lobby'?'等待中':currentSession?.status==='playing'?'游戏中':'已结束'">
+                            </span>
+                            <button @click="openCurrentSessionCharDetail()"
+                                class="btn btn-ghost shrink-0 text-xs">我的角色</button>
+                            <button x-show="currentSession?.status==='lobby' && isInSession(currentSession)"
+                                @click="leaveCurrentSession()" :disabled="leavingSession"
+                                class="btn btn-red shrink-0 text-xs">
+                                退出
                             </button>
+                            <button x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
+                                @click="startSession()" class="btn btn-green shrink-0 text-xs">▶ 开始</button>
+                            <button
+                                x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
+                                @click="endSession()" :disabled="endingSession" class="btn btn-red shrink-0 text-xs">
+                                结束
+                            </button>
+                        </div>
+
+                        <!-- 消息区域 -->
+                        <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar bg-[#0a0908]" id="chatBox">
+                            <template x-for="msg in messages" :key="msg.id">
+                                <div class="msg fade-up shadow-sm border border-[#1e1c17]"
+                                    :class="msg.role==='assistant'?'msg-kp':msg.role==='user'?'msg-user':'msg-sys'">
+
+                                    <div class="flex items-baseline gap-2 mb-1.5 border-b border-[#252018] pb-1">
+                                        <span class="text-xs font-bold" style="font-family:monospace"
+                                            :class="msg.role==='assistant'?'text-red-500':msg.role==='user'?'text-green-500':'text-blue-500'"
+                                            x-text="msg.role==='assistant'?'🎭 KP':msg.role==='system'?'⚙ 系统':('👤 '+(msg.username||'玩家'))">
+                                        </span>
+                                        <span class="text-[10px] text-amber-900" style="font-family:monospace"
+                                            x-text="fmtTime(msg.created_at)"></span>
+                                    </div>
+
+                                    <template x-if="msg.role === 'assistant'">
+                                        <div class="narrative-container">
+                                            <template x-if="msg.writer_text || msg.narration_text">
+                                                <div>
+                                                    <p x-show="msg.writer_text" class="narrative"
+                                                        x-text="msg.writer_text">
+                                                    </p>
+                                                    <p x-show="msg.narration_text" class="narration"
+                                                        :class="msg.writer_text ? 'narration-sep' : ''"
+                                                        x-text="'KP：' + msg.narration_text"></p>
+                                                </div>
+                                            </template>
+                                            <template x-if="!msg.writer_text && !msg.narration_text">
+                                                <p class="narrative" x-text="msg.content"></p>
+                                            </template>
+                                        </div>
+                                    </template>
+
+                                    <template x-if="msg.role !== 'assistant'">
+                                        <p class="action"
+                                            :class="msg.role==='system'?'text-blue-300/70 text-xs italic':'text-green-200/90'"
+                                            x-text="msg.content"></p>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <!-- 流式输出 -->
+                            <div x-show="streaming" class="msg msg-kp fade-up shadow-sm border border-[#3a1515]">
+                                <div class="flex items-baseline gap-2 mb-1.5 border-b border-[#3a1515] pb-1">
+                                    <span class="text-xs font-bold text-red-500" style="font-family:monospace">🎭
+                                        KP</span>
+                                    <span class="text-[10px] text-red-900" style="font-family:monospace">正在回应…</span>
+                                </div>
+                                <div x-show="!writerBuffer && !narrationBuffer" class="flex items-center gap-3 py-1">
+                                    <div class="flex gap-1">
+                                        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                                    </div>
+                                    <span class="text-xs text-red-900 italic" style="font-family:system-ui">
+                                        Agent 团队运行中，请稍候…
+                                    </span>
+                                </div>
+                                <p x-show="writerBuffer" class="narrative" :class="narrationBuffer ? '' : 'cursor'"
+                                    x-text="writerBuffer"></p>
+                                <p x-show="narrationBuffer" class="narration cursor"
+                                    :class="writerBuffer ? 'narration-sep' : ''" x-text="'KP：' + narrationBuffer"></p>
+                            </div>
+
+                            <!-- 等待其他玩家 -->
+                            <div x-show="waitingForPlayers" class="msg msg-sys fade-up border border-[#1a2d4a]">
+                                <p class="text-blue-300/70 text-xs italic" style="font-family:system-ui">
+                                    ⏳ 已提交行动，等待其他调查员…（还差
+                                    <span class="font-bold text-blue-400" x-text="waitingInfo.pending"></span> 人）
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- 底部输入区 -->
+                        <div class="card border-t p-3 bg-[#131110] border-[#252018] shrink-0">
+                            <div class="flex flex-col sm:flex-row gap-2">
+                                <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()"
+                                    placeholder="描述你的行动… (Ctrl+Enter 发送)" rows="2"
+                                    :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers"
+                                    class="inp flex-1 resize-none bg-[#0a0908] focus:border-amber-700 transition-colors"
+                                    style="line-height:1.5"></textarea>
+                                <button @click="sendChat()"
+                                    :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || !chatInput.trim()"
+                                    class="btn btn-amber self-stretch sm:self-end px-5 py-2 h-auto sm:h-[48px] shadow-lg min-w-[80px] flex items-center justify-center">
+                                    <span x-show="!streaming && !waitingForPlayers">发送</span>
+                                    <span x-show="streaming" class="flex gap-1 items-center">
+                                        <span class="dot" style="width:4px;height:4px"></span>
+                                        <span class="dot" style="width:4px;height:4px"></span>
+                                        <span class="dot" style="width:4px;height:4px"></span>
+                                    </span>
+                                    <span x-show="waitingForPlayers && !streaming">等待中</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
