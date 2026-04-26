@@ -39,7 +39,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
    - 需要等待骰子结果反馈后再继续write/answer，不能在同轮同时输出roll_dice和write/answer
 
 4. create_npc — 创建一个临时NPC（每个NPC独立agent）
-	{"action":"create_npc","char_card":{"name":"NPC名","description":"描述","attitude":"态度","goal":"目标","secret":"秘密","risk_preference":"conservative|balanced|aggressive","stats":{"STR":50},"skills":{"聆听":40},"spells":["法术A"]}}
+	{"action":"create_npc","char_card":{"name":"NPC名","race":"种族","description":"描述","attitude":"态度","goal":"目标","secret":"秘密","risk_preference":"conservative|balanced|aggressive","stats":{"STR":50},"skills":{"聆听":40},"spells":["法术A"]}}
 	- 用于现场生成剧本外NPC（路人、守卫、目击者、怪物化身等）
 	- 建议尽量填写 goal/secret/risk_preference，能显著提升NPC行动的心机与一致性
 

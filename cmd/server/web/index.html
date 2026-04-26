@@ -17,6 +17,7 @@
             background: #080706;
             color: #d0bfa0;
             height: 100vh;
+            height: 100dvh; /* 移动端动态视口高度，避免地址栏遮挡 */
             overflow: hidden;
             display: flex;
             flex-direction: column;
@@ -26,6 +27,7 @@
             flex: 1;
             overflow-y: auto;
             position: relative;
+            min-height: 0; /* 确保 flex 子元素可以正确收缩 */
         }
 
         /* ── Scrollbar ─────────────────────────────────────── */
@@ -457,7 +459,7 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════════ MAIN LAYOUT -->
-    <div x-show="page !== 'auth'" class="h-screen flex flex-col overflow-hidden">
+    <div x-show="page !== 'auth'" class="flex flex-col overflow-hidden" style="height:100vh;height:100dvh">
 
         <!-- Top Navigation -->
         <nav class="card border-b px-4 py-2.5 flex items-center justify-between shrink-0 z-40"
@@ -483,7 +485,7 @@
             </div>
         </nav>
 
-        <div class="flex-1 overflow-y-auto" :class="page === 'game' ? 'overflow-hidden' : ''">
+        <div class="flex-1 min-h-0" :class="page === 'game' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'">
             <!-- ═══════════════════════════════════════════════════ DASHBOARD PAGE -->
             <div x-show="page === 'dashboard'" class="p-5 max-w-6xl mx-auto w-full">
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -660,13 +662,13 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════ GAME PAGE -->
-        <div x-show="page === 'game'" class="flex-1 flex flex-col overflow-hidden bg-[#080706]" style="min-height:0">
+        <div x-show="page === 'game'" class="flex-1 flex flex-col overflow-hidden bg-[#080706]" style="min-height:0;height:0">
             <!-- 游戏主区域 -->
             <div class="flex-1 flex overflow-hidden min-h-0">
 
                 <!-- 聊天区域（宽度限制 + 高度约束） -->
-                <div class="flex-1 flex min-w-0 min-h-0">
-                    <div class="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col min-h-0">
+                <div class="flex-1 flex min-w-0 min-h-0 overflow-hidden">
+                    <div class="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col min-h-0 overflow-hidden">
 
                         <!-- 会话头部 -->
                         <div
