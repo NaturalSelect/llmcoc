@@ -108,6 +108,10 @@ func createNPC(sessionID uint, card *NPCCard) string {
 	}
 
 	name := strings.TrimSpace(card.Name)
+	race := strings.TrimSpace(card.Race)
+	if race == "" {
+		race = "人类"
+	}
 	desc := strings.TrimSpace(card.Description)
 	att := strings.TrimSpace(card.Attitude)
 	goal := strings.TrimSpace(card.Goal)
@@ -121,6 +125,7 @@ func createNPC(sessionID uint, card *NPCCard) string {
 	err := models.DB.Where("session_id = ? AND name = ?", sessionID, name).First(&existing).Error
 	if err == nil {
 		existing.Description = desc
+		existing.Race = race
 		existing.Attitude = att
 		existing.Goal = goal
 		existing.Secret = secret
@@ -132,12 +137,13 @@ func createNPC(sessionID uint, card *NPCCard) string {
 		_ = models.DB.Save(&existing).Error
 		// Re-seed from compact memory if available.
 		seedNPCFromMemory(sessionID, name)
-		return fmt.Sprintf("已更新NPC：%s（态度：%s）", name, att)
+		return fmt.Sprintf("已更新NPC：%s（种族：%s，态度：%s）", name, race, att)
 	}
 
 	npc := models.SessionNPC{
 		SessionID:   sessionID,
 		Name:        name,
+		Race:        race,
 		Description: desc,
 		Attitude:    att,
 		Goal:        goal,
@@ -333,7 +339,11 @@ func buildNPCProfile(name string, gctx GameContext, tempNPCs []models.SessionNPC
 			if len(desc) > 200 {
 				desc = desc[:200] + "…"
 			}
-			profile := fmt.Sprintf("姓名：%s\n描述：%s\n态度：%s", npc.Name, desc, npc.Attitude)
+			race := npc.Race
+			if race == "" {
+				race = "人类"
+			}
+			profile := fmt.Sprintf("姓名：%s\n种族：%s\n描述：%s\n态度：%s", npc.Name, race, desc, npc.Attitude)
 			if len(npc.Stats) > 0 {
 				var statParts []string
 				for k, v := range npc.Stats {
@@ -356,7 +366,7 @@ func buildNPCProfile(name string, gctx GameContext, tempNPCs []models.SessionNPC
 			if len(desc) > 200 {
 				desc = desc[:200] + "…"
 			}
-			profile := fmt.Sprintf("姓名：%s（临时NPC，%s）\n描述：%s", npc.Name, alive, desc)
+			profile := fmt.Sprintf("姓名：%s（%s，临时NPC，%s）\n描述：%s", npc.Name, npc.Race, alive, desc)
 			if strings.TrimSpace(npc.Attitude) != "" {
 				profile += "\n态度：" + strings.TrimSpace(npc.Attitude)
 			}

@@ -12,12 +12,12 @@ import (
 
 // parseStateChange parses a director change string (e.g. "HP -3（角色名）" or
 // "cthulhu_mythos +1（角色名）") into a CharacterUpdate.
-// Supported fields: HP, SAN, MP, POW, cthulhu_mythos.
+// Supported fields: HP, SAN, MP, POW, cthulhu_mythos, race.
 // Returns false if the string cannot be matched to a known field.
 func parseStateChange(change string) (CharacterUpdate, bool) {
 	change = strings.TrimSpace(change)
 	// Check longest field name first to avoid prefix collisions.
-	for _, field := range []string{"cthulhu_mythos", "HP", "SAN", "MP", "POW"} {
+	for _, field := range []string{"cthulhu_mythos", "HP", "SAN", "MP", "POW", "race"} {
 		if !strings.HasPrefix(strings.ToUpper(change), strings.ToUpper(field)) {
 			continue
 		}
@@ -29,6 +29,16 @@ func parseStateChange(change string) (CharacterUpdate, bool) {
 		} else {
 			deltaStr = rest
 		}
+
+		if strings.ToLower(field) == "race" {
+			// For race, deltaStr is actually the new race string
+			return CharacterUpdate{
+				CharacterName: charName,
+				Field:         "race",
+				NewValue:      strings.TrimSpace(deltaStr),
+			}, true
+		}
+
 		var delta int
 		fmt.Sscanf(deltaStr, "%d", &delta)
 		return CharacterUpdate{
@@ -189,6 +199,10 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				card.SocialRelations.Data = append(card.SocialRelations.Data, rel)
 				models.DB.Save(card)
 			}
+
+		case "race":
+			card.Race = upd.NewValue
+			models.DB.Save(card)
 		}
 		return
 	}
@@ -303,6 +317,8 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 			npc.IsAlive = true
 		}
 		npc.Stats.Data = stats
+	} else if field == "race" {
+		npc.Race = upd.NewValue
 	}
 }
 

@@ -340,11 +340,10 @@ func StartSession(c *gin.Context) {
 
 func GetMessages(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	userID := c.GetUint("user_id")
 
-	// Verify user is in session
-	if !isInSession(userID, uint(sessionID)) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "你不在此房间中"})
+	var session models.GameSession
+	if err := models.DB.First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
 	}
 
@@ -405,8 +404,19 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏尚未开始"})
 		return
 	}
-	if !isInSession(userID, uint(sessionID)) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "你不在此房间中"})
+
+	// Spectator check: only creators or joined players can speak.
+	isPlayer := false
+	for _, p := range session.Players {
+		if p.UserID == userID {
+			isPlayer = true
+			break
+		}
+	}
+	isCreator := session.CreatedBy == userID
+
+	if !isPlayer && !isCreator {
+		c.JSON(http.StatusForbidden, gin.H{"error": "观战模式下无法发言"})
 		return
 	}
 

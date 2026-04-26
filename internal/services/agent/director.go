@@ -59,9 +59,10 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 	{"action":"npc_act","npc_name":"NPC名称","npc_ctx":"问题或情境"}
 
 8. update_characters — 更新调查员或NPC的状态
-   {"action":"update_characters","changes":["HP -3（角色名）","SAN -2（角色名）","cthulhu_mythos +1（角色名）"]}
-   - 格式：字段 ±数值（角色名）
-   - 可用字段：HP/SAN/MP/cthulhu_mythos
+   {"action":"update_characters","changes":["HP -3（角色名）","SAN -2（角色名）","cthulhu_mythos +1（角色名）","race 深潜者混血（角色名）"]}
+   - 格式：字段 ±数值或新字符串（角色名）
+   - 可用字段：HP/SAN/MP/cthulhu_mythos/race
+   - race：用于改变角色的种族（如：人类 -> 深潜者/食尸鬼等）
    - 不要写SAN变化——sanity检定的SAN损失由系统自动计算
 
 9. manage_inventory — 管理调查员物品栏（获得/丢失）
@@ -215,6 +216,8 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
   * 若某个活跃NPC（包括敌对/中立NPC）与调查员处于同一区域或附近（例如隔着门），该NPC必须先有反应，调查员不能无视其存在自由行动
   * 例如：BOSS在石碑房间，调查员就不能安静地抄录石碑——BOSS会先干预
 	* 若多名调查员行动涉及同一空间，先处理该空间中的NPC反应，再决定行动是否可行
+	* 环境影响：如果调查员的行动会引起环境变化（如制造噪音、破坏物品等），相关NPC也必须有反应
+	* 爆炸会导致调查员 HP下降，附近NPC的HP也可能受到影响；火灾会导致房间内所有人都受到伤害；调查员在公共场所大声喊叫会引来路人注意等
 - 【战斗反应（强约束）】一旦调查员与敌对/警戒NPC进入冲突（攻击、持械威胁、强闯、贴身控制），该NPC必须在同轮给出反制动作：
 	* 优先顺序：还击/压制 > 拉开距离或寻找掩体 > 呼叫援助/撤退
 	* 除非该NPC已被明确判定失能（昏迷、束缚、死亡），否则不能“无反应站桩”

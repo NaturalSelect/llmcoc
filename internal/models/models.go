@@ -69,6 +69,7 @@ type CharacterCard struct {
 	ID              uint                        `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID          uint                        `gorm:"not null;index" json:"user_id"`
 	Name            string                      `gorm:"not null;size:100" json:"name"`
+	Race            string                      `gorm:"size:50" json:"race"` // 新增种族字段
 	Age             int                         `json:"age"`
 	Gender          string                      `gorm:"size:20" json:"gender"`
 	Occupation      string                      `gorm:"size:100" json:"occupation"`
@@ -104,7 +105,7 @@ type ScenarioContent struct {
 	SystemPrompt   string      `json:"system_prompt"`
 	Setting        string      `json:"setting"`
 	Intro          string      `json:"intro"`
-	GameStartSlot  int         `json:"game_start_slot,omitempty"`  // 开局时间槽位(0-47)，每槽30分钟
+	GameStartSlot  int         `json:"game_start_slot,omitempty"` // 开局时间槽位(0-47)，每槽30分钟
 	MapDescription string      `json:"map_description,omitempty"` // 文字描述的场景地图，供KP感知空间关系
 	Scenes         []SceneData `json:"scenes"`
 	NPCs           []NPCData   `json:"npcs"`
@@ -123,6 +124,7 @@ type SceneData struct {
 // NOTE: NPCData provides a template for a non-player character within a scenario.
 type NPCData struct {
 	Name        string         `json:"name"`
+	Race        string         `json:"race,omitempty"`
 	Description string         `json:"description"`
 	Attitude    string         `json:"attitude"`
 	Stats       map[string]int `json:"stats,omitempty"`
@@ -164,23 +166,24 @@ type ChatMsg struct {
 
 // NOTE: GameSession tracks an active or completed run of a scenario with players.
 type GameSession struct {
-	ID            uint                 `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name          string               `gorm:"not null;size:200" json:"name"`
-	ScenarioID    uint                 `gorm:"not null" json:"scenario_id"`
-	Status        SessionStatus        `gorm:"default:'lobby'" json:"status"`
-	MaxPlayers    int                  `gorm:"default:4" json:"max_players"`
-	Password      string               `gorm:"size:100" json:"-"`
-	HasPassword   bool                 `gorm:"default:false" json:"has_password"`
-	CreatedBy     uint                 `gorm:"not null" json:"created_by"`
-	TurnRound     int                       `gorm:"default:1" json:"turn_round"`
-	WriterHistory JSONField[[]ChatMsg]      `gorm:"type:text" json:"-"`
-	CombatState   JSONField[*CombatState]   `gorm:"type:text" json:"-"`
-	ChaseState    JSONField[*ChaseState]    `gorm:"type:text" json:"-"`
-	CreatedAt     time.Time            `json:"created_at"`
-	UpdatedAt     time.Time            `json:"updated_at"`
-	Scenario      Scenario             `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
-	Creator       User                 `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
-	Players       []SessionPlayer      `gorm:"foreignKey:SessionID" json:"players,omitempty"`
+	ID            uint                    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name          string                  `gorm:"not null;size:200" json:"name"`
+	Race          string                  `gorm:"size:50" json:"race"` // 新增种族字段
+	ScenarioID    uint                    `gorm:"not null" json:"scenario_id"`
+	Status        SessionStatus           `gorm:"default:'lobby'" json:"status"`
+	MaxPlayers    int                     `gorm:"default:4" json:"max_players"`
+	Password      string                  `gorm:"size:100" json:"-"`
+	HasPassword   bool                    `gorm:"default:false" json:"has_password"`
+	CreatedBy     uint                    `gorm:"not null" json:"created_by"`
+	TurnRound     int                     `gorm:"default:1" json:"turn_round"`
+	WriterHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
+	CombatState   JSONField[*CombatState] `gorm:"type:text" json:"-"`
+	ChaseState    JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
+	CreatedAt     time.Time               `json:"created_at"`
+	UpdatedAt     time.Time               `json:"updated_at"`
+	Scenario      Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
+	Creator       User                    `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
+	Players       []SessionPlayer         `gorm:"foreignKey:SessionID" json:"players,omitempty"`
 }
 
 // SessionNPC is a temporary NPC card created during a session (e.g. monsters, minor NPCs).
@@ -188,6 +191,7 @@ type SessionNPC struct {
 	ID          uint                      `gorm:"primaryKey;autoIncrement" json:"id"`
 	SessionID   uint                      `gorm:"not null;index" json:"session_id"`
 	Name        string                    `gorm:"not null;size:100" json:"name"`
+	Race        string                    `gorm:"size:50" json:"race"` // 新增种族字段
 	Description string                    `gorm:"type:text" json:"description"`
 	Attitude    string                    `gorm:"size:100" json:"attitude"`
 	Goal        string                    `gorm:"size:200" json:"goal"`
@@ -320,17 +324,17 @@ type CombatParticipant struct {
 	HasActed      bool   `json:"has_acted"`        // 本轮是否已行动
 	HasDodgedOrFB bool   `json:"has_dodged_or_fb"` // 本轮是否已闪避/反击（寡不敌众判断用）
 	IsAiming      bool   `json:"is_aiming"`        // 是否正在瞄准（下轮攻击+奖励骰）
-	APDebt        int    `json:"ap_debt"`           // 下轮行动点扣除（寻找掩体等动作欠债）
-	WoundState    string `json:"wound_state"`       // none/major/dying/dead
+	APDebt        int    `json:"ap_debt"`          // 下轮行动点扣除（寻找掩体等动作欠债）
+	WoundState    string `json:"wound_state"`      // none/major/dying/dead
 }
 
 // CombatState holds the full cross-round state of an ongoing combat encounter.
 // Stored as a JSON column on GameSession; nil means no active combat.
 type CombatState struct {
-	Active       bool                 `json:"active"`
-	Round        int                  `json:"round"`
-	Participants []CombatParticipant  `json:"participants"` // DEX降序排列
-	ActorIndex   int                  `json:"actor_index"`  // 当前行动者在Participants中的索引
+	Active       bool                `json:"active"`
+	Round        int                 `json:"round"`
+	Participants []CombatParticipant `json:"participants"` // DEX降序排列
+	ActorIndex   int                 `json:"actor_index"`  // 当前行动者在Participants中的索引
 }
 
 // ── Chase cross-round state ───────────────────────────────────────────────────
@@ -339,18 +343,18 @@ type CombatState struct {
 type ChaseParticipant struct {
 	Name      string `json:"name"`
 	IsNPC     bool   `json:"is_npc"`
-	MOV       int    `json:"mov"`       // 速度检定后固定的MOV值
-	Location  int    `json:"location"`  // 当前地点索引（数字越大越靠前）
-	APDebt    int    `json:"ap_debt"`   // 下轮扣除的行动点（险境失败欠债）
+	MOV       int    `json:"mov"`      // 速度检定后固定的MOV值
+	Location  int    `json:"location"` // 当前地点索引（数字越大越靠前）
+	APDebt    int    `json:"ap_debt"`  // 下轮扣除的行动点（险境失败欠债）
 	IsPursuer bool   `json:"is_pursuer"`
 }
 
 // ChaseObstacle represents a persistent obstacle between two chase locations.
 type ChaseObstacle struct {
-	Name     string `json:"name"`
-	Between  [2]int `json:"between"` // 阻挡的两个相邻地点索引
-	HP       int    `json:"hp"`
-	MaxHP    int    `json:"max_hp"`
+	Name    string `json:"name"`
+	Between [2]int `json:"between"` // 阻挡的两个相邻地点索引
+	HP      int    `json:"hp"`
+	MaxHP   int    `json:"max_hp"`
 }
 
 // ChaseState holds the full cross-round state of an ongoing chase.
