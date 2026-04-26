@@ -315,12 +315,11 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 [{"action":"roll_dice","dice":{"skill":"理智","value":55,"character":"Bob","check_type":"sanity","hidden":false,"san_success_loss":"1","san_fail_loss":"1D6+2"}}]
 收到结果（假设失败，损失6点SAN）后第二轮：
 [
-  {"action":"trigger_madness","character_name":"Bob","is_bystander":true},
-  {"action":"write","direction":"根据疯狂症状描述Bob的发作，融入当前场景氛围"}
+  {"action":"trigger_madness","character_name":"Bob","is_bystander":true}
 ]
 收到疯狂症状结果后第三轮：
 [
-  {"action":"write","direction":"继续描述Bob疯狂发作的具体表现和队友的反应"},
+  {"action":"write","direction":"描述Bob疯狂发作的具体表现和队友的反应"},
   {"action":"answer","reply":"Bob的双眼失焦，嘴里不断念叨着难以理解的呓语——这突如其来的变化让气氛更加诡异。你们打算怎么办？"}
 ]
   

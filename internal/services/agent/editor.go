@@ -77,7 +77,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 						// Re-roll a new symptom for the relapse episode.
 						sym := game.RollMadnessSymptom(true)
 						card.MadnessSymptom = sym.Description
-						card.MadnessDuration = 1
+						card.MadnessDuration = sym.Duration
 						log.Printf("[editor] %s: latent madness relapse triggered (state=%s, sanLoss=%d)", card.Name, card.MadnessState, sanLoss)
 					} else {
 						kind := game.EvalMadness(sanLoss, s.SAN, card.DailySanLoss, s.MaxSAN)
@@ -227,7 +227,7 @@ func applyMadnessToCard(card *models.CharacterCard, kind game.MadnessKind) {
 		card.MadnessState = "indefinite"
 		sym := game.RollMadnessSymptom(false)
 		card.MadnessSymptom = sym.Description
-		card.MadnessDuration = 1 // flagged as active
+		card.MadnessDuration = sym.Duration // flagged as active
 		log.Printf("[editor] %s: indefinite madness triggered (daily loss threshold)", card.Name)
 
 	case game.MadnessTemporary:
@@ -237,7 +237,7 @@ func applyMadnessToCard(card *models.CharacterCard, kind game.MadnessKind) {
 			card.MadnessState = "temporary"
 			sym := game.RollMadnessSymptom(true) // instantaneous (bystanders present)
 			card.MadnessSymptom = sym.Description
-			card.MadnessDuration = 1
+			card.MadnessDuration = sym.Duration
 			log.Printf("[editor] %s: temporary madness — INT check passed, symptom rolled", card.Name)
 		} else {
 			// Failed INT check → memory suppression, no visible madness (but sanity is still lost)

@@ -401,7 +401,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 						}
 					}
 					card.MadnessSymptom = symptom.Description
-					card.MadnessDuration = 1
+					card.MadnessDuration = symptom.Duration
 					models.DB.Save(card)
 					break
 				}
@@ -507,6 +507,19 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				reason := call.TimeReason
 				if reason == "" {
 					reason = "时间推进"
+				}
+				// NOTE: foreach player if remove madness after time advance
+				for i := range gctx.Session.Players {
+					card := &gctx.Session.Players[i].CharacterCard
+					if card.MadnessState == "none" || card.MadnessState == "" {
+						continue
+					}
+					card.MadnessDuration -= rounds
+					if card.MadnessDuration <= 0 {
+						card.MadnessState = "none"
+					}
+					models.DB.Save(card)
+					break
 				}
 				log.Printf("[agent] session %d advance_time +%d rounds (%s) → %s",
 					gctx.Session.ID, rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session)))
@@ -690,8 +703,22 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 
 		if hasEnd {
-			if !timeAdvancedInTurn && checkTurnReady(gctx) && hasWrite {
-				advanceTurnRound(gctx)
+			if !timeAdvancedInTurn {
+				for i := range gctx.Session.Players {
+					card := &gctx.Session.Players[i].CharacterCard
+					if card.MadnessState == "none" || card.MadnessState == "" {
+						continue
+					}
+					card.MadnessDuration -= 1
+					if card.MadnessDuration <= 0 {
+						card.MadnessState = "none"
+					}
+					models.DB.Save(card)
+					break
+				}
+				if checkTurnReady(gctx) && hasWrite {
+					advanceTurnRound(gctx)
+				}
 			}
 			saveWriterHistory(gctx.Session.ID, writerState)
 			debugf("run", "session=%d completed iter=%d writer_len=%d narration_len=%d",

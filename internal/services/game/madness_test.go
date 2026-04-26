@@ -3,7 +3,6 @@ package game
 import (
 	"fmt"
 	"math/rand"
-	"strings"
 	"testing"
 )
 
@@ -17,8 +16,8 @@ func TestRollMadnessSymptom(t *testing.T) {
 			if !symptom.IsInstantaneous {
 				t.Errorf("Expected IsInstantaneous to be true")
 			}
-			if symptom.Duration != "10 轮" {
-				t.Errorf("Expected duration to be '10 轮', got %q", symptom.Duration)
+			if symptom.Duration != 10 {
+				t.Errorf("Expected duration to be 10, got %d", symptom.Duration)
 			}
 			found := false
 			for _, desc := range instantaneousSymptoms {
@@ -40,8 +39,8 @@ func TestRollMadnessSymptom(t *testing.T) {
 			if symptom.IsInstantaneous {
 				t.Errorf("Expected IsInstantaneous to be false")
 			}
-			if !strings.HasPrefix(symptom.Duration, "持续约 ") || !strings.HasSuffix(symptom.Duration, " 小时") {
-				t.Errorf("Expected duration to be like '持续约 N 小时', got %q", symptom.Duration)
+			if symptom.Duration <= 0 {
+				t.Errorf("Expected duration to be positive, got %d", symptom.Duration)
 			}
 			found := false
 			for _, desc := range summarySymptoms {

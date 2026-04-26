@@ -6,7 +6,7 @@ import "math/rand"
 // MadnessSymptom describes a madness effect from the COC 7th edition symptom tables.
 type MadnessSymptom struct {
 	// Duration is a human-readable description of how long the symptom lasts.
-	Duration string
+	Duration int
 	// Description is a Chinese description of the symptom, ready to pass to the Writer agent.
 	Description string
 	// IsInstantaneous is true for the "instantaneous / bystander" table.
@@ -52,20 +52,16 @@ func RollMadnessSymptom(instantaneous bool) MadnessSymptom {
 		// COC 7th: "疯狂发作只会持续10个战斗轮（应用即时症状时）"——固定10轮，不是随机
 		return MadnessSymptom{
 			IsInstantaneous: true,
-			Duration:        "10 轮",
+			Duration:        10,
 			Description:     instantaneousSymptoms[idx],
 		}
 	}
 	rolls, _ := Roll(1, 10)
 	return MadnessSymptom{
 		IsInstantaneous: false,
-		Duration:        formatDuration(rolls, "小时"),
+		Duration:        rolls * 2,
 		Description:     summarySymptoms[idx],
 	}
-}
-
-func formatDuration(n int, unit string) string {
-	return "持续约 " + itoa(n) + " " + unit
 }
 
 func itoa(n int) string {
