@@ -175,6 +175,13 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		var toolResults []ToolResult
 		hasEnd := false
 		hasWrite := false
+		hasOtherExpectWrite := false
+
+		for _, call := range calls {
+			if call.Action != ToolWrite && call.Action != ToolAnswer {
+				hasOtherExpectWrite = true
+			}
+		}
 
 		for _, call := range calls {
 			if ctx.Err() != nil {
@@ -182,7 +189,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			}
 
 			switch call.Action {
-
 			case ToolCheckRule:
 				// Lawyer slave: receives only a semantic question, no scenario context.
 				debugf("tool", "session=%d check_rule q=%s", sid, call.Question)
@@ -553,7 +559,10 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				}
 			case ToolAnswer:
 				hasEnd = true
-				kpNarration = call.Reply
+				if hasOtherExpectWrite {
+					hasEnd = false
+				}
+				kpNarration += call.Reply
 				debugf("tool", "session=%d answer narration=%s", sid, call.Reply)
 
 			// ── Combat tools ──────────────────────────────────────────────────────
@@ -976,7 +985,6 @@ func chaseAPSummary(parts []models.ChaseParticipant, minMOV int) string {
 	}
 	return strings.Join(items, "、")
 }
-
 
 func formatSingleDiceResult(r DiceCheckResult) string {
 	who := r.Character
