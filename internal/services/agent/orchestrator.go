@@ -472,6 +472,14 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 			case ToolWrite:
 				// Writer slave: no scenario info; receives direction + its own history.
+				if hasInteraction {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolWrite,
+						Result: "已经有其他工具调用了，write 操作被跳过",
+					})
+					debugf("tool", "session=%d write skipped due to other interactions", sid)
+					continue
+				}
 				hasWrite = true
 				debugf("tool", "session=%d write direction=%s", sid, call.Direction)
 				doneW := timedDebug("Writer", "session=%d direction=%s", sid, call.Direction)
@@ -564,7 +572,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if hasInteraction {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolAnswer,
-						Result: "已经给出调用结果...",
+						Result: "已经有其他工具调用了，answer 操作被跳过",
 					})
 					debugf("tool", "session=%v answer with interaction", sid)
 					continue
