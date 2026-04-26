@@ -465,7 +465,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		// Use a DB transaction so that record + count is atomic, preventing the
 		// race where two simultaneous last-submitters both try to run the agent.
 		var isLastToSubmit bool
-		_ = models.DB.Transaction(func(tx *gorm.DB) error {
+		err := models.DB.Transaction(func(tx *gorm.DB) error {
 			// Same-round resubmission should overwrite the player's pending action,
 			// so only the latest action is persisted with the KP reply.
 			var existing models.SessionTurnAction
@@ -480,10 +480,8 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 					ActionSummary: content,
 				})
 			} else {
-				tx.Model(&existing).Updates(map[string]any{
-					"username":       playerDisplayName,
-					"action_summary": content,
-				})
+				c.JSON(http.StatusBadRequest, gin.H{"error": "你已提交过行动了，请等待其他玩家。"})
+				return fmt.Errorf("player %d already submitted action for round %d", userID, session.TurnRound)
 			}
 			var submitted int64
 			tx.Model(&models.SessionTurnAction{}).
@@ -492,6 +490,10 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			isLastToSubmit = submitted >= int64(activePlayerCount)
 			return nil
 		})
+		if err != nil {
+			log.Printf("[chat] session=%d user=%q transaction error: %v", sessionID, username, err)
+			return
+		}
 
 		if !isLastToSubmit {
 			// Tell the player how many are still pending and let them poll.
