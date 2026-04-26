@@ -412,6 +412,20 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 
 【示例：查看规则书常量】
 [{"action":"read_rulebook_const","constant":"spells"}]
+
+【示例：结束游戏】
+[{"action":"query_character","character_name":"Alice"}]
+收到人物卡后第一轮：
+[{"action":"manage_relation","character_name":"Alice","operate":"remove","relation":{"name":"角色A","relationship":"","note":"角色A已死亡"}}]
+或：
+[
+	{"action":"manage_relation","character_name":"Alice","operate":"remove","relation":{"name":"克苏鲁","relationship":"信徒","note":"与克苏鲁的联系加深了"}},
+	{"action":"manage_relation","character_name":"Alice","operate":"add","relation":{"name":"克苏鲁","relationship":"祭司","note":"与克苏鲁的联系加深了"}}
+]
+第二轮：
+[{"action":"update_characters","changes":["occupation 参考原职业和之前的行为设置新职业（Alice）"]}]
+第三轮：
+[{"action":"end_game","ending_summary":"Alice成功逃脱了危险，虽然失去了朋友，但她的职业生涯得以继续。"}]
 `
 
 // buildKPMessages constructs the initial conversation message list for the KP agent.
