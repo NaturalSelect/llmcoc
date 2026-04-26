@@ -419,6 +419,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	if content.WinCondition != "" {
 		scenarioSB.WriteString("胜利条件：" + content.WinCondition + "\n")
 	}
+	if content.MapDescription != "" {
+		scenarioSB.WriteString("场景地图：\n" + content.MapDescription + "\n")
+	}
 	if content.SystemPrompt != "" {
 		scenarioSB.WriteString("KP特殊指令：" + content.SystemPrompt + "\n")
 	}

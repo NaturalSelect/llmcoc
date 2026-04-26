@@ -101,14 +101,15 @@ type CharacterCard struct {
 
 // NOTE: ScenarioContent defines the narrative and structural elements of a playable scenario.
 type ScenarioContent struct {
-	SystemPrompt  string      `json:"system_prompt"`
-	Setting       string      `json:"setting"`
-	Intro         string      `json:"intro"`
-	GameStartSlot int         `json:"game_start_slot,omitempty"` // 开局时间槽位(0-47)，每槽30分钟
-	Scenes        []SceneData `json:"scenes"`
-	NPCs          []NPCData   `json:"npcs"`
-	Clues         []string    `json:"clues"`
-	WinCondition  string      `json:"win_condition"`
+	SystemPrompt   string      `json:"system_prompt"`
+	Setting        string      `json:"setting"`
+	Intro          string      `json:"intro"`
+	GameStartSlot  int         `json:"game_start_slot,omitempty"`  // 开局时间槽位(0-47)，每槽30分钟
+	MapDescription string      `json:"map_description,omitempty"` // 文字描述的场景地图，供KP感知空间关系
+	Scenes         []SceneData `json:"scenes"`
+	NPCs           []NPCData   `json:"npcs"`
+	Clues          []string    `json:"clues"`
+	WinCondition   string      `json:"win_condition"`
 }
 
 // NOTE: SceneData describes a specific location or event in a scenario.
