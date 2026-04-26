@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 
@@ -351,6 +352,14 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 						Result: fmt.Sprintf("已清理%d名调查员的非永久疯狂状态", cleared),
 					})
 				}
+				// 撕卡：战死的调查员软删除人物卡
+				torn := TearDeadInvestigators(players)
+				if len(torn) > 0 {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolEndGame,
+						Result: fmt.Sprintf("调查员%v在本次冒险中牺牲，人物卡已撕除", torn),
+					})
+				}
 				models.DB.Model(&models.GameSession{}).
 					Where("id = ?", gctx.Session.ID).
 					Update("status", models.SessionStatusEnded)
@@ -557,6 +566,108 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				hasEnd = true
 				kpNarration = call.Reply
 				debugf("tool", "session=%d answer narration=%s", sid, call.Reply)
+
+			// ── Combat tools ──────────────────────────────────────────────────────
+			case ToolStartCombat:
+				if len(call.CombatParticipants) == 0 {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolStartCombat,
+						Result: "错误：start_combat 缺少 combat_participants 参数",
+					})
+					continue
+				}
+				cs := buildCombatState(call.CombatParticipants)
+				gctx.Session.CombatState = models.JSONField[*models.CombatState]{Data: &cs}
+				saveCombatState(gctx.Session.ID, &cs)
+				debugf("tool", "session=%d start_combat round=1 participants=%d", sid, len(cs.Participants))
+				toolResults = append(toolResults, ToolResult{
+					Action: ToolStartCombat,
+					Result: fmt.Sprintf("战斗开始！DEX顺序：%s", combatOrderSummary(cs.Participants)),
+				})
+
+			case ToolCombatAct:
+				cs := gctx.Session.CombatState.Data
+				if cs == nil {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolCombatAct,
+						Result: "错误：当前没有进行中的战斗",
+					})
+					continue
+				}
+				result := applyCombatAct(cs, call)
+				gctx.Session.CombatState = models.JSONField[*models.CombatState]{Data: cs}
+				saveCombatState(gctx.Session.ID, cs)
+				debugf("tool", "session=%d combat_act actor=%q action=%q", sid, call.CombatActorName, call.CombatAction)
+				toolResults = append(toolResults, ToolResult{
+					Action: ToolCombatAct,
+					Result: result,
+				})
+
+			case ToolEndCombat:
+				gctx.Session.CombatState = models.JSONField[*models.CombatState]{Data: nil}
+				saveCombatState(gctx.Session.ID, nil)
+				reason := call.CombatEndReason
+				if reason == "" {
+					reason = "战斗结束"
+				}
+				debugf("tool", "session=%d end_combat reason=%q", sid, reason)
+				toolResults = append(toolResults, ToolResult{
+					Action: ToolEndCombat,
+					Result: fmt.Sprintf("战斗已结束：%s", reason),
+				})
+
+			// ── Chase tools ───────────────────────────────────────────────────────
+			case ToolStartChase:
+				if len(call.ChaseParticipants) == 0 {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolStartChase,
+						Result: "错误：start_chase 缺少 chase_participants 参数",
+					})
+					continue
+				}
+				chs := buildChaseState(call.ChaseParticipants)
+				gctx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: &chs}
+				saveChaseState(gctx.Session.ID, &chs)
+				debugf("tool", "session=%d start_chase round=1 participants=%d minMOV=%d", sid, len(chs.Participants), chs.MinMOV)
+				toolResults = append(toolResults, ToolResult{
+					Action: ToolStartChase,
+					Result: fmt.Sprintf("追逐开始！参与者：%s；最低MOV=%d，各参与者行动点=%s",
+						chaseParticipantSummary(chs.Participants),
+						chs.MinMOV,
+						chaseAPSummary(chs.Participants, chs.MinMOV),
+					),
+				})
+
+			case ToolChaseAct:
+				chs := gctx.Session.ChaseState.Data
+				if chs == nil {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolChaseAct,
+						Result: "错误：当前没有进行中的追逐",
+					})
+					continue
+				}
+				result := applyChaseAct(chs, call)
+				gctx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: chs}
+				saveChaseState(gctx.Session.ID, chs)
+				debugf("tool", "session=%d chase_act actor=%q action=%v", sid, call.ChaseActorName, call.ChaseAction)
+				toolResults = append(toolResults, ToolResult{
+					Action: ToolChaseAct,
+					Result: result,
+				})
+
+			case ToolEndChase:
+				gctx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: nil}
+				saveChaseState(gctx.Session.ID, nil)
+				reason := call.ChaseEndReason
+				if reason == "" {
+					reason = "追逐结束"
+				}
+				debugf("tool", "session=%d end_chase reason=%q", sid, reason)
+				toolResults = append(toolResults, ToolResult{
+					Action: ToolEndChase,
+					Result: fmt.Sprintf("追逐已结束：%s", reason),
+				})
 			}
 
 			if hasEnd {
@@ -604,7 +715,280 @@ func saveWriterHistory(sessionID uint, state *WriterState) {
 		})
 }
 
-// formatSingleDiceResult formats a single dice result as a brief string for the KP.
+// ── Combat state helpers ──────────────────────────────────────────────────────
+
+// saveCombatState persists the CombatState JSON column on GameSession.
+// Pass nil to clear an ended combat.
+func saveCombatState(sessionID uint, cs *models.CombatState) {
+	models.DB.Model(&models.GameSession{}).
+		Where("id = ?", sessionID).
+		Update("combat_state", models.JSONField[*models.CombatState]{Data: cs})
+}
+
+// buildCombatState initialises a new CombatState from KP-provided participant inputs.
+// Participants are sorted by DEX descending (ties keep input order).
+func buildCombatState(inputs []CombatParticipantInput) models.CombatState {
+	parts := make([]models.CombatParticipant, len(inputs))
+	for i, inp := range inputs {
+		parts[i] = models.CombatParticipant{
+			Name:       inp.Name,
+			DEX:        inp.DEX,
+			HP:         inp.HP,
+			IsNPC:      inp.IsNPC,
+			WoundState: "none",
+		}
+	}
+	// Stable sort: higher DEX acts first.
+	sort.SliceStable(parts, func(i, j int) bool {
+		return parts[i].DEX > parts[j].DEX
+	})
+	return models.CombatState{
+		Active:       true,
+		Round:        1,
+		Participants: parts,
+		ActorIndex:   0,
+	}
+}
+
+// applyCombatAct applies one combatant's action to the CombatState and advances
+// the actor pointer. Returns a human-readable result string for the KP.
+func applyCombatAct(cs *models.CombatState, call ToolCall) string {
+	actorName := call.CombatActorName
+	act := call.CombatAction
+
+	// Find the actor in the participant list.
+	actorIdx := -1
+	for i, p := range cs.Participants {
+		if p.Name == actorName {
+			actorIdx = i
+			break
+		}
+	}
+	if actorIdx < 0 {
+		return fmt.Sprintf("错误：找不到战斗参与者 %q", actorName)
+	}
+
+	actor := &cs.Participants[actorIdx]
+	actor.HasActed = true
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("【%s 行动】", actorName))
+
+	if act != nil {
+		switch act.Type {
+		case "aim":
+			actor.IsAiming = true
+			sb.WriteString("正在瞄准，下轮攻击获得奖励骰。")
+		case "take_cover":
+			debt := act.APDebtNext
+			if debt <= 0 {
+				debt = 1
+			}
+			actor.APDebt += debt
+			sb.WriteString(fmt.Sprintf("寻找掩体，下轮行动点-1。"))
+		case "dodge":
+			actor.HasDodgedOrFB = true
+			sb.WriteString(fmt.Sprintf("闪避 %s。", act.TargetName))
+		case "fight_back":
+			actor.HasDodgedOrFB = true
+			sb.WriteString(fmt.Sprintf("反击 %s。", act.TargetName))
+		case "attack":
+			// Clear aiming bonus after use.
+			if actor.IsAiming {
+				actor.IsAiming = false
+				sb.WriteString("（使用瞄准奖励骰）")
+			}
+			sb.WriteString(fmt.Sprintf("攻击 %s（武器：%s）。", act.TargetName, act.WeaponName))
+		default:
+			sb.WriteString(fmt.Sprintf("执行动作：%s。", act.Type))
+		}
+	}
+
+	// Advance actor index; if all have acted, start a new round.
+	allActed := true
+	for _, p := range cs.Participants {
+		if !p.HasActed && p.WoundState != "dead" {
+			allActed = false
+			break
+		}
+	}
+	if allActed {
+		cs.Round++
+		// Reset per-round flags and apply AP debts.
+		for i := range cs.Participants {
+			cs.Participants[i].HasActed = false
+			cs.Participants[i].HasDodgedOrFB = false
+			if cs.Participants[i].APDebt > 0 {
+				cs.Participants[i].APDebt-- // consume one point of debt
+			}
+		}
+		cs.ActorIndex = 0
+		sb.WriteString(fmt.Sprintf(" 本轮结束，进入第%d轮。", cs.Round))
+	} else {
+		// Advance to next living actor.
+		next := (actorIdx + 1) % len(cs.Participants)
+		for cs.Participants[next].HasActed || cs.Participants[next].WoundState == "dead" {
+			next = (next + 1) % len(cs.Participants)
+		}
+		cs.ActorIndex = next
+		sb.WriteString(fmt.Sprintf(" 下一行动者：%s（DEX %d）。", cs.Participants[next].Name, cs.Participants[next].DEX))
+	}
+
+	return sb.String()
+}
+
+// combatOrderSummary returns a compact DEX-order string for the KP result message.
+func combatOrderSummary(parts []models.CombatParticipant) string {
+	names := make([]string, len(parts))
+	for i, p := range parts {
+		names[i] = fmt.Sprintf("%s(DEX%d)", p.Name, p.DEX)
+	}
+	return strings.Join(names, " → ")
+}
+
+// ── Chase state helpers ───────────────────────────────────────────────────────
+
+// saveChaseState persists the ChaseState JSON column on GameSession.
+// Pass nil to clear an ended chase.
+func saveChaseState(sessionID uint, chs *models.ChaseState) {
+	models.DB.Model(&models.GameSession{}).
+		Where("id = ?", sessionID).
+		Update("chase_state", models.JSONField[*models.ChaseState]{Data: chs})
+}
+
+// buildChaseState initialises a new ChaseState from KP-provided participant inputs.
+// MinMOV is computed from the participant list.
+func buildChaseState(inputs []ChaseParticipantInput) models.ChaseState {
+	parts := make([]models.ChaseParticipant, len(inputs))
+	minMOV := -1
+	for i, inp := range inputs {
+		parts[i] = models.ChaseParticipant{
+			Name:      inp.Name,
+			IsNPC:     inp.IsNPC,
+			MOV:       inp.MOV,
+			Location:  inp.Location,
+			IsPursuer: inp.IsPursuer,
+		}
+		if minMOV < 0 || inp.MOV < minMOV {
+			minMOV = inp.MOV
+		}
+	}
+	if minMOV < 0 {
+		minMOV = 0
+	}
+	return models.ChaseState{
+		Active:       true,
+		Round:        1,
+		MinMOV:       minMOV,
+		Participants: parts,
+		Obstacles:    nil,
+	}
+}
+
+// applyChaseAct applies one participant's chase action and returns a result string.
+func applyChaseAct(chs *models.ChaseState, call ToolCall) string {
+	actorName := call.ChaseActorName
+	act := call.ChaseAction
+
+	actorIdx := -1
+	for i, p := range chs.Participants {
+		if p.Name == actorName {
+			actorIdx = i
+			break
+		}
+	}
+	if actorIdx < 0 {
+		return fmt.Sprintf("错误：找不到追逐参与者 %q", actorName)
+	}
+
+	actor := &chs.Participants[actorIdx]
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("【%s 追逐行动】", actorName))
+
+	if act == nil {
+		return sb.String() + "（无行动详情）"
+	}
+
+	switch act.Type {
+	case "move":
+		actor.Location += act.MoveDelta
+		sb.WriteString(fmt.Sprintf("移动%+d格，当前位置：%d。", act.MoveDelta, actor.Location))
+	case "hazard":
+		if act.APDebtNext > 0 {
+			actor.APDebt += act.APDebtNext
+			sb.WriteString(fmt.Sprintf("险境检定失败，下轮行动点-%d。", act.APDebtNext))
+		} else {
+			sb.WriteString("险境检定成功，正常通过。")
+		}
+	case "obstacle":
+		// Create or update an obstacle.
+		if act.ObstacleName != "" && act.ObstacleMaxHP > 0 {
+			found := false
+			for i, ob := range chs.Obstacles {
+				if ob.Name == act.ObstacleName {
+					chs.Obstacles[i].HP = act.ObstacleHP
+					found = true
+					sb.WriteString(fmt.Sprintf("障碍【%s】HP更新为%d/%d。", act.ObstacleName, act.ObstacleHP, ob.MaxHP))
+					break
+				}
+			}
+			if !found {
+				chs.Obstacles = append(chs.Obstacles, models.ChaseObstacle{
+					Name:  act.ObstacleName,
+					HP:    act.ObstacleHP,
+					MaxHP: act.ObstacleMaxHP,
+				})
+				sb.WriteString(fmt.Sprintf("新增障碍【%s】HP=%d/%d。", act.ObstacleName, act.ObstacleHP, act.ObstacleMaxHP))
+			}
+		}
+	case "conflict":
+		sb.WriteString(fmt.Sprintf("与%s发生冲突。", act.TargetName))
+	default:
+		sb.WriteString(fmt.Sprintf("执行追逐动作：%s。", act.Type))
+	}
+
+	// Check for chase-end conditions: pursuer reaches same location as prey.
+	for _, p := range chs.Participants {
+		if p.IsPursuer {
+			for _, q := range chs.Participants {
+				if !q.IsPursuer && p.Location >= q.Location {
+					sb.WriteString(fmt.Sprintf(" ⚠ 追逐者%s已追上%s（位置%d≥%d），KP可宣告追逐结束。",
+						p.Name, q.Name, p.Location, q.Location))
+				}
+			}
+		}
+	}
+
+	return sb.String()
+}
+
+// chaseParticipantSummary returns a compact participant list string.
+func chaseParticipantSummary(parts []models.ChaseParticipant) string {
+	names := make([]string, len(parts))
+	for i, p := range parts {
+		role := "猎物"
+		if p.IsPursuer {
+			role = "追逐者"
+		}
+		names[i] = fmt.Sprintf("%s(%s,MOV%d,位置%d)", p.Name, role, p.MOV, p.Location)
+	}
+	return strings.Join(names, "、")
+}
+
+// chaseAPSummary returns each participant's action points for the round.
+func chaseAPSummary(parts []models.ChaseParticipant, minMOV int) string {
+	items := make([]string, len(parts))
+	for i, p := range parts {
+		ap := 1 + (p.MOV - minMOV)
+		if ap < 1 {
+			ap = 1
+		}
+		items[i] = fmt.Sprintf("%s=%d", p.Name, ap)
+	}
+	return strings.Join(items, "、")
+}
+
+
 func formatSingleDiceResult(r DiceCheckResult) string {
 	who := r.Character
 	if who == "" {

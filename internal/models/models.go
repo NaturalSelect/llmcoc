@@ -171,8 +171,10 @@ type GameSession struct {
 	Password      string               `gorm:"size:100" json:"-"`
 	HasPassword   bool                 `gorm:"default:false" json:"has_password"`
 	CreatedBy     uint                 `gorm:"not null" json:"created_by"`
-	TurnRound     int                  `gorm:"default:1" json:"turn_round"`
-	WriterHistory JSONField[[]ChatMsg] `gorm:"type:text" json:"-"`
+	TurnRound     int                       `gorm:"default:1" json:"turn_round"`
+	WriterHistory JSONField[[]ChatMsg]      `gorm:"type:text" json:"-"`
+	CombatState   JSONField[*CombatState]   `gorm:"type:text" json:"-"`
+	ChaseState    JSONField[*ChaseState]    `gorm:"type:text" json:"-"`
 	CreatedAt     time.Time            `json:"created_at"`
 	UpdatedAt     time.Time            `json:"updated_at"`
 	Scenario      Scenario             `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
@@ -304,6 +306,60 @@ type CoinRecharge struct {
 	CreatedAt time.Time `json:"created_at"`
 	User      User      `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Admin     User      `gorm:"foreignKey:AdminID" json:"admin,omitempty"`
+}
+
+// ── Combat cross-round state ──────────────────────────────────────────────────
+
+// CombatParticipant tracks one combatant's cross-round state.
+type CombatParticipant struct {
+	Name          string `json:"name"`
+	DEX           int    `json:"dex"`
+	HP            int    `json:"hp"`
+	IsNPC         bool   `json:"is_npc"`
+	HasActed      bool   `json:"has_acted"`        // 本轮是否已行动
+	HasDodgedOrFB bool   `json:"has_dodged_or_fb"` // 本轮是否已闪避/反击（寡不敌众判断用）
+	IsAiming      bool   `json:"is_aiming"`        // 是否正在瞄准（下轮攻击+奖励骰）
+	APDebt        int    `json:"ap_debt"`           // 下轮行动点扣除（寻找掩体等动作欠债）
+	WoundState    string `json:"wound_state"`       // none/major/dying/dead
+}
+
+// CombatState holds the full cross-round state of an ongoing combat encounter.
+// Stored as a JSON column on GameSession; nil means no active combat.
+type CombatState struct {
+	Active       bool                 `json:"active"`
+	Round        int                  `json:"round"`
+	Participants []CombatParticipant  `json:"participants"` // DEX降序排列
+	ActorIndex   int                  `json:"actor_index"`  // 当前行动者在Participants中的索引
+}
+
+// ── Chase cross-round state ───────────────────────────────────────────────────
+
+// ChaseParticipant tracks one participant's cross-round state in a chase.
+type ChaseParticipant struct {
+	Name      string `json:"name"`
+	IsNPC     bool   `json:"is_npc"`
+	MOV       int    `json:"mov"`       // 速度检定后固定的MOV值
+	Location  int    `json:"location"`  // 当前地点索引（数字越大越靠前）
+	APDebt    int    `json:"ap_debt"`   // 下轮扣除的行动点（险境失败欠债）
+	IsPursuer bool   `json:"is_pursuer"`
+}
+
+// ChaseObstacle represents a persistent obstacle between two chase locations.
+type ChaseObstacle struct {
+	Name     string `json:"name"`
+	Between  [2]int `json:"between"` // 阻挡的两个相邻地点索引
+	HP       int    `json:"hp"`
+	MaxHP    int    `json:"max_hp"`
+}
+
+// ChaseState holds the full cross-round state of an ongoing chase.
+// Stored as a JSON column on GameSession; nil means no active chase.
+type ChaseState struct {
+	Active       bool               `json:"active"`
+	Round        int                `json:"round"`
+	MinMOV       int                `json:"min_mov"` // 所有参与者中最低MOV，用于计算行动点
+	Participants []ChaseParticipant `json:"participants"`
+	Obstacles    []ChaseObstacle    `json:"obstacles"`
 }
 
 // ── Agent system models ──────────────────────────────────────────────────────

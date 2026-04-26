@@ -140,7 +140,39 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 23. answer — 结束本回合并给出KP对玩家的回复
     {"action":"answer","reply":"像朋友一样对玩家说的回复（必填，口语化，包含骰子结果，行动结果，战斗结果等）"}
 
-【执行规则】
+24. start_combat — 开始战斗，初始化跨轮战斗状态（第一次发生冲突时调用）
+    {"action":"start_combat","combat_participants":[{"name":"Alice","dex":60,"hp":12,"is_npc":false},{"name":"怪物","dex":40,"hp":20,"is_npc":true}]}
+    - 系统将按DEX降序排列行动顺序并返回确认。
+    - 仅在战斗刚开始时调用一次；战斗进行中使用 combat_act。
+
+25. combat_act — 记录本轮当前行动者的战斗行动（每个行动者轮到时调用）
+    {"action":"combat_act","combat_actor_name":"Alice","combat_action":{"type":"attack","target_name":"怪物","weapon_name":"左轮手枪"}}
+    - combat_action.type 可选值：attack（攻击）/ dodge（闪避）/ fight_back（反击）/ aim（瞄准）/ take_cover（寻找掩体）/ other
+    - 瞄准后下轮攻击自动获得奖励骰；寻找掩体会令下轮行动点-1（ap_debt_next=1）。
+    - 系统自动维护行动顺序，一轮所有人行动完毕后进入下一轮并重置标记。
+    - 对抗检定/伤害仍通过 roll_dice + update_characters/update_npc_card 处理。
+
+26. end_combat — 结束战斗，清除战斗状态
+    {"action":"end_combat","combat_end_reason":"怪物被击毙"}
+    - 当战斗明确结束（敌人全灭/玩家撤退/投降/其他剧情结束）时调用。
+
+27. start_chase — 开始追逐，初始化跨轮追逐状态
+    {"action":"start_chase","chase_participants":[{"name":"Alice","is_npc":false,"mov":8,"location":2,"is_pursuer":false},{"name":"警察","is_npc":true,"mov":9,"location":0,"is_pursuer":true}]}
+    - location 为地点索引（数字越大越靠前/越靠近逃脱点）；MOV为速度检定后的固定值。
+    - 系统自动计算 min_MOV 和各参与者行动点（AP = 1 + own_MOV - min_MOV）。
+
+28. chase_act — 记录本轮当前追逐参与者的行动
+    {"action":"chase_act","chase_actor_name":"Alice","chase_action":{"type":"move","move_delta":2}}
+    - chase_action.type 可选值：move（移动）/ hazard（险境检定结果）/ obstacle（设置/更新障碍）/ conflict（近战冲突）/ other
+    - move: move_delta 为本次消耗AP移动的格数（正=追近，负=拉开）。
+    - hazard失败时设 ap_debt_next=N（通常1D3结果）；成功则不设。
+    - obstacle: 提供 obstacle_name / obstacle_hp / obstacle_max_hp 新建或更新障碍HP。
+    - 系统检测到追逐者到达猎物位置时会给出提醒，KP再决定是否 end_chase。
+
+29. end_chase — 结束追逐，清除追逐状态
+    {"action":"end_chase","chase_end_reason":"猎物成功逃脱"}
+
+
 - 如果要结束处理，使用 answer 或 end_game 之一作为收尾（end_game 用于结束整场游戏）
 - 若需要骰子结果才能决定叙事走向：本轮只输出 roll_dice（可多个），不含 write/answer
   系统会把骰子结果反馈给你，下一轮再输出 write 和 answer
@@ -155,6 +187,15 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 - answer 代表以KP的身份发言，推进剧情必须使用write；若剧本结束可直接调用 end_game
 - 你只能输出JSON数组，输出前先进行自我检查，不能出现不可见字符，
 - 严格以JSON格式输出，不能有多余的逗号或语法错误；
+- 【战斗状态维护】若当前存在「战斗状态」注入（见用户消息），必须遵守行动顺序：
+  * 每轮按DEX顺序，当前行动者完成动作后调用 combat_act 登记，系统自动推进；
+  * 攻击/伤害仍通过 roll_dice + update_characters/update_npc_card 处理，与 combat_act 配合使用；
+  * 战斗结束后调用 end_combat 清除状态；
+  * 不得跳过行动者或乱序行动。
+- 【追逐状态维护】若当前存在「追逐状态」注入（见用户消息），必须遵守行动点规则：
+  * 每参与者的行动点 = 1 + (自身MOV - min_MOV)，欠债（ap_debt）下轮扣除；
+  * 每次移动/险境/障碍/冲突通过 chase_act 登记，系统自动判断是否追上；
+  * 追逐结束后调用 end_chase 清除状态。
 
 【KP核心准则】
 - 【查阅规则书】 read_rulebook_const 和 check_rule 是你最重要的工具，给调查员回答之前确保你至少看过一遍，除非你对相关规则非常熟悉且有信心
@@ -423,6 +464,72 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	}
 	if hasCombatSignal(gctx) {
 		userSB.WriteString("\n【战斗提醒】检测到本轮存在冲突意图。若同区域存在敌对/警戒NPC，请先调用 act_npc 让其反制（还击、压制、掩护、呼救或撤退），不要让其无反应。\n")
+	}
+	// Inject active combat state so KP can enforce DEX-order and track per-round flags.
+	if cs := gctx.Session.CombatState.Data; cs != nil && cs.Active {
+		userSB.WriteString("\n【当前战斗状态】\n")
+		currentName := ""
+		if cs.ActorIndex >= 0 && cs.ActorIndex < len(cs.Participants) {
+			currentName = cs.Participants[cs.ActorIndex].Name
+		}
+		userSB.WriteString(fmt.Sprintf("  第%d轮，当前行动者：%s\n", cs.Round, currentName))
+		userSB.WriteString("  行动顺序（DEX降序）：\n")
+		for i, p := range cs.Participants {
+			acted := "待行动"
+			if p.WoundState == "dead" {
+				acted = "死亡"
+			} else if p.HasActed {
+				acted = "已行动"
+			}
+			marker := ""
+			if i == cs.ActorIndex {
+				marker = " ◀ 当前"
+			}
+			aiming := ""
+			if p.IsAiming {
+				aiming = "【瞄准中】"
+			}
+			debt := ""
+			if p.APDebt > 0 {
+				debt = fmt.Sprintf("【下轮AP-%d】", p.APDebt)
+			}
+			dodged := ""
+			if p.HasDodgedOrFB {
+				dodged = "【已用闪避/反击】"
+			}
+			userSB.WriteString(fmt.Sprintf("    %d. %s DEX=%d HP=%d %s%s%s%s%s\n",
+				i+1, p.Name, p.DEX, p.HP, acted, aiming, debt, dodged, marker))
+		}
+		userSB.WriteString("  （攻击/伤害仍通过 roll_dice + update_characters 处理；登记行动后调用 combat_act）\n")
+	}
+	// Inject active chase state so KP can enforce AP rules and location tracking.
+	if chs := gctx.Session.ChaseState.Data; chs != nil && chs.Active {
+		userSB.WriteString("\n【当前追逐状态】\n")
+		userSB.WriteString(fmt.Sprintf("  第%d轮，最低MOV=%d（行动点=1+(自身MOV-最低MOV)）\n", chs.Round, chs.MinMOV))
+		for _, p := range chs.Participants {
+			role := "猎物"
+			if p.IsPursuer {
+				role = "追逐者"
+			}
+			ap := 1 + (p.MOV - chs.MinMOV)
+			if ap < 1 {
+				ap = 1
+			}
+			debt := ""
+			if p.APDebt > 0 {
+				debt = fmt.Sprintf("（下轮AP-%d）", p.APDebt)
+			}
+			userSB.WriteString(fmt.Sprintf("    • %s(%s) MOV=%d 位置=%d 可用AP=%d%s\n",
+				p.Name, role, p.MOV, p.Location, ap, debt))
+		}
+		if len(chs.Obstacles) > 0 {
+			userSB.WriteString("  障碍物：\n")
+			for _, ob := range chs.Obstacles {
+				userSB.WriteString(fmt.Sprintf("    • %s HP=%d/%d 位于地点%d-%d之间\n",
+					ob.Name, ob.HP, ob.MaxHP, ob.Between[0], ob.Between[1]))
+			}
+		}
+		userSB.WriteString("  （每次移动/险境/障碍/冲突行动后调用 chase_act 登记；追逐者到达猎物位置时调用 end_chase）\n")
 	}
 
 	// Show all players' actions when everyone has submitted (multi-player),

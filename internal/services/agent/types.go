@@ -55,6 +55,16 @@ const (
 	ToolUpdateLLMNote     ToolCallType = "update_llm_note"     // 更新Session级玩家LLMNote记录
 	ToolUpdateNPCLLMNote  ToolCallType = "update_npc_llm_note" // 更新Session级NPC LLMNote记录
 	ToolAnswer            ToolCallType = "answer"              // 结束本轮并给出回复
+
+	// ── Combat tools ──────────────────────────────────────────────────────────
+	ToolStartCombat ToolCallType = "start_combat" // 开始战斗，初始化战斗状态
+	ToolCombatAct   ToolCallType = "combat_act"   // 宣告本轮行动者的战斗行动
+	ToolEndCombat   ToolCallType = "end_combat"   // 结束战斗，清除战斗状态
+
+	// ── Chase tools ───────────────────────────────────────────────────────────
+	ToolStartChase ToolCallType = "start_chase" // 开始追逐，初始化追逐状态
+	ToolChaseAct   ToolCallType = "chase_act"   // 宣告本轮追逐行动（移动/险境/障碍/冲突）
+	ToolEndChase   ToolCallType = "end_chase"   // 结束追逐，清除追逐状态
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
@@ -82,6 +92,18 @@ type ToolCall struct {
 	LLMNote       string                 `json:"llm_note,omitempty"`       // update_llm_note: 玩家LLMNote内容
 	Reply         string                 `json:"reply"`                    // answer: KP对玩家说的话（必填）
 	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结（可选）
+
+	// ── Combat fields ─────────────────────────────────────────────────────────
+	CombatParticipants []CombatParticipantInput `json:"combat_participants,omitempty"` // start_combat: 参与者列表
+	CombatActorName    string                   `json:"combat_actor_name,omitempty"`   // combat_act: 本轮行动者名称
+	CombatAction       *CombatActionDetail      `json:"combat_action,omitempty"`       // combat_act: 行动详情
+	CombatEndReason    string                   `json:"combat_end_reason,omitempty"`   // end_combat: 战斗结束原因
+
+	// ── Chase fields ──────────────────────────────────────────────────────────
+	ChaseParticipants []ChaseParticipantInput `json:"chase_participants,omitempty"` // start_chase: 参与者列表
+	ChaseActorName    string                  `json:"chase_actor_name,omitempty"`   // chase_act: 本轮行动者名称
+	ChaseAction       *ChaseActionDetail      `json:"chase_action,omitempty"`       // chase_act: 行动详情
+	ChaseEndReason    string                  `json:"chase_end_reason,omitempty"`   // end_chase: 追逐结束原因
 }
 
 // ToolResult wraps the result of executing one ToolCall.
@@ -210,4 +232,44 @@ type CharacterGrowth struct {
 // GrowthResult is the full output from the Growth agent.
 type GrowthResult struct {
 	Characters []CharacterGrowth `json:"characters"`
+}
+
+// ── Combat input types ────────────────────────────────────────────────────────
+
+// CombatParticipantInput is the KP-provided entry for one combatant when starting a combat.
+type CombatParticipantInput struct {
+	Name  string `json:"name"`
+	DEX   int    `json:"dex"`
+	HP    int    `json:"hp"`
+	IsNPC bool   `json:"is_npc"`
+}
+
+// CombatActionDetail describes the specific action a combatant takes this turn.
+type CombatActionDetail struct {
+	Type        string `json:"type"`                   // attack/dodge/fight_back/aim/take_cover/other
+	TargetName  string `json:"target_name,omitempty"`  // 攻击/闪避/反击目标
+	WeaponName  string `json:"weapon_name,omitempty"`  // 使用的武器
+	APDebtNext  int    `json:"ap_debt_next,omitempty"` // 下轮扣除的AP（如寻找掩体）
+}
+
+// ── Chase input types ─────────────────────────────────────────────────────────
+
+// ChaseParticipantInput is the KP-provided entry for one participant when starting a chase.
+type ChaseParticipantInput struct {
+	Name      string `json:"name"`
+	IsNPC     bool   `json:"is_npc"`
+	MOV       int    `json:"mov"`       // 速度检定后的MOV值
+	Location  int    `json:"location"`  // 起始地点索引
+	IsPursuer bool   `json:"is_pursuer"`
+}
+
+// ChaseActionDetail describes the specific chase action taken this turn.
+type ChaseActionDetail struct {
+	Type          string `json:"type"`                     // move/hazard/obstacle/conflict/other
+	MoveDelta     int    `json:"move_delta,omitempty"`     // 移动的地点数（正=追近，负=拉开）
+	ObstacleName  string `json:"obstacle_name,omitempty"`  // 通过/攻击的障碍名称
+	ObstacleHP    int    `json:"obstacle_hp,omitempty"`    // 障碍当前HP（创建障碍时使用）
+	ObstacleMaxHP int    `json:"obstacle_max_hp,omitempty"`
+	APDebtNext    int    `json:"ap_debt_next,omitempty"`   // 险境失败时下轮扣除的AP
+	TargetName    string `json:"target_name,omitempty"`    // 冲突目标名称
 }

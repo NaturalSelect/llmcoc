@@ -12,12 +12,12 @@ import (
 
 // parseStateChange parses a director change string (e.g. "HP -3（角色名）" or
 // "cthulhu_mythos +1（角色名）") into a CharacterUpdate.
-// Supported fields: HP, SAN, MP, cthulhu_mythos.
+// Supported fields: HP, SAN, MP, POW, cthulhu_mythos.
 // Returns false if the string cannot be matched to a known field.
 func parseStateChange(change string) (CharacterUpdate, bool) {
 	change = strings.TrimSpace(change)
 	// Check longest field name first to avoid prefix collisions.
-	for _, field := range []string{"cthulhu_mythos", "HP", "SAN", "MP"} {
+	for _, field := range []string{"cthulhu_mythos", "HP", "SAN", "MP", "POW"} {
 		if !strings.HasPrefix(strings.ToUpper(change), strings.ToUpper(field)) {
 			continue
 		}
@@ -112,6 +112,24 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			s := card.Stats.Data
 			s.MP = clamp(s.MP+upd.Delta, 0, s.MaxMP)
 			card.Stats.Data = s
+			models.DB.Save(card)
+
+		case "pow":
+			// POW changes affect MaxMP (MaxMP = POW/5) and current MP proportionally.
+			s := card.Stats.Data
+			oldPOW := s.POW
+			s.POW = clamp(s.POW+upd.Delta, 1, 99)
+			newMaxMP := s.POW / 5
+			if newMaxMP < 1 {
+				newMaxMP = 1
+			}
+			// Scale current MP proportionally if MaxMP changes.
+			if oldPOW > 0 && s.MaxMP > 0 {
+				s.MP = clamp(s.MP*newMaxMP/s.MaxMP, 0, newMaxMP)
+			}
+			s.MaxMP = newMaxMP
+			card.Stats.Data = s
+			log.Printf("[editor] %s: POW %d→%d, MaxMP→%d", card.Name, oldPOW, s.POW, newMaxMP)
 			models.DB.Save(card)
 
 		case "cthulhu_mythos":
@@ -286,6 +304,23 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 		}
 		npc.Stats.Data = stats
 	}
+}
+
+// TearDeadInvestigators soft-deletes (sets IsActive=false) any character card
+// whose WoundState is "dead". Returns the names of torn cards.
+// Called at end_game and EndSession to implement COC "撕卡" rules.
+func TearDeadInvestigators(players []models.SessionPlayer) []string {
+	var torn []string
+	for i := range players {
+		card := &players[i].CharacterCard
+		if card.WoundState == "dead" && card.IsActive {
+			card.IsActive = false
+			models.DB.Model(card).Update("is_active", false)
+			log.Printf("[editor] 撕卡: %s (WoundState=dead)", card.Name)
+			torn = append(torn, card.Name)
+		}
+	}
+	return torn
 }
 
 func clamp(v, min, max int) int {

@@ -799,6 +799,12 @@ func EndSession(c *gin.Context) {
 			// while preserving permanent madness.
 			agent.ResetMadnessAfterSession(card)
 
+			// 撕卡：战死的调查员软删除人物卡（WoundState=dead → IsActive=false）。
+			// Skills/coins are still saved to record the final adventure.
+			if card.WoundState == "dead" {
+				card.IsActive = false
+			}
+
 			// Always save the character card to persist all in-game changes:
 			// - Inventory (物品), SeenMonsters (已见神话存在), Spells (已掌握法术),
 			// - SocialRelations (社会关系), HP/SAN/MP (stats changes from gameplay)
