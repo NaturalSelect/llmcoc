@@ -65,7 +65,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			prevSAN := s.SAN
 			newSAN := s.SAN + upd.Delta
 			if card.Race != "" && card.Race != "人类" {
-				newSAN = s.MaxSAN
+				newSAN = 99
 				upd.Delta = 0
 			}
 			s.SAN = newSAN
@@ -152,8 +152,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			if upd.Delta > 0 {
 				maxVal := 99
 				if card.Race != "" && card.Race != "人类" {
-					// NOTE: 非人类角色的克苏鲁神话技能上限为98，以保证至少有1点SAN上限（虽然他们通常不靠SAN取胜，但以防万一）。
-					maxVal = 98
+					maxVal = 1
 				}
 				card.CthulhuMythosSkill = clamp(card.CthulhuMythosSkill+upd.Delta, 0, maxVal)
 				newMaxSAN := 99 - card.CthulhuMythosSkill
