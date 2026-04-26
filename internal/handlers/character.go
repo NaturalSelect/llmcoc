@@ -525,16 +525,11 @@ func applyAdjustedSkills(base map[string]int, adjusted map[string]int, stats mod
 }
 
 func RecoverCharacterSAN(c *gin.Context) {
-	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 
 	var card models.CharacterCard
 	if err := models.DB.First(&card, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
-		return
-	}
-	if card.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权恢复此人物卡"})
 		return
 	}
 
