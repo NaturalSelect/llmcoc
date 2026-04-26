@@ -61,6 +61,9 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 
 		switch strings.ToLower(upd.Field) {
 		case "san":
+			if card.Race != "" && card.Race != "人类" {
+				return // 非人类角色免疫理智损失
+			}
 			s := card.Stats.Data
 			prevSAN := s.SAN
 			s.SAN = clamp(s.SAN+upd.Delta, 0, s.MaxSAN)
