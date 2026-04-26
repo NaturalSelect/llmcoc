@@ -1264,6 +1264,9 @@ func applySimpleStateChange(change string, players []models.SessionPlayer) {
 }
 
 func mapSkillToStat(card *models.CharacterCard, skill string) (val int, ok bool) {
+	if card == nil {
+		return 0, false
+	}
 	switch skill {
 	case "力量", "STR":
 		return card.Stats.Data.STR, true
