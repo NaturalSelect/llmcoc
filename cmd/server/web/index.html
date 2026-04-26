@@ -794,86 +794,21 @@
                     </div>
                 </div>
 
-                <!-- 玩家侧边栏（仅超大屏幕显示） -->
-                <div class="w-64 hidden xl:flex card border-l flex-col shrink-0 bg-[#0f0d0c] border-[#252018] min-h-0">
-                    <div class="px-4 py-3 border-b bg-[#131110] border-[#252018]">
-                        <h3 class="text-[11px] font-bold text-amber-600 uppercase tracking-widest font-mono">调查员列表</h3>
-                    </div>
-                    <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-                        <template x-for="p in (currentSession?.players??[])" :key="p.id">
-                            <div class="card card-hover rounded-sm p-3 bg-[#151312] transition-all border-[#252018] hover:bg-[#1a1817] cursor-pointer"
-                                @click="openSessionPlayerCharDetail(p)">
-                                <div class="flex justify-between items-start mb-1.5">
-                                    <div class="min-w-0 flex-1">
-                                        <p class="text-sm font-bold text-amber-200 truncate"
-                                            style="font-family:system-ui"
-                                            x-text="p.character_card?.name || p.user?.username"></p>
-                                        <p class="text-[10px] text-amber-700 truncate mt-0.5"
-                                            style="font-family:system-ui"
-                                            x-text="p.character_card?.occupation || '未知职业'"></p>
-                                    </div>
-                                    <span x-show="p.user?.id === user?.id"
-                                        class="text-[9px] bg-amber-900/30 text-amber-600 px-1 rounded border border-amber-800/30">YOU</span>
-                                </div>
-
-                                <div class="space-y-2 mt-3" x-show="p.character_card">
-                                    <div class="space-y-1">
-                                        <div class="flex justify-between text-[10px] font-mono">
-                                            <span class="text-green-800 uppercase">HP</span>
-                                            <span class="text-green-600 font-bold"
-                                                x-text="p.character_card.stats?.hp+'/'+p.character_card.stats?.max_hp"></span>
-                                        </div>
-                                        <div class="bar-track bg-[#1a1714] h-1">
-                                            <div class="bar-hp"
-                                                :style="'width:'+Math.min(100,Math.round((p.character_card.stats?.hp/(p.character_card.stats?.max_hp||1))*100))+'%'">
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="space-y-1">
-                                        <div class="flex justify-between text-[10px] font-mono">
-                                            <span class="text-yellow-800 uppercase">SAN</span>
-                                            <span class="text-yellow-600 font-bold"
-                                                x-text="p.character_card.stats?.san+'/'+p.character_card.stats?.max_san"></span>
-                                        </div>
-                                        <div class="bar-track bg-[#1a1714] h-1">
-                                            <div class="bar-san"
-                                                :style="'width:'+Math.min(100,Math.round((p.character_card.stats?.san/(p.character_card.stats?.max_san||1))*100))+'%'">
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="space-y-1">
-                                        <div class="flex justify-between text-[10px] font-mono">
-                                            <span class="text-blue-800 uppercase">MP</span>
-                                            <span class="text-blue-600 font-bold"
-                                                x-text="p.character_card.stats?.mp+'/'+p.character_card.stats?.max_mp"></span>
-                                        </div>
-                                        <div class="bar-track bg-[#1a1714] h-1">
-                                            <div class="bar-mp"
-                                                :style="'width:'+Math.min(100,Math.round((p.character_card.stats?.mp/(p.character_card.stats?.max_mp||1))*100))+'%'">
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div x-show="p.character_card?.madness_state && p.character_card?.madness_state !== 'none'"
-                                    class="mt-2.5 pt-2 border-t border-[#252018]">
-                                    <span class="text-[10px] text-red-600 italic font-bold"
-                                        style="font-family:system-ui"
-                                        x-text="{'temporary':'⚡ 临时疯狂','indefinite':'🌀 不定性疯狂','permanent':'☠ 永久疯狂'}[p.character_card?.madness_state]||''"></span>
-                                </div>
-                            </div>
-                        </template>
-                        <p x-show="!currentSession?.players?.length" class="text-xs text-amber-900 text-center py-8"
-                            style="font-family:system-ui">暂无调查员加入</p>
-                    </div>
-                </div>
+                <!-- 玩家侧边栏（移除，改为悬浮模态框） -->
             </div>
         </div>
 
-        <!-- Floating self character card entry (always reachable in long chat) -->
-        <button x-show="page === 'game' && !!currentSession" @click="openCurrentSessionCharDetail()"
-            class="fixed right-4 bottom-24 z-40 btn btn-amber shadow-lg lg:hidden">
-            我的角色卡
-        </button>
+        <!-- Floating Buttons -->
+        <div x-show="page === 'game' && !!currentSession" class="fixed right-4 bottom-6 flex flex-col gap-2 z-40">
+            <button @click="modal='investigatorList'"
+                class="btn btn-amber shadow-lg rounded-full w-12 h-12 flex items-center justify-center text-lg">
+                👥
+            </button>
+            <button @click="openCurrentSessionCharDetail()"
+                class="btn btn-amber shadow-lg rounded-full w-12 h-12 flex items-center justify-center text-lg">
+                📜
+            </button>
+        </div>
 
         <!-- ══════════════════════════════════════════════════════ SHOP PAGE -->
         <div x-show="page === 'shop'" class="flex-1 p-5 max-w-4xl mx-auto w-full">
@@ -1970,10 +1905,63 @@
         </div>
     </div>
 
-    <!-- ══════════════════════════════════════════════════════════════ TOAST -->
-    <div x-show="toast.show" x-transition class="fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded shadow-xl text-sm"
-        :class="toast.type==='error' ? 'bg-red-900 text-red-200 border border-red-800' : 'bg-green-900 text-green-200 border border-green-800'"
-        style="font-family:system-ui" x-text="toast.message">
+    <!-- Investigator List Modal -->
+    <div x-show="modal === 'investigatorList'" class="backdrop" @click.self="modal=null">
+        <div class="modal max-w-md p-5">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold text-amber-100">调查员状态</h2>
+                <button @click="modal=null" class="text-amber-800 hover:text-amber-400 text-xl leading-none">✕</button>
+            </div>
+            <div class="space-y-3 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+                <template x-for="p in (currentSession?.players??[])" :key="p.id">
+                    <div class="card rounded-sm p-3 bg-[#151312] border-[#252018] hover:bg-[#1a1817] cursor-pointer"
+                        @click="openSessionPlayerCharDetail(p)">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-bold text-amber-200 truncate" style="font-family:system-ui"
+                                    x-text="p.character_card?.name || p.user?.username"></p>
+                                <p class="text-[10px] text-amber-700 truncate mt-0.5" style="font-family:system-ui"
+                                    x-text="p.character_card?.occupation || '未知职业'"></p>
+                            </div>
+                            <span x-show="p.user?.id === user?.id"
+                                class="text-[9px] bg-amber-900/30 text-amber-600 px-1 rounded border border-amber-800/30">YOU</span>
+                        </div>
+
+                        <div class="space-y-2" x-show="p.character_card">
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="space-y-1">
+                                    <div class="flex justify-between text-[9px] font-mono">
+                                        <span class="text-green-800">HP</span>
+                                        <span class="text-green-600" x-text="p.character_card.stats?.hp+'/'+p.character_card.stats?.max_hp"></span>
+                                    </div>
+                                    <div class="bar-track bg-[#1a1714] h-1">
+                                        <div class="bar-hp" :style="'width:'+Math.min(100,Math.round((p.character_card.stats?.hp/(p.character_card.stats?.max_hp||1))*100))+'%'"></div>
+                                    </div>
+                                </div>
+                                <div class="space-y-1">
+                                    <div class="flex justify-between text-[9px] font-mono">
+                                        <span class="text-yellow-800">SAN</span>
+                                        <span class="text-yellow-600" x-text="p.character_card.stats?.san+'/'+p.character_card.stats?.max_san"></span>
+                                    </div>
+                                    <div class="bar-track bg-[#1a1714] h-1">
+                                        <div class="bar-san" :style="'width:'+Math.min(100,Math.round((p.character_card.stats?.san/(p.character_card.stats?.max_san||1))*100))+'%'"></div>
+                                    </div>
+                                </div>
+                                <div class="space-y-1">
+                                    <div class="flex justify-between text-[9px] font-mono">
+                                        <span class="text-blue-800">MP</span>
+                                        <span class="text-blue-600" x-text="p.character_card.stats?.mp+'/'+p.character_card.stats?.max_mp"></span>
+                                    </div>
+                                    <div class="bar-track bg-[#1a1714] h-1">
+                                        <div class="bar-mp" :style="'width:'+Math.min(100,Math.round((p.character_card.stats?.mp/(p.character_card.stats?.max_mp||1))*100))+'%'"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════ SCRIPT -->
