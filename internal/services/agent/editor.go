@@ -215,6 +215,9 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 // applyMadnessToCard sets the madness fields on a CharacterCard based on MadnessKind.
 // It rolls a madness symptom and updates the card in memory (caller must DB.Save).
 func applyMadnessToCard(card *models.CharacterCard, kind game.MadnessKind) {
+	if card.Race != "" && card.Race != "人类" {
+		return // 非人类角色免疫疯狂
+	}
 	switch kind {
 	case game.MadnessPermanent:
 		card.MadnessState = "permanent"
