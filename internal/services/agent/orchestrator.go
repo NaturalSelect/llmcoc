@@ -1220,6 +1220,31 @@ func applySimpleStateChange(change string, players []models.SessionPlayer) {
 	}
 }
 
+func mapSkillToStat(card *models.CharacterCard, skill string) (val int, ok bool) {
+	switch skill {
+	case "力量", "STR":
+		return card.Stats.Data.STR, true
+	case "体质", "CON":
+		return card.Stats.Data.CON, true
+	case "体型", "SIZ":
+		return card.Stats.Data.SIZ, true
+	case "敏捷", "DEX":
+		return card.Stats.Data.DEX, true
+	case "外貌", "APP":
+		return card.Stats.Data.APP, true
+	case "灵感", "智力", "INT":
+		return card.Stats.Data.INT, true
+	case "意志", "POW":
+		return card.Stats.Data.POW, true
+	case "教育", "EDU":
+		return card.Stats.Data.EDU, true
+	case "幸运", "LUCK":
+		return card.Stats.Data.Luck, true
+	default:
+		return 0, false
+	}
+}
+
 // executeDiceChecks auto-rolls all checks the Director requested.
 // Actual skill values are looked up from character cards when available.
 // For check_type="sanity", the current SAN value is used and SAN loss is
@@ -1272,6 +1297,10 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 		}
 		if skillVal <= 0 {
 			skillVal = 1
+		}
+		// NOTE: 兼容逻辑，把技能映射到属性上
+		if temp, ok := mapSkillToStat(card, dc.Skill); ok {
+			skillVal = temp
 		}
 
 		// 已见过的神话存在不再握发SAN损失（COC第八章习惯恐惧规则）
