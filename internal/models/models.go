@@ -190,6 +190,7 @@ type SessionNPC struct {
 	Goal        string                    `gorm:"size:200" json:"goal"`
 	Secret      string                    `gorm:"type:text" json:"secret"`
 	RiskPref    string                    `gorm:"size:50" json:"risk_preference"`
+	LLMNote     string                    `gorm:"type:text" json:"llm_note"`
 	Stats       JSONField[map[string]int] `gorm:"type:text" json:"stats"`
 	Skills      JSONField[map[string]int] `gorm:"type:text" json:"skills"`
 	Spells      JSONField[[]string]       `gorm:"type:text" json:"spells"`

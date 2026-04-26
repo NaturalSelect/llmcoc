@@ -501,19 +501,19 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				})
 
 			case ToolUpdateLLMNote:
-				if call.LLMNoteUpd == nil {
+				if call.LLMNote == "" {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolUpdateLLMNote,
-						Result: "错误：缺少 llm_note_upd 参数",
+						Result: "错误：缺少 llm_note 参数",
 					})
 					continue
 				}
-				who := call.LLMNoteUpd.CharacterName
-				debugf("tool", "session=%d update_llm_note char=%q note=%q", sid, who, call.LLMNoteUpd.Note)
+				who := call.CharacterName
+				debugf("tool", "session=%d update_llm_note char=%q note=%q", sid, who, call.LLMNote)
 				var updated bool
 				for i := range gctx.Session.Players {
 					if gctx.Session.Players[i].CharacterCard.Name == who {
-						gctx.Session.Players[i].LLMNote = call.LLMNoteUpd.Note
+						gctx.Session.Players[i].LLMNote = call.LLMNote
 						models.DB.Save(&gctx.Session.Players[i])
 						updated = true
 						break
@@ -530,7 +530,29 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 						Result: fmt.Sprintf("找不到名为 %s 的调查员", who),
 					})
 				}
-
+			case ToolUpdateNPCLLMNote:
+				who := call.NPCName
+				debugf("tool", "session=%d update_npc_llm_note npc=%q note=%q", sid, who, call.LLMNote)
+				var updated bool
+				for i := range tempNPCs {
+					if tempNPCs[i].Name == who {
+						tempNPCs[i].LLMNote = call.LLMNote
+						models.DB.Save(&tempNPCs[i])
+						updated = true
+						break
+					}
+				}
+				if updated {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolUpdateNPCLLMNote,
+						Result: fmt.Sprintf("已记录 %s 的状态（Session级备忘）", who),
+					})
+				} else {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolUpdateNPCLLMNote,
+						Result: fmt.Sprintf("找不到名为 %s 的NPC", who),
+					})
+				}
 			case ToolAnswer:
 				hasEnd = true
 				kpNarration = call.Reply
@@ -1065,8 +1087,11 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 		if strings.TrimSpace(npc.RiskPref) != "" {
 			sb.WriteString("风险偏好：" + strings.TrimSpace(npc.RiskPref) + "\n")
 		}
+		if npc.LLMNote != "" {
+			sb.WriteString("当前备忘：" + npc.LLMNote + "\n")
+		}
 		if hp, ok := findStat(npc.Stats.Data, "HP"); ok {
-			sb.WriteString(fmt.Sprintf("HP：%d\n", hp))
+			sb.WriteString(fmt.Sprintf("当前HP：%d\n", hp))
 		}
 		if san, ok := findStat(npc.Stats.Data, "SAN"); ok {
 			sb.WriteString(fmt.Sprintf("SAN：%d\n", san))
