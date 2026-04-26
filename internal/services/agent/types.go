@@ -142,6 +142,7 @@ type DiceCheck struct {
 	SanSuccessLoss string `json:"san_success_loss"`
 	SanFailLoss    string `json:"san_fail_loss"`
 	MonsterName    string `json:"monster_name,omitempty"` // sanity检定：引发检定的神话存在名称（见过的存在不掉SAN）
+	DiceExpr       string `json:"dice_expr,omitempty"`    // 可选的骰子表达式（如 "1D100+20"），优先于固定值
 }
 
 // DiceCheckResult is the outcome of an auto-executed dice check.
@@ -248,10 +249,10 @@ type CombatParticipantInput struct {
 
 // CombatActionDetail describes the specific action a combatant takes this turn.
 type CombatActionDetail struct {
-	Type        string `json:"type"`                   // attack/dodge/fight_back/aim/take_cover/other
-	TargetName  string `json:"target_name,omitempty"`  // 攻击/闪避/反击目标
-	WeaponName  string `json:"weapon_name,omitempty"`  // 使用的武器
-	APDebtNext  int    `json:"ap_debt_next,omitempty"` // 下轮扣除的AP（如寻找掩体）
+	Type       string `json:"type"`                   // attack/dodge/fight_back/aim/take_cover/other
+	TargetName string `json:"target_name,omitempty"`  // 攻击/闪避/反击目标
+	WeaponName string `json:"weapon_name,omitempty"`  // 使用的武器
+	APDebtNext int    `json:"ap_debt_next,omitempty"` // 下轮扣除的AP（如寻找掩体）
 }
 
 // ── Chase input types ─────────────────────────────────────────────────────────
@@ -260,18 +261,18 @@ type CombatActionDetail struct {
 type ChaseParticipantInput struct {
 	Name      string `json:"name"`
 	IsNPC     bool   `json:"is_npc"`
-	MOV       int    `json:"mov"`       // 速度检定后的MOV值
-	Location  int    `json:"location"`  // 起始地点索引
+	MOV       int    `json:"mov"`      // 速度检定后的MOV值
+	Location  int    `json:"location"` // 起始地点索引
 	IsPursuer bool   `json:"is_pursuer"`
 }
 
 // ChaseActionDetail describes the specific chase action taken this turn.
 type ChaseActionDetail struct {
-	Type          string `json:"type"`                     // move/hazard/obstacle/conflict/other
-	MoveDelta     int    `json:"move_delta,omitempty"`     // 移动的地点数（正=追近，负=拉开）
-	ObstacleName  string `json:"obstacle_name,omitempty"`  // 通过/攻击的障碍名称
-	ObstacleHP    int    `json:"obstacle_hp,omitempty"`    // 障碍当前HP（创建障碍时使用）
+	Type          string `json:"type"`                    // move/hazard/obstacle/conflict/other
+	MoveDelta     int    `json:"move_delta,omitempty"`    // 移动的地点数（正=追近，负=拉开）
+	ObstacleName  string `json:"obstacle_name,omitempty"` // 通过/攻击的障碍名称
+	ObstacleHP    int    `json:"obstacle_hp,omitempty"`   // 障碍当前HP（创建障碍时使用）
 	ObstacleMaxHP int    `json:"obstacle_max_hp,omitempty"`
-	APDebtNext    int    `json:"ap_debt_next,omitempty"`   // 险境失败时下轮扣除的AP
-	TargetName    string `json:"target_name,omitempty"`    // 冲突目标名称
+	APDebtNext    int    `json:"ap_debt_next,omitempty"` // 险境失败时下轮扣除的AP
+	TargetName    string `json:"target_name,omitempty"`  // 冲突目标名称
 }

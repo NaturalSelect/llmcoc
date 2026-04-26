@@ -372,7 +372,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 先查看是否有该法术：
 [{"action":"query_character","character_name":"Alice"}]
 收到人物卡后第一轮：
-[{"action":"roll_dice","dice":{"skill":"绑缚术","value":30,"character":"Alice","check_type":"standard","hidden":false}}]
+[{"action":"roll_dice","dice":{"skill":"绑缚术(MP消耗)","value":30,"character":"Alice","check_type":"expr","hidden":false, "dice_expr":"1D6"}}]
 收到结果后第二轮，修改MP和SAN：
 [{"action":"update_characters","changes":["MP -5（Alice）","SAN -3（Alice）"]}]
 第三轮：

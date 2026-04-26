@@ -1270,7 +1270,7 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 				if card.Stats.Data.SAN > 0 {
 					skillVal = card.Stats.Data.SAN
 				}
-			} else {
+			} else if dc.CheckType == "skill" {
 				v, ok := card.Skills.Data[dc.Skill]
 				if ok {
 					skillVal = v
@@ -1293,6 +1293,16 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 					})
 					goto nextCheck
 				}
+			} else if dc.CheckType == "expr" {
+				diceVal := game.RollDiceExpr(dc.DiceExpr)
+				results = append(results, DiceCheckResult{
+					DiceCheck: dc,
+					Roll:      diceVal,
+					Level:     "normal",
+					Success:   true,
+					Message:   fmt.Sprintf("%v %v: %v", dc.Skill, dc.DiceExpr, diceVal),
+				})
+				goto nextCheck
 			}
 		}
 		if skillVal <= 0 {
