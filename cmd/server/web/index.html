@@ -650,21 +650,22 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════ GAME PAGE -->
-        <div x-show="page === 'game'" class="flex-1 flex flex-col overflow-hidden bg-[#080706]">
-            <!-- 游戏主区域：聊天区 + 侧边栏 -->
-            <div class="flex-1 flex overflow-hidden">
+        <div x-show="page === 'game'" class="flex-1 flex flex-col overflow-hidden bg-[#080706]" style="min-height:0">
+            <!-- 游戏主区域 -->
+            <div class="flex-1 flex overflow-hidden min-h-0">
 
-                <!-- 聊天区域（宽度限制 + 居中） -->
-                <div class="flex-1 flex min-w-0 overflow-hidden">
-                    <div class="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col h-full">
+                <!-- 聊天区域（宽度限制 + 高度约束） -->
+                <div class="flex-1 flex min-w-0 min-h-0">
+                    <div class="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col min-h-0">
 
                         <!-- 会话头部 -->
                         <div
                             class="card border-b px-3 py-2 flex items-center gap-2 shrink-0 bg-[#131110] z-10 border-[#252018] text-sm flex-wrap">
-                            <button @click="goTo('sessions')"
-                                class="text-amber-800 hover:text-amber-400 transition text-xs px-1">← 返回</button>
-                            <span class="font-bold text-amber-100 truncate" x-text="currentSession?.name"></span>
-                            <span class="text-xs text-amber-800 truncate hidden sm:inline"
+                            <button @click="goTo('sessions')" class="text-amber-800 hover:text-amber-400 transition">←
+                                返回</button>
+                            <span class="font-bold text-amber-100 truncate hidden sm:inline"
+                                x-text="currentSession?.name"></span>
+                            <span class="text-xs text-amber-800 truncate hidden md:inline"
                                 x-text="currentSession?.scenario?.name"></span>
                             <span class="badge ml-auto"
                                 :class="currentSession?.status==='lobby'?'badge-lobby':currentSession?.status==='playing'?'badge-playing':'badge-ended'"
@@ -686,8 +687,9 @@
                             </button>
                         </div>
 
-                        <!-- 消息区域 -->
-                        <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar bg-[#0a0908]" id="chatBox">
+                        <!-- 消息区域（可滚动） -->
+                        <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar bg-[#0a0908] min-h-0"
+                            id="chatBox">
                             <template x-for="msg in messages" :key="msg.id">
                                 <div class="msg fade-up shadow-sm border border-[#1e1c17]"
                                     :class="msg.role==='assistant'?'msg-kp':msg.role==='user'?'msg-user':'msg-sys'">
@@ -706,8 +708,7 @@
                                             <template x-if="msg.writer_text || msg.narration_text">
                                                 <div>
                                                     <p x-show="msg.writer_text" class="narrative"
-                                                        x-text="msg.writer_text">
-                                                    </p>
+                                                        x-text="msg.writer_text"></p>
                                                     <p x-show="msg.narration_text" class="narration"
                                                         :class="msg.writer_text ? 'narration-sep' : ''"
                                                         x-text="'KP：' + msg.narration_text"></p>
@@ -727,13 +728,14 @@
                                 </div>
                             </template>
 
-                            <!-- 流式输出 -->
+                            <!-- Streaming block -->
                             <div x-show="streaming" class="msg msg-kp fade-up shadow-sm border border-[#3a1515]">
                                 <div class="flex items-baseline gap-2 mb-1.5 border-b border-[#3a1515] pb-1">
                                     <span class="text-xs font-bold text-red-500" style="font-family:monospace">🎭
                                         KP</span>
                                     <span class="text-[10px] text-red-900" style="font-family:monospace">正在回应…</span>
                                 </div>
+
                                 <div x-show="!writerBuffer && !narrationBuffer" class="flex items-center gap-3 py-1">
                                     <div class="flex gap-1">
                                         <span class="dot"></span><span class="dot"></span><span class="dot"></span>
@@ -742,13 +744,14 @@
                                         Agent 团队运行中，请稍候…
                                     </span>
                                 </div>
+
                                 <p x-show="writerBuffer" class="narrative" :class="narrationBuffer ? '' : 'cursor'"
                                     x-text="writerBuffer"></p>
                                 <p x-show="narrationBuffer" class="narration cursor"
                                     :class="writerBuffer ? 'narration-sep' : ''" x-text="'KP：' + narrationBuffer"></p>
                             </div>
 
-                            <!-- 等待其他玩家 -->
+                            <!-- Waiting for other players -->
                             <div x-show="waitingForPlayers" class="msg msg-sys fade-up border border-[#1a2d4a]">
                                 <p class="text-blue-300/70 text-xs italic" style="font-family:system-ui">
                                     ⏳ 已提交行动，等待其他调查员…（还差
@@ -757,7 +760,7 @@
                             </div>
                         </div>
 
-                        <!-- 底部输入区 -->
+                        <!-- 输入区 -->
                         <div class="card border-t p-3 bg-[#131110] border-[#252018] shrink-0">
                             <div class="flex flex-col sm:flex-row gap-2">
                                 <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()"
@@ -782,7 +785,7 @@
                 </div>
 
                 <!-- 玩家侧边栏（仅超大屏幕显示） -->
-                <div class="w-64 hidden xl:flex card border-l flex-col shrink-0 bg-[#0f0d0c] border-[#252018]">
+                <div class="w-64 hidden xl:flex card border-l flex-col shrink-0 bg-[#0f0d0c] border-[#252018] min-h-0">
                     <div class="px-4 py-3 border-b bg-[#131110] border-[#252018]">
                         <h3 class="text-[11px] font-bold text-amber-600 uppercase tracking-widest font-mono">调查员列表</h3>
                     </div>
@@ -802,6 +805,7 @@
                                     <span x-show="p.user?.id === user?.id"
                                         class="text-[9px] bg-amber-900/30 text-amber-600 px-1 rounded border border-amber-800/30">YOU</span>
                                 </div>
+
                                 <div class="space-y-2 mt-3" x-show="p.character_card">
                                     <div class="space-y-1">
                                         <div class="flex justify-between text-[10px] font-mono">
@@ -848,18 +852,19 @@
                                 </div>
                             </div>
                         </template>
-                        <p x-show="!currentSession?.players?.length" class="text-xs text-amber-900 text-center py-8">
-                            暂无调查员加入</p>
+                        <p x-show="!currentSession?.players?.length" class="text-xs text-amber-900 text-center py-8"
+                            style="font-family:system-ui">暂无调查员加入</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 移动端查看角色悬浮按钮（照旧） -->
+        <!-- Floating self character card entry (always reachable in long chat) -->
         <button x-show="page === 'game' && !!currentSession" @click="openCurrentSessionCharDetail()"
             class="fixed right-4 bottom-24 z-40 btn btn-amber shadow-lg lg:hidden">
             我的角色卡
         </button>
+
         <!-- ══════════════════════════════════════════════════════ SHOP PAGE -->
         <div x-show="page === 'shop'" class="flex-1 p-5 max-w-4xl mx-auto w-full">
             <div class="flex items-end justify-between mb-5">
@@ -2378,18 +2383,9 @@
                     this.endingSession = false;
                 },
 
-                // ══════════════════════════════════════════════════════════════════════
+                // ═══════════════════════════════════════════════════════
                 // Chat / SSE
-                //
-                // SSE event types from backend:
-                //   thinking  — heartbeat while agent pipeline runs (empty data)
-                //   token     — Writer agent narrative text chunk
-                //   narration — KP/Director direct speech chunk (separate from writer text)
-                //   waiting   — player submitted; not all players have acted yet
-                //               data: {"pending":N,"total":M}
-                //   error     — pipeline error, data: error string
-                //   done      — stream complete (empty data)
-                // ══════════════════════════════════════════════════════════════════════
+                // ═══════════════════════════════════════════════════════
                 async sendChat() {
                     const content = this.chatInput.trim();
                     if (!content || this.streaming || this.waitingForPlayers) return;
@@ -2400,7 +2396,6 @@
                     this.narrationBuffer = '';
 
                     const submittedAt = new Date();
-                    // Optimistic: show user message immediately
                     this.messages.push({
                         id: Date.now(), role: 'user',
                         username: this.currentPlayerDisplayName(), content,
@@ -2414,8 +2409,6 @@
                     let receivedWaiting = false;
                     let receivedDone = false;
 
-                    // AbortController: allow up to 10 minutes for the full LLM pipeline.
-                    // Without this, some proxies/browsers silently drop long-lived connections.
                     const abortCtrl = new AbortController();
                     const abortTimer = setTimeout(() => abortCtrl.abort(), 10 * 60 * 1000);
 
@@ -2445,10 +2438,9 @@
 
                             buf += decoder.decode(value, { stream: true });
                             const lines = buf.split('\n');
-                            buf = lines.pop(); // retain incomplete last line
+                            buf = lines.pop();
 
                             for (const rawLine of lines) {
-                                // Strip trailing \r so CRLF-encoded SSE works correctly.
                                 const line = rawLine.replace(/\r$/, '');
 
                                 if (line.startsWith('event:')) {
@@ -2458,7 +2450,6 @@
                                     switch (currentEvent) {
 
                                         case 'thinking':
-                                            // Heartbeat — visual handled by streaming indicator
                                             break;
 
                                         case 'token':
@@ -2495,7 +2486,6 @@
                                             break;
                                     }
                                 } else if (line === '') {
-                                    // Blank line = end of SSE event block; reset event type.
                                     currentEvent = '';
                                 }
                             }
@@ -2514,26 +2504,19 @@
                         this.waitingSince = submittedAt;
                         this.pollForKPResponse(submittedAt);
                     } else if (receivedDone) {
-                        // Flush any remaining buffers (done arrived but buffer not yet committed).
                         if (this.writerBuffer || this.narrationBuffer) {
                             this._commitStreamBuffers();
                         }
                     } else {
-                        // Connection dropped before 'done' (proxy timeout, network reset, etc.).
-                        // Commit whatever was buffered, then poll the DB once for a server-saved reply.
                         if (this.writerBuffer || this.narrationBuffer) {
                             this._commitStreamBuffers();
                         } else {
-                            // Nothing in buffer — backend may have finished but connection was cut.
-                            // Poll a few times to pick up the DB-stored KP message.
                             this._recoverFromDrop(submittedAt);
                         }
                     }
                 },
 
                 async _recoverFromDrop(since) {
-                    // Keep recovering until page/session changes, so transient errors do not
-                    // leave the player with a stale chat view.
                     if (!this.currentSession?.id || this.page !== 'game') return;
                     await new Promise(r => setTimeout(r, this.refreshIntervals.recoveryPoll));
                     try {
@@ -2553,7 +2536,6 @@
                     }
                 },
 
-                // Commit accumulated writer/narration buffers as a single KP message
                 _commitStreamBuffers() {
                     const fullContent = this.writerBuffer +
                         (this.narrationBuffer ? '\n\n' + this.narrationBuffer : '');
@@ -2633,7 +2615,6 @@
 
                 startGameAutoRefresh() {
                     this.stopGameAutoRefresh();
-                    // Keep normal refresh low-frequency. Waiting/streaming paths have their own polling.
                     this.sessionRefreshTimer = setInterval(() => {
                         if (!this.currentSession?.id || this.page !== 'game') return;
                         this.refreshCurrentSession(true).catch(() => { });
@@ -2711,9 +2692,9 @@
                     return { writerText, narrationText };
                 },
 
-                // ══════════════════════════════════════════════════════════════════════
+                // ═══════════════════════════════════════════════════════
                 // Shop
-                // ══════════════════════════════════════════════════════════════════════
+                // ═══════════════════════════════════════════════════════
                 isInventoryItem(itemType) {
                     return itemType === 'equipment' || itemType === 'weapon' || itemType === 'accessory';
                 },
@@ -2739,9 +2720,9 @@
                     this.purchasing = false;
                 },
 
-                // ══════════════════════════════════════════════════════════════════════
+                // ═══════════════════════════════════════════════════════
                 // Admin
-                // ══════════════════════════════════════════════════════════════════════
+                // ═══════════════════════════════════════════════════════
                 async adminRecharge() {
                     try {
                         const r = await this.api('POST', '/api/admin/recharge', this.rechargeForm);
@@ -2988,9 +2969,9 @@
                     }[role] || '留空使用默认';
                 },
 
-                // ══════════════════════════════════════════════════════════════════════
+                // ═══════════════════════════════════════════════════════
                 // Utilities
-                // ══════════════════════════════════════════════════════════════════════
+                // ═══════════════════════════════════════════════════════
                 fmtTime(iso) {
                     if (!iso) return '';
                     return new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
