@@ -112,6 +112,8 @@ func main() {
 		chars.GET("/:id/inventory", handlers.GetCharacterInventory)
 		chars.POST("/:id/inventory", handlers.AddCharacterInventoryItem)
 		chars.DELETE("/:id/inventory/:item", handlers.RemoveCharacterInventoryItem)
+
+		chars.GET("/:id/recover_san", handlers.RecoverCharacterSAN)
 	}
 
 	// Scenarios

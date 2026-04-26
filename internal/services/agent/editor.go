@@ -59,20 +59,17 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 		}
 		log.Printf("[editor] applying %s.%s delta=%d add=%q", card.Name, upd.Field, upd.Delta, upd.AddValue)
 
+		isHuman := card.Race == "" || card.Race == "人类"
 		switch strings.ToLower(upd.Field) {
 		case "san":
 			s := card.Stats.Data
 			prevSAN := s.SAN
 			newSAN := s.SAN + upd.Delta
-			if card.Race != "" && card.Race != "人类" {
-				newSAN = 99
-				upd.Delta = 0
-			}
 			s.SAN = newSAN
 			card.Stats.Data = s
 
 			// ── 理智损失事件：检查疯狂触发 ──────────────────────────────────────
-			if upd.Delta < 0 {
+			if upd.Delta < 0 && isHuman {
 				sanLoss := prevSAN - s.SAN // actual points lost (positive)
 				if sanLoss > 0 {
 					card.DailySanLoss += sanLoss
@@ -151,17 +148,16 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			// ── 克苏鲁神话技能增长 → 降低最大SAN上限 ─────────────────────────
 			if upd.Delta > 0 {
 				maxVal := 99
-				if card.Race != "" && card.Race != "人类" {
-					maxVal = 1
-				}
 				card.CthulhuMythosSkill = clamp(card.CthulhuMythosSkill+upd.Delta, 0, maxVal)
-				newMaxSAN := 99 - card.CthulhuMythosSkill
 				s := card.Stats.Data
-				if s.MaxSAN > newMaxSAN {
-					s.MaxSAN = newMaxSAN
-				}
-				if s.SAN > s.MaxSAN {
-					s.SAN = s.MaxSAN
+				newMaxSAN := 99 - card.CthulhuMythosSkill
+				if isHuman {
+					if s.MaxSAN > newMaxSAN {
+						s.MaxSAN = newMaxSAN
+					}
+					if s.SAN > s.MaxSAN {
+						s.SAN = s.MaxSAN
+					}
 				}
 				card.Stats.Data = s
 				log.Printf("[editor] %s: cthulhu_mythos=%d, new MaxSAN=%d", card.Name, card.CthulhuMythosSkill, newMaxSAN)
