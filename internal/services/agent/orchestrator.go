@@ -15,7 +15,7 @@ import (
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
-const MaxKpRound = 6
+const MaxKpRound = 10
 
 // activeSessions prevents concurrent agent runs for the same game session.
 var activeSessions sync.Map
@@ -179,7 +179,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 		for _, call := range calls {
 			switch call.Action {
-			case ToolActNPC, ToolRollDice, ToolCheckRule, ToolReadRulebookConst:
+			case ToolActNPC, ToolRollDice,
+				ToolCheckRule, ToolReadRulebookConst,
+				ToolChaseAct, ToolCombatAct:
 				hasInteraction = true
 			}
 		}
@@ -562,7 +564,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if hasInteraction {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolAnswer,
-						Result: "正在给出调用结果...先不要急着回答，本次回答已忽略",
+						Result: "已经给出调用结果...",
 					})
 					debugf("tool", "session=%v answer with interaction", sid)
 					continue
