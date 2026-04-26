@@ -607,6 +607,14 @@ loop:
 			c.Writer.Flush()
 		case <-c.Request.Context().Done():
 			ticker.Stop()
+			// Client disconnected while pipeline is running (e.g. device was blocked
+			// behind sessionLock and timed out). The pipeline uses context.Background()
+			// so it will still complete; wait for the result and persist it so the
+			// message is visible on refresh / next poll.
+			res := <-resultCh
+			if res.err == nil {
+				saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, res.output)
+			}
 			return
 		}
 	}
@@ -632,6 +640,8 @@ loop:
 	}
 
 	// Persist the full KP reply (writer + narration) so polling players can retrieve it.
+	saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, output)
+
 	fullReply := output.WriterText
 	if output.KPReply != "" {
 		narration := output.KPReply
@@ -643,43 +653,59 @@ loop:
 		}
 		fullReply += narration
 	}
-	if fullReply != "" {
-		// Save user message(s) first, then KP response, so chat history is ordered correctly.
-		if len(turnActions) > 0 {
-			// Multi-player: persist each player's action from the collected turn actions.
-			for _, ta := range turnActions {
-				uid := ta.UserID
-				models.DB.Create(&models.Message{
-					SessionID: uint(sessionID),
-					UserID:    &uid,
-					Role:      models.MessageRoleUser,
-					Content:   ta.ActionSummary,
-					Username:  ta.Username,
-				})
-			}
-		} else {
-			// Single-player: persist the triggering player's message.
-			uid := userID
-			models.DB.Create(&models.Message{
-				SessionID: uint(sessionID),
-				UserID:    &uid,
-				Role:      models.MessageRoleUser,
-				Content:   content,
-				Username:  playerDisplayName,
-			})
-		}
-		models.DB.Create(&models.Message{
-			SessionID: uint(sessionID),
-			Role:      models.MessageRoleAssistant,
-			Content:   fullReply,
-			Username:  "KP",
-		})
-	}
 
 	log.Printf("[chat] session=%d user=%q done tokens=%d elapsed=%.0fms",
 		sessionID, username, len([]rune(fullReply)), float64(time.Since(pipelineStart).Milliseconds()))
 	c.SSEvent("done", "")
 	c.Writer.Flush()
+}
+
+// saveChatMessages persists the user message(s) and KP reply to the database.
+// It is called both on the normal completion path and when the client has
+// disconnected mid-stream (so that messages are visible on refresh/poll).
+func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content string,
+	turnActions []models.SessionTurnAction, output agent.RunOutput) {
+	fullReply := output.WriterText
+	if output.KPReply != "" {
+		narration := output.KPReply
+		if !strings.HasPrefix(narration, "KP：") && !strings.HasPrefix(narration, "KP:") {
+			narration = "KP：" + narration
+		}
+		if fullReply != "" {
+			fullReply += "\n\n"
+		}
+		fullReply += narration
+	}
+	if fullReply == "" {
+		return
+	}
+	if len(turnActions) > 0 {
+		for _, ta := range turnActions {
+			uid := ta.UserID
+			models.DB.Create(&models.Message{
+				SessionID: uint(sessionID),
+				UserID:    &uid,
+				Role:      models.MessageRoleUser,
+				Content:   ta.ActionSummary,
+				Username:  ta.Username,
+			})
+		}
+	} else {
+		uid := userID
+		models.DB.Create(&models.Message{
+			SessionID: uint(sessionID),
+			UserID:    &uid,
+			Role:      models.MessageRoleUser,
+			Content:   content,
+			Username:  playerDisplayName,
+		})
+	}
+	models.DB.Create(&models.Message{
+		SessionID: uint(sessionID),
+		Role:      models.MessageRoleAssistant,
+		Content:   fullReply,
+		Username:  "KP",
+	})
 }
 
 // chatTruncate truncates s to at most maxLen runes, appending "…" when trimmed.
