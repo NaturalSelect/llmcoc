@@ -17,7 +17,7 @@ import (
 func parseStateChange(change string) (CharacterUpdate, bool) {
 	change = strings.TrimSpace(change)
 	// Check longest field name first to avoid prefix collisions.
-	for _, field := range []string{"cthulhu_mythos", "HP", "SAN", "MP", "POW", "race"} {
+	for _, field := range []string{"cthulhu_mythos", "HP", "SAN", "MP", "POW", "race", "occupation"} {
 		if !strings.HasPrefix(strings.ToUpper(change), strings.ToUpper(field)) {
 			continue
 		}
@@ -202,6 +202,9 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 
 		case "race":
 			card.Race = upd.NewValue
+			models.DB.Save(card)
+		case "occupation":
+			card.Occupation = upd.NewValue
 			models.DB.Save(card)
 		}
 		return

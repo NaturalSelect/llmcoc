@@ -59,10 +59,11 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 	{"action":"npc_act","npc_name":"NPC名称","npc_ctx":"问题或情境"}
 
 8. update_characters — 更新调查员或NPC的状态
-   {"action":"update_characters","changes":["HP -3（角色名）","SAN -2（角色名）","cthulhu_mythos +1（角色名）","race 深潜者混血（角色名）"]}
+   {"action":"update_characters","changes":["HP -3（角色名）","SAN -2（角色名）","cthulhu_mythos +1（角色名）","race 深潜者混血（角色名）","occupation 记者（角色名）"]}
    - 格式：字段 ±数值或新字符串（角色名）
-   - 可用字段：HP/SAN/MP/cthulhu_mythos/race
+   - 可用字段：HP/SAN/MP/cthulhu_mythos/race/occupation
    - race：用于改变角色的种族（如：人类 -> 深潜者/食尸鬼等）
+   - occupation：用于改变角色的职业（如：记者、侦探等）
    - 不要写SAN变化——sanity检定的SAN损失由系统自动计算
 
 9. manage_inventory — 管理调查员物品栏（获得/丢失）
