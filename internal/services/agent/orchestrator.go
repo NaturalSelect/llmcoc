@@ -175,11 +175,12 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		var toolResults []ToolResult
 		hasEnd := false
 		hasWrite := false
-		hasOtherExpectWrite := false
+		hasInteraction := false
 
 		for _, call := range calls {
-			if call.Action != ToolWrite && call.Action != ToolAnswer {
-				hasOtherExpectWrite = true
+			switch call.Action {
+			case ToolActNPC, ToolRollDice, ToolCheckRule, ToolReadRulebookConst:
+				hasInteraction = true
 			}
 		}
 
@@ -558,11 +559,16 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					})
 				}
 			case ToolAnswer:
-				hasEnd = true
-				if hasOtherExpectWrite {
-					hasEnd = false
+				if hasInteraction {
+					toolResults = append(toolResults, ToolResult{
+						Action: ToolAnswer,
+						Result: "正在给出调用结果...先不要急着回答，本次回答已忽略",
+					})
+					debugf("tool", "session=%v answer with interaction", sid)
+					continue
 				}
-				kpNarration += call.Reply
+				hasEnd = true
+				kpNarration = call.Reply
 				debugf("tool", "session=%d answer narration=%s", sid, call.Reply)
 
 			// ── Combat tools ──────────────────────────────────────────────────────
