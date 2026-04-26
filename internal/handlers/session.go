@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -579,7 +580,8 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	}
 	resultCh := make(chan runResult, 1)
 	go func() {
-		out, err := h.Runner.Run(c.Request.Context(), gctx)
+		// NOTE: should running in background be safe since the pipeline should respect context cancellation
+		out, err := h.Runner.Run(context.Background(), gctx)
 		resultCh <- runResult{output: out, err: err}
 	}()
 
