@@ -118,7 +118,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				}
 				log.Printf("[lawyer] search: %s", c.Keyword)
 				debugf("Lawyer", "iter=%d search keyword=%q", iter+1, c.Keyword)
-				sections := rulebook.Search(idx, c.Keyword, 5)
+				sections := rulebook.Search(idx, c.Keyword, 30)
 				text := rulebook.Format(sections, 2000)
 				if text == "" {
 					text = "（规则书中未找到相关内容）"

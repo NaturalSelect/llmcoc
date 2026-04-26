@@ -496,7 +496,7 @@ func executeSearchCalls(calls []pipelineToolCall, idx rulebook.Index, tag string
 				continue
 			}
 			log.Printf("[%s] search_rule keyword=%q", tag, c.Keyword)
-			sections := rulebook.Search(idx, c.Keyword, 5)
+			sections := rulebook.Search(idx, c.Keyword, 30)
 			text := rulebook.Format(sections, 2000)
 			if text == "" {
 				text = "（规则书中未找到相关内容）"
