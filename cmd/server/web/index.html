@@ -650,13 +650,13 @@
         </div>
 
         <!-- ════════════════════════════════════════════════════════ GAME PAGE -->
-        <div x-show="page === 'game'" class="flex-1 flex overflow-hidden" style="height:calc(100vh - 44px)">
+        <div x-show="page === 'game'" class="flex-1 flex overflow-hidden bg-[#080706]" style="height: calc(100vh - 44px);">
 
             <!-- Chat area -->
-            <div class="flex-1 flex flex-col min-w-0">
+            <div class="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
 
                 <!-- Session header -->
-                <div class="card border-b px-4 py-2.5 flex items-center gap-3 shrink-0 flex-wrap"
+                <div class="card border-b px-4 py-2 flex items-center gap-3 shrink-0 bg-[#131110] z-10"
                     style="border-color:#252018">
                     <button @click="goTo('sessions')" class="text-amber-800 hover:text-amber-400 transition text-sm">←
                         返回</button>
@@ -684,8 +684,8 @@
                 </div>
 
                 <!-- Messages -->
-                <div class="flex-1 overflow-hidden p-3 bg-[#0a0908]">
-                    <div id="chatBox" class="h-full overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                <div class="flex-1 overflow-hidden p-3 bg-[#0a0908] relative">
+                    <div id="chatBox" class="absolute inset-0 overflow-y-auto p-3 space-y-3 custom-scrollbar">
                         <template x-for="msg in messages" :key="msg.id">
                             <div class="msg fade-up shadow-sm border border-[#1e1c17]"
                                 :class="msg.role==='assistant'?'msg-kp':msg.role==='user'?'msg-user':'msg-sys'">
