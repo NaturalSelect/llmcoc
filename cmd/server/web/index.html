@@ -175,6 +175,8 @@
         .msg {
             border-radius: 3px;
             padding: 0.625rem 0.875rem;
+            user-select: text;
+            -webkit-user-select: text;
         }
 
         .msg-kp {
@@ -200,6 +202,8 @@
             font-size: 0.9375rem;
             color: #d0bfa0;
             white-space: pre-wrap;
+            user-select: text;
+            -webkit-user-select: text;
         }
 
         /* KP narration - direct KP speech */
@@ -209,6 +213,8 @@
             color: #c09060;
             font-style: italic;
             white-space: pre-wrap;
+            user-select: text;
+            -webkit-user-select: text;
         }
 
         /* separator only when writer narrative precedes narration */
@@ -2632,7 +2638,10 @@
 
                     scrollChat() {
                         const el = document.getElementById('chatBox');
-                        if (el) el.scrollTop = el.scrollHeight;
+                        if (!el) return;
+                        const threshold = 120;
+                        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+                        if (atBottom) el.scrollTop = el.scrollHeight;
                     },
 
                     async refreshCurrentSession(silent = true) {
