@@ -30,11 +30,11 @@ func parseStateChange(change string) (CharacterUpdate, bool) {
 			deltaStr = rest
 		}
 
-		if strings.ToLower(field) == "race" {
-			// For race, deltaStr is actually the new race string
+		if strings.ToLower(field) == "race" || strings.ToLower(field) == "occupation" {
+			// For race and occupation, deltaStr is actually the new value string
 			return CharacterUpdate{
 				CharacterName: charName,
-				Field:         "race",
+				Field:         strings.ToLower(field),
 				NewValue:      strings.TrimSpace(deltaStr),
 			}, true
 		}
