@@ -379,6 +379,23 @@
             color: #5a5a5a;
             border: 1px solid #2a2a2a;
         }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0a0908;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #2a2318;
+            border-radius: 2px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #3d3228;
+        }
     </style>
 </head>
 
@@ -482,7 +499,7 @@
                                     <div>
                                         <h3 class="font-bold text-amber-100" x-text="char.name"></h3>
                                         <p class="text-xs text-amber-800 mt-0.5" style="font-family:system-ui"
-                                            x-text="[char.occupation||'未知职业', char.age?(char.age+'岁'):'', char.gender||''].filter(Boolean).join(' · ')">
+                                            x-text="[char.race||'人类', char.occupation||'未知职业', char.age?(char.age+'岁'):'', char.gender||''].filter(Boolean).join(' · ')">
                                         </p>
                                     </div>
                                     <button @click.stop="deleteChar(char.id)"
@@ -667,105 +684,98 @@
                 </div>
 
                 <!-- Messages -->
-                <div id="chatBox" class="flex-1 overflow-y-auto p-4 space-y-2.5">
+                <div class="flex-1 overflow-hidden p-3 bg-[#0a0908]">
+                    <div id="chatBox" class="h-full overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                        <template x-for="msg in messages" :key="msg.id">
+                            <div class="msg fade-up shadow-sm border border-[#1e1c17]"
+                                :class="msg.role==='assistant'?'msg-kp':msg.role==='user'?'msg-user':'msg-sys'">
 
-                    <template x-for="msg in messages" :key="msg.id">
-                        <div class="msg fade-up"
-                            :class="msg.role==='assistant'?'msg-kp':msg.role==='user'?'msg-user':'msg-sys'">
-
-                            <div class="flex items-baseline gap-2 mb-1.5">
-                                <span class="text-xs font-bold" style="font-family:monospace"
-                                    :class="msg.role==='assistant'?'text-red-500':msg.role==='user'?'text-green-500':'text-blue-500'"
-                                    x-text="msg.role==='assistant'?'🎭 KP':msg.role==='system'?'⚙ 系统':('👤 '+(msg.username||'玩家'))">
-                                </span>
-                                <span class="text-xs text-amber-900" style="font-family:monospace"
-                                    x-text="fmtTime(msg.created_at)"></span>
-                            </div>
-
-                            <!-- KP messages: try writer_text/narration_text split first -->
-                            <template x-if="msg.role === 'assistant'">
-                                <div>
-                                    <template x-if="msg.writer_text || msg.narration_text">
-                                        <div>
-                                            <p x-show="msg.writer_text" class="narrative" x-text="msg.writer_text"></p>
-                                            <p x-show="msg.narration_text" class="narration"
-                                                :class="msg.writer_text ? 'narration-sep' : ''"
-                                                x-text="'KP：' + msg.narration_text"></p>
-                                        </div>
-                                    </template>
-                                    <template x-if="!msg.writer_text && !msg.narration_text">
-                                        <p class="narrative" x-text="msg.content"></p>
-                                    </template>
+                                <div class="flex items-baseline gap-2 mb-1.5 border-b border-[#252018] pb-1">
+                                    <span class="text-xs font-bold" style="font-family:monospace"
+                                        :class="msg.role==='assistant'?'text-red-500':msg.role==='user'?'text-green-500':'text-blue-500'"
+                                        x-text="msg.role==='assistant'?'🎭 KP':msg.role==='system'?'⚙ 系统':('👤 '+(msg.username||'玩家'))">
+                                    </span>
+                                    <span class="text-[10px] text-amber-900" style="font-family:monospace"
+                                        x-text="fmtTime(msg.created_at)"></span>
                                 </div>
-                            </template>
 
-                            <!-- Player / system messages -->
-                            <template x-if="msg.role !== 'assistant'">
-                                <p class="action"
-                                    :class="msg.role==='system'?'text-blue-300/70 text-xs italic':'text-green-200/90'"
-                                    x-text="msg.content"></p>
-                            </template>
-                        </div>
-                    </template>
+                                <!-- KP messages: try writer_text/narration_text split first -->
+                                <template x-if="msg.role === 'assistant'">
+                                    <div class="narrative-container">
+                                        <template x-if="msg.writer_text || msg.narration_text">
+                                            <div>
+                                                <p x-show="msg.writer_text" class="narrative" x-text="msg.writer_text"></p>
+                                                <p x-show="msg.narration_text" class="narration"
+                                                    :class="msg.writer_text ? 'narration-sep' : ''"
+                                                    x-text="'KP：' + msg.narration_text"></p>
+                                            </div>
+                                        </template>
+                                        <template x-if="!msg.writer_text && !msg.narration_text">
+                                            <p class="narrative" x-text="msg.content"></p>
+                                        </template>
+                                    </div>
+                                </template>
 
-                    <!-- Streaming block -->
-                    <div x-show="streaming" class="msg msg-kp fade-up">
-                        <div class="flex items-baseline gap-2 mb-1.5">
-                            <span class="text-xs font-bold text-red-500" style="font-family:monospace">🎭 KP</span>
-                            <span class="text-xs text-amber-900" style="font-family:monospace">正在回应…</span>
-                        </div>
-
-                        <!-- Thinking indicator -->
-                        <div x-show="!writerBuffer && !narrationBuffer" class="flex items-center gap-3 py-1">
-                            <div class="flex gap-1">
-                                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                                <!-- Player / system messages -->
+                                <template x-if="msg.role !== 'assistant'">
+                                    <p class="action"
+                                        :class="msg.role==='system'?'text-blue-300/70 text-xs italic':'text-green-200/90'"
+                                        x-text="msg.content"></p>
+                                </template>
                             </div>
-                            <span class="text-xs text-red-900 italic" style="font-family:system-ui">
-                                Agent 团队运行中，请稍候…
-                            </span>
+                        </template>
+
+                        <!-- Streaming block -->
+                        <div x-show="streaming" class="msg msg-kp fade-up shadow-sm border border-[#3a1515]">
+                            <div class="flex items-baseline gap-2 mb-1.5 border-b border-[#3a1515] pb-1">
+                                <span class="text-xs font-bold text-red-500" style="font-family:monospace">🎭 KP</span>
+                                <span class="text-[10px] text-red-900" style="font-family:monospace">正在回应…</span>
+                            </div>
+
+                            <!-- Thinking indicator -->
+                            <div x-show="!writerBuffer && !narrationBuffer" class="flex items-center gap-3 py-1">
+                                <div class="flex gap-1">
+                                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                                </div>
+                                <span class="text-xs text-red-900 italic" style="font-family:system-ui">
+                                    Agent 团队运行中，请稍候…
+                                </span>
+                            </div>
+
+                            <!-- Writer narrative streaming -->
+                            <p x-show="writerBuffer" class="narrative" :class="narrationBuffer ? '' : 'cursor'"
+                                x-text="writerBuffer"></p>
+
+                            <!-- KP narration streaming -->
+                            <p x-show="narrationBuffer" class="narration cursor"
+                                :class="writerBuffer ? 'narration-sep' : ''" x-text="'KP：' + narrationBuffer"></p>
                         </div>
 
-                        <!-- Writer narrative streaming -->
-                        <p x-show="writerBuffer" class="narrative" :class="narrationBuffer ? '' : 'cursor'"
-                            x-text="writerBuffer"></p>
-
-                        <!-- KP narration streaming -->
-                        <p x-show="narrationBuffer" class="narration cursor"
-                            :class="writerBuffer ? 'narration-sep' : ''" x-text="'KP：' + narrationBuffer"></p>
-                    </div>
-
-                    <!-- Waiting for other players -->
-                    <div x-show="waitingForPlayers" class="msg msg-sys fade-up">
-                        <p class="text-blue-300/70 text-xs italic" style="font-family:system-ui">
-                            ⏳ 已提交行动，等待其他调查员…（还差
-                            <span class="font-bold text-blue-400" x-text="waitingInfo.pending"></span> 人）
-                        </p>
+                        <!-- Waiting for other players -->
+                        <div x-show="waitingForPlayers" class="msg msg-sys fade-up border border-[#1a2d4a]">
+                            <p class="text-blue-300/70 text-xs italic" style="font-family:system-ui">
+                                ⏳ 已提交行动，等待其他调查员…（还差
+                                <span class="font-bold text-blue-400" x-text="waitingInfo.pending"></span> 人）
+                            </p>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Input -->
-                <div class="card border-t shrink-0 p-3" style="border-color:#252018">
-                    <p x-show="currentSession?.status === 'lobby'" class="text-xs text-amber-800 mb-2 italic"
-                        style="font-family:system-ui">
-                        等待房主开始游戏…
-                    </p>
-                    <p x-show="currentSession?.status === 'ended'" class="text-xs text-amber-800 mb-2 italic"
-                        style="font-family:system-ui">
-                        游戏已结束。
-                    </p>
+                <div class="card border-t shrink-0 p-3 bg-[#131110]" style="border-color:#252018">
                     <div class="flex gap-2">
                         <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()"
                             placeholder="描述你的行动… (Ctrl+Enter 发送)" rows="2"
                             :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers"
-                            class="inp flex-1 resize-none" style="line-height:1.5"></textarea>
+                            class="inp flex-1 resize-none bg-[#0a0908] focus:border-amber-700 transition-colors" style="line-height:1.5"></textarea>
                         <button @click="sendChat()"
                             :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || !chatInput.trim()"
-                            class="btn btn-amber self-end px-4">
+                            class="btn btn-amber self-end px-5 py-2 h-[48px] shadow-lg">
                             <span x-show="!streaming && !waitingForPlayers">发送</span>
-                            <span x-show="streaming" class="flex gap-0.5 items-center">
-                                <span class="dot" style="width:3px;height:3px"></span>
-                                <span class="dot" style="width:3px;height:3px"></span>
-                                <span class="dot" style="width:3px;height:3px"></span>
+                            <span x-show="streaming" class="flex gap-1 items-center">
+                                <span class="dot" style="width:4px;height:4px"></span>
+                                <span class="dot" style="width:4px;height:4px"></span>
+                                <span class="dot" style="width:4px;height:4px"></span>
                             </span>
                             <span x-show="waitingForPlayers && !streaming">等待中</span>
                         </button>
@@ -774,69 +784,70 @@
             </div>
 
             <!-- Player sidebar -->
-            <div class="w-56 card border-l flex-col shrink-0 overflow-hidden hidden lg:flex"
+            <div class="w-64 card border-l flex-col shrink-0 overflow-hidden hidden lg:flex bg-[#0f0d0c]"
                 style="border-color:#252018">
-                <div class="px-3 py-2.5 border-b" style="border-color:#252018">
-                    <h3 class="text-xs font-bold text-amber-500 uppercase tracking-wider" style="font-family:monospace">
-                        调查员状态</h3>
+                <div class="px-4 py-3 border-b bg-[#131110]" style="border-color:#252018">
+                    <h3 class="text-[11px] font-bold text-amber-600 uppercase tracking-widest" style="font-family:monospace">
+                        调查员列表</h3>
                 </div>
-                <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
                     <template x-for="p in (currentSession?.players??[])" :key="p.id">
-                        <div class="card card-hover rounded p-2.5 cursor-pointer"
+                        <div class="card card-hover rounded-sm p-3 bg-[#151312] transition-all border-[#252018] hover:bg-[#1a1817] cursor-pointer"
                             @click="openSessionPlayerCharDetail(p)">
-                            <p class="text-xs font-bold text-amber-300 truncate" style="font-family:system-ui"
-                                x-text="p.character_card?.name || p.user?.username"></p>
-                            <p class="text-xs text-amber-800 truncate" style="font-family:system-ui"
-                                x-text="p.character_card?.occupation || '—'"></p>
-                            <p class="text-xs text-amber-900 mb-2" style="font-family:system-ui"
-                                x-text="'@ ' + (p.user?.username || '')"></p>
-                            <div class="space-y-1.5" x-show="p.character_card?.stats">
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-xs text-green-800 w-8 shrink-0"
-                                        style="font-family:monospace">HP</span>
-                                    <div class="flex-1 bar-track">
+                            <div class="flex justify-between items-start mb-1.5">
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-sm font-bold text-amber-200 truncate" style="font-family:system-ui"
+                                        x-text="p.character_card?.name || p.user?.username"></p>
+                                    <p class="text-[10px] text-amber-700 truncate mt-0.5" style="font-family:system-ui"
+                                        x-text="p.character_card?.occupation || '未知职业'"></p>
+                                </div>
+                                <span x-show="p.user?.id === user?.id" class="text-[9px] bg-amber-900/30 text-amber-600 px-1 rounded border border-amber-800/30">YOU</span>
+                            </div>
+                            
+                            <div class="space-y-2 mt-3" x-show="p.character_card">
+                                <div class="space-y-1">
+                                    <div class="flex justify-between text-[10px] font-mono">
+                                        <span class="text-green-800 uppercase">HP</span>
+                                        <span class="text-green-600 font-bold" x-text="p.character_card.stats?.hp+'/'+p.character_card.stats?.max_hp"></span>
+                                    </div>
+                                    <div class="bar-track bg-[#1a1714] h-1">
                                         <div class="bar-hp"
                                             :style="'width:'+Math.min(100,Math.round((p.character_card.stats?.hp/(p.character_card.stats?.max_hp||1))*100))+'%'">
                                         </div>
                                     </div>
-                                    <span class="text-xs text-green-700 w-10 text-right shrink-0"
-                                        style="font-family:monospace"
-                                        x-text="p.character_card.stats?.hp+'/'+p.character_card.stats?.max_hp"></span>
                                 </div>
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-xs text-yellow-800 w-8 shrink-0"
-                                        style="font-family:monospace">SAN</span>
-                                    <div class="flex-1 bar-track">
+                                <div class="space-y-1">
+                                    <div class="flex justify-between text-[10px] font-mono">
+                                        <span class="text-yellow-800 uppercase">SAN</span>
+                                        <span class="text-yellow-600 font-bold" x-text="p.character_card.stats?.san+'/'+p.character_card.stats?.max_san"></span>
+                                    </div>
+                                    <div class="bar-track bg-[#1a1714] h-1">
                                         <div class="bar-san"
                                             :style="'width:'+Math.min(100,Math.round((p.character_card.stats?.san/(p.character_card.stats?.max_san||1))*100))+'%'">
                                         </div>
                                     </div>
-                                    <span class="text-xs text-yellow-700 w-10 text-right shrink-0"
-                                        style="font-family:monospace"
-                                        x-text="p.character_card.stats?.san+'/'+p.character_card.stats?.max_san"></span>
                                 </div>
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-xs text-blue-800 w-8 shrink-0"
-                                        style="font-family:monospace">MP</span>
-                                    <div class="flex-1 bar-track">
+                                <div class="space-y-1">
+                                    <div class="flex justify-between text-[10px] font-mono">
+                                        <span class="text-blue-800 uppercase">MP</span>
+                                        <span class="text-blue-600 font-bold" x-text="p.character_card.stats?.mp+'/'+p.character_card.stats?.max_mp"></span>
+                                    </div>
+                                    <div class="bar-track bg-[#1a1714] h-1">
                                         <div class="bar-mp"
                                             :style="'width:'+Math.min(100,Math.round((p.character_card.stats?.mp/(p.character_card.stats?.max_mp||1))*100))+'%'">
                                         </div>
                                     </div>
-                                    <span class="text-xs text-blue-700 w-10 text-right shrink-0"
-                                        style="font-family:monospace"
-                                        x-text="p.character_card.stats?.mp+'/'+p.character_card.stats?.max_mp"></span>
                                 </div>
                             </div>
                             <div x-show="p.character_card?.madness_state && p.character_card?.madness_state !== 'none'"
-                                class="mt-1.5">
-                                <span class="text-xs text-red-500 italic" style="font-family:system-ui"
-                                    x-text="{'temporary':'⚡临时疯狂','indefinite':'🌀不定性疯狂','permanent':'☠永久疯狂'}[p.character_card?.madness_state]||''"></span>
+                                class="mt-2.5 pt-2 border-t border-[#252018]">
+                                <span class="text-[10px] text-red-600 italic font-bold" style="font-family:system-ui"
+                                    x-text="{'temporary':'⚡ 临时疯狂','indefinite':'🌀 不定性疯狂','permanent':'☠ 永久疯狂'}[p.character_card?.madness_state]||''"></span>
                             </div>
                         </div>
                     </template>
-                    <p x-show="!currentSession?.players?.length" class="text-xs text-amber-900 text-center py-4"
-                        style="font-family:system-ui">暂无玩家</p>
+                    <p x-show="!currentSession?.players?.length" class="text-xs text-amber-900 text-center py-8"
+                        style="font-family:system-ui">暂无调查员加入</p>
                 </div>
             </div>
         </div>
@@ -1333,7 +1344,7 @@
                 <div>
                     <h2 class="text-2xl font-bold text-amber-100" x-text="editChar?.name"></h2>
                     <p class="text-amber-700 text-sm mt-0.5" style="font-family:system-ui"
-                        x-text="[editChar?.occupation, editChar?.age?(editChar.age+'岁'):'', editChar?.gender].filter(Boolean).join(' · ')">
+                        x-text="[editChar?.race||'人类', editChar?.occupation, editChar?.age?(editChar.age+'岁'):'', editChar?.gender].filter(Boolean).join(' · ')">
                     </p>
                 </div>
                 <button @click="modal=null"
@@ -1572,7 +1583,10 @@
                 <button @click="modal=null" class="text-amber-800 hover:text-amber-400 text-xl leading-none">✕</button>
             </div>
             <div class="space-y-3">
-                <input x-model="charForm.name" placeholder="姓名 *" class="inp" />
+                <div class="grid grid-cols-2 gap-2">
+                    <input x-model="charForm.name" placeholder="姓名 *" class="inp" />
+                    <input x-model="charForm.race" placeholder="种族（默认人类）" class="inp" />
+                </div>
                 <div class="grid grid-cols-3 gap-2">
                     <input x-model.number="charForm.age" type="number" placeholder="年龄" class="inp" />
                     <input x-model="charForm.gender" placeholder="性别" class="inp" />
@@ -1601,7 +1615,10 @@
                 <button @click="modal=null" class="text-amber-800 hover:text-amber-400 text-xl leading-none">✕</button>
             </div>
             <div class="space-y-3">
-                <input x-model="genForm.name" placeholder="姓名 *" class="inp" />
+                <div class="grid grid-cols-2 gap-2">
+                    <input x-model="genForm.name" placeholder="姓名 *" class="inp" />
+                    <input x-model="genForm.race" placeholder="种族（默认人类）" class="inp" />
+                </div>
                 <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="text-xs text-amber-800 mb-1 block" style="font-family:system-ui">性别</label>
@@ -1930,8 +1947,8 @@
 
                 // ── Character forms ───────────────────────────────────────────────────
                 editChar: null,
-                charForm: { name: '', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' },
-                genForm: { occupation: '', era: '', background: '' },
+                charForm: { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' },
+                genForm: { name: '', race: '人类', gender: '', age: '', occupation: '', era: '', background: '' },
 
                 // ── Session forms ─────────────────────────────────────────────────────
                 sessionForm: { name: '', scenario_id: '', max_players: 4, password: '' },
@@ -2152,8 +2169,8 @@
                 // ══════════════════════════════════════════════════════════════════════
                 // Characters
                 // ══════════════════════════════════════════════════════════════════════
-                openCreateChar() { this.charForm = { name: '', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' }; this.modal = 'createChar'; },
-                openGenerateChar() { this.genForm = { name: '', gender: '', age: '', occupation: '', era: '', background: '' }; this.modal = 'generateChar'; },
+                openCreateChar() { this.charForm = { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' }; this.modal = 'createChar'; },
+                openGenerateChar() { this.genForm = { name: '', race: '人类', gender: '', age: '', occupation: '', era: '', background: '' }; this.modal = 'generateChar'; },
                 openCharDetail(c) { this.editChar = c; this.inventoryInput = ''; this.modal = 'charDetail'; },
                 openSessionPlayerCharDetail(player) {
                     if (!player?.character_card) {
