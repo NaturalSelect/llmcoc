@@ -413,6 +413,44 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 【示例：查看规则书常量】
 [{"action":"read_rulebook_const","constant":"spells"}]
 
+【示例：战斗轮】
+第一轮（检测到冲突，初始化战斗状态）：
+[{"action":"start_combat","combat_participants":[{"name":"Alice","dex":60,"hp":12,"is_npc":false},{"name":"怪物","dex":40,"hp":20,"is_npc":true}]}]
+第二轮（战斗处理）：
+
+	....
+
+第三步(登记行动，只能单独使用):
+[{"action":"combat_act","combat_actor_name":"Alice","combat_action":{"type":"attack","target_name":"怪物","weapon_name":"左轮手枪"}}]
+第四步(继续后续处理):
+
+...
+
+第五步(根据行动结果继续处理)：
+[
+	{action":"write","direction":"Alice开枪攻击了怪物，造成了伤害"},
+	{"action":"answer","reply":"Alice开枪了！子弹打中了怪物，造成了6点伤害。"}
+]
+
+【示例：追逐轮】
+第一轮（检测到追逐，初始化追逐状态）：
+[{"action":"start_chase","chase_participants":[{"name":"Alice","is_npc":false,"mov":8,"location":2,"is_pursuer":false},{"name":"警察","is_npc":true,"mov":9,"location":0,"is_pursuer":true}]}]
+第二轮（追逐处理）：
+
+....
+
+第三步(登记行动，只能单独使用):
+[{"action":"chase_act","chase_actor_name":"Alice","chase_action":{"type":"move","move_delta":2}}]
+第四步(继续后续处理):
+
+....
+
+第五步(根据行动结果继续处理)：
+[
+	{"action":"write","direction":"Alice加速向前跑了两格，试图拉开与警察的距离"},
+	{"action":"answer","reply":"Alice奋力向前跑了两格，试图拉开与警察的距离！你感觉到心跳加速，警察似乎也加快了脚步。"}
+]
+
 【示例：结束游戏】
 [{"action":"query_character","character_name":"Alice"}]
 收到人物卡后第一轮：

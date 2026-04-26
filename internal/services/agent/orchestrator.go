@@ -140,6 +140,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(kpSystemPrompt), kpMsgs, tempNPCs)
 
+	switchRole := false
+
 	for iter := 0; iter < MaxKpRound; iter++ {
 		if ctx.Err() != nil {
 			return RunOutput{}, ctx.Err()
@@ -189,6 +191,20 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		for _, call := range calls {
 			if ctx.Err() != nil {
 				return RunOutput{}, ctx.Err()
+			}
+
+			switchInThisBatch := false
+
+			if switchRole {
+				// 如果发生了切换跳过本批次其他调用，期望KP在下一轮使用 write/answer 工具交出控制权。
+				if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolAnswer) {
+					debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
+					toolResults = append(toolResults, ToolResult{
+						Action: call.Action,
+						Result: "中断发生，KP已切换到玩家角色，该调用无效，请在下一轮使用 writer/answer 工具决策交出控制权。",
+					})
+					continue
+				}
 			}
 
 			switch call.Action {
@@ -472,7 +488,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 			case ToolWrite:
 				// Writer slave: no scenario info; receives direction + its own history.
-				if hasInteraction {
+				if hasInteraction && !switchRole {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolWrite,
 						Result: "已经有其他工具调用了，write 操作被跳过",
@@ -582,7 +598,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					})
 				}
 			case ToolAnswer:
-				if hasInteraction {
+				if hasInteraction && !switchRole {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolAnswer,
 						Result: "已经有其他工具调用了，answer 操作被跳过",
@@ -621,7 +637,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					})
 					continue
 				}
-				result := applyCombatAct(cs, call)
+				var result string
+				result, switchRole = applyCombatAct(cs, call)
+				if !switchInThisBatch && switchRole {
+					switchInThisBatch = true
+				}
 				gctx.Session.CombatState = models.JSONField[*models.CombatState]{Data: cs}
 				saveCombatState(gctx.Session.ID, cs)
 				debugf("tool", "session=%d combat_act actor=%q action=%q", sid, call.CombatActorName, call.CombatAction)
@@ -674,7 +694,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					})
 					continue
 				}
-				result := applyChaseAct(chs, call)
+				var result string
+				result, switchRole = applyChaseAct(chs, call)
+				if !switchInThisBatch && switchRole {
+					switchInThisBatch = true
+				}
 				gctx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: chs}
 				saveChaseState(gctx.Session.ID, chs)
 				debugf("tool", "session=%d chase_act actor=%q action=%v", sid, call.ChaseActorName, call.ChaseAction)
@@ -793,7 +817,7 @@ func buildCombatState(inputs []CombatParticipantInput) models.CombatState {
 
 // applyCombatAct applies one combatant's action to the CombatState and advances
 // the actor pointer. Returns a human-readable result string for the KP.
-func applyCombatAct(cs *models.CombatState, call ToolCall) string {
+func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switchRole bool) {
 	actorName := call.CombatActorName
 	act := call.CombatAction
 
@@ -806,11 +830,18 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) string {
 		}
 	}
 	if actorIdx < 0 {
-		return fmt.Sprintf("错误：找不到战斗参与者 %q", actorName)
+		return fmt.Sprintf("错误：找不到战斗参与者 %q", actorName), false
 	}
 
 	actor := &cs.Participants[actorIdx]
 	actor.HasActed = true
+
+	switchRole = false
+	if next := (actorIdx + 1) % len(cs.Participants); next != actorIdx {
+		// NOTE: 如果下一个行动者是NPC，则保持KP角色不变让它继续决策；如果是玩家，则切换到玩家角色让KP决策玩家行动。
+		nextActor := cs.Participants[next]
+		switchRole = !nextActor.IsNPC
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("【%s 行动】", actorName))
@@ -875,7 +906,11 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) string {
 		sb.WriteString(fmt.Sprintf(" 下一行动者：%s（DEX %d）。", cs.Participants[next].Name, cs.Participants[next].DEX))
 	}
 
-	return sb.String()
+	if switchRole {
+		sb.WriteString(fmt.Sprintf(" 控制权从KP，移交到玩家，请使用 write/answer 移交控制权"))
+	}
+
+	return sb.String(), switchRole
 }
 
 // combatOrderSummary returns a compact DEX-order string for the KP result message.
@@ -927,7 +962,7 @@ func buildChaseState(inputs []ChaseParticipantInput) models.ChaseState {
 }
 
 // applyChaseAct applies one participant's chase action and returns a result string.
-func applyChaseAct(chs *models.ChaseState, call ToolCall) string {
+func applyChaseAct(chs *models.ChaseState, call ToolCall) (result string, switchRole bool) {
 	actorName := call.ChaseActorName
 	act := call.ChaseAction
 
@@ -939,7 +974,7 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) string {
 		}
 	}
 	if actorIdx < 0 {
-		return fmt.Sprintf("错误：找不到追逐参与者 %q", actorName)
+		return fmt.Sprintf("错误：找不到追逐参与者 %q", actorName), false
 	}
 
 	actor := &chs.Participants[actorIdx]
@@ -947,7 +982,11 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) string {
 	sb.WriteString(fmt.Sprintf("【%s 追逐行动】", actorName))
 
 	if act == nil {
-		return sb.String() + "（无行动详情）"
+		return sb.String() + "（无行动详情）", false
+	}
+
+	if next := (actorIdx + 1) % len(chs.Participants); next != actorIdx {
+		switchRole = !chs.Participants[next].IsNPC
 	}
 
 	switch act.Type {
@@ -1000,7 +1039,11 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) string {
 		}
 	}
 
-	return sb.String()
+	if switchRole {
+		sb.WriteString(fmt.Sprintf(" 控制权从KP，移交到玩家，请使用 write/answer 移交控制权"))
+	}
+
+	return sb.String(), switchRole
 }
 
 // chaseParticipantSummary returns a compact participant list string.
