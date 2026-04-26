@@ -1480,7 +1480,7 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			continue
 		}
 		st := card.Stats.Data
-		sb.WriteString(fmt.Sprintf("=== %s（%s，%s，%d岁，%s）===\n", card.Name, card.Race, card.Occupation, card.Age, card.Gender))
+		sb.WriteString(fmt.Sprintf("=== %s（种族：%s，职业：%s，%d岁，性别：%s）===\n", card.Name, card.Race, card.Occupation, card.Age, card.Gender))
 		if p.LLMNote != "" {
 			sb.WriteString(fmt.Sprintf("⚠️ 当前状态（会话级备忘）：%s\n", p.LLMNote))
 		}
@@ -1603,7 +1603,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 		if !npc.IsAlive {
 			status = "已死亡/失能"
 		}
-		sb.WriteString(fmt.Sprintf("=== %s（%s，临时NPC，%s）===\n", npc.Name, npc.Race, status))
+		sb.WriteString(fmt.Sprintf("=== %s（种族：%s，临时NPC，%s）===\n", npc.Name, npc.Race, status))
 		sb.WriteString("描述：" + npc.Description + "\n")
 		if strings.TrimSpace(npc.Attitude) != "" {
 			sb.WriteString("态度：" + strings.TrimSpace(npc.Attitude) + "\n")
