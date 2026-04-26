@@ -1245,12 +1245,33 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 				if card.Stats.Data.SAN > 0 {
 					skillVal = card.Stats.Data.SAN
 				}
-			} else if v, ok := card.Skills.Data[dc.Skill]; ok && v > 0 {
-				skillVal = v
+			} else {
+				v, ok := card.Skills.Data[dc.Skill]
+				if ok {
+					skillVal = v
+				} else {
+					// NOTE: 简单骰子，并非技能判断，找非空字符串
+					dice := dc.SanFailLoss
+					if dice == "" || dice == "0" {
+						dice = dc.SanSuccessLoss
+					}
+					if dice == "" || dice == "0" {
+						dice = "1D6" // sensible fallback
+					}
+					diceVal := game.RollDiceExpr(dice)
+					results = append(results, DiceCheckResult{
+						DiceCheck: dc,
+						Roll:      diceVal,
+						Level:     "normal",
+						Success:   true,
+						Message:   fmt.Sprintf("%v: %v", dc.Skill, diceVal),
+					})
+					goto nextCheck
+				}
 			}
 		}
 		if skillVal <= 0 {
-			skillVal = 50
+			skillVal = 1
 		}
 
 		// 已见过的神话存在不再握发SAN损失（COC第八章习惯恐惧规则）
