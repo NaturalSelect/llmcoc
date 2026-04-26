@@ -1479,6 +1479,17 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		if characterName != "" && card.Name != characterName {
 			continue
 		}
+		hotFix := func(card *models.CharacterCard) {
+			notHuman := card.Race != "人类" && card.Race != ""
+			if notHuman {
+				if card.CthulhuMythosSkill >= 99 {
+					// NOTE: 克苏鲁神话技能达到99的角色被视为非人类怪物，自动清零该技能以避免KP误判
+					card.CthulhuMythosSkill = 0
+					models.DB.Save(&card)
+				}
+			}
+		}
+		hotFix(&card)
 		st := card.Stats.Data
 		sb.WriteString(fmt.Sprintf("=== %s（种族：%s，职业：%s，%d岁，性别：%s）===\n", card.Name, card.Race, card.Occupation, card.Age, card.Gender))
 		if p.LLMNote != "" {

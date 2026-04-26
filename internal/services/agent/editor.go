@@ -65,8 +65,8 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			prevSAN := s.SAN
 			newSAN := s.SAN + upd.Delta
 			if card.Race != "" && card.Race != "人类" {
-				// 非人类角色的SAN不能下降，但平衡起见允许触发疯狂
 				newSAN = s.MaxSAN
+				upd.Delta = 0
 			}
 			s.SAN = newSAN
 			card.Stats.Data = s
