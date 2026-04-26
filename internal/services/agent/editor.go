@@ -329,7 +329,7 @@ func TearDeadInvestigators(players []models.SessionPlayer) []string {
 	var torn []string
 	for i := range players {
 		card := &players[i].CharacterCard
-		if card.WoundState == "dead" && card.IsActive {
+		if (card.WoundState == "dead" || card.Stats.Data.HP <= 0) && card.IsActive {
 			card.IsActive = false
 			models.DB.Model(card).Update("is_active", false)
 			log.Printf("[editor] 撕卡: %s (WoundState=dead)", card.Name)
