@@ -69,7 +69,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			card.Stats.Data = s
 
 			// ── 理智损失事件：检查疯狂触发 ──────────────────────────────────────
-			if upd.Delta < 0 && isHuman {
+			if upd.Delta < 0 {
 				sanLoss := prevSAN - s.SAN // actual points lost (positive)
 				if sanLoss > 0 {
 					card.DailySanLoss += sanLoss
@@ -144,7 +144,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			log.Printf("[editor] %s: POW %d→%d, MaxMP→%d", card.Name, oldPOW, s.POW, newMaxMP)
 			models.DB.Save(card)
 
-		case "cthulhu_mythos":
+		case "cthulhu_mythos", "cthulhu_mythos_skill":
 			// ── 克苏鲁神话技能增长 → 降低最大SAN上限 ─────────────────────────
 			if upd.Delta > 0 {
 				maxVal := 99

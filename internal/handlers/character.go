@@ -523,18 +523,3 @@ func applyAdjustedSkills(base map[string]int, adjusted map[string]int, stats mod
 	base["母语"] = stats.EDU
 	base["闪避"] = stats.DEX / 2
 }
-
-func RecoverCharacterSAN(c *gin.Context) {
-	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-
-	var card models.CharacterCard
-	if err := models.DB.First(&card, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
-		return
-	}
-
-	card.Stats.Data.MaxSAN = 99
-	card.Stats.Data.SAN = card.Stats.Data.MaxSAN
-	models.DB.Save(&card)
-	c.JSON(http.StatusOK, card)
-}
