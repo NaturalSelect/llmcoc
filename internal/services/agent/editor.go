@@ -61,12 +61,14 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 
 		switch strings.ToLower(upd.Field) {
 		case "san":
-			if card.Race != "" && card.Race != "人类" {
-				return // 非人类角色免疫理智损失
-			}
 			s := card.Stats.Data
 			prevSAN := s.SAN
-			s.SAN = clamp(s.SAN+upd.Delta, 0, s.MaxSAN)
+			newSAN := s.SAN + upd.Delta
+			if card.Race != "" && card.Race != "人类" {
+				// 非人类角色的SAN不能下降，但平衡起见允许触发疯狂
+				newSAN = s.MaxSAN
+			}
+			s.SAN = newSAN
 			card.Stats.Data = s
 
 			// ── 理智损失事件：检查疯狂触发 ──────────────────────────────────────
@@ -218,9 +220,6 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 // applyMadnessToCard sets the madness fields on a CharacterCard based on MadnessKind.
 // It rolls a madness symptom and updates the card in memory (caller must DB.Save).
 func applyMadnessToCard(card *models.CharacterCard, kind game.MadnessKind) {
-	if card.Race != "" && card.Race != "人类" {
-		return // 非人类角色免疫疯狂
-	}
 	switch kind {
 	case game.MadnessPermanent:
 		card.MadnessState = "permanent"
