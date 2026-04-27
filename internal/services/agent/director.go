@@ -148,7 +148,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>combat_act</name>
-			<description>记录本轮当前行动者的战斗行动（每个行动者每轮调用一次，必须在单独的批次使用）</description>
+			<description>记录本轮当前行动者的战斗行动（每个行动者每轮调用一次，必须在单独的 round 中使用）</description>
 			<input_format>{"action":"combat_act","combat_actor_name":"Alice","combat_action":{"type":"attack","target_name":"怪物","weapon_name":"左轮手枪"}}</input_format>
 		</tool>
 		<tool>
@@ -163,7 +163,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>chase_act</name>
-			<description>记录本轮当前追逐参与者的行动(必须在单独的批次调用)</description>
+			<description>记录本轮当前追逐参与者的行动(必须在单独的 round 中使用)</description>
 			<input_format>{"action":"chase_act","chase_actor_name":"Alice","chase_action":{"type":"move","move_delta":2}}</input_format>
 		</tool>
 		<tool>
