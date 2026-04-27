@@ -14,6 +14,7 @@ import (
 
 var lawyerSystemPrompt = `你是COC TRPG（克苏鲁的呼唤7版）规则专家，通过调用工具来回答规则问题。
 每次输出必须是一个JSON数组，包含按顺序执行的工具调用列表。
+在使用 search 之前优先考虑 read_rulebook_const 来获取规则书内置常量（如目录、怪物清单等），以减少搜索次数和提高准确率。
 
 【规则书目录】
 ` + rulebook.RulebookDir + `
@@ -22,8 +23,11 @@ var lawyerSystemPrompt = `你是COC TRPG（克苏鲁的呼唤7版）规则专家
 1. search — 检索规则书原文
    {"action":"search","keyword":"精确关键词（15字以内）"}
    参考上方目录选择合适的关键词进行搜索。
-   示例：{"action":"search","keyword":"理智损失参考值"}
-   示例：{"action":"search","keyword":"推进骰限制条件"}
+   示例：{"action":"search","keyword":"理智损失"}
+   示例：{"action":"search","keyword":"限制条件"}
+   示例: {"action":"search","keyword":"san值"}
+   示例: {"action":"search","keyword":"通神术"}
+   示例: {"action":"search","keyword":"克苏鲁通神术"} // 完整法术名
 
 2. read_rulebook_const — 读取规则书内置常量目录/列表，存在假阴性风险（但不存在假阳性）
 	{"action":"read_rulebook_const","constant":"常量名"}

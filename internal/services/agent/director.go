@@ -227,6 +227,7 @@ const kpSystemPrompt = `
 			<description>KP核心准则：查阅规则书</description>
 			<content>
 				read_rulebook_const 和 check_rule 是你最重要的工具，给调查员回答之前确保你至少看过一遍，除非你对相关规则非常熟悉且有信心
+				read_rulebook_const 和 check_rule 不能与 answer write 在相同的round中出现，必须在 answer 之前的单独round中使用
 			</content>
 		</rule>
 		<rule>
@@ -234,7 +235,7 @@ const kpSystemPrompt = `
 			<content>
 				write 和 answer 不能与其他工具调用同时出现
 				answer 只能与 write 同轮出现，且必须在 write 之后
-				answer 与除了 write 以外的工具调用不能都互斥
+				answer 与除了 write 以外的工具调用都互斥
 			</content>
 		</rule>
 		<rule>
@@ -299,7 +300,7 @@ const kpSystemPrompt = `
 			<content>
 				write 和 answer 不能与其他工具调用同时出现
 				answer 只能与 write 同轮出现，且必须在 write 之后
-				answer 与除了 write 以外的工具调用不能都互斥
+				answer 与除了 write 以外的工具调用都互斥
 			</content>
 		</rule>
 		<rule>
