@@ -109,6 +109,8 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 					card.WoundState = "major"
 					log.Printf("[editor] %s: major wound (damage %d >= maxHP/2 %d)", card.Name, damage, s.MaxHP/2)
 				}
+			} else if upd.Delta > 0 && (s.HP == s.MaxHP || upd.Delta >= s.MaxHP/2) {
+				card.WoundState = "none"
 			}
 			// HP归零且已有重伤 → 濒死（需急救）
 			if s.HP <= 0 && card.WoundState == "major" && card.WoundState != "dead" {
