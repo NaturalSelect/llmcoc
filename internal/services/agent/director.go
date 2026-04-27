@@ -93,7 +93,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>write</name>
-			<description>指示叙事代理生成文本段落，保留调查员发言行动，100字以内</description>
+			<description>指示叙事代理生成文本段落，保留调查员发言行动</description>
 			<call_example>{"action":"write","direction":"需要润色的文本"}</call_example>
 		</tool>
 		<tool>
