@@ -658,6 +658,12 @@ func looksLikeCombatText(s string) bool {
 	return false
 }
 
+var kpRespExample = func() string {
+	toolCall := []ToolCall{{}}
+	bs, _ := json.Marshal(toolCall)
+	return string(bs)
+}()
+
 // runKP sends the current conversation messages to the KP model and returns the parsed tool calls
 // together with the raw response string. The caller is responsible for appending:
 //  1. {Role:"assistant", Content: rawResp}  — the KP's decision
@@ -687,28 +693,25 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 		resp = llm.JsonArryProtect(resp)
 		stripped := llm.StripCodeFence(resp)
 		var calls []ToolCall
-		if err := json.Unmarshal([]byte(stripped), &calls); err != nil {
-			lastErr = err
-			debugf("KP", "attempt %d JSON parse failed: %v, retrying...", attempt, err)
-
-			// If JSON parsing fails, try to extract a JSON array from the response.
-			if start := strings.Index(stripped, "["); start >= 0 {
-				if end := strings.LastIndex(stripped, "]"); end > start {
-					if err2 := json.Unmarshal([]byte(stripped[start:end+1]), &calls); err2 == nil {
-						debugf("KP", "attempt %d JSON extraction succeeded", attempt)
-						return calls, lastResp, nil
-					}
-				}
-			}
-
-			// If not the last attempt, retry by calling Chat again
-			if attempt < maxRetries {
-				continue
-			}
-		} else {
-			// JSON parsing succeeded
+		unmarshlErr := json.Unmarshal([]byte(stripped), &calls)
+		if unmarshlErr == nil {
+			debugf("KP", "attempt %d JSON parse success, got %d calls", attempt, len(calls))
 			return calls, lastResp, nil
 		}
+		stripped, err = RepairJSON(ctx, stripped, unmarshlErr, kpRespExample)
+		if err != nil {
+			debugf("KP", "attempt %d JSON repair failed: %v", attempt, err)
+			lastErr = fmt.Errorf("attempt %d JSON parse error: %w", attempt, unmarshlErr)
+			continue
+		}
+		unmarshlErr = json.Unmarshal([]byte(stripped), &calls)
+		if unmarshlErr == nil {
+			debugf("KP", "attempt %d JSON repair success, got %d calls", attempt, len(calls))
+			return calls, lastResp, nil
+		}
+		debugf("KP", "attempt %d JSON parse failed after repair: %v", attempt, unmarshlErr)
+		lastErr = fmt.Errorf("attempt %d JSON parse error after repair: %w", attempt, unmarshlErr)
+		debugf("KP", "attempt %d JSON parse failed, retrying...", attempt)
 	}
 
 	// All retries exhausted: fall back to minimal sequence.

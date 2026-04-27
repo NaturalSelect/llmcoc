@@ -119,9 +119,9 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 		return CharacterEvolutionResult{NewBackstory: card.Backstory, NewTraits: card.Traits}, nil
 	}
 
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
 	if err != nil {
-		return CharacterEvolutionResult{}, fmt.Errorf("writer agent 未配置: %w", err)
+		return CharacterEvolutionResult{}, fmt.Errorf("evaluator agent 未配置: %w", err)
 	}
 
 	// Copy WriterHistory as-is — all messages hit the provider's prompt cache.
