@@ -755,7 +755,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		// multi-turn context (assistant decided → tools ran → user reports results).
 		if len(toolResults) > 0 {
 			var sb strings.Builder
-			sb.WriteString("【工具执行结果】\n")
 			data, err := json.MarshalIndent(toolResults, "", "  ")
 			if err != nil {
 				return RunOutput{}, fmt.Errorf("failed to marshal tool results: %w", err)
@@ -843,7 +842,7 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switc
 	if next := (actorIdx + 1) % len(cs.Participants); next != actorIdx {
 		// NOTE: 如果下一个行动者是NPC，则保持KP角色不变让它继续决策；如果是玩家，则切换到玩家角色让KP决策玩家行动。
 		nextActor := cs.Participants[next]
-		switchRole = !nextActor.IsNPC
+		switchRole = !nextActor.IsNPC && actor.IsNPC
 	}
 
 	var sb strings.Builder
@@ -989,7 +988,7 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) (result string, switch
 	}
 
 	if next := (actorIdx + 1) % len(chs.Participants); next != actorIdx {
-		switchRole = !chs.Participants[next].IsNPC
+		switchRole = !chs.Participants[next].IsNPC && actor.IsNPC
 	}
 
 	switch act.Type {
