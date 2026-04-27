@@ -3,6 +3,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -755,9 +756,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		if len(toolResults) > 0 {
 			var sb strings.Builder
 			sb.WriteString("【工具执行结果】\n")
-			for _, r := range toolResults {
-				sb.WriteString(fmt.Sprintf("[%s] %s\n", r.Action, r.Result))
+			data, err := json.MarshalIndent(toolResults, "", "  ")
+			if err != nil {
+				return RunOutput{}, fmt.Errorf("failed to marshal tool results: %w", err)
 			}
+			sb.Write(data)
 			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: sb.String()})
 		}
 	}
