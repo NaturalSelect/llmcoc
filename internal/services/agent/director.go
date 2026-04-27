@@ -770,6 +770,10 @@ NOTE:
 
 NOT-sideeffect actions (like query_character, query_clues, read_rulebook_const) should be used to gather information before deciding on the narrative direction or tool calls that have side effects (like roll_dice, manage_inventory, act_npc). Always check the current scenario context and NPC states before processing player actions to ensure consistency and enforce consequences.
 
+NOT-sideeffect actions can be freely combined in the same round, but any action that has side effects (like write/answer) must be carefully placed.
+
+USUALLY, the NOT-sideeffect actions cannot combine with side-effect actions in the same round, and if a side-effect action (write/answer) is used, it must be the last action in that round. This ensures that all information gathering and checks are done before any narrative or game state changes are made.
+
 shouldBeLast action in a round must be write/answer, and if answer is used, it must come after write. No other tool calls can be made in the same round as answer.
 `
 
