@@ -129,12 +129,12 @@ const kpSystemPrompt = `
 		<tool>
 			<name>update_llm_note</name>
 			<description>更新LLM笔记</description>
-			<call_example>{"action":"update_llm_note","character_name":"角色名","note":"笔记内容"}</call_example>
+			<call_example>{"action":"update_llm_note","character_name":"角色名","llm_note":"笔记内容"}</call_example>
 		</tool>
 		<tool>
 			<name>update_npc_llm_note</name>
 			<description>更新NPC的LLM笔记</description>
-			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","note":"笔记内容"}</call_example>
+			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
 		</tool>
 		<tool>
 			<name>answer</name>
