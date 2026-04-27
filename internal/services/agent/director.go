@@ -93,8 +93,8 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>write</name>
-			<description>指示叙事代理生成文本段落</description>
-			<input_format>{"action":"write","direction":"叙事方向，描述本段需要呈现的内容（100字以内）"}</input_format>
+			<description>指示叙事代理生成文本段落，保留调查员发言行动，100字以内</description>
+			<input_format>{"action":"write","direction":"需要润色的文本"}</input_format>
 		</tool>
 		<tool>
 			<name>advance_time</name>
