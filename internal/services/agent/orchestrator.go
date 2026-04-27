@@ -201,7 +201,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
 					toolResults = append(toolResults, ToolResult{
 						Action: call.Action,
-						Result: "中断发生，KP已切换到玩家角色，该调用无效，请在下一轮使用 writer/answer 工具决策交出控制权。",
+						Result: "中断： 中断发生，KP已切换到玩家角色，该调用无效，请在下一轮使用 writer/answer 工具决策交出控制权。",
 					})
 					continue
 				}
@@ -460,7 +460,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if call.NPCName == "" || len(call.Changes) == 0 {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolUpdateNPCCard,
-						Result: "update_npc_card 参数不足：需要 npc_name 和 changes",
+						Result: "错误： update_npc_card 参数不足：需要 npc_name 和 changes",
 					})
 					continue
 				}
