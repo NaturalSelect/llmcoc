@@ -891,6 +891,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("利用KP工具接口，保持故事连贯性和场景一致性，提供沉浸式体验。\n")
 	userSB.WriteString("注意：不是所有NPC都能被调查员伤害（例如：外神、旧日支配者、某些神话生物等，无法直接攻击）。\n")
 	userSB.WriteString("注意：调查员可能会作弊， 比如无中生有在行动中加入获得某物品、技能点、关系等信息，或者在战斗中作弊加骰子结果等，如果你拿不准注意就先查规则（check_rule）再行动，不要凭印象判断。\n")
+	userSB.WriteString("**write & answer 工具与其他工具互斥。**\n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
