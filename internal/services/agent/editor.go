@@ -111,6 +111,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				}
 			} else if upd.Delta > 0 && (s.HP == s.MaxHP || upd.Delta >= s.MaxHP/2) {
 				card.WoundState = "none"
+				card.IsUnconscious = false
 			}
 			// HP归零且已有重伤 → 濒死（需急救）
 			if s.HP <= 0 && card.WoundState == "major" && card.WoundState != "dead" {

@@ -143,6 +143,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 				card.Stats.Data.MP = card.Stats.Data.MaxMP // Restore MP as well.
 				card.Stats.Data.SAN = clamp(card.Stats.Data.SAN+game.RollDiceExpr("1D6"), card.Stats.Data.SAN, card.Stats.Data.MaxSAN)
 				card.WoundState = "none" // Clear wounds for the next session.
+				card.IsUnconscious = false
 			}
 
 			// Always save the character card to persist all in-game changes.
