@@ -401,7 +401,7 @@ const kpSystemPrompt = `你是COC 7版TRPG的守秘人（KP），拥有完整的
 先查看是否有该书：
 [{"action":"query_character","character_name":"Alice"}]
 收到人物卡后第一轮：
-[{"action":"roll_dice","dice":{"skill":"图书馆使用","value":65,"character":"Alice","check_type":"standard","hidden":false}}]
+[{"action":"roll_dice","dice":{"skill":"灵感","value":65,"character":"Alice","check_type":"standard","hidden":false}}]
 收到结果后第二轮（查阅典籍）：
 [{"action":"query_clues"}]
 第三轮（学会法术）：
