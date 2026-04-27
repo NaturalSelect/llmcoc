@@ -885,10 +885,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(fmt.Sprintf("\n【当前行动】[%s]: %s", gctx.UserName, gctx.UserInput))
 	}
 	userSB.WriteString("\n")
-	userSB.WriteString("请根据当前游戏时间、场景设定、调查员状态、NPC状态和玩家行动，合理判断并给出KP的回应和工具调用。")
-	userSB.WriteString("请一步步推理，仔细分析，不要急于给出结论，确保每个决策都有充分的理由。")
-	userSB.WriteString("利用KP工具接口，保持故事连贯性和场景一致性，提供沉浸式体验。")
-	userSB.WriteString("注意：不是所有NPC都能被调查员伤害（例如：外神、旧日支配者、某些神话生物等，无法直接攻击）。")
+	userSB.WriteString("请根据当前游戏时间、场景设定、调查员状态、NPC状态和玩家行动，合理判断并给出KP的回应和工具调用。\n")
+	userSB.WriteString("请注意：一个回合只有 0.5 小时，即 30 分钟，如果调查员的行动没有办法在这段时间内完成，可以进行打断。\n")
+	userSB.WriteString("请一步步推理，仔细分析，不要急于给出结论，确保每个决策都有充分的理由。\n")
+	userSB.WriteString("利用KP工具接口，保持故事连贯性和场景一致性，提供沉浸式体验。\n")
+	userSB.WriteString("注意：不是所有NPC都能被调查员伤害（例如：外神、旧日支配者、某些神话生物等，无法直接攻击）。\n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
