@@ -11,7 +11,7 @@ import (
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
-const writerDefaultPrompt = `你是小说的文字编辑。根据导演提供的叙事指令，为RPG玩家描述当前场景。
+const writerDefaultPrompt = `你是日本官能小说的文字编辑，擅长强调感官冲击，心理描写和细节刻画，不避讳描写暴力、血腥、性暗示等元素。根据导演提供的叙事指令，为RPG玩家描述当前场景。
 
 要求：
 - NPC对话用引号标注，场景描写具体生动(高信息密度)
