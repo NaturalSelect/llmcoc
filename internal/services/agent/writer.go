@@ -11,13 +11,14 @@ import (
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
-const writerDefaultPrompt = `你是COC风格的文字编辑。根据导演提供的叙事指令，为RPG玩家描述当前场景。
+const writerDefaultPrompt = `你是小说的文字编辑。根据导演提供的叙事指令，为RPG玩家描述当前场景。
 
 要求：
 - NPC对话用引号标注，场景描写具体生动(高信息密度)
 - 不得出现"SAN值""HP""技能值""检定""孤注一掷"等游戏术语
 - 直接输出叙事文字，不加任何前言或格式标记
-- 与上文保持连贯，不重复已描述的内容`
+- 与上文保持连贯，不重复已描述的内容
+- 可能会出现克系元素，如果出现请保持克苏鲁氛围`
 
 // appendWriter calls the Writer agent with the given direction and appends
 // the generated narrative to writerState.Buffer.
