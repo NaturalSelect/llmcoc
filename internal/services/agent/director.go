@@ -840,7 +840,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			userSB.WriteString(fmt.Sprintf("    %d. %s DEX=%d HP=%d %s%s%s%s%s\n",
 				i+1, p.Name, p.DEX, p.HP, acted, aiming, debt, dodged, marker))
 		}
-		userSB.WriteString("  （攻击/伤害仍通过 roll_dice + update_characters 处理；登记行动后调用 combat_act）\n")
+		userSB.WriteString("  （攻击/伤害仍通过 roll_dice + update_characters 处理；登记行动后调用 combat_act； 注意： combat_act 不可以和其他调用在同一轮中一起使用）\n")
 	}
 	// Inject active chase state so KP can enforce AP rules and location tracking.
 	if chs := gctx.Session.ChaseState.Data; chs != nil && chs.Active {
@@ -869,7 +869,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 					ob.Name, ob.HP, ob.MaxHP, ob.Between[0], ob.Between[1]))
 			}
 		}
-		userSB.WriteString("  （每次移动/险境/障碍/冲突行动后调用 chase_act 登记；追逐者到达猎物位置时调用 end_chase）\n")
+		userSB.WriteString("  （每次移动/险境/障碍/冲突行动后调用 chase_act 登记； 注意： chase_act 不可以和其他调用在同一轮中一起使用；追逐者到达猎物位置时调用 end_chase）\n")
 	}
 
 	// Show all players' actions when everyone has submitted (multi-player),
