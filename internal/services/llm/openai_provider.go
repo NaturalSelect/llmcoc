@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
@@ -76,70 +75,14 @@ func isRetryableError(err error) bool {
 	return false
 }
 
-func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage) (<-chan string, error) {
-	ch := make(chan string, 64)
-
-	req := openai.ChatCompletionRequest{
-		Model:           p.model,
-		Messages:        p.toOpenAIMessages(messages),
-		MaxTokens:       p.maxTokens,
-		Temperature:     p.temperature,
-		ReasoningEffort: defaultReasoningEffort,
-		Stream:          true,
-	}
-
-	var stream *openai.ChatCompletionStream
-	var err error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		stream, err = p.client.CreateChatCompletionStream(ctx, req)
-		if err == nil || !isRetryableError(err) {
-			break
-		}
-		log.Printf("[llm] ChatStream attempt %d/%d failed (5xx), retrying in 2s: %v", attempt+1, maxRetries, err)
-		select {
-		case <-ctx.Done():
-			close(ch)
-			return ch, ctx.Err()
-		case <-time.After(5 * time.Second):
-		}
-	}
-	if err != nil {
-		close(ch)
-		return ch, fmt.Errorf("LLM stream error: %w", err)
-	}
-
-	go func() {
-		defer close(ch)
-		defer stream.Close()
-		for {
-			resp, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				return
-			}
-			if err != nil {
-				ch <- fmt.Sprintf("[ERROR] %s", err.Error())
-				return
-			}
-			if len(resp.Choices) > 0 {
-				delta := resp.Choices[0].Delta.Content
-				if delta != "" {
-					ch <- delta
-				}
-			}
-		}
-	}()
-
-	return ch, nil
-}
-
 func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (string, error) {
 	start := time.Now()
 	chatReq := openai.ChatCompletionRequest{
-		Model:           p.model,
-		Messages:        p.toOpenAIMessages(messages),
-		MaxTokens:       p.maxTokens,
-		Temperature:     p.temperature,
-		ReasoningEffort: defaultReasoningEffort,
+		Model:       p.model,
+		Messages:    p.toOpenAIMessages(messages),
+		MaxTokens:   p.maxTokens,
+		Temperature: p.temperature,
+		// ReasoningEffort: defaultReasoningEffort,
 	}
 	var resp openai.ChatCompletionResponse
 	var err error
