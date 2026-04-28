@@ -78,11 +78,11 @@ func isRetryableError(err error) bool {
 func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (string, error) {
 	start := time.Now()
 	chatReq := openai.ChatCompletionRequest{
-		Model:       p.model,
-		Messages:    p.toOpenAIMessages(messages),
-		MaxTokens:   p.maxTokens,
-		Temperature: p.temperature,
-		// ReasoningEffort: defaultReasoningEffort,
+		Model:           p.model,
+		Messages:        p.toOpenAIMessages(messages),
+		MaxTokens:       p.maxTokens,
+		Temperature:     p.temperature,
+		ReasoningEffort: defaultReasoningEffort,
 	}
 	var resp openai.ChatCompletionResponse
 	var err error
