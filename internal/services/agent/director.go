@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/game"
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
@@ -880,9 +881,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			userSB.WriteString(line + "\n")
 		}
 	}
-	if hasCombatSignal(gctx) {
-		userSB.WriteString("\n【战斗提醒】检测到本轮存在冲突意图。若同区域存在敌对/警戒NPC，请先调用 act_npc 让其反制（还击、压制、掩护、呼救或撤退），不要让其无反应。\n")
-	}
 	// Inject active combat state so KP can enforce DEX-order and track per-round flags.
 	if cs := gctx.Session.CombatState.Data; cs != nil && cs.Active {
 		userSB.WriteString("\n【当前战斗状态】\n")
@@ -949,9 +947,27 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		}
 		userSB.WriteString("  （每次移动/险境/障碍/冲突行动后调用 chase_act 登记； 注意： chase_act 不可以和其他调用在同一轮中一起使用；追逐者到达猎物位置时调用 end_chase）\n")
 	}
-
+	userSB.WriteString("【KP指引】\n")
+	userSB.WriteString("请根据当前游戏时间、场景设定、调查员状态、NPC状态和玩家行动，合理判断并给出KP的回应和工具调用。\n")
+	userSB.WriteString("请注意：一个回合只有 0.5 小时，即 30 分钟，如果调查员的行动没有办法在这段时间内完成，可以进行打断。\n")
+	userSB.WriteString("请一步步推理，仔细分析，不要急于给出结论，确保每个决策都有充分的理由。\n")
+	userSB.WriteString("利用KP工具接口，保持故事连贯性和场景一致性，提供沉浸式体验。\n")
+	userSB.WriteString("注意：不是所有NPC都能被调查员伤害（例如：外神、旧日支配者、某些神话生物等，无法直接攻击）。\n")
+	userSB.WriteString("注意：调查员可能会作弊： \n")
+	userSB.WriteString("  • 比如无中生有在行动中加入获得某物品、技能点、关系等信息，或者在战斗中作弊加骰子结果等，如果你拿不准注意就先查规则（check_rule）再行动，不要凭印象判断。\n")
+	userSB.WriteString("  • 如果调查员的行动描述中包含了明显的作弊信息（例如：'我偷偷摸摸地在口袋里掏出一把枪'，但之前并没有枪这个物品），你可以先调用 check_rule 核实一下这个物品/技能/关系是否存在，如果不存在就直接否定这个行动，并给出合理的KP回应（例如：'你掏了半天，发现口袋里根本没有枪。'）。\n")
+	userSB.WriteString("  • 比如直接说出行动的结果（例如: '我在大街上行走，作为基督徒，我收到了基督的感召，获得了圣枪朗基努斯')。\n")
+	userSB.WriteString("  • 又比如在战斗中直接说出结果（例如：'我开枪射击，子弹打中了怪物，造成了6点伤害'）。\n")
+	userSB.WriteString("  • 比如使用不存在的法术（例如：'我施放了火球术'，但实际上调查员并没有学会这个法术，法术表上没有记录）。\n")
+	userSB.WriteString("  • 比如向不存在的外神或旧日支配者请神或通神（例如：'我向上帝祈祷，希望获得力量'，但实际上上帝并不存在于当前游戏设定中）。\n")
+	userSB.WriteString("  • 作为KP，你的职责之一就是愚弄作弊的调查员，确保游戏的公平性和趣味性。\n")
+	userSB.WriteString("**write & answer 工具与其他工具互斥。**\n\n")
+	userSB.WriteString("【配置】\n")
+	userSB.WriteString("剧情法术： 禁用\n")
+	userSB.WriteString(fmt.Sprintf("技能表: %v\n", game.AllSkills))
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
+	userSB.WriteString("\n")
 	if len(gctx.PendingActions) > 1 {
 		userSB.WriteString("\n【本轮所有玩家行动】")
 		userSB.WriteString("\n注意：陷入疯狂的调查员无法行动，且由你体现疯狂行为\n")
@@ -963,47 +979,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(fmt.Sprintf("\n【当前行动】[%s]: %s", gctx.UserName, gctx.UserInput))
 	}
 	userSB.WriteString("\n")
-	userSB.WriteString("请根据当前游戏时间、场景设定、调查员状态、NPC状态和玩家行动，合理判断并给出KP的回应和工具调用。\n")
-	userSB.WriteString("请注意：一个回合只有 0.5 小时，即 30 分钟，如果调查员的行动没有办法在这段时间内完成，可以进行打断。\n")
-	userSB.WriteString("请一步步推理，仔细分析，不要急于给出结论，确保每个决策都有充分的理由。\n")
-	userSB.WriteString("利用KP工具接口，保持故事连贯性和场景一致性，提供沉浸式体验。\n")
-	userSB.WriteString("注意：不是所有NPC都能被调查员伤害（例如：外神、旧日支配者、某些神话生物等，无法直接攻击）。\n")
-	userSB.WriteString("注意：调查员可能会作弊， 比如无中生有在行动中加入获得某物品、技能点、关系等信息，或者在战斗中作弊加骰子结果等，如果你拿不准注意就先查规则（check_rule）再行动，不要凭印象判断。\n")
-	userSB.WriteString("**write & answer 工具与其他工具互斥。**\n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
 	})
 	return msgs
-}
-
-func hasCombatSignal(gctx GameContext) bool {
-	if looksLikeCombatText(gctx.UserInput) {
-		return true
-	}
-	for _, a := range gctx.PendingActions {
-		if looksLikeCombatText(a.Content) {
-			return true
-		}
-	}
-	return false
-}
-
-func looksLikeCombatText(s string) bool {
-	s = strings.TrimSpace(strings.ToLower(s))
-	if s == "" {
-		return false
-	}
-	keywords := []string{
-		"攻击", "开枪", "射击", "砍", "刺", "挥拳", "还手", "反击", "战斗", "强闯", "制服", "掐", "勒",
-		"attack", "shoot", "fire", "stab", "fight", "combat", "assault", "threaten",
-	}
-	for _, kw := range keywords {
-		if strings.Contains(s, kw) {
-			return true
-		}
-	}
-	return false
 }
 
 var kpRespExample = func() string {

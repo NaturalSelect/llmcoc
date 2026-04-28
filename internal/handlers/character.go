@@ -69,6 +69,23 @@ func ListCharacters(c *gin.Context) {
 	c.JSON(http.StatusOK, cards)
 }
 
+func hotFixChar(card *models.CharacterCard) {
+	needUpdate := false
+	for skill := range card.Skills.Data {
+		if !game.IsValidSkill(skill) {
+			delete(card.Skills.Data, skill)
+			needUpdate = true
+		}
+	}
+	if card.Race == "" {
+		card.Race = "人类"
+		needUpdate = true
+	}
+	if needUpdate {
+		models.DB.Save(card)
+	}
+}
+
 func GetCharacter(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -82,6 +99,7 @@ func GetCharacter(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此人物卡"})
 		return
 	}
+	hotFixChar(&card)
 	c.JSON(http.StatusOK, card)
 }
 
@@ -135,6 +153,7 @@ func CreateCharacter(c *gin.Context) {
 		UserID:     userID,
 		Name:       req.Name,
 		Age:        req.Age,
+		Race:       "人类",
 		Gender:     req.Gender,
 		Occupation: req.Occupation,
 		Birthplace: req.Birthplace,
@@ -243,6 +262,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 	card := models.CharacterCard{
 		UserID:     userID,
 		Name:       req.Name,
+		Race:       "人类",
 		Age:        req.Age,
 		Gender:     req.Gender,
 		Occupation: req.Occupation,
@@ -296,7 +316,6 @@ func UpdateCharacter(c *gin.Context) {
 	if req.Skills != nil {
 		card.Skills = models.JSONField[map[string]int]{Data: req.Skills}
 	}
-
 	models.DB.Save(&card)
 	c.JSON(http.StatusOK, card)
 }
