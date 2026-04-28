@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
-	"github.com/llmcoc/server/internal/services/game"
 	"github.com/llmcoc/server/internal/services/llm"
+	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 // kpSystemPrompt is the static system prompt for the master KP agent.
@@ -956,7 +956,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("**write & response 工具与其他工具互斥。**\n\n")
 	userSB.WriteString("【配置】\n")
 	userSB.WriteString("剧情法术： 禁用\n")
-	userSB.WriteString(fmt.Sprintf("技能表: %v\n", game.AllSkills))
+	userSB.WriteString(fmt.Sprintf("技能表: %v\n", rulebook.AllSkills))
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")

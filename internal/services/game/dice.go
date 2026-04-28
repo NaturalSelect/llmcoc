@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 // Roll rolls NdM and returns the result and individual dice
@@ -432,19 +433,9 @@ func CheckInstantDeath(damage, maxHP int) bool {
 	return damage > maxHP
 }
 
-var AllSkills = []string{
-	"会计", "人类学", "估价", "考古学", "魅惑", "攀爬", "计算机使用", "信用评级",
-	"乔装", "驾驶(汽车)", "电气维修", "电子学", "话术", "急救", "历史", "恐吓",
-	"跳跃", "母语", "法律", "图书馆使用", "聆听", "锁匠", "机械维修",
-	"医学", "博物学", "领航(陆地)", "神秘学", "操作重型机械",
-	"说服", "药学", "摄影", "物理学", "精神分析",
-	"心理学", "骑术", "科学(地质学)", "潜行", "游泳",
-	"投掷", "追踪", "驾驶(船)", "侦查", "斗殴", "闪避", "手枪", "步枪/霰弹枪", "冲锋枪",
-}
-
 var allSkillsSet = func() map[string]struct{} {
 	s := make(map[string]struct{})
-	for _, skill := range AllSkills {
+	for _, skill := range rulebook.AllSkills {
 		s[skill] = struct{}{}
 	}
 	return s
