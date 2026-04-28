@@ -1496,16 +1496,16 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		} else {
 			sb.WriteString("技能：无\n")
 		}
-		if card.Backstory != "" {
-			sb.WriteString("背景：" + card.Backstory + "\n")
-		} else {
-			sb.WriteString("背景：无\n")
-		}
-		if card.Traits != "" {
-			sb.WriteString("特征：" + card.Traits + "\n")
-		} else {
-			sb.WriteString("特征：无\n")
-		}
+		// if card.Backstory != "" {
+		// 	sb.WriteString("背景：" + card.Backstory + "\n")
+		// } else {
+		// 	sb.WriteString("背景：无\n")
+		// }
+		// if card.Traits != "" {
+		// 	sb.WriteString("特征：" + card.Traits + "\n")
+		// } else {
+		// 	sb.WriteString("特征：无\n")
+		// }
 		if items := card.Inventory.Data; len(items) > 0 {
 			sb.WriteString("物品栏：" + strings.Join(items, "、") + "\n")
 		} else {
