@@ -768,9 +768,7 @@ func EndSession(c *gin.Context) {
 		Limit(150).
 		Find(&messages)
 
-	ctx := c.Request.Context()
-
-	result, txErr := agent.RunEndSession(ctx, &session, messages)
+	result, txErr := agent.RunEndSession(context.Background(), &session, messages)
 
 	removeSessionLock(session.ID)
 
