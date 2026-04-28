@@ -55,6 +55,7 @@ const (
 	ToolUpdateLLMNote     ToolCallType = "update_llm_note"     // 更新Session级玩家LLMNote记录
 	ToolUpdateNPCLLMNote  ToolCallType = "update_npc_llm_note" // 更新Session级NPC LLMNote记录
 	ToolResponse          ToolCallType = "response"            // 结束本轮并给出回复
+	ToolYield             ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
 
 	// ── Combat tools ──────────────────────────────────────────────────────────
 	ToolStartCombat ToolCallType = "start_combat" // 开始战斗,初始化战斗状态
