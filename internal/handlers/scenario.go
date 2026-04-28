@@ -206,7 +206,7 @@ func GenerateScenarioByAgents(c *gin.Context) {
 func UploadScenario(c *gin.Context) {
 	fh, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请上传 JSON 文件（字段名 file）"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请上传 JSON 文件(字段名 file)"})
 		return
 	}
 
@@ -286,7 +286,7 @@ func DownloadScenarioTemplate(c *gin.Context) {
 		MaxPlayers:  4,
 		Difficulty:  "normal",
 		Content: models.ScenarioContent{
-			SystemPrompt:  "你是本场COC跑团的守秘人（KP）...",
+			SystemPrompt:  "你是本场COC跑团的守秘人(KP)...",
 			Setting:       "时代与地点背景",
 			Intro:         "开场引子",
 			GameStartSlot: 36,
@@ -368,7 +368,7 @@ func SeedShopItems() {
 	defaultItems := []models.ShopItem{
 		// 卡槽相关
 		{
-			Name:        "卡槽扩展（+1）",
+			Name:        "卡槽扩展(+1)",
 			Description: "增加1个人物卡卡槽",
 			ItemType:    models.ItemTypeCardSlot,
 			Price:       50,
@@ -376,7 +376,7 @@ func SeedShopItems() {
 			IsActive:    true,
 		},
 		{
-			Name:        "卡槽扩展（+3）",
+			Name:        "卡槽扩展(+3)",
 			Description: "增加3个人物卡卡槽",
 			ItemType:    models.ItemTypeCardSlot,
 			Price:       120,
@@ -418,7 +418,7 @@ func SeedShopItems() {
 			IsActive:    true,
 		},
 		{
-			Name:        "安全绳（30米）",
+			Name:        "安全绳(30米)",
 			Description: "高强度安全绳，用于攀爬和牵引",
 			ItemType:    models.ItemTypeEquipment,
 			Price:       20,
@@ -468,7 +468,7 @@ func SeedShopItems() {
 			IsActive:    true,
 		},
 		{
-			Name:        "左轮手枪（.38）",
+			Name:        "左轮手枪(.38)",
 			Description: "6发弹匣左轮手枪，近程射击武器",
 			ItemType:    models.ItemTypeWeapon,
 			Price:       50,
@@ -484,7 +484,7 @@ func SeedShopItems() {
 			IsActive:    true,
 		},
 		{
-			Name:        "火焰枪（5次）",
+			Name:        "火焰枪(5次)",
 			Description: "重型火焰喷枪，群体伤害武器",
 			ItemType:    models.ItemTypeWeapon,
 			Price:       150,
@@ -492,7 +492,7 @@ func SeedShopItems() {
 			IsActive:    true,
 		},
 		{
-			Name:        "手榴弹（5枚）",
+			Name:        "手榴弹(5枚)",
 			Description: "5枚军用手榴弹",
 			ItemType:    models.ItemTypeWeapon,
 			Price:       80,
@@ -502,7 +502,7 @@ func SeedShopItems() {
 
 		// 配件
 		{
-			Name:        "弹药包（手枪，50发）",
+			Name:        "弹药包(手枪，50发)",
 			Description: "手枪弹药补充，50发装",
 			ItemType:    models.ItemTypeAccessory,
 			Price:       15,
@@ -510,7 +510,7 @@ func SeedShopItems() {
 			IsActive:    true,
 		},
 		{
-			Name:        "弹药包（步枪，100发）",
+			Name:        "弹药包(步枪，100发)",
 			Description: "步枪弹药补充，100发装",
 			ItemType:    models.ItemTypeAccessory,
 			Price:       25,

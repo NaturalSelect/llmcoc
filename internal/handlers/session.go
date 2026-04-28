@@ -427,7 +427,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		return
 	}
 	if len(content) > 2000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "消息过长（最多2000字）"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "消息过长(最多2000字)"})
 		return
 	}
 
@@ -775,7 +775,7 @@ func EndSession(c *gin.Context) {
 
 	if txErr != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"message":    "游戏已结束（奖励结算失败，请联系管理员）",
+			"message":    "游戏已结束(奖励结算失败，请联系管理员)",
 			"evaluation": result.Evaluation,
 			"growth":     result.Growth,
 		})

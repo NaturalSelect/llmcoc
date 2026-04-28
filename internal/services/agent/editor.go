@@ -10,8 +10,8 @@ import (
 	"github.com/llmcoc/server/internal/services/game"
 )
 
-// parseStateChange parses a director change string (e.g. "HP -3（角色名）" or
-// "cthulhu_mythos +1（角色名）") into a CharacterUpdate.
+// parseStateChange parses a director change string (e.g. "HP -3(角色名)" or
+// "cthulhu_mythos +1(角色名)") into a CharacterUpdate.
 // Supported fields: HP, SAN, MP, POW, cthulhu_mythos, race.
 // Returns false if the string cannot be matched to a known field.
 func parseStateChange(change string) (CharacterUpdate, bool) {
@@ -23,9 +23,9 @@ func parseStateChange(change string) (CharacterUpdate, bool) {
 		}
 		rest := strings.TrimSpace(change[len(field):])
 		var deltaStr, charName string
-		if idx := strings.Index(rest, "（"); idx >= 0 {
+		if idx := strings.Index(rest, "("); idx >= 0 {
 			deltaStr = strings.TrimSpace(rest[:idx])
-			charName = strings.TrimSuffix(strings.TrimPrefix(rest[idx:], "（"), "）")
+			charName = strings.TrimSuffix(strings.TrimPrefix(rest[idx:], "("), ")")
 		} else {
 			deltaStr = rest
 		}
@@ -74,7 +74,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				if sanLoss > 0 {
 					card.DailySanLoss += sanLoss
 
-					// 潜在疯狂期（临时/不定性）：哪怕只损失1点SAN，立即再次触发疯狂发作
+					// 潜在疯狂期(临时/不定性)：哪怕只损失1点SAN，立即再次触发疯狂发作
 					if card.MadnessState == "temporary" || card.MadnessState == "indefinite" {
 						// Re-roll a new symptom for the relapse episode.
 						sym := game.RollMadnessSymptom(true)
@@ -113,7 +113,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				card.WoundState = "none"
 				card.IsUnconscious = false
 			}
-			// HP归零且已有重伤 → 濒死（需急救）
+			// HP归零且已有重伤 → 濒死(需急救)
 			if s.HP <= 0 && card.WoundState == "major" && card.WoundState != "dead" {
 				card.WoundState = "dying"
 				card.IsUnconscious = true

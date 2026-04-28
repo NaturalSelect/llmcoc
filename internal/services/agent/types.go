@@ -63,7 +63,7 @@ const (
 
 	// ── Chase tools ───────────────────────────────────────────────────────────
 	ToolStartChase ToolCallType = "start_chase" // 开始追逐，初始化追逐状态
-	ToolChaseAct   ToolCallType = "chase_act"   // 宣告本轮追逐行动（移动/险境/障碍/冲突）
+	ToolChaseAct   ToolCallType = "chase_act"   // 宣告本轮追逐行动(移动/险境/障碍/冲突)
 	ToolEndChase   ToolCallType = "end_chase"   // 结束追逐，清除追逐状态
 )
 
@@ -85,13 +85,13 @@ type ToolCall struct {
 	Spell         string                 `json:"spell,omitempty"`          // manage_spell: 法术名称
 	Relation      *models.SocialRelation `json:"relation,omitempty"`       // manage_relation: 社会关系条目
 	IsBystander   bool                   `json:"is_bystander,omitempty"`   // trigger_madness: 是否有旁观者
-	Direction     string                 `json:"direction,omitempty"`      // write: 叙事方向（供Writer参考）
+	Direction     string                 `json:"direction,omitempty"`      // write: 叙事方向(供Writer参考)
 	TimeRounds    int                    `json:"time_rounds,omitempty"`    // advance_time: 推进的回合数
-	TimeReason    string                 `json:"time_reason,omitempty"`    // advance_time: 原因（如"睡觉"/"吃饭"）
-	Keyword       string                 `json:"keyword,omitempty"`        // query_clues: 已废弃（保留仅为兼容旧输出）
+	TimeReason    string                 `json:"time_reason,omitempty"`    // advance_time: 原因(如"睡觉"/"吃饭")
+	Keyword       string                 `json:"keyword,omitempty"`        // query_clues: 已废弃(保留仅为兼容旧输出)
 	LLMNote       string                 `json:"llm_note,omitempty"`       // update_llm_note: 玩家LLMNote内容
-	Reply         string                 `json:"reply"`                    // answer: KP对玩家说的话（必填）
-	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结（可选）
+	Reply         string                 `json:"reply"`                    // answer: KP对玩家说的话(必填)
+	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结(可选)
 
 	// ── Combat fields ─────────────────────────────────────────────────────────
 	CombatParticipants []CombatParticipantInput `json:"combat_participants,omitempty"` // start_combat: 参与者列表
@@ -141,8 +141,8 @@ type DiceCheck struct {
 	PenaltyDice    int    `json:"penalty_dice"` // 惩罚骰数量
 	SanSuccessLoss string `json:"san_success_loss"`
 	SanFailLoss    string `json:"san_fail_loss"`
-	MonsterName    string `json:"monster_name,omitempty"` // sanity检定：引发检定的神话存在名称（见过的存在不掉SAN）
-	DiceExpr       string `json:"dice_expr,omitempty"`    // 可选的骰子表达式（如 "1D100+20"），优先于固定值
+	MonsterName    string `json:"monster_name,omitempty"` // sanity检定：引发检定的神话存在名称(见过的存在不掉SAN)
+	DiceExpr       string `json:"dice_expr,omitempty"`    // 可选的骰子表达式(如 "1D100+20")，优先于固定值
 }
 
 // DiceCheckResult is the outcome of an auto-executed dice check.
@@ -158,14 +158,14 @@ type DiceCheckResult struct {
 // ── Character update types ────────────────────────────────────────────────────
 
 // CharacterUpdate describes a single field update to a character card or NPC.
-// Director change strings ("HP -3（角色名）") are parsed into this struct by
+// Director change strings ("HP -3(角色名)") are parsed into this struct by
 // parseStateChange in editor.go and applied directly without an LLM intermediary.
 type CharacterUpdate struct {
 	CharacterName string `json:"character_name"` // 目标角色/NPC名称
 	Field         string `json:"field"`          // san/hp/mp/cthulhu_mythos/race
 	Delta         int    `json:"delta"`          // 数值变化量
-	NewValue      string `json:"new_value"`      // 新的字符串值（如 race）
-	AddValue      string `json:"add_value"`      // 新增条目（保留用于未来扩展）
+	NewValue      string `json:"new_value"`      // 新的字符串值(如 race)
+	AddValue      string `json:"add_value"`      // 新增条目(保留用于未来扩展)
 	IsNPC         bool   `json:"is_npc"`         // true = 临时NPC卡
 }
 
@@ -207,7 +207,7 @@ type PlayerEvaluation struct {
 	CharacterName string `json:"character_name"`
 	Comment       string `json:"comment"`
 	Score         int    `json:"score"`      // 0–100
-	BaseCoins     int    `json:"base_coins"` // 基础奖励（固定 20）
+	BaseCoins     int    `json:"base_coins"` // 基础奖励(固定 20)
 	BonusCoins    int    `json:"bonus_coins"`
 }
 
@@ -252,7 +252,7 @@ type CombatActionDetail struct {
 	Type       string `json:"type"`                   // attack/dodge/fight_back/aim/take_cover/other
 	TargetName string `json:"target_name,omitempty"`  // 攻击/闪避/反击目标
 	WeaponName string `json:"weapon_name,omitempty"`  // 使用的武器
-	APDebtNext int    `json:"ap_debt_next,omitempty"` // 下轮扣除的AP（如寻找掩体）
+	APDebtNext int    `json:"ap_debt_next,omitempty"` // 下轮扣除的AP(如寻找掩体)
 }
 
 // ── Chase input types ─────────────────────────────────────────────────────────
@@ -269,9 +269,9 @@ type ChaseParticipantInput struct {
 // ChaseActionDetail describes the specific chase action taken this turn.
 type ChaseActionDetail struct {
 	Type          string `json:"type"`                    // move/hazard/obstacle/conflict/other
-	MoveDelta     int    `json:"move_delta,omitempty"`    // 移动的地点数（正=追近，负=拉开）
+	MoveDelta     int    `json:"move_delta,omitempty"`    // 移动的地点数(正=追近，负=拉开)
 	ObstacleName  string `json:"obstacle_name,omitempty"` // 通过/攻击的障碍名称
-	ObstacleHP    int    `json:"obstacle_hp,omitempty"`   // 障碍当前HP（创建障碍时使用）
+	ObstacleHP    int    `json:"obstacle_hp,omitempty"`   // 障碍当前HP(创建障碍时使用)
 	ObstacleMaxHP int    `json:"obstacle_max_hp,omitempty"`
 	APDebtNext    int    `json:"ap_debt_next,omitempty"` // 险境失败时下轮扣除的AP
 	TargetName    string `json:"target_name,omitempty"`  // 冲突目标名称

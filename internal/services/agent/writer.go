@@ -46,7 +46,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 			card := p.CharacterCard
 			if (card.MadnessState == "temporary" || card.MadnessState == "indefinite") && card.MadnessSymptom != "" {
 				contextHint += fmt.Sprintf(
-					"\n\n【注意】%s正经历疯狂症状（KP掌控其行为）：%s — 请在叙事中自然体现，勿使用游戏术语。",
+					"\n\n【注意】%s正经历疯狂症状(KP掌控其行为)：%s — 请在叙事中自然体现，勿使用游戏术语。",
 					card.Name, card.MadnessSymptom,
 				)
 			}
@@ -58,7 +58,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 		})
 		state.History = append(state.History, llm.ChatMessage{
 			Role:    "assistant",
-			Content: "（已了解当前游戏状态，准备续写叙事。）",
+			Content: "(已了解当前游戏状态，准备续写叙事。)",
 		})
 	}
 
@@ -139,7 +139,7 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 	msgs = append(msgs, llm.ChatMessage{
 		Role: "user",
 		Content: fmt.Sprintf(
-			"根据以上冒险叙事，更新调查员【%s】的背景故事和性格特征（你只能附加一小段）。\n原背景故事：%s\n原性格特征：%s\n\n仅输出JSON：{\"new_backstory\": \"...\", \"new_traits\": \"...\"}",
+			"根据以上冒险叙事，更新调查员【%s】的背景故事和性格特征(你只能附加一小段)。\n原背景故事：%s\n原性格特征：%s\n\n仅输出JSON：{\"new_backstory\": \"...\", \"new_traits\": \"...\"}",
 			card.Name, card.Backstory, card.Traits,
 		),
 	})

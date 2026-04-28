@@ -83,15 +83,15 @@ type CharacterCard struct {
 	Inventory       JSONField[[]string]         `gorm:"type:text" json:"inventory"`
 	SocialRelations JSONField[[]SocialRelation] `gorm:"type:text" json:"social_relations"`
 	Spells          JSONField[[]string]         `gorm:"type:text" json:"spells"`
-	SeenMonsters    JSONField[[]string]         `gorm:"type:text" json:"seen_monsters"` // 已见过的神话存在（见过的不掉SAN）
+	SeenMonsters    JSONField[[]string]         `gorm:"type:text" json:"seen_monsters"` // 已见过的神话存在(见过的不掉SAN)
 	IsActive        bool                        `gorm:"default:true" json:"is_active"`
 	AvatarURL       string                      `gorm:"size:500" json:"avatar_url"`
 	// COC 理智与疯狂状态
 	MadnessState       string `gorm:"size:20;default:'none'" json:"madness_state"` // none/temporary/indefinite/permanent
 	MadnessSymptom     string `gorm:"type:text" json:"madness_symptom"`            // 当前疯狂症状描述
-	MadnessDuration    int    `gorm:"default:0" json:"madness_duration"`           // 剩余轮数（临时性）或标记仍在发作（不定性）
-	DailySanLoss       int    `gorm:"default:0" json:"daily_san_loss"`             // 当日累计SAN损失（用于不定性疯狂判断）
-	CthulhuMythosSkill int    `gorm:"default:0" json:"cthulhu_mythos_skill"`       // 克苏鲁神话技能值（控制最大SAN上限）
+	MadnessDuration    int    `gorm:"default:0" json:"madness_duration"`           // 剩余轮数(临时性)或标记仍在发作(不定性)
+	DailySanLoss       int    `gorm:"default:0" json:"daily_san_loss"`             // 当日累计SAN损失(用于不定性疯狂判断)
+	CthulhuMythosSkill int    `gorm:"default:0" json:"cthulhu_mythos_skill"`       // 克苏鲁神话技能值(控制最大SAN上限)
 	// COC 伤亡状态
 	WoundState    string    `gorm:"size:20;default:'none'" json:"wound_state"` // none/major/dying/dead
 	IsUnconscious bool      `gorm:"default:false" json:"is_unconscious"`
@@ -322,9 +322,9 @@ type CombatParticipant struct {
 	HP            int    `json:"hp"`
 	IsNPC         bool   `json:"is_npc"`
 	HasActed      bool   `json:"has_acted"`        // 本轮是否已行动
-	HasDodgedOrFB bool   `json:"has_dodged_or_fb"` // 本轮是否已闪避/反击（寡不敌众判断用）
-	IsAiming      bool   `json:"is_aiming"`        // 是否正在瞄准（下轮攻击+奖励骰）
-	APDebt        int    `json:"ap_debt"`          // 下轮行动点扣除（寻找掩体等动作欠债）
+	HasDodgedOrFB bool   `json:"has_dodged_or_fb"` // 本轮是否已闪避/反击(寡不敌众判断用)
+	IsAiming      bool   `json:"is_aiming"`        // 是否正在瞄准(下轮攻击+奖励骰)
+	APDebt        int    `json:"ap_debt"`          // 下轮行动点扣除(寻找掩体等动作欠债)
 	WoundState    string `json:"wound_state"`      // none/major/dying/dead
 }
 
@@ -344,8 +344,8 @@ type ChaseParticipant struct {
 	Name      string `json:"name"`
 	IsNPC     bool   `json:"is_npc"`
 	MOV       int    `json:"mov"`      // 速度检定后固定的MOV值
-	Location  int    `json:"location"` // 当前地点索引（数字越大越靠前）
-	APDebt    int    `json:"ap_debt"`  // 下轮扣除的行动点（险境失败欠债）
+	Location  int    `json:"location"` // 当前地点索引(数字越大越靠前)
+	APDebt    int    `json:"ap_debt"`  // 下轮扣除的行动点(险境失败欠债)
 	IsPursuer bool   `json:"is_pursuer"`
 }
 

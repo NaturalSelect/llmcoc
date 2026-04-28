@@ -217,7 +217,7 @@ func TestAdminCreateShopItem_InvalidBody(t *testing.T) {
 func TestAdminDeleteShopItem_Success(t *testing.T) {
 	initTestDB(t)
 	r := adminRouter()
-	itemID := seedShopItem(t, "左轮手枪（.38）", 120, models.ItemTypeWeapon, 1)
+	itemID := seedShopItem(t, "左轮手枪(.38)", 120, models.ItemTypeWeapon, 1)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/admin/shop/items/%d", itemID), nil))

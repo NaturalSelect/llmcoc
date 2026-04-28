@@ -50,27 +50,27 @@ func SkillCheck(skillValue int) SkillCheckResult {
 	case roll == 1:
 		result.Success = true
 		result.Level = "critical"
-		result.Message = fmt.Sprintf("🎯 大成功！（掷出 %d）", roll)
+		result.Message = fmt.Sprintf("🎯 大成功！(掷出 %d)", roll)
 	case roll <= extreme:
 		result.Success = true
 		result.Level = "extreme"
-		result.Message = fmt.Sprintf("✨ 极难成功！（掷出 %d，极难值 %d）", roll, extreme)
+		result.Message = fmt.Sprintf("✨ 极难成功！(掷出 %d，极难值 %d)", roll, extreme)
 	case roll <= hard:
 		result.Success = true
 		result.Level = "hard"
-		result.Message = fmt.Sprintf("✅ 困难成功！（掷出 %d，困难值 %d）", roll, hard)
+		result.Message = fmt.Sprintf("✅ 困难成功！(掷出 %d，困难值 %d)", roll, hard)
 	case roll <= skillValue:
 		result.Success = true
 		result.Level = "success"
-		result.Message = fmt.Sprintf("✅ 普通成功！（掷出 %d，技能值 %d）", roll, skillValue)
+		result.Message = fmt.Sprintf("✅ 普通成功！(掷出 %d，技能值 %d)", roll, skillValue)
 	case roll == 100 || (roll >= 96 && skillValue < 50):
 		result.Success = false
 		result.Level = "fumble"
-		result.Message = fmt.Sprintf("💀 大失败！（掷出 %d）", roll)
+		result.Message = fmt.Sprintf("💀 大失败！(掷出 %d)", roll)
 	default:
 		result.Success = false
 		result.Level = "fail"
-		result.Message = fmt.Sprintf("❌ 失败！（掷出 %d，技能值 %d）", roll, skillValue)
+		result.Message = fmt.Sprintf("❌ 失败！(掷出 %d，技能值 %d)", roll, skillValue)
 	}
 	return result
 }
@@ -134,8 +134,8 @@ func GenerateStats() models.CharacterStats {
 	hp := (con + siz) / 10
 	mp := pow / 5
 	san := pow
-	// COC 7th: 最大理智值固定为99（规则书"每位调查员能拥有的最大理智值都是99"），
-	// 随克苏鲁神话技能增长而降低（99 - cthulhu_mythos）。
+	// COC 7th: 最大理智值固定为99(规则书"每位调查员能拥有的最大理智值都是99")，
+	// 随克苏鲁神话技能增长而降低(99 - cthulhu_mythos)。
 	maxSAN := 99
 	mov := calcMOV(str, dex, siz)
 	build, db := calcBuildAndDB(str, siz)
@@ -179,7 +179,7 @@ func calcBuildAndDB(str, siz int) (int, string) {
 	case combined <= 284:
 		return 3, "2D6"
 	default:
-		// 规则书：合计值≥285时每超过80点（不足80按80算）增加+1体格和+1D6伤害加值
+		// 规则书：合计值≥285时每超过80点(不足80按80算)增加+1体格和+1D6伤害加值
 		build := 4 + (combined-285)/80
 		return build, fmt.Sprintf("%dD6", build-1)
 	}
@@ -230,22 +230,22 @@ func SkillCheckWithModifier(skillValue, bonusDice, penaltyDice int) SkillCheckRe
 	switch {
 	case roll == 1:
 		result.Success, result.Level = true, "critical"
-		result.Message = fmt.Sprintf("🎯 大成功！（掷出 %d）", roll)
+		result.Message = fmt.Sprintf("🎯 大成功！(掷出 %d)", roll)
 	case roll <= extreme:
 		result.Success, result.Level = true, "extreme"
-		result.Message = fmt.Sprintf("✨ 极难成功！（掷出 %d，极难值 %d）", roll, extreme)
+		result.Message = fmt.Sprintf("✨ 极难成功！(掷出 %d，极难值 %d)", roll, extreme)
 	case roll <= hard:
 		result.Success, result.Level = true, "hard"
-		result.Message = fmt.Sprintf("✅ 困难成功！（掷出 %d，困难值 %d）", roll, hard)
+		result.Message = fmt.Sprintf("✅ 困难成功！(掷出 %d，困难值 %d)", roll, hard)
 	case roll <= skillValue:
 		result.Success, result.Level = true, "success"
-		result.Message = fmt.Sprintf("✅ 普通成功！（掷出 %d，技能值 %d）", roll, skillValue)
+		result.Message = fmt.Sprintf("✅ 普通成功！(掷出 %d，技能值 %d)", roll, skillValue)
 	case roll == 100 || (roll >= 96 && skillValue < 50):
 		result.Success, result.Level = false, "fumble"
-		result.Message = fmt.Sprintf("💀 大失败！（掷出 %d）", roll)
+		result.Message = fmt.Sprintf("💀 大失败！(掷出 %d)", roll)
 	default:
 		result.Success, result.Level = false, "fail"
-		result.Message = fmt.Sprintf("❌ 失败！（掷出 %d，技能值 %d）", roll, skillValue)
+		result.Message = fmt.Sprintf("❌ 失败！(掷出 %d，技能值 %d)", roll, skillValue)
 	}
 	return result
 }
@@ -309,23 +309,23 @@ func OpposedCheck(attackerSkill, defenderSkill int, dodgeMode bool) OpposedResul
 	switch {
 	case atkLvl > defLvl:
 		attWins = true
-		reason = fmt.Sprintf("攻击方成功等级更高（%s > %s）", atkRes.Level, defRes.Level)
+		reason = fmt.Sprintf("攻击方成功等级更高(%s > %s)", atkRes.Level, defRes.Level)
 	case defLvl > atkLvl:
 		attWins = false
-		reason = fmt.Sprintf("防守方成功等级更高（%s > %s）", defRes.Level, atkRes.Level)
+		reason = fmt.Sprintf("防守方成功等级更高(%s > %s)", defRes.Level, atkRes.Level)
 	default: // equal levels
 		if dodgeMode {
 			// Tie in dodge → defender wins
 			attWins = false
-			reason = fmt.Sprintf("平手（%s），闪避平手防守方获胜", atkRes.Level)
+			reason = fmt.Sprintf("平手(%s)，闪避平手防守方获胜", atkRes.Level)
 		} else if atkRes.Skill > defRes.Skill {
 			// Tie in combat (counter-attack) → higher skill wins
 			attWins = true
-			reason = fmt.Sprintf("平手（%s），攻击方技能值更高（%d > %d）", atkRes.Level, atkRes.Skill, defRes.Skill)
+			reason = fmt.Sprintf("平手(%s)，攻击方技能值更高(%d > %d)", atkRes.Level, atkRes.Skill, defRes.Skill)
 		} else {
 			// Tie, equal or defender has higher skill → attacker wins (COC rule for combat tie)
 			attWins = true
-			reason = fmt.Sprintf("平手（%s），反击平手攻击方获胜", atkRes.Level)
+			reason = fmt.Sprintf("平手(%s)，反击平手攻击方获胜", atkRes.Level)
 		}
 	}
 
@@ -422,7 +422,7 @@ func evalDamageToken(tok string) (int, error) {
 }
 
 // CheckMajorWound returns true when a single hit deals major wound damage (≥ ceil(maxHP/2)).
-// COC 7th example: maxHP=15 → threshold=8（ceil(15/2)=8），not 7.
+// COC 7th example: maxHP=15 → threshold=8(ceil(15/2)=8)，not 7.
 func CheckMajorWound(damage, maxHP int) bool {
 	return maxHP > 0 && damage >= (maxHP+1)/2
 }

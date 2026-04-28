@@ -182,15 +182,15 @@ func (p *openAIProvider) GenerateCharacter(ctx context.Context, req GenerateChar
 
 	name := req.Name
 	if name == "" {
-		name = "（未指定）"
+		name = "(未指定)"
 	}
 
 	gender := req.Gender
 	if gender == "" {
-		gender = "（未指定）"
+		gender = "(未指定)"
 	}
 
-	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG（COC第七版）生成一名调查员的详细信息，以JSON格式返回，不要有任何额外文字。
+	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)生成一名调查员的详细信息，以JSON格式返回，不要有任何额外文字。
 
 要求：
 - 调查员姓名：%s
@@ -202,12 +202,12 @@ func (p *openAIProvider) GenerateCharacter(ctx context.Context, req GenerateChar
 
 【属性重分配规则】
 你可以在不改变以下两组属性总和的前提下，将属性点在组内重新分配，以更符合职业和背景：
-  - 第一组（可自由互换）：STR、CON、DEX、APP、POW — 当前总和=%d
-  - 第二组（可自由互换）：SIZ、INT、EDU — 当前总和=%d
+  - 第一组(可自由互换)：STR、CON、DEX、APP、POW — 当前总和=%d
+  - 第二组(可自由互换)：SIZ、INT、EDU — 当前总和=%d
   - 约束：每个属性均为5的倍数；STR/CON/DEX/APP/POW 范围 15-90；SIZ/INT/EDU 范围 40-90
   - 若无需调整，原样返回即可
 
-请返回如下JSON格式（所有字段都用中文）：
+请返回如下JSON格式(所有字段都用中文)：
 {
   "backstory": "200字以内的背景故事",
   "appearance": "100字以内的外貌描述",
@@ -279,7 +279,7 @@ func (p *openAIProvider) AdjustSkills(ctx context.Context, req AdjustSkillsReq) 
 	occPoints := req.Stats.EDU * 4
 	intPoints := req.Stats.INT * 2
 
-	prompt := fmt.Sprintf(`你是COC第七版规则专家。请根据调查员的职业和背景，合理分配技能加成点，输出调整后的完整技能列表（JSON对象）。
+	prompt := fmt.Sprintf(`你是COC第七版规则专家。请根据调查员的职业和背景，合理分配技能加成点，输出调整后的完整技能列表(JSON对象)。
 
 【调查员信息】
 - 姓名：%s
@@ -291,13 +291,13 @@ func (p *openAIProvider) AdjustSkills(ctx context.Context, req AdjustSkillsReq) 
 【当前技能基础值】
 %s
 【技能分配规则】
-1. 职业技能点（共 %d 点 = EDU×4）：分配给与职业强相关的技能（例如医生必须高医学、急救、心理学等）
-2. 兴趣技能点（共 %d 点 = INT×2）：分配给调查员个人兴趣或背景相关技能
-3. 每项技能最终值（基础值 + 加成点）上限 90
+1. 职业技能点(共 %d 点 = EDU×4)：分配给与职业强相关的技能(例如医生必须高医学、急救、心理学等)
+2. 兴趣技能点(共 %d 点 = INT×2)：分配给调查员个人兴趣或背景相关技能
+3. 每项技能最终值(基础值 + 加成点)上限 90
 4. 加成点只能加在现有技能列表中的技能上，不得新增技能名称
 5. 把所有职业技能点和兴趣技能点完整分配出去，不要剩余
 
-请直接输出完整技能JSON对象（包含所有技能，包括未改动的），格式示例：
+请直接输出完整技能JSON对象(包含所有技能，包括未改动的)，格式示例：
 {"医学":75,"急救":60,"心理学":50,...}
 只输出JSON，不要任何其他文字。`,
 		req.Name, era, occupation, req.Background,
