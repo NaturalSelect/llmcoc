@@ -962,6 +962,12 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
+	userSB.WriteString("【配置】\n")
+	userSB.WriteString("剧情法术： 禁用\n")
+	userSB.WriteString(fmt.Sprintf("技能表: %v\n", rulebook.AllSkills))
+	// Show all players' actions when everyone has submitted (multi-player),
+	// otherwise show the single triggering player's action.
+	userSB.WriteString("\n")
 	if len(gctx.PendingActions) > 1 {
 		userSB.WriteString("\n【本轮所有玩家行动】")
 		userSB.WriteString("\n注意：陷入疯狂的调查员无法行动,且由你体现疯狂行为\n")
