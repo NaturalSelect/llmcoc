@@ -73,7 +73,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 		{Role: "user", Content: situation},
 	}
 
-	const maxIter = 4
+	const maxIter = 30
 	for iter := 0; iter < maxIter; iter++ {
 		if ctx.Err() != nil {
 			return nil
