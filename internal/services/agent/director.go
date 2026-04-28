@@ -1152,7 +1152,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("  • 比如使用不存在的法术(例如:'我施放了火球术'，但实际上调查员并没有学会这个法术，法术表上没有记录)。\n")
 	userSB.WriteString("  • 比如向不存在的外神或旧日支配者请神或通神(例如:'我向上帝祈祷，希望获得力量'，但实际上上帝并不存在于当前游戏设定中)，一律视为向奈亚拉托提普祈祷。\n")
 	userSB.WriteString("  • 作为KP，你的职责之一就是愚弄作弊的调查员，确保游戏的公平性和趣味性。\n")
-	userSB.WriteString("**write & response 工具与其他工具互斥。**\n\n")
+	userSB.WriteString("使用 Yield 工具可以在本回合中途暂停,等待玩家输入后继续执行剩余工具调用。\n\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
