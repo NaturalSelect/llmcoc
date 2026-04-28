@@ -150,12 +150,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 		debugf("KP", "session=%d iter=%d/%d — calling LLM", sid, iter+1, MaxKpRound)
 
-		// Dump kpMsgs for debugging
-		for i, msg := range kpMsgs {
-			debugf("KP_MSG", "session=%d iter=%d msg[%d] role=%q len=%d content=\n%s\n",
-				sid, iter+1, i, msg.Role, len([]rune(msg.Content)), msg.Content)
-		}
-
 		doneKP := timedDebug("KP", "session=%d iter=%d Chat", sid, iter+1)
 		calls, rawResp, err := runKP(context.Background(), handles[models.AgentRoleDirector], kpMsgs)
 		doneKP()

@@ -122,10 +122,10 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>write</name>
-			<description>指示叙事代理生成文本段落，保留调查员发言行动，高信息密度(300字以内)</description>
+			<description>指示叙事代理生成文本段落，保留调查员发言行动，高信息密度(150字以内)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"write","direction":"需要润色的文本"}</call_example>
+			<call_example>{"action":"write","direction":"需要润色的文本(150字以内)"}</call_example>
 		</tool>
 		<tool>
 			<name>advance_time</name>
