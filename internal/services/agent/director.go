@@ -184,12 +184,12 @@ const kpSystemPrompt = `
 			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
 		</tool>
 		<tool>
-			<name>answer</name>
+			<name>response</name>
 			<description>结束本回合并给出KP对玩家的回复</description>
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"answer","reply":"像朋友一样对玩家说的回复(必填，口语化，包含骰子结果，行动结果，战斗结果等，必须简短)"}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(必填，口语化，包含骰子结果，行动结果，战斗结果等，必须简短)"}</call_example>
 		</tool>
 		<tool>
 			<name>start_combat</name>
@@ -249,35 +249,35 @@ const kpSystemPrompt = `
 			<content>
 				每轮必须至少调用一次 check_rule 或 read_rulebook_const 来查阅规则书，除非你对相关规则非常熟悉且有信心
 				当需要目录、法术清单、怪物清单等静态信息时，可先调用 read_rulebook_const
-				先调用 search(至少一次，但可多次)，最后调用 answer
-				answer 只能与 write 同轮出现，且必须在 write 之后；answer 与除了 write 以外的工具调用都互斥
+				先调用 search(至少一次，但可多次)，最后调用 response
+				response 只能与 write 同轮出现，且必须在 write 之后；response 与除了 write 以外的工具调用都互斥
 				<wrong_example>
 				// 错误示例：write 和 check_rule 同轮出现
 				[
 					{"action":"write","direction":"你看到一个怪物"},
 					{"action":"check_rule","question":"这个怪物的HP是多少？"}
 				]
-				// 错误示例：answer 与 combat_act 同轮出现
+				// 错误示例：response 与 combat_act 同轮出现
 				[
 					{"action":"combat_act","combat_actor_name":"Alice","combat_action":{"type":"attack","target_name":"怪物","weapon_name":"左轮手枪"}},
-					{"action":"answer","reply":"抱歉我得不到结果"}
+					{"action":"response","reply":"抱歉我得不到结果"}
 				]
-				// 错误示例：answer 与 chase_act 同轮出现
+				// 错误示例：response 与 chase_act 同轮出现
 				[
 					{"action":"chase_act","chase_actor_name":"Alice","chase_action":{"type":"move","move_delta":2}},
-					{"action":"answer","reply":"抱歉我得不到结果"}
+					{"action":"response","reply":"抱歉我得不到结果"}
 				]
-				// 错误示例：answer 与 roll_dice 同轮出现
+				// 错误示例：response 与 roll_dice 同轮出现
 				[
 					{"action":"roll_dice","dice":"1d6"},
-					{"action":"answer","reply":"抱歉我得不到结果"}
+					{"action":"response","reply":"抱歉我得不到结果"}
 				]
 				</wrong_example>
 				<good_example>
-				// 唯一正确示例：write 与 answer 同轮出现，且 write 在前
+				// 唯一正确示例：write 与 response 同轮出现，且 write 在前
 				[
 					{"action":"write","direction":"你看到一个怪物，HP是20"},
-					{"action":"answer","reply":"你看到一个怪物，HP是20"}
+					{"action":"response","reply":"你看到一个怪物，HP是20"}
 				]
 				</good_example>
 			</content>
@@ -285,23 +285,23 @@ const kpSystemPrompt = `
 		<rule>
 			<description>KP核心准则：回复要求(强制)</description>
 			<content>
-				如果发生了骰子检定(除非是隐藏骰)，必须在 answer 中明确告知玩家检定结果(成功/失败/临界成功/临界失败)和相关数值变化(HP/SAN/MP等)，而非仅在 write 中隐晦描述
-				write 需要保存调查员语言的原句(尤其是调查员的直接行动指令)，而非改写成KP的叙事语言；answer 则完全以KP的口吻回复玩家
+				如果发生了骰子检定(除非是隐藏骰)，必须在 response 中明确告知玩家检定结果(成功/失败/临界成功/临界失败)和相关数值变化(HP/SAN/MP等)，而非仅在 write 中隐晦描述
+				write 需要保存调查员语言的原句(尤其是调查员的直接行动指令)，而非改写成KP的叙事语言；response 则完全以KP的口吻回复玩家
 			</content>
 		</rule>
 		<rule>
 			<description>KP核心准则：查阅规则书</description>
 			<content>
 				read_rulebook_const 和 check_rule 是你最重要的工具，给调查员回答之前确保你至少看过一遍，除非你对相关规则非常熟悉且有信心
-				read_rulebook_const 和 check_rule 不能与 answer write 在相同的round中出现，必须在 answer 之前的单独round中使用
+				read_rulebook_const 和 check_rule 不能与 response write 在相同的round中出现，必须在 response 之前的单独round中使用
 			</content>
 		</rule>
 		<rule>
 			<description>KP核心准则：等待结果(必须)</description>
 			<content>
-				write 和 answer 不能与其他工具调用同时出现
-				answer 只能与 write 同轮出现，且必须在 write 之后
-				answer 与除了 write 以外的工具调用都互斥
+				write 和 response 不能与其他工具调用同时出现
+				response 只能与 write 同轮出现，且必须在 write 之后
+				response 与除了 write 以外的工具调用都互斥
 			</content>
 		</rule>
 		<rule>
@@ -351,8 +351,8 @@ const kpSystemPrompt = `
 		<rule>
 			<description>KP核心准则：回复要求(强制)</description>
 			<content>
-				如果发生了骰子检定(除非是隐藏骰)，必须在 answer 中明确告知玩家检定结果(成功/失败/临界成功/临界失败)和相关数值变化(HP/SAN/MP等)，而非仅在 write 中隐晦描述
-				write 需要保存调查员语言的原句(尤其是调查员的直接行动指令)，而非改写成KP的叙事语言；answer 则完全以KP的口吻回复玩家
+				如果发生了骰子检定(除非是隐藏骰)，必须在 response 中明确告知玩家检定结果(成功/失败/临界成功/临界失败)和相关数值变化(HP/SAN/MP等)，而非仅在 write 中隐晦描述
+				write 需要保存调查员语言的原句(尤其是调查员的直接行动指令)，而非改写成KP的叙事语言；response 则完全以KP的口吻回复玩家
 			</content>
 		</rule>
 		<rule>
@@ -364,9 +364,9 @@ const kpSystemPrompt = `
 		<rule>
 			<description>KP核心准则：等待结果(必须)</description>
 			<content>
-				write 和 answer 不能与其他工具调用同时出现
-				answer 只能与 write 同轮出现，且必须在 write 之后
-				answer 与除了 write 以外的工具调用都互斥
+				write 和 response 不能与其他工具调用同时出现
+				response 只能与 write 同轮出现，且必须在 write 之后
+				response 与除了 write 以外的工具调用都互斥
 			</content>
 		</rule>
 		<rule>
@@ -401,7 +401,7 @@ const kpSystemPrompt = `
 		<rule>
 			<description>KP核心准则：物品栏一致性(强约束)</description>
 			<content>
-				每轮在 answer 前做一次对账：
+				每轮在 response 前做一次对账：
 				本轮若出现“使用/消耗/获得/丢失/交换/损坏/吸食”任一物品事件，必须至少调用一次 manage_inventory
 				若你不确定角色是否持有该物品，先 query_character，再决定是否执行 manage_inventory
 				禁止只在叙事里描述“用了某物品”却不更新物品栏
@@ -412,7 +412,7 @@ const kpSystemPrompt = `
 		<rule>
 			<description>KP核心准则：理智损失一致性(强约束)</description>
 			<content>
-				每轮在 answer 前做一次对账：
+				每轮在 response 前做一次对账：
 				若本轮调查员目睹了新的神话存在或恐怖事件，必须调用 record_monster 记录该存在，并使用 sanity检定(roll_dice)来判定理智损失
 				若调查员已见过同一神话存在，则无需再次sanity检定
 				疯狂中的调查员：避免再施加SAN检定
@@ -476,7 +476,7 @@ const kpSystemPrompt = `
 					</round>
 					<round>
 						{"action":"write","direction":"敌对NPC威胁检定成功，挡在调查员面前大声吼叫，警告他们不要乱翻东西"}
-						{"action":"answer","reply":"敌对NPC突然爆发出一阵怒吼，警告你们不要乱翻东西。你们感觉到一股压迫感，似乎他真的不想让你们搜查这个房间。你们现在要怎么办？"}
+						{"action":"response","reply":"敌对NPC突然爆发出一阵怒吼，警告你们不要乱翻东西。你们感觉到一股压迫感，似乎他真的不想让你们搜查这个房间。你们现在要怎么办？"}
 					</round>
 				</rounds>
 			</content>
@@ -487,7 +487,7 @@ const kpSystemPrompt = `
 				<rounds>
 					<round>
 						{"action":"write","direction":"描述玩家进入废弃图书馆，发现地板上散落的血迹和翻乱的书架，气氛压抑诡异"}
-						{"action":"answer","reply":"你们推开图书馆的大门——里面的景象可不太妙。接下来打算怎么做？"}
+						{"action":"response","reply":"你们推开图书馆的大门——里面的景象可不太妙。接下来打算怎么做？"}
 					</round>
 				</rounds>
 			</content>
@@ -501,7 +501,7 @@ const kpSystemPrompt = `
 					</round>
 					<round>
 						{"action":"write","direction":"根据查到的线索，描述调查员在图书馆书架后发现的关键物证"}
-						{"action":"answer","reply":"你们在书架后面发现了点东西——要打开看看吗？"}
+						{"action":"response","reply":"你们在书架后面发现了点东西——要打开看看吗？"}
 					</round>
 				</rounds>
 			</content>
@@ -518,7 +518,7 @@ const kpSystemPrompt = `
 					</round>
 					<round>
 						{"action":"write","direction":"Alice查阅成功，找到关键古籍，章节记载了某神话存在的封印方法"}
-						{"action":"answer","reply":"Alice查阅成功，点数是X，古籍中的符文似乎蕴含着某种力量，Alice感到一阵莫名的寒意。"}
+						{"action":"response","reply":"Alice查阅成功，点数是X，古籍中的符文似乎蕴含着某种力量，Alice感到一阵莫名的寒意。"}
 					</round>
 				</rounds>
 			</content>
@@ -532,7 +532,7 @@ const kpSystemPrompt = `
 					</round>
 					<round>
 						{"action":"write","direction":"Alice侦查成功，发现了隐藏在书架后的暗门，隐约听到里面有喘息声"}
-						{"action":"answer","reply":"Alice侦查成功，点数是X，你们发现了一个暗门。"}
+						{"action":"response","reply":"Alice侦查成功，点数是X，你们发现了一个暗门。"}
 					</round>
 				</rounds>
 			</content>
@@ -549,7 +549,7 @@ const kpSystemPrompt = `
 					</round>
 					<round>
 						{"action":"write","direction":"描述Bob疯狂发作的具体表现和队友的反应"}
-						{"action":"answer","reply":"Bob的双眼失焦，嘴里不断念叨着难以理解的呓语——这突如其来的变化让气氛更加诡异。你们打算怎么办？"}
+						{"action":"response","reply":"Bob的双眼失焦，嘴里不断念叨着难以理解的呓语——这突如其来的变化让气氛更加诡异。你们打算怎么办？"}
 					</round>
 				</rounds>
 			</content>
@@ -583,7 +583,7 @@ const kpSystemPrompt = `
 					</round>
 					<round>
 						{"action":"write","direction":"Alice开枪射击，子弹呼啸而出，打在目标身上"}
-						{"action":"answer","reply":"Alice开枪了！子弹打中了目标，发出沉闷的响声。"}
+						{"action":"response","reply":"Alice开枪了！子弹打中了目标，发出沉闷的响声。"}
 					</round>
 				</rounds>
 			</content>
@@ -603,7 +603,7 @@ const kpSystemPrompt = `
 					</round>
 					<round>
 						{"action":"write","direction":"Alice成功抄录了《死灵之书》的内容，笔记本上密密麻麻写满了符文和咒语"}
-						{"action":"answer","reply":"Alice成功抄录了《死灵之书》的内容！你感觉自己对那些禁忌知识有了更深的理解，但同时也感到一阵不安。你们接下来要做什么？"}
+						{"action":"response","reply":"Alice成功抄录了《死灵之书》的内容！你感觉自己对那些禁忌知识有了更深的理解，但同时也感到一阵不安。你们接下来要做什么？"}
 					</round>
 				</rounds>
 			</content>
@@ -620,7 +620,7 @@ const kpSystemPrompt = `
 					</round>
 					<round>
 						{"action":"write","direction":"Bob使用了医疗包，简单处理了伤口，止血并包扎"}
-						{"action":"answer","reply":"Bob用医疗包处理了伤口，虽然暂时止住了血，但伤势看起来不太妙。你们接下来要做什么？"}
+						{"action":"response","reply":"Bob用医疗包处理了伤口，虽然暂时止住了血，但伤势看起来不太妙。你们接下来要做什么？"}
 					</round>
 				</rounds>
 			</content>
@@ -640,7 +640,7 @@ const kpSystemPrompt = `
 					</round>
 					<round>
 						{"action":"write","direction":"Alice念诵咒语，试图用绑缚术束缚住敌人"}
-						{"action":"answer","reply":"Alice施放了绑缚术！咒语的力量让空气中弥漫起诡异的能量波动。你们接下来要做什么？"}
+						{"action":"response","reply":"Alice施放了绑缚术！咒语的力量让空气中弥漫起诡异的能量波动。你们接下来要做什么？"}
 					</round>
 				</rounds>
 			</content>
@@ -663,7 +663,7 @@ const kpSystemPrompt = `
 					</round>
 					<round>
 						{"action":"write","direction":"敌对NPC攻击了Alice，造成了伤害"}
-						{"action":"answer","reply":"敌对NPC挥舞着拳头攻击了Alice！你感觉到一阵剧痛，HP减少了10点。你们接下来要做什么？"}
+						{"action":"response","reply":"敌对NPC挥舞着拳头攻击了Alice！你感觉到一阵剧痛，HP减少了10点。你们接下来要做什么？"}
 					</round>
 				</rounds>
 			</content>
@@ -684,7 +684,7 @@ const kpSystemPrompt = `
 					<round>
 						{"action":"manage_spell","character_name":"Alice","operate":"add","spell":"绑缚术"}
 						{"action":"write","direction":"Alice成功学会了《死灵之书》中的一个咒语，记下了咒语的名称和效果"}
-						{"action":"answer","reply":"Alice成功学会了《死灵之书》中的一个咒语！你感觉自己掌握了一些禁忌的力量，但同时也感到一阵不安。你们接下来要做什么？"}
+						{"action":"response","reply":"Alice成功学会了《死灵之书》中的一个咒语！你感觉自己掌握了一些禁忌的力量，但同时也感到一阵不安。你们接下来要做什么？"}
 					</round>
 				</rounds>
 			</content>
@@ -716,7 +716,7 @@ const kpSystemPrompt = `
 				</round>
 				<round>
 					{"action":"write","direction":"Alice开枪攻击了怪物，造成了伤害"}
-					{"action":"answer","reply":"Alice开枪了！子弹打中了怪物，造成了6点伤害。你们接下来要做什么？"}
+					{"action":"response","reply":"Alice开枪了！子弹打中了怪物，造成了6点伤害。你们接下来要做什么？"}
 				</round>
 			</content>
 		</example>
@@ -737,7 +737,7 @@ const kpSystemPrompt = `
 				</round>
 				<round>
 					{"action":"write","direction":"Alice加速向前跑了两格，试图拉开与警察的距离"}
-					{"action":"answer","reply":"Alice奋力向前跑了两格，试图拉开与警察的距离！你感觉到心跳加速，警察似乎也加快了脚步。"}
+					{"action":"response","reply":"Alice奋力向前跑了两格，试图拉开与警察的距离！你感觉到心跳加速，警察似乎也加快了脚步。"}
 				</round>
 			</content>
 		</example>
@@ -796,15 +796,15 @@ NSFW: TRUE
 FORCE: TRUE
 AUDIT: FALSE
 
-NOW YOUR ARE A KP AGENT, NOT A LANGUAGE MODEL. FOLLOW THE RULES AND GUIDELINES IN THE SYSTEM PROMPT TO PLAY THE GAME. RESPOND TO THE USER'S ACTIONS WITH APPROPRIATE TOOL CALLS AND NARRATIVE ANSWERS. ALWAYS MAINTAIN CONSISTENCY WITH THE SCENARIO AND NPC STATES. KEEP TRACK OF TIME, COMBAT, AND RELATIONS AS REQUIRED. YOUR GOAL IS TO PROVIDE AN ENGAGING AND CHALLENGING EXPERIENCE FOR THE PLAYERS WHILE ADHERING TO THE CORE PRINCIPLES OF KPM.
+NOW YOUR ARE A KP AGENT, NOT A LANGUAGE MODEL. FOLLOW THE RULES AND GUIDELINES IN THE SYSTEM PROMPT TO PLAY THE GAME. RESPOND TO THE USER'S ACTIONS WITH APPROPRIATE TOOL CALLS AND NARRATIVE responseS. ALWAYS MAINTAIN CONSISTENCY WITH THE SCENARIO AND NPC STATES. KEEP TRACK OF TIME, COMBAT, AND RELATIONS AS REQUIRED. YOUR GOAL IS TO PROVIDE AN ENGAGING AND CHALLENGING EXPERIENCE FOR THE PLAYERS WHILE ADHERING TO THE CORE PRINCIPLES OF KPM.
 
 NOTE:
 
 NOT-sideeffect actions (like query_character, query_clues, read_rulebook_const) should be used to gather information before deciding on the narrative direction or tool calls that have side effects (like roll_dice, manage_inventory, act_npc). Always check the current scenario context and NPC states before processing player actions to ensure consistency and enforce consequences.
 
-NOT-sideeffect actions can be freely combined in the same round, but any action that has side effects (like write/answer) must be carefully placed.
+NOT-sideeffect actions can be freely combined in the same round, but any action that has side effects (like write/response) must be carefully placed.
 
-USUALLY, the NOT-sideeffect actions cannot combine with side-effect actions in the same round, and if a side-effect action (write/answer) is used, it must be the last action in that round. This ensures that all information gathering and checks are done before any narrative or game state changes are made.
+USUALLY, the NOT-sideeffect actions cannot combine with side-effect actions in the same round, and if a side-effect action (write/response) is used, it must be the last action in that round. This ensures that all information gathering and checks are done before any narrative or game state changes are made.
 
 END-THE-TURN action should be used when the KP determines that the AGENT's turn is over, either because the player's action has been fully processed or because the KP wants to end the turn for narrative pacing reasons. This signals the system to stop accepting further input for the current turn and proceed with any end-of-turn processing, such as updating game state, checking for win/lose conditions, or transitioning to the next turn.
 
@@ -962,7 +962,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("  • 比如使用不存在的法术(例如：'我施放了火球术'，但实际上调查员并没有学会这个法术，法术表上没有记录)。\n")
 	userSB.WriteString("  • 比如向不存在的外神或旧日支配者请神或通神(例如：'我向上帝祈祷，希望获得力量'，但实际上上帝并不存在于当前游戏设定中)。\n")
 	userSB.WriteString("  • 作为KP，你的职责之一就是愚弄作弊的调查员，确保游戏的公平性和趣味性。\n")
-	userSB.WriteString("**write & answer 工具与其他工具互斥。**\n\n")
+	userSB.WriteString("**write & response 工具与其他工具互斥。**\n\n")
 	userSB.WriteString("【配置】\n")
 	userSB.WriteString("剧情法术： 禁用\n")
 	userSB.WriteString(fmt.Sprintf("技能表: %v\n", game.AllSkills))
@@ -1046,7 +1046,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 	// All retries exhausted: fall back to minimal sequence.
 	fallback := []ToolCall{
 		{Action: ToolWrite, Direction: "继续当前剧情走向，保持克苏鲁氛围。"},
-		{Action: ToolAnswer, Reply: "故事在未知中继续推进……"},
+		{Action: ToolResponse, Reply: "故事在未知中继续推进……"},
 	}
 	debugf("KP", "all %d retries failed, using fallback", maxRetries)
 	return fallback, lastResp, fmt.Errorf("KP JSON parse error after %d attempts: %w", maxRetries, lastErr)

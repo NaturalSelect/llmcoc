@@ -98,9 +98,9 @@ func Run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 //   - Master (KP/Director): Has full scenario info. Outputs JSON arrays of tool calls.
 //   - Slaves (Writer, Lawyer, Editor, NPC): No scenario info; provide specific services.
 //
-// The loop continues until the KP issues an "answer" tool call or max iterations reached.
+// The loop continues until the KP issues an "response" tool call or max iterations reached.
 // Writer maintains conversation history across write calls for narrative continuity.
-// At "answer", the accumulated writer buffer is returned to the caller.
+// At "response", the accumulated writer buffer is returned to the caller.
 //
 // Turn-action recording is handled by the caller (ChatStream handler) before run() is
 // invoked, so run() does not call recordTurnAction itself.
@@ -191,12 +191,12 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			switchInThisBatch := false
 
 			if switchRole {
-				// 如果发生了切换跳过本批次其他调用，期望KP在下一轮使用 write/answer 工具交出控制权。
-				if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolAnswer) {
+				// 如果发生了切换跳过本批次其他调用，期望KP在下一轮使用 write/response 工具交出控制权。
+				if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolResponse) {
 					debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
 					toolResults = append(toolResults, ToolResult{
 						Action: call.Action,
-						Result: "中断： 中断发生，KP已切换到玩家角色，该调用无效，请在下一轮使用 writer/answer 工具决策交出控制权。",
+						Result: "中断： 中断发生，KP已切换到玩家角色，该调用无效，请在下一轮使用 writer/response 工具决策交出控制权。",
 					})
 					continue
 				}
@@ -584,18 +584,18 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 						Result: fmt.Sprintf("找不到名为 %s 的NPC", who),
 					})
 				}
-			case ToolAnswer:
+			case ToolResponse:
 				if hasInteraction && !switchRole {
 					toolResults = append(toolResults, ToolResult{
-						Action: ToolAnswer,
-						Result: "错误：已经有其他工具调用了，answer 操作被跳过，answer工具应在没有其他交互的情况下使用",
+						Action: ToolResponse,
+						Result: "错误：已经有其他工具调用了，response 操作被跳过，response工具应在没有其他交互的情况下使用",
 					})
-					debugf("tool", "session=%v answer with interaction", sid)
+					debugf("tool", "session=%v response with interaction", sid)
 					continue
 				}
 				hasEnd = true
 				kpNarration = call.Reply
-				debugf("tool", "session=%d answer narration=%s", sid, call.Reply)
+				debugf("tool", "session=%d response narration=%s", sid, call.Reply)
 
 			// ── Combat tools ──────────────────────────────────────────────────────
 			case ToolStartCombat:
@@ -895,7 +895,7 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switc
 	}
 
 	if switchRole {
-		sb.WriteString(fmt.Sprintf(" 控制权从KP，移交到玩家，请使用 write/answer 移交控制权"))
+		sb.WriteString(fmt.Sprintf(" 控制权从KP，移交到玩家，请使用 write/response 移交控制权"))
 	}
 
 	return sb.String(), switchRole
@@ -1028,7 +1028,7 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) (result string, switch
 	}
 
 	if switchRole {
-		sb.WriteString(fmt.Sprintf(" 控制权从KP，移交到玩家，请使用 write/answer 移交控制权"))
+		sb.WriteString(fmt.Sprintf(" 控制权从KP，移交到玩家，请使用 write/response 移交控制权"))
 	}
 
 	return sb.String(), switchRole
