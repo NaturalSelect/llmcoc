@@ -46,8 +46,6 @@ type AdjustSkillsReq struct {
 // NOTE: Provider defines the interface for interacting with various LLM backends.
 // Provider defines the interface for LLM providers
 type Provider interface {
-	// ChatStream sends a conversation and streams tokens to a channel (for real-time output)
-	ChatStream(ctx context.Context, messages []ChatMessage) (<-chan string, error)
 	// Chat sends a conversation and returns the full response (for agent pipeline steps)
 	Chat(ctx context.Context, messages []ChatMessage) (string, error)
 	// GenerateCharacter uses AI to fill in character details
