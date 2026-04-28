@@ -113,6 +113,14 @@ type CharacterEvolutionResult struct {
 	NewTraits    string `json:"new_traits"`
 }
 
+var evolutionExample = func() string {
+	data, err := json.Marshal(CharacterEvolutionResult{})
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}()
+
 // RunCharacterEvolution uses the Writer agent to generate an updated backstory and traits
 // for the given character card, based on the session's WriterHistory.
 // The full WriterHistory is reused as conversation context (all messages are already cached
@@ -154,8 +162,22 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 	resp = llm.StripCodeFence(resp)
 	var result CharacterEvolutionResult
 	if err := json.Unmarshal([]byte(resp), &result); err != nil {
-		log.Printf("[agent] character evolution JSON parse error for %q: %v", card.Name, err)
-		return CharacterEvolutionResult{}, fmt.Errorf("character evolution JSON parse error: %w", err)
+		parser, err := loadSingleAgent(models.AgentRoleParser)
+		if err != nil {
+			return CharacterEvolutionResult{}, err
+		}
+		for i := 0; i < 30; i++ {
+			resp, err = repairJSONWith(ctx, parser, resp, err, evolutionExample)
+			if err == nil {
+				break
+			}
+			log.Printf("[agent] character evolution JSON parse error for %q: %v; attempt %d to repair with parser", card.Name, err, i+1)
+		}
+		err = json.Unmarshal([]byte(resp), &result)
+		if err != nil {
+			log.Printf("[agent] character evolution JSON parse error for %q: %v", card.Name, err)
+			return CharacterEvolutionResult{}, fmt.Errorf("character evolution JSON parse error: %w", err)
+		}
 	}
 
 	return result, nil
