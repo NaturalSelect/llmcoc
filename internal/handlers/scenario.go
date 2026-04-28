@@ -387,7 +387,7 @@ func SeedShopItems() {
 		// 基础装备
 		{
 			Name:        "手电筒",
-			Description: "便携式手电筒，提供照明",
+			Description: "便携式手电筒,提供照明",
 			ItemType:    models.ItemTypeEquipment,
 			Price:       15,
 			Value:       1,
@@ -395,7 +395,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "指南针",
-			Description: "航海级指南针，帮助导航",
+			Description: "航海级指南针,帮助导航",
 			ItemType:    models.ItemTypeEquipment,
 			Price:       20,
 			Value:       1,
@@ -403,7 +403,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "修理工具包",
-			Description: "基础修理工具，用于维修各类机械设备",
+			Description: "基础修理工具,用于维修各类机械设备",
 			ItemType:    models.ItemTypeEquipment,
 			Price:       25,
 			Value:       1,
@@ -411,7 +411,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "医疗急救包",
-			Description: "应急医疗用品，可治疗1D4生命值伤害",
+			Description: "应急医疗用品,可治疗1D4生命值伤害",
 			ItemType:    models.ItemTypeEquipment,
 			Price:       30,
 			Value:       1,
@@ -419,7 +419,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "安全绳(30米)",
-			Description: "高强度安全绳，用于攀爬和牵引",
+			Description: "高强度安全绳,用于攀爬和牵引",
 			ItemType:    models.ItemTypeEquipment,
 			Price:       20,
 			Value:       1,
@@ -427,7 +427,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "锁匠工具",
-			Description: "专业开锁工具，提高撬锁技能的成功率",
+			Description: "专业开锁工具,提高撬锁技能的成功率",
 			ItemType:    models.ItemTypeEquipment,
 			Price:       35,
 			Value:       1,
@@ -435,7 +435,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "夜视镜",
-			Description: "军用级夜视镜，在黑暗中提供视野",
+			Description: "军用级夜视镜,在黑暗中提供视野",
 			ItemType:    models.ItemTypeEquipment,
 			Price:       60,
 			Value:       1,
@@ -453,7 +453,7 @@ func SeedShopItems() {
 		// 武器
 		{
 			Name:        "短刀",
-			Description: "便携式匕首，近战武器",
+			Description: "便携式匕首,近战武器",
 			ItemType:    models.ItemTypeWeapon,
 			Price:       20,
 			Value:       1,
@@ -461,7 +461,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "长剑",
-			Description: "标准长剑，增加近战伤害",
+			Description: "标准长剑,增加近战伤害",
 			ItemType:    models.ItemTypeWeapon,
 			Price:       30,
 			Value:       1,
@@ -469,7 +469,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "左轮手枪(.38)",
-			Description: "6发弹匣左轮手枪，近程射击武器",
+			Description: "6发弹匣左轮手枪,近程射击武器",
 			ItemType:    models.ItemTypeWeapon,
 			Price:       50,
 			Value:       1,
@@ -477,7 +477,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "半自动步枪",
-			Description: "军用级步枪，远程射击武器",
+			Description: "军用级步枪,远程射击武器",
 			ItemType:    models.ItemTypeWeapon,
 			Price:       100,
 			Value:       1,
@@ -485,7 +485,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "火焰枪(5次)",
-			Description: "重型火焰喷枪，群体伤害武器",
+			Description: "重型火焰喷枪,群体伤害武器",
 			ItemType:    models.ItemTypeWeapon,
 			Price:       150,
 			Value:       1,
@@ -502,16 +502,16 @@ func SeedShopItems() {
 
 		// 配件
 		{
-			Name:        "弹药包(手枪，50发)",
-			Description: "手枪弹药补充，50发装",
+			Name:        "弹药包(手枪,50发)",
+			Description: "手枪弹药补充,50发装",
 			ItemType:    models.ItemTypeAccessory,
 			Price:       15,
 			Value:       1,
 			IsActive:    true,
 		},
 		{
-			Name:        "弹药包(步枪，100发)",
-			Description: "步枪弹药补充，100发装",
+			Name:        "弹药包(步枪,100发)",
+			Description: "步枪弹药补充,100发装",
 			ItemType:    models.ItemTypeAccessory,
 			Price:       25,
 			Value:       1,
@@ -519,7 +519,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "照相机",
-			Description: "便携式照相机，用于记录证据",
+			Description: "便携式照相机,用于记录证据",
 			ItemType:    models.ItemTypeAccessory,
 			Price:       40,
 			Value:       1,
@@ -527,7 +527,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "钢笔",
-			Description: "精致钢笔，用于记录调查细节",
+			Description: "精致钢笔,用于记录调查细节",
 			ItemType:    models.ItemTypeAccessory,
 			Price:       10,
 			Value:       1,
@@ -535,7 +535,7 @@ func SeedShopItems() {
 		},
 		{
 			Name:        "笔记本",
-			Description: "精装笔记本，用于记录调查细节",
+			Description: "精装笔记本,用于记录调查细节",
 			ItemType:    models.ItemTypeAccessory,
 			Price:       10,
 			Value:       1,

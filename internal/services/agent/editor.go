@@ -79,7 +79,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				if sanLoss > 0 {
 					card.DailySanLoss += sanLoss
 
-					// 潜在疯狂期(临时/不定性)：哪怕只损失1点SAN，立即再次触发疯狂发作
+					// 潜在疯狂期(临时/不定性)：哪怕只损失1点SAN,立即再次触发疯狂发作
 					if card.MadnessState == "temporary" || card.MadnessState == "indefinite" {
 						// Re-roll a new symptom for the relapse episode.
 						sym := game.RollMadnessSymptom(true)
@@ -123,7 +123,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				card.WoundState = "dying"
 				card.IsUnconscious = true
 			} else if s.HP <= 0 && card.WoundState == "none" {
-				// 仅轻伤HP归零 → 昏迷，不会直接死亡
+				// 仅轻伤HP归零 → 昏迷,不会直接死亡
 				card.IsUnconscious = true
 			}
 			models.DB.Save(card)

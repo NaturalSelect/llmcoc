@@ -57,14 +57,14 @@ const (
 	ToolResponse          ToolCallType = "response"            // 结束本轮并给出回复
 
 	// ── Combat tools ──────────────────────────────────────────────────────────
-	ToolStartCombat ToolCallType = "start_combat" // 开始战斗，初始化战斗状态
+	ToolStartCombat ToolCallType = "start_combat" // 开始战斗,初始化战斗状态
 	ToolCombatAct   ToolCallType = "combat_act"   // 宣告本轮行动者的战斗行动
-	ToolEndCombat   ToolCallType = "end_combat"   // 结束战斗，清除战斗状态
+	ToolEndCombat   ToolCallType = "end_combat"   // 结束战斗,清除战斗状态
 
 	// ── Chase tools ───────────────────────────────────────────────────────────
-	ToolStartChase ToolCallType = "start_chase" // 开始追逐，初始化追逐状态
+	ToolStartChase ToolCallType = "start_chase" // 开始追逐,初始化追逐状态
 	ToolChaseAct   ToolCallType = "chase_act"   // 宣告本轮追逐行动(移动/险境/障碍/冲突)
-	ToolEndChase   ToolCallType = "end_chase"   // 结束追逐，清除追逐状态
+	ToolEndChase   ToolCallType = "end_chase"   // 结束追逐,清除追逐状态
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
@@ -135,14 +135,14 @@ type DiceCheck struct {
 	Skill          string `json:"skill"`
 	Value          int    `json:"value"`
 	Character      string `json:"character"`
-	Hidden         bool   `json:"hidden"`       // 暗骰：玩家不可见具体数值，KP将结果融入叙事
+	Hidden         bool   `json:"hidden"`       // 暗骰：玩家不可见具体数值,KP将结果融入叙事
 	CheckType      string `json:"check_type"`   // standard / opposed / luck / sanity
 	BonusDice      int    `json:"bonus_dice"`   // 奖励骰数量
 	PenaltyDice    int    `json:"penalty_dice"` // 惩罚骰数量
 	SanSuccessLoss string `json:"san_success_loss"`
 	SanFailLoss    string `json:"san_fail_loss"`
 	MonsterName    string `json:"monster_name,omitempty"` // sanity检定：引发检定的神话存在名称(见过的存在不掉SAN)
-	DiceExpr       string `json:"dice_expr,omitempty"`    // 可选的骰子表达式(如 "1D100+20")，优先于固定值
+	DiceExpr       string `json:"dice_expr,omitempty"`    // 可选的骰子表达式(如 "1D100+20"),优先于固定值
 }
 
 // DiceCheckResult is the outcome of an auto-executed dice check.
@@ -222,7 +222,7 @@ type EvaluationResult struct {
 // SkillChange represents a single skill value change for a character.
 type SkillChange struct {
 	Skill string `json:"skill"`
-	Delta int    `json:"delta"` // 正整数，1-10
+	Delta int    `json:"delta"` // 正整数,1-10
 }
 
 // CharacterGrowth holds the growth outcome for one character.
@@ -269,7 +269,7 @@ type ChaseParticipantInput struct {
 // ChaseActionDetail describes the specific chase action taken this turn.
 type ChaseActionDetail struct {
 	Type          string `json:"type"`                    // move/hazard/obstacle/conflict/other
-	MoveDelta     int    `json:"move_delta,omitempty"`    // 移动的地点数(正=追近，负=拉开)
+	MoveDelta     int    `json:"move_delta,omitempty"`    // 移动的地点数(正=追近,负=拉开)
 	ObstacleName  string `json:"obstacle_name,omitempty"` // 通过/攻击的障碍名称
 	ObstacleHP    int    `json:"obstacle_hp,omitempty"`   // 障碍当前HP(创建障碍时使用)
 	ObstacleMaxHP int    `json:"obstacle_max_hp,omitempty"`

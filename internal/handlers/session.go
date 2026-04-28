@@ -117,7 +117,7 @@ func CreateSession(c *gin.Context) {
 	systemMsg := models.Message{
 		SessionID: session.ID,
 		Role:      models.MessageRoleSystem,
-		Content:   fmt.Sprintf("房间「%s」已创建，等待玩家加入。剧本：%s", session.Name, scenario.Name),
+		Content:   fmt.Sprintf("房间「%s」已创建,等待玩家加入。剧本：%s", session.Name, scenario.Name),
 		Username:  "系统",
 	}
 	models.DB.Create(&systemMsg)
@@ -187,7 +187,7 @@ func JoinSession(c *gin.Context) {
 			req.CharacterCardID, models.SessionStatusEnded).
 		Count(&lockedCount)
 	if lockedCount > 0 {
-		c.JSON(http.StatusConflict, gin.H{"error": "该人物卡正在另一场游戏中使用，副本结束后才能再次使用"})
+		c.JSON(http.StatusConflict, gin.H{"error": "该人物卡正在另一场游戏中使用,副本结束后才能再次使用"})
 		return
 	}
 
@@ -225,7 +225,7 @@ func LeaveSession(c *gin.Context) {
 		return
 	}
 	if session.Status != models.SessionStatusLobby {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏已开始或已结束，无法退出房间"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏已开始或已结束,无法退出房间"})
 		return
 	}
 
@@ -279,7 +279,7 @@ func LeaveSession(c *gin.Context) {
 	}
 
 	if deletedSession {
-		c.JSON(http.StatusOK, gin.H{"message": "退出房间成功，房间无人已自动解散"})
+		c.JSON(http.StatusOK, gin.H{"message": "退出房间成功,房间无人已自动解散"})
 		return
 	}
 
@@ -776,7 +776,7 @@ func EndSession(c *gin.Context) {
 
 	if txErr != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"message":    "游戏已结束(奖励结算失败，请联系管理员)",
+			"message":    "游戏已结束(奖励结算失败,请联系管理员)",
 			"evaluation": result.Evaluation,
 			"growth":     result.Growth,
 		})

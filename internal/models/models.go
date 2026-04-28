@@ -105,8 +105,8 @@ type ScenarioContent struct {
 	SystemPrompt   string      `json:"system_prompt"`
 	Setting        string      `json:"setting"`
 	Intro          string      `json:"intro"`
-	GameStartSlot  int         `json:"game_start_slot,omitempty"` // 开局时间槽位(0-47)，每槽30分钟
-	MapDescription string      `json:"map_description,omitempty"` // 文字描述的场景地图，供KP感知空间关系
+	GameStartSlot  int         `json:"game_start_slot,omitempty"` // 开局时间槽位(0-47),每槽30分钟
+	MapDescription string      `json:"map_description,omitempty"` // 文字描述的场景地图,供KP感知空间关系
 	Scenes         []SceneData `json:"scenes"`
 	NPCs           []NPCData   `json:"npcs"`
 	Clues          []string    `json:"clues"`
@@ -362,7 +362,7 @@ type ChaseObstacle struct {
 type ChaseState struct {
 	Active       bool               `json:"active"`
 	Round        int                `json:"round"`
-	MinMOV       int                `json:"min_mov"` // 所有参与者中最低MOV，用于计算行动点
+	MinMOV       int                `json:"min_mov"` // 所有参与者中最低MOV,用于计算行动点
 	Participants []ChaseParticipant `json:"participants"`
 	Obstacles    []ChaseObstacle    `json:"obstacles"`
 }

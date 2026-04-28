@@ -85,7 +85,7 @@ func seedDefaultShopItems() {
 		items := []ShopItem{
 			{
 				Name:        "人物卡槽位扩展 +1",
-				Description: "永久增加 1 个人物卡槽位，让你可以保存更多的调查员档案。",
+				Description: "永久增加 1 个人物卡槽位,让你可以保存更多的调查员档案。",
 				ItemType:    ItemTypeCardSlot,
 				Price:       10,
 				Value:       1,
@@ -93,7 +93,7 @@ func seedDefaultShopItems() {
 			},
 			{
 				Name:        "人物卡槽位扩展 +3",
-				Description: "永久增加 3 个人物卡槽位，特惠套装。",
+				Description: "永久增加 3 个人物卡槽位,特惠套装。",
 				ItemType:    ItemTypeCardSlot,
 				Price:       25,
 				Value:       3,

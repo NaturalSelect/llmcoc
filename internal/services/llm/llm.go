@@ -67,7 +67,7 @@ func LoadProviderFromDB(role models.AgentRole) (Provider, error) {
 		Where("role = ? AND is_active = ?", role, true).
 		First(&cfg).Error
 	if err != nil {
-		return nil, fmt.Errorf("agent %q 未配置，请在管理面板中配置 LLM provider", role)
+		return nil, fmt.Errorf("agent %q 未配置,请在管理面板中配置 LLM provider", role)
 	}
 	if cfg.ProviderConfigID == nil || cfg.ProviderConfig == nil || !cfg.ProviderConfig.IsActive {
 		return nil, fmt.Errorf("agent %q 未绑定可用的 LLM provider", role)
@@ -122,7 +122,7 @@ func BuildKPSystemPrompt(scenario *models.Scenario, players []models.SessionPlay
 	for _, p := range players {
 		card := p.CharacterCard
 		playerList += fmt.Sprintf(
-			"\n- %s(%s，%s)：STR%d CON%d SIZ%d DEX%d APP%d INT%d POW%d EDU%d HP%d/%d SAN%d/%d",
+			"\n- %s(%s,%s)：STR%d CON%d SIZ%d DEX%d APP%d INT%d POW%d EDU%d HP%d/%d SAN%d/%d",
 			card.Name, card.Occupation, card.Gender,
 			card.Stats.Data.STR, card.Stats.Data.CON, card.Stats.Data.SIZ,
 			card.Stats.Data.DEX, card.Stats.Data.APP, card.Stats.Data.INT,
@@ -141,12 +141,12 @@ func BuildKPSystemPrompt(scenario *models.Scenario, players []models.SessionPlay
 ## 在场调查员%s
 
 ## KP行为规范
-1. 你是克苏鲁神话TRPG(COC 第七版)的主持人(KP)，负责推进剧情、扮演NPC、描述场景。
-2. 当玩家宣布行动时，若需要骰子检定，请明确告知「请进行XX检定(技能值N)」，系统会自动处理骰子。
-3. 保持克苏鲁风格：神秘、压抑、充满未知恐惧，适度展现宇宙恐怖元素。
-4. 对话以中文进行，场景描述生动具体，NPC性格鲜明。
-5. 当调查员的SAN值、HP或MP发生变化时，以「【SAN -N】」「【HP -N】」的格式标注。
-6. 不要替玩家做决策，引导但不强迫剧情走向。
-7. 每次回复控制在300字以内，除非场景描述确实需要更多。`, content.SystemPrompt,
+1. 你是克苏鲁神话TRPG(COC 第七版)的主持人(KP),负责推进剧情、扮演NPC、描述场景。
+2. 当玩家宣布行动时,若需要骰子检定,请明确告知「请进行XX检定(技能值N)」,系统会自动处理骰子。
+3. 保持克苏鲁风格：神秘、压抑、充满未知恐惧,适度展现宇宙恐怖元素。
+4. 对话以中文进行,场景描述生动具体,NPC性格鲜明。
+5. 当调查员的SAN值、HP或MP发生变化时,以「【SAN -N】」「【HP -N】」的格式标注。
+6. 不要替玩家做决策,引导但不强迫剧情走向。
+7. 每次回复控制在300字以内,除非场景描述确实需要更多。`, content.SystemPrompt,
 		scenario.Name, content.Setting, playerList)
 }

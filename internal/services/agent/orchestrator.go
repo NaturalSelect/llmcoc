@@ -51,7 +51,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 	makeHandle := func(role models.AgentRole) (agentHandle, error) {
 		cfg, ok := index[role]
 		if !ok {
-			return agentHandle{}, fmt.Errorf("agent %q 未配置，请在管理面板配置 LLM provider", role)
+			return agentHandle{}, fmt.Errorf("agent %q 未配置,请在管理面板配置 LLM provider", role)
 		}
 		if cfg.ProviderConfigID == nil || cfg.ProviderConfig == nil || !cfg.ProviderConfig.IsActive {
 			return agentHandle{}, fmt.Errorf("agent %q 未绑定可用的 LLM provider", role)
@@ -85,7 +85,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 // Only one pipeline may run per session at a time; concurrent calls receive an error.
 func Run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	if _, loaded := activeSessions.LoadOrStore(gctx.Session.ID, struct{}{}); loaded {
-		return RunOutput{}, fmt.Errorf("当前房间正在处理上一条消息，请稍候")
+		return RunOutput{}, fmt.Errorf("当前房间正在处理上一条消息,请稍候")
 	}
 	defer activeSessions.Delete(gctx.Session.ID)
 
@@ -191,12 +191,12 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			switchInThisBatch := false
 
 			if switchRole {
-				// 如果发生了切换跳过本批次其他调用，期望KP在下一轮使用 write/response 工具交出控制权。
+				// 如果发生了切换跳过本批次其他调用,期望KP在下一轮使用 write/response 工具交出控制权。
 				if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolResponse) {
 					debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
 					toolResults = append(toolResults, ToolResult{
 						Action: call.Action,
-						Result: "中断： 中断发生，KP已切换到玩家角色，该调用无效，请在下一轮使用 writer/response 工具决策交出控制权。",
+						Result: "中断： 中断发生,KP已切换到玩家角色,该调用无效,请在下一轮使用 writer/response 工具决策交出控制权。",
 					})
 					continue
 				}
@@ -370,7 +370,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				} else if call.EndSummary != "" {
 					kpNarration = "本次冒险结束。" + call.EndSummary
 				} else {
-					kpNarration = "本次冒险到此结束，感谢各位调查员。"
+					kpNarration = "本次冒险到此结束,感谢各位调查员。"
 				}
 				debugf("tool", "session=%d end_game summary=%s", sid, call.EndSummary)
 
@@ -397,7 +397,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if call.IsBystander {
 					madnessType = "即时症状"
 				}
-				// 持久化疯狂状态到角色卡(不定性疯狂需要判断，临时性直接用即时路径)
+				// 持久化疯狂状态到角色卡(不定性疯狂需要判断,临时性直接用即时路径)
 				for i := range gctx.Session.Players {
 					card := &gctx.Session.Players[i].CharacterCard
 					if who != "调查员" && card.Name != who {
@@ -418,7 +418,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				}
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolTriggerMadness,
-					Result: fmt.Sprintf("%s疯狂发作(%s，持续%s)：%s", who, madnessType, symptom.Duration, symptom.Description),
+					Result: fmt.Sprintf("%s疯狂发作(%s,持续%s)：%s", who, madnessType, symptom.Duration, symptom.Description),
 				})
 
 			case ToolQueryClues:
@@ -528,7 +528,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					gctx.Session.ID, rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session)))
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolAdvanceTime,
-					Result: fmt.Sprintf("时间推进%d回合(%s)，当前时间：%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session))),
+					Result: fmt.Sprintf("时间推进%d回合(%s),当前时间：%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session))),
 				})
 
 			case ToolUpdateLLMNote:
@@ -588,7 +588,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if hasInteraction && !switchRole {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolResponse,
-						Result: "错误：已经有其他工具调用了，response 操作被跳过，response工具应在没有其他交互的情况下使用",
+						Result: "错误：已经有其他工具调用了,response 操作被跳过,response工具应在没有其他交互的情况下使用",
 					})
 					debugf("tool", "session=%v response with interaction", sid)
 					continue
@@ -665,7 +665,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				debugf("tool", "session=%d start_chase round=1 participants=%d minMOV=%d", sid, len(chs.Participants), chs.MinMOV)
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolStartChase,
-					Result: fmt.Sprintf("追逐开始！参与者：%s；最低MOV=%d，各参与者行动点=%s",
+					Result: fmt.Sprintf("追逐开始！参与者：%s；最低MOV=%d,各参与者行动点=%s",
 						chaseParticipantSummary(chs.Participants),
 						chs.MinMOV,
 						chaseAPSummary(chs.Participants, chs.MinMOV),
@@ -752,7 +752,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	// Max iterations reached — return whatever Writer produced.
 	if writerState.Buffer == "" {
-		writerState.Buffer = "(KP思考中，请稍后重试。)"
+		writerState.Buffer = "(KP思考中,请稍后重试。)"
 	}
 	saveWriterHistory(gctx.Session.ID, writerState)
 	return RunOutput{WriterText: writerState.Buffer, KPReply: kpNarration}, nil
@@ -826,7 +826,7 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switc
 
 	switchRole = false
 	if next := (actorIdx + 1) % len(cs.Participants); next != actorIdx {
-		// NOTE: 如果下一个行动者是NPC，则保持KP角色不变让它继续决策；如果是玩家，则切换到玩家角色让KP决策玩家行动。
+		// NOTE: 如果下一个行动者是NPC,则保持KP角色不变让它继续决策；如果是玩家,则切换到玩家角色让KP决策玩家行动。
 		nextActor := cs.Participants[next]
 		switchRole = !nextActor.IsNPC && actor.IsNPC
 	}
@@ -838,14 +838,14 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switc
 		switch act.Type {
 		case "aim":
 			actor.IsAiming = true
-			sb.WriteString("正在瞄准，下轮攻击获得奖励骰。")
+			sb.WriteString("正在瞄准,下轮攻击获得奖励骰。")
 		case "take_cover":
 			debt := act.APDebtNext
 			if debt <= 0 {
 				debt = 1
 			}
 			actor.APDebt += debt
-			sb.WriteString(fmt.Sprintf("寻找掩体，下轮行动点-1。"))
+			sb.WriteString(fmt.Sprintf("寻找掩体,下轮行动点-1。"))
 		case "dodge":
 			actor.HasDodgedOrFB = true
 			sb.WriteString(fmt.Sprintf("闪避 %s。", act.TargetName))
@@ -883,7 +883,7 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switc
 			}
 		}
 		cs.ActorIndex = 0
-		sb.WriteString(fmt.Sprintf(" 本轮结束，进入第%d轮。", cs.Round))
+		sb.WriteString(fmt.Sprintf(" 本轮结束,进入第%d轮。", cs.Round))
 	} else {
 		// Advance to next living actor.
 		next := (actorIdx + 1) % len(cs.Participants)
@@ -895,7 +895,7 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switc
 	}
 
 	if switchRole {
-		sb.WriteString(fmt.Sprintf(" 控制权从KP，移交到玩家，请使用 write/response 移交控制权"))
+		sb.WriteString(fmt.Sprintf(" 控制权从KP,移交到玩家,请使用 write/response 移交控制权"))
 	}
 
 	return sb.String(), switchRole
@@ -980,13 +980,13 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) (result string, switch
 	switch act.Type {
 	case "move":
 		actor.Location += act.MoveDelta
-		sb.WriteString(fmt.Sprintf("移动%+d格，当前位置：%d。", act.MoveDelta, actor.Location))
+		sb.WriteString(fmt.Sprintf("移动%+d格,当前位置：%d。", act.MoveDelta, actor.Location))
 	case "hazard":
 		if act.APDebtNext > 0 {
 			actor.APDebt += act.APDebtNext
-			sb.WriteString(fmt.Sprintf("险境检定失败，下轮行动点-%d。", act.APDebtNext))
+			sb.WriteString(fmt.Sprintf("险境检定失败,下轮行动点-%d。", act.APDebtNext))
 		} else {
-			sb.WriteString("险境检定成功，正常通过。")
+			sb.WriteString("险境检定成功,正常通过。")
 		}
 	case "obstacle":
 		// Create or update an obstacle.
@@ -1020,7 +1020,7 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) (result string, switch
 		if p.IsPursuer {
 			for _, q := range chs.Participants {
 				if !q.IsPursuer && p.Location >= q.Location {
-					sb.WriteString(fmt.Sprintf(" ⚠ 追逐者%s已追上%s(位置%d≥%d)，KP可宣告追逐结束。",
+					sb.WriteString(fmt.Sprintf(" ⚠ 追逐者%s已追上%s(位置%d≥%d),KP可宣告追逐结束。",
 						p.Name, q.Name, p.Location, q.Location))
 				}
 			}
@@ -1028,7 +1028,7 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) (result string, switch
 	}
 
 	if switchRole {
-		sb.WriteString(fmt.Sprintf(" 控制权从KP，移交到玩家，请使用 write/response 移交控制权"))
+		sb.WriteString(fmt.Sprintf(" 控制权从KP,移交到玩家,请使用 write/response 移交控制权"))
 	}
 
 	return sb.String(), switchRole
@@ -1073,7 +1073,7 @@ func formatSingleDiceResult(r DiceCheckResult) string {
 		return fmt.Sprintf("%s%s：%s", who, hidden, r.Message)
 	}
 	if r.CheckType == "sanity" {
-		return fmt.Sprintf("%s理智检定%s：%s，骰值%d，SAN损失%d", who, hidden, r.Message, r.Roll, r.SanLoss)
+		return fmt.Sprintf("%s理智检定%s：%s,骰值%d,SAN损失%d", who, hidden, r.Message, r.Roll, r.SanLoss)
 	}
 	return fmt.Sprintf("%s的%s检定%s：%s(骰值%d/%d)", who, r.Skill, hidden, r.Message, r.Roll, r.Value)
 }
@@ -1230,7 +1230,7 @@ func applySimpleStateChange(change string, players []models.SessionPlayer) {
 				prevSAN := s.SAN
 				s.SAN = clamp(s.SAN+delta, 0, s.MaxSAN)
 				card.Stats.Data = s
-				// fallback路径下也需要追踪当日累计SAN损失，以正确触发不定性疯狂判定
+				// fallback路径下也需要追踪当日累计SAN损失,以正确触发不定性疯狂判定
 				if delta < 0 {
 					sanLoss := prevSAN - s.SAN
 					if sanLoss > 0 {
@@ -1312,7 +1312,7 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 				if ok {
 					skillVal = v
 				} else {
-					// NOTE: 简单骰子，并非技能判断，找非空字符串
+					// NOTE: 简单骰子,并非技能判断,找非空字符串
 					dice := dc.SanFailLoss
 					if dice == "" || dice == "0" {
 						dice = dc.SanSuccessLoss
@@ -1345,7 +1345,7 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 		if skillVal <= 0 {
 			skillVal = 1
 		}
-		// NOTE: 兼容逻辑，把技能映射到属性上
+		// NOTE: 兼容逻辑,把技能映射到属性上
 		if temp, ok := mapSkillToStat(card, dc.Skill); ok {
 			skillVal = temp
 		}
@@ -1358,12 +1358,12 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 						DiceCheck: dc,
 						Level:     "seen",
 						Success:   true,
-						Message:   fmt.Sprintf("已见过「%s」，不再损失理智值", dc.MonsterName),
+						Message:   fmt.Sprintf("已见过「%s」,不再损失理智值", dc.MonsterName),
 					})
 					goto nextCheck
 				}
 			}
-			// 初次遇到——记录到已见列表，后续检定将自动跳过
+			// 初次遇到——记录到已见列表,后续检定将自动跳过
 			card.SeenMonsters.Data = append(card.SeenMonsters.Data, dc.MonsterName)
 			models.DB.Save(card)
 		}
@@ -1399,7 +1399,7 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 				if !res.Success {
 					outcomeWord = "失败"
 				}
-				dcr.Message = fmt.Sprintf("%s，%s(SAN损失 %d 点)", res.Message, outcomeWord, dcr.SanLoss)
+				dcr.Message = fmt.Sprintf("%s,%s(SAN损失 %d 点)", res.Message, outcomeWord, dcr.SanLoss)
 			}
 
 			results = append(results, dcr)
@@ -1448,7 +1448,7 @@ func buildPlayerStatus(players []models.SessionPlayer) string {
 
 		// 克苏鲁神话技能
 		if card.CthulhuMythosSkill > 0 {
-			line += fmt.Sprintf("(克苏鲁神话技能:%d，最大SAN上限:%d)", card.CthulhuMythosSkill, 99-card.CthulhuMythosSkill)
+			line += fmt.Sprintf("(克苏鲁神话技能:%d,最大SAN上限:%d)", card.CthulhuMythosSkill, 99-card.CthulhuMythosSkill)
 		}
 		if len(card.SeenMonsters.Data) > 0 {
 			line += fmt.Sprintf("(已见神话存在：%s)", strings.Join(card.SeenMonsters.Data, "、"))
@@ -1471,7 +1471,7 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			continue
 		}
 		st := card.Stats.Data
-		sb.WriteString(fmt.Sprintf("=== %s(种族：%s，职业：%s，%d岁，性别：%s)===\n", card.Name, card.Race, card.Occupation, card.Age, card.Gender))
+		sb.WriteString(fmt.Sprintf("=== %s(种族：%s,职业：%s,%d岁,性别：%s)===\n", card.Name, card.Race, card.Occupation, card.Age, card.Gender))
 		if p.LLMNote != "" {
 			sb.WriteString(fmt.Sprintf("⚠️ 当前状态(会话级备忘)：%s\n", p.LLMNote))
 		}
@@ -1594,7 +1594,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 		if !npc.IsAlive {
 			status = "已死亡/失能"
 		}
-		sb.WriteString(fmt.Sprintf("=== %s(种族：%s，临时NPC，%s)===\n", npc.Name, npc.Race, status))
+		sb.WriteString(fmt.Sprintf("=== %s(种族：%s,临时NPC,%s)===\n", npc.Name, npc.Race, status))
 		sb.WriteString("描述：" + npc.Description + "\n")
 		if strings.TrimSpace(npc.Attitude) != "" {
 			sb.WriteString("态度：" + strings.TrimSpace(npc.Attitude) + "\n")
@@ -1654,7 +1654,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 		if race == "" {
 			race = "人类"
 		}
-		sb.WriteString(fmt.Sprintf("=== %s(%s，剧本静态NPC)===\n", npc.Name, race))
+		sb.WriteString(fmt.Sprintf("=== %s(%s,剧本静态NPC)===\n", npc.Name, race))
 		sb.WriteString("描述：" + npc.Description + "\n")
 		sb.WriteString("态度：" + npc.Attitude + "\n")
 		if len(npc.Stats) > 0 {

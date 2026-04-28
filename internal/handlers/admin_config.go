@@ -136,7 +136,7 @@ func AdminDeleteProvider(c *gin.Context) {
 	var count int64
 	models.DB.Model(&models.AgentConfig{}).Where("provider_config_id = ?", id).Count(&count)
 	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该提供商正在被 Agent 使用，请先解除绑定"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该提供商正在被 Agent 使用,请先解除绑定"})
 		return
 	}
 	if err := models.DB.Delete(&models.LLMProviderConfig{}, id).Error; err != nil {

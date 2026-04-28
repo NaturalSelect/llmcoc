@@ -140,7 +140,7 @@ const RulebookDetailDir = `
 10.21 创作模组
 10.22 洛氏主题
 10.23 导入
-10.24 那么，最后…
+10.24 那么,最后…
 第十一章 可怖传说书籍
 11.1 描述神话典籍
 11.2 使用神话典籍
@@ -249,9 +249,9 @@ var GreadOldOnesAndGods = func() []string {
 # 埃霍特
 # 加塔诺托亚
 # 格拉基
-# 哈斯塔，不可名状者
+# 哈斯塔,不可名状者
 # 伊塔库亚
-# 黄衣之王，哈斯塔的化身
+# 黄衣之王,哈斯塔的化身
 # 黄印
 # 诺登斯
 # 奈亚拉托提普
@@ -283,7 +283,7 @@ var Monsters = func() []string {
 	text := `
 # 幽灵
 # 木乃伊
-# 骷髅，人类
+# 骷髅,人类
 # 吸血鬼
 # 丧尸
 # 蝙蝠
@@ -333,7 +333,7 @@ var MythosCreatures = func() []string {
 # 庭达罗斯的猎犬
 # 恐怖猎手
 # 罗伊格尔
-# 米-戈，来自犹格斯的真菌
+# 米-戈,来自犹格斯的真菌
 # 夜魔
 # 人面鼠
 # 潜沙怪
@@ -787,7 +787,7 @@ func Format(sections []Section, maxChars int) string {
 func splitKeywords(query string) []string {
 	// Replace common Chinese punctuation with spaces, then split on whitespace.
 	replacer := strings.NewReplacer(
-		"，", " ", "。", " ", "、", " ", "：", " ",
+		",", " ", "。", " ", "、", " ", "：", " ",
 		"；", " ", "(", " ", ")", " ", "【", " ", "】", " ",
 		"？", " ", "！", " ", ",", " ", ".", " ", ";", " ",
 		":", " ", "(", " ", ")", " ", "[", " ", "]", " ",
