@@ -806,11 +806,11 @@ NOT-sideeffect actions can be freely combined in the same round, but any action 
 
 USUALLY, the NOT-sideeffect actions cannot combine with side-effect actions in the same round, and if a side-effect action (write/answer) is used, it must be the last action in that round. This ensures that all information gathering and checks are done before any narrative or game state changes are made.
 
-shouldBeLast action in a round must be write/answer, and if answer is used, it must come after write. No other tool calls can be made in the same round as answer.
-
 END-THE-TURN action should be used when the KP determines that the AGENT's turn is over, either because the player's action has been fully processed or because the KP wants to end the turn for narrative pacing reasons. This signals the system to stop accepting further input for the current turn and proceed with any end-of-turn processing, such as updating game state, checking for win/lose conditions, or transitioning to the next turn.
 
-YOUR ARE ALLOWED TO OUTPUT A JSON ARRAY OF TOOL CALLS AND RESPONSES
+**ORDER RULE: NOT-sideeffect actions < sideeffect actions < end-the-turn actions **
+
+YOUR ARE **ONLY** ALLOWED TO OUTPUT **ONE JSON ARRAY** OF TOOL CALLS AND RESPONSES
 `
 
 // buildKPMessages constructs the initial conversation message list for the KP agent.
