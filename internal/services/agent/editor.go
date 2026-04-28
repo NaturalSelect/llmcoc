@@ -14,10 +14,15 @@ import (
 // "cthulhu_mythos +1(角色名)") into a CharacterUpdate.
 // Supported fields: HP, SAN, MP, POW, cthulhu_mythos, race.
 // Returns false if the string cannot be matched to a known field.
+var stateChangeFields = []string{
+	"cthulhu_mythos", "HP", "SAN", "MP", "POW", "race", "occupation",
+	"str", "con", "siz", "dex", "app", "int", "edu",
+}
+
 func parseStateChange(change string) (CharacterUpdate, bool) {
 	change = strings.TrimSpace(change)
 	// Check longest field name first to avoid prefix collisions.
-	for _, field := range []string{"cthulhu_mythos", "HP", "SAN", "MP", "POW", "race", "occupation"} {
+	for _, field := range stateChangeFields {
 		if !strings.HasPrefix(strings.ToUpper(change), strings.ToUpper(field)) {
 			continue
 		}
@@ -214,6 +219,28 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 		case "occupation":
 			card.Occupation = upd.NewValue
 			models.DB.Save(card)
+		case "str", "con", "siz", "dex", "app", "int", "edu":
+			s := card.Stats.Data
+			switch strings.ToLower(upd.Field) {
+			case "str":
+				s.STR = clamp(s.STR+upd.Delta, 1, 99)
+			case "con":
+				s.CON = clamp(s.CON+upd.Delta, 1, 99)
+			case "siz":
+				s.SIZ = clamp(s.SIZ+upd.Delta, 1, 99)
+			case "dex":
+				s.DEX = clamp(s.DEX+upd.Delta, 1, 99)
+			case "app":
+				s.APP = clamp(s.APP+upd.Delta, 1, 99)
+			case "int":
+				s.INT = clamp(s.INT+upd.Delta, 1, 99)
+			case "edu":
+				s.EDU = clamp(s.EDU+upd.Delta, 1, 99)
+			}
+			card.Stats.Data = s
+			models.DB.Save(card)
+		default:
+			log.Printf("[editor] unrecognised field in character update: %q", upd.Field)
 		}
 		return
 	}
@@ -308,7 +335,8 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 		stats = make(map[string]int)
 	}
 	field := strings.ToLower(upd.Field)
-	if field == "hp" || field == "san" || field == "mp" {
+	switch field {
+	case "hp", "san", "mp", "pow":
 		key := strings.ToUpper(field)
 		curr := 0
 		if v, ok := stats[key]; ok {
@@ -328,8 +356,29 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 			npc.IsAlive = true
 		}
 		npc.Stats.Data = stats
-	} else if field == "race" {
+		log.Printf("[editor] NPC %s: %s %d→%d", npc.Name, key, curr-upd.Delta, curr)
+
+	case "race":
 		npc.Race = upd.NewValue
+		log.Printf("[editor] NPC %s: race changed to %q", npc.Name, npc.Race)
+	case "str", "con", "siz", "dex", "app", "int", "edu":
+		key := strings.ToUpper(field)
+		curr := 0
+		if v, ok := stats[key]; ok {
+			curr = v
+		} else if v, ok := stats[field]; ok {
+			curr = v
+		}
+		curr += upd.Delta
+		if curr < 1 {
+			curr = 1
+		}
+		stats[key] = curr
+		delete(stats, field)
+		npc.Stats.Data = stats
+		log.Printf("[editor] NPC %s: %s %d→%d", npc.Name, key, curr-upd.Delta, curr)
+	default:
+		log.Printf("[editor] unrecognised field in NPC update: %q", upd.Field)
 	}
 }
 
