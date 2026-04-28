@@ -189,7 +189,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"answer","reply":"像朋友一样对玩家说的回复(必填，口语化，包含骰子结果，行动结果，战斗结果等)"}</call_example>
+			<call_example>{"action":"answer","reply":"像朋友一样对玩家说的回复(必填，口语化，包含骰子结果，行动结果，战斗结果等，必须简短)"}</call_example>
 		</tool>
 		<tool>
 			<name>start_combat</name>
