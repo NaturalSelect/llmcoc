@@ -75,7 +75,7 @@ func AdminCreateProvider(c *gin.Context) {
 		IsActive: isActive,
 	}
 	if err := models.DB.Create(&p).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败：" + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败:" + err.Error()})
 		return
 	}
 	log.Printf("[admin_config] create_provider ok id=%d name=%q", p.ID, p.Name)

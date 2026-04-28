@@ -117,7 +117,7 @@ func CreateSession(c *gin.Context) {
 	systemMsg := models.Message{
 		SessionID: session.ID,
 		Role:      models.MessageRoleSystem,
-		Content:   fmt.Sprintf("房间「%s」已创建,等待玩家加入。剧本：%s", session.Name, scenario.Name),
+		Content:   fmt.Sprintf("房间「%s」已创建,等待玩家加入。剧本:%s", session.Name, scenario.Name),
 		Username:  "系统",
 	}
 	models.DB.Create(&systemMsg)
@@ -646,8 +646,8 @@ loop:
 	fullReply := output.WriterText
 	if output.KPReply != "" {
 		narration := output.KPReply
-		if !strings.HasPrefix(narration, "KP：") && !strings.HasPrefix(narration, "KP:") {
-			narration = "KP：" + narration
+		if !strings.HasPrefix(narration, "KP:") && !strings.HasPrefix(narration, "KP:") {
+			narration = "KP:" + narration
 		}
 		if fullReply != "" {
 			fullReply += "\n\n"
@@ -669,8 +669,8 @@ func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content 
 	fullReply := output.WriterText
 	if output.KPReply != "" {
 		narration := output.KPReply
-		if !strings.HasPrefix(narration, "KP：") && !strings.HasPrefix(narration, "KP:") {
-			narration = "KP：" + narration
+		if !strings.HasPrefix(narration, "KP:") && !strings.HasPrefix(narration, "KP:") {
+			narration = "KP:" + narration
 		}
 		if fullReply != "" {
 			fullReply += "\n\n"

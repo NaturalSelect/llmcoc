@@ -180,7 +180,7 @@ func calcBuildAndDB(str, siz int) (int, string) {
 	case combined <= 284:
 		return 3, "2D6"
 	default:
-		// 规则书：合计值≥285时每超过80点(不足80按80算)增加+1体格和+1D6伤害加值
+		// 规则书:合计值≥285时每超过80点(不足80按80算)增加+1体格和+1D6伤害加值
 		build := 4 + (combined-285)/80
 		return build, fmt.Sprintf("%dD6", build-1)
 	}

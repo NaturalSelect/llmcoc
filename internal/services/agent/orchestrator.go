@@ -196,7 +196,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
 					toolResults = append(toolResults, ToolResult{
 						Action: call.Action,
-						Result: "中断： 中断发生,KP已切换到玩家角色,该调用无效,请在下一轮使用 writer/response 工具决策交出控制权。",
+						Result: "中断: 中断发生,KP已切换到玩家角色,该调用无效,请在下一轮使用 writer/response 工具决策交出控制权。",
 					})
 					continue
 				}
@@ -325,7 +325,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				}
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolUpdateCharacters,
-					Result: "已更新：" + strings.Join(call.Changes, "、"),
+					Result: "已更新:" + strings.Join(call.Changes, "、"),
 				})
 
 			case ToolManageInventory:
@@ -349,7 +349,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if call.EndSummary != "" {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolEndGame,
-						Result: "剧本结局：" + call.EndSummary,
+						Result: "剧本结局:" + call.EndSummary,
 					})
 				}
 				// Ensure players with CharacterCard are loaded.
@@ -418,7 +418,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				}
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolTriggerMadness,
-					Result: fmt.Sprintf("%s疯狂发作(%s,持续%s)：%s", who, madnessType, symptom.Duration, symptom.Description),
+					Result: fmt.Sprintf("%s疯狂发作(%s,持续%s):%s", who, madnessType, symptom.Duration, symptom.Description),
 				})
 
 			case ToolQueryClues:
@@ -433,7 +433,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				}
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolQueryClues,
-					Result: fmt.Sprintf("线索查询结果(全部)：\n%s", clueResult),
+					Result: fmt.Sprintf("线索查询结果(全部):\n%s", clueResult),
 				})
 
 			case ToolQueryCharacter:
@@ -455,7 +455,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if call.NPCName == "" || len(call.Changes) == 0 {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolUpdateNPCCard,
-						Result: "错误： update_npc_card 参数不足：需要 npc_name 和 changes",
+						Result: "错误: update_npc_card 参数不足:需要 npc_name 和 changes",
 					})
 					continue
 				}
@@ -478,7 +478,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if len(applied) == 0 {
 					toolResults = append(toolResults, ToolResult{Action: ToolUpdateNPCCard, Result: "未识别可应用的变更"})
 				} else {
-					toolResults = append(toolResults, ToolResult{Action: ToolUpdateNPCCard, Result: "已更新NPC：" + strings.Join(applied, "、")})
+					toolResults = append(toolResults, ToolResult{Action: ToolUpdateNPCCard, Result: "已更新NPC:" + strings.Join(applied, "、")})
 				}
 
 			case ToolWrite:
@@ -528,14 +528,14 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					gctx.Session.ID, rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session)))
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolAdvanceTime,
-					Result: fmt.Sprintf("时间推进%d回合(%s),当前时间：%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session))),
+					Result: fmt.Sprintf("时间推进%d回合(%s),当前时间:%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session))),
 				})
 
 			case ToolUpdateLLMNote:
 				if call.LLMNote == "" {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolUpdateLLMNote,
-						Result: "错误：缺少 llm_note 参数",
+						Result: "错误:缺少 llm_note 参数",
 					})
 					continue
 				}
@@ -588,7 +588,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if hasInteraction && !switchRole {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolResponse,
-						Result: "错误：已经有其他工具调用了,response 操作被跳过,response工具应在没有其他交互的情况下使用",
+						Result: "错误:已经有其他工具调用了,response 操作被跳过,response工具应在没有其他交互的情况下使用",
 					})
 					debugf("tool", "session=%v response with interaction", sid)
 					continue
@@ -602,7 +602,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if len(call.CombatParticipants) == 0 {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolStartCombat,
-						Result: "错误：start_combat 缺少 combat_participants 参数",
+						Result: "错误:start_combat 缺少 combat_participants 参数",
 					})
 					continue
 				}
@@ -612,7 +612,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				debugf("tool", "session=%d start_combat round=1 participants=%d", sid, len(cs.Participants))
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolStartCombat,
-					Result: fmt.Sprintf("战斗开始！DEX顺序：%s", combatOrderSummary(cs.Participants)),
+					Result: fmt.Sprintf("战斗开始！DEX顺序:%s", combatOrderSummary(cs.Participants)),
 				})
 
 			case ToolCombatAct:
@@ -620,7 +620,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if cs == nil {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolCombatAct,
-						Result: "错误：当前没有进行中的战斗",
+						Result: "错误:当前没有进行中的战斗",
 					})
 					continue
 				}
@@ -647,7 +647,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				debugf("tool", "session=%d end_combat reason=%q", sid, reason)
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolEndCombat,
-					Result: fmt.Sprintf("战斗已结束：%s", reason),
+					Result: fmt.Sprintf("战斗已结束:%s", reason),
 				})
 
 			// ── Chase tools ───────────────────────────────────────────────────────
@@ -655,7 +655,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if len(call.ChaseParticipants) == 0 {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolStartChase,
-						Result: "错误：start_chase 缺少 chase_participants 参数",
+						Result: "错误:start_chase 缺少 chase_participants 参数",
 					})
 					continue
 				}
@@ -665,7 +665,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				debugf("tool", "session=%d start_chase round=1 participants=%d minMOV=%d", sid, len(chs.Participants), chs.MinMOV)
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolStartChase,
-					Result: fmt.Sprintf("追逐开始！参与者：%s；最低MOV=%d,各参与者行动点=%s",
+					Result: fmt.Sprintf("追逐开始！参与者:%s；最低MOV=%d,各参与者行动点=%s",
 						chaseParticipantSummary(chs.Participants),
 						chs.MinMOV,
 						chaseAPSummary(chs.Participants, chs.MinMOV),
@@ -677,7 +677,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if chs == nil {
 					toolResults = append(toolResults, ToolResult{
 						Action: ToolChaseAct,
-						Result: "错误：当前没有进行中的追逐",
+						Result: "错误:当前没有进行中的追逐",
 					})
 					continue
 				}
@@ -704,7 +704,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				debugf("tool", "session=%d end_chase reason=%q", sid, reason)
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolEndChase,
-					Result: fmt.Sprintf("追逐已结束：%s", reason),
+					Result: fmt.Sprintf("追逐已结束:%s", reason),
 				})
 			}
 
@@ -818,7 +818,7 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switc
 		}
 	}
 	if actorIdx < 0 {
-		return fmt.Sprintf("错误：找不到战斗参与者 %q", actorName), false
+		return fmt.Sprintf("错误:找不到战斗参与者 %q", actorName), false
 	}
 
 	actor := &cs.Participants[actorIdx]
@@ -858,9 +858,9 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switc
 				actor.IsAiming = false
 				sb.WriteString("(使用瞄准奖励骰)")
 			}
-			sb.WriteString(fmt.Sprintf("攻击 %s(武器：%s)。", act.TargetName, act.WeaponName))
+			sb.WriteString(fmt.Sprintf("攻击 %s(武器:%s)。", act.TargetName, act.WeaponName))
 		default:
-			sb.WriteString(fmt.Sprintf("执行动作：%s。", act.Type))
+			sb.WriteString(fmt.Sprintf("执行动作:%s。", act.Type))
 		}
 	}
 
@@ -891,7 +891,7 @@ func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switc
 			next = (next + 1) % len(cs.Participants)
 		}
 		cs.ActorIndex = next
-		sb.WriteString(fmt.Sprintf(" 下一行动者：%s(DEX %d)。", cs.Participants[next].Name, cs.Participants[next].DEX))
+		sb.WriteString(fmt.Sprintf(" 下一行动者:%s(DEX %d)。", cs.Participants[next].Name, cs.Participants[next].DEX))
 	}
 
 	if switchRole {
@@ -962,7 +962,7 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) (result string, switch
 		}
 	}
 	if actorIdx < 0 {
-		return fmt.Sprintf("错误：找不到追逐参与者 %q", actorName), false
+		return fmt.Sprintf("错误:找不到追逐参与者 %q", actorName), false
 	}
 
 	actor := &chs.Participants[actorIdx]
@@ -980,7 +980,7 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) (result string, switch
 	switch act.Type {
 	case "move":
 		actor.Location += act.MoveDelta
-		sb.WriteString(fmt.Sprintf("移动%+d格,当前位置：%d。", act.MoveDelta, actor.Location))
+		sb.WriteString(fmt.Sprintf("移动%+d格,当前位置:%d。", act.MoveDelta, actor.Location))
 	case "hazard":
 		if act.APDebtNext > 0 {
 			actor.APDebt += act.APDebtNext
@@ -1012,7 +1012,7 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall) (result string, switch
 	case "conflict":
 		sb.WriteString(fmt.Sprintf("与%s发生冲突。", act.TargetName))
 	default:
-		sb.WriteString(fmt.Sprintf("执行追逐动作：%s。", act.Type))
+		sb.WriteString(fmt.Sprintf("执行追逐动作:%s。", act.Type))
 	}
 
 	// Check for chase-end conditions: pursuer reaches same location as prey.
@@ -1070,19 +1070,19 @@ func formatSingleDiceResult(r DiceCheckResult) string {
 		hidden = "(暗骰)"
 	}
 	if r.Level == "seen" {
-		return fmt.Sprintf("%s%s：%s", who, hidden, r.Message)
+		return fmt.Sprintf("%s%s:%s", who, hidden, r.Message)
 	}
 	if r.CheckType == "sanity" {
-		return fmt.Sprintf("%s理智检定%s：%s,骰值%d,SAN损失%d", who, hidden, r.Message, r.Roll, r.SanLoss)
+		return fmt.Sprintf("%s理智检定%s:%s,骰值%d,SAN损失%d", who, hidden, r.Message, r.Roll, r.SanLoss)
 	}
-	return fmt.Sprintf("%s的%s检定%s：%s(骰值%d/%d)", who, r.Skill, hidden, r.Message, r.Roll, r.Value)
+	return fmt.Sprintf("%s的%s检定%s:%s(骰值%d/%d)", who, r.Skill, hidden, r.Message, r.Roll, r.Value)
 }
 
 // formatNPCAction formats an NPCAction as a brief string for the KP.
 func formatNPCAction(a NPCAction) string {
-	result := a.NPCName + "：" + a.Action
+	result := a.NPCName + ":" + a.Action
 	if a.Dialogue != "" {
-		result += fmt.Sprintf("(对话：\"%s\")", a.Dialogue)
+		result += fmt.Sprintf("(对话:\"%s\")", a.Dialogue)
 	}
 	return result
 }
@@ -1415,7 +1415,7 @@ func buildPlayerStatus(players []models.SessionPlayer) string {
 	if len(players) == 0 {
 		return ""
 	}
-	s := "调查员状态："
+	s := "调查员状态:"
 	for _, p := range players {
 		card := p.CharacterCard
 		line := fmt.Sprintf("\n• %s(%s)HP:%d/%d SAN:%d/%d",
@@ -1426,11 +1426,11 @@ func buildPlayerStatus(players []models.SessionPlayer) string {
 		// 疯狂状态标注
 		switch card.MadnessState {
 		case "temporary":
-			line += "【临时性疯狂：" + card.MadnessSymptom + "】"
+			line += "【临时性疯狂:" + card.MadnessSymptom + "】"
 		case "indefinite":
-			line += "【不定性疯狂(任何SAN损失将再次触发发作)：" + card.MadnessSymptom + "】"
+			line += "【不定性疯狂(任何SAN损失将再次触发发作):" + card.MadnessSymptom + "】"
 		case "permanent":
-			line += "【永久性疯狂：" + card.MadnessSymptom + "】"
+			line += "【永久性疯狂:" + card.MadnessSymptom + "】"
 		}
 
 		// 伤亡状态标注
@@ -1451,7 +1451,7 @@ func buildPlayerStatus(players []models.SessionPlayer) string {
 			line += fmt.Sprintf("(克苏鲁神话技能:%d,最大SAN上限:%d)", card.CthulhuMythosSkill, 99-card.CthulhuMythosSkill)
 		}
 		if len(card.SeenMonsters.Data) > 0 {
-			line += fmt.Sprintf("(已见神话存在：%s)", strings.Join(card.SeenMonsters.Data, "、"))
+			line += fmt.Sprintf("(已见神话存在:%s)", strings.Join(card.SeenMonsters.Data, "、"))
 		}
 		s += line
 	}
@@ -1471,19 +1471,19 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			continue
 		}
 		st := card.Stats.Data
-		sb.WriteString(fmt.Sprintf("=== %s(种族：%s,职业：%s,%d岁,性别：%s)===\n", card.Name, card.Race, card.Occupation, card.Age, card.Gender))
+		sb.WriteString(fmt.Sprintf("=== %s(种族:%s,职业:%s,%d岁,性别:%s)===\n", card.Name, card.Race, card.Occupation, card.Age, card.Gender))
 		if p.LLMNote != "" {
-			sb.WriteString(fmt.Sprintf("⚠️ 当前状态(会话级备忘)：%s\n", p.LLMNote))
+			sb.WriteString(fmt.Sprintf("⚠️ 当前状态(会话级备忘):%s\n", p.LLMNote))
 		}
-		sb.WriteString(fmt.Sprintf("基础属性：STR%d CON%d SIZ%d DEX%d APP%d INT%d POW%d EDU%d\n",
+		sb.WriteString(fmt.Sprintf("基础属性:STR%d CON%d SIZ%d DEX%d APP%d INT%d POW%d EDU%d\n",
 			st.STR, st.CON, st.SIZ, st.DEX, st.APP, st.INT, st.POW, st.EDU))
-		sb.WriteString(fmt.Sprintf("衍生属性：HP%d/%d MP%d/%d SAN%d/%d Luck%d MOV%d Build%d DB%s\n",
+		sb.WriteString(fmt.Sprintf("衍生属性:HP%d/%d MP%d/%d SAN%d/%d Luck%d MOV%d Build%d DB%s\n",
 			st.HP, st.MaxHP, st.MP, st.MaxMP, st.SAN, st.MaxSAN, st.Luck, st.MOV, st.Build, st.DB))
 		if card.CthulhuMythosSkill > 0 {
-			sb.WriteString(fmt.Sprintf("克苏鲁神话技能：%d(最大SAN上限：%d)\n", card.CthulhuMythosSkill, 99-card.CthulhuMythosSkill))
+			sb.WriteString(fmt.Sprintf("克苏鲁神话技能:%d(最大SAN上限:%d)\n", card.CthulhuMythosSkill, 99-card.CthulhuMythosSkill))
 		}
 		if skills := card.Skills.Data; len(skills) > 0 {
-			sb.WriteString("技能：")
+			sb.WriteString("技能:")
 			i := 0
 			for name, val := range skills {
 				if i > 0 {
@@ -1494,25 +1494,25 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			}
 			sb.WriteString("\n")
 		} else {
-			sb.WriteString("技能：无\n")
+			sb.WriteString("技能:无\n")
 		}
 		// if card.Backstory != "" {
-		// 	sb.WriteString("背景：" + card.Backstory + "\n")
+		// 	sb.WriteString("背景:" + card.Backstory + "\n")
 		// } else {
-		// 	sb.WriteString("背景：无\n")
+		// 	sb.WriteString("背景:无\n")
 		// }
 		// if card.Traits != "" {
-		// 	sb.WriteString("特征：" + card.Traits + "\n")
+		// 	sb.WriteString("特征:" + card.Traits + "\n")
 		// } else {
-		// 	sb.WriteString("特征：无\n")
+		// 	sb.WriteString("特征:无\n")
 		// }
 		if items := card.Inventory.Data; len(items) > 0 {
-			sb.WriteString("物品栏：" + strings.Join(items, "、") + "\n")
+			sb.WriteString("物品栏:" + strings.Join(items, "、") + "\n")
 		} else {
-			sb.WriteString("物品栏：无\n")
+			sb.WriteString("物品栏:无\n")
 		}
 		if rels := card.SocialRelations.Data; len(rels) > 0 {
-			sb.WriteString("社会关系：")
+			sb.WriteString("社会关系:")
 			for _, r := range rels {
 				sb.WriteString(fmt.Sprintf("%s(%s)", r.Name, r.Relationship))
 				if r.Note != "" {
@@ -1522,24 +1522,24 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			}
 			sb.WriteString("\n")
 		} else {
-			sb.WriteString("社会关系：无\n")
+			sb.WriteString("社会关系:无\n")
 		}
 		if spells := card.Spells.Data; len(spells) > 0 {
-			sb.WriteString("掌握法术：" + strings.Join(spells, "、") + "\n")
+			sb.WriteString("掌握法术:" + strings.Join(spells, "、") + "\n")
 		} else {
-			sb.WriteString("掌握法术：无\n")
+			sb.WriteString("掌握法术:无\n")
 		}
 		if monsters := card.SeenMonsters.Data; len(monsters) > 0 {
-			sb.WriteString("已见神话存在：" + strings.Join(monsters, "、") + "\n")
+			sb.WriteString("已见神话存在:" + strings.Join(monsters, "、") + "\n")
 		} else {
-			sb.WriteString("已见神话存在：无\n")
+			sb.WriteString("已见神话存在:无\n")
 		}
 		if card.MadnessState != "" && card.MadnessState != "none" {
-			sb.WriteString(fmt.Sprintf("疯狂状态：%s——%s\n", card.MadnessState, card.MadnessSymptom))
+			sb.WriteString(fmt.Sprintf("疯狂状态:%s——%s\n", card.MadnessState, card.MadnessSymptom))
 		}
 	}
 	if sb.Len() == 0 {
-		return fmt.Sprintf("(未找到角色：%s)", characterName)
+		return fmt.Sprintf("(未找到角色:%s)", characterName)
 	}
 	return sb.String()
 }
@@ -1594,50 +1594,50 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 		if !npc.IsAlive {
 			status = "已死亡/失能"
 		}
-		sb.WriteString(fmt.Sprintf("=== %s(种族：%s,临时NPC,%s)===\n", npc.Name, npc.Race, status))
-		sb.WriteString("描述：" + npc.Description + "\n")
+		sb.WriteString(fmt.Sprintf("=== %s(种族:%s,临时NPC,%s)===\n", npc.Name, npc.Race, status))
+		sb.WriteString("描述:" + npc.Description + "\n")
 		if strings.TrimSpace(npc.Attitude) != "" {
-			sb.WriteString("态度：" + strings.TrimSpace(npc.Attitude) + "\n")
+			sb.WriteString("态度:" + strings.TrimSpace(npc.Attitude) + "\n")
 		}
 		if strings.TrimSpace(npc.Goal) != "" {
-			sb.WriteString("目标：" + strings.TrimSpace(npc.Goal) + "\n")
+			sb.WriteString("目标:" + strings.TrimSpace(npc.Goal) + "\n")
 		}
 		if strings.TrimSpace(npc.Secret) != "" {
-			sb.WriteString("秘密：" + strings.TrimSpace(npc.Secret) + "\n")
+			sb.WriteString("秘密:" + strings.TrimSpace(npc.Secret) + "\n")
 		}
 		if strings.TrimSpace(npc.RiskPref) != "" {
-			sb.WriteString("风险偏好：" + strings.TrimSpace(npc.RiskPref) + "\n")
+			sb.WriteString("风险偏好:" + strings.TrimSpace(npc.RiskPref) + "\n")
 		}
 		if npc.LLMNote != "" {
-			sb.WriteString("当前备忘：" + npc.LLMNote + "\n")
+			sb.WriteString("当前备忘:" + npc.LLMNote + "\n")
 		}
 		if hp, ok := findStat(npc.Stats.Data, "HP"); ok {
-			sb.WriteString(fmt.Sprintf("当前HP：%d\n", hp))
+			sb.WriteString(fmt.Sprintf("当前HP:%d\n", hp))
 		}
 		if san, ok := findStat(npc.Stats.Data, "SAN"); ok {
-			sb.WriteString(fmt.Sprintf("SAN：%d\n", san))
+			sb.WriteString(fmt.Sprintf("SAN:%d\n", san))
 		}
 		if mp, ok := findStat(npc.Stats.Data, "MP"); ok {
-			sb.WriteString(fmt.Sprintf("MP：%d\n", mp))
+			sb.WriteString(fmt.Sprintf("MP:%d\n", mp))
 		}
 		if len(npc.Stats.Data) > 0 {
 			parts := make([]string, 0, len(npc.Stats.Data))
 			for k, v := range npc.Stats.Data {
 				parts = append(parts, fmt.Sprintf("%s:%d", k, v))
 			}
-			sb.WriteString("属性：" + strings.Join(parts, " ") + "\n")
+			sb.WriteString("属性:" + strings.Join(parts, " ") + "\n")
 		}
 		if len(npc.Skills.Data) > 0 {
 			parts := make([]string, 0, len(npc.Skills.Data))
 			for k, v := range npc.Skills.Data {
 				parts = append(parts, fmt.Sprintf("%s:%d", k, v))
 			}
-			sb.WriteString("技能：" + strings.Join(parts, " ") + "\n")
+			sb.WriteString("技能:" + strings.Join(parts, " ") + "\n")
 		}
 		if len(npc.Spells.Data) > 0 {
-			sb.WriteString("法术：" + strings.Join(npc.Spells.Data, "、") + "\n")
+			sb.WriteString("法术:" + strings.Join(npc.Spells.Data, "、") + "\n")
 		} else {
-			sb.WriteString("法术：无\n")
+			sb.WriteString("法术:无\n")
 		}
 	}
 	if matched {
@@ -1655,14 +1655,14 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 			race = "人类"
 		}
 		sb.WriteString(fmt.Sprintf("=== %s(%s,剧本静态NPC)===\n", npc.Name, race))
-		sb.WriteString("描述：" + npc.Description + "\n")
-		sb.WriteString("态度：" + npc.Attitude + "\n")
+		sb.WriteString("描述:" + npc.Description + "\n")
+		sb.WriteString("态度:" + npc.Attitude + "\n")
 		if len(npc.Stats) > 0 {
 			parts := make([]string, 0, len(npc.Stats))
 			for k, v := range npc.Stats {
 				parts = append(parts, fmt.Sprintf("%s:%d", k, v))
 			}
-			sb.WriteString("属性：" + strings.Join(parts, " ") + "\n")
+			sb.WriteString("属性:" + strings.Join(parts, " ") + "\n")
 		}
 	}
 
@@ -1672,7 +1672,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 	if npcName == "" {
 		return "(当前无可查询NPC)"
 	}
-	return fmt.Sprintf("(未找到NPC：%s)", npcName)
+	return fmt.Sprintf("(未找到NPC:%s)", npcName)
 }
 
 // buildPlayerBrief returns a minimal one-line summary of all players for the KP context.
@@ -1769,7 +1769,7 @@ func llmToChatMsgs(msgs []llm.ChatMessage) []models.ChatMsg {
 
 func manageInventory(players []models.SessionPlayer, characterName, operate, item string) string {
 	if characterName == "" || item == "" {
-		return "物品操作失败：缺少角色名或物品名"
+		return "物品操作失败:缺少角色名或物品名"
 	}
 	for i := range players {
 		card := &players[i].CharacterCard
@@ -1781,19 +1781,19 @@ func manageInventory(players []models.SessionPlayer, characterName, operate, ite
 			list = removeString(list, item)
 			card.Inventory.Data = list
 			models.DB.Save(card)
-			return fmt.Sprintf("%s 失去物品：%s", card.Name, item)
+			return fmt.Sprintf("%s 失去物品:%s", card.Name, item)
 		}
 		list = appendUniqueString(list, item)
 		card.Inventory.Data = list
 		models.DB.Save(card)
-		return fmt.Sprintf("%s 获得物品：%s", card.Name, item)
+		return fmt.Sprintf("%s 获得物品:%s", card.Name, item)
 	}
-	return fmt.Sprintf("物品操作失败：未找到角色 %s", characterName)
+	return fmt.Sprintf("物品操作失败:未找到角色 %s", characterName)
 }
 
 func manageSeenMonster(players []models.SessionPlayer, characterName, operate, monster string) string {
 	if characterName == "" || monster == "" {
-		return "神话存在记录失败：缺少角色名或神话存在名称"
+		return "神话存在记录失败:缺少角色名或神话存在名称"
 	}
 	for i := range players {
 		card := &players[i].CharacterCard
@@ -1805,19 +1805,19 @@ func manageSeenMonster(players []models.SessionPlayer, characterName, operate, m
 			list = removeString(list, monster)
 			card.SeenMonsters.Data = list
 			models.DB.Save(card)
-			return fmt.Sprintf("%s 已移除神话存在记录：%s", card.Name, monster)
+			return fmt.Sprintf("%s 已移除神话存在记录:%s", card.Name, monster)
 		}
 		list = appendUniqueString(list, monster)
 		card.SeenMonsters.Data = list
 		models.DB.Save(card)
-		return fmt.Sprintf("%s 已记录神话存在：%s", card.Name, monster)
+		return fmt.Sprintf("%s 已记录神话存在:%s", card.Name, monster)
 	}
-	return fmt.Sprintf("神话存在记录失败：未找到角色 %s", characterName)
+	return fmt.Sprintf("神话存在记录失败:未找到角色 %s", characterName)
 }
 
 func manageSpell(players []models.SessionPlayer, characterName, operate, spell string) string {
 	if characterName == "" || spell == "" {
-		return "法术操作失败：缺少角色名或法术名"
+		return "法术操作失败:缺少角色名或法术名"
 	}
 	for i := range players {
 		card := &players[i].CharacterCard
@@ -1829,19 +1829,19 @@ func manageSpell(players []models.SessionPlayer, characterName, operate, spell s
 			list = removeString(list, spell)
 			card.Spells.Data = list
 			models.DB.Save(card)
-			return fmt.Sprintf("%s 遗失法术：%s", card.Name, spell)
+			return fmt.Sprintf("%s 遗失法术:%s", card.Name, spell)
 		}
 		list = appendUniqueString(list, spell)
 		card.Spells.Data = list
 		models.DB.Save(card)
-		return fmt.Sprintf("%s 学会法术：%s", card.Name, spell)
+		return fmt.Sprintf("%s 学会法术:%s", card.Name, spell)
 	}
-	return fmt.Sprintf("法术操作失败：未找到角色 %s", characterName)
+	return fmt.Sprintf("法术操作失败:未找到角色 %s", characterName)
 }
 
 func manageSocialRelation(players []models.SessionPlayer, characterName, operate string, rel *models.SocialRelation) string {
 	if characterName == "" || rel == nil || rel.Name == "" {
-		return "社会关系操作失败：缺少角色名或关系条目"
+		return "社会关系操作失败:缺少角色名或关系条目"
 	}
 	for i := range players {
 		card := &players[i].CharacterCard
@@ -1859,7 +1859,7 @@ func manageSocialRelation(players []models.SessionPlayer, characterName, operate
 			}
 			card.SocialRelations.Data = filtered
 			models.DB.Save(card)
-			return fmt.Sprintf("%s 移除社会关系：%s", card.Name, rel.Name)
+			return fmt.Sprintf("%s 移除社会关系:%s", card.Name, rel.Name)
 		}
 
 		updated := false
@@ -1875,9 +1875,9 @@ func manageSocialRelation(players []models.SessionPlayer, characterName, operate
 		}
 		card.SocialRelations.Data = list
 		models.DB.Save(card)
-		return fmt.Sprintf("%s 更新社会关系：%s(%s)", card.Name, rel.Name, rel.Relationship)
+		return fmt.Sprintf("%s 更新社会关系:%s(%s)", card.Name, rel.Name, rel.Relationship)
 	}
-	return fmt.Sprintf("社会关系操作失败：未找到角色 %s", characterName)
+	return fmt.Sprintf("社会关系操作失败:未找到角色 %s", characterName)
 }
 
 func appendUniqueString(list []string, value string) []string {

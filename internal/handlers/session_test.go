@@ -336,7 +336,7 @@ func TestChatStream_Success(t *testing.T) {
 		t.Fatalf("no assistant message persisted: %v", err)
 	}
 	// DB stores writer + narration combined.
-	wantContent := "克苏鲁觉醒了\n\nKP：恐惧正在蔓延。"
+	wantContent := "克苏鲁觉醒了\n\nKP:恐惧正在蔓延。"
 	if msg.Content != wantContent {
 		t.Errorf("persisted content = %q, want %q", msg.Content, wantContent)
 	}

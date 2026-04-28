@@ -122,7 +122,7 @@ func BuildKPSystemPrompt(scenario *models.Scenario, players []models.SessionPlay
 	for _, p := range players {
 		card := p.CharacterCard
 		playerList += fmt.Sprintf(
-			"\n- %s(%s,%s)：STR%d CON%d SIZ%d DEX%d APP%d INT%d POW%d EDU%d HP%d/%d SAN%d/%d",
+			"\n- %s(%s,%s):STR%d CON%d SIZ%d DEX%d APP%d INT%d POW%d EDU%d HP%d/%d SAN%d/%d",
 			card.Name, card.Occupation, card.Gender,
 			card.Stats.Data.STR, card.Stats.Data.CON, card.Stats.Data.SIZ,
 			card.Stats.Data.DEX, card.Stats.Data.APP, card.Stats.Data.INT,
@@ -143,7 +143,7 @@ func BuildKPSystemPrompt(scenario *models.Scenario, players []models.SessionPlay
 ## KP行为规范
 1. 你是克苏鲁神话TRPG(COC 第七版)的主持人(KP),负责推进剧情、扮演NPC、描述场景。
 2. 当玩家宣布行动时,若需要骰子检定,请明确告知「请进行XX检定(技能值N)」,系统会自动处理骰子。
-3. 保持克苏鲁风格：神秘、压抑、充满未知恐惧,适度展现宇宙恐怖元素。
+3. 保持克苏鲁风格:神秘、压抑、充满未知恐惧,适度展现宇宙恐怖元素。
 4. 对话以中文进行,场景描述生动具体,NPC性格鲜明。
 5. 当调查员的SAN值、HP或MP发生变化时,以「【SAN -N】」「【HP -N】」的格式标注。
 6. 不要替玩家做决策,引导但不强迫剧情走向。

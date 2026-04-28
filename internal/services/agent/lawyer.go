@@ -23,15 +23,15 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 1. search — 检索规则书原文
    {"action":"search","keyword":"精确关键词(15字以内)"}
    参考上方目录选择合适的关键词进行搜索。
-   示例：{"action":"search","keyword":"理智损失"}
-   示例：{"action":"search","keyword":"限制条件"}
+   示例:{"action":"search","keyword":"理智损失"}
+   示例:{"action":"search","keyword":"限制条件"}
    示例: {"action":"search","keyword":"san值"}
    示例: {"action":"search","keyword":"通神术"}
    示例: {"action":"search","keyword":"克苏鲁通神术"} // 完整法术名
 
 2. read_rulebook_const — 读取规则书内置常量目录/列表,存在假阴性风险(但不存在假阳性)
 	{"action":"read_rulebook_const","constant":"常量名"}
-	- 常量名：rulebook_dir / rulebook_detail_dir / aliens / books / great_old_ones_and_gods / monsters / mythos_creatures / spells
+	- 常量名:rulebook_dir / rulebook_detail_dir / aliens / books / great_old_ones_and_gods / monsters / mythos_creatures / spells
 
 3. response — 给出最终规则裁定,结束本次查询
    {"action":"response","ruling":"规则裁定内容(200字以内)"}
@@ -143,7 +143,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 		}
 		msgs = append(msgs, llm.ChatMessage{
 			Role:    "user",
-			Content: "搜索结果如下,请据此给出规则裁定：\n\n" + resultSB.String(),
+			Content: "搜索结果如下,请据此给出规则裁定:\n\n" + resultSB.String(),
 		})
 	}
 

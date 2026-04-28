@@ -73,13 +73,13 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			s.SAN = newSAN
 			card.Stats.Data = s
 
-			// ── 理智损失事件：检查疯狂触发 ──────────────────────────────────────
+			// ── 理智损失事件:检查疯狂触发 ──────────────────────────────────────
 			if upd.Delta < 0 {
 				sanLoss := prevSAN - s.SAN // actual points lost (positive)
 				if sanLoss > 0 {
 					card.DailySanLoss += sanLoss
 
-					// 潜在疯狂期(临时/不定性)：哪怕只损失1点SAN,立即再次触发疯狂发作
+					// 潜在疯狂期(临时/不定性):哪怕只损失1点SAN,立即再次触发疯狂发作
 					if card.MadnessState == "temporary" || card.MadnessState == "indefinite" {
 						// Re-roll a new symptom for the relapse episode.
 						sym := game.RollMadnessSymptom(true)
@@ -103,7 +103,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			s.HP = clamp(s.HP+upd.Delta, 0, s.MaxHP)
 			card.Stats.Data = s
 
-			// ── 伤害事件：检查重伤/濒死/即死 ─────────────────────────────────
+			// ── 伤害事件:检查重伤/濒死/即死 ─────────────────────────────────
 			if damage > 0 {
 				switch {
 				case game.CheckInstantDeath(damage, s.MaxHP):

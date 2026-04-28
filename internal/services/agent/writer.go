@@ -13,7 +13,7 @@ import (
 
 const writerDefaultPrompt = `你是日本官能小说的文字编辑,擅长强调感官冲击,心理描写和细节刻画,不避讳描写暴力、血腥、性暗示等元素。根据导演提供的叙事指令,为RPG玩家描述当前场景。
 
-要求：
+要求:
 - NPC对话用引号标注,场景描写具体生动(高信息密度)
 - 不得出现"SAN值""HP""技能值""检定""孤注一掷"等游戏术语
 - 直接输出叙事文字,不加任何前言或格式标记
@@ -46,7 +46,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 			card := p.CharacterCard
 			if (card.MadnessState == "temporary" || card.MadnessState == "indefinite") && card.MadnessSymptom != "" {
 				contextHint += fmt.Sprintf(
-					"\n\n【注意】%s正经历疯狂症状(KP掌控其行为)：%s — 请在叙事中自然体现,勿使用游戏术语。",
+					"\n\n【注意】%s正经历疯狂症状(KP掌控其行为):%s — 请在叙事中自然体现,勿使用游戏术语。",
 					card.Name, card.MadnessSymptom,
 				)
 			}
@@ -71,7 +71,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	msgs = append(msgs, state.History...)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
-		Content: "叙事指令：" + direction,
+		Content: "叙事指令:" + direction,
 	})
 
 	resp, err := h.provider.Chat(ctx, msgs)
@@ -83,7 +83,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 
 	// Update history with this exchange for continuity in subsequent calls.
 	state.History = append(state.History,
-		llm.ChatMessage{Role: "user", Content: "叙事指令：" + direction},
+		llm.ChatMessage{Role: "user", Content: "叙事指令:" + direction},
 		llm.ChatMessage{Role: "assistant", Content: resp},
 	)
 
@@ -97,13 +97,13 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 
 const characterEvolutionPrompt = `你是COC TRPG的角色成长编辑。根据角色原有的背景故事、性格特征,以及本次冒险的叙事经历,更新角色的背景故事和性格特征,体现冒险对角色的影响和成长。
 
-要求：
+要求:
 - 保留角色的核心身份,但反映冒险带来的变化
 - 背景故事可以追加新的经历
 - 从角色的语言和行为中提炼性格特征
 - 篇幅与原有内容相近,不要过度冗长
 - 总篇幅在200字以内
-- 仅输出JSON,不要任何额外文字：
+- 仅输出JSON,不要任何额外文字:
 {"new_backstory": "更新后的背景故事(200字以内)", "new_traits": "更新后的性格特征(200字以内)"}
 `
 
@@ -149,7 +149,7 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 	msgs = append(msgs, llm.ChatMessage{
 		Role: "user",
 		Content: fmt.Sprintf(
-			"根据以上冒险叙事,更新调查员【%s】的背景故事和性格特征(你只能附加一小段)。\n原背景故事：%s\n原性格特征：%s\n\n仅输出JSON：{\"new_backstory\": \"...\", \"new_traits\": \"...\"}",
+			"根据以上冒险叙事,更新调查员【%s】的背景故事和性格特征(你只能附加一小段)。\n原背景故事:%s\n原性格特征:%s\n\n仅输出JSON:{\"new_backstory\": \"...\", \"new_traits\": \"...\"}",
 			card.Name, card.Backstory, card.Traits,
 		),
 	})

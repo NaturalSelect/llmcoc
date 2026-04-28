@@ -135,7 +135,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 			// while preserving permanent madness.
 			ResetMadnessAfterSession(card)
 
-			// 撕卡：dead investigators are soft-deleted (IsActive = false).
+			// 撕卡:dead investigators are soft-deleted (IsActive = false).
 			if card.WoundState == "dead" || card.Stats.Data.HP <= 0 {
 				card.IsActive = false
 			} else {
