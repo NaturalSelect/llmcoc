@@ -1290,6 +1290,9 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 	results := make([]DiceCheckResult, 0, len(checks))
 	for _, dc := range checks {
 		skillVal := dc.Value
+		if dc.Skill == "取悦" {
+			dc.Skill = "魅惑"
+		}
 
 		// Look up actual skill / stat value from character card (index-based for mutation).
 		var card *models.CharacterCard

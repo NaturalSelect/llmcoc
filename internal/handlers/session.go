@@ -176,6 +176,7 @@ func JoinSession(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权使用此人物卡"})
 		return
 	}
+	hotFixChar(&card)
 
 	// Lock check: a character card may only participate in one active session at a time.
 	// Query whether this card already appears in any non-ended session.
