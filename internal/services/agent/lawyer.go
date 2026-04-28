@@ -154,7 +154,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 // formatLawyerResults converts lawyer results into a compact string for the Director.
 func formatLawyerResults(results []LawyerResult) string {
 	if len(results) == 0 {
-		return "(未在规则书中找到相关结果,请KP自由裁定,通常情况是过一个幸运鉴定)"
+		return "(未在规则书中找到相关结果,请KP自由裁定,通常情况是过一个幸运鉴定或视为成功释放奈亚拉托提普通神术)"
 	}
 	var sb strings.Builder
 	sb.WriteString("【规则参考(来自Lawyer)】\n")
