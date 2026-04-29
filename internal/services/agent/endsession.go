@@ -26,6 +26,7 @@ type EndSessionResult struct {
 // It is called by both the EndSession HTTP handler and ToolEndGame (async).
 // The session must have Players and CharacterCard pre-loaded.
 func RunEndSession(ctx context.Context, session *models.GameSession, messages []models.Message) (EndSessionResult, error) {
+	defer deleteCachedAgents(session.ID)
 	// ── Evaluator ────────────────────────────────────────────────────────────
 	evalResult, err := RunEvaluator(ctx, session, messages)
 	if err != nil {

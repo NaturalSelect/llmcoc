@@ -93,6 +93,26 @@ func Run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	return run(ctx, gctx)
 }
 
+var sessionAgents = sync.Map{}
+
+func getCachedAgents(sessionID uint) (agent map[models.AgentRole]agentHandle, err error) {
+	tmp, ok := sessionAgents.Load(sessionID)
+	if !ok {
+		agent, err = batchLoadAgents()
+		if err != nil {
+			return nil, err
+		}
+		sessionAgents.Store(sessionID, agent)
+	} else {
+		agent = tmp.(map[models.AgentRole]agentHandle)
+	}
+	return agent, err
+}
+
+func deleteCachedAgents(sessionID uint) {
+	sessionAgents.Delete(sessionID)
+}
+
 // run implements the master-slave agent loop.
 //
 // Architecture:
@@ -106,7 +126,7 @@ func Run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 // Turn-action recording is handled by the caller (ChatStream handler) before run() is
 // invoked, so run() does not call recordTurnAction itself.
 func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
-	handles, err := batchLoadAgents()
+	handles, err := getCachedAgents(gctx.Session.ID)
 	if err != nil {
 		return RunOutput{}, err
 	}
@@ -152,6 +172,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		debugf("KP", "session=%d iter=%d/%d — calling LLM", sid, iter+1, MaxKpRound)
 
 		doneKP := timedDebug("KP", "session=%d iter=%d Chat", sid, iter+1)
+		// 请求一次JSON
 		calls, rawResp, err := runKP(context.Background(), handles[models.AgentRoleDirector], kpMsgs)
 		doneKP()
 		if err != nil {
@@ -167,6 +188,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		debugf("KP", "session=%d iter=%d raw_resp=%s",
 			sid, iter+1, rawResp)
 
+		// LLM 的结果加回去
 		// Record what the KP decided so the next iteration has proper context.
 		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: rawResp})
 
@@ -297,8 +319,10 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				return RunOutput{}, fmt.Errorf("failed to marshal tool results: %w", err)
 			}
 			sb.Write(data)
+			// 输入用户数据
 			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: sb.String()})
 		}
+		// 等一轮之后继续跑
 		time.Sleep(2 * time.Second)
 	}
 
