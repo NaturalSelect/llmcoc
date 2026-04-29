@@ -24,6 +24,7 @@ type anthropicProvider struct {
 func newAnthropicProvider(apiKey, baseURL, model string, maxTokens int, temperature float64) *anthropicProvider {
 	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
 	if baseURL != "" {
+		baseURL = strings.TrimSuffix(baseURL, "/v1")
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 	if maxTokens == 0 {
