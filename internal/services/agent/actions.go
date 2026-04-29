@@ -113,6 +113,7 @@ func (rollDiceAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	if call.Dice == nil {
 		return nil
 	}
+	call.Dice.CheckType = "expr"
 	debugf("tool", "session=%d roll_dice skill=%q val=%d char=%q type=%s bonus=%d penalty=%d",
 		actx.Sid, call.Dice.Skill, call.Dice.Value, call.Dice.Character, call.Dice.CheckType, call.Dice.BonusDice, call.Dice.PenaltyDice)
 	dcr := executeSingleDiceCheck(*call.Dice, actx.GCtx.Session.Players)

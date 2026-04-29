@@ -187,6 +187,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			sid, iter+1, len(calls), formatCallNames(calls))
 		debugf("KP", "session=%d iter=%d raw_resp=%s",
 			sid, iter+1, rawResp)
+		if len(calls) == 0 {
+			continue
+		}
 
 		// LLM 的结果加回去
 		// Record what the KP decided so the next iteration has proper context.

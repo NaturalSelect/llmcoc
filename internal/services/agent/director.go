@@ -578,7 +578,7 @@ const kpSystemPrompt = `
 			<description>投掷骰子，返回结果数值</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"roll_dice","dice":{"dice_expr":"2D6+3","check_type":"expr"}}</call_example>
+			<call_example>{"action":"roll_dice","dice":{"dice_expr":"2D6+3"}}</call_example>
 		</tool>
 		<tool>
 			<name>create_npc</name>
@@ -972,7 +972,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		if len(localMsg) > 20 {
 			localMsg = localMsg[:20]
 		}
-		log.Printf("KP SESSION: %v MSG: %v LEN:%v", gctx.Session.ID,localMsg, len([]rune(msg.Content)))
+		log.Printf("KP SESSION: %v MSG: %v LEN:%v", gctx.Session.ID, localMsg, len([]rune(msg.Content)))
 	}
 	return msgs
 }
