@@ -968,7 +968,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		Content: userSB.String(),
 	})
 	for _, msg := range msgs {
-		log.Printf("KP SESSION: %v MSG: %v LEN:%v", gctx.Session.ID, msg.Content[:20], len([]rune(msg.Content)))
+		localMsg := msg.Content
+		if len(localMsg) > 20 {
+			localMsg = localMsg[:20]
+		}
+		log.Printf("KP SESSION: %v MSG: %v LEN:%v", gctx.Session.ID,localMsg, len([]rune(msg.Content)))
 	}
 	return msgs
 }
