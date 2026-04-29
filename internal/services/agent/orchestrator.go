@@ -1105,7 +1105,7 @@ func convertHistory(history []models.Message) []llm.ChatMessage {
 		case models.MessageRoleAssistant:
 			msgs = append(msgs, llm.ChatMessage{
 				Role:    "assistant",
-				Content: m.Content,
+				Content: extraKPMessage(m.Content),
 			})
 			// Skip system messages — they are not part of the conversation context.
 		}

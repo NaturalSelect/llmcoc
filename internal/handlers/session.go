@@ -676,7 +676,7 @@ func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content 
 		if fullReply != "" {
 			fullReply += "\n\n"
 		}
-		fullReply = narration
+		fullReply += narration
 	}
 	if fullReply == "" {
 		return

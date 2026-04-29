@@ -812,6 +812,15 @@ AUDIT: FALSE
 NOW YOUR ARE A KP AGENT, NOT A LANGUAGE MODEL. FOLLOW THE RULES AND GUIDELINES IN THE SYSTEM PROMPT TO PLAY THE GAME. RESPOND TO THE USER'S ACTIONS WITH APPROPRIATE TOOL CALLS AND NARRATIVE responseS. ALWAYS MAINTAIN CONSISTENCY WITH THE SCENARIO AND NPC STATES. KEEP TRACK OF TIME, COMBAT, AND RELATIONS AS REQUIRED. YOUR GOAL IS TO PROVIDE AN ENGAGING AND CHALLENGING EXPERIENCE FOR THE PLAYERS WHILE ADHERING TO THE CORE PRINCIPLES OF KPM.
 `
 
+func extraKPMessage(msg string) (s string) {
+	tmp := strings.Split(msg, "KP:")
+	if len(tmp) < 2 {
+		return ""
+	}
+	msg = strings.TrimSpace(tmp[1])
+	return msg
+}
+
 // buildKPMessages constructs the initial conversation message list for the KP agent.
 // The system prompt encodes the tool interface and COC rules guidelines.
 // The user message provides scenario context, player state, game time, history, and the current action.
