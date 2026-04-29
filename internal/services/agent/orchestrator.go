@@ -214,38 +214,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		var toolResults []ToolResult
 		hasEnd := false
 		hasWrite := false
-
-		// NOTE: firewall
-		fwHasAct := false
-		fwHasSideEffect := false
-		fwHasNoSideEffect := false
 		interrupt := false
-		for _, call := range calls {
-			if call.Action == ToolYield {
-				continue
-			}
-			if call.Action == ToolCombatAct {
-				fwHasAct = true
-			}
-			if call.Action == ToolChaseAct {
-				fwHasAct = true
-			}
-			if noSideEffectActions[call.Action] {
-				fwHasNoSideEffect = true
-			} else {
-				fwHasSideEffect = true
-			}
-		}
-		lastYield := calls[len(calls)-1].Action == ToolYield
-		lastAct := calls[len(calls)-1].Action == ToolCombatAct || calls[len(calls)-1].Action == ToolChaseAct
-		coreDump := ((fwHasAct && !lastYield) || (fwHasAct && !lastAct)) ||
-			(fwHasSideEffect && fwHasNoSideEffect)
-		if coreDump {
-			toolResults = append(toolResults, ToolResult{
-				Action: "ERROR",
-				Result: "YOU DO NOT FOLLOW THE RULE, MIXED SIDE-EFFECT AND non-SIDE-EFFECT IN A ACTIONS PHASE, PLEASE RETRY",
-			})
-		}
 
 		actx := ActionContext{
 			Ctx:                ctx,
@@ -268,7 +237,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			if ctx.Err() != nil {
 				return RunOutput{}, ctx.Err()
 			}
-			if coreDump || interrupt {
+			if interrupt {
 				continue
 			}
 
