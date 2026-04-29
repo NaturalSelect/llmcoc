@@ -311,7 +311,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: sb.String()})
 		}
 		// 等一轮之后继续跑
-		time.Sleep(2 * time.Second)
+		time.Sleep(20 * time.Second)
 	}
 
 	// Max iterations reached — return whatever Writer produced.
