@@ -667,15 +667,16 @@ loop:
 func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content string,
 	turnActions []models.SessionTurnAction, output agent.RunOutput) {
 	fullReply := output.WriterText
+	// NOTE: only save response to KP history
 	if output.KPReply != "" {
 		narration := output.KPReply
-		if !strings.HasPrefix(narration, "KP:") && !strings.HasPrefix(narration, "KP:") {
+		if !strings.HasPrefix(narration, "KP:") {
 			narration = "KP:" + narration
 		}
 		if fullReply != "" {
 			fullReply += "\n\n"
 		}
-		fullReply += narration
+		fullReply = narration
 	}
 	if fullReply == "" {
 		return
