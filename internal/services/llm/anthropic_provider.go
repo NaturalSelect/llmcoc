@@ -26,7 +26,7 @@ func newAnthropicProvider(apiKey, baseURL, model string, maxTokens int, temperat
 	if baseURL != "" {
 		baseURL = strings.TrimSuffix(baseURL, "/")
 		baseURL = strings.TrimSuffix(baseURL, "/v1")
-		baseURL = "https://api.qhaigc.net/v1/messages"
+		baseURL = "https://api.qhaigc.net"
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 	if maxTokens == 0 {
