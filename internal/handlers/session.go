@@ -681,6 +681,8 @@ func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content 
 	if fullReply == "" {
 		return
 	}
+	log.Printf("[chat] session=%d user=%q saving messages content_len=%d reply_len=%d turn_actions=%d",
+		sessionID, playerDisplayName, len([]rune(content)), len([]rune(fullReply)), len(turnActions))
 	if len(turnActions) > 0 {
 		for _, ta := range turnActions {
 			uid := ta.UserID
