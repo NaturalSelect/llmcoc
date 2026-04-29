@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -851,45 +852,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Append conversation history from DB (real multi-turn messages from previous rounds).
 	msgs = append(msgs, history...)
 
-	// Few-shot learn
-	msgs = append(msgs, llm.ChatMessage{
-		Role: "assistant",
-		Content: `
-[
-		{"action":"roll_dice"}
-		{"action":"response"}
-]
-		`,
-	})
-	msgs = append(msgs, llm.ChatMessage{
-		Role:    "user",
-		Content: `ERROR: CORE DUMP, RESPONSE CANNOT NOT BE USED WITH OTHER ACTIONS IN THE SAME ROUND`,
-	})
-	msgs = append(msgs, llm.ChatMessage{
-		Role: "assistant",
-		Content: `
-[
-	{"action":"roll_dice","dice":{"dice_expr":"1D100","check_type":"expr"}},
-	{"action":"yield"}
-]
-		`,
-	})
-	msgs = append(msgs, llm.ChatMessage{
-		Role: "user",
-		Content: `[
-			{"action":"roll_dice","result":"大成功"},
-		]`,
-	})
-	msgs = append(msgs, llm.ChatMessage{
-		Role: "assistant",
-		Content: `
-[
-	{"action":"write","direction":"Alice侧耳倾听,大成功,清晰地捕捉到了走廊尽头的脚步声"},
-	{"action":"response","reply":"大成功！Alice你听到了走廊尽头有人在走动,听起来不止一个人。"}
-]
-		`,
-	})
-
 	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
 	var userSB strings.Builder
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
@@ -1005,6 +967,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		Role:    "user",
 		Content: userSB.String(),
 	})
+	for _, msg := range msgs {
+		log.Printf("KP SESSION: %v MSG: %v LEN:%v", gctx.Session.ID, msg.Content[:20], len([]rune(msg.Content)))
+	}
 	return msgs
 }
 
