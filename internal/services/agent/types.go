@@ -133,27 +133,16 @@ type RunOutput struct {
 
 // DiceCheck represents a skill check requested by the KP.
 type DiceCheck struct {
-	Skill          string `json:"skill"`
-	Value          int    `json:"value"`
-	Character      string `json:"character"`
-	Hidden         bool   `json:"hidden"`       // 暗骰:玩家不可见具体数值,KP将结果融入叙事
-	CheckType      string `json:"check_type"`   // standard / opposed / luck / sanity
-	BonusDice      int    `json:"bonus_dice"`   // 奖励骰数量
-	PenaltyDice    int    `json:"penalty_dice"` // 惩罚骰数量
-	SanSuccessLoss string `json:"san_success_loss"`
-	SanFailLoss    string `json:"san_fail_loss"`
-	MonsterName    string `json:"monster_name,omitempty"` // sanity检定:引发检定的神话存在名称(见过的存在不掉SAN)
-	DiceExpr       string `json:"dice_expr,omitempty"`    // 可选的骰子表达式(如 "1D100+20"),优先于固定值
+	Character string `json:"character"`
+	Hidden    bool   `json:"hidden"`              // 暗骰:玩家不可见具体数值,KP将结果融入叙事
+	What      string `json:"what"`                // 检定内容描述(如 "攻击检定"/"智力检定")
+	DiceExpr  string `json:"dice_expr,omitempty"` // 可选的骰子表达式(如 "1D100+20"),优先于固定值
 }
 
 // DiceCheckResult is the outcome of an auto-executed dice check.
 type DiceCheckResult struct {
 	DiceCheck
-	Roll    int    `json:"roll"`
-	Level   string `json:"level"`
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-	SanLoss int    `json:"san_loss"` // only for check_type="sanity"
+	Roll int `json:"roll"`
 }
 
 // ── Character update types ────────────────────────────────────────────────────

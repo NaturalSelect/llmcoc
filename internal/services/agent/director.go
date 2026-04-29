@@ -578,7 +578,7 @@ const kpSystemPrompt = `
 			<description>投掷骰子，返回结果数值</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"roll_dice","dice":{"dice_expr":"2D6+3"}}</call_example>
+			<call_example>{"action":"roll_dice","dice":{"dice_expr":"2D6+3", "what":"智力"}}}</call_example>
 		</tool>
 		<tool>
 			<name>create_npc</name>

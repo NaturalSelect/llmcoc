@@ -636,13 +636,7 @@ func formatSingleDiceResult(r DiceCheckResult) string {
 	if r.Hidden {
 		hidden = "(暗骰)"
 	}
-	if r.Level == "seen" {
-		return fmt.Sprintf("%s%s:%s", who, hidden, r.Message)
-	}
-	if r.CheckType == "sanity" {
-		return fmt.Sprintf("%s理智检定%s:%s,骰值%d,SAN损失%d", who, hidden, r.Message, r.Roll, r.SanLoss)
-	}
-	return fmt.Sprintf("%s的%s检定%s:%s(骰值%d/%d)", who, r.Skill, hidden, r.Message, r.Roll, r.Value)
+	return fmt.Sprintf("%s的%v鉴定: %v %v", who, r.What, r.Roll, hidden)
 }
 
 // formatNPCAction formats an NPCAction as a brief string for the KP.
@@ -785,122 +779,11 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 	}
 	results := make([]DiceCheckResult, 0, len(checks))
 	for _, dc := range checks {
-		skillVal := dc.Value
-		if dc.Skill == "取悦" {
-			dc.Skill = "魅惑"
-		}
-
-		// Look up actual skill / stat value from character card (index-based for mutation).
-		var card *models.CharacterCard
-		for pi := range players {
-			if dc.Character == "" || players[pi].CharacterCard.Name == dc.Character {
-				card = &players[pi].CharacterCard
-				break
-			}
-		}
-		if card != nil {
-			if dc.CheckType == "sanity" {
-				if card.Stats.Data.SAN > 0 {
-					skillVal = card.Stats.Data.SAN
-				}
-			} else if dc.CheckType == "skill" {
-				v, ok := card.Skills.Data[dc.Skill]
-				if ok {
-					skillVal = v
-				} else {
-					// NOTE: 简单骰子,并非技能判断,找非空字符串
-					dice := dc.SanFailLoss
-					if dice == "" || dice == "0" {
-						dice = dc.SanSuccessLoss
-					}
-					if dice == "" || dice == "0" {
-						dice = "1D6" // sensible fallback
-					}
-					diceVal := game.RollDiceExpr(dice)
-					results = append(results, DiceCheckResult{
-						DiceCheck: dc,
-						Roll:      diceVal,
-						Level:     "normal",
-						Success:   true,
-						Message:   fmt.Sprintf("%v: %v", dc.Skill, diceVal),
-					})
-					goto nextCheck
-				}
-			} else if dc.CheckType == "expr" {
-				diceVal := game.RollDiceExpr(dc.DiceExpr)
-				results = append(results, DiceCheckResult{
-					DiceCheck: dc,
-					Roll:      diceVal,
-					Level:     "normal",
-					Success:   true,
-					Message:   fmt.Sprintf("%v %v: %v", dc.Skill, dc.DiceExpr, diceVal),
-				})
-				goto nextCheck
-			}
-		}
-		if skillVal <= 0 {
-			skillVal = 1
-		}
-		// NOTE: 兼容逻辑,把技能映射到属性上
-		if temp, ok := mapSkillToStat(card, dc.Skill); ok {
-			skillVal = temp
-		}
-
-		// 已见过的神话存在不再握发SAN损失(COC第八章习惯恐惧规则)
-		if dc.CheckType == "sanity" && dc.MonsterName != "" && card != nil {
-			for _, seen := range card.SeenMonsters.Data {
-				if seen == dc.MonsterName {
-					results = append(results, DiceCheckResult{
-						DiceCheck: dc,
-						Level:     "seen",
-						Success:   true,
-						Message:   fmt.Sprintf("已见过「%s」,不再损失理智值", dc.MonsterName),
-					})
-					goto nextCheck
-				}
-			}
-			// 初次遇到——记录到已见列表,后续检定将自动跳过
-			card.SeenMonsters.Data = append(card.SeenMonsters.Data, dc.MonsterName)
-			models.DB.Save(card)
-		}
-
-		{
-			res := game.SkillCheck(skillVal)
-			dcr := DiceCheckResult{
-				DiceCheck: dc,
-				Roll:      res.Value,
-				Level:     res.Level,
-				Success:   res.Success,
-				Message:   res.Message,
-			}
-
-			// For sanity checks, also roll the SAN loss based on success/failure.
-			if dc.CheckType == "sanity" {
-				lossExpr := dc.SanFailLoss
-				if res.Success {
-					lossExpr = dc.SanSuccessLoss
-				}
-				if lossExpr == "" {
-					if res.Success {
-						lossExpr = "0"
-					} else {
-						lossExpr = "1D6" // sensible fallback
-					}
-				}
-				dcr.SanLoss = game.RollDiceExpr(lossExpr)
-				if dcr.SanLoss < 0 {
-					dcr.SanLoss = 0
-				}
-				outcomeWord := "成功"
-				if !res.Success {
-					outcomeWord = "失败"
-				}
-				dcr.Message = fmt.Sprintf("%s,%s(SAN损失 %d 点)", res.Message, outcomeWord, dcr.SanLoss)
-			}
-
-			results = append(results, dcr)
-		}
-	nextCheck:
+		diceVal := game.RollDiceExpr(dc.DiceExpr)
+		results = append(results, DiceCheckResult{
+			DiceCheck: dc,
+			Roll:      diceVal,
+		})
 	}
 	return results
 }
