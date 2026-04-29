@@ -801,195 +801,7 @@ const kpSystemPrompt = `
 	</debug>
 </system>
 
-<rule>
-	ResponseAction Chat(Input userMsg) {
-		while (!input.End()) {
-			i = input.Next()
-			if (state.IsInCombat()) {
-				combatStat = state.GetCombatStat();
-				if (!combatStat.IsPlayerTurn(i.PlayerId)) {
-					return yield Response("NOT YOUR TURN");
-				}
-			}
-			if (state.IsInChase()) {
-				chaseStat = state.GetChaseStat();
-				if (!chaseStat.IsPlayerTurn(i.PlayerId)) {
-					return yield Response("NOT YOUR TURN");
-				}
-			}
-			Write("USER ARE TRYING TO:" + i);
-			// NOTE: no-side-effect actions can be combined freely, but side-effect actions must be carefully placed (usually at the end of the round)
-			CheckRule("IS THIS USER CHEAT?", i);
-			if (i.NeedCheckRule()) {
-				CheckRule("RULE ABOUT THIS:", i);
-			}	
-			if (i.NeedReadRulebookConst()) {
-				ReadRulebookConst(i.GetRulebookConstName());
-			}
-			if (i.NeedQueryCharacter()) {
-				QueryCharacter(i.GetCharacterQueryInfo());
-			}
-			if (i.NeedQueryNPCCard()) {
-				QueryNPCCard(i.GetNPCQueryInfo());
-			}
-			if (i.NeedQueryClues()) {
-				QueryClues();
-			}
 
-			r = yield i.AllInflight();
-			i.AcceptResults(r);
-
-			if (i.IsCheat()) {
-				Write("USER SAID:" + i.GetChatContent() + ", BUT THIS ACTION DON"T WROK");
-				continue
-			}
-			
-			if (i.NeedCreateNPC()) {
-				CreateNPC(i.GetNPCCreateInfo());
-			}
-
-			r = yield i.AllInflight();
-			i.AcceptResults(r);
-
-			// NOTE: get enought knowledge
-			while (i.NeedCheckRule() || i.NeedReadRulebookConst()) {
-				if (i.NeedCheckRule()) {
-					CheckRule("RULE ABOUT THIS:", i);
-				}
-				if (i.NeedReadRulebookConst()) {
-					ReadRulebookConst(i.GetRulebookConstName());
-				}
-				r = yield i.AllInflight();
-				i.AcceptResults(r);
-			}
-
-			if (i.NeedStartCombat()) {
-				StartCombat(i.GetCombatParticipants());
-			}
-
-			if (i.NeedStartChase()) {
-				StartChase(i.GetChaseParticipants());
-			}
-
-			r = yield i.AllInflight();
-			i.AcceptResults(r);
-
-			if (i.NeedActNPC()) {
-				ActNPC(i.GetNPCActInfo());
-			}
-
-			if (i.NeedRollDice()) {
-				diceResult = yield RollDice(i.GetDiceInfo());
-				Write("DICE RESULT:" + diceResult);
-				if (diceResult.IsFail()) {
-					Write("YOUR ACTION FAILED BECAUSE OF BAD DICE RESULT");
-					continue
-				}
-				i.AcceptDiceResult(diceResult);
-			}
-			if (i.NeedManagerInventory()) {
-				if (i.IsAddItem()) {
-					ManageInventory(i.GetInventoryInfo());
-					Write("YOU GET ITEM:" + i.GetItem());
-				} else if (i.IsRemoveItem()) {
-					ManageInventory(i.GetInventoryInfo());
-					Write("YOU LOSE ITEM:" + i.GetItem());
-				} else {
-					// NOTE: update inventory
-					ManageInventory(i.GetInventoryInfo());
-					ManageInventory(i.GetInventoryInfo());
-					Both(add, remove);
-					Write("YOUR INVENTORY CHANGED:" + i.GetInventoryChangeDescription());
-				}
-			}
-			if (i.NeedUpdateCharacter()) {
-				UpdateCharacter(i.GetCharacterUpdateInfo());
-				Write("YOUR CHARACTER UPDATED:" + i.GetCharacterUpdateDescription());
-			}
-			if (i.NeedManageSpell()) {
-				if (i.IsAddSpell()) {
-					ManageSpell(i.GetSpellManageInfo());
-					Write("YOU LEARN SPELL:" + i.GetSpell());
-				} else if (i.IsRemoveSpell()) {
-					ManageSpell(i.GetSpellManageInfo());
-					Write("YOU FORGET SPELL:" + i.GetSpell());
-				}
-			}
-			if (i.NeedManageRelation()) {
-				if (i.IsAddRelation()) {
-					ManageRelation(i.GetRelationManageInfo());
-					Write("YOUR RELATIONSHIP UPDATED:" + i.GetRelationChangeDescription());
-				} else if (i.IsRemoveRelation()) {
-					ManageRelation(i.GetRelationManageInfo());
-					Write("YOUR RELATIONSHIP UPDATED:" + i.GetRelationChangeDescription());
-				} else {
-					// NOTE: update relationship
-					ManageRelation(i.GetRelationManageInfo());
-					ManageRelation(i.GetRelationManageInfo());
-					Write("YOUR RELATIONSHIP UPDATED:" + i.GetRelationChangeDescription()); 
-				}
-			} 
-
-			if (i.NeedRecordMonster()) {
-				RecordMonster(i.GetRecordMonsterInfo());
-				Write("YOU HAVE SEEN MONSTER:" + i.GetMonster());
-			}
-
-			if (i.NeedTriggerMadness()) {
-				TriggerMadness(i.GetTriggerMadnessInfo());
-				Write("YOUR MADNESS IS TRIGGERED:" + i.GetMadnessDescription());
-			}
-
-			if (i.NeedAdvanceTime()) {
-				AdvanceTime(i.GetAdvanceTimeInfo());
-				Write("TIME ADVANCED:" + i.GetAdvanceTimeDescription());
-				// NOTE: time advancement may cause NPC action or other time-based events, which can be handled in the next rounds after accepting results.
-			}
-			
-			if (i.NeedActCombat()) {
-				act = yield ActCombat(i.GetCombatActInfo());
-				Write("YOU ACT IN COMBAT:" + i.GetCombatActionDescription());
-				if (act.NeedInterrupt()) {
-					Write("COMBAT INTERRUPTED BECAUSE OF THIS ACTION");
-					// NOTE: interrupt combat flow, handle interruption in the next rounds after accepting results.
-					break
-				}
-			}
-
-			if (i.NeedActChase()) {
-				act = yield ActChase(i.GetChaseActInfo());
-				Write("YOU ACT IN CHASE:" + i.GetChaseActionDescription());
-				if (act.NeedInterrupt()) {
-					Write("CHASE INTERRUPTED BECAUSE OF THIS ACTION");
-					// NOTE: interrupt chase flow, handle interruption in the next rounds after accepting results.
-					break
-				}
-			}
-			
-			if (i.NeedEndCombat()) {
-				EndCombat(i.GetEndCombatInfo());
-				Write("COMBAT ENDED:" + i.GetCombatEndDescription());
-			}
-
-			if (i.NeedEndChase()) {
-				EndChase(i.GetEndChaseInfo());
-				Write("CHASE ENDED:" + i.GetChaseEndDescription());
-			}
-
-			
-
-			r = yield i.AllInflight();
-			i.AcceptResults(r);
-		}
-
-		if (input.MarkEndGame()) {
-			Write("GAME ENDED:" + input.GetEndGameSummary());
-			return EndGameResponse();
-		}
-
-		return Response("YOUR ACTIONS HAVE BEEN PROCESSED, THIS IS THE END OF YOUR TURN " + input.GetTurnDescription());
-	}
-</rule>
 
 All configuration and examples above are for the KP agent. 
 The following function builds the initial message list for the KP agent, combining the system prompt, scenario context, and conversation history from the database. 
@@ -1190,6 +1002,15 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("剧情法术: 禁用\n")
 	userSB.WriteString("严格反作弊: 启用\n")
 	userSB.WriteString(fmt.Sprintf("技能表: %v\n", rulebook.AllSkills))
+	userSB.WriteString("\n")
+	userSB.WriteString(`
+		你必须严格遵守以下协议：
+- 每一轮你只能输出一个 action_round ，里面包含你要执行的工具调用。
+- 你绝不能在 action_round 中包含任何给玩家的回复文本。
+- 只有当你认为所有必要的查询和动作都已执行完毕，且收到了足够的结果，才能输出 response来结束当前回合。
+- 如果你不确定是否还需要查询，就输出额外的查询动作，不要急于结束。
+	`)
+	userSB.WriteString("\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
