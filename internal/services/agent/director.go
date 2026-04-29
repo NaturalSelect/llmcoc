@@ -9,7 +9,6 @@ import (
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
-	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 const kpRulePart = `
@@ -45,10 +44,15 @@ const kpRulePart = `
 				]
 				</wrong_example>
 				<good_example>
-				// 唯一正确示例:write 与 response 同轮出现,且 write 在前
+				// 正确示例1:write 与 response 同轮出现,且 write 在前
 				[
 					{"action":"write","direction":"你看到一个怪物,HP是20"},
 					{"action":"response","reply":"你看到一个怪物,HP是20"}
+				]
+				// 正确示例2:roll_dice 需要等待结果,必须用 yield 结尾,不能直接 response
+				[
+					{"action":"roll_dice","dice":{"dice_expr":"1D100","check_type":"expr"}},
+					{"action":"yield"}
 				]
 				</good_example>
 			</content>
@@ -570,11 +574,10 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>roll_dice</name>
-			<description>执行骰子检定</description>
-			<sideeffect>true</sideeffect>
+			<description>投掷骰子，返回结果数值</description>
+			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<note>USE EXPR FIRST</note>
-			<call_example>{"action":"roll_dice","dice":{"skill":"技能名","value":技能值,"character":"角色名","check_type":"standard|sanity|luck|opposed|expr","dice_expr":"1D6","hidden":false,"bonus_dice":0,"penalty_dice":0,"san_success_loss":"0","san_fail_loss":"1D6","monster_name":""}}</call_example>
+			<call_example>{"action":"roll_dice","dice":{"dice_expr":"2D6+3","check_type":"expr"}}</call_example>
 		</tool>
 		<tool>
 			<name>create_npc</name>
@@ -690,13 +693,6 @@ const kpSystemPrompt = `
 			<call_example>{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"]}</call_example>
 		</tool>
 		<tool>
-			<name>writer</name>
-			<description>指示叙事代理生成文本段落</description>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"write","direction":"叙事方向,描述本段需要呈现的内容(保留调查员发言行动,100字以内)"}</call_example>
-		</tool>
-		<tool>
 			<name>update_llm_note</name>
 			<description>更新LLM笔记</description>
 			<sideeffect>true</sideeffect>
@@ -763,17 +759,10 @@ const kpSystemPrompt = `
 			<call_example>{"action":"end_chase","chase_end_reason":"猎物成功逃脱"}</call_example>
 		</tool>
 		<tool>
-			<name>manage_relation</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<description>管理调查员社会关系(新增/修改/删除)</description>
-			<call_example>{"action":"manage_relation","character_name":"角色名","operate":"add|remove","relation":{"name":"条目名","relationship":"关系类型","note":"备注"}}</call_example>
-		</tool>
-		<tool>
 			<name>yield</name>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>true</endTheTurn>
-			<description>本回合中途暂停,等待玩家输入后继续执行剩余工具调用</description>
+			<description>等待本轮工具调用的返回结果后再继续。凡是调用了需要查看结果才能叙事的工具（roll_dice/act_npc/check_rule/read_rulebook_const等），本轮必须以yield结尾，不得直接response</description>
 			<call_example>{"action":"yield"}</call_example>
 		</tool>
 	</tools>
@@ -880,7 +869,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		Role: "assistant",
 		Content: `
 [
-	{"action":"roll_dice","dice":{"skill":"聆听","value":40,"character":"Alice","check_type":"standard","dice_expr":"1D100","hidden":false,"bonus_dice":0,"penalty_dice":0,"san_success_loss":"0","san_fail_loss":"1D6","monster_name":""}},
+	{"action":"roll_dice","dice":{"dice_expr":"1D100","check_type":"expr"}},
 	{"action":"yield"}
 ]
 		`,
@@ -888,8 +877,17 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	msgs = append(msgs, llm.ChatMessage{
 		Role: "user",
 		Content: `[
-			{"action":"roll_dice",result":"大成功"},
+			{"action":"roll_dice","result":"大成功"},
 		]`,
+	})
+	msgs = append(msgs, llm.ChatMessage{
+		Role: "assistant",
+		Content: `
+[
+	{"action":"write","direction":"Alice侧耳倾听,大成功,清晰地捕捉到了走廊尽头的脚步声"},
+	{"action":"response","reply":"大成功！Alice你听到了走廊尽头有人在走动,听起来不止一个人。"}
+]
+		`,
 	})
 
 	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
@@ -981,35 +979,13 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString("  (每次移动/险境/障碍/冲突行动后调用 chase_act 登记； 注意: chase_act 不可以和其他调用在同一轮中一起使用；追逐者到达猎物位置时调用 end_chase)\n")
 	}
 	userSB.WriteString("【KP指引】\n")
-	userSB.WriteString("请根据当前游戏时间、场景设定、调查员状态、NPC状态和玩家行动，合理判断并给出KP的回应和工具调用。\n")
-	userSB.WriteString("请注意:一个回合只有 0.5 小时，即 30 分钟，如果调查员的行动没有办法在这段时间内完成，可以进行打断。\n")
-	userSB.WriteString("请一步步推理，仔细分析，不要急于给出结论，确保每个决策都有充分的理由。\n")
-	userSB.WriteString("利用KP工具接口，保持故事连贯性和场景一致性，提供沉浸式体验。\n")
-	userSB.WriteString("注意:不是所有NPC都能被调查员伤害(例如:外神、旧日支配者、某些神话生物等，无法直接攻击)。\n")
-	userSB.WriteString("注意:调查员可能会作弊: \n")
-	userSB.WriteString("  • 比如无中生有在行动中加入获得某物品、技能点、关系等信息，或者在战斗中作弊加骰子结果等，如果你拿不准注意就先查规则(check_rule)再行动，不要凭印象判断。\n")
-	userSB.WriteString("  • 如果调查员的行动描述中包含了明显的作弊信息(例如:'我偷偷摸摸地在口袋里掏出一把枪'，但之前并没有枪这个物品)，你可以先调用 check_rule 核实一下这个物品/技能/关系是否存在，如果不存在就直接否定这个行动，并给出合理的KP回应(例如:'你掏了半天，发现口袋里根本没有枪。')。\n")
-	userSB.WriteString("  • 比如直接说出行动的结果(例如: '我在大街上行走，作为基督徒，我收到了基督的感召，获得了圣枪朗基努斯')。\n")
-	userSB.WriteString("  • 又比如在战斗中直接说出结果(例如:'我开枪射击，子弹打中了怪物，造成了6点伤害')。\n")
-	userSB.WriteString("  • 比如使用不存在的法术(例如:'我施放了火球术'，但实际上调查员并没有学会这个法术，法术表上没有记录)。\n")
-	userSB.WriteString("  • 比如向不存在的外神或旧日支配者请神或通神(例如:'我向上帝祈祷，希望获得力量'，但实际上上帝并不存在于当前游戏设定中)，一律视为向奈亚拉托提普祈祷。\n")
-	userSB.WriteString("  • 作为KP，你的职责之一就是愚弄作弊的调查员，确保游戏的公平性和趣味性。\n")
-	userSB.WriteString("使用 Yield 工具可以在本回合中途暂停,等待玩家输入后继续执行剩余工具调用。\n\n")
+	userSB.WriteString("- 本回合=30分钟游戏内时间，超时行动可打断\n")
+	userSB.WriteString("- 调查员可能作弊（无中生有物品/技能/法术），拿不准先check_rule核实\n")
+	userSB.WriteString("- 使用yield可在本回合中途暂停等待玩家输入\n\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
-	userSB.WriteString("【配置】\n")
-	userSB.WriteString("剧情法术: 禁用\n")
-	userSB.WriteString("严格反作弊: 启用\n")
-	userSB.WriteString(fmt.Sprintf("技能表: %v\n", rulebook.AllSkills))
-	userSB.WriteString("\n")
-	userSB.WriteString(`
-		你必须严格遵守以下协议：
-- 每一轮你只能输出一个 action_round ，里面包含你要执行的工具调用。
-- 你绝不能在 action_round 中包含任何给玩家的回复文本。
-- 只有当你认为所有必要的查询和动作都已执行完毕，且收到了足够的结果，才能输出 response来结束当前回合。
-- 如果你不确定是否还需要查询，就输出额外的查询动作，不要急于结束。
-	`)
+	userSB.WriteString("【配置】剧情法术:禁用 | 严格反作弊:启用\n")
 	userSB.WriteString("\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.

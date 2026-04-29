@@ -256,19 +256,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					sid, call.Dice.Skill, call.Dice.Value, call.Dice.Character, call.Dice.CheckType, call.Dice.BonusDice, call.Dice.PenaltyDice)
 				dcr := executeSingleDiceCheck(*call.Dice, gctx.Session.Players)
 				debugf("tool", "session=%d roll_dice result=%s", sid, formatSingleDiceResult(dcr))
-				// Auto-apply SAN loss immediately so character state stays consistent.
-				if dcr.CheckType == "sanity" && dcr.SanLoss > 0 {
-					who := dcr.Character
-					if who == "" {
-						who = "调查员"
-					}
-					applyStateChangesFallback(
-						[]string{fmt.Sprintf("SAN -%d(%s)", dcr.SanLoss, who)},
-						gctx.Session.Players,
-					)
-				}
-				// Record growth mark for successful standard skill checks (COC classic rule).
-				recordGrowthMark(gctx.Session.ID, dcr)
 				toolResults = append(toolResults, ToolResult{
 					Action: ToolRollDice,
 					Result: formatSingleDiceResult(dcr),

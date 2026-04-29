@@ -34,7 +34,7 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	- 常量名:rulebook_dir / rulebook_detail_dir / aliens / books / great_old_ones_and_gods / monsters / mythos_creatures / spells
 
 3. response — 给出最终规则裁定,结束本次查询
-   {"action":"response","ruling":"规则裁定内容(200字以内)"}
+   {"action":"response","ruling":"规则裁定内容(100字以内)"}
    - 直接引用关键规则数值和判定条件
    - 若原文未覆盖该问题,明确说明"规则书未明确规定"
 
