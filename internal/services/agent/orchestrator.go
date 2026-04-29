@@ -197,21 +197,10 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		hasWrite := false
 
 		// NOTE: firewall
-		fwHasResp := false
-		fwHasOther := false
 		fwHasAct := false
 		fwHasSideEffect := false
 		fwHasNoSideEffect := false
 		for _, call := range calls {
-			if call.Action == ToolResponse {
-				fwHasResp = true
-				break
-			}
-		}
-		for _, call := range calls {
-			if call.Action != ToolWrite && call.Action != ToolResponse {
-				fwHasOther = true
-			}
 			if call.Action == ToolCombatAct {
 				fwHasAct = true
 			}
@@ -226,8 +215,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 		lastYield := calls[len(calls)-1].Action == ToolYield
 		lastAct := calls[len(calls)-1].Action == ToolCombatAct || calls[len(calls)-1].Action == ToolChaseAct
-		coreDump := (fwHasOther && fwHasResp) ||
-			((fwHasAct && !lastYield) || (fwHasAct && !lastAct)) ||
+		coreDump := ((fwHasAct && !lastYield) || (fwHasAct && !lastAct)) ||
 			(fwHasSideEffect && fwHasNoSideEffect)
 		if coreDump {
 			toolResults = append(toolResults, ToolResult{

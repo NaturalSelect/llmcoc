@@ -45,6 +45,7 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolQueryClues:        true,
 	ToolQueryCharacter:    true,
 	ToolQueryNPCCard:      true,
+	ToolYield:             true,
 }
 
 // actionRegistry maps each ToolCallType to its handler.
