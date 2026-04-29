@@ -167,7 +167,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			sid, iter+1, rawResp)
 
 		// Record what the KP decided so the next iteration has proper context.
-		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: rawResp})
+		rawRespTrimBytes, _ := json.Marshal(calls)
+		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: string(rawRespTrimBytes)})
 
 		var toolResults []ToolResult
 		hasEnd := false
@@ -291,7 +292,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		// multi-turn context (assistant decided → tools ran → user reports results).
 		if len(toolResults) > 0 {
 			var sb strings.Builder
-			data, err := json.MarshalIndent(toolResults, "", "  ")
+			data, err := json.Marshal(toolResults)
 			if err != nil {
 				return RunOutput{}, fmt.Errorf("failed to marshal tool results: %w", err)
 			}
@@ -1378,4 +1379,3 @@ func removeString(list []string, value string) []string {
 	}
 	return out
 }
-
