@@ -2,17 +2,51 @@
 package llm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
+
+// fixContentTypeTransport rewrites response Content-Type from text/plain to
+// application/json when the body starts with '{' or '['. Some proxy servers
+// (e.g. one-api forks) return valid JSON with text/plain; the Anthropic SDK
+// rejects such responses before we can even inspect them.
+// It also mirrors x-api-key as Authorization: Bearer for proxies that require it.
+type fixContentTypeTransport struct {
+	base http.RoundTripper
+}
+
+func (t *fixContentTypeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Mirror x-api-key → Authorization: Bearer for proxies that expect it.
+	if apiKey := req.Header.Get("X-Api-Key"); apiKey != "" && req.Header.Get("Authorization") == "" {
+		req = req.Clone(req.Context())
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	ct := resp.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "text/plain") {
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		if readErr == nil && len(body) > 0 && (body[0] == '{' || body[0] == '[') {
+			resp.Header.Set("Content-Type", "application/json; charset=utf-8")
+		}
+	}
+	return resp, nil
+}
 
 type anthropicProvider struct {
 	client      anthropic.Client
@@ -22,11 +56,15 @@ type anthropicProvider struct {
 }
 
 func newAnthropicProvider(apiKey, baseURL, model string, maxTokens int, temperature float64) *anthropicProvider {
-	opts := []option.RequestOption{option.WithAuthToken(apiKey)}
+	httpClient := &http.Client{Transport: &fixContentTypeTransport{base: http.DefaultTransport}}
+	opts := []option.RequestOption{
+		option.WithAPIKey(apiKey),
+		option.WithHTTPClient(httpClient),
+	}
 	if baseURL != "" {
 		baseURL = strings.TrimSuffix(baseURL, "/")
+		baseURL = strings.TrimSuffix(baseURL, "/v1/messages")
 		baseURL = strings.TrimSuffix(baseURL, "/v1")
-		baseURL = "https://api.qhaigc.net"
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 	if maxTokens == 0 {
