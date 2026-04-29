@@ -222,8 +222,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			(fwHasSideEffect && fwHasNoSideEffect)
 		if coreDump {
 			toolResults = append(toolResults, ToolResult{
-				Action: "CORE DUMP",
-				Result: "YOU DO NOT FOLLOW THE RULE, SYSTEM IS CORE DUMP, PLEASE RETRY",
+				Action: "ERROR",
+				Result: "YOU DO NOT FOLLOW THE RULE, MIXED SIDE-EFFECT AND non-SIDE-EFFECT ACTIONS, PLEASE RETRY",
 			})
 		}
 
