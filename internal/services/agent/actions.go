@@ -28,6 +28,7 @@ type ActionContext struct {
 	TimeAdvancedInTurn *bool
 	SwitchRole         *bool
 	KPNarration        *string
+	Interrupt          *bool
 }
 
 // Action is implemented by every tool call handler.
@@ -45,7 +46,6 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolQueryClues:        true,
 	ToolQueryCharacter:    true,
 	ToolQueryNPCCard:      true,
-	ToolYield:             true,
 }
 
 // actionRegistry maps each ToolCallType to its handler.
@@ -135,6 +135,7 @@ func (npcActAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		log.Printf("[agent] NPC %q error: %v", call.NPCName, npcErr)
 	}
 	debugf("tool", "session=%d npc_act result=%s", actx.Sid, formatNPCAction(action))
+	*actx.Interrupt = true
 	return []ToolResult{{Action: ToolNPCAct, Result: formatNPCAction(action)}}
 }
 
@@ -152,6 +153,7 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	if npcErr != nil {
 		log.Printf("[agent] act_npc %q error: %v", call.NPCName, npcErr)
 	}
+	*actx.Interrupt = true
 	return []ToolResult{{Action: ToolActNPC, Result: formatNPCAction(action)}}
 }
 
@@ -356,6 +358,7 @@ type yieldAction struct{}
 
 func (yieldAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d KP yields control, remaining calls deferred to next round", actx.Sid)
+	*actx.Interrupt = true
 	return nil
 }
 
@@ -511,6 +514,7 @@ func (combatActAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	actx.GCtx.Session.CombatState = models.JSONField[*models.CombatState]{Data: cs}
 	saveCombatState(actx.GCtx.Session.ID, cs)
 	debugf("tool", "session=%d combat_act actor=%q action=%q", actx.Sid, call.CombatActorName, call.CombatAction)
+	*actx.Interrupt = true
 	return []ToolResult{{Action: ToolCombatAct, Result: result}}
 }
 
@@ -563,6 +567,7 @@ func (chaseActAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	actx.GCtx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: chs}
 	saveChaseState(actx.GCtx.Session.ID, chs)
 	debugf("tool", "session=%d chase_act actor=%q action=%v", actx.Sid, call.ChaseActorName, call.ChaseAction)
+	*actx.Interrupt = true
 	return []ToolResult{{Action: ToolChaseAct, Result: result}}
 }
 

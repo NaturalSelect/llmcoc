@@ -162,8 +162,8 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 	resp = llm.StripCodeFence(resp)
 	var result CharacterEvolutionResult
 	if err := json.Unmarshal([]byte(resp), &result); err != nil {
-		parser, err := loadSingleAgent(models.AgentRoleParser)
-		if err != nil {
+		parser, createErr := loadSingleAgent(models.AgentRoleParser)
+		if createErr != nil {
 			return CharacterEvolutionResult{}, err
 		}
 		for i := 0; i < 30; i++ {

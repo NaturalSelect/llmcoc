@@ -95,7 +95,7 @@ func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (stri
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
-		case <-time.After(2 * time.Second):
+		case <-time.After(5 * time.Second):
 		}
 	}
 	if err != nil {
@@ -182,11 +182,11 @@ func (p *openAIProvider) GenerateCharacter(ctx context.Context, req GenerateChar
 		if err == nil || !isRetryableError(err) {
 			break
 		}
-		log.Printf("[llm] GenerateCharacter attempt %d/%d failed (5xx), retrying in 2s: %v", attempt+1, maxRetries, err)
+		log.Printf("[llm] GenerateCharacter attempt %d/%d failed (5xx), retrying in 5s: %v", attempt+1, maxRetries, err)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(2 * time.Second):
+		case <-time.After(5 * time.Second):
 		}
 	}
 	if err != nil {
@@ -269,11 +269,11 @@ func (p *openAIProvider) AdjustSkills(ctx context.Context, req AdjustSkillsReq) 
 		if err == nil || !isRetryableError(err) {
 			break
 		}
-		log.Printf("[llm] AdjustSkills attempt %d/%d failed (5xx), retrying in 2s: %v", attempt+1, maxRetries, err)
+		log.Printf("[llm] AdjustSkills attempt %d/%d failed (5xx), retrying in 5s: %v", attempt+1, maxRetries, err)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(2 * time.Second):
+		case <-time.After(5 * time.Second):
 		}
 	}
 	if err != nil {

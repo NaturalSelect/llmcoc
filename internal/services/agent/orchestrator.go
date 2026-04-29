@@ -219,7 +219,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		fwHasAct := false
 		fwHasSideEffect := false
 		fwHasNoSideEffect := false
+		interrupt := false
 		for _, call := range calls {
+			if call.Action == ToolYield {
+				continue
+			}
 			if call.Action == ToolCombatAct {
 				fwHasAct = true
 			}
@@ -256,6 +260,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			TimeAdvancedInTurn: &timeAdvancedInTurn,
 			SwitchRole:         &switchRole,
 			KPNarration:        &kpNarration,
+			Interrupt:          &interrupt,
 		}
 
 		switchInThisBatch := false
@@ -263,7 +268,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			if ctx.Err() != nil {
 				return RunOutput{}, ctx.Err()
 			}
-			if coreDump {
+			if coreDump || interrupt {
 				continue
 			}
 
