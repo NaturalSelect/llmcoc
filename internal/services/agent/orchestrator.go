@@ -177,6 +177,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		fwHasResp := false
 		fwHasOther := false
 		fwHasAct := false
+		fwHasSideEffect := false
+		fwHasNoSideEffect := false
 		for _, call := range calls {
 			if call.Action == ToolResponse {
 				fwHasResp = true
@@ -193,11 +195,17 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			if call.Action == ToolChaseAct {
 				fwHasAct = true
 			}
+			if noSideEffectActions[call.Action] {
+				fwHasNoSideEffect = true
+			} else {
+				fwHasSideEffect = true
+			}
 		}
 		lastYield := calls[len(calls)-1].Action == ToolYield
 		lastAct := calls[len(calls)-1].Action == ToolCombatAct || calls[len(calls)-1].Action == ToolChaseAct
 		coreDump := (fwHasOther && fwHasResp) ||
-			((fwHasAct && !lastYield) || (fwHasAct && !lastAct))
+			((fwHasAct && !lastYield) || (fwHasAct && !lastAct)) ||
+			(fwHasSideEffect && fwHasNoSideEffect)
 		if coreDump {
 			toolResults = append(toolResults, ToolResult{
 				Action: "CORE DUMP",
@@ -205,6 +213,22 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			})
 		}
 
+		actx := ActionContext{
+			Ctx:                ctx,
+			GCtx:               &gctx,
+			Sid:                sid,
+			Handles:            handles,
+			TempNPCs:           &tempNPCs,
+			Writer:             writerState,
+			RbIdx:              rbIdx,
+			HasEnd:             &hasEnd,
+			HasWrite:           &hasWrite,
+			TimeAdvancedInTurn: &timeAdvancedInTurn,
+			SwitchRole:         &switchRole,
+			KPNarration:        &kpNarration,
+		}
+
+		switchInThisBatch := false
 		for _, call := range calls {
 			if ctx.Err() != nil {
 				return RunOutput{}, ctx.Err()
@@ -212,8 +236,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			if coreDump {
 				continue
 			}
-
-			switchInThisBatch := false
 
 			if switchRole {
 				// 如果发生了切换跳过本批次其他调用,期望KP在下一轮使用 write/response 工具交出控制权。
@@ -227,491 +249,13 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				}
 			}
 
-			switch call.Action {
-			case ToolCheckRule:
-				// Lawyer slave: receives only a semantic question, no scenario context.
-				debugf("tool", "session=%d check_rule q=%s", sid, call.Question)
-				doneL := timedDebug("Lawyer", "session=%d question=%s", sid, call.Question)
-				results := runLawyer(ctx, handles[models.AgentRoleLawyer], call.Question, rbIdx)
-				doneL()
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolCheckRule,
-					Result: formatLawyerResults(results),
-				})
-				debugf("tool", "session=%d check_rule result=%s", sid, formatLawyerResults(results))
-
-			case ToolReadRulebookConst:
-				debugf("tool", "session=%d read_rulebook_const constant=%q", sid, call.Constant)
-				result := rulebook.ReadConstant(call.Constant)
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolReadRulebookConst,
-					Result: result,
-				})
-
-			case ToolRollDice:
-				if call.Dice == nil {
-					continue
-				}
-				debugf("tool", "session=%d roll_dice skill=%q val=%d char=%q type=%s bonus=%d penalty=%d",
-					sid, call.Dice.Skill, call.Dice.Value, call.Dice.Character, call.Dice.CheckType, call.Dice.BonusDice, call.Dice.PenaltyDice)
-				dcr := executeSingleDiceCheck(*call.Dice, gctx.Session.Players)
-				debugf("tool", "session=%d roll_dice result=%s", sid, formatSingleDiceResult(dcr))
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolRollDice,
-					Result: formatSingleDiceResult(dcr),
-				})
-
-			case ToolNPCAct:
-				// Backward compatibility: map legacy npc_act to act_npc style.
-				question := call.Question
-				if question == "" {
-					question = call.NPCCtx
-				}
-				debugf("tool", "session=%d npc_act npc=%q question=%s", sid, call.NPCName, question)
-				doneNPC := timedDebug("NPC", "session=%d npc=%s", sid, call.NPCName)
-				action, npcErr := actNPC(ctx, handles[models.AgentRoleNPC], gctx, call.NPCName, question, tempNPCs)
-				doneNPC()
-				if npcErr != nil {
-					log.Printf("[agent] NPC %q error: %v", call.NPCName, npcErr)
-				}
-				debugf("tool", "session=%d npc_act result=%s", sid, formatNPCAction(action))
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolNPCAct,
-					Result: formatNPCAction(action),
-				})
-
-			case ToolCreateNPC:
-				result := createNPC(gctx.Session.ID, call.CharCard)
-				// Reload temp NPCs so later calls in this round can see the new NPC.
-				tempNPCs = nil
-				models.DB.Where("session_id = ?", gctx.Session.ID).Find(&tempNPCs)
-				toolResults = append(toolResults, ToolResult{Action: ToolCreateNPC, Result: result})
-
-			case ToolDestroyNPC, ToolDestoryNPC:
-				result := destroyNPC(gctx.Session.ID, call.NPCName, call.DestroyReason)
-				// Reload temp NPCs after destruction.
-				tempNPCs = nil
-				models.DB.Where("session_id = ?", gctx.Session.ID).Find(&tempNPCs)
-				toolResults = append(toolResults, ToolResult{Action: call.Action, Result: result})
-
-			case ToolActNPC:
-				question := call.Question
-				if question == "" {
-					question = call.NPCCtx
-				}
-				debugf("tool", "session=%d act_npc npc=%q question=%s", sid, call.NPCName, question)
-				doneNPC := timedDebug("NPC", "session=%d npc=%s", sid, call.NPCName)
-				action, npcErr := actNPC(ctx, handles[models.AgentRoleNPC], gctx, call.NPCName, question, tempNPCs)
-				doneNPC()
-				if npcErr != nil {
-					log.Printf("[agent] act_npc %q error: %v", call.NPCName, npcErr)
-				}
-				toolResults = append(toolResults, ToolResult{Action: ToolActNPC, Result: formatNPCAction(action)})
-
-			case ToolUpdateCharacters:
-				if len(call.Changes) == 0 {
-					continue
-				}
-				debugf("tool", "session=%d update_characters changes=%v", sid, call.Changes)
-				// Apply state changes directly: parse each string and dispatch to the
-				// appropriate apply function without an LLM intermediary.
-				for _, change := range call.Changes {
-					upd, ok := parseStateChange(change)
-					if !ok {
-						continue
-					}
-					// Determine target: check players first, fall back to session NPCs.
-					isPlayer := false
-					for _, p := range gctx.Session.Players {
-						if p.CharacterCard.Name == upd.CharacterName {
-							isPlayer = true
-							break
-						}
-					}
-					if isPlayer {
-						applyCharacterUpdate(upd, gctx.Session.Players)
-					} else {
-						upd.IsNPC = true
-						applyNPCUpdate(upd, gctx.Session.ID, tempNPCs, gctx.Session.Scenario.Content.Data.NPCs)
-					}
-				}
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolUpdateCharacters,
-					Result: "已更新:" + strings.Join(call.Changes, "、"),
-				})
-
-			case ToolManageInventory:
-				result := manageInventory(gctx.Session.Players, call.CharacterName, call.Operate, call.Item)
-				toolResults = append(toolResults, ToolResult{Action: ToolManageInventory, Result: result})
-
-			case ToolRecordMonster:
-				result := manageSeenMonster(gctx.Session.Players, call.CharacterName, call.Operate, call.Monster)
-				toolResults = append(toolResults, ToolResult{Action: ToolRecordMonster, Result: result})
-
-			case ToolManageSpell:
-				result := manageSpell(gctx.Session.Players, call.CharacterName, call.Operate, call.Spell)
-				toolResults = append(toolResults, ToolResult{Action: ToolManageSpell, Result: result})
-
-			case ToolManageRelation:
-				result := manageSocialRelation(gctx.Session.Players, call.CharacterName, call.Operate, call.Relation)
-				toolResults = append(toolResults, ToolResult{Action: ToolManageRelation, Result: result})
-			case ToolYield:
-				debugf("tool", "session=%d iter=%d KP yields control to Player, remaining calls will be deferred to next round", sid, iter+1)
-				// toolResults = append(toolResults, ToolResult{Action: ToolYield, Result: "Resumed in next round"})
-			case ToolEndGame:
-				// End game immediately when KP decides the scenario has reached its conclusion.
-				if call.EndSummary != "" {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolEndGame,
-						Result: "剧本结局:" + call.EndSummary,
-					})
-				}
-				// Ensure players with CharacterCard are loaded.
-				if len(gctx.Session.Players) == 0 {
-					models.DB.Preload("CharacterCard").
-						Where("session_id = ?", gctx.Session.ID).
-						Find(&gctx.Session.Players)
-				}
-				models.DB.Model(&models.GameSession{}).
-					Where("id = ?", gctx.Session.ID).
-					Update("status", models.SessionStatusEnded)
-				// Clear remaining round actions for safety; no further rounds after end_game.
-				models.DB.Where("session_id = ?", gctx.Session.ID).Delete(&models.SessionTurnAction{})
-				gctx.Session.Status = models.SessionStatusEnded
-				hasEnd = true
-				if call.Reply != "" {
-					kpNarration = call.Reply
-				} else if call.EndSummary != "" {
-					kpNarration = "本次冒险结束。" + call.EndSummary
-				} else {
-					kpNarration = "本次冒险到此结束,感谢各位调查员。"
-				}
-				debugf("tool", "session=%d end_game summary=%s", sid, call.EndSummary)
-
-				// Run full settlement (evaluator + growth + character evolution) synchronously.
-				var msgs []models.Message
-				models.DB.Where("session_id = ? AND role != ?", gctx.Session.ID, models.MessageRoleSystem).
-					Order("created_at ASC").
-					Limit(150).
-					Find(&msgs)
-				sessionSnap := gctx.Session
-				if _, err := RunEndSession(ctx, &sessionSnap, msgs); err != nil {
-					debugf("tool", "session=%d RunEndSession error: %v", gctx.Session.ID, err)
-				}
-
-			case ToolTriggerMadness:
-				// Roll on the appropriate COC 7th edition madness table.
-				who := call.CharacterName
-				if who == "" {
-					who = "调查员"
-				}
-				debugf("tool", "session=%d trigger_madness char=%q bystander=%v", sid, who, call.IsBystander)
-				symptom := game.RollMadnessSymptom(call.IsBystander)
-				madnessType := "总结症状"
-				if call.IsBystander {
-					madnessType = "即时症状"
-				}
-				// 持久化疯狂状态到角色卡(不定性疯狂需要判断,临时性直接用即时路径)
-				for i := range gctx.Session.Players {
-					card := &gctx.Session.Players[i].CharacterCard
-					if who != "调查员" && card.Name != who {
-						continue
-					}
-					if card.MadnessState == "none" || card.MadnessState == "" {
-						if call.IsBystander {
-							card.MadnessState = "temporary"
-						} else {
-							// 独处时按不定性疯狂处理(总结症状)
-							card.MadnessState = "indefinite"
-						}
-					}
-					card.MadnessSymptom = symptom.Description
-					card.MadnessDuration = symptom.Duration
-					models.DB.Save(card)
-					break
-				}
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolTriggerMadness,
-					Result: fmt.Sprintf("%s疯狂发作(%s,持续%s):%s", who, madnessType, symptom.Duration, symptom.Description),
-				})
-
-			case ToolQueryClues:
-				// Return full scenario clues.
-				debugf("tool", "session=%d query_clues all", sid)
-				clues := gctx.Session.Scenario.Content.Data.Clues
-				var clueResult string
-				if len(clues) == 0 {
-					clueResult = "(无匹配线索)"
-				} else {
-					clueResult = strings.Join(clues, "\n")
-				}
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolQueryClues,
-					Result: fmt.Sprintf("线索查询结果(全部):\n%s", clueResult),
-				})
-
-			case ToolQueryCharacter:
-				// Return full character card(s) for the requested investigator(s).
-				debugf("tool", "session=%d query_character name=%q", sid, call.CharacterName)
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolQueryCharacter,
-					Result: buildCharacterDetail(call.CharacterName, gctx.Session.Players),
-				})
-
-			case ToolQueryNPCCard:
-				debugf("tool", "session=%d query_npc_card npc=%q", sid, call.NPCName)
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolQueryNPCCard,
-					Result: buildNPCDetail(call.NPCName, tempNPCs, gctx.Session.Scenario.Content.Data.NPCs),
-				})
-
-			case ToolUpdateNPCCard:
-				if call.NPCName == "" || len(call.Changes) == 0 {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolUpdateNPCCard,
-						Result: "错误: update_npc_card 参数不足:需要 npc_name 和 changes",
-					})
-					continue
-				}
-				debugf("tool", "session=%d update_npc_card npc=%q changes=%v", sid, call.NPCName, call.Changes)
-				applied := make([]string, 0, len(call.Changes))
-				for _, change := range call.Changes {
-					upd, ok := parseStateChange(change)
-					if !ok {
-						continue
-					}
-					if upd.CharacterName == "" {
-						upd.CharacterName = call.NPCName
-					}
-					upd.IsNPC = true
-					applyNPCUpdate(upd, gctx.Session.ID, tempNPCs, gctx.Session.Scenario.Content.Data.NPCs)
-					applied = append(applied, change)
-				}
-				tempNPCs = nil
-				models.DB.Where("session_id = ?", gctx.Session.ID).Find(&tempNPCs)
-				if len(applied) == 0 {
-					toolResults = append(toolResults, ToolResult{Action: ToolUpdateNPCCard, Result: "未识别可应用的变更"})
-				} else {
-					toolResults = append(toolResults, ToolResult{Action: ToolUpdateNPCCard, Result: "已更新NPC:" + strings.Join(applied, "、")})
-				}
-
-			case ToolWrite:
-				// Writer slave: no scenario info; receives direction + its own history.
-				hasWrite = true
-				debugf("tool", "session=%d write direction=%s", sid, call.Direction)
-				doneW := timedDebug("Writer", "session=%d direction=%s", sid, call.Direction)
-				writeErr := appendWriter(ctx, handles[models.AgentRoleWriter], writerState, call.Direction, gctx)
-				doneW()
-				if writeErr != nil {
-					log.Printf("[agent] writer error: %v", writeErr)
-				}
-				debugf("tool", "session=%d write buffer_len=%d", sid, len([]rune(writerState.Buffer)))
-
-			case ToolAdvanceTime:
-				rounds := call.TimeRounds
-				if rounds <= 0 {
-					rounds = 1
-				}
-				newRound := gctx.Session.TurnRound + rounds
-				models.DB.Model(&models.GameSession{}).
-					Where("id = ?", gctx.Session.ID).
-					Update("turn_round", newRound)
-				// Remove stale turn-action records for the skipped rounds.
-				models.DB.Where("session_id = ? AND round < ?", gctx.Session.ID, newRound).
-					Delete(&models.SessionTurnAction{})
-				gctx.Session.TurnRound = newRound
-				timeAdvancedInTurn = true
-				reason := call.TimeReason
-				if reason == "" {
-					reason = "时间推进"
-				}
-				// NOTE: foreach player if remove madness after time advance
-				for i := range gctx.Session.Players {
-					card := &gctx.Session.Players[i].CharacterCard
-					if card.MadnessState == "none" || card.MadnessState == "" {
-						continue
-					}
-					card.MadnessDuration -= rounds
-					if card.MadnessDuration <= 0 {
-						card.MadnessState = "none"
-					}
-					models.DB.Save(card)
-					break
-				}
-				log.Printf("[agent] session %d advance_time +%d rounds (%s) → %s",
-					gctx.Session.ID, rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session)))
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolAdvanceTime,
-					Result: fmt.Sprintf("时间推进%d回合(%s),当前时间:%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(gctx.Session))),
-				})
-
-			case ToolUpdateLLMNote:
-				if call.LLMNote == "" {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolUpdateLLMNote,
-						Result: "错误:缺少 llm_note 参数",
-					})
-					continue
-				}
-				who := call.CharacterName
-				debugf("tool", "session=%d update_llm_note char=%q note=%q", sid, who, call.LLMNote)
-				var updated bool
-				for i := range gctx.Session.Players {
-					if gctx.Session.Players[i].CharacterCard.Name == who {
-						gctx.Session.Players[i].LLMNote = call.LLMNote
-						models.DB.Save(&gctx.Session.Players[i])
-						updated = true
-						break
-					}
-				}
-				if updated {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolUpdateLLMNote,
-						Result: fmt.Sprintf("已记录 %s 的状态(Session级备忘)", who),
-					})
-				} else {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolUpdateLLMNote,
-						Result: fmt.Sprintf("找不到名为 %s 的调查员", who),
-					})
-				}
-			case ToolUpdateNPCLLMNote:
-				who := call.NPCName
-				debugf("tool", "session=%d update_npc_llm_note npc=%q note=%q", sid, who, call.LLMNote)
-				var updated bool
-				for i := range tempNPCs {
-					if tempNPCs[i].Name == who {
-						tempNPCs[i].LLMNote = call.LLMNote
-						models.DB.Save(&tempNPCs[i])
-						updated = true
-						break
-					}
-				}
-				if updated {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolUpdateNPCLLMNote,
-						Result: fmt.Sprintf("已记录 %s 的状态(Session级备忘)", who),
-					})
-				} else {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolUpdateNPCLLMNote,
-						Result: fmt.Sprintf("找不到名为 %s 的NPC", who),
-					})
-				}
-			case ToolResponse:
-				hasEnd = true
-				kpNarration = call.Reply
-				debugf("tool", "session=%d response narration=%s", sid, call.Reply)
-
-			// ── Combat tools ──────────────────────────────────────────────────────
-			case ToolStartCombat:
-				if len(call.CombatParticipants) == 0 {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolStartCombat,
-						Result: "错误:start_combat 缺少 combat_participants 参数",
-					})
-					continue
-				}
-				cs := buildCombatState(call.CombatParticipants)
-				gctx.Session.CombatState = models.JSONField[*models.CombatState]{Data: &cs}
-				saveCombatState(gctx.Session.ID, &cs)
-				debugf("tool", "session=%d start_combat round=1 participants=%d", sid, len(cs.Participants))
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolStartCombat,
-					Result: fmt.Sprintf("战斗开始！DEX顺序:%s", combatOrderSummary(cs.Participants)),
-				})
-
-			case ToolCombatAct:
-				cs := gctx.Session.CombatState.Data
-				if cs == nil {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolCombatAct,
-						Result: "错误:当前没有进行中的战斗",
-					})
-					continue
-				}
-				var result string
-				result, switchRole = applyCombatAct(cs, call)
-				if !switchInThisBatch && switchRole {
-					switchInThisBatch = true
-				}
-				gctx.Session.CombatState = models.JSONField[*models.CombatState]{Data: cs}
-				saveCombatState(gctx.Session.ID, cs)
-				debugf("tool", "session=%d combat_act actor=%q action=%q", sid, call.CombatActorName, call.CombatAction)
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolCombatAct,
-					Result: result,
-				})
-
-			case ToolEndCombat:
-				gctx.Session.CombatState = models.JSONField[*models.CombatState]{Data: nil}
-				saveCombatState(gctx.Session.ID, nil)
-				reason := call.CombatEndReason
-				if reason == "" {
-					reason = "战斗结束"
-				}
-				debugf("tool", "session=%d end_combat reason=%q", sid, reason)
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolEndCombat,
-					Result: fmt.Sprintf("战斗已结束:%s", reason),
-				})
-
-			// ── Chase tools ───────────────────────────────────────────────────────
-			case ToolStartChase:
-				if len(call.ChaseParticipants) == 0 {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolStartChase,
-						Result: "错误:start_chase 缺少 chase_participants 参数",
-					})
-					continue
-				}
-				chs := buildChaseState(call.ChaseParticipants)
-				gctx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: &chs}
-				saveChaseState(gctx.Session.ID, &chs)
-				debugf("tool", "session=%d start_chase round=1 participants=%d minMOV=%d", sid, len(chs.Participants), chs.MinMOV)
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolStartChase,
-					Result: fmt.Sprintf("追逐开始！参与者:%s；最低MOV=%d,各参与者行动点=%s",
-						chaseParticipantSummary(chs.Participants),
-						chs.MinMOV,
-						chaseAPSummary(chs.Participants, chs.MinMOV),
-					),
-				})
-
-			case ToolChaseAct:
-				chs := gctx.Session.ChaseState.Data
-				if chs == nil {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolChaseAct,
-						Result: "错误:当前没有进行中的追逐",
-					})
-					continue
-				}
-				var result string
-				result, switchRole = applyChaseAct(chs, call)
-				if !switchInThisBatch && switchRole {
-					switchInThisBatch = true
-				}
-				gctx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: chs}
-				saveChaseState(gctx.Session.ID, chs)
-				debugf("tool", "session=%d chase_act actor=%q action=%v", sid, call.ChaseActorName, call.ChaseAction)
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolChaseAct,
-					Result: result,
-				})
-
-			case ToolEndChase:
-				gctx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: nil}
-				saveChaseState(gctx.Session.ID, nil)
-				reason := call.ChaseEndReason
-				if reason == "" {
-					reason = "追逐结束"
-				}
-				debugf("tool", "session=%d end_chase reason=%q", sid, reason)
-				toolResults = append(toolResults, ToolResult{
-					Action: ToolEndChase,
-					Result: fmt.Sprintf("追逐已结束:%s", reason),
-				})
+			prevSwitch := switchRole
+			if handler, ok := actionRegistry[call.Action]; ok {
+				results := handler.Execute(call, actx)
+				toolResults = append(toolResults, results...)
+			}
+			if !switchInThisBatch && switchRole && !prevSwitch {
+				switchInThisBatch = true
 			}
 
 			if hasEnd {
@@ -1169,14 +713,6 @@ func scenarioStartSlot(session models.GameSession) int {
 	return session.Scenario.Content.Data.GameStartSlot
 }
 
-func truncate(s string, maxLen int) string {
-	runes := []rune(s)
-	if len(runes) > maxLen {
-		return string(runes[:maxLen]) + "…"
-	}
-	return s
-}
-
 // ResetMadnessAfterSession clears non-permanent madness state on session end.
 // Returns true when any field was changed.
 func ResetMadnessAfterSession(card *models.CharacterCard) bool {
@@ -1192,69 +728,6 @@ func ResetMadnessAfterSession(card *models.CharacterCard) bool {
 	card.MadnessDuration = 0
 	card.DailySanLoss = 0
 	return changed
-}
-
-// applyStateChangesFallback is the simple regex-based stat applier used when
-// the Editor agent fails.  It is intentionally identical to the former
-// applyStateChanges in session.go but lives here so all stat-mutation logic is
-// in one package.
-func applyStateChangesFallback(changes []string, players []models.SessionPlayer) {
-	for _, change := range changes {
-		applySimpleStateChange(change, players)
-	}
-}
-
-func applySimpleStateChange(change string, players []models.SessionPlayer) {
-	// Matches "SAN -2(角色名)" or "HP +1(角色名)" etc.
-	change = strings.TrimSpace(change)
-	fields := map[string]struct{}{"SAN": {}, "HP": {}, "MP": {}}
-	for stat := range fields {
-		if !strings.HasPrefix(change, stat) {
-			continue
-		}
-		// Extract delta and name via simple string parsing.
-		rest := strings.TrimPrefix(change, stat)
-		rest = strings.TrimSpace(rest)
-		// rest = "-2(角色名)" or "-2"
-		var deltaStr, charName string
-		if idx := strings.Index(rest, "("); idx >= 0 {
-			deltaStr = strings.TrimSpace(rest[:idx])
-			charName = strings.TrimSuffix(strings.TrimPrefix(rest[idx:], "("), ")")
-		} else {
-			deltaStr = rest
-		}
-		var delta int
-		fmt.Sscanf(deltaStr, "%d", &delta)
-		for i := range players {
-			card := &players[i].CharacterCard
-			if charName != "" && card.Name != charName {
-				continue
-			}
-			s := card.Stats.Data
-			switch stat {
-			case "SAN":
-				prevSAN := s.SAN
-				s.SAN = clamp(s.SAN+delta, 0, s.MaxSAN)
-				card.Stats.Data = s
-				// fallback路径下也需要追踪当日累计SAN损失,以正确触发不定性疯狂判定
-				if delta < 0 {
-					sanLoss := prevSAN - s.SAN
-					if sanLoss > 0 {
-						card.DailySanLoss += sanLoss
-					}
-				}
-			case "HP":
-				s.HP = clamp(s.HP+delta, 0, s.MaxHP)
-				card.Stats.Data = s
-			case "MP":
-				s.MP = clamp(s.MP+delta, 0, s.MaxMP)
-				card.Stats.Data = s
-			}
-			models.DB.Save(card)
-			break
-		}
-		return
-	}
 }
 
 func mapSkillToStat(card *models.CharacterCard, skill string) (val int, ok bool) {
@@ -1906,46 +1379,3 @@ func removeString(list []string, value string) []string {
 	return out
 }
 
-// skillsExcludedFromGrowth lists skills that never receive growth marks per COC rules.
-var skillsExcludedFromGrowth = map[string]bool{
-	"克苏鲁神话": true,
-	"信用评级":  true,
-}
-
-// recordGrowthMark saves a growth mark if the check qualifies under COC rules:
-// - must be a success
-// - must be a standard skill check (not sanity / luck)
-// - must not have used bonus dice
-// - skill must not be on the exclusion list
-// - character must be named
-// Duplicate marks for the same session+character+skill are silently ignored.
-func recordGrowthMark(sessionID uint, dcr DiceCheckResult) {
-	if !dcr.Success {
-		return
-	}
-	if dcr.CheckType == "sanity" || dcr.CheckType == "luck" {
-		return
-	}
-	if dcr.BonusDice > 0 {
-		return
-	}
-	skill := dcr.Skill
-	charName := dcr.Character
-	if skill == "" || charName == "" {
-		return
-	}
-	if skillsExcludedFromGrowth[skill] {
-		return
-	}
-	// Upsert: only insert if no mark exists yet for this session+character+skill.
-	var existing models.SessionGrowthMark
-	result := models.DB.Where("session_id = ? AND character_name = ? AND skill = ?",
-		sessionID, charName, skill).First(&existing)
-	if result.Error != nil {
-		models.DB.Create(&models.SessionGrowthMark{
-			SessionID:     sessionID,
-			CharacterName: charName,
-			Skill:         skill,
-		})
-	}
-}
