@@ -1050,6 +1050,36 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Append conversation history from DB (real multi-turn messages from previous rounds).
 	msgs = append(msgs, history...)
 
+	// Few-shot learn
+	msgs = append(msgs, llm.ChatMessage{
+		Role: "assistant",
+		Content: `
+[
+		{"action":"roll_dice"}
+		{"action":"response"}
+]
+		`,
+	})
+	msgs = append(msgs, llm.ChatMessage{
+		Role:    "user",
+		Content: `ERROR: CORE DUMP, RESPONSE CANNOT NOT BE USED WITH OTHER ACTIONS IN THE SAME ROUND`,
+	})
+	msgs = append(msgs, llm.ChatMessage{
+		Role: "assistant",
+		Content: `
+[
+	{"action":"roll_dice","dice":{"skill":"聆听","value":40,"character":"Alice","check_type":"standard","dice_expr":"1D100","hidden":false,"bonus_dice":0,"penalty_dice":0,"san_success_loss":"0","san_fail_loss":"1D6","monster_name":""}},
+	{"action":"yield"}
+]
+		`,
+	})
+	msgs = append(msgs, llm.ChatMessage{
+		Role: "user",
+		Content: `[
+			{"action":"roll_dice",result":"大成功"},
+		]`,
+	})
+
 	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
 	var userSB strings.Builder
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
