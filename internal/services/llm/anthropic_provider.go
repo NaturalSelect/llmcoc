@@ -24,6 +24,7 @@ type anthropicProvider struct {
 func newAnthropicProvider(apiKey, baseURL, model string, maxTokens int, temperature float64) *anthropicProvider {
 	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
 	if baseURL != "" {
+		baseURL = strings.TrimSuffix(baseURL, "/")
 		baseURL = strings.TrimSuffix(baseURL, "/v1")
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
@@ -72,6 +73,11 @@ func isAnthropicRetryable(err error) bool {
 		code := apiErr.StatusCode
 		return code == 429 || code >= 500
 	}
+	// The SDK emits this when a proxy/gateway returns a non-JSON body (e.g. plain-text
+	// 502/503 error pages). Treat as transient so the caller retries.
+	// if strings.Contains(err.Error(), "content-type") && strings.Contains(err.Error(), "text/plain") {
+	// 	return true
+	// }
 	return false
 }
 
