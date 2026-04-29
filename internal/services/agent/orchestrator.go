@@ -174,6 +174,30 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		hasWrite := false
 		hasInteraction := false
 
+		// NOTE: firewall
+		fwHasResp := false
+		fwHasOther := false
+		for _, call := range calls {
+			if call.Action == ToolResponse {
+				fwHasResp = true
+				break
+			}
+		}
+		for _, call := range calls {
+			if call.Action != ToolWrite && call.Action != ToolResponse {
+				fwHasOther = true
+				break
+			}
+		}
+		coreDump := false
+		if fwHasOther && fwHasResp {
+			toolResults = append(toolResults, ToolResult{
+				Action: "CORE DUMP",
+				Result: "YOU DO NOT FOLLOW THE RULE, SYSTEM IS CORE DUMP, PLEASE RETRY",
+			})
+			coreDump = true
+		}
+
 		for _, call := range calls {
 			switch call.Action {
 			case ToolActNPC, ToolRollDice,
@@ -186,6 +210,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		for _, call := range calls {
 			if ctx.Err() != nil {
 				return RunOutput{}, ctx.Err()
+			}
+			if coreDump {
+				continue
 			}
 
 			switchInThisBatch := false
