@@ -646,7 +646,7 @@ loop:
 	fullReply := output.WriterText
 	if output.KPReply != "" {
 		narration := output.KPReply
-		if !strings.HasPrefix(narration, "KP:") && !strings.HasPrefix(narration, "KP:") {
+		if !strings.HasPrefix(narration, "KP:") {
 			narration = "KP:" + narration
 		}
 		if fullReply != "" {
