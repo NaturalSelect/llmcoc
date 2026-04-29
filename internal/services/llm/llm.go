@@ -56,6 +56,9 @@ type Provider interface {
 
 // NewProviderFromConfig creates a provider from a DB-stored LLMProviderConfig.
 func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32) Provider {
+	if strings.HasPrefix(modelName, "claude") {
+		return newAnthropicProvider(cfg.APIKey, cfg.BaseURL, modelName, maxTokens, float64(temperature))
+	}
 	return newOpenAIProvider(cfg.APIKey, cfg.BaseURL, modelName, maxTokens, temperature)
 }
 
@@ -75,6 +78,9 @@ func LoadProviderFromDB(role models.AgentRole) (Provider, error) {
 	maxTok := cfg.MaxTokens
 	if maxTok == 0 {
 		maxTok = 1024
+	}
+	if strings.HasPrefix(cfg.ModelName, "claude") {
+		return newAnthropicProvider(cfg.ProviderConfig.APIKey, cfg.ProviderConfig.BaseURL, cfg.ModelName, maxTok, float64(cfg.Temperature)), nil
 	}
 	return newOpenAIProvider(cfg.ProviderConfig.APIKey, cfg.ProviderConfig.BaseURL, cfg.ModelName, maxTok, cfg.Temperature), nil
 }

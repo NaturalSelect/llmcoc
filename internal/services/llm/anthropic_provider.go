@@ -15,12 +15,13 @@ import (
 )
 
 type anthropicProvider struct {
-	client    anthropic.Client
-	model     anthropic.Model
-	maxTokens int64
+	client      anthropic.Client
+	model       anthropic.Model
+	maxTokens   int64
+	temperature float64
 }
 
-func newAnthropicProvider(apiKey, baseURL, model string, maxTokens int) *anthropicProvider {
+func newAnthropicProvider(apiKey, baseURL, model string, maxTokens int, temperature float64) *anthropicProvider {
 	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
@@ -29,9 +30,10 @@ func newAnthropicProvider(apiKey, baseURL, model string, maxTokens int) *anthrop
 		maxTokens = 2048
 	}
 	return &anthropicProvider{
-		client:    anthropic.NewClient(opts...),
-		model:     anthropic.Model(model),
-		maxTokens: int64(maxTokens),
+		client:      anthropic.NewClient(opts...),
+		model:       anthropic.Model(model),
+		maxTokens:   int64(maxTokens),
+		temperature: temperature,
 	}
 }
 
@@ -77,11 +79,13 @@ func (p *anthropicProvider) Chat(ctx context.Context, messages []ChatMessage) (s
 	params, system := p.toAnthropicMessages(messages)
 
 	req := anthropic.MessageNewParams{
-		Model:     p.model,
-		MaxTokens: p.maxTokens,
-		Messages:  params,
-		Thinking:  anthropic.ThinkingConfigParamOfEnabled(1500),
+		Model:        p.model,
+		MaxTokens:    p.maxTokens,
+		Messages:     params,
+		Thinking:     anthropic.ThinkingConfigParamOfEnabled(1500),
+		CacheControl: anthropic.NewCacheControlEphemeralParam(),
 	}
+	req.Temperature.Value = p.temperature
 	if system != "" {
 		req.System = []anthropic.TextBlockParam{
 			{Text: system},
