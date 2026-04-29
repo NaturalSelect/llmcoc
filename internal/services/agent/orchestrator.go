@@ -193,7 +193,23 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 		// LLM 的结果加回去
 		// Record what the KP decided so the next iteration has proper context.
-		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: rawResp})
+		truncStr := func(s string, max int) string {
+			if len(s) <= max {
+				return s
+			}
+			return fmt.Sprintf("%s...", s[:max])
+		}
+		compressRawResp := func(calls []ToolCall) string {
+			tmp := append([]ToolCall{}, calls...)
+			for i := range tmp {
+				act := &tmp[i]
+				act.Reply = truncStr(act.Reply, 10)
+				act.Direction = truncStr(act.Direction, 10)
+			}
+			data, _ := json.Marshal(tmp)
+			return string(data)
+		}
+		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
 
 		var toolResults []ToolResult
 		hasEnd := false
@@ -223,7 +239,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		if coreDump {
 			toolResults = append(toolResults, ToolResult{
 				Action: "ERROR",
-				Result: "YOU DO NOT FOLLOW THE RULE, MIXED SIDE-EFFECT AND non-SIDE-EFFECT ACTIONS, PLEASE RETRY",
+				Result: "YOU DO NOT FOLLOW THE RULE, MIXED SIDE-EFFECT AND non-SIDE-EFFECT IN A ACTIONS PHASE, PLEASE RETRY",
 			})
 		}
 
