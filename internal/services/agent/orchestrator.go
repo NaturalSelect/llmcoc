@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
@@ -167,8 +168,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			sid, iter+1, rawResp)
 
 		// Record what the KP decided so the next iteration has proper context.
-		rawRespTrimBytes, _ := json.Marshal(calls)
-		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: string(rawRespTrimBytes)})
+		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: rawResp})
 
 		var toolResults []ToolResult
 		hasEnd := false
@@ -299,6 +299,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			sb.Write(data)
 			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: sb.String()})
 		}
+		time.Sleep(2 * time.Second)
 	}
 
 	// Max iterations reached — return whatever Writer produced.
