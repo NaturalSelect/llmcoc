@@ -172,11 +172,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		var toolResults []ToolResult
 		hasEnd := false
 		hasWrite := false
-		hasInteraction := false
 
 		// NOTE: firewall
 		fwHasResp := false
 		fwHasOther := false
+		fwHasAct := false
 		for _, call := range calls {
 			if call.Action == ToolResponse {
 				fwHasResp = true
@@ -186,25 +186,23 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		for _, call := range calls {
 			if call.Action != ToolWrite && call.Action != ToolResponse {
 				fwHasOther = true
-				break
+			}
+			if call.Action == ToolCombatAct {
+				fwHasAct = true
+			}
+			if call.Action == ToolChaseAct {
+				fwHasAct = true
 			}
 		}
-		coreDump := false
-		if fwHasOther && fwHasResp {
+		lastYield := calls[len(calls)-1].Action == ToolYield
+		lastAct := calls[len(calls)-1].Action == ToolCombatAct || calls[len(calls)-1].Action == ToolChaseAct
+		coreDump := (fwHasOther && fwHasResp) ||
+			((fwHasAct && !lastYield) || (fwHasAct && !lastAct))
+		if coreDump {
 			toolResults = append(toolResults, ToolResult{
 				Action: "CORE DUMP",
 				Result: "YOU DO NOT FOLLOW THE RULE, SYSTEM IS CORE DUMP, PLEASE RETRY",
 			})
-			coreDump = true
-		}
-
-		for _, call := range calls {
-			switch call.Action {
-			case ToolActNPC, ToolRollDice,
-				ToolCheckRule, ToolReadRulebookConst,
-				ToolChaseAct, ToolCombatAct:
-				hasInteraction = true
-			}
 		}
 
 		for _, call := range calls {
@@ -614,14 +612,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					})
 				}
 			case ToolResponse:
-				if hasInteraction && !switchRole {
-					toolResults = append(toolResults, ToolResult{
-						Action: ToolResponse,
-						Result: "错误:已经有其他工具调用了,response 操作被跳过,response工具应在没有其他交互的情况下使用",
-					})
-					debugf("tool", "session=%v response with interaction", sid)
-					continue
-				}
 				hasEnd = true
 				kpNarration = call.Reply
 				debugf("tool", "session=%d response narration=%s", sid, call.Reply)
