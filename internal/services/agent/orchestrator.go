@@ -345,7 +345,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				toolResults = append(toolResults, ToolResult{Action: ToolManageRelation, Result: result})
 			case ToolYield:
 				debugf("tool", "session=%d iter=%d KP yields control to Player, remaining calls will be deferred to next round", sid, iter+1)
-				toolResults = append(toolResults, ToolResult{Action: ToolYield, Result: "OK"})
+				// toolResults = append(toolResults, ToolResult{Action: ToolYield, Result: "Resumed in next round"})
 			case ToolEndGame:
 				// End game immediately when KP decides the scenario has reached its conclusion.
 				if call.EndSummary != "" {
