@@ -461,17 +461,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	var turnActions []models.SessionTurnAction
 
 	// Count only players who can still act (alive and not unconscious).
-	activePlayerCount := 0
-	for _, p := range session.Players {
-		card := p.CharacterCard
-		if card.WoundState != "dead" && !card.IsUnconscious {
-			activePlayerCount++
-		}
-	}
-	// Fall back to total count if everyone is incapacitated (edge case).
-	if activePlayerCount == 0 {
-		activePlayerCount = playerCount
-	}
+	activePlayerCount := len(session.Players)
 
 	if playerCount > 1 && isTrackedPlayer {
 		// Use a DB transaction so that record + count is atomic, preventing the
