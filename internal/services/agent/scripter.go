@@ -726,7 +726,7 @@ func grepRulebook(keyword string) string {
 		if len(s) > maxLen {
 			s = s[:maxLen] + "..."
 		}
-		sb.WriteString(fmt.Sprintf("%v Hit %v: %v", i+1, h.LineNum, s))
+		sb.WriteString(fmt.Sprintf("[%v] Hit Line: %v Content: %v\n", i+1, h.LineNum, s))
 	}
 	return strings.TrimSpace(sb.String())
 }
