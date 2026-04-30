@@ -340,7 +340,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
 	var userSB strings.Builder
 	userSB.WriteString("The above is historical information that has been processed, completed, and compressed.")
-	userSB.WriteString("<message>\n")
+	userSB.WriteString("<processing>\n")
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
 	userSB.WriteString("\n\n Curr Game Time" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "\n")
 	// Inject active temp NPC states so KP can enforce scene consistency.
@@ -494,7 +494,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("不要忘记更新调查员的 物品栏 社交关系 法术表 种族 等属性\n")
 	userSB.WriteString("SAN值的扣除必须谨慎,随意扣除SAN,不能反复扣SAN,不能只因为调查员处于疯狂状态在忽略规则的情况下扣除SAN\n")
 	userSB.WriteString("进行社交关系修改是已经慎重尤其是更新已有社交关系时\n")
-	userSB.WriteString("</message>\n")
+	userSB.WriteString("</processing>\n")
 
 	userSB.WriteString("\n")
 	userSB.WriteString("Your Response Tool Call Must Contain Detail(e.g. dice point, damage and so on)\n")
