@@ -1677,6 +1677,9 @@
                             </option>
                         </template>
                     </select>
+                    <div x-show="sessionForm.scenario_id" class="text-xs text-amber-700 px-1" style="font-family:system-ui">
+                        难度：<span x-text="(scenarioList.find(s => s.id === sessionForm.scenario_id)?.difficulty) || 'normal'"></span>
+                    </div>
                     <div class="grid grid-cols-2 gap-2">
                         <div>
                             <label class="text-xs text-amber-800 mb-1 block" style="font-family:system-ui">最大玩家数</label>
