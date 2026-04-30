@@ -138,7 +138,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			// POW changes affect MaxMP (MaxMP = POW/5) and current MP proportionally.
 			s := card.Stats.Data
 			oldPOW := s.POW
-			s.POW = clamp(s.POW+upd.Delta, 1, 99)
+			s.POW = clamp(s.POW+upd.Delta, 1, 500)
 			newMaxMP := s.POW / 5
 			if newMaxMP < 1 {
 				newMaxMP = 1
