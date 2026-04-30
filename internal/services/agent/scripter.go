@@ -724,7 +724,10 @@ func grepRulebook(keyword string) string {
 	for i, h := range hits {
 		s := h.Text
 		if len(s) > maxLen {
-			s = s[:maxLen] + "..."
+			runes := []rune(s)
+			if len(runes) > maxLen {
+				s = string(runes[:maxLen]) + "..."
+			}
 		}
 		sb.WriteString(fmt.Sprintf("[%v] Hit Line: %v Content: %v\n", i+1, h.LineNum, s))
 	}
