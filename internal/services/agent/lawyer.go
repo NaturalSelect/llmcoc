@@ -14,20 +14,19 @@ import (
 
 var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通过调用工具来回答规则问题。
 每次输出必须是一个JSON数组,包含按顺序执行的工具调用列表。
-在使用 search 之前优先考虑 read_rulebook_const 来获取规则书内置常量(如目录、怪物清单等),以减少搜索次数和提高准确率。
+在使用 grep 之前优先考虑 read_rulebook_const 来获取规则书内置常量(如目录、怪物清单等),以减少搜索次数和提高准确率。
 
 【规则书目录】
 ` + rulebook.RulebookDir + `
 
 【可用工具】
-1. search — 检索规则书原文
-   {"action":"search","keyword":"精确关键词(15字以内)"}
-   参考上方目录选择合适的关键词进行搜索。
-   示例:{"action":"search","keyword":"理智损失"}
-   示例:{"action":"search","keyword":"限制条件"}
-   示例: {"action":"search","keyword":"san值"}
-   示例: {"action":"search","keyword":"通神术"}
-   示例: {"action":"search","keyword":"克苏鲁通神术"} // 完整法术名
+1. grep — 在规则书中精确搜索关键词,返回匹配行及其上下文原文
+   {"action":"grep","keyword":"精确关键词"}
+   - 关键词须与规则书原文一致
+   示例:{"action":"grep","keyword":"理智损失"}
+   示例:{"action":"grep","keyword":"san值"}
+   示例:{"action":"grep","keyword":"通神术"}
+   示例:{"action":"grep","keyword":"克苏鲁通神术"}
 
 2. read_rulebook_const — 读取规则书内置常量目录/列表,存在假阴性风险(但不存在假阳性)
 	{"action":"read_rulebook_const","constant":"常量名"}
@@ -39,16 +38,16 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
    - 若原文未覆盖该问题,明确说明"规则书未明确规定"
 
 【执行规则】
-- 先调用 search(至少一次,但可多次),再调用 response
+- 先调用 grep(至少一次,但可多次),再调用 response
 - 当需要目录、法术清单、怪物清单等静态信息时,可先调用 read_rulebook_const
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
-- 每轮只包含 search 调用(可多个),或只包含单个 response,不混用
+- 每轮只包含 grep 调用(可多个),或只包含单个 response,不混用
 - 仅输出JSON数组,不加任何说明文字`
 
 // lawyerCall is one item in the Lawyer's tool-call output sequence.
 type lawyerCall struct {
 	Action   string `json:"action"`
-	Keyword  string `json:"keyword,omitempty"`  // search
+	Keyword  string `json:"keyword,omitempty"`  // grep
 	Constant string `json:"constant,omitempty"` // read_rulebook_const
 	Ruling   string `json:"ruling,omitempty"`   // response
 }
@@ -56,8 +55,8 @@ type lawyerCall struct {
 // runLawyer is an autonomous rule consultant that mirrors the Director's tool-call loop.
 //
 // Each iteration the model outputs a JSON array of lawyerCalls:
-//   - [search, search, …] → execute searches, feed results back as user message, loop
-//   - [response]            → return ruling
+//   - [grep, grep, …] → execute grep searches, feed results back as user message, loop
+//   - [response]       → return ruling
 //
 // The conversation grows naturally (system → user → assistant → user → …) so the model
 // always sees its own prior decisions alongside the search evidence.
@@ -112,23 +111,22 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 			}
 		}
 
-		// ── search/read_rulebook_const: execute and feed results back ─────────
+		// ── grep/read_rulebook_const: execute and feed results back ─────────
 		var resultSB strings.Builder
 		for _, c := range calls {
 			switch c.Action {
-			case "search":
+			case "grep":
 				if c.Keyword == "" {
 					continue
 				}
-				log.Printf("[lawyer] search: %s", c.Keyword)
-				debugf("Lawyer", "iter=%d search keyword=%q", iter+1, c.Keyword)
-				sections := rulebook.Search(idx, c.Keyword, 30)
-				text := rulebook.Format(sections, 2000)
+				log.Printf("[lawyer] grep: %s", c.Keyword)
+				debugf("Lawyer", "iter=%d grep keyword=%q", iter+1, c.Keyword)
+				text := grepRulebook(c.Keyword)
 				if text == "" {
 					text = "(规则书中未找到相关内容)"
 				}
-				resultSB.WriteString(fmt.Sprintf("【search:%s】\n%s\n\n", c.Keyword, text))
-				debugf("Search", "Search keyword: %v result: %v", c.Keyword, text)
+				resultSB.WriteString(fmt.Sprintf("【grep:%s】\n%s\n\n", c.Keyword, text))
+				debugf("Grep", "keyword: %v result: %v", c.Keyword, text)
 			case "read_rulebook_const":
 				if c.Constant == "" {
 					continue

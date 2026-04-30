@@ -594,6 +594,8 @@ type Index []Section
 // GlobalIndex holds the loaded rulebook sections, populated at startup.
 var GlobalIndex Index
 
+var ruleBookLines = make([]string, 0)
+
 // Load reads a Markdown file at the given path and splits it into sections
 // at any Markdown heading level (lines starting with one or more '#').
 func Load(path string) (Index, error) {
@@ -613,6 +615,7 @@ func Load(path string) (Index, error) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		ruleBookLines = append(ruleBookLines, line)
 		trimmed := strings.TrimSpace(line)
 		if title, ok := parseHeading(trimmed); ok {
 			// Save previous section.
@@ -651,6 +654,30 @@ func parseHeading(line string) (string, bool) {
 		return "", false
 	}
 	return title, true
+}
+
+type GrepResult struct {
+	LineNum int
+	Text    string
+}
+
+func GrepRuleBook(keyword string) []GrepResult {
+	var results []GrepResult
+	for i, line := range ruleBookLines {
+		if strings.Contains(line, keyword) {
+			results = append(results, GrepResult{LineNum: i + 1, Text: line})
+		}
+	}
+	return results
+}
+
+func GetContentByLineNum(firstLine, endLine int) string {
+	sb := strings.Builder{}
+	for i := firstLine - 1; i < endLine && i < len(ruleBookLines); i++ {
+		sb.WriteString(ruleBookLines[i])
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 // Search returns up to maxResults sections ranked by multi-strategy matching:
