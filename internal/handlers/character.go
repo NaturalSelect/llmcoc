@@ -238,7 +238,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		}
 	}
 
-	provider, err = h.LLMFactory.LoadProvider(models.AgentRoleDirector)
+	provider, err = h.LLMFactory.LoadProvider(models.AgentRoleEvaluator)
 	if err != nil {
 		log.Printf("[character] failed to load LLM provider for skill adjustment: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "加载LLM提供者失败: " + err.Error()})

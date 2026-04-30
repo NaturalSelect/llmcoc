@@ -281,13 +281,6 @@ func (p *openAIProvider) AdjustSkills(ctx context.Context, req AdjustSkillsReq) 
 	}
 
 	content := StripCodeFence(resp.Choices[0].Message.Content)
-	// extract {...} in case of surrounding text
-	if s := strings.Index(content, "{"); s >= 0 {
-		if e := strings.LastIndex(content, "}"); e > s {
-			content = content[s : e+1]
-		}
-	}
-
 	var raw map[string]int
 	if err := json.Unmarshal([]byte(content), &raw); err != nil {
 		return nil, fmt.Errorf("AdjustSkills parse failed: %w (raw: %s)", err, content)
