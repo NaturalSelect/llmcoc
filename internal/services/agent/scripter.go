@@ -717,26 +717,16 @@ func grepRulebook(keyword string) string {
 	if len(hits) == 0 {
 		return ""
 	}
-	const contextLines = 30
-	const maxChars = 2000
+
+	const maxLen = 20
 
 	var sb strings.Builder
-	for _, h := range hits {
-		first := h.LineNum - contextLines
-		if first < 1 {
-			first = 1
+	for i, h := range hits {
+		s := h.Text
+		if len(s) > maxLen {
+			s = s[:maxLen] + "..."
 		}
-		end := h.LineNum + contextLines
-		block := fmt.Sprintf("(第%d行附近)\n%s\n", h.LineNum, rulebook.GetContentByLineNum(first, end))
-		if sb.Len()+len(block) > maxChars {
-			remaining := maxChars - sb.Len()
-			if remaining > 0 {
-				sb.WriteString(block[:remaining])
-				sb.WriteString("…")
-			}
-			break
-		}
-		sb.WriteString(block)
+		sb.WriteString(fmt.Sprintf("%v Hit %v: %v", i+1, h.LineNum, s))
 	}
 	return strings.TrimSpace(sb.String())
 }

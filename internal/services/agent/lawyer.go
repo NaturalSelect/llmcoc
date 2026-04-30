@@ -32,12 +32,17 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	{"action":"read_rulebook_const","constant":"常量名"}
 	- 常量名:rulebook_dir / rulebook_detail_dir / aliens / books / great_old_ones_and_gods / monsters / mythos_creatures / spells
 
-3. response — 给出最终规则裁定,结束本次查询
+3. read_lines — 直接读取规则书的特定行号范围,适用于已知出处的规则查询
+   {"action":"read_lines","start":100,"end":120}
+   - 仅当 grep 已定位相关内容但需要完整上下文时使用
+
+4. response — 给出最终规则裁定,结束本次查询
    {"action":"response","ruling":"规则裁定内容(100字以内)"}
    - 直接引用关键规则数值和判定条件
    - 若原文未覆盖该问题,明确说明"规则书未明确规定"
 
 【执行规则】
+- 回复不能为空
 - 先调用 grep(至少一次,但可多次),再调用 response
 - 当需要目录、法术清单、怪物清单等静态信息时,可先调用 read_rulebook_const
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
@@ -49,6 +54,8 @@ type lawyerCall struct {
 	Action   string `json:"action"`
 	Keyword  string `json:"keyword,omitempty"`  // grep
 	Constant string `json:"constant,omitempty"` // read_rulebook_const
+	Start    int    `json:"start,omitempty"`    // read_lines
+	End      int    `json:"end,omitempty"`      // read_lines
 	Ruling   string `json:"ruling,omitempty"`   // response
 }
 
@@ -136,6 +143,12 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				}
 				text := rulebook.ReadConstant(c.Constant)
 				resultSB.WriteString(fmt.Sprintf("【read_rulebook_const:%s】\n%s\n\n", c.Constant, text))
+			case "read_lines":
+				if c.Start == 0 || c.End == 0 {
+					continue
+				}
+				text := rulebook.GetContentByLineNum(c.Start, c.End)
+				resultSB.WriteString(fmt.Sprintf("【read_lines:%d-%d】\n%s\n\n", c.Start, c.End, text))
 			}
 		}
 		if resultSB.Len() == 0 {
