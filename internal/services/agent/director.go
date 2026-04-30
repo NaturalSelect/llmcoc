@@ -963,7 +963,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
-	userSB.WriteString("【配置】剧情法术:禁用 | 严格反作弊:启用 | 社交关系:实时变更\n")
+	userSB.WriteString("【配置】剧情法术:禁用 | 严格反作弊:启用 | 社交关系:实时变更 | 法术学习:实时变更\n")
 	userSB.WriteString("\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
