@@ -985,6 +985,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s]: %s</%s>", getTag(gctx.UserInput), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput)))
 	}
 	userSB.WriteString("\n")
+	userSB.WriteString("Your Response Tool Call Must Contain Detail(e.g. dice point, damage and so on)\n")
 	userSB.WriteString("Please Generate one JSON array of tool call, to work as KP agent \n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
