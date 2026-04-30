@@ -149,6 +149,14 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				}
 				text := rulebook.GetContentByLineNum(c.Start, c.End)
 				resultSB.WriteString(fmt.Sprintf("【read_lines:%d-%d】\n%s\n\n", c.Start, c.End, text))
+				s := text
+				if len(s) > 20 {
+					runes := []rune(s)
+					if len(runes) > 20 {
+						s = string(runes[:20]) + "..."
+					}
+				}
+				debugf("lawyer", "read_lines: start=%d end=%d result=%s", c.Start, c.End, s)
 			}
 		}
 		if resultSB.Len() == 0 {

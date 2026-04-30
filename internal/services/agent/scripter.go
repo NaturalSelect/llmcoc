@@ -505,17 +505,6 @@ func executeSearchCalls(ctx context.Context, calls []pipelineToolCall, tag strin
 			}
 			results := runLawyer(ctx, lawyerHandle, c.Query, rulebook.GlobalIndex)
 			sb.WriteString(fmt.Sprintf("【search:%s】\n%s\n\n", c.Query, formatLawyerResults(results)))
-		case "grep":
-			if c.Keyword == "" {
-				continue
-			}
-			log.Printf("[%s] grep keyword=%q", tag, c.Keyword)
-			text := grepRulebook(c.Keyword)
-			if text == "" {
-				text = "(规则书中未找到相关内容)"
-			}
-			sb.WriteString(fmt.Sprintf("【grep:%s】\n%s\n\n", c.Keyword, text))
-			debugf("Grep", "keyword: %v content: %v", c.Keyword, text)
 		case "read_rulebook_const":
 			if c.Constant == "" {
 				continue
