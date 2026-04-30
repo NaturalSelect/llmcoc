@@ -1013,7 +1013,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		}
 	} else {
 		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
-		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s]: %s</%s>", getTag(gctx.UserInput), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput)))
+		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s]: %s</%s>\n", getTag(gctx.UserInput), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput)))
 		skillBrief.WriteString(attentionSkill(gctx.UserName, gctx.UserInput))
 	}
 	if skillBrief.Len() > 0 {
