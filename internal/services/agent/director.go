@@ -964,7 +964,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
-	userSB.WriteString("【配置】剧情法术:禁用 | 严格反作弊:启用 | 社交关系更新:实时变更 | 法术表更新:实时变更 | 学习时间:极短 | 物品栏更新:实时变更\n")
+	userSB.WriteString("【配置】剧情法术:禁用 | 严格反作弊:启用 | 社交关系更新:实时变更 | 法术表更新:实时变更 | 学习时间:极短 | 物品栏更新:实时变更 | 种族更新:实时变更\n")
 	userSB.WriteString("\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
@@ -1021,7 +1021,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(skillBrief.String())
 		userSB.WriteString("\n")
 	}
-	userSB.WriteString("不要忘记更新调查员的 物品栏 社交关系 法术表 等属性\n")
+	userSB.WriteString("不要忘记更新调查员的 物品栏 社交关系 法术表 种族 等属性\n")
 
 	userSB.WriteString("\n")
 	userSB.WriteString("Your Response Tool Call Must Contain Detail(e.g. dice point, damage and so on)\n")
