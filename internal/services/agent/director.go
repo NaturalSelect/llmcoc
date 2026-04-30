@@ -1022,6 +1022,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString("\n")
 	}
 	userSB.WriteString("不要忘记更新调查员的 物品栏 社交关系 法术表 种族 等属性\n")
+	userSB.WriteString("SAN值的扣除必须谨慎,随意扣除SAN,不能反复扣SAN,不能只因为调查员处于疯狂状态在忽略规则的情况下扣除SAN")
 
 	userSB.WriteString("\n")
 	userSB.WriteString("Your Response Tool Call Must Contain Detail(e.g. dice point, damage and so on)\n")
