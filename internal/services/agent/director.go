@@ -925,7 +925,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			userSB.WriteString(fmt.Sprintf("    %d. %s DEX=%d HP=%d %s%s%s%s%s\n",
 				i+1, p.Name, p.DEX, p.HP, acted, aiming, debt, dodged, marker))
 		}
-		userSB.WriteString("  (攻击/伤害仍通过 roll_dice + update_characters 处理；登记行动后调用 combat_act； 注意: combat_act 不可以和其他调用在同一轮中一起使用)\n")
+		userSB.WriteString("  (攻击/伤害仍通过 roll_dice + update_characters 处理；登记行动后调用 combat_act； 注意: combat_act 不可以和其他调用在同一Phase中一起使用)\n")
 	}
 	// Inject active chase state so KP can enforce AP rules and location tracking.
 	if chs := gctx.Session.ChaseState.Data; chs != nil && chs.Active {
@@ -954,7 +954,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 					ob.Name, ob.HP, ob.MaxHP, ob.Between[0], ob.Between[1]))
 			}
 		}
-		userSB.WriteString("  (每次移动/险境/障碍/冲突行动后调用 chase_act 登记； 注意: chase_act 不可以和其他调用在同一轮中一起使用；追逐者到达猎物位置时调用 end_chase)\n")
+		userSB.WriteString("  (每次移动/险境/障碍/冲突行动后调用 chase_act 登记； 注意: chase_act 不可以和其他调用在同一Phase中一起使用；追逐者到达猎物位置时调用 end_chase)\n")
 	}
 	userSB.WriteString("【KP指引】\n")
 	userSB.WriteString("- 本回合=30分钟游戏内时间，超时行动可打断\n")
@@ -963,20 +963,26 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
-	userSB.WriteString("【配置】剧情法术:禁用 | 严格反作弊:启用 | 社交关系:实时\n")
+	userSB.WriteString("【配置】剧情法术:禁用 | 严格反作弊:启用 | 社交关系:实时变更\n")
 	userSB.WriteString("\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
+	getTag := func(s string) string {
+		if strings.Contains(s, "DEBUG") {
+			return "debug"
+		}
+		return "input"
+	}
 	if len(gctx.PendingActions) > 1 {
 		userSB.WriteString("\nMultiple Players Ask:\n")
 		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
 		for _, a := range gctx.PendingActions {
-			userSB.WriteString(fmt.Sprintf("[%s]: %s\n", a.PlayerName, a.Content))
+			userSB.WriteString(fmt.Sprintf("<%s>[%s]: %s</%s>\n", getTag(a.Content), a.PlayerName, a.Content, getTag(a.Content)))
 		}
 	} else {
 		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
-		userSB.WriteString(fmt.Sprintf("\nCurrent Ask [%s]: %s", gctx.UserName, gctx.UserInput))
+		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s]: %s</%s>", getTag(gctx.UserInput), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput)))
 	}
 	userSB.WriteString("\n")
 	userSB.WriteString("Please Generate one JSON array of tool call, to work as KP agent \n")

@@ -45,6 +45,8 @@ const RulebookDir = `
 第十六章 附录 355
 
 译名表 392
+
+额外WIKI数据
 `
 const RulebookDetailDir = `
 第一章 介绍
@@ -159,6 +161,7 @@ const RulebookDetailDir = `
 14.5 可选规则
 第十五章 模组
 第十六章 附录
+额外WIKI数据
 `
 
 var Aliens = func() []string {
@@ -267,7 +270,13 @@ var GreadOldOnesAndGods = func() []string {
 # 伊格
 # 蛇之父伊格
 # 犹格-索托斯
-# 佐斯-奥摩格`
+# 佐斯-奥摩格
+# 格赫罗斯
+# 撒达·赫格拉
+# 塔维尔·亚特·乌姆尔
+# 亚弗戈蒙
+# 阿尔瓦撒
+`
 	lines := strings.Split(text, "\n")
 	var gods []string
 	for _, line := range lines {
