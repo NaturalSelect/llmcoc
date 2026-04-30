@@ -10,6 +10,7 @@ import (
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
+	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 const kpRulePart = `
@@ -963,7 +964,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
-	userSB.WriteString("【配置】剧情法术:禁用 | 严格反作弊:启用 | 社交关系:实时变更 | 法术学习:实时变更\n")
+	userSB.WriteString("【配置】剧情法术:禁用 | 严格反作弊:启用 | 社交关系:实时变更关系更新 | 法术学习:实时变更法术表 | 学习时间:极短\n")
 	userSB.WriteString("\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
@@ -974,16 +975,52 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		}
 		return "input"
 	}
+	attentionSkill := func(user string, content string) string {
+		skillList := make([]string, 0)
+		for _, skill := range rulebook.AllSkills {
+			if strings.Contains(content, skill) {
+				skillList = append(skillList, skill)
+			}
+		}
+		if len(skillList) < 1 {
+			return ""
+		}
+		var card *models.CharacterCard
+		for _, player := range gctx.Session.Players {
+			if player.CharacterCard.Name == user {
+				card = &player.CharacterCard
+			}
+		}
+		if card == nil {
+			return ""
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("%v的部分技能等级\n", user))
+		for _, skill := range skillList {
+			if level, ok := card.Skills.Data[skill]; ok {
+				sb.WriteString(fmt.Sprintf("- %s: %d\n", skill, level))
+			}
+		}
+		return sb.String()
+	}
+	skillBrief := strings.Builder{}
 	if len(gctx.PendingActions) > 1 {
 		userSB.WriteString("\nMultiple Players Ask:\n")
 		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
 		for _, a := range gctx.PendingActions {
 			userSB.WriteString(fmt.Sprintf("<%s>[%s]: %s</%s>\n", getTag(a.Content), a.PlayerName, a.Content, getTag(a.Content)))
+			skillBrief.WriteString(attentionSkill(a.PlayerName, a.Content))
 		}
 	} else {
 		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
 		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s]: %s</%s>", getTag(gctx.UserInput), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput)))
+		skillBrief.WriteString(attentionSkill(gctx.UserName, gctx.UserInput))
 	}
+	if skillBrief.Len() > 0 {
+		userSB.WriteString("\n\n【技能相关提示】\n")
+		userSB.WriteString(skillBrief.String())
+	}
+
 	userSB.WriteString("\n")
 	userSB.WriteString("Your Response Tool Call Must Contain Detail(e.g. dice point, damage and so on)\n")
 	userSB.WriteString("Please Generate one JSON array of tool call, to work as KP agent \n")
