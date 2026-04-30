@@ -247,7 +247,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
 					toolResults = append(toolResults, ToolResult{
 						Action: call.Action,
-						Result: "中断: 中断发生,KP已切换到玩家角色,该调用无效,请在下一轮使用 writer/response 工具决策交出控制权。",
+						Result: "Interrupted: KP has switched control to Player, skipping this tool call. Please use write or response in next message to proceed.",
 					})
 					continue
 				}
