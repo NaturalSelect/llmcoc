@@ -121,12 +121,15 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				}
 				log.Printf("[lawyer] grep: %s", c.Keyword)
 				debugf("Lawyer", "iter=%d grep keyword=%q", iter+1, c.Keyword)
-				text := grepRulebook(c.Keyword)
-				if text == "" {
-					text = "(规则书中未找到相关内容)"
+				kws := strings.Fields(c.Keyword)
+				for _, kw := range kws {
+					text := grepRulebook(kw)
+					if text == "" {
+						text = "(规则书中未找到相关内容)"
+					}
+					resultSB.WriteString(fmt.Sprintf("【grep:%s】\n%s\n\n", kw, text))
+					debugf("Grep", "keyword: %v result: %v", kw, text)
 				}
-				resultSB.WriteString(fmt.Sprintf("【grep:%s】\n%s\n\n", c.Keyword, text))
-				debugf("Grep", "keyword: %v result: %v", c.Keyword, text)
 			case "read_rulebook_const":
 				if c.Constant == "" {
 					continue
