@@ -25,7 +25,6 @@ type ActionContext struct {
 	// Mutable flags written by action handlers and read by the dispatch loop.
 	HasEnd             *bool
 	HasWrite           *bool
-	HasDetail          *bool
 	TimeAdvancedInTurn *bool
 	SwitchRole         *bool
 	KPNarration        *string
@@ -271,7 +270,6 @@ type queryNPCCardAction struct{}
 
 func (queryNPCCardAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d query_npc_card npc=%q", actx.Sid, call.NPCName)
-	*actx.HasDetail = true
 	return []ToolResult{{
 		Action: ToolQueryNPCCard,
 		Result: buildNPCDetail(call.NPCName, *actx.TempNPCs, actx.GCtx.Session.Scenario.Content.Data.NPCs),
@@ -324,7 +322,6 @@ type queryCharacterAction struct{}
 
 func (queryCharacterAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d query_character name=%q", actx.Sid, call.CharacterName)
-	*actx.HasDetail = true
 	return []ToolResult{{
 		Action: ToolQueryCharacter,
 		Result: buildCharacterDetail(call.CharacterName, actx.GCtx.Session.Players),

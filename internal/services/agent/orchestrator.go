@@ -216,7 +216,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		hasEnd := false
 		hasWrite := false
 		interrupt := false
-		hasDetail := false
 
 		actx := ActionContext{
 			Ctx:                ctx,
@@ -232,7 +231,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			SwitchRole:         &switchRole,
 			KPNarration:        &kpNarration,
 			Interrupt:          &interrupt,
-			HasDetail:          &hasDetail,
 		}
 
 		switchInThisBatch := false
@@ -300,19 +298,30 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		// Feed tool results back as a user message so the next KP call has proper
 		// multi-turn context (assistant decided → tools ran → user reports results).
 		if len(toolResults) > 0 {
-			var sb strings.Builder
-			var data []byte
-			if hasDetail {
-				data, err = json.MarshalIndent(toolResults, "", "  ")
-			} else {
-				data, err = json.Marshal(toolResults)
+			formatResult := func(r []ToolResult) string {
+				var sb strings.Builder
+				xml := ""
+				newTc := make([]ToolResult, 0, len(r))
+				for _, tr := range r {
+					if tr.Action == ToolQueryCharacter || tr.Action == ToolQueryNPCCard {
+						xml += tr.Result + "\n"
+						continue
+					}
+					newTc = append(newTc, tr)
+				}
+				data, err := json.Marshal(newTc)
+				if err != nil {
+					return fmt.Sprintf("ERROR: failed to marshal tool results: %v", err)
+				}
+				sb.Write(data)
+				if xml != "" {
+					sb.WriteString("\n")
+					sb.WriteString(xml)
+				}
+				return sb.String()
 			}
-			if err != nil {
-				return RunOutput{}, fmt.Errorf("failed to marshal tool results: %w", err)
-			}
-			sb.Write(data)
 			// 输入用户数据
-			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: sb.String()})
+			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: formatResult(toolResults)})
 		}
 		// 等一轮之后继续跑
 		time.Sleep(20 * time.Second)
@@ -872,15 +881,15 @@ type characterXML struct {
 		Build  int    `xml:"build"`
 		DB     string `xml:"damage_bonus"`
 	} `xml:"derived_stats"`
-	CthulhuMythos   int            `xml:"cthulhu_mythos,omitempty"`
-	MythosMaxSAN    int            `xml:"mythos_max_san,omitempty"`
-	Skills          map[string]int `xml:"skills>skill,omitempty"`
-	Inventory       []string       `xml:"inventory>item,omitempty"`
-	SocialRelations []relationXML  `xml:"social_relations>relation,omitempty"`
-	Spells          []string       `xml:"spells>spell,omitempty"`
-	SeenMonsters    []string       `xml:"seen_monsters>monster,omitempty"`
-	MadnessState    string         `xml:"madness_state,omitempty"`
-	MadnessSymptom  string         `xml:"madness_symptom,omitempty"`
+	CthulhuMythos   int           `xml:"cthulhu_mythos,omitempty"`
+	MythosMaxSAN    int           `xml:"mythos_max_san,omitempty"`
+	Skills          []keyValue    `xml:"skills>skill,omitempty"`
+	Inventory       []string      `xml:"inventory>item,omitempty"`
+	SocialRelations []relationXML `xml:"social_relations>relation,omitempty"`
+	Spells          []string      `xml:"spells>spell,omitempty"`
+	SeenMonsters    []string      `xml:"seen_monsters>monster,omitempty"`
+	MadnessState    string        `xml:"madness_state,omitempty"`
+	MadnessSymptom  string        `xml:"madness_symptom,omitempty"`
 }
 
 type relationXML struct {
@@ -948,7 +957,9 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			c.MythosMaxSAN = 99 - card.CthulhuMythosSkill
 		}
 		if len(card.Skills.Data) > 0 {
-			c.Skills = card.Skills.Data
+			for k, v := range card.Skills.Data {
+				c.Skills = append(c.Skills, keyValue{Key: k, Value: v})
+			}
 		}
 		if len(card.SocialRelations.Data) > 0 {
 			rels := make([]relationXML, len(card.SocialRelations.Data))
