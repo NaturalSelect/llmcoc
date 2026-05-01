@@ -123,7 +123,7 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 
 	era := req.Era
 	if era == "" {
-		era = "1920年代"
+		era = "现代"
 	}
 	occupation := req.Occupation
 	if occupation == "" {
@@ -149,7 +149,9 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 
 【当前技能基础值】
 %s
+
 【技能分配规则】
+
 1. 职业技能点(共 %d 点 = EDU×4):分配给与职业强相关的技能(例如医生必须高医学、急救、心理学等)
 2. 兴趣技能点(共 %d 点 = INT×2):分配给调查员个人兴趣或背景相关技能
 3. 每项技能最终值(基础值 + 加成点)上限 90
@@ -168,7 +170,7 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 	)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: "你是COC TRPG规则专家,只输出JSON,不输出任何其他内容。"},
+		{Role: "system", Content: "你是COC第七版规则专家。请根据调查员的职业和背景,合理分配技能加成点,输出调整后的完整技能列表(JSON对象)"},
 		{Role: "user", Content: prompt},
 	}
 
