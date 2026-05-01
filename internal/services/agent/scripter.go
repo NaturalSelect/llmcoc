@@ -158,6 +158,8 @@ const scenarioExample = `{
   }
 }`
 
+var randomTopicSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)模组设计师,请生成一个随机的模组主题,仅输出主题名称,不要有任何其他文字。`
+
 // ---------------------------------------------------------------------------
 // Tool-call types for outline & QA phases
 // ---------------------------------------------------------------------------
@@ -245,6 +247,10 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		return ScenarioCreationOutput{}, err
 	}
 
+	if req.Theme == "" {
+		req.Theme = generateRandomTopic(ctx, architect, req.Salt)
+	}
+
 	// Phase 1: Outline (with grep tool calls)
 	outline, err := generateOutline(ctx, architect, req)
 	if err != nil {
@@ -297,6 +303,17 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 
 	// Return best effort even if QA didn't pass
 	return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: 3}, nil
+}
+
+func generateRandomTopic(ctx context.Context, architect agentHandle, seed string) string {
+	raw, err := architect.provider.Chat(ctx, []llm.ChatMessage{
+		{Role: "system", Content: architect.systemPrompt(randomTopicSystemPrompt)},
+		{Role: "user", Content: "请生成一个随机的COC模组主题,仅输出主题名称,不要有任何其他文字, 种子: " + seed},
+	})
+	if err != nil {
+		return "未知冒险"
+	}
+	return strings.TrimSpace(raw)
 }
 
 // ---------------------------------------------------------------------------
