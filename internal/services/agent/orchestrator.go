@@ -214,8 +214,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 		var toolResults []ToolResult
 		hasEnd := false
-		hasWrite := false
 		interrupt := false
+		pendgWrite := ""
 
 		actx := ActionContext{
 			Ctx:                ctx,
@@ -226,11 +226,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			Writer:             writerState,
 			RbIdx:              rbIdx,
 			HasEnd:             &hasEnd,
-			HasWrite:           &hasWrite,
 			TimeAdvancedInTurn: &timeAdvancedInTurn,
 			SwitchRole:         &switchRole,
 			KPNarration:        &kpNarration,
 			Interrupt:          &interrupt,
+			PendingWrite:       &pendgWrite,
 		}
 
 		switchInThisBatch := false
@@ -285,7 +285,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					models.DB.Save(card)
 					break
 				}
-				if checkTurnReady(gctx) && hasWrite {
+				if checkTurnReady(gctx) && pendgWrite != "" {
 					advanceTurnRound(gctx)
 				}
 			}

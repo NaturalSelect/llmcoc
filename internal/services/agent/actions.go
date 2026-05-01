@@ -24,10 +24,10 @@ type ActionContext struct {
 
 	// Mutable flags written by action handlers and read by the dispatch loop.
 	HasEnd             *bool
-	HasWrite           *bool
 	TimeAdvancedInTurn *bool
 	SwitchRole         *bool
 	KPNarration        *string
+	PendingWrite       *string
 	Interrupt          *bool
 }
 
@@ -333,15 +333,8 @@ func (queryCharacterAction) Execute(call ToolCall, actx ActionContext) []ToolRes
 type writeAction struct{}
 
 func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	*actx.HasWrite = true
+	*actx.PendingWrite += fmt.Sprintf("%s\n", call.Direction)
 	debugf("tool", "session=%d write direction=%s", actx.Sid, call.Direction)
-	doneW := timedDebug("Writer", "session=%d direction=%s", actx.Sid, call.Direction)
-	writeErr := appendWriter(actx.Ctx, actx.Handles[models.AgentRoleWriter], actx.Writer, call.Direction, *actx.GCtx)
-	doneW()
-	if writeErr != nil {
-		log.Printf("[agent] writer error: %v", writeErr)
-	}
-	debugf("tool", "session=%d write buffer_len=%d", actx.Sid, len([]rune(actx.Writer.Buffer)))
 	return nil
 }
 
@@ -350,6 +343,15 @@ type responseAction struct{}
 func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	*actx.HasEnd = true
 	*actx.KPNarration = call.Reply
+	if *actx.PendingWrite != "" {
+		doneW := timedDebug("Writer", "session=%d direction=%s", actx.Sid, call.Direction)
+		writeErr := appendWriter(actx.Ctx, actx.Handles[models.AgentRoleWriter], actx.Writer, call.Direction, *actx.GCtx)
+		doneW()
+		if writeErr != nil {
+			log.Printf("[agent] writer error: %v", writeErr)
+		}
+		debugf("tool", "session=%d write buffer_len=%d", actx.Sid, len([]rune(actx.Writer.Buffer)))
+	}
 	debugf("tool", "session=%d response narration=%s", actx.Sid, call.Reply)
 	return nil
 }
