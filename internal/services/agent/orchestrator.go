@@ -969,7 +969,7 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 	}
 
 	if len(characters) == 0 {
-		return `<result><error>未找到角色：` + escapeXML(characterName) + `</error></result>`
+		return `<result><error>未找到角色：` + characterName + `</error></result>`
 	}
 
 	// 序列化为 XML
@@ -978,16 +978,9 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		Characters []characterXML `xml:"character"`
 	}{Characters: characters}, "", "  ")
 	if err != nil {
-		return `<result><error>ERROR</error></result>`
+		return `<result><error>ERROR : ` + err.Error() + `</error></result>`
 	}
 	return string(out)
-}
-
-// 简单转义，实际 xml.Marshal 已自动处理，此函数仅用于错误消息中的文本
-func escapeXML(s string) string {
-	var b strings.Builder
-	xml.EscapeText(&b, []byte(s))
-	return b.String()
 }
 
 // buildNPCDetail returns a detailed NPC card dump for temporary/session NPCs.
@@ -1115,7 +1108,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 		NPCs    []npcXML `xml:"npcs>npc"`
 	}{NPCs: npcs}, "", "  ")
 	if err != nil {
-		return `<result><error>ERROR</error></result>`
+		return `<result><error>ERROR : ` + err.Error() + `</error></result>`
 	}
 	return string(out)
 }
