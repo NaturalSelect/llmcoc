@@ -100,7 +100,7 @@ func main() {
 	}
 
 	// Characters (authenticated)
-	chh := handlers.NewCharacterHandlers(handlers.DefaultCharacterLLMFactory)
+	chh := handlers.NewCharacterHandlers()
 	chars := api.Group("/characters", middleware.AuthRequired())
 	{
 		chars.GET("", handlers.ListCharacters)

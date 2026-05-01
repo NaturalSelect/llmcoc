@@ -9,32 +9,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/game"
-	"github.com/llmcoc/server/internal/services/llm"
 )
 
-// CharacterLLMFactory lets tests inject a fake LLM provider.
-type CharacterLLMFactory interface {
-	LoadProvider(role models.AgentRole) (llm.Provider, error)
-}
+// CharacterHandlers holds handlers for character-related routes.
+type CharacterHandlers struct{}
 
-type defaultCharacterLLMFactory struct{}
-
-func (defaultCharacterLLMFactory) LoadProvider(role models.AgentRole) (llm.Provider, error) {
-	return llm.LoadProviderFromDB(role)
-}
-
-// DefaultCharacterLLMFactory is the production implementation.
-var DefaultCharacterLLMFactory CharacterLLMFactory = defaultCharacterLLMFactory{}
-
-// CharacterHandlers holds handlers that depend on an LLM factory.
-type CharacterHandlers struct {
-	LLMFactory CharacterLLMFactory
-}
-
-// NewCharacterHandlers creates a CharacterHandlers with the given factory.
-func NewCharacterHandlers(f CharacterLLMFactory) *CharacterHandlers {
-	return &CharacterHandlers{LLMFactory: f}
+// NewCharacterHandlers creates a CharacterHandlers.
+func NewCharacterHandlers() *CharacterHandlers {
+	return &CharacterHandlers{}
 }
 
 type CreateCharacterReq struct {
@@ -210,13 +194,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 	skills["闪避"] = stats.DEX / 2
 
 	// Ask LLM to fill out backstory, name, traits
-	provider, err := h.LLMFactory.LoadProvider(models.AgentRoleWriter)
-	var generated *llm.GeneratedCharacter
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "加载LLM提供者失败: " + err.Error()})
-		return
-	}
-	generated, err = provider.GenerateCharacter(c.Request.Context(), llm.GenerateCharacterReq{
+	generated, err := agent.GenerateCharacter(c.Request.Context(), agent.GenerateCharacterReq{
 		Name:       req.Name,
 		Occupation: req.Occupation,
 		Background: req.Background,
@@ -238,14 +216,8 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		}
 	}
 
-	provider, err = h.LLMFactory.LoadProvider(models.AgentRoleEvaluator)
-	if err != nil {
-		log.Printf("[character] failed to load LLM provider for skill adjustment: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "加载LLM提供者失败: " + err.Error()})
-		return
-	}
 	// Second LLM call: adjust skill levels based on occupation and background
-	adjustedSkills, skillErr := provider.AdjustSkills(c.Request.Context(), llm.AdjustSkillsReq{
+	adjustedSkills, skillErr := agent.AdjustSkills(c.Request.Context(), agent.AdjustSkillsReq{
 		Name:       req.Name,
 		Occupation: req.Occupation,
 		Background: req.Background,
