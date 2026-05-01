@@ -215,6 +215,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		hasEnd := false
 		hasWrite := false
 		interrupt := false
+		hasDetail := false
 
 		actx := ActionContext{
 			Ctx:                ctx,
@@ -230,6 +231,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			SwitchRole:         &switchRole,
 			KPNarration:        &kpNarration,
 			Interrupt:          &interrupt,
+			HasDetail:          &hasDetail,
 		}
 
 		switchInThisBatch := false
@@ -295,7 +297,12 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		// multi-turn context (assistant decided → tools ran → user reports results).
 		if len(toolResults) > 0 {
 			var sb strings.Builder
-			data, err := json.Marshal(toolResults)
+			var data []byte
+			if hasDetail {
+				data, err = json.MarshalIndent(toolResults, "", "  ")
+			} else {
+				data, err = json.Marshal(toolResults)
+			}
 			if err != nil {
 				return RunOutput{}, fmt.Errorf("failed to marshal tool results: %w", err)
 			}
@@ -844,12 +851,12 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		if p.LLMNote != "" {
 			sb.WriteString(fmt.Sprintf("⚠️ 当前状态(会话级备忘):%s\n", p.LLMNote))
 		}
-		sb.WriteString(fmt.Sprintf("基础属性:STR%d CON%d SIZ%d DEX%d APP%d INT%d POW%d EDU%d\n",
+		sb.WriteString(fmt.Sprintf("基础属性: STR: %d CON: %d SIZ: %d DEX: %d APP: %d INT: %d POW: %d EDU: %d\n",
 			st.STR, st.CON, st.SIZ, st.DEX, st.APP, st.INT, st.POW, st.EDU))
-		sb.WriteString(fmt.Sprintf("衍生属性:HP%d/%d MP%d/%d SAN%d/%d Luck%d MOV%d Build%d DB%s\n",
+		sb.WriteString(fmt.Sprintf("衍生属性: HP: %d/%d MP: %d/%d SAN: %d/%d Luck: %d MOV: %d Build: %d DB: %s\n",
 			st.HP, st.MaxHP, st.MP, st.MaxMP, st.SAN, st.MaxSAN, st.Luck, st.MOV, st.Build, st.DB))
 		if card.CthulhuMythosSkill > 0 {
-			sb.WriteString(fmt.Sprintf("克苏鲁神话技能:%d(最大SAN上限:%d)\n", card.CthulhuMythosSkill, 99-card.CthulhuMythosSkill))
+			sb.WriteString(fmt.Sprintf("克苏鲁神话技能: %d (最大SAN上限: %d)\n", card.CthulhuMythosSkill, 99-card.CthulhuMythosSkill))
 		}
 		if skills := card.Skills.Data; len(skills) > 0 {
 			sb.WriteString("技能:")
@@ -865,20 +872,10 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		} else {
 			sb.WriteString("技能:无\n")
 		}
-		// if card.Backstory != "" {
-		// 	sb.WriteString("背景:" + card.Backstory + "\n")
-		// } else {
-		// 	sb.WriteString("背景:无\n")
-		// }
-		// if card.Traits != "" {
-		// 	sb.WriteString("特征:" + card.Traits + "\n")
-		// } else {
-		// 	sb.WriteString("特征:无\n")
-		// }
 		if items := card.Inventory.Data; len(items) > 0 {
 			sb.WriteString("物品栏:" + strings.Join(items, "、") + "\n")
 		} else {
-			sb.WriteString("物品栏:无\n")
+			sb.WriteString("物品栏: 无\n")
 		}
 		if rels := card.SocialRelations.Data; len(rels) > 0 {
 			sb.WriteString("社会关系:")
@@ -894,12 +891,12 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			sb.WriteString("社会关系:无\n")
 		}
 		if spells := card.Spells.Data; len(spells) > 0 {
-			sb.WriteString("掌握法术:" + strings.Join(spells, "、") + "\n")
+			sb.WriteString("掌握法术:" + strings.Join(spells, "|") + "\n")
 		} else {
 			sb.WriteString("掌握法术:无\n")
 		}
 		if monsters := card.SeenMonsters.Data; len(monsters) > 0 {
-			sb.WriteString("已见神话存在:" + strings.Join(monsters, "、") + "\n")
+			sb.WriteString("已见神话存在:" + strings.Join(monsters, "|") + "\n")
 		} else {
 			sb.WriteString("已见神话存在:无\n")
 		}
@@ -981,13 +978,13 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 			sb.WriteString("当前备忘:" + npc.LLMNote + "\n")
 		}
 		if hp, ok := findStat(npc.Stats.Data, "HP"); ok {
-			sb.WriteString(fmt.Sprintf("当前HP:%d\n", hp))
+			sb.WriteString(fmt.Sprintf("当前HP: %d\n", hp))
 		}
 		if san, ok := findStat(npc.Stats.Data, "SAN"); ok {
-			sb.WriteString(fmt.Sprintf("SAN:%d\n", san))
+			sb.WriteString(fmt.Sprintf("SAN: %d\n", san))
 		}
 		if mp, ok := findStat(npc.Stats.Data, "MP"); ok {
-			sb.WriteString(fmt.Sprintf("MP:%d\n", mp))
+			sb.WriteString(fmt.Sprintf("MP: %d\n", mp))
 		}
 		if len(npc.Stats.Data) > 0 {
 			parts := make([]string, 0, len(npc.Stats.Data))
