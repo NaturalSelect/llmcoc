@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -141,6 +142,17 @@ func CreateScenario(c *gin.Context) {
 	c.JSON(http.StatusCreated, scenario)
 }
 
+var ranGen = rand.New(rand.NewSource(time.Now().UnixMilli()))
+
+func RandomSalt() string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, 16)
+	for i := range b {
+		b[i] = letters[ranGen.Intn(len(letters))]
+	}
+	return string(b)
+}
+
 func GenerateScenarioByAgents(c *gin.Context) {
 	var req GenerateScenarioReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -157,6 +169,7 @@ func GenerateScenarioByAgents(c *gin.Context) {
 		Difficulty:   req.Difficulty,
 		MinPlayers:   req.MinPlayers,
 		MaxPlayers:   req.MaxPlayers,
+		Salt:         RandomSalt(),
 	})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent team 生成失败: " + err.Error()})

@@ -184,6 +184,7 @@ type ScenarioCreationRequest struct {
 	MaxPlayers   int    `json:"max_players"`
 	TargetLength string `json:"target_length"`
 	Brief        string `json:"brief"`
+	Salt         string `json:"salt"`
 }
 
 type ScenarioCreationOutput struct {
@@ -307,7 +308,7 @@ func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCre
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: architect.systemPrompt(outlineSystemPrompt)},
-		{Role: "user", Content: "创作需求如下(JSON):\n" + string(reqJSON)},
+		{Role: "user", Content: "请使用随机NPC姓名，创作需求如下(JSON):\n" + string(reqJSON)},
 	}
 
 	const maxIter = 30
