@@ -91,15 +91,22 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 			return nil
 		}
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-
-		stripped := llm.StripCodeFence(raw)
 		var calls []lawyerCall
-		if err := json.Unmarshal([]byte(stripped), &calls); err != nil {
-			// Try to extract array from surrounding text.
-			if s := strings.Index(stripped, "["); s >= 0 {
-				if e := strings.LastIndex(stripped, "]"); e > s {
-					_ = json.Unmarshal([]byte(stripped[s:e+1]), &calls)
+		if err := json.Unmarshal([]byte(raw), &calls); err != nil {
+			log.Printf("[lawyer] iter %d JSON parse error: %v; raw response: %s", iter, err, raw)
+			for i := 0; i < 30; i++ {
+				raw, err = RepairJSON(ctx, raw, err, `[{"action":"response","ruling":"规则书未明确规定"}]`)
+				if err == nil {
+					err = json.Unmarshal([]byte(raw), &calls)
+					if err == nil {
+						break
+					}
 				}
+				log.Printf("[lawyer] iter %d JSON parse error: %v; attempt %d to repair with parser", iter, err, i+1)
+			}
+			if err != nil {
+				log.Printf("[lawyer] iter %d failed to parse calls after repair attempts: %v", iter, err)
+				return nil
 			}
 		}
 		if len(calls) == 0 {

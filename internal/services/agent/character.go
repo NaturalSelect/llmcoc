@@ -106,10 +106,9 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 		return nil, err
 	}
 
-	content := llm.StripCodeFence(resp)
 	var out GeneratedCharacter
-	if err := json.Unmarshal([]byte(content), &out); err != nil {
-		return nil, fmt.Errorf("parse LLM response failed: %w (raw: %s)", err, content)
+	if err := json.Unmarshal([]byte(resp), &out); err != nil {
+		return nil, fmt.Errorf("parse LLM response failed: %w (raw: %s)", err, resp)
 	}
 	return &out, nil
 }
@@ -178,13 +177,12 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 		return nil, err
 	}
 
-	content := llm.StripCodeFence(resp)
 	var raw map[string]int
-	if err := json.Unmarshal([]byte(content), &raw); err != nil {
+	if err := json.Unmarshal([]byte(resp), &raw); err != nil {
 		for i := 0; i < 30; i++ {
-			content, err = RepairJSON(ctx, content, err, `{"A":1,"B":2,"C":3}`)
+			resp, err = RepairJSON(ctx, resp, err, `{"A":1,"B":2,"C":3}`)
 			if err == nil {
-				err = json.Unmarshal([]byte(content), &raw)
+				err = json.Unmarshal([]byte(resp), &raw)
 				if err == nil {
 					break
 				}
@@ -192,7 +190,7 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 			log.Printf("[agent] AdjustSkills JSON parse error attempt %d: %v", i+1, err)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("AdjustSkills parse failed: %w (raw: %s)", err, content)
+			return nil, fmt.Errorf("AdjustSkills parse failed: %w (raw: %s)", err, resp)
 		}
 	}
 	log.Printf("[agent] AdjustSkills done, skills=%d", len(raw))

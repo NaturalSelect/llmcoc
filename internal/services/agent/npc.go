@@ -272,7 +272,6 @@ func runNPC(
 		return NPCAction{NPCName: npcName, Action: "保持沉默", Dialogue: ""}, fmt.Errorf("npc LLM error: %w", err)
 	}
 
-	resp = llm.StripCodeFence(resp)
 	var action NPCAction
 	if err := json.Unmarshal([]byte(resp), &action); err != nil {
 		for i := 0; i < 30; i++ {

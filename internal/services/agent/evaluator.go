@@ -80,11 +80,22 @@ func RunEvaluator(ctx context.Context, session *models.GameSession, messages []m
 		return fallbackEvaluation(session), nil
 	}
 
-	resp = llm.StripCodeFence(resp)
 	var result EvaluationResult
 	if err := json.Unmarshal([]byte(resp), &result); err != nil {
-		log.Printf("[agent] evaluator JSON parse error: %v; using fallback rewards", err)
-		return fallbackEvaluation(session), nil
+		for i := 0; i < 30; i++ {
+			resp, err = RepairJSON(ctx, resp, err, `{"summary":"...","players":[{"character_name":"...","comment":"...","score":80,"base_coins":20,"bonus_coins":15}]}`)
+			if err == nil {
+				err = json.Unmarshal([]byte(resp), &result)
+				if err == nil {
+					break
+				}
+			}
+			log.Printf("[agent] evaluator JSON parse error: %v; attempt %d to repair with parser", err, i+1)
+		}
+		if err != nil {
+			log.Printf("[agent] evaluator JSON parse error: %v; using fallback rewards", err)
+			return fallbackEvaluation(session), nil
+		}
 	}
 
 	// Clamp bonus_coins to [0, 50] and ensure base_coins == 20
