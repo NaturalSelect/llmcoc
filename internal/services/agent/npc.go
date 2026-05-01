@@ -276,7 +276,7 @@ func runNPC(
 	var action NPCAction
 	if err := json.Unmarshal([]byte(resp), &action); err != nil {
 		for i := 0; i < 30; i++ {
-			resp, err = repairJSONWith(ctx, h, resp, err, npcExample)
+			resp, err = RepairJSON(ctx, resp, err, npcExample)
 			if err == nil {
 				err = json.Unmarshal([]byte(resp), &action)
 				if err != nil {

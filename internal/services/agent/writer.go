@@ -162,22 +162,18 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 	resp = llm.StripCodeFence(resp)
 	var result CharacterEvolutionResult
 	if err := json.Unmarshal([]byte(resp), &result); err != nil {
-		parser, createErr := loadSingleAgent(models.AgentRoleParser)
-		if createErr != nil {
-			return CharacterEvolutionResult{}, err
-		}
 		for i := 0; i < 30; i++ {
-			resp, err = repairJSONWith(ctx, parser, resp, err, evolutionExample)
+			resp, err = RepairJSON(ctx, resp, err, evolutionExample)
 			if err == nil {
-				break
+				err = json.Unmarshal([]byte(resp), &result)
+				if err == nil {
+					break
+				}
 			}
 			log.Printf("[agent] character evolution JSON parse error for %q: %v; attempt %d to repair with parser", card.Name, err, i+1)
 		}
-		err = json.Unmarshal([]byte(resp), &result)
-		if err != nil {
-			log.Printf("[agent] character evolution JSON parse error for %q: %v", card.Name, err)
-			return CharacterEvolutionResult{}, fmt.Errorf("character evolution JSON parse error: %w", err)
-		}
+		log.Printf("[agent] character evolution JSON parse error for %q: %v", card.Name, err)
+		return CharacterEvolutionResult{}, fmt.Errorf("character evolution JSON parse error: %w", err)
 	}
 
 	return result, nil
