@@ -53,6 +53,23 @@ func ListSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, sessions)
 }
 
+// ListMyHistorySessions returns the last 20 ended sessions the current user participated in.
+func ListMyHistorySessions(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var sessions []models.GameSession
+	models.DB.
+		Preload("Scenario").
+		Preload("Creator").
+		Preload("Players.User").
+		Preload("Players.CharacterCard").
+		Joins("JOIN session_players ON session_players.session_id = game_sessions.id").
+		Where("session_players.user_id = ? AND game_sessions.status = ?", userID, models.SessionStatusEnded).
+		Order("game_sessions.updated_at DESC").
+		Limit(20).
+		Find(&sessions)
+	c.JSON(http.StatusOK, sessions)
+}
+
 func GetSession(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var session models.GameSession

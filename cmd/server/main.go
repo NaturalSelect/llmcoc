@@ -132,6 +132,7 @@ func main() {
 	sessions := api.Group("/sessions", middleware.AuthRequired())
 	{
 		sessions.GET("", handlers.ListSessions)
+		sessions.GET("/my-history", handlers.ListMyHistorySessions)
 		sessions.POST("", handlers.CreateSession)
 		sessions.GET("/:id", handlers.GetSession)
 		sessions.POST("/:id/join", handlers.JoinSession)
