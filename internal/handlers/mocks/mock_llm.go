@@ -70,33 +70,3 @@ func (mr *MockProviderMockRecorder) ChatStream(ctx, messages any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChatStream", reflect.TypeOf((*MockProvider)(nil).ChatStream), ctx, messages)
 }
-
-// GenerateCharacter mocks base method.
-func (m *MockProvider) GenerateCharacter(ctx context.Context, req llm.GenerateCharacterReq) (*llm.GeneratedCharacter, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GenerateCharacter", ctx, req)
-	ret0, _ := ret[0].(*llm.GeneratedCharacter)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GenerateCharacter indicates an expected call of GenerateCharacter.
-func (mr *MockProviderMockRecorder) GenerateCharacter(ctx, req any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateCharacter", reflect.TypeOf((*MockProvider)(nil).GenerateCharacter), ctx, req)
-}
-
-// AdjustSkills mocks base method.
-func (m *MockProvider) AdjustSkills(ctx context.Context, req llm.AdjustSkillsReq) (map[string]int, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AdjustSkills", ctx, req)
-	ret0, _ := ret[0].(map[string]int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// AdjustSkills indicates an expected call of AdjustSkills.
-func (mr *MockProviderMockRecorder) AdjustSkills(ctx, req any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AdjustSkills", reflect.TypeOf((*MockProvider)(nil).AdjustSkills), ctx, req)
-}

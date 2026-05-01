@@ -2,17 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/llmcoc/server/internal/handlers/mocks"
 	"github.com/llmcoc/server/internal/models"
-	"github.com/llmcoc/server/internal/services/llm"
-	"go.uber.org/mock/gomock"
 )
 
 func charRouter(userID uint) *gin.Engine {
@@ -23,13 +19,6 @@ func charRouter(userID uint) *gin.Engine {
 	r.GET("/characters/:id", auth, GetCharacter)
 	r.PUT("/characters/:id", auth, UpdateCharacter)
 	r.DELETE("/characters/:id", auth, DeleteCharacter)
-	return r
-}
-
-func charRouterWithGenerate(userID uint, h *CharacterHandlers) *gin.Engine {
-	r := gin.New()
-	auth := withAuth(userID, "tester", "user")
-	r.POST("/characters/generate", auth, h.GenerateCharacter)
 	return r
 }
 
@@ -236,109 +225,5 @@ func TestDeleteCharacter_Forbidden(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("want 403, got %d", w.Code)
-	}
-}
-
-// ── GenerateCharacter ──────────────────────────────────────────────────────────
-
-func TestGenerateCharacter_LLMSuccess(t *testing.T) {
-	initTestDB(t)
-	uid := seedUser(t, "alice", "user", 0, 3)
-
-	ctrl := gomock.NewController(t)
-	mockProv := mocks.NewMockProvider(ctrl)
-	mockProv.EXPECT().AdjustSkills(gomock.Any(), gomock.Any()).Return(map[string]int{"侦查": 50, "聆听": 50}, nil).AnyTimes()
-	mockProv.EXPECT().GenerateCharacter(gomock.Any(), gomock.Any()).Return(&llm.GeneratedCharacter{
-		Backstory:  "神秘的背景",
-		Appearance: "优雅的外貌",
-		Traits:     "好奇心旺盛",
-	}, nil)
-
-	mockFac := mocks.NewMockCharacterLLMFactory(ctrl)
-	mockFac.EXPECT().LoadProvider(models.AgentRoleWriter).Return(mockProv, nil)
-	mockFac.EXPECT().LoadProvider(models.AgentRoleDirector).Return(mockProv, nil).AnyTimes()
-
-	h := NewCharacterHandlers(mockFac)
-	r := charRouterWithGenerate(uid, h)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq("POST", "/characters/generate", map[string]any{
-		"name":       "阿加莎",
-		"gender":     "女",
-		"occupation": "侦探",
-		"era":        "1920s",
-	}))
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]any
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp["name"] != "阿加莎" {
-		t.Errorf("name = %v, want 阿加莎", resp["name"])
-	}
-}
-
-func TestGenerateCharacter_LLMError_Fallback(t *testing.T) {
-	initTestDB(t)
-	uid := seedUser(t, "alice", "user", 0, 3)
-
-	ctrl := gomock.NewController(t)
-	mockProv := mocks.NewMockProvider(ctrl)
-	mockProv.EXPECT().GenerateCharacter(gomock.Any(), gomock.Any()).
-		Return(nil, errors.New("LLM unavailable"))
-
-	mockFac := mocks.NewMockCharacterLLMFactory(ctrl)
-	mockFac.EXPECT().LoadProvider(models.AgentRoleWriter).Return(mockProv, nil)
-	mockFac.EXPECT().LoadProvider(models.AgentRoleDirector).Return(mockProv, nil).AnyTimes()
-
-	h := NewCharacterHandlers(mockFac)
-	r := charRouterWithGenerate(uid, h)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq("POST", "/characters/generate", map[string]any{
-		"name":       "测试调查员",
-		"gender":     "男",
-		"occupation": "医生",
-	}))
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("want 500, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestGenerateCharacter_NoProvider_Fallback(t *testing.T) {
-	initTestDB(t)
-	uid := seedUser(t, "alice", "user", 0, 3)
-
-	ctrl := gomock.NewController(t)
-	mockFac := mocks.NewMockCharacterLLMFactory(ctrl)
-	mockFac.EXPECT().LoadProvider(models.AgentRoleWriter).Return(nil, errors.New("no provider"))
-	mockFac.EXPECT().LoadProvider(models.AgentRoleDirector).Return(nil, nil).AnyTimes()
-
-	h := NewCharacterHandlers(mockFac)
-	r := charRouterWithGenerate(uid, h)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq("POST", "/characters/generate", map[string]any{
-		"name":   "测试调查员",
-		"gender": "男",
-	}))
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("want 500, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestGenerateCharacter_SlotFull(t *testing.T) {
-	initTestDB(t)
-	uid := seedUser(t, "alice", "user", 0, 1)
-	seedCard(t, uid, "Existing")
-
-	ctrl := gomock.NewController(t)
-	h := NewCharacterHandlers(mocks.NewMockCharacterLLMFactory(ctrl)) // no EXPECT: won't be called
-	r := charRouterWithGenerate(uid, h)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq("POST", "/characters/generate", map[string]any{}))
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("want 403 (slot full), got %d", w.Code)
 	}
 }
