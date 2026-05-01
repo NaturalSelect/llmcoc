@@ -159,7 +159,6 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 		return CharacterEvolutionResult{}, fmt.Errorf("character evolution LLM error: %w", err)
 	}
 
-	resp = llm.StripCodeFence(resp)
 	var result CharacterEvolutionResult
 	if err := json.Unmarshal([]byte(resp), &result); err != nil {
 		for i := 0; i < 30; i++ {

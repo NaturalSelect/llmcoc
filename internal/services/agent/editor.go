@@ -70,7 +70,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			s := card.Stats.Data
 			prevSAN := s.SAN
 			newSAN := s.SAN + upd.Delta
-			s.SAN = newSAN
+			s.SAN = clamp(newSAN, 0, card.Stats.Data.MaxSAN)
 			card.Stats.Data = s
 
 			// ── 理智损失事件:检查疯狂触发 ──────────────────────────────────────
