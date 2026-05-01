@@ -279,15 +279,16 @@ func runNPC(
 			resp, err = RepairJSON(ctx, resp, err, npcExample)
 			if err == nil {
 				err = json.Unmarshal([]byte(resp), &action)
-				if err != nil {
-					log.Printf("[npc] final JSON parse error for %s: %v; response was: %s", npcName, err, resp)
-					return NPCAction{NPCName: npcName, Action: "保持沉默", Dialogue: ""}, nil
+				if err == nil {
+					break
 				}
 			}
 			log.Printf("[npc] JSON parse error for %s: %v; attempt %d to repair with parser", npcName, err, i+1)
 		}
-		log.Printf("[npc] JSON parse error for %s: %v", npcName, err)
-		return NPCAction{NPCName: npcName, Action: strings.TrimSpace(resp), Dialogue: ""}, nil
+		if err != nil {
+			log.Printf("[npc] final JSON parse error for %s: %v; response was: %s", npcName, err, resp)
+			return NPCAction{NPCName: npcName, Action: "保持沉默", Dialogue: ""}, nil
+		}
 	}
 	if action.NPCName == "" {
 		action.NPCName = npcName
