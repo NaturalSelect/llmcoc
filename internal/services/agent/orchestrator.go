@@ -279,6 +279,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					card.MadnessDuration -= 1
 					if card.MadnessDuration <= 0 {
 						card.MadnessState = "none"
+						card.MadnessSymptom = ""
+						card.MadnessDuration = 0
+						debugf("madness", "session=%d char=%s madness ended", sid, card.Name)
 					}
 					models.DB.Save(card)
 					break

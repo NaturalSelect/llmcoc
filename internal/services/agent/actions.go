@@ -394,6 +394,9 @@ func (advanceTimeAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 		card.MadnessDuration -= rounds
 		if card.MadnessDuration <= 0 {
 			card.MadnessState = "none"
+			card.MadnessSymptom = ""
+			card.MadnessDuration = 0
+			debugf("madness", "session=%d char=%s madness ended", actx.Sid, card.Name)
 		}
 		models.DB.Save(card)
 		break
