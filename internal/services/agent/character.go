@@ -176,6 +176,7 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 	if err != nil {
 		return nil, err
 	}
+	debugf("skills", "raw resp %v", resp)
 
 	var raw map[string]int
 	if err := json.Unmarshal([]byte(resp), &raw); err != nil {

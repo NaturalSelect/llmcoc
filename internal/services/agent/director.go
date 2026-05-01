@@ -339,7 +339,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 
 	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
 	var userSB strings.Builder
-	userSB.WriteString("The above is historical information that has been processed, completed, and compressed.")
+	userSB.WriteString("The above is historical information that has been processed, completed, and compressed.\n\n")
 	userSB.WriteString("<processing>\n")
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
 	userSB.WriteString("\n\n Curr Game Time" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "\n")
