@@ -220,6 +220,15 @@ func actNPC(
 	return runNPC(ctx, h, gctx, npcName, question, tempNPCs)
 }
 
+var npcExample = func() string {
+	data, err := json.Marshal(NPCAction{})
+	if err != nil {
+		log.Printf("failed to marshal NPCAction example: %v", err)
+		return ""
+	}
+	return string(data)
+}()
+
 // runNPC makes one NPC act based on its own profile and the context brief provided by the KP.
 // The NPC agent does NOT receive scenario information — it only gets:
 //   - The NPC's own profile (name, description, attitude, goal, secret, risk preference, stats)
@@ -266,6 +275,17 @@ func runNPC(
 	resp = llm.StripCodeFence(resp)
 	var action NPCAction
 	if err := json.Unmarshal([]byte(resp), &action); err != nil {
+		for i := 0; i < 30; i++ {
+			resp, err = repairJSONWith(ctx, h, resp, err, npcExample)
+			if err == nil {
+				err = json.Unmarshal([]byte(resp), &action)
+				if err != nil {
+					log.Printf("[npc] final JSON parse error for %s: %v; response was: %s", npcName, err, resp)
+					return NPCAction{NPCName: npcName, Action: "保持沉默", Dialogue: ""}, nil
+				}
+			}
+			log.Printf("[npc] JSON parse error for %s: %v; attempt %d to repair with parser", npcName, err, i+1)
+		}
 		log.Printf("[npc] JSON parse error for %s: %v", npcName, err)
 		return NPCAction{NPCName: npcName, Action: strings.TrimSpace(resp), Dialogue: ""}, nil
 	}
