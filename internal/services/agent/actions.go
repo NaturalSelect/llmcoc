@@ -270,7 +270,7 @@ func (updateNPCLLMNoteAction) Execute(call ToolCall, actx ActionContext) []ToolR
 type hitAction struct{}
 
 func (hitAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	debugf("tool", "session=%d hit hint_len=%d", actx.Sid, len([]rune(call.Hint)))
+	debugf("tool", "session=%d hit hint_len=%d content=%v", actx.Sid, len([]rune(call.Hint)), call.Hint)
 	actx.GCtx.Session.KPHint = call.Hint
 	models.DB.Model(&models.GameSession{}).
 		Where("id = ?", actx.GCtx.Session.ID).
