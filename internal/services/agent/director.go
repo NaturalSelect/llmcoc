@@ -177,6 +177,13 @@ const kpSystemPrompt = `
 			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
 		</tool>
 		<tool>
+			<name>hit</name>
+			<description>写入当前场景的高密度提示, 供下次上下文使用; 不限字数, 但必须高信息密度</description>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"hit","hint":"高信息密度的当前场景提示"}</call_example>
+		</tool>
+		<tool>
 			<name>response</name>
 			<description>结束本回合并给出KP对玩家的回复</description>
 			<sideeffect>true</sideeffect>
@@ -344,6 +351,12 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
 	var userSB strings.Builder
 	userSB.WriteString("The above is historical information that has been processed, completed, and compressed.\n\n")
+	// Inject KP self-written scene hint if present.
+	if gctx.Session.KPHint != "" {
+		userSB.WriteString("<hint>\n")
+		userSB.WriteString(gctx.Session.KPHint)
+		userSB.WriteString("\n</hint>\n\n")
+	}
 	userSB.WriteString("<processing>\n")
 	userSB.WriteString("<latest_message>\n")
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
@@ -518,7 +531,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("check_rule tool call can be used multip-time before you got enought info\n")
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug>\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
-	userSB.WriteString("The LLM-Note is super large and it is recommend for you to manage your world state\n")
+	userSB.WriteString("The hit tool call is used to write the current scene's high-density hint, which will be used in the next context(useful for you to recall current scene); there is no limit on the number of words, but it must be high information density\n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),

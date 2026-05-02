@@ -75,6 +75,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolAdvanceTime:       advanceTimeAction{},
 	ToolUpdateLLMNote:     updateLLMNoteAction{},
 	ToolUpdateNPCLLMNote:  updateNPCLLMNoteAction{},
+	ToolHit:               hitAction{},
 	ToolResponse:          responseAction{},
 	ToolStartCombat:       startCombatAction{},
 	ToolCombatAct:         combatActAction{},
@@ -262,6 +263,19 @@ func (updateNPCLLMNoteAction) Execute(call ToolCall, actx ActionContext) []ToolR
 		}
 	}
 	return []ToolResult{{Action: ToolUpdateNPCLLMNote, Result: fmt.Sprintf("找不到名为 %s 的NPC", who)}}
+}
+
+// ── Hit action ────────────────────────────────────────────────────────────────
+
+type hitAction struct{}
+
+func (hitAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	debugf("tool", "session=%d hit hint_len=%d", actx.Sid, len([]rune(call.Hint)))
+	actx.GCtx.Session.KPHint = call.Hint
+	models.DB.Model(&models.GameSession{}).
+		Where("id = ?", actx.GCtx.Session.ID).
+		Update("kp_hint", call.Hint)
+	return []ToolResult{{Action: ToolHit, Result: "KP提示已更新"}}
 }
 
 // ── NPC card actions ──────────────────────────────────────────────────────────
