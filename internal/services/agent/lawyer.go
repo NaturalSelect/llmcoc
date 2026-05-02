@@ -89,7 +89,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(lawyerSystemPrompt)},
-		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表。"},
+		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。"},
 	}
 
 	const maxIter = 30
@@ -103,6 +103,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 			log.Printf("[lawyer] iter %d LLM error: %v", iter, err)
 			return nil
 		}
+		mark := ""
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 		var calls []lawyerCall
 		if err := json.Unmarshal([]byte(raw), &calls); err != nil {
@@ -121,6 +122,12 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				log.Printf("[lawyer] iter %d failed to parse calls after repair attempts: %v", iter, err)
 				return nil
 			}
+			mark = "YOUR OUTPUT FORMAT IS INCORRECT, PLEASE STRICTLY FOLLOW THE RULES AND ONLY OUTPUT THE JSON ARRAY WITHOUT ANY EXPLANATION OR MARKDOWN. THE RESULT OF THIS CALL IS GIVEN BELOW, PLEASE CHECK CAREFULLY AND ADJUST YOUR OUTPUT TO MATCH THE REQUIRED FORMAT."
+		} else {
+			mark = ""
+		}
+		if mark != "" {
+			msgs[len(msgs)-1].Content = mark + "\n" + msgs[len(msgs)-1].Content
 		}
 		if len(calls) == 0 {
 			log.Printf("[lawyer] iter %d: no parseable calls, aborting", iter)
