@@ -1197,6 +1197,16 @@ func convertHistory(history []models.Message) []llm.ChatMessage {
 	for len(msgs) > 0 && msgs[len(msgs)-1].Role == "user" {
 		msgs = msgs[:len(msgs)-1]
 	}
+	if len(msgs) > 0 {
+		msgs = append(msgs, llm.ChatMessage{
+			Role:    "user",
+			Content: "Online Compact",
+		})
+		msgs = append(msgs, llm.ChatMessage{
+			Role:    "assistant",
+			Content: "Done, waiting for new messages...",
+		})
+	}
 	return msgs
 }
 
