@@ -125,7 +125,7 @@ const kpSystemPrompt = `
 			<description>指示叙事代理生成文本段落,保留调查员发言行动,高信息密度</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"write","direction":"需要润色的文本(需指示使用二次元风格还是克苏鲁风格)"}</call_example>
+			<call_example>{"action":"write","direction":"需要润色的文本"}</call_example>
 		</tool>
 		<tool>
 			<name>advance_time</name>
