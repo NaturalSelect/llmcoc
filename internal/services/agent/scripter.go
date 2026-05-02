@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
@@ -218,6 +219,11 @@ type ScenarioDraft struct {
 // Entry point: 3-phase pipeline
 // ---------------------------------------------------------------------------
 
+func randomEra() string {
+	eras := []string{"1880s", "1890s", "1900s", "1910s", "1920s", "1930s", "1940s", "1950s", "1960s", "1970s", "1980s", "1990s", "2000s", "2010s", "2020s"}
+	return eras[time.Now().UnixNano()%int64(len(eras))]
+}
+
 func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (ScenarioCreationOutput, error) {
 	// Defaults
 	if req.MinPlayers <= 0 {
@@ -228,6 +234,9 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 	if req.Difficulty == "" {
 		req.Difficulty = "normal"
+	}
+	if req.Era == "" {
+		req.Era = randomEra()
 	}
 
 	reqJSON, _ := json.Marshal(req)
