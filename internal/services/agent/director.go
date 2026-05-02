@@ -532,7 +532,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("check_rule tool call can be used multip-time before you got enought info\n")
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug>\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
-	userSB.WriteString("The hit tool call is used to write the current scene's high-density hint, which will be used in the next context(useful for you to recall current scene); there is no limit on the number of words, but it must be high information density, you must call it in same message of response too call, otherwise it will not be recorded\n")
+	userSB.WriteString("The hit tool call is used to write the current scene's high-density hint, which will be used in the next context(useful for you to recall current scene, operations your have done and anything necessarily); there is no limit on the number of words, but it must be high information density, you must call it in same message of response too call, otherwise it will not be recorded\n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
