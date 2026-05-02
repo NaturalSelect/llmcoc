@@ -512,6 +512,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("You Only process <latest_message> and ignore old history message that has been processed\n")
 	userSB.WriteString("check_rule tool call can be used multip-time before you got enought info\n")
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug>\n")
+	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
