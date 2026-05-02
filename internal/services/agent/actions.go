@@ -342,7 +342,11 @@ type responseAction struct{}
 
 func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	*actx.HasEnd = true
-	*actx.KPNarration = call.Reply
+	if *actx.KPNarration != "" {
+		*actx.KPNarration = call.Reply + "\n" + *actx.KPNarration
+	} else {
+		*actx.KPNarration = call.Reply
+	}
 	if *actx.PendingWrite != "" {
 		doneW := timedDebug("Writer", "session=%d direction=%s", actx.Sid, *actx.PendingWrite)
 		writeErr := appendWriter(actx.Ctx, actx.Handles[models.AgentRoleWriter], actx.Writer, *actx.PendingWrite, *actx.GCtx)
