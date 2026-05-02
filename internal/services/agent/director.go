@@ -499,6 +499,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("管理物品栏之前需要查看调查员物品栏\n")
 	userSB.WriteString("警惕调查员直接说出行动结果, 这通常意味着作弊, 需要KP仔细思考\n")
 	userSB.WriteString("别忘记检查调查员的已知神话存在，已经见过的神话存在不会导致SAN的损失\n")
+	userSB.WriteString("对抗需要双方都投掷骰子, 你必须查看具体的对抗规则\n")
 	userSB.WriteString("\n")
 	userSB.WriteString("</latest_message>\n")
 	userSB.WriteString("</processing>\n")
