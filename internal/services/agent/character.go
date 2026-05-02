@@ -159,7 +159,9 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 5. 把所有职业技能点和兴趣技能点完整分配出去,不要剩余
 
 请直接输出完整技能JSON对象(包含所有技能,包括未改动的),格式示例:
+
 {"医学":75,"急救":60,"心理学":50,...}
+
 只输出JSON,不要任何其他文字。`,
 		req.Name, era, occupation, req.Background,
 		req.Stats.STR, req.Stats.CON, req.Stats.SIZ,
@@ -168,6 +170,8 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 		sb.String(),
 		occPoints, intPoints,
 	)
+
+	debugf("skills", "prompt: %v", prompt)
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: "你是COC第七版规则专家。请根据调查员的职业和背景,合理分配技能加成点,输出调整后的完整技能列表(JSON对象)"},
