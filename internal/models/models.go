@@ -111,6 +111,8 @@ type ScenarioContent struct {
 	NPCs           []NPCData   `json:"npcs"`
 	Clues          []string    `json:"clues"`
 	WinCondition   string      `json:"win_condition"`
+	LoseCondition  string      `json:"lose_condition,omitempty"`  // 失败条件
+	PartialWins    []string    `json:"partial_wins,omitempty"`   // 部分胜利情景列表
 }
 
 // NOTE: SceneData describes a specific location or event in a scenario.
