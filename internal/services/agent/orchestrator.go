@@ -1204,7 +1204,7 @@ func convertHistory(history []models.Message) []llm.ChatMessage {
 		})
 		msgs = append(msgs, llm.ChatMessage{
 			Role:    "assistant",
-			Content: "Done, waiting for new messages...",
+			Content: "Done, all messages is compacted and will not be processed again, waiting for new messages...",
 		})
 	}
 	return msgs
