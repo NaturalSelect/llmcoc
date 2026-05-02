@@ -259,6 +259,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	if req.Theme == "" {
 		req.Theme = generateRandomTopic(ctx, architect, req.Salt)
 	}
+	debugf("script", "theme: %v", req.Theme)
 
 	// Phase 1: Outline (with grep tool calls)
 	outline, err := generateOutline(ctx, architect, req)
