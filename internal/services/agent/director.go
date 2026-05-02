@@ -439,7 +439,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
-	userSB.WriteString("【配置】剧情法术:禁用 | 严格反作弊:启用 | 社交关系更新:实时变更 | 法术表更新:实时变更 | 学习时间:极短 | 物品栏更新:实时变更 | 种族更新:实时变更 | 已知神话生物更新:实时变更\n")
+	userSB.WriteString("<config> 剧情法术:禁用 | 严格反作弊:启用 | 社交关系更新:实时变更 | 法术表更新:实时变更 | 学习时间:极短 | 物品栏更新:实时变更 | 种族更新:实时变更 | 已知神话生物更新:实时变更 </config>\n")
 	userSB.WriteString("\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
@@ -513,7 +513,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("Please Generate one JSON array of tool call, to work as KP agent \n")
 	userSB.WriteString("Please use add and remove combine to update stat\n")
 	userSB.WriteString("You can skip roll dice if you belive it is unnecessarily, but you must give a reasonable explanation in the response content\n")
-	userSB.WriteString("You Only process <latest_message> and ignore old history message that has been processed\n")
+	userSB.WriteString("You Only process <latest_message> and ignore old history message that has been processed, if you dont our monitor system will detect it(it also means you might be penalized), so you had better follow this rule strictly\n")
 	userSB.WriteString("check_rule tool call can be used multip-time before you got enought info\n")
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug>\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
