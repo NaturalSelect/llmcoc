@@ -1166,6 +1166,9 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 // original multi-turn structure. User messages include the player name prefix
 // so the model can distinguish speakers in multi-player sessions.
 //
+// Consecutive user messages from the same round (multi-player) are merged into
+// a single user message so the history always alternates user/assistant.
+//
 // Trailing user messages without a following assistant response are trimmed
 // to ensure the KP never sees an incomplete conversation round (e.g. when a
 // previous pipeline run failed after the user message was already persisted).
@@ -1178,10 +1181,13 @@ func convertHistory(history []models.Message) []llm.ChatMessage {
 			if name == "" {
 				name = "玩家"
 			}
-			msgs = append(msgs, llm.ChatMessage{
-				Role:    "user",
-				Content: fmt.Sprintf("[%s]: %s", name, m.Content),
-			})
+			line := fmt.Sprintf("[%s]: %s", name, m.Content)
+			// Merge consecutive user messages into one (multi-player rounds).
+			if len(msgs) > 0 && msgs[len(msgs)-1].Role == "user" {
+				msgs[len(msgs)-1].Content += "\n" + line
+			} else {
+				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: line})
+			}
 		case models.MessageRoleAssistant:
 			msgs = append(msgs, llm.ChatMessage{
 				Role:    "assistant",
