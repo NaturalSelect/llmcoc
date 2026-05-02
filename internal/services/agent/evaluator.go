@@ -148,3 +148,22 @@ func loadSingleAgent(role models.AgentRole) (agentHandle, error) {
 	p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, cfg.Temperature)
 	return agentHandle{provider: p, config: &cfg}, nil
 }
+
+func loadSingleAgentWithTemperature(role models.AgentRole, temperature float64) (agentHandle, error) {
+	var cfg models.AgentConfig
+	err := models.DB.Preload("ProviderConfig").
+		Where("role = ? AND is_active = ?", role, true).
+		First(&cfg).Error
+	if err != nil {
+		return agentHandle{}, fmt.Errorf("agent %q 未配置,请在管理面板配置 LLM provider", role)
+	}
+	if cfg.ProviderConfigID == nil || cfg.ProviderConfig == nil || !cfg.ProviderConfig.IsActive {
+		return agentHandle{}, fmt.Errorf("agent %q 未绑定可用的 LLM provider", role)
+	}
+	maxTok := cfg.MaxTokens
+	if maxTok == 0 {
+		maxTok = 1024
+	}
+	p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, float32(temperature))
+	return agentHandle{provider: p, config: &cfg}, nil
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -159,7 +160,7 @@ const scenarioExample = `{
   }
 }`
 
-var randomTopicSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)模组设计师,请生成一个随机的模组主题,仅输出主题名称,不要有任何其他文字。`
+var randomTopicSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。`
 
 // ---------------------------------------------------------------------------
 // Tool-call types for outline & QA phases
@@ -257,7 +258,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 
 	if req.Theme == "" {
-		req.Theme = generateRandomTopic(ctx, architect, req.Salt)
+		req.Theme = generateRandomTopic(ctx, req.Salt)
 	}
 	debugf("script", "theme: %v", req.Theme)
 
@@ -315,11 +316,41 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: 3}, nil
 }
 
-func generateRandomTopic(ctx context.Context, architect agentHandle, seed string) string {
-	raw, err := architect.provider.Chat(ctx, []llm.ChatMessage{
-		{Role: "system", Content: architect.systemPrompt(randomTopicSystemPrompt)},
-		{Role: "user", Content: "请生成一个随机的COC模组主题,仅输出主题名称,不要有任何其他文字, 种子: " + seed},
-	})
+func generateRandomTopic(ctx context.Context, seed string) string {
+	agent, err := loadSingleAgentWithTemperature(models.AgentRoleArchitect, 1.2)
+	if err != nil {
+		return "未知冒险"
+	}
+	var raw string
+	const iter = 3
+	randGen := rand.New(rand.NewSource(time.Now().Unix()))
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: agent.systemPrompt(randomTopicSystemPrompt)},
+		{Role: "user", Content: "请生成一个COC模组主题灵感提供器,输出多个主题名称,不要有任何其他文字, 种子: " + seed},
+	}
+	for i := 0; i < iter; i++ {
+		if ctx.Err() != nil {
+			return "未知冒险"
+		}
+		raw, err = agent.provider.Chat(ctx, msgs)
+		if err != nil {
+			break
+		}
+		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
+		debugf("script", "architect iter=%d raw=%v", i+1, raw)
+		rawRune := []rune(raw)
+		if len(rawRune) < 5 {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "输出太短了,请重新生成一个更有创意的主题名称"})
+		} else {
+			startPoint := randGen.Intn(5)
+			endPoint := startPoint + 5 + randGen.Intn(len(rawRune)-startPoint-5)
+			randSlice := rawRune[startPoint:endPoint]
+			msgs = append(msgs, llm.ChatMessage{
+				Role:    "user",
+				Content: fmt.Sprintf("我们认为这里： %v 不够好, 请重新生成一个更有创意的主题, 输出只包含主题名称", string(randSlice)),
+			})
+		}
+	}
 	if err != nil {
 		return "未知冒险"
 	}
