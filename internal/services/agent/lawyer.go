@@ -47,7 +47,9 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 - 当需要目录、法术清单、怪物清单等静态信息时,可先调用 read_rulebook_const
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
 - 每轮只包含 grep 调用(可多个),或只包含单个 response,不混用
-- 仅输出JSON数组,不加任何说明文字`
+- 仅输出JSON数组,不加任何说明文字
+- You should only output the JSON array, without any additional text or explanation.
+- You are limited to output JSON format, and you must strictly follow the specified format for tool calls. Do not include any text outside of the JSON array. If you need to provide explanations or reasoning, include them as part of the "ruling" field in the response action. Remember, your output must be a valid JSON array that can be parsed without errors.`
 
 // lawyerCall is one item in the Lawyer's tool-call output sequence.
 type lawyerCall struct {
