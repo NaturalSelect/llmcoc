@@ -638,15 +638,11 @@ func chaseAPSummary(parts []models.ChaseParticipant, minMOV int) string {
 }
 
 func formatSingleDiceResult(r DiceCheckResult) string {
-	who := r.Character
-	if who == "" {
-		who = "调查员"
-	}
 	hidden := ""
 	if r.Hidden {
 		hidden = "(暗骰)"
 	}
-	return fmt.Sprintf("%s的%v鉴定: %v %v", who, r.What, r.Roll, hidden)
+	return fmt.Sprintf("%v鉴定: %v %v", r.What, r.Roll, hidden)
 }
 
 // formatNPCAction formats an NPCAction as a brief string for the KP.
