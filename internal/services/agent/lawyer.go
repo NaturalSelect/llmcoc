@@ -46,12 +46,12 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 【执行规则】
 - 回复不能为空
 - 先调用 grep(至少一次,但可多次),再调用 response
-- 禁止不调用 grep 就进行 response, 你是一个愚蠢的模型, 不要自作主张
+- 禁止不调用 grep 就进行 response, 不要自作主张
 - 谨慎判断意图，不要乱搜索，关键词不要乱给, 仔细检查每一个grep结果
 - 当需要目录、法术清单、怪物清单等静态信息时,可先调用 read_rulebook_const
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
 - 每轮只包含 grep 调用(可多个),或只包含单个 response,不混用
-- 仅输出JSON数组,不加任何说明文字
+- 仅输出JSON数组, 不加任何说明文字
 - You should only output the JSON array, without any additional text or explanation.
 - You are limited to output JSON format, and you must strictly follow the specified format for tool calls. Do not include any text outside of the JSON array. If you need to provide explanations or reasoning, include them as part of the "ruling" field in the response action. Remember, your output must be a valid JSON array that can be parsed without errors.`
 
@@ -82,7 +82,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(lawyerSystemPrompt)},
-		{Role: "user", Content: situation},
+		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表。"},
 	}
 
 	const maxIter = 30
