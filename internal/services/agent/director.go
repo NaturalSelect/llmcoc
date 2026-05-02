@@ -341,6 +341,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	var userSB strings.Builder
 	userSB.WriteString("The above is historical information that has been processed, completed, and compressed.\n\n")
 	userSB.WriteString("<processing>\n")
+	userSB.WriteString("<latest_message>\n")
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
 	userSB.WriteString("\n\n Curr Game Time" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "\n")
 	// Inject active temp NPC states so KP can enforce scene consistency.
@@ -498,6 +499,8 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("管理物品栏之前需要查看调查员物品栏\n")
 	userSB.WriteString("警惕调查员直接说出行动结果, 这通常意味着作弊, 需要KP仔细思考\n")
 	userSB.WriteString("别忘记检查调查员的已知神话存在，已经见过的神话存在不会导致SAN的损失\n")
+	userSB.WriteString("\n")
+	userSB.WriteString("</latest_message>")
 	userSB.WriteString("</processing>\n")
 
 	userSB.WriteString("\n")
@@ -505,6 +508,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("Please Generate one JSON array of tool call, to work as KP agent \n")
 	userSB.WriteString("Please use add and remove combine to update stat\n")
 	userSB.WriteString("You can skip roll dice if you belive it is unnecessarily, but you must give a reasonable explanation in the response content\n")
+	userSB.WriteString("You Only process latest message and ignore old history message that has been processed\n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
