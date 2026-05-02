@@ -100,10 +100,10 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>manage_relation</name>
-			<description>管理调查员社会关系(新增/修改/删除)</description>
+			<description>管理调查员社会关系(新增/删除)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"manage_relation","character_name":"角色名","operate":"add|remove","relation":{"name":"条目名","relationship":"关系类型","note":"备注"}}</call_example>
+			<call_example>{"action":"manage_relation","character_name":"角色名","operate":"add|remove","relation":{"name":"条目名","relationship":"关系类型","note":"备注(种族、具体关系、态度、NPC属性等其他信息)"}}</call_example>
 		</tool>
 		<tool>
 			<name>end_game</name>
