@@ -165,6 +165,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	switchRole := false
 
+	warnning := "YOU DONOT FOLLOW THE RULES, THIS ABUSE IS RECORDED BY MONITOR SYSTEM.\n"
+
 	for iter := 0; iter < MaxKpRound; iter++ {
 		if ctx.Err() != nil {
 			return RunOutput{}, ctx.Err()
@@ -211,6 +213,22 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			return string(data)
 		}
 		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
+
+		foundHit := false
+		foundResp := false
+		for _, call := range calls {
+			if call.Action == ToolHit {
+				foundHit = true
+			} else if call.Action == ToolResponse || call.Action == ToolEndGame {
+				foundResp = true
+			}
+		}
+		if foundHit && !foundResp {
+			debugf("KP", "session=%d iter=%d warning: hit tool call found without response or end_game", sid, iter+1)
+			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: warnning})
+			iter-- // retry this iteration with the warning added to context
+			continue
+		}
 
 		var toolResults []ToolResult
 		hasEnd := false
