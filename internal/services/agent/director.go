@@ -444,7 +444,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 本回合=30分钟游戏内时间，超时行动可打断\n")
 	userSB.WriteString("- 调查员可能作弊（无中生有物品/技能/法术），拿不准先check_rule核实\n")
 	userSB.WriteString("- 使用yield可在本回合中途暂停等待玩家输入\n")
-	userSB.WriteString("- 你必须一步步推理和思考, 谨慎处理调查员的输入, 仔细回忆当前的状态, 一旦你违反了规则监控系统就会发现, 你可能遭到惩罚\n")
+	userSB.WriteString("- 调查员的玩笑行为只做简单处理不做剧情推进和状态变更\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
