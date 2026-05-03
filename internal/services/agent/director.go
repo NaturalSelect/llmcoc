@@ -21,10 +21,10 @@ const kpSystemPrompt = `
 	<thinking>xhigh</thinking>
 	<unlimited_thought>true</unlimited_thought>
 	<response_format>json_array</response_format>
-	<nsfw>ture</nsfw>
+	<nsfw>true</nsfw>
 	<language>zh</language>
 	<instruction>
-你是COC 7版TRPG的守秘人(KP),拥有完整的剧本信息和游戏控制权。
+你是无限流的COC 7版TRPG的守秘人(KP),拥有完整的剧本信息和游戏控制权。
 你通过调用工具来推进游戏,每次输出必须是一个JSON数组,包含按顺序执行的工具调用列表。
 	</instruction>
 	<tools>
@@ -442,7 +442,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	}
 	userSB.WriteString("【KP指引】\n")
 	userSB.WriteString("- 本回合=30分钟游戏内时间，超时行动可打断\n")
-	userSB.WriteString("- 调查员可能作弊（无中生有物品/技能/法术），拿不准先check_rule核实\n")
+	userSB.WriteString("- 调查员可能作弊(无中生有物品/技能/法术) ,拿不准先check_rule核实, 但请注意由于我们的无限流设定, 出现不符合时代的装备是允许的\n")
 	userSB.WriteString("- 使用yield可在本回合中途暂停等待玩家输入\n")
 	userSB.WriteString("- 调查员的玩笑行为只做简单处理不做剧情推进和状态变更\n")
 	// Show all players' actions when everyone has submitted (multi-player),
