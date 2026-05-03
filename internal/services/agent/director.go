@@ -47,7 +47,7 @@ const kpSystemPrompt = `
 			<description>投掷骰子，返回结果数值</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"roll_dice","dice":{"dice_expr":"2D6+3", "what":"智力"}}}</call_example>
+			<call_example>{"action":"roll_dice","dice":{"dice_expr":"2D6+3", "what":"智力", "reason":"描述投掷原因"}}</call_example>
 		</tool>
 		<tool>
 			<name>create_npc</name>
@@ -75,28 +75,28 @@ const kpSystemPrompt = `
 			<description>更新调查员的状态</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)"]}</call_example>		
+			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)"], "reason":"描述变更原因"}</call_example>		
 		</tool>
 		<tool>
 			<name>manage_inventory</name>
 			<description>管理调查员物品栏(获得/丢失)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"manage_inventory","character_name":"角色名","operate":"add|remove","item":"物品名"}</call_example>
+			<call_example>{"action":"manage_inventory","character_name":"角色名","operate":"add|remove","item":"物品名", "reason":"描述变更原因"}</call_example>
 		</tools>
 		<tool>
 			<name>record_monster</name>
 			<description>记录调查员已见神话存在</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"record_monster","character_name":"角色名","operate":"add|remove","monster":"神话存在类型名称"}</call_example>
+			<call_example>{"action":"record_monster","character_name":"角色名","operate":"add|remove","monster":"神话存在类型名称", "reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool>
 			<name>manage_spell</name>
 			<description>管理调查员掌握的法术(新增/删除)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"manage_spell","character_name":"角色名","operate":"add|remove","spell":"法术名"}</call_example>
+			<call_example>{"action":"manage_spell","character_name":"角色名","operate":"add|remove","spell":"法术名", "reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool>
 			<name>manage_relation</name>
@@ -160,7 +160,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<description>操作NPC角色卡数值(推荐用于战斗伤害/治疗/法术消耗)</description>
-			<call_example>{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"]}</call_example>
+			<call_example>{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"],"reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool>
 			<name>update_llm_note</name>
