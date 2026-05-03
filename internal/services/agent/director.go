@@ -178,7 +178,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>hit</name>
-			<description>向监控系统写入你本次所做的操作</description>
+			<description>向未来的你提示, 解释你已经完成的操作, 提醒他不要重复操作, 并建议下一步行动</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"hit","hint":"高信息密度的当前场景提示"}</call_example>
