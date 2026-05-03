@@ -457,6 +457,16 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		if strings.Contains(s, "DEBUG") {
 			return "debug"
 		}
+		if strings.Contains(s, "WARN") {
+			msgs = append(msgs, llm.ChatMessage{
+				Role:    "user",
+				Content: "WARNING: MONITOR SYSTEM DETECTED YOUR MISTAKE, PLEASE BE CAREFUL IN THE FOLLOWING ACTIONS, OR YOU MIGHT BE PENALIZED.",
+			})
+			msgs = append(msgs, llm.ChatMessage{
+				Role:    "assistant",
+				Content: "I understand, I will be more careful.",
+			})
+		}
 		return "input"
 	}
 	attentionSkill := func(user string, content string) string {
