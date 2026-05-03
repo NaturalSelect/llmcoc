@@ -543,7 +543,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("check_rule tool call can be used multip-time before you got enought info\n")
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug>\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
-	userSB.WriteString("Your should be careful stat update, don't duplicate changes\n")
+	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
 	userSB.WriteString("The hit tool call is used to write workflow hint(e.g. Already change A' HP and B' MP) to avoid duplicate, it will nee inject in next message\n")
 
 	msgs = append(msgs, llm.ChatMessage{
