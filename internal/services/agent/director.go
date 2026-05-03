@@ -529,9 +529,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("</processing>\n")
 
 	if gctx.Session.KPHint != "" {
-		userSB.WriteString("<last_workflow_detail>\n")
+		userSB.WriteString("<workflow_detail>\n")
 		userSB.WriteString(gctx.Session.KPHint)
-		userSB.WriteString("\n</last_workflow_detail>\n\n")
+		userSB.WriteString("\n</workflow_detail>\n\n")
 	}
 
 	userSB.WriteString("\n")
@@ -545,6 +545,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
 	userSB.WriteString("The hit tool call is used to write workflow hint(e.g. Already change A' HP and B' MP) to avoid duplicate, it will nee inject in next message\n")
+	userSB.WriteString("It's recommended to use the hit tool call in every messages\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
