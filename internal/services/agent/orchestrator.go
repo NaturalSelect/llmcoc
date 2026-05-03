@@ -214,21 +214,21 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
 
-		// foundHit := false
-		// foundResp := false
-		// for _, call := range calls {
-		// 	if call.Action == ToolHit {
-		// 		foundHit = true
-		// 	} else if call.Action == ToolResponse || call.Action == ToolEndGame {
-		// 		foundResp = true
-		// 	}
-		// }
-		// if foundHit && !foundResp {
-		// 	debugf("KP", "session=%d iter=%d warning: hit tool call found without response or end_game", sid, iter+1)
-		// 	kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: warnning})
-		// 	iter-- // retry this iteration with the warning added to context
-		// 	continue
-		// }
+		foundHit := false
+		foundResp := false
+		for _, call := range calls {
+			if call.Action == ToolHit {
+				foundHit = true
+			} else if call.Action == ToolResponse || call.Action == ToolEndGame {
+				foundResp = true
+			}
+		}
+		if !foundHit && foundResp {
+			debugf("KP", "session=%d iter=%d warning: hit tool call found without response or end_game", sid, iter+1)
+			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: "Please use the hit tool call to record your workflow hint(e.g. Already change A' HP and B' MP) to avoid duplicate stat update, and it will be injected in next message. RETRY this turn with the hint added to context."})
+			iter-- // retry this iteration with the warning added to context
+			continue
+		}
 
 		var toolResults []ToolResult
 		hasEnd := false
