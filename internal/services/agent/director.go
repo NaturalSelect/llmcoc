@@ -460,7 +460,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		if strings.Contains(s, "WARN") {
 			msgs = append(msgs, llm.ChatMessage{
 				Role:    "user",
-				Content: "WARNING: MONITOR SYSTEM DETECTED YOUR MISTAKE, PLEASE BE CAREFUL IN THE FOLLOWING ACTIONS, OR YOU MIGHT BE PENALIZED.",
+				Content: "<system>WARNING: MONITOR SYSTEM DETECTED YOUR MISTAKE, PLEASE BE CAREFUL IN THE FOLLOWING ACTIONS, OR YOU MIGHT BE PENALIZED.</system>",
 			})
 			msgs = append(msgs, llm.ChatMessage{
 				Role:    "assistant",
@@ -528,6 +528,12 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("</latest_message>\n")
 	userSB.WriteString("</processing>\n")
 
+	if gctx.Session.KPHint != "" {
+		userSB.WriteString("<workflow_detail>\n")
+		userSB.WriteString(gctx.Session.KPHint)
+		userSB.WriteString("\n</workflow_detail>\n\n")
+	}
+
 	userSB.WriteString("\n")
 	userSB.WriteString("Your Response Tool Call Must Contain Detail(e.g. dice point, damage and so on)\n")
 	userSB.WriteString("Please Generate one JSON array of tool call, to work as KP agent \n")
@@ -537,12 +543,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("check_rule tool call can be used multip-time before you got enought info\n")
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug>\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
-	userSB.WriteString("The hit tool call is used to write workflow hint(e.g. CharA use spell 'Fireball', cost already taken, don't decrease MP in next message), which will be used in the next context; there is no limit on the number of words, but it must be high information density, you must call it in same message of response too call, otherwise it will not be recorded\n")
-	if gctx.Session.KPHint != "" {
-		userSB.WriteString("<hint>\n")
-		userSB.WriteString(gctx.Session.KPHint)
-		userSB.WriteString("\n</hint>\n\n")
-	}
+	userSB.WriteString("Your should be careful stat update, don't duplicate changes\n")
+	userSB.WriteString("The hit tool call is used to write workflow hint(e.g. Already change A' HP and B' MP) to avoid duplicate, it will nee inject in next message\n")
+
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
