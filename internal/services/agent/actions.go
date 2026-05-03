@@ -275,7 +275,7 @@ func (hitAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	models.DB.Model(&models.GameSession{}).
 		Where("id = ?", actx.GCtx.Session.ID).
 		Update("kp_hint", call.Hint)
-	return []ToolResult{{Action: ToolHit, Result: "KP提示已更新"}}
+	return []ToolResult{{Action: ToolHit, Result: "ALREADY RECORDED"}}
 }
 
 // ── NPC card actions ──────────────────────────────────────────────────────────
