@@ -50,6 +50,9 @@ func ListCharacters(c *gin.Context) {
 	models.DB.Where("user_id = ? AND is_active = ?", userID, true).
 		Order("created_at DESC").
 		Find(&cards)
+	for i := range cards {
+		hotFixChar(&cards[i])
+	}
 	c.JSON(http.StatusOK, cards)
 }
 
@@ -63,6 +66,11 @@ func hotFixChar(card *models.CharacterCard) {
 	}
 	if card.Race == "" {
 		card.Race = "人类"
+		needUpdate = true
+	}
+	if card.Stats.Data.HP > 0 && card.WoundState != "none" {
+		card.WoundState = "none"
+		card.IsActive = true
 		needUpdate = true
 	}
 	if needUpdate {
