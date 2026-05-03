@@ -545,7 +545,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug>\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
-	userSB.WriteString("The hit tool call is used to write workflow hint(e.g. **ALREADY**  change A' HP and B' MP) to avoid duplicate stat update\n")
+	userSB.WriteString("The hit tool call is used to write workflow hint(e.g. **ALREADY/PLANNING**  change A' HP and B' MP) to avoid duplicate stat update\n")
 	userSB.WriteString("It's recommended to use the hit tool call in every messages\n")
 
 	msgs = append(msgs, llm.ChatMessage{
