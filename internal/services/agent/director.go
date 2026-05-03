@@ -178,7 +178,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>hit</name>
-			<description>写入当前场景的高密度提示, 供下次上下文使用; 不限字数, 但必须高信息密度</description>
+			<description>向监控系统写入你本次所做的操作</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"hit","hint":"高信息密度的当前场景提示"}</call_example>
