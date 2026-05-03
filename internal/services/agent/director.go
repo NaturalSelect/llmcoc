@@ -529,9 +529,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("</processing>\n")
 
 	if gctx.Session.KPHint != "" {
-		userSB.WriteString("<workflow_detail>\n")
+		userSB.WriteString("<last_workflow_detail>\n")
 		userSB.WriteString(gctx.Session.KPHint)
-		userSB.WriteString("\n</workflow_detail>\n\n")
+		userSB.WriteString("\n</last_workflow_detail>\n\n")
 	}
 
 	userSB.WriteString("\n")
