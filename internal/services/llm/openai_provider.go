@@ -74,7 +74,7 @@ func isRetryableError(err error) bool {
 	return false
 }
 
-func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (string, error) {
+func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage) (string, error) {
 	start := time.Now()
 	chatReq := openai.ChatCompletionRequest{
 		Model:           p.model,
@@ -112,3 +112,17 @@ func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (stri
 	return result, nil
 }
 
+func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (msg string, err error) {
+	for i := 0; i < maxRetries; i++ {
+		msg, err = p.chat(ctx, messages)
+		if err != nil {
+			log.Printf("[llm] Chat error: %v", err)
+			return "", err
+		}
+		if msg == "" {
+			continue
+		}
+		break
+	}
+	return msg, nil
+}
