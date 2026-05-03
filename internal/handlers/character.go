@@ -47,13 +47,19 @@ type GenerateCharacterReq struct {
 func ListCharacters(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var cards []models.CharacterCard
-	models.DB.Where("user_id = ? AND is_active = ?", userID, true).
+	models.DB.Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&cards)
 	for i := range cards {
 		hotFixChar(&cards[i])
 	}
-	c.JSON(http.StatusOK, cards)
+	newCard := []models.CharacterCard{}
+	for _, card := range cards {
+		if card.IsActive {
+			newCard = append(newCard, card)
+		}
+	}
+	c.JSON(http.StatusOK, newCard)
 }
 
 func hotFixChar(card *models.CharacterCard) {
