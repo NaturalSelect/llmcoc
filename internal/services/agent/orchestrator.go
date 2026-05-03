@@ -262,7 +262,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 			if switchRole {
 				// 如果发生了切换跳过本批次其他调用,期望KP在下一轮使用 write/response 工具交出控制权。
-				if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolResponse) {
+				if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolResponse && call.Action != ToolEndGame && call.Action != ToolHit) {
 					debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
 					toolResults = append(toolResults, ToolResult{
 						Action: call.Action,
