@@ -54,7 +54,7 @@ const (
 	ToolUpdateNPCCard     ToolCallType = "update_npc_card"     // 更新NPC角色卡状态
 	ToolUpdateLLMNote     ToolCallType = "update_llm_note"     // 更新Session级玩家LLMNote记录
 	ToolUpdateNPCLLMNote  ToolCallType = "update_npc_llm_note" // 更新Session级NPC LLMNote记录
-	ToolHit               ToolCallType = "hit"                 // KP写入当前场景高密度提示
+	ToolHint              ToolCallType = "hint"                // KP写入当前场景高密度提示
 	ToolResponse          ToolCallType = "response"            // 结束本轮并给出回复
 	ToolYield             ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
 

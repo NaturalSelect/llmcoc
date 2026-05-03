@@ -217,7 +217,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		foundHit := false
 		foundResp := false
 		for _, call := range calls {
-			if call.Action == ToolHit {
+			if call.Action == ToolHint {
 				foundHit = true
 			} else if call.Action == ToolResponse || call.Action == ToolEndGame {
 				foundResp = true
@@ -262,7 +262,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 			if switchRole {
 				// 如果发生了切换跳过本批次其他调用,期望KP在下一轮使用 write/response 工具交出控制权。
-				if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolResponse && call.Action != ToolEndGame && call.Action != ToolHit) {
+				if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolResponse && call.Action != ToolEndGame && call.Action != ToolHint) {
 					debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
 					toolResults = append(toolResults, ToolResult{
 						Action: call.Action,

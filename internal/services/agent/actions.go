@@ -75,7 +75,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolAdvanceTime:       advanceTimeAction{},
 	ToolUpdateLLMNote:     updateLLMNoteAction{},
 	ToolUpdateNPCLLMNote:  updateNPCLLMNoteAction{},
-	ToolHit:               hitAction{},
+	ToolHint:              hintAction{},
 	ToolResponse:          responseAction{},
 	ToolStartCombat:       startCombatAction{},
 	ToolCombatAct:         combatActAction{},
@@ -267,15 +267,15 @@ func (updateNPCLLMNoteAction) Execute(call ToolCall, actx ActionContext) []ToolR
 
 // ── Hit action ────────────────────────────────────────────────────────────────
 
-type hitAction struct{}
+type hintAction struct{}
 
-func (hitAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	debugf("tool", "session=%d hit hint_len=%d content=%v", actx.Sid, len([]rune(call.Hint)), call.Hint)
+func (hintAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	debugf("tool", "session=%d hint hint_len=%d content=%v", actx.Sid, len([]rune(call.Hint)), call.Hint)
 	actx.GCtx.Session.KPHint = call.Hint
 	models.DB.Model(&models.GameSession{}).
 		Where("id = ?", actx.GCtx.Session.ID).
 		Update("kp_hint", call.Hint)
-	return []ToolResult{{Action: ToolHit, Result: "RECORDED:\n" + call.Hint}}
+	return []ToolResult{{Action: ToolHint, Result: "RECORDED:\n" + call.Hint}}
 }
 
 // ── NPC card actions ──────────────────────────────────────────────────────────
