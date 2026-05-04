@@ -178,7 +178,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>hint</name>
-			<description>向未来的你提示, 解释你已经完成的操作, 记录你已经进行的操作和当前正在进行的操作, 并建议下一步行动</description>
+			<description>向未来的你提示, 解释你已经完成的操作, 记录你已经进行的操作和当前正在进行的操作(也视为已经成功进行), 并建议下一步行动</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"hint","hint":"高信息密度的当前场景提示"}</call_example>
