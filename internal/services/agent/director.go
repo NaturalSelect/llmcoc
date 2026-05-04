@@ -571,7 +571,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("You can skip roll dice if you belive it is unnecessarily, but you must give a reasonable explanation in the response content\n")
 	userSB.WriteString("You Only process <latest_message> and ignore old history message that has been processed, if you dont our monitor system will detect it(it also means you might be penalized), so you had better follow this rule strictly\n")
 	userSB.WriteString("check_rule tool call can be used multip-time before you got enought info, but don't abuse it\n")
-	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug>\n")
+	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug> follow the <debug> instructions\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
 	userSB.WriteString("The hint tool call record your actions to avoid duplicate stat update, you will use it in every message and see the recorded hints in next player input\n")
