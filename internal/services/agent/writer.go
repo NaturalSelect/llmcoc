@@ -81,7 +81,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 		}
 		return newMsg
 	}
-	msgs = append(msgs, trunc(state.History, 20000)...)
+	msgs = append(msgs, trunc(state.History, 10000)...)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: "叙事指令:" + direction,
