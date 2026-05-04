@@ -214,18 +214,18 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
 
-		foundReason := false
-		for _, call := range calls {
-			if call.Action == ToolReason {
-				foundReason = true
-			}
-		}
-		if !foundReason {
-			debugf("KP", "session=%d iter=%d error: don't reason", sid, iter+1)
-			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: "Please reasoning current turn based on history message, include reasoning tool call in next message. RETRY this turn with the reasoning added to context."})
-			iter-- // retry this iteration with the warning added to context
-			continue
-		}
+		// foundReason := false
+		// for _, call := range calls {
+		// 	if call.Action == ToolReason {
+		// 		foundReason = true
+		// 	}
+		// }
+		// if !foundReason {
+		// 	debugf("KP", "session=%d iter=%d error: don't reason", sid, iter+1)
+		// 	kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: "Please reasoning current turn based on history message, include reasoning tool call in next message. RETRY this turn with the reasoning added to context."})
+		// 	iter-- // retry this iteration with the warning added to context
+		// 	continue
+		// }
 
 		var toolResults []ToolResult
 		hasEnd := false
