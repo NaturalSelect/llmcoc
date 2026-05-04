@@ -557,6 +557,8 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
 	userSB.WriteString("The hint tool call record your actions to avoid duplicate stat update, you will use it in every message and see the recorded hints in next player input\n")
+	userSB.WriteString("Look book the history messages and reasioning context from it combine the <last_stats_change_detail> will let you know what you have done, but you should not process the history messages again, just focus on the latest user input, and never update character or npc stats based on history alone!\n")
+	userSB.WriteString("If user say 'fuck you', it must be your wrong\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
