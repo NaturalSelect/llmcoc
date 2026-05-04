@@ -178,7 +178,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>hint</name>
-			<description>向未来的你提示, 解释你已经完成的操作, 提醒他不要重复操作, 并建议下一步行动</description>
+			<description>向未来的你提示, 解释你已经完成的操作, 记录你已经进行的操作, 并建议下一步行动</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"hint","hint":"高信息密度的当前场景提示"}</call_example>
@@ -550,7 +550,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug>\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
-	userSB.WriteString("The hint tool call write record of your actions to avoid duplicate stat update, you will use it in every message and see the recorded hints in next player input\n")
+	userSB.WriteString("The hint tool call record your actions to avoid duplicate stat update, you will use it in every message and see the recorded hints in next player input\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
