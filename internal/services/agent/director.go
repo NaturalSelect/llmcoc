@@ -505,6 +505,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	if len(gctx.PendingActions) > 1 {
 		userSB.WriteString("\nMultiple Players Ask:\n")
 		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
+		userSB.WriteString("\nYour must process all input of players, use advance_time tool call if necessarily\n")
 		for _, a := range gctx.PendingActions {
 			userSB.WriteString(fmt.Sprintf("<%s>[%s]: %s</%s>\n", getTag(a.Content), a.PlayerName, a.Content, getTag(a.Content)))
 			skillBrief.WriteString(attentionSkill(a.PlayerName, a.Content))
