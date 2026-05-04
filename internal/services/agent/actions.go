@@ -376,6 +376,10 @@ func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		}
 		debugf("tool", "session=%d write buffer_len=%d", actx.Sid, len([]rune(actx.Writer.Buffer)))
 	}
+	actx.GCtx.Session.Reasoning = call.Context
+	models.DB.Model(&models.GameSession{}).
+		Where("id = ?", actx.GCtx.Session.ID).
+		Update("reasoning", call.Context)
 	debugf("tool", "session=%d response narration=%s", actx.Sid, call.Reply)
 	return nil
 }
@@ -621,7 +625,7 @@ func (reasonAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	models.DB.Model(&models.GameSession{}).
 		Where("id = ?", actx.GCtx.Session.ID).
 		Update("reasoning", call.Reason)
-	return []ToolResult{{Action: ToolReason, Result: call.Reason}}
+	return []ToolResult{{Action: ToolReason, Result: "OK"}}
 }
 
 type reportAction struct{}

@@ -75,7 +75,7 @@ const kpCombatPrompt = `
 		
 		<tool>
 			<name>hint</name>
-			<description>向未来的你提示, 解释你已经完成的操作, 记录你已经进行的操作和当前正在进行的操作(也视为已经成功进行), 并建议下一步行动</description>
+			<description>记录当前场景的高信息密度描述, 用于实现特殊机制(例如: 护甲)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"hint","hint":"高信息密度的当前场景提示"}</call_example>
@@ -99,10 +99,10 @@ const kpSystemPrompt = `
 	<tools>
 		<tool>
 			<name>reasoning</name>
-			<description>记录你的推理过程，每个消息必须包含此工具调用</description>
+			<description>Record your CoT in this tool call, you must include this tool call in every message</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"reasoning","reason":"你本轮通过历史消息和当前状态得到的推理结果"}</call_example>
+			<call_example>{"action":"reasoning","reason":"Chain Of Thought"}</call_example>
 		</tool>
 		<tool>
 			<name>check_rule</name>
@@ -244,7 +244,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(必填,口语化,包含骰子结果,行动结果,战斗结果等,必须简短)"}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(必填,口语化,包含骰子结果,行动结果,战斗结果等,必须简短)", "context":"推进到此调用的完整上下文(即完整推理过程)"}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
@@ -310,6 +310,8 @@ YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN RE
 You interfaces with a batch processing system, so if you are not sure don't make any assumptions, just call the tools you need and wait for the results to be returned to you in the next message, the stats update is durable and will be reflected, invoke them carefully.
 
 YOU SHOULD LOOK BACK HISTORY MESSAGES TO GET CONTEXT, BUT YOU SHOULD NOT PROCESS HISTORY MESSAGES AGAIN, JUST FOCUS ON THE LATEST USER INPUT. IF YOU NEED TO USE THE INFORMATION IN HISTORY, JUST CALL THE TOOLS TO GET THE INFORMATION YOU NEED, DON'T MAKE ANY ASSUMPTION OR GUESS ABOUT THE HISTORY CONTENT, THIS IS VERY IMPORTANT.
+
+Strictly follow the procedure of '1. Review the rules, 2. Roll the dice, 3. Update the values using the tool, 4. Respond'.
 `
 
 func extraKPMessage(msg string) (s string) {
@@ -552,7 +554,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 
 	if gctx.Session.KPHint != "" {
 		userSB.WriteString("\n<stat_hint>\n")
-		userSB.WriteString("FROM THE PASS MESSAGE:\n")
 		userSB.WriteString(gctx.Session.KPHint)
 		userSB.WriteString("\n</stat_hint>\n\n")
 	}
@@ -578,11 +579,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	if gctx.Session.Reasoning != "" {
 		msgs = append(msgs, llm.ChatMessage{
 			Role:    "assistant",
-			Content: `[{"action":"reasoning","reason":"` + gctx.Session.Reasoning + `"}]`,
+			Content: `[{"action":"current_context"}]`,
 		})
 		msgs = append(msgs, llm.ChatMessage{
 			Role:    "user",
-			Content: `[{"action":"reasoning","result":"` + gctx.Session.Reasoning + `"}]`,
+			Content: `[{"action":"current_context","result":"` + gctx.Session.Reasoning + `"}]`,
 		})
 	}
 	for _, msg := range msgs {

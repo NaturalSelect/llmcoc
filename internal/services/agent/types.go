@@ -98,6 +98,7 @@ type ToolCall struct {
 	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结(可选)
 	Reason        string                 `json:"reason,omitempty"`         // reasoning: KP本轮推理过程
+	Context       string                 `json:"context,omitempty"`        // response: 剧本推进到此处的完整上下文
 
 	// ── Combat fields ─────────────────────────────────────────────────────────
 	CombatParticipants []CombatParticipantInput `json:"combat_participants,omitempty"` // start_combat: 参与者列表
