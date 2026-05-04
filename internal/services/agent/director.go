@@ -515,11 +515,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s]: %s</%s>\n", getTag(gctx.UserInput), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput)))
 		skillBrief.WriteString(attentionSkill(gctx.UserName, gctx.UserInput))
 	}
-	if skillBrief.Len() > 0 {
-		userSB.WriteString("\n\n【技能相关提示】\n")
-		userSB.WriteString(skillBrief.String())
-		userSB.WriteString("\n")
-	}
 	userSB.WriteString("在应用任何变更之前，需要查看调查员或NPC的信息\n")
 	userSB.WriteString("不要忘记更新调查员的 物品栏 社交关系 法术表 种族 等属性\n")
 	userSB.WriteString("SAN值的扣除必须谨慎,随意扣除SAN,不能反复扣SAN,不能只因为调查员处于疯狂状态在忽略规则的情况下扣除SAN\n")
@@ -529,6 +524,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("别忘记检查调查员的已知神话存在，已经见过的神话存在不会导致SAN的损失\n")
 	userSB.WriteString("对抗需要双方都投掷骰子, 你必须查看具体的对抗规则\n")
 	userSB.WriteString("在调用 end_game 之前, 记得帮调查员清理掉已死NPC的社交关系\n")
+	userSB.WriteString("不要在剧情演绎中虚构调查员发言(除非调查员明确要求这样做), 这样可以保持剧情的连续性\n")
 	userSB.WriteString("\n")
 	userSB.WriteString("</latest_message>\n")
 	userSB.WriteString("</processing>\n")
