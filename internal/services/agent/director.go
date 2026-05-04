@@ -531,6 +531,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("对抗需要双方都投掷骰子, 你必须查看具体的对抗规则\n")
 	userSB.WriteString("在调用 end_game 之前, 记得帮调查员清理掉已死NPC的社交关系\n")
 	userSB.WriteString("不要在剧情演绎中虚构调查员发言(除非调查员明确要求这样做), 这样可以保持剧情的连续性\n")
+	userSB.WriteString("调查员可能会释放他不会的法术, 除非剧情需要否(面对外神)则判断成作弊\n")
 	userSB.WriteString("\n")
 	userSB.WriteString("</latest_message>\n")
 	userSB.WriteString("</processing>\n")
