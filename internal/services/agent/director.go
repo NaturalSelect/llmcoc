@@ -144,7 +144,7 @@ const kpSystemPrompt = `
 			<description>管理调查员物品栏(获得/丢失)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"manage_inventory","character_name":"角色名","operate":"add|remove","item":"物品名", "reason":"描述变更原因"}</call_example>
+			<call_example>{"action":"manage_inventory","character_name":"角色名","operate":"add|remove","item":"包含'()'的完整物品名", "reason":"描述变更原因"}</call_example>
 		</tools>
 		<tool>
 			<name>record_monster</name>
