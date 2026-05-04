@@ -362,6 +362,7 @@ type responseAction struct{}
 
 func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	*actx.HasEnd = true
+	call.Reply += "\n" + call.Ack
 	if *actx.KPNarration != "" {
 		*actx.KPNarration = call.Reply + "\n" + *actx.KPNarration
 	} else {
@@ -376,10 +377,6 @@ func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		}
 		debugf("tool", "session=%d write buffer_len=%d", actx.Sid, len([]rune(actx.Writer.Buffer)))
 	}
-	actx.GCtx.Session.Reasoning = call.Context
-	models.DB.Model(&models.GameSession{}).
-		Where("id = ?", actx.GCtx.Session.ID).
-		Update("reasoning", call.Context)
 	debugf("tool", "session=%d response narration=%s", actx.Sid, call.Reply)
 	return nil
 }

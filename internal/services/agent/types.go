@@ -112,6 +112,7 @@ type ToolCall struct {
 	ChaseAction       *ChaseActionDetail      `json:"chase_action,omitempty"`       // chase_act: 行动详情
 	ChaseEndReason    string                  `json:"chase_end_reason,omitempty"`   // end_chase: 追逐结束原因
 	Report            string                  `json:"report,omitempty"`             // report: agent self-report
+	Ack               string                  `json:"ack,omitempty"`                // response: 对玩家动作的正式确认
 }
 
 // ToolResult wraps the result of executing one ToolCall.

@@ -80,6 +80,13 @@ const kpCombatPrompt = `
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"hint","hint":"高信息密度的当前场景提示"}</call_example>
 		</tool>
+		<tool>
+			<name>reasoning</name>
+			<description>Record your CoT in this tool call, you must include this tool call in every message</description>
+			<sideeffect>false</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"reasoning","reason":"Chain Of Thought"}</call_example>
+		</tool>
 `
 
 // kpSystemPrompt is the static system prompt for the master KP agent.
@@ -97,13 +104,6 @@ const kpSystemPrompt = `
 你通过调用工具来推进游戏,每次输出必须是一个JSON数组,包含按顺序执行的工具调用列表。
 	</instruction>
 	<tools>
-		<tool>
-			<name>reasoning</name>
-			<description>Record your CoT in this tool call, you must include this tool call in every message</description>
-			<sideeffect>false</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"reasoning","reason":"Chain Of Thought"}</call_example>
-		</tool>
 		<tool>
 			<name>check_rule</name>
 			<description>查阅COC规则书(技能判定、战斗、追逐、法术、怪物、理智、典籍等规则细节)</description>
@@ -240,11 +240,11 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>response</name>
-			<description>结束本回合并给出KP对玩家的回复</description>
+			<description>结束本回合并给出KP对玩家的回复和对玩家行为和本次推理所涉及的所有行为确认留痕(必填)</description>
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(必填,口语化,包含骰子结果,行动结果,战斗结果等,必须简短)", "context":"推进到此调用的完整上下文(即完整推理过程)"}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(可选,口语化,必须简短)","ack":"必须: 对调查员和NPC所有动作的正式确认不限制字数(详细到每一次判定), 例如: A使用法术xx成功(骰子 xx/yy 困难成功),扣除了y点MP; B受到xx攻击;"}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
@@ -307,11 +307,7 @@ THE MESSAGE YOU NEED TO PROCESS IS TAGGED BY <processing>, AND THE LATEST USER I
 
 YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN REFER TO THE PREVIOUS MESSAGES IN THE HISTORY FOR CONTEXT BUT DO NOT NEED(ALSO FORBID) TO PROCESS THEM AGAIN.
 
-You interfaces with a batch processing system, so if you are not sure don't make any assumptions, just call the tools you need and wait for the results to be returned to you in the next message, the stats update is durable and will be reflected, invoke them carefully.
-
-YOU SHOULD LOOK BACK HISTORY MESSAGES TO GET CONTEXT, BUT YOU SHOULD NOT PROCESS HISTORY MESSAGES AGAIN, JUST FOCUS ON THE LATEST USER INPUT. IF YOU NEED TO USE THE INFORMATION IN HISTORY, JUST CALL THE TOOLS TO GET THE INFORMATION YOU NEED, DON'T MAKE ANY ASSUMPTION OR GUESS ABOUT THE HISTORY CONTENT, THIS IS VERY IMPORTANT.
-
-Strictly follow the procedure of '1. Review the rules, 2. Roll the dice, 3. Update the values using the tool, 4. Respond'.
+Strictly follow the procedure of '1. Review the rules, 2. Roll the dice, 3. Update the values using the tool, 4. Respond and acknowledge'.
 `
 
 func extraKPMessage(msg string) (s string) {
@@ -569,23 +565,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug> follow the <debug> instructions\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
-	userSB.WriteString("Look book the history messages and reasioning context from it combine the <last_stats_change_detail> will let you know what you have done, but you should not process the history messages again, just focus on the latest user input, and never update character or npc stats based on history alone!\n")
-	userSB.WriteString("If user say 'fuck you', it must be your wrong\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
 	})
-	if gctx.Session.Reasoning != "" {
-		msgs = append(msgs, llm.ChatMessage{
-			Role:    "assistant",
-			Content: `[{"action":"current_context"}]`,
-		})
-		msgs = append(msgs, llm.ChatMessage{
-			Role:    "user",
-			Content: `[{"action":"current_context","result":"` + gctx.Session.Reasoning + `"}]`,
-		})
-	}
 	for _, msg := range msgs {
 		localMsg := msg.Content
 		if len(localMsg) > 20 {
