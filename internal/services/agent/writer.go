@@ -68,7 +68,19 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 		Role:    "system",
 		Content: h.systemPrompt(writerDefaultPrompt),
 	})
-	msgs = append(msgs, state.History...)
+	trunc := func(msg []llm.ChatMessage, maxToken int) []llm.ChatMessage {
+		newMsg := make([]llm.ChatMessage, 0)
+		tokenCount := 0
+		for i := len(msg) - 1; i >= 0; i-- {
+			tokenCount += len([]rune(msg[i].Content))
+			if tokenCount > maxToken {
+				break
+			}
+			newMsg = append([]llm.ChatMessage{msg[i]}, newMsg...)
+		}
+		return newMsg
+	}
+	msgs = append(msgs, trunc(state.History, 20000)...)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: "叙事指令:" + direction,
