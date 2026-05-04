@@ -68,7 +68,7 @@ const kpSystemPrompt = `
 			<description>打开与指定NPC的一轮对话(该NPC独立记忆)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息)"}</call_example>
+			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果)"}</call_example>
 		</tool>
 		<tool>
 			<name>update_characters</name>
