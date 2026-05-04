@@ -83,6 +83,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolStartChase:        startChaseAction{},
 	ToolChaseAct:          chaseActAction{},
 	ToolEndChase:          endChaseAction{},
+	ToolReason:            reasonAction{},
 }
 
 // ── Rule / lookup actions ─────────────────────────────────────────────────────
@@ -608,4 +609,11 @@ func (endChaseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	debugf("tool", "session=%d end_chase reason=%q", actx.Sid, reason)
 	return []ToolResult{{Action: ToolEndChase, Result: fmt.Sprintf("追逐已结束:%s", reason)}}
+}
+
+type reasonAction struct{}
+
+func (reasonAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	debugf("tool", "session=%d reason reason=%q", actx.Sid, call.Reason)
+	return []ToolResult{{Action: ToolReason, Result: call.Reason}}
 }

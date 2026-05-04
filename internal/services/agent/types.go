@@ -67,6 +67,7 @@ const (
 	ToolStartChase ToolCallType = "start_chase" // 开始追逐,初始化追逐状态
 	ToolChaseAct   ToolCallType = "chase_act"   // 宣告本轮追逐行动(移动/险境/障碍/冲突)
 	ToolEndChase   ToolCallType = "end_chase"   // 结束追逐,清除追逐状态
+	ToolReason     ToolCallType = "reasoning"   // 记录推理过程
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
@@ -95,7 +96,7 @@ type ToolCall struct {
 	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
 	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结(可选)
-	Reason        string                 `json:"reason,omitempty"`
+	Reason        string                 `json:"reason,omitempty"`         // reasoning: KP本轮推理过程
 
 	// ── Combat fields ─────────────────────────────────────────────────────────
 	CombatParticipants []CombatParticipantInput `json:"combat_participants,omitempty"` // start_combat: 参与者列表

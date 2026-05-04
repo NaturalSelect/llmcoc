@@ -91,6 +91,13 @@ const kpSystemPrompt = `
 	</instruction>
 	<tools>
 		<tool>
+			<name>reasoning</name>
+			<description>记录你的推理过程，每个消息必须包含此工具调用</description>
+			<sideeffect>false</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"reasoning","reason":"你本轮通过历史消息和当前状态得到的推理结果"}</call_example>
+		</tool>
+		<tool>
 			<name>check_rule</name>
 			<description>查阅COC规则书(技能判定、战斗、追逐、法术、怪物、理智、典籍等规则细节)</description>
 			<sideeffect>false</sideeffect>
