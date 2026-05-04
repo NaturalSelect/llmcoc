@@ -95,6 +95,7 @@ type ToolCall struct {
 	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
 	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结(可选)
+	Reason        string                 `json:"reason,omitempty"`
 
 	// ── Combat fields ─────────────────────────────────────────────────────────
 	CombatParticipants []CombatParticipantInput `json:"combat_participants,omitempty"` // start_combat: 参与者列表
