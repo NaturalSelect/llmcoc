@@ -19,7 +19,7 @@ var llmDebug = func() bool {
 	return v == "1" || v == "true" || v == "yes"
 }()
 
-const defaultReasoningEffort = "xhigh"
+const defaultReasoningEffort = "high"
 
 type openAIProvider struct {
 	client      *openai.Client
