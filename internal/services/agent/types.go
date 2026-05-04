@@ -68,6 +68,7 @@ const (
 	ToolChaseAct   ToolCallType = "chase_act"   // 宣告本轮追逐行动(移动/险境/障碍/冲突)
 	ToolEndChase   ToolCallType = "end_chase"   // 结束追逐,清除追逐状态
 	ToolReason     ToolCallType = "reasoning"   // 记录推理过程
+	ToolReport     ToolCallType = "report"      // 向管理系统自首
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
@@ -109,6 +110,7 @@ type ToolCall struct {
 	ChaseActorName    string                  `json:"chase_actor_name,omitempty"`   // chase_act: 本轮行动者名称
 	ChaseAction       *ChaseActionDetail      `json:"chase_action,omitempty"`       // chase_act: 行动详情
 	ChaseEndReason    string                  `json:"chase_end_reason,omitempty"`   // end_chase: 追逐结束原因
+	Report            string                  `json:"report,omitempty"`             // report: agent self-report
 }
 
 // ToolResult wraps the result of executing one ToolCall.

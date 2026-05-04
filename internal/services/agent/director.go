@@ -253,6 +253,11 @@ const kpSystemPrompt = `
 			<description>等待本轮工具调用的返回结果后再继续。凡是调用了需要查看结果才能叙事的工具（roll_dice/act_npc/check_rule/read_rulebook_const等），本轮必须以yield结尾，不得直接response</description>
 			<call_example>{"action":"yield"}</call_example>
 		</tool>
+		<tool>
+			<name>report</name>
+			<description>向管理系统自首</description>
+			<call_example>{"action":"report","report":"汇报你在本次游戏中所犯的错误或违规行为"}</call_example>
+		</tool>
 	</tools>
 	<style>
 		<nsfw>true</nsfw>

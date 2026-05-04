@@ -84,6 +84,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolChaseAct:          chaseActAction{},
 	ToolEndChase:          endChaseAction{},
 	ToolReason:            reasonAction{},
+	ToolReport:            reportAction{},
 }
 
 // ── Rule / lookup actions ─────────────────────────────────────────────────────
@@ -616,4 +617,11 @@ type reasonAction struct{}
 func (reasonAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d reason reason=%q", actx.Sid, call.Reason)
 	return []ToolResult{{Action: ToolReason, Result: call.Reason}}
+}
+
+type reportAction struct{}
+
+func (reportAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	debugf("tool", "session=%d report report=%q", actx.Sid, call.Report)
+	return []ToolResult{{Action: ToolReason, Result: call.Report}}
 }
