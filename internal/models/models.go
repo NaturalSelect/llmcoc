@@ -111,7 +111,7 @@ type ScenarioContent struct {
 	NPCs           []NPCData   `json:"npcs"`
 	Clues          []string    `json:"clues"`
 	WinCondition   string      `json:"win_condition"`
-	LoseCondition  string      `json:"lose_condition,omitempty"`  // 失败条件
+	LoseCondition  string      `json:"lose_condition,omitempty"` // 失败条件
 	PartialWins    []string    `json:"partial_wins,omitempty"`   // 部分胜利情景列表
 }
 
@@ -181,7 +181,8 @@ type GameSession struct {
 	WriterHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
 	CombatState   JSONField[*CombatState] `gorm:"type:text" json:"-"`
 	ChaseState    JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
-	KPHint        string                 `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
+	KPHint        string                  `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
+	Reasoning     string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
 	CreatedAt     time.Time               `json:"created_at"`
 	UpdatedAt     time.Time               `json:"updated_at"`
 	Scenario      Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`

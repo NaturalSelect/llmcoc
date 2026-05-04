@@ -28,6 +28,7 @@ type ActionContext struct {
 	SwitchRole         *bool
 	KPNarration        *string
 	PendingWrite       *string
+	Reasoning          *string
 	Interrupt          *bool
 }
 
@@ -616,6 +617,10 @@ type reasonAction struct{}
 
 func (reasonAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d reason reason=%q", actx.Sid, call.Reason)
+	actx.GCtx.Session.Reasoning = call.Reason
+	models.DB.Model(&models.GameSession{}).
+		Where("id = ?", actx.GCtx.Session.ID).
+		Update("reasoning", call.Reason)
 	return []ToolResult{{Action: ToolReason, Result: call.Reason}}
 }
 
@@ -623,5 +628,5 @@ type reportAction struct{}
 
 func (reportAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d report report=%q", actx.Sid, call.Report)
-	return []ToolResult{{Action: ToolReason, Result: call.Report}}
+	return []ToolResult{{Action: ToolReport, Result: call.Report}}
 }

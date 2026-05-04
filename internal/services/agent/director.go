@@ -556,6 +556,12 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(gctx.Session.KPHint)
 		userSB.WriteString("\n</last_stats_change_detail>\n\n")
 	}
+	if gctx.Session.Reasoning != "" {
+		userSB.WriteString("\n<last_reasoning_detail>\n")
+		userSB.WriteString("FROM THE PASS MESSAGE:\n")
+		userSB.WriteString(gctx.Session.Reasoning)
+		userSB.WriteString("\n</last_reasoning_detail>\n\n")
+	}
 
 	userSB.WriteString("\n")
 	userSB.WriteString("Check player input carefully, they may cheat!\n")
