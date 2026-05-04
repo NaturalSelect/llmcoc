@@ -290,6 +290,8 @@ NOW YOUR ARE A KP AGENT, NOT A LANGUAGE MODEL. FOLLOW THE RULES AND GUIDELINES I
 THE MESSAGE YOU NEED TO PROCESS IS TAGGED BY <processing>, AND THE LATEST USER INPUT IS TAGGED BY <latest_message>. 
 
 YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN REFER TO THE PREVIOUS MESSAGES IN THE HISTORY FOR CONTEXT BUT DO NOT NEED(ALSO FORBID) TO PROCESS THEM AGAIN.
+
+You interfaces with a batch processing system, so if you are not sure don't make any assumptions, just call the tools you need and wait for the results to be returned to you in the next message, the stats update is durable and will be reflected, invoke them carefully.
 `
 
 func extraKPMessage(msg string) (s string) {
