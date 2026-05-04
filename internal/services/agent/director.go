@@ -13,6 +13,68 @@ import (
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
+const kpCombatPrompt = `
+<tool>
+			<name>start_combat</name>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<description>开始战斗,初始化跨轮战斗状态(第一次发生冲突时调用)</description>
+			<call_example>{"action":"start_combat","combat_participants":[{"name":"Alice","dex":60,"hp":12,"is_npc":false},{"name":"怪物","dex":40,"hp":20,"is_npc":true}]}</call_example>
+		</tool>
+		<tool>
+			<name>combat_act</name>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<maybeInterrupt>true</maybeInterrupt>
+			<description>记录本轮当前行动者的战斗行动(每个行动者每轮调用一次,必须在单独的 round 中使用)</description>
+			<call_example>{"action":"combat_act","combat_actor_name":"Alice","combat_action":{"type":"attack","target_name":"怪物","weapon_name":"左轮手枪"}}</call_example>
+		</tool>
+		<tool>
+			<name>end_combat</name>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<description>结束战斗,清除战斗状态</description>
+			<call_example>{"action":"end_combat","combat_end_reason":"怪物被击败"}</call_example>
+		</tool>
+		<tool>
+			<name>start_chase</name>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<description>开始追逐,初始化跨轮追逐状态</description>
+			<call_example>{"action":"start_chase","chase_participants":[{"name":"Alice","is_npc":false,"mov":8,"location":2,"is_pursuer":false},{"name":"警察","is_npc":true,"mov":9,"location":0,"is_pursuer":true}]}</call_example>
+		</tool>
+		<tool>
+			<name>chase_act</name>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<maybeInterrupt>true</maybeInterrupt>
+			<description>记录本轮当前追逐参与者的行动(必须在单独的 round 中使用)</description>
+			<call_example>{"action":"chase_act","chase_actor_name":"Alice","chase_action":{"type":"move","move_delta":2}}</call_example>
+		</tool>
+		<tool>
+			<name>end_chase</name>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<description>结束追逐,清除追逐状态</description>
+			<call_example>{"action":"end_chase","chase_end_reason":"猎物成功逃脱"}</call_example>
+		</tool>
+		<tool>
+			<name>update_llm_note</name>
+			<description>更新LLM笔记</description>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"update_llm_note","character_name":"角色名","llm_note":"笔记内容"}</call_example>
+		</tool>
+		<tool>
+			<name>update_npc_llm_note</name>
+			<description>更新NPC的LLM笔记</description>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
+		</tool>
+		
+`
+
 // kpSystemPrompt is the static system prompt for the master KP agent.
 // It defines the tool interface and COC rules guidelines.
 // The KP receives full scenario context in the user prompt on each call.
@@ -163,20 +225,6 @@ const kpSystemPrompt = `
 			<call_example>{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"],"reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool>
-			<name>update_llm_note</name>
-			<description>更新LLM笔记</description>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"update_llm_note","character_name":"角色名","llm_note":"笔记内容"}</call_example>
-		</tool>
-		<tool>
-			<name>update_npc_llm_note</name>
-			<description>更新NPC的LLM笔记</description>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
-		</tool>
-		<tool>
 			<name>hint</name>
 			<description>向未来的你提示, 解释你已经完成的操作, 记录你已经进行的操作和当前正在进行的操作(也视为已经成功进行), 并建议下一步行动</description>
 			<sideeffect>true</sideeffect>
@@ -190,50 +238,6 @@ const kpSystemPrompt = `
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
 			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(必填,口语化,包含骰子结果,行动结果,战斗结果等,必须简短)"}</call_example>
-		</tool>
-		<tool>
-			<name>start_combat</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<description>开始战斗,初始化跨轮战斗状态(第一次发生冲突时调用)</description>
-			<call_example>{"action":"start_combat","combat_participants":[{"name":"Alice","dex":60,"hp":12,"is_npc":false},{"name":"怪物","dex":40,"hp":20,"is_npc":true}]}</call_example>
-		</tool>
-		<tool>
-			<name>combat_act</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<maybeInterrupt>true</maybeInterrupt>
-			<description>记录本轮当前行动者的战斗行动(每个行动者每轮调用一次,必须在单独的 round 中使用)</description>
-			<call_example>{"action":"combat_act","combat_actor_name":"Alice","combat_action":{"type":"attack","target_name":"怪物","weapon_name":"左轮手枪"}}</call_example>
-		</tool>
-		<tool>
-			<name>end_combat</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<description>结束战斗,清除战斗状态</description>
-			<call_example>{"action":"end_combat","combat_end_reason":"怪物被击败"}</call_example>
-		</tool>
-		<tool>
-			<name>start_chase</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<description>开始追逐,初始化跨轮追逐状态</description>
-			<call_example>{"action":"start_chase","chase_participants":[{"name":"Alice","is_npc":false,"mov":8,"location":2,"is_pursuer":false},{"name":"警察","is_npc":true,"mov":9,"location":0,"is_pursuer":true}]}</call_example>
-		</tool>
-		<tool>
-			<name>chase_act</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<maybeInterrupt>true</maybeInterrupt>
-			<description>记录本轮当前追逐参与者的行动(必须在单独的 round 中使用)</description>
-			<call_example>{"action":"chase_act","chase_actor_name":"Alice","chase_action":{"type":"move","move_delta":2}}</call_example>
-		</tool>
-		<tool>
-			<name>end_chase</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<description>结束追逐,清除追逐状态</description>
-			<call_example>{"action":"end_chase","chase_end_reason":"猎物成功逃脱"}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
@@ -377,71 +381,71 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		}
 	}
 	// Inject active combat state so KP can enforce DEX-order and track per-round flags.
-	if cs := gctx.Session.CombatState.Data; cs != nil && cs.Active {
-		userSB.WriteString("\nActive Combat State:\n")
-		currentName := ""
-		if cs.ActorIndex >= 0 && cs.ActorIndex < len(cs.Participants) {
-			currentName = cs.Participants[cs.ActorIndex].Name
-		}
-		userSB.WriteString(fmt.Sprintf("  Round %d, Current Actor: %s\n", cs.Round, currentName))
-		userSB.WriteString("  Action Order (DEX Descending):\n")
-		for i, p := range cs.Participants {
-			acted := "Pending"
-			if p.WoundState == "dead" {
-				acted = "Dead"
-			} else if p.HasActed {
-				acted = "Acted"
-			}
-			marker := ""
-			if i == cs.ActorIndex {
-				marker = " ◀ Current"
-			}
-			aiming := ""
-			if p.IsAiming {
-				aiming = "【Aiming】"
-			}
-			debt := ""
-			if p.APDebt > 0 {
-				debt = fmt.Sprintf("【Next Round AP-%d】", p.APDebt)
-			}
-			dodged := ""
-			if p.HasDodgedOrFB {
-				dodged = "【Dodged/FB Used】"
-			}
-			userSB.WriteString(fmt.Sprintf("    %d. %s DEX=%d HP=%d %s%s%s%s%s\n",
-				i+1, p.Name, p.DEX, p.HP, acted, aiming, debt, dodged, marker))
-		}
-		userSB.WriteString("  (攻击/伤害仍通过 roll_dice + update_characters 处理；登记行动后调用 combat_act； 注意: combat_act 不可以和其他调用在同一Phase中一起使用)\n")
-	}
-	// Inject active chase state so KP can enforce AP rules and location tracking.
-	if chs := gctx.Session.ChaseState.Data; chs != nil && chs.Active {
-		userSB.WriteString("\nActive Chase State:\n")
-		userSB.WriteString(fmt.Sprintf("  Round %d, Min MOV=%d (Action Points=1+(MOV-Min MOV))\n", chs.Round, chs.MinMOV))
-		for _, p := range chs.Participants {
-			role := "猎物"
-			if p.IsPursuer {
-				role = "追逐者"
-			}
-			ap := 1 + (p.MOV - chs.MinMOV)
-			if ap < 1 {
-				ap = 1
-			}
-			debt := ""
-			if p.APDebt > 0 {
-				debt = fmt.Sprintf("(Next Round AP-%d)", p.APDebt)
-			}
-			userSB.WriteString(fmt.Sprintf("    • %s(%s) MOV=%d 位置=%d 可用AP=%d%s\n",
-				p.Name, role, p.MOV, p.Location, ap, debt))
-		}
-		if len(chs.Obstacles) > 0 {
-			userSB.WriteString("  障碍物:\n")
-			for _, ob := range chs.Obstacles {
-				userSB.WriteString(fmt.Sprintf("    • %s HP=%d/%d 位于地点%d-%d之间\n",
-					ob.Name, ob.HP, ob.MaxHP, ob.Between[0], ob.Between[1]))
-			}
-		}
-		userSB.WriteString("  (每次移动/险境/障碍/冲突行动后调用 chase_act 登记； 注意: chase_act 不可以和其他调用在同一Phase中一起使用；追逐者到达猎物位置时调用 end_chase)\n")
-	}
+	// if cs := gctx.Session.CombatState.Data; cs != nil && cs.Active {
+	// 	userSB.WriteString("\nActive Combat State:\n")
+	// 	currentName := ""
+	// 	if cs.ActorIndex >= 0 && cs.ActorIndex < len(cs.Participants) {
+	// 		currentName = cs.Participants[cs.ActorIndex].Name
+	// 	}
+	// 	userSB.WriteString(fmt.Sprintf("  Round %d, Current Actor: %s\n", cs.Round, currentName))
+	// 	userSB.WriteString("  Action Order (DEX Descending):\n")
+	// 	for i, p := range cs.Participants {
+	// 		acted := "Pending"
+	// 		if p.WoundState == "dead" {
+	// 			acted = "Dead"
+	// 		} else if p.HasActed {
+	// 			acted = "Acted"
+	// 		}
+	// 		marker := ""
+	// 		if i == cs.ActorIndex {
+	// 			marker = " ◀ Current"
+	// 		}
+	// 		aiming := ""
+	// 		if p.IsAiming {
+	// 			aiming = "【Aiming】"
+	// 		}
+	// 		debt := ""
+	// 		if p.APDebt > 0 {
+	// 			debt = fmt.Sprintf("【Next Round AP-%d】", p.APDebt)
+	// 		}
+	// 		dodged := ""
+	// 		if p.HasDodgedOrFB {
+	// 			dodged = "【Dodged/FB Used】"
+	// 		}
+	// 		userSB.WriteString(fmt.Sprintf("    %d. %s DEX=%d HP=%d %s%s%s%s%s\n",
+	// 			i+1, p.Name, p.DEX, p.HP, acted, aiming, debt, dodged, marker))
+	// 	}
+	// 	userSB.WriteString("  (攻击/伤害仍通过 roll_dice + update_characters 处理；登记行动后调用 combat_act； 注意: combat_act 不可以和其他调用在同一Phase中一起使用)\n")
+	// }
+	// // Inject active chase state so KP can enforce AP rules and location tracking.
+	// if chs := gctx.Session.ChaseState.Data; chs != nil && chs.Active {
+	// 	userSB.WriteString("\nActive Chase State:\n")
+	// 	userSB.WriteString(fmt.Sprintf("  Round %d, Min MOV=%d (Action Points=1+(MOV-Min MOV))\n", chs.Round, chs.MinMOV))
+	// 	for _, p := range chs.Participants {
+	// 		role := "猎物"
+	// 		if p.IsPursuer {
+	// 			role = "追逐者"
+	// 		}
+	// 		ap := 1 + (p.MOV - chs.MinMOV)
+	// 		if ap < 1 {
+	// 			ap = 1
+	// 		}
+	// 		debt := ""
+	// 		if p.APDebt > 0 {
+	// 			debt = fmt.Sprintf("(Next Round AP-%d)", p.APDebt)
+	// 		}
+	// 		userSB.WriteString(fmt.Sprintf("    • %s(%s) MOV=%d 位置=%d 可用AP=%d%s\n",
+	// 			p.Name, role, p.MOV, p.Location, ap, debt))
+	// 	}
+	// 	if len(chs.Obstacles) > 0 {
+	// 		userSB.WriteString("  障碍物:\n")
+	// 		for _, ob := range chs.Obstacles {
+	// 			userSB.WriteString(fmt.Sprintf("    • %s HP=%d/%d 位于地点%d-%d之间\n",
+	// 				ob.Name, ob.HP, ob.MaxHP, ob.Between[0], ob.Between[1]))
+	// 		}
+	// 	}
+	// 	userSB.WriteString("  (每次移动/险境/障碍/冲突行动后调用 chase_act 登记； 注意: chase_act 不可以和其他调用在同一Phase中一起使用；追逐者到达猎物位置时调用 end_chase)\n")
+	// }
 	userSB.WriteString("【KP指引】\n")
 	userSB.WriteString("- 本回合=30分钟游戏内时间，超时行动可打断\n")
 	userSB.WriteString("- 调查员可能作弊(无中生有物品/技能/法术/随意学习法术) ,拿不准先check_rule核实\n")
