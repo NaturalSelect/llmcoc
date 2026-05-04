@@ -89,7 +89,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(lawyerSystemPrompt)},
-		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。"},
+		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。"},
 	}
 
 	const maxIter = 30
