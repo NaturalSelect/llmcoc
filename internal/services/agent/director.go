@@ -73,6 +73,13 @@ const kpCombatPrompt = `
 			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
 		</tool>
 		
+		<tool>
+			<name>hint</name>
+			<description>向未来的你提示, 解释你已经完成的操作, 记录你已经进行的操作和当前正在进行的操作(也视为已经成功进行), 并建议下一步行动</description>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"hint","hint":"高信息密度的当前场景提示"}</call_example>
+		</tool>
 `
 
 // kpSystemPrompt is the static system prompt for the master KP agent.
@@ -230,13 +237,6 @@ const kpSystemPrompt = `
 			<endTheTurn>false</endTheTurn>
 			<description>操作NPC角色卡数值(推荐用于战斗伤害/治疗/法术消耗)</description>
 			<call_example>{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"],"reason":"描述变更原因"}</call_example>
-		</tool>
-		<tool>
-			<name>hint</name>
-			<description>向未来的你提示, 解释你已经完成的操作, 记录你已经进行的操作和当前正在进行的操作(也视为已经成功进行), 并建议下一步行动</description>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"hint","hint":"高信息密度的当前场景提示"}</call_example>
 		</tool>
 		<tool>
 			<name>response</name>
@@ -551,16 +551,10 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("</processing>\n")
 
 	if gctx.Session.KPHint != "" {
-		userSB.WriteString("\n<last_stats_change_detail>\n")
+		userSB.WriteString("\n<stat_hint>\n")
 		userSB.WriteString("FROM THE PASS MESSAGE:\n")
 		userSB.WriteString(gctx.Session.KPHint)
-		userSB.WriteString("\n</last_stats_change_detail>\n\n")
-	}
-	if gctx.Session.Reasoning != "" {
-		userSB.WriteString("\n<last_reasoning_detail>\n")
-		userSB.WriteString("FROM THE PASS MESSAGE:\n")
-		userSB.WriteString(gctx.Session.Reasoning)
-		userSB.WriteString("\n</last_reasoning_detail>\n\n")
+		userSB.WriteString("\n</stat_hint>\n\n")
 	}
 
 	userSB.WriteString("\n")
@@ -574,7 +568,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug> follow the <debug> instructions\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
-	userSB.WriteString("The hint tool call record your actions to avoid duplicate stat update, you will use it in every message and see the recorded hints in next player input\n")
 	userSB.WriteString("Look book the history messages and reasioning context from it combine the <last_stats_change_detail> will let you know what you have done, but you should not process the history messages again, just focus on the latest user input, and never update character or npc stats based on history alone!\n")
 	userSB.WriteString("If user say 'fuck you', it must be your wrong\n")
 
@@ -582,6 +575,16 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		Role:    "user",
 		Content: userSB.String(),
 	})
+	if gctx.Session.Reasoning != "" {
+		msgs = append(msgs, llm.ChatMessage{
+			Role:    "assistant",
+			Content: `[{"action":"reasoning","reason":"` + gctx.Session.Reasoning + `"}]`,
+		})
+		msgs = append(msgs, llm.ChatMessage{
+			Role:    "user",
+			Content: `[{"action":"reasoning","result":"` + gctx.Session.Reasoning + `"}]`,
+		})
+	}
 	for _, msg := range msgs {
 		localMsg := msg.Content
 		if len(localMsg) > 20 {
