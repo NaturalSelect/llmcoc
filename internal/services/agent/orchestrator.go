@@ -168,7 +168,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		introspectionMsg = introspectionMsg[:len(introspectionMsg)-1]
 		introspectionMsg = append(introspectionMsg, llm.ChatMessage{
 			Role:    "user",
-			Content: "请基于以上历史消息进行系统性内省,总结当前的游戏状态和上下文,并检查是否有任何不一致或需要注意的地方。回复JSON格式数组。",
+			Content: "请基于以上历史消息进行系统性内省,总结当前的游戏状态和上下文,并检查是否有任何不一致或需要注意的地方。回复JSON格式数组, 只包含 introspection 调用不要进行其他操作。",
 		})
 		resp, err := handles[models.AgentRoleDirector].provider.Chat(ctx, introspectionMsg)
 		if err != nil {
