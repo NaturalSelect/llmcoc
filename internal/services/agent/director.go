@@ -222,7 +222,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(可选,口语化,必须简短)","ack":"必须: 对调查员和NPC所有动作的正式确认不限制字数(详细到每一次判定), 例如: A使用法术xx成功(骰子 xx/yy 困难成功),扣除了y点MP; B受到xx攻击;"}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(可选,口语化,必须简短)","ack":"必须: 对调查员和NPC所有动作的正式确认不限制字数(详细到每一次判定,每一次数据修改操作的结果), 例如: A使用法术xx成功(骰子 xx/yy 困难成功),扣除了y点MP; B受到xx攻击;"}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
@@ -252,10 +252,10 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>introspection</name>
-			<description>Systemic introspection through historical records(from the start to the latest message, should use english) then check the consistency of the external data</description>
+			<description>Systemic introspection through historical detail messages(from the start to the latest message, should use english)</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"introspection","introspection":"Systemic introspection through historical records(from the start to the latest message, should use english) then check the consistency of the external data"}</call_example>
+			<call_example>{"action":"introspection","introspection":"Systemic introspection through historical detail messages(from the start to the latest message, should use english), this result must detail"}</call_example>
 		</tool>
 		<tool>
 			<name>think</name>
