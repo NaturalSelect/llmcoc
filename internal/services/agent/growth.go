@@ -129,7 +129,7 @@ func RunGrowth(ctx context.Context, session *models.GameSession, messages []mode
 				current = 1
 			}
 
-			gain, _ := game.Roll(1, 10)
+			gain, _ := game.Roll(1, 3)
 			newVal := current + gain
 			if newVal > 99 {
 				gain = 99 - current
