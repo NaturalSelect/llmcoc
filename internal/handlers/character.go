@@ -81,6 +81,45 @@ func hotFixChar(card *models.CharacterCard) {
 		card.Stats.Data.MaxHP = maxHp
 		needUpdate = true
 	}
+	combined := card.Stats.Data.STR + card.Stats.Data.SIZ
+	var build int
+	var db string
+	switch {
+	case combined <= 64:
+		build, db = -2, "-2"
+	case combined <= 84:
+		build, db = -1, "-1"
+	case combined <= 124:
+		build, db = 0, "0"
+	case combined <= 164:
+		build, db = 1, "1D4"
+	case combined <= 204:
+		build, db = 2, "1D6"
+	case combined <= 284:
+		build, db = 3, "2D6"
+	default:
+		build, db = 4, "2D6+1D6"
+	}
+	if card.Stats.Data.Build != build {
+		card.Stats.Data.Build = build
+		needUpdate = true
+	}
+	if card.Stats.Data.DB != db {
+		card.Stats.Data.DB = db
+		needUpdate = true
+	}
+	var mov int
+	if card.Stats.Data.STR > card.Stats.Data.SIZ && card.Stats.Data.DEX > card.Stats.Data.SIZ {
+		mov = 9
+	} else if card.Stats.Data.STR < card.Stats.Data.SIZ && card.Stats.Data.DEX < card.Stats.Data.SIZ {
+		mov = 7
+	} else {
+		mov = 8
+	}
+	if card.Stats.Data.MOV != mov {
+		card.Stats.Data.MOV = mov
+		needUpdate = true
+	}
 	if needUpdate {
 		models.DB.Save(card)
 	}
