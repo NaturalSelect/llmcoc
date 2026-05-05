@@ -73,6 +73,14 @@ func hotFixChar(card *models.CharacterCard) {
 		card.IsActive = true
 		needUpdate = true
 	}
+	maxHp := (card.Stats.Data.CON + card.Stats.Data.SIZ) / 10
+	if (card.Stats.Data.CON+card.Stats.Data.SIZ)%10 != 0 {
+		maxHp++ // round up if not a multiple of 10
+	}
+	if card.Stats.Data.MaxHP != maxHp {
+		card.Stats.Data.MaxHP = maxHp
+		needUpdate = true
+	}
 	if needUpdate {
 		models.DB.Save(card)
 	}
