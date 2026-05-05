@@ -126,7 +126,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>update_characters</name>
-			<description>更新调查员的状态</description>
+			<description>更新调查员的状态, changes 输入的参数字符串不可包含'()', 请考虑使用'-', '()'是关键字</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)"], "reason":"描述变更原因"}</call_example>		
