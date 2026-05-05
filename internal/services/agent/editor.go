@@ -224,13 +224,16 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			models.DB.Save(card)
 		case "str", "con", "siz", "dex", "app", "int", "edu":
 			s := card.Stats.Data
+			needUpdateMaxHp := false
 			switch strings.ToLower(upd.Field) {
 			case "str":
 				s.STR = clamp(s.STR+upd.Delta, 1, 99)
 			case "con":
 				s.CON = clamp(s.CON+upd.Delta, 1, 99)
+				needUpdateMaxHp = true
 			case "siz":
 				s.SIZ = clamp(s.SIZ+upd.Delta, 1, 99)
+				needUpdateMaxHp = true
 			case "dex":
 				s.DEX = clamp(s.DEX+upd.Delta, 1, 99)
 			case "app":
@@ -239,6 +242,12 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				s.INT = clamp(s.INT+upd.Delta, 1, 99)
 			case "edu":
 				s.EDU = clamp(s.EDU+upd.Delta, 1, 99)
+			}
+			if needUpdateMaxHp {
+				s.MaxHP = (s.CON + s.SIZ) / 10
+				if (s.CON+s.SIZ)%10 != 0 {
+					s.MaxHP += 1
+				}
 			}
 			card.Stats.Data = s
 			models.DB.Save(card)

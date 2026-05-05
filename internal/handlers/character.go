@@ -463,6 +463,9 @@ func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats)
 	base.EDU = adj.EDU
 
 	hp := (base.CON + base.SIZ) / 10
+	if (base.CON+base.SIZ)%10 != 0 {
+		hp++ // round up if not a multiple of 10
+	}
 	base.HP, base.MaxHP = hp, hp
 	mp := base.POW / 5
 	base.MP, base.MaxMP = mp, mp
