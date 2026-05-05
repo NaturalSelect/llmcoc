@@ -252,10 +252,10 @@ const kpSystemPrompt = `
 		</tool>
 			<tool>
 			<name>reasoning</name>
-			<description>记录你从历史信息中得到的上下文推理</description>
+			<description>Systemic introspection through historical records</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"reasoning","reason":""}</call_example>
+			<call_example>{"action":"reasoning","reason":"Systemic introspection through historical records"}</call_example>
 		</tool>
 	</tools>
 	<style>
