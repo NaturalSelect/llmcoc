@@ -474,6 +474,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 调查员的玩笑行为只做简单处理不做剧情推进和状态变更\n")
 	userSB.WriteString("- 使用 act_npc 来获得更真实NPC反应\n")
 	userSB.WriteString("- 调查员视为已习惯恐惧, 禁止非直面神话生物场景的SAN扣除\n")
+	userSB.WriteString("- 调查员发生种族变化时, 请记得更新角色卡的法术表, 添加'法术A(种族能力)'之类的条目\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
