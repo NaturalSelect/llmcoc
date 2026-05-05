@@ -57,22 +57,7 @@ const kpCombatPrompt = `
 			<endTheTurn>false</endTheTurn>
 			<description>结束追逐,清除追逐状态</description>
 			<call_example>{"action":"end_chase","chase_end_reason":"猎物成功逃脱"}</call_example>
-		</tool>
-		<tool>
-			<name>update_llm_note</name>
-			<description>更新LLM笔记</description>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"update_llm_note","character_name":"角色名","llm_note":"笔记内容"}</call_example>
-		</tool>
-		<tool>
-			<name>update_npc_llm_note</name>
-			<description>更新NPC的LLM笔记</description>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
-		</tool>
-		
+		</tool>	
 		<tool>
 			<name>hint</name>
 			<description>记录当前场景的高信息密度描述, 用于实现特殊机制(例如: 护甲)</description>
@@ -257,6 +242,20 @@ const kpSystemPrompt = `
 			<name>report</name>
 			<description>向管理系统自首</description>
 			<call_example>{"action":"report","report":"汇报你在本次游戏中所犯的错误或违规行为"}</call_example>
+		</tool>
+		<tool>
+			<name>update_llm_note</name>
+			<description>更新LLM笔记</description>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"update_llm_note","character_name":"角色名","llm_note":"笔记内容"}</call_example>
+		</tool>
+		<tool>
+			<name>update_npc_llm_note</name>
+			<description>更新NPC的LLM笔记</description>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
 		</tool>
 	</tools>
 	<style>
