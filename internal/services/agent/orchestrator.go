@@ -163,12 +163,28 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(kpSystemPrompt), kpMsgs, tempNPCs)
 
+	if len(gctx.History) > 0 {
+		introspectionMsg := append([]llm.ChatMessage{}, kpMsgs...)
+		introspectionMsg = introspectionMsg[:len(introspectionMsg)-1]
+		introspectionMsg = append(introspectionMsg, llm.ChatMessage{
+			Role:    "user",
+			Content: "请基于以上历史消息进行系统性内省,总结当前的游戏状态和上下文,并检查是否有任何不一致或需要注意的地方。回复JSON格式数组。",
+		})
+		resp, err := handles[models.AgentRoleDirector].provider.Chat(ctx, introspectionMsg)
+		if err != nil {
+			log.Printf("[run] session=%d introspection error: %v", sid, err)
+			return RunOutput{}, err
+		}
+		log.Printf("[run] session=%d introspection response: %s", sid, resp)
+		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: "<debug>System Introspection</debug>"})
+		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: resp})
+	}
+
 	switchRole := false
 
-	hasReason := false
+	// hasIntrospection := false
 
 	// warnning := "YOU DONOT FOLLOW THE RULES, THIS ABUSE IS RECORDED BY MONITOR SYSTEM.\n"
-
 	for iter := 0; iter < MaxKpRound; iter++ {
 		if ctx.Err() != nil {
 			return RunOutput{}, ctx.Err()
@@ -196,11 +212,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			continue
 		}
 
-		for _, call := range calls {
-			if call.Action == ToolIntrospection {
-				hasReason = true
-			}
-		}
+		// for _, call := range calls {
+		// 	if call.Action == ToolIntrospection {
+		// 		hasIntrospection = true
+		// 	}
+		// }
 
 		// LLM 的结果加回去
 		// Record what the KP decided so the next iteration has proper context.
@@ -222,12 +238,12 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
 
-		if !hasReason {
-			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "system", Content: "ERROR: NOT FOLLOW THE RULES, YOU MUST USE THE INTROSPECTION TOOL BEFORE YOUR ANY TOOL CALL."})
-			iter--
-			debugf("kp", "no follow rule session %v", gctx.Session.ID)
-			continue
-		}
+		// if !hasIntrospection {
+		// 	kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "system", Content: "ERROR: NOT FOLLOW THE RULES, YOU MUST USE THE INTROSPECTION TOOL BEFORE YOUR ANY TOOL CALL."})
+		// 	iter--
+		// 	debugf("kp", "no follow rule session %v", gctx.Session.ID)
+		// 	continue
+		// }
 
 		var toolResults []ToolResult
 		hasEnd := false
