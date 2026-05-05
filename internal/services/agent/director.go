@@ -183,7 +183,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>advance_time</name>
-			<description>推进游戏内时间(耗时活动, 每一轮代表30分钟, 需要注意规则时间与游戏时间的转换)</description>
+			<description>推进游戏内时间(耗时活动, 每一轮代表30分钟, 需要注意规则时间与游戏时间的转换, 为0则不推进时间, 否则默认推进30分钟)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"advance_time","time_rounds":N,"time_reason":"原因"}</call_example>
