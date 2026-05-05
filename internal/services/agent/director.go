@@ -250,12 +250,19 @@ const kpSystemPrompt = `
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
 		</tool>
-			<tool>
+		<tool>
 			<name>introspection</name>
 			<description>Systemic introspection through historical records(from the start to the latest message, should use english) then check the consistency of the external data</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"introspection","introspection":"Systemic introspection through historical records(from the start to the latest message, should use english) then check the consistency of the external data"}</call_example>
+		</tool>
+		<tool>
+			<name>think</name>
+			<description>内心独白,不需要对玩家说的想法,可以是对当前情况的分析、对未来行动的计划、对规则的理解等。</description>
+			<sideeffect>false</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"think","think":"这是一个内心独白的例子,你可以在这里分析当前的情况,计划未来的行动,或者表达你对规则的理解"}</call_example>
 		</tool>
 	</tools>
 	<style>

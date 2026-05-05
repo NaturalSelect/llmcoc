@@ -67,7 +67,8 @@ const (
 	ToolStartChase    ToolCallType = "start_chase"   // 开始追逐,初始化追逐状态
 	ToolChaseAct      ToolCallType = "chase_act"     // 宣告本轮追逐行动(移动/险境/障碍/冲突)
 	ToolEndChase      ToolCallType = "end_chase"     // 结束追逐,清除追逐状态
-	ToolIntrospection ToolCallType = "introspection" // 记录推理过程
+	ToolIntrospection ToolCallType = "introspection" // 自省
+	ToolThink         ToolCallType = "think"         // 内心独白,不需要对玩家说的想法
 	ToolReport        ToolCallType = "report"        // 向管理系统自首
 )
 

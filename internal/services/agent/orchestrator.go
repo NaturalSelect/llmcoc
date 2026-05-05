@@ -274,7 +274,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			prevSwitch := switchRole
 			if handler, ok := actionRegistry[call.Action]; ok {
 				results := handler.Execute(call, actx)
-				toolResults = append(toolResults, results...)
+				if len(results) > 0 {
+					toolResults = append(toolResults, results...)
+				}
 			}
 			if !switchInThisBatch && switchRole && !prevSwitch {
 				switchInThisBatch = true

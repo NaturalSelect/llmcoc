@@ -83,7 +83,8 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolStartChase:        startChaseAction{},
 	ToolChaseAct:          chaseActAction{},
 	ToolEndChase:          endChaseAction{},
-	ToolIntrospection:     reasonAction{},
+	ToolIntrospection:     emptyAction{actionName: string(ToolIntrospection)},
+	ToolThink:             emptyAction{actionName: string(ToolThink)},
 	ToolReport:            reportAction{},
 }
 
@@ -613,11 +614,13 @@ func (endChaseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	return []ToolResult{{Action: ToolEndChase, Result: fmt.Sprintf("追逐已结束:%s", reason)}}
 }
 
-type reasonAction struct{}
+type emptyAction struct {
+	actionName string
+}
 
-func (reasonAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+func (a emptyAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d reason reason=%q", actx.Sid, call.Reason)
-	return []ToolResult{{Action: ToolIntrospection, Result: "OK"}}
+	return []ToolResult{}
 }
 
 type reportAction struct{}
