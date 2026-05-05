@@ -1148,10 +1148,13 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 	s := "【调查员概况(完整人物卡请用 query_character 获取)】"
 	for _, p := range players {
 		card := p.CharacterCard
-		line := fmt.Sprintf("\n• %s(%s)HP:%d/%d SAN:%d/%d",
-			card.Name, card.Occupation,
+		line := fmt.Sprintf("\n• %s(%s,种族:%s)HP:%d/%d SAN:%d/%d",
+			card.Name, card.Occupation, card.Race,
 			card.Stats.Data.HP, card.Stats.Data.MaxHP,
 			card.Stats.Data.SAN, card.Stats.Data.MaxSAN)
+		if card.Race != "" && card.Race != "人类" {
+			line += "【非人类】SAN代表人性, 注意施法和使用能力会有额外人性损失"
+		}
 		switch card.MadnessState {
 		case "temporary":
 			line += "【临时性疯狂】"

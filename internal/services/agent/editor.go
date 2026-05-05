@@ -215,6 +215,9 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 
 		case "race":
 			card.Race = upd.NewValue
+			if card.Race != "" && card.Race != "人类" {
+				card.Stats.Data.MaxSAN = 99 // 非人类的最大SAN上限为99,且不受克苏鲁神话技能影响
+			}
 			models.DB.Save(card)
 		case "occupation":
 			card.Occupation = upd.NewValue
