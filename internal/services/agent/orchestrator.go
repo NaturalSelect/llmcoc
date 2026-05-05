@@ -197,7 +197,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 
 		for _, call := range calls {
-			if call.Action == ToolReason {
+			if call.Action == ToolIntrospection {
 				hasReason = true
 			}
 		}
@@ -223,7 +223,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
 
 		if !hasReason {
-			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "system", Content: "ERROR: NOT FOLLOW THE RULES, YOU MUST USE THE reasoning TOOL BEFORE YOUR ANY TOOL CALL."})
+			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "system", Content: "ERROR: NOT FOLLOW THE RULES, YOU MUST USE THE INTROSPECTION TOOL BEFORE YOUR ANY TOOL CALL."})
 			iter--
 			debugf("kp", "no follow rule session %v", gctx.Session.ID)
 			continue

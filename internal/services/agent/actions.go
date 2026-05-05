@@ -28,7 +28,6 @@ type ActionContext struct {
 	SwitchRole         *bool
 	KPNarration        *string
 	PendingWrite       *string
-	Reasoning          *string
 	Interrupt          *bool
 }
 
@@ -84,7 +83,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolStartChase:        startChaseAction{},
 	ToolChaseAct:          chaseActAction{},
 	ToolEndChase:          endChaseAction{},
-	ToolReason:            reasonAction{},
+	ToolIntrospection:     reasonAction{},
 	ToolReport:            reportAction{},
 }
 
@@ -618,11 +617,7 @@ type reasonAction struct{}
 
 func (reasonAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d reason reason=%q", actx.Sid, call.Reason)
-	// actx.GCtx.Session.Reasoning = call.Reason
-	// models.DB.Model(&models.GameSession{}).
-	// 	Where("id = ?", actx.GCtx.Session.ID).
-	// 	Update("reasoning", call.Reason)
-	return []ToolResult{{Action: ToolReason, Result: "OK"}}
+	return []ToolResult{{Action: ToolIntrospection, Result: "OK"}}
 }
 
 type reportAction struct{}

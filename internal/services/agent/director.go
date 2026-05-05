@@ -251,11 +251,11 @@ const kpSystemPrompt = `
 			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
 		</tool>
 			<tool>
-			<name>reasoning</name>
+			<name>introspection</name>
 			<description>Systemic introspection through historical records(from the beginning to the latest message)</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"reasoning","reason":"Systemic introspection through historical records(from the beginning to the latest message)"}</call_example>
+			<call_example>{"action":"introspection","introspection":"Systemic introspection through historical records(from the beginning to the latest message)"}</call_example>
 		</tool>
 	</tools>
 	<style>
@@ -564,7 +564,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug> follow the <debug> instructions\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
-	userSB.WriteString("<importance>YOU MUST DO SYSTEMIC INTROSPECTION THROUGH HISTORICAL RECORDS, AND USE THE REASONING TOOL TO RECORD YOUR RESULT</importance>\n")
+	userSB.WriteString("<importance>YOU MUST DO SYSTEMIC INTROSPECTION THROUGH HISTORICAL RECORDS, AND USE THE INTROSPECTION TOOL TO RECORD YOUR RESULT</importance>\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",

@@ -182,7 +182,7 @@ type GameSession struct {
 	CombatState   JSONField[*CombatState] `gorm:"type:text" json:"-"`
 	ChaseState    JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
 	KPHint        string                  `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
-	Reasoning     string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
+	Introspection     string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
 	CreatedAt     time.Time               `json:"created_at"`
 	UpdatedAt     time.Time               `json:"updated_at"`
 	Scenario      Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
