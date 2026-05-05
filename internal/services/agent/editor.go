@@ -225,15 +225,22 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 		case "str", "con", "siz", "dex", "app", "int", "edu":
 			s := card.Stats.Data
 			needUpdateMaxHp := false
+			needUpdateDb := false
+			needUpdateMov := false
 			switch strings.ToLower(upd.Field) {
 			case "str":
 				s.STR = clamp(s.STR+upd.Delta, 1, 99)
+				needUpdateMaxHp = true
+				needUpdateMov = true
+				needUpdateDb = true
 			case "con":
 				s.CON = clamp(s.CON+upd.Delta, 1, 99)
 				needUpdateMaxHp = true
 			case "siz":
 				s.SIZ = clamp(s.SIZ+upd.Delta, 1, 99)
 				needUpdateMaxHp = true
+				needUpdateDb = true
+				needUpdateMov = true
 			case "dex":
 				s.DEX = clamp(s.DEX+upd.Delta, 1, 99)
 			case "app":
@@ -248,6 +255,40 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				if (s.CON+s.SIZ)%10 != 0 {
 					s.MaxHP += 1
 				}
+			}
+			if needUpdateDb {
+				combined := s.STR + s.SIZ
+				var build int
+				var db string
+				switch {
+				case combined <= 64:
+					build, db = -2, "-2"
+				case combined <= 84:
+					build, db = -1, "-1"
+				case combined <= 124:
+					build, db = 0, "0"
+				case combined <= 164:
+					build, db = 1, "1D4"
+				case combined <= 204:
+					build, db = 2, "1D6"
+				case combined <= 284:
+					build, db = 3, "2D6"
+				default:
+					build, db = 4, "2D6+1D6"
+				}
+				s.Build = build
+				s.DB = db
+			}
+			if needUpdateMov {
+				var mov int
+				if s.STR > s.SIZ && s.DEX > s.SIZ {
+					mov = 9
+				} else if s.STR < s.SIZ && s.DEX < s.SIZ {
+					mov = 7
+				} else {
+					mov = 8
+				}
+				s.MOV = mov
 			}
 			card.Stats.Data = s
 			models.DB.Save(card)
