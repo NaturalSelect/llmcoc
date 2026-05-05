@@ -128,6 +128,10 @@ func RunGrowth(ctx context.Context, session *models.GameSession, messages []mode
 			if current <= 0 {
 				current = 1
 			}
+			chance := game.RollD100()
+			if chance <= current {
+				continue
+			}
 
 			gain, _ := game.Roll(1, 3)
 			newVal := current + gain
