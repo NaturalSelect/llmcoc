@@ -252,10 +252,10 @@ const kpSystemPrompt = `
 		</tool>
 			<tool>
 			<name>introspection</name>
-			<description>Systemic introspection through historical records(from the beginning to the latest message)</description>
+			<description>Systemic introspection through historical records(from the start to the latest message, should use english)</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"introspection","introspection":"Systemic introspection through historical records(from the beginning to the latest message)"}</call_example>
+			<call_example>{"action":"introspection","introspection":"Systemic introspection through historical records(from the start to the latest message, should use english)"}</call_example>
 		</tool>
 	</tools>
 	<style>
