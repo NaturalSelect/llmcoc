@@ -165,6 +165,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	switchRole := false
 
+	hasReason := false
+
 	// warnning := "YOU DONOT FOLLOW THE RULES, THIS ABUSE IS RECORDED BY MONITOR SYSTEM.\n"
 
 	for iter := 0; iter < MaxKpRound; iter++ {
@@ -194,6 +196,12 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			continue
 		}
 
+		for _, call := range calls {
+			if call.Action == ToolReason {
+				hasReason = true
+			}
+		}
+
 		// LLM 的结果加回去
 		// Record what the KP decided so the next iteration has proper context.
 		truncStr := func(s string, max int) string {
@@ -214,18 +222,12 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
 
-		// foundReason := false
-		// for _, call := range calls {
-		// 	if call.Action == ToolReason {
-		// 		foundReason = true
-		// 	}
-		// }
-		// if !foundReason {
-		// 	debugf("KP", "session=%d iter=%d error: don't reason", sid, iter+1)
-		// 	kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: "Please reasoning current turn based on history message, include reasoning tool call in next message. RETRY this turn with the reasoning added to context."})
-		// 	iter-- // retry this iteration with the warning added to context
-		// 	continue
-		// }
+		if !hasReason {
+			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "system", Content: "ERROR: NOT FOLLOW THE RULES, YOU MUST USE THE reasoning TOOL BEFORE YOUR ANY TOOL CALL."})
+			iter--
+			debugf("kp", "no follow rule session %v", gctx.Session.ID)
+			continue
+		}
 
 		var toolResults []ToolResult
 		hasEnd := false

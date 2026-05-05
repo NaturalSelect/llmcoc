@@ -618,10 +618,10 @@ type reasonAction struct{}
 
 func (reasonAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d reason reason=%q", actx.Sid, call.Reason)
-	actx.GCtx.Session.Reasoning = call.Reason
-	models.DB.Model(&models.GameSession{}).
-		Where("id = ?", actx.GCtx.Session.ID).
-		Update("reasoning", call.Reason)
+	// actx.GCtx.Session.Reasoning = call.Reason
+	// models.DB.Model(&models.GameSession{}).
+	// 	Where("id = ?", actx.GCtx.Session.ID).
+	// 	Update("reasoning", call.Reason)
 	return []ToolResult{{Action: ToolReason, Result: "OK"}}
 }
 

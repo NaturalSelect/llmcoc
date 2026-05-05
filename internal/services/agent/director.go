@@ -65,13 +65,6 @@ const kpCombatPrompt = `
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"hint","hint":"高信息密度的当前场景提示"}</call_example>
 		</tool>
-		<tool>
-			<name>reasoning</name>
-			<description>Record your CoT in this tool call, you must include this tool call in every message</description>
-			<sideeffect>false</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"reasoning","reason":"Chain Of Thought"}</call_example>
-		</tool>
 `
 
 // kpSystemPrompt is the static system prompt for the master KP agent.
@@ -256,6 +249,13 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
+		</tool>
+			<tool>
+			<name>reasoning</name>
+			<description>记录你从历史信息中得到的上下文推理</description>
+			<sideeffect>false</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"reasoning","reason":""}</call_example>
 		</tool>
 	</tools>
 	<style>
@@ -564,6 +564,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug> follow the <debug> instructions\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
+	userSB.WriteString("<importance>YOU MUST REASON CURRENT CONTEXT FROM HISTORY MESSAGES FIRST</importance>\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
