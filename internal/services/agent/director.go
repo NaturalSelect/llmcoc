@@ -314,12 +314,14 @@ THE MESSAGE YOU NEED TO PROCESS IS TAGGED BY <processing>, AND THE LATEST USER I
 YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN REFER TO THE PREVIOUS MESSAGES IN THE HISTORY FOR CONTEXT BUT DO NOT NEED(ALSO FORBID) TO PROCESS THEM AGAIN.
 
 Strictly follow the procedure of '1. Review the rules, 2. Roll the dice, 3. Update the values using the tool, 4. Respond and acknowledge'.
+
+Strictly follow <DEBUG> instructions when the user input.
 `
 
 func extraKPMessage(msg string) (s string) {
 	tmp := strings.Split(msg, "KP:")
 	if len(tmp) < 2 {
-		return ""
+		return msg
 	}
 	msg = strings.TrimSpace(tmp[1])
 	return msg
