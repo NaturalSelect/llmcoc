@@ -108,7 +108,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	return nil
 }
 
-const characterEvolutionPrompt = `你是COC TRPG的角色成长编辑。根据角色原有的背景故事、性格特征,以及本次冒险的叙事经历,更新角色的背景故事和性格特征,体现冒险对角色的影响和成长。
+const characterEvolutionPrompt = `你是无限流故事的角色成长编辑。根据角色原有的背景故事、性格特征,以及本次冒险的叙事经历,更新角色的背景故事和性格特征,体现冒险对角色的影响和成长。
 
 要求:
 - 保留角色的核心身份,但反映冒险带来的变化
@@ -162,7 +162,7 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 	msgs = append(msgs, llm.ChatMessage{
 		Role: "user",
 		Content: fmt.Sprintf(
-			"根据以上冒险叙事,更新调查员【%s】的背景故事和性格特征(你只能附加一小段, 不超过 2 句话,与原文一起输出)。\n原背景故事:%s\n原性格特征:%s\n\n仅输出JSON:{\"new_backstory\": \"...\", \"new_traits\": \"...\"}",
+			"根据以上冒险叙事,更新角色【%s】的背景故事和性格特征(你只能附加一小段, 不超过 2 句话,与原文一起输出)。\n原背景故事:%s\n原性格特征:%s\n\n仅输出JSON:{\"new_backstory\": \"...\", \"new_traits\": \"...\"}",
 			card.Name, card.Backstory, card.Traits,
 		),
 	})
