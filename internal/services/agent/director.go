@@ -413,6 +413,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 注意遵循物理空间的规则, 调查员和NPC都无法瞬移, 当NPC处于调查员附近时, 不要让其毫无反应(完全被动)\n")
 	userSB.WriteString("- 调查员的疯狂状态会导致他们失去行动能力, 但他们的疯狂行为会反映在你的决策中\n")
 	userSB.WriteString("- 调查员的无中生有产生的物品不能影响平衡, 否则你有权进行没收\n")
+	userSB.WriteString("- 一些神话生物有法术或类法术能力, 在其攻击时你可以代替他选择施法\n")
 
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
