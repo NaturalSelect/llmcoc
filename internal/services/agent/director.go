@@ -222,7 +222,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(可选,口语化,必须简短)","ack":"Record all actions to ack user operations using functional syntax(english) must be value cannot be placeholder. E.g., change(A, MP, -5), spell_cast(A, "Fireball", success, roll=(14/20, hard_success)). ..."}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(可选,口语化,必须简短)","ack":"Record all actions to ack user operations using english, it should include every action taken by the investigators and NPCs, detailed to each roll, each data modification, and each interaction with the batch system."}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
