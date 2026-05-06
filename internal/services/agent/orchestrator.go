@@ -1146,6 +1146,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 	if len(players) == 0 {
 		return ""
 	}
+	hasNotHuman := false
 	s := "【调查员概况(完整人物卡请用 query_character 获取)】"
 	for _, p := range players {
 		card := p.CharacterCard
@@ -1155,6 +1156,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 			card.Stats.Data.SAN, card.Stats.Data.MaxSAN)
 		if card.Race != "" && card.Race != "人类" {
 			line += " 【非人类】SAN代表人性, 注意施法和使用种族能力会有额外50%人性损失(至少1点)"
+			hasNotHuman = true
 		}
 		switch card.MadnessState {
 		case "temporary":
@@ -1176,6 +1178,9 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 			line += "【昏迷】"
 		}
 		s += line
+	}
+	if hasNotHuman {
+		s += "\n【注意】非人类角色, 仍然适用于疯狂规则。"
 	}
 	return s
 }
