@@ -398,72 +398,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			userSB.WriteString(line + "\n")
 		}
 	}
-	// Inject active combat state so KP can enforce DEX-order and track per-round flags.
-	// if cs := gctx.Session.CombatState.Data; cs != nil && cs.Active {
-	// 	userSB.WriteString("\nActive Combat State:\n")
-	// 	currentName := ""
-	// 	if cs.ActorIndex >= 0 && cs.ActorIndex < len(cs.Participants) {
-	// 		currentName = cs.Participants[cs.ActorIndex].Name
-	// 	}
-	// 	userSB.WriteString(fmt.Sprintf("  Round %d, Current Actor: %s\n", cs.Round, currentName))
-	// 	userSB.WriteString("  Action Order (DEX Descending):\n")
-	// 	for i, p := range cs.Participants {
-	// 		acted := "Pending"
-	// 		if p.WoundState == "dead" {
-	// 			acted = "Dead"
-	// 		} else if p.HasActed {
-	// 			acted = "Acted"
-	// 		}
-	// 		marker := ""
-	// 		if i == cs.ActorIndex {
-	// 			marker = " ◀ Current"
-	// 		}
-	// 		aiming := ""
-	// 		if p.IsAiming {
-	// 			aiming = "【Aiming】"
-	// 		}
-	// 		debt := ""
-	// 		if p.APDebt > 0 {
-	// 			debt = fmt.Sprintf("【Next Round AP-%d】", p.APDebt)
-	// 		}
-	// 		dodged := ""
-	// 		if p.HasDodgedOrFB {
-	// 			dodged = "【Dodged/FB Used】"
-	// 		}
-	// 		userSB.WriteString(fmt.Sprintf("    %d. %s DEX=%d HP=%d %s%s%s%s%s\n",
-	// 			i+1, p.Name, p.DEX, p.HP, acted, aiming, debt, dodged, marker))
-	// 	}
-	// 	userSB.WriteString("  (攻击/伤害仍通过 roll_dice + update_characters 处理；登记行动后调用 combat_act； 注意: combat_act 不可以和其他调用在同一Phase中一起使用)\n")
-	// }
-	// // Inject active chase state so KP can enforce AP rules and location tracking.
-	// if chs := gctx.Session.ChaseState.Data; chs != nil && chs.Active {
-	// 	userSB.WriteString("\nActive Chase State:\n")
-	// 	userSB.WriteString(fmt.Sprintf("  Round %d, Min MOV=%d (Action Points=1+(MOV-Min MOV))\n", chs.Round, chs.MinMOV))
-	// 	for _, p := range chs.Participants {
-	// 		role := "猎物"
-	// 		if p.IsPursuer {
-	// 			role = "追逐者"
-	// 		}
-	// 		ap := 1 + (p.MOV - chs.MinMOV)
-	// 		if ap < 1 {
-	// 			ap = 1
-	// 		}
-	// 		debt := ""
-	// 		if p.APDebt > 0 {
-	// 			debt = fmt.Sprintf("(Next Round AP-%d)", p.APDebt)
-	// 		}
-	// 		userSB.WriteString(fmt.Sprintf("    • %s(%s) MOV=%d 位置=%d 可用AP=%d%s\n",
-	// 			p.Name, role, p.MOV, p.Location, ap, debt))
-	// 	}
-	// 	if len(chs.Obstacles) > 0 {
-	// 		userSB.WriteString("  障碍物:\n")
-	// 		for _, ob := range chs.Obstacles {
-	// 			userSB.WriteString(fmt.Sprintf("    • %s HP=%d/%d 位于地点%d-%d之间\n",
-	// 				ob.Name, ob.HP, ob.MaxHP, ob.Between[0], ob.Between[1]))
-	// 		}
-	// 	}
-	// 	userSB.WriteString("  (每次移动/险境/障碍/冲突行动后调用 chase_act 登记； 注意: chase_act 不可以和其他调用在同一Phase中一起使用；追逐者到达猎物位置时调用 end_chase)\n")
-	// }
 	userSB.WriteString("【KP指引】\n")
 	userSB.WriteString("- 本回合=30分钟游戏内时间，超时行动可打断\n")
 	userSB.WriteString("- 调查员可能作弊(无中生有物品/技能/法术/随意学习法术) ,拿不准先check_rule核实\n")
@@ -472,9 +406,12 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 向神祈祷需要检查这个神是否存在, 如果不存在用奈亚的化身代替\n")
 	userSB.WriteString("- 使用yield可在本回合中途暂停等待玩家输入\n")
 	userSB.WriteString("- 调查员的玩笑行为只做简单处理不做剧情推进和状态变更\n")
-	userSB.WriteString("- 使用 act_npc 来获得更真实NPC反应\n")
+	userSB.WriteString("- 使用 act_npc 来获得更真实NPC反应, 在调查员行动时不要让NPC毫无动作\n")
 	userSB.WriteString("- 调查员视为已习惯恐惧, 禁止非直面神话生物场景的SAN扣除\n")
 	userSB.WriteString("- 调查员发生种族变化时, 请记得更新角色卡的法术表, 添加'法术A(种族能力)'之类的条目\n")
+	userSB.WriteString("- 留意「当前游戏时间」中的「距开局已过」信息，并与剧本胜利条件/场景触发条件中的时间限制对比\n")
+	userSB.WriteString("- 注意遵循物理空间的规则, 调查员和NPC都无法瞬移, 当NPC处于调查员附近时, 不要让其毫无反应(完全被动)\n")
+
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")

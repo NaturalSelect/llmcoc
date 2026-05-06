@@ -359,11 +359,27 @@ func StartSession(c *gin.Context) {
 
 func GetMessages(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID := c.GetUint("user_id")
 
 	var session models.GameSession
 	if err := models.DB.First(&session, sessionID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
+	}
+
+	if session.Password != "" {
+		contain := false
+		for _, pl := range session.Players {
+			if pl.UserID == userID {
+				contain = true
+				break
+			}
+		}
+		if !contain {
+			var messages []models.Message
+			c.JSON(http.StatusOK, messages)
+			return
+		}
 	}
 
 	var messages []models.Message

@@ -8,7 +8,6 @@ import (
 	"log"
 	"math/rand"
 	"strings"
-	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
@@ -189,7 +188,7 @@ const scenarioExample = `{
   }
 }`
 
-var randomTopicSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。`
+var randomTopicSystemPrompt = `你是无限流冒险模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。`
 
 // ---------------------------------------------------------------------------
 // Tool-call types for outline & QA phases
@@ -399,36 +398,12 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 		return "未知冒险"
 	}
 	var raw string
-	const iter = 3
-	randGen := rand.New(rand.NewSource(time.Now().Unix()))
 	constraints := randomTopicConstraints()
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: agent.systemPrompt(randomTopicSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请生成一个COC模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。\n种子: %s\n【创作约束(必须体现在主题中)】%s", seed, constraints)},
+		{Role: "user", Content: fmt.Sprintf("请生成一个无限流冒险模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。\n种子: %s\n【创作约束(必须体现在主题中)】%s", seed, constraints)},
 	}
-	for i := 0; i < iter; i++ {
-		if ctx.Err() != nil {
-			return "未知冒险"
-		}
-		raw, err = agent.provider.Chat(ctx, msgs)
-		if err != nil {
-			break
-		}
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-		debugf("script", "architect iter=%d raw=%v", i+1, raw)
-		rawRune := []rune(raw)
-		if len(rawRune) < 5 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "输出太短了,请重新生成一个更有创意的主题名称"})
-		} else {
-			startPoint := randGen.Intn(5)
-			endPoint := startPoint + 5 + randGen.Intn(len(rawRune)-startPoint-5)
-			randSlice := rawRune[startPoint:endPoint]
-			msgs = append(msgs, llm.ChatMessage{
-				Role:    "user",
-				Content: fmt.Sprintf("我们认为这里： %v 不够好, 请重新生成一个更有创意的主题, 输出只包含主题名称", string(randSlice)),
-			})
-		}
-	}
+	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
 		return "未知冒险"
 	}

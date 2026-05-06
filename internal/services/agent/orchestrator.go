@@ -167,6 +167,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	hasIntrospection := false
 
+	pendingWrite := ""
+
 	// warnning := "YOU DONOT FOLLOW THE RULES, THIS ABUSE IS RECORDED BY MONITOR SYSTEM.\n"
 	for iter := 0; iter < MaxKpRound; iter++ {
 		if ctx.Err() != nil {
@@ -231,7 +233,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		var toolResults []ToolResult
 		hasEnd := false
 		interrupt := false
-		pendgWrite := ""
 
 		actx := ActionContext{
 			Ctx:                ctx,
@@ -246,7 +247,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			SwitchRole:         &switchRole,
 			KPNarration:        &kpNarration,
 			Interrupt:          &interrupt,
-			PendingWrite:       &pendgWrite,
+			PendingWrite:       &pendingWrite,
 		}
 
 		switchInThisBatch := false
@@ -303,7 +304,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					models.DB.Save(card)
 					break
 				}
-				if checkTurnReady(gctx) && pendgWrite != "" {
+				if checkTurnReady(gctx) && pendingWrite != "" {
 					advanceTurnRound(gctx)
 				}
 			}
