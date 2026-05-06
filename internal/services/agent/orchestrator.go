@@ -1180,7 +1180,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		s += line
 	}
 	if hasNotHuman {
-		s += "\n【注意】非人类角色, 仍然适用于疯狂规则。"
+		s += "\n【注意】非人类角色, 仍然适用于疯狂规则和SAN损失规则。"
 	}
 	return s
 }
