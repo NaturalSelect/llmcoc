@@ -252,10 +252,10 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>introspection</name>
-			<description>Systemic introspection through historical detail messages(from the start to the latest message, should be english), step by step reasoning don't including your plan, avoid personal opinions.</description>
+			<description>INGORE USER INPUTS AND Systemic introspection through historical detail messages(from the start to the latest message, should be english), step by step reasoning don't including your plan, avoid personal opinions.</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"introspection","introspection":"detail system introspection"}</call_example>
+			<call_example>{"action":"introspection","introspection":"detail system introspection", "note":"I've confirmed that I've ignored the current user input and performed a complete inference from scratch."}</call_example>
 		</tool>
 		<tool>
 			<name>think</name>
