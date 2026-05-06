@@ -8,10 +8,11 @@ import (
 
 // GameContext carries all information the agent pipeline needs for one chat turn.
 type GameContext struct {
-	Session   models.GameSession
-	History   []models.Message // recent messages, system role excluded
-	UserInput string
-	UserName  string
+	Session        models.GameSession
+	History        []models.Message // recent messages, system role excluded
+	UserInput      string
+	UserName       string
+	UserInputAdmin bool // true if the user input is from the admin (KP), false for regular players
 	// PendingActions holds all player actions collected for the current round.
 	// Populated only in multi-player sessions once all players have submitted;
 	// when non-empty the KP prompt shows a combined action summary instead of
@@ -21,6 +22,7 @@ type GameContext struct {
 
 // PlayerAction is one player's submitted action for the current round.
 type PlayerAction struct {
+	IsAdmin    bool // true if the player is the admin (KP), false for regular players
 	PlayerName string
 	Content    string
 }

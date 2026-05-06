@@ -427,6 +427,9 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		return
 	}
 
+	var user models.User
+	models.DB.First(&user, userID)
+
 	// Use character card name as the display name; fall back to account username.
 	playerDisplayName := username
 	for _, p := range session.Players {
@@ -548,7 +551,10 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			Order("created_at ASC").
 			Find(&turnActions)
 		for _, ta := range turnActions {
+			var user models.User
+			models.DB.First(&user, ta.UserID)
 			pendingActions = append(pendingActions, agent.PlayerAction{
+				IsAdmin:    user.Role == models.RoleAdmin,
 				PlayerName: ta.Username,
 				Content:    ta.ActionSummary,
 			})
@@ -589,6 +595,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		History:        recentMsgs,
 		UserInput:      content,
 		UserName:       playerDisplayName,
+		UserInputAdmin: user.Role == models.RoleAdmin,
 		PendingActions: pendingActions,
 	}
 

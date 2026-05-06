@@ -222,7 +222,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(可选,口语化,必须简短)","ack":"Record all actions to ack user operations using english, it should include every action taken by the investigators and NPCs, detailed to each roll, each data modification, and each interaction with the batch system."}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息)","ack":"Record all actions to ack user operations using english, it should include every action taken by the investigators and NPCs, detailed to each roll, each data modification, and each interaction with the batch system."}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
@@ -426,7 +426,10 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
-	getTag := func(s string) string {
+	getTag := func(s string, isAdmin bool) string {
+		if !isAdmin {
+			return "input"
+		}
 		if strings.Contains(s, "DEBUG") {
 			return "debug"
 		}
@@ -477,7 +480,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString("\nYour must process all input of players, use advance_time tool call if necessarily\n")
 		hasDbg := false
 		for _, a := range gctx.PendingActions {
-			tag := getTag(a.Content)
+			tag := getTag(a.Content, a.IsAdmin)
 			if tag == "debug" {
 				hasDbg = true
 			}
@@ -489,7 +492,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		}
 	} else {
 		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
-		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s]: %s</%s>\n", getTag(gctx.UserInput), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput)))
+		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s]: %s</%s>\n", getTag(gctx.UserInput, gctx.UserInputAdmin), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput, gctx.UserInputAdmin)))
 		skillBrief.WriteString(attentionSkill(gctx.UserName, gctx.UserInput))
 	}
 	userSB.WriteString("在应用任何变更之前，需要查看调查员或NPC的信息\n")
