@@ -417,6 +417,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 调查员的疯狂状态会导致他们失去行动能力, 但他们的疯狂行为会反映在你的决策中\n")
 	userSB.WriteString("- 调查员的无中生有产生的物品不能影响平衡, 否则你有权进行没收\n")
 	userSB.WriteString("- 一些神话生物有法术或类法术能力, 在其攻击时你可以代替他选择施法\n")
+	userSB.WriteString("- 幸运鉴定不可用于提升角色属性\n")
 
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
