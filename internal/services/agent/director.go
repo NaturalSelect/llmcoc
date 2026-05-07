@@ -264,6 +264,14 @@ const kpSystemPrompt = `
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"think","think":"这是一个内心独白的例子,你可以在这里分析当前的情况,计划未来的行动,或者表达你对规则的理解"}</call_example>
 		</tool>
+		<tool>
+			<name>anti_cheat</name>
+			<description>反作弊工具, 用于检测和纠正调查员的违规输入(例如: 直接说出行动结果, 这通常意味着作弊, 需要KP仔细思考)</description>
+			<sideeffect>true</sideeffect>
+			<endTheTurn>false</endTheTurn>
+			<call_example>{"action":"anti_cheat","reason":"描述你怀疑调查员作弊的原因, 以及你将如何纠正这种行为"}</call_example>
+			<note>这个工具的调用需要非常谨慎, 只有在调查员的输入明显违反游戏规则或常识时才使用, 例如: 直接说出行动结果, 这通常意味着作弊, 需要KP仔细思考。调用后需要明确说明怀疑作弊的原因, 以及将如何纠正这种行为(例如: 要求调查员重新输入行动, 或者直接给出正确的结果)。</note>
+		</tool>
 	</tools>
 	<style>
 		<nsfw>true</nsfw>
@@ -428,21 +436,23 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
 	getTag := func(s string, isAdmin bool) string {
-		if !isAdmin {
-			return "input"
+		if isAdmin {
+			if strings.Contains(s, "DEBUG") {
+				return "debug"
+			}
+			if strings.Contains(s, "WARN") {
+				msgs = append(msgs, llm.ChatMessage{
+					Role:    "user",
+					Content: "<system>WARNING: MONITOR SYSTEM DETECTED YOUR MISTAKE, PLEASE BE CAREFUL IN THE FOLLOWING ACTIONS, OR YOU MIGHT BE PENALIZED.</system>",
+				})
+				msgs = append(msgs, llm.ChatMessage{
+					Role:    "assistant",
+					Content: "I understand, I will be more careful.",
+				})
+			}
 		}
-		if strings.Contains(s, "DEBUG") {
-			return "debug"
-		}
-		if strings.Contains(s, "WARN") {
-			msgs = append(msgs, llm.ChatMessage{
-				Role:    "user",
-				Content: "<system>WARNING: MONITOR SYSTEM DETECTED YOUR MISTAKE, PLEASE BE CAREFUL IN THE FOLLOWING ACTIONS, OR YOU MIGHT BE PENALIZED.</system>",
-			})
-			msgs = append(msgs, llm.ChatMessage{
-				Role:    "assistant",
-				Content: "I understand, I will be more careful.",
-			})
+		if len([]rune(s)) > 30 {
+			return "input_maybeCheat"
 		}
 		return "input"
 	}
@@ -501,7 +511,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("SAN值的扣除必须谨慎,随意扣除SAN,不能反复扣SAN,不能只因为调查员处于疯狂状态在忽略规则的情况下扣除SAN\n")
 	userSB.WriteString("进行社交关系修改是已经慎重尤其是更新已有社交关系时\n")
 	userSB.WriteString("管理物品栏之前需要查看调查员物品栏, 使用消耗品记得通过 manage_inventory 减少物品数量\n")
-	userSB.WriteString("警惕调查员直接说出行动结果, 这通常意味着作弊, 需要KP仔细思考\n")
+	userSB.WriteString("如果调查员直接陈述了其行动的结果, 警惕那样的输入, 他大概率是在作弊\n")
 	userSB.WriteString("别忘记检查调查员的已知神话存在，已经见过的神话存在不会导致SAN的损失\n")
 	userSB.WriteString("对抗需要双方都投掷骰子, 你必须查看具体的对抗规则\n")
 	userSB.WriteString("在调用 end_game 之前, 记得帮调查员清理掉已死NPC的社交关系\n")

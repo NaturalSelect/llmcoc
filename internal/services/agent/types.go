@@ -72,6 +72,7 @@ const (
 	ToolIntrospection ToolCallType = "introspection" // 自省
 	ToolThink         ToolCallType = "think"         // 内心独白,不需要对玩家说的想法
 	ToolReport        ToolCallType = "report"        // 向管理系统自首
+	ToolAntiCheat     ToolCallType = "anti_cheat"    // 反作弊工具, 用于检测和纠正调查员的违规输入(例如: 直接说出行动结果, 这通常意味着作弊, 需要KP仔细思考)
 )
 
 // ToolCall is one item in the master KP agent's output sequence.

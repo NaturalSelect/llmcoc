@@ -86,6 +86,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolIntrospection:     emptyAction{actionName: string(ToolIntrospection)},
 	ToolThink:             emptyAction{actionName: string(ToolThink)},
 	ToolReport:            reportAction{},
+	ToolAntiCheat:         emptyAction{actionName: string(ToolAntiCheat)},
 }
 
 // ── Rule / lookup actions ─────────────────────────────────────────────────────
@@ -619,7 +620,6 @@ type emptyAction struct {
 }
 
 func (a emptyAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	debugf("tool", "session=%d reason reason=%q", actx.Sid, call.Reason)
 	return []ToolResult{}
 }
 
