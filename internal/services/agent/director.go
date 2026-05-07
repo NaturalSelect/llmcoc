@@ -98,7 +98,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>roll_dice</name>
-			<description>投掷骰子，返回结果数值, 表达式不能包含"/"也不能包含"*"</description>
+			<description>投掷骰子，返回结果数值, 表达式仅支持'+'操作符</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"roll_dice","dice":{"dice_expr":"2D6+3", "what":"智力"}}</call_example>
