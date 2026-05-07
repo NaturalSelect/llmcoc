@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -160,58 +161,56 @@ func GenerateScenarioByAgents(c *gin.Context) {
 		return
 	}
 
-	gen, err := agent.RunScripterScenarioTeam(context.Background(), agent.ScenarioCreationRequest{
-		Name:         req.Name,
-		Theme:        req.Theme,
-		Era:          req.Era,
-		Brief:        req.Brief,
-		TargetLength: req.TargetLength,
-		Difficulty:   req.Difficulty,
-		MinPlayers:   req.MinPlayers,
-		MaxPlayers:   req.MaxPlayers,
-		Salt:         RandomSalt(),
-	})
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "agent team 生成失败: " + err.Error()})
-		return
-	}
+	go func() {
+		gen, err := agent.RunScripterScenarioTeam(context.Background(), agent.ScenarioCreationRequest{
+			Name:         req.Name,
+			Theme:        req.Theme,
+			Era:          req.Era,
+			Brief:        req.Brief,
+			TargetLength: req.TargetLength,
+			Difficulty:   req.Difficulty,
+			MinPlayers:   req.MinPlayers,
+			MaxPlayers:   req.MaxPlayers,
+			Salt:         RandomSalt(),
+		})
+		if err != nil {
+			log.Printf("[agent] scenario generation failed: %v", err)
+			return
+		}
 
-	if gen.Draft.Name == "" {
-		gen.Draft.Name = "AI模组-" + time.Now().Format("20060102150405")
-	}
+		if gen.Draft.Name == "" {
+			gen.Draft.Name = "AI模组-" + time.Now().Format("20060102150405")
+		}
 
-	scenario := models.Scenario{
-		Name:        gen.Draft.Name,
-		Description: gen.Draft.Description,
-		Author:      gen.Draft.Author,
-		Tags:        gen.Draft.Tags,
-		MinPlayers:  gen.Draft.MinPlayers,
-		MaxPlayers:  gen.Draft.MaxPlayers,
-		Difficulty:  gen.Draft.Difficulty,
-		Content:     models.JSONField[models.ScenarioContent]{Data: gen.Draft.Content},
-		IsActive:    true,
-	}
+		scenario := models.Scenario{
+			Name:        gen.Draft.Name,
+			Description: gen.Draft.Description,
+			Author:      gen.Draft.Author,
+			Tags:        gen.Draft.Tags,
+			MinPlayers:  gen.Draft.MinPlayers,
+			MaxPlayers:  gen.Draft.MaxPlayers,
+			Difficulty:  gen.Draft.Difficulty,
+			Content:     models.JSONField[models.ScenarioContent]{Data: gen.Draft.Content},
+			IsActive:    true,
+		}
 
-	if scenario.MinPlayers == 0 {
-		scenario.MinPlayers = 1
-	}
-	if scenario.MaxPlayers == 0 {
-		scenario.MaxPlayers = 4
-	}
-	if scenario.Difficulty == "" {
-		scenario.Difficulty = "normal"
-	}
+		if scenario.MinPlayers == 0 {
+			scenario.MinPlayers = 1
+		}
+		if scenario.MaxPlayers == 0 {
+			scenario.MaxPlayers = 4
+		}
+		if scenario.Difficulty == "" {
+			scenario.Difficulty = "normal"
+		}
 
-	if err := models.DB.Create(&scenario).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存生成模组失败: " + err.Error()})
-		return
-	}
+		if err := models.DB.Create(&scenario).Error; err != nil {
+			log.Printf("[agent] failed to save generated scenario to DB: %v", err)
+			return
+		}
+	}()
 
-	c.JSON(http.StatusCreated, gin.H{
-		"scenario":   scenario,
-		"qa":         gen.QA,
-		"iterations": gen.Iterations,
-	})
+	c.JSON(http.StatusCreated, gin.H{"message": "模组生成中, 请稍后查看列表", "name": req.Name})
 }
 
 // UploadScenario imports a scenario JSON file into DB.
