@@ -143,7 +143,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 				card.Stats.Data.HP = card.Stats.Data.MaxHP // Heal to full HP at session end for living investigators.
 				card.Stats.Data.MP = card.Stats.Data.MaxMP // Restore MP as well.
 				if card.Stats.Data.SAN > 0 {
-					card.Stats.Data.SAN = clamp(card.Stats.Data.SAN+game.RollDiceExpr("2D6"), card.Stats.Data.SAN, card.Stats.Data.MaxSAN)
+					card.Stats.Data.SAN = clamp(card.Stats.Data.SAN+game.RollDiceExpr("3D6"), card.Stats.Data.SAN, card.Stats.Data.MaxSAN)
 				}
 				card.WoundState = "none" // Clear wounds for the next session.
 				card.IsUnconscious = false
