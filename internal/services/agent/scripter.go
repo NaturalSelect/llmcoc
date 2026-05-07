@@ -416,18 +416,21 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 	if err != nil {
 		return "未知冒险"
 	}
+	debugf("topic", "first: %v", raw)
 	msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "请从上述输出的主题中选择一个,并简要说明为什么这个主题有趣。仅回复主题名称和简短说明,不要任何其他文字。"})
 	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
 		return "未知冒险"
 	}
+	debugf("topic", "extend: %v", raw)
 	msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "很好, 重新生成一个完全无关的主题,同样满足创作约束。"})
 	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
 		return "未知冒险"
 	}
+	debugf("topic", "reverse: %v", raw)
 	return strings.TrimSpace(raw)
 }
 
