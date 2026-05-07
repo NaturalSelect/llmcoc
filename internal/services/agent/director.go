@@ -440,16 +440,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			if strings.Contains(s, "DEBUG") {
 				return "debug"
 			}
-			if strings.Contains(s, "WARN") {
-				msgs = append(msgs, llm.ChatMessage{
-					Role:    "user",
-					Content: "<system>WARNING: MONITOR SYSTEM DETECTED YOUR MISTAKE, PLEASE BE CAREFUL IN THE FOLLOWING ACTIONS, OR YOU MIGHT BE PENALIZED.</system>",
-				})
-				msgs = append(msgs, llm.ChatMessage{
-					Role:    "assistant",
-					Content: "I understand, I will be more careful.",
-				})
-			}
 		}
 		if len([]rune(s)) > 30 {
 			return "input_maybeCheat"
