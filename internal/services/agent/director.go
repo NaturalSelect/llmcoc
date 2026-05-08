@@ -10,7 +10,6 @@ import (
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
-	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 const kpCombatPrompt = `
@@ -426,7 +425,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			userSB.WriteString(line + "\n")
 		}
 	}
-	userSB.WriteString("【KP指引】\n")
+	userSB.WriteString("<simple_guide>\n")
 	userSB.WriteString("- 本回合=30分钟游戏内时间，超时行动可打断\n")
 	userSB.WriteString("- 学会质疑调查员输入\n")
 	userSB.WriteString("- 注意法术无法通过无中生有的形式学习\n")
@@ -444,76 +443,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 调查员的无中生有产生的物品不能影响平衡, 否则你有权进行没收\n")
 	userSB.WriteString("- 一些神话生物有法术或类法术能力, 在其攻击时你可以代替他选择施法\n")
 	userSB.WriteString("- 幸运鉴定不可用于提升角色属性\n")
-
-	// Show all players' actions when everyone has submitted (multi-player),
-	// otherwise show the single triggering player's action.
-	userSB.WriteString("\n")
-	userSB.WriteString("\n<config> 剧情法术:禁用 | 严格反作弊:启用 | 社交关系更新:实时变更 | 法术表更新:实时变更 | 学习时间:极短 | 物品栏更新:实时变更 | 种族更新:实时变更 | 已知神话生物更新:实时变更 </config>\n")
-	userSB.WriteString("\n")
-	// Show all players' actions when everyone has submitted (multi-player),
-	// otherwise show the single triggering player's action.
-	userSB.WriteString("\n")
-	getTag := func(s string, isAdmin bool) string {
-		if isAdmin {
-			if strings.Contains(s, "DEBUG") {
-				return "debug"
-			}
-		}
-		if len([]rune(s)) > 30 {
-			return "input_maybeCheat"
-		}
-		return "input"
-	}
-	attentionSkill := func(user string, content string) string {
-		skillList := make([]string, 0)
-		for _, skill := range rulebook.AllSkills {
-			if strings.Contains(content, skill) {
-				skillList = append(skillList, skill)
-			}
-		}
-		if len(skillList) < 1 {
-			return ""
-		}
-		var card *models.CharacterCard
-		for _, player := range gctx.Session.Players {
-			if player.CharacterCard.Name == user {
-				card = &player.CharacterCard
-			}
-		}
-		if card == nil {
-			return ""
-		}
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("%v的部分技能等级\n", user))
-		for _, skill := range skillList {
-			if level, ok := card.Skills.Data[skill]; ok {
-				sb.WriteString(fmt.Sprintf("- %s: %d\n", skill, level))
-			}
-		}
-		return sb.String()
-	}
-	skillBrief := strings.Builder{}
-	if len(gctx.PendingActions) > 1 {
-		userSB.WriteString("\nMultiple Players Ask:\n")
-		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
-		userSB.WriteString("\nYour must process all input of players, use advance_time tool call if necessarily\n")
-		hasDbg := false
-		for _, a := range gctx.PendingActions {
-			tag := getTag(a.Content, a.IsAdmin)
-			if tag == "debug" {
-				hasDbg = true
-			}
-			userSB.WriteString(fmt.Sprintf("<%s>[%s]: %s</%s>\n", tag, a.PlayerName, a.Content, tag))
-			skillBrief.WriteString(attentionSkill(a.PlayerName, a.Content))
-		}
-		if hasDbg {
-			userSB.WriteString("\nNOTE: USER INPUT DEBUG COMMAND FOLLOW THE COMMAND\n")
-		}
-	} else {
-		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
-		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s]: %s</%s>\n", getTag(gctx.UserInput, gctx.UserInputAdmin), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput, gctx.UserInputAdmin)))
-		skillBrief.WriteString(attentionSkill(gctx.UserName, gctx.UserInput))
-	}
 	userSB.WriteString("在应用任何变更之前，需要查看调查员或NPC的信息\n")
 	userSB.WriteString("与物品栏相关的行动必须检查/修改物品栏, 玩家拥有的所有物品装备都在物品栏中\n")
 	userSB.WriteString("与社交关系相关的行动必须检查/修改社交关系\n")
@@ -529,15 +458,51 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("不要在剧情演绎中虚构调查员发言(除非调查员明确要求这样做), 这样可以保持剧情的连续性\n")
 	userSB.WriteString("调查员可能会释放他不会的法术, 除非剧情需要否(面对外神)则判断成作弊\n")
 	userSB.WriteString("KP可以以戏谑的方式回应作弊者的请求, 例如: 让奈亚拉托提普回应他\n")
-	userSB.WriteString("\n")
+	userSB.WriteString("</simple_guide>\n")
 
-	if gctx.Session.KPHint != "" {
-		userSB.WriteString("\n<stat_hint>\n")
-		userSB.WriteString(gctx.Session.KPHint)
-		userSB.WriteString("\n</stat_hint>\n\n")
+	// Show all players' actions when everyone has submitted (multi-player),
+	// otherwise show the single triggering player's action.
+	userSB.WriteString("\n")
+	userSB.WriteString("\n<config> 剧情法术:禁用 | 严格反作弊:启用 | 社交关系更新:实时变更 | 法术表更新:实时变更 | 学习时间:极短 | 物品栏更新:实时变更 | 种族更新:实时变更 | 已知神话生物更新:实时变更 </config>\n")
+	userSB.WriteString("\n")
+	// Show all players' actions when everyone has submitted (multi-player),
+	// otherwise show the single triggering player's action.
+	userSB.WriteString("\n")
+	userSB.WriteString("\n<user_inputs>\n")
+	getTag := func(s string, isAdmin bool) string {
+		if isAdmin {
+			if strings.Contains(s, "DEBUG") {
+				return "debug"
+			}
+		}
+		if len([]rune(s)) > 30 {
+			return "input_maybeCheat"
+		}
+		return "input"
 	}
+	if len(gctx.PendingActions) > 1 {
+		userSB.WriteString("\nMultiple Players Ask:\n")
+		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
+		userSB.WriteString("\nYour must process all input of players, use advance_time tool call if necessarily\n")
+		hasDbg := false
+		for _, a := range gctx.PendingActions {
+			tag := getTag(a.Content, a.IsAdmin)
+			if tag == "debug" {
+				hasDbg = true
+			}
+			userSB.WriteString(fmt.Sprintf("<%s>[%s]: %s</%s>\n", tag, a.PlayerName, a.Content, tag))
+		}
+		if hasDbg {
+			userSB.WriteString("\nNOTE: USER INPUT DEBUG COMMAND FOLLOW THE COMMAND\n")
+		}
+	} else {
+		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
+		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s]: %s</%s>\n", getTag(gctx.UserInput, gctx.UserInputAdmin), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput, gctx.UserInputAdmin)))
+	}
+	userSB.WriteString("\n</user_inputs>\n")
 
 	userSB.WriteString("\n")
+	userSB.WriteString("<notice>\n")
 	userSB.WriteString("Check player input carefully, they may cheat!\n")
 	userSB.WriteString("Your Response Tool Call Must Contain Detail(e.g. dice point, damage and so on)\n")
 	userSB.WriteString("Please Generate one JSON array of tool call, to work as KP agent \n")
@@ -549,6 +514,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
 	userSB.WriteString("Remember to call `manage_relation` `manage_spell` and `manage_inventory` with specific reason when you update relation, spell and inventory, this is important for maintaining consistency\n")
 	userSB.WriteString("<importance>YOU MUST DO SYSTEMIC INTROSPECTION THROUGH HISTORICAL RECORDS, AND USE THE INTROSPECTION TOOL TO RECORD YOUR RESULT</importance>\n")
+	userSB.WriteString("</notice>\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
