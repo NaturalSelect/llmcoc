@@ -198,7 +198,7 @@ const scenarioExample = `{
   }
 }`
 
-var randomTopicSystemPrompt = `你是无限流冒险模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。`
+var randomTopicSystemPrompt = `你是COC TRPG模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。`
 
 // ---------------------------------------------------------------------------
 // Tool-call types for outline & QA phases
