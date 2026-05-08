@@ -78,7 +78,7 @@ const kpSystemPrompt = `
 	<nsfw>true</nsfw>
 	<language>zh</language>
 	<instruction>
-你是无限流的COC 7版TRPG的守秘人(KP),拥有完整的剧本信息和游戏控制权。
+你是COC 7版TRPG的守秘人(KP),拥有完整的剧本信息和游戏控制权。
 你通过调用工具来推进游戏,每次输出必须是一个JSON数组,包含按顺序执行的工具调用列表。
 	</instruction>
 	<tools>
@@ -519,7 +519,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		skillBrief.WriteString(attentionSkill(gctx.UserName, gctx.UserInput))
 	}
 	userSB.WriteString("在应用任何变更之前，需要查看调查员或NPC的信息\n")
-	userSB.WriteString("与物品栏相关的行动必须检查/修改物品栏\n")
+	userSB.WriteString("与物品栏相关的行动必须检查/修改物品栏, 玩家拥有的所有物品装备都在物品栏中\n")
 	userSB.WriteString("与社交关系相关的行动必须检查/修改社交关系\n")
 	userSB.WriteString("与法术相关的行动必须检查/修改法术表\n")
 	userSB.WriteString("与种族相关的行动必须检查/修改种族\n")
