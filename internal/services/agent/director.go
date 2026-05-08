@@ -358,6 +358,18 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	if content.WinCondition != "" {
 		scenarioSB.WriteString("WIN COND:" + content.WinCondition + "\n")
 	}
+	if content.LoseCondition != "" {
+		scenarioSB.WriteString("LOSE COND:" + content.LoseCondition + "\n")
+	}
+	if len(content.PartialWins) > 0 {
+		scenarioSB.WriteString("PARTIAL WIN COND:\n")
+		for _, cond := range content.PartialWins {
+			scenarioSB.WriteString("  • " + cond + "\n")
+		}
+	}
+	if content.Setting != "" {
+		scenarioSB.WriteString("BG:" + content.Setting + "\n")
+	}
 	if content.MapDescription != "" {
 		scenarioSB.WriteString("MAP DESC:" + content.MapDescription + "\n")
 	}
@@ -372,6 +384,16 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 				desc = string([]rune(desc)[:100]) + "…"
 			}
 			scenarioSB.WriteString(fmt.Sprintf("  • %s(%s):%s\n", npc.Name, npc.Attitude, desc))
+		}
+	}
+	if len(content.Scenes) > 0 {
+		scenarioSB.WriteString("场景列表:\n")
+		for _, scene := range content.Scenes {
+			s := ""
+			if len(scene.Triggers) > 0 {
+				s = fmt.Sprintf(" 触发条件: %v", scene.Triggers)
+			}
+			scenarioSB.WriteString(fmt.Sprintf("  • %s: %s %s\n", scene.Name, scene.Description, s))
 		}
 	}
 	msgs = append(msgs, llm.ChatMessage{
