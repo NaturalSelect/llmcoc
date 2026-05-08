@@ -519,7 +519,10 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		skillBrief.WriteString(attentionSkill(gctx.UserName, gctx.UserInput))
 	}
 	userSB.WriteString("在应用任何变更之前，需要查看调查员或NPC的信息\n")
-	userSB.WriteString("不要忘记更新调查员的 物品栏 社交关系 法术表 种族 等属性\n")
+	userSB.WriteString("与物品栏相关的行动必须检查/修改物品栏\n")
+	userSB.WriteString("与社交关系相关的行动必须检查/修改社交关系\n")
+	userSB.WriteString("与法术相关的行动必须检查/修改法术表\n")
+	userSB.WriteString("与种族相关的行动必须检查/修改种族\n")
 	userSB.WriteString("SAN值的扣除必须谨慎,随意扣除SAN,不能反复扣SAN,不能只因为调查员处于疯狂状态在忽略规则的情况下扣除SAN\n")
 	userSB.WriteString("进行社交关系修改是已经慎重尤其是更新已有社交关系时\n")
 	userSB.WriteString("管理物品栏之前需要查看调查员物品栏, 使用消耗品记得通过 manage_inventory 减少物品数量\n")
