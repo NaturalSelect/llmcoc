@@ -222,7 +222,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息)","ack":"Record all user actions in English, including every action taken by investigators and NPCs, detailing every dice roll, every data modification, and every interaction(manage_* or update_*) with the batch processing system, and use the past perfect tense."}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息)","ack":"Record all user actions in English, including every action taken by investigators and NPCs, detailing every dice roll, every data modification, and every interaction(manage_* or update_*) with the batch processing system and result of actions, and use the past perfect tense."}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
