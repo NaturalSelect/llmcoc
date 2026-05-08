@@ -406,10 +406,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 
 	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
 	var userSB strings.Builder
-	userSB.WriteString("The above is historical information that has been processed, completed, and compressed.\n\n")
-	// Inject KP self-written scene hint if present.
-	userSB.WriteString("<processing>\n")
-	userSB.WriteString("<latest_message>\n")
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
 	userSB.WriteString("\n\n Curr Game Time" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "\n")
 	// Inject active temp NPC states so KP can enforce scene consistency.
@@ -534,8 +530,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("调查员可能会释放他不会的法术, 除非剧情需要否(面对外神)则判断成作弊\n")
 	userSB.WriteString("KP可以以戏谑的方式回应作弊者的请求, 例如: 让奈亚拉托提普回应他\n")
 	userSB.WriteString("\n")
-	userSB.WriteString("</latest_message>\n")
-	userSB.WriteString("</processing>\n")
 
 	if gctx.Session.KPHint != "" {
 		userSB.WriteString("\n<stat_hint>\n")
