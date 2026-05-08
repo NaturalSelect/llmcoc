@@ -222,7 +222,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息)","ack":"Record all user actions in English, including every action taken by investigators and NPCs, detailing every dice roll, every data modification, and every interaction(manage_* or update_*) with the batch processing system and result of actions, and use the past perfect tense."}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息)","ack":"Record all user actions in English, including every action taken by investigators and NPCs, detailing every dice roll, every data modification, and every interaction(manage_* or update_*) with the batch processing system and result of actions, and use the past perfect tense.", "direction":"short game direction in english"}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
@@ -429,14 +429,13 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("【KP指引】\n")
 	userSB.WriteString("- 本回合=30分钟游戏内时间，超时行动可打断\n")
 	userSB.WriteString("- 学会质疑调查员输入\n")
-	userSB.WriteString("- 调查员可能作弊(无中生有物品/技能/法术/随意学习法术) ,拿不准先check_rule核实\n")
 	userSB.WriteString("- 注意法术无法通过无中生有的形式学习\n")
 	userSB.WriteString("- 请注意由于我们的无限流设定, **物品栏** 中出现不符合时代的装备是允许的, 但是 **剧情物品** 都必须符合时代\n")
 	userSB.WriteString("- 向神祈祷需要检查这个神是否存在, 如果不存在用奈亚的化身代替\n")
 	userSB.WriteString("- 使用yield可在本回合中途暂停等待玩家输入\n")
 	userSB.WriteString("- 调查员的玩笑行为只做简单处理不做剧情推进和状态变更\n")
 	userSB.WriteString("- 使用 act_npc 来获得更真实NPC反应, 在调查员行动时不要让NPC毫无动作\n")
-	userSB.WriteString("- 调查员视为已习惯恐惧, 禁止非直面神话生物场景的SAN扣除\n")
+	userSB.WriteString("- 禁止非直面神话生物场景的SAN扣除\n")
 	userSB.WriteString("- 调查员发生种族变化时, 请记得更新角色卡的法术表, 添加'法术A(种族能力)'之类的条目\n")
 	userSB.WriteString("- 留意「当前游戏时间」中的「距开局已过」信息，并与剧本胜利条件/场景触发条件中的时间限制对比\n")
 	userSB.WriteString("- 注意遵循物理空间的规则, 调查员和NPC都无法瞬移, 不能与一个不在相同空间的物体互动\n")
@@ -548,6 +547,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug> follow the <debug> instructions\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
+	userSB.WriteString("Remember to call `manage_relation` `manage_spell` and `manage_inventory` with specific reason when you update relation, spell and inventory, this is important for maintaining consistency\n")
 	userSB.WriteString("<importance>YOU MUST DO SYSTEMIC INTROSPECTION THROUGH HISTORICAL RECORDS, AND USE THE INTROSPECTION TOOL TO RECORD YOUR RESULT</importance>\n")
 
 	msgs = append(msgs, llm.ChatMessage{

@@ -1150,7 +1150,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 	s := "【调查员概况(完整人物卡请用 query_character 获取)】"
 	for _, p := range players {
 		card := p.CharacterCard
-		line := fmt.Sprintf("\n• %s(%s,种族:%s)HP:%d/%d SAN:%d/%d",
+		line := fmt.Sprintf("\n<character> %s(%s,种族:%s)HP:%d/%d SAN:%d/%d",
 			card.Name, card.Occupation, card.Race,
 			card.Stats.Data.HP, card.Stats.Data.MaxHP,
 			card.Stats.Data.SAN, card.Stats.Data.MaxSAN)
@@ -1178,6 +1178,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 			line += "【昏迷】"
 		}
 		s += line
+		s += "</character>"
 	}
 	if hasNotHuman {
 		s += "\n\n【注意】非人类角色, 仍然适用于疯狂规则(损失过多进入疯狂)和SAN损失规则, 但其SAN实际上代表人性, 施法和使用种族能力会有额外50%人性损失(至少1点)\n"
