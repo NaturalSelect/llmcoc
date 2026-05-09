@@ -316,10 +316,10 @@ func randomNarrativeTemplate() string {
 }
 
 func randomTopicConstraints(threatNum int) string {
-	threats := make([]string, threatNum)
 	if threatNum > len(topicThreatOrigins) {
 		threatNum = len(topicThreatOrigins)
 	}
+	threats := make([]string, len(topicThreatOrigins))
 	copy(threats, topicThreatOrigins)
 	rand.Shuffle(len(threats), func(i, j int) { threats[i], threats[j] = threats[j], threats[i] })
 	threats = threats[:threatNum]
