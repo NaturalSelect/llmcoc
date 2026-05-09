@@ -120,6 +120,11 @@ func hotFixChar(card *models.CharacterCard) {
 		card.Stats.Data.MOV = mov
 		needUpdate = true
 	}
+	trimed := strings.TrimSpace(card.Name)
+	if trimed != card.Name {
+		card.Name = trimed
+		needUpdate = true
+	}
 	if needUpdate {
 		models.DB.Save(card)
 	}
@@ -236,6 +241,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	req.Name = strings.TrimSpace(req.Name)
 
 	if req.Gender != models.GenderMale && req.Gender != models.GenderFemale {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别"})
