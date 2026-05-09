@@ -441,6 +441,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
 	userSB.WriteString("Remember to call `manage_relation` `manage_spell` and `manage_inventory` with specific reason when you update relation, spell and inventory, this is important for maintaining consistency\n")
 	userSB.WriteString("Growth check only happens in the end of game, if they win\n")
+	userSB.WriteString("It is forbidden to update the status of any player or NPC based on assumptions.\n")
 	userSB.WriteString("<importance>YOU MUST DO SYSTEMIC INTROSPECTION THROUGH HISTORICAL RECORDS, AND USE THE INTROSPECTION TOOL TO RECORD YOUR RESULT</importance>\n")
 	userSB.WriteString("</notice>\n")
 
