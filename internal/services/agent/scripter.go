@@ -290,29 +290,6 @@ var topicThreatOrigins = []string{
 	"伟大存在的直接干预（亲自降临或通过代理人直接影响世界）",
 }
 
-// topicSocialLayers 社会层维度
-var topicSocialLayers = []string{
-	"底层社会（贫民窟、矿工、移民社区）",
-	"学术精英（大学、博物馆、考古队）",
-	"军事/政府（战场、情报机构、监狱）",
-	"地下犯罪（黑市、帮派、走私网络）",
-	"上流社会（豪门世家、宗教权贵、金融寡头）",
-	"里层社会（邪教徒、古神信徒）",
-	"乡村（偏远地区、山村、无人区）",
-	"特殊环境（精神病院、孤岛、废弃设施）",
-	"娱乐圈与文艺界（片场、剧院、画廊开幕、绯闻产业链）",
-	"医疗体系（急诊室、精神病院深处、被掩盖的疫情调查）",
-	"街头流浪者（拾荒者、无家可归的退伍兵、地下通道的人际网）",
-	"远洋与港口（远洋货轮、走私码头、与陆地法律脱节的海上社会）",
-	"殖民与海外领地（大使馆、租界旧迹、正在独立动荡中的地区）",
-	"家族内部（代际创伤、家族企业继承权、祖宅里被禁止谈论的房间）",
-	"灾后临时社区（难民营、洪水后的体育场馆、资源配给引发的权力结构）",
-	"考古现场（刚刚出土的遗址帐篷区、附近被征地的原住民村落）",
-	"极限运动圈（翼装飞行线路、地下搏击俱乐部、深海潜水探险队）",
-	"时间边缘群体（绝症晚期病人互助会、养老院记忆照护区、临终关怀社工）",
-	"交通枢纽（国际列车、中转机场的滞留区、长途货运司机的公路社群）",
-}
-
 // topicTwists NPC/剧情转折维度
 var topicTwists = []string{
 	"雇主本身是幕后黑手",
@@ -351,10 +328,9 @@ func randomNarrativeTemplate() string {
 
 func randomTopicConstraints() string {
 	threat := topicThreatOrigins[rand.Intn(len(topicThreatOrigins))]
-	layer := topicSocialLayers[rand.Intn(len(topicSocialLayers))]
 	twist := topicTwists[rand.Intn(len(topicTwists))]
 	gamePlay := gameplay[rand.Intn(len(gameplay))]
-	return fmt.Sprintf("威胁来源=%s | 社会背景=%s | 核心转折=%s | 游戏玩法=%s", threat, layer, twist, gamePlay)
+	return fmt.Sprintf("威胁来源=%s | 核心转折=%s | 游戏玩法=%s", threat, twist, gamePlay)
 }
 
 var genScenarioMutex sync.Mutex
