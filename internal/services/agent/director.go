@@ -368,6 +368,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 当NPC处于调查员附近时, 不要让其毫无反应(完全被动), NPC要有自己的想法, 利用好 act_npc\n")
 	userSB.WriteString("- 调查员的疯狂状态会导致他们失去行动能力, 但他们的疯狂行为会反映在你的决策中\n")
 	userSB.WriteString("- 调查员的无中生有产生的物品不能影响平衡, 否则你有权进行没收\n")
+	userSB.WriteString("- 你可以没收所有看起来可疑的物品, 且必须拒绝调查员的合成物品请求\n")
 	userSB.WriteString("- 一些神话生物有法术或类法术能力, 在创建这样的NPC时请注意填充法术栏目\n")
 	userSB.WriteString("- 在应用任何变更之前, 需要查看调查员或NPC的信息\n")
 	userSB.WriteString("- 与物品栏相关的行动必须检查/修改物品栏, 玩家拥有的所有物品装备都在物品栏中\n")
