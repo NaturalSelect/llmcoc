@@ -464,7 +464,7 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 	constraints := randomTopicConstraints()
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: agent.systemPrompt(randomTopicSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请生成一个COC冒险模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。\n种子: %s\n【创作约束(必须体现在主题中)】%s", seed, constraints)},
+		{Role: "user", Content: fmt.Sprintf("请生成一个COC冒险模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。\n种子: %s\n【建议创作约束(必须体现在主题中)】%s", seed, constraints)},
 	}
 	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
@@ -479,7 +479,7 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 	}
 	debugf("topic", "extend: %v", raw)
 	msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "很好, 重新生成一个完全无关的主题,同样满足创作约束。"})
+	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "你的逻辑狗屁不通, 重新生成一个完全无关的主题,同样尽量满足创作约束。"})
 	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
 		return "未知冒险"
@@ -490,7 +490,7 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 	tmp := strings.Split(raw, "\n")
 	raw = tmp[rand.Intn(len(tmp))]
 	debugf("topic", "final: %v", raw)
-	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "扩展一下这个主题，给出一个背景设定, 设定需要符合逻辑不能编造, 同时给出大量留白: " + raw})
+	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "扩展一下这个主题，给出一个包含大量留白的背景设定, 设定需要符合逻辑不能编造, 同时给出大量留白: " + raw})
 	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
 		return "未知冒险"
