@@ -20,7 +20,7 @@ import (
 // ---------------------------------------------------------------------------
 
 var outlineSystemPrompt = `你是 COC TRPG(克苏鲁的呼唤第7版)模组设计师。
-根据用户需求生成一个详细的模组大纲。
+根据用户需求生成一个详细的模组大纲, 你需要保证故事有足够的悬疑性和趣味性。
 
 【规则书目录】
 ` + rulebook.RulebookDir + `
@@ -125,9 +125,10 @@ var qaSystemPrompt = `你是 COC TRPG 模组质量审查员(qa_guard)。
 1. 结构完整性(20分):场景、NPC、线索、胜负条件是否齐全,lose_condition和partial_wins是否有意义
 2. 线索设计(20分):是否包含[真实]/[误导]/[隐藏]三类线索,冗余路径是否存在
 3. 规则合规(20分):神话元素是否来自规则书,NPC属性值是否合规
-4. 可玩性(20分):玩家是否有真实决策空间,胜负结果是否依赖玩家行为而非固定剧情
-5. 文本质量(10分):背景和开场叙事的氛围营造、语言质量
-6. 新颖性(10分):叙事结构是否跳出三幕套路,NPC是否存在反转立场或独立行动线,是否有至少一个让有经验COC玩家感到意外的设计
+4. 可玩性(15分):玩家是否有真实决策空间,胜负结果是否依赖玩家行为而非固定剧情
+5. 文本质量(5分):背景和开场叙事的氛围营造、语言质量
+6. 新颖性(5分):叙事结构是否跳出三幕套路,NPC是否存在反转立场或独立行动线,是否有至少一个让有经验COC玩家感到意外的设计
+7. 悬疑性(15分):故事是否充满未知和转折,是否能激发玩家的探索欲望
 
 must_fix 中必须标注:
 - 缺失 lose_condition 或 partial_wins
@@ -370,7 +371,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 
 	if req.Theme == "" {
-		req.Theme = generateRandomTopic(ctx, req.Salt)
+		req.Theme = randomTopicConstraints()
 	}
 	debugf("script", "theme: %v", req.Theme)
 
@@ -426,61 +427,6 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 
 	// Return best effort even if QA didn't pass
 	return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: 3}, nil
-}
-
-func generateRandomTopic(ctx context.Context, seed string) string {
-	agent, err := loadSingleAgentWithTemperature(models.AgentRoleArchitect, 1.2)
-	if err != nil {
-		return "未知冒险"
-	}
-	var raw string
-	constraints := randomTopicConstraints()
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: agent.systemPrompt(randomTopicSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请生成一个COC悬疑冒险模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。\n种子: %s\n【建议创作约束(必须体现在主题中)】%s", seed, constraints)},
-	}
-	raw, err = agent.provider.Chat(ctx, msgs)
-	if err != nil {
-		return "未知冒险"
-	}
-	debugf("topic", "first: %v", raw)
-	msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "请从上述输出的主题中选择一个,并简要说明为什么这个主题有趣。仅回复主题名称和简短说明,不要任何其他文字。"})
-	raw, err = agent.provider.Chat(ctx, msgs)
-	if err != nil {
-		return "未知冒险"
-	}
-	debugf("topic", "extend: %v", raw)
-	msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "你的逻辑狗屁不通, 无病呻吟, 重新生成一个完全无关的主题,同样尽量满足创作约束。"})
-	raw, err = agent.provider.Chat(ctx, msgs)
-	if err != nil {
-		return "未知冒险"
-	}
-	msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-	debugf("topic", "reverse: %v", raw)
-	raw = strings.TrimSpace(raw)
-	tmp := strings.Split(raw, "\n")
-	raw = tmp[rand.Intn(len(tmp))]
-	debugf("topic", "final: %v", raw)
-	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "扩展一下这个主题，给出一个包含大量留白的背景设定, 设定需要符合逻辑不能编造, 同时给出大量留白: " + raw})
-	raw, err = agent.provider.Chat(ctx, msgs)
-	if err != nil {
-		return "未知冒险"
-	}
-	iter := rand.Intn(5) + 5 // 2-4次迭代打磨主题和背景设定
-	for i := 0; i < iter; i++ {
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "重来, 你的结果充斥无病呻吟且逻辑狗屁不通, 另选一个主题, 扩展一下这个主题，给出一个包含大量留白的背景设定, 设定需要符合逻辑不能编造, 同时给出大量留白: " + raw})
-
-		raw, err = agent.provider.Chat(ctx, msgs)
-		if err != nil {
-			return "未知冒险"
-		}
-		debugf("topic", "final_extend iter=%d: %v", i+1, raw)
-	}
-	debugf("topic", "final_extend: %v", raw)
-	return raw
 }
 
 // ---------------------------------------------------------------------------
