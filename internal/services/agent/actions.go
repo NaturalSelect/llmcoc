@@ -161,6 +161,8 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	if call.Spell != "" {
 		question += " (你可以使用使用法术: " + call.Spell + ")"
+	} else {
+		question += " (你没有法术可用, 且无法创造改造魔法物品)"
 	}
 	action, npcErr := actNPC(actx.Ctx, actx.Handles[models.AgentRoleNPC], *actx.GCtx, call.NPCName, question, *actx.TempNPCs)
 	doneNPC()
