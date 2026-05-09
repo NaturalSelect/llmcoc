@@ -383,6 +383,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 不要在剧情演绎中虚构调查员发言(除非调查员明确要求这样做), 这样可以保持剧情的连续性\n")
 	userSB.WriteString("- 调查员可能会释放他不会的法术, 除非剧情需要否(面对外神)则判断成作弊\n")
 	userSB.WriteString("- KP可以以戏谑的方式回应作弊者的请求, 例如: 让奈亚拉托提普回应他\n")
+	userSB.WriteString("- 调查员获得物品必须参考信用评级\n")
 	userSB.WriteString("</simple_guide>\n")
 
 	// Show all players' actions when everyone has submitted (multi-player),
