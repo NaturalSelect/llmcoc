@@ -12,60 +12,6 @@ import (
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
-const kpCombatPrompt = `
-<tool>
-			<name>start_combat</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<description>开始战斗,初始化跨轮战斗状态(第一次发生冲突时调用)</description>
-			<call_example>{"action":"start_combat","combat_participants":[{"name":"Alice","dex":60,"hp":12,"is_npc":false},{"name":"怪物","dex":40,"hp":20,"is_npc":true}]}</call_example>
-		</tool>
-		<tool>
-			<name>combat_act</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<maybeInterrupt>true</maybeInterrupt>
-			<description>记录本轮当前行动者的战斗行动(每个行动者每轮调用一次,必须在单独的 round 中使用)</description>
-			<call_example>{"action":"combat_act","combat_actor_name":"Alice","combat_action":{"type":"attack","target_name":"怪物","weapon_name":"左轮手枪"}}</call_example>
-		</tool>
-		<tool>
-			<name>end_combat</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<description>结束战斗,清除战斗状态</description>
-			<call_example>{"action":"end_combat","combat_end_reason":"怪物被击败"}</call_example>
-		</tool>
-		<tool>
-			<name>start_chase</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<description>开始追逐,初始化跨轮追逐状态</description>
-			<call_example>{"action":"start_chase","chase_participants":[{"name":"Alice","is_npc":false,"mov":8,"location":2,"is_pursuer":false},{"name":"警察","is_npc":true,"mov":9,"location":0,"is_pursuer":true}]}</call_example>
-		</tool>
-		<tool>
-			<name>chase_act</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<maybeInterrupt>true</maybeInterrupt>
-			<description>记录本轮当前追逐参与者的行动(必须在单独的 round 中使用)</description>
-			<call_example>{"action":"chase_act","chase_actor_name":"Alice","chase_action":{"type":"move","move_delta":2}}</call_example>
-		</tool>
-		<tool>
-			<name>end_chase</name>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<description>结束追逐,清除追逐状态</description>
-			<call_example>{"action":"end_chase","chase_end_reason":"猎物成功逃脱"}</call_example>
-		</tool>	
-		<tool>
-			<name>hint</name>
-			<description>记录当前场景的高信息密度描述, 用于实现特殊机制(例如: 护甲)</description>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"hint","hint":"高信息密度的当前场景提示"}</call_example>
-		</tool>
-`
-
 // kpSystemPrompt is the static system prompt for the master KP agent.
 // It defines the tool interface and COC rules guidelines.
 // The KP receives full scenario context in the user prompt on each call.
@@ -118,10 +64,10 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>act_npc</name>
-			<description>打开与指定NPC的一轮对话(该NPC独立记忆)</description>
+			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容, 可以选择是否让NPC隐瞒他的秘密</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果)"}</call_example>
+			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果)", "hideSecret":true}</call_example>
 		</tool>
 		<tool>
 			<name>update_characters</name>

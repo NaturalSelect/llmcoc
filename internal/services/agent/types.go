@@ -117,6 +117,7 @@ type ToolCall struct {
 	ChaseEndReason    string                  `json:"chase_end_reason,omitempty"`   // end_chase: 追逐结束原因
 	Report            string                  `json:"report,omitempty"`             // report: agent self-report
 	Ack               string                  `json:"ack,omitempty"`                // response: 对玩家动作的正式确认
+	HideSecret        bool                    `json:"hide_secret,omitempty"`        // npc_act: 是否隐藏NPC反应中的敏感信息(如HP变化), 由KP根据当前情境决定
 }
 
 // ToolResult wraps the result of executing one ToolCall.

@@ -156,6 +156,9 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	debugf("tool", "session=%d act_npc npc=%q question=%s", actx.Sid, call.NPCName, question)
 	doneNPC := timedDebug("NPC", "session=%d npc=%s", actx.Sid, call.NPCName)
+	if call.HideSecret {
+		question = "(注意隐瞒你的秘密) " + question
+	}
 	action, npcErr := actNPC(actx.Ctx, actx.Handles[models.AgentRoleNPC], *actx.GCtx, call.NPCName, question, *actx.TempNPCs)
 	doneNPC()
 	if npcErr != nil {
