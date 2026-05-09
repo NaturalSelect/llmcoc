@@ -492,10 +492,10 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 	if err != nil {
 		return "未知冒险"
 	}
-	iter := rand.Intn(3) + 2 // 2-4次迭代打磨主题和背景设定
+	iter := rand.Intn(5) + 5 // 2-4次迭代打磨主题和背景设定
 	for i := 0; i < iter; i++ {
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "重来, 你的结果充斥无病呻吟且逻辑狗屁不通，重新扩展一下这个主题，给出一个包含大量留白的背景设定, 设定需要符合逻辑不能编造, 同时给出大量留白: " + raw})
+		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "重来, 你的结果充斥无病呻吟且逻辑狗屁不通, 另选一个主题, 扩展一下这个主题，给出一个包含大量留白的背景设定, 设定需要符合逻辑不能编造, 同时给出大量留白: " + raw})
 
 		raw, err = agent.provider.Chat(ctx, msgs)
 		if err != nil {
