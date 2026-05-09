@@ -159,6 +159,9 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	if call.HideSecret {
 		question = "(注意隐瞒你的秘密) " + question
 	}
+	if call.Spell != "" {
+		question += " (你可以使用使用法术: " + call.Spell + ")"
+	}
 	action, npcErr := actNPC(actx.Ctx, actx.Handles[models.AgentRoleNPC], *actx.GCtx, call.NPCName, question, *actx.TempNPCs)
 	doneNPC()
 	if npcErr != nil {

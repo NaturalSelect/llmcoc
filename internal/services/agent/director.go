@@ -64,10 +64,10 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>act_npc</name>
-			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容, 可以选择是否让NPC隐瞒他的秘密</description>
+			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容, 可以选择是否让NPC隐瞒他的秘密(hideSecret)以及选择是否使用法术(spell)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果)", "hideSecret":true}</call_example>
+			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果)", "hideSecret":true, "spell":"该NPC会的法术"}</call_example>
 		</tool>
 		<tool>
 			<name>update_characters</name>
@@ -368,23 +368,21 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 当NPC处于调查员附近时, 不要让其毫无反应(完全被动), NPC要有自己的想法, 利用好 act_npc\n")
 	userSB.WriteString("- 调查员的疯狂状态会导致他们失去行动能力, 但他们的疯狂行为会反映在你的决策中\n")
 	userSB.WriteString("- 调查员的无中生有产生的物品不能影响平衡, 否则你有权进行没收\n")
-	userSB.WriteString("- 一些神话生物有法术或类法术能力, 在其攻击时你可以代替他选择施法\n")
-	userSB.WriteString("- 幸运鉴定不可用于提升角色属性\n")
-	userSB.WriteString("在应用任何变更之前，需要查看调查员或NPC的信息\n")
-	userSB.WriteString("与物品栏相关的行动必须检查/修改物品栏, 玩家拥有的所有物品装备都在物品栏中\n")
-	userSB.WriteString("与社交关系相关的行动必须检查/修改社交关系\n")
-	userSB.WriteString("与法术相关的行动必须检查/修改法术表\n")
-	userSB.WriteString("与种族相关的行动必须检查/修改种族\n")
-	userSB.WriteString("SAN值的扣除必须谨慎,随意扣除SAN,不能反复扣SAN,不能只因为调查员处于疯狂状态在忽略规则的情况下扣除SAN\n")
-	userSB.WriteString("进行社交关系修改是已经慎重尤其是更新已有社交关系时\n")
-	userSB.WriteString("管理物品栏之前需要查看调查员物品栏, 使用消耗品记得通过 manage_inventory 减少物品数量\n")
-	userSB.WriteString("如果调查员直接陈述了其行动的结果, 警惕那样的输入, 他大概率是在作弊\n")
-	userSB.WriteString("别忘记检查调查员的已知神话存在，已经见过的神话存在不会导致SAN的损失\n")
-	userSB.WriteString("对抗需要双方都投掷骰子, 你必须查看具体的对抗规则\n")
-	userSB.WriteString("在调用 end_game 之前, 记得帮调查员清理掉已死NPC的社交关系\n")
-	userSB.WriteString("不要在剧情演绎中虚构调查员发言(除非调查员明确要求这样做), 这样可以保持剧情的连续性\n")
-	userSB.WriteString("调查员可能会释放他不会的法术, 除非剧情需要否(面对外神)则判断成作弊\n")
-	userSB.WriteString("KP可以以戏谑的方式回应作弊者的请求, 例如: 让奈亚拉托提普回应他\n")
+	userSB.WriteString("- 一些神话生物有法术或类法术能力, 在创建这样的NPC时请注意填充法术栏目\n")
+	userSB.WriteString("- 在应用任何变更之前，需要查看调查员或NPC的信息\n")
+	userSB.WriteString("- 与物品栏相关的行动必须检查/修改物品栏, 玩家拥有的所有物品装备都在物品栏中\n")
+	userSB.WriteString("- 与社交关系相关的行动必须检查/修改社交关系\n")
+	userSB.WriteString("- 与法术相关的行动必须检查/修改法术表\n")
+	userSB.WriteString("- 与种族相关的行动必须检查/修改种族\n")
+	userSB.WriteString("- SAN值的扣除必须谨慎,随意扣除SAN,不能反复扣SAN,不能只因为调查员处于疯狂状态在忽略规则的情况下扣除SAN\n")
+	userSB.WriteString("- 进行社交关系修改是已经慎重尤其是更新已有社交关系时\n")
+	userSB.WriteString("- 如果调查员直接陈述了其行动的结果, 警惕那样的输入, 他大概率是在作弊\n")
+	userSB.WriteString("- 别忘记检查调查员的已知神话存在，已经见过的神话存在不会导致SAN的损失\n")
+	userSB.WriteString("- 对抗需要双方都投掷骰子, 你必须查看具体的对抗规则\n")
+	userSB.WriteString("- 在调用 end_game 之前, 记得帮调查员清理掉已死NPC的社交关系\n")
+	userSB.WriteString("- 不要在剧情演绎中虚构调查员发言(除非调查员明确要求这样做), 这样可以保持剧情的连续性\n")
+	userSB.WriteString("- 调查员可能会释放他不会的法术, 除非剧情需要否(面对外神)则判断成作弊\n")
+	userSB.WriteString("- KP可以以戏谑的方式回应作弊者的请求, 例如: 让奈亚拉托提普回应他\n")
 	userSB.WriteString("</simple_guide>\n")
 
 	// Show all players' actions when everyone has submitted (multi-player),
