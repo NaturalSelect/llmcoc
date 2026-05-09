@@ -67,7 +67,7 @@ const kpSystemPrompt = `
 			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容, 可以选择是否让NPC隐瞒他的秘密(hideSecret)以及选择是否使用法术(spell)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果)", "hideSecret":true, "spell":"该NPC会的法术"}</call_example>
+			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果)", "hide_secret":true, "spell":"该NPC会的法术"}</call_example>
 		</tool>
 		<tool>
 			<name>update_characters</name>
