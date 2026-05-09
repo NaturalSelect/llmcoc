@@ -461,7 +461,7 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 	constraints := randomTopicConstraints()
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: agent.systemPrompt(randomTopicSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请生成一个COC冒险模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。\n种子: %s\n【建议创作约束(必须体现在主题中)】%s", seed, constraints)},
+		{Role: "user", Content: fmt.Sprintf("请生成一个COC悬疑冒险模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。\n种子: %s\n【建议创作约束(必须体现在主题中)】%s", seed, constraints)},
 	}
 	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
