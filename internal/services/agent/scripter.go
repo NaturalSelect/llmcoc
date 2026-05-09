@@ -464,7 +464,7 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 	constraints := randomTopicConstraints()
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: agent.systemPrompt(randomTopicSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请生成一个无限流冒险模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。\n种子: %s\n【创作约束(必须体现在主题中)】%s", seed, constraints)},
+		{Role: "user", Content: fmt.Sprintf("请生成一个COC冒险模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。\n种子: %s\n【创作约束(必须体现在主题中)】%s", seed, constraints)},
 	}
 	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
@@ -510,7 +510,7 @@ func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCre
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: architect.systemPrompt(outlineSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请使用随机NPC姓名，创作需求如下(JSON):\n%s\n\n【本次叙事结构模板(必须遵循)】\n%s", string(reqJSON), template)},
+		{Role: "user", Content: fmt.Sprintf("请使用随机NPC姓名, 必须至少查看一次怪物和神话生物列表选择合适的敌人,创作需求如下(JSON):\n%s\n\n【本次叙事结构模板(必须遵循)】\n%s", string(reqJSON), template)},
 	}
 
 	const maxIter = 30
