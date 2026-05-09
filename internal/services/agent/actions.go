@@ -160,7 +160,11 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		question = "(注意隐瞒你的秘密) " + question
 	}
 	if call.Spell != "" {
-		question += " (你可以使用使用法术: " + call.Spell + ")"
+		if strings.Contains(call.Spell, "附魔") {
+			question += " (你可以使用使用法术: " + call.Spell + ", 且可以附魔)"
+		} else {
+			question += " (你可以使用使用法术: " + call.Spell + " , 但不能附魔)"
+		}
 	} else {
 		question += " (你没有法术可用, 且无法创造改造魔法物品)"
 	}
