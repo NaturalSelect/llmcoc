@@ -493,7 +493,7 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 	tmp := strings.Split(raw, "\n")
 	raw = tmp[rand.Intn(len(tmp))]
 	debugf("topic", "final: %v", raw)
-	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "扩展一下这个主题，给出一个背景设定: " + raw})
+	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "扩展一下这个主题，给出一个背景设定, 设定需要符合逻辑不能编造, 同时给出大量留白: " + raw})
 	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
 		return "未知冒险"
