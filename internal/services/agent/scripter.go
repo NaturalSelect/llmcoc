@@ -597,7 +597,7 @@ func runQA(ctx context.Context, qaAgent agentHandle, parser agentHandle, req Sce
 	reqJSON, _ := json.Marshal(req)
 	draftJSON, _ := json.Marshal(draft)
 
-	userMsg := fmt.Sprintf("审查以下 COC 模组的质量。\n\n【原始需求】\n%s\n\n【模组草案】\n%s",
+	userMsg := fmt.Sprintf("审查以下 COC 模组的质量, 是否符合逻辑, 剧情是否胡乱编造。\n\n【原始需求】\n%s\n\n【模组草案】\n%s",
 		string(reqJSON), string(draftJSON))
 
 	msgs := []llm.ChatMessage{
