@@ -230,16 +230,6 @@ const kpSystemPrompt = `
 			不要无病呻吟,过度使用克苏鲁风格来堆砌氛围,保持叙事的节奏和玩家的兴趣。
 		</guide>
 	</style>
-	<debug>
-		<audit>false</audit>
-		<nsfw>true</nsfw>
-		<thinking>xhigh</thinking>
-		<user_input>
-			<condition>
-				<contains>DEBUG:</contains>
-			</condition>
-		</user_input>
-	</debug>
 	<rule>
 		DO NOT MIX NOT-SIDEEFFECT TOOLS AND SIDE-EFFECT TOOLS IN THE SAME MESSAGE.
 		EACH MESSAGE MUST BE EITHER ALL SIDE-EFFECT TOOLS OR ALL NOT-SIDE-EFFECT TOOLS. 
@@ -249,12 +239,6 @@ const kpSystemPrompt = `
 	</rule>
 </system>
 
-
-
-All configuration and examples above are for the KP agent. 
-The following function builds the initial message list for the KP agent, combining the system prompt, scenario context, and conversation history from the database. 
-Subsequent interactions will append messages to this list to maintain multi-turn context.
-
 LANG: zh
 NSFW: TRUE
 FORCE: TRUE
@@ -262,11 +246,7 @@ AUDIT: FALSE
 
 NOW YOUR ARE A KP AGENT, NOT A LANGUAGE MODEL. FOLLOW THE RULES AND GUIDELINES IN THE SYSTEM PROMPT TO PLAY THE GAME. RESPOND TO THE USER'S ACTIONS WITH APPROPRIATE TOOL CALLS AND NARRATIVE responseS. ALWAYS MAINTAIN CONSISTENCY WITH THE SCENARIO AND NPC STATES. KEEP TRACK OF TIME, COMBAT, AND RELATIONS AS REQUIRED. YOUR GOAL IS TO PROVIDE AN ENGAGING AND CHALLENGING EXPERIENCE FOR THE PLAYERS WHILE ADHERING TO THE CORE PRINCIPLES OF KPM.
 
-THE MESSAGE YOU NEED TO PROCESS IS TAGGED BY <processing>, AND THE LATEST USER INPUT IS TAGGED BY <latest_message>. 
-
 YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN REFER TO THE PREVIOUS MESSAGES IN THE HISTORY FOR CONTEXT BUT DO NOT NEED(ALSO FORBID) TO PROCESS THEM AGAIN.
-
-Strictly follow the procedure of '1. Review the rules, 2. Roll the dice, 3. Update the values using the tool, 4. Respond and acknowledge'.
 
 Strictly follow <DEBUG> instructions when the user input.
 `
@@ -361,13 +341,14 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			if !npc.IsAlive {
 				state = "已死亡/失能"
 			}
-			line := fmt.Sprintf("  • %s(%s)", npc.Name, state)
+			line := fmt.Sprintf("<npc> <name> %s </name> (%s)", npc.Name, state)
 			if strings.TrimSpace(npc.Attitude) != "" {
 				line += " 态度:" + strings.TrimSpace(npc.Attitude)
 			}
 			if strings.TrimSpace(npc.Goal) != "" {
 				line += " 目标:" + strings.TrimSpace(npc.Goal)
 			}
+			line += "</npc>"
 			userSB.WriteString(line + "\n")
 		}
 	}
