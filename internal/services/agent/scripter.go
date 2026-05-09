@@ -258,7 +258,7 @@ type ScenarioDraft struct {
 // ---------------------------------------------------------------------------
 
 func randomEra() string {
-	eras := []string{"1880s", "1890s", "1900s", "1910s", "1920s", "1930s", "1940s", "1950s", "1960s", "1970s", "1980s", "1990s", "2000s", "2010s", "2020s"}
+	eras := []string{"1920s", "1950s", "现代"}
 	return eras[rand.Intn(len(eras))]
 }
 
@@ -281,7 +281,6 @@ var topicThreatOrigins = []string{
 	"伟大存在的遗迹（古神废墟、被诅咒的考古现场）",
 	"超自然现象（诅咒、异象、时间/空间异常）",
 	"人类的疯狂（精神崩溃引发的暴力事件或自我毁灭）",
-	"未知的科技（失控的人工智能、外星遗留设备）",
 	"内在恐怖（调查员自身潜藏的黑暗面被触发）",
 	"社会腐败（权力滥用、道德沦丧引发的危机）",
 	"文化冲突（不同文化/信仰体系之间的碰撞引发的超自然事件）",
@@ -304,7 +303,6 @@ var topicSocialLayers = []string{
 	"娱乐圈与文艺界（片场、剧院、画廊开幕、绯闻产业链）",
 	"医疗体系（急诊室、精神病院深处、被掩盖的疫情调查）",
 	"街头流浪者（拾荒者、无家可归的退伍兵、地下通道的人际网）",
-	"数字深网（暗网交易、被封存的早期互联网遗迹、AI培养社区）",
 	"远洋与港口（远洋货轮、走私码头、与陆地法律脱节的海上社会）",
 	"殖民与海外领地（大使馆、租界旧迹、正在独立动荡中的地区）",
 	"家族内部（代际创伤、家族企业继承权、祖宅里被禁止谈论的房间）",
@@ -312,7 +310,6 @@ var topicSocialLayers = []string{
 	"考古现场（刚刚出土的遗址帐篷区、附近被征地的原住民村落）",
 	"极限运动圈（翼装飞行线路、地下搏击俱乐部、深海潜水探险队）",
 	"时间边缘群体（绝症晚期病人互助会、养老院记忆照护区、临终关怀社工）",
-	"生态保护区（与偷猎者对抗的巡护员、保护区内的原住民与外来NGO）",
 	"交通枢纽（国际列车、中转机场的滞留区、长途货运司机的公路社群）",
 }
 
@@ -479,7 +476,7 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 	}
 	debugf("topic", "extend: %v", raw)
 	msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "你的逻辑狗屁不通, 重新生成一个完全无关的主题,同样尽量满足创作约束。"})
+	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "你的逻辑狗屁不通, 无病呻吟的假科幻, 重新生成一个完全无关的主题,同样尽量满足创作约束。"})
 	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
 		return "未知冒险"
@@ -494,6 +491,17 @@ func generateRandomTopic(ctx context.Context, seed string) string {
 	raw, err = agent.provider.Chat(ctx, msgs)
 	if err != nil {
 		return "未知冒险"
+	}
+	iter := rand.Intn(3)
+	for i := 0; i < iter; i++ {
+		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
+		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "重来, 你的结果充斥无病呻吟的假科幻，重新扩展一下这个主题，给出一个包含大量留白的背景设定, 设定需要符合逻辑不能编造, 同时给出大量留白: " + raw})
+
+		raw, err = agent.provider.Chat(ctx, msgs)
+		if err != nil {
+			return "未知冒险"
+		}
+		debugf("topic", "final_extend iter=%d: %v", i+1, raw)
 	}
 	debugf("topic", "final_extend: %v", raw)
 	return raw
