@@ -312,11 +312,17 @@ func randomNarrativeTemplate() string {
 	return narrativeTemplates[rand.Intn(len(narrativeTemplates))]
 }
 
-func randomTopicConstraints() string {
-	threat := topicThreatOrigins[rand.Intn(len(topicThreatOrigins))]
+func randomTopicConstraints(threatNum int) string {
+	threats := make([]string, threatNum)
+	if threatNum > len(topicThreatOrigins) {
+		threatNum = len(topicThreatOrigins)
+	}
+	copy(threats, topicThreatOrigins)
+	rand.Shuffle(len(threats), func(i, j int) { threats[i], threats[j] = threats[j], threats[i] })
+	threats = threats[:threatNum]
 	twist := topicTwists[rand.Intn(len(topicTwists))]
 	gamePlay := gameplay[rand.Intn(len(gameplay))]
-	return fmt.Sprintf("威胁来源=%s | 核心转折=%s | 游戏玩法=%s", threat, twist, gamePlay)
+	return fmt.Sprintf("威胁来源=%v | 核心转折=%s | 游戏玩法=%s", threats, twist, gamePlay)
 }
 
 var genScenarioMutex sync.Mutex
@@ -356,7 +362,13 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 
 	if req.Theme == "" {
-		req.Theme = randomTopicConstraints()
+		num := 1
+		if req.Difficulty == "hard" {
+			num = 3
+		} else if req.Difficulty == "normal" {
+			num = 2
+		}
+		req.Theme = randomTopicConstraints(num)
 	}
 	debugf("script", "theme: %v", req.Theme)
 
