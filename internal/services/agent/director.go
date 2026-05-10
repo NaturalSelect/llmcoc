@@ -102,7 +102,7 @@ const kpSystemPrompt = `
 			<description>管理调查员社会关系(新增/删除)</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"manage_relation","character_name":"角色名","operate":"add|remove","relation":{"name":"条目名","relationship":"关系类型","note":"备注(种族、具体关系、态度、NPC属性等其他信息)"}}</call_example>
+			<call_example>{"action":"manage_relation","character_name":"角色名","operate":"add|remove","relation":{"name":"条目名","relationship":"关系类型","note":"备注(种族、具体关系、态度、NPC属性等其他信息)"}, "reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool>
 			<name>end_game</name>
@@ -110,7 +110,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"end_game","end_summary":"结局总结","reply":"对玩家的收尾发言"}</call_example>
+			<call_example>{"action":"end_game","end_summary":"结局总结"}</call_example>
 		</tool>
 		<tool>
 			<name>trigger_madness</name>
@@ -438,7 +438,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("User input is tagged by <input> while admin input is tagged by <debug> follow the <debug> instructions\n")
 	userSB.WriteString("You cannot do any side-effect action before your plan completed\n")
 	userSB.WriteString("Your should be careful stat update, don't duplicate changes, only update character and npc stats when necessary, and explain your reasoning\n")
-	userSB.WriteString("Remember to call `manage_relation` `manage_spell` and `manage_inventory` with specific reason when you update relation, spell and inventory, this is important for maintaining consistency\n")
+	userSB.WriteString("Remember to call `manage_relation` `manage_spell` and `manage_inventory` with specific reason when you update relation, spell and inventory, this is important for maintaining consistency, you must update those data after reasoning\n")
 	userSB.WriteString("Growth check only happens in the end of game, if they win\n")
 	userSB.WriteString("It is forbidden to update the status of any player or NPC based on assumptions.\n")
 	userSB.WriteString("<importance>YOU MUST DO SYSTEMIC INTROSPECTION THROUGH HISTORICAL RECORDS, AND USE THE INTROSPECTION TOOL TO RECORD YOUR RESULT</importance>\n")
