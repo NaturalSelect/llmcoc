@@ -384,6 +384,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 调查员可能会释放他不会的法术, 除非剧情需要否(面对外神)则判断成作弊\n")
 	userSB.WriteString("- KP可以以戏谑的方式回应作弊者的请求, 例如: 让奈亚拉托提普回应他\n")
 	userSB.WriteString("- 调查员获得物品必须参考信用评级, KP不可随意生成装备和物品, 剧本NPC没有能力生成物品和装备, 也没有能力附魔除非他是法师\n")
+	userSB.WriteString("- 修改、增删社交关系之前进行充分的推理\n")
 	userSB.WriteString("</simple_guide>\n")
 
 	// Show all players' actions when everyone has submitted (multi-player),
