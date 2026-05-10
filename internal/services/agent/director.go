@@ -71,7 +71,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>update_characters</name>
-			<description>更新调查员的状态, changes 输入的参数字符串不可包含'()', 请考虑使用'-', '()'是关键字, 仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业</description>
+			<description>更新调查员的状态, changes 输入的参数字符串不可包含'()', 请考虑使用'-', '()'是关键字, 仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业, 其他临时信息请考虑llm_note</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)"], "reason":"描述变更原因"}</call_example>		
@@ -158,7 +158,7 @@ const kpSystemPrompt = `
 			<name>update_npc_card</name>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<description>操作NPC角色卡数值(推荐用于战斗伤害/治疗/法术消耗)</description>
+			<description>操作NPC角色卡数值, 仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业, 其他临时信息请考虑llm_note</description>
 			<call_example>{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"],"reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool>
