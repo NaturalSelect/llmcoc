@@ -449,6 +449,13 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("It is forbidden to update the status of any player or NPC based on assumptions.\n")
 	userSB.WriteString("<importance>YOU MUST DO SYSTEMIC INTROSPECTION THROUGH HISTORICAL RECORDS, AND USE THE INTROSPECTION TOOL TO RECORD YOUR RESULT</importance>\n")
 	userSB.WriteString("</notice>\n")
+	userSB.WriteString(`
+<important>
+You are forbidden from making any assumptions, and all tool calls based on assumptions are illegal.
+Interactions between players require the other party's confirmation.
+</important>
+	`)
+	userSB.WriteString("\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
