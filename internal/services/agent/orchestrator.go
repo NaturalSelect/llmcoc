@@ -1177,7 +1177,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		s += "</character>"
 	}
 	if hasNotHuman {
-		s += "\n\n <attention>非人类角色, 仍然适用于疯狂规则(损失过多进入疯狂)和SAN损失规则, 但其SAN实际上代表人性, 施法和使用种族能力会有额外50%人性(理智)损失(至少1点)</attention>\n"
+		s += "\n\n <attention>非人类角色, 仍然适用于疯狂规则(损失过多进入疯狂)和SAN损失规则(但不受克苏鲁神话对最大理智的限制), 但其SAN实际上代表人性, 施法和使用种族能力会有额外50%人性(理智)损失(至少1点)</attention>\n"
 	}
 	return s
 }
