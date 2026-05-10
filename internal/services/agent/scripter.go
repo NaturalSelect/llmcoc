@@ -441,6 +441,8 @@ func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCre
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: architect.systemPrompt(outlineSystemPrompt)},
 		{Role: "user", Content: fmt.Sprintf("请使用随机NPC姓名, 必须至少查看一次怪物和神话生物列表选择合适的敌人,创作需求如下(JSON):\n%s\n\n【本次叙事结构模板(必须遵循)】\n%s", string(reqJSON), template)},
+		{Role: "assistant", Content: `[{"action":"read_rulebook_const","constant":"monsters"},{"action":"read_rulebook_const","constant":"mythos_creatures"},{"action":"yield"}]`},
+		{Role: "user", Content: strings.Join(rulebook.Monsters, "\n") + "\n\n" + strings.Join(rulebook.MythosCreatures, "\n") },
 	}
 
 	const maxIter = 30
@@ -494,7 +496,7 @@ func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCre
 		}
 		msgs = append(msgs, llm.ChatMessage{
 			Role:    "user",
-			Content: "规则书搜索结果如下,请继续:\n\n" + feedback,
+			Content: feedback,
 		})
 	}
 
