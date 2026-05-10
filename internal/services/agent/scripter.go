@@ -447,11 +447,25 @@ func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCre
 	template := randomNarrativeTemplate()
 	log.Printf("[outline] 叙事模板: %s", template)
 
+	// Shuffle monster/creature lists before injecting so the LLM doesn't
+	// systematically favour entries that appear first in the fixed list.
+	shuffledMonsters := make([]string, len(rulebook.Monsters))
+	copy(shuffledMonsters, rulebook.Monsters)
+	shuffledMonsters = append(shuffledMonsters, rulebook.Aliens...) // 合并外星生物到怪物列表
+	shuffledMonsters = append(shuffledMonsters, rulebook.MythosCreatures...) // 合并旧日支配者和外神到怪物列表
+	rand.Shuffle(len(shuffledMonsters), func(i, j int) { shuffledMonsters[i], shuffledMonsters[j] = shuffledMonsters[j], shuffledMonsters[i] })
+
+	num := 1
+	if req.Difficulty == "hard" {
+		num = 5
+	} else if req.Difficulty == "normal" {
+		num = 3
+	}
+	shuffledMonsters = shuffledMonsters[:num]
+
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: architect.systemPrompt(outlineSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请使用随机NPC姓名, 必须至少查看一次怪物和神话生物列表选择合适的敌人,创作需求如下(JSON):\n%s\n\n【本次叙事结构模板(必须遵循)】\n%s", string(reqJSON), template)},
-		{Role: "assistant", Content: `[{"action":"read_rulebook_const","constant":"monsters"},{"action":"read_rulebook_const","constant":"mythos_creatures"},{"action":"yield"}]`},
-		{Role: "user", Content: strings.Join(rulebook.Monsters, "\n") + "\n\n" + strings.Join(rulebook.MythosCreatures, "\n")},
+		{Role: "user", Content: fmt.Sprintf("请使用随机NPC姓名, 必须至少查看一次怪物和神话生物列表选择合适的敌人,创作需求如下(JSON):\n%s\n\n【本次叙事结构模板(必须遵循)】\n%s\n\n 怪物表: %v", string(reqJSON), template, shuffledMonsters)},
 	}
 
 	const maxIter = 30
