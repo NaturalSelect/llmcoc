@@ -505,12 +505,33 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	models.DB.Where("session_id = ?", actx.GCtx.Session.ID).Delete(&models.SessionTurnAction{})
 	actx.GCtx.Session.Status = models.SessionStatusEnded
 	*actx.HasEnd = true
+
+	// Flush any pending write directions through the Writer agent so the final
+	// narrative is not lost when end_game is called in the same batch as write.
+	if *actx.PendingWrite != "" {
+		doneW := timedDebug("Writer", "session=%d direction=%s (end_game)", actx.Sid, *actx.PendingWrite)
+		writeErr := appendWriter(actx.Ctx, actx.Handles[models.AgentRoleWriter], actx.Writer, *actx.PendingWrite, *actx.GCtx)
+		doneW()
+		if writeErr != nil {
+			log.Printf("[agent] writer error at end_game: %v", writeErr)
+		}
+		*actx.PendingWrite = ""
+		debugf("tool", "session=%d end_game flushed writer buffer_len=%d", actx.Sid, len([]rune(actx.Writer.Buffer)))
+	}
+
+	var closing string
 	if call.Reply != "" {
-		*actx.KPNarration = call.Reply
+		closing = call.Reply
 	} else if call.EndSummary != "" {
-		*actx.KPNarration = "本次冒险结束。" + call.EndSummary
+		closing = "本次冒险结束。" + call.EndSummary
 	} else {
-		*actx.KPNarration = "本次冒险到此结束,感谢各位调查员。"
+		closing = "本次冒险到此结束,感谢各位调查员。"
+	}
+	// Preserve any narration already set by earlier actions in the same batch.
+	if *actx.KPNarration != "" {
+		*actx.KPNarration = closing + "\n" + *actx.KPNarration
+	} else {
+		*actx.KPNarration = closing
 	}
 	debugf("tool", "session=%d end_game summary=%s", actx.Sid, call.EndSummary)
 
