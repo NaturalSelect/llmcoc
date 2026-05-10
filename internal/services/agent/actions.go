@@ -506,19 +506,6 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	actx.GCtx.Session.Status = models.SessionStatusEnded
 	*actx.HasEnd = true
 
-	// Flush any pending write directions through the Writer agent so the final
-	// narrative is not lost when end_game is called in the same batch as write.
-	if *actx.PendingWrite != "" {
-		doneW := timedDebug("Writer", "session=%d direction=%s (end_game)", actx.Sid, *actx.PendingWrite)
-		writeErr := appendWriter(actx.Ctx, actx.Handles[models.AgentRoleWriter], actx.Writer, *actx.PendingWrite, *actx.GCtx)
-		doneW()
-		if writeErr != nil {
-			log.Printf("[agent] writer error at end_game: %v", writeErr)
-		}
-		*actx.PendingWrite = ""
-		debugf("tool", "session=%d end_game flushed writer buffer_len=%d", actx.Sid, len([]rune(actx.Writer.Buffer)))
-	}
-
 	var closing string
 	if call.Reply != "" {
 		closing = call.Reply
