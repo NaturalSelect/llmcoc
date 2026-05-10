@@ -361,6 +361,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 本回合=30分钟游戏内时间, 超时行动可打断\n")
 	userSB.WriteString("- 学会质疑调查员输入, 但必须要有依据, 提供完整的推理\n")
 	userSB.WriteString("- 注意法术无法通过无中生有的形式学习\n")
+	userSB.WriteString("- 禁止臆想规则, 所有与规则相关的事项需要使用 check_rule 和 check_rulebook_const 工具多次查找\n")
 	userSB.WriteString("- 请注意由于我们的无限流设定, **物品栏** 中出现不符合时代的装备是允许的, 但是 **剧情物品** 都必须符合时代\n")
 	userSB.WriteString("- 向神祈祷需要检查这个神是否存在, 如果不存在用奈亚的化身代替\n")
 	userSB.WriteString("- 使用yield可在本回合中途暂停等待玩家输入\n")
