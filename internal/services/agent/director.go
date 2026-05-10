@@ -308,7 +308,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			if len([]rune(desc)) > 100 {
 				desc = string([]rune(desc)[:100]) + "…"
 			}
-			scenarioSB.WriteString(fmt.Sprintf("  • %s(%s):%s\n", npc.Name, npc.Attitude, desc))
+			scenarioSB.WriteString(fmt.Sprintf("<static_npc><name>%s</name><attitude>%s</attitude><description>%s</description><stats>%v</stats></static_npc>\n", npc.Name, npc.Attitude, desc, npc.Stats))
 		}
 	}
 	if len(content.Scenes) > 0 {
