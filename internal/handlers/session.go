@@ -820,3 +820,85 @@ func EndSession(c *gin.Context) {
 		"growth":     result.Growth,
 	})
 }
+
+// ListMyFavoriteSessions returns the user's favorite sessions
+func ListMyFavoriteSessions(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var sessions []models.GameSession
+	models.DB.
+		Joins("JOIN session_favorites ON session_favorites.session_id = game_sessions.id").
+		Preload("Scenario").
+		Preload("Creator").
+		Preload("Players.User").
+		Preload("Players.CharacterCard").
+		Where("session_favorites.user_id = ? AND game_sessions.status = ?", userID, models.SessionStatusEnded).
+		Order("session_favorites.created_at DESC").
+		Find(&sessions)
+	c.JSON(http.StatusOK, sessions)
+}
+
+// FavoriteSession adds a session to the current user's favorites
+func FavoriteSession(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var session models.GameSession
+	if err := models.DB.First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+
+	// Check if user is a participant in this session
+	var player models.SessionPlayer
+	if err := models.DB.
+		Where("session_id = ? AND user_id = ?", sessionID, userID).
+		First(&player).Error; err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "只有房间参与者可以收藏此房间"})
+		return
+	}
+
+	// Create or update favorite entry
+	favorite := models.SessionFavorite{
+		UserID:    userID,
+		SessionID: uint(sessionID),
+	}
+	result := models.DB.FirstOrCreate(&favorite, models.SessionFavorite{
+		UserID:    userID,
+		SessionID: uint(sessionID),
+	})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "收藏失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "已收藏"})
+}
+
+// UnfavoriteSession removes a session from the current user's favorites
+func UnfavoriteSession(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var session models.GameSession
+	if err := models.DB.First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+
+	// Check if user is a participant in this session
+	var player models.SessionPlayer
+	if err := models.DB.
+		Where("session_id = ? AND user_id = ?", sessionID, userID).
+		First(&player).Error; err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "只有房间参与者可以管理此房间"})
+		return
+	}
+
+	// Delete favorite entry
+	if err := models.DB.Delete(&models.SessionFavorite{}, "user_id = ? AND session_id = ?", userID, sessionID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消收藏失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "已取消收藏"})
+}

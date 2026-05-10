@@ -254,6 +254,16 @@ type SessionPlayer struct {
 	CharacterCard   CharacterCard `gorm:"foreignKey:CharacterCardID" json:"character_card,omitempty"`
 }
 
+// SessionFavorite stores a user's favorite sessions (many-to-many relationship)
+type SessionFavorite struct {
+	ID        uint        `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID    uint        `gorm:"not null;index" json:"user_id"`
+	SessionID uint        `gorm:"not null;index" json:"session_id"`
+	CreatedAt time.Time   `json:"created_at"`
+	User      User        `gorm:"foreignKey:UserID" json:"-"`
+	Session   GameSession `gorm:"foreignKey:SessionID" json:"-"`
+}
+
 type MessageRole string
 
 const (

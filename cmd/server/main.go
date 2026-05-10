@@ -133,12 +133,15 @@ func main() {
 	{
 		sessions.GET("", handlers.ListSessions)
 		sessions.GET("/my-history", handlers.ListMyHistorySessions)
+		sessions.GET("/my-favorites", handlers.ListMyFavoriteSessions)
 		sessions.POST("", handlers.CreateSession)
 		sessions.GET("/:id", handlers.GetSession)
 		sessions.POST("/:id/join", handlers.JoinSession)
 		sessions.POST("/:id/leave", handlers.LeaveSession)
 		sessions.POST("/:id/start", handlers.StartSession)
 		sessions.POST("/:id/end", handlers.EndSession)
+		sessions.POST("/:id/favorite", handlers.FavoriteSession)
+		sessions.DELETE("/:id/favorite", handlers.UnfavoriteSession)
 		sessions.GET("/:id/messages", handlers.GetMessages)
 		sessions.POST("/:id/chat", sh.ChatStream)
 	}

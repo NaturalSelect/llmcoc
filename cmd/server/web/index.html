@@ -625,12 +625,12 @@
 
                 <!-- Tabs -->
                 <div class="flex gap-1 mb-4 border-b border-[#252018]">
-                    <button @click="sessionsTab='lobby'"
-                        class="tab text-sm px-4 py-1.5"
+                    <button @click="sessionsTab='lobby'" class="tab text-sm px-4 py-1.5"
                         :class="sessionsTab==='lobby'?'active':''">活跃房间</button>
                     <button @click="sessionsTab='history'; loadMyHistory().catch(e=>showToast(e.message,'error'))"
-                        class="tab text-sm px-4 py-1.5"
-                        :class="sessionsTab==='history'?'active':''">我的历史记录</button>
+                        class="tab text-sm px-4 py-1.5" :class="sessionsTab==='history'?'active':''">我的历史记录</button>
+                    <button @click="sessionsTab='favorites'; loadMyFavorites().catch(e=>showToast(e.message,'error'))"
+                        class="tab text-sm px-4 py-1.5" :class="sessionsTab==='favorites'?'active':''">我的收藏</button>
                 </div>
 
                 <!-- Active rooms tab -->
@@ -683,6 +683,7 @@
 
                 <!-- History tab -->
                 <div x-show="sessionsTab==='history'" class="space-y-3">
+                    <!-- modified history tab to remove is_favorite field -->
                     <template x-for="s in myHistory" :key="s.id">
                         <div class="card card-hover rounded p-4">
                             <div class="flex items-start gap-4">
@@ -713,6 +714,7 @@
                                 </div>
                                 <div class="flex flex-col gap-1.5 shrink-0">
                                     <button @click="goToSession(s.id)" class="btn btn-ghost">查看记录</button>
+                                    <button @click="toggleFavorite(s.id)" class="btn btn-ghost">☆ 收藏</button>
                                 </div>
                             </div>
                         </div>
@@ -720,6 +722,49 @@
                     <div x-show="myHistory.length === 0" class="text-center py-12 text-amber-900">
                         <p class="text-4xl mb-3">📜</p>
                         <p style="font-family:system-ui">还没有参与过已结束的房间</p>
+                    </div>
+                </div>
+
+                <!-- Favorites tab -->
+                <div x-show="sessionsTab==='favorites'" class="space-y-3">
+                    <template x-for="s in myFavorites" :key="s.id">
+                        <div class="card card-hover rounded p-4">
+                            <div class="flex items-start gap-4">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <h3 class="font-bold text-amber-100 text-base" x-text="s.name"></h3>
+                                        <span class="badge badge-ended">已结束</span>
+                                    </div>
+                                    <p class="text-xs text-amber-700 mt-1" style="font-family:system-ui">
+                                        剧本：<span class="text-amber-500" x-text="s.scenario?.name"></span>
+                                    </p>
+                                    <p class="text-xs text-amber-800 mt-0.5" style="font-family:system-ui">
+                                        房主：<span x-text="s.creator?.username"></span>
+                                        · 玩家：<span x-text="(s.players?.length??0)"></span> 位
+                                        · 结束于：<span x-text="fmtTime(s.updated_at)"></span>
+                                    </p>
+                                    <div class="flex gap-1.5 mt-2 flex-wrap">
+                                        <template x-for="p in (s.players??[])" :key="p.id">
+                                            <span
+                                                class="text-xs bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/20 text-amber-600"
+                                                style="font-family:system-ui">
+                                                <span x-text="p.user?.username"></span>
+                                                <span class="text-amber-800"> — </span>
+                                                <span x-text="p.character_card?.name"></span>
+                                            </span>
+                                        </template>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-1.5 shrink-0">
+                                    <button @click="goToSession(s.id)" class="btn btn-ghost">查看记录</button>
+                                    <button @click="removeFavorite(s.id)" class="btn btn-amber">★ 取消收藏</button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="myFavorites.length === 0" class="text-center py-12 text-amber-900">
+                        <p class="text-4xl mb-3">🌟</p>
+                        <p style="font-family:system-ui">还没有收藏任何房间</p>
                     </div>
                 </div>
             </div>
@@ -1731,8 +1776,10 @@
                             </option>
                         </template>
                     </select>
-                    <div x-show="sessionForm.scenario_id" class="text-xs text-amber-700 px-1" style="font-family:system-ui">
-                        难度：<span x-text="(scenarioList.find(s => s.id === sessionForm.scenario_id)?.difficulty) || 'normal'"></span>
+                    <div x-show="sessionForm.scenario_id" class="text-xs text-amber-700 px-1"
+                        style="font-family:system-ui">
+                        难度：<span
+                            x-text="(scenarioList.find(s => s.id === sessionForm.scenario_id)?.difficulty) || 'normal'"></span>
                     </div>
                     <div class="grid grid-cols-2 gap-2">
                         <div>
@@ -2111,6 +2158,7 @@
                     characters: [],
                     sessions: [],
                     myHistory: [],
+                    myFavorites: [],
                     sessionsTab: 'lobby',
                     scenarioList: [],
                     shopItems: [],
@@ -2189,7 +2237,7 @@
                         if (this.token) {
                             try {
                                 await this.loadMe();
-                                await Promise.all([this.loadCharacters(), this.loadSessions(), this.loadMyHistory()]);
+                                await Promise.all([this.loadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
                                 this.goTo('dashboard');
                             } catch {
                                 this.token = '';
@@ -2206,7 +2254,7 @@
                         try {
                             const r = await this.api('POST', '/api/auth/login', this.loginForm);
                             this.setToken(r.token); this.user = r.user;
-                            await Promise.all([this.loadCharacters(), this.loadSessions(), this.loadMyHistory()]);
+                            await Promise.all([this.loadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
                             this.goTo('dashboard');
                         } catch (e) { this.authError = e.message; }
                         this.loading = false;
@@ -2217,7 +2265,7 @@
                         try {
                             const r = await this.api('POST', '/api/auth/register', this.regForm);
                             this.setToken(r.token); this.user = r.user;
-                            await Promise.all([this.loadCharacters(), this.loadSessions(), this.loadMyHistory()]);
+                            await Promise.all([this.loadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
                             this.goTo('dashboard');
                         } catch (e) { this.authError = e.message; }
                         this.loading = false;
@@ -2237,6 +2285,27 @@
                     async loadCharacters() { this.characters = (await this.api('GET', '/api/characters')) || []; },
                     async loadSessions() { this.sessions = (await this.api('GET', '/api/sessions')) || []; },
                     async loadMyHistory() { this.myHistory = (await this.api('GET', '/api/sessions/my-history')) || []; },
+                    async loadMyFavorites() { this.myFavorites = (await this.api('GET', '/api/sessions/my-favorites')) || []; },
+                    async toggleFavorite(sessionId) {
+                        try {
+                            await this.api('POST', '/api/sessions/' + sessionId + '/favorite');
+                            this.showToast('已收藏');
+                            // 重新加载收藏列表
+                            await this.loadMyFavorites();
+                        } catch (e) {
+                            this.showToast(e.message, 'error');
+                        }
+                    },
+                    async removeFavorite(sessionId) {
+                        try {
+                            await this.api('DELETE', '/api/sessions/' + sessionId + '/favorite');
+                            this.showToast('已取消收藏');
+                            // 重新加载收藏列表
+                            await this.loadMyFavorites();
+                        } catch (e) {
+                            this.showToast(e.message, 'error');
+                        }
+                    },
                     async loadScenarios() { this.scenarioList = (await this.api('GET', '/api/scenarios')) || []; },
                     async loadShop() {
                         const [items, txns] = await Promise.all([
