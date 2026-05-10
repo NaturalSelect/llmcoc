@@ -453,6 +453,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 <important>
 You are forbidden from making any assumptions, and all tool calls based on assumptions are illegal.
 Interactions between players require the other party's confirmation.
+Use check_rule and check_rulebook_const tools multiple times if you need to find any information about the rules.
 </important>
 	`)
 	userSB.WriteString("\n")
