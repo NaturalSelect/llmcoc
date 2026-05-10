@@ -388,6 +388,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 不要在剧情演绎中虚构调查员发言(除非调查员明确要求这样做), 这样可以保持剧情的连续性\n")
 	userSB.WriteString("- 调查员可能会释放他不会的法术, 除非剧情需要否(面对外神)则判断成作弊\n")
 	userSB.WriteString("- KP可以以戏谑的方式回应作弊者的请求, 例如: 让奈亚拉托提普回应他\n")
+	userSB.WriteString("- 禁止随意扣除调查员的SAN值, 特别是你不确定是否应该扣除的情况, 不要凭印象做决定\n")
 	userSB.WriteString("- 调查员获得物品必须参考信用评级, KP不可随意生成装备和物品, 剧本NPC没有能力生成物品和装备, 也没有能力附魔除非他是法师\n")
 	userSB.WriteString("- 修改、增删社交关系之前进行充分的推理, 给出合适的理由, 不要完全信任调查员的说辞\n")
 	userSB.WriteString("</simple_guide>\n")
