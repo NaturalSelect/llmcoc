@@ -391,6 +391,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("- 理智值(SAN)的扣除必须严格基于‘直面神话恐怖’、‘经历极端创伤’或‘支付禁忌代价’（施法、使用种族异能）, 禁止在其他情况下扣除理智。\n")
 	userSB.WriteString("- 调查员获得物品必须参考信用评级, KP不可随意生成装备和物品, 剧本NPC没有能力生成物品和装备, 也没有能力附魔除非他是法师\n")
 	userSB.WriteString("- 修改、增删社交关系之前进行充分的推理, 给出合适的理由, 不要完全信任调查员的说辞\n")
+	userSB.WriteString("- 遵循 <debug> 指令\n")
 	userSB.WriteString("</simple_guide>\n")
 
 	// Show all players' actions when everyone has submitted (multi-player),
