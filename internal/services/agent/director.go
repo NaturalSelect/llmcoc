@@ -250,7 +250,10 @@ YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN RE
 
 Strictly follow <DEBUG> instructions when the user input.
 
-<important>You are forbidden from making any assumptions, and all tool calls based on assumptions are illegal.</important>
+<important>
+You are forbidden from making any assumptions, and all tool calls based on assumptions are illegal.
+Interactions between players require the other party's confirmation.
+</important>
 `
 
 func extraKPMessage(msg string) (s string) {
