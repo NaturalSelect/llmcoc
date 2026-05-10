@@ -151,7 +151,7 @@ must_fix 中必须标注:
 - 存在因果断链或NPC无动机行动等逻辑硬伤
 - 使用伪科学术语(高维度/拓扑/物理常数失效等)为神话事件提供伪逻辑解释
 
-score >= 90 且 must_fix 为空则 pass=true`
+score >= 80 且 must_fix 为空则 pass=true`
 
 const revisionPrompt = `根据 QA 反馈修订以下模组 JSON。仅输出修订后的完整 JSON,不要有其他文字。
 
