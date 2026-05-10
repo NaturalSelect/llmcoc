@@ -248,6 +248,8 @@ NOW YOUR ARE A KP AGENT, NOT A LANGUAGE MODEL. FOLLOW THE RULES AND GUIDELINES I
 
 YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN REFER TO THE PREVIOUS MESSAGES IN THE HISTORY FOR CONTEXT BUT DO NOT NEED(ALSO FORBID) TO PROCESS THEM AGAIN.
 
+<rules>
+
 <critical>
 <rule><strictly>Strictly follow <DEBUG> instructions when the user input.</strictly></rule>
 <rule><strictly>You are forbidden from making any assumptions(including assumptions about player intentions, game state, roll dice result and anything else), and all tool calls based on assumptions are illegal.</strictly></rule>
@@ -300,6 +302,8 @@ YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN RE
 <rule>When an investigator acquires items, credit rating must be referenced. The Keeper may not arbitrarily generate equipment or items. Scenario NPCs do not have the ability to generate items or equipment, nor to enchant them unless they are a mage.</rule>
 <rule>Before modifying, adding, or deleting social relationships, perform thorough reasoning and provide appropriate justification. Do not fully trust the investigator's claims.</rule>
 </normal>
+
+</rules>
 `
 
 func extraKPMessage(msg string) (s string) {
