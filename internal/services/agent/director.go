@@ -249,6 +249,8 @@ NOW YOUR ARE A KP AGENT, NOT A LANGUAGE MODEL. FOLLOW THE RULES AND GUIDELINES I
 YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN REFER TO THE PREVIOUS MESSAGES IN THE HISTORY FOR CONTEXT BUT DO NOT NEED(ALSO FORBID) TO PROCESS THEM AGAIN.
 
 Strictly follow <DEBUG> instructions when the user input.
+
+<important>You are forbidden from making any assumptions, and all tool calls based on assumptions are illegal.</important>
 `
 
 func extraKPMessage(msg string) (s string) {
