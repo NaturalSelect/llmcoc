@@ -280,7 +280,6 @@ var topicThreatOrigins = []string{
 	"沉睡已久的神话生物（即将苏醒或被意外唤醒）",
 	"潜伏在人类社会中的神话生物（伪装成普通人或动物）",
 	"外来的神话生物（从其他维度或星球入侵）",
-	"伟大存在的遗迹（古神废墟、被诅咒的考古现场）",
 	"伟大存在的直接干预（亲自降临或通过代理人直接影响世界）",
 	"委托人是奈亚拉托提普的化身(不表现为敌对,利用调查员达成自己的不可告人目的,在结尾揭开真相并嘲笑调查员的愚蠢)",
 }
@@ -375,6 +374,13 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 			num = 2
 		}
 		req.Theme = randomTopicConstraints(num)
+		monsterNum := 1
+		if req.Difficulty == "hard" {
+			monsterNum = 5
+		} else if req.Difficulty == "normal" {
+			monsterNum = 3
+		}
+		req.Theme += " | 主要怪物种类=" + fmt.Sprint(monsterNum)
 	}
 	debugf("script", "theme: %v", req.Theme)
 
