@@ -281,10 +281,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			if !switchInThisBatch && switchRole && !prevSwitch {
 				switchInThisBatch = true
 			}
-
-			if hasEnd {
-				break
-			}
 		}
 
 		if hasEnd {
