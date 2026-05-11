@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1242,10 +1243,82 @@ func llmToChatMsgs(msgs []llm.ChatMessage) []models.ChatMsg {
 	return out
 }
 
+// parseInventoryItem parses an item string of the form "Name(Desc, xN)".
+// Both Desc and xN are optional.
+// hasQty is true only when xN is explicitly present in the string.
+func parseInventoryItem(item string) (baseName, desc string, qty int, hasQty bool) {
+	qty = 1
+	idx := strings.Index(item, "(")
+	if idx < 0 {
+		baseName = strings.TrimSpace(item)
+		return
+	}
+	baseName = strings.TrimSpace(item[:idx])
+	inner := strings.TrimSpace(item[idx+1:])
+	inner = strings.TrimSuffix(inner, ")")
+	inner = strings.TrimSpace(inner)
+	// Try ", xN" at the end (comma-separated desc + quantity).
+	if ci := strings.LastIndex(inner, ","); ci >= 0 {
+		tail := strings.TrimSpace(inner[ci+1:])
+		if strings.HasPrefix(tail, "x") || strings.HasPrefix(tail, "X") {
+			if n, err := strconv.Atoi(tail[1:]); err == nil && n >= 1 {
+				qty = n
+				hasQty = true
+				desc = strings.TrimSpace(inner[:ci])
+				return
+			}
+		}
+	}
+	// Try bare "xN" with no desc.
+	if strings.HasPrefix(inner, "x") || strings.HasPrefix(inner, "X") {
+		if n, err := strconv.Atoi(inner[1:]); err == nil && n >= 1 {
+			qty = n
+			hasQty = true
+			return
+		}
+	}
+	// Desc only, xN omitted.
+	desc = inner
+	return
+}
+
+// buildInventoryItem reconstructs an item string from its components.
+func buildInventoryItem(baseName, desc string, qty int) string {
+	if desc == "" && qty == 1 {
+		return baseName
+	}
+	if desc == "" {
+		return fmt.Sprintf("%s(x%d)", baseName, qty)
+	}
+	if qty == 1 {
+		return fmt.Sprintf("%s(%s)", baseName, desc)
+	}
+	return fmt.Sprintf("%s(%s, x%d)", baseName, desc, qty)
+}
+
+// inventoryItemBaseName returns the base name of an item (part before '(').
+func inventoryItemBaseName(item string) string {
+	base, _, _, _ := parseInventoryItem(item)
+	return base
+}
+
+// upsertInventoryItem replaces an existing entry with the same base name, or appends.
+func upsertInventoryItem(list []string, baseName, newItem string) []string {
+	for i, item := range list {
+		if inventoryItemBaseName(item) == baseName {
+			list[i] = newItem
+			return list
+		}
+	}
+	return append(list, newItem)
+}
+
 func manageInventory(players []models.SessionPlayer, characterName, operate, item string) string {
 	if characterName == "" || item == "" {
 		return "物品操作失败:缺少角色名或物品名"
 	}
+	_, _, _, callerHasQty := parseInventoryItem(item)
+	baseName := inventoryItemBaseName(item)
 	for i := range players {
 		card := &players[i].CharacterCard
 		if card.Name != characterName {
@@ -1253,13 +1326,39 @@ func manageInventory(players []models.SessionPlayer, characterName, operate, ite
 		}
 		list := card.Inventory.Data
 		if operate == "remove" {
-			list = removeString(list, item)
-			card.Inventory.Data = list
+			// Find the stored entry by base name.
+			foundIdx := -1
+			for j, stored := range list {
+				if inventoryItemBaseName(stored) == baseName {
+					foundIdx = j
+					break
+				}
+			}
+			if foundIdx < 0 {
+				return fmt.Sprintf("%s 物品栏中没有 %s", card.Name, baseName)
+			}
+			stored := list[foundIdx]
+			if !callerHasQty {
+				// xN omitted (bare name or Name(Desc)) → auto-decrement stored quantity by 1.
+				_, storedDesc, storedQty, _ := parseInventoryItem(stored)
+				if storedQty <= 1 {
+					card.Inventory.Data = append(list[:foundIdx], list[foundIdx+1:]...)
+					models.DB.Save(card)
+					return fmt.Sprintf("%s 失去物品:%s", card.Name, stored)
+				}
+				newItem := buildInventoryItem(baseName, storedDesc, storedQty-1)
+				list[foundIdx] = newItem
+				card.Inventory.Data = list
+				models.DB.Save(card)
+				return fmt.Sprintf("%s 物品数量减少:%s → %s", card.Name, stored, newItem)
+			}
+			// xN explicitly provided → remove the entry entirely.
+			card.Inventory.Data = append(list[:foundIdx], list[foundIdx+1:]...)
 			models.DB.Save(card)
-			return fmt.Sprintf("%s 失去物品:%s", card.Name, item)
+			return fmt.Sprintf("%s 失去物品:%s", card.Name, stored)
 		}
-		list = appendUniqueString(list, item)
-		card.Inventory.Data = list
+		// add: replace existing same-base-name entry to prevent duplicate inflation.
+		card.Inventory.Data = upsertInventoryItem(list, baseName, item)
 		models.DB.Save(card)
 		return fmt.Sprintf("%s 获得物品:%s", card.Name, item)
 	}

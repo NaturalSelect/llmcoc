@@ -496,15 +496,7 @@ func SeedShopItems() {
 			IsActive:    true,
 		},
 		{
-			Name:        "火焰枪(5次)",
-			Description: "重型火焰喷枪,群体伤害武器",
-			ItemType:    models.ItemTypeWeapon,
-			Price:       150,
-			Value:       1,
-			IsActive:    true,
-		},
-		{
-			Name:        "手榴弹(5枚)",
+			Name:        "手榴弹(x5)",
 			Description: "5枚军用手榴弹",
 			ItemType:    models.ItemTypeWeapon,
 			Price:       80,
@@ -513,22 +505,6 @@ func SeedShopItems() {
 		},
 
 		// 配件
-		{
-			Name:        "弹药包(手枪,50发)",
-			Description: "手枪弹药补充,50发装",
-			ItemType:    models.ItemTypeAccessory,
-			Price:       15,
-			Value:       1,
-			IsActive:    true,
-		},
-		{
-			Name:        "弹药包(步枪,100发)",
-			Description: "步枪弹药补充,100发装",
-			ItemType:    models.ItemTypeAccessory,
-			Price:       25,
-			Value:       1,
-			IsActive:    true,
-		},
 		{
 			Name:        "照相机",
 			Description: "便携式照相机,用于记录证据",
