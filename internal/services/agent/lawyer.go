@@ -12,6 +12,10 @@ import (
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
+// lawyerCache is a global LRU cache for final lawyer rulings.
+// Capacity: 1GB (extremely large fixed capacity)
+var lawyerCache = NewLawyerCache(1073741824) // 1GB in bytes
+
 var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通过调用工具来回答规则问题。
 每次输出必须是一个JSON数组,包含按顺序执行的工具调用列表。
 在使用 grep 之前优先考虑 read_rulebook_const 来获取规则书内置常量(如目录、怪物清单等),以减少搜索次数和提高准确率。
@@ -20,37 +24,45 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 ` + rulebook.RulebookDir + `
 
 【可用工具】
-1. grep — 在规则书中精确搜索关键词,返回匹配行及其上下文原文
-   [{"action":"grep","keyword":"精确关键词"}]
-   - 关键词须与规则书原文一致
-   示例: [{"action":"grep","keyword":"理智损失"}]
-   示例: [{"action":"grep","keyword":"san值"}]
-   示例: [{"action":"grep","keyword":"通神术"}]
-   示例: [{"action":"grep","keyword":"克苏鲁通神术"}]
-   示例: [{"action":"grep","keyword":"混血"}]
-   示例: [{"action":"grep","keyword":"非人类"}]
+1. ls_cache — 列出缓存中已有的所有规则查询结果
+	[{"action":"ls_cache"}]
+	- 返回缓存的所有规则问题和答案，如果有相同或类似的问题已被回答过，可直接使用cached答案
 
-2. read_rulebook_const — 读取规则书内置常量目录/列表,存在假阴性风险(但不存在假阳性)
+2. read_cache — 从缓存中读取已查询问题的规则裁定答案
+	[{"action":"read_cache","key":"问题内容"}]
+	- 用ls_cache的输出中找到的key，直接读取该问题的cached规则裁定
+	- 如果缓存中存在该问题的答案，无需再进行grep等搜索
+
+3. grep — 在规则书中精确搜索关键词,返回匹配行及其上下文原文
+	[{"action":"grep","keyword":"精确关键词"}]
+	- 关键词须与规则书原文一致
+	- 搜索结果仅用于本轮分析，不会被缓存
+
+4. read_rulebook_const — 读取规则书内置常量目录/列表,存在假阴性风险(但不存在假阳性)
 	[{"action":"read_rulebook_const","constant":"常量名"}]
 	- 常量名:rulebook_dir / rulebook_detail_dir / aliens / books / great_old_ones_and_gods / monsters / mythos_creatures / spells
+	- 结果仅用于本轮分析
 
-3. read_lines — 直接读取规则书的特定行号范围,适用于已知出处的规则查询
-   [{"action":"read_lines","start":100,"end":120}]
-   - 仅当 grep 已定位相关内容但需要完整上下文时使用
+5. read_lines — 直接读取规则书的特定行号范围,适用于已知出处的规则查询
+	[{"action":"read_lines","start":100,"end":120}]
+	- 仅当 grep 已定位相关内容但需要完整上下文时使用
+	- 结果仅用于本轮分析
 
-4. response — 给出最终规则裁定,结束本次查询
+6. response — 给出最终规则裁定,结束本次查询
    [{"action":"response","ruling":"规则裁定内容(100字以内)"}]
    - 直接引用关键规则数值和判定条件
    - 若原文未覆盖该问题,明确说明"规则书未明确规定"
+	- 该裁定会被自动缓存，下次相同问题可直接调用read_cache获得
 
 【执行规则】
 - 回复不能为空
-- 先调用 grep(至少一次,但可多次),再调用 response
-- 禁止不调用 grep 就进行 response, 不要自作主张
+- 优先使用缓存：先调用 ls_cache 查看是否有cached答案，有则用read_cache读取
+- 如果缓存中没有，才进行grep/read_rulebook_const/read_lines等搜索
+- 禁止在没有调用grep/read_cache/read_rulebook_const/read_lines的情况下就进行response
 - 谨慎判断意图，不要乱搜索，关键词不要乱给, 仔细检查每一个grep结果
 - 当需要目录、法术清单、怪物清单等静态信息时,可先调用 read_rulebook_const
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
-- 每轮只包含 grep 调用(可多个),或只包含单个 response,不混用
+- 每轮只包含 ls_cache/grep/read_cache/read_rulebook_const/read_lines 调用(可多个),或只包含单个 response,不混用
 - 仅输出JSON数组, 不加任何说明文字
 
 <rule>
@@ -69,6 +81,7 @@ type lawyerCall struct {
 	Constant string `json:"constant,omitempty"` // read_rulebook_const
 	Start    int    `json:"start,omitempty"`    // read_lines
 	End      int    `json:"end,omitempty"`      // read_lines
+	Key      string `json:"key,omitempty"`      // read_cache: cache key
 	Ruling   string `json:"ruling,omitempty"`   // response
 }
 
@@ -138,17 +151,52 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 		for _, c := range calls {
 			if c.Action == "response" && c.Ruling != "" {
 				debugf("Lawyer", "iter=%d response ruling=%s", iter+1, c.Ruling)
+				ruleText := strings.TrimSpace(c.Ruling)
+				// Cache the result
+				cacheKey := situation
+				lawyerCache.Set(cacheKey, ruleText)
+				debugf("Lawyer", "cached result for situation: %s", situation)
 				return []LawyerResult{{
 					Query:    situation,
-					RuleText: strings.TrimSpace(c.Ruling),
+					RuleText: ruleText,
 				}}
 			}
 		}
 
-		// ── grep/read_rulebook_const: execute and feed results back ─────────
+		// ── execute tool calls and feed results back ────────────────────────
 		var resultSB strings.Builder
 		for _, c := range calls {
 			switch c.Action {
+			case "ls_cache":
+				// List all cached final rulings with full keys for read_cache.
+				entries, usedBytes, maxBytes := lawyerCache.Stats()
+				debugf("Lawyer", "iter=%d ls_cache entries=%d used=%d/%d", iter+1, entries, usedBytes, maxBytes)
+				resultSB.WriteString(fmt.Sprintf("【ls_cache】\nCache Statistics: %d entries, using %d bytes (max %d bytes)\n", entries, usedBytes, maxBytes))
+
+				cacheKeys := lawyerCache.ListKeys()
+				if len(cacheKeys) > 0 {
+					resultSB.WriteString("Cached keys (use exact key with read_cache):\n")
+					for _, k := range cacheKeys {
+						resultSB.WriteString(fmt.Sprintf("  - %s\n", k))
+					}
+				} else {
+					resultSB.WriteString("Cache is empty.\n")
+				}
+				resultSB.WriteString("\n")
+
+			case "read_cache":
+				if c.Key == "" {
+					continue
+				}
+				debugf("Lawyer", "iter=%d read_cache key=%q", iter+1, c.Key)
+				if cached, ok := lawyerCache.Get(c.Key); ok {
+					resultSB.WriteString(fmt.Sprintf("【read_cache】\nCached result:\n%s\n\n", cached))
+					debugf("Lawyer", "cache hit for key: %s", c.Key)
+				} else {
+					resultSB.WriteString(fmt.Sprintf("【read_cache】\n(cache key not found: %s)\n\n", c.Key))
+					debugf("Lawyer", "cache miss for key: %s", c.Key)
+				}
+
 			case "grep":
 				if c.Keyword == "" {
 					continue
