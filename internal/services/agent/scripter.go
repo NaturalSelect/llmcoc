@@ -775,6 +775,11 @@ func chatAndParseDraft(ctx context.Context, generator agentHandle, parser agentH
 // schemaExample is a correct JSON example showing the expected structure.
 // Returns the repaired JSON string, or an error if repair fails.
 func RepairJSON(ctx context.Context, rawJSON string, parseErr error, schemaExample string) (string, error) {
+	if strings.HasPrefix(rawJSON, "```json") {
+		rawJSON = strings.TrimPrefix(rawJSON, "```json")
+		rawJSON = strings.TrimSuffix(rawJSON, "```")
+		return rawJSON, nil
+	}
 	parser, err := loadSingleAgent(models.AgentRoleParser)
 	if err != nil {
 		return "", fmt.Errorf("parser agent 未配置: %w", err)
