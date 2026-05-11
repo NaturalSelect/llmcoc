@@ -229,7 +229,12 @@ func (updateCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolR
 type manageInventoryAction struct{}
 
 func (manageInventoryAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	result := manageInventory(actx.GCtx.Session.Players, call.CharacterName, call.Operate, call.Item)
+	item := call.Item
+	if call.ItemName != "" {
+		// Assemble canonical "Name(Desc, xN)" from structured fields.
+		item = buildInventoryItem(call.ItemName, call.ItemDesc, max(1, call.ItemCount))
+	}
+	result := manageInventory(actx.GCtx.Session.Players, call.CharacterName, call.Operate, item)
 	return []ToolResult{{Action: ToolManageInventory, Result: result}}
 }
 

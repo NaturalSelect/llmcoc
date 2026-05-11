@@ -88,7 +88,10 @@ type ToolCall struct {
 	Changes       []string               `json:"changes,omitempty"`        // update_characters: 状态变化列表
 	CharacterName string                 `json:"character_name,omitempty"` // trigger_madness / query_character: 角色名称
 	Operate       string                 `json:"operate,omitempty"`        // 通用操作: add/remove
-	Item          string                 `json:"item,omitempty"`           // manage_inventory: 物品名称
+	Item          string                 `json:"item,omitempty"`           // manage_inventory: 物品名称(仅保留兼容,优先使用 item_name+item_desc+item_count)
+	ItemName      string                 `json:"item_name,omitempty"`      // manage_inventory: 物品基础名称
+	ItemDesc      string                 `json:"item_desc,omitempty"`      // manage_inventory: 物品状态描述(可选)
+	ItemCount     int                    `json:"item_count,omitempty"`     // manage_inventory: 物品数量(省略或0均视为1)
 	Monster       string                 `json:"monster,omitempty"`        // record_monster: 神话存在名称
 	Spell         string                 `json:"spell,omitempty"`          // manage_spell: 法术名称
 	Relation      *models.SocialRelation `json:"relation,omitempty"`       // manage_relation: 社会关系条目
