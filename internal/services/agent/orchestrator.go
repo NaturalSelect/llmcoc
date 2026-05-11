@@ -252,6 +252,30 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 
 		switchInThisBatch := false
+
+		// Guard against the KP including a response/end_game in the same batch as
+		// any tool that returns results the KP needs to see first.
+		// Only responseCompatibleActions may share a batch with response.
+		// If violated, reject the ENTIRE batch and force the KP to retry.
+		hasResponse := false
+		hasNonCompatible := false
+		for _, call := range calls {
+			if call.Action == ToolResponse || call.Action == ToolEndGame {
+				hasResponse = true
+			}
+			if !responseCompatibleActions[call.Action] {
+				hasNonCompatible = true
+			}
+		}
+		if hasResponse && hasNonCompatible {
+			debugf("KP", "session=%d iter=%d rejecting entire batch: response mixed with result-producing tools", sid, iter+1)
+			kpMsgs = append(kpMsgs, llm.ChatMessage{
+				Role:    "user",
+				Content: "SYSTEM REJECT: your entire batch was rejected. response/end_game must be the ONLY action in a batch (except write/hint/introspection/think/update_llm_note). Split into two batches: first call the result-producing tools, then after reading the results call response separately.",
+			})
+			continue
+		}
+
 		for _, call := range calls {
 			if ctx.Err() != nil {
 				return RunOutput{}, ctx.Err()

@@ -46,6 +46,24 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolQueryClues:        true,
 	ToolQueryCharacter:    true,
 	ToolQueryNPCCard:      true,
+	ToolActNPC:            true, // returns NPC reaction that must be read before response
+	ToolNPCAct:            true, // same
+}
+
+// responseCompatibleActions is the set of actions that MAY coexist with
+// response/end_game in the same batch (they don't return results the KP needs
+// to read before concluding the turn).
+var responseCompatibleActions = map[ToolCallType]bool{
+	ToolResponse:         true,
+	ToolEndGame:          true,
+	ToolWrite:            true,
+	ToolHint:             true,
+	ToolIntrospection:    true,
+	ToolThink:            true,
+	ToolUpdateLLMNote:    true,
+	ToolUpdateNPCLLMNote: true,
+	ToolReport:           true,
+	ToolYield:            true,
 }
 
 // actionRegistry maps each ToolCallType to its handler.
