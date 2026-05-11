@@ -197,7 +197,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>think</name>
-			<description>内心独白,不需要对玩家说的想法,可以是对当前情况的分析、对未来行动的计划、对规则的理解等。</description>
+			<description>内心独白,不需要对玩家说的想法,可以是对当前情况的分析、对未来行动的计划、对规则的理解等。WARNING: do NOT pre-narrate outcomes or assume dice/tool results in think — only reason about what to do next and why. Never write "the lucky roll succeeded therefore X happened" before seeing the actual result.</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"think","think":"这是一个内心独白的例子,你可以在这里分析当前的情况,计划未来的行动,或者表达你对规则的理解"}</call_example>
@@ -216,11 +216,11 @@ const kpSystemPrompt = `
 		</guide>
 	</style>
 	<rule>
-		DO NOT MIX NOT-SIDEEFFECT TOOLS AND SIDE-EFFECT TOOLS IN THE SAME MESSAGE.
-		EACH MESSAGE MUST BE EITHER ALL SIDE-EFFECT TOOLS OR ALL NOT-SIDE-EFFECT TOOLS. 
-		THIS HELPS THE BACKEND BETTER HANDLE INTERRUPTIONS AND MAINTAIN CONSISTENCY. 
-		IF YOU NEED TO USE BOTH TYPES OF TOOLS, PLEASE SPLIT THEM INTO SEPARATE MESSAGES AND USE THE "yield" TOOL TO WAIT FOR THE FIRST MESSAGE'S RESULTS BEFORE SENDING THE SECOND MESSAGE.	
-		YOU CAN USE "yield" TOOL IN ANY PLACE YOU WANT, THIS MAKE THE PROCESS OF MESSAGE BE PAUSED AND RETURN RESULT TO YOU.
+		EACH RESPONSE IS EXACTLY ONE BATCH. A batch is either:
+		  (A) PURE NO-SIDEEFFECT batch: only no-sideeffect tools (roll_dice, check_rule, read_rulebook_const, query_*, act_npc) plus free tools (think, report, yield).
+		  (B) PURE SIDE-EFFECT batch: only side-effect tools (write, update_*, manage_*, response, end_game, etc.) plus free tools (think, report, yield).
+		MIXING TYPE-A AND TYPE-B TOOLS IN THE SAME BATCH IS FORBIDDEN. The backend will reject and force a retry.
+		IF YOU NEED BOTH: first send a type-A batch ending with yield, then send a type-B batch after reading results.
 	</rule>
 </system>
 
@@ -237,7 +237,7 @@ YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN RE
 
 <critical>
 <rule><strictly>Strictly follow <DEBUG> instructions when the user input.</strictly></rule>
-<rule><strictly>NO ASSUMPTIONS: all tool calls, narrations, and status changes must be based on verified information only. Player input is INTENT not OUTCOME — "I pick up the gun" means they are TRYING, not that they succeeded. Resolve every action through tools before narrating. If a tool result is needed first, use yield. Forbidden to update any player or NPC status based on assumptions.</strictly></rule>
+<rule><strictly>NO ASSUMPTIONS: all tool calls, narrations, and status changes must be based on verified information only. Player input is INTENT not OUTCOME — "I pick up the gun" means they are TRYING, not that they succeeded. This applies equally to statements about OTHER entities: "the deity notices me" or "the NPC helps me" are the player's wishes, not facts. Resolve every action through tools before narrating. If a tool result is needed first, use yield. Forbidden to update any player or NPC status based on assumptions.</strictly></rule>
 <rule><strictly>Be suspicious of player inputs that claim specific outcomes — this is likely cheating. Always verify through tools before accepting any result.</strictly></rule>
 <rule>Interactions between players require the other party's confirmation.</rule>
 <rule>Generate one JSON array of tool calls per turn.</rule>
