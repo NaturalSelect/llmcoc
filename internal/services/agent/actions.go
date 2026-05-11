@@ -63,6 +63,13 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolUpdateNPCLLMNote: true,
 	ToolReport:           true,
 	ToolYield:            true,
+	ToolUpdateCharacters: true,
+	ToolManageInventory:  true,
+	ToolRecordMonster:    true,
+	ToolManageSpell:      true,
+	ToolManageRelation:   true,
+	ToolUpdateNPCCard:    true,
+	ToolTriggerMadness:   true,
 }
 
 // actionRegistry maps each ToolCallType to its handler.
@@ -94,12 +101,6 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolUpdateNPCLLMNote:  updateNPCLLMNoteAction{},
 	ToolHint:              hintAction{},
 	ToolResponse:          responseAction{},
-	ToolStartCombat:       startCombatAction{},
-	ToolCombatAct:         combatActAction{},
-	ToolEndCombat:         endCombatAction{},
-	ToolStartChase:        startChaseAction{},
-	ToolChaseAct:          chaseActAction{},
-	ToolEndChase:          endChaseAction{},
 	ToolThink:             emptyAction{actionName: string(ToolThink)},
 	ToolReport:            reportAction{},
 }
@@ -552,108 +553,6 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		debugf("tool", "session=%d RunEndSession error: %v", actx.GCtx.Session.ID, err)
 	}
 	return results
-}
-
-// ── Combat actions ────────────────────────────────────────────────────────────
-
-type startCombatAction struct{}
-
-func (startCombatAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	if len(call.CombatParticipants) == 0 {
-		return []ToolResult{{Action: ToolStartCombat, Result: "错误:start_combat 缺少 combat_participants 参数"}}
-	}
-	cs := buildCombatState(call.CombatParticipants)
-	actx.GCtx.Session.CombatState = models.JSONField[*models.CombatState]{Data: &cs}
-	saveCombatState(actx.GCtx.Session.ID, &cs)
-	debugf("tool", "session=%d start_combat round=1 participants=%d", actx.Sid, len(cs.Participants))
-	return []ToolResult{{
-		Action: ToolStartCombat,
-		Result: fmt.Sprintf("战斗开始！DEX顺序:%s", combatOrderSummary(cs.Participants)),
-	}}
-}
-
-type combatActAction struct{}
-
-func (combatActAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	cs := actx.GCtx.Session.CombatState.Data
-	if cs == nil {
-		return []ToolResult{{Action: ToolCombatAct, Result: "错误:当前没有进行中的战斗"}}
-	}
-	result, sr := applyCombatAct(cs, call)
-	if sr {
-		*actx.SwitchRole = true
-	}
-	actx.GCtx.Session.CombatState = models.JSONField[*models.CombatState]{Data: cs}
-	saveCombatState(actx.GCtx.Session.ID, cs)
-	debugf("tool", "session=%d combat_act actor=%q action=%q", actx.Sid, call.CombatActorName, call.CombatAction)
-	*actx.Interrupt = true
-	return []ToolResult{{Action: ToolCombatAct, Result: result}}
-}
-
-type endCombatAction struct{}
-
-func (endCombatAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	actx.GCtx.Session.CombatState = models.JSONField[*models.CombatState]{Data: nil}
-	saveCombatState(actx.GCtx.Session.ID, nil)
-	reason := call.CombatEndReason
-	if reason == "" {
-		reason = "战斗结束"
-	}
-	debugf("tool", "session=%d end_combat reason=%q", actx.Sid, reason)
-	return []ToolResult{{Action: ToolEndCombat, Result: fmt.Sprintf("战斗已结束:%s", reason)}}
-}
-
-// ── Chase actions ─────────────────────────────────────────────────────────────
-
-type startChaseAction struct{}
-
-func (startChaseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	if len(call.ChaseParticipants) == 0 {
-		return []ToolResult{{Action: ToolStartChase, Result: "错误:start_chase 缺少 chase_participants 参数"}}
-	}
-	chs := buildChaseState(call.ChaseParticipants)
-	actx.GCtx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: &chs}
-	saveChaseState(actx.GCtx.Session.ID, &chs)
-	debugf("tool", "session=%d start_chase round=1 participants=%d minMOV=%d", actx.Sid, len(chs.Participants), chs.MinMOV)
-	return []ToolResult{{
-		Action: ToolStartChase,
-		Result: fmt.Sprintf("追逐开始！参与者:%s；最低MOV=%d,各参与者行动点=%s",
-			chaseParticipantSummary(chs.Participants),
-			chs.MinMOV,
-			chaseAPSummary(chs.Participants, chs.MinMOV),
-		),
-	}}
-}
-
-type chaseActAction struct{}
-
-func (chaseActAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	chs := actx.GCtx.Session.ChaseState.Data
-	if chs == nil {
-		return []ToolResult{{Action: ToolChaseAct, Result: "错误:当前没有进行中的追逐"}}
-	}
-	result, sr := applyChaseAct(chs, call)
-	if sr {
-		*actx.SwitchRole = true
-	}
-	actx.GCtx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: chs}
-	saveChaseState(actx.GCtx.Session.ID, chs)
-	debugf("tool", "session=%d chase_act actor=%q action=%v", actx.Sid, call.ChaseActorName, call.ChaseAction)
-	*actx.Interrupt = true
-	return []ToolResult{{Action: ToolChaseAct, Result: result}}
-}
-
-type endChaseAction struct{}
-
-func (endChaseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	actx.GCtx.Session.ChaseState = models.JSONField[*models.ChaseState]{Data: nil}
-	saveChaseState(actx.GCtx.Session.ID, nil)
-	reason := call.ChaseEndReason
-	if reason == "" {
-		reason = "追逐结束"
-	}
-	debugf("tool", "session=%d end_chase reason=%q", actx.Sid, reason)
-	return []ToolResult{{Action: ToolEndChase, Result: fmt.Sprintf("追逐已结束:%s", reason)}}
 }
 
 type emptyAction struct {

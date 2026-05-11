@@ -59,18 +59,8 @@ const (
 	ToolHint              ToolCallType = "hint"                // KP写入当前场景高密度提示
 	ToolResponse          ToolCallType = "response"            // 结束本轮并给出回复
 	ToolYield             ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
-
-	// ── Combat tools ──────────────────────────────────────────────────────────
-	ToolStartCombat ToolCallType = "start_combat" // 开始战斗,初始化战斗状态
-	ToolCombatAct   ToolCallType = "combat_act"   // 宣告本轮行动者的战斗行动
-	ToolEndCombat   ToolCallType = "end_combat"   // 结束战斗,清除战斗状态
-
-	// ── Chase tools ───────────────────────────────────────────────────────────
-	ToolStartChase ToolCallType = "start_chase" // 开始追逐,初始化追逐状态
-	ToolChaseAct   ToolCallType = "chase_act"   // 宣告本轮追逐行动(移动/险境/障碍/冲突)
-	ToolEndChase   ToolCallType = "end_chase"   // 结束追逐,清除追逐状态
-	ToolThink      ToolCallType = "think"       // 内心独白,不需要对玩家说的想法
-	ToolReport     ToolCallType = "report"      // 向管理系统自首
+	ToolThink             ToolCallType = "think"               // 内心独白,不需要对玩家说的想法
+	ToolReport            ToolCallType = "report"              // 向管理系统自首
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
