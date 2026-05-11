@@ -70,6 +70,7 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolManageRelation:   true,
 	ToolUpdateNPCCard:    true,
 	ToolTriggerMadness:   true,
+	ToolAdvanceTime:      true,
 }
 
 // actionRegistry maps each ToolCallType to its handler.
