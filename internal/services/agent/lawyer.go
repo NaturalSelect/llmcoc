@@ -24,16 +24,12 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 ` + rulebook.RulebookDir + `
 
 【可用工具】
-1. ls_cache — 列出缓存中已有的所有规则查询结果
-	[{"action":"ls_cache"}]
-	- 返回缓存的所有规则问题和答案，如果有相同或类似的问题已被回答过，可直接使用cached答案
+1. search_cache — 在缓存中模糊搜索与当前问题相关的已有裁定(返回最多3条最相关结果,含完整裁定内容)
+	[{"action":"search_cache","keyword":"用于匹配的关键词"}]
+	- 若返回结果与当前问题高度相关,可直接引用其裁定并输出 response,无需再搜索规则书
+	- 若无相关结果,再进行grep等搜索
 
-2. read_cache — 从缓存中读取已查询问题的规则裁定答案
-	[{"action":"read_cache","key":"问题内容"}]
-	- 用ls_cache的输出中找到的key，直接读取该问题的cached规则裁定
-	- 如果缓存中存在该问题的答案，无需再进行grep等搜索
-
-3. grep — 在规则书中精确搜索关键词,返回匹配行及其上下文原文
+2. grep — 在规则书中精确搜索关键词,返回匹配行及其上下文原文
 	[{"action":"grep","keyword":"精确关键词"}]
 	- 关键词须与规则书原文一致
 	- 搜索结果仅用于本轮分析，不会被缓存
@@ -56,13 +52,14 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 
 【执行规则】
 - 回复不能为空
-- 优先使用缓存：先调用 ls_cache 查看是否有cached答案，有则用read_cache读取
-- 如果缓存中没有，才进行grep/read_rulebook_const/read_lines等搜索
-- 禁止在没有调用grep/read_cache/read_rulebook_const/read_lines的情况下就进行response
+- **第一轮必须且只能调用 search_cache**，不得跳过，不得在第一轮输出任何其他工具或response
+- 若 search_cache 返回了高度相关的缓存裁定，直接引用并输出 response，不再进行任何搜索
+- 只有缓存完全未命中时，才允许进行grep/read_rulebook_const/read_lines等搜索
+- 禁止在没有调用grep/search_cache/read_rulebook_const/read_lines的情况下就进行response
 - 谨慎判断意图，不要乱搜索，关键词不要乱给, 仔细检查每一个grep结果
 - 当需要目录、法术清单、怪物清单等静态信息时,可先调用 read_rulebook_const
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
-- 每轮只包含 ls_cache/grep/read_cache/read_rulebook_const/read_lines 调用(可多个),或只包含单个 response,不混用
+- 每轮只包含 search_cache/grep/read_rulebook_const/read_lines 调用(可多个),或只包含单个 response,不混用
 - 仅输出JSON数组, 不加任何说明文字
 
 <rule>
@@ -72,16 +69,16 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 - Remember, your output must be a valid JSON array that can be parsed without errors.
 - You cannot output any MARKDOWN or other formatting(expect JSON).
 - The final result must be provided through the "response" action, and you should not provide any conclusions or answers without using the specified tool calls.
+- YOUR VERY FIRST OUTPUT MUST BE [{"action":"search_cache","keyword":"..."}] AND NOTHING ELSE. Fill keyword with the most relevant terms from the question. This is mandatory and cannot be skipped under any circumstance.
 </rule>`
 
 // lawyerCall is one item in the Lawyer's tool-call output sequence.
 type lawyerCall struct {
 	Action   string `json:"action"`
-	Keyword  string `json:"keyword,omitempty"`  // grep
+	Keyword  string `json:"keyword,omitempty"`  // grep / search_cache
 	Constant string `json:"constant,omitempty"` // read_rulebook_const
 	Start    int    `json:"start,omitempty"`    // read_lines
 	End      int    `json:"end,omitempty"`      // read_lines
-	Key      string `json:"key,omitempty"`      // read_cache: cache key
 	Ruling   string `json:"ruling,omitempty"`   // response
 }
 
@@ -98,11 +95,17 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 		return nil
 	}
 
+	// Fast path: check the Go-level cache before involving the LLM at all.
+	if cached, ok := lawyerCache.Get(situation); ok {
+		debugf("Lawyer", "cache hit (Go-level) for situation: %s", situation)
+		return []LawyerResult{{Query: situation, RuleText: cached}}
+	}
+
 	debugf("Lawyer", "question=%s", situation)
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(lawyerSystemPrompt)},
-		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。"},
+		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。\n**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"<此处填写与问题最相关的关键词>\"}]，不得包含其他任何工具调用。**"},
 	}
 
 	const maxIter = 30
@@ -167,34 +170,18 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 		var resultSB strings.Builder
 		for _, c := range calls {
 			switch c.Action {
-			case "ls_cache":
-				// List all cached final rulings with full keys for read_cache.
-				entries, usedBytes, maxBytes := lawyerCache.Stats()
-				debugf("Lawyer", "iter=%d ls_cache entries=%d used=%d/%d", iter+1, entries, usedBytes, maxBytes)
-				resultSB.WriteString(fmt.Sprintf("【ls_cache】\nCache Statistics: %d entries, using %d bytes (max %d bytes)\n", entries, usedBytes, maxBytes))
-
-				cacheKeys := lawyerCache.ListKeys()
-				if len(cacheKeys) > 0 {
-					resultSB.WriteString("Cached keys (use exact key with read_cache):\n")
-					for _, k := range cacheKeys {
-						resultSB.WriteString(fmt.Sprintf("  - %s\n", k))
+			case "search_cache":
+				query := strings.TrimSpace(c.Keyword)
+				debugf("Lawyer", "iter=%d search_cache query=%q", iter+1, query)
+				matches := lawyerCache.Search(query, 3)
+				if len(matches) == 0 {
+					resultSB.WriteString("[搜索缓存] 未找到相关缓存裁定。\n\n")
+				} else {
+					resultSB.WriteString(fmt.Sprintf("[搜索缓存] 找到 %d 条相关裁定：\n", len(matches)))
+					for i, m := range matches {
+						resultSB.WriteString(fmt.Sprintf("%d. 问题：%s\n   裁定：%s\n", i+1, m.Key, m.Ruling))
 					}
-				} else {
-					resultSB.WriteString("Cache is empty.\n")
-				}
-				resultSB.WriteString("\n")
-
-			case "read_cache":
-				if c.Key == "" {
-					continue
-				}
-				debugf("Lawyer", "iter=%d read_cache key=%q", iter+1, c.Key)
-				if cached, ok := lawyerCache.Get(c.Key); ok {
-					resultSB.WriteString(fmt.Sprintf("【read_cache】\nCached result:\n%s\n\n", cached))
-					debugf("Lawyer", "cache hit for key: %s", c.Key)
-				} else {
-					resultSB.WriteString(fmt.Sprintf("【read_cache】\n(cache key not found: %s)\n\n", c.Key))
-					debugf("Lawyer", "cache miss for key: %s", c.Key)
+					resultSB.WriteString("\n")
 				}
 
 			case "grep":

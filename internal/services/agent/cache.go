@@ -2,6 +2,7 @@ package agent
 
 import (
 	"container/list"
+	"strings"
 	"sync"
 )
 
@@ -139,4 +140,57 @@ func (lc *LawyerCache) ListKeys() []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// CacheMatch is one result returned by Search.
+type CacheMatch struct {
+	Key    string
+	Ruling string
+	Score  int // number of query tokens matched
+}
+
+// Search returns up to topK cached entries whose keys contain the most query
+// tokens (case-insensitive substring match). Entries are ordered by score desc.
+func (lc *LawyerCache) Search(query string, topK int) []CacheMatch {
+	if query == "" || topK <= 0 {
+		return nil
+	}
+	tokens := strings.Fields(strings.ToLower(query))
+	if len(tokens) == 0 {
+		return nil
+	}
+
+	lc.mu.RLock()
+	defer lc.mu.RUnlock()
+
+	var matches []CacheMatch
+	for k, elem := range lc.cache {
+		lk := strings.ToLower(k)
+		score := 0
+		for _, t := range tokens {
+			if strings.Contains(lk, t) {
+				score++
+			}
+		}
+		if score == 0 {
+			continue
+		}
+		node := elem.Value.(*cacheNode)
+		matches = append(matches, CacheMatch{Key: k, Ruling: node.value, Score: score})
+	}
+	// Sort by score descending, then key ascending for determinism.
+	for i := 1; i < len(matches); i++ {
+		for j := i; j > 0; j-- {
+			a, b := matches[j-1], matches[j]
+			if a.Score < b.Score || (a.Score == b.Score && a.Key > b.Key) {
+				matches[j-1], matches[j] = matches[j], matches[j-1]
+			} else {
+				break
+			}
+		}
+	}
+	if len(matches) > topK {
+		return matches[:topK]
+	}
+	return matches
 }
