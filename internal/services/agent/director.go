@@ -389,10 +389,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 				return "debug"
 			}
 		}
-		if len([]rune(s)) > 30 {
-			return "input_maybeCheat"
-		}
-		return "input"
+		return "intent"
 	}
 	if len(gctx.PendingActions) > 1 {
 		userSB.WriteString("\nMultiple Players Ask:\n")
