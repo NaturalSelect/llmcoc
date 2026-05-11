@@ -58,7 +58,6 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolEndGame:          true,
 	ToolWrite:            true,
 	ToolHint:             true,
-	ToolIntrospection:    true,
 	ToolThink:            true,
 	ToolUpdateLLMNote:    true,
 	ToolUpdateNPCLLMNote: true,
@@ -101,10 +100,8 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolStartChase:        startChaseAction{},
 	ToolChaseAct:          chaseActAction{},
 	ToolEndChase:          endChaseAction{},
-	ToolIntrospection:     emptyAction{actionName: string(ToolIntrospection)},
 	ToolThink:             emptyAction{actionName: string(ToolThink)},
 	ToolReport:            reportAction{},
-	ToolAntiCheat:         emptyAction{actionName: string(ToolAntiCheat)},
 }
 
 // ── Rule / lookup actions ─────────────────────────────────────────────────────

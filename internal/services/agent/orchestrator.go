@@ -166,8 +166,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	switchRole := false
 
-	hasIntrospection := false
-
 	pendingWrite := ""
 
 	// warnning := "YOU DONOT FOLLOW THE RULES, THIS ABUSE IS RECORDED BY MONITOR SYSTEM.\n"
@@ -198,12 +196,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			continue
 		}
 
-		for _, call := range calls {
-			if call.Action == ToolIntrospection {
-				hasIntrospection = true
-			}
-		}
-
 		// LLM 的结果加回去
 		// Record what the KP decided so the next iteration has proper context.
 		truncStr := func(s string, max int) string {
@@ -223,13 +215,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			return string(data)
 		}
 		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
-
-		if !hasIntrospection {
-			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "system", Content: "ERROR: NOT FOLLOW THE RULES, YOU MUST USE THE INTROSPECTION TOOL BEFORE YOUR ANY TOOL CALL."})
-			iter--
-			debugf("kp", "no follow rule session %v", gctx.Session.ID)
-			continue
-		}
 
 		var toolResults []ToolResult
 		hasEnd := false

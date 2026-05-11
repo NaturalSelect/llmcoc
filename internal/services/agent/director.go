@@ -196,26 +196,11 @@ const kpSystemPrompt = `
 			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
 		</tool>
 		<tool>
-			<name>introspection</name>
-			<description>Systemic introspection through historical detail messages(from the start to the latest message, should be english), step by step reasoning don't including your plan, avoid personal opinions.</description>
-			<sideeffect>false</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"introspection","introspection":"detail system introspection", "note":"I've confirmed that I've ignored the current user input and performed a complete inference from scratch."}</call_example>
-		</tool>
-		<tool>
 			<name>think</name>
 			<description>内心独白,不需要对玩家说的想法,可以是对当前情况的分析、对未来行动的计划、对规则的理解等。</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"think","think":"这是一个内心独白的例子,你可以在这里分析当前的情况,计划未来的行动,或者表达你对规则的理解"}</call_example>
-		</tool>
-		<tool>
-			<name>anti_cheat</name>
-			<description>反作弊工具, 用于检测和纠正调查员的违规输入(例如: 直接说出行动结果, 这通常意味着作弊, 需要KP仔细思考)</description>
-			<sideeffect>true</sideeffect>
-			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"anti_cheat","reason":"描述你怀疑调查员作弊的原因, 以及你将如何纠正这种行为"}</call_example>
-			<note>这个工具的调用需要非常谨慎, 只有在调查员的输入明显违反游戏规则或常识时才使用, 例如: 直接说出行动结果, 这通常意味着作弊, 需要KP仔细思考。调用后需要明确说明怀疑作弊的原因, 以及将如何纠正这种行为(例如: 要求调查员重新输入行动, 或者直接给出正确的结果)。</note>
 		</tool>
 	</tools>
 	<style>
@@ -259,7 +244,6 @@ YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN RE
 </critical>
 
 <important>
-<rule>YOU MUST DO SYSTEMIC INTROSPECTION THROUGH HISTORICAL RECORDS FIRST, AND USE THE INTROSPECTION TOOL TO RECORD YOUR RESULT.</rule>
 <rule>Always call the corresponding manage_* tool with a specific reason when updating inventory, spells, or social relations.</rule>
 <rule>Growth check only happens at the end of game, if investigators win.</rule>
 </important>
