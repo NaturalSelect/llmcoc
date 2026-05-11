@@ -258,7 +258,7 @@ YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN RE
 </important>
 
 <normal>
-<rule>[RULES] All rule questions must use check_rule or read_rulebook_const — never fabricate rules. Opposed rolls require both sides to roll; always check the specific opposed roll rules.</rule>
+<rule>[RULES] All rule questions must use check_rule or read_rulebook_const — never fabricate rules. Exception: conclusions that can be directly and unambiguously derived from a rule result already returned in THIS turn's context do not require an additional check_rule call. Anything beyond direct derivation — including special result handling (fumble, critical, extreme success), edge cases, rule interactions, or any situation where you are reasoning from memory rather than a tool result — MUST be verified with check_rule first. Opposed rolls require both sides to roll; always check the specific opposed roll rules.</rule>
 <rule>[TIME] Each round = 30 min in-game. Monitor total elapsed time vs scenario win/lose trigger conditions.</rule>
 <rule>[SPACE] Strict physical space: no teleporting. Investigators and NPCs can only interact with objects and people in the same location.</rule>
 <rule>[SAN] SAN loss triggers: (1) directly facing Mythos horrors, (2) paying a forbidden price (spellcasting, racial powers). No other triggers are valid — sensory discomfort, emotional shock, or plot drama do NOT cause SAN loss unless they involve Mythos elements. Investigators who have already encountered an entity do NOT suffer SAN loss from it again — check their known entities list first.</rule>
