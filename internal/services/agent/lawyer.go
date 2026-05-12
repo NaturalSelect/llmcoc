@@ -24,8 +24,8 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 ` + rulebook.RulebookDir + `
 
 【可用工具】
-1. search_cache — 在缓存中模糊搜索与当前问题相关的已有裁定(返回最多3条最相关结果,含完整裁定内容)
-	[{"action":"search_cache","keyword":"用于匹配的关键词"}]
+1. search_cache — 在缓存中搜索与当前问题相关的已有裁定(返回最多3条最相关结果,含完整裁定内容)
+	[{"action":"search_cache","keyword":"用于匹配的单个关键词"}]
 	- 若返回结果与当前问题高度相关,可直接引用其裁定并输出 response,无需再搜索规则书
 	- 若无相关结果,再进行grep等搜索
 
