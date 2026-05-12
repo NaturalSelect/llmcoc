@@ -36,10 +36,8 @@ const (
 	ToolCheckRule         ToolCallType = "check_rule"          // 查阅规则书
 	ToolReadRulebookConst ToolCallType = "read_rulebook_const" // 读取规则书常量目录/列表
 	ToolRollDice          ToolCallType = "roll_dice"           // 骰子检定
-	ToolNPCAct            ToolCallType = "npc_act"             // NPC行动
 	ToolCreateNPC         ToolCallType = "create_npc"          // 创建临时NPC
 	ToolDestroyNPC        ToolCallType = "destroy_npc"         // 销毁临时NPC
-	ToolDestoryNPC        ToolCallType = "destory_npc"         // 兼容拼写错误: destroy_npc
 	ToolActNPC            ToolCallType = "act_npc"             // 与指定NPC对话并获取反应
 	ToolUpdateCharacters  ToolCallType = "update_characters"   // 更新角色状态
 	ToolManageInventory   ToolCallType = "manage_inventory"    // 角色物品增删

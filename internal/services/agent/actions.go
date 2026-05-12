@@ -47,7 +47,6 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolQueryCharacter:    true,
 	ToolQueryNPCCard:      true,
 	ToolActNPC:            true, // returns NPC reaction that must be read before response
-	ToolNPCAct:            true, // same
 }
 
 // responseCompatibleActions is the set of actions that MAY coexist with
@@ -71,6 +70,7 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolUpdateNPCCard:    true,
 	ToolTriggerMadness:   true,
 	ToolAdvanceTime:      true,
+	ToolDestroyNPC:       true,
 }
 
 // actionRegistry maps each ToolCallType to its handler.
@@ -79,11 +79,9 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolCheckRule:         checkRuleAction{},
 	ToolReadRulebookConst: readRulebookConstAction{},
 	ToolRollDice:          rollDiceAction{},
-	ToolNPCAct:            npcActAction{},
 	ToolActNPC:            actNPCAction{},
 	ToolCreateNPC:         createNPCAction{},
 	ToolDestroyNPC:        destroyNPCAction{},
-	ToolDestoryNPC:        destroyNPCAction{}, // compat alias
 	ToolUpdateCharacters:  updateCharactersAction{},
 	ToolManageInventory:   manageInventoryAction{},
 	ToolRecordMonster:     recordMonsterAction{},
@@ -141,27 +139,6 @@ func (rollDiceAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	dcr := executeSingleDiceCheck(*call.Dice, actx.GCtx.Session.Players)
 	debugf("tool", "session=%d roll_dice result=%s", actx.Sid, formatSingleDiceResult(dcr))
 	return []ToolResult{{Action: ToolRollDice, Result: formatSingleDiceResult(dcr)}}
-}
-
-// ── NPC actions ───────────────────────────────────────────────────────────────
-
-type npcActAction struct{}
-
-func (npcActAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	question := call.Question
-	if question == "" {
-		question = call.NPCCtx
-	}
-	debugf("tool", "session=%d npc_act npc=%q question=%s", actx.Sid, call.NPCName, question)
-	doneNPC := timedDebug("NPC", "session=%d npc=%s", actx.Sid, call.NPCName)
-	action, npcErr := actNPC(actx.Ctx, actx.Handles[models.AgentRoleNPC], *actx.GCtx, call.NPCName, question, *actx.TempNPCs)
-	doneNPC()
-	if npcErr != nil {
-		log.Printf("[agent] NPC %q error: %v", call.NPCName, npcErr)
-	}
-	debugf("tool", "session=%d npc_act result=%s", actx.Sid, formatNPCAction(action))
-	*actx.Interrupt = true
-	return []ToolResult{{Action: ToolNPCAct, Result: formatNPCAction(action)}}
 }
 
 type actNPCAction struct{}
