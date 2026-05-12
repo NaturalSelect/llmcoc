@@ -116,9 +116,9 @@ func deleteCachedAgents(sessionID uint) {
 }
 
 func ClearAllCachedAgents() {
-	agents := make([]int, 0)
+	agents := make([]uint, 0)
 	sessionAgents.Range(func(key, value any) bool {
-		agents = append(agents, key.(int))
+		agents = append(agents, key.(uint))
 		return true
 	})
 	for _, id := range agents {
