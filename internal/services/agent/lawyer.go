@@ -45,10 +45,10 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	- 结果仅用于本轮分析
 
 6. response — 给出最终规则裁定,结束本次查询
-   [{"action":"response","ruling":"规则裁定内容(100字以内)"}]
+   [{"action":"response","cache_key":"简洁的规则主题(用于未来检索,如'大失败重试规则'、'左轮手枪伤害')","ruling":"规则裁定内容(100字以内)"}]
    - 直接引用关键规则数值和判定条件
    - 若原文未覆盖该问题,明确说明"规则书未明确规定"
-	- 该裁定会被自动缓存，下次相同问题可直接调用read_cache获得
+	- cache_key必填,用简洁的规则主题命名,方便下次search_cache检索命中
 
 【执行规则】
 - 回复不能为空
@@ -75,11 +75,12 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 // lawyerCall is one item in the Lawyer's tool-call output sequence.
 type lawyerCall struct {
 	Action   string `json:"action"`
-	Keyword  string `json:"keyword,omitempty"`  // grep / search_cache
-	Constant string `json:"constant,omitempty"` // read_rulebook_const
-	Start    int    `json:"start,omitempty"`    // read_lines
-	End      int    `json:"end,omitempty"`      // read_lines
-	Ruling   string `json:"ruling,omitempty"`   // response
+	Keyword  string `json:"keyword,omitempty"`   // grep / search_cache
+	Constant string `json:"constant,omitempty"`  // read_rulebook_const
+	Start    int    `json:"start,omitempty"`     // read_lines
+	End      int    `json:"end,omitempty"`       // read_lines
+	CacheKey string `json:"cache_key,omitempty"` // response: agent-chosen cache key
+	Ruling   string `json:"ruling,omitempty"`    // response
 }
 
 // runLawyer is an autonomous rule consultant that mirrors the Director's tool-call loop.
@@ -155,10 +156,13 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 			if c.Action == "response" && c.Ruling != "" {
 				debugf("Lawyer", "iter=%d response ruling=%s", iter+1, c.Ruling)
 				ruleText := strings.TrimSpace(c.Ruling)
-				// Cache the result
-				cacheKey := situation
+				// Use agent-chosen cache key, fallback to situation
+				cacheKey := strings.TrimSpace(c.CacheKey)
+				if cacheKey == "" {
+					cacheKey = situation
+				}
 				lawyerCache.Set(cacheKey, ruleText)
-				debugf("Lawyer", "cached result for situation: %s", situation)
+				debugf("Lawyer", "cached result key=%s", cacheKey)
 				return []LawyerResult{{
 					Query:    situation,
 					RuleText: ruleText,
