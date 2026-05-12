@@ -251,7 +251,7 @@ func TestAdminPingProvider_Success(t *testing.T) {
 	mockProv.EXPECT().Chat(gomock.Any(), gomock.Any()).Return("pong", nil)
 
 	mockFac := mocks.NewMockProviderFactory(ctrl)
-	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(mockProv)
+	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(mockProv)
 
 	r := gin.New()
 	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
@@ -282,7 +282,7 @@ func TestAdminPingProvider_LLMError(t *testing.T) {
 	mockProv.EXPECT().Chat(gomock.Any(), gomock.Any()).Return("", errors.New("connection refused"))
 
 	mockFac := mocks.NewMockProviderFactory(ctrl)
-	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(mockProv)
 
 	r := gin.New()

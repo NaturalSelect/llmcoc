@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -586,4 +587,111 @@ func applyAdjustedSkills(base map[string]int, adjusted map[string]int, stats mod
 	// always keep derived skills correct
 	base["母语"] = stats.EDU
 	base["闪避"] = stats.DEX / 2
+}
+
+const reviveBaseCost = 2000
+
+// reviveCostFor calculates the next revive cost based on how many times the user has already revived.
+func reviveCostFor(reviveCount int) int {
+	return (reviveCount + 1) * reviveBaseCost
+}
+
+// ListDeadCharacters returns all inactive (dead/deleted) character cards belonging to the user.
+func ListDeadCharacters(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var cards []models.CharacterCard
+	models.DB.Where("user_id = ? AND is_active = ?", userID, false).
+		Order("updated_at DESC").
+		Find(&cards)
+	c.JSON(http.StatusOK, cards)
+}
+
+// ReviveCharacter spends coins (escalating by 2000 each use) to revive a dead (is_active=false) character card.
+// The revived character loses a random half of their inventory and forgets a random half of their spells.
+func ReviveCharacter(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.Where("id = ? AND user_id = ?", id, userID).First(&card).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.IsActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该调查员尚未死亡，无需复活"})
+		return
+	}
+
+	var user models.User
+	models.DB.First(&user, userID)
+	cost := reviveCostFor(user.ReviveCount)
+	if user.Coins < cost {
+		c.JSON(http.StatusPaymentRequired, gin.H{
+			"error":   "金币不足",
+			"need":    cost,
+			"current": user.Coins,
+		})
+		return
+	}
+
+	tx := models.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	if err := tx.Model(&user).Updates(map[string]any{
+		"coins":        user.Coins - cost,
+		"revive_count": user.ReviveCount + 1,
+	}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
+		return
+	}
+
+	// Randomly lose half inventory
+	inv := card.Inventory.Data
+	if len(inv) > 0 {
+		rand.Shuffle(len(inv), func(i, j int) { inv[i], inv[j] = inv[j], inv[i] })
+		inv = inv[:(len(inv)+1)/2]
+	}
+	// Randomly forget half spells
+	spells := card.Spells.Data
+	if len(spells) > 0 {
+		rand.Shuffle(len(spells), func(i, j int) { spells[i], spells[j] = spells[j], spells[i] })
+		spells = spells[:(len(spells)+1)/2]
+	}
+
+	reviveHP := card.Stats.Data.MaxHP / 2
+	if reviveHP < 1 {
+		reviveHP = 1
+	}
+	card.Stats.Data.HP = reviveHP
+	card.WoundState = "none"
+	card.IsUnconscious = false
+	card.IsActive = true
+	card.Inventory = models.JSONField[[]string]{Data: inv}
+	card.Spells = models.JSONField[[]string]{Data: spells}
+
+	if err := tx.Save(&card).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "复活角色失败"})
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交事务失败"})
+		return
+	}
+
+	models.DB.First(&user, userID)
+	log.Printf("[revive] user_id=%d card_id=%d cost=%d coins_left=%d inv_kept=%d spells_kept=%d",
+		userID, card.ID, cost, user.Coins, len(inv), len(spells))
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "复活成功",
+		"coins":          user.Coins,
+		"revive_count":   user.ReviveCount,
+		"character_card": card,
+	})
 }

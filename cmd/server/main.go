@@ -104,11 +104,13 @@ func main() {
 	chars := api.Group("/characters", middleware.AuthRequired())
 	{
 		chars.GET("", handlers.ListCharacters)
+		chars.GET("/dead", handlers.ListDeadCharacters)
 		chars.POST("", handlers.CreateCharacter)
 		chars.POST("/generate", chh.GenerateCharacter)
 		chars.GET("/:id", handlers.GetCharacter)
 		chars.PUT("/:id", handlers.UpdateCharacter)
 		chars.DELETE("/:id", handlers.DeleteCharacter)
+		chars.POST("/:id/revive", handlers.ReviveCharacter)
 		chars.GET("/:id/inventory", handlers.GetCharacterInventory)
 		chars.POST("/:id/inventory", handlers.AddCharacterInventoryItem)
 		chars.DELETE("/:id/inventory/:item", handlers.RemoveCharacterInventoryItem)

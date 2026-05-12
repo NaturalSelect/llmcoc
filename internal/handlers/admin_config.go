@@ -206,6 +206,7 @@ func AdminUpdateAgent(c *gin.Context) {
 	maxTokens := int(toFloat(raw["max_tokens"]))
 	temperature := float32(toFloat(raw["temperature"]))
 	systemPrompt, _ := raw["system_prompt"].(string)
+	thinkingLevel, _ := raw["thinking_level"].(string)
 	var isActive *bool
 	if v, ok := raw["is_active"]; ok {
 		if b, ok := v.(bool); ok {
@@ -219,6 +220,7 @@ func AdminUpdateAgent(c *gin.Context) {
 		"max_tokens":         maxTokens,
 		"temperature":        temperature,
 		"system_prompt":      systemPrompt,
+		"thinking_level":     thinkingLevel,
 	}
 	if isActive != nil {
 		updates["is_active"] = *isActive
@@ -239,6 +241,7 @@ func AdminUpdateAgent(c *gin.Context) {
 			MaxTokens:        maxTokens,
 			Temperature:      temperature,
 			SystemPrompt:     systemPrompt,
+			ThinkingLevel:    thinkingLevel,
 			IsActive:         active,
 		}
 		models.DB.Create(&agentCfg)
@@ -265,14 +268,14 @@ func toFloat(v any) float64 {
 
 // ProviderFactory abstracts llm.Provider construction so ping can be tested without real HTTP calls.
 type ProviderFactory interface {
-	NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32) llm.Provider
+	NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, reasoningEffort string) llm.Provider
 }
 
 // defaultProviderFactory is the production factory that calls llm.NewProviderFromConfig.
 type defaultProviderFactory struct{}
 
-func (defaultProviderFactory) NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32) llm.Provider {
-	return llm.NewProviderFromConfig(cfg, modelName, maxTokens, temperature)
+func (defaultProviderFactory) NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, reasoningEffort string) llm.Provider {
+	return llm.NewProviderFromConfig(cfg, modelName, maxTokens, temperature, reasoningEffort)
 }
 
 // DefaultProviderFactory is the singleton used by production handlers.
@@ -303,7 +306,7 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 		req.ModelName = "gpt-4o-mini"
 	}
 
-	provider := factory.NewProvider(&p, req.ModelName, 16, 0.1)
+	provider := factory.NewProvider(&p, req.ModelName, 16, 0.1, "")
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 

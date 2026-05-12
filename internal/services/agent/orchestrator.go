@@ -63,7 +63,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 		if maxTok == 0 {
 			maxTok = 1024
 		}
-		p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, cfg.Temperature)
+		p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, cfg.Temperature, cfg.ThinkingLevel)
 		return agentHandle{provider: p, config: cfg}, nil
 	}
 

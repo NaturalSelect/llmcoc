@@ -585,6 +585,35 @@
                                 </div>
                             </template>
                         </div>
+
+                        <!-- Dead characters / Revive -->
+                        <div x-show="deadCharacters.length > 0" class="mt-6">
+                            <h3 class="text-sm font-bold text-red-700 mb-3" style="font-family:system-ui">⚰ 已阵亡的调查员</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <template x-for="char in deadCharacters" :key="char.id">
+                                    <div class="card rounded p-4 border-red-900/40" style="border-color:#4a1a1a">
+                                        <div class="flex justify-between items-start mb-2">
+                                            <div>
+                                                <h3 class="font-bold text-red-300/70" x-text="char.name"></h3>
+                                                <p class="text-xs text-red-900 mt-0.5" style="font-family:system-ui"
+                                                    x-text="[char.race||'人类', char.occupation||'未知职业'].join(' · ')"></p>
+                                            </div>
+                                            <span
+                                                class="text-[10px] text-red-700 border border-red-900/40 px-1.5 py-0.5 rounded"
+                                                style="font-family:system-ui">已阵亡</span>
+                                        </div>
+                                        <div class="flex items-center justify-between mt-3">
+                                            <span class="text-xs text-amber-800"
+                                                style="font-family:system-ui">复活费用：<span
+                                                    class="text-amber-500 font-bold">2000</span> 金币</span>
+                                            <button @click="reviveCharacter(char)"
+                                                :disabled="(user?.coins??0) < 2000 || reviving"
+                                                class="btn btn-amber text-xs">✨ 复活</button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Recent sessions -->
@@ -937,12 +966,14 @@
                     </span>
                 </div>
                 <div class="card rounded p-3 mb-4">
-                    <label class="text-xs text-amber-700 mb-1 block"
-                        style="font-family:system-ui">装备/武器/配件购买目标人物卡</label>
+                    <label class="text-xs text-amber-700 mb-1 block" style="font-family:system-ui">装备/武器/配件/复活
+                        目标人物卡</label>
                     <select x-model.number="shopTargetCharacterId" class="inp">
                         <option value="">请选择人物卡（金币与卡槽商品不需要）</option>
                         <template x-for="c in characters" :key="c.id">
-                            <option :value="c.id" x-text="c.name + ' · ' + (c.occupation || '未知职业')"></option>
+                            <option :value="c.id"
+                                x-text="c.name + ' · ' + (c.occupation || '未知职业') + (c.wound_state==='dead' ? ' 【已死亡】' : '')">
+                            </option>
                         </template>
                     </select>
                 </div>
@@ -950,7 +981,7 @@
                     <template x-for="item in shopItems" :key="item.id">
                         <div class="card card-hover rounded p-5">
                             <div class="text-3xl mb-3"
-                                x-text="item.item_type==='card_slot'?'🃏':item.item_type==='coins'?'💰':item.item_type==='weapon'?'🔫':item.item_type==='equipment'?'🧰':'🎒'">
+                                x-text="item.item_type==='card_slot'?'🃏':item.item_type==='coins'?'💰':item.item_type==='weapon'?'🔫':item.item_type==='equipment'?'🧰':item.item_type==='revive'?'✨':'🎒'">
                             </div>
                             <h3 class="font-bold text-amber-100 mb-1" x-text="item.name"></h3>
                             <p class="text-xs text-amber-800 mb-4 leading-relaxed" style="font-family:system-ui"
@@ -1134,6 +1165,18 @@
                                     <textarea x-model="ag.system_prompt" rows="3"
                                         :placeholder="agentDefaultHint(ag.role)"
                                         class="inp resize-none font-mono text-xs"></textarea>
+                                </div>
+                                <div class="mb-2.5">
+                                    <label class="text-xs text-amber-800 mb-1 block"
+                                        style="font-family:system-ui">推理强度</label>
+                                    <select x-model="ag.thinking_level" class="inp">
+                                        <option value="">默认（high）</option>
+                                        <option value="none">关闭</option>
+                                        <option value="low">低</option>
+                                        <option value="medium">中</option>
+                                        <option value="high">高</option>
+                                        <option value="xhigh">极高</option>
+                                    </select>
                                 </div>
                                 <div class="flex items-center gap-3">
                                     <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer"
@@ -2208,6 +2251,10 @@
                     shopTargetCharacterId: '',
                     inventoryInput: '',
 
+                    // ── Revive ────────────────────────────────────────────────────────────
+                    deadCharacters: [],
+                    reviving: false,
+
                     // ── Admin ─────────────────────────────────────────────────────────────
                     adminTab: 'users',
                     adminUsers: [],
@@ -2241,7 +2288,7 @@
                         if (this.token) {
                             try {
                                 await this.loadMe();
-                                await Promise.all([this.loadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
+                                await Promise.all([this.loadCharacters(), this.loadDeadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
                                 this.goTo('dashboard');
                             } catch {
                                 this.token = '';
@@ -2258,7 +2305,7 @@
                         try {
                             const r = await this.api('POST', '/api/auth/login', this.loginForm);
                             this.setToken(r.token); this.user = r.user;
-                            await Promise.all([this.loadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
+                            await Promise.all([this.loadCharacters(), this.loadDeadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
                             this.goTo('dashboard');
                         } catch (e) { this.authError = e.message; }
                         this.loading = false;
@@ -2269,7 +2316,7 @@
                         try {
                             const r = await this.api('POST', '/api/auth/register', this.regForm);
                             this.setToken(r.token); this.user = r.user;
-                            await Promise.all([this.loadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
+                            await Promise.all([this.loadCharacters(), this.loadDeadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
                             this.goTo('dashboard');
                         } catch (e) { this.authError = e.message; }
                         this.loading = false;
@@ -2287,6 +2334,7 @@
                     // ══════════════════════════════════════════════════════════════════════
                     async loadMe() { this.user = await this.api('GET', '/api/auth/me'); },
                     async loadCharacters() { this.characters = (await this.api('GET', '/api/characters')) || []; },
+                    async loadDeadCharacters() { this.deadCharacters = (await this.api('GET', '/api/characters/dead')) || []; },
                     async loadSessions() { this.sessions = (await this.api('GET', '/api/sessions')) || []; },
                     async loadMyHistory() { this.myHistory = (await this.api('GET', '/api/sessions/my-history')) || []; },
                     async loadMyFavorites() { this.myFavorites = (await this.api('GET', '/api/sessions/my-favorites')) || []; },
@@ -2344,13 +2392,14 @@
                             npc: { max_tokens: 600, temperature: 0.9 },
                             evaluator: { max_tokens: 1200, temperature: 0.5 },
                             growth: { max_tokens: 1000, temperature: 0.4 },
-                            scripter: { max_tokens: 1800, temperature: 0.5 },
                             architect: { max_tokens: 4000, temperature: 0.7 },
                             qa_guard: { max_tokens: 2000, temperature: 0.3 },
                             parser: { max_tokens: 4000, temperature: 0.1 },
                         };
-                        const expectedRoles = Object.keys(roleDefaults);
-                        const byRole = new Map(agents.map(a => [a.role, a]));
+                        const expectedRoles = Object.keys(roleDefaults).filter(r => r !== 'scripter');
+                        const byRole = new Map(agents.filter(a => a.role !== 'scripter').map(a => [a.role, a]));
+
+                        agents.splice(0, agents.length, ...byRole.values());
 
                         for (const role of expectedRoles) {
                             if (byRole.has(role)) continue;
@@ -2467,8 +2516,22 @@
                         try {
                             await this.api('DELETE', '/api/characters/' + id);
                             this.characters = this.characters.filter(c => c.id !== id);
+                            await this.loadDeadCharacters();
                             this.showToast('人物卡已删除');
                         } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+
+                    async reviveCharacter(char) {
+                        if (!confirm(`确认花费 2000 金币复活「${char.name}」？\n复活后HP为最大值的一半，随机失去一半装备，遗忘一半法术。`)) return;
+                        this.reviving = true;
+                        try {
+                            const r = await this.api('POST', '/api/characters/' + char.id + '/revive');
+                            if (this.user) this.user.coins = r.coins;
+                            this.characters.push(r.character_card);
+                            this.deadCharacters = this.deadCharacters.filter(c => c.id !== char.id);
+                            this.showToast(`${char.name} 已复活！但部分记忆与装备永久消散……`);
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                        this.reviving = false;
                     },
 
                     syncCharacter(updated) {
@@ -2909,24 +2972,47 @@
                     isInventoryItem(itemType) {
                         return itemType === 'equipment' || itemType === 'weapon' || itemType === 'accessory';
                     },
+                    isReviveItem(itemType) {
+                        return itemType === 'revive';
+                    },
+                    requiresCharacter(itemType) {
+                        return this.isInventoryItem(itemType) || this.isReviveItem(itemType);
+                    },
 
                     async purchase(item) {
-                        if (!confirm(`确认花费 ${item.price} 金币购买「${item.name}」？`)) return;
-                        if (this.isInventoryItem(item.item_type) && !this.shopTargetCharacterId) {
-                            this.showToast('请先选择目标人物卡', 'error');
-                            return;
+                        if (this.isReviveItem(item.item_type)) {
+                            if (!this.shopTargetCharacterId) {
+                                this.showToast('请先选择要复活的人物卡', 'error');
+                                return;
+                            }
+                            const target = this.characters.find(c => c.id === Number(this.shopTargetCharacterId));
+                            if (!target || target.wound_state !== 'dead') {
+                                this.showToast('所选人物卡并非死亡状态，无法使用复活卷轴', 'error');
+                                return;
+                            }
+                            if (!confirm(`确认花费 ${item.price} 金币复活「${target.name}」？\n复活后HP为最大值的一半，随机失去一半装备，遗忘一半法术。`)) return;
+                        } else {
+                            if (!confirm(`确认花费 ${item.price} 金币购买「${item.name}」？`)) return;
+                            if (this.isInventoryItem(item.item_type) && !this.shopTargetCharacterId) {
+                                this.showToast('请先选择目标人物卡', 'error');
+                                return;
+                            }
                         }
                         this.purchasing = true;
                         try {
                             const body = { item_id: item.id };
-                            if (this.isInventoryItem(item.item_type)) {
+                            if (this.requiresCharacter(item.item_type)) {
                                 body.character_card_id = Number(this.shopTargetCharacterId);
                             }
                             const r = await this.api('POST', '/api/shop/purchase', body);
                             if (this.user) { this.user.coins = r.coins; this.user.card_slots = r.card_slots; }
                             if (r.character_card) this.syncCharacter(r.character_card);
                             this.transactions.unshift({ id: Date.now(), shop_item: item, coins_spent: item.price, created_at: new Date().toISOString() });
-                            this.showToast('购买成功！');
+                            if (this.isReviveItem(item.item_type)) {
+                                this.showToast('复活成功！调查员已苏醒，但部分记忆与装备已消散……');
+                            } else {
+                                this.showToast('购买成功！');
+                            }
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.purchasing = false;
                     },
@@ -3002,6 +3088,7 @@
                                 max_tokens: ag.max_tokens,
                                 temperature: ag.temperature,
                                 system_prompt: ag.system_prompt,
+                                thinking_level: ag.thinking_level || '',
                                 is_active: ag.is_active,
                             });
                             this.showToast(this.agentLabel(ag.role) + ' 配置已保存');
@@ -3149,7 +3236,7 @@
                         return {
                             director: '🎬 Director', writer: '✍️ Writer', lawyer: '⚖️ Lawyer',
                             npc: '🎭 NPC', evaluator: '📊 Evaluator', growth: '🌱 Growth',
-                            scripter: '📋 Scripter', architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
+                            architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
                             parser: '🔧 Parser',
                         }[role] || role;
                     },

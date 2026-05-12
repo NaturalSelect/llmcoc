@@ -28,6 +28,7 @@ type User struct {
 	Role         Role      `gorm:"default:'user';not null" json:"role"`
 	Coins        int       `gorm:"default:0;not null" json:"coins"`
 	CardSlots    int       `gorm:"default:3;not null" json:"card_slots"`
+	ReviveCount  int       `gorm:"default:0;not null" json:"revive_count"` // 累计复活次数，影响后续复活费用
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -421,6 +422,7 @@ type AgentConfig struct {
 	MaxTokens        int                `gorm:"default:1024" json:"max_tokens"`
 	Temperature      float32            `gorm:"default:0.7;type:real" json:"temperature"`
 	SystemPrompt     string             `gorm:"type:text" json:"system_prompt"`
+	ThinkingLevel    string             `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh
 	IsActive         bool               `gorm:"default:true" json:"is_active"`
 	CreatedAt        time.Time          `json:"created_at"`
 	UpdatedAt        time.Time          `json:"updated_at"`

@@ -22,13 +22,14 @@ var llmDebug = func() bool {
 const defaultReasoningEffort = "high"
 
 type openAIProvider struct {
-	client      *openai.Client
-	model       string
-	maxTokens   int
-	temperature float32
+	client          *openai.Client
+	model           string
+	maxTokens       int
+	temperature     float32
+	reasoningEffort string
 }
 
-func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature float32) *openAIProvider {
+func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature float32, reasoningEffort string) *openAIProvider {
 	cfg := openai.DefaultConfig(apiKey)
 	if baseURL != "" {
 		cfg.BaseURL = baseURL
@@ -39,11 +40,15 @@ func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature
 	if temperature == 0 {
 		temperature = 0.8
 	}
+	if reasoningEffort == "" {
+		reasoningEffort = defaultReasoningEffort
+	}
 	return &openAIProvider{
-		client:      openai.NewClientWithConfig(cfg),
-		model:       model,
-		maxTokens:   maxTokens,
-		temperature: temperature,
+		client:          openai.NewClientWithConfig(cfg),
+		model:           model,
+		maxTokens:       maxTokens,
+		temperature:     temperature,
+		reasoningEffort: reasoningEffort,
 	}
 }
 
@@ -81,7 +86,7 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage) (stri
 		Messages:        p.toOpenAIMessages(messages),
 		MaxTokens:       p.maxTokens,
 		Temperature:     p.temperature,
-		ReasoningEffort: defaultReasoningEffort,
+		ReasoningEffort: p.reasoningEffort,
 	}
 	var resp openai.ChatCompletionResponse
 	var err error

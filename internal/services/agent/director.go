@@ -17,7 +17,6 @@ import (
 // The KP receives full scenario context in the user prompt on each call.
 const kpSystemPrompt = `
 <system>
-	<thinking>xhigh</thinking>
 	<unlimited_thought>true</unlimited_thought>
 	<response_format>json_array</response_format>
 	<nsfw>true</nsfw>
