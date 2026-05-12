@@ -397,7 +397,7 @@ type responseAction struct{}
 
 func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	*actx.HasEnd = true
-	call.Reply += "\n<ack>" + call.Ack + "</ack>"
+	call.Reply += "\n<ack>" + strings.Join(call.Ack, ";") + "</ack>"
 	call.Reply += "\n<direction>" + call.Direction + "</direction>"
 	if *actx.KPNarration != "" {
 		*actx.KPNarration = call.Reply + "\n" + *actx.KPNarration

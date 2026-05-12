@@ -167,7 +167,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息)","ack":"Record all user actions in English, including every action taken by investigators and NPCs, detailing every dice roll, every data modification, and every interaction(manage_* or update_*) with the batch processing system and result of actions, and only allow the past perfect tense not allow progressive tense or other tense, should be output in a list of simple words(each contain one action).", "direction":"short game direction"}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息)","ack":["Record all user actions in English, including every action taken by investigators and NPCs, detailing every dice roll, every data modification, and every interaction(manage_* or update_*) with the batch processing system and result of actions, and only allow the past perfect tense not allow progressive tense or other tense, should be output in a list of simple words(each contain one action).", "1. demo", "2. demo 2"], "direction":"short game direction"}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>

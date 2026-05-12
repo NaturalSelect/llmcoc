@@ -816,8 +816,8 @@
                             <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar bg-[#0a0908] min-h-0"
                                 id="chatBox">
                                 <template x-for="msg in messages" :key="msg.id">
-                                    <div class="msg fade-up shadow-sm border border-[#1e1c17]"
-                                        :class="msg.role==='assistant'?'msg-kp':msg.role==='user'?'msg-user':'msg-sys'">
+                                    <div class="msg shadow-sm border border-[#1e1c17]"
+                                        :class="(msg._new ? 'fade-up ' : '') + (msg.role==='assistant'?'msg-kp':msg.role==='user'?'msg-user':'msg-sys')">
 
                                         <div class="flex items-baseline gap-2 mb-1.5 border-b border-[#252018] pb-1">
                                             <span class="text-xs font-bold" style="font-family:monospace"
@@ -2602,6 +2602,7 @@
                             id: Date.now(), role: 'user',
                             username: this.currentPlayerDisplayName(), content,
                             created_at: submittedAt.toISOString(),
+                            _new: true,
                         });
                         this.$nextTick(() => this.scrollChat());
 
@@ -2739,15 +2740,17 @@
                     },
 
                     _commitStreamBuffers() {
-                        const fullContent = this.writerBuffer +
-                            (this.narrationBuffer ? '\n\n' + this.narrationBuffer : '');
+                        const wt = this.writerBuffer.trim();
+                        const nt = this.narrationBuffer.trim();
+                        const fullContent = wt + (nt ? '\n\nKP:' + nt : '');
                         this.messages.push({
                             id: Date.now() + 1,
                             role: 'assistant', username: 'KP',
                             content: fullContent,
-                            writer_text: this.writerBuffer,
-                            narration_text: this.narrationBuffer,
+                            writer_text: wt,
+                            narration_text: nt,
                             created_at: new Date().toISOString(),
+                            _new: true,
                         });
                         this.writerBuffer = '';
                         this.narrationBuffer = '';
@@ -2801,7 +2804,7 @@
                             );
 
                             // 增量追加：只取比当前多出来的新消息，避免全量替换导致滚动位置重置
-                            const newMsgs = msgs.slice(this.messages.length);
+                            const newMsgs = msgs.slice(this.messages.length).map(m => ({ ...m, _new: true }));
                             if (newMsgs.length > 0) {
                                 this.messages.push(...newMsgs);
                                 if (this.waitingForPlayers && this.waitingSince) {
