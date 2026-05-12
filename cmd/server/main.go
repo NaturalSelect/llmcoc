@@ -111,6 +111,7 @@ func main() {
 		chars.PUT("/:id", handlers.UpdateCharacter)
 		chars.DELETE("/:id", handlers.DeleteCharacter)
 		chars.POST("/:id/revive", handlers.ReviveCharacter)
+		chars.DELETE("/:id/dead", handlers.DeleteDeadCharacter)
 		chars.GET("/:id/inventory", handlers.GetCharacterInventory)
 		chars.POST("/:id/inventory", handlers.AddCharacterInventoryItem)
 		chars.DELETE("/:id/inventory/:item", handlers.RemoveCharacterInventoryItem)

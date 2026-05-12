@@ -593,22 +593,28 @@
                                 <template x-for="char in deadCharacters" :key="char.id">
                                     <div class="card rounded p-4 border-red-900/40" style="border-color:#4a1a1a">
                                         <div class="flex justify-between items-start mb-2">
-                                            <div>
-                                                <h3 class="font-bold text-red-300/70" x-text="char.name"></h3>
+                                            <div class="cursor-pointer flex-1 min-w-0" @click="openCharDetail(char)">
+                                                <h3 class="font-bold text-red-300/70 hover:text-red-200/80 transition-colors"
+                                                    x-text="char.name"></h3>
                                                 <p class="text-xs text-red-900 mt-0.5" style="font-family:system-ui"
                                                     x-text="[char.race||'人类', char.occupation||'未知职业'].join(' · ')"></p>
                                             </div>
                                             <span
-                                                class="text-[10px] text-red-700 border border-red-900/40 px-1.5 py-0.5 rounded"
+                                                class="text-[10px] text-red-700 border border-red-900/40 px-1.5 py-0.5 rounded ml-2 shrink-0"
                                                 style="font-family:system-ui">已阵亡</span>
                                         </div>
                                         <div class="flex items-center justify-between mt-3">
                                             <span class="text-xs text-amber-800"
                                                 style="font-family:system-ui">复活费用：<span
                                                     class="text-amber-500 font-bold">2000</span> 金币</span>
-                                            <button @click="reviveCharacter(char)"
-                                                :disabled="(user?.coins??0) < 2000 || reviving"
-                                                class="btn btn-amber text-xs">✨ 复活</button>
+                                            <div class="flex gap-2">
+                                                <button @click="deleteDeadCharacter(char)"
+                                                    class="btn text-xs bg-red-900/40 hover:bg-red-900/70 text-red-300 border border-red-900/50">🗑
+                                                    彻底删除</button>
+                                                <button @click="reviveCharacter(char)"
+                                                    :disabled="(user?.coins??0) < 2000 || reviving"
+                                                    class="btn btn-amber text-xs">✨ 复活</button>
+                                            </div>
                                         </div>
                                     </div>
                                 </template>
@@ -2518,6 +2524,15 @@
                             this.characters = this.characters.filter(c => c.id !== id);
                             await this.loadDeadCharacters();
                             this.showToast('人物卡已删除');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+
+                    async deleteDeadCharacter(char) {
+                        if (!confirm(`确认彻底删除「${char.name}」？此操作不可撤销，角色将永久消逝。`)) return;
+                        try {
+                            await this.api('DELETE', '/api/characters/' + char.id + '/dead');
+                            this.deadCharacters = this.deadCharacters.filter(c => c.id !== char.id);
+                            this.showToast(`${char.name} 已彻底消逝……`);
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 

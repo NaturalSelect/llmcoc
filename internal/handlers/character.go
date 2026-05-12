@@ -695,3 +695,25 @@ func ReviveCharacter(c *gin.Context) {
 		"character_card": card,
 	})
 }
+
+// DeleteDeadCharacter permanently deletes a dead (is_active=false) character card.
+func DeleteDeadCharacter(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.Where("id = ? AND user_id = ?", id, userID).First(&card).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.IsActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只能删除已阵亡的调查员"})
+		return
+	}
+
+	if err := models.DB.Unscoped().Delete(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "调查员已彻底消逝"})
+}
