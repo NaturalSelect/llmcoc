@@ -115,6 +115,17 @@ func deleteCachedAgents(sessionID uint) {
 	sessionAgents.Delete(sessionID)
 }
 
+func ClearAllCachedAgents() {
+	agents := make([]int, 0)
+	sessionAgents.Range(func(key, value any) bool {
+		agents = append(agents, key.(int))
+		return true
+	})
+	for _, id := range agents {
+		sessionAgents.Delete(id)
+	}
+}
+
 // run implements the master-slave agent loop.
 //
 // Architecture:

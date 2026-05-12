@@ -85,7 +85,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 {
   "backstory": "200字以内的背景故事",
   "appearance": "100字以内的外貌描述",
-  "traits": "性格特征与信念,50字以内",
+  "traits": "性格特征(以空格分隔,10-15个标签)",
   "stats": {"STR":N,"CON":N,"SIZ":N,"DEX":N,"APP":N,"INT":N,"POW":N,"EDU":N}
 }`,
 		name, era, occupation, gender, req.Background,

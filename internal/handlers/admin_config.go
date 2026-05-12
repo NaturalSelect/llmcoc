@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
@@ -251,6 +252,7 @@ func AdminUpdateAgent(c *gin.Context) {
 	}
 	log.Printf("[admin_config] update_agent ok role=%s provider_config_id=%v model=%s", role, providerConfigID, modelName)
 	c.JSON(http.StatusOK, agentCfg)
+	agent.ClearAllCachedAgents()
 }
 
 // toFloat safely coerces a JSON-decoded any value to float64.
