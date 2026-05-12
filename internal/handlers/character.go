@@ -596,11 +596,11 @@ func reviveCostFor(reviveCount int) int {
 	return (reviveCount + 1) * reviveBaseCost
 }
 
-// ListDeadCharacters returns all inactive (dead/deleted) character cards belonging to the user.
+// ListDeadCharacters returns dead (is_active=false, is_deleted=false) character cards belonging to the user.
 func ListDeadCharacters(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var cards []models.CharacterCard
-	models.DB.Where("user_id = ? AND is_active = ?", userID, false).
+	models.DB.Where("user_id = ? AND is_active = ? AND is_deleted = ?", userID, false, false).
 		Order("updated_at DESC").
 		Find(&cards)
 	c.JSON(http.StatusOK, cards)
@@ -613,7 +613,7 @@ func ReviveCharacter(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 
 	var card models.CharacterCard
-	if err := models.DB.Where("id = ? AND user_id = ?", id, userID).First(&card).Error; err != nil {
+	if err := models.DB.Where("id = ? AND user_id = ? AND is_deleted = ?", id, userID, false).First(&card).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
 		return
 	}
@@ -696,7 +696,7 @@ func ReviveCharacter(c *gin.Context) {
 	})
 }
 
-// DeleteDeadCharacter permanently deletes a dead (is_active=false) character card.
+// DeleteDeadCharacter soft-deletes a dead (is_active=false) character card by setting is_deleted=true.
 func DeleteDeadCharacter(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -711,7 +711,7 @@ func DeleteDeadCharacter(c *gin.Context) {
 		return
 	}
 
-	if err := models.DB.Unscoped().Delete(&card).Error; err != nil {
+	if err := models.DB.Model(&card).Update("is_deleted", true).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
 		return
 	}

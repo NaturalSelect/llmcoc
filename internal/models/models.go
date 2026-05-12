@@ -96,6 +96,7 @@ type CharacterCard struct {
 	// COC 伤亡状态
 	WoundState    string    `gorm:"size:20;default:'none'" json:"wound_state"` // none/major/dying/dead
 	IsUnconscious bool      `gorm:"default:false" json:"is_unconscious"`
+	IsDeleted     bool      `gorm:"default:false;not null" json:"is_deleted"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 	User          User      `gorm:"foreignKey:UserID" json:"-"`
