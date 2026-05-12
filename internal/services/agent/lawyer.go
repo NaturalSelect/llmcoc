@@ -154,14 +154,13 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 		// ── response: return ruling ─────────────────────────────────────────────
 		for _, c := range calls {
 			if c.Action == "response" && c.Ruling != "" {
-				debugf("Lawyer", "iter=%d response ruling=%s", iter+1, c.Ruling)
+				debugf("Lawyer", "iter=%d response ruling=%s cache=%s", iter+1, c.Ruling, c.CacheKey)
 				ruleText := strings.TrimSpace(c.Ruling)
 				// Use agent-chosen cache key, fallback to situation
 				cacheKey := strings.TrimSpace(c.CacheKey)
-				if cacheKey == "" {
-					cacheKey = situation
+				if cacheKey != "" {
+					lawyerCache.Set(cacheKey, ruleText)
 				}
-				lawyerCache.Set(cacheKey, ruleText)
 				debugf("Lawyer", "cached result key=%s", cacheKey)
 				return []LawyerResult{{
 					Query:    situation,
