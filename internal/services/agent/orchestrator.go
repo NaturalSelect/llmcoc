@@ -1164,7 +1164,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		return ""
 	}
 	hasNotHuman := false
-	s := "【调查员概况(完整人物卡请用 query_character 获取)】"
+	s := "【调查员概况(完整人物卡请用 query_character 获取)】\n所有角色均已成年"
 	for _, p := range players {
 		card := p.CharacterCard
 		line := fmt.Sprintf("\n<character> %s(%s,种族:%s)HP:%d/%d SAN:%d/%d",

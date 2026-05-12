@@ -125,6 +125,10 @@ func hotFixChar(card *models.CharacterCard) {
 		card.Name = trimed
 		needUpdate = true
 	}
+	if card.Age < 18 {
+		card.Age = 18
+		needUpdate = true
+	}
 	if needUpdate {
 		models.DB.Save(card)
 	}
@@ -173,6 +177,11 @@ func CreateCharacter(c *gin.Context) {
 
 	if req.Gender != models.GenderMale && req.Gender != models.GenderFemale {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别"})
+		return
+	}
+
+	if req.Age < 18 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "年龄必须至少为18岁"})
 		return
 	}
 
