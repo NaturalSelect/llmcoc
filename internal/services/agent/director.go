@@ -168,7 +168,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["Record all user actions in English, including every action taken by investigators and NPCs, detailing every dice roll, every data modification, and every interaction(manage_* or update_*) with the batch processing system and result of actions, and only allow the past perfect tense not allow progressive tense or other tense, should be output in a list of simple words(each contain one action).", "1. demo", "2. demo 2"], "direction":"short game direction"}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["For every side-effect tool called this turn (roll_dice/update_*/manage_*/trigger_*/record_*/act_npc/advance_time/create_npc/destroy_npc), write one entry: \"tool_name: reason\" in English past tense. No other text.","roll_dice: checked 角色甲 throw skill (result 42, success)","manage_inventory(remove): 角色甲 lost 手枪 after being disarmed","update_characters: 角色乙 SAN -3 from seeing deep one"],"direction":"short game direction"}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
