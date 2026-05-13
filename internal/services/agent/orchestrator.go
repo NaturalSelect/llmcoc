@@ -274,16 +274,23 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 		// When a batch has multiple check_rule calls, run them concurrently since
 		// each is an independent LLM query with no shared mutable state.
+		// act_npc calls targeting different NPCs also run concurrently (each NPC
+		// has its own independent memory; same-NPC calls remain sequential).
 		// All other tools remain sequential.
 		nCheckRule := 0
+		npcNames := map[string]int{}
 		for _, call := range calls {
 			if call.Action == ToolCheckRule {
 				nCheckRule++
 			}
+			if call.Action == ToolActNPC {
+				npcNames[call.NPCName]++
+			}
 		}
-		if nCheckRule > 1 {
-			debugf("KP", "session=%d iter=%d parallel check_rule: %d concurrent calls", sid, iter+1, nCheckRule)
-			toolResults = executeParallelCheckRule(calls, actx)
+		useParallel := nCheckRule > 1 || len(npcNames) > 1
+		if useParallel {
+			debugf("KP", "session=%d iter=%d parallel batch: %d check_rule, %d distinct npcs", sid, iter+1, nCheckRule, len(npcNames))
+			toolResults = executeParallelBatch(calls, actx)
 		} else {
 			for _, call := range calls {
 				if ctx.Err() != nil {
@@ -383,6 +390,87 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	}
 	saveWriterHistory(gctx.Session.ID, writerState)
 	return RunOutput{WriterText: writerState.Buffer, KPReply: kpNarration}, nil
+}
+
+// executeParallelBatch runs check_rule calls and act_npc calls targeting distinct
+// NPCs concurrently; act_npc calls for the same NPC run sequentially to preserve
+// that NPC's memory order. All other tools run sequentially in original order.
+// Result order matches the original call order.
+func executeParallelBatch(calls []ToolCall, actx ActionContext) []ToolResult {
+	type slotResult struct {
+		idx     int
+		results []ToolResult
+	}
+	resultSlots := make([][]ToolResult, len(calls))
+	ch := make(chan slotResult, len(calls))
+	var wg sync.WaitGroup
+
+	// Group act_npc indices by NPC name to detect which names have >1 call.
+	npcCallOrder := map[string][]int{} // npc_name → ordered list of call indices
+	for i, call := range calls {
+		if call.Action == ToolActNPC {
+			npcCallOrder[call.NPCName] = append(npcCallOrder[call.NPCName], i)
+		}
+	}
+
+	// Track which indices will be handled asynchronously.
+	asyncIdx := map[int]bool{}
+
+	// Launch one goroutine per distinct NPC name; calls for the same NPC run
+	// sequentially inside that goroutine to preserve memory order.
+	for npcName, indices := range npcCallOrder {
+		_ = npcName
+		wg.Add(1)
+		go func(idxList []int) {
+			defer wg.Done()
+			for _, idx := range idxList {
+				var results []ToolResult
+				if handler, ok := actionRegistry[calls[idx].Action]; ok {
+					results = handler.Execute(calls[idx], actx)
+				}
+				ch <- slotResult{idx: idx, results: results}
+			}
+		}(indices)
+		for _, idx := range indices {
+			asyncIdx[idx] = true
+		}
+	}
+
+	// check_rule calls run concurrently (independent reads).
+	for i, call := range calls {
+		if call.Action == ToolCheckRule {
+			asyncIdx[i] = true
+			wg.Add(1)
+			go func(idx int, c ToolCall) {
+				defer wg.Done()
+				if handler, ok := actionRegistry[c.Action]; ok {
+					ch <- slotResult{idx: idx, results: handler.Execute(c, actx)}
+				}
+			}(i, call)
+		}
+	}
+
+	// Sequential pass for everything else.
+	for i, call := range calls {
+		if asyncIdx[i] {
+			continue
+		}
+		if handler, ok := actionRegistry[call.Action]; ok {
+			resultSlots[i] = handler.Execute(call, actx)
+		}
+	}
+
+	wg.Wait()
+	close(ch)
+	for r := range ch {
+		resultSlots[r.idx] = r.results
+	}
+
+	var out []ToolResult
+	for _, r := range resultSlots {
+		out = append(out, r...)
+	}
+	return out
 }
 
 // executeParallelCheckRule runs all check_rule calls in the batch concurrently

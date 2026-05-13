@@ -14,8 +14,8 @@ import (
 )
 
 // lawyerCache is a global LRU cache for final lawyer rulings.
-// Capacity: 1GB (extremely large fixed capacity)
-var lawyerCache = NewLawyerCache(1073741824) // 1GB in bytes
+// Capacity: 4GB (extremely large fixed capacity)
+var lawyerCache = NewLawyerCache(1073741824 * 4) // 4GB in bytes
 
 func lawyerCachePath() string {
 	if path := strings.TrimSpace(os.Getenv("LAWYER_CACHE_PATH")); path != "" {

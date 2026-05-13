@@ -91,7 +91,9 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage) (stri
 	var resp openai.ChatCompletionResponse
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
+		start := time.Now()
 		resp, err = p.client.CreateChatCompletion(ctx, chatReq)
+		log.Printf("Char model %v using %v\n", p.model, time.Since(start))
 		if err == nil || !isRetryableError(err) {
 			break
 		}

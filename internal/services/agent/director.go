@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
@@ -122,7 +123,10 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>write</name>
-			<description>指示叙事代理生成文本段落描述当前场景(确保你充分描述所有玩家的意图),需要保留玩家的原始发言(除非他没有发言, 则你可以虚构),高信息密度,可以被调用多次以保持丰富的叙事内容</description>
+			<description>
+				指示叙事代理生成文本段落描述当前场景(确保你充分描述所有玩家的意图),需要保留玩家的原始发言(除非他没有发言, 则你可以虚构),高信息密度,可以被调用多次以保持丰富的叙事内容
+				原则上只要玩家有动作(包括发言),就必须调用write来描述场景和玩家的行为。如果玩家没有任何动作和发言,你可以选择不调用write。
+			</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"write","direction":"需要润色的文本(如果调查员有发言, 把原话代入这里)"}</call_example>
@@ -471,6 +475,9 @@ var kpRespExample = func() string {
 func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCall, string, error) {
 	debugf("KP", "Chat: %d messages, last_user=%s",
 		len(msgs), lastUserContent(msgs))
+
+	start := time.Now()
+	defer log.Printf("KP using %v\n", time.Since(start))
 
 	const maxRetries = 20
 	var lastErr error
