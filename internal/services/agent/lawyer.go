@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/llmcoc/server/internal/services/llm"
@@ -15,6 +16,44 @@ import (
 // lawyerCache is a global LRU cache for final lawyer rulings.
 // Capacity: 1GB (extremely large fixed capacity)
 var lawyerCache = NewLawyerCache(1073741824) // 1GB in bytes
+
+func lawyerCachePath() string {
+	if path := strings.TrimSpace(os.Getenv("LAWYER_CACHE_PATH")); path != "" {
+		return path
+	}
+	return "data/lawyer_cache.json"
+}
+
+// LoadLawyerCache loads persisted lawyer rulings when the rulebook hash matches.
+func LoadLawyerCache(rulebookHash string) {
+	if rulebookHash == "" {
+		return
+	}
+	path := lawyerCachePath()
+	loaded, err := lawyerCache.LoadFromFile(path, rulebookHash)
+	if err != nil {
+		log.Printf("[lawyer] failed to load cache %s: %v", path, err)
+		return
+	}
+	if loaded {
+		entries, used, _ := lawyerCache.Stats()
+		log.Printf("[lawyer] loaded cache: %d entries (%d bytes) from %s", entries, used, path)
+	}
+}
+
+// SaveLawyerCache persists lawyer rulings together with the current rulebook hash.
+func SaveLawyerCache(rulebookHash string) {
+	if rulebookHash == "" {
+		return
+	}
+	path := lawyerCachePath()
+	if err := lawyerCache.SaveToFile(path, rulebookHash); err != nil {
+		log.Printf("[lawyer] failed to save cache %s: %v", path, err)
+		return
+	}
+	entries, used, _ := lawyerCache.Stats()
+	log.Printf("[lawyer] saved cache: %d entries (%d bytes) to %s", entries, used, path)
+}
 
 var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通过调用工具来回答规则问题。
 每次输出必须是一个JSON数组,包含按顺序执行的工具调用列表。

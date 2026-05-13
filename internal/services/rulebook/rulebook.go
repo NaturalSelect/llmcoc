@@ -4,6 +4,9 @@ package rulebook
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"os"
 	"sort"
 	"strconv"
@@ -594,7 +597,25 @@ type Index []Section
 // GlobalIndex holds the loaded rulebook sections, populated at startup.
 var GlobalIndex Index
 
+// GlobalHash is the SHA-256 hash of the loaded rulebook file.
+var GlobalHash string
+
 var ruleBookLines = make([]string, 0)
+
+// FileHash returns the SHA-256 hash of the file at path.
+func FileHash(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
 
 // Load reads a Markdown file at the given path and splits it into sections
 // at any Markdown heading level (lines starting with one or more '#').

@@ -2,8 +2,12 @@ package agent
 
 import (
 	"container/list"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // CacheEntry represents a single cached item.
@@ -27,6 +31,17 @@ type cacheNode struct {
 	key   string
 	value string
 	size  int64 // Size in bytes
+}
+
+type persistentLawyerCache struct {
+	RulebookHash string             `json:"rulebook_hash"`
+	SavedAt      time.Time          `json:"saved_at"`
+	Entries      []persistentRuling `json:"entries"`
+}
+
+type persistentRuling struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // NewLawyerCache creates a new LRU cache with a specified capacity in bytes.
@@ -68,7 +83,10 @@ func (lc *LawyerCache) Set(key, value string) {
 
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
+	lc.setLocked(key, value)
+}
 
+func (lc *LawyerCache) setLocked(key, value string) {
 	size := int64(len(key) + len(value))
 
 	// If key already exists, update it
@@ -117,9 +135,70 @@ func (lc *LawyerCache) Clear() {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 
+	lc.clearLocked()
+}
+
+func (lc *LawyerCache) clearLocked() {
 	lc.cache = make(map[string]*list.Element)
 	lc.list = list.New()
 	lc.curBytes = 0
+}
+
+// LoadFromFile replaces the cache with entries from path when the rulebook hash matches.
+func (lc *LawyerCache) LoadFromFile(path, rulebookHash string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	var payload persistentLawyerCache
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return false, err
+	}
+	if payload.RulebookHash != rulebookHash {
+		return false, nil
+	}
+
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	lc.clearLocked()
+	for i := len(payload.Entries) - 1; i >= 0; i-- {
+		entry := payload.Entries[i]
+		lc.setLocked(entry.Key, entry.Value)
+	}
+	return true, nil
+}
+
+// SaveToFile writes the cache to path together with the current rulebook hash.
+func (lc *LawyerCache) SaveToFile(path, rulebookHash string) error {
+	lc.mu.RLock()
+	entries := make([]persistentRuling, 0, len(lc.cache))
+	for elem := lc.list.Front(); elem != nil; elem = elem.Next() {
+		node := elem.Value.(*cacheNode)
+		entries = append(entries, persistentRuling{Key: node.key, Value: node.value})
+	}
+	lc.mu.RUnlock()
+
+	payload := persistentLawyerCache{
+		RulebookHash: rulebookHash,
+		SavedAt:      time.Now(),
+		Entries:      entries,
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // Stats returns cache statistics: (entries_count, used_bytes, max_bytes).

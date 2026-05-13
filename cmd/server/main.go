@@ -4,12 +4,17 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -51,12 +56,32 @@ func main() {
 	if rbPath == "" {
 		rbPath = "COC_kp.md"
 	}
+	lawyerCacheEnabled := false
+	if hash, err := rulebook.FileHash(rbPath); err != nil {
+		log.Printf("Warning: failed to hash rulebook (%s): %v — Lawyer cache persistence disabled", rbPath, err)
+	} else {
+		rulebook.GlobalHash = hash
+	}
 	if idx, err := rulebook.Load(rbPath); err != nil {
 		log.Printf("Warning: failed to load rulebook (%s): %v — Lawyer agent will have no rule data", rbPath, err)
 	} else {
 		rulebook.GlobalIndex = idx
 		log.Printf("Rulebook loaded: %d sections from %s", len(idx), rbPath)
+		if rulebook.GlobalHash != "" {
+			lawyerCacheEnabled = true
+			agent.LoadLawyerCache(rulebook.GlobalHash)
+		}
 	}
+	var saveLawyerCacheOnce sync.Once
+	saveLawyerCache := func() {
+		if !lawyerCacheEnabled {
+			return
+		}
+		saveLawyerCacheOnce.Do(func() {
+			agent.SaveLawyerCache(rulebook.GlobalHash)
+		})
+	}
+	defer saveLawyerCache()
 
 	// Create Gin engine
 	if os.Getenv("GIN_MODE") == "" {
@@ -217,7 +242,29 @@ func main() {
 		WriteTimeout: 30 * time.Minute, // long AI generation won't be cut off
 		IdleTimeout:  90 * time.Second,
 	}
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- srv.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Printf("Shutdown signal received")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Server shutdown failed: %v", err)
+		}
+		saveLawyerCache()
+		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("Server failed: %v", err)
+		}
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("Server failed: %v", err)
+		}
 	}
 }
