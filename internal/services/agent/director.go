@@ -30,7 +30,7 @@ const kpSystemPrompt = `
 	<tools>
 		<tool>
 			<name>check_rule</name>
-			<description>询问规则专家(技能判定、战斗、追逐、法术、怪物、理智、典籍等规则和图鉴细节), can be used multip-time before you got enought info, but don't abuse it(don't ask it about the scenario)</description>
+			<description>询问规则专家(技能判定、战斗、追逐、法术、怪物、理智、典籍等规则和图鉴细节, 一个调用只问一个问题), can be used multip-time before you got enought info, but don't abuse it(don't ask it about the scenario)</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"check_rule","question":"用自然语言描述你的规则疑问或情境,规则专家会自动检索原文并给出答案"}</call_example>
