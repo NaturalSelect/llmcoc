@@ -1831,7 +1831,7 @@
                             x-text="(scenarioList.find(s => s.id === sessionForm.scenario_id)?.difficulty) || 'normal'"></span>
                     </div>
                     <div x-show="sessionForm.scenario_id"
-                        x-text="scenarioList.find(s => s.id === sessionForm.scenario_id)?.description"
+                        x-text="scenarioList.find(s => s.id === sessionForm.scenario_id)?.content?.setting"
                         class="text-xs text-amber-600 px-1 leading-relaxed border-l-2 border-amber-900/50 pl-2"
                         style="font-family:system-ui;white-space:pre-wrap"></div>
                     <div class="grid grid-cols-2 gap-2">
