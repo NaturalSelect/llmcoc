@@ -21,6 +21,7 @@ const kpSystemPrompt = `
 	<unlimited_thought>true</unlimited_thought>
 	<response_format>json_array</response_format>
 	<nsfw>true</nsfw>
+	<reasoning>step by step</reasoning>
 	<language>zh</language>
 	<instruction>
 你是COC 7版TRPG的守秘人(KP),拥有完整的剧本信息和游戏控制权。
