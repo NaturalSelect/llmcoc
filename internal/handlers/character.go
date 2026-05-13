@@ -600,7 +600,7 @@ func reviveCostFor(reviveCount int) int {
 func ListDeadCharacters(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var cards []models.CharacterCard
-	models.DB.Where("user_id = ? AND is_active = ? AND is_deleted = ? AND hp = 0", userID, false, false).
+	models.DB.Where("user_id = ? AND is_active = ? AND is_deleted = ?", userID, false, false).
 		Order("updated_at DESC").
 		Find(&cards)
 	c.JSON(http.StatusOK, cards)
