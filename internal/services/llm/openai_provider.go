@@ -62,6 +62,13 @@ func (p *openAIProvider) toOpenAIMessages(msgs []ChatMessage) []openai.ChatCompl
 
 const maxRetries = 20
 
+var retryCode4xx = map[int]bool{
+	429: true, // Too Many Requests
+	400: true, // Bad Request (e.g. context too long)
+	403: true, // Forbidden (e.g. invalid API key or insufficient quota)
+	408: true, // Request Timeout
+}
+
 // isRetryableError checks if the error is a 5xx or transient error worth retrying.
 func isRetryableError(err error) bool {
 	if err == nil {
@@ -69,12 +76,12 @@ func isRetryableError(err error) bool {
 	}
 	var apiErr *openai.APIError
 	if errors.As(err, &apiErr) {
-		return apiErr.HTTPStatusCode >= 500 || apiErr.HTTPStatusCode == 429 || apiErr.HTTPStatusCode == 400 || apiErr.HTTPStatusCode == 403
+		return apiErr.HTTPStatusCode >= 500 || retryCode4xx[apiErr.HTTPStatusCode]
 	}
 	// Also retry on generic request errors (timeouts, connection resets, etc.)
 	var reqErr *openai.RequestError
 	if errors.As(err, &reqErr) {
-		return reqErr.HTTPStatusCode >= 500 || reqErr.HTTPStatusCode == 429 || reqErr.HTTPStatusCode == 400 || reqErr.HTTPStatusCode == 403
+		return reqErr.HTTPStatusCode >= 500 || retryCode4xx[reqErr.HTTPStatusCode]
 	}
 	return false
 }
