@@ -253,7 +253,7 @@ func main() {
 	select {
 	case <-ctx.Done():
 		log.Printf("Shutdown signal received")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			log.Printf("Server shutdown failed: %v", err)
