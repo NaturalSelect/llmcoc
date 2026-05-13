@@ -74,7 +74,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>update_characters</name>
-			<description>更新调查员的状态, changes 输入的参数字符串不可包含'()', 请考虑使用'-', '()'是关键字, 仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业, 其他临时信息请考虑llm_note</description>
+			<description>更新调查员的状态。格式严格为: "FIELD VALUE (角色名)" — 角色名必须用圆括号包裹且紧跟在值之后，这是解析关键字。FIELD和VALUE之间只用空格，VALUE中禁止再出现圆括号(例如不能写"-3(重伤)")。仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业，其他临时信息请用llm_note。</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)"], "reason":"描述变更原因"}</call_example>		
