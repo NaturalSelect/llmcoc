@@ -784,6 +784,22 @@ func RepairJSON(ctx context.Context, rawJSON string, parseErr error, schemaExamp
 		rawJSON = strings.TrimSuffix(rawJSON, "```")
 		return rawJSON, nil
 	}
+	isArray := strings.HasPrefix(schemaExample, "[") && strings.HasSuffix(schemaExample, "]")
+	if isArray {
+		fixed := false
+		if !strings.HasPrefix(rawJSON, "[") {
+			rawJSON = "[" + rawJSON
+			fixed = true
+		}
+		if !strings.HasSuffix(rawJSON, "]") {
+			rawJSON = rawJSON + "]"
+			fixed = true
+		}
+		if fixed && json.Valid([]byte(rawJSON)) {
+			debugf("repair", "fixed: %v", rawJSON)
+			return rawJSON, nil
+		}
+	}
 	parser, err := loadSingleAgent(models.AgentRoleParser)
 	if err != nil {
 		return "", fmt.Errorf("parser agent 未配置: %w", err)
