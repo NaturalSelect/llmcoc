@@ -121,6 +121,9 @@ func CreateScenario(c *gin.Context) {
 	if req.MaxPlayers == 0 {
 		req.MaxPlayers = 4
 	}
+	if req.MaxPlayers > 4 {
+		req.MaxPlayers = 4
+	}
 	if req.Difficulty == "" {
 		req.Difficulty = "normal"
 	}
@@ -250,6 +253,9 @@ func UploadScenario(c *gin.Context) {
 		in.MinPlayers = 1
 	}
 	if in.MaxPlayers <= 0 {
+		in.MaxPlayers = 4
+	}
+	if in.MaxPlayers > 4 {
 		in.MaxPlayers = 4
 	}
 	if in.Difficulty == "" {

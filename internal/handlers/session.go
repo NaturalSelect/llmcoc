@@ -103,6 +103,9 @@ func CreateSession(c *gin.Context) {
 	if req.MaxPlayers == 0 {
 		req.MaxPlayers = scenario.MaxPlayers
 	}
+	if req.MaxPlayers > 4 {
+		req.MaxPlayers = 4
+	}
 
 	var pwHash string
 	hasPassword := req.Password != ""
