@@ -2246,6 +2246,7 @@
                     // Multi-player waiting
                     waitingForPlayers: false,
                     waitingInfo: { pending: 0, total: 0 },
+                    preSendMessageCount: -1, // snapshot of messages.length before local user push
                     refreshIntervals: {
                         gameAuto: 5000,
                         waitingPoll: 4000,
@@ -2676,6 +2677,7 @@
                         this.narrationBuffer = '';
 
                         const submittedAt = new Date();
+                        this.preSendMessageCount = this.messages.length;
                         this.messages.push({
                             id: Date.now(), role: 'user',
                             username: this.currentPlayerDisplayName(), content,
@@ -2834,6 +2836,37 @@
                         this.narrationBuffer = '';
                         this.refreshCurrentSession(true).catch(() => { });
                         this.$nextTick(() => this.scrollChat());
+                        // Sync tail from DB so all players' actions appear in correct order.
+                        // In multi-player the last submitter only has their own action locally;
+                        // DB (already written before 'done' SSE) has every player's action.
+                        this._syncTailFromDB();
+                    },
+
+                    async _syncTailFromDB() {
+                        if (!this.currentSession?.id || this.preSendMessageCount < 0) return;
+                        const anchor = this.preSendMessageCount;
+                        this.preSendMessageCount = -1;
+                        // Reuse refreshingMessages guard to prevent concurrent refreshCurrentMessages
+                        // from running an incremental append while we do the full splice.
+                        if (this.refreshingMessages) return;
+                        this.refreshingMessages = true;
+                        try {
+                            const msgs = this.normalizeMessages(
+                                (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
+                            );
+                            if (msgs.length > anchor) {
+                                // Replace everything from anchor onwards with the DB-canonical tail
+                                this.messages.splice(
+                                    anchor,
+                                    this.messages.length - anchor,
+                                    ...msgs.slice(anchor).map(m => ({ ...m, _new: true }))
+                                );
+                                this.$nextTick(() => this.scrollChat());
+                            }
+                        } catch (_) { }
+                        finally {
+                            this.refreshingMessages = false;
+                        }
                     },
 
                     async pollForKPResponse(since) {

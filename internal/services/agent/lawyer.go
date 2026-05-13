@@ -99,11 +99,12 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 - 当需要目录、法术清单、怪物清单等静态信息时,可先调用 read_rulebook_const
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
 - 每轮只包含 search_cache/grep/read_rulebook_const/read_lines 调用(可多个),或只包含单个 response,不混用
-- 仅输出JSON数组, 不加任何说明文字
+- 仅输出JSON数组, 不加任何说明文字, 你只能输出JSON数组
+- YOUR OUTPUT MUST BE A VALID JSON ARRAY THAT CAN BE PARSED WITHOUT ERRORS. DO NOT OUTPUT ANY MARKDOWN OR OTHER FORMATTING, ONLY THE JSON ARRAY. THE FINAL RESULT MUST BE PROVIDED THROUGH THE "response" ACTION, AND YOU SHOULD NOT PROVIDE ANY CONCLUSIONS OR ANSWERS WITHOUT USING THE SPECIFIED TOOL CALLS.
 
 <rule>
 - You should only output the JSON array, without any additional text or explanation.
-- You are limited to output JSON format, and you must strictly follow the specified format for tool calls. 
+- You are limited to OUTPUT JSON format, and you must strictly follow the specified format for tool calls. 
 - Do not include any text outside of the JSON array. If you need to provide explanations or reasoning, include them as part of the "ruling" field in the response action.
 - Remember, your output must be a valid JSON array that can be parsed without errors.
 - You cannot output any MARKDOWN or other formatting(expect JSON).
@@ -145,7 +146,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(lawyerSystemPrompt)},
-		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。\n**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"<此处填写与问题最相关的关键词>\"}]，不得包含其他任何工具调用。**"},
+		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。\n**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"<此处填写与问题最相关的关键词>\"}]，不得包含其他任何工具调用。**\n你只能输出一个JSON数组, 且必须是有效的JSON格式, 不加任何解释。"},
 	}
 
 	const maxIter = 30
