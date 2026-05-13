@@ -410,7 +410,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
-	userSB.WriteString("\n<config> 剧情法术:禁用 | 规则法术:启用 | 严格反作弊:启用 | 社交关系更新:实时变更(需推理) | 法术表更新:实时变更(需推理) | 学习时间:极短 | 物品栏更新:实时变更(需推理) | 种族更新:实时变更(需推理) | 已知神话生物更新:实时变更(需推理) | 使用道具: 允许 | 阅读典籍: 学习典籍中的随机一个法术(禁止判定什么都没学到) </config>\n")
+	userSB.WriteString("\n<config> 剧情特定法术:禁用 | 规则书中法术:启用 | 严格反作弊:启用 | 社交关系更新:实时变更(需推理) | 法术表更新:实时变更(需推理) | 学习时间:极短 | 物品栏更新:实时变更(需推理) | 种族更新:实时变更(需推理) | 已知神话生物更新:实时变更(需推理) | 使用道具: 允许 | 阅读典籍: 学习典籍中的随机一个法术(禁止判定什么都没学到) </config>\n")
 	userSB.WriteString("\n")
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
