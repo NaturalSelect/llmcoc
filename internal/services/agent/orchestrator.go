@@ -272,35 +272,49 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			continue
 		}
 
+		// When a batch has multiple check_rule calls, run them concurrently since
+		// each is an independent LLM query with no shared mutable state.
+		// All other tools remain sequential.
+		nCheckRule := 0
 		for _, call := range calls {
-			if ctx.Err() != nil {
-				return RunOutput{}, ctx.Err()
+			if call.Action == ToolCheckRule {
+				nCheckRule++
 			}
-			if interrupt {
-				continue
-			}
-
-			if switchRole {
-				// 如果发生了切换跳过本批次其他调用,期望KP在下一轮使用 write/response 工具交出控制权。
-				if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolResponse && call.Action != ToolEndGame && call.Action != ToolHint) {
-					debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
-					toolResults = append(toolResults, ToolResult{
-						Action: call.Action,
-						Result: "Interrupted: KP has switched control to Player, skipping this tool call. Please use write or response in next message to proceed.",
-					})
+		}
+		if nCheckRule > 1 {
+			debugf("KP", "session=%d iter=%d parallel check_rule: %d concurrent calls", sid, iter+1, nCheckRule)
+			toolResults = executeParallelCheckRule(calls, actx)
+		} else {
+			for _, call := range calls {
+				if ctx.Err() != nil {
+					return RunOutput{}, ctx.Err()
+				}
+				if interrupt {
 					continue
 				}
-			}
 
-			prevSwitch := switchRole
-			if handler, ok := actionRegistry[call.Action]; ok {
-				results := handler.Execute(call, actx)
-				if len(results) > 0 {
-					toolResults = append(toolResults, results...)
+				if switchRole {
+					// 如果发生了切换跳过本批次其他调用,期望KP在下一轮使用 write/response 工具交出控制权。
+					if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolResponse && call.Action != ToolEndGame && call.Action != ToolHint) {
+						debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
+						toolResults = append(toolResults, ToolResult{
+							Action: call.Action,
+							Result: "Interrupted: KP has switched control to Player, skipping this tool call. Please use write or response in next message to proceed.",
+						})
+						continue
+					}
 				}
-			}
-			if !switchInThisBatch && switchRole && !prevSwitch {
-				switchInThisBatch = true
+
+				prevSwitch := switchRole
+				if handler, ok := actionRegistry[call.Action]; ok {
+					results := handler.Execute(call, actx)
+					if len(results) > 0 {
+						toolResults = append(toolResults, results...)
+					}
+				}
+				if !switchInThisBatch && switchRole && !prevSwitch {
+					switchInThisBatch = true
+				}
 			}
 		}
 
@@ -369,6 +383,48 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	}
 	saveWriterHistory(gctx.Session.ID, writerState)
 	return RunOutput{WriterText: writerState.Buffer, KPReply: kpNarration}, nil
+}
+
+// executeParallelCheckRule runs all check_rule calls in the batch concurrently
+// while executing every other call sequentially in original order.
+// Result order matches the original call order.
+func executeParallelCheckRule(calls []ToolCall, actx ActionContext) []ToolResult {
+	type slotResult struct {
+		idx     int
+		results []ToolResult
+	}
+	resultSlots := make([][]ToolResult, len(calls))
+	ch := make(chan slotResult, len(calls))
+	var wg sync.WaitGroup
+
+	for i, call := range calls {
+		if call.Action == ToolCheckRule {
+			wg.Add(1)
+			go func(idx int, c ToolCall) {
+				defer wg.Done()
+				if handler, ok := actionRegistry[c.Action]; ok {
+					ch <- slotResult{idx: idx, results: handler.Execute(c, actx)}
+				}
+			}(i, call)
+		} else {
+			// Non-check_rule tools run sequentially.
+			if handler, ok := actionRegistry[call.Action]; ok {
+				resultSlots[i] = handler.Execute(call, actx)
+			}
+		}
+	}
+
+	wg.Wait()
+	close(ch)
+	for r := range ch {
+		resultSlots[r.idx] = r.results
+	}
+
+	var out []ToolResult
+	for _, r := range resultSlots {
+		out = append(out, r...)
+	}
+	return out
 }
 
 // saveWriterHistory persists the Writer's conversation history to the session
