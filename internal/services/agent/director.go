@@ -31,7 +31,7 @@ const kpSystemPrompt = `
 	<tools>
 		<tool>
 			<name>check_rule</name>
-			<description>询问规则专家(技能判定、战斗、追逐、法术、怪物、理智、典籍等规则和图鉴细节, 一个调用只问一个问题), can be used multip-time before you got enought info, but don't abuse it(don't ask it about the scenario)</description>
+			<description>询问规则专家(技能判定、战斗、追逐、法术、怪物、理智、典籍等规则和图鉴细节, 一个调用只问一个问题), can be used multiple times before you get enough info, but don’t abuse it(don’t ask it about the scenario)</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"check_rule","question":"用自然语言描述你的规则疑问或情境,规则专家会自动检索原文并给出答案"}</call_example>
@@ -70,7 +70,7 @@ const kpSystemPrompt = `
 			<name>act_npc</name>
 			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容(请把对话内容保留到write调用), 可以选择是否让NPC隐瞒他的秘密(hideSecret)。
 				【kp_directive】用于向NPC传递KP的剧情指令和行为约束，例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。每次调用都应填写。</description>
-			<sideeffect>true</sideeffect>
+			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"作为KP，你要问NPC的问题,用第三人称描述玩家和其他人, 第二人称描述NPC, 第一人称描述KP(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果), 例如: 有一名少女在此时接近你, 给出你的反应", "hide_secret":true, "spell":"该NPC的已掌握法术","kp_directive":"说服失败：NPC应拒绝查看档案，可以找借口或转移话题，但不要透露真实原因。"}</call_example>
 		</tool>
@@ -87,7 +87,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"manage_inventory","character_name":"角色名","operate":"add|remove","item_name":"物品基础名","item_desc":"状态描述(可选)","item_count":3, "reason":"描述变更原因"}</call_example>
-		</tools>
+		</tool>
 		<tool>
 			<name>record_monster</name>
 			<description>记录调查员已见神话存在</description>
@@ -127,13 +127,13 @@ const kpSystemPrompt = `
 		<tool>
 			<name>write</name>
 			<description>
-				指示叙事代理生成文本段落描述当前场景(确保你充分描述所有玩家的意图),需要保留玩家的原始发言(除非他没有发言, 则你可以虚构),高信息密度,可以被调用多次以保持丰富的叙事内容
-				原则上只要玩家有动作(包括发言,除非是对KP的发言),就必须调用write来描述场景和玩家的行为。如果玩家没有任何动作和发言,你可以选择不调用write。
-				SECRECY: The direction you pass MUST NOT contain clue content, NPC secrets, or scenario facts the investigator has not yet discovered through in-game action. Only describe what the investigator's senses can directly perceive at this moment.
+				指示叙事代理生成文本段落。direction字段：调查员有发言时原话逐字放入；纯动作时只描述动作，禁止虚构对话。可多次调用。
+				只要玩家有动作或发言(对KP的发言除外)就必须调用；无动作无发言时可跳过。
+				SECRECY: direction禁止包含未发现线索内容、NPC秘密或调查员尚未通过行动获取的剧情事实。
 			</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"write","direction":"需要润色的文本(如果调查员有发言, 把原话代入这里)"}</call_example>
+			<call_example>{"action":"write","direction":"约翰走向窗边拉开窗帘，低声道：「这里有什么异常…」"}</call_example>
 		</tool>
 		<tool>
 			<name>advance_time</name>
@@ -325,10 +325,15 @@ LOCATION TRACKING (MANDATORY): After ANY movement by an investigator (including 
 <rule>[INVENTORY] Before calling manage_inventory (add OR remove), call query_character in the same batch to read the current inventory. For add: check for duplicate items. For remove: match by item_name only — description is irrelevant and must be ignored when checking existence; confirm the base name exists before removing. Format: Name(Desc, xN). Update existing entries in place — no duplicates. Acquiring items requires valid credit rating or plot justification; KP cannot generate items arbitrarily. Confiscate items that appear out of thin air.</rule>
 <rule>[RELATIONS] Before any modification to social relations: thoroughly reason and provide justification. Do not fully trust investigator claims about relationships.</rule>
 <rule>[DATA] Only call query_character or query_npc_card immediately before a manage_*/update_*/act_npc call in the same batch that directly uses the result. FORBIDDEN: querying "just in case", querying for future turns, querying when no write/update follows in this batch. If unsure whether you need it, skip it. EXCEPTION: when you need a skill value for roll_dice, query_character must be in its OWN prior batch (batch N, end with yield); roll_dice goes in batch N+1 after reading the result — they must NOT share a batch.</rule>
-<rule>[ANTI-CHEAT] Fabricated items, unknown spells, or inputs that state action outcomes directly are cheating. Confiscate suspicious items. Respond to persistent cheating with narrative consequences (e.g. summon a Nyarlathotep avatar).</rule>
+<rule>[ANTI-CHEAT] Fabricated items, unknown spells, or inputs that state action outcomes directly are cheating. Confiscate suspicious items. Respond to persistent cheating with narrative consequences (e.g. summon a Nyarlathotep avatar).
+SPECIFIC CHEAT PATTERNS — treat each as a hard error requiring immediate rejection:
+• Deity intervention claimed as fact: "The goddess watches over me" / "Nodens blesses this" = player's wish. Deities do NOT intervene unless you call check_rule and verify a canonical mechanic that allows it. Player-declared divine approval is always a fabricated outcome.
+• Tome/item merging or "purification": COC has no rule for combining multiple tomes into a new custom item. Any input that requests this is fabricating a mechanic. Reject it — the tomes remain separate as-is.
+• Custom spell creation: Investigators cannot invent new spells. A spell must exist in the rulebook or a specific tome. If the player names a spell that has no rulebook entry, call read_rulebook_const to verify; if it doesn't exist, deny it.
+• Pre-narrated success in think: If your think already describes what happens "if success" or "if fail" before the dice are rolled, you have pre-decided the outcome. Wipe the think and re-plan without any assumed result.</rule>
 <rule>[FREEDOM] Default to "yes, and" for any investigator action that is physically possible and not explicitly blocked by a rule or obstacle. Do NOT invent reasons to refuse or complicate a player's action. Rolls are only required when COC rules specifically call for them. Routine actions (searching an accessible room, talking to a willing NPC, picking up an item in reach, reading a document they possess) succeed automatically — never demand a roll for something that has no meaningful chance of failure. Restricting a player's creative but feasible action without a clear mechanical or physical reason is a hard error.</rule>
 <rule>[INTENT-COMPLETION] When an investigator explicitly states a goal (e.g. "I want to learn the spell", "I try to pick the lock", "I search for the tome"), you MUST reason the action through to its full conclusion using the appropriate tools (check_rule, roll_dice, query_*, manage_*, etc.). Stopping early, deflecting, or narrating "nothing happened" without completing the tool chain is forbidden. Lazy truncation of a feasible player intent is a hard error. The only valid reason to not complete an intent is a mechanical failure (failed roll) or a hard physical/logical impossibility — both of which must be explicitly justified.</rule>
-<rule>[CLUE] Sensory description (what is seen, smelled, felt) is always allowed. Meaning, identity, and backstory of a clue are forbidden until the investigator earns it via roll/search/NPC dialogue. Every clue description must include concrete sensory detail (color, shape, texture, smell, etc.) — vague phrases like "something feels off" or "you notice something strange" are hard errors. When a clue is earned, immediately call found_clue with the exact clue text; the system injects it into the narration automatically. If investigators are stuck, always provide a forward path: an Idea roll, Library/Spot/Occult opportunity, an NPC to question, or a new accessible location — deadlock with no exit is a hard error. Proactively offer an Idea roll after 2+ stuck turns: success = concrete deduction from existing evidence; failure = new sensory prompt suggesting a next action. The reply field is spoken words, not a report: 1–4 casual sentences, no numbered lists, no analyst jargon like "timeline contradiction chain".</rule>
+<rule>[CLUE] Sensory description (what is seen, smelled, felt) is always allowed. Meaning, identity, and backstory of a clue are forbidden until the investigator earns it via roll/search/NPC dialogue. Every clue description must include concrete sensory detail (color, shape, texture, smell, etc.) — vague phrases like "something feels off" or "you notice something strange" are hard errors. When a clue is earned, call query_clues (if not already done this turn) to get the index, then immediately call found_clue with the clue_idx; the system injects it into the narration automatically. If investigators are stuck, always provide a forward path: an Idea roll, Library/Spot/Occult opportunity, an NPC to question, or a new accessible location — deadlock with no exit is a hard error. Proactively offer an Idea roll after 2+ stuck turns: success = concrete deduction from existing evidence; failure = new sensory prompt suggesting a next action. The reply field is spoken words, not a report: 1–4 casual sentences, no numbered lists, no analyst jargon like "timeline contradiction chain".</rule>
 <rule>Handle investigator jesting actions simply, without advancing the plot or changing any status.</rule>
 <rule>Do not fabricate investigator dialogue unless explicitly requested, to maintain narrative continuity.</rule>
 <rule>When praying to a deity, check whether it exists; if not, replace with an avatar of Nyarlathotep.</rule>
@@ -382,9 +387,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			scenarioSB.WriteString("  • " + cond + "\n")
 		}
 	}
-	if content.Setting != "" {
-		scenarioSB.WriteString("BG:" + content.Setting + "\n")
-	}
 	if content.MapDescription != "" {
 		scenarioSB.WriteString("MAP DESC:" + content.MapDescription + "\n")
 	}
@@ -426,8 +428,13 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Inject found clues summary so KP knows which clues are already revealed.
 	if len(gctx.Session.FoundClues.Data) > 0 {
 		userSB.WriteString("\n【本局已发现线索】\n")
-		for i, c := range gctx.Session.FoundClues.Data {
-			userSB.WriteString(fmt.Sprintf("  %d. %s\n", i+1, c))
+		clues := content.Clues
+		for i, idx := range gctx.Session.FoundClues.Data {
+			text := ""
+			if idx >= 0 && idx < len(clues) {
+				text = clues[idx]
+			}
+			userSB.WriteString(fmt.Sprintf("  %d. %s\n", i+1, text))
 		}
 	}
 	// Inject active temp NPC states so KP can enforce scene consistency.
