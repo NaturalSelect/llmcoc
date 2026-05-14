@@ -144,13 +144,6 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 		return nil
 	}
 
-	// Fast path: check the Go-level cache before involving the LLM at all.
-	if cached, ok := lawyerCache.Get(situation); ok {
-		debugf("Lawyer", "cache hit (Go-level) for situation: %s", situation)
-		lawyerCache.RecordFullHit()
-		return []LawyerResult{{Query: situation, RuleText: cached}}
-	}
-
 	// Track whether the LLM had to search the rulebook (grep/read_lines/read_rulebook_const).
 	searchedRulebook := false
 	// Track whether search_cache returned at least one result.
@@ -222,9 +215,9 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				} else if searchedRulebook && !cacheSearchHadResults {
 					// Cache returned nothing — full miss.
 					lawyerCache.RecordMiss()
-				} else {
+				} else if !searchedRulebook && cacheSearchHadResults {
 					// search_cache satisfied the LLM without any rulebook search.
-					lawyerCache.RecordPartialHit()
+					lawyerCache.RecordFullHit()
 				}
 				return []LawyerResult{{
 					Query:    situation,
