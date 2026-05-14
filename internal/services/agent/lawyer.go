@@ -95,7 +95,7 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 【执行规则】
 - 回复不能为空
 - **第一轮必须且只能调用 search_cache**，不得跳过，不得在第一轮输出任何其他工具或response
-- 若 search_cache 返回了高度相关的缓存裁定且你判定能够满足当前问题，直接引用并输出 response，不再进行任何搜索
+- 若 search_cache 返回了高度相关的缓存且你认为有足够的信息能够回答当前问题，直接引用并输出 response，不再进行任何搜索
 - 只有缓存未命中时，才允许进行grep/read_rulebook_const/read_lines等搜索
 - 禁止在没有调用grep/search_cache/read_rulebook_const/read_lines的情况下就进行response
 - 谨慎判断意图，不要乱搜索，关键词不要乱给, 仔细检查每一个grep结果，确保你能拿到足够多的信息来回答问题, 不要乱猜
