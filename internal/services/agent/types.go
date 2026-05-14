@@ -72,6 +72,7 @@ type ToolCall struct {
 	CharCard      *NPCCard               `json:"char_card,omitempty"`      // create_npc: NPC角色卡
 	NPCName       string                 `json:"npc_name,omitempty"`       // npc_act: NPC名称
 	NPCCtx        string                 `json:"npc_ctx,omitempty"`        // npc_act: 当前情境简述
+	KPDirective   string                 `json:"kp_directive,omitempty"`   // act_npc: KP剧情指令(最高优先级行为约束)
 	DestroyReason string                 `json:"destroy_reason,omitempty"` // destroy_npc: dead|out_of_range|cleanup
 	Changes       []string               `json:"changes,omitempty"`        // update_characters: 状态变化列表
 	CharacterName string                 `json:"character_name,omitempty"` // trigger_madness / query_character: 角色名称

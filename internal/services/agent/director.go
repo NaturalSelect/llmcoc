@@ -67,10 +67,11 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>act_npc</name>
-			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容(请把对话内容保留到write调用), 可以选择是否让NPC隐瞒他的秘密(hideSecret)</description>
+			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容(请把对话内容保留到write调用), 可以选择是否让NPC隐瞒他的秘密(hideSecret)。
+				【kp_directive】用于向NPC传递KP的剧情指令和行为约束，例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。每次调用都应填写。</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果)", "hide_secret":true, "spell":"必填, 该NPC的已掌握法术"}</call_example>
+			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果)", "hide_secret":true, "spell":"该NPC的已掌握法术","kp_directive":"说服失败：NPC应拒绝查看档案，可以找借口或转移话题，但不要透露真实原因。"}</call_example>
 		</tool>
 		<tool>
 			<name>update_characters</name>
