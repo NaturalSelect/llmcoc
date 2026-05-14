@@ -338,17 +338,26 @@ func (hintAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 type foundClueAction struct{}
 
 func (foundClueAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	clueText := strings.TrimSpace(call.ClueText)
-	if clueText == "" {
-		return []ToolResult{{Action: ToolFoundClue, Result: "错误: clue_text 不能为空"}}
+	clues := actx.GCtx.Session.Scenario.Content.Data.Clues
+	idx := call.ClueIdx
+	if idx < 0 || idx >= len(clues) {
+		return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("error: clue_idx %d out of range (0-%d), check query_clues for valid indices", idx, len(clues)-1)}}
 	}
-	debugf("tool", "session=%d found_clue text=%s", actx.Sid, clueText)
-	actx.GCtx.Session.FoundClues.Data = append(actx.GCtx.Session.FoundClues.Data, clueText)
+	debugf("tool", "session=%d found_clue idx=%d", actx.Sid, idx)
+
+	// Deduplicate.
+	for _, f := range actx.GCtx.Session.FoundClues.Data {
+		if f == idx {
+			return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("clue[%d] already recorded", idx)}}
+		}
+	}
+
+	actx.GCtx.Session.FoundClues.Data = append(actx.GCtx.Session.FoundClues.Data, idx)
 	models.DB.Model(&models.GameSession{}).
 		Where("id = ?", actx.GCtx.Session.ID).
 		Update("found_clues", actx.GCtx.Session.FoundClues)
-	*actx.KPNarration += fmt.Sprintf("\n【线索已获得】%s\n", clueText)
-	return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("线索已记录: %s", clueText)}}
+	*actx.PendingWrite += fmt.Sprintf("\n【线索已获得】%s\n", clues[idx])
+	return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("clue[%d] recorded: %s", idx, clues[idx])}}
 }
 
 // ── NPC card actions ──────────────────────────────────────────────────────────
@@ -398,18 +407,18 @@ type queryCluesAction struct{}
 func (queryCluesAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d query_clues all", actx.Sid)
 	clues := actx.GCtx.Session.Scenario.Content.Data.Clues
-	clueResult := "(无匹配线索)"
+	clueResult := "(无线索)"
 	if len(clues) > 0 {
-		foundSet := make(map[string]bool, len(actx.GCtx.Session.FoundClues.Data))
-		for _, f := range actx.GCtx.Session.FoundClues.Data {
-			foundSet[f] = true
+		foundSet := make(map[int]bool, len(actx.GCtx.Session.FoundClues.Data))
+		for _, i := range actx.GCtx.Session.FoundClues.Data {
+			foundSet[i] = true
 		}
 		var sb strings.Builder
-		for _, c := range clues {
-			if foundSet[c] {
-				sb.WriteString("[已发现] " + c + "\n")
+		for i, c := range clues {
+			if foundSet[i] {
+				sb.WriteString(fmt.Sprintf("[Idx: %d][已发现] %s\n", i, c))
 			} else {
-				sb.WriteString("[未发现] " + c + "\n")
+				sb.WriteString(fmt.Sprintf("[Idx: %d][未发现] %s\n", i, c))
 			}
 		}
 		clueResult = sb.String()

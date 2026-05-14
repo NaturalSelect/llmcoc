@@ -185,7 +185,7 @@ type GameSession struct {
 	ChaseState    JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
 	KPHint        string                  `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
 	Introspection string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
-	FoundClues    JSONField[[]string]     `gorm:"type:text" json:"-"` // 本局已被玩家发现的线索列表
+	FoundClues    JSONField[[]int]        `gorm:"type:text" json:"-"` // 本局已被玩家发现的线索索引列表(对应ScenarioContent.Clues的下标)
 	CreatedAt     time.Time               `json:"created_at"`
 	UpdatedAt     time.Time               `json:"updated_at"`
 	Scenario      Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`

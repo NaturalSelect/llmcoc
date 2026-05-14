@@ -94,7 +94,7 @@ type ToolCall struct {
 	NewLocation   string                 `json:"new_location,omitempty"`   // update_location: 新位置名称
 	ArmorValue    int                    `json:"armor_value"`              // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
-	ClueText      string                 `json:"clue_text,omitempty"`      // found_clue: 线索原文
+	ClueIdx       int                    `json:"clue_idx"`                 // found_clue: 线索在剧本clues数组中的0-based索引
 	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结(可选)
 	Reason        string                 `json:"reason,omitempty"`         // reasoning: KP本轮推理过程
