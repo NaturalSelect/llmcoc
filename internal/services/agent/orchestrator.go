@@ -342,8 +342,17 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					models.DB.Save(card)
 					break
 				}
-				if checkTurnReady(gctx) && pendingWrite != "" {
-					advanceTurnRound(gctx)
+				if checkTurnReady(gctx) {
+					if pendingWrite != "" {
+						// Real game turn: narrative was written, advance the clock.
+						advanceTurnRound(gctx)
+					} else {
+						// Pure OOC consultation (KP-QUERY): no in-game action happened,
+						// so TurnRound stays the same. But we must still clear
+						// SessionTurnAction records so the next submission doesn't
+						// immediately look like "all players already submitted".
+						clearTurnActions(gctx)
+					}
 				}
 			}
 			saveWriterHistory(gctx.Session.ID, writerState)
@@ -866,6 +875,14 @@ func advanceTurnRound(gctx GameContext) {
 	models.DB.Model(&models.GameSession{}).Where("id = ?", gctx.Session.ID).Update("turn_round", nextRound)
 	models.DB.Where("session_id = ? AND round = ?", gctx.Session.ID, gctx.Session.TurnRound).Delete(&models.SessionTurnAction{})
 	log.Printf("[agent] session %d advanced to round %d", gctx.Session.ID, nextRound)
+}
+
+// clearTurnActions removes SessionTurnAction records for the current round
+// without incrementing TurnRound. Used for out-of-character KP consultations
+// so that players can resubmit in-game actions afterwards.
+func clearTurnActions(gctx GameContext) {
+	models.DB.Where("session_id = ? AND round = ?", gctx.Session.ID, gctx.Session.TurnRound).Delete(&models.SessionTurnAction{})
+	log.Printf("[agent] session %d cleared turn actions (round %d, no time advance)", gctx.Session.ID, gctx.Session.TurnRound)
 }
 
 // formatCallNames returns a comma-joined list of action names for debug logging.

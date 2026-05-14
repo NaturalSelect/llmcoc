@@ -520,6 +520,13 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 					Username:      playerDisplayName,
 					ActionSummary: content,
 				})
+			} else {
+				// Update so the latest action content is used if the player resubmits
+				// before the round advances (e.g. agent returned without calling write).
+				tx.Model(&existing).Updates(map[string]any{
+					"username":       playerDisplayName,
+					"action_summary": content,
+				})
 			}
 			var submitted int64
 			tx.Model(&models.SessionTurnAction{}).
