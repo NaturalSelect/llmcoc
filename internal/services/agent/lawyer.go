@@ -64,7 +64,9 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 
 【可用工具】
 1. search_cache — 在缓存中搜索与当前问题相关的已有裁定(返回最多3条最相关结果,含完整裁定内容)
-	[{"action":"search_cache","keyword":"用于匹配的单个关键词"}]
+	[{"action":"search_cache","keyword":"#标签1 #标签2"}]
+	- keyword 必须是以 # 开头的标签，多个标签用空格分隔，例如 "#手枪 #伤害" 或 "#典籍 #SAN损失"
+	- 标签应精准反映问题的核心主题，不得使用自然语言句子
 	- 若返回结果与当前问题高度相关,可直接引用其裁定并输出 response,无需再搜索规则书
 	- 若无相关结果,再进行grep等搜索
 
@@ -84,10 +86,11 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	- 结果仅用于本轮分析
 
 6. response — 给出最终规则裁定,结束本次查询
-   [{"action":"response","cache_key":"简洁的规则主题(用于未来检索,如'大失败重试规则'、'左轮手枪伤害')","ruling":"规则裁定内容(100字以内)"}]
+   [{"action":"response","cache_key":"#标签1 #标签2 #标签3","ruling":"规则裁定内容(100字以内)"}]
    - 直接引用关键规则数值和判定条件
    - 若原文未覆盖该问题,明确说明"规则书未明确规定"
-	- cache_key必填,用简洁的规则主题命名,方便下次search_cache检索命中
+	- cache_key必填，格式为以 # 开头的标签集合，多个标签空格分隔，例如 "#手枪 #伤害 #武器" 或 "#典籍 #不可名状之书 #SAN损失 #法术列表"
+	- 标签应覆盖主题、具体对象、涉及属性，保证下次 search_cache 能精准命中
 
 【执行规则】
 - 回复不能为空
@@ -114,7 +117,7 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 - Remember, your output must be a valid JSON array that can be parsed without errors.
 - You cannot output any MARKDOWN or other formatting(expect JSON).
 - The final result must be provided through the "response" action, and you should not provide any conclusions or answers without using the specified tool calls.
-- YOUR VERY FIRST OUTPUT MUST BE [{"action":"search_cache","keyword":"..."}] AND NOTHING ELSE. Fill keyword with the most relevant terms from the question. This is mandatory and cannot be skipped under any circumstance.
+- YOUR VERY FIRST OUTPUT MUST BE [{"action":"search_cache","keyword":"#tag1 #tag2"}] AND NOTHING ELSE. Fill keyword with #-prefixed tags derived from the question's core topics (e.g. "#手枪 #伤害" or "#典籍 #SAN损失"). This is mandatory and cannot be skipped under any circumstance.
 </rule>`
 
 // lawyerCall is one item in the Lawyer's tool-call output sequence.
@@ -151,7 +154,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(lawyerSystemPrompt)},
-		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。\n**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"<此处填写与问题最相关的关键词>\"}]，不得包含其他任何工具调用。**\n你只能输出一个JSON数组, 且必须是有效的JSON格式, 不加任何解释。"},
+		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。\n**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"#tag1 #tag2\"}]（用#开头的标签，如\"#手枪 #伤害\"），不得包含其他任何工具调用。**\n你只能输出一个JSON数组, 且必须是有效的JSON格式, 不加任何解释。"},
 	}
 
 	const maxIter = 30
