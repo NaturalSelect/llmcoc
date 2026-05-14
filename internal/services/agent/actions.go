@@ -60,6 +60,8 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolThink:            true,
 	ToolUpdateLLMNote:    true,
 	ToolUpdateNPCLLMNote: true,
+	ToolUpdateLocation:   true,
+	ToolUpdateArmor:      true,
 	ToolReport:           true,
 	ToolYield:            true,
 	ToolUpdateCharacters: true,
@@ -98,6 +100,8 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolAdvanceTime:       advanceTimeAction{},
 	ToolUpdateLLMNote:     updateLLMNoteAction{},
 	ToolUpdateNPCLLMNote:  updateNPCLLMNoteAction{},
+	ToolUpdateLocation:    updateLocationAction{},
+	ToolUpdateArmor:       updateArmorAction{},
 	ToolHint:              hintAction{},
 	ToolResponse:          responseAction{},
 	ToolThink:             emptyAction{actionName: string(ToolThink)},
@@ -283,7 +287,37 @@ func (updateNPCLLMNoteAction) Execute(call ToolCall, actx ActionContext) []ToolR
 	return []ToolResult{{Action: ToolUpdateNPCLLMNote, Result: fmt.Sprintf("找不到名为 %s 的NPC", who)}}
 }
 
-// ── Hit action ────────────────────────────────────────────────────────────────
+type updateLocationAction struct{}
+
+func (updateLocationAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	who := call.CharacterName
+	loc := strings.TrimSpace(call.NewLocation)
+	debugf("tool", "session=%d update_location char=%q location=%q", actx.Sid, who, loc)
+	for i := range actx.GCtx.Session.Players {
+		if actx.GCtx.Session.Players[i].CharacterCard.Name == who {
+			actx.GCtx.Session.Players[i].Location = loc
+			models.DB.Model(&actx.GCtx.Session.Players[i]).Update("location", loc)
+			return []ToolResult{{Action: ToolUpdateLocation, Result: fmt.Sprintf("%s 当前位置已更新为: %s", who, loc)}}
+		}
+	}
+	return []ToolResult{{Action: ToolUpdateLocation, Result: fmt.Sprintf("找不到名为 %s 的调查员", who)}}
+}
+
+type updateArmorAction struct{}
+
+func (updateArmorAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	who := call.CharacterName
+	val := call.ArmorValue
+	debugf("tool", "session=%d update_armor char=%q armor=%d", actx.Sid, who, val)
+	for i := range actx.GCtx.Session.Players {
+		if actx.GCtx.Session.Players[i].CharacterCard.Name == who {
+			actx.GCtx.Session.Players[i].Armor = val
+			models.DB.Model(&actx.GCtx.Session.Players[i]).Update("armor", val)
+			return []ToolResult{{Action: ToolUpdateArmor, Result: fmt.Sprintf("%s 护甲已更新为 %d点", who, val)}}
+		}
+	}
+	return []ToolResult{{Action: ToolUpdateArmor, Result: fmt.Sprintf("找不到名为 %s 的调查员", who)}}
+}
 
 type hintAction struct{}
 

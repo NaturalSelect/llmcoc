@@ -1321,6 +1321,12 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 			line += " 【非人类】"
 			hasNotHuman = true
 		}
+		if p.Location != "" {
+			line += fmt.Sprintf("【位置:%s】", p.Location)
+		}
+		if p.Armor > 0 {
+			line += fmt.Sprintf("【护甲:%d】", p.Armor)
+		}
 		if strings.TrimSpace(p.LLMNote) != "" {
 			line += "【有Session级特殊状态:需query_character查看】"
 			hasSessionNote = true

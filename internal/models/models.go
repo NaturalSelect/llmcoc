@@ -252,6 +252,8 @@ type SessionPlayer struct {
 	CharacterCardID uint          `gorm:"not null" json:"character_card_id"`
 	JoinedAt        time.Time     `json:"joined_at"`
 	LLMNote         string        `gorm:"type:text" json:"llm_note"`
+	Location        string        `gorm:"size:200" json:"location"` // 当前所在地点，由 update_location 工具维护
+	Armor           int           `gorm:"default:0" json:"armor"`   // 当前护甲值，由 update_armor 工具维护
 	User            User          `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	CharacterCard   CharacterCard `gorm:"foreignKey:CharacterCardID" json:"character_card,omitempty"`
 }

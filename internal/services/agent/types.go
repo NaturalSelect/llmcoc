@@ -54,6 +54,8 @@ const (
 	ToolUpdateNPCCard     ToolCallType = "update_npc_card"     // 更新NPC角色卡状态
 	ToolUpdateLLMNote     ToolCallType = "update_llm_note"     // 更新Session级玩家LLMNote记录
 	ToolUpdateNPCLLMNote  ToolCallType = "update_npc_llm_note" // 更新Session级NPC LLMNote记录
+	ToolUpdateLocation    ToolCallType = "update_location"     // 更新调查员当前位置
+	ToolUpdateArmor       ToolCallType = "update_armor"        // 更新调查员护甲值
 	ToolHint              ToolCallType = "hint"                // KP写入当前场景高密度提示
 	ToolResponse          ToolCallType = "response"            // 结束本轮并给出回复
 	ToolYield             ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
@@ -87,6 +89,8 @@ type ToolCall struct {
 	TimeReason    string                 `json:"time_reason,omitempty"`    // advance_time: 原因(如"睡觉"/"吃饭")
 	Keyword       string                 `json:"keyword,omitempty"`        // query_clues: 已废弃(保留仅为兼容旧输出)
 	LLMNote       string                 `json:"llm_note,omitempty"`       // update_llm_note: 玩家LLMNote内容
+	NewLocation   string                 `json:"new_location,omitempty"`   // update_location: 新位置名称
+	ArmorValue    int                    `json:"armor_value"`              // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
 	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结(可选)
