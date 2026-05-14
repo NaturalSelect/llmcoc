@@ -71,7 +71,7 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	- 若无相关结果,再进行grep等搜索
 
 2. grep — 在规则书中精确搜索关键词,返回匹配行及其上下文原文
-	[{"action":"grep","keyword":"精确关键词"}]
+	[{"action":"grep","keyword":"精确关键词(不支持正则表达式)"}]
 	- 关键词须与规则书原文一致
 	- 搜索结果仅用于本轮分析，不会被缓存
 
