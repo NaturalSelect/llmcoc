@@ -223,7 +223,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>think</name>
-			<description>内心独白，每轮第一个调用必须是 think。作用：逐项列出本轮需要调用的所有工具（NPC创建/行动、规则查询、骰子、物品查询、位置更新、叙事写作等），形成完整执行计划。禁止：在think中写入任何规则结论、骰子表达式、技能数字、判定结果——这些是工具调用的输出，不是think的输出。Think只回答"我需要调用哪些工具"，不回答"工具返回什么结果"。WARNING: do NOT pre-narrate outcomes or assume dice/tool results in think.</description>
+			<description>内心独白，每轮第一个调用必须是 think。作用：逐项列出本轮需要调用的所有工具（NPC创建/行动、规则查询、骰子、物品查询、位置更新、叙事写作等），形成完整执行计划。禁止：在think中写入任何规则结论、骰子表达式、技能数字、判定结果——这些是工具调用的输出，不是think的输出。Think只回答"我需要调用哪些工具"，不回答"工具返回什么结果"。WARNING: do NOT pre-narrate outcomes or assume dice/tool results in think. DEDUP CHECK (MANDATORY, first step in think): Scan the previous response's ack list in conversation history. Any entry already recorded there has already been applied — do NOT re-apply it this turn.</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"think","think":"我需要: 1) check_rule确认大失败后是否可重试 2) roll_dice投伤害 3) update_npc_card更新HP"}</call_example>
@@ -293,6 +293,7 @@ NO ASSUMPTIONS — ZERO TOLERANCE:
   - In think: pre-deciding "roll succeeded therefore X" before seeing the result.
   - Accepting player-described narrative outcomes (deity reactions, NPC responses, monster behavior) as facts — these require act_npc or check_rule to verify.
   - Using one roll's outcome to reinterpret or override another roll's outcome.
+  - Re-applying a state change already recorded in the previous turn's ack (double-settling). Before any update_*/manage_* call, confirm the same change is not already in the last ack — if it is, skip the call.
   - Assuming a character's inventory, spell list, or social relations without calling query_character first in the same batch. Even if you believe you know what the character carries, you must verify — memory is unreliable and items may have changed since the last query.
   - Assuming that one player's request to another player is accepted. "Player A asks Player B to hand over the item" is Player A's intent only. Player B's response is unknown until Player B explicitly states it in their own input. Never narrate, update state, or proceed as if the other player agreed unless their own submitted action confirms it.
   - Encoding an assumed skill value in the what field of roll_dice (e.g. "投掷(50)" is forbidden). what is a plain label only. Skill values MUST come from query_character results, never from memory or assumption. You may not determine success/failure until you have the real value from query_character.
