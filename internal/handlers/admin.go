@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/agent"
 )
 
 func AdminListUsers(c *gin.Context) {
@@ -121,4 +122,20 @@ func AdminDeleteShopItem(c *gin.Context) {
 	}
 	log.Printf("[admin] delete_shop_item ok item_id=%d", item.ID)
 	c.JSON(http.StatusOK, gin.H{"message": "商品已删除"})
+}
+
+// AdminGetCacheStats handles GET /admin/cache/stats.
+// Returns lawyer cache hit/miss statistics and current size.
+func AdminGetCacheStats(c *gin.Context) {
+	stats := agent.GetLawyerCacheStats()
+	c.JSON(http.StatusOK, stats)
+}
+
+// AdminClearCache handles DELETE /admin/cache.
+// Clears all lawyer cache entries and resets hit/miss counters.
+func AdminClearCache(c *gin.Context) {
+	adminID := c.GetUint("user_id")
+	agent.ClearLawyerCacheAll()
+	log.Printf("[admin] clear_lawyer_cache admin_id=%d", adminID)
+	c.JSON(http.StatusOK, gin.H{"message": "缓存已清空"})
 }

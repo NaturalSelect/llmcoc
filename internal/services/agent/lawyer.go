@@ -147,8 +147,12 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 	// Fast path: check the Go-level cache before involving the LLM at all.
 	if cached, ok := lawyerCache.Get(situation); ok {
 		debugf("Lawyer", "cache hit (Go-level) for situation: %s", situation)
+		lawyerCache.RecordFullHit()
 		return []LawyerResult{{Query: situation, RuleText: cached}}
 	}
+
+	// Track whether the LLM had to search the rulebook (grep/read_lines/read_rulebook_const).
+	searchedRulebook := false
 
 	debugf("Lawyer", "question=%s", situation)
 
@@ -210,6 +214,11 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 					lawyerCache.Set(cacheKey, ruleText)
 				}
 				debugf("Lawyer", "cached result key=%s", cacheKey)
+				if searchedRulebook {
+					lawyerCache.RecordMiss()
+				} else {
+					lawyerCache.RecordPartialHit()
+				}
 				return []LawyerResult{{
 					Query:    situation,
 					RuleText: ruleText,
@@ -239,6 +248,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				if c.Keyword == "" {
 					continue
 				}
+				searchedRulebook = true
 				log.Printf("[lawyer] grep: %s", c.Keyword)
 				debugf("Lawyer", "iter=%d grep keyword=%q", iter+1, c.Keyword)
 				kws := strings.Fields(c.Keyword)
@@ -254,12 +264,14 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				if c.Constant == "" {
 					continue
 				}
+				searchedRulebook = true
 				text := rulebook.ReadConstant(c.Constant)
 				resultSB.WriteString(fmt.Sprintf("【read_rulebook_const:%s】\n%s\n\n", c.Constant, text))
 			case "read_lines":
 				if c.Start == 0 || c.End == 0 {
 					continue
 				}
+				searchedRulebook = true
 				text := rulebook.GetContentByLineNum(c.Start, c.End)
 				resultSB.WriteString(fmt.Sprintf("【read_lines:%d-%d】\n%s\n\n", c.Start, c.End, text))
 				s := text
@@ -302,4 +314,34 @@ func formatLawyerResults(results []LawyerResult) string {
 		sb.WriteString("\n")
 	}
 	return strings.TrimSpace(sb.String())
+}
+
+// CacheStatsResult holds the cache hit/miss statistics exposed to the admin API.
+type CacheStatsResult struct {
+	FullHits    int64 `json:"full_hits"`    // Go-level cache hit, LLM not invoked
+	PartialHits int64 `json:"partial_hits"` // LLM used search_cache and returned directly
+	Misses      int64 `json:"misses"`       // LLM had to search the rulebook
+	Entries     int   `json:"entries"`      // Current number of cached entries
+	UsedBytes   int64 `json:"used_bytes"`
+	MaxBytes    int64 `json:"max_bytes"`
+}
+
+// GetLawyerCacheStats returns current cache statistics.
+func GetLawyerCacheStats() CacheStatsResult {
+	full, partial, miss := lawyerCache.HitStats()
+	entries, used, max := lawyerCache.Stats()
+	return CacheStatsResult{
+		FullHits:    full,
+		PartialHits: partial,
+		Misses:      miss,
+		Entries:     entries,
+		UsedBytes:   used,
+		MaxBytes:    max,
+	}
+}
+
+// ClearLawyerCacheAll clears all cached entries and resets hit/miss counters.
+func ClearLawyerCacheAll() {
+	lawyerCache.Clear()
+	lawyerCache.ResetStats()
 }

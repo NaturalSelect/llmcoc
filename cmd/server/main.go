@@ -206,6 +206,9 @@ func main() {
 		admin.GET("/invite-codes", handlers.AdminListInviteCodes)
 		admin.POST("/invite-codes", handlers.AdminCreateInviteCodes)
 		admin.DELETE("/invite-codes/:id", handlers.AdminDeleteInviteCode)
+		// Lawyer cache management
+		admin.GET("/cache/stats", handlers.AdminGetCacheStats)
+		admin.DELETE("/cache", handlers.AdminClearCache)
 	}
 
 	// ─── Frontend (embedded) ─────────────────────────────────────────────────

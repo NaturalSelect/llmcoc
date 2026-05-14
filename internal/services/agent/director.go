@@ -175,7 +175,7 @@ const kpSystemPrompt = `
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["For every side-effect tool called this turn (roll_dice/update_*/manage_*/trigger_*/record_*/act_npc/advance_time/create_npc/destroy_npc), write one entry: \"tool_name: reason\" in past tense. No other text, max length is 100.","roll_dice: checked CharA throw skill (result 42, success)","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"],"direction":"short game direction"}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["ACK RULES: (1) For EVERY roll_dice called this turn, record: \"roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败\". MANDATORY even if it's a no-sideeffect tool. (2) For every other side-effect tool (update_*/manage_*/trigger_*/record_*/act_npc/advance_time/create_npc/destroy_npc), write one entry: \"tool_name: reason\" in past tense. No other text, max length 100 per entry.","roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 扏劰 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"],"direction":"short game direction"}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
@@ -447,6 +447,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
 	userSB.WriteString("\n<user_inputs>\n")
+	userSB.WriteString("INTENT CLASSIFICATION — read the player input and label it BEFORE acting:\n")
+	userSB.WriteString("  [DIALOGUE]  Player speaks in-character to an NPC. → Primary tool: act_npc. Write the NPC's reaction. DO NOT demand a roll for ordinary conversation.\n")
+	userSB.WriteString("  [ACTION]    Player performs a game action (searching, moving, attacking, using an item, casting a spell, etc.). → check_rule if any mechanic applies, then roll_dice, then resolve.\n")
+	userSB.WriteString("  [KP-QUERY]  Player asks the KP out-of-character (starts with 'KP:' / asks about rules / asks a meta question). → Reply as KP directly in the 'reply' field, no game mechanics needed.\n")
+	userSB.WriteString("Classify first in your think call, then proceed with the appropriate tool chain.\n\n")
 	getTag := func(s string, isAdmin bool) string {
 		if isAdmin {
 			if strings.Contains(s, "DEBUG") {

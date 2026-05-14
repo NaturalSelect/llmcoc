@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,6 +25,11 @@ type LawyerCache struct {
 	list     *list.List
 	maxBytes int64 // Maximum capacity in bytes
 	curBytes int64 // Current size in bytes
+
+	// Hit statistics (atomic)
+	fullHits    atomic.Int64 // Go-level cache hit, LLM not invoked
+	partialHits atomic.Int64 // LLM invoked, search_cache matched, no rulebook search needed
+	misses      atomic.Int64 // LLM invoked and had to search the rulebook
 }
 
 // cacheNode is the internal node stored in the list.
@@ -207,6 +213,27 @@ func (lc *LawyerCache) Stats() (entries int, usedBytes int64, maxBytes int64) {
 	defer lc.mu.RUnlock()
 
 	return len(lc.cache), lc.curBytes, lc.maxBytes
+}
+
+// RecordFullHit increments the full-hit counter (Go-level cache returned directly).
+func (lc *LawyerCache) RecordFullHit() { lc.fullHits.Add(1) }
+
+// RecordPartialHit increments the partial-hit counter (LLM search_cache matched, no rulebook search).
+func (lc *LawyerCache) RecordPartialHit() { lc.partialHits.Add(1) }
+
+// RecordMiss increments the miss counter (LLM had to search the rulebook).
+func (lc *LawyerCache) RecordMiss() { lc.misses.Add(1) }
+
+// HitStats returns (fullHits, partialHits, misses).
+func (lc *LawyerCache) HitStats() (full, partial, miss int64) {
+	return lc.fullHits.Load(), lc.partialHits.Load(), lc.misses.Load()
+}
+
+// ResetStats resets all hit/miss counters to zero.
+func (lc *LawyerCache) ResetStats() {
+	lc.fullHits.Store(0)
+	lc.partialHits.Store(0)
+	lc.misses.Store(0)
 }
 
 // ListKeys returns all cache keys in the cache.

@@ -1027,10 +1027,11 @@
 
                 <div class="flex gap-0 mb-5 border-b" style="border-color:#252018">
                     <template
-                        x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'settings',label:'系统设置'}]"
+                        x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'settings',label:'系统设置'},{id:'cache',label:'规则缓存'}]"
                         :key="t.id">
-                        <button @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems()" class="tab"
-                            :class="adminTab===t.id?'active':''" x-text="t.label"></button>
+                        <button
+                            @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems(); if (t.id === 'cache') loadCacheStats()"
+                            class="tab" :class="adminTab===t.id?'active':''" x-text="t.label"></button>
                     </template>
                 </div>
 
@@ -1397,6 +1398,79 @@
                                         class="btn btn-danger text-xs shrink-0">删除</button>
                                 </div>
                             </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Lawyer cache stats & clear -->
+                <div x-show="adminTab==='cache'" class="space-y-5">
+                    <div class="card rounded p-5 max-w-xl">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">规则缓存统计</h3>
+                            <div class="flex gap-2">
+                                <button @click="loadCacheStats()" class="btn btn-ghost text-xs">刷新</button>
+                                <button @click="clearCache()" class="btn btn-red text-xs">清空缓存</button>
+                            </div>
+                        </div>
+                        <div x-show="!cacheStats" class="text-amber-900 text-sm" style="font-family:system-ui">加载中…
+                        </div>
+                        <div x-show="cacheStats" class="space-y-3">
+                            <!-- Hit / miss counters -->
+                            <div class="grid grid-cols-3 gap-3">
+                                <div class="rounded p-3 text-center"
+                                    style="background:#0d1a0d;border:1px solid #1a3d1a">
+                                    <div class="text-2xl font-bold text-green-400" style="font-family:system-ui"
+                                        x-text="cacheStats?.full_hits ?? 0"></div>
+                                    <div class="text-xs mt-1" style="font-family:system-ui;color:#6a9a6a">完全命中</div>
+                                    <div class="text-xs mt-0.5" style="font-family:system-ui;color:#3a6a3a">缓存直接返回</div>
+                                </div>
+                                <div class="rounded p-3 text-center"
+                                    style="background:#1a1a0d;border:1px solid #3d3d1a">
+                                    <div class="text-2xl font-bold text-yellow-400" style="font-family:system-ui"
+                                        x-text="cacheStats?.partial_hits ?? 0"></div>
+                                    <div class="text-xs mt-1" style="font-family:system-ui;color:#9a9a6a">部分命中</div>
+                                    <div class="text-xs mt-0.5" style="font-family:system-ui;color:#6a6a3a">LLM 搜索缓存即返回
+                                    </div>
+                                </div>
+                                <div class="rounded p-3 text-center"
+                                    style="background:#1a0d0d;border:1px solid #3d1a1a">
+                                    <div class="text-2xl font-bold text-red-400" style="font-family:system-ui"
+                                        x-text="cacheStats?.misses ?? 0"></div>
+                                    <div class="text-xs mt-1" style="font-family:system-ui;color:#9a6a6a">未命中</div>
+                                    <div class="text-xs mt-0.5" style="font-family:system-ui;color:#6a3a3a">LLM 搜索规则书
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Hit rate bar -->
+                            <div x-show="(cacheStats?.full_hits + cacheStats?.partial_hits + cacheStats?.misses) > 0">
+                                <div class="flex justify-between text-xs mb-1"
+                                    style="font-family:system-ui;color:#7a6a50">
+                                    <span>命中率</span>
+                                    <span
+                                        x-text="cacheStats ? (((cacheStats.full_hits + cacheStats.partial_hits) / (cacheStats.full_hits + cacheStats.partial_hits + cacheStats.misses)) * 100).toFixed(1) + '%' : '-'"></span>
+                                </div>
+                                <div class="w-full rounded-full h-2" style="background:#1a1814">
+                                    <div class="h-2 rounded-full"
+                                        style="background:linear-gradient(90deg,#2d6030,#6a8040)"
+                                        :style="'width:' + (cacheStats ? Math.min(100, ((cacheStats.full_hits + cacheStats.partial_hits) / (cacheStats.full_hits + cacheStats.partial_hits + cacheStats.misses)) * 100) : 0) + '%'">
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Capacity -->
+                            <div class="mt-2 pt-3" style="border-top:1px solid #252018">
+                                <div class="flex justify-between text-xs mb-1"
+                                    style="font-family:system-ui;color:#7a6a50">
+                                    <span>条目数 / 容量使用</span>
+                                    <span
+                                        x-text="cacheStats ? cacheStats.entries + ' 条 · ' + (cacheStats.used_bytes / 1048576).toFixed(1) + ' MB / ' + (cacheStats.max_bytes / 1073741824).toFixed(0) + ' GB' : '-'"
+                                        style="font-family:system-ui"></span>
+                                </div>
+                                <div class="w-full rounded-full h-1.5" style="background:#1a1814">
+                                    <div class="h-1.5 rounded-full" style="background:#4a3318"
+                                        :style="'width:' + (cacheStats ? Math.min(100, (cacheStats.used_bytes / cacheStats.max_bytes) * 100) : 0) + '%'">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2269,6 +2343,7 @@
                     adminAgents: [],
                     adminScenarios: [],
                     adminShopItems: [],
+                    cacheStats: null,
                     scenarioUploadFile: null,
                     viewingScenario: null,
                     scenarioGenForm: { name: '', theme: '', era: '', brief: '', target_length: 'short', min_players: 1, max_players: 4, difficulty: 'normal' },
@@ -2375,6 +2450,15 @@
                         this.transactions = txns || [];
                     },
                     async loadAdminUsers() { this.adminUsers = (await this.api('GET', '/api/admin/users')) || []; },
+                    async loadCacheStats() { this.cacheStats = await this.api('GET', '/api/admin/cache/stats'); },
+                    async clearCache() {
+                        if (!confirm('确认清空所有规则缓存？统计计数也将重置。')) return;
+                        try {
+                            await this.api('DELETE', '/api/admin/cache');
+                            this.showToast('缓存已清空');
+                            await this.loadCacheStats();
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
                     async loadAdminProviders() { this.adminProviders = (await this.api('GET', '/api/admin/config/providers')) || []; },
                     async loadAdminScenarios() { this.adminScenarios = (await this.api('GET', '/api/scenarios')) || []; },
                     async loadAdminShopItems() { this.adminShopItems = (await this.api('GET', '/api/shop/items')) || []; },
