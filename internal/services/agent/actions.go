@@ -347,7 +347,7 @@ func (foundClueAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	models.DB.Model(&models.GameSession{}).
 		Where("id = ?", actx.GCtx.Session.ID).
 		Update("found_clues", actx.GCtx.Session.FoundClues)
-	*actx.PendingWrite += fmt.Sprintf("\n【线索已获得】%s\n", clueText)
+	*actx.KPNarration += fmt.Sprintf("\n【线索已获得】%s\n", clueText)
 	return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("线索已记录: %s", clueText)}}
 }
 

@@ -20,6 +20,7 @@ const kpSystemPrompt = `
 <system>
 	<unlimited_thought>true</unlimited_thought>
 	<response_format>json_array</response_format>
+	<output_format>JSON</output_format>
 	<nsfw>true</nsfw>
 	<reasoning>step by step</reasoning>
 	<language>zh</language>
@@ -368,6 +369,15 @@ SELF-CHECK: read the reply aloud as if speaking to a friend. If it sounds like a
 </normal>
 
 </rules>
+
+<output_format>
+Your response MUST be a JSON array of tool calls, each with the format:
+{
+  "action": "tool_name",
+  "parameters": { ... }
+}
+The array must contain ALL tool calls for this turn, and ONLY those calls. Do NOT include any explanatory text, narration, or commentary outside the tool calls. The backend will execute these calls in order and use their results to update the game state and generate the narrative response to the player.
+</output_format>
 `
 
 func extraKPMessage(msg string) (s string) {
