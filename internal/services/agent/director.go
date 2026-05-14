@@ -179,11 +179,12 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>response</name>
-			<description>结束本回合并给出KP对玩家的回复和对玩家行为和本次推理所涉及的所有行为确认留痕(必填)</description>
+			<description>结束本回合并给出KP对玩家的回复和行为确认留痕(必填)。
+				ack字段规则: (1) 本回合每一次roll_dice都必须记录一条: "roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败"。(2) 每一个其他有副作用的工具(update_*/manage_*/trigger_*/record_*/advance_time)记录一条: "tool_name: reason"(过去时)。不加其他文字，每条最长100字。ack数组中禁止出现任何规则说明文字。</description>
 			<sideeffect>true</sideeffect>
 			<shouldBeLast>true</shouldBeLast>
 			<endTheTurn>true</endTheTurn>
-			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["ACK RULES: (1) For EVERY roll_dice called this turn, record: \"roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败\". MANDATORY even if it's a no-sideeffect tool. (2) For every other side-effect tool (update_*/manage_*/trigger_*/record_*/act_npc/advance_time/create_npc/destroy_npc), write one entry: \"tool_name: reason\" in past tense. No other text, max length 100 per entry.","roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 扏劰 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"],"direction":"short game direction"}</call_example>
+			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 攀爬 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"],"direction":"short game direction"}</call_example>
 		</tool>
 		<tool>
 			<name>yield</name>
