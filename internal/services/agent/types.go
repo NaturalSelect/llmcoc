@@ -57,6 +57,7 @@ const (
 	ToolUpdateLocation    ToolCallType = "update_location"     // 更新调查员当前位置
 	ToolUpdateArmor       ToolCallType = "update_armor"        // 更新调查员护甲值
 	ToolHint              ToolCallType = "hint"                // KP写入当前场景高密度提示
+	ToolFoundClue         ToolCallType = "found_clue"          // 记录玩家发现的线索并注入旁白
 	ToolResponse          ToolCallType = "response"            // 结束本轮并给出回复
 	ToolYield             ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
 	ToolThink             ToolCallType = "think"               // 内心独白,不需要对玩家说的想法
@@ -93,6 +94,7 @@ type ToolCall struct {
 	NewLocation   string                 `json:"new_location,omitempty"`   // update_location: 新位置名称
 	ArmorValue    int                    `json:"armor_value"`              // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
+	ClueText      string                 `json:"clue_text,omitempty"`      // found_clue: 线索原文
 	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结(可选)
 	Reason        string                 `json:"reason,omitempty"`         // reasoning: KP本轮推理过程

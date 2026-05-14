@@ -57,6 +57,7 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolEndGame:          true,
 	ToolWrite:            true,
 	ToolHint:             true,
+	ToolFoundClue:        true,
 	ToolThink:            true,
 	ToolUpdateLLMNote:    true,
 	ToolUpdateNPCLLMNote: true,
@@ -103,6 +104,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolUpdateLocation:    updateLocationAction{},
 	ToolUpdateArmor:       updateArmorAction{},
 	ToolHint:              hintAction{},
+	ToolFoundClue:         foundClueAction{},
 	ToolResponse:          responseAction{},
 	ToolThink:             emptyAction{actionName: string(ToolThink)},
 	ToolReport:            reportAction{},
@@ -333,6 +335,22 @@ func (hintAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	return []ToolResult{{Action: ToolHint, Result: call.Hint}}
 }
 
+type foundClueAction struct{}
+
+func (foundClueAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	clueText := strings.TrimSpace(call.ClueText)
+	if clueText == "" {
+		return []ToolResult{{Action: ToolFoundClue, Result: "错误: clue_text 不能为空"}}
+	}
+	debugf("tool", "session=%d found_clue text=%s", actx.Sid, clueText)
+	actx.GCtx.Session.FoundClues.Data = append(actx.GCtx.Session.FoundClues.Data, clueText)
+	models.DB.Model(&models.GameSession{}).
+		Where("id = ?", actx.GCtx.Session.ID).
+		Update("found_clues", actx.GCtx.Session.FoundClues)
+	*actx.PendingWrite += fmt.Sprintf("\n【线索已获得】%s\n", clueText)
+	return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("线索已记录: %s", clueText)}}
+}
+
 // ── NPC card actions ──────────────────────────────────────────────────────────
 
 type queryNPCCardAction struct{}
@@ -382,7 +400,19 @@ func (queryCluesAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	clues := actx.GCtx.Session.Scenario.Content.Data.Clues
 	clueResult := "(无匹配线索)"
 	if len(clues) > 0 {
-		clueResult = strings.Join(clues, "\n")
+		foundSet := make(map[string]bool, len(actx.GCtx.Session.FoundClues.Data))
+		for _, f := range actx.GCtx.Session.FoundClues.Data {
+			foundSet[f] = true
+		}
+		var sb strings.Builder
+		for _, c := range clues {
+			if foundSet[c] {
+				sb.WriteString("[已发现] " + c + "\n")
+			} else {
+				sb.WriteString("[未发现] " + c + "\n")
+			}
+		}
+		clueResult = sb.String()
 	}
 	return []ToolResult{{Action: ToolQueryClues, Result: fmt.Sprintf("线索查询结果(全部):\n%s", clueResult)}}
 }
