@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 
 	"gorm.io/gorm"
@@ -28,6 +29,7 @@ func normalizeScenarioDefaults(p *ScenarioPayload) {
 	if strings.TrimSpace(p.Difficulty) == "" {
 		p.Difficulty = "normal"
 	}
+	sort.Strings(p.Content.Clues)
 }
 
 func hasScenarioContent(c ScenarioContent) bool {
