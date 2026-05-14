@@ -153,6 +153,8 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 
 	// Track whether the LLM had to search the rulebook (grep/read_lines/read_rulebook_const).
 	searchedRulebook := false
+	// Track whether search_cache returned at least one result.
+	cacheSearchHadResults := false
 
 	debugf("Lawyer", "question=%s", situation)
 
@@ -214,9 +216,14 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 					lawyerCache.Set(cacheKey, ruleText)
 				}
 				debugf("Lawyer", "cached result key=%s", cacheKey)
-				if searchedRulebook {
+				if searchedRulebook && cacheSearchHadResults {
+					// Cache had results but wasn't fully satisfying — had to search rulebook too.
+					lawyerCache.RecordPartialHit()
+				} else if searchedRulebook && !cacheSearchHadResults {
+					// Cache returned nothing — full miss.
 					lawyerCache.RecordMiss()
 				} else {
+					// search_cache satisfied the LLM without any rulebook search.
 					lawyerCache.RecordPartialHit()
 				}
 				return []LawyerResult{{
@@ -237,6 +244,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				if len(matches) == 0 {
 					resultSB.WriteString("[搜索缓存] 未找到相关缓存裁定。\n\n")
 				} else {
+					cacheSearchHadResults = true
 					resultSB.WriteString(fmt.Sprintf("[搜索缓存] 找到 %d 条相关裁定：\n", len(matches)))
 					for i, m := range matches {
 						resultSB.WriteString(fmt.Sprintf("%d. 问题：%s\n   裁定：%s\n", i+1, m.Key, m.Ruling))
@@ -318,9 +326,9 @@ func formatLawyerResults(results []LawyerResult) string {
 
 // CacheStatsResult holds the cache hit/miss statistics exposed to the admin API.
 type CacheStatsResult struct {
-	FullHits    int64 `json:"full_hits"`    // Go-level cache hit, LLM not invoked
-	PartialHits int64 `json:"partial_hits"` // LLM used search_cache and returned directly
-	Misses      int64 `json:"misses"`       // LLM had to search the rulebook
+	FullHits    int64 `json:"full_hits"`    // Go-level cache hit, LLM not invoked at all
+	PartialHits int64 `json:"partial_hits"` // search_cache returned results, but rulebook was still searched
+	Misses      int64 `json:"misses"`       // search_cache returned nothing, LLM had to search rulebook
 	Entries     int   `json:"entries"`      // Current number of cached entries
 	UsedBytes   int64 `json:"used_bytes"`
 	MaxBytes    int64 `json:"max_bytes"`
