@@ -127,7 +127,7 @@ const kpSystemPrompt = `
 			<name>write</name>
 			<description>
 				指示叙事代理生成文本段落描述当前场景(确保你充分描述所有玩家的意图),需要保留玩家的原始发言(除非他没有发言, 则你可以虚构),高信息密度,可以被调用多次以保持丰富的叙事内容
-				原则上只要玩家有动作(包括发言),就必须调用write来描述场景和玩家的行为。如果玩家没有任何动作和发言,你可以选择不调用write。
+				原则上只要玩家有动作(包括发言,除非是对KP的发言),就必须调用write来描述场景和玩家的行为。如果玩家没有任何动作和发言,你可以选择不调用write。
 				SECRECY: The direction you pass MUST NOT contain clue content, NPC secrets, or scenario facts the investigator has not yet discovered through in-game action. Only describe what the investigator's senses can directly perceive at this moment.
 			</description>
 			<sideeffect>true</sideeffect>
