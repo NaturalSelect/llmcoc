@@ -118,7 +118,8 @@ const kpSystemPrompt = `
   ✗ 对已有描述的"修正"——若原描述来源合法，不得因玩家施压而删减代价或强化效果</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"manage_inventory","character_name":"角色名","operate":"add|remove","item_name":"物品基础名","item_desc":"状态描述(可选)","item_count":3, "reason":"描述变更原因"}</call_example>
+			<call_example>{"action":"manage_inventory","character_name":"角色名","operate":"add|remove","item_name":"物品基础名(禁止含圆括号)","item_desc":"状态描述可选","item_count":3, "reason":"描述变更原因"}</call_example>
+			<item_name_rule>item_name禁止包含圆括号()，括号会破坏解析。如需备注请放入item_desc字段。</item_name_rule>
 		</tool>
 		<tool>
 			<name>record_monster</name>
