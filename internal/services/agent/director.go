@@ -239,6 +239,8 @@ const kpSystemPrompt = `
 6. think是否自创了COC规则书中不存在的机制（自造属性/回合效果/数量规则）
 7. think是否自行宣布了胜利/失败条件
 8. think的逻辑是否正确，符合现实世界的逻辑
+9. think是否包含任何显示或者隐式的假设
+10. think是否表现了你的显示或隐式的越权行为
 如有任何一条触犯，self_check必须标注"VIOLATION: [条目]"并终止后续计划，改为写出合规的替代方案。全部通过则写"OK"。后端会验证self_check存在，缺失则拒绝整个batch。</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
