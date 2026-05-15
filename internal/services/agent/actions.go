@@ -379,6 +379,7 @@ func (foundClueAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		Where("id = ?", actx.GCtx.Session.ID).
 		Update("found_clue_indices", actx.GCtx.Session.FoundClues)
 	*actx.PendingWrite += fmt.Sprintf("\n【线索已获得】%s\n", clues[idx])
+	*actx.KPNarration += fmt.Sprintf("\n【线索已获得】%s\n", clues[idx])
 	return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("clue[%d] recorded: %s", idx, clues[idx])}}
 }
 
