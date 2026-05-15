@@ -97,6 +97,30 @@ func TestAntiCheatRejectPreventsInventoryExecution(t *testing.T) {
 	}
 }
 
+func TestFilterAntiCheatCallsSkipsWriteAndResponse(t *testing.T) {
+	calls := []ToolCall{
+		{Action: ToolThink, Think: "只写叙事回复"},
+		{Action: ToolWrite, Direction: "叙事段落"},
+		{Action: ToolResponse, Reply: "好的"},
+	}
+	filtered, hasAuditedAction := filterAntiCheatCalls(calls)
+	if hasAuditedAction {
+		t.Fatal("write/response-only batch should not require anti-cheat audit")
+	}
+	if len(filtered) != 1 || filtered[0].Action != ToolThink {
+		t.Fatalf("unexpected filtered calls: %+v", filtered)
+	}
+
+	fp := &fakeProvider{resp: `{"verdict":"replan","reason":"should not be called","message":"should not be called"}`}
+	_, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), calls, nil)
+	if !allowed || rejectMsg != "" {
+		t.Fatalf("write/response-only batch should be allowed without audit: allowed=%v reject=%q", allowed, rejectMsg)
+	}
+	if len(fp.messages) != 0 {
+		t.Fatal("anti-cheat provider should not be called for write/response-only batch")
+	}
+}
+
 func TestParseAntiCheatVerdictRejectsPlayerCheatVerdict(t *testing.T) {
 	if _, err := parseAntiCheatVerdict(`{"verdict":"player_cheat","reason":"x","message":"y"}`); err == nil {
 		t.Fatal("player_cheat should not be a valid simplified anti-cheat verdict")
