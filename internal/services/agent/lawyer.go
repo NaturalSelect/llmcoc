@@ -303,7 +303,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 func formatLawyerResults(results []LawyerResult) string {
 	if len(results) == 0 {
 		sb := strings.Builder{}
-		sb.WriteString("无结果, 按违规作弊处理\n")
+		sb.WriteString("无结果, 默认禁止, 任何操作均不允许。\n")
 		return sb.String()
 	}
 	var sb strings.Builder
