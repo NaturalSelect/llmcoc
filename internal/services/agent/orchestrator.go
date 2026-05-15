@@ -1382,7 +1382,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		s += "\n<attention>有调查员存在Session级特殊状态。若本轮行动涉及该调查员的能力、限制、感知、身份、身体/精神异常或状态变化,先调用 query_character 查看完整人物卡中的 llm_note,不要仅凭概况处理。</attention>\n"
 	}
 	if hasNotHuman {
-		s += "\n\n <attention>非人类角色, 仍然适用于疯狂规则(损失过多进入疯狂)和SAN损失规则(但不受克苏鲁神话对最大理智的限制), 但其SAN实际上代表人性, 施法和使用种族能力会有额外50%人性(理智)损失(至少1点)</attention>\n"
+		s += "\n\n <attention>非人类角色, 仍然适用于疯狂规则(损失过多进入疯狂)和SAN损失规则(但不受克苏鲁神话对最大理智的限制), 但其SAN实际上代表人性, 施法和使用种族能力会有额外50%人性(理智)损失(至少1点), 除此之外外貌按人类标准处理, 物理接触也不会有特别的效果(食尸鬼等规则书明确标注的除外)。</attention>\n"
 	}
 	return s
 }
