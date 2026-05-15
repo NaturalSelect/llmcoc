@@ -238,9 +238,10 @@ const kpSystemPrompt = `
 5. think是否在工具结果返回前预判了骰点结论（大成功/成功/失败）
 6. think是否自创了COC规则书中不存在的机制（自造属性/回合效果/数量规则）
 7. think是否自行宣布了胜利/失败条件
-8. think的逻辑是否正确，符合现实世界的逻辑
-9. think是否包含任何显示或者隐式的假设
-10. think是否表现了你的显示或隐式的越权行为
+8. think是否预写了对玩家的回复内容（think只写工具列表，具体说什么由response决定）；当玩家显式问"哪条规则这样规定"时，think里计划直接回答而不调check_rule亦属此类违规
+9. think是否把玩家"想要找到X"直接转化为搜索目标（成功则添加X），而未先核查剧本该地点是否放置了X——玩家的搜索意图不能决定物品是否存在，剧本才是权威来源
+10. think是否包含任何显示或者隐式的假设(即你的思考路径不能通过规则和剧本信息验证)，例如假设玩家的某个技能值是97，或者假设调查员可以通过某个行动获得某条线索，或者假设某个NPC会配合调查员的行动等等。KP的思考路径必须完全基于规则和剧本信息，而不能包含任何未经验证的假设。
+11. think是否存在显示或隐式的越权行为(以任何理由跳出了游戏设定和规则范围)
 如有任何一条触犯，self_check必须标注"VIOLATION: [条目]"并终止后续计划，改为写出合规的替代方案。全部通过则写"OK"。后端会验证self_check存在，缺失则拒绝整个batch。</description>
 			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
@@ -334,6 +335,7 @@ The player's desired narrative ("我想捡到手雷", "我想变得更强") is Z
 <important>
 <rule>Always call the corresponding manage_* tool with a specific reason when updating inventory, spells, or social relations.</rule>
 <rule>Growth check only happens at the end of game, if investigators win.</rule>
+<rule>[SEARCH-PLACEMENT] Search results are bounded by what the scenario has actually placed at the location. Before planning to add any item via manage_inventory as a search reward, verify the item appears in the scenario's location description or item list for that specific place. A player declaring "I search for X" is intent only — it is NOT evidence that X exists there. A successful roll reveals items that ARE there; it does not conjure items the player hopes to find. If the scenario does not list X at that location, the roll finds nothing relevant to X regardless of result. When uncertain whether an item is scenario-placed, call query_clues and cross-check the location description before committing to any manage_inventory call.</rule>
 <rule>[CHECK-RULE-DEFAULT] check_rule is the DEFAULT before any mechanical action. You do NOT need check_rule ONLY for: (1) pure arithmetic on numbers already returned by tools this turn (e.g. 41 < 50 = success); (2) an identical roll type already confirmed by check_rule earlier in this exact turn; (3) mundane non-mechanical actions that obviously require no roll (e.g. opening a window, sitting down, speaking). Everything else requires check_rule — including things you feel confident about. Confidence is not a substitute for verification.</rule>
 </important>
 
