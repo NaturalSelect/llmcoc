@@ -69,6 +69,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 
 	roles := []models.AgentRole{
 		models.AgentRoleDirector,
+		models.AgentRoleAntiCheat,
 		models.AgentRoleWriter,
 		models.AgentRoleLawyer,
 		models.AgentRoleNPC,
@@ -272,23 +273,13 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			continue
 		}
 
-		// Enforce: every think must be immediately followed by self_check.
-		// If think is present but self_check is not the very next call, reject.
-		missSelfCheck := false
-		for i, call := range calls {
-			if call.Action == ToolThink && (i+1 >= len(calls) || calls[i+1].Action != ToolSelfCheck) {
-				missSelfCheck = true
-				break
-			}
-		}
-		if missSelfCheck {
-			debugf("KP", "session=%d iter=%d rejecting batch: think not followed by self_check", sid, iter+1)
-			kpMsgs = append(kpMsgs, llm.ChatMessage{
-				Role:    "user",
-				Content: "SYSTEM REJECT: think must be immediately followed by self_check. Your batch was rejected. Add a self_check call right after think before any other tool.",
-			})
+		verdict, allowed, rejectMsg := checkAntiCheat(ctx, handles[models.AgentRoleAntiCheat], gctx, calls, tempNPCs)
+		if !allowed {
+			debugf("anti_cheat", "session=%d iter=%d reject: %s", sid, iter+1, rejectMsg)
+			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: rejectMsg})
 			continue
 		}
+		debugf("anti_cheat", "session=%d iter=%d allow: %s", sid, iter+1, verdict.Reason)
 
 		// When a batch has multiple check_rule calls, run them concurrently since
 		// each is an independent LLM query with no shared mutable state.

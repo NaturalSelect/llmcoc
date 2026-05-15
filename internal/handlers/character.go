@@ -145,8 +145,13 @@ func GetCharacter(c *gin.Context) {
 		return
 	}
 	if card.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此人物卡"})
-		return
+		// is admin?
+		var user models.User
+		models.DB.First(&user, userID)
+		if user.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此人物卡"})
+			return
+		}
 	}
 	hotFixChar(&card)
 	c.JSON(http.StatusOK, card)
@@ -464,6 +469,13 @@ func RemoveCharacterInventoryItem(c *gin.Context) {
 		return
 	}
 	if card.UserID != userID {
+		// is admin?
+		var user models.User
+		models.DB.First(&user, userID)
+		if user.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+			return
+		}
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
 		return
 	}

@@ -61,13 +61,13 @@ const (
 	ToolResponse          ToolCallType = "response"            // 结束本轮并给出回复
 	ToolYield             ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
 	ToolThink             ToolCallType = "think"               // 内心独白,不需要对玩家说的想法
-	ToolSelfCheck         ToolCallType = "self_check"          // think之后的强制自查,发现违规则立即中止
 	ToolReport            ToolCallType = "report"              // 向管理系统自首
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
 type ToolCall struct {
 	Action        ToolCallType           `json:"action"`
+	Think         string                 `json:"think,omitempty"`          // think: KP执行计划文本
 	Question      string                 `json:"question,omitempty"`       // check_rule: 规则问题的语义描述
 	Constant      string                 `json:"constant,omitempty"`       // read_rulebook_const: 常量名
 	Dice          *DiceCheck             `json:"dice,omitempty"`           // roll_dice: 骰子检定请求
@@ -112,7 +112,6 @@ type ToolCall struct {
 	ChaseActorName    string                  `json:"chase_actor_name,omitempty"`   // chase_act: 本轮行动者名称
 	ChaseAction       *ChaseActionDetail      `json:"chase_action,omitempty"`       // chase_act: 行动详情
 	ChaseEndReason    string                  `json:"chase_end_reason,omitempty"`   // end_chase: 追逐结束原因
-	SelfCheck         string                  `json:"self_check,omitempty"`         // self_check: 自查结论
 	Report            string                  `json:"report,omitempty"`             // report: agent self-report
 	Ack               []string                `json:"ack,omitempty"`                // response: 对玩家动作的正式确认
 	HideSecret        bool                    `json:"hide_secret,omitempty"`        // npc_act: 是否隐藏NPC反应中的敏感信息(如HP变化), 由KP根据当前情境决定
