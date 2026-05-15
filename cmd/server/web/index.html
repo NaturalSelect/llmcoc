@@ -1068,8 +1068,13 @@
                                         <span class="badge"
                                             :class="u.role==='admin'?'bg-red-950/50 text-red-400 border border-red-900/30':'bg-amber-950/30 text-amber-700 border border-amber-900/20'"
                                             x-text="u.role"></span>
+                                        <span x-show="u.is_banned"
+                                            class="badge bg-red-950/60 text-red-500 border border-red-900/40">已封</span>
                                         <button @click="toggleAdmin(u)"
-                                            class="text-amber-800 hover:text-amber-500 transition">切换</button>
+                                            class="text-amber-800 hover:text-amber-500 transition">切换权限</button>
+                                        <button @click="toggleBan(u)"
+                                            :class="u.is_banned ? 'text-green-700 hover:text-green-400' : 'text-red-900 hover:text-red-500'"
+                                            class="transition" x-text="u.is_banned ? '解封' : '封号'"></button>
                                     </div>
                                 </div>
                             </template>
@@ -3169,6 +3174,25 @@
                             await this.api('PUT', '/api/admin/users/' + u.id + '/role', { role: newRole });
                             u.role = newRole; this.showToast('角色已更新');
                         } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+
+                    async toggleBan(u) {
+                        if (u.is_banned) {
+                            if (!confirm(`解封 ${u.username}？`)) return;
+                            try {
+                                await this.api('PUT', '/api/admin/users/' + u.id + '/unban');
+                                u.is_banned = false; u.ban_reason = '';
+                                this.showToast('已解封');
+                            } catch (e) { this.showToast(e.message, 'error'); }
+                        } else {
+                            const reason = prompt(`封号原因（可留空）：`);
+                            if (reason === null) return;
+                            try {
+                                await this.api('PUT', '/api/admin/users/' + u.id + '/ban', { reason });
+                                u.is_banned = true; u.ban_reason = reason;
+                                this.showToast('已封号');
+                            } catch (e) { this.showToast(e.message, 'error'); }
+                        }
                     },
 
                     openCreateProvider() {

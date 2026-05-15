@@ -139,3 +139,47 @@ func AdminClearCache(c *gin.Context) {
 	log.Printf("[admin] clear_lawyer_cache admin_id=%d", adminID)
 	c.JSON(http.StatusOK, gin.H{"message": "缓存已清空"})
 }
+
+// AdminBanUser handles PUT /admin/users/:id/ban.
+func AdminBanUser(c *gin.Context) {
+	adminID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	c.ShouldBindJSON(&req)
+
+	var user models.User
+	if err := models.DB.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	if user.Role == models.RoleAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "不能封禁管理员"})
+		return
+	}
+	if err := models.DB.Model(&user).Updates(map[string]any{"is_banned": true, "ban_reason": req.Reason}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "封号失败"})
+		return
+	}
+	log.Printf("[admin] ban_user admin_id=%d target_user=%d reason=%q", adminID, id, req.Reason)
+	c.JSON(http.StatusOK, gin.H{"message": "已封号", "user_id": id})
+}
+
+// AdminUnbanUser handles PUT /admin/users/:id/unban.
+func AdminUnbanUser(c *gin.Context) {
+	adminID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var user models.User
+	if err := models.DB.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	if err := models.DB.Model(&user).Updates(map[string]any{"is_banned": false, "ban_reason": ""}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "解封失败"})
+		return
+	}
+	log.Printf("[admin] unban_user admin_id=%d target_user=%d", adminID, id)
+	c.JSON(http.StatusOK, gin.H{"message": "已解封", "user_id": id})
+}

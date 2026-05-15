@@ -126,7 +126,7 @@ func main() {
 
 	// Characters (authenticated)
 	chh := handlers.NewCharacterHandlers()
-	chars := api.Group("/characters", middleware.AuthRequired())
+	chars := api.Group("/characters", middleware.AuthRequired(), middleware.BanCheck())
 	{
 		chars.GET("", handlers.ListCharacters)
 		chars.GET("/dead", handlers.ListDeadCharacters)
@@ -157,7 +157,7 @@ func main() {
 
 	// Sessions
 	sh := handlers.NewSessionHandlers(agent.DefaultRunner{})
-	sessions := api.Group("/sessions", middleware.AuthRequired())
+	sessions := api.Group("/sessions", middleware.AuthRequired(), middleware.BanCheck())
 	{
 		sessions.GET("", handlers.ListSessions)
 		sessions.GET("/my-history", handlers.ListMyHistorySessions)
@@ -175,7 +175,7 @@ func main() {
 	}
 
 	// Shop
-	shop := api.Group("/shop", middleware.AuthRequired())
+	shop := api.Group("/shop", middleware.AuthRequired(), middleware.BanCheck())
 	{
 		shop.GET("/items", handlers.ListShopItems)
 		shop.POST("/purchase", handlers.PurchaseItem)
@@ -209,6 +209,9 @@ func main() {
 		// Lawyer cache management
 		admin.GET("/cache/stats", handlers.AdminGetCacheStats)
 		admin.DELETE("/cache", handlers.AdminClearCache)
+		// Ban management
+		admin.PUT("/users/:id/ban", handlers.AdminBanUser)
+		admin.PUT("/users/:id/unban", handlers.AdminUnbanUser)
 	}
 
 	// ─── Frontend (embedded) ─────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/llmcoc/server/internal/config"
+	"github.com/llmcoc/server/internal/models"
 )
 
 // NOTE: Claims represents the JWT payload containing user identity and role.
@@ -45,6 +46,24 @@ func AdminRequired() gin.HandlerFunc {
 		role, exists := c.Get("role")
 		if !exists || role != "admin" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "需要管理员权限"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// BanCheck checks whether the authenticated user is banned and aborts with 403 if so.
+// Must be placed after AuthRequired in the middleware chain.
+func BanCheck() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetUint("user_id")
+		var user models.User
+		if err := models.DB.Select("is_banned, ban_reason").First(&user, userID).Error; err == nil && user.IsBanned {
+			msg := "账号已被封禁"
+			if user.BanReason != "" {
+				msg += "：" + user.BanReason
+			}
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": msg})
 			return
 		}
 		c.Next()

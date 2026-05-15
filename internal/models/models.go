@@ -26,6 +26,8 @@ type User struct {
 	Email        string    `gorm:"uniqueIndex;not null;size:200" json:"email"`
 	PasswordHash string    `gorm:"not null" json:"-"`
 	Role         Role      `gorm:"default:'user';not null" json:"role"`
+	IsBanned     bool      `gorm:"default:false;not null" json:"is_banned"`
+	BanReason    string    `gorm:"size:500" json:"ban_reason,omitempty"`
 	Coins        int       `gorm:"default:0;not null" json:"coins"`
 	CardSlots    int       `gorm:"default:3;not null" json:"card_slots"`
 	ReviveCount  int       `gorm:"default:0;not null" json:"revive_count"` // 累计复活次数，影响后续复活费用
