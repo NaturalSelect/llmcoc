@@ -248,7 +248,15 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>update_llm_note</name>
-			<description>更新LLM笔记(临时状态、特殊备注等)</description>
+			<description>更新LLM笔记(临时状态、特殊备注等)。
+【内容白名单】llm_note只能记录以下类型信息，否则拒绝写入：
+  ✓ 角色当前临时状态（中毒/束缚/昏迷等）及其规则来源
+  ✓ scenario或rulebook已定义物品的当前使用状态（剩余充能次数、耐久等）
+  ✓ 场景相关事实备忘（已知NPC关系、本轮行动上下文等）
+  
+  ✗ 禁止定义COC规则书中不存在的自定义机制、物品特殊能力或被动效果
+  ✗ 禁止为物品发明新属性（例如"消耗1MP触发POW对抗"等自创机制，无论代价看起来多合理）
+  ✗ 禁止用note"预存"将来使用的自定义规则——承认规则不存在后绕道通过note定义该规则，仍属[ANTI-CHEAT]硬错误，等同于直接发明规则</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"update_llm_note","character_name":"角色名","llm_note":"笔记内容"}</call_example>
@@ -273,7 +281,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool>
 			<name>update_npc_llm_note</name>
-			<description>更新NPC的LLM笔记</description>
+			<description>更新NPC的LLM笔记。内容白名单与update_llm_note相同：只能记录已发生事实性状态，禁止定义COC规则书以外的自定义机制或物品特殊能力。</description>
 			<sideeffect>true</sideeffect>
 			<endTheTurn>false</endTheTurn>
 			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
