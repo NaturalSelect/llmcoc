@@ -41,7 +41,11 @@ func TestToolCallUnmarshalPreservesThink(t *testing.T) {
 
 func TestRunAntiCheatParsesAllow(t *testing.T) {
 	fp := &fakeProvider{resp: `{"verdict":"allow","reason":"KP计划和工具一致","message":"继续"}`}
-	verdict, err := runAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), []ToolCall{{Action: ToolThink, Think: "仅叙事描述，不改状态"}}, nil)
+	calls := []ToolCall{
+		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=保持原属性，不增强; source=玩家叙事换皮要求。"},
+		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "属性同手榴弹，仅叙事换皮", ItemCount: 1},
+	}
+	verdict, err := runAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), calls, nil)
 	if err != nil {
 		t.Fatalf("runAntiCheat failed: %v", err)
 	}
@@ -54,6 +58,9 @@ func TestRunAntiCheatParsesAllow(t *testing.T) {
 	if !strings.Contains(fp.messages[1].Content, "<proposed_tool_batch>") {
 		t.Fatal("guard prompt did not include proposed tool batch")
 	}
+	if !strings.Contains(fp.messages[1].Content, "ANTI_CHEAT_CONTRACT") {
+		t.Fatal("guard prompt did not include anti-cheat contract from think")
+	}
 	if strings.Contains(fp.messages[0].Content, "player_cheat") {
 		t.Fatal("simplified prompt should not ask for player_cheat verdict")
 	}
@@ -62,7 +69,7 @@ func TestRunAntiCheatParsesAllow(t *testing.T) {
 func TestCheckAntiCheatRejectsKPInconsistency(t *testing.T) {
 	fp := &fakeProvider{resp: `{"verdict":"replan","reason":"think承诺仅换皮但工具写入新伤害","message":"只能写属性同原物品/仅叙事换皮"}`}
 	calls := []ToolCall{
-		{Action: ToolThink, Think: "把手榴弹换皮为北凉火蒺藜，保持原属性，不增强。"},
+		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=保持原属性，不增强; source=玩家叙事换皮要求。"},
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "伤害：4D10，爆炸范围更大", ItemCount: 1},
 	}
 	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), calls, nil)
@@ -80,7 +87,7 @@ func TestCheckAntiCheatRejectsKPInconsistency(t *testing.T) {
 func TestAntiCheatRejectPreventsInventoryExecution(t *testing.T) {
 	ctx := minimalAntiCheatContext()
 	calls := []ToolCall{
-		{Action: ToolThink, Think: "只改名，不改变手榴弹机械属性。"},
+		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=不改变手榴弹机械属性; source=玩家叙事换皮要求。"},
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "伤害：4D10", ItemCount: 1},
 	}
 	fp := &fakeProvider{resp: `{"verdict":"replan","reason":"承诺不改变机械属性但工具改变伤害","message":"重新规划工具参数"}`}

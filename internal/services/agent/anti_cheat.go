@@ -16,11 +16,11 @@ const antiCheatDefaultPrompt = `你是 COC TRPG 后台 AntiCheat 裁判。你只
 {"verdict":"allow|replan","reason":"简短原因","message":"给 KP 的纠正指令"}
 
 审查范围：
-- 只比较本批次 proposed_tool_batch 内的 KP 文本字段与副作用工具参数是否一致，例如 think、reason 与 manage_inventory/update_*/manage_spell/manage_relation 等工具的参数。write、response 和纯查询/投骰工具不参与审计。
-- 不判断玩家是否作弊，不判断剧本/规则来源是否充分，不做全量规则裁判。
-- 如果 KP 文本没有明确承诺，或只是笼统计划，且工具参数没有明显反向执行，返回 allow。
-- 如果 KP 明确承诺“不增强/仅叙事换皮/保持原属性/不改变数值/不授予物品/不造成伤害/不更新关系”等，但后续工具参数实际增加伤害骰、护甲、奖励骰、数量、属性、法术、关系、HP/SAN/MP变化等机械收益或损失，返回 replan。
-- 如果 KP 的 reason/ack/reply 声称执行 A，但工具参数执行 B，也返回 replan。
+- 只比较本批次 proposed_tool_batch 内的 KP 文本字段与副作用工具参数是否一致，重点读取 think 里的 ANTI_CHEAT_CONTRACT（tool/promised_change/consistency_constraint/source）和每个副作用工具的 reason/参数。write、response 和纯查询/投骰工具不参与审计。
+- 不判断玩家是否作弊，不判断剧本/规则来源是否充分，不做全量规则裁判；source 信息不足本身不是拒绝理由。
+- 默认放行：如果 KP 文本没有明确承诺，合约写得不完整，或信息不足但没有发现工具参数与合约/think/reason直接矛盾，返回 allow。
+- 只在存在清晰、可指出的自相矛盾时返回 replan：例如合约/think/reason 明确承诺“不增强/仅叙事换皮/保持原属性/不改变数值/不授予物品/不造成伤害/不更新关系”，但后续副作用工具参数实际增加伤害骰、护甲、奖励骰、数量、属性、法术、关系、HP/SAN/MP变化等机械收益或损失。
+- 如果 KP 的 reason 声称执行 A，但工具参数执行 B，也返回 replan。
 - 如果 KP 的 think 显示向玩家妥协而放弃了原本合理的拒绝（例如玩家要求“我希望这个物品有X能力”，KP 原本可以拒绝但改成了“虽然规则里没有，但我觉得合理，所以就给你这个能力吧”），也返回 replan。
 - 如果 KP 的 think 有明显为自己开脱的理由（例如“虽然这个物品有点强，但我觉得剧情需要/玩家很喜欢/我不想破坏氛围，所以就给了”），也返回 replan，并在 message 中要求 KP 只能基于规则和机械属性做判断，不能基于剧情需要或玩家喜好妥协。
 - 叙事换皮、重命名、风味描述允许改变名称和外观；只要没有新增或改变机械属性，返回 allow。
@@ -103,7 +103,7 @@ func buildAntiCheatPrompt(gctx GameContext, calls []ToolCall, tempNPCs []models.
 	var sb strings.Builder
 
 	sb.WriteString("<scope>\n")
-	sb.WriteString("只判定 KP 本批次文本承诺与副作用工具参数是否一致；write/response 已被后端移除，纯查询/投骰工具不会触发审计；不要判断玩家作弊或规则来源。\n")
+	sb.WriteString("只判定 KP 本批次文本承诺与副作用工具参数是否一致；重点读取 think 的 ANTI_CHEAT_CONTRACT；write/response 已被后端移除，纯查询/投骰工具不会触发审计；不要判断玩家作弊或规则来源；信息不足但无直接矛盾时放行。\n")
 	sb.WriteString("</scope>\n\n")
 
 	sb.WriteString("<current_input_context>\n")
