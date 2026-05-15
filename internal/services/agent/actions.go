@@ -476,6 +476,21 @@ func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	return nil
 }
 
+func flushPendingWrite(actx ActionContext) {
+	if actx.PendingWrite == nil || *actx.PendingWrite == "" {
+		return
+	}
+	direction := *actx.PendingWrite
+	doneW := timedDebug("Writer", "session=%d direction=%s", actx.Sid, direction)
+	writeErr := appendWriter(actx.Ctx, actx.Handles[models.AgentRoleWriter], actx.Writer, direction, *actx.GCtx)
+	doneW()
+	if writeErr != nil {
+		log.Printf("[agent] writer error: %v", writeErr)
+	}
+	*actx.PendingWrite = ""
+	debugf("tool", "session=%d write buffer_len=%d", actx.Sid, len([]rune(actx.Writer.Buffer)))
+}
+
 type responseAction struct{}
 
 func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
@@ -487,15 +502,7 @@ func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	} else {
 		*actx.KPNarration = call.Reply
 	}
-	if *actx.PendingWrite != "" {
-		doneW := timedDebug("Writer", "session=%d direction=%s", actx.Sid, *actx.PendingWrite)
-		writeErr := appendWriter(actx.Ctx, actx.Handles[models.AgentRoleWriter], actx.Writer, *actx.PendingWrite, *actx.GCtx)
-		doneW()
-		if writeErr != nil {
-			log.Printf("[agent] writer error: %v", writeErr)
-		}
-		debugf("tool", "session=%d write buffer_len=%d", actx.Sid, len([]rune(actx.Writer.Buffer)))
-	}
+	flushPendingWrite(actx)
 	debugf("tool", "session=%d response narration=%s", actx.Sid, call.Reply)
 	return nil
 }

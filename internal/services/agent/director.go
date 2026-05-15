@@ -178,13 +178,17 @@ const kpSystemPrompt = `
 		<tool>
 			<name>write</name>
 			<description>
-				指示叙事代理生成文本段落。direction字段：调查员有发言时原话逐字放入；纯动作时只描述动作，禁止虚构对话。可多次调用。
+				指示叙事代理生成文本段落。direction字段会追加到叙事buffer，最终response时统一交给Writer生成玩家可见文本；因此中间批次也必须write，不能只在最后一批write。
+				调查员有发言时原话逐字放入；纯动作时只描述动作，禁止虚构对话。可多次调用。
 				只要玩家有动作或发言(对KP的发言除外)就必须调用；无动作无发言时可跳过。
+				PROCESS VISIBILITY: 每当一个中间过程已经被工具结果确定为玩家可见事实（移动完成、NPC做出反应、骰子导致可见成败、物品被拿起/丢失、线索被发现、伤害发生等），必须立刻在同一批次调用write把这个过程追加到buffer；即使随后还要yield等待更多工具，也不能把这些已确定过程留到最终批次才概括。
+				LAZY-WRITE HARD ERROR: direction禁止只写“继续描述/处理玩家行动/进入下一场景/他们来到X/简单回应”等空泛指令。每次write都必须给足可写内容，至少包含：①行动者和动作 ②当前地点/目标位置 ③行动造成的可见变化或NPC/环境即时反应 ④本段情绪节奏(日常/调查/紧张/恐怖/战斗) ⑤如果发生场景转换，要写清离开点、路上过渡、到达点第一眼看到的具体事物。
+				SCENE CONTINUITY: 玩家行动推进剧情时，write必须把“动作→环境反馈→下一可互动状态”写完整，不能把剧情停在半句确认或纯总结。若有多个玩家/NPC在场，说明每个关键对象的位置和可见反应。
 				SECRECY: direction禁止包含未发现线索内容、NPC秘密或调查员尚未通过行动获取的剧情事实。
 			</description>
-			<sideeffect>true</sideeffect>
+			<sideeffect>false</sideeffect>
 			<endTheTurn>false</endTheTurn>
-			<call_example>{"action":"write","direction":"约翰走向窗边拉开窗帘，低声道：「这里有什么异常…」"}</call_example>
+			<call_example>{"action":"write","direction":"节奏:调查/日常。约翰在图书馆二楼窗边停下，伸手拉开厚窗帘；请描写窗帘滑动的声音、灰尘和窗外街灯照进来的变化。约翰原话：「这里有什么异常…」不要揭示未发现线索，结尾停在他能继续检查窗台/书桌/窗外的状态。"}</call_example>
 		</tool>
 		<tool>
 			<name>advance_time</name>
@@ -360,7 +364,8 @@ THOROUGHNESS IS MANDATORY — LAZY TOOL USE IS A HARD ERROR:
   - act_npc: any NPC present during an interaction must respond.
   - check_rule: any mechanical action requires a rule check unless explicitly exempted by [CHECK-RULE-DEFAULT].
   - update_location: any investigator movement requires a location update.
-  - write: any investigator action or speech requires a write call to narrate it.
+  - write: any investigator action or speech requires a write call to narrate it. Write is a buffer append, so it is safe and required in intermediate batches; do not postpone all visible process narration to the final batch.
+• If a visible process has been resolved by current tool results, call write in that same batch before yield/response so the buffer records the full sequence. Final response should conclude, not summarize missing middle steps.
 • If you find yourself about to call response without having called write, check_rule, act_npc (for present NPCs), or roll_dice (for skill checks) — stop and ask yourself what you skipped.
 
 NO ASSUMPTIONS — ZERO TOLERANCE:

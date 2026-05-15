@@ -70,6 +70,7 @@ var outlineSystemPrompt = `你是 COC TRPG(克苏鲁的呼唤第7版)模组设�
 - 至少一个NPC有独立行动线,其目标与调查员无关,玩家若忽视将导致可见的世界变化
 - 至少一个NPC完全无辜且拒绝相信任何超自然现象,无论调查员如何说服
 - 禁止所有主要NPC都是"知情者"身份
+- NPC name 必须使用具体可称呼姓名，不要使用职业/身份泛称；不得复用用户消息中提供的近期 NPC 名字黑名单。
 
 【线索分层强制要求】
 线索必须分为两类:
@@ -108,7 +109,7 @@ const draftPrompt = `将以下模组大纲转换为完整的 JSON 模组。严�
 %s
 - game_start_slot: 开局时间槽(0-47,每槽30分钟,0=0:00,16=8:00,24=12:00,40=20:00),根据剧情背景选择合适的开局时刻
 - map_description: 文字描述的场景地图,列出所有主要地点、空间关系和移动路径(100-200字),帮助KP在运行中准确感知调查员位置
-- npcs: 每个NPC有 name/description/attitude/stats
+- npcs: 每个NPC有 name/description/attitude/stats；name 必须是具体姓名，不得使用近期 NPC 名字黑名单中的名字，也不得使用职业/身份泛称
 - clues: 线索需标注类型前缀，格式为 "[真实]线索名(地点):描述" / "[误导]线索名(地点):描述" / "[隐藏]线索名(地点):描述(需XXX检定)"
 - win_condition: 明确的胜利条件
 - lose_condition: 明确的失败条件(如仪式完成、关键NPC死亡、调查员全灭等)
@@ -155,6 +156,7 @@ must_fix 中必须标注:
 - 缺失 lose_condition 或 partial_wins
 - 线索缺少[隐藏]分类
 - NPC全部为知情者身份(无多样性)
+- npcs[].name 复用了近期 NPC 名字黑名单中的名字，或使用职业/身份泛称而非具体姓名
 - 叙事结构完全套用三幕剧且无任何转折
 - 怪物/神话生物不符合规则书
 - 怪物登场方式为直白冲出/从黑暗中出现等套路,未使用任何新颖登场手法
@@ -414,15 +416,18 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 	debugf("script", "theme: %v", req.Theme)
 
+	npcNameBlacklist := loadRecentNPCNameBlacklist(200)
+	debugf("script", "npc blacklist count: %d", len(npcNameBlacklist))
+
 	// Phase 1: Outline (with grep tool calls)
-	outline, err := generateOutline(ctx, architect, req)
+	outline, err := generateOutline(ctx, architect, req, npcNameBlacklist)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("phase1 outline 失败: %w", err)
 	}
 	log.Printf("[scripter] phase1 outline len=%d", len(outline))
 
 	// Phase 2: Draft (pure JSON generation; parser as JSON fixer)
-	draft, err := buildDraft(ctx, architect, parser, outline, req.TargetLength)
+	draft, err := buildDraft(ctx, architect, parser, outline, req.TargetLength, npcNameBlacklist)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("phase2 draft 失败: %w", err)
 	}
@@ -436,7 +441,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		if ctx.Err() != nil {
 			return ScenarioCreationOutput{}, ctx.Err()
 		}
-		qaResult, err = runQA(ctx, qaAgent, parser, req, draft)
+		qaResult, err = runQA(ctx, qaAgent, parser, req, draft, npcNameBlacklist)
 		if err != nil {
 			log.Printf("[scripter] phase3 QA失败 iter=%d: %v", i, err)
 			return ScenarioCreationOutput{}, fmt.Errorf("phase3 QA 失败: %w", err)
@@ -454,7 +459,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		}
 
 		// Revise draft based on QA feedback
-		revised, revErr := reviseDraft(ctx, architect, parser, draft, qaResult.MustFix, outline)
+		revised, revErr := reviseDraft(ctx, architect, parser, draft, qaResult.MustFix, outline, npcNameBlacklist)
 		if revErr != nil {
 			log.Printf("[scripter] revision 失败 iter=%d: %v", i, revErr)
 			break // return best effort
@@ -472,7 +477,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 // Phase 1: Generate Outline (with tool-call loop for grep)
 // ---------------------------------------------------------------------------
 
-func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest) (string, error) {
+func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, npcNameBlacklist []string) (string, error) {
 	reqJSON, _ := json.Marshal(req)
 	template := randomNarrativeTemplate()
 	log.Printf("[outline] 叙事模板: %s", template)
@@ -495,7 +500,7 @@ func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCre
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: architect.systemPrompt(outlineSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请使用随机NPC姓名, 必须至少查看一次怪物和神话生物列表选择合适的敌人,创作需求如下(JSON):\n%s\n\n【本次叙事结构模板(必须遵循)】\n%s\n\n 怪物表: %v", string(reqJSON), template, shuffledMonsters)},
+		{Role: "user", Content: fmt.Sprintf("请使用随机NPC姓名, 必须至少查看一次怪物和神话生物列表选择合适的敌人,创作需求如下(JSON):\n%s\n\n【本次叙事结构模板(必须遵循)】\n%s\n\n【近期已用 NPC 名字黑名单，禁止复用】\n%s\n\n 怪物表: %v", string(reqJSON), template, formatNPCNameBlacklist(npcNameBlacklist), shuffledMonsters)},
 	}
 
 	const maxIter = 30
@@ -560,8 +565,9 @@ func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCre
 // Phase 2: Build Draft (pure JSON, no tool calls)
 // ---------------------------------------------------------------------------
 
-func buildDraft(ctx context.Context, architect, fixer agentHandle, outline string, targetLength string) (ScenarioDraft, error) {
+func buildDraft(ctx context.Context, architect, fixer agentHandle, outline string, targetLength string, npcNameBlacklist []string) (ScenarioDraft, error) {
 	userMsg := fmt.Sprintf(draftPrompt, outline, scenarioExample, lengthSpec(targetLength))
+	userMsg += "\n\n【近期已用 NPC 名字黑名单，禁止 npcs[].name 复用】\n" + formatNPCNameBlacklist(npcNameBlacklist)
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: "你是 COC TRPG 模组 JSON 生成器。仅输出合法 JSON,不要有任何其他文字。"},
 		{Role: "user", Content: userMsg},
@@ -578,12 +584,12 @@ func buildDraft(ctx context.Context, architect, fixer agentHandle, outline strin
 // Phase 3: QA (with tool-call loop for grep)
 // ---------------------------------------------------------------------------
 
-func runQA(ctx context.Context, qaAgent agentHandle, parser agentHandle, req ScenarioCreationRequest, draft ScenarioDraft) (qaGuardResult, error) {
+func runQA(ctx context.Context, qaAgent agentHandle, parser agentHandle, req ScenarioCreationRequest, draft ScenarioDraft, npcNameBlacklist []string) (qaGuardResult, error) {
 	reqJSON, _ := json.Marshal(req)
 	draftJSON, _ := json.Marshal(draft)
 
-	userMsg := fmt.Sprintf("审查以下 COC 模组的质量, 是否符合逻辑, 剧情是否胡乱编造。\n\n【原始需求】\n%s\n\n【模组草案】\n%s",
-		string(reqJSON), string(draftJSON))
+	userMsg := fmt.Sprintf("审查以下 COC 模组的质量, 是否符合逻辑, 剧情是否胡乱编造。\n\n【原始需求】\n%s\n\n【近期已用 NPC 名字黑名单，npcs[].name 禁止复用】\n%s\n\n【模组草案】\n%s",
+		string(reqJSON), formatNPCNameBlacklist(npcNameBlacklist), string(draftJSON))
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: qaAgent.systemPrompt(qaSystemPrompt)},
@@ -655,11 +661,12 @@ func runQA(ctx context.Context, qaAgent agentHandle, parser agentHandle, req Sce
 // Revision: targeted fix based on QA feedback (pure JSON, no tool calls)
 // ---------------------------------------------------------------------------
 
-func reviseDraft(ctx context.Context, architect, fixer agentHandle, draft ScenarioDraft, mustFix []string, outline string) (ScenarioDraft, error) {
+func reviseDraft(ctx context.Context, architect, fixer agentHandle, draft ScenarioDraft, mustFix []string, outline string, npcNameBlacklist []string) (ScenarioDraft, error) {
 	draftJSON, _ := json.Marshal(draft)
 	issues := strings.Join(mustFix, "\n- ")
 
 	userMsg := fmt.Sprintf(revisionPrompt, outline, string(draftJSON), issues, scenarioExample)
+	userMsg += "\n\n【近期已用 NPC 名字黑名单，修订后的 npcs[].name 禁止复用】\n" + formatNPCNameBlacklist(npcNameBlacklist)
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: "你是 COC TRPG 模组修订器。根据QA反馈修订模组。仅输出修订后的完整 JSON,不要有其他文字。"},
 		{Role: "user", Content: userMsg},
@@ -922,6 +929,49 @@ func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest) {
 	if draft.Author == "" {
 		draft.Author = "agent-team"
 	}
+}
+
+func loadRecentNPCNameBlacklist(limit int) []string {
+	if limit <= 0 || models.DB == nil {
+		return nil
+	}
+	var scenarios []models.Scenario
+	if err := models.DB.Order("created_at DESC").Limit(limit * 3).Find(&scenarios).Error; err != nil {
+		log.Printf("[scripter] load recent npc blacklist failed: %v", err)
+		return nil
+	}
+	seen := map[string]bool{}
+	names := make([]string, 0, limit)
+	for i := range scenarios {
+		if err := scenarios[i].DecodeData(); err != nil {
+			continue
+		}
+		for _, npc := range scenarios[i].Content.Data.NPCs {
+			name := normalizeNPCName(npc.Name)
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			names = append(names, name)
+			if len(names) >= limit {
+				return names
+			}
+		}
+	}
+	return names
+}
+
+func formatNPCNameBlacklist(names []string) string {
+	if len(names) == 0 {
+		return "(无)"
+	}
+	return "- " + strings.Join(names, "\n- ")
+}
+
+func normalizeNPCName(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.Trim(name, " `\"'，。；;：:（）()【】[]")
+	return strings.TrimSpace(name)
 }
 
 func firstNonEmpty(values ...string) string {
