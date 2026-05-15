@@ -47,6 +47,7 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolQueryCharacter:    true,
 	ToolQueryNPCCard:      true,
 	ToolActNPC:            true, // returns NPC reaction that must be read before response
+	ToolSelfCheck:         true, // free introspection tool, no side effects
 }
 
 // responseCompatibleActions is the set of actions that MAY coexist with
@@ -59,6 +60,7 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolHint:             true,
 	ToolFoundClue:        true,
 	ToolThink:            true,
+	ToolSelfCheck:        true,
 	ToolUpdateLLMNote:    true,
 	ToolUpdateNPCLLMNote: true,
 	ToolUpdateLocation:   true,
@@ -107,6 +109,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolFoundClue:         foundClueAction{},
 	ToolResponse:          responseAction{},
 	ToolThink:             emptyAction{actionName: string(ToolThink)},
+	ToolSelfCheck:         emptyAction{actionName: string(ToolSelfCheck)},
 	ToolReport:            reportAction{},
 }
 
