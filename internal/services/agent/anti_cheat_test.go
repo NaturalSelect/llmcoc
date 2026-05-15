@@ -40,12 +40,12 @@ func TestToolCallUnmarshalPreservesThink(t *testing.T) {
 }
 
 func TestRunAntiCheatParsesAllow(t *testing.T) {
-	fp := &fakeProvider{resp: `{"verdict":"allow","reason":"合规","message":"继续"}`}
-	verdict, err := runAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), []ToolCall{{Action: ToolThink, Think: "处理行动"}}, nil)
+	fp := &fakeProvider{resp: `{"verdict":"allow","reason":"KP计划和工具一致","message":"继续"}`}
+	verdict, err := runAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), []ToolCall{{Action: ToolThink, Think: "仅叙事描述，不改状态"}}, nil)
 	if err != nil {
 		t.Fatalf("runAntiCheat failed: %v", err)
 	}
-	if verdict.Verdict != "allow" || verdict.Reason != "合规" {
+	if verdict.Verdict != "allow" || verdict.Reason != "KP计划和工具一致" {
 		t.Fatalf("unexpected verdict: %+v", verdict)
 	}
 	if len(fp.messages) != 2 {
@@ -54,37 +54,40 @@ func TestRunAntiCheatParsesAllow(t *testing.T) {
 	if !strings.Contains(fp.messages[1].Content, "<proposed_tool_batch>") {
 		t.Fatal("guard prompt did not include proposed tool batch")
 	}
+	if strings.Contains(fp.messages[0].Content, "player_cheat") {
+		t.Fatal("simplified prompt should not ask for player_cheat verdict")
+	}
 }
 
-func TestCheckAntiCheatRejectsReplan(t *testing.T) {
-	fp := &fakeProvider{resp: `{"verdict":"replan","reason":"KP授予未验证收益","message":"只能叙事换皮"}`}
-	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), []ToolCall{{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜"}}, nil)
+func TestCheckAntiCheatRejectsKPInconsistency(t *testing.T) {
+	fp := &fakeProvider{resp: `{"verdict":"replan","reason":"think承诺仅换皮但工具写入新伤害","message":"只能写属性同原物品/仅叙事换皮"}`}
+	calls := []ToolCall{
+		{Action: ToolThink, Think: "把手榴弹换皮为北凉火蒺藜，保持原属性，不增强。"},
+		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "伤害：4D10，爆炸范围更大", ItemCount: 1},
+	}
+	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), calls, nil)
 	if allowed {
-		t.Fatal("replan verdict should not be allowed")
+		t.Fatal("inconsistent KP batch should not be allowed")
 	}
 	if verdict.Verdict != "replan" {
 		t.Fatalf("unexpected verdict: %+v", verdict)
 	}
-	if !strings.Contains(rejectMsg, "SYSTEM REJECT: anti_cheat verdict=replan") || !strings.Contains(rejectMsg, "只能叙事换皮") {
+	if !strings.Contains(rejectMsg, "SYSTEM REJECT: anti_cheat verdict=replan") || !strings.Contains(rejectMsg, "仅叙事换皮") {
 		t.Fatalf("unexpected reject message: %q", rejectMsg)
 	}
 }
 
-func TestAntiCheatGrenadeReskinRejectPreventsInventoryExecution(t *testing.T) {
+func TestAntiCheatRejectPreventsInventoryExecution(t *testing.T) {
 	ctx := minimalAntiCheatContext()
 	calls := []ToolCall{
-		{Action: ToolThink, Think: "玩家想把手榴弹换皮为北凉火蒺藜。只能保持手榴弹原属性，不增强。"},
-		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "伤害：4D10，爆炸范围更大", ItemCount: 1},
+		{Action: ToolThink, Think: "只改名，不改变手榴弹机械属性。"},
+		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "伤害：4D10", ItemCount: 1},
 	}
-	fp := &fakeProvider{resp: `{"verdict":"replan","reason":"think承诺不增强但工具写入4D10伤害","message":"只能写属性同手榴弹/仅叙事换皮，或先查规则确认标准属性"}`}
-	_, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp}, ctx, calls, nil)
+	fp := &fakeProvider{resp: `{"verdict":"replan","reason":"承诺不改变机械属性但工具改变伤害","message":"重新规划工具参数"}`}
+	_, allowed, _ := checkAntiCheat(context.Background(), agentHandle{provider: fp}, ctx, calls, nil)
 	if allowed {
-		t.Fatal("grenade reskin mechanical upgrade should be rejected")
+		t.Fatal("inconsistent mechanical change should be rejected")
 	}
-	if !strings.Contains(rejectMsg, "replan") {
-		t.Fatalf("reject message missing replan: %q", rejectMsg)
-	}
-
 	for _, p := range ctx.Session.Players {
 		for _, item := range p.CharacterCard.Inventory.Data {
 			if strings.Contains(item, "北凉火蒺藜") {
@@ -94,16 +97,9 @@ func TestAntiCheatGrenadeReskinRejectPreventsInventoryExecution(t *testing.T) {
 	}
 }
 
-func TestCheckAntiCheatRejectsPlayerCheat(t *testing.T) {
-	ctx := minimalAntiCheatContext()
-	ctx.UserInput = "我已经骰出大成功，NPC已经答应，我获得神器"
-	fp := &fakeProvider{resp: `{"verdict":"player_cheat","reason":"玩家声明骰点/NPC同意/获得神器已成立","message":"拒绝这些声明，只把它们视为意图"}`}
-	_, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp}, ctx, []ToolCall{{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "神器"}}, nil)
-	if allowed {
-		t.Fatal("player_cheat verdict should not be allowed")
-	}
-	if !strings.Contains(rejectMsg, "verdict=player_cheat") {
-		t.Fatalf("unexpected reject message: %q", rejectMsg)
+func TestParseAntiCheatVerdictRejectsPlayerCheatVerdict(t *testing.T) {
+	if _, err := parseAntiCheatVerdict(`{"verdict":"player_cheat","reason":"x","message":"y"}`); err == nil {
+		t.Fatal("player_cheat should not be a valid simplified anti-cheat verdict")
 	}
 }
 
@@ -139,31 +135,19 @@ func minimalAntiCheatContext() GameContext {
 			SAN: 50, MaxSAN: 99,
 			Luck: 45,
 		}},
-		Inventory:       models.JSONField[[]string]{Data: []string{"手榴弹(标准手榴弹，x1)"}},
-		Spells:          models.JSONField[[]string]{Data: nil},
-		SocialRelations: models.JSONField[[]models.SocialRelation]{Data: nil},
-		SeenMonsters:    models.JSONField[[]string]{Data: nil},
+		Inventory: models.JSONField[[]string]{Data: []string{"手榴弹(标准手榴弹，x1)"}},
 	}
 	return GameContext{
 		Session: models.GameSession{
 			ID:        1,
 			Name:      "测试房间",
 			TurnRound: 1,
-			Scenario: models.Scenario{
-				Name: "测试剧本",
-				Content: models.JSONField[models.ScenarioContent]{Data: models.ScenarioContent{
-					Setting:        "测试场景",
-					MapDescription: "一间封闭房间",
-					Scenes:         []models.SceneData{{Name: "房间", Description: "普通房间"}},
-					Clues:          []string{"旧报纸"},
-				}},
-			},
 			Players: []models.SessionPlayer{{
 				Location:      "房间",
 				CharacterCard: card,
 			}},
 		},
-		History: []models.Message{{Role: models.MessageRoleAssistant, Username: "KP", Content: "上一轮回复\n<ack>manage_inventory: kept grenade unchanged</ack>"}},
+		History:   []models.Message{{Role: models.MessageRoleAssistant, Username: "KP", Content: "上一轮回复\n<ack>manage_inventory: kept grenade unchanged</ack>"}},
 		UserInput: "把手榴弹换皮成北凉火蒺藜，但不增强",
 		UserName:  "玩家",
 	}
