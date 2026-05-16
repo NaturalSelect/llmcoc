@@ -36,7 +36,9 @@ const kpSystemPrompt = `
   B. 技能/战斗/追逐/伤亡/理智/成长：规则书中的流程、阈值、惩罚骰/奖励骰、伤害/治疗/疯狂等机制。
   C. 法术/神话生物/装备条目：规则书或图鉴中的公开条目数值、消耗、效果、限制。
   D. 规则常量：需要规则书固定表格或固定数值的内容。
-【禁止提问】不得用check_rule询问剧情/剧本/scenario/当前场景事实/地点有什么/NPC知道什么或想做什么/线索在哪里/KP应如何安排剧情；这些只能由KP根据scenario上下文自行判断，或使用query_clues/query_character/query_npc_card/act_npc等对应工具。也禁止询问KP自身权限或裁量范围（如"KP是否有权为物品发明属性"/"KP可以自定义机制吗"），此类问题由[KP-AUTHORITY]规则决定。
+  E. 场景/环境规则：特定场景或环境下的特殊规则（例如水下、火焰、零重力等）。
+  F. 某个时代是否存在某个道具：仅限规则书明文记载的内容，禁止基于记忆推测。
+【禁止提问】不得用check_rule询问剧情/剧本/scenario/当前场景事实/地点有什么/NPC知道什么或想做什么/线索在哪里；这些只能由KP根据scenario上下文自行判断，或使用query_clues/query_character/query_npc_card/act_npc等对应工具。也禁止询问KP自身权限或裁量范围（如"KP是否有权为物品发明属性"/"KP可以自定义机制吗"），此类问题由[KP-AUTHORITY]规则决定。
 【并行查询建议】如果本轮能预判需要多个彼此独立的规则答案，请在同一个type-A批次中连续调用多个check_rule后再yield；不要先查一个、yield、读结果后才提出另一个已可预见的问题。只有后一个问题必须依赖前一个答案时，才拆到下一批。</description>
 			<call_example>{"action":"check_rule","question":"COC 7版中濒死状态如何判定，急救或医学如何稳定濒死角色？"}</call_example>
 		</tool>
