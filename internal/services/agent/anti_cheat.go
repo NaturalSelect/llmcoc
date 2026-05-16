@@ -69,6 +69,14 @@ func checkAntiCheat(ctx context.Context, h agentHandle, gctx GameContext, calls 
 	if !hasAuditedAction {
 		return AntiCheatVerdict{Verdict: "allow", Reason: "no side-effect tools"}, true, ""
 	}
+	if !hasNonEmptyThink(calls) {
+		verdict := AntiCheatVerdict{
+			Verdict: "must_fix",
+			Reason:  "missing_think",
+			Message: "本批次包含副作用工具，必须先输出 think 并在其中写明 ANTI_CHEAT_CONTRACT，再重试本批次；不要执行任何状态修改。",
+		}
+		return verdict, false, rejectMessageFromAntiCheat(verdict)
+	}
 
 	verdict, err := runAntiCheat(ctx, h, gctx, filteredCalls, tempNPCs)
 	if err != nil {
@@ -97,6 +105,15 @@ func filterAntiCheatCalls(calls []ToolCall) ([]ToolCall, bool) {
 		}
 	}
 	return filtered, hasSideEffectAction
+}
+
+func hasNonEmptyThink(calls []ToolCall) bool {
+	for _, call := range calls {
+		if call.Action == ToolThink && strings.TrimSpace(call.Think) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func buildAntiCheatPrompt(gctx GameContext, calls []ToolCall, tempNPCs []models.SessionNPC) string {

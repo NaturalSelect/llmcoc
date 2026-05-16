@@ -140,6 +140,26 @@ func TestFilterAntiCheatCallsRequiresSideEffectAction(t *testing.T) {
 	}
 }
 
+func TestCheckAntiCheatRejectsSideEffectWithoutThink(t *testing.T) {
+	fp := &fakeProvider{resp: `{"verdict":"allow","reason":"should not be called","message":"should not be called"}`}
+	calls := []ToolCall{
+		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "可疑物品"},
+	}
+	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), calls, nil)
+	if allowed {
+		t.Fatal("side-effect batch without think should be rejected")
+	}
+	if verdict.Verdict != "must_fix" || verdict.Reason != "missing_think" {
+		t.Fatalf("unexpected verdict: %+v", verdict)
+	}
+	if !strings.Contains(rejectMsg, "missing_think") || !strings.Contains(rejectMsg, "ANTI_CHEAT_CONTRACT") {
+		t.Fatalf("unexpected reject message: %q", rejectMsg)
+	}
+	if len(fp.messages) != 0 {
+		t.Fatal("anti-cheat provider should not be called when think is missing")
+	}
+}
+
 func TestParseAntiCheatVerdictRejectsPlayerCheatVerdict(t *testing.T) {
 	if _, err := parseAntiCheatVerdict(`{"verdict":"player_cheat","reason":"x","message":"y"}`); err == nil {
 		t.Fatal("player_cheat should not be a valid simplified anti-cheat verdict")
@@ -148,7 +168,10 @@ func TestParseAntiCheatVerdictRejectsPlayerCheatVerdict(t *testing.T) {
 
 func TestCheckAntiCheatFailClosedOnInvalidJSONOrError(t *testing.T) {
 	ctx := minimalAntiCheatContext()
-	calls := []ToolCall{{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "可疑物品"}}
+	calls := []ToolCall{
+		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=新增可疑物品; consistency_constraint=按规则来源添加; source=测试。"},
+		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "可疑物品"},
+	}
 
 	_, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: &fakeProvider{resp: `not json`}}, ctx, calls, nil)
 	if allowed {

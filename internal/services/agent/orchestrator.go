@@ -4,7 +4,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"log"
 	"sort"
@@ -1049,151 +1048,54 @@ func buildPlayerStatus(players []models.SessionPlayer) string {
 	return s
 }
 
-// buildCharacterDetail returns a detailed character card dump for the given character name.
+// buildCharacterDetail returns a compact XML character card dump for the given character name.
 // If characterName is empty, all players' cards are returned.
-
-// 用于生成 XML 的临时结构体（不导出）
-type characterXML struct {
-	XMLName struct{} `xml:"character"`
-	Name    string   `xml:"name"`
-	Race    string   `xml:"race"`
-	Job     string   `xml:"occupation"`
-	Age     int      `xml:"age"`
-	Gender  string   `xml:"gender"`
-	LLMNote string   `xml:"llm_note,omitempty"`
-	Stats   struct {
-		STR int `xml:"str"`
-		CON int `xml:"con"`
-		SIZ int `xml:"siz"`
-		DEX int `xml:"dex"`
-		APP int `xml:"app"`
-		INT int `xml:"int"`
-		POW int `xml:"pow"`
-		EDU int `xml:"edu"`
-	} `xml:"base_stats"`
-	Derived struct {
-		HP     int    `xml:"hp"`
-		MaxHP  int    `xml:"max_hp"`
-		MP     int    `xml:"mp"`
-		MaxMP  int    `xml:"max_mp"`
-		SAN    int    `xml:"san"`
-		MaxSAN int    `xml:"max_san"`
-		Luck   int    `xml:"luck"`
-		MOV    int    `xml:"mov"`
-		Build  int    `xml:"build"`
-		DB     string `xml:"damage_bonus"`
-	} `xml:"derived_stats"`
-	CthulhuMythos   int           `xml:"cthulhu_mythos,omitempty"`
-	MythosMaxSAN    int           `xml:"mythos_max_san,omitempty"`
-	Skills          []keyValue    `xml:"skills>skill,omitempty"`
-	Inventory       []string      `xml:"inventory>item,omitempty"`
-	SocialRelations []relationXML `xml:"social_relations>relation,omitempty"`
-	Spells          []string      `xml:"spells>spell,omitempty"`
-	SeenMonsters    []string      `xml:"seen_monsters>monster,omitempty"`
-	MadnessState    string        `xml:"madness_state,omitempty"`
-	MadnessSymptom  string        `xml:"madness_symptom,omitempty"`
-}
-
-type relationXML struct {
-	Name         string `xml:"name"`
-	Relationship string `xml:"relationship"`
-	Note         string `xml:"note,omitempty"`
-}
-
 func buildCharacterDetail(characterName string, players []models.SessionPlayer) string {
 	if len(players) == 0 {
-		return `<result><error>当前无调查员</error></result>`
+		return `<err>当前无调查员</err>`
 	}
 
-	var characters []characterXML
+	var sb strings.Builder
+	sb.WriteString("<chars>")
+	matched := 0
 	for _, p := range players {
 		card := p.CharacterCard
 		if characterName != "" && card.Name != characterName {
 			continue
 		}
+		matched++
 		st := card.Stats.Data
-		c := characterXML{
-			Name:   card.Name,
-			Race:   card.Race,
-			Job:    card.Occupation,
-			Age:    card.Age,
-			Gender: card.Gender,
-			Stats: struct {
-				STR int `xml:"str"`
-				CON int `xml:"con"`
-				SIZ int `xml:"siz"`
-				DEX int `xml:"dex"`
-				APP int `xml:"app"`
-				INT int `xml:"int"`
-				POW int `xml:"pow"`
-				EDU int `xml:"edu"`
-			}{
-				STR: st.STR, CON: st.CON, SIZ: st.SIZ, DEX: st.DEX,
-				APP: st.APP, INT: st.INT, POW: st.POW, EDU: st.EDU,
-			},
-			Derived: struct {
-				HP     int    `xml:"hp"`
-				MaxHP  int    `xml:"max_hp"`
-				MP     int    `xml:"mp"`
-				MaxMP  int    `xml:"max_mp"`
-				SAN    int    `xml:"san"`
-				MaxSAN int    `xml:"max_san"`
-				Luck   int    `xml:"luck"`
-				MOV    int    `xml:"mov"`
-				Build  int    `xml:"build"`
-				DB     string `xml:"damage_bonus"`
-			}{
-				HP: st.HP, MaxHP: st.MaxHP, MP: st.MP, MaxMP: st.MaxMP,
-				SAN: st.SAN, MaxSAN: st.MaxSAN, Luck: st.Luck, MOV: st.MOV,
-				Build: st.Build, DB: st.DB,
-			},
-			Inventory:    card.Inventory.Data,
-			Spells:       card.Spells.Data,
-			SeenMonsters: card.SeenMonsters.Data,
+		sb.WriteString(fmt.Sprintf(`<c n=%q race=%q job=%q age=%q gender=%q loc=%q armor=%q>`, card.Name, card.Race, card.Occupation, compactInt(card.Age), card.Gender, p.Location, compactInt(p.Armor)))
+		sb.WriteString(fmt.Sprintf(`<stat base="STR=%d CON=%d SIZ=%d DEX=%d APP=%d INT=%d POW=%d EDU=%d" hp="%d/%d" mp="%d/%d" san="%d/%d" luck="%d" mov="%d" build="%d" db=%q/>`,
+			st.STR, st.CON, st.SIZ, st.DEX, st.APP, st.INT, st.POW, st.EDU,
+			st.HP, st.MaxHP, st.MP, st.MaxMP, st.SAN, st.MaxSAN, st.Luck, st.MOV, st.Build, st.DB))
+		if card.CthulhuMythosSkill > 0 {
+			sb.WriteString(fmt.Sprintf(`<mythos skill="%d" max_san="%d"/>`, card.CthulhuMythosSkill, 99-card.CthulhuMythosSkill))
+		}
+		writeCompactMap(&sb, "skills", card.Skills.Data)
+		writeCompactList(&sb, "inv", card.Inventory.Data)
+		writeCompactList(&sb, "spells", card.Spells.Data)
+		writeCompactList(&sb, "seen", card.SeenMonsters.Data)
+		if len(card.SocialRelations.Data) > 0 {
+			sb.WriteString("<rels>")
+			for _, r := range card.SocialRelations.Data {
+				sb.WriteString(fmt.Sprintf(`<rel n=%q type=%q note=%q/>`, r.Name, r.Relationship, r.Note))
+			}
+			sb.WriteString("</rels>")
 		}
 		if p.LLMNote != "" {
-			c.LLMNote = p.LLMNote
-		}
-		if card.CthulhuMythosSkill > 0 {
-			c.CthulhuMythos = card.CthulhuMythosSkill
-			c.MythosMaxSAN = 99 - card.CthulhuMythosSkill
-		}
-		if len(card.Skills.Data) > 0 {
-			for k, v := range card.Skills.Data {
-				c.Skills = append(c.Skills, keyValue{Key: k, Value: v})
-			}
-		}
-		if len(card.SocialRelations.Data) > 0 {
-			rels := make([]relationXML, len(card.SocialRelations.Data))
-			for i, r := range card.SocialRelations.Data {
-				rels[i] = relationXML{
-					Name:         r.Name,
-					Relationship: r.Relationship,
-					Note:         r.Note,
-				}
-			}
-			c.SocialRelations = rels
+			sb.WriteString(fmt.Sprintf("<note>%s</note>", xmlEscape(p.LLMNote)))
 		}
 		if card.MadnessState != "" && card.MadnessState != "none" {
-			c.MadnessState = card.MadnessState
-			c.MadnessSymptom = card.MadnessSymptom
+			sb.WriteString(fmt.Sprintf(`<mad state=%q symptom=%q/>`, card.MadnessState, card.MadnessSymptom))
 		}
-		characters = append(characters, c)
+		sb.WriteString("</c>")
 	}
-
-	if len(characters) == 0 {
-		return `<result><error>未找到角色：` + characterName + `</error></result>`
+	if matched == 0 {
+		return `<err>未找到角色：` + xmlEscape(characterName) + `</err>`
 	}
-
-	// 序列化为 XML
-	out, err := xml.MarshalIndent(struct {
-		XMLName    xml.Name       `xml:"characters"`
-		Characters []characterXML `xml:"character"`
-	}{Characters: characters}, "", "  ")
-	if err != nil {
-		return `<result><error>ERROR : ` + err.Error() + `</error></result>`
-	}
-	return string(out)
+	sb.WriteString("</chars>")
+	return sb.String()
 }
 
 // buildNPCDetail returns a detailed NPC card dump for temporary/session NPCs.
@@ -1217,113 +1119,119 @@ func npcNameMatch(name, query string) bool {
 	return strings.Contains(name, query)
 }
 
-// 辅助类型：用于序列化键值对
-type keyValue struct {
-	Key   string `xml:"key,attr"`
-	Value int    `xml:"value"`
+func xmlEscape(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
 }
 
-// XML 结构：NPC（临时或静态）
-type npcXML struct {
-	Name        string     `xml:"name"`
-	Race        string     `xml:"race"`
-	Type        string     `xml:"type"`             // "临时NPC" 或 "剧本静态NPC"
-	Status      string     `xml:"status,omitempty"` // 存活/死亡（仅临时NPC）
-	Description string     `xml:"description"`
-	Attitude    string     `xml:"attitude,omitempty"`
-	Goal        string     `xml:"goal,omitempty"`
-	Secret      string     `xml:"secret,omitempty"`
-	RiskPref    string     `xml:"risk_pref,omitempty"`
-	LLMNote     string     `xml:"llm_note,omitempty"`
-	Stats       []keyValue `xml:"stats>entry,omitempty"`
-	Skills      []keyValue `xml:"skills>entry,omitempty"`
-	Spells      []string   `xml:"spells>spell,omitempty"`
+func compactInt(v int) string {
+	if v == 0 {
+		return ""
+	}
+	return strconv.Itoa(v)
 }
 
-// 将 map[string]int 转换为 []keyValue
-func mapToKV(m map[string]int) []keyValue {
-	if len(m) == 0 {
-		return nil
+func writeCompactText(sb *strings.Builder, tag, text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
 	}
-	kv := make([]keyValue, 0, len(m))
-	for k, v := range m {
-		kv = append(kv, keyValue{Key: k, Value: v})
+	sb.WriteString("<")
+	sb.WriteString(tag)
+	sb.WriteString(">")
+	sb.WriteString(xmlEscape(text))
+	sb.WriteString("</")
+	sb.WriteString(tag)
+	sb.WriteString(">")
+}
+
+func writeCompactList(sb *strings.Builder, tag string, items []string) {
+	clean := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			clean = append(clean, item)
+		}
 	}
-	return kv
+	if len(clean) == 0 {
+		return
+	}
+	writeCompactText(sb, tag, strings.Join(clean, "; "))
+}
+
+func writeCompactMap(sb *strings.Builder, tag string, values map[string]int) {
+	if len(values) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", key, values[key]))
+	}
+	writeCompactText(sb, tag, strings.Join(parts, " "))
 }
 
 func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs []models.NPCData) string {
+	var sb strings.Builder
+	sb.WriteString("<npcs>")
+	matched := 0
 
-	var npcs []npcXML
 	// 1. 优先搜索临时 NPC（动态状态）
 	for _, npc := range tempNPCs {
 		if !npcNameMatch(npc.Name, npcName) {
 			continue
 		}
-		status := "存活"
+		matched++
+		status := "alive"
 		if !npc.IsAlive {
-			status = "已死亡/失能"
+			status = "dead"
 		}
-
-		n := npcXML{
-			Name:        npc.Name,
-			Race:        npc.Race,
-			Type:        "临时NPC",
-			Status:      status,
-			Description: npc.Description,
-			Attitude:    strings.TrimSpace(npc.Attitude),
-			Goal:        strings.TrimSpace(npc.Goal),
-			Secret:      strings.TrimSpace(npc.Secret),
-			RiskPref:    strings.TrimSpace(npc.RiskPref),
-			LLMNote:     npc.LLMNote,
-			Stats:       mapToKV(npc.Stats.Data),
-			Skills:      mapToKV(npc.Skills.Data),
-			Spells:      npc.Spells.Data,
-		}
-		// 剔除空字符串字段（omitempty 会在序列化时处理，但为了结构干净也可保留）
-		npcs = append(npcs, n)
+		sb.WriteString(fmt.Sprintf(`<npc n=%q race=%q src="tmp" st=%q>`, npc.Name, npc.Race, status))
+		writeCompactText(&sb, "desc", npc.Description)
+		writeCompactText(&sb, "att", strings.TrimSpace(npc.Attitude))
+		writeCompactText(&sb, "goal", strings.TrimSpace(npc.Goal))
+		writeCompactText(&sb, "secret", strings.TrimSpace(npc.Secret))
+		writeCompactText(&sb, "risk", strings.TrimSpace(npc.RiskPref))
+		writeCompactText(&sb, "note", npc.LLMNote)
+		writeCompactMap(&sb, "stats", npc.Stats.Data)
+		writeCompactMap(&sb, "skills", npc.Skills.Data)
+		writeCompactList(&sb, "spells", npc.Spells.Data)
+		sb.WriteString("</npc>")
 	}
 
 	// 如果临时 NPC 中没有匹配，则回退到剧本静态 NPC（只读基准信息）
-	if len(npcs) == 0 {
+	if matched == 0 {
 		for _, npc := range scenarioNPCs {
 			if !npcNameMatch(npc.Name, npcName) {
 				continue
 			}
+			matched++
 			race := npc.Race
 			if race == "" {
 				race = "人类"
 			}
-			n := npcXML{
-				Name:        npc.Name,
-				Race:        race,
-				Type:        "剧本静态NPC",
-				Description: npc.Description,
-				Attitude:    npc.Attitude,
-				Stats:       mapToKV(npc.Stats),
-				// 静态 NPC 没有技能、法术、动态状态
-			}
-			npcs = append(npcs, n)
+			sb.WriteString(fmt.Sprintf(`<npc n=%q race=%q src="scenario">`, npc.Name, race))
+			writeCompactText(&sb, "desc", npc.Description)
+			writeCompactText(&sb, "att", npc.Attitude)
+			writeCompactMap(&sb, "stats", npc.Stats)
+			sb.WriteString("</npc>")
 		}
 	}
 
-	// 输出结果
-	if len(npcs) == 0 {
+	if matched == 0 {
 		if npcName == "" {
-			return `<result><error>当前无可查询NPC</error></result>`
+			return `<err>当前无可查询NPC</err>`
 		}
-		return `<result><error>未找到NPC：` + npcName + `</error></result>`
+		return `<err>未找到NPC：` + xmlEscape(npcName) + `</err>`
 	}
-
-	// 序列化为 XML
-	out, err := xml.MarshalIndent(struct {
-		XMLName xml.Name `xml:"result"`
-		NPCs    []npcXML `xml:"npcs>npc"`
-	}{NPCs: npcs}, "", "  ")
-	if err != nil {
-		return `<result><error>ERROR : ` + err.Error() + `</error></result>`
-	}
-	return string(out)
+	sb.WriteString("</npcs>")
+	return sb.String()
 }
 
 // buildPlayerBrief returns a minimal one-line summary of all players for the KP context.
