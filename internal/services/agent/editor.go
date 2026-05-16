@@ -12,10 +12,10 @@ import (
 
 // parseStateChange parses a director change string (e.g. "HP -3(角色名)" or
 // "cthulhu_mythos +1(角色名)") into a CharacterUpdate.
-// Supported fields: HP, SAN, MP, POW, cthulhu_mythos, race.
+// Supported fields: HP, SAN, MP, POW, cthulhu_mythos, race, occupation, wound_state.
 // Returns false if the string cannot be matched to a known field.
 var stateChangeFields = []string{
-	"cthulhu_mythos", "HP", "SAN", "MP", "POW", "race", "occupation",
+	"cthulhu_mythos", "wound_state", "HP", "SAN", "MP", "POW", "race", "occupation",
 	"str", "con", "siz", "dex", "app", "int", "edu",
 }
 
@@ -35,8 +35,8 @@ func parseStateChange(change string) (CharacterUpdate, bool) {
 			deltaStr = rest
 		}
 
-		if strings.ToLower(field) == "race" || strings.ToLower(field) == "occupation" {
-			// For race and occupation, deltaStr is actually the new value string
+		if strings.ToLower(field) == "race" || strings.ToLower(field) == "occupation" || strings.ToLower(field) == "wound_state" {
+			// For string fields, deltaStr is actually the new value string.
 			return CharacterUpdate{
 				CharacterName: charName,
 				Field:         strings.ToLower(field),
@@ -91,6 +91,36 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 						applyMadnessToCard(card, kind)
 					}
 				}
+			}
+			models.DB.Save(card)
+
+		case "wound_state":
+			s := card.Stats.Data
+			switch strings.ToLower(strings.TrimSpace(upd.NewValue)) {
+			case "none":
+				card.WoundState = "none"
+				if s.HP > 0 {
+					card.IsUnconscious = false
+				}
+			case "major":
+				card.WoundState = "major"
+			case "dying":
+				card.WoundState = "dying"
+				card.IsUnconscious = true
+				if s.HP > 0 {
+					s.HP = 0
+					card.Stats.Data = s
+				}
+			case "dead":
+				card.WoundState = "dead"
+				card.IsUnconscious = true
+				if s.HP > 0 {
+					s.HP = 0
+					card.Stats.Data = s
+				}
+			default:
+				log.Printf("[editor] %s: invalid wound_state %q", card.Name, upd.NewValue)
+				continue
 			}
 			models.DB.Save(card)
 

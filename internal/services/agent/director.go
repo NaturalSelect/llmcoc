@@ -72,15 +72,16 @@ const kpSystemPrompt = `
 			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"作为KP，你要问NPC的问题,用第三人称描述玩家和其他人, 第二人称描述NPC, 第一人称描述KP(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果), 例如: 有一名少女在此时接近你, 给出你的反应", "hide_secret":true, "spell":"该NPC的已掌握法术","kp_directive":"说服失败：NPC应拒绝查看档案，可以找借口或转移话题，但不要透露真实原因。"}</call_example>
 		</tool>
 		<tool name="update_characters" sideeffect="true" endTheTurn="false">
-			<description>更新调查员的状态。格式严格为: "FIELD VALUE (角色名)" — 角色名必须用圆括号包裹且紧跟在值之后，这是解析关键字。FIELD和VALUE之间只用空格，VALUE中禁止再出现圆括号(例如不能写"-3(重伤)")。仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业，其他临时信息请用llm_note。禁止修改角色名称(name字段不存在)。
+			<description>更新调查员的状态。格式严格为: "FIELD VALUE (角色名)" — 角色名必须用圆括号包裹且紧跟在值之后，这是解析关键字。FIELD和VALUE之间只用空格，VALUE中禁止再出现圆括号(例如不能写"-3(重伤)")。仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业、wound_state，其他临时信息请用llm_note。禁止修改角色名称(name字段不存在)。HP伤害/治疗必须优先使用HP变更路径，系统会自动处理即死/重伤/濒死/复活，不要因为怕忘记状态而跳过HP修改；wound_state只用于HP自动路径无法表达的规则/剧情状态（none|major|dying|dead）。
 【reason白名单】每条变更的reason必须且只能属于以下类别之一，否则拒绝调用：
   A. HP变更：本轮roll_dice已返回的伤害/治疗数值（引用骰结果），或COC规则明确规定的固定伤害（引用规则名称）。
   B. SAN变更：本轮roll_dice已返回的理智检定结果（引用骰结果），以及触发检定的神话存在/事件名称。
   C. MP变更：本轮已调用的法术名称及其规则书MP消耗（引用法术名+规则来源）。
   D. 基础属性变更：以下三种情形之一——(1) scenario明文记载的药水/法术/变化效果，附原文引用；(2) check_rule本轮已确认的COC规则机制，附check_rule回答原文；(3) scenario明文定义该角色为非人种族并给出独立属性表，附scenario章节引用。三种情形之外一律拒绝，"角色概念"/"修仙者"/"玩家希望"/"KP认为合理"均不属于任何情形。
   E. 种族/职业变更：scenario叙事中本轮发生的具体事件触发（引用事件名称），且该事件在scenario中有明确的种族/职业转换描述。
+  F. wound_state变更：仅限 dying状态下规则判定死亡、急救/医学失败导致死亡、剧本/规则明确角色死亡，或有明确规则/剧本/超自然效果将死亡逆转为none；普通伤害和治疗仍必须写HP变更让系统自动处理。
 属性值不得超过COC规则书对该种族的上限（人类基础属性上限通常为99）；scenario未明文定义非人类属性表的角色一律按人类上限处理。</description>
-			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)"], "reason":"描述变更原因"}</call_example>		
+			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)","wound_state dead (角色名)"], "reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool name="manage_inventory" sideeffect="true" endTheTurn="false">
 			<description>管理调查员物品栏(获得/丢失)。调用前必须在同批次先调用query_character读取当前物品栏。

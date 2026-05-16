@@ -162,9 +162,9 @@ type DiceCheckResult struct {
 // parseStateChange in editor.go and applied directly without an LLM intermediary.
 type CharacterUpdate struct {
 	CharacterName string `json:"character_name"` // 目标角色/NPC名称
-	Field         string `json:"field"`          // san/hp/mp/cthulhu_mythos/race
+	Field         string `json:"field"`          // san/hp/mp/cthulhu_mythos/race/occupation/wound_state
 	Delta         int    `json:"delta"`          // 数值变化量
-	NewValue      string `json:"new_value"`      // 新的字符串值(如 race)
+	NewValue      string `json:"new_value"`      // 新的字符串值(如 race/wound_state)
 	AddValue      string `json:"add_value"`      // 新增条目(保留用于未来扩展)
 	IsNPC         bool   `json:"is_npc"`         // true = 临时NPC卡
 }
