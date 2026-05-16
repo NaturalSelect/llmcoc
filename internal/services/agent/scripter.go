@@ -323,7 +323,6 @@ var topicThreatOrigins = []string{
 	"潜伏在人类社会中的神话生物（伪装成普通人或动物）",
 	"外来的神话生物（从其他维度或星球入侵）",
 	"伟大存在的直接干预（亲自降临或通过代理人直接影响世界）",
-	"委托人是奈亚拉托提普的化身(不表现为敌对,利用调查员达成自己的不可告人目的,在结尾揭开真相并嘲笑调查员的愚蠢; 注: 请自由设定化身的形象不必局限在经典形象, 但必须是人形且在故事中一直以人类身份出现)",
 }
 
 // topicTwists NPC/剧情转折维度
@@ -367,6 +366,9 @@ func randomTopicConstraints(threatNum int) string {
 	copy(threats, topicThreatOrigins)
 	rand.Shuffle(len(threats), func(i, j int) { threats[i], threats[j] = threats[j], threats[i] })
 	threats = threats[:threatNum]
+	if rand.Intn(10) == 1 {
+		threats = append(threats, "委托人是奈亚拉托提普的化身(不表现为敌对,利用调查员达成自己的不可告人目的,在结尾揭开真相并嘲笑调查员的愚蠢; 注: 请自由设定化身的形象不必局限在经典形象, 但必须是人形且在故事中一直以人类身份出现)")
+	}
 	twist := topicTwists[rand.Intn(len(topicTwists))]
 	gamePlay := gameplay[rand.Intn(len(gameplay))]
 	return fmt.Sprintf("威胁来源=%v | 核心转折=%s | 游戏玩法=%s", threats, twist, gamePlay)
@@ -509,10 +511,15 @@ func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCre
 		num = 3
 	}
 	shuffledMonsters = shuffledMonsters[:num]
+	extra := ""
+	if rand.Intn(10) < 3 {
+		god := rulebook.GreadOldOnesAndGods[rand.Intn(len(rulebook.GreadOldOnesAndGods))]
+		fmt.Sprintf("故事关联的神祇: %s", god)
+	}
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: architect.systemPrompt(outlineSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请使用随机NPC姓名, 必须至少查看一次怪物和神话生物列表选择合适的敌人,创作需求如下(JSON):\n%s\n\n【本次叙事结构模板(必须遵循)】\n%s\n\n【近期剧本主题/标题黑名单，禁止生成同名、近似标题或核心主题高度相似的模组】\n%s\n\n【近期已用 NPC 名字黑名单，禁止复用】\n%s\n\n怪物表: %v", string(reqJSON), template, formatScenarioTitleBlacklist(recentScenarioNames), formatNPCNameBlacklist(npcNameBlacklist), shuffledMonsters)},
+		{Role: "user", Content: fmt.Sprintf("请使用随机NPC姓名, 必须至少查看一次怪物和神话生物列表选择合适的敌人,创作需求如下(JSON):\n%s\n\n【本次叙事结构模板(必须遵循)】\n%s\n\n【近期剧本主题/标题黑名单，禁止生成同名、近似标题或核心主题高度相似的模组】\n%s\n\n【近期已用 NPC 名字黑名单，禁止复用】\n%s\n\n怪物表: %v\n%v", string(reqJSON), template, formatScenarioTitleBlacklist(recentScenarioNames), formatNPCNameBlacklist(npcNameBlacklist), shuffledMonsters, extra)},
 	}
 
 	const maxIter = 30
