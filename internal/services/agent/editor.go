@@ -407,6 +407,7 @@ func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.Sessi
 				Stats:       models.JSONField[map[string]int]{Data: sNPC.Stats},
 				Skills:      models.JSONField[map[string]int]{Data: map[string]int{}},
 				Spells:      models.JSONField[[]string]{Data: []string{}},
+				WoundState:  "none",
 				IsAlive:     true,
 			}
 			models.DB.Create(&npc)
@@ -444,12 +445,49 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 		stats[key] = curr
 		delete(stats, field)
 		if field == "hp" && curr == 0 {
+			npc.WoundState = "dead"
 			npc.IsAlive = false
 		} else if field == "hp" && curr > 0 {
+			if npc.WoundState == "dead" {
+				npc.WoundState = "none"
+			}
 			npc.IsAlive = true
 		}
 		npc.Stats.Data = stats
 		log.Printf("[editor] NPC %s: %s %d→%d", npc.Name, key, curr-upd.Delta, curr)
+
+	case "wound_state":
+		switch strings.ToLower(strings.TrimSpace(upd.NewValue)) {
+		case "none":
+			npc.WoundState = "none"
+			npc.IsAlive = true
+		case "major":
+			npc.WoundState = "major"
+			npc.IsAlive = true
+		case "dying":
+			npc.WoundState = "dying"
+			npc.IsAlive = true
+			if stats["HP"] > 0 {
+				stats["HP"] = 0
+			} else if stats["hp"] > 0 {
+				stats["HP"] = 0
+				delete(stats, "hp")
+			}
+			npc.Stats.Data = stats
+		case "dead":
+			npc.WoundState = "dead"
+			npc.IsAlive = false
+			if stats["HP"] > 0 {
+				stats["HP"] = 0
+			} else if stats["hp"] > 0 {
+				stats["HP"] = 0
+				delete(stats, "hp")
+			}
+			npc.Stats.Data = stats
+		default:
+			log.Printf("[editor] NPC %s: invalid wound_state %q", npc.Name, upd.NewValue)
+		}
+		log.Printf("[editor] NPC %s: wound_state changed to %q", npc.Name, npc.WoundState)
 
 	case "race":
 		npc.Race = upd.NewValue

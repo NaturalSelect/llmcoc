@@ -211,6 +211,7 @@ type SessionNPC struct {
 	Skills      JSONField[map[string]int] `gorm:"type:text" json:"skills"`
 	Spells      JSONField[[]string]       `gorm:"type:text" json:"spells"`
 	AgentCtx    JSONField[[]ChatMsg]      `gorm:"type:text" json:"agent_ctx"`
+	WoundState  string                    `gorm:"column:wound_state;size:20;default:'none'" json:"wound_state"`
 	IsAlive     bool                      `gorm:"default:true" json:"is_alive"`
 	CreatedAt   time.Time                 `json:"created_at"`
 	UpdatedAt   time.Time                 `json:"updated_at"`

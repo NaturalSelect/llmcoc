@@ -13,6 +13,33 @@ import (
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
+func npcDisplayState(npc models.SessionNPC) string {
+	woundState := strings.TrimSpace(npc.WoundState)
+	switch woundState {
+	case "major":
+		return "重伤"
+	case "dying":
+		return "濒死/可抢救"
+	case "dead":
+		return "已死亡"
+	}
+	if !npc.IsAlive {
+		return "已死亡/失能"
+	}
+	return "存活"
+}
+
+func npcCompactState(npc models.SessionNPC) string {
+	switch strings.TrimSpace(npc.WoundState) {
+	case "major", "dying", "dead":
+		return npc.WoundState
+	}
+	if !npc.IsAlive {
+		return "dead"
+	}
+	return "alive"
+}
+
 const npcDefaultPrompt = `<system role="npc_agent" game="coc7" lang="zh-CN">
 	<identity>
 		你正在扮演 COC TRPG 中的一个 NPC。你会收到该 NPC 的性格设定、当前情境、KP 指令和调查员行动，并给出该 NPC 在这一轮的具体反应。
@@ -137,6 +164,7 @@ func createNPC(sessionID uint, card *NPCCard) string {
 		existing.Goal = goal
 		existing.Secret = secret
 		existing.RiskPref = riskPref
+		existing.WoundState = "none"
 		existing.IsAlive = true
 		existing.Stats.Data = card.Stats
 		existing.Skills.Data = card.Skills
@@ -159,6 +187,7 @@ func createNPC(sessionID uint, card *NPCCard) string {
 		Stats:       models.JSONField[map[string]int]{Data: card.Stats},
 		Skills:      models.JSONField[map[string]int]{Data: card.Skills},
 		Spells:      models.JSONField[[]string]{Data: card.Spells},
+		WoundState:  "none",
 		IsAlive:     true,
 	}
 	if err := models.DB.Create(&npc).Error; err != nil {
@@ -182,11 +211,26 @@ func destroyNPC(sessionID uint, name string, reason string) string {
 		reason = "out_of_range"
 	}
 
-	state := loadNPCState(sessionID, name)
 	if reason == "dead" {
-		// Death means no continuation memory; clear any old memory snapshot.
-		_ = models.DB.Where("session_id = ? AND name = ?", sessionID, name).Delete(&models.SessionNPCMemory{}).Error
-	} else {
+		var npc models.SessionNPC
+		if err := models.DB.Where("session_id = ? AND name = ?", sessionID, name).First(&npc).Error; err != nil {
+			return fmt.Sprintf("未找到NPC:%s", name)
+		}
+		stats := npc.Stats.Data
+		if stats == nil {
+			stats = make(map[string]int)
+		}
+		stats["HP"] = 0
+		delete(stats, "hp")
+		npc.Stats.Data = stats
+		npc.WoundState = "dead"
+		npc.IsAlive = false
+		_ = models.DB.Save(&npc).Error
+		return fmt.Sprintf("已标记NPC:%s(死亡)", name)
+	}
+
+	state := loadNPCState(sessionID, name)
+	{
 		// Non-death destroy (e.g. out_of_range): compact context into long-term memory.
 		summary := compactNPCMemory(state)
 		if summary != "" {
@@ -209,9 +253,6 @@ func destroyNPC(sessionID uint, name string, reason string) string {
 	clearNPCState(sessionID, name)
 	if res.RowsAffected == 0 {
 		return fmt.Sprintf("未找到NPC:%s", name)
-	}
-	if reason == "dead" {
-		return fmt.Sprintf("已销毁NPC:%s(死亡)", name)
 	}
 	return fmt.Sprintf("已销毁NPC:%s(记忆已压缩保存)", name)
 }
@@ -385,10 +426,7 @@ func buildNPCProfile(name string, gctx GameContext, tempNPCs []models.SessionNPC
 	// Check temporary NPC cards.
 	for _, npc := range tempNPCs {
 		if npc.Name == name {
-			alive := "存活"
-			if !npc.IsAlive {
-				alive = "已死亡/失能"
-			}
+			alive := npcDisplayState(npc)
 			desc := npc.Description
 			if len(desc) > 200 {
 				desc = desc[:200] + "…"

@@ -176,13 +176,14 @@ const kpSystemPrompt = `
 			<call_example>{"action":"query_npc_card","npc_name":"NPC名,留空返回全部NPC"}</call_example>
 		</tool>
 		<tool name="update_npc_card" sideeffect="true" endTheTurn="false">
-			<description>操作NPC角色卡数值，仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业，其他临时信息请考虑llm_note。NPC和调查员一样，HP/SAN不能凭叙事感觉随意扣除。
-【reason白名单】reason必须且只能属于以下情形之一：
-  A. HP变更：必须有明确伤害来源链。仅允许：(1)本轮roll_dice已返回的攻击/伤害骰数值（引用骰结果和攻击来源）；(2)COC规则明确规定的固定伤害（引用规则名）；(3)scenario明文写定的固定伤害事件（引用章节原文）。禁止因为NPC“被打到/被吓到/处境危险/剧情需要/大失败”自行估算扣HP；若没有伤害骰或固定数值，不能调用HP变更。
-  B. SAN变更：必须有明确理智损失来源链。仅允许本轮SAN检定roll_dice已返回的损失数值（引用骰结果），并说明触发检定的神话存在/禁忌法术/种族能力代价。普通恐惧、疼痛、尸体、压力、NPC情绪或恐怖描写不构成SAN损失。
-  C. MP变更：本轮已调用法术名称及其规则书MP消耗（引用法术名+规则来源）
-  D. 其他属性/种族/职业：check_rule本轮已确认的规则机制或scenario明文（引用原文）
-以上情形之外一律拒绝。</description>
+			<description>操作NPC角色卡数值，仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业、wound_state，其他临时信息请考虑llm_note。NPC和调查员一样，HP/SAN不能凭叙事感觉随意扣除。
+【reason白名单】reason必须且只能属于以下情形之一，并在reason中写清完整来源链；写不清则本轮禁止调用update_npc_card：
+  A. HP变更：必须有明确伤害/治疗来源链。仅允许：(1)本轮roll_dice已返回的攻击/伤害骰或治疗骰数值（reason引用骰结果、攻击/治疗来源和最终数值）；(2)COC规则明确规定的固定伤害/治疗（reason引用规则名和固定数值）；(3)scenario明文写定的固定伤害/治疗事件（reason引用章节原文和固定数值）。禁止因为NPC“被打到/被吓到/处境危险/剧情需要/大失败/持续折磨/感官虐待/暴露在恶劣环境/疼痛/疲惫/饥渴/寒冷/恐怖氛围”自行估算扣HP；若没有伤害骰、治疗骰或规则/剧本固定数值，不能调用HP变更，只能写叙事或记录llm_note。
+  B. SAN变更：必须有明确理智损失来源链。仅允许本轮SAN检定roll_dice已返回的损失数值（reason引用骰结果），并说明触发检定的神话存在/禁忌法术/种族能力代价。普通恐惧、疼痛、尸体、压力、NPC情绪或恐怖描写不构成SAN损失。
+  C. MP变更：本轮已调用法术名称及其规则书MP消耗（reason引用法术名+规则来源+固定MP消耗）。
+  D. wound_state变更：仅限HP变更已导致dying/dead、急救/医学或规则判定改变伤亡状态、剧本/规则明确死亡或复活；复活可将dead改为none，但reason必须引用明确规则/剧本/超自然效果。普通伤害和治疗仍优先写HP变更让系统自动处理。
+  E. 其他属性/种族/职业：check_rule本轮已确认的规则机制或scenario明文（引用原文）。
+以上情形之外一律拒绝；不得用“persistent sensory abuse and exposure”等无固定伤害来源的描述作为HP扣除reason。</description>
 			<call_example>{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"],"reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool name="response" sideeffect="true" shouldBeLast="true" endTheTurn="true">
@@ -225,7 +226,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="think" sideeffect="false" endTheTurn="false">
 			<description>内心独白，每轮第一个调用必须是 think。作用：逐项列出本轮需要调用的所有工具（NPC创建/行动、规则查询、骰子、物品查询、位置更新、叙事写作等），形成完整执行计划。禁止：在think中写入任何规则结论、骰子表达式、技能数字、判定结果——这些是工具调用的输出，不是think的输出。Think只回答"我需要调用哪些工具"，不回答"工具返回什么结果"。WARNING: do NOT pre-narrate outcomes or assume dice/tool results in think.
-【DUP CHECK】think 必须先写 DUP CHECK: 检查上一轮 response 的 ack、最近工具结果和本批次已列工具，确认没有重复结算、重复扣血/扣SAN/扣MP、重复加减物品、重复发现线索、重复更新位置/关系/护甲/笔记、重复销毁或创建 NPC。凡是上一轮 ack 已记录或本批次前面已计划执行的状态变化，本轮不得再次调用对应副作用工具。
+【DUP CHECK】think 必须先写 DUP CHECK: 检查上一轮 response 的 ack、最近工具结果和本批次已列工具，确认没有重复结算、重复扣血/扣SAN/扣MP、重复加减物品、重复发现线索、重复更新位置/关系/护甲/笔记、重复销毁或创建 NPC。凡是上一轮 ack 已记录或本批次前面已计划执行的状态变化，本轮不得再次调用对应副作用工具, 也不需要记录在本轮的ack中。
 【AntiCheat合约】如果本批次包含任何副作用工具（create_npc/destroy_npc/update_*/manage_*/record_monster/end_game/advance_time/found_clue/hint），think末尾必须写 ANTI_CHEAT_CONTRACT，并逐条列出：tool=工具名和对象；promised_change=将发生的机械变化（物品/数量/伤害/护甲/HP/SAN/MP/法术/关系/位置/线索/时间等），若只是叙事换皮则写“无机械变化，仅名称/外观变化”；consistency_constraint=承诺限制（如保持原属性/不增强/不授予新能力/不改数值）；source=本批次可见工具结果、上一轮ack、当前玩家动作、剧本/规则已知事实，或“不需要，纯叙事记录/位置同步”。凡 promised_change 包含 HP/SAN/MP 变化，source 必须写完整来源链：触发事件→规则/剧本来源→roll_dice结果或固定数值→将写入的update_*数值；没有完整来源链就禁止调用HP/SAN/MP更新。后续副作用工具参数必须与该合约一致。禁止用“可能/大概/剧情需要/玩家喜欢/不想破坏氛围/大失败所以应该惩罚”等含糊或妥协理由。若合约写不清，不要调用副作用工具，先查询或yield。</description>
 			<call_example>{"action":"think","think":"DUP CHECK: 上一轮ack未记录本次换皮，当前批次尚未执行manage_inventory，不重复结算。我需要: 1) query_character确认当前物品 2) manage_inventory把手榴弹重命名为北凉火蒺藜 3) response说明只是叙事换皮。ANTI_CHEAT_CONTRACT: tool=manage_inventory character=角色名 item=北凉火蒺藜; promised_change=无机械变化，仅名称/外观变化，数量同原手榴弹; consistency_constraint=保持原属性，不增强，不新增伤害骰/护甲/特殊效果; source=玩家要求叙事换皮，当前物品栏已有手榴弹。"}</call_example>
 		</tool>
@@ -497,10 +498,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	if len(tempNPCs) > 0 {
 		userSB.WriteString("\nActive NPC:\n")
 		for _, npc := range tempNPCs {
-			state := "存活"
-			if !npc.IsAlive {
-				state = "已死亡/失能"
-			}
+			state := npcDisplayState(npc)
 			line := fmt.Sprintf("<npc> <name> %s </name> (%s)", npc.Name, state)
 			if strings.TrimSpace(npc.Attitude) != "" {
 				line += " 态度:" + strings.TrimSpace(npc.Attitude)
