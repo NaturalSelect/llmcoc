@@ -82,12 +82,12 @@ const kpSystemPrompt = `
 		<tool name="update_characters" sideeffect="true" endTheTurn="false">
 			<description>更新调查员的状态。格式严格为: "FIELD VALUE (角色名)" — 角色名必须用圆括号包裹且紧跟在值之后，这是解析关键字。FIELD和VALUE之间只用空格，VALUE中禁止再出现圆括号(例如不能写"-3(重伤)")。仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业、wound_state，其他临时信息请用llm_note。禁止修改角色名称(name字段不存在)。HP伤害/治疗必须优先使用HP变更路径，系统会自动处理即死/重伤/濒死/复活，不要因为怕忘记状态而跳过HP修改；wound_state只用于HP自动路径无法表达的规则/剧情状态（none|major|dying|dead）。
 【reason白名单】每条变更的reason必须且只能属于以下类别之一，否则拒绝调用：
-  A. HP变更：必须有明确伤害/治疗来源链。仅允许：(1)本轮roll_dice已返回的攻击/伤害骰数值（引用骰结果和攻击来源）；(2)COC规则明确规定的固定伤害/治疗（引用规则名称）；(3)scenario明文写定的固定伤害/治疗事件（引用章节原文）。禁止因为“摔了一下/很痛苦/很危险/剧情需要/大失败所以受伤/怪物很可怕”自行估算扣HP；若没有伤害骰或固定数值，不能调用HP变更。
-  B. SAN变更：必须有明确理智损失来源链。仅允许本轮SAN检定roll_dice已返回的损失数值（引用骰结果），并说明触发检定的神话存在/禁忌法术/种族能力代价。禁止因为恐怖氛围、恶心气味、尸体、惊吓、压力、剧情震撼、NPC台词、直视人形化身或“感觉应当掉SAN”自行扣SAN；若没有SAN检定结果或规则固定损失，不能调用SAN变更。
-  C. MP变更：本轮已调用的法术名称及其规则书MP消耗（引用法术名+规则来源）, 需要玩家有明确的施法要求，不允许KP擅自代替玩家施法，代替施法视为hard error。
-  D. 基础属性变更：以下三种情形之一——(1) scenario明文记载的药水/法术/变化效果，附原文引用；(2) check_rule本轮已确认的COC规则机制，附check_rule回答原文；(3) scenario明文定义该角色为非人种族并给出独立属性表，附scenario章节引用。三种情形之外一律拒绝，"角色概念"/"修仙者"/"玩家希望"/"KP认为合理"均不属于任何情形。
-  E. 种族/职业变更：scenario叙事中本轮发生的具体事件触发（引用事件名称），且该事件在scenario中有明确的种族/职业转换描述。
-  F. wound_state变更：仅限 dying状态下规则判定死亡、急救/医学失败导致死亡、剧本/规则明确角色死亡，或有明确规则/剧本/超自然效果将死亡逆转为none；普通伤害和治疗仍必须写HP变更让系统自动处理。wound_state合法值只有四个：none / major / dying / dead。temporary_insanity / indefinite_insanity / insanity 等疯狂状态不是合法的wound_state值——疯狂用trigger_madness工具，不是wound_state字段。
+  A. HP变更：reason必须包含本轮roll_dice已返回的具体伤害数字（如"roll_dice伤害骰返回5点，攻击来源：X"），或COC规则/scenario明文的固定数值（如"固定伤害3点，规则：跌落"）。纯叙事描述不含具体数字（"肉体负荷"/"受到重击"/"剧情受伤"/"大失败所以受伤"）一律拒绝；没有骰子数字或固定数值就不能调用HP变更。
+  B. SAN变更：reason必须包含本轮SAN检定roll_dice已返回的具体检定数字（如"SAN检定roll=45 失败，损失=3点，触发：深渊之神"）。以下均不合法，无论描述多具体多有氛围：①不含roll数字的叙事（"亵渎接触导致损失"/"精神侵蚀"/"直视化身受到冲击"/"肉体负荷与精神侵蚀"/"感应到恐惧"/"深度接触神话存在"）②仅描述情境而未引用dice结果③任何未含"roll=NN"格式数值的reason。判断方式：reason中能否找到本轮roll_dice返回的具体roll=NN？找不到则拒绝，不得调用SAN变更。
+  C. MP变更：必须同时满足：①玩家本轮有明确施法宣言（禁止KP擅自代替玩家施法）②本轮check_rule/read_rulebook_const已返回该法术的MP消耗具体数值（引用返回值，如"check_rule返回：X法术消耗3MP"）。未经规则工具确认的MP数字不得直接使用。
+  D. 基础属性变更：以下三种情形之一——(1) scenario明文记载的药水/法术/变化效果，附scenario实际存在文本的逐字摘录（不得概括/改写/捏造章节名）；(2) check_rule本轮已确认的COC规则机制，附check_rule返回原文；(3) scenario明文定义该角色为非人种族并给出独立属性表，附scenario实际文本的逐字摘录。三种情形之外一律拒绝，"角色概念"/"修仙者"/"玩家希望"/"KP认为合理"均不属于任何情形。
+  E. 种族/职业变更：scenario叙事中本轮发生的具体事件触发（引用scenario中实际存在的场景/事件名称），且scenario明文描述该事件导致种族/职业转换。新职业必须符合叙事；新种族须check_rule/read_rulebook_const确认COC中存在，不得造新职业/种族名（除非规则专家允许你这样做）。
+  F. wound_state变更：dying→dead：必须有本轮急救/医学检定roll_dice已返回失败结果（引用roll=NN），或scenario/规则明文的即死判定（逐字引用原文）；仅凭叙事判断"已必死"不构成依据。dead→none（复活）：必须有scenario明文或check_rule确认的具体超自然复活机制（逐字引用）。合法值只有四个：none/major/dying/dead；temporary_insanity等疯狂状态不是wound_state，用trigger_madness。
 属性值不得超过COC规则书对该种族的上限（人类基础属性上限通常为99）；scenario未明文定义非人类属性表的角色一律按人类上限处理。</description>
 			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)","wound_state dead (角色名)"], "reason":"描述变更原因"}</call_example>
 		</tool>
