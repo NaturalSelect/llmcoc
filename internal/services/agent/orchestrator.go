@@ -183,6 +183,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	if len(gctx.PendingActions) > 1 {
 		debugf("run", "session=%d multi-player round: %d actions", sid, len(gctx.PendingActions))
 	}
+	turnPlayerIDs := activeTurnPlayerIDs(gctx.Session.Players)
 
 	// Load temp NPCs for this session.
 	var tempNPCs []models.SessionNPC
@@ -383,10 +384,10 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					models.DB.Save(card)
 					break
 				}
-				if checkTurnReady(gctx) {
+				if checkTurnReadyForPlayers(gctx, turnPlayerIDs) {
 					if pendingWrite != "" {
 						// Real game turn: narrative was written, advance the clock.
-						advanceTurnRound(gctx)
+						advanceTurnRound(&gctx)
 					} else {
 						// Pure OOC consultation (KP-QUERY): no in-game action happened,
 						// so TurnRound stays the same. But we must still clear
@@ -903,7 +904,10 @@ func checkTurnReady(gctx GameContext) bool {
 	if len(gctx.Session.Players) == 0 {
 		return false
 	}
-	playerIDs := activeTurnPlayerIDs(gctx.Session.Players)
+	return checkTurnReadyForPlayers(gctx, activeTurnPlayerIDs(gctx.Session.Players))
+}
+
+func checkTurnReadyForPlayers(gctx GameContext, playerIDs []uint) bool {
 	if len(playerIDs) == 0 {
 		return true
 	}
@@ -927,10 +931,11 @@ func activeTurnPlayerIDs(players []models.SessionPlayer) []uint {
 
 // advanceTurnRound increments TurnRound and deletes turn action records for the
 // completed round.
-func advanceTurnRound(gctx GameContext) {
+func advanceTurnRound(gctx *GameContext) {
 	nextRound := gctx.Session.TurnRound + 1
 	models.DB.Model(&models.GameSession{}).Where("id = ?", gctx.Session.ID).Update("turn_round", nextRound)
-	models.DB.Where("session_id = ? AND round = ?", gctx.Session.ID, gctx.Session.TurnRound).Delete(&models.SessionTurnAction{})
+	models.DB.Where("session_id = ? AND round <= ?", gctx.Session.ID, gctx.Session.TurnRound).Delete(&models.SessionTurnAction{})
+	gctx.Session.TurnRound = nextRound
 	log.Printf("[agent] session %d advanced to round %d", gctx.Session.ID, nextRound)
 }
 

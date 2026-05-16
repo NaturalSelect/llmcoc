@@ -495,6 +495,15 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	lock.Lock()
 	defer lock.Unlock()
 
+	if err := models.DB.
+		Preload("Scenario").
+		Preload("Players.User").
+		Preload("Players.CharacterCard").
+		First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+
 	log.Printf("[chat] session=%d user=%q content_len=%d round=%d",
 		sessionID, username, len([]rune(content)), session.TurnRound)
 

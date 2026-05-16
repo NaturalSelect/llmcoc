@@ -177,13 +177,13 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="update_npc_card" sideeffect="true" endTheTurn="false">
 			<description>操作NPC角色卡数值，仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业、wound_state，其他临时信息请考虑llm_note。NPC和调查员一样，HP/SAN不能凭叙事感觉随意扣除。
-【reason白名单】reason必须且只能属于以下情形之一，并在reason中写清完整来源链；写不清则本轮禁止调用update_npc_card：
-  A. HP变更：必须有明确伤害/治疗来源链。仅允许：(1)本轮roll_dice已返回的攻击/伤害骰或治疗骰数值（reason引用骰结果、攻击/治疗来源和最终数值）；(2)COC规则明确规定的固定伤害/治疗（reason引用规则名和固定数值）；(3)scenario明文写定的固定伤害/治疗事件（reason引用章节原文和固定数值）。禁止因为NPC“被打到/被吓到/处境危险/剧情需要/大失败/持续折磨/感官虐待/暴露在恶劣环境/疼痛/疲惫/饥渴/寒冷/恐怖氛围”自行估算扣HP；若没有伤害骰、治疗骰或规则/剧本固定数值，不能调用HP变更，只能写叙事或记录llm_note。
-  B. SAN变更：必须有明确理智损失来源链。仅允许本轮SAN检定roll_dice已返回的损失数值（reason引用骰结果），并说明触发检定的神话存在/禁忌法术/种族能力代价。普通恐惧、疼痛、尸体、压力、NPC情绪或恐怖描写不构成SAN损失。
-  C. MP变更：本轮已调用法术名称及其规则书MP消耗（reason引用法术名+规则来源+固定MP消耗）。
+【reason白名单】每条变更的reason必须且只能属于以下类别之一，否则拒绝调用；reason必须写清对应来源链：
+  A. HP变更：必须有明确伤害/治疗来源链。仅允许：(1)本轮roll_dice已返回的攻击/伤害骰或治疗骰数值，引用骰结果、攻击/治疗来源和最终数值；(2)COC规则明确规定的固定伤害/治疗，引用规则名和固定数值；(3)scenario明文写定的固定伤害/治疗事件，引用章节原文和固定数值。禁止因为NPC“被打到/被吓到/处境危险/剧情需要/大失败/持续折磨/感官虐待/暴露在恶劣环境/疼痛/疲惫/饥渴/寒冷/恐怖氛围”自行估算扣HP；若没有伤害骰、治疗骰或规则/剧本固定数值，不能调用HP变更，只能写叙事或记录llm_note。
+  B. SAN变更：必须有明确理智损失来源链。仅允许本轮SAN检定roll_dice已返回的损失数值，引用骰结果，并说明触发检定的神话存在/禁忌法术/种族能力代价。普通恐惧、疼痛、尸体、压力、NPC情绪或恐怖描写不构成SAN损失。
+  C. MP变更：本轮已调用法术名称及其规则书MP消耗，引用法术名+规则来源+固定MP消耗。
   D. wound_state变更：仅限HP变更已导致dying/dead、急救/医学或规则判定改变伤亡状态、剧本/规则明确死亡或复活；复活可将dead改为none，但reason必须引用明确规则/剧本/超自然效果。普通伤害和治疗仍优先写HP变更让系统自动处理。
-  E. 其他属性/种族/职业：check_rule本轮已确认的规则机制或scenario明文（引用原文）。
-以上情形之外一律拒绝；不得用“persistent sensory abuse and exposure”等无固定伤害来源的描述作为HP扣除reason。</description>
+  E. 其他属性/种族/职业：check_rule本轮已确认的规则机制或scenario明文，引用原文。
+以上类别之外一律拒绝；不得用“persistent sensory abuse and exposure”等无固定伤害来源的描述作为HP扣除reason。</description>
 			<call_example>{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"],"reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool name="response" sideeffect="true" shouldBeLast="true" endTheTurn="true">
