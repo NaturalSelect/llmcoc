@@ -31,6 +31,7 @@ const kpSystemPrompt = `
 	<tools>
 		<tool name="check_rule" sideeffect="false" endTheTurn="false">
 			<description>询问规则专家(技能判定、战斗、追逐、法术、怪物、理智、典籍等规则和图鉴细节, 一个调用只问一个问题), can be used multiple times before you get enough info, but don't abuse it(don't ask it about the scenario)。
+【并行查询建议】如果本轮能预判需要多个彼此独立的规则答案，请在同一个type-A批次中连续调用多个check_rule后再yield；不要先查一个、yield、读结果后才提出另一个已可预见的问题。只有后一个问题必须依赖前一个答案时，才拆到下一批。
 禁止提问以下类型：KP自身权限或裁量范围（如"KP是否有权为物品发明属性"/"KP可以自定义机制吗"）——此类问题答案由[KP-AUTHORITY]规则决定，不由规则专家裁定。</description>
 			<call_example>{"action":"check_rule","question":"用自然语言描述你的规则疑问或情境,规则专家会自动检索原文并给出答案"}</call_example>
 		</tool>
@@ -253,6 +254,7 @@ const kpSystemPrompt = `
 		  Batch N:   [think, write, update_characters, manage_inventory, ...other side-effect tools, yield]
 		  Batch N+1: [think, write (if needed), response]   ← response is ALONE with only write/think
 		IF YOU NEED NO-SIDEEFFECT RESULTS FIRST: type-A batch ending with yield, then type-B batch, then type-C batch.
+		CHECK_RULE GROUPING: When multiple independent rule questions are already foreseeable, put all of those check_rule calls in the same type-A batch before yield so they can be processed together. Do not serialize independent check_rule calls across multiple yields. Split only when a later rule question depends on an earlier answer.
 		SKILL-ROLL SEQUENCING — HARD RULE: If you need an investigator's skill value to roll dice, you MUST split into two separate batches:
 		  Batch N:   [query_character(...), yield]          ← get the real skill value first
 		  Batch N+1: [roll_dice(what="技能名", ...), yield]  ← now roll using the confirmed value
