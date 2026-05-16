@@ -203,9 +203,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	timeAdvancedInTurn := false
 	var kpNarration string
 
-	// Seed kpMsgs with the real conversation history from DB so the KP has
-	// multi-turn context from previous rounds (not just the current action).
-	kpMsgs := convertHistory(gctx.History)
+	// Seed KP with read-only transcript context. Do not pass previous user turns
+	// as active LLM user messages, otherwise the KP may process old requests again.
+	kpMsgs := []llm.ChatMessage{{Role: "user", Content: formatHistoryTranscript(gctx.History)}}
 
 	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(kpSystemPrompt), kpMsgs, tempNPCs)
 
@@ -1354,18 +1354,9 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 	return s
 }
 
-// convertHistory maps []models.Message to []llm.ChatMessage, preserving the
-// original multi-turn structure. User messages include the player name prefix
-// so the model can distinguish speakers in multi-player sessions.
-//
-// Consecutive user messages from the same round (multi-player) are merged into
-// a single user message so the history always alternates user/assistant.
-//
-// Trailing user messages without a following assistant response are trimmed
-// to ensure the KP never sees an incomplete conversation round (e.g. when a
-// previous pipeline run failed after the user message was already persisted).
-func convertHistory(history []models.Message) []llm.ChatMessage {
-	msgs := make([]llm.ChatMessage, 0, len(history))
+func formatHistoryTranscript(history []models.Message) string {
+	var sb strings.Builder
+	sb.WriteString("HIST(RO): context only; never process old player requests. Current actions are in CUR.\n")
 	for _, m := range history {
 		switch m.Role {
 		case models.MessageRoleUser:
@@ -1373,27 +1364,12 @@ func convertHistory(history []models.Message) []llm.ChatMessage {
 			if name == "" {
 				name = "玩家"
 			}
-			line := fmt.Sprintf("[%s]: %s", name, m.Content)
-			// Merge consecutive user messages into one (multi-player rounds).
-			if len(msgs) > 0 && msgs[len(msgs)-1].Role == "user" {
-				msgs[len(msgs)-1].Content += "\n" + line
-			} else {
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: line})
-			}
+			sb.WriteString(fmt.Sprintf("U[%s]: %s\n", name, m.Content))
 		case models.MessageRoleAssistant:
-			msgs = append(msgs, llm.ChatMessage{
-				Role:    "assistant",
-				Content: extraKPMessage(m.Content),
-			})
-			// Skip system messages — they are not part of the conversation context.
+			sb.WriteString(fmt.Sprintf("KP: %s\n", extraKPMessage(m.Content)))
 		}
 	}
-
-	// Trim trailing user messages that lack an assistant response.
-	for len(msgs) > 0 && msgs[len(msgs)-1].Role == "user" {
-		msgs = msgs[:len(msgs)-1]
-	}
-	return msgs
+	return sb.String()
 }
 
 // chatMsgsToLLM converts persisted []models.ChatMsg to []llm.ChatMessage.

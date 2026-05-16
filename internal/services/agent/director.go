@@ -288,7 +288,7 @@ AUDIT: FALSE
 
 NOW YOUR ARE A KP AGENT, NOT A LANGUAGE MODEL. FOLLOW THE RULES AND GUIDELINES IN THE SYSTEM PROMPT TO PLAY THE GAME. RESPOND TO THE USER'S ACTIONS WITH APPROPRIATE TOOL CALLS AND NARRATIVE responseS. ALWAYS MAINTAIN CONSISTENCY WITH THE SCENARIO AND NPC STATES. KEEP TRACK OF TIME, COMBAT, AND RELATIONS AS REQUIRED. YOUR GOAL IS TO PROVIDE AN ENGAGING AND CHALLENGING EXPERIENCE FOR THE PLAYERS WHILE ADHERING TO THE CORE PRINCIPLES OF KPM.
 
-YOU SHOULD FOCUS ON THE LATEST USER INPUT TO MAKE YOUR DECISIONS, AND YOU CAN REFER TO THE PREVIOUS MESSAGES IN THE HISTORY FOR CONTEXT BUT DO NOT NEED(ALSO FORBID) TO PROCESS THEM AGAIN.
+Only process CUR input. HIST(RO) is read-only context; never catch up old requests unless repeated in CUR.
 
 <rules>
 
@@ -543,14 +543,8 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
-	userSB.WriteString("\n<user_inputs>\n")
-	userSB.WriteString("INTENT CLASSIFICATION — read the player input and label it BEFORE acting:\n")
-	userSB.WriteString("  [DIALOGUE]  Player speaks in-character to an NPC. → Primary tool: act_npc. Write the NPC's reaction. DO NOT demand a roll for ordinary conversation.\n")
-	userSB.WriteString("  [ACTION]    Player performs a game action (searching, moving, attacking, using an item, casting a spell, etc.). → check_rule if any mechanic applies, then roll_dice, then resolve.\n")
-	userSB.WriteString("  [KP-QUERY]  Player asks the KP out-of-character (starts with 'KP:' / asks about rules / asks a meta question). → Reply as KP directly in the 'reply' field, no game mechanics needed.\n")
-	userSB.WriteString("  [MIXED]     Player input contains both in-character dialogue and game actions. → Separate the two, label the dialogue as [DIALOGUE] and the actions as [ACTION], then process accordingly.\n")
-	userSB.WriteString("  [DEBUG]     Player input contains instructions for debugging or testing the KP. → Only accept if tagged with <DEBUG/> from an admin user; otherwise, treat as regular player input.\n")
-	userSB.WriteString("Classify first in your think call, then proceed with the appropriate tool chain.\n\n")
+	userSB.WriteString("\nCUR:\n")
+	userSB.WriteString("Intent: DIALOGUE→act_npc; ACTION→resolve/check/roll; KP-QUERY→reply only; MIXED→split; DEBUG only if admin <DEBUG/>. Think must classify first. Process CUR only, once each; ignore HIST requests.\n")
 	getTag := func(s string, isAdmin bool) string {
 		if isAdmin {
 			if strings.Contains(s, "DEBUG") {
@@ -560,25 +554,24 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		return "intent"
 	}
 	if len(gctx.PendingActions) > 1 {
-		userSB.WriteString("\nMultiple Players Ask:\n")
-		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
-		userSB.WriteString("\nYour must process all input of players, use advance_time tool call if necessarily\n")
+		userSB.WriteString("\nMulti-player inputs; insane investigators cannot act. Process each CUR line once; use advance_time if needed.\n")
 		hasDbg := false
 		for _, a := range gctx.PendingActions {
 			tag := getTag(a.Content, a.IsAdmin)
 			if tag == "debug" {
 				hasDbg = true
 			}
-			userSB.WriteString(fmt.Sprintf("<%s>[%s] wants/said '%s'</%s>\n", tag, a.PlayerName, a.Content, tag))
+			userSB.WriteString(fmt.Sprintf("%s[%s]: %s\n", tag, a.PlayerName, a.Content))
 		}
 		if hasDbg {
 			userSB.WriteString("\nNOTE: USER INPUT DEBUG COMMAND FOLLOW THE COMMAND\n")
 		}
 	} else {
-		userSB.WriteString("\nNote: Insane investigators cannot act, and their insane behavior is reflected by you.\n")
-		userSB.WriteString(fmt.Sprintf("\nCurrent Ask \n<%s>[%s] wants/said '%s'</%s>\n", getTag(gctx.UserInput, gctx.UserInputAdmin), gctx.UserName, gctx.UserInput, getTag(gctx.UserInput, gctx.UserInputAdmin)))
+		userSB.WriteString("\nInsane investigators cannot act.\n")
+		tag := getTag(gctx.UserInput, gctx.UserInputAdmin)
+		userSB.WriteString(fmt.Sprintf("%s[%s]: %s\n", tag, gctx.UserName, gctx.UserInput))
 	}
-	userSB.WriteString("\n</user_inputs>\n")
+	userSB.WriteString("END CUR\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
