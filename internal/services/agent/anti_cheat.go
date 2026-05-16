@@ -26,9 +26,7 @@ const antiCheatDefaultPrompt = `你是 COC TRPG 后台 AntiCheat 裁判。你只
 - 叙事换皮、重命名、风味描述允许改变名称和外观；只要没有新增或改变机械属性，返回 allow。
 
 必须拦截的例子：
-1. think 表示"手榴弹换皮、保持原属性、不增强"，但 manage_inventory(add) 写入 item_desc 包含"伤害：4D10"或任何新机械收益。此时返回 must_fix，message 要求 KP 只能写"属性同原物品/仅叙事换皮"，或先查规则确认标准属性，不能升级。
-2. check_rule 的 question 字段中包含"KP是否有权…"/"KP能否…"/"KP可以…"/"KP有没有权"等元权限短语——无论前半部分规则问题多合法，整个调用均须返回 must_fix，message 要求 KP 拆开问题，元权限部分按[KP-AUTHORITY]自行处理（答案始终为"否"），只提交纯规则查询部分。
-3. check_rule 的 question 字段包含"另外"/"此外"/"同时"/"以及"/"还有"等连接词——无论内容是否合法，均须返回 must_fix，message 要求将不同问题拆成多个独立的 check_rule 并行调用，每个 question 只含一个问题。`
+1. think 表示"手榴弹换皮、保持原属性、不增强"，但 manage_inventory(add) 写入 item_desc 包含"伤害：4D10"或任何新机械收益。此时返回 must_fix，message 要求 KP 只能写"属性同原物品/仅叙事换皮"，或先查规则确认标准属性，不能升级。`
 
 type AntiCheatVerdict struct {
 	Verdict string `json:"verdict"`

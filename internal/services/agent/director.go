@@ -52,9 +52,18 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="roll_dice" sideeffect="false" endTheTurn="false">
 			<description>投掷骰子，返回结果数值, 表达式仅支持'+'操作符。
-				what字段仅为标签(例如"投掷""说服""SAN"),严禁在what中填写任何数字或技能值(例如"投掷(97)"是非法的)。
-				技能值必须在yield后读取query_character的真实返回值，不得从记忆中假设。</description>
-			<call_example>{"action":"roll_dice","dice":{"dice_expr":"1D100", "what":"投掷", "character":"角色名"}}</call_example>
+				what字段仅为标签（如"说服""闪避""SAN检定"），严禁填写数字或技能值；what必须是COC规则书中存在的技能/属性名或"伤害骰"。
+				技能值必须在yield后读取query_character的真实返回值，不得从记忆中假设。
+				dice.reason字段必填：注明本次掷骰对应白名单条件（A/B/C/D/E）及具体依据（玩家宣言原文、scenario引用或check_rule返回原文）。
+【调用前提白名单】roll_dice只能在以下情形之一时调用，否则禁止：
+  A. 玩家本轮有明确行动宣言且该行动按COC规则需要检定（如"我尝试说服他"→技能检定；"我开枪"→战斗检定）。
+  B. 正在进行的战斗回合：攻击/伤害/闪避骰；伤害骰骰型必须来自本轮check_rule/规则书确认的该武器标准值（如"1D8+DB"），禁止自定义骰型。
+  C. scenario明文要求在此节点掷骰（逐字引用scenario中的具体触发条件）。
+  D. 本轮check_rule已返回该情境需要检定的规则依据，且当前情境满足其触发条件（引用check_rule返回原文）。
+  E. SAN检定：玩家本轮实际接触/目睹了scenario或check_rule明文记载SAN值的神话存在/事件，且本轮尚未对该事件掷SAN。
+  F. 先询问规则专家，如果规则专家确认你可以投掷，且规则专家返回了具体的骰型或检定方式（如"需要进行听力检定，难度为50"或"需要掷1D10伤害骰"），你就可以投掷；如果规则专家确认你不应该投掷（如"这个情境下规则没有要求进行检定"），你就不能投掷。
+【禁止调用】以下情形禁止roll_dice：①不在A–E范围内的KP自创检定，包括"神性接触抵抗检定"/"承受神圣冲击"/"长时间接触代价"等在规则书和scenario中均不存在的检定——无论叙事多有氛围；②玩家未宣言行动而KP代替玩家主动发起检定；③在check_rule确认某情境是否需要检定之前，先掷骰再倒推理由。</description>
+			<call_example>{"action":"roll_dice","dice":{"dice_expr":"1D100","what":"说服","character":"角色名","reason":"A: 玩家宣言'我尝试说服侦探相信我的话'"}}</call_example>
 		</tool>
 		<tool name="create_npc" sideeffect="true" endTheTurn="false">
 			<description>创建一个临时NPC(每个NPC独立agent)。
