@@ -531,6 +531,24 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	activePlayerIDs := activeTurnPlayerIDs(session.Players)
 	activePlayerCount := len(activePlayerIDs)
 	isActiveTurnPlayer := activePlayerIDs[userID]
+	if playerCount > 1 {
+		if activePlayerCount > 0 && (!isTrackedPlayer || !isActiveTurnPlayer) {
+			log.Printf("[chat] session=%d user=%q rejected dead/non-player input while active players remain", sessionID, username)
+			c.SSEvent("error", "当前仍有存活调查员，只有非死亡玩家可以提交本轮行动")
+			c.Writer.Flush()
+			c.SSEvent("done", "")
+			c.Writer.Flush()
+			return
+		}
+		if activePlayerCount == 0 && !isTrackedPlayer {
+			log.Printf("[chat] session=%d user=%q rejected non-player input after party wipe", sessionID, username)
+			c.SSEvent("error", "所有调查员均已死亡时，只有房间内玩家可以推进剧情")
+			c.Writer.Flush()
+			c.SSEvent("done", "")
+			c.Writer.Flush()
+			return
+		}
+	}
 
 	if playerCount > 1 && isTrackedPlayer && isActiveTurnPlayer && activePlayerCount > 1 {
 		// Use a DB transaction so that record + count is atomic, preventing the
