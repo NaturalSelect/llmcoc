@@ -403,6 +403,25 @@ func removeSessionLock(sessionID uint) {
 	sessionMutex.Delete(sessionID)
 }
 
+func activeTurnPlayerIDs(players []models.SessionPlayer) map[uint]bool {
+	ids := make(map[uint]bool, len(players))
+	for _, p := range players {
+		if p.CharacterCard.WoundState == "dead" {
+			continue
+		}
+		ids[p.UserID] = true
+	}
+	return ids
+}
+
+func mapKeys(m map[uint]bool) []uint {
+	keys := make([]uint, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // ChatStream handles SSE streaming for game chat using the multi-agent pipeline.
 //
 // NOTE: This is the core gameplay loop endpoint. It handles receiving player actions,
@@ -410,10 +429,11 @@ func removeSessionLock(sessionID uint) {
 // the Keeper's narrative responses back to the clients via Server-Sent Events.
 //
 // Multi-player turn flow:
-//  1. Each player submits their action; it is saved to DB and recorded in SessionTurnAction.
-//  2. If not all players have acted yet, the handler sends a "waiting" SSE event and returns.
+//  1. Each non-dead investigator submits their action; it is saved to DB and recorded in SessionTurnAction.
+//  2. Dead investigators do not block the round. If revived later, they are counted again from the next round.
+//  3. If not all active investigators have acted yet, the handler sends a "waiting" SSE event and returns.
 //     The player's frontend then polls /messages to pick up the KP response when it arrives.
-//  3. Once the last player submits, all pending actions are collected and the agent pipeline
+//  4. Once the last active investigator submits, all pending actions are collected and the agent pipeline
 //     runs once, producing a single KP response for the entire round.
 func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -499,10 +519,11 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	var pendingActions []agent.PlayerAction
 	var turnActions []models.SessionTurnAction
 
-	// Count only players who can still act (alive and not unconscious).
-	activePlayerCount := len(session.Players)
+	activePlayerIDs := activeTurnPlayerIDs(session.Players)
+	activePlayerCount := len(activePlayerIDs)
+	isActiveTurnPlayer := activePlayerIDs[userID]
 
-	if playerCount > 1 && isTrackedPlayer {
+	if playerCount > 1 && isTrackedPlayer && isActiveTurnPlayer && activePlayerCount > 1 {
 		// Use a DB transaction so that record + count is atomic, preventing the
 		// race where two simultaneous last-submitters both try to run the agent.
 		var isLastToSubmit bool
@@ -530,7 +551,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			}
 			var submitted int64
 			tx.Model(&models.SessionTurnAction{}).
-				Where("session_id = ? AND round = ?", session.ID, session.TurnRound).
+				Where("session_id = ? AND round = ? AND user_id IN ?", session.ID, session.TurnRound, mapKeys(activePlayerIDs)).
 				Count(&submitted)
 			isLastToSubmit = submitted >= int64(activePlayerCount)
 			return nil
@@ -544,7 +565,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			// Tell the player how many are still pending and let them poll.
 			var submitted int64
 			models.DB.Model(&models.SessionTurnAction{}).
-				Where("session_id = ? AND round = ?", session.ID, session.TurnRound).
+				Where("session_id = ? AND round = ? AND user_id IN ?", session.ID, session.TurnRound, mapKeys(activePlayerIDs)).
 				Count(&submitted)
 			pending := int64(activePlayerCount) - submitted
 			log.Printf("[chat] session=%d user=%q waiting pending=%d/%d",
@@ -556,8 +577,8 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			return
 		}
 
-		// Last to submit: load all actions for the KP prompt.
-		models.DB.Where("session_id = ? AND round = ?", session.ID, session.TurnRound).
+		// Last to submit: load all living/revived actors' actions for the KP prompt.
+		models.DB.Where("session_id = ? AND round = ? AND user_id IN ?", session.ID, session.TurnRound, mapKeys(activePlayerIDs)).
 			Order("created_at ASC").
 			Find(&turnActions)
 		for _, ta := range turnActions {

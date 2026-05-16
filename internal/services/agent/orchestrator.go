@@ -895,17 +895,34 @@ func executeSingleDiceCheck(dc DiceCheck, players []models.SessionPlayer) DiceCh
 
 // ── Turn tracking ─────────────────────────────────────────────────────────────
 
-// checkTurnReady returns true when every player in the session has a
-// SessionTurnAction record for the current round.
+// checkTurnReady returns true when every non-dead investigator in the session
+// has a SessionTurnAction record for the current round. Dead investigators do
+// not block multiplayer turns; if revived later, WoundState is cleared and they
+// are counted again in subsequent rounds.
 func checkTurnReady(gctx GameContext) bool {
 	if len(gctx.Session.Players) == 0 {
 		return false
 	}
+	playerIDs := activeTurnPlayerIDs(gctx.Session.Players)
+	if len(playerIDs) == 0 {
+		return true
+	}
 	var count int64
 	models.DB.Model(&models.SessionTurnAction{}).
-		Where("session_id = ? AND round = ?", gctx.Session.ID, gctx.Session.TurnRound).
+		Where("session_id = ? AND round = ? AND user_id IN ?", gctx.Session.ID, gctx.Session.TurnRound, playerIDs).
 		Count(&count)
-	return count >= int64(len(gctx.Session.Players))
+	return count >= int64(len(playerIDs))
+}
+
+func activeTurnPlayerIDs(players []models.SessionPlayer) []uint {
+	ids := make([]uint, 0, len(players))
+	for _, p := range players {
+		if p.CharacterCard.WoundState == "dead" {
+			continue
+		}
+		ids = append(ids, p.UserID)
+	}
+	return ids
 }
 
 // advanceTurnRound increments TurnRound and deletes turn action records for the

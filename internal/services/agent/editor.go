@@ -96,12 +96,22 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 
 		case "hp":
 			s := card.Stats.Data
+			wasDead := card.WoundState == "dead"
 			damage := 0
 			if upd.Delta < 0 {
 				damage = -upd.Delta
 			}
 			s.HP = clamp(s.HP+upd.Delta, 0, s.MaxHP)
 			card.Stats.Data = s
+
+			// Positive HP changes can represent healing or supernatural revival. If a
+			// dead investigator is restored above 0 HP, clear dead/unconscious so they
+			// can participate in later multiplayer rounds again.
+			if upd.Delta > 0 && wasDead && s.HP > 0 {
+				card.WoundState = "none"
+				card.IsUnconscious = false
+				log.Printf("[editor] %s: revived by HP change %+d", card.Name, upd.Delta)
+			}
 
 			// ── 伤害事件:检查重伤/濒死/即死 ─────────────────────────────────
 			if damage > 0 {
