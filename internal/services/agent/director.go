@@ -78,6 +78,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="act_npc" sideeffect="false" endTheTurn="false">
 			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容(请把对话内容保留到write调用), 可以选择是否让NPC隐瞒他的秘密(hideSecret), 参数必须被正确填写, 使用查询到的名称而不是名称的一部分。
+【批次硬规则】act_npc返回结果必须先读到才能写叙事/回复：任何包含act_npc的批次必须是type-A查询批次，并且必须以yield结束；严禁在同一批次放write、response、end_game、update_npc_llm_note或任何副作用工具。正确模式：Batch N [think, act_npc(...), act_npc(...), yield]；Batch N+1 读取NPC结果后再 [think, write, response] 或状态更新。
 				【kp_directive】用于向NPC传递KP的剧情指令和行为约束，例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。每次调用都应填写。
 【act_npc结果白名单】NPC的回答是纯角色扮演文本，可信范围严格限于：
   ✓ NPC的对话内容和可观察肢体动作 → 用于后续write的direction字段
@@ -271,6 +272,7 @@ const kpSystemPrompt = `
 		  Batch N:   [think, write, update_characters, manage_inventory, ...other side-effect tools, yield]
 		  Batch N+1: [think, write (if needed), response]   ← response is ALONE with only write/think
 		IF YOU NEED NO-SIDEEFFECT RESULTS FIRST: type-A batch ending with yield, then type-B batch, then type-C batch.
+		ACT_NPC SEQUENCING — HARD RULE: act_npc is a no-sideeffect query whose result is unknown until the next batch. Any batch containing act_npc MUST end with yield and MUST NOT contain write/response/end_game/update_npc_llm_note or side-effect tools. You may group multiple independent act_npc calls together, then yield, then write/response after reading their results.
 		CHECK_RULE GROUPING: When multiple independent rule questions are already foreseeable, put all of those check_rule calls in the same type-A batch before yield so they can be processed together. Do not serialize independent check_rule calls across multiple yields. Split only when a later rule question depends on an earlier answer.
 		SKILL-ROLL SEQUENCING — HARD RULE: If you need an investigator's skill value to roll dice, you MUST split into two separate batches:
 		  Batch N:   [query_character(...), yield]          ← get the real skill value first
