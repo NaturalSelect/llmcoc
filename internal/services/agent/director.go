@@ -59,7 +59,7 @@ const kpSystemPrompt = `
 			<call_example>{"action":"destroy_npc","npc_name":"NPC名称","destroy_reason":"dead|out_of_range|cleanup"}</call_example>
 		</tool>
 		<tool name="act_npc" sideeffect="false" endTheTurn="false">
-			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容(请把对话内容保留到write调用), 可以选择是否让NPC隐瞒他的秘密(hideSecret)。
+			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容(请把对话内容保留到write调用), 可以选择是否让NPC隐瞒他的秘密(hideSecret), 参数必须被正确填写, 使用查询到的名称而不是名称的一部分。
 				【kp_directive】用于向NPC传递KP的剧情指令和行为约束，例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。每次调用都应填写。
 【act_npc结果白名单】NPC的回答是纯角色扮演文本，可信范围严格限于：
   ✓ NPC的对话内容和可观察肢体动作 → 用于后续write的direction字段
