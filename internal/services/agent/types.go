@@ -45,7 +45,7 @@ const (
 	ToolManageSpell       ToolCallType = "manage_spell"        // 管理已掌握法术
 	ToolManageRelation    ToolCallType = "manage_relation"     // 管理社会关系
 	ToolEndGame           ToolCallType = "end_game"            // 结束游戏
-	ToolTriggerMadness    ToolCallType = "trigger_madness"     // 触发疯狂发作
+	ToolManageMadness     ToolCallType = "manage_madness"      // 管理疯狂状态
 	ToolWrite             ToolCallType = "write"               // 生成叙事段落
 	ToolAdvanceTime       ToolCallType = "advance_time"        // 推进游戏内时间
 	ToolQueryClues        ToolCallType = "query_clues"         // 查询剧本线索
@@ -77,7 +77,7 @@ type ToolCall struct {
 	KPDirective   string                 `json:"kp_directive,omitempty"`   // act_npc: KP剧情指令(最高优先级行为约束)
 	DestroyReason string                 `json:"destroy_reason,omitempty"` // destroy_npc: dead|out_of_range|cleanup
 	Changes       []string               `json:"changes,omitempty"`        // update_characters: 状态变化列表
-	CharacterName string                 `json:"character_name,omitempty"` // trigger_madness / query_character: 角色名称
+	CharacterName string                 `json:"character_name,omitempty"` // manage_madness / query_character: 角色名称
 	Operate       string                 `json:"operate,omitempty"`        // 通用操作: add/remove
 	Item          string                 `json:"item,omitempty"`           // manage_inventory: 物品名称(仅保留兼容,优先使用 item_name+item_desc+item_count)
 	ItemName      string                 `json:"item_name,omitempty"`      // manage_inventory: 物品基础名称
@@ -86,7 +86,7 @@ type ToolCall struct {
 	Monster       string                 `json:"monster,omitempty"`        // record_monster: 神话存在名称
 	Spell         string                 `json:"spell,omitempty"`          // manage_spell: 法术名称
 	Relation      *models.SocialRelation `json:"relation,omitempty"`       // manage_relation: 社会关系条目
-	IsBystander   bool                   `json:"is_bystander,omitempty"`   // trigger_madness: 是否有旁观者
+	IsBystander   bool                   `json:"is_bystander,omitempty"`   // manage_madness trigger: 是否有旁观者
 	Direction     string                 `json:"direction,omitempty"`      // write: 叙事方向(供Writer参考)
 	TimeRounds    int                    `json:"time_rounds,omitempty"`    // advance_time: 推进的回合数
 	TimeReason    string                 `json:"time_reason,omitempty"`    // advance_time: 原因(如"睡觉"/"吃饭")

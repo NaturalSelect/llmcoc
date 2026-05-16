@@ -60,7 +60,7 @@ var antiCheatSideEffectActions = map[ToolCallType]bool{
 	ToolRecordMonster:    true,
 	ToolManageSpell:      true,
 	ToolManageRelation:   true,
-	ToolTriggerMadness:   true,
+	ToolManageMadness:    true,
 	ToolAdvanceTime:      true,
 	ToolFoundClue:        true,
 	ToolUpdateNPCCard:    true,
@@ -93,7 +93,7 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolManageSpell:      true,
 	ToolManageRelation:   true,
 	ToolUpdateNPCCard:    true,
-	ToolTriggerMadness:   true,
+	ToolManageMadness:    true,
 	ToolAdvanceTime:      true,
 	ToolDestroyNPC:       true,
 }
@@ -114,7 +114,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolManageRelation:    manageRelationAction{},
 	ToolYield:             yieldAction{},
 	ToolEndGame:           endGameAction{},
-	ToolTriggerMadness:    triggerMadnessAction{},
+	ToolManageMadness:     manageMadnessAction{},
 	ToolQueryClues:        queryCluesAction{},
 	ToolQueryCharacter:    queryCharacterAction{},
 	ToolQueryNPCCard:      queryNPCCardAction{},
@@ -561,39 +561,64 @@ func (advanceTimeAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 
 // ── Madness action ────────────────────────────────────────────────────────────
 
-type triggerMadnessAction struct{}
+type manageMadnessAction struct{}
 
-func (triggerMadnessAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+func (manageMadnessAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	who := call.CharacterName
 	if who == "" {
 		who = "调查员"
 	}
-	debugf("tool", "session=%d trigger_madness char=%q bystander=%v", actx.Sid, who, call.IsBystander)
-	symptom := game.RollMadnessSymptom(call.IsBystander)
-	madnessType := "总结症状"
-	if call.IsBystander {
-		madnessType = "即时症状"
+	operate := strings.ToLower(strings.TrimSpace(call.Operate))
+	if operate == "" {
+		operate = "trigger"
 	}
+	debugf("tool", "session=%d manage_madness op=%q char=%q bystander=%v", actx.Sid, operate, who, call.IsBystander)
+
 	for i := range actx.GCtx.Session.Players {
 		card := &actx.GCtx.Session.Players[i].CharacterCard
 		if who != "调查员" && card.Name != who {
 			continue
 		}
-		if card.MadnessState == "none" || card.MadnessState == "" {
+		switch operate {
+		case "clear", "remove", "none":
+			card.MadnessState = "none"
+			card.MadnessSymptom = ""
+			card.MadnessDuration = 0
+			models.DB.Save(card)
+			return []ToolResult{{
+				Action: ToolManageMadness,
+				Result: fmt.Sprintf("%s疯狂状态已撤销", card.Name),
+			}}
+		case "trigger", "add":
+			symptom := game.RollMadnessSymptom(call.IsBystander)
+			madnessType := "总结症状"
 			if call.IsBystander {
-				card.MadnessState = "temporary"
-			} else {
-				card.MadnessState = "indefinite"
+				madnessType = "即时症状"
 			}
+			if card.MadnessState == "none" || card.MadnessState == "" {
+				if call.IsBystander {
+					card.MadnessState = "temporary"
+				} else {
+					card.MadnessState = "indefinite"
+				}
+			}
+			card.MadnessSymptom = symptom.Description
+			card.MadnessDuration = symptom.Duration
+			models.DB.Save(card)
+			return []ToolResult{{
+				Action: ToolManageMadness,
+				Result: fmt.Sprintf("%s疯狂发作(%s,持续%d):%s", card.Name, madnessType, symptom.Duration, symptom.Description),
+			}}
+		default:
+			return []ToolResult{{
+				Action: ToolManageMadness,
+				Result: fmt.Sprintf("manage_madness operate=%q 无效", call.Operate),
+			}}
 		}
-		card.MadnessSymptom = symptom.Description
-		card.MadnessDuration = symptom.Duration
-		models.DB.Save(card)
-		break
 	}
 	return []ToolResult{{
-		Action: ToolTriggerMadness,
-		Result: fmt.Sprintf("%s疯狂发作(%s,持续%d):%s", who, madnessType, symptom.Duration, symptom.Description),
+		Action: ToolManageMadness,
+		Result: fmt.Sprintf("未找到调查员:%s", who),
 	}}
 }
 
