@@ -210,7 +210,7 @@ const scenarioExample = `{
     "npcs": [
       {
         "name": "NPC名",
-        "description": "年龄、外貌、身份背景描述",
+        "description": "年龄、外貌、身份背景描述, 法术表(如有)",
         "attitude": "对调查员的态度和行为模式",
         "stats": {"STR": 60, "CON": 65, "SIZ": 55, "DEX": 50, "APP": 40, "INT": 70, "POW": 75, "EDU": 80, "HP": 12, "MP": 15}
       }
