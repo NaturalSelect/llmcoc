@@ -345,7 +345,7 @@ func StartSession(c *gin.Context) {
 	models.DB.Create(&sysMsg)
 
 	// KP intro message
-	intro := session.Scenario.Content.Data.Intro
+	intro := session.Scenario.Content.Data.Setting + "\n" + session.Scenario.Content.Data.Intro
 	if intro == "" {
 		intro = "游戏开始。KP将为你们展开这段旅程……"
 	}
