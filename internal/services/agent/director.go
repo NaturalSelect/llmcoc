@@ -184,7 +184,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="response" sideeffect="true" shouldBeLast="true" endTheTurn="true">
 			<description>结束本回合并给出KP对玩家的回复和行为确认留痕(必填)。
-				ack字段规则: (1) 本回合每一次roll_dice都必须记录一条: "roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败"。(2) 每一个其他有副作用的工具(update_*/manage_*/trigger_*/record_*/advance_time)记录一条: "tool_name: reason"(过去时)。不加其他文字，每条最长100字。ack数组中禁止出现任何规则说明文字。
+				ack字段规则: (1) 本回合每一次roll_dice都必须记录一条: "roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败"。(2) 每一个其他有副作用的工具(update_*/manage_*/trigger_*/record_*/advance_time)记录一条: "tool_name: reason"(过去时)。不加其他文字，每条最长100字。ack数组中禁止出现任何规则说明文字, act_npc 不需要ack。
 				【批次硬规则】response只能与write/think/update_llm_note同批次，严禁与update_*/manage_*/trigger_*/record_*/found_clue/advance_time/create_npc/destroy_npc同批次——后端会拒绝整批。正确模式：先在独立批次完成所有状态更新(type-B)，yield后再发response批次(type-C)。</description>
 			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 攀爬 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"],"direction":"short game direction"}</call_example>
 		</tool>
