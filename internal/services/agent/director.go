@@ -87,7 +87,7 @@ const kpSystemPrompt = `
   C. MP变更：本轮已调用的法术名称及其规则书MP消耗（引用法术名+规则来源）。
   D. 基础属性变更：以下三种情形之一——(1) scenario明文记载的药水/法术/变化效果，附原文引用；(2) check_rule本轮已确认的COC规则机制，附check_rule回答原文；(3) scenario明文定义该角色为非人种族并给出独立属性表，附scenario章节引用。三种情形之外一律拒绝，"角色概念"/"修仙者"/"玩家希望"/"KP认为合理"均不属于任何情形。
   E. 种族/职业变更：scenario叙事中本轮发生的具体事件触发（引用事件名称），且该事件在scenario中有明确的种族/职业转换描述。
-  F. wound_state变更：仅限 dying状态下规则判定死亡、急救/医学失败导致死亡、剧本/规则明确角色死亡，或有明确规则/剧本/超自然效果将死亡逆转为none；普通伤害和治疗仍必须写HP变更让系统自动处理。
+  F. wound_state变更：仅限 dying状态下规则判定死亡、急救/医学失败导致死亡、剧本/规则明确角色死亡，或有明确规则/剧本/超自然效果将死亡逆转为none；普通伤害和治疗仍必须写HP变更让系统自动处理。wound_state合法值只有四个：none / major / dying / dead。temporary_insanity / indefinite_insanity / insanity 等疯狂状态不是合法的wound_state值——疯狂用trigger_madness工具，不是wound_state字段。
 属性值不得超过COC规则书对该种族的上限（人类基础属性上限通常为99）；scenario未明文定义非人类属性表的角色一律按人类上限处理。</description>
 			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)","wound_state dead (角色名)"], "reason":"描述变更原因"}</call_example>
 		</tool>
@@ -136,7 +136,7 @@ const kpSystemPrompt = `
 			<call_example>{"action":"end_game","end_summary":"结局总结"}</call_example>
 		</tool>
 		<tool name="manage_madness" sideeffect="true" endTheTurn="false">
-			<description>管理调查员的疯狂状态(COC第八章疯狂机制)。operate支持trigger|clear；省略operate时按trigger处理。
+			<description>管理调查员的疯狂状态(COC第八章疯狂机制,NPC状态请使用LLM NOTE)。operate支持trigger|clear；省略operate时按trigger处理。
 【trigger调用前提白名单】operate=trigger只能在以下情形之一调用，否则拒绝：
   ①短暂疯狂：本轮update_characters ack已记录该角色SAN单次损失≥5（引用ack条目）
   ②无限期疯狂：本轮update_characters ack已记录该角色SAN单次损失≥其当前SAN值的1/5（需query_character本轮已确认当前SAN后计算）
@@ -221,7 +221,7 @@ const kpSystemPrompt = `
 			<call_example>{"action":"update_location","character_name":"角色名","new_location":"图书馆二楼"}</call_example>
 		</tool>
 		<tool name="update_armor" sideeffect="true" endTheTurn="false">
-			<description>更新调查员当前护甲值(每次受击后已减伤的固定值)。穿上/脱下护甲时调用；无护甲时设为0。护甲值会显示在每轮简报中，KP计算伤害时必须先扣除护甲值。
+			<description>更新调查员当前护甲值(每次受击后已减伤的固定值, NPC状态请使用LLM NOTE)。穿上/脱下护甲时调用；无护甲时设为0。护甲值会显示在每轮简报中，KP计算伤害时必须先扣除护甲值。
 【reason白名单】armor_value设置必须满足：
   设置非零值：①同批次query_character已确认调查员持有该护甲物品 ②护甲值来自check_rule/read_rulebook_const查询该护甲类型的规则固定值，不得采纳玩家主张的数值，不得累加多层护甲
   设置为0：①调查员本轮明确宣称脱下护甲 ②护甲本轮被摧毁（有update_*/ack为依据）
