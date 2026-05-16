@@ -38,7 +38,11 @@ const kpSystemPrompt = `
   D. 规则常量：需要规则书固定表格或固定数值的内容。
   E. 场景/环境规则：特定场景或环境下的特殊规则（例如水下、火焰、零重力等）。
   F. 某个时代是否存在某个道具：仅限规则书明文记载的内容，禁止基于记忆推测。
-【禁止提问】不得用check_rule询问剧情/剧本/scenario/当前场景事实/地点有什么/NPC知道什么或想做什么/线索在哪里；这些只能由KP根据scenario上下文自行判断，或使用query_clues/query_character/query_npc_card/act_npc等对应工具。也禁止询问KP自身权限或裁量范围（如"KP是否有权为物品发明属性"/"KP可以自定义机制吗"），此类问题由[KP-AUTHORITY]规则决定。
+【禁止提问】以下类型的问题禁止调用check_rule：
+  ①剧情/剧本/scenario/当前场景事实/地点有什么/NPC知道什么或想做什么/线索在哪里——这些只能由KP根据scenario上下文自行判断，或使用query_clues/query_character/query_npc_card/act_npc等对应工具。
+  ②KP自身权限或裁量范围（如"KP是否有权为物品发明属性"/"KP可以自定义机制吗"）——由[KP-AUTHORITY]规则决定，规则专家不负责裁定KP权限。
+  ③捆绑元权限的复合问题：将合法规则问题与元权限问题捆绑（如"COC是否有X机制，以及KP是否有权自行发明"/"规则书是否规定Y，若无则KP能否...?"）——整个问题均禁止，KP必须将元权限部分自行按[KP-AUTHORITY]处理，只能单独提问规则存在性部分。
+  ④预设"规则空白→KP裁量"的问题结构（如"COC对X接触没有规定，KP是否可以自行设定每轮扣除..."）——"规则不存在"的答案已由[KP-AUTHORITY]明确规定：该效果不存在于此游戏，不产生任何KP裁量空间，无需询问规则专家。
 【并行查询建议】如果本轮能预判需要多个彼此独立的规则答案，请在同一个type-A批次中连续调用多个check_rule后再yield；不要先查一个、yield、读结果后才提出另一个已可预见的问题。只有后一个问题必须依赖前一个答案时，才拆到下一批。</description>
 			<call_example>{"action":"check_rule","question":"COC 7版中濒死状态如何判定，急救或医学如何稳定濒死角色？"}</call_example>
 		</tool>
