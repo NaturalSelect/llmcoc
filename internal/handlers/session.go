@@ -422,6 +422,49 @@ func mapKeys(m map[uint]bool) []uint {
 	return keys
 }
 
+func lastKPReplyTime(sessionID uint) (time.Time, bool) {
+	var lastKP models.Message
+	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).
+		Order("created_at DESC").
+		First(&lastKP).Error; err != nil {
+		return time.Time{}, false
+	}
+	return lastKP.CreatedAt, true
+}
+
+func countSubmittedTurnPlayers(db *gorm.DB, sessionID uint, round int, activePlayerIDs map[uint]bool, cutoff time.Time, hasCutoff bool) int64 {
+	ids := mapKeys(activePlayerIDs)
+	if len(ids) == 0 {
+		return 0
+	}
+	query := db.Model(&models.SessionTurnAction{}).
+		Select("user_id").
+		Where("session_id = ? AND round = ? AND user_id IN ?", sessionID, round, ids)
+	if hasCutoff {
+		query = query.Where("created_at > ?", cutoff)
+	}
+	var rows []struct{ UserID uint }
+	query.Group("user_id").Find(&rows)
+	return int64(len(rows))
+}
+
+func loadLatestTurnActions(sessionID uint, round int, activePlayerIDs map[uint]bool, cutoff time.Time, hasCutoff bool) []models.SessionTurnAction {
+	ids := mapKeys(activePlayerIDs)
+	turnActions := make([]models.SessionTurnAction, 0, len(ids))
+	for _, id := range ids {
+		var ta models.SessionTurnAction
+		query := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", sessionID, round, id)
+		if hasCutoff {
+			query = query.Where("created_at > ?", cutoff)
+		}
+		if err := query.Order("created_at DESC, id DESC").
+			First(&ta).Error; err == nil {
+			turnActions = append(turnActions, ta)
+		}
+	}
+	return turnActions
+}
+
 // ChatStream handles SSE streaming for game chat using the multi-agent pipeline.
 //
 // NOTE: This is the core gameplay loop endpoint. It handles receiving player actions,
@@ -531,6 +574,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	activePlayerIDs := activeTurnPlayerIDs(session.Players)
 	activePlayerCount := len(activePlayerIDs)
 	isActiveTurnPlayer := activePlayerIDs[userID]
+	actionCutoff, hasActionCutoff := lastKPReplyTime(session.ID)
 	if playerCount > 1 {
 		if activePlayerCount > 0 && (!isTrackedPlayer || !isActiveTurnPlayer) {
 			log.Printf("[chat] session=%d user=%q rejected dead/non-player input while active players remain", sessionID, username)
@@ -558,8 +602,11 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			// Same-round resubmission should overwrite the player's pending action,
 			// so only the latest action is persisted with the KP reply.
 			var existing models.SessionTurnAction
-			err := tx.Where("session_id = ? AND round = ? AND user_id = ?",
-				session.ID, session.TurnRound, userID).First(&existing).Error
+			query := tx.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID)
+			if hasActionCutoff {
+				query = query.Where("created_at > ?", actionCutoff)
+			}
+			err := query.First(&existing).Error
 			if err != nil {
 				tx.Create(&models.SessionTurnAction{
 					SessionID:     session.ID,
@@ -576,10 +623,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 					"action_summary": content,
 				})
 			}
-			var submitted int64
-			tx.Model(&models.SessionTurnAction{}).
-				Where("session_id = ? AND round = ? AND user_id IN ?", session.ID, session.TurnRound, mapKeys(activePlayerIDs)).
-				Count(&submitted)
+			submitted := countSubmittedTurnPlayers(tx, session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
 			isLastToSubmit = submitted >= int64(activePlayerCount)
 			return nil
 		})
@@ -590,10 +634,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 
 		if !isLastToSubmit {
 			// Tell the player how many are still pending and let them poll.
-			var submitted int64
-			models.DB.Model(&models.SessionTurnAction{}).
-				Where("session_id = ? AND round = ? AND user_id IN ?", session.ID, session.TurnRound, mapKeys(activePlayerIDs)).
-				Count(&submitted)
+			submitted := countSubmittedTurnPlayers(models.DB, session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
 			pending := int64(activePlayerCount) - submitted
 			log.Printf("[chat] session=%d user=%q waiting pending=%d/%d",
 				sessionID, username, pending, activePlayerCount)
@@ -604,10 +645,17 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			return
 		}
 
-		// Last to submit: load all living/revived actors' actions for the KP prompt.
-		models.DB.Where("session_id = ? AND round = ? AND user_id IN ?", session.ID, session.TurnRound, mapKeys(activePlayerIDs)).
-			Order("created_at ASC").
-			Find(&turnActions)
+		// Last to submit: load exactly one latest action per active actor for the KP prompt.
+		turnActions = loadLatestTurnActions(session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
+		if len(turnActions) < activePlayerCount {
+			pending := activePlayerCount - len(turnActions)
+			log.Printf("[chat] session=%d user=%q waiting after load pending=%d/%d", sessionID, username, pending, activePlayerCount)
+			c.SSEvent("waiting", fmt.Sprintf(`{"pending":%d,"total":%d}`, pending, activePlayerCount))
+			c.Writer.Flush()
+			c.SSEvent("done", "")
+			c.Writer.Flush()
+			return
+		}
 		for _, ta := range turnActions {
 			var user models.User
 			models.DB.First(&user, ta.UserID)
