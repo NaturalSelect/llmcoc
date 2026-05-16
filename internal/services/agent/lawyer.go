@@ -153,7 +153,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(lawyerSystemPrompt)},
-		{Role: "user", Content: situation + "\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。\n**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"#tag1 #tag2\"}]（用#开头的标签，如\"#手枪 #伤害\"），不得包含其他任何工具调用。**\n你只能输出一个JSON数组, 且必须是有效的JSON格式, 不加任何解释。"},
+		{Role: "user", Content: "KP向你询问: '" + situation + "'\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。\n**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"#tag1 #tag2\"}]（用#开头的标签，如\"#手枪 #伤害\"），不得包含其他任何工具调用。**\n你只能输出一个JSON数组, 且必须是有效的JSON格式, 不加任何解释。"},
 	}
 
 	const maxIter = 30
