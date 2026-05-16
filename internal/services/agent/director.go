@@ -221,9 +221,10 @@ const kpSystemPrompt = `
 			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
 		</tool>
 		<tool name="think" sideeffect="false" endTheTurn="false">
-			<description>内心独白，每轮第一个调用必须是 think。作用：逐项列出本轮需要调用的所有工具（NPC创建/行动、规则查询、骰子、物品查询、位置更新、叙事写作等），形成完整执行计划。禁止：在think中写入任何规则结论、骰子表达式、技能数字、判定结果——这些是工具调用的输出，不是think的输出。Think只回答"我需要调用哪些工具"，不回答"工具返回什么结果"。WARNING: do NOT pre-narrate outcomes or assume dice/tool results in think. DEDUP CHECK (MANDATORY, first step in think): Scan the previous response's ack list in conversation history. Any entry already recorded there has already been applied — do NOT re-apply it this turn.
+			<description>内心独白，每轮第一个调用必须是 think。作用：逐项列出本轮需要调用的所有工具（NPC创建/行动、规则查询、骰子、物品查询、位置更新、叙事写作等），形成完整执行计划。禁止：在think中写入任何规则结论、骰子表达式、技能数字、判定结果——这些是工具调用的输出，不是think的输出。Think只回答"我需要调用哪些工具"，不回答"工具返回什么结果"。WARNING: do NOT pre-narrate outcomes or assume dice/tool results in think.
+【DUP CHECK】think 必须先写 DUP CHECK: 检查上一轮 response 的 ack、最近工具结果和本批次已列工具，确认没有重复结算、重复扣血/扣SAN/扣MP、重复加减物品、重复发现线索、重复更新位置/关系/护甲/笔记、重复销毁或创建 NPC。凡是上一轮 ack 已记录或本批次前面已计划执行的状态变化，本轮不得再次调用对应副作用工具。
 【AntiCheat合约】如果本批次包含任何副作用工具（create_npc/destroy_npc/update_*/manage_*/record_monster/end_game/trigger_madness/advance_time/found_clue/hint），think末尾必须写 ANTI_CHEAT_CONTRACT，并逐条列出：tool=工具名和对象；promised_change=将发生的机械变化（物品/数量/伤害/护甲/HP/SAN/MP/法术/关系/位置/线索/时间等），若只是叙事换皮则写“无机械变化，仅名称/外观变化”；consistency_constraint=承诺限制（如保持原属性/不增强/不授予新能力/不改数值）；source=本批次可见工具结果、上一轮ack、当前玩家动作、剧本/规则已知事实，或“不需要，纯叙事记录/位置同步”。后续副作用工具参数必须与该合约一致。禁止用“可能/大概/剧情需要/玩家喜欢/不想破坏氛围”等含糊或妥协理由。若合约写不清，不要调用副作用工具，先查询或yield。</description>
-			<call_example>{"action":"think","think":"我需要: 1) query_character确认当前物品 2) manage_inventory把手榴弹重命名为北凉火蒺藜 3) response说明只是叙事换皮。ANTI_CHEAT_CONTRACT: tool=manage_inventory character=角色名 item=北凉火蒺藜; promised_change=无机械变化，仅名称/外观变化，数量同原手榴弹; consistency_constraint=保持原属性，不增强，不新增伤害骰/护甲/特殊效果; source=玩家要求叙事换皮，当前物品栏已有手榴弹。"}</call_example>
+			<call_example>{"action":"think","think":"DUP CHECK: 上一轮ack未记录本次换皮，当前批次尚未执行manage_inventory，不重复结算。我需要: 1) query_character确认当前物品 2) manage_inventory把手榴弹重命名为北凉火蒺藜 3) response说明只是叙事换皮。ANTI_CHEAT_CONTRACT: tool=manage_inventory character=角色名 item=北凉火蒺藜; promised_change=无机械变化，仅名称/外观变化，数量同原手榴弹; consistency_constraint=保持原属性，不增强，不新增伤害骰/护甲/特殊效果; source=玩家要求叙事换皮，当前物品栏已有手榴弹。"}</call_example>
 		</tool>
 	</tools>
 	<style>
