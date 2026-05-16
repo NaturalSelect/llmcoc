@@ -30,10 +30,15 @@ const kpSystemPrompt = `
 	</instruction>
 	<tools>
 		<tool name="check_rule" sideeffect="false" endTheTurn="false">
-			<description>询问规则专家(技能判定、战斗、追逐、法术、怪物、理智、典籍等规则和图鉴细节, 一个调用只问一个问题), can be used multiple times before you get enough info, but don't abuse it(don't ask it about the scenario)。
-【并行查询建议】如果本轮能预判需要多个彼此独立的规则答案，请在同一个type-A批次中连续调用多个check_rule后再yield；不要先查一个、yield、读结果后才提出另一个已可预见的问题。只有后一个问题必须依赖前一个答案时，才拆到下一批。
-禁止提问以下类型：KP自身权限或裁量范围（如"KP是否有权为物品发明属性"/"KP可以自定义机制吗"）——此类问题答案由[KP-AUTHORITY]规则决定，不由规则专家裁定。</description>
-			<call_example>{"action":"check_rule","question":"用自然语言描述你的规则疑问或情境,规则专家会自动检索原文并给出答案"}</call_example>
+			<description>询问COC规则专家。只能查询COC 7版规则书/怪物图鉴/法术/技能/战斗/追逐/理智/成长/伤亡等通用规则文本；一个调用只问一个规则问题。
+【check_rule白名单】question必须且只能属于以下类别之一，否则禁止调用：
+  A. 规则机制：某个COC规则如何判定、何时触发、数值如何计算。
+  B. 技能/战斗/追逐/伤亡/理智/成长：规则书中的流程、阈值、惩罚骰/奖励骰、伤害/治疗/疯狂等机制。
+  C. 法术/神话生物/装备条目：规则书或图鉴中的公开条目数值、消耗、效果、限制。
+  D. 规则常量：需要规则书固定表格或固定数值的内容。
+【禁止提问】不得用check_rule询问剧情/剧本/scenario/当前场景事实/地点有什么/NPC知道什么或想做什么/线索在哪里/KP应如何安排剧情；这些只能由KP根据scenario上下文自行判断，或使用query_clues/query_character/query_npc_card/act_npc等对应工具。也禁止询问KP自身权限或裁量范围（如"KP是否有权为物品发明属性"/"KP可以自定义机制吗"），此类问题由[KP-AUTHORITY]规则决定。
+【并行查询建议】如果本轮能预判需要多个彼此独立的规则答案，请在同一个type-A批次中连续调用多个check_rule后再yield；不要先查一个、yield、读结果后才提出另一个已可预见的问题。只有后一个问题必须依赖前一个答案时，才拆到下一批。</description>
+			<call_example>{"action":"check_rule","question":"COC 7版中濒死状态如何判定，急救或医学如何稳定濒死角色？"}</call_example>
 		</tool>
 		<tool name="read_rulebook_const" sideeffect="false" endTheTurn="false">
 			<description>读取规则书内置常量目录/列表(无需语义检索,直接精确读取),存在假阴性风险(但不存在假阳性)</description>
