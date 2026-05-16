@@ -23,10 +23,21 @@ const MaxKpRound = 10
 // activeSessions prevents concurrent agent runs for the same game session.
 var activeSessions sync.Map
 
-// agentHandle pairs a Provider with its optional DB config.
+// agentHandle pairs a Provider with its DB config and enable state.
 type agentHandle struct {
 	provider llm.Provider
 	config   *models.AgentConfig
+	enabled  bool
+}
+
+func (h agentHandle) isEnabled() bool {
+	if !h.enabled || h.provider == nil {
+		return false
+	}
+	if h.config == nil {
+		return true
+	}
+	return h.config.IsActive
 }
 
 // systemPrompt returns the configured prompt or the given default.
@@ -37,33 +48,38 @@ func (h agentHandle) systemPrompt(defaultPrompt string) string {
 	return defaultPrompt
 }
 
-// batchLoadAgents fetches all active AgentConfigs in a single DB query.
-// Returns an error if any required role lacks an active provider config.
+func newAgentHandleFromConfig(cfg *models.AgentConfig, temperatureOverride *float32) (agentHandle, error) {
+	if cfg == nil {
+		return agentHandle{}, fmt.Errorf("agent config is nil")
+	}
+	if !cfg.IsActive {
+		return agentHandle{config: cfg, enabled: false}, nil
+	}
+	if cfg.ProviderConfigID == nil || cfg.ProviderConfig == nil || !cfg.ProviderConfig.IsActive {
+		return agentHandle{}, fmt.Errorf("agent %q 未绑定可用的 LLM provider", cfg.Role)
+	}
+	maxTok := cfg.MaxTokens
+	if maxTok == 0 {
+		maxTok = 1024
+	}
+	temperature := cfg.Temperature
+	if temperatureOverride != nil {
+		temperature = *temperatureOverride
+	}
+	p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, temperature, cfg.ThinkingLevel)
+	return agentHandle{provider: p, config: cfg, enabled: true}, nil
+}
+
+// batchLoadAgents fetches all AgentConfigs in a single DB query.
+// Disabled optional agents are returned as disabled handles; disabled required
+// agents still fail fast so the core pipeline does not run with nil providers.
 func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 	var configs []models.AgentConfig
-	models.DB.Preload("ProviderConfig").
-		Where("is_active = ?", true).
-		Find(&configs)
+	models.DB.Preload("ProviderConfig").Find(&configs)
 
 	index := make(map[models.AgentRole]*models.AgentConfig, len(configs))
 	for i := range configs {
 		index[configs[i].Role] = &configs[i]
-	}
-
-	makeHandle := func(role models.AgentRole) (agentHandle, error) {
-		cfg, ok := index[role]
-		if !ok {
-			return agentHandle{}, fmt.Errorf("agent %q 未配置,请在管理面板配置 LLM provider", role)
-		}
-		if cfg.ProviderConfigID == nil || cfg.ProviderConfig == nil || !cfg.ProviderConfig.IsActive {
-			return agentHandle{}, fmt.Errorf("agent %q 未绑定可用的 LLM provider", role)
-		}
-		maxTok := cfg.MaxTokens
-		if maxTok == 0 {
-			maxTok = 1024
-		}
-		p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, cfg.Temperature, cfg.ThinkingLevel)
-		return agentHandle{provider: p, config: cfg}, nil
 	}
 
 	roles := []models.AgentRole{
@@ -73,11 +89,28 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 		models.AgentRoleLawyer,
 		models.AgentRoleNPC,
 	}
+	requiredRoles := map[models.AgentRole]bool{
+		models.AgentRoleDirector: true,
+		models.AgentRoleWriter:   true,
+		models.AgentRoleLawyer:   true,
+		models.AgentRoleNPC:      true,
+	}
 	result := make(map[models.AgentRole]agentHandle, len(roles))
 	for _, role := range roles {
-		h, err := makeHandle(role)
+		cfg, ok := index[role]
+		if !ok {
+			if requiredRoles[role] {
+				return nil, fmt.Errorf("agent %q 未配置,请在管理面板配置 LLM provider", role)
+			}
+			result[role] = agentHandle{enabled: false}
+			continue
+		}
+		h, err := newAgentHandleFromConfig(cfg, nil)
 		if err != nil {
 			return nil, err
+		}
+		if requiredRoles[role] && !h.isEnabled() {
+			return nil, fmt.Errorf("agent %q 已禁用,请在管理面板启用", role)
 		}
 		result[role] = h
 	}

@@ -45,7 +45,7 @@ func TestRunAntiCheatParsesAllow(t *testing.T) {
 		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=保持原属性，不增强; source=玩家叙事换皮要求。"},
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "属性同手榴弹，仅叙事换皮", ItemCount: 1},
 	}
-	verdict, err := runAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), calls, nil)
+	verdict, err := runAntiCheat(context.Background(), agentHandle{provider: fp, enabled: true}, minimalAntiCheatContext(), calls, nil)
 	if err != nil {
 		t.Fatalf("runAntiCheat failed: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestCheckAntiCheatRejectsKPInconsistency(t *testing.T) {
 		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=保持原属性，不增强; source=玩家叙事换皮要求。"},
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "伤害：4D10，爆炸范围更大", ItemCount: 1},
 	}
-	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), calls, nil)
+	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp, enabled: true}, minimalAntiCheatContext(), calls, nil)
 	if allowed {
 		t.Fatal("inconsistent KP batch should not be allowed")
 	}
@@ -91,7 +91,7 @@ func TestAntiCheatRejectPreventsInventoryExecution(t *testing.T) {
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "伤害：4D10", ItemCount: 1},
 	}
 	fp := &fakeProvider{resp: `{"verdict":"must_fix","reason":"承诺不改变机械属性但工具改变伤害","message":"重新规划工具参数"}`}
-	_, allowed, _ := checkAntiCheat(context.Background(), agentHandle{provider: fp}, ctx, calls, nil)
+	_, allowed, _ := checkAntiCheat(context.Background(), agentHandle{provider: fp, enabled: true}, ctx, calls, nil)
 	if allowed {
 		t.Fatal("inconsistent mechanical change should be rejected")
 	}
@@ -120,7 +120,7 @@ func TestFilterAntiCheatCallsRequiresSideEffectAction(t *testing.T) {
 	}
 
 	fp := &fakeProvider{resp: `{"verdict":"must_fix","reason":"should not be called","message":"should not be called"}`}
-	_, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), calls, nil)
+	_, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp, enabled: true}, minimalAntiCheatContext(), calls, nil)
 	if !allowed || rejectMsg != "" {
 		t.Fatalf("no-side-effect batch should be allowed without audit: allowed=%v reject=%q", allowed, rejectMsg)
 	}
@@ -145,7 +145,7 @@ func TestCheckAntiCheatRejectsSideEffectWithoutThink(t *testing.T) {
 	calls := []ToolCall{
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "可疑物品"},
 	}
-	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp}, minimalAntiCheatContext(), calls, nil)
+	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp, enabled: true}, minimalAntiCheatContext(), calls, nil)
 	if allowed {
 		t.Fatal("side-effect batch without think should be rejected")
 	}
@@ -157,6 +157,24 @@ func TestCheckAntiCheatRejectsSideEffectWithoutThink(t *testing.T) {
 	}
 	if len(fp.messages) != 0 {
 		t.Fatal("anti-cheat provider should not be called when think is missing")
+	}
+}
+
+func TestCheckAntiCheatDisabledSkipsLLMAuditAfterHardChecks(t *testing.T) {
+	fp := &fakeProvider{resp: `{"verdict":"must_fix","reason":"should not be called","message":"should not be called"}`}
+	calls := []ToolCall{
+		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=新增可疑物品; consistency_constraint=按规则来源添加; source=测试。"},
+		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "可疑物品"},
+	}
+	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp, enabled: false}, minimalAntiCheatContext(), calls, nil)
+	if !allowed || rejectMsg != "" {
+		t.Fatalf("disabled anti-cheat should allow after hard checks: verdict=%+v reject=%q", verdict, rejectMsg)
+	}
+	if verdict.Verdict != "allow" || verdict.Reason != "anti-cheat disabled" {
+		t.Fatalf("unexpected verdict: %+v", verdict)
+	}
+	if len(fp.messages) != 0 {
+		t.Fatal("disabled anti-cheat should not call provider")
 	}
 }
 
@@ -173,7 +191,7 @@ func TestCheckAntiCheatFailClosedOnInvalidJSONOrError(t *testing.T) {
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "可疑物品"},
 	}
 
-	_, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: &fakeProvider{resp: `not json`}}, ctx, calls, nil)
+	_, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: &fakeProvider{resp: `not json`}, enabled: true}, ctx, calls, nil)
 	if allowed {
 		t.Fatal("invalid JSON should fail closed")
 	}
@@ -181,7 +199,7 @@ func TestCheckAntiCheatFailClosedOnInvalidJSONOrError(t *testing.T) {
 		t.Fatalf("reject message should mention anti_cheat_error: %q", rejectMsg)
 	}
 
-	_, allowed, rejectMsg = checkAntiCheat(context.Background(), agentHandle{provider: &fakeProvider{err: errors.New("boom")}}, ctx, calls, nil)
+	_, allowed, rejectMsg = checkAntiCheat(context.Background(), agentHandle{provider: &fakeProvider{err: errors.New("boom")}, enabled: true}, ctx, calls, nil)
 	if allowed {
 		t.Fatal("provider error should fail closed")
 	}

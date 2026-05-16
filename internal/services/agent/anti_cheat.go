@@ -34,8 +34,8 @@ type AntiCheatVerdict struct {
 }
 
 func runAntiCheat(ctx context.Context, h agentHandle, gctx GameContext, calls []ToolCall, tempNPCs []models.SessionNPC) (AntiCheatVerdict, error) {
-	if h.provider == nil {
-		return AntiCheatVerdict{}, fmt.Errorf("anti_cheat provider is nil")
+	if !h.isEnabled() {
+		return AntiCheatVerdict{Verdict: "allow", Reason: "anti-cheat disabled"}, nil
 	}
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(antiCheatDefaultPrompt)},
@@ -76,6 +76,9 @@ func checkAntiCheat(ctx context.Context, h agentHandle, gctx GameContext, calls 
 			Message: "本批次包含副作用工具，必须先输出 think 并在其中写明 ANTI_CHEAT_CONTRACT，再重试本批次；不要执行任何状态修改。",
 		}
 		return verdict, false, rejectMessageFromAntiCheat(verdict)
+	}
+	if !h.isEnabled() {
+		return AntiCheatVerdict{Verdict: "allow", Reason: "anti-cheat disabled"}, true, ""
 	}
 
 	verdict, err := runAntiCheat(ctx, h, gctx, filteredCalls, tempNPCs)

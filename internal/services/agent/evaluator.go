@@ -128,42 +128,40 @@ func fallbackEvaluation(session *models.GameSession) EvaluationResult {
 	return result
 }
 
-// loadSingleAgent loads an agentHandle for the given role from the database.
-// Returns an error if the role has no active config or no active provider config.
+// loadSingleAgent loads an enabled agentHandle for the given role from the database.
 func loadSingleAgent(role models.AgentRole) (agentHandle, error) {
 	var cfg models.AgentConfig
 	err := models.DB.Preload("ProviderConfig").
-		Where("role = ? AND is_active = ?", role, true).
+		Where("role = ?", role).
 		First(&cfg).Error
 	if err != nil {
 		return agentHandle{}, fmt.Errorf("agent %q 未配置,请在管理面板配置 LLM provider", role)
 	}
-	if cfg.ProviderConfigID == nil || cfg.ProviderConfig == nil || !cfg.ProviderConfig.IsActive {
-		return agentHandle{}, fmt.Errorf("agent %q 未绑定可用的 LLM provider", role)
+	h, err := newAgentHandleFromConfig(&cfg, nil)
+	if err != nil {
+		return agentHandle{}, err
 	}
-	maxTok := cfg.MaxTokens
-	if maxTok == 0 {
-		maxTok = 1024
+	if !h.isEnabled() {
+		return agentHandle{}, fmt.Errorf("agent %q 已禁用,请在管理面板启用", role)
 	}
-	p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, cfg.Temperature, cfg.ThinkingLevel)
-	return agentHandle{provider: p, config: &cfg}, nil
+	return h, nil
 }
 
 func loadSingleAgentWithTemperature(role models.AgentRole, temperature float64) (agentHandle, error) {
 	var cfg models.AgentConfig
 	err := models.DB.Preload("ProviderConfig").
-		Where("role = ? AND is_active = ?", role, true).
+		Where("role = ?", role).
 		First(&cfg).Error
 	if err != nil {
 		return agentHandle{}, fmt.Errorf("agent %q 未配置,请在管理面板配置 LLM provider", role)
 	}
-	if cfg.ProviderConfigID == nil || cfg.ProviderConfig == nil || !cfg.ProviderConfig.IsActive {
-		return agentHandle{}, fmt.Errorf("agent %q 未绑定可用的 LLM provider", role)
+	t := float32(temperature)
+	h, err := newAgentHandleFromConfig(&cfg, &t)
+	if err != nil {
+		return agentHandle{}, err
 	}
-	maxTok := cfg.MaxTokens
-	if maxTok == 0 {
-		maxTok = 1024
+	if !h.isEnabled() {
+		return agentHandle{}, fmt.Errorf("agent %q 已禁用,请在管理面板启用", role)
 	}
-	p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, float32(temperature), cfg.ThinkingLevel)
-	return agentHandle{provider: p, config: &cfg}, nil
+	return h, nil
 }
