@@ -934,9 +934,9 @@ func truncateForLog(s string, maxLen int) string {
 func lengthSpec(targetLength string) string {
 	switch targetLength {
 	case "long":
-		return "- scenes: 6-8个场景,每个有 id/name/description/triggers\n- clues: 10-12条线索,格式为\"线索名(地点):描述\"\nNPC数量: 5个"
+		return "- scenes: 6-8个场景,每个有 id/name/description/triggers\n- clues: 10-12条线索,格式为\"线索名(地点):描述\"\nNPC数量: 6-7个"
 	case "medium":
-		return "- scenes: 4-6个场景,每个有 id/name/description/triggers\n- clues: 7-10条线索,格式为\"线索名(地点):描述\"\nNPC数量: 3-5个"
+		return "- scenes: 4-6个场景,每个有 id/name/description/triggers\n- clues: 7-10条线索,格式为\"线索名(地点):描述\"\nNPC数量: 4-5个"
 	default: // short
 		return "- scenes: 3-4个场景,每个有 id/name/description/triggers\n- clues: 5-7条线索,格式为\"线索名(地点):描述\"\nNPC数量: 2-3个"
 	}
