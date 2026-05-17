@@ -362,7 +362,7 @@ func randomNarrativeTemplate() string {
 
 const (
 	briefElementExpansionEnabled = true
-	briefElementRounds           = 10
+	briefElementRounds           = 5
 	briefElementCount            = 1000
 )
 
