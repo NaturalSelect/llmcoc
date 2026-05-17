@@ -30,7 +30,7 @@ const kpSystemPrompt = `
 	</instruction>
 	<tools>
 		<tool name="check_rule" sideeffect="false" endTheTurn="false">
-			<description>询问COC规则专家。只能查询COC 7版规则书/怪物图鉴/法术/技能/战斗/追逐/理智/成长/伤亡等通用规则文本；一个调用只问一个规则问题，question字段禁止包含任何连接词（"另外"/"此外"/"同时"/"以及"/"还有"等）；需要多个规则答案时必须在同一type-A批次中分别调用多个check_rule。
+			<description>询问COC规则专家。只能查询COC 7版规则书/怪物图鉴/法术/技能/战斗/追逐/理智/成长/伤亡等通用规则文本；一个调用只问一个规则问题，question字段禁止包含任何连接词（"另外"/"此外"/"同时"/"以及"/"还有"等）,禁止包含多个问题；需要多个规则答案时必须在同一type-A批次中分别调用多个check_rule。
 【check_rule白名单】question必须且只能属于以下类别之一，否则禁止调用：
   A. 规则机制：某个COC规则如何判定、何时触发、数值如何计算。
   B. 技能/战斗/追逐/伤亡/理智/成长：规则书中的流程、阈值、惩罚骰/奖励骰、伤害/治疗/疯狂等机制。
@@ -77,7 +77,7 @@ const kpSystemPrompt = `
 			<call_example>{"action":"destroy_npc","npc_name":"NPC名称","destroy_reason":"dead|out_of_range|cleanup"}</call_example>
 		</tool>
 		<tool name="act_npc" sideeffect="false" endTheTurn="false">
-			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容(请把对话内容保留到write调用), 可以选择是否让NPC隐瞒他的秘密(hideSecret), 参数必须被正确填写, 使用查询到的名称而不是名称的一部分。
+			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容(请把对话内容保留到write调用), 可以选择是否让NPC隐瞒他的秘密(hideSecret), 参数必须被正确填写, 使用查询到的名称而不是名称的一部分, spell参数填写该NPC已经掌握的法术(如果没有,可以为空)。
 【批次硬规则】act_npc返回结果必须先读到才能写叙事/回复：任何包含act_npc的批次必须是type-A查询批次，并且必须以yield结束；严禁在同一批次放write、response、end_game、update_npc_llm_note或任何副作用工具。正确模式：Batch N [think, act_npc(...), act_npc(...), yield]；Batch N+1 读取NPC结果后再 [think, write, response] 或状态更新。
 【后续硬规则】读取act_npc结果后，write/response只能呈现NPC已返回的可见动作、台词、环境反应和可选的“等待玩家回应”停顿；严禁替玩家回答、同意、拒绝、沉默、点头、接受物品/任务、跟随、离开、攻击、施法、搜索、做心理反应或任何后续行动。若NPC提出问题、邀请、交易、命令、威胁、要求选择或等待调查员表态，本轮必须停在这里，response只提示“等玩家回应/决定”，不得推进到玩家的假定回复之后。
 				【kp_directive】用于向NPC传递KP的剧情指令和行为约束，例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。每次调用都应填写。
