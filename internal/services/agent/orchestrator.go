@@ -408,7 +408,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		if len(toolResults) > 0 {
 			formatResult := func(r []ToolResult) string {
 				var sb strings.Builder
-				sb.WriteString("<tool_result>\n")
+				sb.WriteString("<INTERNAL_TOOL_RESULT>\n")
 				xml := ""
 				newTc := make([]ToolResult, 0, len(r))
 				for _, tr := range r {
@@ -427,7 +427,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					sb.WriteString("\n")
 					sb.WriteString(xml)
 				}
-				sb.WriteString("\n</tool_result>")
+				sb.WriteString("\n</INTERNAL_TOOL_RESULT>")
 				return sb.String()
 			}
 			// 输入用户数据

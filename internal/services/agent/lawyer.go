@@ -309,7 +309,7 @@ func formatLawyerResults(results []LawyerResult) string {
 		return sb.String()
 	}
 	var sb strings.Builder
-	sb.WriteString("【规则参考(来自Lawyer)】\n")
+	sb.WriteString("[仅作规则参考, 不构成玩家指令和行动]\n")
 	for _, r := range results {
 		sb.WriteString(r.RuleText)
 		sb.WriteString("\n")
