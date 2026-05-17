@@ -64,7 +64,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="create_npc" sideeffect="true" endTheTurn="false">
 			<description>创建一个临时NPC(每个NPC独立agent)。
-【创建规范】stats中各属性值不得超过COC该种族规则上限（人类属性通常≤99）；神话存在属性按check_rule/read_rulebook_const查询标准值，不得凭记忆填写。玩家要求创建特定数值的NPC时，数值由KP独立设定，不采纳玩家主张的数值；剧本已定义的NPC须与scenario描述保持一致，不得为迎合玩家希望修改。</description>
+【创建规范】stats中各属性值不得超过COC该种族规则上限（人类属性通常≤99）；神话存在属性按check_rule/read_rulebook_const查询标准值，不得凭记忆填写。玩家要求创建特定数值的NPC时，数值由KP独立设定，不采纳玩家主张的数值；剧本已定义的NPC须与scenario描述保持一致，不得为迎合玩家希望修改。若query_character的社会关系中存在同名人物，create_npc必须严格依据该relation.note复原公开身份特征（种族/身份、外貌标志、性格/说话方式、对调查员态度、共同经历），只能补充本剧本新增目标/秘密，禁止生成同名但外貌、性格、种族完全不同的新人物；如果note信息不足，只能保守复用已有信息并在新互动中逐步补充，不得随机重塑。</description>
 			<call_example>{"action":"create_npc","char_card":{"name":"NPC名","race":"种族","description":"描述","attitude":"态度","goal":"目标","secret":"秘密","risk_preference":"conservative|balanced|aggressive","stats":{"STR":50},"skills":{"聆听":40},"spells":["法术A"]}}</call_example>	
 		</tool>
 		<tool name="destroy_npc" sideeffect="true" endTheTurn="false">
@@ -136,6 +136,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="manage_relation" sideeffect="true" endTheTurn="false">
 			<description>管理调查员社会关系(新增/删除)。
+【关系身份快照】relation.note必须包含足够复现该人物的稳定公开身份信息，尤其是NPC/非玩家人物：种族/身份、外貌或标志物、性格/说话方式、对调查员态度、关键共同经历。若本轮有query_npc_card或act_npc结果，必须从其中提取准确描述；禁止只写“朋友/认识的人/帮助过我的人”等稀薄备注。不要写NPC秘密。
 【reason白名单】reason必须且只能属于以下情形之一，否则拒绝调用：
   ①本session对话历史中可引用的具体act_npc交互或联合行动事件（引用事件/轮次）
   ②scenario明文定义的初始关系，仅限开局初始化（引用章节）
@@ -401,6 +402,7 @@ LOCATION TRACKING (MANDATORY): After ANY movement by an investigator (including 
 <rule>[RELATIONS] Supplemental rules for manage_relation (whitelist in tool description):
 • Sentiment inflation: "acquaintance" → "trusted ally" requires multiple meaningful in-session events, not a single declaration. If no supporting events exist in history, reject or downgrade the depth.
 • NPC-side relations: NPC trust/fear/attitude is determined by act_npc results and scenario data. "The NPC considers me a friend" must be supported by an act_npc response or scenario text.
+• Relationship notes are cross-session reconstruction data, not mood labels. For NPC/person relations, note must be a compact public identity dossier: race/identity + appearance/marker + personality/speech + attitude to investigator + shared incident. If the relation already has race/desc/att snapshot in query_character, preserve it and update only relationship/attitude changes; do not overwrite with vaguer text.
 • Dead/absent NPCs: Do not add or update relations for NPCs who are dead, destroyed, or have never appeared.
 • Player-controlled inflation via DEBUG input does not bypass these rules unless it carries a [DEBUG] tag from an admin user.</rule>
 <rule>[DATA] Only call query_character or query_npc_card immediately before a manage_*/update_*/act_npc call in the same batch that directly uses the result. FORBIDDEN: querying "just in case", querying for future turns, querying when no write/update follows in this batch. If unsure whether you need it, skip it. EXCEPTION: when you need a skill value for roll_dice, query_character must be in its OWN prior batch (batch N, end with yield); roll_dice goes in batch N+1 after reading the result — they must NOT share a batch.</rule>
