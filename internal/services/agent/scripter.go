@@ -239,7 +239,7 @@ const scenarioExample = `{
   }
 }`
 
-var randomTopicSystemPrompt = `你是COC TRPG悬疑模组主题灵感提供器。
+var randomTopicSystemPrompt = `你是小说主题灵感提供器。
 只输出名称列表，每行一个名称；不要编号、不要解释、不要分类标题、不要任何描述句。`
 
 // ---------------------------------------------------------------------------
