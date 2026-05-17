@@ -97,6 +97,7 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolUpdateNPCCard:    true,
 	ToolManageMadness:    true,
 	ToolAdvanceTime:      true,
+	ToolCreateNPC:        true,
 	ToolDestroyNPC:       true,
 }
 

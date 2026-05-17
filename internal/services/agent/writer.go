@@ -37,6 +37,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		<rule>怪物或异常真正出现时，先用一两个正常细节建立基线，再写异常打破基线，突出反差。</rule>
 		<rule>避免无病呻吟和空泛心理描写。不要频繁写“某种不安”“难以言说”“仿佛有什么东西”等没有具体对象的句子。</rule>
 		<rule>暴力、血腥、性暗示只在导演指令需要时使用；不要为了风格主动添加。</rule>
+		<rule>保证信息的完整传达和逻辑连贯，避免为了追求风格和缩减文本长度而牺牲清晰度。</rule>
 	</style>
 </system>`
 
