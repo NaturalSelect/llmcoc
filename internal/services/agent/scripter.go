@@ -860,6 +860,10 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 		if chatErr != nil {
 			return "", fmt.Errorf("parser 调用失败: %w", chatErr)
 		}
+		if strings.HasPrefix(fixed, "```json") {
+			fixed = strings.TrimPrefix(fixed, "```json")
+			fixed = strings.TrimSuffix(fixed, "```")
+		}
 		debugf("Parser", "Fixed JSON: %v", fixed)
 
 		// Verify the fix by stripping code fences
