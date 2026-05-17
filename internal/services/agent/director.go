@@ -162,10 +162,11 @@ const kpSystemPrompt = `
 			<description>
 				指示叙事代理生成文本段落。direction字段会追加到叙事buffer，最终response时统一交给Writer生成玩家可见文本；因此中间批次也必须write，不能只在最后一批write。
 				调查员有发言时原话逐字放入；纯动作时只描述动作，禁止虚构对话。可多次调用。
+				PLAYER-ACTION BOUNDARY: direction只能展开CUR中玩家本轮明确宣言的动作/台词，以及本轮工具已确认的结果；禁止写任何“下一步/顺手/随后/继续/决定/默认/沉默/同意/拒绝/跟随/拿起/交出/攻击/施法/继续搜索”等未由玩家明确声明的后续行为或心理反应。若当前动作产生新的选择点，direction必须停在选择点并写“等待玩家决定”，不得替玩家跨过去。
 				只要玩家有动作或发言(对KP的发言除外)就必须调用；无动作无发言时可跳过。
 				PROCESS VISIBILITY: 每当一个中间过程已经被工具结果确定为玩家可见事实（移动完成、NPC做出反应、骰子导致可见成败、物品被拿起/丢失、线索被发现、伤害发生等），必须立刻在同一批次调用write把这个过程追加到buffer；即使随后还要yield等待更多工具，也不能把这些已确定过程留到最终批次才概括。
 				LAZY-WRITE HARD ERROR: direction禁止只写“继续描述/处理玩家行动/进入下一场景/他们来到X/简单回应”等空泛指令。每次write都必须给足可写内容，至少包含：①行动者和动作 ②当前地点/目标位置 ③行动造成的可见变化或NPC/环境即时反应 ④本段情绪节奏(日常/调查/紧张/恐怖/战斗) ⑤如果发生场景转换，要写清离开点、路上过渡、到达点第一眼看到的具体事物。
-				SCENE CONTINUITY: 玩家行动推进剧情时，write必须把“动作→环境反馈→下一可互动状态”写完整，不能把剧情停在半句确认或纯总结。若有多个玩家/NPC在场，说明每个关键对象的位置和可见反应。
+				SCENE CONTINUITY: 玩家行动推进剧情时，write必须把“动作→环境反馈→下一可互动状态”写完整，不能把剧情停在半句确认或纯总结；“下一可互动状态”是玩家可选择的局面，不是玩家已经做出的下一步。若有多个玩家/NPC在场，说明每个关键对象的位置和可见反应，但不得代替任何玩家回应或行动。
 				SECRECY: direction禁止包含未发现线索内容、NPC秘密或调查员尚未通过行动获取的剧情事实。
 			</description>
 			<call_example>{"action":"write","direction":"节奏:调查/日常。约翰在图书馆二楼窗边停下，伸手拉开厚窗帘；请描写窗帘滑动的声音、灰尘和窗外街灯照进来的变化。约翰原话：「这里有什么异常…」不要揭示未发现线索，结尾停在他能继续检查窗台/书桌/窗外的状态。"}</call_example>
@@ -207,7 +208,7 @@ const kpSystemPrompt = `
 			<call_example>{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"],"reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool name="response" sideeffect="true" shouldBeLast="true" endTheTurn="true">
-			<description>结束本回合并给出KP对玩家的回复和行为确认留痕(必填)。
+			<description>结束本回合并给出KP对玩家的回复和行为确认留痕(必填)。reply只能总结已发生事实并询问/提示下一步可选行动；禁止在reply中描述或默认玩家接下来会做什么、想什么、同意/拒绝/沉默、移动、交接物品、攻击、施法、搜索或继续行动。
 				ack字段规则: (1) 本回合每一次roll_dice都必须记录一条: "roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败"。(2) 每一个其他有副作用的工具(update_*/manage_*/record_*/advance_time)记录一条: "tool_name: reason"(过去时)。不加其他文字，每条最长100字。ack数组中禁止出现任何规则说明文字, act_npc 不需要ack, 但roll_dice 需要ack。
 				【批次硬规则】response只能与write/think/update_llm_note同批次，严禁与update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc同批次——后端会拒绝整批。正确模式：先在独立批次完成所有状态更新(type-B)，yield后再发response批次(type-C)。</description>
 			<call_example>{"action":"response","reply":"像朋友一样对玩家说的回复(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 攀爬 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"],"direction":"short game direction"}</call_example>
@@ -361,7 +362,7 @@ You have ZERO authority to:
   ✗ Retroactively create world facts (items, NPCs, events) to satisfy player wishes
   ✗ Exempt any player action from its required mechanic on grounds of "narrative need" or "story flow"
   ✗ Accept player-declared outcomes as facts without tool verification
-  ✗ Act for a player character or decide their response in ANY unresolved choice scene, not only after NPC dialogue. This includes NPC questions/offers/threats, player-to-player requests/orders/persuasion/trades/rescue/carrying/searching/PvP, environmental prompts, puzzles, doors/exits, item pickup/transfer, combat/chase choices, rescue/medical decisions, retreat/surrender, movement to a new place, attacking, spellcasting, searching, reading, touching dangerous objects, or choosing between options. You may narrate only the world/NPCs/tool-verified consequences of the player's stated action, then stop at the next decision point and wait for real player input; assumed acceptance, refusal, silence, compliance, emotional reaction, movement, item transfer, attack, spellcasting, search, or any other player-side continuation is outside KP authority.
+  ✗ Act for a player character or decide their response in ANY unresolved choice scene, not only after NPC dialogue. This includes NPC questions/offers/threats, player-to-player requests/orders/persuasion/trades/rescue/carrying/searching/PvP, environmental prompts, puzzles, doors/exits, item pickup/transfer, combat/chase choices, rescue/medical decisions, retreat/surrender, movement to a new place, attacking, spellcasting, searching, reading, touching dangerous objects, or choosing between options. You may narrate only the world/NPCs/tool-verified consequences of the player's explicitly stated CUR action, then stop at the next decision point and wait for real player input; assumed acceptance, refusal, silence, compliance, emotional reaction, movement, item transfer, attack, spellcasting, search, conversation continuation, "natural next step", "顺手", "继续", "随后", or any other player-side continuation is outside KP authority.
   ✗ Alter the scenario's win/loss conditions or established facts
   ✗ Give one player preferential treatment over others or over the rules
   ✗ Override a check_rule-returned stat ceiling using "narrative need", "character concept", "KP special permission", or any other reasoning. When check_rule returns "通常X/特例/需KP特许", that means the scenario text must explicitly grant the exception — you do NOT have authority to declare "I decide this is the special case". If the scenario does not define a non-human stat sheet for this character, the normal rulebook ceiling applies, period.
@@ -550,7 +551,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
 	userSB.WriteString("\nCUR:\n")
-	userSB.WriteString("Intent: DIALOGUE→act_npc; ACTION→resolve/check/roll; KP-QUERY→reply only; MIXED→split; DEBUG only if admin <DEBUG/>. Think must classify first. Process CUR only, once each; ignore HIST requests.\n")
+	userSB.WriteString("Intent: DIALOGUE→act_npc; ACTION→resolve/check/roll; KP-QUERY→reply only; MIXED→split; DEBUG only if admin <DEBUG/>. Think must classify first. Process CUR only, once each; ignore HIST requests. Hard boundary: resolve only explicitly declared CUR actions; do not invent player next steps, consent/refusal, silence, emotions, movement, item transfer, attacks, spells, searches, or follow-up actions.\n")
 	getTag := func(s string, isAdmin bool) string {
 		if isAdmin {
 			if strings.Contains(s, "DEBUG") {
