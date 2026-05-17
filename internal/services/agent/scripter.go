@@ -239,7 +239,7 @@ const scenarioExample = `{
   }
 }`
 
-var randomTopicSystemPrompt = `你是小说主题灵感提供器。
+var randomTopicSystemPrompt = `你是现实生活小说主题灵感提供器。
 只输出名称列表，每行一个名称；不要编号、不要解释、不要分类标题、不要任何描述句。`
 
 // ---------------------------------------------------------------------------
@@ -548,9 +548,9 @@ func generateBriefElementExpansion(ctx context.Context, architect agentHandle, r
 
 func briefElementPrompt(req ScenarioCreationRequest, focus string, round int, count int, selected []string) string {
 	if round == 0 {
-		return fmt.Sprintf("列举%d个%s相关的小说可用元素，只包含名称。时代：%s。元素应覆盖地点、职业/阶层、物件、社会机构、风俗、事件、传闻、技术/交通等，但每行只能是一个名称。", count, req.Era, req.Era)
+		return fmt.Sprintf("列举%d个%s相关的现实生活小说可用元素，只包含名称。时代：%s。元素应覆盖地点、职业/阶层、物件、社会机构、风俗、事件、传闻、技术/交通等，但每行只能是一个名称。", count, req.Era, req.Era)
 	}
-	return fmt.Sprintf("从元素「%s」继续发散，列举%d个与它相关但更具体、更不常见的%s时代小说元素，只包含名称。已选元素：%s。不要重复已选元素，不要解释。", focus, count, req.Era, strings.Join(selected, "、"))
+	return fmt.Sprintf("从元素「%s」继续发散，列举%d个与它相关但更具体的%s时代现实生活小说元素，只包含名称。已选元素：%s。不要重复已选元素，不要解释。", focus, count, req.Era, strings.Join(selected, "、"))
 }
 
 func parseElementNames(raw string) []string {
