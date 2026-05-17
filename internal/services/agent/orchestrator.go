@@ -1244,7 +1244,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 		}
 		matched++
 		status := npcCompactState(npc)
-		sb.WriteString(fmt.Sprintf(`<npc n=%q race=%q src="tmp" st=%q wound_state=%q>`, npc.Name, npc.Race, status, npc.WoundState))
+		sb.WriteString(fmt.Sprintf(`<npc n=%q race=%q src="tmp" st=%q wound_state=%q loc=%q>`, npc.Name, npc.Race, status, npc.WoundState, npc.Location))
 		writeCompactText(&sb, "desc", npc.Description)
 		writeCompactText(&sb, "att", strings.TrimSpace(npc.Attitude))
 		writeCompactText(&sb, "goal", strings.TrimSpace(npc.Goal))

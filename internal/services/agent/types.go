@@ -55,6 +55,7 @@ const (
 	ToolUpdateLLMNote     ToolCallType = "update_llm_note"     // 更新Session级玩家LLMNote记录
 	ToolUpdateNPCLLMNote  ToolCallType = "update_npc_llm_note" // 更新Session级NPC LLMNote记录
 	ToolUpdateLocation    ToolCallType = "update_location"     // 更新调查员当前位置
+	ToolUpdateNPCLocation ToolCallType = "update_npc_location" // 更新NPC当前位置
 	ToolUpdateArmor       ToolCallType = "update_armor"        // 更新调查员护甲值
 	ToolHint              ToolCallType = "hint"                // KP写入当前场景高密度提示
 	ToolFoundClue         ToolCallType = "found_clue"          // 记录玩家发现的线索并注入旁白
@@ -92,7 +93,7 @@ type ToolCall struct {
 	TimeReason    string                 `json:"time_reason,omitempty"`    // advance_time: 原因(如"睡觉"/"吃饭")
 	Keyword       string                 `json:"keyword,omitempty"`        // query_clues: 已废弃(保留仅为兼容旧输出)
 	LLMNote       string                 `json:"llm_note,omitempty"`       // update_llm_note: 玩家LLMNote内容
-	NewLocation   string                 `json:"new_location,omitempty"`   // update_location: 新位置名称
+	NewLocation   string                 `json:"new_location,omitempty"`   // update_location/update_npc_location: 新位置名称
 	ArmorValue    int                    `json:"armor_value"`              // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
 	ClueIdx       int                    `json:"clue_idx"`                 // found_clue: 线索在剧本clues数组中的0-based索引

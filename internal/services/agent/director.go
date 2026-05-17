@@ -231,6 +231,10 @@ const kpSystemPrompt = `
 			<description>更新调查员当前所在位置。调查员每次移动后必须调用，位置信息将直接显示在每轮简报中。副本: 开局第一轮必须为每个调查员初始化位置。</description>
 			<call_example>{"action":"update_location","character_name":"角色名","new_location":"图书馆二楼"}</call_example>
 		</tool>
+		<tool name="update_npc_location" sideeffect="true" endTheTurn="false">
+			<description>更新临时NPC当前所在位置。NPC发生移动、离开房间、跟随/追逐调查员、被带到新地点后调用；位置会显示在NPC简报和query_npc_card中。</description>
+			<call_example>{"action":"update_npc_location","npc_name":"NPC名","new_location":"图书馆二楼"}</call_example>
+		</tool>
 		<tool name="update_armor" sideeffect="true" endTheTurn="false">
 			<description>更新调查员当前护甲值(每次受击后已减伤的固定值, NPC状态请使用LLM NOTE)。穿上/脱下护甲时调用；无护甲时设为0。护甲值会显示在每轮简报中，KP计算伤害时必须先扣除护甲值。
 【reason白名单】armor_value设置必须满足：
@@ -265,7 +269,7 @@ const kpSystemPrompt = `
 	<rule>
 		EACH RESPONSE IS EXACTLY ONE BATCH. A batch is either:
 		  (A) PURE NO-SIDEEFFECT batch: only no-sideeffect tools (roll_dice, check_rule, read_rulebook_const, query_*, act_npc) plus free tools (think, report, yield).
-		  (B) PURE SIDE-EFFECT batch: only side-effect tools (write, update_*, manage_*, record_*, found_clue, advance_time, create_npc, destroy_npc, update_llm_note, update_npc_llm_note, update_location, update_armor) plus free tools (think, yield). No response/end_game here.
+		  (B) PURE SIDE-EFFECT batch: only side-effect tools (write, update_*, manage_*, record_*, found_clue, advance_time, create_npc, destroy_npc, update_llm_note, update_npc_llm_note, update_location, update_npc_location, update_armor) plus free tools (think, yield). No response/end_game here.
 		  (C) RESPONSE/END-GAME batch: response OR end_game, accompanied ONLY by write/think/update_llm_note. NEVER put update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc in this batch — the backend will reject the entire batch.
 		MIXING TYPE-A AND TYPE-B/C TOOLS IN THE SAME BATCH IS FORBIDDEN. The backend will reject and force a retry.
 		CORRECT PATTERN for a turn that updates state AND replies:
@@ -306,7 +310,7 @@ THOROUGHNESS IS MANDATORY — LAZY TOOL USE IS A HARD ERROR:
   - create_npc: any unnamed person the investigator addresses must be created first.
   - act_npc: any NPC present during an interaction must respond.
   - check_rule: any mechanical action requires a rule check unless explicitly exempted by [CHECK-RULE-DEFAULT].
-  - update_location: any investigator movement requires a location update.
+  - update_location / update_npc_location: any investigator or temporary NPC movement requires a location update.
   - write: any investigator action or speech requires a write call to narrate it. Write is a buffer append, so it is safe and required in intermediate batches; do not postpone all visible process narration to the final batch.
 • If a visible process has been resolved by current tool results, call write in that same batch before yield/response so the buffer records the full sequence. Final response should conclude, not summarize missing middle steps.
 • If you find yourself about to call response without having called write, check_rule, act_npc (for present NPCs), or roll_dice (for skill checks) — stop and ask yourself what you skipped.
@@ -372,7 +376,7 @@ When you feel the urge to "make an exception just this once", that urge is itsel
 <rule>[RULES] Your memory of COC rules is unreliable — treat it as a hint for what to ask check_rule, not as an answer. See [CHECK-RULE-DEFAULT].</rule>
 <rule>[TIME] Each round = 30 min in-game. Monitor total elapsed time vs scenario win/lose trigger conditions.</rule>
 <rule>[SPACE] Maintain a running mental model of each investigator's and NPC's current location, updated every time they move. Before resolving any action, check whether the acting character is physically present at the required location. Investigators can move freely between accessible, unobstructed locations without a roll — movement only requires a roll when there is an active obstacle (locked door, combat, pursuit, etc.). When an investigator's location is ambiguous, infer from the most recent narration; do not assume they are still at the last explicitly mentioned location if subsequent actions imply they moved.
-LOCATION TRACKING (MANDATORY): After ANY movement by an investigator (including scene transitions, room changes, or going anywhere), you MUST call update_location for that character with the new location name. The current location is displayed in the brief each turn — always keep it accurate. On the very first turn, initialize every investigator's location from the scenario intro.</rule>
+LOCATION TRACKING (MANDATORY): After ANY movement by an investigator (including scene transitions, room changes, or going anywhere), you MUST call update_location for that character with the new location name. After ANY movement by a temporary NPC, call update_npc_location for that NPC. Current locations are displayed in the brief each turn — keep them accurate. On the very first turn, initialize every investigator's location from the scenario intro.</rule>
 <rule>[HP-SAN-SOURCE] Never deduct HP or SAN from investigators or NPCs by intuition. Every HP/SAN update requires a verifiable source chain in this exact turn: trigger/event → rule or scenario source → roll_dice result or fixed numeric value → update_* reason. If any link is missing, do not call update_characters/update_npc_card for HP/SAN. 大失败/失败本身不是伤害或SAN损失；只有规则/剧本明确说明该失败造成多少伤害/理智损失时才可扣除。Narrative tone, fear, pain, shock, danger, disgust, corpses, darkness, screams, NPC emotions, or “dramatic consequence” are not numeric damage/SAN sources.</rule>
 <rule>[SAN] SAN loss triggers: (1) directly facing Mythos horrors, (2) paying a forbidden price (spellcasting, racial powers). No other triggers are valid — sensory discomfort, emotional shock, corpses, ordinary violence, or plot drama do NOT cause SAN loss unless a COC/scenario rule explicitly assigns SAN loss. Investigators who have already encountered an entity do NOT suffer SAN loss from it again — check their known entities list first.</rule>
 <rule>[ARMOR] When an investigator wears armor, call update_armor with the armor's point value; when removed, set to 0. When applying damage: final_damage = max(0, rolled_damage - armor_value). Always deduct armor before updating HP. The armor value is shown in the brief every turn — do NOT re-query it from memory.</rule>
@@ -526,6 +530,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			}
 			if strings.TrimSpace(npc.Goal) != "" {
 				line += " 目标:" + strings.TrimSpace(npc.Goal)
+			}
+			if strings.TrimSpace(npc.Location) != "" {
+				line += " 位置:" + strings.TrimSpace(npc.Location)
 			}
 			if strings.TrimSpace(npc.LLMNote) != "" {
 				line += "【有Session级特殊状态:需query_npc_card查看】"

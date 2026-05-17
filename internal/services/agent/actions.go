@@ -65,10 +65,11 @@ var antiCheatSideEffectActions = map[ToolCallType]bool{
 	ToolFoundClue:        true,
 	ToolUpdateNPCCard:    true,
 	ToolUpdateLLMNote:    true,
-	ToolUpdateNPCLLMNote: true,
-	ToolUpdateLocation:   true,
-	ToolUpdateArmor:      true,
-	ToolHint:             true,
+	ToolUpdateNPCLLMNote:  true,
+	ToolUpdateLocation:    true,
+	ToolUpdateNPCLocation: true,
+	ToolUpdateArmor:       true,
+	ToolHint:              true,
 }
 
 // responseCompatibleActions is the set of actions that MAY coexist with
@@ -82,10 +83,11 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolFoundClue:        true,
 	ToolThink:            true,
 	ToolUpdateLLMNote:    true,
-	ToolUpdateNPCLLMNote: true,
-	ToolUpdateLocation:   true,
-	ToolUpdateArmor:      true,
-	ToolReport:           true,
+	ToolUpdateNPCLLMNote:  true,
+	ToolUpdateLocation:    true,
+	ToolUpdateNPCLocation: true,
+	ToolUpdateArmor:       true,
+	ToolReport:            true,
 	ToolYield:            true,
 	ToolUpdateCharacters: true,
 	ToolManageInventory:  true,
@@ -124,6 +126,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolUpdateLLMNote:     updateLLMNoteAction{},
 	ToolUpdateNPCLLMNote:  updateNPCLLMNoteAction{},
 	ToolUpdateLocation:    updateLocationAction{},
+	ToolUpdateNPCLocation: updateNPCLocationAction{},
 	ToolUpdateArmor:       updateArmorAction{},
 	ToolHint:              hintAction{},
 	ToolFoundClue:         foundClueAction{},
@@ -328,6 +331,31 @@ func (updateLocationAction) Execute(call ToolCall, actx ActionContext) []ToolRes
 		}
 	}
 	return []ToolResult{{Action: ToolUpdateLocation, Result: fmt.Sprintf("找不到名为 %s 的调查员", who)}}
+}
+
+type updateNPCLocationAction struct{}
+
+func (updateNPCLocationAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	who := strings.TrimSpace(call.NPCName)
+	loc := strings.TrimSpace(call.NewLocation)
+	debugf("tool", "session=%d update_npc_location npc=%q location=%q", actx.Sid, who, loc)
+	if who == "" {
+		return []ToolResult{{Action: ToolUpdateNPCLocation, Result: "错误:update_npc_location 需要 npc_name"}}
+	}
+	for i := range *actx.TempNPCs {
+		if npcNameMatch((*actx.TempNPCs)[i].Name, who) {
+			(*actx.TempNPCs)[i].Location = loc
+			models.DB.Model(&(*actx.TempNPCs)[i]).Update("location", loc)
+			return []ToolResult{{Action: ToolUpdateNPCLocation, Result: fmt.Sprintf("%s 当前位置已更新为: %s", (*actx.TempNPCs)[i].Name, loc)}}
+		}
+	}
+	var npc models.SessionNPC
+	if err := models.DB.Where("session_id = ? AND name = ?", actx.GCtx.Session.ID, who).First(&npc).Error; err == nil {
+		npc.Location = loc
+		models.DB.Model(&npc).Update("location", loc)
+		return []ToolResult{{Action: ToolUpdateNPCLocation, Result: fmt.Sprintf("%s 当前位置已更新为: %s", npc.Name, loc)}}
+	}
+	return []ToolResult{{Action: ToolUpdateNPCLocation, Result: fmt.Sprintf("找不到名为 %s 的NPC", who)}}
 }
 
 type updateArmorAction struct{}
