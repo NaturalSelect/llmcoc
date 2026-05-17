@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"math/rand"
 	"strings"
@@ -238,7 +239,8 @@ const scenarioExample = `{
   }
 }`
 
-var randomTopicSystemPrompt = `你是COC TRPG悬疑模组主题灵感提供器,输出多个主题名称,不要有任何其他文字。`
+var randomTopicSystemPrompt = `你是COC TRPG悬疑模组主题灵感提供器。
+只输出名称列表，每行一个名称；不要编号、不要解释、不要分类标题、不要任何描述句。`
 
 // ---------------------------------------------------------------------------
 // Tool-call types for outline & QA phases
@@ -358,6 +360,12 @@ func randomNarrativeTemplate() string {
 	return narrativeTemplates[rand.Intn(len(narrativeTemplates))]
 }
 
+const (
+	briefElementExpansionEnabled = true
+	briefElementRounds          = 10
+	briefElementCount           = 1000
+)
+
 func randomTopicConstraints(threatNum int) string {
 	if threatNum > len(topicThreatOrigins) {
 		threatNum = len(topicThreatOrigins)
@@ -426,10 +434,21 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		}
 		req.Theme += " | 主要怪物种类=" + fmt.Sprint(monsterNum)
 	}
+	if strings.TrimSpace(req.Brief) == "" && briefElementExpansionEnabled {
+		brief, err := generateBriefElementExpansion(ctx, architect, req)
+		if err != nil {
+			log.Printf("[scripter] brief element expansion failed: %v", err)
+		} else if strings.TrimSpace(brief) != "" {
+			req.Brief = brief
+			log.Printf("[scripter] brief generated from element expansion len=%d", len([]rune(req.Brief)))
+		}
+		debugf("script","brief: %v",brief)
+	}
 	debugf("script", "theme: %v", req.Theme)
 
 	npcNameBlacklist := loadRecentNPCNameBlacklist(200)
-	recentScenarioNames := loadScenarioTitleSamples(20)
+	recentScenarioNames := loadScenarioTitleSamples(40)
+	debugf("script", "name blacklist: %v", recentScenarioNames)
 	debugf("script", "npc blacklist count: %d", len(npcNameBlacklist))
 	debugf("script", "scenario title blacklist count: %d", len(recentScenarioNames))
 
@@ -490,6 +509,103 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 // ---------------------------------------------------------------------------
 // Phase 1: Generate Outline (with tool-call loop for grep)
 // ---------------------------------------------------------------------------
+
+func generateBriefElementExpansion(ctx context.Context, architect agentHandle, req ScenarioCreationRequest) (string, error) {
+	rounds := briefElementRounds
+	count := briefElementCount
+	rng := rand.New(rand.NewSource(seedFromScenarioRequest(req)))
+	selected := make([]string, 0, rounds)
+	allChosen := make([]string, 0, rounds)
+	focus := ""
+
+	for round := 0; round < rounds; round++ {
+		prompt := briefElementPrompt(req, focus, round, count, selected)
+		msgs := []llm.ChatMessage{
+			{Role: "system", Content: architect.systemPrompt(randomTopicSystemPrompt)},
+			{Role: "user", Content: prompt},
+		}
+		raw, err := architect.provider.Chat(ctx, msgs)
+		if err != nil {
+			return "", err
+		}
+		items := parseElementNames(raw)
+		if len(items) == 0 {
+			return "", fmt.Errorf("round %d 未生成可用元素", round+1)
+		}
+		choice := items[rng.Intn(len(items))]
+		allChosen = append(allChosen, choice)
+		selected = append(selected, choice)
+		focus = choice
+		log.Printf("[scripter] brief expansion round=%d items=%d chosen=%q", round+1, len(items), choice)
+	}
+
+	return fmt.Sprintf("自动随机灵感链：时代=%s；选中元素=%s。请将这些元素全部纳入剧本核心设计，但避免逐字堆砌为清单。", req.Era, strings.Join(allChosen, "、")), nil
+}
+
+func briefElementPrompt(req ScenarioCreationRequest, focus string, round int, count int, selected []string) string {
+	if round == 0 {
+		return fmt.Sprintf("列举%d个%s相关的小说可用元素，只包含名称。时代：%s。元素应覆盖地点、职业/阶层、物件、社会机构、风俗、事件、传闻、技术/交通等，但每行只能是一个名称。", count, req.Era, req.Era)
+	}
+	return fmt.Sprintf("从元素「%s」继续发散，列举%d个与它相关但更具体、更不常见的%s时代小说元素，只包含名称。已选元素：%s。不要重复已选元素，不要解释。", focus, count, req.Era, strings.Join(selected, "、"))
+}
+
+func parseElementNames(raw string) []string {
+	raw = llm.StripCodeFence(strings.TrimSpace(raw))
+	raw = strings.ReplaceAll(raw, "，", "\n")
+	raw = strings.ReplaceAll(raw, ",", "\n")
+	raw = strings.ReplaceAll(raw, "、", "\n")
+	lines := strings.Split(raw, "\n")
+	items := make([]string, 0, len(lines))
+	seen := map[string]bool{}
+	for _, line := range lines {
+		name := normalizeElementName(line)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, name)
+	}
+	return items
+}
+
+func normalizeElementName(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimLeft(s, "-•*· ")
+	s = strings.TrimSpace(s)
+	if idx := strings.IndexAny(s, ".、)"); idx >= 0 && idx <= 4 {
+		prefix := strings.TrimSpace(s[:idx])
+		if prefix != "" {
+			allDigits := true
+			for _, r := range prefix {
+				if r < '0' || r > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				s = strings.TrimSpace(s[idx+1:])
+			}
+		}
+	}
+	s = strings.Trim(s, " `\"'，。；;：:（）()【】[]《》")
+	if s == "" || strings.Contains(s, "：") || strings.Contains(s, ":") {
+		return ""
+	}
+	if len([]rune(s)) > 40 {
+		return ""
+	}
+	return strings.TrimSpace(s)
+}
+
+func seedFromScenarioRequest(req ScenarioCreationRequest) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(req.Salt + "|" + req.Name + "|" + req.Theme + "|" + req.Era))
+	seed := int64(h.Sum64())
+	if seed == 0 {
+		seed = 1
+	}
+	return seed
+}
 
 func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, npcNameBlacklist []string, recentScenarioNames []string) (string, error) {
 	reqJSON, _ := json.Marshal(req)
