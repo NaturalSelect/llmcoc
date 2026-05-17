@@ -362,8 +362,8 @@ func randomNarrativeTemplate() string {
 
 const (
 	briefElementExpansionEnabled = true
-	briefElementRounds          = 10
-	briefElementCount           = 1000
+	briefElementRounds           = 10
+	briefElementCount            = 1000
 )
 
 func randomTopicConstraints(threatNum int) string {
@@ -417,6 +417,10 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	if err != nil {
 		return ScenarioCreationOutput{}, err
 	}
+	writer, err := loadSingleAgent(models.AgentRoleWriter)
+	if err != nil {
+		return ScenarioCreationOutput{}, err
+	}
 
 	if req.Theme == "" {
 		num := 1
@@ -435,14 +439,14 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		req.Theme += " | 主要怪物种类=" + fmt.Sprint(monsterNum)
 	}
 	if strings.TrimSpace(req.Brief) == "" && briefElementExpansionEnabled {
-		brief, err := generateBriefElementExpansion(ctx, architect, req)
+		brief, err := generateBriefElementExpansion(ctx, writer, req)
 		if err != nil {
 			log.Printf("[scripter] brief element expansion failed: %v", err)
 		} else if strings.TrimSpace(brief) != "" {
 			req.Brief = brief
 			log.Printf("[scripter] brief generated from element expansion len=%d", len([]rune(req.Brief)))
 		}
-		debugf("script","brief: %v",brief)
+		debugf("script", "brief: %v", brief)
 	}
 	debugf("script", "theme: %v", req.Theme)
 
