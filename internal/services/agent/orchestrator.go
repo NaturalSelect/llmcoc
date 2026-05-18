@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
@@ -430,8 +429,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			// 输入用户数据
 			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: formatResult(toolResults)})
 		}
-		// 等一轮之后继续跑
-		time.Sleep(20 * time.Second)
 	}
 
 	// Max iterations reached — return whatever Writer produced.

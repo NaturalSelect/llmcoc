@@ -526,6 +526,7 @@ func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	*actx.HasEnd = true
 	call.Reply += "\n<ack>" + strings.Join(call.Ack, ";") + "</ack>"
 	call.Reply += "\n<direction>" + call.Direction + "</direction>"
+	call.Reply += "\n<time_point>" + formatGameTime(actx.GCtx.Session.TurnRound, scenarioStartSlot(actx.GCtx.Session)) + "</time_point>"
 	if *actx.KPNarration != "" {
 		*actx.KPNarration = call.Reply + "\n" + *actx.KPNarration
 	} else {
