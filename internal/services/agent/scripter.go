@@ -316,7 +316,7 @@ func randomNarrativeTemplate() string {
 const (
 	briefElementExpansionEnabled = true
 	briefElementRounds           = 5
-	briefElementCount            = 1000
+	briefElementCount            = 500
 )
 
 func randomTopicConstraints(threatNum int) string {
