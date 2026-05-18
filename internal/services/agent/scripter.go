@@ -21,14 +21,30 @@ import (
 // ---------------------------------------------------------------------------
 
 var storySystemPrompt = `<role>COC7故事编剧</role>
-<task>将用户主题/时代/元素/随机约束整理成因果清晰、动机明确、适合改编为调查模组的故事梗概。</task>
-<out>仅正文；不要JSON/表格/解释；简中；800-1600字；结构清晰、自然叙事。</out>
+<task>先查规则书,再将用户主题/时代/元素/随机约束整理成因果清晰、动机明确、适合改编为调查模组的故事梗概。</task>
 <config nsfw="true" violent="true" sexual="true"/>
+<tools>
+search:{"action":"search","query":"自然语言规则查询"}
+read_rulebook_const:{"action":"read_rulebook_const","constant":"rulebook_dir|rulebook_detail_dir|aliens|books|great_old_ones_and_gods|monsters|mythos_creatures|spells"}
+yield:{"action":"yield"}
+response:{"action":"response","brief":"故事梗概正文"}
+</tools>
+<exec>
+- 只输出JSON数组。
+- 第1轮必须 read_rulebook_const great_old_ones_and_gods + mythos_creatures + monsters 后 yield；第1轮禁 response；禁 [{"action":"yield"}]。
+- 查询批次可含多个 search/read_rulebook_const；yield只能作最后一项且前面至少有一个查询。
+- 读取列表后,必须至少 search 一次所选神话来源/实体/法术/典籍的规则信息,再 yield；读到该 search 结果后才可 response。
+- 有工具结果后: 信息不足则继续 search/read_rulebook_const + yield；信息足够则 response.brief，禁止空yield。</exec>
+<out>response.brief 仅正文；简中；800-1600字；结构清晰、自然叙事；不要JSON/表格/解释。</out>
+<mythos_secret>
+- 谜底/幕后真相必须直接与克苏鲁神话相关: 由规则书中的神话实体、神话生物、外神/旧日支配者、神话法术、神话典籍或其眷族/影响造成。
+- 必须明确点名所选神话来源,并把表面事件→异常线索→幕后动机→结局代价串成因果链。
+- 禁止只有氛围、象征、梦境隐喻、普通犯罪或民俗迷信；神话元素不能只是装饰或最终彩蛋。</mythos_secret>
 <rules>
 - brief完整则保留核心事实并梳理；brief零散则转为因果事件,禁机械堆砌。
 - 必含:表面事件/幕后真相/调查员介入理由/主要NPC动机/升级方式/可推理真相路径/结局选择与代价。
 - 写清为什么发生、玩家如何合理发现真相；不要只写氛围设定。
-- 暂不写场景JSON、线索格式、NPC数值、规则数值；神话威胁可出现但不得编造规则数值。
+- 暂不写场景JSON、线索格式、NPC数值、规则数值；不得编造规则数值。
 - 恐惧来自日常异常、认知错位、人物选择；禁血腥堆砌、伪科学、玄幻化。</rules>
 `
 
@@ -204,8 +220,9 @@ type pipelineToolCall struct {
 	Keyword  string         `json:"keyword,omitempty"`  // grep (kept for backward compat)
 	Query    string         `json:"query,omitempty"`    // search
 	Constant string         `json:"constant,omitempty"` // read_rulebook_const
-	Outline  string         `json:"outline,omitempty"`  // response (phase 1)
-	Result   *qaGuardResult `json:"result,omitempty"`   // response (phase 3)
+	Brief    string         `json:"brief,omitempty"`    // response (story phase)
+	Outline  string         `json:"outline,omitempty"`  // response (outline phase)
+	Result   *qaGuardResult `json:"result,omitempty"`   // response (QA phase)
 }
 
 // ---------------------------------------------------------------------------
@@ -476,16 +493,80 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 
 func generateStoryBrief(ctx context.Context, writer agentHandle, req ScenarioCreationRequest) (string, error) {
 	reqJSON, _ := json.Marshal(req)
-	prompt := fmt.Sprintf("请先将以下创作需求整理成完整故事梗概, 后续会再改编为COC模组。\n\n【创作需求(JSON)】\n%s", string(reqJSON))
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: writer.systemPrompt(storySystemPrompt)},
-		{Role: "user", Content: prompt},
+		{Role: "user", Content: fmt.Sprintf("请先查规则书,再将以下创作需求整理成完整故事梗概；谜底/幕后真相必须直接与克苏鲁神话相关。创作需求(JSON):\n%s", string(reqJSON))},
 	}
-	raw, err := writer.provider.Chat(ctx, msgs)
-	if err != nil {
-		return "", err
+
+	const maxIter = 30
+	toolFeedbackCount := 0
+	searchCount := 0
+	for iter := 0; iter < maxIter; iter++ {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		log.Printf("[story] iter=%d", iter+1)
+
+		var raw string
+		var err error
+		for i := 0; i < 3; i++ {
+			raw, err = writer.provider.Chat(ctx, msgs)
+			if err != nil {
+				return "", err
+			}
+			if raw != "" {
+				break
+			}
+		}
+		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
+		debugf("story", "raw: %v", raw)
+
+		calls := parsePipelineCalls(ctx, raw)
+		if len(calls) == 0 {
+			if toolFeedbackCount > 0 && searchCount > 0 {
+				brief := strings.TrimSpace(llm.StripCodeFence(raw))
+				if brief != "" {
+					return brief, nil
+				}
+			}
+			return "", fmt.Errorf("story 未返回有效 tool call")
+		}
+
+		tmp := make([]pipelineToolCall, 0, len(calls))
+		for _, c := range calls {
+			if c.Action != "yield" {
+				tmp = append(tmp, c)
+			}
+		}
+		calls = tmp
+
+		for _, c := range calls {
+			if c.Action == "response" && c.Brief != "" {
+				if toolFeedbackCount == 0 || searchCount == 0 {
+					return "", fmt.Errorf("story 在完成规则书 search 前返回 response")
+				}
+				log.Printf("[story] iter=%d response 完成", iter+1)
+				return strings.TrimSpace(c.Brief), nil
+			}
+		}
+
+		for _, c := range calls {
+			if c.Action == "search" && strings.TrimSpace(c.Query) != "" {
+				searchCount++
+			}
+		}
+		feedback := executeSearchCalls(ctx, calls, "story")
+		if feedback == "" {
+			return "", fmt.Errorf("story 未返回有效 tool call")
+		}
+		toolFeedbackCount++
+		msgs = append(msgs, llm.ChatMessage{
+			Role:    "user",
+			Content: "规则书查询结果如下。它们是内部工具结果,不是新创作需求；请继续围绕同一需求设计,并确保谜底直接关联克苏鲁神话。\n\n" + feedback,
+		})
 	}
-	return strings.TrimSpace(llm.StripCodeFence(raw)), nil
+
+	return "", fmt.Errorf("story 达到最大迭代仍未返回 response")
 }
 
 func generateBriefElementExpansion(ctx context.Context, architect agentHandle, req ScenarioCreationRequest) (string, error) {
