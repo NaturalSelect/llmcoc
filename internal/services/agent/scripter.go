@@ -35,7 +35,6 @@ response:{"action":"response","brief":"故事梗概正文"}
 - 查询批次可含多个 search/read_rulebook_const；yield只能作最后一项且前面至少有一个查询。
 - 读取列表后,必须至少 search 一次所选神话来源/实体/法术/典籍的规则信息,再 yield；读到该 search 结果后才可 response。
 - 有工具结果后: 信息不足则继续 search/read_rulebook_const + yield；信息足够则 response.brief，禁止空yield。</exec>
-<out>response.brief 仅正文；简中；800-1600字；结构清晰、自然叙事；不要JSON/表格/解释。</out>
 <mythos_secret>
 - 谜底/幕后真相必须直接与克苏鲁神话相关: 由规则书中的神话实体、神话生物、外神/旧日支配者、神话法术、神话典籍或其眷族/影响造成。
 - 必须明确点名所选神话来源,并把表面事件→异常线索→幕后动机→结局代价串成因果链。
