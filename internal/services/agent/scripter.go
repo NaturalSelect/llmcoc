@@ -420,7 +420,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 	debugf("script", "theme: %v", req.Theme)
 
-	storyBrief, err := generateStoryBrief(ctx, architect, req)
+	storyBrief, err := generateStoryBrief(ctx, writer, req)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
 	}
