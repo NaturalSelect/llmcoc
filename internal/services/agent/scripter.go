@@ -30,7 +30,7 @@ yield:{"action":"yield"}
 response:{"action":"response","brief":"故事梗概正文"}
 </tools>
 <exec>
-- 只输出JSON数组。
+- 只允许输出单个JSON数组, 禁止输出多个JSON数组, 禁止输出Markdown和其他格式。
 - 第1轮必须 read_rulebook_const great_old_ones_and_gods + mythos_creatures + monsters 后 yield；第1轮禁 response；禁 [{"action":"yield"}]。
 - 查询批次可含多个 search/read_rulebook_const；yield只能作最后一项且前面至少有一个查询。
 - 读取列表后,必须至少 search 一次所选神话来源/实体/法术/典籍的规则信息,再 yield；读到该 search 结果后才可 response。
