@@ -361,7 +361,7 @@ func randomNarrativeTemplate() string {
 const (
 	briefElementExpansionEnabled = true
 	briefElementRounds           = 5
-	briefElementCount            = 500
+	briefElementCount            = 200
 )
 
 func randomTopicConstraints(threatNum int) string {
@@ -453,6 +453,12 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
 	}
 	if strings.TrimSpace(storyBrief) != "" {
+		polishedBrief, polishErr := polishStoryBrief(ctx, writer, storyBrief)
+		if polishErr != nil {
+			log.Printf("[scripter] story brief polish failed: %v", polishErr)
+		} else if strings.TrimSpace(polishedBrief) != "" {
+			storyBrief = polishedBrief
+		}
 		req.Brief = storyBrief
 		log.Printf("[scripter] story brief len=%d", len([]rune(req.Brief)))
 		debugf("script", "story brief: %v", req.Brief)
@@ -595,6 +601,27 @@ func generateStoryBrief(ctx context.Context, writer agentHandle, req ScenarioCre
 	}
 
 	return "", fmt.Errorf("story 达到最大迭代仍未返回 response")
+}
+
+func polishStoryBrief(ctx context.Context, writer agentHandle, brief string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: writer.systemPrompt(`<role>COC故事润色编辑</role>
+<task>润色故事梗概文本,提升因果清晰度、可读性和COC氛围。</task>
+<config nsfw="true" violent="true" sexual="true"/>
+<rules>
+- 不得新增、删除或改写核心事实、神话来源、幕后真相、NPC动机、线索路径、结局代价。
+- 不得加入机械/科技/声波/药剂解释神话,不得加入抽象情感祭品或象征钥匙。
+- 保持简中,800-1600字左右；只输出润色后的故事梗概正文,不要JSON/标题解释/修改说明。</rules>`)},
+		{Role: "user", Content: "请润色以下故事梗概,保持事实不变:\n\n" + brief},
+	}
+	raw, err := writer.provider.Chat(ctx, msgs)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(llm.StripCodeFence(raw)), nil
 }
 
 func generateBriefElementExpansion(ctx context.Context, architect agentHandle, req ScenarioCreationRequest) (string, error) {
