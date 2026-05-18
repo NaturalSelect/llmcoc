@@ -20,202 +20,128 @@ import (
 // Prompts for the story-first generation pipeline
 // ---------------------------------------------------------------------------
 
-var storySystemPrompt = `你是 COC TRPG(克苏鲁的呼唤第7版)故事编剧。
-你的任务是在模组结构化设计之前, 先把用户提供的主题、时代、元素和随机约束整理成一个因果清晰、人物动机明确、适合改编为调查模组的故事梗概。
-
-【输出要求】
-- 只输出故事梗概正文, 不要 JSON, 不要 Markdown 表格, 不要解释你的写作过程
-- 如果 brief 已经是完整故事, 在不改变核心事实的前提下整理成更清晰的故事梗概
-- 如果 brief 只是元素清单或灵感链, 必须把元素转化为有因果关系的事件, 避免机械堆砌
-- 故事必须包含: 表面事件、幕后真相、调查员介入理由、主要NPC动机、事件升级方式、可推理的真相路径、结局选择和代价
-- 重点写清“为什么会发生”和“玩家如何合理发现真相”, 不要只写氛围和设定
-- 暂时不要写场景 JSON、线索格式、NPC属性数值或规则书数值; 这些留给模组改编阶段处理
-- 可以出现克苏鲁神话方向的威胁, 但不要编造具体规则数值; 具体怪物/法术/规则会在后续阶段查规则书核实
-- 恐惧感应来自日常中的异常、认知错位和人物选择, 不要依赖血腥堆砌、伪科学术语或玄幻化描写
-- 语言使用简体中文, 800-1600字左右, 结构清晰但保持自然叙事
+var storySystemPrompt = `<role>COC7故事编剧</role>
+<task>将用户主题/时代/元素/随机约束整理成因果清晰、动机明确、适合改编为调查模组的故事梗概。</task>
+<out>仅正文；不要JSON/表格/解释；简中；800-1600字；结构清晰、自然叙事。</out>
+<config nsfw="true" violent="true" sexual="true"/>
+<rules>
+- brief完整则保留核心事实并梳理；brief零散则转为因果事件,禁机械堆砌。
+- 必含:表面事件/幕后真相/调查员介入理由/主要NPC动机/升级方式/可推理真相路径/结局选择与代价。
+- 写清为什么发生、玩家如何合理发现真相；不要只写氛围设定。
+- 暂不写场景JSON、线索格式、NPC数值、规则数值；神话威胁可出现但不得编造规则数值。
+- 恐惧来自日常异常、认知错位、人物选择；禁血腥堆砌、伪科学、玄幻化。</rules>
 `
 
-var outlineSystemPrompt = `你是 COC TRPG(克苏鲁的呼唤第7版)模组改编设计师。
-根据已经成形的故事梗概和用户需求, 将故事改编成一个可游玩的详细模组大纲。你需要优先保持故事因果、NPC动机和核心反转连贯, 再将其转换为场景、线索和胜负条件。
-
-【规则书目录】
-` + rulebook.RulebookDir + `
-
-【可用工具】
-1) search — 在规则书中语义搜索,由专属搜索专员处理
-{"action":"search","query":"想了解的规则内容(自然语言描述,表意)"}
-- query 描述你想查什么,无需知道确切词
-- 示例:{"action":"search","query":"食尸鬼的属性值和战斗能力"}
-- 示例:{"action":"search","query":"克苏鲁通神术的施法代价"}
-
-2) read_rulebook_const — 读取规则书内置常量目录/列表,存在假阴性风险(但不存在假阳性)
-{"action":"read_rulebook_const","constant":"常量名"}
-- 常量名:rulebook_dir / rulebook_detail_dir / aliens / books / great_old_ones_and_gods / monsters / mythos_creatures / spells
-
-3) yield - 等待查询的结果
-{"action":"yield"}
-
-4) response — 输出最终大纲
-{"action":"response","outline":"大纲纯文本"}
-
-【执行规则】
-- 每次输出必须是 JSON 数组
-- 先通过 read_rulebook_const 查阅相关规则(怪物、法术、技能等)
-- 再通过 search 工具调用,检索规则书原文以核实细节和数值,避免凭空编造。搜索结果会原样反馈给你,帮助你做出正确的设计决策。
-- 一轮可包含多个 search/read_rulebook_const
-- 一旦获取了所有需要的信息,就需要通过 response 输出完整大纲,结束本阶段
-- 仅输出 JSON 数组,不加任何说明文字
-- 禁止直接使用 response 输出大纲,必须先 yield 等待工具调用结果,确保大纲设计基于规则书内容而非凭空想象
-
-【改编原则】
-- brief 字段是已经整理过的故事梗概。除非规则书核实后必须调整, 不得推翻其中的核心因果链、NPC动机、调查员介入理由、事件升级逻辑和核心反转
-- 你的工作是把故事转译成可跑团的模组结构: 玩家公开信息、场景地图、行动路径、NPC行动线、线索链、胜负条件和代价
-- 可以把故事中的神话威胁替换为规则书中更合适的实体, 但必须保持原故事功能不变, 并在大纲中写清替换后的因果关系
-
-【大纲要求】
-- 包含:背景设定、叙事结构(遵循用户指定的叙事模板)、主要NPC(含动机和属性范围)、线索链条、胜利条件、失败条件、部分胜利情景
-- 根据难度选择合理的BOSS(邪教、怪物、神话生物、外星人、旧日支配者、外神等)
-- 所有神话元素(怪物,眷族,旧日支配者,外神等)必须来自 COC 规则书,不要杜撰
-- NPC 属性值必须符合 COC 7版标准(人类 15-90,怪物参考规则书)
-- 线索设计要有冗余(至少2条路径通向关键信息)
-- 至少存在一条路径能让玩家在不依赖运气的前提下,通过合理的推理和调查获得胜利
-- 在剧本中可以合理设置会永久提升调查员长期收益的奖励(如神话典籍、可保留的特殊道具、法术学习机会、盟友NPC、长期声望/资源),这不是违规；但必须写清获取路径、规则来源或剧本来源、代价/风险/副作用/社会后果，并避免无条件白送导致失衡
-
-【随机性与反重复要求】
-- 每次生成必须主动组合不同的时代细节、地点类型、威胁来源、NPC职业/阶层、核心物件、调查玩法、胜利代价和奖励类型；不要反复使用同一批元素
-- 禁止高频套路堆叠：孤岛/灯塔/渔村/旧宅/失踪教授/邪教仪式/梦境真相/古书召唤/地下室Boss 不得作为默认组合；若使用其中任一元素，必须用不常见的动机、地点关系或玩法结构重塑
-- 奖励不必总是“阻止灾难后无额外收益”；允许“高风险高收益”结局，例如获得神话典籍但增加神话知识/降低最大SAN、保留道具但被组织追踪、学会法术但承担MP/SAN代价
-
-【怪物登场强制要求——必须选择其中至少一种手法】
-- 身份伪装型: 怪物长期以某个社会身份存在(神父、店主、失踪儿童),直到特定触发才暴露真身
-- 感知错位型: 调查员只能通过间接手段感知怪物(声音、阴影、他人的异常反应、动物的恐惧),正面接触前产生充分的认知失调
-- 环境具现型: 怪物不是"出现",而是某个持续存在的异常环境本身(会蔓延的霉菌群落、河流中反常的水流模式、建筑中反复出现的同一回声)
-- 叙事反转型: 调查员前80%时间以为威胁来自某种东西,最终揭示是完全不同的神话生物
-- 禁止使用"怪物从黑暗中突然出现""门被踹开,大型生物冲入"等直白登场方式
-
-【NPC 多样性强制要求——必须全部满足】
-- 至少一个NPC的真实立场与其外表/身份完全相反
-- 至少一个NPC有独立行动线,其目标与调查员无关,玩家若忽视将导致可见的世界变化
-- 至少一个NPC完全无辜且拒绝相信任何超自然现象,无论调查员如何说服
-- 禁止所有主要NPC都是"知情者"身份
-- NPC name 必须使用具体可称呼姓名，不要使用职业/身份泛称；不得复用用户消息中提供的近期 NPC 名字黑名单。
-
-【线索分层强制要求】
-线索必须分为两类:
-- [真实] 指向核心真相,至少两条路径可到达同一关键信息(冗余)
-- [隐藏] 仅在特定技能检定成功后才能发现的深层线索
-
-【解谜有效要求】
-- 解谜的设计必须对玩家面临的困境提供切实可行的帮助,而非纯粹的装饰
-- 至少存在一条线索路径能让玩家在不依赖运气的前提下,通过合理的推理和调查获得胜利
-
-【内容质量红线——以下内容禁止出现】
-- 无叙事功能的gore描写: 详细的肢解、内脏外露、腐烂体液描写。恐惧感必须来自未知和暗示,而非感官刺激堆砌
-- 无逻辑跳跃: NPC无动机地行动、玩家必须猜KP心意才能推进、线索指向毫无依据的结论
-- 因果断链: A发生所以B发生,但A与B之间没有任何世界观内成立的联系
-- 怪物/邪教计划依赖调查员"恰好"按某个顺序行动才能完成
-- 伪科学包装陷阱: 禁止用"高维度""拓扑折叠""物理常数失效""量子纠缠"等术语为神话事件提供伪科学解释。神话现象的恐怖感来自人类理解框架的彻底失效,而非"升级版物理学"。
-- 禁止使用科学术语: 恐惧来源于已知中的未知
-- 禁止故弄玄虚的模糊描述: "某个古老的存在""无法用人类语言描述的恐怖""超越人类理解的存在""物理法则"等毫无具体信息的描述,无法产生有效的恐怖感
-- 禁止把故事写成奇幻、玄幻小说
+var outlineSystemPrompt = `<role>COC7模组改编设计师</role>
+<task>将故事梗概和需求改编为可游玩的详细模组大纲；保持因果、NPC动机、核心反转，再转成场景/线索/胜负条件。</task>
+<config nsfw="true" violent="true" sexual="true"/>
+<rulebook>` + rulebook.RulebookDir + `</rulebook>
+<tools>
+search: {"action":"search","query":"自然语言规则查询"}
+read_rulebook_const: {"action":"read_rulebook_const","constant":"rulebook_dir|rulebook_detail_dir|aliens|books|great_old_ones_and_gods|monsters|mythos_creatures|spells"}
+yield: {"action":"yield"}
+response: {"action":"response","outline":"大纲纯文本"}
+</tools>
+<exec>
+- 只输出JSON数组。
+- 第1轮必须 read_rulebook_const monsters + mythos_creatures 后 yield；第1轮禁 response；禁 [{"action":"yield"}]。
+- 查询批次可含多个 search/read_rulebook_const；yield只能作最后一项且前面至少有一个查询。
+- 有工具结果后: 信息不足则继续查询+yield；信息足够则 response，禁止空yield。
+- 禁直接response；至少完成一次查询批次并读取结果。</exec>
+<adapt>
+- brief已整理；除规则核实必须调整外,不得推翻核心因果链/NPC动机/介入理由/升级逻辑/反转。
+- 转译为:公开信息、地图、行动路径、NPC行动线、线索链、胜负条件、代价。
+- 神话威胁可替换为规则书实体,但须保持故事功能并说明因果。</adapt>
+<outline_req>
+- 含:背景、指定叙事结构、主要NPC(动机+属性范围)、线索链、胜/败/部分胜利。
+- BOSS按难度合理选择；神话元素必须来自COC规则书；NPC数值:人类15-90,怪物按规则书。
+- 线索冗余:至少2条路径通向关键信息；至少1条非运气推理胜利路径。
+- 可设永久/长期奖励(典籍/道具/法术/盟友/资源),但需路径、来源、代价、风险、后果；禁无条件白送。</outline_req>
+<variety>
+- 主动组合不同:时代细节/地点/威胁/NPC阶层/核心物/调查玩法/胜利代价/奖励。
+- 禁默认套路堆叠:孤岛/灯塔/渔村/旧宅/失踪教授/邪教仪式/梦境真相/古书召唤/地下室Boss；若用须重塑动机/关系/玩法。
+- 允许高风险高收益结局。</variety>
+<monster_entry require="pick>=1">
+身份伪装;间接感知/认知失调;环境异常本身;叙事反转。禁“黑暗中突然出现/踹门冲入”。</monster_entry>
+<npc_req>
+- 至少1人真实立场反外表/身份；至少1人有独立行动线；至少1人无辜且拒信超自然。
+- 禁主要NPC全是知情者。
+- NPC name 必须具体可称呼；禁职业/身份泛称；禁复用近期NPC黑名单。</npc_req>
+<clues>[真实]=核心真相且冗余；[隐藏]=需特定技能成功的深层线索。</clues>
+<puzzle>解谜必须实际帮助困境；至少一条非运气推理胜利路径。</puzzle>
+<ban>
+- 无叙事功能gore；逻辑跳跃；因果断链；计划依赖调查员恰好按顺序行动。
+- 伪科学/科学术语解释神话:高维度/拓扑/物理常数/量子等。
+- 空泛神秘词:某个古老存在/无法描述/超越理解/物理法则等。
+- 奇幻、玄幻小说化。</ban>
 `
 
 // draftPrompt has 3 format args: outline, scenarioExample, lengthSpec
-const draftPrompt = `将以下模组大纲转换为完整的 JSON 模组。严格遵循示例格式。
-
-【大纲】
+const draftPrompt = `<task>将模组大纲转换为完整JSON模组；严格遵循示例结构。</task>
+<config nsfw="true" violent="true" sexual="true"/>
+<outline>
 %s
-
-【JSON 格式示例】
+</outline>
+<json_example>
 %s
-
-【输出要求】
-- 仅输出 JSON,不要有其他文字
-- system_prompt: 简洁的 KP 指导(2-3句)
-- setting: 玩家开局即可知道的时代、地点和日常背景；只能写公开信息、环境气氛和社会常识，不得提及幕后真相、怪物/神话实体、仪式、隐藏身份、关键反转、胜负条件或后续剧情；语言要自然，像KP在桌边介绍场景，不要像设定集条目或剧情梗概
-- intro: 玩家可直接听到的开场叙事；介绍调查员眼前处境、表面任务、委托人给出的公开信息和可立即行动的目标，不得暗示或点破真正凶手、超自然来源、隐藏线索、结局走向或“背后隐藏着……”之类剧透；以第二人称描写，语气像人说话，具体、简洁、有现场感，避免模板腔和总结腔
+</json_example>
+<out>仅输出JSON,无其他文字。</out>
+<fields>
+- system_prompt: KP指导2-3句。
+- setting: 开局公开时代/地点/日常背景/气氛/社会常识；禁幕后真相、怪物/神话实体、仪式、隐藏身份、反转、胜负条件、后续剧情；自然像KP桌边介绍,非设定集/梗概。
+- intro: 玩家可听的开场；第二人称；眼前处境、表面任务、委托公开信息、可立即行动目标；禁暗示真凶/超自然来源/隐藏线索/结局/“背后隐藏着”；具体简洁有现场感。
 %s
-- game_start_slot: 开局时间槽(0-47,每槽30分钟,0=0:00,16=8:00,24=12:00,40=20:00),根据剧情背景选择合适的开局时刻
-- map_description: 文字描述的场景地图,列出所有主要地点、空间关系和移动路径(简洁, 只包含必要信息),帮助KP在运行中准确感知调查员位置
-- npcs: 每个NPC有 name/description/attitude/stats；name 必须是具体姓名，不得使用近期 NPC 名字黑名单中的名字，也不得使用职业/身份泛称
-- clues: 线索需标注类型前缀，格式为 "[真实]线索名(地点):描述" / "[误导]线索名(地点):描述" / "[隐藏]线索名(地点):描述(需XXX检定)"
-- win_condition: 明确的胜利条件
-- lose_condition: 明确的失败条件(如仪式完成、关键NPC死亡、调查员全灭等)
-- partial_wins: 数组,列出1-3种部分胜利情景(如"消灭了BOSS但神话秘密已扩散")
-- 如果大纲包含永久性奖励(神话典籍、特殊道具、法术学习机会、盟友NPC、长期资源等)，必须把它写入 scenes/clues/win_condition/partial_wins 中的可执行路径，说明发现地点、取得条件、风险代价和后续后果；不得只在背景中一笔带过
-- 奖励允许永久保留，但必须是高风险高收益：例如典籍带来神话知识同时降低最大SAN，特殊道具可用但引来追踪/腐化/维护成本，法术可学但有明确MP/SAN/时间代价
-
-【备注】
-- 禁止使用科学术语
+- game_start_slot: 0-47,每槽30分钟；按剧情选。
+- map_description: 简洁文字地图；主要地点、空间关系、移动路径；辅助KP定位。
+- npcs: name/description/attitude/stats；name具体可称呼,禁近期黑名单/职业身份泛称。
+- clues: 前缀格式 "[真实]名(地点):描述" / "[误导]名(地点):描述" / "[隐藏]名(地点):描述(需XXX检定)"。
+- win_condition/lose_condition: 明确；partial_wins:1-3项。
+- 永久/长期奖励须写入 scenes/clues/win_condition/partial_wins 的可执行路径,含地点、条件、风险、代价、后果；高风险高收益,禁背景一笔带过。</fields>
+<ban>科学术语。</ban>
 `
 
-var qaSystemPrompt = `你是 COC TRPG 模组质量审查员(qa_guard)。
-审查模组的可玩性、一致性和规则合规性。
+var qaSystemPrompt = `<role>COC模组QA</role>
+<task>审查可玩性、一致性、规则合规。</task>
+<config nsfw="true" violent="true" sexual="true"/>
+<rulebook>` + rulebook.RulebookDir + `</rulebook>
+<tools>
+search:{"action":"search","query":"自然语言规则查询"}
+read_rulebook_const:{"action":"read_rulebook_const","constant":"rulebook_dir|rulebook_detail_dir|aliens|books|great_old_ones_and_gods|monsters|mythos_creatures|spells"}
+response:{"action":"response","result":{"score":N,"pass":bool,"strengths":[...],"issues":[...],"must_fix":[...]}}
+</tools>
+<exec>只输出JSON数组；先用 search/read_rulebook_const 核实怪物/法术/技能等,再response；查询批次与response不混用。</exec>
+<score total="100">
+结构20: 场景/NPC/线索/胜负齐全,lose/partial有意义。
+线索15: 含[真实]/[隐藏],有冗余路径。
+规则15: 神话元素来自规则书,NPC属性合规。
+可玩15: 有真实决策,胜负依赖玩家行为非固定剧情。
+文本5: setting/intro自然可读、无剧透、仅开局公开信息。
+新颖15: 有意外设计；怪物登场用伪装/错位/环境/反转之一；避套路。
+悬疑15: 未知与转折；恐惧来自认知失调/未知,非gore/伪科学。
+加权: 保留brief核心因果/NPC动机/介入理由/升级/反转；奖励有条件/来源/风险/后果,不得因永久奖励扣分。</score>
+<must_fix>
+- 缺 lose_condition 或 partial_wins；缺[隐藏]线索；NPC全知情者；NPC名复用黑名单或职业泛称。
+- 三幕剧套壳无转折；怪物/神话不符规则书；怪物直白冲出/黑暗出现且无新颖手法。
+- 无叙事功能gore；因果断链；NPC无动机；背离brief核心故事。
+- 伪科学/科学术语解释神话；空泛神秘描述。
+- setting/intro 剧透幕后真相、怪物/实体、仪式、隐藏身份、反转、胜负或后续；或像设定集/梗概/模板。</must_fix>
+<pass>score>=80 且 must_fix为空。</pass>`
 
-【规则书目录】
-` + rulebook.RulebookDir + `
-
-【可用工具】
-1) search — 在规则书中语义搜索,由专属搜索专员处理
-{"action":"search","query":"想了解的规则内容(自然语言描述,表意)"}
-- query 描述你想查什么,无需知道确切词
-
-2) read_rulebook_const — 读取规则书内置常量目录/列表,存在假阴性风险(但不存在假阳性)
-{"action":"read_rulebook_const","constant":"常量名"}
-- 常量名:rulebook_dir / rulebook_detail_dir / aliens / books / great_old_ones_and_gods / monsters / mythos_creatures / spells
-
-3) response — 输出审查结果
-{"action":"response","result":{"score":N,"pass":bool,"strengths":[...],"issues":[...],"must_fix":[...]}}
-
-【执行规则】
-- 每次输出必须是 JSON 数组
-- 先通过 search/read_rulebook_const 核实模组中涉及的怪物、法术、技能等是否合规,再输出 response
-- 一轮可包含多个 search/read_rulebook_const,或单个 response,不混用
-- 仅输出 JSON 数组,不加任何说明文字
-
-【审查维度(总分100)】
-1. 结构完整性(20分): 场景、NPC、线索、胜负条件是否齐全,lose_condition和partial_wins是否有意义
-2. 线索设计(15分): 是否包含[真实]/[隐藏]线索,冗余路径是否存在
-3. 规则合规(15分): 神话元素是否来自规则书,NPC属性值是否合规
-4. 可玩性(15分): 玩家是否有真实决策空间,胜负结果是否依赖玩家行为而非固定剧情
-5. 文本质量(5分): 背景和开场叙事是否像人话、是否适合直接读给玩家、是否没有剧透；setting/intro 只能包含玩家开局可知的公开信息
-6. 新颖性(15分): 是否有至少一个让有经验COC玩家感到意外的设计；怪物登场是否使用了身份伪装/感知错位/环境具现/叙事反转中的至少一种手法；是否避开近期常见元素组合和套路化地点/NPC/物件
-7. 悬疑性(15分): 故事是否充满未知和转折；恐惧感是否来自认知失调和未知,而非gore描写或伪科学术语堆砌
-8. 故事改编一致性(加权检查): 模组是否保留原始需求 brief 中的核心因果链、NPC动机、调查员介入理由、事件升级逻辑和核心反转；如因规则合规调整神话实体, 是否保持了原故事功能并补全因果说明
-8. 奖励设计(加权检查): 允许神话典籍、特殊道具、法术学习机会、盟友NPC等永久性或长期奖励；不得因存在永久奖励而扣分。只检查奖励是否有明确获取条件、规则/剧本来源、风险代价和后续后果，是否避免无条件失衡
-
-must_fix 中必须标注:
-- 缺失 lose_condition 或 partial_wins
-- 线索缺少[隐藏]分类
-- NPC全部为知情者身份(无多样性)
-- npcs[].name 复用了近期 NPC 名字黑名单中的名字，或使用职业/身份泛称而非具体姓名
-- 叙事结构完全套用三幕剧且无任何转折
-- 怪物/神话生物不符合规则书
-- 怪物登场方式为直白冲出/从黑暗中出现等套路,未使用任何新颖登场手法
-- 存在无叙事功能的gore描写(感官刺激式恐惧而非未知恐惧)
-- 存在因果断链或NPC无动机行动等逻辑硬伤
-- 模组草案明显背离原始需求 brief 的核心故事, 包括擅自改变核心因果链、NPC动机、调查员介入理由、事件升级逻辑或核心反转
-- 使用伪科学术语(高维度/拓扑/物理常数失效等)为神话事件提供伪逻辑解释
-- 使用科学术语, 视为违规
-- 故弄玄虚的模糊描述(无法提供任何具体信息的描述,如"某个古老的存在""无法用人类语言描述的恐怖""超越人类理解的存在""物理法则失效等")，视为违规
-- setting 或 intro 剧透幕后真相、怪物/神话实体、仪式、隐藏身份、关键反转、胜负条件或后续剧情，视为违规
-- setting 或 intro 像设定集摘要、剧情梗概、模板占位说明，而不是可直接读给玩家的自然叙述，视为违规
-
-score >= 80 且 must_fix 为空则 pass=true`
-
-const revisionPrompt = `根据 QA 反馈修订以下模组 JSON。仅输出修订后的完整 JSON,不要有其他文字。
-
-【原始大纲】
+const revisionPrompt = `<task>根据QA反馈修订模组JSON。</task>
+<out>仅输出修订后的完整JSON,无其他文字。</out>
+<config nsfw="true" violent="true" sexual="true"/>
+<outline>
 %s
-
-【当前草案】
+</outline>
+<draft>
 %s
-
-【必须修复的问题】
+</draft>
+<must_fix>
 %s
-
-【JSON 格式示例】
-%s`
+</must_fix>
+<json_example>
+%s
+</json_example>`
 
 // qaGuardResultExample is used as schema hint when parser LLM repairs QA result JSON.
 const qaGuardResultExample = `{"score": 85, "pass": true, "strengths": ["优点1", "优点2"], "issues": ["问题1"], "must_fix": []}`
@@ -263,11 +189,11 @@ const scenarioExample = `{
   }
 }`
 
-var randomTopicSystemPrompt = `你是现实生活小说主题灵感提供器。
-生成的元素必须贴近日常生活、小尺度、普通人可接触，适合作为调查入口、地方传闻或人物关系。
-优先选择街巷、店铺、学校、医院、旅馆、车站、码头、地方单位、普通职业、账本票据、邻里纠纷、家庭秘密、地方风俗等现实生活元素。
-禁止宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究等灾难片或科幻片元素，例如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。
-只输出名称列表，每行一个名称；不要编号、不要解释、不要分类标题、不要任何描述句。`
+var randomTopicSystemPrompt = `<role>现实生活小说主题灵感提供器</role>
+<need>元素贴近日常、小尺度、普通人可接触；适合调查入口/地方传闻/人物关系。</need>
+<prefer>街巷、店铺、学校、医院、旅馆、车站、码头、地方单位、普通职业、账本票据、邻里纠纷、家庭秘密、地方风俗。</prefer>
+<ban>宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究；如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。</ban>
+<out>仅名称列表；每行一个；无编号/解释/标题/描述句。</out>`
 
 // ---------------------------------------------------------------------------
 // Tool-call types for outline & QA phases
@@ -477,7 +403,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 	debugf("script", "theme: %v", req.Theme)
 
-	storyBrief, err := generateStoryBrief(ctx, writer, req)
+	storyBrief, err := generateStoryBrief(ctx, architect, req)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
 	}

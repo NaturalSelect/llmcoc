@@ -40,11 +40,8 @@ func (h agentHandle) isEnabled() bool {
 	return h.config.IsActive
 }
 
-// systemPrompt returns the configured prompt or the given default.
+// systemPrompt always returns the built-in prompt. Runtime prompt overrides are disabled.
 func (h agentHandle) systemPrompt(defaultPrompt string) string {
-	if h.config != nil && h.config.SystemPrompt != "" {
-		return h.config.SystemPrompt
-	}
 	return defaultPrompt
 }
 

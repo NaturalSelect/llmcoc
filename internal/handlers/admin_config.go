@@ -205,7 +205,6 @@ func AdminUpdateAgent(c *gin.Context) {
 	modelName, _ := raw["model_name"].(string)
 	maxTokens := int(toFloat(raw["max_tokens"]))
 	temperature := float32(toFloat(raw["temperature"]))
-	systemPrompt, _ := raw["system_prompt"].(string)
 	thinkingLevel, _ := raw["thinking_level"].(string)
 	var isActive *bool
 	if v, ok := raw["is_active"]; ok {
@@ -219,7 +218,6 @@ func AdminUpdateAgent(c *gin.Context) {
 		"model_name":         modelName,
 		"max_tokens":         maxTokens,
 		"temperature":        temperature,
-		"system_prompt":      systemPrompt,
 		"thinking_level":     thinkingLevel,
 	}
 	if isActive != nil {
@@ -240,7 +238,6 @@ func AdminUpdateAgent(c *gin.Context) {
 			ModelName:        modelName,
 			MaxTokens:        maxTokens,
 			Temperature:      temperature,
-			SystemPrompt:     systemPrompt,
 			ThinkingLevel:    thinkingLevel,
 			IsActive:         active,
 		}
