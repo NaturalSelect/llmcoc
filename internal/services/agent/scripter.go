@@ -437,7 +437,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		req.Theme += " | 主要怪物种类=" + fmt.Sprint(monsterNum)
 	}
 	if strings.TrimSpace(req.Brief) == "" && briefElementExpansionEnabled {
-		brief, err := generateBriefElementExpansion(ctx, writer, req)
+		brief, err := generateBriefElementExpansion(ctx, architect, req)
 		if err != nil {
 			log.Printf("[scripter] brief element expansion failed: %v", err)
 		} else if strings.TrimSpace(brief) != "" {
