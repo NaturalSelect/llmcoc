@@ -225,11 +225,11 @@ const scenarioExample = `{
   }
 }`
 
-var randomTopicSystemPrompt = `<role>现实生活小说主题灵感提供器</role>
+var randomTopicSystemPrompt = `<role>COC小说主题灵感提供器</role>
 <need>元素贴近日常、小尺度、普通人可接触；适合调查入口/地方传闻/人物关系。</need>
 <prefer>街巷、店铺、学校、医院、旅馆、车站、码头、地方单位、普通职业、账本票据、邻里纠纷、家庭秘密、地方风俗。</prefer>
 <ban>宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究；如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。</ban>
-<out>仅名称列表；每行一个；无编号/解释/标题/描述句。</out>`
+<out>仅名词列表；每行一个；无编号/解释/标题/描述句。</out>`
 
 // ---------------------------------------------------------------------------
 // Tool-call types for outline & QA phases
@@ -697,9 +697,9 @@ func generateBriefElementExpansion(ctx context.Context, architect agentHandle, r
 
 func briefElementPrompt(req ScenarioCreationRequest, focus string, round int, count int, selected []string) string {
 	if round == 0 {
-		return fmt.Sprintf("列举%d个%s相关的现实生活小说可用元素，只包含名称。时代：%s。元素应贴近日常生活、小尺度、普通人可接触，适合作为调查入口、地方传闻或人物关系；覆盖街巷、店铺、学校、医院、旅馆、车站、码头、地方单位、普通职业、账本票据、邻里纠纷、家庭秘密、地方风俗等。禁止宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究元素，例如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。每行只能是一个名称。", count, req.Era, req.Era)
+		return fmt.Sprintf("列举%d个%s相关的COC小说可用元素，只包含名词。时代：%s。元素应贴近日常生活、小尺度、普通人可接触，适合作为调查入口、地方传闻或人物关系；覆盖街巷、店铺、学校、医院、旅馆、车站、码头、地方单位、普通职业、账本票据、邻里纠纷、家庭秘密、地方风俗等。禁止宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究元素，例如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。每行只能是一个名词。", count, req.Era, req.Era)
 	}
-	return fmt.Sprintf("从元素「%s」继续发散，列举%d个与它相关但更具体的%s时代现实生活小说元素，只包含名称。新元素必须保持日常、小尺度、普通人可接触，优先从场所、人际关系、普通职业、账目文书、地方传闻、生活物件、风俗事件发散。禁止宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究元素，例如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。已选元素：%s。不要重复已选元素，不要解释。", focus, count, req.Era, strings.Join(selected, "、"))
+	return fmt.Sprintf("从元素「%s」继续发散，列举%d个与它相关但更具体的%s时代COC小说元素，只包含名词。新元素必须保持日常、小尺度、普通人可接触，优先从场所、人际关系、普通职业、账目文书、地方传闻、生活物件、风俗事件发散。禁止宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究元素，例如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。已选元素：%s。不要重复已选元素，不要解释。", focus, count, req.Era, strings.Join(selected, "、"))
 }
 
 func parseElementNames(raw string) []string {
