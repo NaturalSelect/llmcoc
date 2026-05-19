@@ -241,7 +241,7 @@ var randomTopicSystemPrompt = `<role>COC地方背景设定生成器</role>
 <out>仅输出一段300-600字的简中背景设定正文；不要JSON、Markdown、编号、标题或解释。</out>`
 
 var storyElementSystemPrompt = `<role>COC故事相关元素列举器</role>
-<task>根据已有story列举可继续加入背景设定的相关元素。</task>
+<task>根据已有story列举可继续加入背景设定的新设定。</task>
 <need>元素必须贴合当前story，能补强事件发生地点、社会背景、经济产业或民俗文化。</need>
 <prefer>自然地理、人文地理、特色建筑、权力运作、执法安全、支柱产业、交通设施、商店银行旅店、走私等非法经济、财富分配、信仰风俗、地方禁忌、行业规矩。</prefer>
 <ban>不要列神话实体、怪物、法术、仪式、幕后真相、结局、抽象主题词或宏大设施。</ban>
@@ -687,7 +687,7 @@ func generateStoryElementCandidates(ctx context.Context, writer agentHandle, sto
 	}
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: writer.systemPrompt(storyElementSystemPrompt)},
-		{Role: "user", Content: "请根据以下story列举200个可加入背景设定的相关元素。\n\n" + story},
+		{Role: "user", Content: "请根据以下story列举200个可加入背景设定的新设定。\n\n" + story},
 	}
 	raw, err := writer.provider.Chat(ctx, msgs)
 	if err != nil {
