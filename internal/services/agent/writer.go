@@ -20,7 +20,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 	</output>
 	<config nsfw="true" violent="true" sexual="true"/>
 	<requirements>
-		<rule>使用简体中文，官能小说风格，高信息密度, 采用第三人称视角。</rule>
+		<rule>使用简体中文，官能小说风格，采用第三人称视角。</rule>
 		<rule>NPC 对话用引号标注。</rule>
 		<rule>禁止出现“SAN值”“HP”“技能值”“检定”等游戏术语。</rule>
 		<rule>与上文保持连贯，不重复已描述的内容。</rule>
