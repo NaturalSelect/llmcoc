@@ -229,9 +229,9 @@ var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
 - country阶段输出具体国家或具体政权范围。
 - 非country阶段只输出类型/形态/区位模式，不输出具体地名、真实行政区名、真实城市名或真实街区名。
 - natural_geography阶段必须输出自然地理/地形/水文/气候约束类型。
-- human_geography阶段必须输出人文地理/聚落形态/人口构成/地方空间组织类型。
-- economy_transport阶段必须输出交通可达性、产业空间或非法经济空间类型。
-- landmark_stage阶段必须输出特色建筑、地标或关键公共空间类型。
+- human_geography阶段必须输出人口密度/当地风俗文化/社会结构。
+- economy_transport阶段必须输出交通可达性、支柱产业、商业设施或非法经济空间类型。
+- landmark_stage阶段必须输出该地与众不同的点。
 - 只输出现实地理/人文地理候选，不输出幕后真相。
 - 候选应适合调查故事，具有地方社会、交通、产业、执法或民俗延展空间。
 - 每行一个名称，正好20个，不要编号、解释、标题或描述句。</rules>`
@@ -540,9 +540,9 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 	}{
 		{Key: "country", Mode: "具体国家或具体政权范围", Examples: "美国"},
 		{Key: "natural_geography", Mode: "自然地理/地形/水文/气候约束类型，不输出具体地名", Examples: "林木覆盖的山谷"},
-		{Key: "human_geography", Mode: "人文地理/聚落形态/人口构成/地方空间组织类型，不输出具体地名", Examples: "城市"},
+		{Key: "human_geography", Mode: "人口密度/当地风俗文化/社会结构，不输出具体地名", Examples: "城市"},
 		{Key: "economy_transport", Mode: "交通可达性、支柱产业、商业设施或非法经济空间类型，不输出具体地名", Examples: "金融中心"},
-		{Key: "landmark_stage", Mode: "特色建筑、地标或关键公共空间类型，不输出具体地名", Examples: "金门大桥"},
+		{Key: "landmark_stage", Mode: "该地与众不同的点", Examples: "金门大桥"},
 	}
 	chain := make([]string, 0, len(stages))
 	msgs := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)}}
