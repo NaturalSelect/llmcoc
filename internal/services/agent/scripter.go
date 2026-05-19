@@ -233,6 +233,8 @@ var geographyElementSystemPrompt = `<role>COC地理候选列举器</role>
 <task>根据用户给定阶段列举20个可用于事件发生地的地理候选。</task>
 <rules>
 - 严格按用户要求的阶段输出候选。
+- 国家阶段输出具体国家或具体政权范围。
+- 非国家阶段只输出类型/形态/区位模式，不输出具体地名、真实行政区名、真实城市名或真实街区名。
 - 只输出现实地理/人文地理候选，不输出神话元素、怪物、仪式、幕后真相。
 - 候选应适合COC调查故事，具有地方社会、交通、产业或民俗延展空间。
 - 每行一个名称，正好20个，不要编号、解释、标题或描述句。</rules>`
@@ -547,7 +549,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 func generateStoryBrief(ctx context.Context, writer agentHandle, era string, threat string, geographyChain []string) (string, error) {
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: writer.systemPrompt(storySystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请根据时代、威胁参考和地理链生成事件发生地背景设定。只生成现实背景，不要点名神话实体/怪物/法术/典籍，不要设计完整剧情。威胁参考只能转化为社会压力、地方矛盾、传闻或调查入口。地理链必须作为事件发生地的逐级定位依据。\n\n时代：%s\n威胁参考：%s\n地理链：%s", era, threat, strings.Join(geographyChain, " → "))},
+		{Role: "user", Content: fmt.Sprintf("请根据时代、威胁参考和地理约束生成事件发生地背景设定。只生成现实背景，不要点名神话实体/怪物/法术/典籍，不要设计完整剧情。威胁参考只能转化为社会压力、地方矛盾、传闻或调查入口。地理约束中只有国家是具体地点，后续都是地点类型/形态；你需要基于这些类型自行创造合理的虚构区域、聚落、街区或建筑名称，并让它们符合该国家与时代。\n\n时代：%s\n威胁参考：%s\n地理约束：%s", era, threat, strings.Join(geographyChain, " → "))},
 	}
 
 	if ctx.Err() != nil {
@@ -567,42 +569,49 @@ func generateStoryBrief(ctx context.Context, writer agentHandle, era string, thr
 }
 
 func generateGeographyChain(ctx context.Context, architect agentHandle, era string) ([]string, error) {
-	stages := []string{
-		"国家或政权范围",
-		"国家内的区域/州/省/殖民地/边疆地带",
-		"区域内的城市/县镇/岛屿/山谷/港口片区",
-		"具体聚落或街区",
-		"特色自然地理、人文地理或标志建筑",
+	stages := []struct {
+		Key      string
+		Mode     string
+		Examples string
+	}{
+		{Key: "country", Mode: "具体国家或具体政权范围", Examples: "美国、英国、法兰西第三共和国、埃及王国、英属印度"},
+		{Key: "region_type", Mode: "国家内部区域类型/形态，不输出具体地名", Examples: "边疆省份、矿业州、殖民地、山地边区、河谷农业带、群岛辖区"},
+		{Key: "place_type", Mode: "区域内地点类型/形态，不输出具体地名", Examples: "工业港口、铁路枢纽小城、衰败矿镇、温泉疗养镇、偏远林业营地、边境集市"},
+		{Key: "settlement_type", Mode: "聚落或街区类型/形态，不输出具体地名", Examples: "码头仓库区、教会山坡街区、矿工棚户区、旧商业街、移民聚居巷、伐木营地"},
+		{Key: "landmark_type", Mode: "特色自然地理、人文地理或标志建筑类型/形态，不输出具体地名", Examples: "潮汐沼泽、废弃采石场、木栈码头、山口桥梁、市场钟楼、旧海关楼"},
 	}
 	chain := make([]string, 0, len(stages))
+	msgs := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)}}
 	for _, stage := range stages {
-		items, err := generateGeographyCandidates(ctx, architect, era, stage, chain)
+		items, err := generateGeographyCandidates(ctx, architect, &msgs, era, stage.Key, stage.Mode, stage.Examples, chain)
 		if err != nil {
 			return chain, err
 		}
 		if len(items) == 0 {
-			return chain, fmt.Errorf("%s 候选为空", stage)
+			return chain, fmt.Errorf("%s 候选为空", stage.Key)
 		}
 		choice := items[rand.Intn(len(items))]
 		chain = append(chain, choice)
-		log.Printf("[scripter] geography stage=%q candidates=%d chosen=%q", stage, len(items), choice)
+		log.Printf("[scripter] geography stage=%q candidates=%d chosen=%q", stage.Key, len(items), choice)
 	}
 	return chain, nil
 }
 
-func generateGeographyCandidates(ctx context.Context, architect agentHandle, era string, stage string, chain []string) ([]string, error) {
+func generateGeographyCandidates(ctx context.Context, architect agentHandle, msgs *[]llm.ChatMessage, era string, stageKey string, mode string, examples string, chain []string) ([]string, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	prompt := fmt.Sprintf("时代：%s\n当前阶段：%s\n已选地理链：%s\n\n请输出20个候选。", era, stage, strings.Join(chain, " → "))
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)},
-		{Role: "user", Content: prompt},
+	selected := "无，第一轮先选择具体国家或政权范围"
+	if len(chain) > 0 {
+		selected = strings.Join(chain, " → ")
 	}
-	raw, err := architect.provider.Chat(ctx, msgs)
+	prompt := fmt.Sprintf("已随机选中的前置约束：%s\n现在进入下一阶段：%s\n本阶段任务：根据前置约束继续列举候选，不要重做上一阶段。\n时代：%s\n输出要求：%s\n示例范围：%s\n\n请只输出本阶段的20个候选。", selected, stageKey, era, mode, examples)
+	*msgs = append(*msgs, llm.ChatMessage{Role: "user", Content: prompt})
+	raw, err := architect.provider.Chat(ctx, *msgs)
 	if err != nil {
 		return nil, err
 	}
+	*msgs = append(*msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 	items := parseElementNames(raw)
 	if len(items) == 0 {
 		return nil, fmt.Errorf("地理候选列表为空")
