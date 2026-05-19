@@ -240,6 +240,13 @@ var randomTopicSystemPrompt = `<role>COC地方背景设定生成器</role>
 <ban>宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究；如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。禁止输出随机元素清单。</ban>
 <out>仅输出一段300-600字的简中背景设定正文；不要JSON、Markdown、编号、标题或解释。</out>`
 
+var storyElementSystemPrompt = `<role>COC故事相关元素列举器</role>
+<task>根据已有story列举可继续加入背景设定的相关元素。</task>
+<need>元素必须贴合当前story，能补强事件发生地点、社会背景、经济产业或民俗文化。</need>
+<prefer>自然地理、人文地理、特色建筑、权力运作、执法安全、支柱产业、交通设施、商店银行旅店、走私等非法经济、财富分配、信仰风俗、地方禁忌、行业规矩。</prefer>
+<ban>不要列神话实体、怪物、法术、仪式、幕后真相、结局、抽象主题词或宏大设施。</ban>
+<out>仅输出名称列表；每行一个；正好200个；无编号、解释、标题或描述句。</out>`
+
 // ---------------------------------------------------------------------------
 // Tool-call types for outline & QA phases
 // ---------------------------------------------------------------------------
@@ -384,8 +391,6 @@ func randomNarrativeTemplate() string {
 	return narrativeTemplates[rand.Intn(len(narrativeTemplates))]
 }
 
-const briefElementExpansionEnabled = true
-
 func randomTopicConstraints(threatNum int) string {
 	if threatNum > len(topicThreatOrigins) {
 		threatNum = len(topicThreatOrigins)
@@ -458,16 +463,6 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		}
 		req.Theme += " | 主要怪物种类=" + fmt.Sprint(monsterNum)
 	}
-	if strings.TrimSpace(req.Brief) == "" && briefElementExpansionEnabled {
-		brief, err := generateBriefElementExpansion(ctx, architect, req)
-		if err != nil {
-			log.Printf("[scripter] brief element expansion failed: %v", err)
-		} else if strings.TrimSpace(brief) != "" {
-			req.Brief = brief
-			log.Printf("[scripter] brief generated from element expansion len=%d", len([]rune(req.Brief)))
-		}
-		debugf("script", "brief: %v", brief)
-	}
 	debugf("script", "theme: %v", req.Theme)
 
 	npcNameBlacklist := loadRecentNPCNameBlacklist(200)
@@ -478,6 +473,12 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
 	}
 	if strings.TrimSpace(storyBrief) != "" {
+		expandedBrief, expandErr := injectRandomStoryElement(ctx, writer, storyBrief)
+		if expandErr != nil {
+			log.Printf("[scripter] story random element injection failed: %v", expandErr)
+		} else if strings.TrimSpace(expandedBrief) != "" {
+			storyBrief = expandedBrief
+		}
 		polishedBrief, polishErr := polishStoryBrief(ctx, writer, storyBrief)
 		if polishErr != nil {
 			log.Printf("[scripter] story brief polish failed: %v", polishErr)
@@ -647,6 +648,106 @@ func generateStoryBrief(ctx context.Context, writer agentHandle, req ScenarioCre
 	return "", fmt.Errorf("story 达到最大迭代仍未返回 response")
 }
 
+func injectRandomStoryElement(ctx context.Context, writer agentHandle, story string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	items, err := generateStoryElementCandidates(ctx, writer, story)
+	if err != nil {
+		return "", err
+	}
+	if len(items) == 0 {
+		return "", fmt.Errorf("未生成可用story相关元素")
+	}
+	randomElem := items[rand.Intn(len(items))]
+	log.Printf("[scripter] story random element candidates=%d chosen=%q", len(items), randomElem)
+
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: writer.systemPrompt(`<role>COC故事背景整合编辑</role>
+<task>把一个随机相关元素自然融入已有story。</task>
+<rules>
+- 保留原story的核心事实、神话来源、幕后真相、NPC动机、线索路径、结局代价。
+- 只能围绕事件发生地点、社会背景、经济产业、民俗文化补强设定。
+- 随机元素必须影响至少两个背景维度，不能只提到一次。
+- 新增背景要与原story互相印证，不能孤立堆砌。
+- 不得加入机械/科技/声波/药剂解释神话，不得加入抽象情感祭品或象征钥匙。
+- 只输出整合后的story正文，不要JSON、标题或修改说明。</rules>`)},
+		{Role: "user", Content: fmt.Sprintf("<story>\n%s\n</story>\n\n<random_elem>\n%s\n</random_elem>", story, randomElem)},
+	}
+	raw, err := writer.provider.Chat(ctx, msgs)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(llm.StripCodeFence(raw)), nil
+}
+
+func generateStoryElementCandidates(ctx context.Context, writer agentHandle, story string) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: writer.systemPrompt(storyElementSystemPrompt)},
+		{Role: "user", Content: "请根据以下story列举200个可加入背景设定的相关元素。\n\n" + story},
+	}
+	raw, err := writer.provider.Chat(ctx, msgs)
+	if err != nil {
+		return nil, err
+	}
+	items := parseElementNames(raw)
+	if len(items) == 0 {
+		return nil, fmt.Errorf("story相关元素列表为空")
+	}
+	return items, nil
+}
+
+func parseElementNames(raw string) []string {
+	raw = llm.StripCodeFence(strings.TrimSpace(raw))
+	raw = strings.ReplaceAll(raw, "，", "\n")
+	raw = strings.ReplaceAll(raw, ",", "\n")
+	raw = strings.ReplaceAll(raw, "、", "\n")
+	lines := strings.Split(raw, "\n")
+	items := make([]string, 0, len(lines))
+	seen := map[string]bool{}
+	for _, line := range lines {
+		name := normalizeElementName(line)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, name)
+	}
+	return items
+}
+
+func normalizeElementName(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimLeft(s, "-•*· ")
+	s = strings.TrimSpace(s)
+	if idx := strings.IndexAny(s, ".、)"); idx >= 0 && idx <= 4 {
+		prefix := strings.TrimSpace(s[:idx])
+		if prefix != "" {
+			allDigits := true
+			for _, r := range prefix {
+				if r < '0' || r > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				s = strings.TrimSpace(s[idx+1:])
+			}
+		}
+	}
+	s = strings.Trim(s, " `\"'，。；;：:（）()【】[]《》")
+	if s == "" || strings.Contains(s, "：") || strings.Contains(s, ":") {
+		return ""
+	}
+	if len([]rune(s)) > 40 {
+		return ""
+	}
+	return strings.TrimSpace(s)
+}
+
 func polishStoryBrief(ctx context.Context, writer agentHandle, brief string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
@@ -666,28 +767,6 @@ func polishStoryBrief(ctx context.Context, writer agentHandle, brief string) (st
 		return "", err
 	}
 	return strings.TrimSpace(llm.StripCodeFence(raw)), nil
-}
-
-func generateBriefElementExpansion(ctx context.Context, architect agentHandle, req ScenarioCreationRequest) (string, error) {
-	prompt := briefElementPrompt(req)
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: architect.systemPrompt(randomTopicSystemPrompt)},
-		{Role: "user", Content: prompt},
-	}
-	raw, err := architect.provider.Chat(ctx, msgs)
-	if err != nil {
-		return "", err
-	}
-	brief := strings.TrimSpace(llm.StripCodeFence(raw))
-	if brief == "" {
-		return "", fmt.Errorf("未生成可用背景设定")
-	}
-	log.Printf("[scripter] brief background generated len=%d", len([]rune(brief)))
-	return fmt.Sprintf("自动背景设定：时代=%s。以下事件发生地背景要作为故事核心土壤，后续神话、NPC动机、线索和冲突都应从这些相互交织的地理、社会、经济与民俗关系中生长出来，而不是把它们当作孤立装饰。\n%s", req.Era, brief), nil
-}
-
-func briefElementPrompt(req ScenarioCreationRequest) string {
-	return fmt.Sprintf("请为一个COC调查模组生成事件发生地的背景设定。\n\n时代：%s\n主题/玩法约束：%s\n难度：%s\n\n必须覆盖并相互勾连这些内容：\n1. 事件发生地点：自然地理、人文地理、特色建筑。\n2. 社会背景：权力运作模式、执法与安全机构。\n3. 经济与产业：当地支柱产业、交通是否便利，商店、银行、旅店等设施是否齐全，是否存在走私等非法经济活动，财富分配模式。\n4. 民俗文化：信仰、风俗、地方禁忌或节庆。\n5. 交织关系：解释上述要素如何彼此印证，并形成后续调查可利用的矛盾、压力或传闻。\n\n要求：不要输出孤立元素清单；不要直接指定神话实体、怪物、仪式、幕后真相或结局；保持现实生活质感和可调查性。", req.Era, req.Theme, req.Difficulty)
 }
 
 func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, storyBrief string, npcNameBlacklist []string) (string, error) {
