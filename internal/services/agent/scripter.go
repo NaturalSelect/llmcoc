@@ -324,7 +324,7 @@ type ScenarioDraft struct {
 // ---------------------------------------------------------------------------
 
 func randomEra() string {
-	eras := []string{"1920s", "1950s", "现代"}
+	eras := []string{"1920s", "1990s", "现代"}
 	return eras[rand.Intn(len(eras))]
 }
 
