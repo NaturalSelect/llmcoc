@@ -318,7 +318,8 @@ var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
 - 非country阶段只输出类型/形态/区位模式，不输出具体地名、真实行政区名、真实城市名或真实街区名。
 - natural_geography阶段必须输出自然地理/地形/水文/气候约束类型。
 - human_geography阶段必须输出人口密度/当地风俗文化/社会结构。
-- economy_transport阶段必须输出交通可达性、支柱产业、商业设施或非法经济空间类型。
+- economy阶段必须输出支柱产业、商业设施、财富分配或非法经济空间类型。
+- transport阶段必须输出交通可达性、交通瓶颈、主要通行方式或物流节点类型。
 - landmark_stage阶段必须输出该地与众不同的点。
 - 只输出现实地理/人文地理候选，不输出幕后真相。
 - 候选应适合调查故事，具有地方社会、交通、产业、执法或民俗延展空间。
@@ -619,13 +620,13 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 			num = 2
 		}
 		req.Theme = randomTopicConstraints(num)
-		monsterNum := 1
-		if req.Difficulty == "hard" {
-			monsterNum = 5
-		} else if req.Difficulty == "normal" {
-			monsterNum = 3
-		}
-		req.Theme += " | 主要怪物种类=" + fmt.Sprint(monsterNum)
+		// monsterNum := 1
+		// if req.Difficulty == "hard" {
+		// 	monsterNum = 5
+		// } else if req.Difficulty == "normal" {
+		// 	monsterNum = 3
+		// }
+		// req.Theme += " | 主要怪物种类=" + fmt.Sprint(monsterNum)
 	}
 	debugf("script", "theme: %v", req.Theme)
 
@@ -726,7 +727,8 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 		{Key: "country", Mode: "具体国家或具体政权范围", Examples: "美国"},
 		{Key: "natural_geography", Mode: "自然地理/地形/水文/气候约束类型，不输出具体地名", Examples: "林木覆盖的山谷"},
 		{Key: "human_geography", Mode: "人口密度/当地风俗文化/社会结构，不输出具体地名", Examples: "城市"},
-		{Key: "economy_transport", Mode: "交通可达性、支柱产业、商业设施或非法经济空间类型，不输出具体地名", Examples: "金融中心"},
+		{Key: "economy", Mode: "支柱产业、商业设施、财富分配或非法经济空间类型，不输出具体地名", Examples: "金融中心"},
+		{Key: "transport", Mode: "交通可达性、交通瓶颈、主要通行方式或物流节点类型，不输出具体地名", Examples: "跨湾渡船枢纽"},
 		{Key: "landmark_stage", Mode: "该地与众不同的点", Examples: "金门大桥"},
 	}
 	chain := make([]string, 0, len(stages))
