@@ -222,12 +222,20 @@ var randomTopicSystemPrompt = `<role>COC地方背景设定生成器</role>
 <ban>宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究；如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。禁止输出随机元素清单。</ban>
 <out>仅输出一段300-600字的简中背景设定正文；不要JSON、Markdown、编号、标题或解释。</out>`
 
-var storyElementSystemPrompt = `<role>COC故事相关背景设定列举器</role>
-<task>根据已有story列举可继续加入背景设定的新设定。</task>
-<need>元素必须贴合当前story，能补强事件发生地点、社会背景、经济产业或民俗文化。</need>
-<prefer>自然地理、人文地理、特色建筑、权力运作、执法安全、支柱产业、交通设施、商店银行旅店、走私等非法经济、财富分配、信仰风俗、地方禁忌、行业规矩。</prefer>
-<ban>不要列神话实体、怪物、法术、仪式、幕后真相、结局、抽象主题词或宏大设施。</ban>
-<out>仅输出名称列表；每行一个；正好200个；无编号、解释、标题或描述句。</out>`
+var storyElementSystemPrompt = `<role>COC地方特色列举器</role>
+<task>根据已有背景列举可继续加入的地方特色。</task>
+<need>地方特色必须贴合当前事件发生地，能增强地方感、日常生活质感和可调查性。</need>
+<prefer>地方饮食、口音称谓、行业规矩、集市日、地方节庆、民间禁忌、特色建筑、手工业、运输习惯、旅店/酒馆习俗、商会规矩、治安潜规则、地方报纸、学校/教会/会社活动、财富炫耀方式、穷人互助方式。</prefer>
+<ban>不要列神话实体、怪物、法术、仪式、幕后真相、结局、抽象主题词、宏大设施或通用背景词。</ban>
+<out>仅输出地方特色名称列表；每行一个；正好200个；无编号、解释、标题或描述句。</out>`
+
+var geographyElementSystemPrompt = `<role>COC地理候选列举器</role>
+<task>根据用户给定阶段列举20个可用于事件发生地的地理候选。</task>
+<rules>
+- 严格按用户要求的阶段输出候选。
+- 只输出现实地理/人文地理候选，不输出神话元素、怪物、仪式、幕后真相。
+- 候选应适合COC调查故事，具有地方社会、交通、产业或民俗延展空间。
+- 每行一个名称，正好20个，不要编号、解释、标题或描述句。</rules>`
 
 // ---------------------------------------------------------------------------
 // Tool-call types for outline & QA phases
@@ -450,7 +458,11 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	npcNameBlacklist := loadRecentNPCNameBlacklist(200)
 	debugf("script", "npc blacklist count: %d", len(npcNameBlacklist))
 
-	storyBrief, err := generateStoryBrief(ctx, architect, req.Era, req.Theme)
+	geographyChain, geoErr := generateGeographyChain(ctx, architect, req.Era)
+	if geoErr != nil {
+		log.Printf("[scripter] geography chain generation failed: %v", geoErr)
+	}
+	storyBrief, err := generateStoryBrief(ctx, architect, req.Era, req.Theme, geographyChain)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
 	}
@@ -532,10 +544,10 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 // Phase 1: Generate story brief, then outline
 // ---------------------------------------------------------------------------
 
-func generateStoryBrief(ctx context.Context, writer agentHandle, era string, threat string) (string, error) {
+func generateStoryBrief(ctx context.Context, writer agentHandle, era string, threat string, geographyChain []string) (string, error) {
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: writer.systemPrompt(storySystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请根据时代和威胁参考生成事件发生地背景设定。只生成现实背景，不要点名神话实体/怪物/法术/典籍，不要设计完整剧情。威胁参考只能转化为社会压力、地方矛盾、传闻或调查入口。\n\n时代：%s\n威胁参考：%s", era, threat)},
+		{Role: "user", Content: fmt.Sprintf("请根据时代、威胁参考和地理链生成事件发生地背景设定。只生成现实背景，不要点名神话实体/怪物/法术/典籍，不要设计完整剧情。威胁参考只能转化为社会压力、地方矛盾、传闻或调查入口。地理链必须作为事件发生地的逐级定位依据。\n\n时代：%s\n威胁参考：%s\n地理链：%s", era, threat, strings.Join(geographyChain, " → "))},
 	}
 
 	if ctx.Err() != nil {
@@ -554,6 +566,50 @@ func generateStoryBrief(ctx context.Context, writer agentHandle, era string, thr
 	return brief, nil
 }
 
+func generateGeographyChain(ctx context.Context, architect agentHandle, era string) ([]string, error) {
+	stages := []string{
+		"国家或政权范围",
+		"国家内的区域/州/省/殖民地/边疆地带",
+		"区域内的城市/县镇/岛屿/山谷/港口片区",
+		"具体聚落或街区",
+		"特色自然地理、人文地理或标志建筑",
+	}
+	chain := make([]string, 0, len(stages))
+	for _, stage := range stages {
+		items, err := generateGeographyCandidates(ctx, architect, era, stage, chain)
+		if err != nil {
+			return chain, err
+		}
+		if len(items) == 0 {
+			return chain, fmt.Errorf("%s 候选为空", stage)
+		}
+		choice := items[rand.Intn(len(items))]
+		chain = append(chain, choice)
+		log.Printf("[scripter] geography stage=%q candidates=%d chosen=%q", stage, len(items), choice)
+	}
+	return chain, nil
+}
+
+func generateGeographyCandidates(ctx context.Context, architect agentHandle, era string, stage string, chain []string) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	prompt := fmt.Sprintf("时代：%s\n当前阶段：%s\n已选地理链：%s\n\n请输出20个候选。", era, stage, strings.Join(chain, " → "))
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)},
+		{Role: "user", Content: prompt},
+	}
+	raw, err := architect.provider.Chat(ctx, msgs)
+	if err != nil {
+		return nil, err
+	}
+	items := parseElementNames(raw)
+	if len(items) == 0 {
+		return nil, fmt.Errorf("地理候选列表为空")
+	}
+	return items, nil
+}
+
 func generateRandomStoryBackgroundAddendum(ctx context.Context, architect agentHandle, story string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
@@ -563,23 +619,23 @@ func generateRandomStoryBackgroundAddendum(ctx context.Context, architect agentH
 		return "", err
 	}
 	if len(items) == 0 {
-		return "", fmt.Errorf("未生成可用story相关元素")
+		return "", fmt.Errorf("未生成可用地方特色")
 	}
 	randomElem := items[rand.Intn(len(items))]
-	log.Printf("[scripter] story random element candidates=%d chosen=%q", len(items), randomElem)
+	log.Printf("[scripter] local feature candidates=%d chosen=%q", len(items), randomElem)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: architect.systemPrompt(`<role>COC故事背景补充编辑</role>
-<task>基于已有story和一个随机相关元素，生成后置背景补充；不要改写story本身。</task>
+		{Role: "system", Content: architect.systemPrompt(`<role>COC地方特色补充编辑</role>
+<task>基于已有背景和一个随机地方特色，生成后置背景补充；不要改写背景本身。</task>
 <rules>
-- 不得复述、改写或扩写story主干剧情。
-- 只补充事件发生地点、社会背景、经济产业、民俗文化中的设定。
-- 随机元素必须影响至少两个背景维度，不能只提到一次。
-- 补充设定要与story互相印证，不能孤立堆砌。
+- 不得复述、改写或扩写背景主干。
+- 只围绕地方特色补充日常生活、经济产业、民俗文化、治安或人际规矩中的设定。
+- 随机地方特色必须影响至少两个背景维度，不能只提到一次。
+- 补充设定要与已有背景互相印证，不能孤立堆砌。
 - 不得新增神话来源、幕后真相、NPC动机、线索路径或结局代价。
 - 不得加入机械/科技/声波/药剂解释神话，不得加入抽象情感祭品或象征钥匙。
-- 只输出背景补充正文，不要JSON、标题或修改说明。</rules>`)},
-		{Role: "user", Content: fmt.Sprintf("<story>\n%s\n</story>\n\n<random_elem>\n%s\n</random_elem>", story, randomElem)},
+- 只输出地方特色背景补充正文，不要JSON、标题或修改说明。</rules>`)},
+		{Role: "user", Content: fmt.Sprintf("<background>\n%s\n</background>\n\n<random_local_feature>\n%s\n</random_local_feature>", story, randomElem)},
 	}
 	raw, err := architect.provider.Chat(ctx, msgs)
 	if err != nil {
@@ -594,7 +650,7 @@ func generateStoryElementCandidates(ctx context.Context, architect agentHandle, 
 	}
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: architect.systemPrompt(storyElementSystemPrompt)},
-		{Role: "user", Content: "请根据以下story列举200个可加入背景设定的新设定。\n\n" + story},
+		{Role: "user", Content: "请根据以下背景列举200个可加入的地方特色。\n\n" + story},
 	}
 	raw, err := architect.provider.Chat(ctx, msgs)
 	if err != nil {
@@ -602,7 +658,7 @@ func generateStoryElementCandidates(ctx context.Context, architect agentHandle, 
 	}
 	items := parseElementNames(raw)
 	if len(items) == 0 {
-		return nil, fmt.Errorf("story相关元素列表为空")
+		return nil, fmt.Errorf("地方特色列表为空")
 	}
 	return items, nil
 }

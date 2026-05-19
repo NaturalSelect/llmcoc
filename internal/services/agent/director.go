@@ -579,6 +579,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(fmt.Sprintf("%s[%s]: %s\n", tag, gctx.UserName, gctx.UserInput))
 	}
 	userSB.WriteString("END CUR\n")
+	userSB.WriteString("Please remember to advance game time!\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
