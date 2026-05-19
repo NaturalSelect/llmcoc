@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"log"
 	"math/rand"
 	"strings"
@@ -258,11 +257,12 @@ const scenarioExample = `{
   }
 }`
 
-var randomTopicSystemPrompt = `<role>COC小说主题灵感提供器</role>
-<need>元素贴近日常、小尺度、普通人可接触；适合调查入口/地方传闻/人物关系。</need>
+var briefElementSystemPrompt = `<role>COC模组基础设定锁定器</role>
+<task>在story foundation之前,根据时代、主题和难度确定一组具体基础元素；只提供可被后续创作采用的时间、地点、社会环境、入口事件和实物线索种子,不写完整剧情,不随机发散名词链。</task>
+<need>元素必须贴近日常、小尺度、普通人可接触；适合调查入口、地方传闻、人物关系、场景布置或handout。</need>
 <prefer>街巷、店铺、学校、医院、旅馆、车站、码头、地方单位、普通职业、账本票据、邻里纠纷、家庭秘密、地方风俗。</prefer>
-<ban>宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究；如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。</ban>
-<out>仅名词列表；每行一个；无编号/解释/标题/描述句。</out>`
+<ban>宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究；如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。不得解释神话真相,不得写怪物、神祇、仪式或最终反转。</ban>
+<out>只输出简中纯文本,使用固定小节标题；不要JSON、Markdown表格、编号解释。</out>`
 
 // ---------------------------------------------------------------------------
 // Tool-call types for outline & QA phases
@@ -408,11 +408,7 @@ func randomNarrativeTemplate() string {
 	return narrativeTemplates[rand.Intn(len(narrativeTemplates))]
 }
 
-const (
-	briefElementExpansionEnabled = true
-	briefElementRounds           = 3
-	briefElementCount            = 200
-)
+const briefElementExpansionEnabled = true
 
 func randomTopicConstraints(threatNum int) string {
 	if threatNum > len(topicThreatOrigins) {
@@ -699,100 +695,49 @@ func polishStoryBrief(ctx context.Context, writer agentHandle, brief string) (st
 }
 
 func generateBriefElementExpansion(ctx context.Context, architect agentHandle, req ScenarioCreationRequest) (string, error) {
-	rounds := briefElementRounds
-	count := briefElementCount
-	rng := rand.New(rand.NewSource(seedFromScenarioRequest(req)))
-	selected := make([]string, 0, rounds)
-	allChosen := make([]string, 0, rounds)
-	focus := ""
-
-	for round := 0; round < rounds; round++ {
-		prompt := briefElementPrompt(req, focus, round, count, selected)
-		msgs := []llm.ChatMessage{
-			{Role: "system", Content: architect.systemPrompt(randomTopicSystemPrompt)},
-			{Role: "user", Content: prompt},
-		}
-		raw, err := architect.provider.Chat(ctx, msgs)
-		if err != nil {
-			return "", err
-		}
-		items := parseElementNames(raw)
-		if len(items) == 0 {
-			return "", fmt.Errorf("round %d 未生成可用元素", round+1)
-		}
-		choice := items[rng.Intn(len(items))]
-		allChosen = append(allChosen, choice)
-		selected = append(selected, choice)
-		focus = choice
-		log.Printf("[scripter] brief expansion round=%d items=%d chosen=%q", round+1, len(items), choice)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
 	}
-
-	return fmt.Sprintf("自动随机灵感链：时代=%s；选中元素=%s。请将这些元素全部纳入剧本核心设计，但避免逐字堆砌为清单。", req.Era, strings.Join(allChosen, "、")), nil
+	prompt := briefElementPrompt(req)
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: architect.systemPrompt(briefElementSystemPrompt)},
+		{Role: "user", Content: prompt},
+	}
+	raw, err := architect.provider.Chat(ctx, msgs)
+	if err != nil {
+		return "", err
+	}
+	brief := strings.TrimSpace(llm.StripCodeFence(raw))
+	if brief == "" {
+		return "", fmt.Errorf("brief expansion 未生成基础设定")
+	}
+	log.Printf("[scripter] brief expansion generated base elements len=%d", len([]rune(brief)))
+	return "【基础设定元素】\n" + brief + "\n\n请在后续创作奠基石中采用这些基础元素作为时间、地点、入口事件、场景和handout种子；它们不是完整剧情,不得把它们当作神话真相本身。", nil
 }
 
-func briefElementPrompt(req ScenarioCreationRequest, focus string, round int, count int, selected []string) string {
-	if round == 0 {
-		return fmt.Sprintf("列举%d个%s相关的COC小说可用元素，只包含名词。时代：%s。元素应贴近日常生活、小尺度、普通人可接触，适合作为调查入口、地方传闻或人物关系；覆盖街巷、店铺、学校、医院、旅馆、车站、码头、地方单位、普通职业、账本票据、邻里纠纷、家庭秘密、地方风俗等。禁止宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究元素，例如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。每行只能是一个名词。", count, req.Era, req.Era)
-	}
-	return fmt.Sprintf("从元素「%s」继续发散，列举%d个与它相关但更具体的%s时代COC小说元素，只包含名词。新元素必须保持日常、小尺度、普通人可接触，优先从场所、人际关系、普通职业、账目文书、地方传闻、生活物件、风俗事件发散。禁止宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究元素，例如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。已选元素：%s。不要重复已选元素，不要解释。", focus, count, req.Era, strings.Join(selected, "、"))
-}
+func briefElementPrompt(req ScenarioCreationRequest) string {
+	reqJSON, _ := json.Marshal(req)
+	return fmt.Sprintf(`请为以下COC模组请求确定一组基础设定元素。目标是锁定“发生在什么具体时间、什么具体地方、从什么日常事件进入、有哪些可用场所和实物资料”,不是随机发散,也不是写完整故事。
 
-func parseElementNames(raw string) []string {
-	raw = llm.StripCodeFence(strings.TrimSpace(raw))
-	raw = strings.ReplaceAll(raw, "，", "\n")
-	raw = strings.ReplaceAll(raw, ",", "\n")
-	raw = strings.ReplaceAll(raw, "、", "\n")
-	lines := strings.Split(raw, "\n")
-	items := make([]string, 0, len(lines))
-	seen := map[string]bool{}
-	for _, line := range lines {
-		name := normalizeElementName(line)
-		if name == "" || seen[name] {
-			continue
-		}
-		seen[name] = true
-		items = append(items, name)
-	}
-	return items
-}
+<request_json>
+%s
+</request_json>
 
-func normalizeElementName(s string) string {
-	s = strings.TrimSpace(s)
-	s = strings.TrimLeft(s, "-•*· ")
-	s = strings.TrimSpace(s)
-	if idx := strings.IndexAny(s, ".、)"); idx >= 0 && idx <= 4 {
-		prefix := strings.TrimSpace(s[:idx])
-		if prefix != "" {
-			allDigits := true
-			for _, r := range prefix {
-				if r < '0' || r > '9' {
-					allDigits = false
-					break
-				}
-			}
-			if allDigits {
-				s = strings.TrimSpace(s[idx+1:])
-			}
-		}
-	}
-	s = strings.Trim(s, " `\"'，。；;：:（）()【】[]《》")
-	if s == "" || strings.Contains(s, "：") || strings.Contains(s, ":") {
-		return ""
-	}
-	if len([]rune(s)) > 40 {
-		return ""
-	}
-	return strings.TrimSpace(s)
-}
+必须输出这些小节:
+【具体时间】给出符合时代的年份/季节/月份/星期/时段；如时代为现代,避免写成笼统“现代”。
+【地理位置】给出具体国家/地区/城市或镇区类型、街区/村镇/机构名称；尺度要适合短中篇调查,普通人能抵达。
+【社会与日常背景】说明当地产业、人际关系、公共压力或地方习俗,作为公开背景。
+【开局地点与介入事件】给出调查员能立即行动的起点场景和表面事件；不得剧透神话真相。
+【可用场景元素】列出3-6个日常地点或空间,如车站、诊所、旅馆、档案室、码头、市场、学校、社区办公室等。
+【人物关系种子】列出3-5个普通人关系或身份冲突,只写社会关系,不写谁是反派。
+【实物/Handout种子】列出3-5个可作为线索载体的物件,如报纸剪报、信件、地图、照片、账本、族谱、病历、票据、录音等；每个说明可能取得地点。
+【限制与禁区】说明本次基础设定应避免的宏大设施、科技解释、机械/声波/药剂解释、抽象情感钥匙。
 
-func seedFromScenarioRequest(req ScenarioCreationRequest) int64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(req.Salt + "|" + req.Name + "|" + req.Theme + "|" + req.Era))
-	seed := int64(h.Sum64())
-	if seed == 0 {
-		seed = 1
-	}
-	return seed
+要求:
+- 具体、可落地、贴近日常。
+- 不要选择国家级/军事/核能/航天/深海/高能物理/绝密研究地点。
+- 不要写神话实体、怪物、仪式、幕后真相、最终反转或结局。
+- 不要输出候选列表让后续随机选择；你必须直接确定一组基础元素。`, string(reqJSON))
 }
 
 func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, storyBrief string, npcNameBlacklist []string) (string, error) {
