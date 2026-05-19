@@ -240,7 +240,7 @@ var randomTopicSystemPrompt = `<role>COC地方背景设定生成器</role>
 <ban>宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究；如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。禁止输出随机元素清单。</ban>
 <out>仅输出一段300-600字的简中背景设定正文；不要JSON、Markdown、编号、标题或解释。</out>`
 
-var storyElementSystemPrompt = `<role>COC故事相关元素列举器</role>
+var storyElementSystemPrompt = `<role>COC故事相关背景设定列举器</role>
 <task>根据已有story列举可继续加入背景设定的新设定。</task>
 <need>元素必须贴合当前story，能补强事件发生地点、社会背景、经济产业或民俗文化。</need>
 <prefer>自然地理、人文地理、特色建筑、权力运作、执法安全、支柱产业、交通设施、商店银行旅店、走私等非法经济、财富分配、信仰风俗、地方禁忌、行业规矩。</prefer>
@@ -473,7 +473,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
 	}
 	if strings.TrimSpace(storyBrief) != "" {
-		expandedBrief, expandErr := injectRandomStoryElement(ctx, writer, storyBrief)
+		expandedBrief, expandErr := injectRandomStoryElement(ctx, architect, storyBrief)
 		if expandErr != nil {
 			log.Printf("[scripter] story random element injection failed: %v", expandErr)
 		} else if strings.TrimSpace(expandedBrief) != "" {
@@ -648,11 +648,11 @@ func generateStoryBrief(ctx context.Context, writer agentHandle, req ScenarioCre
 	return "", fmt.Errorf("story 达到最大迭代仍未返回 response")
 }
 
-func injectRandomStoryElement(ctx context.Context, writer agentHandle, story string) (string, error) {
+func injectRandomStoryElement(ctx context.Context, architect agentHandle, story string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
-	items, err := generateStoryElementCandidates(ctx, writer, story)
+	items, err := generateStoryElementCandidates(ctx, architect, story)
 	if err != nil {
 		return "", err
 	}
@@ -663,7 +663,7 @@ func injectRandomStoryElement(ctx context.Context, writer agentHandle, story str
 	log.Printf("[scripter] story random element candidates=%d chosen=%q", len(items), randomElem)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: writer.systemPrompt(`<role>COC故事背景整合编辑</role>
+		{Role: "system", Content: architect.systemPrompt(`<role>COC故事背景整合编辑</role>
 <task>把一个随机相关元素自然融入已有story。</task>
 <rules>
 - 保留原story的核心事实、神话来源、幕后真相、NPC动机、线索路径、结局代价。
@@ -674,22 +674,22 @@ func injectRandomStoryElement(ctx context.Context, writer agentHandle, story str
 - 只输出整合后的story正文，不要JSON、标题或修改说明。</rules>`)},
 		{Role: "user", Content: fmt.Sprintf("<story>\n%s\n</story>\n\n<random_elem>\n%s\n</random_elem>", story, randomElem)},
 	}
-	raw, err := writer.provider.Chat(ctx, msgs)
+	raw, err := architect.provider.Chat(ctx, msgs)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(llm.StripCodeFence(raw)), nil
 }
 
-func generateStoryElementCandidates(ctx context.Context, writer agentHandle, story string) ([]string, error) {
+func generateStoryElementCandidates(ctx context.Context, architect agentHandle, story string) ([]string, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: writer.systemPrompt(storyElementSystemPrompt)},
+		{Role: "system", Content: architect.systemPrompt(storyElementSystemPrompt)},
 		{Role: "user", Content: "请根据以下story列举200个可加入背景设定的新设定。\n\n" + story},
 	}
-	raw, err := writer.provider.Chat(ctx, msgs)
+	raw, err := architect.provider.Chat(ctx, msgs)
 	if err != nil {
 		return nil, err
 	}
