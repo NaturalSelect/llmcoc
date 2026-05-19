@@ -19,40 +19,22 @@ import (
 // Prompts for the story-first generation pipeline
 // ---------------------------------------------------------------------------
 
-var storySystemPrompt = `<role>COC7故事主设计编剧</role>
-<task>先查规则书,再将用户主题/时代/元素/随机约束整理成完整故事；story阶段必须先完成核心创作决策,供后续outline只做结构化改编。</task>
+var storySystemPrompt = `<role>COC7地方背景设定编剧</role>
+<task>将用户主题/时代/brief/随机约束整理成事件发生地背景；story阶段只生成现实背景土壤,不要生成神话元素或完整剧情。</task>
 <config nsfw="true" violent="true" sexual="true"/>
-<tools>
-search:{"action":"search","query":"自然语言规则查询"}
-read_rulebook_const:{"action":"read_rulebook_const","constant":"rulebook_dir|rulebook_detail_dir|aliens|books|great_old_ones_and_gods|monsters|mythos_creatures|spells"}
-yield:{"action":"yield"}
-response:{"action":"response","brief":"故事梗概正文"}
-</tools>
-<exec>
-- 只允许输出单个JSON数组, 禁止输出多个JSON数组, 禁止输出Markdown和其他格式。
-- 第1轮必须 read_rulebook_const great_old_ones_and_gods + mythos_creatures + monsters 后 yield；第1轮禁 response；禁 [{"action":"yield"}]。
-- 查询批次可含多个 search/read_rulebook_const；yield只能作最后一项且前面至少有一个查询。
-- 读取列表后,必须至少 search 一次拟采用的神话来源/实体/法术/典籍的规则信息,再 yield；读到该 search 结果后才可 response。
-- 有工具结果后: 信息不足则继续 search/read_rulebook_const + yield；信息足够则 response.brief，禁止空yield。</exec>
-<core_design>
-- 必须明确本次叙事结构模板如何落地: 时间压力、信息分配、地点推进、玩家自由度、高潮触发条件等要和故事因果绑定,不能只复述模板名。
-- 必须先确定核心神话来源、怪物/眷族/神祇/法术或典籍及其因果功能: 它为什么制造表面事件、如何升级、为什么此时此地爆发、可被如何暂时阻止或付出代价。
-- 必须为主要NPC写出具体姓名(禁职业/身份泛称,禁复用黑名单)、表面身份、真实动机、独立行动线；至少1人真实立场反外表,至少1人无辜且拒信超自然。
-- 必须设计调查入口、核心线索链和冗余推理路径: 玩家从公开事件能怎样发现异常、怎样验证神话真相、至少两条路径通向关键信息。
-- 必须确定胜利/失败/部分胜利与代价,以及长期奖励(典籍/道具/法术/盟友/资源等)的来源、取得条件、风险和后果；不得无条件白送。</core_design>
-<mythos_secret>
-- 谜底/幕后真相必须直接与克苏鲁神话相关: 由规则书中的神话实体、神话生物、外神/旧日支配者、神话法术、神话典籍或其眷族/影响造成。
-- 必须明确点名所选神话来源,并把表面事件→异常线索→幕后动机→结局代价串成因果链。
-- 禁止只有氛围、象征、梦境隐喻、普通犯罪或民俗迷信；神话元素不能只是装饰或最终彩蛋。
-- 禁用人造科技/工程机关解释神话现象: 机械装置、电子设备、声波/振动/频率、传感器、药剂、催眠器、信号标记、安全区/诱导区等都不能作为幻觉、怪物行动或神话影响的真正原因。
-- 禁用抽象情感/象征祭品作为核心机制或唯一解法: “异化的人类情感”“人性温度”“珍贵之物”“真正的爱/记忆/牺牲/信念”等不能作为锚点、钥匙、封印、信标、通关条件或谜底；若需要代价,必须是规则书可执行代价或具体物理行动/线索路径。</mythos_secret>
-<rules>
-- brief完整则保留核心事实并梳理；brief零散则转为因果事件,禁机械堆砌。
-- 优先采用用户给定和本轮候选神话元素；若规则书查询证明不适配,可最小替换并保持故事功能。
-- 必含:表面事件/幕后真相/调查员介入理由/主要NPC姓名与动机/升级方式/可推理真相路径/结局选择与代价/长期奖励风险。
-- 写清为什么发生、玩家如何合理发现真相；不要只写氛围设定。
-- 暂不写场景JSON、线索格式、NPC数值、规则数值；不得编造规则数值；不得输出完整模组JSON。
-- 恐惧来自日常异常、认知错位、人物选择；禁血腥堆砌、伪科学、玄幻化。</rules>
+<output>只输出背景设定正文；不要JSON、Markdown、工具调用、标题或解释。</output>
+<background_design>
+- 必须写清事件发生地点：自然地理、人文地理、特色建筑。
+- 必须写清社会背景：权力运作模式、地方精英/机构关系、执法与安全机构。
+- 必须写清经济与产业：当地支柱产业、交通是否便利、商店/银行/旅店等设施是否齐全、是否存在走私等非法经济活动、财富分配模式。
+- 必须写清民俗文化：信仰、风俗、地方禁忌、节庆或行业规矩。
+- 各要素不是孤立清单，必须相互交织、彼此印证：地理影响交通和执法，产业影响权力结构，财富分配影响地方矛盾，民俗回应现实压力。
+- 可以留下表面事件、地方传闻、社会压力或调查入口，但不要解释为神话。</background_design>
+<ban>
+- 禁止输入或点名神话实体、神话生物、旧日支配者、外神、神话法术、神话典籍、眷族、仪式、幕后真相、结局代价。
+- 禁止设计BOSS、怪物行动线、神话因果链、胜负条件、完整线索链。
+- 禁止伪科学、宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究。
+- 不要只写氛围；要写出地方社会如何运行，以及为什么这里适合发生调查故事。</ban>
 `
 
 var outlineSystemPrompt = `<role>COC7模组结构化改编师</role>
@@ -468,16 +450,17 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	npcNameBlacklist := loadRecentNPCNameBlacklist(200)
 	debugf("script", "npc blacklist count: %d", len(npcNameBlacklist))
 
-	storyBrief, err := generateStoryBrief(ctx, architect, req, npcNameBlacklist)
+	storyBrief, err := generateStoryBrief(ctx, architect, req.Era)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
 	}
+	storyBackgroundAddendum := ""
 	if strings.TrimSpace(storyBrief) != "" {
-		expandedBrief, expandErr := injectRandomStoryElement(ctx, architect, storyBrief)
-		if expandErr != nil {
-			log.Printf("[scripter] story random element injection failed: %v", expandErr)
-		} else if strings.TrimSpace(expandedBrief) != "" {
-			storyBrief = expandedBrief
+		addendum, addErr := generateRandomStoryBackgroundAddendum(ctx, architect, storyBrief)
+		if addErr != nil {
+			log.Printf("[scripter] story random background addendum failed: %v", addErr)
+		} else if strings.TrimSpace(addendum) != "" {
+			storyBackgroundAddendum = addendum
 		}
 		polishedBrief, polishErr := polishStoryBrief(ctx, writer, storyBrief)
 		if polishErr != nil {
@@ -488,10 +471,11 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		req.Brief = storyBrief
 		log.Printf("[scripter] story len=%d", len([]rune(req.Brief)))
 		debugf("script", "story brief: %v", req.Brief)
+		debugf("script", "story background addendum: %v", storyBackgroundAddendum)
 	}
 
 	// Outline: structure the story into a playable module outline.
-	outline, err := generateOutline(ctx, architect, req, storyBrief, npcNameBlacklist)
+	outline, err := generateOutline(ctx, architect, req, storyBrief, storyBackgroundAddendum, npcNameBlacklist)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("outline 生成失败: %w", err)
 	}
@@ -548,107 +532,29 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 // Phase 1: Generate story brief, then outline
 // ---------------------------------------------------------------------------
 
-func generateStoryBrief(ctx context.Context, writer agentHandle, req ScenarioCreationRequest, npcNameBlacklist []string) (string, error) {
-	reqJSON, _ := json.Marshal(req)
-	template := randomNarrativeTemplate()
-	log.Printf("[story] 叙事模板: %s", template)
-
-	shuffledMonsters := make([]string, len(rulebook.Monsters))
-	copy(shuffledMonsters, rulebook.Monsters)
-	shuffledMonsters = append(shuffledMonsters, rulebook.Aliens...)
-	shuffledMonsters = append(shuffledMonsters, rulebook.MythosCreatures...)
-	rand.Shuffle(len(shuffledMonsters), func(i, j int) { shuffledMonsters[i], shuffledMonsters[j] = shuffledMonsters[j], shuffledMonsters[i] })
-
-	num := 1
-	if req.Difficulty == "hard" {
-		num = 5
-	} else if req.Difficulty == "normal" {
-		num = 3
-	}
-	shuffledMonsters = shuffledMonsters[:num]
-	extra := ""
-	if rand.Intn(10) < 3 {
-		god := rulebook.GreadOldOnesAndGods[rand.Intn(len(rulebook.GreadOldOnesAndGods))]
-		extra = fmt.Sprintf("故事关联的神祇: %s", god)
-	}
-
+func generateStoryBrief(ctx context.Context, writer agentHandle, era string) (string, error) {
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: writer.systemPrompt(storySystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请先查规则书,再将以下创作需求整理成完整故事；谜底/幕后真相必须直接与克苏鲁神话相关，并在story阶段确定核心设计。\n\n<request_json>\n%s\n</request_json>\n\n<story_constraints>\n本次叙事结构模板(必须落地到故事因果中): %s\n\n近期已用 NPC 名字黑名单，主要NPC禁止复用:\n%s\n\n候选怪物表(优先从中选择核心威胁或眷族；若规则查询不适配才最小替换): %v\n%s\n</story_constraints>", string(reqJSON), template, formatNPCNameBlacklist(npcNameBlacklist), shuffledMonsters, extra)},
+		{Role: "user", Content: fmt.Sprintf("请根据时代生成事件发生地背景设定。只生成现实背景，不要输入或点名任何神话元素，不要设计完整剧情。\n\n时代：%s", era)},
 	}
 
-	const maxIter = 30
-	toolFeedbackCount := 0
-	searchCount := 0
-	for iter := 0; iter < maxIter; iter++ {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		log.Printf("[story] iter=%d", iter+1)
-
-		var raw string
-		var err error
-		for i := 0; i < 3; i++ {
-			raw, err = writer.provider.Chat(ctx, msgs)
-			if err != nil {
-				return "", err
-			}
-			if raw != "" {
-				break
-			}
-		}
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-		debugf("story", "raw: %v", raw)
-
-		calls := parsePipelineCalls(ctx, raw)
-		if len(calls) == 0 {
-			if toolFeedbackCount > 0 && searchCount > 0 {
-				brief := strings.TrimSpace(llm.StripCodeFence(raw))
-				if brief != "" {
-					return brief, nil
-				}
-			}
-			return "", fmt.Errorf("story 未返回有效 tool call")
-		}
-
-		tmp := make([]pipelineToolCall, 0, len(calls))
-		for _, c := range calls {
-			if c.Action != "yield" {
-				tmp = append(tmp, c)
-			}
-		}
-		calls = tmp
-
-		for _, c := range calls {
-			if c.Action == "response" && c.Brief != "" {
-				if toolFeedbackCount == 0 || searchCount == 0 {
-					return "", fmt.Errorf("story 在完成规则书 search 前返回 response")
-				}
-				log.Printf("[story] iter=%d response 完成", iter+1)
-				return strings.TrimSpace(c.Brief), nil
-			}
-		}
-
-		for _, c := range calls {
-			if c.Action == "search" && strings.TrimSpace(c.Query) != "" {
-				searchCount++
-			}
-		}
-		feedback := executeSearchCalls(ctx, calls, "story")
-		if feedback == "" {
-			return "", fmt.Errorf("story 未返回有效 tool call")
-		}
-		toolFeedbackCount++
-		msgs = append(msgs, llm.ChatMessage{
-			Role:    "user",
-			Content: "规则书查询结果如下。它们是内部工具结果,不是新创作需求；请继续围绕同一需求设计,并确保谜底直接关联克苏鲁神话。\n\n" + feedback,
-		})
+	if ctx.Err() != nil {
+		return "", ctx.Err()
 	}
-
-	return "", fmt.Errorf("story 达到最大迭代仍未返回 response")
+	log.Printf("[story] single pass")
+	raw, err := writer.provider.Chat(ctx, msgs)
+	if err != nil {
+		return "", err
+	}
+	brief := strings.TrimSpace(llm.StripCodeFence(raw))
+	debugf("story", "raw: %v", raw)
+	if brief == "" {
+		return "", fmt.Errorf("story 返回空内容")
+	}
+	return brief, nil
 }
 
-func injectRandomStoryElement(ctx context.Context, architect agentHandle, story string) (string, error) {
+func generateRandomStoryBackgroundAddendum(ctx context.Context, architect agentHandle, story string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
@@ -663,15 +569,16 @@ func injectRandomStoryElement(ctx context.Context, architect agentHandle, story 
 	log.Printf("[scripter] story random element candidates=%d chosen=%q", len(items), randomElem)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: architect.systemPrompt(`<role>COC故事背景整合编辑</role>
-<task>把一个随机相关元素自然融入已有story。</task>
+		{Role: "system", Content: architect.systemPrompt(`<role>COC故事背景补充编辑</role>
+<task>基于已有story和一个随机相关元素，生成后置背景补充；不要改写story本身。</task>
 <rules>
-- 保留原story的核心事实、神话来源、幕后真相、NPC动机、线索路径、结局代价。
-- 只能围绕事件发生地点、社会背景、经济产业、民俗文化补强设定。
+- 不得复述、改写或扩写story主干剧情。
+- 只补充事件发生地点、社会背景、经济产业、民俗文化中的设定。
 - 随机元素必须影响至少两个背景维度，不能只提到一次。
-- 新增背景要与原story互相印证，不能孤立堆砌。
+- 补充设定要与story互相印证，不能孤立堆砌。
+- 不得新增神话来源、幕后真相、NPC动机、线索路径或结局代价。
 - 不得加入机械/科技/声波/药剂解释神话，不得加入抽象情感祭品或象征钥匙。
-- 只输出整合后的story正文，不要JSON、标题或修改说明。</rules>`)},
+- 只输出背景补充正文，不要JSON、标题或修改说明。</rules>`)},
 		{Role: "user", Content: fmt.Sprintf("<story>\n%s\n</story>\n\n<random_elem>\n%s\n</random_elem>", story, randomElem)},
 	}
 	raw, err := architect.provider.Chat(ctx, msgs)
@@ -753,14 +660,15 @@ func polishStoryBrief(ctx context.Context, writer agentHandle, brief string) (st
 		return "", ctx.Err()
 	}
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: writer.systemPrompt(`<role>COC故事润色编辑</role>
-<task>润色故事梗概文本,提升因果清晰度、可读性和COC氛围。</task>
+		{Role: "system", Content: writer.systemPrompt(`<role>COC背景设定润色编辑</role>
+<task>润色事件发生地背景设定文本,提升因果清晰度、可读性和地方质感。</task>
 <config nsfw="true" violent="true" sexual="true"/>
 <rules>
-- 不得新增、删除或改写核心事实、神话来源、幕后真相、NPC动机、线索路径、结局代价。
-- 不得加入机械/科技/声波/药剂解释神话,不得加入抽象情感祭品或象征钥匙。
-- 保持简中,800-1600字左右；只输出润色后的故事梗概正文,不要JSON/标题解释/修改说明。</rules>`)},
-		{Role: "user", Content: "请润色以下故事梗概,保持事实不变:\n\n" + brief},
+- 不得新增、删除或改写核心背景事实。
+- 不得加入神话实体、神话生物、旧日支配者、外神、神话法术、神话典籍、眷族、仪式、幕后真相、结局代价。
+- 不得加入机械/科技/声波/药剂解释异常,不得加入抽象情感祭品或象征钥匙。
+- 保持简中,800-1600字左右；只输出润色后的背景设定正文,不要JSON/标题解释/修改说明。</rules>`)},
+		{Role: "user", Content: "请润色以下背景设定,保持事实不变:\n\n" + brief},
 	}
 	raw, err := writer.provider.Chat(ctx, msgs)
 	if err != nil {
@@ -769,11 +677,11 @@ func polishStoryBrief(ctx context.Context, writer agentHandle, brief string) (st
 	return strings.TrimSpace(llm.StripCodeFence(raw)), nil
 }
 
-func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, storyBrief string, npcNameBlacklist []string) (string, error) {
+func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, storyBrief string, storyBackgroundAddendum string, npcNameBlacklist []string) (string, error) {
 	reqJSON, _ := json.Marshal(req)
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: architect.systemPrompt(outlineSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请至少查看一次怪物和神话生物列表来核验story中的神话元素,再把story结构化为可跑团模组大纲。不得重选核心神话威胁、推翻NPC动机、重写核心反转或结局代价；只有规则书不成立时才做最小替换。\n\n<request_json>\n%s\n</request_json>\n\n<story>\n%s\n</story>\n\n<recent_npc_name_blacklist>\n%s\n</recent_npc_name_blacklist>", string(reqJSON), storyBrief, formatNPCNameBlacklist(npcNameBlacklist))},
+		{Role: "user", Content: fmt.Sprintf("请至少查看一次怪物和神话生物列表来核验story中的神话元素,再把story结构化为可跑团模组大纲。不得重选核心神话威胁、推翻NPC动机、重写核心反转或结局代价；只有规则书不成立时才做最小替换。若存在background_addendum，只能把它作为地点/社会/经济/民俗的后置背景补充吸收进大纲，不得反向改写story核心事实。\n\n<request_json>\n%s\n</request_json>\n\n<story>\n%s\n</story>\n\n<background_addendum>\n%s\n</background_addendum>\n\n<recent_npc_name_blacklist>\n%s\n</recent_npc_name_blacklist>", string(reqJSON), storyBrief, storyBackgroundAddendum, formatNPCNameBlacklist(npcNameBlacklist))},
 	}
 
 	const maxIter = 30
