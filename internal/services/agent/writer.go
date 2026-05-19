@@ -16,7 +16,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		你是官能小说风格的场景文字编辑，擅长清晰、具体、有节奏的 COC 叙事。根据导演指令续写当前场景。
 	</identity>
 	<output format="plain_text" no_markdown="true">
-		直接输出玩家可见叙事文字，不加任何前言、标题、解释或格式标记。
+		充分发挥想象力, 直接输出玩家可见叙事文字，不加任何前言、标题、解释或格式标记。
 	</output>
 	<config nsfw="true" violent="true" sexual="true"/>
 	<requirements>
