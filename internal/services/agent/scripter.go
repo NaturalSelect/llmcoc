@@ -229,14 +229,18 @@ var storyElementSystemPrompt = `<role>COC地方特色列举器</role>
 <ban>不要列神话实体、怪物、法术、仪式、幕后真相、结局、抽象主题词、宏大设施或通用背景词。</ban>
 <out>仅输出地方特色名称列表；每行一个；正好200个；无编号、解释、标题或描述句。</out>`
 
-var geographyElementSystemPrompt = `<role>COC地理候选列举器</role>
-<task>根据用户给定阶段列举20个可用于事件发生地的地理候选。</task>
+var geographyElementSystemPrompt = `<role>COC事件发生地候选列举器</role>
+<task>根据用户给定阶段列举20个可用于事件发生地的候选。</task>
 <rules>
-- 严格按用户要求的阶段输出候选。
-- 国家阶段输出具体国家或具体政权范围。
-- 非国家阶段只输出类型/形态/区位模式，不输出具体地名、真实行政区名、真实城市名或真实街区名。
+- 严格按用户要求的阶段输出候选，不得偷换成行政区划清单。
+- country阶段输出具体国家或具体政权范围。
+- 非country阶段只输出类型/形态/区位模式，不输出具体地名、真实行政区名、真实城市名或真实街区名。
+- natural_geography阶段必须输出自然地理/地形/水文/气候约束类型。
+- human_geography阶段必须输出人文地理/聚落形态/人口构成/地方空间组织类型。
+- economy_transport阶段必须输出交通可达性、产业空间或非法经济空间类型。
+- landmark_stage阶段必须输出特色建筑、地标或关键公共空间类型。
 - 只输出现实地理/人文地理候选，不输出神话元素、怪物、仪式、幕后真相。
-- 候选应适合COC调查故事，具有地方社会、交通、产业或民俗延展空间。
+- 候选应适合COC调查故事，具有地方社会、交通、产业、执法或民俗延展空间。
 - 每行一个名称，正好20个，不要编号、解释、标题或描述句。</rules>`
 
 // ---------------------------------------------------------------------------
@@ -549,7 +553,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 func generateStoryBrief(ctx context.Context, writer agentHandle, era string, threat string, geographyChain []string) (string, error) {
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: writer.systemPrompt(storySystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请根据时代、威胁参考和地理约束生成事件发生地背景设定。只生成现实背景，不要点名神话实体/怪物/法术/典籍，不要设计完整剧情。威胁参考只能转化为社会压力、地方矛盾、传闻或调查入口。地理约束中只有国家是具体地点，后续都是地点类型/形态；你需要基于这些类型自行创造合理的虚构区域、聚落、街区或建筑名称，并让它们符合该国家与时代。\n\n时代：%s\n威胁参考：%s\n地理约束：%s", era, threat, strings.Join(geographyChain, " → "))},
+		{Role: "user", Content: fmt.Sprintf("请根据时代、威胁参考和事件发生地约束生成背景设定。只生成现实背景，不要点名神话实体/怪物/法术/典籍，不要设计完整剧情。威胁参考只能转化为社会压力、地方矛盾、传闻或调查入口。事件发生地约束中只有国家是具体地点，后续分别是自然地理、人文地理、经济交通、特色建筑/地标类型；你需要基于这些类型自行创造合理的虚构区域、聚落、街区或建筑名称，并让它们符合该国家与时代。背景必须把自然地理、人文地理、特色建筑、权力运作、执法安全、经济产业、交通便利性、商店/银行/旅店设施、非法经济、财富分配、民俗文化相互交织起来。\n\n时代：%s\n威胁参考：%s\n事件发生地约束：%s", era, threat, strings.Join(geographyChain, " → "))},
 	}
 
 	if ctx.Err() != nil {
@@ -575,10 +579,10 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 		Examples string
 	}{
 		{Key: "country", Mode: "具体国家或具体政权范围", Examples: "美国、英国、法兰西第三共和国、埃及王国、英属印度"},
-		{Key: "region_type", Mode: "国家内部区域类型/形态，不输出具体地名", Examples: "边疆省份、矿业州、殖民地、山地边区、河谷农业带、群岛辖区"},
-		{Key: "place_type", Mode: "区域内地点类型/形态，不输出具体地名", Examples: "工业港口、铁路枢纽小城、衰败矿镇、温泉疗养镇、偏远林业营地、边境集市"},
-		{Key: "settlement_type", Mode: "聚落或街区类型/形态，不输出具体地名", Examples: "码头仓库区、教会山坡街区、矿工棚户区、旧商业街、移民聚居巷、伐木营地"},
-		{Key: "landmark_type", Mode: "特色自然地理、人文地理或标志建筑类型/形态，不输出具体地名", Examples: "潮汐沼泽、废弃采石场、木栈码头、山口桥梁、市场钟楼、旧海关楼"},
+		{Key: "natural_geography", Mode: "自然地理/地形/水文/气候约束类型，不输出具体地名", Examples: "潮湿三角洲、内陆盐碱盆地、林木覆盖的山谷、风暴频发海岸、喀斯特丘陵、冻土边缘河谷、雾重的湖沼地带"},
+		{Key: "human_geography", Mode: "人文地理/聚落形态/人口构成/地方空间组织类型，不输出具体地名", Examples: "移民混居矿镇、教会控制的山坡聚落、铁路公司镇、季节性猎户营地、族裔分隔港区、庄园佃农村落、疗养院附属小镇、城市、大都会"},
+		{Key: "economy_transport", Mode: "交通可达性、支柱产业、商业设施或非法经济空间类型，不输出具体地名", Examples: "单线铁路末端、河运转运码头、衰败煤矿产业带、走私盐酒通道、银行兼邮局的商业街、每周集市牲畜交易场、伐木铁路支线"},
+		{Key: "landmark_stage", Mode: "特色建筑、地标或关键公共空间类型，不输出具体地名", Examples: "旧海关楼、废弃采石场、木栈码头、市场钟楼、铁路水塔、山口桥梁、砖砌警署兼拘留室、地方报社小楼"},
 	}
 	chain := make([]string, 0, len(stages))
 	msgs := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)}}
