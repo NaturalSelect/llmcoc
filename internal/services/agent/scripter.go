@@ -580,6 +580,9 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 			log.Printf("[scripter] geography stage=%q candidates=0", stage.Key)
 			return chain, fmt.Errorf("%s 候选为空", stage.Key)
 		}
+		if stage.Key == "human_geography" {
+			items = append(items, "城市")
+		}
 		choice := items[rand.Intn(len(items))]
 		chain = append(chain, choice)
 		log.Printf("[scripter] geography stage=%q candidates=%v chosen=%q", stage.Key, items, choice)
