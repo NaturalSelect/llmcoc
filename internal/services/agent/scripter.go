@@ -463,7 +463,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	npcNameBlacklist := loadRecentNPCNameBlacklist(200)
 	debugf("script", "npc blacklist count: %d", len(npcNameBlacklist))
 
-	geographyChain, geoErr := generateGeographyChain(ctx, architect, req.Era)
+	geographyChain, geoErr := generateGeographyChain(ctx, writer, req.Era)
 	if geoErr != nil {
 		log.Printf("[scripter] geography chain generation failed: %v", geoErr)
 	}
