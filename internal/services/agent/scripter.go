@@ -138,7 +138,14 @@ search:{"action":"search","query":"自然语言规则查询"}
 read_rulebook_const:{"action":"read_rulebook_const","constant":"rulebook_dir|rulebook_detail_dir|aliens|books|great_old_ones_and_gods|monsters|mythos_creatures|spells"}
 response:{"action":"response","result":{"score":N,"pass":bool,"strengths":[...],"issues":[...],"must_fix":[...]}}
 </tools>
-<exec>只输出JSON数组；先用 search/read_rulebook_const 核实怪物/法术/技能等,再response；查询批次与response不混用。</exec>
+<exec>
+- 只允许输出单个JSON数组,数组元素只能是 search/read_rulebook_const/response 三类之一。
+- 禁止输出 yield/think/comment/markdown/自然语言/空数组/空对象/缺少 query 的 search/缺少 constant 的 read_rulebook_const。
+- 第1轮必须输出至少1个 read_rulebook_const 和至少1个 search,用于核实草案中的怪物/法术/技能/神话来源；第1轮禁止 response。
+- 查询轮示例:[{"action":"read_rulebook_const","constant":"monsters"},{"action":"search","query":"深潜者 COC7 属性与行为"}]
+- 收到规则书搜索结果后,若信息足够,必须只输出1个 response action；response 不得和 search/read_rulebook_const 混用。
+- response轮示例:[{"action":"response","result":{"score":85,"pass":true,"strengths":["结构完整"],"issues":[],"must_fix":[]}}]
+- 若信息仍不足,继续输出至少1个有效 search/read_rulebook_const；任何轮次都不得输出空查询或等待动作。</exec>
 <score total="100">
 结构20: 场景/NPC/线索/胜负齐全,lose/partial有意义。
 线索15: 含[真实]/[隐藏],有冗余路径。
