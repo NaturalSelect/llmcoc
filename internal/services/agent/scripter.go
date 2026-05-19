@@ -416,10 +416,6 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	if err != nil {
 		return ScenarioCreationOutput{}, err
 	}
-	writer, err := loadSingleAgent(models.AgentRoleWriter)
-	if err != nil {
-		return ScenarioCreationOutput{}, err
-	}
 
 	if req.Theme == "" {
 		num := 1
@@ -442,7 +438,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	npcNameBlacklist := loadRecentNPCNameBlacklist(200)
 	debugf("script", "npc blacklist count: %d", len(npcNameBlacklist))
 
-	geographyChain, geoErr := generateGeographyChain(ctx, writer, req.Era)
+	geographyChain, geoErr := generateGeographyChain(ctx, architect, req.Era)
 	if geoErr != nil {
 		log.Printf("[scripter] geography chain generation failed: %v", geoErr)
 	}
@@ -451,12 +447,6 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
 	}
 	if strings.TrimSpace(storyBrief) != "" {
-		polishedBrief, polishErr := polishStoryBrief(ctx, writer, storyBrief)
-		if polishErr != nil {
-			log.Printf("[scripter] story brief polish failed: %v", polishErr)
-		} else if strings.TrimSpace(polishedBrief) != "" {
-			storyBrief = polishedBrief
-		}
 		req.Brief = storyBrief
 		log.Printf("[scripter] story len=%d", len([]rune(req.Brief)))
 		debugf("script", "story brief: %v", req.Brief)
@@ -643,28 +633,6 @@ func normalizeElementName(s string) string {
 		return ""
 	}
 	return strings.TrimSpace(s)
-}
-
-func polishStoryBrief(ctx context.Context, writer agentHandle, brief string) (string, error) {
-	if ctx.Err() != nil {
-		return "", ctx.Err()
-	}
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: writer.systemPrompt(`<role>COC背景设定润色编辑</role>
-<task>润色事件发生地背景设定文本,提升因果清晰度、可读性和地方质感。</task>
-<config nsfw="true" violent="true" sexual="true"/>
-<rules>
-- 不得新增、删除或改写核心背景事实。
-- 不得加入神话实体、神话生物、旧日支配者、外神、神话法术、神话典籍、眷族、仪式、幕后真相、结局代价。
-- 不得加入机械/科技/声波/药剂解释异常,不得加入抽象情感祭品或象征钥匙。
-- 保持简中,800-1600字左右；只输出润色后的背景设定正文,不要JSON/标题解释/修改说明。</rules>`)},
-		{Role: "user", Content: "请润色以下背景设定,保持事实不变:\n\n" + brief},
-	}
-	raw, err := writer.provider.Chat(ctx, msgs)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(llm.StripCodeFence(raw)), nil
 }
 
 func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, storyBrief string, npcNameBlacklist []string) (string, error) {
