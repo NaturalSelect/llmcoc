@@ -197,6 +197,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	// timeAdvancedInTurn tracks whether advance_time was called so we can skip the
 	// normal per-turn +1 advancement at the end (the KP already pushed the clock).
 	timeAdvancedInTurn := false
+	wroteNarrative := false
 	var kpNarration string
 
 	// Seed KP with read-only transcript context. Do not pass previous user turns
@@ -275,6 +276,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			KPNarration:        &kpNarration,
 			Interrupt:          &interrupt,
 			PendingWrite:       &pendingWrite,
+			WroteNarrative:     &wroteNarrative,
 		}
 
 		switchInThisBatch := false
@@ -381,7 +383,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					break
 				}
 				if checkTurnReadyForPlayers(gctx, turnPlayerIDs) {
-					if pendingWrite != "" {
+					if wroteNarrative {
 						// Real game turn: narrative was written, advance the clock.
 						advanceTurnRound(&gctx)
 					} else {

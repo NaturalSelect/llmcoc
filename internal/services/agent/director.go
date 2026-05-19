@@ -503,7 +503,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
 	var userSB strings.Builder
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
-	userSB.WriteString("\n\n Curr Game Time" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + " 第" + fmt.Sprint(gctx.Session.TurnRound) + "回合, 请留意时限条件\n")
+	userSB.WriteString("\n\n<now>" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</now>\n")
 	// Inject found clues summary so KP knows which clues are already revealed.
 	if len(gctx.Session.FoundClues.Data) > 0 {
 		userSB.WriteString("\n【本局已发现线索】\n")
@@ -579,7 +579,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(fmt.Sprintf("%s[%s]: %s\n", tag, gctx.UserName, gctx.UserInput))
 	}
 	userSB.WriteString("END CUR\n")
-	userSB.WriteString("Please remember to advance game time!\n")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",

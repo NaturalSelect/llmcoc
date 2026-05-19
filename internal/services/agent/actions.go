@@ -28,6 +28,7 @@ type ActionContext struct {
 	SwitchRole         *bool
 	KPNarration        *string
 	PendingWrite       *string
+	WroteNarrative     *bool
 	Interrupt          *bool
 }
 
@@ -415,6 +416,9 @@ func (foundClueAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		}
 	}
 	*actx.PendingWrite += fmt.Sprintf("\n【线索已获得】%s\n", clubsText)
+	if actx.WroteNarrative != nil {
+		*actx.WroteNarrative = true
+	}
 	*actx.KPNarration += fmt.Sprintf("\n【线索已获得】%s\n", clubsText)
 	return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("clue[%d] recorded: %s", idx, clubsText)}}
 }
@@ -501,6 +505,9 @@ type writeAction struct{}
 
 func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	*actx.PendingWrite += fmt.Sprintf("%s\n", call.Direction)
+	if actx.WroteNarrative != nil {
+		*actx.WroteNarrative = true
+	}
 	debugf("tool", "session=%d write direction=%s", actx.Sid, call.Direction)
 	return nil
 }
