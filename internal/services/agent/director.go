@@ -429,6 +429,8 @@ SPECIFIC CHEAT PATTERNS — treat each as a hard error requiring immediate rejec
 </normal>
 
 </rules>
+
+FORBIDDEN TO OUTPUT EMPTY RESPONSES.
 `
 
 func extraKPMessage(msg string) (s string) {
