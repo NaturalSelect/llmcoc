@@ -20,8 +20,8 @@ import (
 // Prompts for the story-first generation pipeline
 // ---------------------------------------------------------------------------
 
-var storySystemPrompt = `<role>COC7故事编剧</role>
-<task>先查规则书,再将用户主题/时代/元素/随机约束整理成因果清晰、动机明确、适合改编为调查模组的故事梗概。</task>
+var storySystemPrompt = `<role>COC7故事主设计编剧</role>
+<task>先查规则书,再将用户主题/时代/元素/随机约束整理成完整故事；story阶段必须先完成核心创作决策,供后续outline只做结构化改编。</task>
 <config nsfw="true" violent="true" sexual="true"/>
 <tools>
 search:{"action":"search","query":"自然语言规则查询"}
@@ -33,8 +33,14 @@ response:{"action":"response","brief":"故事梗概正文"}
 - 只允许输出单个JSON数组, 禁止输出多个JSON数组, 禁止输出Markdown和其他格式。
 - 第1轮必须 read_rulebook_const great_old_ones_and_gods + mythos_creatures + monsters 后 yield；第1轮禁 response；禁 [{"action":"yield"}]。
 - 查询批次可含多个 search/read_rulebook_const；yield只能作最后一项且前面至少有一个查询。
-- 读取列表后,必须至少 search 一次所选神话来源/实体/法术/典籍的规则信息,再 yield；读到该 search 结果后才可 response。
+- 读取列表后,必须至少 search 一次拟采用的神话来源/实体/法术/典籍的规则信息,再 yield；读到该 search 结果后才可 response。
 - 有工具结果后: 信息不足则继续 search/read_rulebook_const + yield；信息足够则 response.brief，禁止空yield。</exec>
+<core_design>
+- 必须明确本次叙事结构模板如何落地: 时间压力、信息分配、地点推进、玩家自由度、高潮触发条件等要和故事因果绑定,不能只复述模板名。
+- 必须先确定核心神话来源、怪物/眷族/神祇/法术或典籍及其因果功能: 它为什么制造表面事件、如何升级、为什么此时此地爆发、可被如何暂时阻止或付出代价。
+- 必须为主要NPC写出具体姓名(禁职业/身份泛称,禁复用黑名单)、表面身份、真实动机、独立行动线；至少1人真实立场反外表,至少1人无辜且拒信超自然。
+- 必须设计调查入口、核心线索链和冗余推理路径: 玩家从公开事件能怎样发现异常、怎样验证神话真相、至少两条路径通向关键信息。
+- 必须确定胜利/失败/部分胜利与代价,以及长期奖励(典籍/道具/法术/盟友/资源等)的来源、取得条件、风险和后果；不得无条件白送。</core_design>
 <mythos_secret>
 - 谜底/幕后真相必须直接与克苏鲁神话相关: 由规则书中的神话实体、神话生物、外神/旧日支配者、神话法术、神话典籍或其眷族/影响造成。
 - 必须明确点名所选神话来源,并把表面事件→异常线索→幕后动机→结局代价串成因果链。
@@ -43,14 +49,15 @@ response:{"action":"response","brief":"故事梗概正文"}
 - 禁用抽象情感/象征祭品作为核心机制或唯一解法: “异化的人类情感”“人性温度”“珍贵之物”“真正的爱/记忆/牺牲/信念”等不能作为锚点、钥匙、封印、信标、通关条件或谜底；若需要代价,必须是规则书可执行代价或具体物理行动/线索路径。</mythos_secret>
 <rules>
 - brief完整则保留核心事实并梳理；brief零散则转为因果事件,禁机械堆砌。
-- 必含:表面事件/幕后真相/调查员介入理由/主要NPC动机/升级方式/可推理真相路径/结局选择与代价。
+- 优先采用用户给定和本轮候选神话元素；若规则书查询证明不适配,可最小替换并保持故事功能。
+- 必含:表面事件/幕后真相/调查员介入理由/主要NPC姓名与动机/升级方式/可推理真相路径/结局选择与代价/长期奖励风险。
 - 写清为什么发生、玩家如何合理发现真相；不要只写氛围设定。
-- 暂不写场景JSON、线索格式、NPC数值、规则数值；不得编造规则数值。
+- 暂不写场景JSON、线索格式、NPC数值、规则数值；不得编造规则数值；不得输出完整模组JSON。
 - 恐惧来自日常异常、认知错位、人物选择；禁血腥堆砌、伪科学、玄幻化。</rules>
 `
 
-var outlineSystemPrompt = `<role>COC7模组改编设计师</role>
-<task>将故事梗概和需求改编为可游玩的详细模组大纲；保持因果、NPC动机、核心反转，再转成场景/线索/胜负条件。</task>
+var outlineSystemPrompt = `<role>COC7模组结构化改编师</role>
+<task>基于story做可跑团大纲结构化和规则核验；不得重新创作核心故事,只把已确定的神话威胁、NPC动机、反转和结局代价改编为可执行场景/线索/胜负条件。</task>
 <config nsfw="true" violent="true" sexual="true"/>
 <rulebook>` + rulebook.RulebookDir + `</rulebook>
 <tools>
@@ -66,21 +73,24 @@ response: {"action":"response","outline":"大纲纯文本"}
 - 有工具结果后: 信息不足则继续查询+yield；信息足够则 response，禁止空yield。
 - 禁直接response；至少完成一次查询批次并读取结果。</exec>
 <adapt>
-- brief已整理；除规则核实必须调整外,不得推翻核心因果链/NPC动机/介入理由/升级逻辑/反转。
-- 转译为:公开信息、地图、行动路径、NPC行动线、线索链、胜负条件、代价。
-- 神话威胁可替换为规则书实体,但须保持故事功能并说明因果。</adapt>
+- story是核心设计来源；不得重选核心神话威胁、推翻NPC真实动机、重写核心反转、替换结局代价或改变调查员介入理由。
+- 你的职责是规则核验与可跑团结构化: 补齐公开信息、地图、场景、行动路径、NPC行动线、线索冗余、属性范围、可执行胜负条件和代价呈现。
+- 保留outline阶段规则书工具调用,用于核验story中的怪物/法术/典籍/神祇,并补齐怪物属性范围、规则书称谓和可用限制。
+- 只有当story中的神话元素无法在规则书中成立时,才允许最小替换；替换必须保持story中的因果功能、威胁位置、NPC动机和结局代价,并在大纲中说明替换理由。</adapt>
 <outline_req>
-- 含:背景、指定叙事结构、主要NPC(动机+属性范围)、线索链、胜/败/部分胜利。
-- BOSS按难度合理选择；神话元素必须来自COC规则书；NPC数值:人类15-90,怪物按规则书。
+- 含:背景、story指定叙事结构的跑团落地方式、主要NPC(沿用姓名+动机+属性范围)、场景列表、线索链、胜/败/部分胜利。
+- BOSS和神话元素必须来自COC规则书或已被最小规则替换；NPC数值:人类15-90,怪物按规则书。
 - 线索冗余:至少2条路径通向关键信息；至少1条非运气推理胜利路径。
-- 可设永久/长期奖励(典籍/道具/法术/盟友/资源),但需路径、来源、代价、风险、后果；禁无条件白送。</outline_req>
+- 长期奖励(典籍/道具/法术/盟友/资源)只可来自story已确定的来源或其直接后果；必须写清路径、来源、代价、风险、后果；禁无条件白送。
+- 输出应足够draft阶段直接转成JSON,但不要输出完整模组JSON。</outline_req>
 <variety>
-- 主动组合不同:时代细节/地点/威胁/NPC阶层/核心物/调查玩法/胜利代价/奖励。
-- 禁默认套路堆叠:孤岛/灯塔/渔村/旧宅/失踪教授/邪教仪式/梦境真相/古书召唤/地下室Boss；若用须重塑动机/关系/玩法。
+- 在不改写story核心事实的前提下,细化时代细节/地点/调查玩法/胜利代价/奖励呈现。
+- 禁默认套路堆叠:孤岛/灯塔/渔村/旧宅/失踪教授/邪教仪式/梦境真相/古书召唤/地下室Boss；若story中使用,只能通过场景关系和玩法重塑,不得替换核心事实。
 - 允许高风险高收益结局。</variety>
 <monster_entry require="pick>=1">
 身份伪装;间接感知/认知失调;环境异常本身;叙事反转。禁“黑暗中突然出现/踹门冲入”。</monster_entry>
 <npc_req>
+- 沿用story中主要NPC姓名和真实动机；只可补齐态度、行动线、属性范围和跑团可用信息。
 - 至少1人真实立场反外表/身份；至少1人有独立行动线；至少1人无辜且拒信超自然。
 - 禁主要NPC全是知情者。
 - NPC name 必须具体可称呼；禁职业/身份泛称；禁复用近期NPC黑名单。</npc_req>
@@ -360,7 +370,7 @@ func randomNarrativeTemplate() string {
 
 const (
 	briefElementExpansionEnabled = true
-	briefElementRounds           = 5
+	briefElementRounds           = 3
 	briefElementCount            = 200
 )
 
@@ -448,7 +458,10 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 	debugf("script", "theme: %v", req.Theme)
 
-	storyBrief, err := generateStoryBrief(ctx, architect, req)
+	npcNameBlacklist := loadRecentNPCNameBlacklist(200)
+	debugf("script", "npc blacklist count: %d", len(npcNameBlacklist))
+
+	storyBrief, err := generateStoryBrief(ctx, architect, req, npcNameBlacklist)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
 	}
@@ -460,19 +473,16 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 			storyBrief = polishedBrief
 		}
 		req.Brief = storyBrief
-		log.Printf("[scripter] story brief len=%d", len([]rune(req.Brief)))
+		log.Printf("[scripter] story len=%d", len([]rune(req.Brief)))
 		debugf("script", "story brief: %v", req.Brief)
 	}
 
-	npcNameBlacklist := loadRecentNPCNameBlacklist(200)
-	debugf("script", "npc blacklist count: %d", len(npcNameBlacklist))
-
-	// Phase 1: Outline (with grep tool calls)
-	outline, err := generateOutline(ctx, architect, req, npcNameBlacklist)
+	// Outline: structure the story into a playable module outline.
+	outline, err := generateOutline(ctx, architect, req, storyBrief, npcNameBlacklist)
 	if err != nil {
-		return ScenarioCreationOutput{}, fmt.Errorf("phase1 outline 失败: %w", err)
+		return ScenarioCreationOutput{}, fmt.Errorf("outline 生成失败: %w", err)
 	}
-	log.Printf("[scripter] phase1 outline len=%d", len(outline))
+	log.Printf("[scripter] outline len=%d", len([]rune(outline)))
 
 	// Phase 2: Draft (pure JSON generation; parser as JSON fixer)
 	draft, err := buildDraft(ctx, architect, parser, outline, req.TargetLength, npcNameBlacklist)
@@ -525,11 +535,33 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 // Phase 1: Generate story brief, then outline
 // ---------------------------------------------------------------------------
 
-func generateStoryBrief(ctx context.Context, writer agentHandle, req ScenarioCreationRequest) (string, error) {
+func generateStoryBrief(ctx context.Context, writer agentHandle, req ScenarioCreationRequest, npcNameBlacklist []string) (string, error) {
 	reqJSON, _ := json.Marshal(req)
+	template := randomNarrativeTemplate()
+	log.Printf("[story] 叙事模板: %s", template)
+
+	shuffledMonsters := make([]string, len(rulebook.Monsters))
+	copy(shuffledMonsters, rulebook.Monsters)
+	shuffledMonsters = append(shuffledMonsters, rulebook.Aliens...)
+	shuffledMonsters = append(shuffledMonsters, rulebook.MythosCreatures...)
+	rand.Shuffle(len(shuffledMonsters), func(i, j int) { shuffledMonsters[i], shuffledMonsters[j] = shuffledMonsters[j], shuffledMonsters[i] })
+
+	num := 1
+	if req.Difficulty == "hard" {
+		num = 5
+	} else if req.Difficulty == "normal" {
+		num = 3
+	}
+	shuffledMonsters = shuffledMonsters[:num]
+	extra := ""
+	if rand.Intn(10) < 3 {
+		god := rulebook.GreadOldOnesAndGods[rand.Intn(len(rulebook.GreadOldOnesAndGods))]
+		extra = fmt.Sprintf("故事关联的神祇: %s", god)
+	}
+
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: writer.systemPrompt(storySystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请先查规则书,再将以下创作需求整理成完整故事梗概；谜底/幕后真相必须直接与克苏鲁神话相关。创作需求(JSON):\n%s", string(reqJSON))},
+		{Role: "user", Content: fmt.Sprintf("请先查规则书,再将以下创作需求整理成完整故事；谜底/幕后真相必须直接与克苏鲁神话相关，并在story阶段确定核心设计。\n\n<request_json>\n%s\n</request_json>\n\n<story_constraints>\n本次叙事结构模板(必须落地到故事因果中): %s\n\n近期已用 NPC 名字黑名单，主要NPC禁止复用:\n%s\n\n候选怪物表(优先从中选择核心威胁或眷族；若规则查询不适配才最小替换): %v\n%s\n</story_constraints>", string(reqJSON), template, formatNPCNameBlacklist(npcNameBlacklist), shuffledMonsters, extra)},
 	}
 
 	const maxIter = 30
@@ -721,35 +753,11 @@ func seedFromScenarioRequest(req ScenarioCreationRequest) int64 {
 	return seed
 }
 
-func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, npcNameBlacklist []string) (string, error) {
+func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, storyBrief string, npcNameBlacklist []string) (string, error) {
 	reqJSON, _ := json.Marshal(req)
-	template := randomNarrativeTemplate()
-	log.Printf("[outline] 叙事模板: %s", template)
-
-	// Shuffle monster/creature lists before injecting so the LLM doesn't
-	// systematically favour entries that appear first in the fixed list.
-	shuffledMonsters := make([]string, len(rulebook.Monsters))
-	copy(shuffledMonsters, rulebook.Monsters)
-	shuffledMonsters = append(shuffledMonsters, rulebook.Aliens...)          // 合并外星生物到怪物列表
-	shuffledMonsters = append(shuffledMonsters, rulebook.MythosCreatures...) // 合并旧日支配者和外神到怪物列表
-	rand.Shuffle(len(shuffledMonsters), func(i, j int) { shuffledMonsters[i], shuffledMonsters[j] = shuffledMonsters[j], shuffledMonsters[i] })
-
-	num := 1
-	if req.Difficulty == "hard" {
-		num = 5
-	} else if req.Difficulty == "normal" {
-		num = 3
-	}
-	shuffledMonsters = shuffledMonsters[:num]
-	extra := ""
-	if rand.Intn(10) < 3 {
-		god := rulebook.GreadOldOnesAndGods[rand.Intn(len(rulebook.GreadOldOnesAndGods))]
-		extra = fmt.Sprintf("故事关联的神祇: %s", god)
-	}
-
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: architect.systemPrompt(outlineSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请使用随机NPC姓名, 必须至少查看一次怪物和神话生物列表选择合适的敌人,并将 brief 中的故事梗概改编为可跑团模组大纲。创作需求如下(JSON):\n%s\n\n【本次叙事结构模板(必须遵循)】\n%s\n\n【近期已用 NPC 名字黑名单，禁止复用】\n%s\n\n候选怪物表: %v\n%v", string(reqJSON), template, formatNPCNameBlacklist(npcNameBlacklist), shuffledMonsters, extra)},
+		{Role: "user", Content: fmt.Sprintf("请至少查看一次怪物和神话生物列表来核验story中的神话元素,再把story结构化为可跑团模组大纲。不得重选核心神话威胁、推翻NPC动机、重写核心反转或结局代价；只有规则书不成立时才做最小替换。\n\n<request_json>\n%s\n</request_json>\n\n<story>\n%s\n</story>\n\n<recent_npc_name_blacklist>\n%s\n</recent_npc_name_blacklist>", string(reqJSON), storyBrief, formatNPCNameBlacklist(npcNameBlacklist))},
 	}
 
 	const maxIter = 30
