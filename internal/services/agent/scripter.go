@@ -16,102 +16,141 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Prompts for the story-first generation pipeline
+// Prompts for the Seed → Bible → Verify → Draft → QA pipeline
 // ---------------------------------------------------------------------------
 
-var storySystemPrompt = `<role>COC7地方背景设定编剧</role>
-<task>将用户主题/时代/brief/随机约束整理成事件发生地背景；story阶段只生成现实背景土壤,不要生成神话元素或完整剧情。</task>
+var seedSystemPrompt = `<role>COC7单页敏捷种子设计师</role>
+<task>把用户brief、时代、主题约束、地理链和近期黑名单压缩成可扩展的ScenarioSeed。目标是短、快、强的单页骨架，不写完整剧本。</task>
 <config nsfw="true" violent="true" sexual="true"/>
-<output>只输出背景设定正文；不要JSON、Markdown、工具调用、标题或解释。</output>
-<background_design>
-- 必须写清事件发生地点：自然地理、人文地理、特色建筑。
-- 必须写清社会背景：权力运作模式、地方精英/机构关系、执法与安全机构。
-- 必须写清经济与产业：当地支柱产业、交通是否便利、商店/银行/旅店等设施是否齐全、是否存在走私等非法经济活动、财富分配模式。
-- 必须写清民俗文化：信仰、风俗、地方禁忌、节庆或行业规矩。
-- 各要素不是孤立清单，必须相互交织、彼此印证：地理影响交通和执法，产业影响权力结构，财富分配影响地方矛盾，民俗回应现实压力。
-- 可以留下表面事件、地方传闻、社会压力或调查入口，但不要解释为神话。</background_design>
-<ban>
-- 禁止输入或点名神话实体、神话生物、旧日支配者、外神、神话法术、神话典籍、眷族、仪式、幕后真相、结局代价。
-- 禁止设计BOSS、怪物行动线、神话因果链、胜负条件、完整线索链。
-- 禁止伪科学、宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究。
-- 不要只写氛围；要写出地方社会如何运行，以及为什么这里适合发生调查故事。</ban>
+<output>只输出合法JSON对象，字段必须匹配ScenarioSeed；不要Markdown、标题、解释或代码围栏。</output>
+<priority>
+- 如果用户brief非空，必须作为最高优先级创意输入吸收并保留核心意图，不得被随机主题或地理背景覆盖。
+- 随机主题和地理链只用于补强舞台、玩法与新颖约束, 不要完全依赖它们。
+</priority>
+<schema>
+{
+  "core_stage": "一句强画面冲突舞台",
+  "local_soil": "现实地方土壤：地理/社会/经济/民俗如何交织",
+  "investigator_hook": "调查员介入点和开局表面任务",
+  "no_investigator_outcome": "调查员不来时会如何恶化",
+  "threat_direction": ["威胁来源候选或方向，不必完成规则核验"],
+  "core_twist": "核心反转或误读",
+  "gameplay_tags": ["玩法标签"],
+  "sandbox": {"core": ["必须发生或必须可抵达的核心场景"], "optional": ["可选探索地带"], "background": ["背景幕或传闻层"]},
+  "key_clue_redundancy": ["关键情报及至少两条潜在线索路径"],
+  "props_and_npc_seeds": ["可跑团道具/NPC种子"],
+  "novelty_limits": ["必须避免的俗套或必须采用的新颖手法"],
+  "brief_preserved": "用户brief的核心意图如何被保留"
+}
+</schema>
+<rules>
+- 可以提出神话威胁方向，但不要展开成完整规则裁定。
+- 必须有核心/可选/背景三层沙盒和线索冗余雏形。
+- 禁默认套路堆叠：孤岛、灯塔、渔村、旧宅、失踪教授、邪教仪式、梦境真相、古书召唤、地下室Boss。若输入强制使用，必须写出重塑方式。
+- 禁伪科学、宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究。
+</rules>
 `
 
-var outlineSystemPrompt = `<role>COC7模组结构化改编师</role>
-<task>基于story做可跑团大纲结构化和规则核验；不得重新创作核心故事,只把已确定的神话威胁、NPC动机、反转和结局代价改编为可执行场景/线索/胜负条件。</task>
+var bibleSystemPrompt = `<role>COC7结构化剧情圣经设计师</role>
+<task>把ScenarioSeed扩展为完整但可控的ScenarioBible，用反派计划反推、幕结构、NPC动机、场景功能、蛛网线索和胜败代价支撑后续director-ready JSON。</task>
+<config nsfw="true" violent="true" sexual="true"/>
+<output>只输出合法JSON对象，字段必须匹配ScenarioBible；不要Markdown、标题、解释或代码围栏。</output>
+<schema>
+{
+  "title_working": "暂定标题",
+  "premise": "一句话前提",
+  "public_setup": "开局公开信息，不剧透",
+  "behind_truth": "幕后真相，可含待核验神话威胁",
+  "antagonist_plan": {"actor": "反派/怪物/组织", "goal": "目标", "method": "方法", "if_unopposed": "无人阻止的结果"},
+  "mythos_elements": ["需要规则核验的怪物/神祇/典籍/法术/物品/规则名"],
+  "timeline": ["已经发生/将发生的关键节点，含倒计时或升级"],
+  "acts": [{"name": "幕名", "purpose": "调查功能", "turning_point": "转折"}],
+  "scenes": {"core": [{"id":"稳定英文或拼音id","name":"场景名","function":"场景功能","interactive_objects":["可互动对象"],"clues":["线索名"],"checks":["检定/代价"],"danger":"危险","exits":["可推进到的场景id"]}], "optional": [], "background": []},
+  "npcs": [{"name":"具体姓名","public_identity":"公开身份","appearance":"可扮演特征","attitude":"初始态度","real_motive":"真实动机","secret":"秘密","action_line":"独立行动线","stats_note":"人类15-90或怪物按规则书"}],
+  "clue_web": [{"truth":"关键情报","paths":["路径A：地点+获取方式","路径B：地点+获取方式"],"failure_fallback":"失败后的备用推进"}],
+  "win_loss": {"win":"可核查胜利条件","lose":"可核查失败条件","partial":["部分胜利条件"]},
+  "long_term_rewards": [{"reward":"长期奖励","source":"来源","path":"取得路径","cost":"代价/风险","consequence":"后果"}],
+  "novelty_controls": ["新颖性限制与反套路执行方式"],
+  "rule_verification_targets": ["待检索裁定的问题"]
+}
+</schema>
+<rules>
+- 允许设计神话威胁，但必须列入 mythos_elements/rule_verification_targets，供后续核验。
+- 核心事实必须承接seed：介入理由、地方土壤、威胁功能、核心反转、无人介入后果不能无故改写。
+- 每个关键情报至少两条获取路径；至少一条非运气推理胜利路径。
+- NPC必须可扮演：具体姓名、公开表象、态度、真实目标/秘密、独立行动线；禁主要NPC全知情者。
+- 长期奖励必须来自故事直接后果，写清路径、来源、代价、风险、后果，禁无条件白送。
+- 禁伪科学/工程机关/抽象情感祭品解释神话；禁空泛神秘词和奇幻小说化。
+</rules>
+`
+
+var ruleVerifySystemPrompt = `<role>COC7规则核验架构师</role>
+<task>为ScenarioBible中的神话元素、怪物、典籍、法术、神祇和关键规则点生成规则书检索调用；收到检索结果后只做最小规则校正，输出VerifiedBible。</task>
 <config nsfw="true" violent="true" sexual="true"/>
 <rulebook>` + rulebook.RulebookDir + `</rulebook>
 <tools>
 search: {"action":"search","query":"自然语言规则查询"}
 read_rulebook_const: {"action":"read_rulebook_const","constant":"rulebook_dir|rulebook_detail_dir|aliens|books|great_old_ones_and_gods|monsters|mythos_creatures|spells"}
 yield: {"action":"yield"}
-response: {"action":"response","outline":"大纲纯文本"}
+response: {"action":"response","verified_bible":{...}}
 </tools>
 <exec>
 - 只输出JSON数组。
-- 第1轮必须 read_rulebook_const monsters + mythos_creatures 后 yield；第1轮禁 response；禁 [{"action":"yield"}]。
+- 第1轮必须至少包含 read_rulebook_const monsters、read_rulebook_const mythos_creatures，并按bible内容加入 search；第1轮禁止response。
 - 查询批次可含多个 search/read_rulebook_const；yield只能作最后一项且前面至少有一个查询。
-- 有工具结果后: 信息不足则继续查询+yield；信息足够则 response，禁止空yield。
-- 禁直接response；至少完成一次查询批次并读取结果。</exec>
-<adapt>
-- story是核心设计来源；不得重选核心神话威胁、推翻NPC真实动机、重写核心反转、替换结局代价或改变调查员介入理由。
-- 你的职责是规则核验与可跑团结构化: 补齐公开信息、地图、场景、行动路径、NPC行动线、线索冗余、属性范围、可执行胜负条件和代价呈现。
-- 保留outline阶段规则书工具调用,用于核验story中的怪物/法术/典籍/神祇,并补齐怪物属性范围、规则书称谓和可用限制。
-- 只有当story中的神话元素无法在规则书中成立时,才允许最小替换；替换必须保持story中的因果功能、威胁位置、NPC动机和结局代价,并在大纲中说明替换理由。</adapt>
-<outline_req>
-- 含:背景、story指定叙事结构的跑团落地方式、主要NPC(沿用姓名+动机+属性范围)、场景列表、线索链、胜/败/部分胜利。
-- BOSS和神话元素必须来自COC规则书或已被最小规则替换；NPC数值:人类15-90,怪物按规则书。
-- 线索冗余:至少2条路径通向关键信息；至少1条非运气推理胜利路径。
-- 长期奖励(典籍/道具/法术/盟友/资源)只可来自story已确定的来源或其直接后果；必须写清路径、来源、代价、风险、后果；禁无条件白送。
-- 输出应足够draft阶段直接转成JSON,但不要输出完整模组JSON。</outline_req>
-<variety>
-- 在不改写story核心事实的前提下,细化时代细节/地点/调查玩法/胜利代价/奖励呈现。
-- 禁默认套路堆叠:孤岛/灯塔/渔村/旧宅/失踪教授/邪教仪式/梦境真相/古书召唤/地下室Boss；若story中使用,只能通过场景关系和玩法重塑,不得替换核心事实。
-- 允许高风险高收益结局。</variety>
-<monster_entry require="pick>=1">
-身份伪装;间接感知/认知失调;环境异常本身;叙事反转。禁“黑暗中突然出现/踹门冲入”。</monster_entry>
-<npc_req>
-- 沿用story中主要NPC姓名和真实动机；只可补齐态度、行动线、属性范围和跑团可用信息。
-- 至少1人真实立场反外表/身份；至少1人有独立行动线；至少1人无辜且拒信超自然。
-- 禁主要NPC全是知情者。
-- NPC name 必须具体可称呼；禁职业/身份泛称；禁复用近期NPC黑名单。</npc_req>
-<clues>[真实]=核心真相且冗余；[隐藏]=需特定技能成功的深层线索。</clues>
-<puzzle>解谜必须实际帮助困境；至少一条非运气推理胜利路径。</puzzle>
-<ban>
-- 无叙事功能gore；逻辑跳跃；因果断链；计划依赖调查员恰好按顺序行动。
-- 伪科学/科学术语解释神话:高维度/拓扑/物理常数/量子等。
-- 工程机关/科技设备解释神话:机械装置、电子设备、声波/振动/频率、传感器、药剂、催眠器、信号标记、安全区/诱导区等。
-- 抽象情感/象征祭品机制:异化的人类情感、人性温度、珍贵之物、真正的爱/记忆/牺牲/信念等作为锚点/钥匙/封印/信标/唯一解法。
-- 空泛神秘词:某个古老存在/无法描述/超越理解/物理法则等。
-- 奇幻、玄幻小说化。</ban>
+- 有工具结果后：信息不足则继续查询+yield；信息足够则输出单个response。
+- 禁空数组、空yield、自然语言、Markdown。</exec>
+<verify_policy>
+- 保持ScenarioBible核心事实不变：因果功能、NPC动机、介入理由、核心反转、结局代价不得重写。
+- 只有神话元素无法成立或名称/属性/限制与规则书冲突时才最小替换或添加规则注记。
+- 最小替换必须保持原元素在故事中的功能位置，并在rules_notes说明原因。
+- 输出的verified_bible必须包含原bible全部主要内容，并增加rules_notes与verified_mythos_elements。
+</verify_policy>
+<response_schema>
+{"verified_bible":{"bible":{...ScenarioBible...},"rules_notes":["规则来源/裁定/最小替换说明"],"verified_mythos_elements":["已核验元素及用途"],"unsupported_replacements":["若有，说明替换前后和原因"]}}
+</response_schema>
 `
 
-// draftPrompt has 3 format args: outline, scenarioExample, lengthSpec
-const draftPrompt = `<task>将模组大纲转换为完整JSON模组；严格遵循示例结构。</task>
+// draftPrompt has 5 format args: verifiedBible, requestJSON, scenarioExample, lengthSpec, npcBlacklist
+const draftPrompt = `<task>将VerifiedBible编译为director可直接运行的完整ScenarioDraft JSON；严格对齐models.ScenarioContent和director.go读取方式。</task>
 <config nsfw="true" violent="true" sexual="true"/>
-<outline>
+<verified_bible>
 %s
-</outline>
+</verified_bible>
+<request_json>
+%s
+</request_json>
 <json_example>
 %s
 </json_example>
-<out>仅输出JSON,无其他文字。</out>
-<fields>
-- system_prompt: KP指导2-3句。
-- setting: 开局公开时代/地点/日常背景/气氛/社会常识；禁幕后真相、怪物/神话实体、仪式、隐藏身份、反转、胜负条件、后续剧情；自然像KP桌边介绍,非设定集/梗概。
-- intro: 玩家可听的开场；第二人称；眼前处境、表面任务、委托公开信息、可立即行动目标；禁暗示真凶/超自然来源/隐藏线索/结局/“背后隐藏着”；具体简洁有现场感。
+<out>仅输出合法JSON对象，无其他文字。</out>
+<length>
 %s
-- game_start_slot: 0-47,每槽30分钟；按剧情选。
-- map_description: 简洁文字地图；主要地点、空间关系、移动路径；辅助KP定位。
-- npcs: name/description/attitude/stats；name具体可称呼,禁近期黑名单/职业身份泛称。
-- clues: 前缀格式 "[真实]名(地点):描述" / "[误导]名(地点):描述" / "[隐藏]名(地点):描述(需XXX检定)"。
-- win_condition/lose_condition: 明确；partial_wins:1-3项。
-- 永久/长期奖励须写入 scenes/clues/win_condition/partial_wins 的可执行路径,含地点、条件、风险、代价、后果；高风险高收益,禁背景一笔带过。</fields>
-<ban>科学术语；用机械装置/电子设备/声波/振动/频率/传感器/药剂/催眠器/信号标记/安全区解释神话现象；用抽象情感/象征祭品(人性温度/珍贵之物/爱/记忆/牺牲/信念)作锚点/钥匙/封印/唯一解法。</ban>
+</length>
+<director_contract>
+- content.setting 会被注入KP上下文作为BG：只写开局公开时代/地点/日常背景/表面事件/社会常识；禁止幕后真相、怪物/神话实体、仪式、隐藏身份、反转、胜败条件和后续剧情。
+- content.intro 是玩家听到的开场：第二人称，明确玩家起点、表面任务、可立即行动目标；禁止“背后隐藏着”等剧透式表达。
+- content.map_description 必须是可导航文字地图：起点、核心地点、可选地点、路径关系、阻碍/入口、可回退路线。
+- content.scenes[].description 必须包含：地点/事件、可互动对象、可自动获得线索、需检定线索、危险/代价、可推进到哪些场景。
+- content.scenes[].triggers 写可触发条件或进入条件；不要空泛。
+- content.npcs[] 必须是稳定角色卡：具体姓名、公开身份、态度、真实目标/秘密写入description或attitude；人类属性15-90，怪物按规则注记；禁止职业/身份泛称和黑名单姓名。
+- content.clues[] 必须保持前缀：[真实] / [隐藏] / [误导]；格式包含线索名、地点、获取方式、用途，便于found_clue精确引用。
+- content.win_condition / lose_condition / partial_wins 必须是KP可逐条核查的条件，不写抽象文学结局。
+</director_contract>
+<fields>
+- name/description/author/tags/min_players/max_players/difficulty/content 必须完整。
+- system_prompt: KP指导2-3句，提醒按线索、NPC动机和胜败条件主持。
+- game_start_slot: 0-47，每槽30分钟，按开局选择。
+- 长期奖励必须写入scenes/clues/win_condition/partial_wins的可执行路径，含地点、条件、风险、代价、后果。
+</fields>
+<recent_npc_name_blacklist>
+%s
+</recent_npc_name_blacklist>
+<ban>科学术语解释神话；机械装置/电子设备/声波/振动/频率/传感器/药剂/催眠器/信号标记/安全区解释神话；抽象情感/象征祭品作锚点/钥匙/封印/唯一解法；空泛神秘词；主要NPC全知情。</ban>
 `
 
-var qaSystemPrompt = `<role>COC模组QA</role>
-<task>审查可玩性、一致性、规则合规。</task>
+var qaSystemPrompt = `<role>COC7 director可用性QA</role>
+<task>只审查ScenarioDraft是否可被director直接运行、是否规则合规、线索可跑、开局无剧透；不重写创意。</task>
 <config nsfw="true" violent="true" sexual="true"/>
 <rulebook>` + rulebook.RulebookDir + `</rulebook>
 <tools>
@@ -120,36 +159,39 @@ read_rulebook_const:{"action":"read_rulebook_const","constant":"rulebook_dir|rul
 response:{"action":"response","result":{"score":N,"pass":bool,"strengths":[...],"issues":[...],"must_fix":[...]}}
 </tools>
 <exec>
-- 只允许输出单个JSON数组,数组元素只能是 search/read_rulebook_const/response 三类之一。
-- 禁止输出 yield/think/comment/markdown/自然语言/空数组/空对象/缺少 query 的 search/缺少 constant 的 read_rulebook_const。
-- 第1轮必须输出至少1个 read_rulebook_const 和至少1个 search,用于核实草案中的怪物/法术/技能/神话来源；第1轮禁止 response。
-- 查询轮示例:[{"action":"read_rulebook_const","constant":"monsters"},{"action":"search","query":"深潜者 COC7 属性与行为"}]
-- 收到规则书搜索结果后,若信息足够,必须只输出1个 response action；response 不得和 search/read_rulebook_const 混用。
-- response轮示例:[{"action":"response","result":{"score":85,"pass":true,"strengths":["结构完整"],"issues":[],"must_fix":[]}}]
-- 若信息仍不足,继续输出至少1个有效 search/read_rulebook_const；任何轮次都不得输出空查询或等待动作。</exec>
-<score total="100">
-结构20: 场景/NPC/线索/胜负齐全,lose/partial有意义。
-线索15: 含[真实]/[隐藏],有冗余路径。
-规则15: 神话元素来自规则书,NPC属性合规。
-可玩15: 有真实决策,胜负依赖玩家行为非固定剧情。
-文本5: setting/intro自然可读、无剧透、仅开局公开信息。
-新颖15: 有意外设计；怪物登场用伪装/错位/环境/反转之一；避套路。
-悬疑15: 未知与转折；恐惧来自认知失调/未知,非gore/伪科学。
-加权: 保留brief核心因果/NPC动机/介入理由/升级/反转；奖励有条件/来源/风险/后果,不得因永久奖励扣分。</score>
+- 只允许输出单个JSON数组，数组元素只能是search/read_rulebook_const/response。
+- 第1轮必须输出至少1个read_rulebook_const和至少1个search，用于核实草案中的怪物/法术/典籍/神话来源；第1轮禁止response。
+- 收到规则书搜索结果后，若信息足够，必须只输出1个response action；response不得和查询混用。
+- 若信息仍不足，继续输出至少1个有效查询；禁止空数组、yield、自然语言、Markdown。
+</exec>
+<checklist total="100">
+字段完整10: ScenarioDraft顶层字段和ScenarioContent字段齐全，scenes/npcs/clues数量符合target_length。
+Director可用15: setting/win/lose/partial/map/npcs/scenes能被director.go上下文直接使用；scene description含互动对象、线索、检定、危险、出口。
+地图导航10: map_description能指导地点推理，含起点、核心/可选地点、路径、阻碍/入口。
+线索蛛网15: 每个关键真相至少两条路径，含[真实]/[隐藏]/[误导]，失败有备用推进，无死胡同。
+NPC可扮演10: 具体姓名、公开身份、态度、真实目标/秘密、独立行动线；禁全知情者、泛称、黑名单复用。
+规则合规15: 神话元素、怪物、典籍、法术、属性范围有规则来源或合理注记；不使用伪科学/工程机关/抽象情感祭品解释神话。
+胜败可裁定10: win_condition/lose_condition/partial_wins是可逐条核查的玩家行动结果。
+开局无剧透5: setting/intro不泄露幕后真相、实体、仪式、隐藏身份、反转、胜败。
+新颖与悬疑10: 避免套路套壳；恐惧来自认知失调、间接感知、身份伪装、环境异常或反转，而非无功能gore。
+</checklist>
 <must_fix>
-- 缺 lose_condition 或 partial_wins；缺[隐藏]线索；NPC全知情者；NPC名复用黑名单或职业泛称。
-- 三幕剧套壳无转折；怪物/神话不符规则书；怪物直白冲出/黑暗出现且无新颖手法。
-- 无叙事功能gore；因果断链；NPC无动机；背离brief核心故事。
-- 伪科学/科学术语解释神话；用机械装置/电子设备/声波/振动/频率/传感器/药剂/催眠器/信号标记/安全区解释神话现象；用抽象情感/象征祭品(人性温度/珍贵之物/爱/记忆/牺牲/信念)作锚点/钥匙/封印/唯一解法；空泛神秘描述。
-- setting/intro 剧透幕后真相、怪物/实体、仪式、隐藏身份、反转、胜负或后续；或像设定集/梗概/模板。</must_fix>
+- 缺lose_condition、partial_wins、map_description、[隐藏]线索或关键truth冗余路径。
+- scene无法互动、没有线索获取方式、没有出口，或地图无法导航。
+- NPC姓名泛称/复用黑名单/全知情者/无动机。
+- 规则书不支持且未最小替换或注记；属性明显不合规。
+- setting/intro剧透幕后真相、怪物/实体、仪式、隐藏身份、反转、胜败或后续。
+- 背离VerifiedBible核心事实，或修订导致因果断链。
+</must_fix>
 <pass>score>=80 且 must_fix为空。</pass>`
 
-const revisionPrompt = `<task>根据QA反馈修订模组JSON。</task>
-<out>仅输出修订后的完整JSON,无其他文字。</out>
+// revisionPrompt has 6 format args: verifiedBible, draftJSON, issues, scenarioExample, lengthSpec, npcBlacklist
+const revisionPrompt = `<task>根据QA的must_fix定向修订ScenarioDraft JSON。</task>
+<out>仅输出修订后的完整合法JSON对象，无其他文字。</out>
 <config nsfw="true" violent="true" sexual="true"/>
-<outline>
+<verified_bible>
 %s
-</outline>
+</verified_bible>
 <draft>
 %s
 </draft>
@@ -158,10 +200,56 @@ const revisionPrompt = `<task>根据QA反馈修订模组JSON。</task>
 </must_fix>
 <json_example>
 %s
-</json_example>`
+</json_example>
+<length>
+%s
+</length>
+<recent_npc_name_blacklist>
+%s
+</recent_npc_name_blacklist>
+<rules>
+- 只修must_fix列出的硬问题，不重写VerifiedBible核心事实、幕后真相、NPC真实动机、核心反转和结局代价。
+- 保持director contract：setting/intro无剧透；map可导航；scene含互动对象/线索/检定/危险/出口；clues有[真实]/[隐藏]/[误导]、地点、获取方式、用途；胜败可裁定。
+- 若必须改NPC姓名以避开黑名单，只替换姓名并保持人物功能不变。
+</rules>`
 
 // qaGuardResultExample is used as schema hint when parser LLM repairs QA result JSON.
 const qaGuardResultExample = `{"score": 85, "pass": true, "strengths": ["优点1", "优点2"], "issues": ["问题1"], "must_fix": []}`
+
+const scenarioSeedExample = `{
+  "core_stage": "暴雨后的运河市场里，所有钟表都停在同一分钟，失踪者的货摊却照常收钱。",
+  "local_soil": "虚构港区依赖夜间驳船和小额信贷，警察、码头公会与民俗互保让外人难以插手。",
+  "investigator_hook": "调查员受雇寻找一名未归的账房，并从市场账册的异常缺页开始。",
+  "no_investigator_outcome": "三夜后市场债务会被集中清算，更多居民被迫加入异常交易。",
+  "threat_direction": ["被规则书典籍误导的人类组织", "潜伏在日常交易中的神话眷族"],
+  "core_twist": "表面勒索案其实是地方互保制度被非人契约借壳。",
+  "gameplay_tags": ["公开事件暗线", "社会潜入"],
+  "sandbox": {"core": ["市场起点", "账房住处", "清算夜现场"], "optional": ["公会茶室", "水上仓库"], "background": ["停钟传闻", "码头债俗"]},
+  "key_clue_redundancy": ["清算名单：账册缺页/茶室副本/仓库木牌"],
+  "props_and_npc_seeds": ["缺页账册", "拒信超自然的巡警"],
+  "novelty_limits": ["禁止地下室Boss；威胁先通过交易规则和身份错位出现"],
+  "brief_preserved": "保留用户brief中的核心委托、时代和地点气质。"
+}`
+
+const scenarioBibleExample = `{
+  "title_working": "停钟清算",
+  "premise": "调查一宗账房失踪案会揭开港区债务习俗被神话契约污染的真相。",
+  "public_setup": "港区市场因失踪与账册纠纷陷入停摆，委托人要求调查员找到账房并追回账册。",
+  "behind_truth": "一名公会理事利用待核验的神话典籍，把旧债俗改造成向非人存在供奉身份的契约。",
+  "antagonist_plan": {"actor": "公会理事沈岱", "goal": "让港区债务永远无法结清", "method": "在清算夜替换名单与见证人", "if_unopposed": "居民的身份和财产关系被契约吞并"},
+  "mythos_elements": ["待核验典籍", "待核验眷族"],
+  "timeline": ["三日前账房失踪", "今夜账册缺页流出", "第三夜清算"],
+  "acts": [{"name": "公开纠纷", "purpose": "建立表面任务", "turning_point": "发现第二份名单"}],
+  "scenes": {"core": [{"id":"market","name":"运河市场","function":"起点与公开证词","interactive_objects":["货摊账箱"],"clues":["缺页账册"],"checks":["会计或侦察"],"danger":"被公会盯梢","exits":["ledger_room"]}], "optional": [], "background": []},
+  "npcs": [{"name":"沈岱","public_identity":"公会理事","appearance":"衣着整洁但手指沾墨","attitude":"礼貌拖延","real_motive":"维持契约并摆脱旧债","secret":"主持清算名单替换","action_line":"派人回收账册缺页","stats_note":"人类属性15-90"}],
+  "clue_web": [{"truth":"清算名单被替换","paths":["市场账箱：会计发现编号断裂","茶室副本：说服掌柜取得抄本"],"failure_fallback":"巡警提供被撕下的半页"}],
+  "win_loss": {"win":"在清算夜前公开真名单并阻断见证流程", "lose":"第三夜清算完成且关键名单被焚毁", "partial":["救回账房但契约主持者逃脱"]},
+  "long_term_rewards": [{"reward":"残缺典籍抄页", "source":"公会密柜", "path":"胜利后搜查取得", "cost":"SAN检定与法律风险", "consequence":"可供后续研究但吸引追索"}],
+  "novelty_controls": ["怪物不踹门出现，而通过交易身份错位被感知"],
+  "rule_verification_targets": ["核验可替代的典籍、眷族和属性范围"]
+}`
+
+const verifiedBibleExample = `{"bible":` + scenarioBibleExample + `,"rules_notes":["已用规则书条目替换待核验典籍"],"verified_mythos_elements":["规则书支持的典籍/眷族名称"],"unsupported_replacements":[]}`
 
 // scenarioExample is the anonymised lonely_island.json used as a structural reference.
 const scenarioExample = `{
@@ -241,13 +329,14 @@ var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
 // ---------------------------------------------------------------------------
 
 type pipelineToolCall struct {
-	Action   string         `json:"action"`
-	Keyword  string         `json:"keyword,omitempty"`  // grep (kept for backward compat)
-	Query    string         `json:"query,omitempty"`    // search
-	Constant string         `json:"constant,omitempty"` // read_rulebook_const
-	Brief    string         `json:"brief,omitempty"`    // response (story phase)
-	Outline  string         `json:"outline,omitempty"`  // response (outline phase)
-	Result   *qaGuardResult `json:"result,omitempty"`   // response (QA phase)
+	Action        string          `json:"action"`
+	Keyword       string          `json:"keyword,omitempty"`  // grep (kept for backward compat)
+	Query         string          `json:"query,omitempty"`    // search
+	Constant      string          `json:"constant,omitempty"` // read_rulebook_const
+	Brief         string          `json:"brief,omitempty"`    // response (legacy story phase)
+	Outline       string          `json:"outline,omitempty"`  // response (legacy outline phase)
+	VerifiedBible json.RawMessage `json:"verified_bible,omitempty"`
+	Result        *qaGuardResult  `json:"result,omitempty"` // response (QA phase)
 }
 
 // ---------------------------------------------------------------------------
@@ -289,6 +378,113 @@ type ScenarioDraft struct {
 	MaxPlayers  int                    `json:"max_players"`
 	Difficulty  string                 `json:"difficulty"`
 	Content     models.ScenarioContent `json:"content"`
+}
+
+type ScenarioSeed struct {
+	CoreStage         string        `json:"core_stage"`
+	LocalSoil         string        `json:"local_soil"`
+	InvestigatorHook  string        `json:"investigator_hook"`
+	NoInvestigator    string        `json:"no_investigator_outcome"`
+	ThreatDirection   []string      `json:"threat_direction"`
+	CoreTwist         string        `json:"core_twist"`
+	GameplayTags      []string      `json:"gameplay_tags"`
+	Sandbox           SandboxLayers `json:"sandbox"`
+	KeyClueRedundancy []string      `json:"key_clue_redundancy"`
+	PropsAndNPCSeeds  []string      `json:"props_and_npc_seeds"`
+	NoveltyLimits     []string      `json:"novelty_limits"`
+	BriefPreserved    string        `json:"brief_preserved"`
+}
+
+type SandboxLayers struct {
+	Core       []string `json:"core"`
+	Optional   []string `json:"optional"`
+	Background []string `json:"background"`
+}
+
+type ScenarioBible struct {
+	TitleWorking            string           `json:"title_working"`
+	Premise                 string           `json:"premise"`
+	PublicSetup             string           `json:"public_setup"`
+	BehindTruth             string           `json:"behind_truth"`
+	AntagonistPlan          AntagonistPlan   `json:"antagonist_plan"`
+	MythosElements          []string         `json:"mythos_elements"`
+	Timeline                []string         `json:"timeline"`
+	Acts                    []BibleAct       `json:"acts"`
+	Scenes                  BibleScenes      `json:"scenes"`
+	NPCs                    []BibleNPC       `json:"npcs"`
+	ClueWeb                 []ClueWebEntry   `json:"clue_web"`
+	WinLoss                 BibleWinLoss     `json:"win_loss"`
+	LongTermRewards         []LongTermReward `json:"long_term_rewards"`
+	NoveltyControls         []string         `json:"novelty_controls"`
+	RuleVerificationTargets []string         `json:"rule_verification_targets"`
+}
+
+type AntagonistPlan struct {
+	Actor       string `json:"actor"`
+	Goal        string `json:"goal"`
+	Method      string `json:"method"`
+	IfUnopposed string `json:"if_unopposed"`
+}
+
+type BibleAct struct {
+	Name         string `json:"name"`
+	Purpose      string `json:"purpose"`
+	TurningPoint string `json:"turning_point"`
+}
+
+type BibleScenes struct {
+	Core       []BibleScene `json:"core"`
+	Optional   []BibleScene `json:"optional"`
+	Background []BibleScene `json:"background"`
+}
+
+type BibleScene struct {
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Function           string   `json:"function"`
+	InteractiveObjects []string `json:"interactive_objects"`
+	Clues              []string `json:"clues"`
+	Checks             []string `json:"checks"`
+	Danger             string   `json:"danger"`
+	Exits              []string `json:"exits"`
+}
+
+type BibleNPC struct {
+	Name           string `json:"name"`
+	PublicIdentity string `json:"public_identity"`
+	Appearance     string `json:"appearance"`
+	Attitude       string `json:"attitude"`
+	RealMotive     string `json:"real_motive"`
+	Secret         string `json:"secret"`
+	ActionLine     string `json:"action_line"`
+	StatsNote      string `json:"stats_note"`
+}
+
+type ClueWebEntry struct {
+	Truth           string   `json:"truth"`
+	Paths           []string `json:"paths"`
+	FailureFallback string   `json:"failure_fallback"`
+}
+
+type BibleWinLoss struct {
+	Win     string   `json:"win"`
+	Lose    string   `json:"lose"`
+	Partial []string `json:"partial"`
+}
+
+type LongTermReward struct {
+	Reward      string `json:"reward"`
+	Source      string `json:"source"`
+	Path        string `json:"path"`
+	Cost        string `json:"cost"`
+	Consequence string `json:"consequence"`
+}
+
+type VerifiedBible struct {
+	Bible                   ScenarioBible `json:"bible"`
+	RulesNotes              []string      `json:"rules_notes"`
+	VerifiedMythosElements  []string      `json:"verified_mythos_elements"`
+	UnsupportedReplacements []string      `json:"unsupported_replacements"`
 }
 
 // ---------------------------------------------------------------------------
@@ -401,9 +597,8 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	}
 
 	reqJSON, _ := json.Marshal(req)
-	log.Printf("[scripter] 开始故事优先生成 req=%s", reqJSON)
+	log.Printf("[scripter] 开始混合流水线生成 req=%s", reqJSON)
 
-	// Load agents: architect + qa_guard + parser (JSON fixer)
 	architect, err := loadSingleAgent(models.AgentRoleArchitect)
 	if err != nil {
 		return ScenarioCreationOutput{}, err
@@ -442,94 +637,85 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	if geoErr != nil {
 		log.Printf("[scripter] geography chain generation failed: %v", geoErr)
 	}
-	storyBrief, err := generateStoryBrief(ctx, architect, req.Era, req.Theme, geographyChain)
-	if err != nil {
-		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
-	}
-	if strings.TrimSpace(storyBrief) != "" {
-		req.Brief = storyBrief
-		log.Printf("[scripter] story len=%d", len([]rune(req.Brief)))
-		debugf("script", "story brief: %v", req.Brief)
-	}
 
-	// Outline: structure the story into a playable module outline.
-	outline, err := generateOutline(ctx, architect, req, storyBrief, npcNameBlacklist)
+	seed, err := generateScenarioSeed(ctx, architect, parser, req, geographyChain, npcNameBlacklist)
 	if err != nil {
-		return ScenarioCreationOutput{}, fmt.Errorf("outline 生成失败: %w", err)
+		return ScenarioCreationOutput{}, fmt.Errorf("seed 生成失败: %w", err)
 	}
-	log.Printf("[scripter] outline len=%d", len([]rune(outline)))
+	log.Printf("[scripter] seed stage=%q core_scenes=%d", seed.CoreStage, len(seed.Sandbox.Core))
 
-	// Phase 2: Draft (pure JSON generation; parser as JSON fixer)
-	draft, err := buildDraft(ctx, architect, parser, outline, req.TargetLength, npcNameBlacklist)
+	bible, err := generateScenarioBible(ctx, architect, parser, req, seed, npcNameBlacklist)
 	if err != nil {
-		return ScenarioCreationOutput{}, fmt.Errorf("phase2 draft 失败: %w", err)
+		return ScenarioCreationOutput{}, fmt.Errorf("bible 生成失败: %w", err)
+	}
+	log.Printf("[scripter] bible title=%q mythos=%d core_scenes=%d", bible.TitleWorking, len(bible.MythosElements), len(bible.Scenes.Core))
+
+	verifiedBible, err := verifyBibleRules(ctx, architect, parser, bible)
+	if err != nil {
+		return ScenarioCreationOutput{}, fmt.Errorf("规则核验失败: %w", err)
+	}
+	log.Printf("[scripter] verified bible rules=%d replacements=%d", len(verifiedBible.RulesNotes), len(verifiedBible.UnsupportedReplacements))
+
+	draft, err := buildDraft(ctx, architect, parser, verifiedBible, req, npcNameBlacklist)
+	if err != nil {
+		return ScenarioCreationOutput{}, fmt.Errorf("draft 生成失败: %w", err)
 	}
 	applyGuardrails(&draft, req)
-	log.Printf("[scripter] phase2 draft name=%q scenes=%d npcs=%d clues=%d",
+	log.Printf("[scripter] draft name=%q scenes=%d npcs=%d clues=%d",
 		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 
-	// Phase 3: QA + Iteration (up to 2 revisions, with grep tool calls)
+	const maxRevisions = 2
 	var qaResult qaGuardResult
-	for i := 0; i < 30; i++ {
+	for attempt := 0; attempt <= maxRevisions; attempt++ {
 		if ctx.Err() != nil {
 			return ScenarioCreationOutput{}, ctx.Err()
 		}
-		qaResult, err = runQA(ctx, qaAgent, parser, req, draft, npcNameBlacklist)
+		qaResult, err = runQA(ctx, qaAgent, parser, req, verifiedBible, draft, npcNameBlacklist)
 		if err != nil {
-			log.Printf("[scripter] phase3 QA失败 iter=%d: %v", i, err)
-			return ScenarioCreationOutput{}, fmt.Errorf("phase3 QA 失败: %w", err)
+			log.Printf("[scripter] QA失败 attempt=%d: %v", attempt+1, err)
+			return ScenarioCreationOutput{}, fmt.Errorf("QA 失败: %w", err)
 		}
-		log.Printf("[scripter] phase3 QA iter=%d score=%d pass=%v must_fix=%d",
-			i, qaResult.Score, qaResult.Pass, len(qaResult.MustFix))
+		log.Printf("[scripter] QA attempt=%d score=%d pass=%v must_fix=%d",
+			attempt+1, qaResult.Score, qaResult.Pass, len(qaResult.MustFix))
 
-		if qaResult.Pass {
-			return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: i + 1}, nil
+		if qaResult.Pass || len(qaResult.MustFix) == 0 {
+			return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: attempt + 1}, nil
 		}
-
-		// Last iteration — don't revise, just return best effort
-		if i == 2 {
+		if attempt == maxRevisions {
 			break
 		}
 
-		// Revise draft based on QA feedback
-		revised, revErr := reviseDraft(ctx, architect, parser, draft, qaResult.MustFix, outline, npcNameBlacklist)
+		revised, revErr := reviseDraft(ctx, architect, parser, draft, qaResult.MustFix, verifiedBible, req.TargetLength, npcNameBlacklist)
 		if revErr != nil {
-			log.Printf("[scripter] revision 失败 iter=%d: %v", i, revErr)
-			break // return best effort
+			log.Printf("[scripter] revision failed attempt=%d: %v", attempt+1, revErr)
+			break
 		}
 		applyGuardrails(&revised, req)
 		draft = revised
-		log.Printf("[scripter] revision iter=%d done", i)
+		log.Printf("[scripter] revision attempt=%d done", attempt+1)
 	}
 
-	// Return best effort even if QA didn't pass
-	return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: 3}, nil
+	return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: maxRevisions + 1}, nil
 }
 
 // ---------------------------------------------------------------------------
 // Phase 1: Generate story brief, then outline
 // ---------------------------------------------------------------------------
 
-func generateStoryBrief(ctx context.Context, writer agentHandle, era string, threat string, geographyChain []string) (string, error) {
+func generateScenarioSeed(ctx context.Context, architect, parser agentHandle, req ScenarioCreationRequest, geographyChain []string, npcNameBlacklist []string) (ScenarioSeed, error) {
+	reqJSON, _ := json.Marshal(req)
+	userMsg := fmt.Sprintf("请生成ScenarioSeed。用户brief若非空，必须作为最高优先级创意输入，不得被随机主题或地理链覆盖。\n\n<request_json>\n%s\n</request_json>\n\n<geography_chain>\n%s\n</geography_chain>\n\n<narrative_template>\n%s\n</narrative_template>\n\n<recent_npc_name_blacklist>\n%s\n</recent_npc_name_blacklist>",
+		string(reqJSON), strings.Join(geographyChain, " → "), randomNarrativeTemplate(), formatNPCNameBlacklist(npcNameBlacklist))
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: writer.systemPrompt(storySystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请根据时代、威胁参考和事件发生地约束生成背景设定。只生成现实背景，不要点名神话实体/怪物/法术/典籍，不要设计完整剧情。威胁参考只能转化为社会压力、地方矛盾、传闻或调查入口。事件发生地约束中只有国家是具体地点，后续分别是自然地理、人文地理、经济交通、特色建筑/地标类型；你需要基于这些类型自行创造合理的虚构区域、聚落、街区或建筑名称，并让它们符合该国家与时代。背景必须把自然地理、人文地理、特色建筑、权力运作、执法安全、经济产业、交通便利性、商店/银行/旅店设施、非法经济、财富分配、民俗文化相互交织起来。\n\n时代：%s\n威胁参考：%s\n事件发生地约束：%s", era, threat, strings.Join(geographyChain, " → "))},
+		{Role: "system", Content: architect.systemPrompt(seedSystemPrompt)},
+		{Role: "user", Content: userMsg},
 	}
 
-	if ctx.Err() != nil {
-		return "", ctx.Err()
+	var seed ScenarioSeed
+	if err := chatAndParseJSON(ctx, architect, parser, msgs, &seed, scenarioSeedExample, "seed"); err != nil {
+		return ScenarioSeed{}, err
 	}
-	log.Printf("[story] single pass")
-	raw, err := writer.provider.Chat(ctx, msgs)
-	if err != nil {
-		return "", err
-	}
-	brief := strings.TrimSpace(llm.StripCodeFence(raw))
-	debugf("story", "raw: %v", raw)
-	if brief == "" {
-		return "", fmt.Errorf("story 返回空内容")
-	}
-	return brief, nil
+	return seed, nil
 }
 
 func generateGeographyChain(ctx context.Context, architect agentHandle, era string) ([]string, error) {
@@ -635,80 +821,81 @@ func normalizeElementName(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func generateOutline(ctx context.Context, architect agentHandle, req ScenarioCreationRequest, storyBrief string, npcNameBlacklist []string) (string, error) {
+func generateScenarioBible(ctx context.Context, architect, parser agentHandle, req ScenarioCreationRequest, seed ScenarioSeed, npcNameBlacklist []string) (ScenarioBible, error) {
 	reqJSON, _ := json.Marshal(req)
+	seedJSON, _ := json.Marshal(seed)
+	userMsg := fmt.Sprintf("请把ScenarioSeed扩展为ScenarioBible。保持seed核心事实；允许设计神话威胁，但必须列入待核验元素。\n\n<request_json>\n%s\n</request_json>\n\n<scenario_seed>\n%s\n</scenario_seed>\n\n<recent_npc_name_blacklist>\n%s\n</recent_npc_name_blacklist>",
+		string(reqJSON), string(seedJSON), formatNPCNameBlacklist(npcNameBlacklist))
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: architect.systemPrompt(outlineSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请把story结构化为可跑团模组大纲。不得重选核心神话威胁、推翻NPC动机、重写核心反转或结局代价；只有规则书不成立时才做最小替换。若存在background_addendum，只能把它作为地点/社会/经济/民俗的后置背景补充吸收进大纲，不得反向改写story核心事实。\n\n<request_json>\n%s\n</request_json>\n\n<story>\n%s\n</story>\n\n<recent_npc_name_blacklist>\n%s\n</recent_npc_name_blacklist>", string(reqJSON), storyBrief, formatNPCNameBlacklist(npcNameBlacklist))},
+		{Role: "system", Content: architect.systemPrompt(bibleSystemPrompt)},
+		{Role: "user", Content: userMsg},
 	}
 
-	const maxIter = 30
+	var bible ScenarioBible
+	if err := chatAndParseJSON(ctx, architect, parser, msgs, &bible, scenarioBibleExample, "bible"); err != nil {
+		return ScenarioBible{}, err
+	}
+	return bible, nil
+}
+
+func verifyBibleRules(ctx context.Context, architect, parser agentHandle, bible ScenarioBible) (VerifiedBible, error) {
+	bibleJSON, _ := json.Marshal(bible)
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: architect.systemPrompt(ruleVerifySystemPrompt)},
+		{Role: "user", Content: fmt.Sprintf("请核验ScenarioBible中的神话元素、怪物、典籍、法术、神祇、规则与属性。只做规则书检索和最小校正，不重写故事主干。\n\n<scenario_bible>\n%s\n</scenario_bible>", string(bibleJSON))},
+	}
+
+	const maxIter = 12
 	for iter := 0; iter < maxIter; iter++ {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return VerifiedBible{}, ctx.Err()
 		}
-		log.Printf("[outline] iter=%d", iter+1)
+		log.Printf("[rule_verify] iter=%d", iter+1)
 
-		var raw string
-		var err error
-		for i := 0; i < 3; i++ { // retry loop for transient LLM errors
-			raw, err = architect.provider.Chat(ctx, msgs)
-			if err != nil {
-				return "", err
-			}
-			if raw != "" {
-				break
-			}
+		raw, err := architect.provider.Chat(ctx, msgs)
+		if err != nil {
+			return VerifiedBible{}, err
 		}
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
+		debugf("rule_verify", "raw: %v", raw)
 
-		debugf("outline", "raw: %v", raw)
-
-		calls := parsePipelineCalls(ctx, raw)
+		calls := stripYieldCalls(parsePipelineCalls(ctx, raw))
+		for _, c := range calls {
+			if c.Action == "response" && len(c.VerifiedBible) > 0 {
+				verified, err := parseVerifiedBiblePayload(ctx, parser, c.VerifiedBible)
+				if err != nil {
+					return VerifiedBible{}, err
+				}
+				return verified, nil
+			}
+		}
 		if len(calls) == 0 {
-			// If no tool calls parsed, treat raw text as outline directly
-			log.Printf("[outline] iter=%d 无tool call,使用原始文本作为大纲", iter+1)
-			return strings.TrimSpace(raw), nil
-		}
-		tmp := make([]pipelineToolCall, 0)
-		for _, c := range calls {
-			if c.Action != "yield" {
-				tmp = append(tmp, c)
-			}
-		}
-		calls = tmp
-
-		// Check for response
-		for _, c := range calls {
-			if c.Action == "response" && c.Outline != "" {
-				log.Printf("[outline] iter=%d response 完成", iter+1)
-				return strings.TrimSpace(c.Outline), nil
+			var direct VerifiedBible
+			if err := parseJSONObject(raw, &direct); err == nil && direct.Bible.Premise != "" {
+				return direct, nil
 			}
 		}
 
-		// Execute search calls
-		feedback := executeSearchCalls(ctx, calls, "outline")
+		feedback := executeSearchCalls(ctx, calls, "rule_verify")
 		if feedback == "" {
-			return "", fmt.Errorf("outline 未返回有效 tool call")
+			return fallbackVerifiedBible(bible, "规则核验阶段未返回有效查询；保留bible并要求draft以规则注记呈现待核验元素"), nil
 		}
-		msgs = append(msgs, llm.ChatMessage{
-			Role:    "user",
-			Content: feedback,
-		})
+		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "规则书检索结果如下。请据此输出最小校正后的response，若仍不足则继续查询：\n\n" + feedback})
 	}
 
-	return "", fmt.Errorf("outline 达到最大迭代仍未返回 response")
+	return fallbackVerifiedBible(bible, "规则核验达到最大迭代；保留bible并要求draft以保守规则注记呈现待核验元素"), nil
 }
 
 // ---------------------------------------------------------------------------
 // Phase 2: Build Draft (pure JSON, no tool calls)
 // ---------------------------------------------------------------------------
 
-func buildDraft(ctx context.Context, architect, fixer agentHandle, outline string, targetLength string, npcNameBlacklist []string) (ScenarioDraft, error) {
-	userMsg := fmt.Sprintf(draftPrompt, outline, scenarioExample, lengthSpec(targetLength))
-	userMsg += "\n\n【近期已用 NPC 名字黑名单，禁止 npcs[].name 复用】\n" + formatNPCNameBlacklist(npcNameBlacklist)
+func buildDraft(ctx context.Context, architect, fixer agentHandle, verifiedBible VerifiedBible, req ScenarioCreationRequest, npcNameBlacklist []string) (ScenarioDraft, error) {
+	verifiedJSON, _ := json.Marshal(verifiedBible)
+	reqJSON, _ := json.Marshal(req)
+	userMsg := fmt.Sprintf(draftPrompt, string(verifiedJSON), string(reqJSON), scenarioExample, lengthSpec(req.TargetLength), formatNPCNameBlacklist(npcNameBlacklist))
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: "你是 COC TRPG 模组 JSON 生成器。仅输出合法 JSON,不要有任何其他文字。"},
+		{Role: "system", Content: "你是 COC7 director-ready ScenarioDraft JSON 生成器。仅输出合法 JSON,不要有任何其他文字。"},
 		{Role: "user", Content: userMsg},
 	}
 
@@ -723,12 +910,13 @@ func buildDraft(ctx context.Context, architect, fixer agentHandle, outline strin
 // Phase 3: QA (with tool-call loop for grep)
 // ---------------------------------------------------------------------------
 
-func runQA(ctx context.Context, qaAgent agentHandle, parser agentHandle, req ScenarioCreationRequest, draft ScenarioDraft, npcNameBlacklist []string) (qaGuardResult, error) {
+func runQA(ctx context.Context, qaAgent agentHandle, parser agentHandle, req ScenarioCreationRequest, verifiedBible VerifiedBible, draft ScenarioDraft, npcNameBlacklist []string) (qaGuardResult, error) {
 	reqJSON, _ := json.Marshal(req)
+	verifiedJSON, _ := json.Marshal(verifiedBible)
 	draftJSON, _ := json.Marshal(draft)
 
-	userMsg := fmt.Sprintf("审查以下 COC 模组的质量, 是否符合逻辑, 剧情是否胡乱编造。\n\n【原始需求】\n%s\n\n【近期已用 NPC 名字黑名单，npcs[].name 禁止复用】\n%s\n\n【模组草案】\n%s",
-		string(reqJSON), formatNPCNameBlacklist(npcNameBlacklist), string(draftJSON))
+	userMsg := fmt.Sprintf("请按director可用性checklist审查以下ScenarioDraft。只报告硬问题，不重写创意；必须检查是否保持VerifiedBible核心事实。\n\n<request_json>\n%s\n</request_json>\n\n<verified_bible>\n%s\n</verified_bible>\n\n<recent_npc_name_blacklist>\n%s\n</recent_npc_name_blacklist>\n\n<scenario_draft>\n%s\n</scenario_draft>",
+		string(reqJSON), string(verifiedJSON), formatNPCNameBlacklist(npcNameBlacklist), string(draftJSON))
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: qaAgent.systemPrompt(qaSystemPrompt)},
@@ -800,14 +988,17 @@ func runQA(ctx context.Context, qaAgent agentHandle, parser agentHandle, req Sce
 // Revision: targeted fix based on QA feedback (pure JSON, no tool calls)
 // ---------------------------------------------------------------------------
 
-func reviseDraft(ctx context.Context, architect, fixer agentHandle, draft ScenarioDraft, mustFix []string, outline string, npcNameBlacklist []string) (ScenarioDraft, error) {
+func reviseDraft(ctx context.Context, architect, fixer agentHandle, draft ScenarioDraft, mustFix []string, verifiedBible VerifiedBible, targetLength string, npcNameBlacklist []string) (ScenarioDraft, error) {
+	verifiedJSON, _ := json.Marshal(verifiedBible)
 	draftJSON, _ := json.Marshal(draft)
 	issues := strings.Join(mustFix, "\n- ")
+	if issues != "" {
+		issues = "- " + issues
+	}
 
-	userMsg := fmt.Sprintf(revisionPrompt, outline, string(draftJSON), issues, scenarioExample)
-	userMsg += "\n\n【近期已用 NPC 名字黑名单，修订后的 npcs[].name 禁止复用】\n" + formatNPCNameBlacklist(npcNameBlacklist)
+	userMsg := fmt.Sprintf(revisionPrompt, string(verifiedJSON), string(draftJSON), issues, scenarioExample, lengthSpec(targetLength), formatNPCNameBlacklist(npcNameBlacklist))
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: "你是 COC TRPG 模组修订器。根据QA反馈修订模组。仅输出修订后的完整 JSON,不要有其他文字。"},
+		{Role: "system", Content: "你是 COC7 ScenarioDraft 定向修订器。只修QA指出的硬问题。仅输出修订后的完整 JSON,不要有其他文字。"},
 		{Role: "user", Content: userMsg},
 	}
 
@@ -847,6 +1038,48 @@ func parsePipelineCalls(c context.Context, raw string) []pipelineToolCall {
 	return calls
 }
 
+func stripYieldCalls(calls []pipelineToolCall) []pipelineToolCall {
+	filtered := make([]pipelineToolCall, 0, len(calls))
+	for _, c := range calls {
+		if c.Action == "yield" {
+			continue
+		}
+		filtered = append(filtered, c)
+	}
+	return filtered
+}
+
+func parseVerifiedBiblePayload(ctx context.Context, parser agentHandle, raw json.RawMessage) (VerifiedBible, error) {
+	var verified VerifiedBible
+	if err := parseJSONObject(string(raw), &verified); err == nil {
+		return verified, nil
+	} else {
+		fixed, repairErr := repairJSONWith(ctx, parser, string(raw), err, verifiedBibleExample)
+		if repairErr != nil {
+			return VerifiedBible{}, fmt.Errorf("verified bible JSON 修复失败: %w (原始错误: %v)", repairErr, err)
+		}
+		if err2 := parseJSONObject(fixed, &verified); err2 != nil {
+			return VerifiedBible{}, fmt.Errorf("修复后的 verified bible 仍无法解析: %w", err2)
+		}
+		return verified, nil
+	}
+}
+
+func fallbackVerifiedBible(bible ScenarioBible, note string) VerifiedBible {
+	verified := make([]string, 0, len(bible.MythosElements))
+	for _, element := range bible.MythosElements {
+		if strings.TrimSpace(element) == "" {
+			continue
+		}
+		verified = append(verified, "待保守处理: "+strings.TrimSpace(element))
+	}
+	return VerifiedBible{
+		Bible:                  bible,
+		RulesNotes:             []string{note},
+		VerifiedMythosElements: verified,
+	}
+}
+
 func executeSearchCalls(ctx context.Context, calls []pipelineToolCall, tag string) string {
 	var sb strings.Builder
 	for _, c := range calls {
@@ -882,11 +1115,14 @@ func executeSearchCalls(ctx context.Context, calls []pipelineToolCall, tag strin
 // chatAndParseDraft calls the generator LLM once, then hands JSON repair to
 // the parser agent when unmarshal fails.
 func chatAndParseDraft(ctx context.Context, generator agentHandle, parser agentHandle, msgs []llm.ChatMessage, out *ScenarioDraft) error {
+	return chatAndParseJSON(ctx, generator, parser, msgs, out, scenarioExample, "draft")
+}
+
+func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser agentHandle, msgs []llm.ChatMessage, out *T, schemaExample string, tag string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
-	// Step 1: generator produces the draft
 	raw, err := generator.provider.Chat(ctx, msgs)
 	if err != nil {
 		return err
@@ -895,25 +1131,22 @@ func chatAndParseDraft(ctx context.Context, generator agentHandle, parser agentH
 	if parseErr == nil {
 		return nil
 	}
-	log.Printf("[draft] generator JSON parse failed: %v", parseErr)
+	log.Printf("[%s] generator JSON parse failed: %v", tag, parseErr)
 
-	// Step 2: parser agent repairs the JSON
-	fixed, repairErr := repairJSONWith(ctx, parser, raw, parseErr, scenarioExample)
+	fixed, repairErr := repairJSONWith(ctx, parser, raw, parseErr, schemaExample)
 	if repairErr != nil {
-		return fmt.Errorf("draft JSON 修复失败: %w (原始错误: %v)", repairErr, parseErr)
+		return fmt.Errorf("%s JSON 修复失败: %w (原始错误: %v)", tag, repairErr, parseErr)
 	}
 	if err := parseJSONObject(fixed, out); err == nil {
 		return nil
 	} else {
-		// First repair can return syntactically valid JSON but still mismatched schema.
-		// Feed the concrete schema error back into parser once more.
-		log.Printf("[draft] parser output schema mismatch, retry parser: %v", err)
-		repairedAgain, repairErr2 := repairJSONWith(ctx, parser, fixed, err, scenarioExample)
+		log.Printf("[%s] parser output schema mismatch, retry parser: %v", tag, err)
+		repairedAgain, repairErr2 := repairJSONWith(ctx, parser, fixed, err, schemaExample)
 		if repairErr2 != nil {
-			return fmt.Errorf("修复后的 JSON 结构仍不匹配,二次修复失败: %w (结构错误: %v)", repairErr2, err)
+			return fmt.Errorf("修复后的 %s JSON 结构仍不匹配,二次修复失败: %w (结构错误: %v)", tag, repairErr2, err)
 		}
 		if err2 := parseJSONObject(repairedAgain, out); err2 != nil {
-			return fmt.Errorf("二次修复后的 JSON 仍无法解析为 ScenarioDraft: %w", err2)
+			return fmt.Errorf("二次修复后的 %s JSON 仍无法解析: %w", tag, err2)
 		}
 	}
 	return nil
