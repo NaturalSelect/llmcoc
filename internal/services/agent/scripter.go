@@ -450,7 +450,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	npcNameBlacklist := loadRecentNPCNameBlacklist(200)
 	debugf("script", "npc blacklist count: %d", len(npcNameBlacklist))
 
-	storyBrief, err := generateStoryBrief(ctx, architect, req.Era)
+	storyBrief, err := generateStoryBrief(ctx, architect, req.Era, req.Theme)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("story brief 生成失败: %w", err)
 	}
@@ -532,10 +532,10 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 // Phase 1: Generate story brief, then outline
 // ---------------------------------------------------------------------------
 
-func generateStoryBrief(ctx context.Context, writer agentHandle, era string) (string, error) {
+func generateStoryBrief(ctx context.Context, writer agentHandle, era string, threat string) (string, error) {
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: writer.systemPrompt(storySystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf("请根据时代生成事件发生地背景设定。只生成现实背景，不要输入或点名任何神话元素，不要设计完整剧情。\n\n时代：%s", era)},
+		{Role: "user", Content: fmt.Sprintf("请根据时代和威胁参考生成事件发生地背景设定。只生成现实背景，不要点名神话实体/怪物/法术/典籍，不要设计完整剧情。威胁参考只能转化为社会压力、地方矛盾、传闻或调查入口。\n\n时代：%s\n威胁参考：%s", era, threat)},
 	}
 
 	if ctx.Err() != nil {
