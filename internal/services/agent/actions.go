@@ -415,10 +415,6 @@ func (foundClueAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 			clubsText = clubsText[start+1:]
 		}
 	}
-	*actx.PendingWrite += fmt.Sprintf("\n【线索已获得】%s\n", clubsText)
-	if actx.WroteNarrative != nil {
-		*actx.WroteNarrative = true
-	}
 	*actx.KPNarration += fmt.Sprintf("\n【线索已获得】%s\n", clubsText)
 	return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("clue[%d] recorded: %s", idx, clubsText)}}
 }
