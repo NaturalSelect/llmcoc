@@ -326,7 +326,7 @@ func pickCandidate(rng *rand.Rand, candidates []string) string {
 }
 
 var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
-<task>根据用户给定阶段列举20个可用于事件发生地的候选。该结果只作为布景风味，不决定剧情结构。</task>
+<task>根据用户给定阶段列举50个可用于事件发生地的候选。该结果只作为布景风味，不决定剧情结构。</task>
 <rules>
 - country阶段输出具体国家或具体政权范围。
 - 非country阶段只输出类型/形态/区位模式，不输出具体地名、真实行政区名、真实城市名或真实街区名。
@@ -334,7 +334,7 @@ var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
 - human_geography阶段必须输出人口密度/当地风俗文化/社会结构。
 - 只输出现实地理/人文地理候选，不输出幕后真相。
 - 禁止输出伪科学、高科技、工程化异常或可诱导伪科学解释神话的候选。
-- 每行一个名称，正好20个，不要编号、解释、标题或描述句。</rules>`
+- 每行一个名称，正好50个，不要编号、解释、标题或描述句。</rules>`
 
 func generateGeographyChain(ctx context.Context, architect agentHandle, era string) ([]string, error) {
 	if architect.provider == nil {
@@ -462,7 +462,7 @@ func normalizeElementName(s string) string {
 
 type FoundationSeed struct {
 	Anomaly        string `json:"anomaly"`
-	HumanTragedy  string `json:"human_tragedy"`
+	HumanTragedy   string `json:"human_tragedy"`
 	MythosRelation string `json:"mythos_relation"`
 	MythosSeed     string `json:"mythos_seed"`
 }
@@ -476,9 +476,9 @@ type FoundationSeedQA struct {
 }
 
 type FoundationSeedRuleCheck struct {
-	Question string `json:"question"`
-	Result   string `json:"result"`
-	Usable   bool   `json:"usable"`
+	Question    string `json:"question"`
+	Result      string `json:"result"`
+	HardFailure bool   `json:"hard_failure"`
 }
 
 const foundationSeedSystemPrompt = `<role>COC7沙盒基础种子设计师</role>
@@ -506,7 +506,9 @@ const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
 - 必须以输入中的check_rule结果作为审核依据；不要只凭常识或氛围判断。
 - 只审核Stage1 seed，不锁定具体数值，不扩写派系/NPC/场景。
 - pass=true的最低标准：anomaly具体且怪异；check_rule结果能支持mythos_seed保守接到神话实体、典籍、法术、梦境、异界、生物、崇拜、禁忌知识或宇宙恐怖方向之一；不依赖伪科学、高科技或普通犯罪作为唯一解释。
-- 如果check_rule无结果、明确规则书未覆盖、或只支持普通怪谈/刑侦/心理疾病/科技异常/社会议题，pass=false。
+- 如果check_rule hard_failure=true，pass=false。
+- 如果check_rule正文给出了可保守支撑的核心神话锚点，即使同时指出部分具体表现不是规则书明文效果，也应pass=true；把未覆盖表现写入suggested_scope，要求Stage2保守标注，不要拒绝整个seed。
+- 只有当check_rule正文没有任何可支撑核心锚点，或只支持普通怪谈/刑侦/心理疾病/科技异常/社会议题时，pass=false。
 - 如果check_rule只给出宽泛目录但能证明存在可用神话类别，可pass=true，并在suggested_scope要求Stage2继续保守核验具体锚点。
 - reject_reasons必须具体指出异常、mythos_seed和check_rule结果之间哪里对应不上。
 - rule_check_summary必须简述check_rule返回的核心依据，不能留空。
@@ -514,7 +516,7 @@ const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
 
 func generateFoundationSeedWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (FoundationSeed, error) {
 	var rejection *FoundationSeedQA
-	const maxAttempts = 3
+	const maxAttempts = 30
 	var lastSeed FoundationSeed
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		seed, err := generateFoundationSeed(ctx, room, constraints, rejection, attempt)
@@ -590,13 +592,13 @@ func reviewFoundationSeed(ctx context.Context, room *scripterRoom, constraints S
 	if qa.RuleCheckSummary == "" {
 		qa.RuleCheckSummary = truncateRunes(ruleCheck.Result, 1000)
 	}
-	if !ruleCheck.Usable {
+	if ruleCheck.HardFailure {
 		qa.Pass = false
 		if len(qa.RejectReasons) == 0 {
-			qa.RejectReasons = []string{"check_rule没有返回可用神话锚点，不能让创作阶段只凭氛围通过。"}
+			qa.RejectReasons = []string{"check_rule未返回可审核的规则书结果，不能让创作阶段只凭氛围通过。"}
 		}
 		if qa.Reason == "" {
-			qa.Reason = "check_rule未能证明该异常可保守对应到规则书神话方向。"
+			qa.Reason = "check_rule没有可用结果，无法证明该异常可保守对应到规则书神话方向。"
 		}
 	}
 	if qa.Pass && qa.Reason == "" {
@@ -615,28 +617,28 @@ func checkFoundationSeedRule(ctx context.Context, seed FoundationSeed) Foundatio
 	if err != nil {
 		result := fmt.Sprintf("check_rule unavailable: %v", err)
 		log.Printf("[scripter:foundation_seed_qa] check_rule unavailable err=%v", err)
-		return FoundationSeedRuleCheck{Question: question, Result: result, Usable: false}
+		return FoundationSeedRuleCheck{Question: question, Result: result, HardFailure: true}
 	}
 	results := runLawyer(ctx, lawyerHandle, question, rulebook.GlobalIndex)
 	result := formatLawyerResults(results)
-	usable := foundationRuleCheckUsable(result)
-	log.Printf("[scripter:foundation_seed_qa] check_rule results=%d usable=%v body=%s", len(results), usable, truncateRunes(result, scripterRepairLogLimit))
-	return FoundationSeedRuleCheck{Question: question, Result: result, Usable: usable}
+	hardFailure := foundationRuleCheckHardFailure(result)
+	log.Printf("[scripter:foundation_seed_qa] check_rule results=%d hard_failure=%v body=%s", len(results), hardFailure, truncateRunes(result, scripterRepairLogLimit))
+	return FoundationSeedRuleCheck{Question: question, Result: result, HardFailure: hardFailure}
 }
 
-func foundationRuleCheckUsable(result string) bool {
+func foundationRuleCheckHardFailure(result string) bool {
 	text := strings.TrimSpace(result)
 	if text == "" {
-		return false
+		return true
 	}
 	lower := strings.ToLower(text)
-	blockingPhrases := []string{"无结果", "默认禁止", "规则书未明确规定", "未明确规定", "没有结果", "no result", "not found"}
-	for _, phrase := range blockingPhrases {
+	hardBlockingPhrases := []string{"无结果", "默认禁止", "没有结果", "no result", "not found", "check_rule unavailable"}
+	for _, phrase := range hardBlockingPhrases {
 		if strings.Contains(lower, strings.ToLower(phrase)) {
-			return false
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 func rejectionRejectReasons(rejection *FoundationSeedQA) []string {
@@ -728,11 +730,14 @@ func generateFactionMap(ctx context.Context, room *scripterRoom, constraints Scr
 	userPrompt := fmt.Sprintf(`<request_json>%s</request_json>
 <constraints>%s</constraints>
 <foundation_seed>%s</foundation_seed>
+<difficulty_spec>
+%s
+</difficulty_spec>
 <stage2_rule_context conservative="%v">
 %s
 </stage2_rule_context>
 <recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
-请生成FactionMap。`, string(reqJSON), string(constraintsJSON), string(seedJSON), conservative, ruleCtx, formatNPCNameBlacklist(room.npcBlacklist))
+请生成FactionMap。`, string(reqJSON), string(constraintsJSON), string(seedJSON), difficultySpec(room.req.Difficulty), conservative, ruleCtx, formatNPCNameBlacklist(room.npcBlacklist))
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.architect.systemPrompt(factionMapSystemPrompt)},
 		{Role: "user", Content: userPrompt},
@@ -836,7 +841,10 @@ func generateWorldState(ctx context.Context, room *scripterRoom, constraints Scr
 <faction_map>%s</faction_map>
 <fixed_mythos_anchor>%s</fixed_mythos_anchor>
 <length>%s</length>
-请生成WorldState。`, string(constraintsJSON), string(seedJSON), string(factionsJSON), factions.MythosAnchor, lengthSpec(room.req.TargetLength))
+<difficulty_spec>
+%s
+</difficulty_spec>
+请生成WorldState。`, string(constraintsJSON), string(seedJSON), string(factionsJSON), factions.MythosAnchor, lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty))
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.architect.systemPrompt(worldStateSystemPrompt)},
 		{Role: "user", Content: userPrompt},
@@ -915,9 +923,12 @@ func assembleSandboxDraft(ctx context.Context, room *scripterRoom, constraints S
 <fixed_mythos_anchor>%s</fixed_mythos_anchor>
 <json_example>%s</json_example>
 <length>%s</length>
+<difficulty_spec>
+%s
+</difficulty_spec>
 <recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
 <title_samples_to_avoid>%s</title_samples_to_avoid>%s
-请输出完整ScenarioDraft JSON。`, string(reqJSON), string(constraintsJSON), string(seedJSON), string(factionsJSON), string(worldJSON), factions.MythosAnchor, scenarioExample, lengthSpec(room.req.TargetLength), formatNPCNameBlacklist(room.npcBlacklist), formatScenarioTitleBlacklist(room.titleSamples), revisionBlock)
+请输出完整ScenarioDraft JSON。`, string(reqJSON), string(constraintsJSON), string(seedJSON), string(factionsJSON), string(worldJSON), factions.MythosAnchor, scenarioExample, lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty), formatNPCNameBlacklist(room.npcBlacklist), formatScenarioTitleBlacklist(room.titleSamples), revisionBlock)
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.architect.systemPrompt(assemblySystemPrompt)},
 		{Role: "user", Content: userPrompt},
@@ -1390,6 +1401,17 @@ func cluePrefixForLayer(layer string) string {
 }
 
 // lengthSpec returns scene/clue/NPC count requirements based on target_length.
+func difficultySpec(difficulty string) string {
+	switch strings.ToLower(strings.TrimSpace(difficulty)) {
+	case "easy":
+		return "- 派系时间线节点推进缓慢，调查员有充足干预窗口\n- 线索分布：[真实]为主，少量[隐藏]，极少[误导]\n- 杠杆代价低：对话、基础检定或公开信息即可拉动，无需牺牲\n- NPC初始态度：中立到谨慎，社交检定可以成功说服\n- 恐怖核心层：可进入但不强迫付出理智代价"
+	case "hard":
+		return "- 派系时间线推进快，干预窗口紧张，超时则产生不可逆后果\n- 线索分布：[隐藏]和[误导]为主，表面可见的[真实]线索很少\n- 杠杆代价高：多数杠杆需要对抗检定、道德代价或信息暴露\n- NPC初始态度：多数敌对或欺骗性，说服有实质代价\n- 恐怖核心层：进入需承担显著理智或人际代价"
+	default: // normal
+		return "- 派系时间线推进速度适中，有几个明确干预窗口\n- 线索分布均衡：[真实]略多，[隐藏]次之，少量[误导]\n- 杠杆代价适中：部分杠杆可直接拉动，部分需要检定\n- NPC初始态度：混合，部分可说服，部分保持距离\n- 恐怖核心层：需要主动调查和付出一定代价"
+	}
+}
+
 func lengthSpec(targetLength string) string {
 	switch strings.ToLower(strings.TrimSpace(targetLength)) {
 	case "long":
@@ -1478,7 +1500,7 @@ func RepairJSON(ctx context.Context, rawJSON string, parseErr error, schemaExamp
 }
 
 func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, parseErr error, schemaExample string) (string, error) {
-	 if parser.provider == nil {
+	if parser.provider == nil {
 		return "", fmt.Errorf("parser provider unavailable")
 	}
 	msgs := []llm.ChatMessage{
