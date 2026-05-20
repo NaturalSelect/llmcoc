@@ -1017,45 +1017,61 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 	for i := range draft.Content.Scenes {
 		if strings.TrimSpace(draft.Content.Scenes[i].ID) == "" {
 			draft.Content.Scenes[i].ID = fmt.Sprintf("location_%d", i+1)
+			log.Printf("[scripter:normalize] filled scene[%d].id=%q", i, draft.Content.Scenes[i].ID)
 		}
 		if strings.TrimSpace(draft.Content.Scenes[i].Name) == "" {
 			draft.Content.Scenes[i].Name = fmt.Sprintf("地点%d", i+1)
+			log.Printf("[scripter:normalize] filled scene[%d].name=%q", i, draft.Content.Scenes[i].Name)
 		}
 		if strings.TrimSpace(draft.Content.Scenes[i].Description) == "" {
 			draft.Content.Scenes[i].Description = "可见：当前局势的表面信息。可发现：主动调查可获得的事实。杠杆：调查员行动会改变派系时间线。风险：拖延会让世界推进。出口：可前往其他地点。"
+			log.Printf("[scripter:normalize] filled scene[%d].description", i)
 		}
 		if len(draft.Content.Scenes[i].Triggers) == 0 {
 			draft.Content.Scenes[i].Triggers = []string{"available_from_start"}
+			log.Printf("[scripter:normalize] filled scene[%d].triggers=%v", i, draft.Content.Scenes[i].Triggers)
 		}
 	}
 	if len(draft.Content.NPCs) == 0 {
 		draft.Content.NPCs = npcsFromFactions(factions)
+		log.Printf("[scripter:normalize] generated npcs count=%d", len(draft.Content.NPCs))
 	}
 	for i := range draft.Content.NPCs {
 		if strings.TrimSpace(draft.Content.NPCs[i].Name) == "" {
 			draft.Content.NPCs[i].Name = fmt.Sprintf("关键NPC%d", i+1)
+			log.Printf("[scripter:normalize] filled npc[%d].name=%q", i, draft.Content.NPCs[i].Name)
 		}
 		if strings.TrimSpace(draft.Content.NPCs[i].Description) == "" {
 			draft.Content.NPCs[i].Description = "公开身份、所属派系、真实议程、秘密和可被调查员影响的杠杆。"
+			log.Printf("[scripter:normalize] filled npc[%d].description", i)
 		}
 		if strings.TrimSpace(draft.Content.NPCs[i].Attitude) == "" {
 			draft.Content.NPCs[i].Attitude = "谨慎观察调查员，只有在压力或交换下才透露深层信息。"
+			log.Printf("[scripter:normalize] filled npc[%d].attitude=%q", i, draft.Content.NPCs[i].Attitude)
 		}
 	}
 	if len(draft.Content.Clues) == 0 {
 		draft.Content.Clues = cluesFromWorld(world, seed)
+		log.Printf("[scripter:normalize] generated clues count=%d", len(draft.Content.Clues))
 	}
 	for i, clue := range draft.Content.Clues {
-		draft.Content.Clues[i] = normalizeClueString(clue)
+		normalized := normalizeClueString(clue)
+		if normalized != clue {
+			log.Printf("[scripter:normalize] normalized clue[%d] from=%q to=%q", i, truncateRunes(clue, 300), truncateRunes(normalized, 300))
+		}
+		draft.Content.Clues[i] = normalized
 	}
 	if strings.TrimSpace(draft.Content.WinCondition) == "" {
 		draft.Content.WinCondition = defaultWinCondition(factions)
+		log.Printf("[scripter:normalize] filled win_condition=%q", truncateRunes(draft.Content.WinCondition, 300))
 	}
 	if strings.TrimSpace(draft.Content.LoseCondition) == "" {
 		draft.Content.LoseCondition = defaultLoseCondition(factions)
+		log.Printf("[scripter:normalize] filled lose_condition=%q", truncateRunes(draft.Content.LoseCondition, 300))
 	}
 	if len(draft.Content.PartialWins) == 0 {
 		draft.Content.PartialWins = defaultPartialWins(factions)
+		log.Printf("[scripter:normalize] filled partial_wins count=%d", len(draft.Content.PartialWins))
 	}
 }
 
@@ -1239,15 +1255,20 @@ func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser 
 	if generator.provider == nil {
 		return fmt.Errorf("%s generator provider unavailable", tag)
 	}
+	log.Printf("[scripter:%s] chat start messages=%d", tag, len(msgs))
 	raw, err := generator.provider.Chat(ctx, msgs)
 	if err != nil {
+		log.Printf("[scripter:%s] chat error=%v", tag, err)
 		return err
 	}
+	log.Printf("[scripter:%s] raw len=%d body=%s", tag, len(raw), truncateRunes(raw, scripterRawLogLimit))
 	parseErr := parseJSONObject(raw, out)
 	if parseErr == nil {
+		log.Printf("[scripter:%s] parse ok without repair", tag)
+		logParsedJSON(tag, out)
 		return nil
 	}
-	log.Printf("[%s] generator JSON parse failed: %v", tag, parseErr)
+	log.Printf("[scripter:%s] generator JSON parse failed: %v raw=%s", tag, parseErr, truncateRunes(raw, scripterRawLogLimit))
 	fixed, repairErr := repairJSONWith(ctx, parser, raw, parseErr, schemaExample)
 	if repairErr != nil {
 		return fmt.Errorf("%s JSON 修复失败: %w (原始错误: %v)", tag, repairErr, parseErr)
