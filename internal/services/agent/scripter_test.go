@@ -80,29 +80,29 @@ func TestApplyGuardrailsPreservesRequestOverrides(t *testing.T) {
 }
 
 func TestParseJSONObjectExtractsFencedJSON(t *testing.T) {
-	raw := "```json\n{\"score\":88,\"pass\":true,\"strengths\":[\"ok\"],\"issues\":[],\"must_fix\":[]}\n```"
-	var result qaGuardResult
+	raw := "```json\n{\"name\":\"测试模组\",\"description\":\"简介\"}\n```"
+	var result ScenarioDraft
 	if err := parseJSONObject(raw, &result); err != nil {
 		t.Fatalf("parseJSONObject failed: %v", err)
 	}
-	if result.Score != 88 || !result.Pass || len(result.Strengths) != 1 {
+	if result.Name != "测试模组" || result.Description != "简介" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 }
 
 func TestValidateScripterResponsePayloadRequiresReason(t *testing.T) {
-	call := scripterToolCall{Action: "response", Review: &agentReview{Pass: true}}
-	if err := validateScripterResponsePayload(call, "review"); err == nil {
+	call := scripterToolCall{Action: "response", Background: &FogBackground{TimeAndPlace: "测试地点"}}
+	if err := validateScripterResponsePayload(call, "background"); err == nil {
 		t.Fatal("expected missing reason to fail")
 	}
-	call.Reason = "审查通过，因为没有硬性问题。"
-	if err := validateScripterResponsePayload(call, "review"); err != nil {
+	call.Reason = "背景符合公开入口阶段要求。"
+	if err := validateScripterResponsePayload(call, "background"); err != nil {
 		t.Fatalf("expected response with reason to pass: %v", err)
 	}
 }
 
 func TestParseScripterToolCallsRequiresArrayShape(t *testing.T) {
-	calls, err := parseScripterToolCalls(context.Background(), agentHandle{}, `[{"action":"think","think":"先查规则"}]`, scripterSchemaExample("review"))
+	calls, err := parseScripterToolCalls(context.Background(), agentHandle{}, `[{"action":"think","think":"先查规则"}]`, scripterSchemaExample("background"))
 	if err != nil {
 		t.Fatalf("parseScripterToolCalls valid array failed: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestParseScripterToolCallsRequiresArrayShape(t *testing.T) {
 		t.Fatalf("unexpected calls: %+v", calls)
 	}
 
-	if _, err := parseScripterToolCalls(context.Background(), agentHandle{}, `{"action":"think"}`, scripterSchemaExample("review")); err == nil {
+	if _, err := parseScripterToolCalls(context.Background(), agentHandle{}, `{"action":"think"}`, scripterSchemaExample("background")); err == nil {
 		t.Fatal("expected object-shaped tool calls to fail")
 	}
 }
