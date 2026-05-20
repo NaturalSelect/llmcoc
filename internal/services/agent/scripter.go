@@ -24,8 +24,8 @@ var seedSystemPrompt = `<role>COC7单页模组敏捷设计师</role>
 <config nsfw="true" violent="true" sexual="true"/>
 <output>只输出合法JSON对象，字段必须匹配ScenarioSeed；不要Markdown、标题、解释或代码围栏。</output>
 <priority>
-- 如果用户brief非空，必须作为最高优先级创意输入吸收并保留核心意图，不得被随机主题或地理背景覆盖。
-- 随机主题、叙事模板和地理链只用于补强五步内容，不得替代五步结构。
+- 如果用户brief非空，必须作为最高优先级创意输入吸收并保留核心意图，不得被地理背景覆盖。
+- 地理链只用于补强五步内容，不得替代五步结构。
 </priority>
 <schema>
 {
@@ -350,22 +350,6 @@ const scenarioExample = `{
   }
 }`
 
-var randomTopicSystemPrompt = `<role>COC地方背景设定生成器</role>
-<task>为自动brief生成一个可支撑调查故事的事件发生地背景设定。</task>
-<need>背景要贴近日常、小尺度、普通人可接触；适合调查入口、地方传闻、人物关系和后续神话介入。</need>
-<fields>
-- 事件发生地点：写清自然地理、人文地理、特色建筑。
-- 社会背景：写清权力运作模式、执法与安全机构。
-- 经济与产业：写清当地支柱产业、交通便利程度、商店/银行/旅店等设施是否齐全、是否存在走私等非法经济活动、财富分配模式。
-- 民俗文化：写清信仰、风俗、地方禁忌或节庆。
-- 交织关系：说明地理、社会、经济、民俗如何互相印证，并形成可引出COC调查的压力或矛盾。</fields>
-<rules>
-- 各要素不能孤立罗列，必须彼此因果关联：例如偏僻地理影响交通与执法，单一产业影响权力结构，产业衰败影响民俗信仰或秘密组织。
-- 保持现实生活质感，不要直接写幕后神话真相、怪物、仪式或结局。
-- 可以留下适合story阶段发展的异常压力，但不要替story阶段指定唯一谜底。</rules>
-<ban>伪科学解释异常或神话；科学术语、机械装置、电子设备、声波、振动、频率、传感器、药剂、催眠器、信号标记、安全区、能量场、量子、磁场、电磁波、生物实验、心理暗示作为神话解释或解决关键；宏大工程、国家级设施、军事/核能/航天/深海/高能物理/绝密研究；如核电站、反应堆、导弹基地、航天基地、粒子加速器、深海基地。禁止输出随机元素清单。</ban>
-<out>仅输出一段300-600字的简中背景设定正文；不要JSON、Markdown、编号、标题或解释。</out>`
-
 var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
 <task>根据用户给定阶段列举20个可用于事件发生地的候选。</task>
 <rules>
@@ -374,9 +358,6 @@ var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
 - 非country阶段只输出类型/形态/区位模式，不输出具体地名、真实行政区名、真实城市名或真实街区名。
 - natural_geography阶段必须输出自然地理/地形/水文/气候约束类型。
 - human_geography阶段必须输出人口密度/当地风俗文化/社会结构。
-- economy阶段必须输出支柱产业、商业设施、财富分配或非法经济空间类型。
-- transport阶段必须输出交通可达性、交通瓶颈、主要通行方式或物流节点类型。
-- landmark_stage阶段必须输出该地与众不同的点。
 - 只输出现实地理/人文地理候选，不输出幕后真相。
 - 禁止输出伪科学、高科技、工程化异常或可诱导伪科学解释神话的候选。
 - 候选应适合调查故事，具有地方社会、交通、产业、执法或民俗延展空间。
@@ -605,9 +586,11 @@ type scripterToolCall struct {
 	Think      string         `json:"think,omitempty"`
 	Question   string         `json:"question,omitempty"`
 	Constant   string         `json:"constant,omitempty"`
+	Reason     string         `json:"reason,omitempty"`
 	Review     *agentReview   `json:"review,omitempty"`
 	Result     *qaGuardResult `json:"result,omitempty"`
 	Background *FogBackground `json:"background,omitempty"`
+	Gameplay   *GameplayFrame `json:"gameplay_frame,omitempty"`
 	Truth      *TruthStack    `json:"truth,omitempty"`
 	Maze       *ClueMaze      `json:"maze,omitempty"`
 	Cast       *CastPlan      `json:"cast,omitempty"`
@@ -625,13 +608,13 @@ type scripterStageSpec struct {
 }
 
 type scripterRoom struct {
-	architect        agentHandle
-	qa               agentHandle
-	parser           agentHandle
-	req              ScenarioCreationRequest
-	geographyChain   []string
-	npcBlacklist     []string
-	titleSamples     []string
+	architect      agentHandle
+	qa             agentHandle
+	parser         agentHandle
+	req            ScenarioCreationRequest
+	geographyChain []string
+	npcBlacklist   []string
+	titleSamples   []string
 }
 
 type virtualScripterAgent struct {
@@ -642,6 +625,7 @@ type virtualScripterAgent struct {
 
 type scripterAgents struct {
 	SettingScout       virtualScripterAgent
+	GameplayGrounder   virtualScripterAgent
 	MysteryArchitect   virtualScripterAgent
 	MisdirectionCritic virtualScripterAgent
 	ClueCartographer   virtualScripterAgent
@@ -666,6 +650,18 @@ type FogBackground struct {
 	PublicProblem      string   `json:"public_problem"`
 	BriefPreserved     string   `json:"brief_preserved"`
 	AntiTropeExecution []string `json:"anti_trope_execution"`
+}
+
+type GameplayFrame struct {
+	Gameplay             string   `json:"gameplay"`
+	FitReason            string   `json:"fit_reason"`
+	BackgroundDerivation []string `json:"background_derivation"`
+	InvestigationLoop    string   `json:"investigation_loop"`
+	PlayerActions        []string `json:"player_actions"`
+	FrictionPoints       []string `json:"friction_points"`
+	FailurePressure      string   `json:"failure_pressure"`
+	RuleTouchpoints      []string `json:"rule_touchpoints"`
+	Boundaries           []string `json:"boundaries"`
 }
 
 type TruthStack struct {
@@ -697,17 +693,17 @@ type ScenarioCluePlan struct {
 }
 
 type WitnessReport struct {
-	Viewpoint       string `json:"viewpoint"`
-	Statement       string `json:"statement"`
-	TruePart        string `json:"true_part"`
-	MisleadingPart  string `json:"misleading_part"`
+	Viewpoint      string `json:"viewpoint"`
+	Statement      string `json:"statement"`
+	TruePart       string `json:"true_part"`
+	MisleadingPart string `json:"misleading_part"`
 }
 
 type RedHerringPlan struct {
-	GroupName     string   `json:"group_name"`
-	SurfaceGuilt  string   `json:"surface_guilt"`
-	Explains      []string `json:"explains"`
-	ActualAgenda  string   `json:"actual_agenda"`
+	GroupName    string   `json:"group_name"`
+	SurfaceGuilt string   `json:"surface_guilt"`
+	Explains     []string `json:"explains"`
+	ActualAgenda string   `json:"actual_agenda"`
 }
 
 type CastPlan struct {
@@ -717,105 +713,37 @@ type CastPlan struct {
 }
 
 type NPCPlan struct {
-	Name            string `json:"name"`
-	PublicIdentity  string `json:"public_identity"`
-	Appearance      string `json:"appearance"`
-	Attitude        string `json:"attitude"`
-	RealMotive      string `json:"real_motive"`
-	Secret          string `json:"secret"`
-	DailyObsession  string `json:"daily_obsession"`
-	ClueFunction    string `json:"clue_function"`
-	ActionLine      string `json:"action_line"`
-	StatsNote       string `json:"stats_note"`
+	Name           string `json:"name"`
+	PublicIdentity string `json:"public_identity"`
+	Appearance     string `json:"appearance"`
+	Attitude       string `json:"attitude"`
+	RealMotive     string `json:"real_motive"`
+	Secret         string `json:"secret"`
+	DailyObsession string `json:"daily_obsession"`
+	ClueFunction   string `json:"clue_function"`
+	ActionLine     string `json:"action_line"`
+	StatsNote      string `json:"stats_note"`
 }
 
 // ---------------------------------------------------------------------------
 // Entry point: director-style multi-agent scripter harness
 // ---------------------------------------------------------------------------
 
-func randomEra() string {
-	eras := []string{"1920s", "1990s", "现代"}
-	return eras[rand.Intn(len(eras))]
+const defaultScripterEra = "1920s"
+
+var gameplayCatalysts = []string{
+	"社会潜入：调查员必须通过身份、关系或伪装进入受限圈层",
+	"限时调查：公开事件、自然周期或社会日程制造有限调查窗口",
+	"追踪狩猎：调查员沿痕迹、目击、物流或异常移动路径推进",
+	"封闭空间探索：关键区域暂时封锁，出口和信息都受控",
+	"多方交易：多个势力争夺同一证据、人物或物品",
+	"公开事件暗线：调查在公众、媒体、警察或地方权威注视下进行",
+	"路线型调查：交通线路、迁徙路线或巡回活动让线索分站展开",
+	"怪物谈判：非人存在有可理解但危险的诉求，玩家可沟通或误导",
 }
 
-// narrativeTemplates 叙事结构模板，随机注入大纲 prompt，打破三幕剧单一套路。
-var narrativeTemplates = []string{
-	"非线性结构：多条独立调查线并行，玩家可自由选择探索顺序，最终汇聚至核心真相",
-	"限时压迫：存在明确的倒计时（如天文现象、仪式日期），若干回合内未完成则神话降临，Bad End 自动触发",
-	"三幕经典结构：序章-调查-高潮",
-	"完全开放：没有预设场景或线索，玩家的每个行动都可能引发新的事件和线索，故事由玩家行为驱动",
-	"罗生门结构：不同NPC对同一事件给出互相矛盾但各自合理的证词，真相需从矛盾处拼合",
-	"地点剥洋葱：围绕一个核心地点反复深入，每次返回都会揭开新的空间层级、历史痕迹或神话污染",
-	"公开事件暗线：表面是公开社会事件，调查员在记者、警察、民众或地方势力注视下寻找隐藏的神话因果",
-	"递归线索：每条线索既回答一个问题又引出更深问题，最终指向同一神话源头而非单一Boss战",
-}
-
-// topicThreatOrigins 威胁来源维度
-var topicThreatOrigins = []string{
-	"腐化的人类组织（邪教、秘密学会、政府黑计划）",
-	"传统怪物(狼人、吸血鬼等经典恐怖生物)",
-	"神话法师（人类但掌握了强大且危险的神话知识和法术）",
-	"博学的神话法师（人类但对神话有深入研究，掌握丰富的神话知识和实际法术能力）",
-	"旧日支配者的眷族（忠诚的仆从，可能是人类、怪物或混血种）",
-	"沉睡已久的神话生物（即将苏醒或被意外唤醒）",
-	"潜伏在人类社会中的神话生物（伪装成普通人或动物）",
-	"外来的神话生物（从其他维度或星球入侵）",
-	"伟大存在的直接干预（亲自降临或通过代理人直接影响世界）",
-	"被神话典籍误导的人类研究者",
-	"古老遗物的持续影响（规则书来源的神话物品正在吸引眷族或改变持有者）",
-	"死者或失踪者的异常回归（回来的不是原本人类）",
-}
-
-// topicTwists NPC/剧情转折维度
-var topicTwists = []string{
-	"雇主本身是幕后黑手",
-	"BOSS实为受害者，真正的威胁尚未露面",
-	"渐进式，威胁逐步升级",
-	"关键NPC一直在帮助，但其动机本身构成最终危机",
-	"所有人以为的‘超自然现象’实为精心策划的人类阴谋",
-	"本应最可靠的盟友阵营里，隐藏着唯一知道真相的叛逃者",
-	"怪物并非被制造出来，而是在逃离比它更可怕的存在",
-	"故事发生的世界本身是一个梦境",
-	"最初的受害者其实是主动召来神话影响的人，但后来失去控制",
-	"调查员要阻止的仪式其实已经失败，真正危险来自失败后的副作用",
-	"地方权威一直在掩盖真相，但其目的不是作恶而是拖延更大灾难",
-	"关键证据是真的，但被放在错误语境中会得出完全相反的结论",
-	"看似无害的日常职业或地方习俗，实际是维持封印/边界的残缺仪式",
-}
-
-var gameplay = []string{
-	"大逃杀，逃离事件发生地点",
-	"与恋爱、性有关的18X、NSFW内容",
-	"大世界探索, 在开放世界中自由探索, 线索分布在各个角落",
-	"密室逃脱，限时破解封闭空间内的连环谜题",
-	"间谍潜入，伪装身份渗透目标组织，窃取情报并安全撤离",
-	"都市怪谈，调查现代都市中的异常现象，揭开传闻背后的真相",
-	"物品收集，寻找并组合散落世界各地的神话物品，解锁隐藏剧情和能力",
-	"社会潜入，利用身份、关系和话术进入封闭社群或组织核心",
-	"追踪狩猎，沿着踪迹、目击记录和异常痕迹寻找移动中的神话目标",
-	"航程/旅途结构，交通工具或迁徙路线上的每一站都揭开一层真相",
-	"拍卖/交易会结构，多方势力争夺同一神话物品，玩家可谈判、盗取或毁弃",
-	"怪物谈判，非人存在有可理解但危险的目标，玩家可沟通、误导、交易或驱逐",
-}
-
-func randomNarrativeTemplate() string {
-	return narrativeTemplates[rand.Intn(len(narrativeTemplates))]
-}
-
-func randomTopicConstraints(threatNum int) string {
-	if threatNum > len(topicThreatOrigins) {
-		threatNum = len(topicThreatOrigins)
-	}
-	threats := make([]string, len(topicThreatOrigins))
-	copy(threats, topicThreatOrigins)
-	rand.Shuffle(len(threats), func(i, j int) { threats[i], threats[j] = threats[j], threats[i] })
-	threats = threats[:threatNum]
-	if rand.Intn(10) == 1 {
-		threats = append(threats, "委托人是奈亚拉托提普的化身(不表现为敌对,利用调查员达成自己的不可告人目的,在结尾揭开真相并嘲笑调查员的愚蠢; 注: 请自由设定化身的形象不必局限在经典形象, 但必须是人形且在故事中一直以人类身份出现)")
-	}
-	twist := topicTwists[rand.Intn(len(topicTwists))]
-	gamePlay := gameplay[rand.Intn(len(gameplay))]
-	return fmt.Sprintf("威胁来源=%v | 核心转折=%s | 游戏玩法=%s", threats, twist, gamePlay)
+func randomGameplayCatalyst() string {
+	return gameplayCatalysts[rand.Intn(len(gameplayCatalysts))]
 }
 
 var genScenarioMutex sync.Mutex
@@ -864,16 +792,7 @@ func (r *scripterRoom) prepareContext(ctx context.Context) {
 		r.req.TargetLength = "short"
 	}
 	if strings.TrimSpace(r.req.Era) == "" {
-		r.req.Era = randomEra()
-	}
-	if strings.TrimSpace(r.req.Theme) == "" {
-		num := 1
-		if r.req.Difficulty == "hard" {
-			num = 3
-		} else if r.req.Difficulty == "normal" {
-			num = 2
-		}
-		r.req.Theme = randomTopicConstraints(num)
+		r.req.Era = defaultScripterEra
 	}
 
 	r.npcBlacklist = loadRecentNPCNameBlacklist(200)
@@ -899,56 +818,77 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("Setting Scout 失败: %w", err)
 	}
-	truth, err := generateTruthStack(ctx, r, agents.MysteryArchitect, background, nil, nil)
+	logScripterArtifact("Stage 1 Setting Scout / FogBackground", background)
+
+	gameplay, err := generateGameplayFrame(ctx, r, agents.GameplayGrounder, background)
+	if err != nil {
+		return ScenarioCreationOutput{}, fmt.Errorf("Gameplay Grounder 失败: %w", err)
+	}
+	logScripterArtifact("Stage 1.5 Gameplay Grounder / GameplayFrame", gameplay)
+
+	truth, err := generateTruthStack(ctx, r, agents.MysteryArchitect, background, gameplay, nil, nil)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("Mystery Architect 失败: %w", err)
 	}
-	truthReview, err := reviewTruthStack(ctx, r, agents.MisdirectionCritic, background, truth)
+	logScripterArtifact("Stage 2 Mystery Architect / TruthStack", truth)
+
+	truthReview, err := reviewTruthStack(ctx, r, agents.MisdirectionCritic, background, gameplay, truth)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("Misdirection Critic 失败: %w", err)
 	}
+	logScripterArtifact("Stage 2 Misdirection Critic / Review", truthReview)
 	if !truthReview.Pass {
-		truth, err = generateTruthStack(ctx, r, agents.MysteryArchitect, background, &truth, &truthReview)
+		truth, err = generateTruthStack(ctx, r, agents.MysteryArchitect, background, gameplay, &truth, &truthReview)
 		if err != nil {
 			return ScenarioCreationOutput{}, fmt.Errorf("TruthStack 修订失败: %w", err)
 		}
+		logScripterArtifact("Stage 2 Mystery Architect / Revised TruthStack", truth)
 	}
 
-	maze, err := generateClueMaze(ctx, r, agents.ClueCartographer, background, truth, nil, nil)
+	maze, err := generateClueMaze(ctx, r, agents.ClueCartographer, background, gameplay, truth, nil, nil)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("Clue Cartographer 失败: %w", err)
 	}
-	mazeReview, err := reviewClueMaze(ctx, r, agents.PlayerSimulator, background, truth, maze)
+	logScripterArtifact("Stage 3 Clue Cartographer / ClueMaze", maze)
+
+	mazeReview, err := reviewClueMaze(ctx, r, agents.PlayerSimulator, background, gameplay, truth, maze)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("Player Simulator 失败: %w", err)
 	}
+	logScripterArtifact("Stage 3 Player Simulator / Review", mazeReview)
 	if !mazeReview.Pass {
-		maze, err = generateClueMaze(ctx, r, agents.ClueCartographer, background, truth, &maze, &mazeReview)
+		maze, err = generateClueMaze(ctx, r, agents.ClueCartographer, background, gameplay, truth, &maze, &mazeReview)
 		if err != nil {
 			return ScenarioCreationOutput{}, fmt.Errorf("ClueMaze 修订失败: %w", err)
 		}
+		logScripterArtifact("Stage 3 Clue Cartographer / Revised ClueMaze", maze)
 	}
 
-	cast, err := generateCastPlan(ctx, r, agents.CastDramatist, background, truth, maze, nil, nil)
+	cast, err := generateCastPlan(ctx, r, agents.CastDramatist, background, gameplay, truth, maze, nil, nil)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("Cast Dramatist 失败: %w", err)
 	}
-	castReview, err := reviewCastPlan(ctx, r, agents.ContinuityEditor, background, truth, maze, cast)
+	logScripterArtifact("Stage 4 Cast Dramatist / CastPlan", cast)
+
+	castReview, err := reviewCastPlan(ctx, r, agents.ContinuityEditor, background, gameplay, truth, maze, cast)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("Continuity Editor 失败: %w", err)
 	}
+	logScripterArtifact("Stage 4 Continuity Editor / Review", castReview)
 	if !castReview.Pass {
-		cast, err = generateCastPlan(ctx, r, agents.CastDramatist, background, truth, maze, &cast, &castReview)
+		cast, err = generateCastPlan(ctx, r, agents.CastDramatist, background, gameplay, truth, maze, &cast, &castReview)
 		if err != nil {
 			return ScenarioCreationOutput{}, fmt.Errorf("CastPlan 修订失败: %w", err)
 		}
+		logScripterArtifact("Stage 4 Cast Dramatist / Revised CastPlan", cast)
 	}
 
-	draft, err := assembleDraft(ctx, r, agents.ScenarioAssembler, background, truth, maze, cast, nil, nil)
+	draft, err := assembleDraft(ctx, r, agents.ScenarioAssembler, background, gameplay, truth, maze, cast, nil, nil)
 	if err != nil {
 		return ScenarioCreationOutput{}, fmt.Errorf("Scenario Assembler 失败: %w", err)
 	}
 	log.Printf("[scripter] draft name=%q scenes=%d npcs=%d clues=%d", draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+	logScripterArtifact("Stage 5 Scenario Assembler / ScenarioDraft", draft)
 
 	const maxQAAttempts = 3
 	var qaResult qaGuardResult
@@ -961,18 +901,20 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 			return ScenarioCreationOutput{}, fmt.Errorf("Final QA Guard 失败: %w", err)
 		}
 		log.Printf("[scripter] final QA attempt=%d score=%d pass=%v must_fix=%d", attempt+1, qaResult.Score, qaResult.Pass, len(qaResult.MustFix))
+		logScripterArtifact(fmt.Sprintf("Stage 6 Final QA Guard / QA attempt %d", attempt+1), qaResult)
 		if qaResult.Pass && len(qaResult.MustFix) == 0 {
 			return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: attempt + 1}, nil
 		}
 		if attempt == maxQAAttempts-1 {
 			break
 		}
-		revised, revErr := reviseDraftByAssembler(ctx, r, agents.ScenarioAssembler, background, truth, maze, cast, draft, qaResult.MustFix)
+		revised, revErr := reviseDraftByAssembler(ctx, r, agents.ScenarioAssembler, background, gameplay, truth, maze, cast, draft, qaResult.MustFix)
 		if revErr != nil {
 			log.Printf("[scripter] final revision failed attempt=%d: %v", attempt+1, revErr)
 			break
 		}
 		draft = revised
+		logScripterArtifact(fmt.Sprintf("Stage 5 Scenario Assembler / Revised ScenarioDraft attempt %d", attempt+1), draft)
 	}
 
 	return ScenarioCreationOutput{Draft: draft, QA: qaResult, Iterations: maxQAAttempts}, nil
@@ -984,6 +926,11 @@ func makeVirtualAgents(r *scripterRoom) scripterAgents {
 			name:   "Setting Scout",
 			handle: r.architect,
 			system: scripterAgentSystem("Setting Scout", "只设计公开背景与调查入口，不生成幕后真相。"),
+		},
+		GameplayGrounder: virtualScripterAgent{
+			name:   "Gameplay Grounder",
+			handle: r.architect,
+			system: scripterAgentSystem("Gameplay Grounder", "把玩法催化器落地到公开背景中，衍生可玩的调查结构，不生成幕后真相。"),
 		},
 		MysteryArchitect: virtualScripterAgent{
 			name:   "Mystery Architect",
@@ -1033,6 +980,15 @@ func scripterAgentSystem(name, task string) string {
 <task>%s</task>
 <config nsfw="true" violent="true" sexual="true"/>
 <language>zh</language>`, name, task)
+}
+
+func logScripterArtifact(stage string, artifact any) {
+	bs, err := json.MarshalIndent(artifact, "", "  ")
+	if err != nil {
+		log.Printf("[scripter-artifact] %s marshal failed: %v", stage, err)
+		return
+	}
+	log.Printf("[scripter-artifact] %s\n%s", stage, string(bs))
 }
 
 func runScripterToolStage(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, spec scripterStageSpec) (scripterToolCall, error) {
@@ -1099,6 +1055,7 @@ func runScripterToolStage(ctx context.Context, room *scripterRoom, agent virtual
 				needContinue = true
 				break
 			}
+			log.Printf("[scripter-reason] %s: %s", spec.Name, strings.TrimSpace(call.Reason))
 			return call, nil
 		}
 		if needContinue {
@@ -1118,6 +1075,7 @@ func scripterToolProtocol(spec scripterStageSpec) string {
 - read_rulebook_const格式: {"action":"read_rulebook_const","constant":"rulebook_dir|rulebook_detail_dir|aliens|books|great_old_ones_and_gods|monsters|mythos_creatures|spells|skills"}。
 - 如果本轮包含check_rule或read_rulebook_const，本轮就是查询批，禁止同时提交response；等待工具结果后下一轮再response。
 - 本阶段ExpectedPayload=%s。response必须是单个数组元素，并且只填对应payload字段；不要附带其他阶段payload。
+- 每个response必须包含非空reason字段，用1-3句话解释为什么这样生成或审查。
 - RequireRuleCheck=%v；第一次response前必须至少完成一次有效check_rule或read_rulebook_const。
 </tool_protocol>
 <response_schema_example>
@@ -1145,6 +1103,9 @@ func hasScripterResponse(calls []scripterToolCall) bool {
 }
 
 func validateScripterResponsePayload(call scripterToolCall, expected string) error {
+	if strings.TrimSpace(call.Reason) == "" {
+		return fmt.Errorf("response必须包含非空reason")
+	}
 	payloads := 0
 	if call.Review != nil {
 		payloads++
@@ -1153,6 +1114,9 @@ func validateScripterResponsePayload(call scripterToolCall, expected string) err
 		payloads++
 	}
 	if call.Background != nil {
+		payloads++
+	}
+	if call.Gameplay != nil {
 		payloads++
 	}
 	if call.Truth != nil {
@@ -1175,6 +1139,10 @@ func validateScripterResponsePayload(call scripterToolCall, expected string) err
 	case "background":
 		if call.Background == nil {
 			return fmt.Errorf("expected background")
+		}
+	case "gameplay":
+		if call.Gameplay == nil {
+			return fmt.Errorf("expected gameplay_frame")
 		}
 	case "truth":
 		if call.Truth == nil {
@@ -1303,8 +1271,41 @@ func generateFogBackground(ctx context.Context, room *scripterRoom, agent virtua
 	return *call.Background, nil
 }
 
-func generateTruthStack(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, previous *TruthStack, review *agentReview) (TruthStack, error) {
+func generateGameplayFrame(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground) (GameplayFrame, error) {
+	reqJSON, _ := json.Marshal(room.req)
 	backgroundJSON, _ := json.Marshal(background)
+	selectedGameplay := randomGameplayCatalyst()
+	userPrompt := fmt.Sprintf(`请执行Stage 1.5: Gameplay Grounder，产出GameplayFrame。
+
+<request_json>%s</request_json>
+<background>%s</background>
+<gameplay_catalyst>%s</gameplay_catalyst>
+
+要求：
+- 第一轮必须先check_rule或read_rulebook_const，重点查询该玩法在当前时代/地点/社会结构下是否需要技能、装备、交通、追逐、潜入、社交、战斗、封闭空间或时间压力规则支持。
+- gameplay_catalyst只是交互结构催化器，不是硬性剧情模板；如果它与用户brief冲突，必须把它降级为局部背景压力或局部玩法，不得覆盖brief。
+- 只做公开背景衍生：解释该玩法为什么在当前背景下自然成立，补充社会/空间/制度/交通/风俗压力。
+- 不生成幕后真相、怪物、仪式、真凶、深层反转或结局。
+- 不允许电子游戏式机制或伪科学神话解释。
+- 完成后输出response.gameplay_frame。`, string(reqJSON), string(backgroundJSON), selectedGameplay)
+	call, err := runScripterToolStage(ctx, room, agent, scripterStageSpec{
+		Name:             "Gameplay Grounder",
+		SystemPrompt:     `<stage>玩法落地：把一个玩法催化器自然落地到公开背景，衍生可玩的调查结构。</stage>`,
+		UserPrompt:       userPrompt,
+		ExpectedPayload:  "gameplay",
+		MaxTurns:         8,
+		RequireRuleCheck: true,
+		SchemaExample:    scripterSchemaExample("gameplay"),
+	})
+	if err != nil {
+		return GameplayFrame{}, err
+	}
+	return *call.Gameplay, nil
+}
+
+func generateTruthStack(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, gameplay GameplayFrame, previous *TruthStack, review *agentReview) (TruthStack, error) {
+	backgroundJSON, _ := json.Marshal(background)
+	gameplayJSON, _ := json.Marshal(gameplay)
 	reqJSON, _ := json.Marshal(room.req)
 	revisionBlock := ""
 	if previous != nil && review != nil {
@@ -1315,14 +1316,15 @@ func generateTruthStack(ctx context.Context, room *scripterRoom, agent virtualSc
 	userPrompt := fmt.Sprintf(`请执行Stage 2: Mystery Architect，产出TruthStack。
 
 <request_json>%s</request_json>
-<background>%s</background>%s
+<background>%s</background>
+<gameplay_frame>%s</gameplay_frame>%s
 
 要求：
 - 第一轮必须先check_rule/read_rulebook_const，重点查询候选神话元素/怪物/典籍/法术是否存在、三层神话因果是否与COC常识冲突、是否出现伪科学神话解释。
 - 三层真相必须自洽：假象层给3条以上表面证据；表象真相必须解释全部appearance_evidence；深层本相必须不是硬拗反转。
 - WhyVeteransStopHere要能误导老玩家，使其满足于表象真相。
 - DeepTruthAccessCosts写明触及深层本相需要付出的代价或跳出常规思维的方式。
-- 完成后输出response.truth。`, string(reqJSON), string(backgroundJSON), revisionBlock)
+- 完成后输出response.truth。`, string(reqJSON), string(backgroundJSON), string(gameplayJSON), revisionBlock)
 	call, err := runScripterToolStage(ctx, room, agent, scripterStageSpec{
 		Name:             "Mystery Architect",
 		SystemPrompt:     `<stage>三层嵌套真相：appearance → surface → deep。</stage>`,
@@ -1338,12 +1340,14 @@ func generateTruthStack(ctx context.Context, room *scripterRoom, agent virtualSc
 	return *call.Truth, nil
 }
 
-func reviewTruthStack(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, truth TruthStack) (agentReview, error) {
+func reviewTruthStack(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, gameplay GameplayFrame, truth TruthStack) (agentReview, error) {
 	backgroundJSON, _ := json.Marshal(background)
+	gameplayJSON, _ := json.Marshal(gameplay)
 	truthJSON, _ := json.Marshal(truth)
 	userPrompt := fmt.Sprintf(`请执行Stage 2 Reviewer: Misdirection Critic，审查TruthStack。
 
 <background>%s</background>
+<gameplay_frame>%s</gameplay_frame>
 <truth>%s</truth>
 
 必须先check_rule/read_rulebook_const，重点查询反转涉及的神话元素是否需要核验、表象真相是否有规则层面不可能之处。
@@ -1351,7 +1355,7 @@ func reviewTruthStack(ctx context.Context, room *scripterRoom, agent virtualScri
 - surface_truth是否解释全部appearance_evidence。
 - deep_truth是否不是硬拗反转。
 - why_veterans_stop_here是否足以误导老玩家。
-只输出response.review；不重写truth。`, string(backgroundJSON), string(truthJSON))
+只输出response.review；不重写truth。`, string(backgroundJSON), string(gameplayJSON), string(truthJSON))
 	call, err := runScripterToolStage(ctx, room, agent, scripterStageSpec{
 		Name:             "Misdirection Critic",
 		SystemPrompt:     `<stage>Reviewer：只审查误导与规则可行性，失败时给出最小revision_brief。</stage>`,
@@ -1367,8 +1371,9 @@ func reviewTruthStack(ctx context.Context, room *scripterRoom, agent virtualScri
 	return *call.Review, nil
 }
 
-func generateClueMaze(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, truth TruthStack, previous *ClueMaze, review *agentReview) (ClueMaze, error) {
+func generateClueMaze(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, gameplay GameplayFrame, truth TruthStack, previous *ClueMaze, review *agentReview) (ClueMaze, error) {
 	backgroundJSON, _ := json.Marshal(background)
+	gameplayJSON, _ := json.Marshal(gameplay)
 	truthJSON, _ := json.Marshal(truth)
 	revisionBlock := ""
 	if previous != nil && review != nil {
@@ -1379,15 +1384,16 @@ func generateClueMaze(ctx context.Context, room *scripterRoom, agent virtualScri
 	userPrompt := fmt.Sprintf(`请执行Stage 3: Clue Cartographer，产出ClueMaze。
 
 <background>%s</background>
+<gameplay_frame>%s</gameplay_frame>
 <truth>%s</truth>%s
 
 要求：
-- 第一轮必须先check_rule/read_rulebook_const，重点查询线索获取方式是否符合COC技能/调查流程、法术/怪物痕迹/典籍/SAN风险、禁止科学仪器检测神话式伪科学解法。
+- 第一轮必须先check_rule/read_rulebook_const，重点查询线索获取方式是否符合COC技能/调查流程、法术/怪物痕迹/典籍/SAN风险、玩法循环是否需要追逐/潜入/社交/封闭空间等规则支持、禁止科学仪器检测神话式伪科学解法。
 - 真实线索至少有冗余路径，避免单点失败。
 - 指向deep truth的线索必须失真，不要直白暴露答案。
 - witness_reports必须包含victim、perpetrator、nonhuman三视角。
 - red_herring团体要能合理解释表层异常，但与核心恐怖无关。
-- 完成后输出response.maze。`, string(backgroundJSON), string(truthJSON), revisionBlock)
+- 完成后输出response.maze。`, string(backgroundJSON), string(gameplayJSON), string(truthJSON), revisionBlock)
 	call, err := runScripterToolStage(ctx, room, agent, scripterStageSpec{
 		Name:             "Clue Cartographer",
 		SystemPrompt:     `<stage>线索迷宫：线索失真、矛盾目击、红鲱鱼与冗余路径。</stage>`,
@@ -1403,19 +1409,21 @@ func generateClueMaze(ctx context.Context, room *scripterRoom, agent virtualScri
 	return *call.Maze, nil
 }
 
-func reviewClueMaze(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, truth TruthStack, maze ClueMaze) (agentReview, error) {
+func reviewClueMaze(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, gameplay GameplayFrame, truth TruthStack, maze ClueMaze) (agentReview, error) {
 	backgroundJSON, _ := json.Marshal(background)
+	gameplayJSON, _ := json.Marshal(gameplay)
 	truthJSON, _ := json.Marshal(truth)
 	mazeJSON, _ := json.Marshal(maze)
 	userPrompt := fmt.Sprintf(`请执行Stage 3 Reviewer: Player Simulator，审查ClueMaze。
 
 <background>%s</background>
+<gameplay_frame>%s</gameplay_frame>
 <truth>%s</truth>
 <maze>%s</maze>
 
-必须先check_rule/read_rulebook_const，重点查询玩家通过线索推进是否需要规则机制支持、深层线索SAN/神话知识风险是否需规则注记。
+必须先check_rule/read_rulebook_const，重点查询玩家通过线索推进是否需要规则机制支持、深层线索SAN/神话知识风险是否需规则注记、玩法循环是否有单点失败。
 审查项：deep clues是否太直白；red herring是否能解释表层异常；是否存在单点失败；witness_reports是否含victim/perpetrator/nonhuman三视角。
-只输出response.review；不重写maze。`, string(backgroundJSON), string(truthJSON), string(mazeJSON))
+只输出response.review；不重写maze。`, string(backgroundJSON), string(gameplayJSON), string(truthJSON), string(mazeJSON))
 	call, err := runScripterToolStage(ctx, room, agent, scripterStageSpec{
 		Name:             "Player Simulator",
 		SystemPrompt:     `<stage>Reviewer：模拟调查员推进路径，指出可玩性硬问题。</stage>`,
@@ -1431,8 +1439,9 @@ func reviewClueMaze(ctx context.Context, room *scripterRoom, agent virtualScript
 	return *call.Review, nil
 }
 
-func generateCastPlan(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, truth TruthStack, maze ClueMaze, previous *CastPlan, review *agentReview) (CastPlan, error) {
+func generateCastPlan(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, gameplay GameplayFrame, truth TruthStack, maze ClueMaze, previous *CastPlan, review *agentReview) (CastPlan, error) {
 	backgroundJSON, _ := json.Marshal(background)
+	gameplayJSON, _ := json.Marshal(gameplay)
 	truthJSON, _ := json.Marshal(truth)
 	mazeJSON, _ := json.Marshal(maze)
 	revisionBlock := ""
@@ -1444,6 +1453,7 @@ func generateCastPlan(ctx context.Context, room *scripterRoom, agent virtualScri
 	userPrompt := fmt.Sprintf(`请执行Stage 4: Cast Dramatist，产出CastPlan。
 
 <background>%s</background>
+<gameplay_frame>%s</gameplay_frame>
 <truth>%s</truth>
 <maze>%s</maze>
 <recent_npc_name_blacklist>%s</recent_npc_name_blacklist>%s
@@ -1453,7 +1463,7 @@ func generateCastPlan(ctx context.Context, room *scripterRoom, agent virtualScri
 - NPC不能全知；每人必须与线索、红鲱鱼或真相有明确连接。
 - 每个NPC必须有日常执念、公开身份、外貌/态度、真实动机、秘密、行动线、stats_note。
 - 不复用近期NPC姓名。
-- 完成后输出response.cast。`, string(backgroundJSON), string(truthJSON), string(mazeJSON), formatNPCNameBlacklist(room.npcBlacklist), revisionBlock)
+- 完成后输出response.cast。`, string(backgroundJSON), string(gameplayJSON), string(truthJSON), string(mazeJSON), formatNPCNameBlacklist(room.npcBlacklist), revisionBlock)
 	call, err := runScripterToolStage(ctx, room, agent, scripterStageSpec{
 		Name:             "Cast Dramatist",
 		SystemPrompt:     `<stage>动机与NPC：人性化动机、日常执念、线索功能、行动线。</stage>`,
@@ -1469,22 +1479,24 @@ func generateCastPlan(ctx context.Context, room *scripterRoom, agent virtualScri
 	return *call.Cast, nil
 }
 
-func reviewCastPlan(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, truth TruthStack, maze ClueMaze, cast CastPlan) (agentReview, error) {
+func reviewCastPlan(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, gameplay GameplayFrame, truth TruthStack, maze ClueMaze, cast CastPlan) (agentReview, error) {
 	backgroundJSON, _ := json.Marshal(background)
+	gameplayJSON, _ := json.Marshal(gameplay)
 	truthJSON, _ := json.Marshal(truth)
 	mazeJSON, _ := json.Marshal(maze)
 	castJSON, _ := json.Marshal(cast)
 	userPrompt := fmt.Sprintf(`请执行Stage 4 Reviewer: Continuity Editor，审查CastPlan。
 
 <background>%s</background>
+<gameplay_frame>%s</gameplay_frame>
 <truth>%s</truth>
 <maze>%s</maze>
 <cast>%s</cast>
 <recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
 
-必须先check_rule/read_rulebook_const，重点查询NPC stats/spells/mythos identity是否规则可行、NPC行动线是否需要规则机制支持。
+必须先check_rule/read_rulebook_const，重点查询NPC stats/spells/mythos identity是否规则可行、NPC行动线是否需要规则机制支持，NPC能否支撑gameplay_frame中的玩家行动。
 审查项：NPC是否全知；是否与线索/红鲱鱼/真相连接；是否复用黑名单姓名；是否每人有日常执念。
-只输出response.review；不重写cast。`, string(backgroundJSON), string(truthJSON), string(mazeJSON), string(castJSON), formatNPCNameBlacklist(room.npcBlacklist))
+只输出response.review；不重写cast。`, string(backgroundJSON), string(gameplayJSON), string(truthJSON), string(mazeJSON), string(castJSON), formatNPCNameBlacklist(room.npcBlacklist))
 	call, err := runScripterToolStage(ctx, room, agent, scripterStageSpec{
 		Name:             "Continuity Editor",
 		SystemPrompt:     `<stage>Reviewer：审查人物连续性、规则可行性和姓名黑名单。</stage>`,
@@ -1500,9 +1512,10 @@ func reviewCastPlan(ctx context.Context, room *scripterRoom, agent virtualScript
 	return *call.Review, nil
 }
 
-func assembleDraft(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, truth TruthStack, maze ClueMaze, cast CastPlan, previous *ScenarioDraft, mustFix []string) (ScenarioDraft, error) {
+func assembleDraft(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, gameplay GameplayFrame, truth TruthStack, maze ClueMaze, cast CastPlan, previous *ScenarioDraft, mustFix []string) (ScenarioDraft, error) {
 	reqJSON, _ := json.Marshal(room.req)
 	backgroundJSON, _ := json.Marshal(background)
+	gameplayJSON, _ := json.Marshal(gameplay)
 	truthJSON, _ := json.Marshal(truth)
 	mazeJSON, _ := json.Marshal(maze)
 	castJSON, _ := json.Marshal(cast)
@@ -1515,6 +1528,7 @@ func assembleDraft(ctx context.Context, room *scripterRoom, agent virtualScripte
 
 <request_json>%s</request_json>
 <background>%s</background>
+<gameplay_frame>%s</gameplay_frame>
 <truth>%s</truth>
 <maze>%s</maze>
 <cast>%s</cast>
@@ -1531,7 +1545,7 @@ func assembleDraft(ctx context.Context, room *scripterRoom, agent virtualScripte
 - content.setting和content.intro只写公开背景/入口，禁止幕后剧透。
 - 每个scene.description必须包含互动对象、线索、检定、危险、出口。
 - win_condition/lose_condition/partial_wins必须可由KP核查。
-- 完成后输出response.draft。`, string(reqJSON), string(backgroundJSON), string(truthJSON), string(mazeJSON), string(castJSON), clueMappingSummary(maze), scenarioExample, lengthSpec(room.req.TargetLength), formatNPCNameBlacklist(room.npcBlacklist), formatScenarioTitleBlacklist(room.titleSamples), revisionBlock)
+- 完成后输出response.draft。`, string(reqJSON), string(backgroundJSON), string(gameplayJSON), string(truthJSON), string(mazeJSON), string(castJSON), clueMappingSummary(maze), scenarioExample, lengthSpec(room.req.TargetLength), formatNPCNameBlacklist(room.npcBlacklist), formatScenarioTitleBlacklist(room.titleSamples), revisionBlock)
 	call, err := runScripterToolStage(ctx, room, agent, scripterStageSpec{
 		Name:             "Scenario Assembler",
 		SystemPrompt:     `<stage>组装格式化：把前四阶段artifact编译成director-ready ScenarioDraft。</stage>`,
@@ -1589,11 +1603,11 @@ QA checklist：字段完整；director可用；地图导航；线索格式和稳
 	return result, nil
 }
 
-func reviseDraftByAssembler(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, truth TruthStack, maze ClueMaze, cast CastPlan, draft ScenarioDraft, mustFix []string) (ScenarioDraft, error) {
+func reviseDraftByAssembler(ctx context.Context, room *scripterRoom, agent virtualScripterAgent, background FogBackground, gameplay GameplayFrame, truth TruthStack, maze ClueMaze, cast CastPlan, draft ScenarioDraft, mustFix []string) (ScenarioDraft, error) {
 	if len(mustFix) == 0 {
 		return draft, nil
 	}
-	return assembleDraft(ctx, room, agent, background, truth, maze, cast, &draft, mustFix)
+	return assembleDraft(ctx, room, agent, background, gameplay, truth, maze, cast, &draft, mustFix)
 }
 
 func validateDraftCompatibility(draft ScenarioDraft) []string {
@@ -1690,21 +1704,23 @@ func clueMappingSummary(maze ClueMaze) string {
 func scripterSchemaExample(expected string) string {
 	switch expected {
 	case "background":
-		return `[{"action":"response","background":{"time_and_place":"时代与地点","investigator_hook":"调查入口","daily_beauty":"日常之美","unsettling_detail":"不安细节","public_problem":"公开问题","brief_preserved":"如何保留brief","anti_trope_execution":["反套路执行"]}}]`
+		return `[{"action":"response","reason":"这个公开背景保留了用户brief并把地理链转化为可调查入口。","background":{"time_and_place":"时代与地点","investigator_hook":"调查入口","daily_beauty":"日常之美","unsettling_detail":"不安细节","public_problem":"公开问题","brief_preserved":"如何保留brief","anti_trope_execution":["反套路执行"]}}]`
+	case "gameplay":
+		return `[{"action":"response","reason":"这个玩法催化器能从当前公开背景的制度和空间压力自然生长出来，且不覆盖幕后真相。","gameplay_frame":{"gameplay":"社会潜入：调查员必须通过身份、关系或伪装进入受限圈层","fit_reason":"为什么该玩法在此背景下成立","background_derivation":["由玩法衍生出的公开背景压力"],"investigation_loop":"玩家反复执行的调查循环","player_actions":["可执行行动"],"friction_points":["阻力来源"],"failure_pressure":"失败压力但不剧透","rule_touchpoints":["可能用到的规则点"],"boundaries":["不得覆盖brief","不得生成幕后真相"]}}]`
 	case "truth":
-		return `[{"action":"response","truth":{"appearance_belief":"最初误判","appearance_evidence":["证据1"],"surface_truth":"表象真相","surface_explains_evidence":["如何解释证据"],"why_veterans_stop_here":["误导点"],"deep_truth":"深层本相","deep_truth_access_costs":["代价"],"mythos_elements":["待核验元素"]}}]`
+		return `[{"action":"response","reason":"三层真相让表象证据先被合理解释，再用深层代价打开更恐怖的本相。","truth":{"appearance_belief":"最初误判","appearance_evidence":["证据1"],"surface_truth":"表象真相","surface_explains_evidence":["如何解释证据"],"why_veterans_stop_here":["误导点"],"deep_truth":"深层本相","deep_truth_access_costs":["代价"],"mythos_elements":["待核验元素"]}}]`
 	case "maze":
-		return `[{"action":"response","maze":{"real_clues":[{"name":"线索名","layer":"surface","location":"地点","acquisition":"获取方式","content":"内容","use":"用途"}],"distorted_deep_clues":[{"name":"深层线索","layer":"deep","location":"地点","acquisition":"获取方式","content":"失真内容","use":"用途"}],"false_clues":[{"name":"假线索","layer":"false","location":"地点","acquisition":"获取方式","content":"内容","use":"误导用途"}],"witness_reports":[{"viewpoint":"victim","statement":"陈述","true_part":"真实部分","misleading_part":"误导部分"}],"red_herring":{"group_name":"团体","surface_guilt":"表面罪责","explains":["解释的异常"],"actual_agenda":"真实议程"}}}]`
+		return `[{"action":"response","reason":"线索按真实、隐藏、误导分层，支持玩法循环并保留冗余路径。","maze":{"real_clues":[{"name":"线索名","layer":"surface","location":"地点","acquisition":"获取方式","content":"内容","use":"用途"}],"distorted_deep_clues":[{"name":"深层线索","layer":"deep","location":"地点","acquisition":"获取方式","content":"失真内容","use":"用途"}],"false_clues":[{"name":"假线索","layer":"false","location":"地点","acquisition":"获取方式","content":"内容","use":"误导用途"}],"witness_reports":[{"viewpoint":"victim","statement":"陈述","true_part":"真实部分","misleading_part":"误导部分"}],"red_herring":{"group_name":"团体","surface_guilt":"表面罪责","explains":["解释的异常"],"actual_agenda":"真实议程"}}}]`
 	case "cast":
-		return `[{"action":"response","cast":{"antagonist_purpose":"反派目的","victim_involvement":"受害者卷入原因","npcs":[{"name":"姓名","public_identity":"公开身份","appearance":"外貌","attitude":"态度","real_motive":"真实动机","secret":"秘密","daily_obsession":"日常执念","clue_function":"线索功能","action_line":"行动线","stats_note":"属性/规则注记"}]}}]`
+		return `[{"action":"response","reason":"NPC各自承担线索、阻力或误导功能，同时保留非主线日常执念。","cast":{"antagonist_purpose":"反派目的","victim_involvement":"受害者卷入原因","npcs":[{"name":"姓名","public_identity":"公开身份","appearance":"外貌","attitude":"态度","real_motive":"真实动机","secret":"秘密","daily_obsession":"日常执念","clue_function":"线索功能","action_line":"行动线","stats_note":"属性/规则注记"}]}}]`
 	case "review":
-		return `[{"action":"response","review":{"pass":false,"issues":["问题"],"revision_brief":"最小修订指令"}}]`
+		return `[{"action":"response","reason":"审查聚焦本阶段硬约束，问题可由一次最小修订解决。","review":{"pass":false,"issues":["问题"],"revision_brief":"最小修订指令"}}]`
 	case "qa":
-		return `[{"action":"response","result":{"score":75,"pass":false,"strengths":["优点"],"issues":["问题"],"must_fix":["必须修复"]}}]`
+		return `[{"action":"response","reason":"最终QA只判断director可用性、规则合规和字段完整性，不直接改写draft。","result":{"score":75,"pass":false,"strengths":["优点"],"issues":["问题"],"must_fix":["必须修复"]}}]`
 	case "draft":
-		return `[{"action":"response","draft":` + scenarioExample + `}]`
+		return `[{"action":"response","reason":"最终草案把所有阶段artifact编译为兼容ScenarioContent的可运行模组，并保持线索下标稳定。","draft":` + scenarioExample + `}]`
 	default:
-		return `[{"action":"response"}]`
+		return `[{"action":"response","reason":"解释为什么这样响应。"}]`
 	}
 }
 
@@ -1714,8 +1730,8 @@ func scripterSchemaExample(expected string) string {
 
 func generateScenarioSeed(ctx context.Context, architect, parser agentHandle, req ScenarioCreationRequest, geographyChain []string, npcNameBlacklist []string) (ScenarioSeed, error) {
 	reqJSON, _ := json.Marshal(req)
-	userMsg := fmt.Sprintf("请生成ScenarioSeed。用户brief若非空，必须作为最高优先级创意输入，不得被随机主题或地理链覆盖。\n\n<request_json>\n%s\n</request_json>\n\n<geography_chain>\n%s\n</geography_chain>\n\n<narrative_template>\n%s\n</narrative_template>\n\n<recent_npc_name_blacklist>\n%s\n</recent_npc_name_blacklist>",
-		string(reqJSON), strings.Join(geographyChain, " → "), randomNarrativeTemplate(), formatNPCNameBlacklist(npcNameBlacklist))
+	userMsg := fmt.Sprintf("请生成ScenarioSeed。用户brief若非空，必须作为最高优先级创意输入，不得被地理链覆盖。\n\n<request_json>\n%s\n</request_json>\n\n<geography_chain>\n%s\n</geography_chain>\n\n<recent_npc_name_blacklist>\n%s\n</recent_npc_name_blacklist>",
+		string(reqJSON), strings.Join(geographyChain, " → "), formatNPCNameBlacklist(npcNameBlacklist))
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: architect.systemPrompt(seedSystemPrompt)},
 		{Role: "user", Content: userMsg},
@@ -1737,9 +1753,6 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 		{Key: "country", Mode: "具体国家或具体政权范围", Examples: "美国"},
 		{Key: "natural_geography", Mode: "自然地理/地形/水文/气候约束类型，不输出具体地名", Examples: "林木覆盖的山谷"},
 		{Key: "human_geography", Mode: "人口密度/当地风俗文化/社会结构，不输出具体地名", Examples: "城市"},
-		{Key: "economy", Mode: "支柱产业、商业设施、财富分配或非法经济空间类型，不输出具体地名", Examples: "金融中心"},
-		{Key: "transport", Mode: "交通可达性、交通瓶颈、主要通行方式或物流节点类型，不输出具体地名", Examples: "跨湾渡船枢纽"},
-		{Key: "landmark_stage", Mode: "该地与众不同的点", Examples: "金门大桥"},
 	}
 	chain := make([]string, 0, len(stages))
 	msgs := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)}}

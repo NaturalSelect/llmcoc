@@ -90,6 +90,17 @@ func TestParseJSONObjectExtractsFencedJSON(t *testing.T) {
 	}
 }
 
+func TestValidateScripterResponsePayloadRequiresReason(t *testing.T) {
+	call := scripterToolCall{Action: "response", Review: &agentReview{Pass: true}}
+	if err := validateScripterResponsePayload(call, "review"); err == nil {
+		t.Fatal("expected missing reason to fail")
+	}
+	call.Reason = "审查通过，因为没有硬性问题。"
+	if err := validateScripterResponsePayload(call, "review"); err != nil {
+		t.Fatalf("expected response with reason to pass: %v", err)
+	}
+}
+
 func TestParseScripterToolCallsRequiresArrayShape(t *testing.T) {
 	calls, err := parseScripterToolCalls(context.Background(), agentHandle{}, `[{"action":"think","think":"先查规则"}]`, scripterSchemaExample("review"))
 	if err != nil {
