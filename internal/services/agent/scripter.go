@@ -380,7 +380,7 @@ func generateGeographyCandidates(ctx context.Context, architect agentHandle, msg
 	if len(chain) > 0 {
 		selected = strings.Join(chain, " → ")
 	}
-	prompt := fmt.Sprintf("已随机选中的前置布景：%s\n现在进入下一阶段：%s\n时代：%s\n输出要求：%s\n示例范围：%s\n\n请只输出本阶段的20个候选。", selected, stageKey, era, mode, examples)
+	prompt := fmt.Sprintf("已随机选中的前置布景：%s\n现在进入下一阶段：%s\n时代：%s\n输出要求：%s\n示例范围：%s\n\n请只输出本阶段的50个候选。", selected, stageKey, era, mode, examples)
 	log.Printf("[scripter:geography] prompt stage=%q len=%d body=%s", stageKey, len(prompt), truncateRunes(prompt, scripterPromptLogLimit))
 	*msgs = append(*msgs, llm.ChatMessage{Role: "user", Content: prompt})
 	raw, err := architect.provider.Chat(ctx, *msgs)
