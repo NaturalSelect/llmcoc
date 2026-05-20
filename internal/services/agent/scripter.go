@@ -170,7 +170,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	logScripterArtifact("Stage 1 Foundation Seed", seed)
 
 	log.Printf("[scripter] stage=faction_map start mythos_seed=%q", truncateRunes(seed.MythosSeed, 300))
-	factions, err := generateFactionMap(ctx, r, constraints, seed)
+	factions, err := generateFactionMapWithQA(ctx, r, constraints, seed)
 	if err != nil {
 		log.Printf("[scripter] stage=faction_map error=%v", err)
 		return ScenarioCreationOutput{}, fmt.Errorf("Factions & Timelines 失败: %w", err)
@@ -179,7 +179,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	logScripterArtifact("Stage 2 Factions & Timelines", factions)
 
 	log.Printf("[scripter] stage=world_state start mythos_anchor=%q", truncateRunes(factions.MythosAnchor, 300))
-	world, err := generateWorldState(ctx, r, constraints, seed, factions)
+	world, err := generateWorldStateWithQA(ctx, r, constraints, seed, factions)
 	if err != nil {
 		log.Printf("[scripter] stage=world_state error=%v", err)
 		return ScenarioCreationOutput{}, fmt.Errorf("World Dressing 失败: %w", err)
@@ -188,27 +188,29 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	logScripterArtifact("Stage 3 World Dressing", world)
 
 	log.Printf("[scripter] stage=assembly start")
-	draft, err := assembleSandboxDraft(ctx, r, constraints, seed, factions, world, nil, nil)
+	draft, err := assembleSandboxDraftWithQA(ctx, r, constraints, seed, factions, world)
 	if err != nil {
 		log.Printf("[scripter] stage=assembly error=%v", err)
 		return ScenarioCreationOutput{}, fmt.Errorf("Assembly 失败: %w", err)
 	}
-	log.Printf("[scripter] stage=assembly done raw name=%q scenes=%d npcs=%d clues=%d", draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
-	applyGuardrails(&draft, r.req)
-	log.Printf("[scripter] guardrails applied name=%q players=%d-%d difficulty=%q author=%q", draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Difficulty, draft.Author)
+	log.Printf("[scripter] stage=assembly done name=%q scenes=%d npcs=%d clues=%d", draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 	iterations := 4
-	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
-		log.Printf("[scripter] draft compatibility issues before repair count=%d issues=%v", len(issues), issues)
-		log.Printf("[scripter] stage=assembly_repair start")
-		if repaired, err := assembleSandboxDraft(ctx, r, constraints, seed, factions, world, &draft, issues); err == nil {
-			draft = repaired
-			log.Printf("[scripter] stage=assembly_repair done raw name=%q scenes=%d npcs=%d clues=%d", draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
-			applyGuardrails(&draft, r.req)
-			log.Printf("[scripter] guardrails applied after repair name=%q players=%d-%d difficulty=%q author=%q", draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Difficulty, draft.Author)
-			iterations++
-		} else {
-			log.Printf("[scripter] focused repair failed, using normalized first draft: %v", err)
+	const maxRepairRounds = 3
+	for repairRound := 1; repairRound <= maxRepairRounds; repairRound++ {
+		issues := validateDraftCompatibility(draft)
+		if len(issues) == 0 {
+			break
 		}
+		log.Printf("[scripter] stage=assembly_repair round=%d start issues=%d %v", repairRound, len(issues), issues)
+		repaired, repairErr := assembleSandboxDraft(ctx, r, constraints, seed, factions, world, &draft, issues)
+		if repairErr != nil {
+			log.Printf("[scripter] stage=assembly_repair round=%d failed: %v", repairRound, repairErr)
+			break
+		}
+		draft = repaired
+		applyGuardrails(&draft, r.req)
+		iterations++
+		log.Printf("[scripter] stage=assembly_repair round=%d done name=%q scenes=%d npcs=%d clues=%d", repairRound, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 	}
 	beforeNormalizeIssues := validateDraftCompatibility(draft)
 	log.Printf("[scripter] normalization start pre_issues=%d", len(beforeNormalizeIssues))
@@ -571,14 +573,12 @@ const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
 func generateFoundationSeedWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (FoundationSeed, error) {
 	session := newFoundationSeedSession(room, constraints)
 	const maxAttempts = 30
-	var lastSeed FoundationSeed
 	var lastQA *FoundationSeedQA
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		seed, err := session.generate(ctx, attempt)
 		if err != nil {
 			return FoundationSeed{}, err
 		}
-		lastSeed = seed
 		qa, err := session.review(ctx, attempt, seed)
 		if err != nil {
 			return FoundationSeed{}, err
@@ -591,7 +591,7 @@ func generateFoundationSeedWithQA(ctx context.Context, room *scripterRoom, const
 		}
 		session.feedRejection(attempt, seed, qa)
 	}
-	return FoundationSeed{}, fmt.Errorf("Foundation Seed QA 连续拒绝 %d 次，最后一次seed=%+v，拒绝原因=%v", maxAttempts, lastSeed, rejectionRejectReasons(lastQA))
+	return FoundationSeed{}, fmt.Errorf("Foundation Seed QA 连续拒绝 %d 次，拒绝原因=%v", maxAttempts, rejectionRejectReasons(lastQA))
 }
 
 type foundationSeedSession struct {
@@ -826,6 +826,19 @@ func rejectionRejectReasons(rejection *FoundationSeedQA) []string {
 	return []string{"未给出拒绝原因"}
 }
 
+func sandboxQARejectReasons(qa *SandboxQA) []string {
+	if qa == nil {
+		return nil
+	}
+	if len(qa.RejectReasons) > 0 {
+		return qa.RejectReasons
+	}
+	if strings.TrimSpace(qa.Reason) != "" {
+		return []string{strings.TrimSpace(qa.Reason)}
+	}
+	return []string{"未给出拒绝原因"}
+}
+
 func normalizeFoundationSeed(seed FoundationSeed, req ScenarioCreationRequest) FoundationSeed {
 	seed.Anomaly = strings.TrimSpace(seed.Anomaly)
 	seed.HumanTragedy = strings.TrimSpace(seed.HumanTragedy)
@@ -849,6 +862,139 @@ func normalizeFoundationSeed(seed FoundationSeed, req ScenarioCreationRequest) F
 		seed.MythosSeed = "待核验的神话实体、典籍、法术或物品"
 	}
 	return seed
+}
+
+// ---------------------------------------------------------------------------
+// Shared sandbox QA types and loop (Stage 2-4, structural/semantic only)
+// ---------------------------------------------------------------------------
+
+// SandboxQA is the verdict type for Stage 2, 3, and 4 QA sessions.
+// Unlike FoundationSeedQA it contains no rulebook check summary.
+type SandboxQA struct {
+	Pass          bool     `json:"pass"`
+	Reason        string   `json:"reason"`
+	RejectReasons []string `json:"reject_reasons"`
+	SuggestedFix  string   `json:"suggested_fix"`
+}
+
+type sandboxQAToolCall struct {
+	Action        ToolCallType `json:"action"`
+	Think         string       `json:"think,omitempty"`
+	Pass          bool         `json:"pass,omitempty"`
+	Reason        string       `json:"reason,omitempty"`
+	RejectReasons []string     `json:"reject_reasons,omitempty"`
+	SuggestedFix  string       `json:"suggested_fix,omitempty"`
+}
+
+// runSandboxQALoop runs the think→response QA loop for stages 2-4.
+// No rulebook tool calls are allowed; only think and response.
+func runSandboxQALoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, toolCallExample string, tag string) (SandboxQA, []llm.ChatMessage, error) {
+	if room.qa.provider == nil {
+		return SandboxQA{Pass: true, Reason: "qa provider unavailable, skipping"}, msgs, nil
+	}
+	const maxQARounds = 20
+	seenThink := false
+	for round := 1; round <= maxQARounds; round++ {
+		if ctx.Err() != nil {
+			return SandboxQA{}, msgs, ctx.Err()
+		}
+		logStagePrompt(fmt.Sprintf("%s_qa_round_%d", tag, round), msgs)
+		raw, err := room.qa.provider.Chat(ctx, msgs)
+		if err != nil {
+			return SandboxQA{}, msgs, err
+		}
+		log.Printf("[scripter:%s_qa] round=%d raw_len=%d raw=%s", tag, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
+		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
+		calls, parseErr := parseSandboxQAToolCalls(ctx, room.parser, raw, toolCallExample)
+		if parseErr != nil {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
+			continue
+		}
+		if len(calls) == 0 {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
+			continue
+		}
+		hasResponse := false
+		invalidAction := false
+		for _, call := range calls {
+			switch call.Action {
+			case ToolThink:
+				seenThink = true
+			case ToolResponse:
+				hasResponse = true
+			default:
+				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf("SYSTEM REJECT: 此QA只允许think/response，不允许%s。", call.Action)})
+				invalidAction = true
+			}
+		}
+		if invalidAction {
+			continue
+		}
+		if hasResponse && !seenThink {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 第一轮必须先think，再response。"})
+			continue
+		}
+		if hasResponse {
+			qa, err := sandboxQAFromResponse(calls)
+			if err != nil {
+				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: " + err.Error()})
+				continue
+			}
+			return qa, msgs, nil
+		}
+	}
+	return SandboxQA{}, msgs, fmt.Errorf("%s QA 未在%d轮内给出response", tag, maxQARounds)
+}
+
+func parseSandboxQAToolCalls(ctx context.Context, parser agentHandle, raw string, example string) ([]sandboxQAToolCall, error) {
+	stripped := strings.TrimSpace(llm.StripCodeFence(llm.JsonArryProtect(raw)))
+	var calls []sandboxQAToolCall
+	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
+		return calls, nil
+	} else if parser.provider != nil {
+		fixed, repairErr := repairJSONWith(ctx, parser, stripped, err, example)
+		if repairErr != nil {
+			return nil, repairErr
+		}
+		fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
+		if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
+			return nil, err2
+		}
+		return calls, nil
+	} else {
+		return nil, err
+	}
+}
+
+func sandboxQAFromResponse(calls []sandboxQAToolCall) (SandboxQA, error) {
+	var response *sandboxQAToolCall
+	for i := range calls {
+		if calls[i].Action == ToolResponse {
+			if response != nil {
+				return SandboxQA{}, fmt.Errorf("response只能有一个")
+			}
+			response = &calls[i]
+		}
+	}
+	if response == nil {
+		return SandboxQA{}, fmt.Errorf("缺少response")
+	}
+	qa := SandboxQA{
+		Pass:          response.Pass,
+		Reason:        strings.TrimSpace(response.Reason),
+		RejectReasons: response.RejectReasons,
+		SuggestedFix:  strings.TrimSpace(response.SuggestedFix),
+	}
+	for i := range qa.RejectReasons {
+		qa.RejectReasons[i] = strings.TrimSpace(qa.RejectReasons[i])
+	}
+	if qa.Reason == "" {
+		return SandboxQA{}, fmt.Errorf("response.reason不能为空")
+	}
+	if !qa.Pass && len(qa.RejectReasons) == 0 {
+		qa.RejectReasons = []string{qa.Reason}
+	}
+	return qa, nil
 }
 
 type FactionMap struct {
@@ -890,6 +1036,7 @@ const factionMapSystemPrompt = `<role>COC7沙盒派系与时间线设计师</rol
 - NPC从派系中派生，不是独立线索容器；每个重要NPC必须能被KP作为静态NPC卡使用。
 - mythos_anchor一旦写定，后续阶段不得更换；如果规则上下文不足，必须在rules_notes显式写“不确定/保守处理”。
 - 不要写线性剧情门；时间线描述无人干预时世界如何运动。
+- 如果收到qa_rejection，必须修复干预枢纽或派系自主性问题；不要只改措辞。
 </rules>`
 
 const factionMapExample = `{"mythos_anchor":"保守锚定：梦境相关典籍残页；具体法术效果需KP按规则书裁定","rules_notes":["规则上下文不足时保守处理，不赋予未核验法术数值"],"factions":[{"name":"邮政夜班","goal":"维持信件继续被取走以保护旧谎言","current_state":"正在销毁三十年前的投递登记","timeline":[{"node":"第0天：继续投递异常信件","trigger":"调查员进入邮局或夜晚到来","intervention_pivot":"取得登记簿可迫使他们承认旧谎言"},{"node":"第1天：转移剩余信件","trigger":"无人阻止且早班交接完成","intervention_pivot":"说服夜班员可暂停转移"}],"npcs":[{"name":"陈维舟","public_identity":"夜班分拣员","agenda":"保护已退休邮差","secret":"知道拆除地址仍有取信人","attitude":"紧张而防备","stats_note":"普通人类属性15-70"}]}],"ending_signals":["如果异常信件公开且母亲确认真相，则邮政夜班失去遮掩空间，但收信者会转向新的取信点"]}`
@@ -958,6 +1105,137 @@ func containsUncertaintyNote(notes []string) bool {
 	return false
 }
 
+// ---------------------------------------------------------------------------
+// Stage 2 FactionMap QA session
+// ---------------------------------------------------------------------------
+
+const factionMapQASystemPrompt = `<role>COC7沙盒派系QA</role>
+<task>审核FactionMap是否符合沙盒设计原则：派系自主行动、有效干预枢纽、代价式结局信号。不审核规则书内容（Stage2已完成锚定）。</task>
+<response_format>json_array</response_format>
+<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
+<tools>
+- think：说明本轮审核计划。
+  {"action":"think","think":"计划"}
+- response：最终审核结论。必须先输出至少一个think轮次后才能response。
+  {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
+</tools>
+<batch_rules>
+- 第一轮必须包含think；第一轮禁止直接response。
+- response必须包含pass、reason、reject_reasons、suggested_fix。
+</batch_rules>
+<audit_rules>
+审核只关注以下四点，其他不管：
+1. 派系自主性：每个派系必须有non-empty current_state，且timeline节点描述无人干预时的世界运动，而不是"等待调查员触发X"。如果所有派系的current_state都是空白或被动等待，pass=false。
+2. 干预枢纽有效性：每个timeline节点的intervention_pivot必须描述一个具体的可执行动作，而不是"调查员可以干预"这种空话。如果所有节点的intervention_pivot都缺乏具体动作，pass=false。
+3. NPC-派系绑定：每个NPC必须有属于其所在派系的具体agenda和secret，不能是空白或"协助调查员"式的被动描述。
+4. 结局信号格式：ending_signals必须描述"如果[条件]，则[谁失去什么/得到什么]，[什么不可挽回地改变]"，不能是简单的"调查员赢了/输了"。
+不审核：规则书准确性、神话锚点的规则合规性、NPC属性数值、世界/地点细节。
+</audit_rules>`
+
+const factionMapQAToolCallExample = `[{"action":"think","think":"审核派系自主性和干预枢纽有效性。"},{"action":"response","pass":true,"reason":"每个派系有明确当前行动，干预枢纽有具体动作，NPC议程与派系目标绑定，结局信号描述代价分配。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
+
+type factionMapSession struct {
+	room          *scripterRoom
+	constraints   ScripterConstraints
+	seed          FoundationSeed
+	ruleCtx       string
+	conservative  bool
+	architectMsgs []llm.ChatMessage
+	qaMsgs        []llm.ChatMessage
+}
+
+func newFactionMapSession(room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, ruleCtx string, conservative bool) *factionMapSession {
+	reqJSON, _ := json.Marshal(room.req)
+	constraintsJSON, _ := json.Marshal(constraints)
+	seedJSON, _ := json.Marshal(seed)
+	architectPrompt := fmt.Sprintf(`<request_json>%s</request_json>
+<constraints>%s</constraints>
+<foundation_seed>%s</foundation_seed>
+<difficulty_spec>
+%s
+</difficulty_spec>
+<stage2_rule_context conservative="%v">
+%s
+</stage2_rule_context>
+<recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
+请生成第1版FactionMap。`, string(reqJSON), string(constraintsJSON), string(seedJSON), difficultySpec(room.req.Difficulty), conservative, ruleCtx, formatNPCNameBlacklist(room.npcBlacklist))
+	qaPrompt := fmt.Sprintf(`<foundation_seed>%s</foundation_seed>
+你是持续运行的FactionMap QA会话。每次收到<faction_map_candidate>后，通过think/response工具调用审核它。`, string(seedJSON))
+	return &factionMapSession{
+		room:         room,
+		constraints:  constraints,
+		seed:         seed,
+		ruleCtx:      ruleCtx,
+		conservative: conservative,
+		architectMsgs: []llm.ChatMessage{
+			{Role: "system", Content: room.architect.systemPrompt(factionMapSystemPrompt)},
+			{Role: "user", Content: architectPrompt},
+		},
+		qaMsgs: []llm.ChatMessage{
+			{Role: "system", Content: room.qa.systemPrompt(factionMapQASystemPrompt)},
+			{Role: "user", Content: qaPrompt},
+		},
+	}
+}
+
+func (s *factionMapSession) generate(ctx context.Context, attempt int) (FactionMap, error) {
+	logStagePrompt(fmt.Sprintf("faction_map_attempt_%d", attempt), s.architectMsgs)
+	var factions FactionMap
+	if err := chatAndParseJSON(ctx, s.room.architect, s.room.parser, s.architectMsgs, &factions, factionMapExample, "faction_map"); err != nil {
+		return FactionMap{}, err
+	}
+	factions = normalizeFactionMap(factions, s.seed, s.conservative)
+	factionsJSON, _ := json.Marshal(factions)
+	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "assistant", Content: string(factionsJSON)})
+	log.Printf("[scripter:faction_map] attempt=%d generated anchor=%q factions=%d", attempt, truncateRunes(factions.MythosAnchor, 300), len(factions.Factions))
+	return factions, nil
+}
+
+func (s *factionMapSession) review(ctx context.Context, attempt int, factions FactionMap) (SandboxQA, error) {
+	factionsJSON, _ := json.Marshal(factions)
+	s.qaMsgs = append(s.qaMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<faction_map_candidate attempt="%d">%s</faction_map_candidate>
+请审核这个候选。`, attempt, string(factionsJSON))})
+	qa, msgs, err := runSandboxQALoop(ctx, s.room, s.qaMsgs, factionMapQAToolCallExample, "faction_map")
+	s.qaMsgs = msgs
+	return qa, err
+}
+
+func (s *factionMapSession) feedRejection(attempt int, factions FactionMap, qa SandboxQA) {
+	factionsJSON, _ := json.Marshal(factions)
+	qaJSON, _ := json.Marshal(qa)
+	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<qa_rejection attempt="%d">
+<rejected_factions>%s</rejected_factions>
+<qa_result>%s</qa_result>
+</qa_rejection>
+请基于同一个创作上下文重写FactionMap：必须解决QA指出的沙盒结构问题；不要只改措辞；仍只输出合法JSON对象。`, attempt, string(factionsJSON), string(qaJSON))})
+}
+
+func generateFactionMapWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed) (FactionMap, error) {
+	ruleCtx, conservative := buildStage2RuleContext(ctx, seed)
+	session := newFactionMapSession(room, constraints, seed, ruleCtx, conservative)
+	const maxAttempts = 20
+	var lastQA *SandboxQA
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		factions, err := session.generate(ctx, attempt)
+		if err != nil {
+			return FactionMap{}, err
+		}
+		qa, err := session.review(ctx, attempt, factions)
+		if err != nil {
+			return FactionMap{}, err
+		}
+		lastQA = &qa
+		log.Printf("[scripter:faction_map_qa] attempt=%d pass=%v reason=%q rejects=%q", attempt, qa.Pass, truncateRunes(qa.Reason, 500), strings.Join(qa.RejectReasons, " | "))
+		logScripterArtifact(fmt.Sprintf("Stage 2 FactionMap QA Attempt %d", attempt), qa)
+		if qa.Pass {
+			return factions, nil
+		}
+		session.feedRejection(attempt, factions, qa)
+	}
+	rejects := sandboxQARejectReasons(lastQA)
+	return FactionMap{}, fmt.Errorf("FactionMap QA 连续拒绝 %d 次，拒绝原因=%v", maxAttempts, rejects)
+}
+
 type WorldState struct {
 	Locations    []LocationState `json:"locations"`
 	HorrorLayers HorrorLayers    `json:"horror_layers"`
@@ -1000,6 +1278,7 @@ const worldStateSystemPrompt = `<role>COC7沙盒世界状态设计师</role>
 - 重要NPC如果不在地点中出现，也要通过地点、证词或物件给出可作用的杠杆。
 - noise不是隐藏线索，不要把噪声转换成必经答案。
 - clue_facts只能从地点、派系、NPC当前状态中抽取；不是独立线索迷宫。
+- 如果收到qa_rejection，必须修复派系杠杆覆盖或线索可达性问题；不要只改措辞。
 </rules>`
 
 const worldStateExample = `{"locations":[{"name":"旧邮局分拣室","surface_visible":"夜班灯常亮，退信箱里有写给不存在地址的新信。","discoverable":"查登记簿可发现投递路线被同一人手写修改。","deep_layer":"信封内侧有像梦中潮湿盐霜一样的痕迹，读久后会想起从未去过的门牌。","levers":[{"action":"公开登记簿","change":"邮政夜班派系必须从销毁证据转为解释旧谎言"}],"noise":["墙上有一张与事件无关的过期剧院海报"]}],"horror_layers":{"surface":"异常信件和人为遮掩可以被普通谎言解释","middle":"信件持续回应无人能知道的问题，普通解释失效","core":"取信点不是地点而是神话锚点寻找收件人的方式"},"clue_facts":[{"layer":"real","fact":"投递登记被同一只手连续改写三十年，说明异常有长期人为维护者。","source":"旧邮局登记簿","acquisition":"会计、图书馆利用或说服夜班员"},{"layer":"hidden","fact":"不存在地址收到的回信回答了近期才发生的问题，说明通信并不受正常时间限制。","source":"未投递信件内页","acquisition":"拆阅信件并承担法律/道德风险"}]}`
@@ -1060,6 +1339,133 @@ func normalizeWorldState(world WorldState, seed FoundationSeed, factions Faction
 	return world
 }
 
+// ---------------------------------------------------------------------------
+// Stage 3 WorldState QA session
+// ---------------------------------------------------------------------------
+
+const worldStateQASystemPrompt = `<role>COC7沙盒世界状态QA</role>
+<task>审核WorldState是否符合沙盒设计原则：地点为状态而非顺序门、派系有杠杆覆盖、线索可达、噪声无意义。不审核规则书内容。</task>
+<response_format>json_array</response_format>
+<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
+<tools>
+- think：说明本轮审核计划。
+  {"action":"think","think":"计划"}
+- response：最终审核结论。必须先输出至少一个think轮次后才能response。
+  {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
+</tools>
+<batch_rules>
+- 第一轮必须包含think；第一轮禁止直接response。
+- response必须包含pass、reason、reject_reasons、suggested_fix。
+</batch_rules>
+<audit_rules>
+审核只关注以下四点，其他不管：
+1. 派系杠杆覆盖：faction_map中每个有timeline的派系，必须在至少一个location的levers[]中有对应动作（做X则该派系时间线改变）；如果有派系在所有location的levers中完全消失，pass=false。
+2. 入口可达性：至少有一个surface_visible或discoverable项目能让调查员有地方起步；不能所有关键事实都只在deep_layer（需要已知答案才能触及）。
+3. 噪声纪律：noise[]中的项目不能是实际上指向唯一答案的必经线索；如果某条noise事实上是通向核心真相的必经信息，pass=false。
+4. 线索来源可追溯：每条clue_facts中的fact必须能追溯到某个location、NPC或physical object；不能凭空出现。
+不审核：神话锚点规则合规性、NPC属性数值、叙事质量、地点戏剧张力、Stage2派系设计细节。
+</audit_rules>`
+
+const worldStateQAToolCallExample = `[{"action":"think","think":"审核每个有timeline的派系是否在某地点levers中出现。"},{"action":"response","pass":true,"reason":"每个派系在至少一个地点有对应levers，入口有surface_visible线索，噪声不指向唯一答案，clue_facts有明确来源。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
+
+type worldStateSession struct {
+	room          *scripterRoom
+	constraints   ScripterConstraints
+	seed          FoundationSeed
+	factions      FactionMap
+	architectMsgs []llm.ChatMessage
+	qaMsgs        []llm.ChatMessage
+}
+
+func newWorldStateSession(room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap) *worldStateSession {
+	constraintsJSON, _ := json.Marshal(constraints)
+	seedJSON, _ := json.Marshal(seed)
+	factionsJSON, _ := json.Marshal(factions)
+	architectPrompt := fmt.Sprintf(`<constraints>%s</constraints>
+<foundation_seed>%s</foundation_seed>
+<faction_map>%s</faction_map>
+<fixed_mythos_anchor>%s</fixed_mythos_anchor>
+<length>%s</length>
+<difficulty_spec>
+%s
+</difficulty_spec>
+请生成第1版WorldState。`, string(constraintsJSON), string(seedJSON), string(factionsJSON), factions.MythosAnchor, lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty))
+	qaPrompt := fmt.Sprintf(`<foundation_seed>%s</foundation_seed>
+<faction_map>%s</faction_map>
+你是持续运行的WorldState QA会话。每次收到<world_state_candidate>后，通过think/response工具调用审核它。`, string(seedJSON), string(factionsJSON))
+	return &worldStateSession{
+		room:        room,
+		constraints: constraints,
+		seed:        seed,
+		factions:    factions,
+		architectMsgs: []llm.ChatMessage{
+			{Role: "system", Content: room.architect.systemPrompt(worldStateSystemPrompt)},
+			{Role: "user", Content: architectPrompt},
+		},
+		qaMsgs: []llm.ChatMessage{
+			{Role: "system", Content: room.qa.systemPrompt(worldStateQASystemPrompt)},
+			{Role: "user", Content: qaPrompt},
+		},
+	}
+}
+
+func (s *worldStateSession) generate(ctx context.Context, attempt int) (WorldState, error) {
+	logStagePrompt(fmt.Sprintf("world_state_attempt_%d", attempt), s.architectMsgs)
+	var world WorldState
+	if err := chatAndParseJSON(ctx, s.room.architect, s.room.parser, s.architectMsgs, &world, worldStateExample, "world_state"); err != nil {
+		return WorldState{}, err
+	}
+	world = normalizeWorldState(world, s.seed, s.factions)
+	worldJSON, _ := json.Marshal(world)
+	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "assistant", Content: string(worldJSON)})
+	log.Printf("[scripter:world_state] attempt=%d generated locations=%d clue_facts=%d", attempt, len(world.Locations), len(world.ClueFacts))
+	return world, nil
+}
+
+func (s *worldStateSession) review(ctx context.Context, attempt int, world WorldState) (SandboxQA, error) {
+	worldJSON, _ := json.Marshal(world)
+	s.qaMsgs = append(s.qaMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<world_state_candidate attempt="%d">%s</world_state_candidate>
+请审核这个候选。`, attempt, string(worldJSON))})
+	qa, msgs, err := runSandboxQALoop(ctx, s.room, s.qaMsgs, worldStateQAToolCallExample, "world_state")
+	s.qaMsgs = msgs
+	return qa, err
+}
+
+func (s *worldStateSession) feedRejection(attempt int, world WorldState, qa SandboxQA) {
+	worldJSON, _ := json.Marshal(world)
+	qaJSON, _ := json.Marshal(qa)
+	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<qa_rejection attempt="%d">
+<rejected_world>%s</rejected_world>
+<qa_result>%s</qa_result>
+</qa_rejection>
+请基于同一个创作上下文重写WorldState：必须解决QA指出的沙盒结构问题；不要只改措辞；仍只输出合法JSON对象。`, attempt, string(worldJSON), string(qaJSON))})
+}
+
+func generateWorldStateWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap) (WorldState, error) {
+	session := newWorldStateSession(room, constraints, seed, factions)
+	const maxAttempts = 20
+	var lastQA *SandboxQA
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		world, err := session.generate(ctx, attempt)
+		if err != nil {
+			return WorldState{}, err
+		}
+		qa, err := session.review(ctx, attempt, world)
+		if err != nil {
+			return WorldState{}, err
+		}
+		lastQA = &qa
+		log.Printf("[scripter:world_state_qa] attempt=%d pass=%v reason=%q rejects=%q", attempt, qa.Pass, truncateRunes(qa.Reason, 500), strings.Join(qa.RejectReasons, " | "))
+		logScripterArtifact(fmt.Sprintf("Stage 3 WorldState QA Attempt %d", attempt), qa)
+		if qa.Pass {
+			return world, nil
+		}
+		session.feedRejection(attempt, world, qa)
+	}
+	rejects := sandboxQARejectReasons(lastQA)
+	return WorldState{}, fmt.Errorf("WorldState QA 连续拒绝 %d 次，拒绝原因=%v", maxAttempts, rejects)
+}
+
 const assemblySystemPrompt = `<role>COC7沙盒ScenarioDraft编译器</role>
 <task>把FoundationSeed、FactionMap和WorldState编译为兼容models.ScenarioContent的ScenarioDraft。不要查询规则书，不要更换mythos_anchor。</task>
 <output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
@@ -1072,6 +1478,7 @@ const assemblySystemPrompt = `<role>COC7沙盒ScenarioDraft编译器</role>
 - content.clues是自包含事实字符串，必须以[真实]/[隐藏]/[误导]开头；不要依赖数组顺序理解。
 - win_condition/lose_condition/partial_wins写代价分配和结束信号，不写二元奖励。
 - system_prompt必须给KP时间推进、信息可见性和不主动引导三项协议。
+- 如果收到qa_rejection，必须修复setting快照、intro可执行性、scene杠杆或KP协议问题；不要只改措辞；不要更换mythos_anchor。
 </director_contract>`
 
 const scenarioExample = `{"name":"示例沙盒模组名","description":"一份围绕异常事实、派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是本场COC跑团的KP，职责是管理一个会自行推进的局势而不是执行线性故事。按派系时间线推进后果；按可见性分层给信息；不要主动把调查员引向正确答案。","setting":"玩家抵达时能看见的当前局势。只写公开事实、紧张关系和可感知异常，不剧透幕后真相。","intro":"你们以某种身份进入局势，眼前有三件可立即行动的事：询问某人、检查某地、决定是否公开某条信息。","game_start_slot":16,"map_description":"【文字地图】起点A连接地点B和地点C；地点B有公开冲突，地点C有可深入调查的物件；各地点可往返，没有固定访问顺序。","scenes":[{"id":"location_1","name":"地点名","description":"可见：到达即可看到的信息。可发现：主动调查可获得的信息。杠杆：调查员若做X，派系Y的时间线会改变。风险：拖延或失败的后果。出口：可前往的其他地点。","triggers":["available_from_start"]}],"npcs":[{"name":"NPC姓名","description":"公开身份；所属派系；真实议程；秘密；可被说服或施压的杠杆；可能知道但不会主动说出的事实。","attitude":"初始态度和压力下的反应","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"HP":10,"MP":10}}],"clues":["[真实]登记簿矛盾(旧办公室): 自包含事实；获取方式；能改变哪个判断。","[隐藏]深层事实(封存物件): 自包含事实；获取方式；触及后要承担什么代价。","[误导]地方传闻(酒馆): 为什么它表面合理但只能解释一部分。"],"win_condition":"如果调查员让某个结束信号以较低代价固化，则对应派系失去关键优势，但另一个代价留存。","lose_condition":"如果关键时间线终点到达且无人干预，则局势进入新的稳定态，某人或某地不可挽回地改变。","partial_wins":["如果只救出某人但没有公开事实，则个人获救，派系结构保留。"]}}`
@@ -1114,6 +1521,142 @@ func assembleSandboxDraft(ctx context.Context, room *scripterRoom, constraints S
 		return ScenarioDraft{}, err
 	}
 	return draft, nil
+}
+
+// ---------------------------------------------------------------------------
+// Stage 4 Assembly QA session
+// ---------------------------------------------------------------------------
+
+const assemblyQASystemPrompt = `<role>COC7沙盒剧本编译QA</role>
+<task>审核ScenarioDraft是否符合Director runtime合约：setting是局势快照而非背景倾倒、intro有立即可执行动作、scene描述包含杠杆、clue自包含、KP协议完整。</task>
+<response_format>json_array</response_format>
+<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
+<tools>
+- think：说明本轮审核计划。
+  {"action":"think","think":"计划"}
+- response：最终审核结论。必须先输出至少一个think轮次后才能response。
+  {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
+</tools>
+<batch_rules>
+- 第一轮必须包含think；第一轮禁止直接response。
+- response必须包含pass、reason、reject_reasons、suggested_fix。
+</batch_rules>
+<audit_rules>
+审核只关注以下五点，其他不管：
+1. setting局势快照：setting只能包含玩家到达时能直接观察到的事实、紧张关系和可感知异常；不能包含幕后设定、NPC秘密、隐藏事实或玩家不能观察到的信息。
+2. intro可执行性：intro必须为玩家提供至少2个立即可采取的行动选项（询问某人、检查某地、决定公开某信息等具体选项）；不能只是"你们抵达了地点"这种纯描述。
+3. scene杠杆存在：至少有一个scene的description包含明确的杠杆描述（调查员做X会改变局势的说明）；如果所有scene都只有描述没有任何杠杆，pass=false。
+4. clue自包含：每条clue必须包含[真实]/[隐藏]/[误导]前缀、事实本身和获取方式；不能有需要结合其他clue才能理解的条目，不能有"参见其他线索"式的引用。
+5. KP协议完整性：system_prompt必须包含时间推进协议（派系时间线如何推进）、信息可见性协议（按层级给信息）、不主动引导协议（不把玩家引向正确答案）三项；缺少任意一项pass=false。
+不审核：派系设计细节（Stage2已审）、世界状态细节（Stage3已审）、规则书合规性、NPC属性数值、游戏时长判断。
+</audit_rules>`
+
+const assemblyQAToolCallExample = `[{"action":"think","think":"审核setting是否只含可观察事实，intro是否有具体行动选项。"},{"action":"response","pass":true,"reason":"setting只含公开可见局势，intro提供了3个具体行动，每个scene有杠杆描述，clues自包含，system_prompt包含三项KP协议。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
+
+type assemblySession struct {
+	room          *scripterRoom
+	constraints   ScripterConstraints
+	seed          FoundationSeed
+	factions      FactionMap
+	world         WorldState
+	architectMsgs []llm.ChatMessage
+	qaMsgs        []llm.ChatMessage
+}
+
+func newAssemblySession(room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap, world WorldState) *assemblySession {
+	reqJSON, _ := json.Marshal(room.req)
+	constraintsJSON, _ := json.Marshal(constraints)
+	seedJSON, _ := json.Marshal(seed)
+	factionsJSON, _ := json.Marshal(factions)
+	worldJSON, _ := json.Marshal(world)
+	architectPrompt := fmt.Sprintf(`<request_json>%s</request_json>
+<constraints>%s</constraints>
+<foundation_seed>%s</foundation_seed>
+<faction_map>%s</faction_map>
+<world_state>%s</world_state>
+<fixed_mythos_anchor>%s</fixed_mythos_anchor>
+<json_example>%s</json_example>
+<length>%s</length>
+<difficulty_spec>
+%s
+</difficulty_spec>
+<recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
+<title_samples_to_avoid>%s</title_samples_to_avoid>
+请生成第1版ScenarioDraft。`, string(reqJSON), string(constraintsJSON), string(seedJSON), string(factionsJSON), string(worldJSON), factions.MythosAnchor, scenarioExample, lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty), formatNPCNameBlacklist(room.npcBlacklist), formatScenarioTitleBlacklist(room.titleSamples))
+	qaPrompt := fmt.Sprintf(`<foundation_seed>%s</foundation_seed>
+你是持续运行的Assembly QA会话。每次收到<draft_candidate>后，通过think/response工具调用审核它。`, string(seedJSON))
+	return &assemblySession{
+		room:        room,
+		constraints: constraints,
+		seed:        seed,
+		factions:    factions,
+		world:       world,
+		architectMsgs: []llm.ChatMessage{
+			{Role: "system", Content: room.architect.systemPrompt(assemblySystemPrompt)},
+			{Role: "user", Content: architectPrompt},
+		},
+		qaMsgs: []llm.ChatMessage{
+			{Role: "system", Content: room.qa.systemPrompt(assemblyQASystemPrompt)},
+			{Role: "user", Content: qaPrompt},
+		},
+	}
+}
+
+func (s *assemblySession) generate(ctx context.Context, attempt int) (ScenarioDraft, error) {
+	logStagePrompt(fmt.Sprintf("assembly_attempt_%d", attempt), s.architectMsgs)
+	var draft ScenarioDraft
+	if err := chatAndParseJSON(ctx, s.room.architect, s.room.parser, s.architectMsgs, &draft, scenarioExample, "scenario_draft"); err != nil {
+		return ScenarioDraft{}, err
+	}
+	draftJSON, _ := json.Marshal(draft)
+	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "assistant", Content: string(draftJSON)})
+	log.Printf("[scripter:assembly] attempt=%d generated name=%q scenes=%d npcs=%d clues=%d", attempt, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+	return draft, nil
+}
+
+func (s *assemblySession) review(ctx context.Context, attempt int, draft ScenarioDraft) (SandboxQA, error) {
+	draftJSON, _ := json.Marshal(draft)
+	s.qaMsgs = append(s.qaMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<draft_candidate attempt="%d">%s</draft_candidate>
+请审核这个候选。`, attempt, string(draftJSON))})
+	qa, msgs, err := runSandboxQALoop(ctx, s.room, s.qaMsgs, assemblyQAToolCallExample, "assembly")
+	s.qaMsgs = msgs
+	return qa, err
+}
+
+func (s *assemblySession) feedRejection(attempt int, draft ScenarioDraft, qa SandboxQA) {
+	draftJSON, _ := json.Marshal(draft)
+	qaJSON, _ := json.Marshal(qa)
+	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<qa_rejection attempt="%d">
+<rejected_draft>%s</rejected_draft>
+<qa_result>%s</qa_result>
+</qa_rejection>
+请基于同一个创作上下文重写ScenarioDraft：必须解决QA指出的runtime合约问题；不要只改措辞；不要更换mythos_anchor；仍只输出合法JSON对象。`, attempt, string(draftJSON), string(qaJSON))})
+}
+
+func assembleSandboxDraftWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap, world WorldState) (ScenarioDraft, error) {
+	session := newAssemblySession(room, constraints, seed, factions, world)
+	const maxAttempts = 10
+	var lastQA *SandboxQA
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		draft, err := session.generate(ctx, attempt)
+		if err != nil {
+			return ScenarioDraft{}, err
+		}
+		applyGuardrails(&draft, room.req)
+		qa, err := session.review(ctx, attempt, draft)
+		if err != nil {
+			return ScenarioDraft{}, err
+		}
+		lastQA = &qa
+		log.Printf("[scripter:assembly_qa] attempt=%d pass=%v reason=%q rejects=%q", attempt, qa.Pass, truncateRunes(qa.Reason, 500), strings.Join(qa.RejectReasons, " | "))
+		logScripterArtifact(fmt.Sprintf("Stage 4 Assembly QA Attempt %d", attempt), qa)
+		if qa.Pass {
+			return draft, nil
+		}
+		session.feedRejection(attempt, draft, qa)
+	}
+	rejects := sandboxQARejectReasons(lastQA)
+	return ScenarioDraft{}, fmt.Errorf("Assembly QA 连续拒绝 %d 次，拒绝原因=%v", maxAttempts, rejects)
 }
 
 // ---------------------------------------------------------------------------
