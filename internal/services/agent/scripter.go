@@ -72,6 +72,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 
 type scripterRoom struct {
 	architect    agentHandle
+	qa           agentHandle
 	parser       agentHandle
 	req          ScenarioCreationRequest
 	npcBlacklist []string
@@ -83,11 +84,15 @@ func newScripterRoom(req ScenarioCreationRequest) (*scripterRoom, error) {
 	if err != nil {
 		return nil, err
 	}
+	qa, err := loadSingleAgent(models.AgentRoleQAGuard)
+	if err != nil {
+		return nil, err
+	}
 	parser, err := loadSingleAgent(models.AgentRoleParser)
 	if err != nil {
 		return nil, err
 	}
-	return &scripterRoom{architect: architect, parser: parser, req: normalizeScenarioCreationRequest(req)}, nil
+	return &scripterRoom{architect: architect, qa: qa, parser: parser, req: normalizeScenarioCreationRequest(req)}, nil
 }
 
 func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreationRequest {
@@ -151,7 +156,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	logScripterArtifact("Pre-generation Constraints", constraints)
 
 	log.Printf("[scripter] stage=foundation_seed start")
-	seed, err := generateFoundationSeed(ctx, r, constraints)
+	seed, err := generateFoundationSeedWithQA(ctx, r, constraints)
 	if err != nil {
 		log.Printf("[scripter] stage=foundation_seed error=%v", err)
 		return ScenarioCreationOutput{}, fmt.Errorf("Foundation Seed 失败: %w", err)
@@ -462,6 +467,20 @@ type FoundationSeed struct {
 	MythosSeed     string `json:"mythos_seed"`
 }
 
+type FoundationSeedQA struct {
+	Pass             bool     `json:"pass"`
+	Reason           string   `json:"reason"`
+	RejectReasons    []string `json:"reject_reasons"`
+	SuggestedScope   string   `json:"suggested_scope"`
+	RuleCheckSummary string   `json:"rule_check_summary"`
+}
+
+type FoundationSeedRuleCheck struct {
+	Question string `json:"question"`
+	Result   string `json:"result"`
+	Usable   bool   `json:"usable"`
+}
+
 const foundationSeedSystemPrompt = `<role>COC7沙盒基础种子设计师</role>
 <task>只生成FoundationSeed JSON。这个阶段是纯创意阶段，不查询也不引用规则书。</task>
 <output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
@@ -472,17 +491,64 @@ const foundationSeedSystemPrompt = `<role>COC7沙盒基础种子设计师</role>
 - mythos_relation只能是byproduct或consequence：byproduct=异常是神话力量副产品；consequence=神话是人类行为后果。
 - mythos_seed只是方向，不做规则裁定，不编造数值。
 - 用户brief若非空，必须保留其核心意图。
+- 如果收到qa_rejection，必须重写异常与mythos_seed之间的关系；不要只改措辞。
 </rules>`
 
 const foundationSeedExample = `{"anomaly":"邮局每天把信投递到三十年前已经拆除的地址，仍有人在夜里取走这些信。","human_tragedy":"一名邮差为了让失踪孩子的母亲继续相信孩子还活着，开始伪造回信；多年后谎言被某种不属于人的通信方式接管。","mythos_relation":"consequence","mythos_seed":"与梦境、信件、非人传讯或典籍残页有关的神话锚点"}`
 
-func generateFoundationSeed(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (FoundationSeed, error) {
+const foundationSeedQAExample = `{"pass":true,"reason":"check_rule结果显示该方向可以保守接入梦境、典籍或非人传讯等规则书神话元素；异常与mythos_seed存在可核验桥接。","reject_reasons":[],"suggested_scope":"保留非线性通信方向，Stage2锁定具体典籍或实体时继续保守标注。","rule_check_summary":"check_rule返回了可用的规则书神话方向，未要求使用未核验数值。"}`
+
+const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
+<task>根据check_rule结果审核FoundationSeed中的异常是否能保守对应到克苏鲁神话/规则书方向。只做通过/拒绝，不扩写剧本。</task>
+<output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
+<schema>{"pass":true,"reason":"审核理由","reject_reasons":["拒绝原因"],"suggested_scope":"若拒绝，给创作阶段的重写范围","rule_check_summary":"你实际依据的check_rule摘要"}</schema>
+<rules>
+- 必须以输入中的check_rule结果作为审核依据；不要只凭常识或氛围判断。
+- 只审核Stage1 seed，不锁定具体数值，不扩写派系/NPC/场景。
+- pass=true的最低标准：anomaly具体且怪异；check_rule结果能支持mythos_seed保守接到神话实体、典籍、法术、梦境、异界、生物、崇拜、禁忌知识或宇宙恐怖方向之一；不依赖伪科学、高科技或普通犯罪作为唯一解释。
+- 如果check_rule无结果、明确规则书未覆盖、或只支持普通怪谈/刑侦/心理疾病/科技异常/社会议题，pass=false。
+- 如果check_rule只给出宽泛目录但能证明存在可用神话类别，可pass=true，并在suggested_scope要求Stage2继续保守核验具体锚点。
+- reject_reasons必须具体指出异常、mythos_seed和check_rule结果之间哪里对应不上。
+- rule_check_summary必须简述check_rule返回的核心依据，不能留空。
+</rules>`
+
+func generateFoundationSeedWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (FoundationSeed, error) {
+	var rejection *FoundationSeedQA
+	const maxAttempts = 3
+	var lastSeed FoundationSeed
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		seed, err := generateFoundationSeed(ctx, room, constraints, rejection, attempt)
+		if err != nil {
+			return FoundationSeed{}, err
+		}
+		lastSeed = seed
+		qa, err := reviewFoundationSeed(ctx, room, constraints, seed)
+		if err != nil {
+			return FoundationSeed{}, err
+		}
+		log.Printf("[scripter:foundation_seed_qa] attempt=%d pass=%v reason=%q rejects=%q suggested_scope=%q rule_check=%q", attempt, qa.Pass, truncateRunes(qa.Reason, 500), strings.Join(qa.RejectReasons, " | "), truncateRunes(qa.SuggestedScope, 500), truncateRunes(qa.RuleCheckSummary, 500))
+		logScripterArtifact(fmt.Sprintf("Stage 1 Foundation Seed QA Attempt %d", attempt), qa)
+		if qa.Pass {
+			return seed, nil
+		}
+		rejection = &qa
+	}
+	return FoundationSeed{}, fmt.Errorf("Foundation Seed QA 连续拒绝 %d 次，最后一次seed=%+v，拒绝原因=%v", maxAttempts, lastSeed, rejectionRejectReasons(rejection))
+}
+
+func generateFoundationSeed(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, rejection *FoundationSeedQA, attempt int) (FoundationSeed, error) {
 	reqJSON, _ := json.Marshal(room.req)
 	constraintsJSON, _ := json.Marshal(constraints)
+	rejectionBlock := ""
+	if rejection != nil {
+		rejectionJSON, _ := json.Marshal(rejection)
+		rejectionBlock = fmt.Sprintf("\n<qa_rejection>%s</qa_rejection>\n请根据qa_rejection重写FoundationSeed：异常必须仍具体怪异，但mythos_seed必须能保守接入神话方向。", string(rejectionJSON))
+	}
 	userPrompt := fmt.Sprintf(`<request_json>%s</request_json>
 <constraints>%s</constraints>
-<geography_note>地理只作为风味，不要让它替代异常事实和人类悲剧。</geography_note>
-请生成FoundationSeed。`, string(reqJSON), string(constraintsJSON))
+<attempt>%d</attempt>
+<geography_note>地理只作为风味，不要让它替代异常事实和人类悲剧。</geography_note>%s
+请生成FoundationSeed。`, string(reqJSON), string(constraintsJSON), attempt, rejectionBlock)
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.architect.systemPrompt(foundationSeedSystemPrompt)},
 		{Role: "user", Content: userPrompt},
@@ -492,7 +558,98 @@ func generateFoundationSeed(ctx context.Context, room *scripterRoom, constraints
 	if err := chatAndParseJSON(ctx, room.architect, room.parser, msgs, &seed, foundationSeedExample, "foundation_seed"); err != nil {
 		return FoundationSeed{}, err
 	}
-	return normalizeFoundationSeed(seed, room.req), nil
+	seed = normalizeFoundationSeed(seed, room.req)
+	log.Printf("[scripter:foundation_seed] attempt=%d generated anomaly=%q relation=%q mythos_seed=%q", attempt, truncateRunes(seed.Anomaly, 500), seed.MythosRelation, truncateRunes(seed.MythosSeed, 500))
+	return seed, nil
+}
+
+func reviewFoundationSeed(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed) (FoundationSeedQA, error) {
+	ruleCheck := checkFoundationSeedRule(ctx, seed)
+	seedJSON, _ := json.Marshal(seed)
+	constraintsJSON, _ := json.Marshal(constraints)
+	ruleCheckJSON, _ := json.Marshal(ruleCheck)
+	userPrompt := fmt.Sprintf(`<constraints>%s</constraints>
+<foundation_seed>%s</foundation_seed>
+<check_rule>%s</check_rule>
+请基于check_rule结果审核这个FoundationSeed。`, string(constraintsJSON), string(seedJSON), string(ruleCheckJSON))
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: room.qa.systemPrompt(foundationSeedQASystemPrompt)},
+		{Role: "user", Content: userPrompt},
+	}
+	logStagePrompt("foundation_seed_qa", msgs)
+	var qa FoundationSeedQA
+	if err := chatAndParseJSON(ctx, room.qa, room.parser, msgs, &qa, foundationSeedQAExample, "foundation_seed_qa"); err != nil {
+		return FoundationSeedQA{}, err
+	}
+	qa.Reason = strings.TrimSpace(qa.Reason)
+	qa.SuggestedScope = strings.TrimSpace(qa.SuggestedScope)
+	qa.RuleCheckSummary = strings.TrimSpace(qa.RuleCheckSummary)
+	for i := range qa.RejectReasons {
+		qa.RejectReasons[i] = strings.TrimSpace(qa.RejectReasons[i])
+	}
+	if qa.RuleCheckSummary == "" {
+		qa.RuleCheckSummary = truncateRunes(ruleCheck.Result, 1000)
+	}
+	if !ruleCheck.Usable {
+		qa.Pass = false
+		if len(qa.RejectReasons) == 0 {
+			qa.RejectReasons = []string{"check_rule没有返回可用神话锚点，不能让创作阶段只凭氛围通过。"}
+		}
+		if qa.Reason == "" {
+			qa.Reason = "check_rule未能证明该异常可保守对应到规则书神话方向。"
+		}
+	}
+	if qa.Pass && qa.Reason == "" {
+		qa.Reason = "QA通过：check_rule返回了可保守接入的神话方向。"
+	}
+	if !qa.Pass && len(qa.RejectReasons) == 0 {
+		qa.RejectReasons = []string{firstNonEmpty(qa.Reason, "异常与mythos_seed的神话对应关系不足。")}
+	}
+	return qa, nil
+}
+
+func checkFoundationSeedRule(ctx context.Context, seed FoundationSeed) FoundationSeedRuleCheck {
+	question := fmt.Sprintf("COC7规则书中是否存在可保守支撑此剧本基础异常的神话方向？异常：%s。人类悲剧：%s。候选mythos_seed：%s。只核验是否能对应到规则书中的神话实体、典籍、法术、梦境/异界、生物、崇拜或禁忌知识方向；不要给剧本创作建议，不要编造未核验数值。", seed.Anomaly, seed.HumanTragedy, seed.MythosSeed)
+	log.Printf("[scripter:foundation_seed_qa] check_rule question len=%d body=%s", len(question), truncateRunes(question, scripterPromptLogLimit))
+	lawyerHandle, err := loadSingleAgent(models.AgentRoleLawyer)
+	if err != nil {
+		result := fmt.Sprintf("check_rule unavailable: %v", err)
+		log.Printf("[scripter:foundation_seed_qa] check_rule unavailable err=%v", err)
+		return FoundationSeedRuleCheck{Question: question, Result: result, Usable: false}
+	}
+	results := runLawyer(ctx, lawyerHandle, question, rulebook.GlobalIndex)
+	result := formatLawyerResults(results)
+	usable := foundationRuleCheckUsable(result)
+	log.Printf("[scripter:foundation_seed_qa] check_rule results=%d usable=%v body=%s", len(results), usable, truncateRunes(result, scripterRepairLogLimit))
+	return FoundationSeedRuleCheck{Question: question, Result: result, Usable: usable}
+}
+
+func foundationRuleCheckUsable(result string) bool {
+	text := strings.TrimSpace(result)
+	if text == "" {
+		return false
+	}
+	lower := strings.ToLower(text)
+	blockingPhrases := []string{"无结果", "默认禁止", "规则书未明确规定", "未明确规定", "没有结果", "no result", "not found"}
+	for _, phrase := range blockingPhrases {
+		if strings.Contains(lower, strings.ToLower(phrase)) {
+			return false
+		}
+	}
+	return true
+}
+
+func rejectionRejectReasons(rejection *FoundationSeedQA) []string {
+	if rejection == nil {
+		return nil
+	}
+	if len(rejection.RejectReasons) > 0 {
+		return rejection.RejectReasons
+	}
+	if strings.TrimSpace(rejection.Reason) != "" {
+		return []string{strings.TrimSpace(rejection.Reason)}
+	}
+	return []string{"未给出拒绝原因"}
 }
 
 func normalizeFoundationSeed(seed FoundationSeed, req ScenarioCreationRequest) FoundationSeed {
