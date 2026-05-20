@@ -51,6 +51,10 @@ type ScenarioDraft struct {
 const (
 	defaultScripterEra    = "1920s"
 	defaultScripterAuthor = "agent-team"
+
+	scripterPromptLogLimit = 8000
+	scripterRawLogLimit    = 20000
+	scripterRepairLogLimit = 12000
 )
 
 var genScenarioMutex sync.Mutex
@@ -124,6 +128,13 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 func (r *scripterRoom) prepareContext() {
 	r.npcBlacklist = loadRecentNPCNameBlacklist(200)
 	r.titleSamples = loadScenarioTitleSamples(80)
+	log.Printf("[scripter] context prepared npc_blacklist=%d title_samples=%d", len(r.npcBlacklist), len(r.titleSamples))
+	if len(r.npcBlacklist) > 0 {
+		log.Printf("[scripter] npc blacklist sample=%s", truncateRunes(strings.Join(r.npcBlacklist, ", "), 500))
+	}
+	if len(r.titleSamples) > 0 {
+		log.Printf("[scripter] title samples=%s", truncateRunes(strings.Join(r.titleSamples, ", "), 500))
+	}
 }
 
 func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) {
@@ -134,44 +145,65 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	reqJSON, _ := json.Marshal(r.req)
 	log.Printf("[scripter] sandbox generation start req=%s", reqJSON)
 
+	log.Printf("[scripter] stage=constraints start")
 	constraints := r.buildConstraints(ctx)
+	log.Printf("[scripter] stage=constraints done archetype=%q entry=%q topology=%q phase=%q register=%q geography=%q", constraints.SituationArchetype, constraints.InvestigatorEntryPosition, constraints.FactionTopology, constraints.TemporalPhase, constraints.ThematicRegister, strings.Join(constraints.GeographyFlavor, " → "))
 	logScripterArtifact("Pre-generation Constraints", constraints)
 
+	log.Printf("[scripter] stage=foundation_seed start")
 	seed, err := generateFoundationSeed(ctx, r, constraints)
 	if err != nil {
+		log.Printf("[scripter] stage=foundation_seed error=%v", err)
 		return ScenarioCreationOutput{}, fmt.Errorf("Foundation Seed 失败: %w", err)
 	}
+	log.Printf("[scripter] stage=foundation_seed done anomaly=%q relation=%q mythos_seed=%q", truncateRunes(seed.Anomaly, 300), seed.MythosRelation, truncateRunes(seed.MythosSeed, 300))
 	logScripterArtifact("Stage 1 Foundation Seed", seed)
 
+	log.Printf("[scripter] stage=faction_map start mythos_seed=%q", truncateRunes(seed.MythosSeed, 300))
 	factions, err := generateFactionMap(ctx, r, constraints, seed)
 	if err != nil {
+		log.Printf("[scripter] stage=faction_map error=%v", err)
 		return ScenarioCreationOutput{}, fmt.Errorf("Factions & Timelines 失败: %w", err)
 	}
+	log.Printf("[scripter] stage=faction_map done mythos_anchor=%q factions=%d rules_notes=%d ending_signals=%d", truncateRunes(factions.MythosAnchor, 300), len(factions.Factions), len(factions.RulesNotes), len(factions.EndingSignals))
 	logScripterArtifact("Stage 2 Factions & Timelines", factions)
 
+	log.Printf("[scripter] stage=world_state start mythos_anchor=%q", truncateRunes(factions.MythosAnchor, 300))
 	world, err := generateWorldState(ctx, r, constraints, seed, factions)
 	if err != nil {
+		log.Printf("[scripter] stage=world_state error=%v", err)
 		return ScenarioCreationOutput{}, fmt.Errorf("World Dressing 失败: %w", err)
 	}
+	log.Printf("[scripter] stage=world_state done locations=%d clue_facts=%d horror_surface=%q", len(world.Locations), len(world.ClueFacts), truncateRunes(world.HorrorLayers.Surface, 300))
 	logScripterArtifact("Stage 3 World Dressing", world)
 
+	log.Printf("[scripter] stage=assembly start")
 	draft, err := assembleSandboxDraft(ctx, r, constraints, seed, factions, world, nil, nil)
 	if err != nil {
+		log.Printf("[scripter] stage=assembly error=%v", err)
 		return ScenarioCreationOutput{}, fmt.Errorf("Assembly 失败: %w", err)
 	}
+	log.Printf("[scripter] stage=assembly done raw name=%q scenes=%d npcs=%d clues=%d", draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 	applyGuardrails(&draft, r.req)
+	log.Printf("[scripter] guardrails applied name=%q players=%d-%d difficulty=%q author=%q", draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Difficulty, draft.Author)
 	iterations := 4
 	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
-		log.Printf("[scripter] draft compatibility issues before repair: %v", issues)
+		log.Printf("[scripter] draft compatibility issues before repair count=%d issues=%v", len(issues), issues)
+		log.Printf("[scripter] stage=assembly_repair start")
 		if repaired, err := assembleSandboxDraft(ctx, r, constraints, seed, factions, world, &draft, issues); err == nil {
 			draft = repaired
+			log.Printf("[scripter] stage=assembly_repair done raw name=%q scenes=%d npcs=%d clues=%d", draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 			applyGuardrails(&draft, r.req)
+			log.Printf("[scripter] guardrails applied after repair name=%q players=%d-%d difficulty=%q author=%q", draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Difficulty, draft.Author)
 			iterations++
 		} else {
 			log.Printf("[scripter] focused repair failed, using normalized first draft: %v", err)
 		}
 	}
+	beforeNormalizeIssues := validateDraftCompatibility(draft)
+	log.Printf("[scripter] normalization start pre_issues=%d", len(beforeNormalizeIssues))
 	normalizeDraftBeforeReturn(&draft, r.req, constraints, seed, factions, world)
+	log.Printf("[scripter] normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d partial_wins=%d", draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Content.GameStartSlot, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), len(draft.Content.PartialWins))
 	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
 		log.Printf("[scripter] draft compatibility issues after normalization: %v", issues)
 	}
@@ -240,13 +272,20 @@ var thematicRegisterCandidates = []string{
 }
 
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
-	rng := rand.New(rand.NewSource(seedFromRequest(r.req)))
+	seed := seedFromRequest(r.req)
+	log.Printf("[scripter] constraints random_seed=%d salt=%q", seed, r.req.Salt)
+	rng := rand.New(rand.NewSource(seed))
 	geography, err := generateGeographyChain(ctx, r.architect, r.req.Era)
 	if err != nil || len(geography) == 0 {
 		if err != nil {
 			log.Printf("[scripter] geography flavor generation failed: %v", err)
+		} else {
+			log.Printf("[scripter] geography flavor generation returned empty chain")
 		}
 		geography = fallbackGeographyFlavor(r.req)
+		log.Printf("[scripter] geography fallback=%q", strings.Join(geography, " → "))
+	} else {
+		log.Printf("[scripter] geography generated=%q", strings.Join(geography, " → "))
 	}
 	return ScripterConstraints{
 		SituationArchetype:        pickCandidate(rng, situationArchetypeCandidates),
@@ -296,6 +335,7 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 	if architect.provider == nil {
 		return nil, fmt.Errorf("architect provider unavailable")
 	}
+	log.Printf("[scripter:geography] start era=%q", era)
 	stages := []struct {
 		Key      string
 		Mode     string
@@ -308,8 +348,10 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 	chain := make([]string, 0, len(stages))
 	msgs := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)}}
 	for _, stage := range stages {
+		log.Printf("[scripter:geography] stage=%q selected_so_far=%q", stage.Key, strings.Join(chain, " → "))
 		items, err := generateGeographyCandidates(ctx, architect, &msgs, era, stage.Key, stage.Mode, stage.Examples, chain)
 		if err != nil {
+			log.Printf("[scripter:geography] stage=%q error=%v", stage.Key, err)
 			return chain, err
 		}
 		if len(items) == 0 {
@@ -334,14 +376,19 @@ func generateGeographyCandidates(ctx context.Context, architect agentHandle, msg
 		selected = strings.Join(chain, " → ")
 	}
 	prompt := fmt.Sprintf("已随机选中的前置布景：%s\n现在进入下一阶段：%s\n时代：%s\n输出要求：%s\n示例范围：%s\n\n请只输出本阶段的20个候选。", selected, stageKey, era, mode, examples)
+	log.Printf("[scripter:geography] prompt stage=%q len=%d body=%s", stageKey, len(prompt), truncateRunes(prompt, scripterPromptLogLimit))
 	*msgs = append(*msgs, llm.ChatMessage{Role: "user", Content: prompt})
 	raw, err := architect.provider.Chat(ctx, *msgs)
 	if err != nil {
+		log.Printf("[scripter:geography] chat error stage=%q err=%v", stageKey, err)
 		return nil, err
 	}
+	log.Printf("[scripter:geography] raw stage=%q len=%d body=%s", stageKey, len(raw), truncateRunes(raw, scripterRawLogLimit))
 	*msgs = append(*msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 	items := parseElementNames(raw)
+	log.Printf("[scripter:geography] parsed stage=%q count=%d items=%q", stageKey, len(items), strings.Join(items, " | "))
 	if len(items) == 0 {
+		log.Printf("[scripter:geography] parse empty stage=%q raw=%s", stageKey, truncateRunes(raw, scripterRawLogLimit))
 		return nil, fmt.Errorf("地理候选列表为空")
 	}
 	return items, nil
@@ -440,6 +487,7 @@ func generateFoundationSeed(ctx context.Context, room *scripterRoom, constraints
 		{Role: "system", Content: room.architect.systemPrompt(foundationSeedSystemPrompt)},
 		{Role: "user", Content: userPrompt},
 	}
+	logStagePrompt("foundation_seed", msgs)
 	var seed FoundationSeed
 	if err := chatAndParseJSON(ctx, room.architect, room.parser, msgs, &seed, foundationSeedExample, "foundation_seed"); err != nil {
 		return FoundationSeed{}, err
@@ -532,6 +580,7 @@ func generateFactionMap(ctx context.Context, room *scripterRoom, constraints Scr
 		{Role: "system", Content: room.architect.systemPrompt(factionMapSystemPrompt)},
 		{Role: "user", Content: userPrompt},
 	}
+	logStagePrompt("faction_map", msgs)
 	var factions FactionMap
 	if err := chatAndParseJSON(ctx, room.architect, room.parser, msgs, &factions, factionMapExample, "faction_map"); err != nil {
 		return FactionMap{}, err
@@ -635,6 +684,7 @@ func generateWorldState(ctx context.Context, room *scripterRoom, constraints Scr
 		{Role: "system", Content: room.architect.systemPrompt(worldStateSystemPrompt)},
 		{Role: "user", Content: userPrompt},
 	}
+	logStagePrompt("world_state", msgs)
 	var world WorldState
 	if err := chatAndParseJSON(ctx, room.architect, room.parser, msgs, &world, worldStateExample, "world_state"); err != nil {
 		return WorldState{}, err
@@ -715,6 +765,10 @@ func assembleSandboxDraft(ctx context.Context, room *scripterRoom, constraints S
 		{Role: "system", Content: room.architect.systemPrompt(assemblySystemPrompt)},
 		{Role: "user", Content: userPrompt},
 	}
+	if previous != nil || len(mustFix) > 0 {
+		log.Printf("[scripter:scenario_draft] repair_mode previous_present=%v must_fix=%d issues=%v", previous != nil, len(mustFix), mustFix)
+	}
+	logStagePrompt("scenario_draft", msgs)
 	var draft ScenarioDraft
 	if err := chatAndParseJSON(ctx, room.architect, room.parser, msgs, &draft, scenarioExample, "scenario_draft"); err != nil {
 		return ScenarioDraft{}, err
@@ -729,9 +783,11 @@ func assembleSandboxDraft(ctx context.Context, room *scripterRoom, constraints S
 func buildStage2RuleContext(ctx context.Context, seed FoundationSeed) (string, bool) {
 	var sb strings.Builder
 	conservative := false
+	log.Printf("[scripter:rule_context] start mythos_seed=%q relation=%q", truncateRunes(seed.MythosSeed, 500), seed.MythosRelation)
 	sb.WriteString("【规则书常量摘要，仅供Stage2锚定神话元素】\n")
 	for _, constant := range []string{"mythos_creatures", "monsters", "great_old_ones_and_gods", "books", "spells"} {
 		text := strings.TrimSpace(rulebook.ReadConstant(constant))
+		log.Printf("[scripter:rule_context] const=%q len=%d", constant, len(text))
 		if text == "" {
 			continue
 		}
@@ -739,22 +795,31 @@ func buildStage2RuleContext(ctx context.Context, seed FoundationSeed) (string, b
 	}
 
 	question := fmt.Sprintf("为COC7沙盒剧本核验一个最小神话锚点。异常：%s。人类悲剧：%s。神话关系：%s。候选方向：%s。请只给可保守使用的实体/典籍/法术/物品方向和必须避免的未核验数值。", seed.Anomaly, seed.HumanTragedy, seed.MythosRelation, seed.MythosSeed)
+	log.Printf("[scripter:rule_context] lawyer question len=%d body=%s", len(question), truncateRunes(question, scripterPromptLogLimit))
 	lawyerHandle, err := loadSingleAgent(models.AgentRoleLawyer)
 	if err != nil {
 		conservative = true
+		log.Printf("[scripter:rule_context] lawyer unavailable err=%v", err)
 		sb.WriteString(fmt.Sprintf("\n【lawyer_unavailable】%v\n必须在rules_notes标记不确定元素，并避免生成未核验数值。\n", err))
-		return truncateRunes(sb.String(), 9000), conservative
+		ctxText := truncateRunes(sb.String(), 9000)
+		log.Printf("[scripter:rule_context] done conservative=%v len=%d body=%s", conservative, len(ctxText), truncateRunes(ctxText, scripterRepairLogLimit))
+		return ctxText, conservative
 	}
 	results := runLawyer(ctx, lawyerHandle, question, rulebook.GlobalIndex)
+	log.Printf("[scripter:rule_context] lawyer results=%d", len(results))
 	if len(results) == 0 {
 		conservative = true
 		sb.WriteString("\n【lawyer_no_result】规则专家未返回有效裁定；必须在rules_notes标记不确定元素，并避免生成未核验数值。\n")
-		return truncateRunes(sb.String(), 9000), conservative
+		ctxText := truncateRunes(sb.String(), 9000)
+		log.Printf("[scripter:rule_context] done conservative=%v len=%d body=%s", conservative, len(ctxText), truncateRunes(ctxText, scripterRepairLogLimit))
+		return ctxText, conservative
 	}
 	sb.WriteString("\n【lawyer_result】\n")
 	sb.WriteString(formatLawyerResults(results))
 	sb.WriteString("\n")
-	return truncateRunes(sb.String(), 9000), conservative
+	ctxText := truncateRunes(sb.String(), 9000)
+	log.Printf("[scripter:rule_context] done conservative=%v len=%d body=%s", conservative, len(ctxText), truncateRunes(ctxText, scripterRepairLogLimit))
+	return ctxText, conservative
 }
 
 // ---------------------------------------------------------------------------
@@ -767,7 +832,23 @@ func logScripterArtifact(stage string, artifact any) {
 		log.Printf("[scripter-artifact] %s marshal failed: %v", stage, err)
 		return
 	}
-	log.Printf("[scripter-artifact] %s\n%s", stage, string(bs))
+	log.Printf("[scripter-artifact] %s len=%d\n%s", stage, len(bs), string(bs))
+}
+
+func logStagePrompt(tag string, msgs []llm.ChatMessage) {
+	log.Printf("[scripter:%s] prompt messages=%d", tag, len(msgs))
+	for i, msg := range msgs {
+		log.Printf("[scripter:%s] prompt[%d] role=%s len=%d body=%s", tag, i, msg.Role, len(msg.Content), truncateRunes(msg.Content, scripterPromptLogLimit))
+	}
+}
+
+func logParsedJSON(tag string, value any) {
+	bs, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		log.Printf("[scripter:%s] parsed JSON marshal failed: %v", tag, err)
+		return
+	}
+	log.Printf("[scripter:%s] parsed JSON len=%d body=%s", tag, len(bs), truncateRunes(string(bs), scripterRawLogLimit))
 }
 
 func validateDraftCompatibility(draft ScenarioDraft) []string {
@@ -835,22 +916,28 @@ func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest) {
 	if draft == nil {
 		return
 	}
-	if strings.TrimSpace(req.Name) != "" {
+	if strings.TrimSpace(req.Name) != "" && draft.Name != strings.TrimSpace(req.Name) {
+		log.Printf("[scripter:guardrails] override name from=%q to=%q", draft.Name, strings.TrimSpace(req.Name))
 		draft.Name = strings.TrimSpace(req.Name)
 	}
-	if req.MinPlayers > 0 {
+	if req.MinPlayers > 0 && draft.MinPlayers != req.MinPlayers {
+		log.Printf("[scripter:guardrails] override min_players from=%d to=%d", draft.MinPlayers, req.MinPlayers)
 		draft.MinPlayers = req.MinPlayers
 	}
-	if req.MaxPlayers > 0 {
+	if req.MaxPlayers > 0 && draft.MaxPlayers != req.MaxPlayers {
+		log.Printf("[scripter:guardrails] override max_players from=%d to=%d", draft.MaxPlayers, req.MaxPlayers)
 		draft.MaxPlayers = req.MaxPlayers
 	}
 	if draft.MaxPlayers > 0 && draft.MinPlayers > 0 && draft.MaxPlayers < draft.MinPlayers {
+		log.Printf("[scripter:guardrails] clamp max_players from=%d to min_players=%d", draft.MaxPlayers, draft.MinPlayers)
 		draft.MaxPlayers = draft.MinPlayers
 	}
-	if strings.TrimSpace(req.Difficulty) != "" {
+	if strings.TrimSpace(req.Difficulty) != "" && draft.Difficulty != strings.TrimSpace(req.Difficulty) {
+		log.Printf("[scripter:guardrails] override difficulty from=%q to=%q", draft.Difficulty, strings.TrimSpace(req.Difficulty))
 		draft.Difficulty = strings.TrimSpace(req.Difficulty)
 	}
 	if strings.TrimSpace(draft.Author) == "" {
+		log.Printf("[scripter:guardrails] default author=%q", defaultScripterAuthor)
 		draft.Author = defaultScripterAuthor
 	}
 }
@@ -861,54 +948,71 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 	}
 	if strings.TrimSpace(draft.Name) == "" {
 		draft.Name = defaultScenarioName(seed)
+		log.Printf("[scripter:normalize] filled name=%q", draft.Name)
 	}
 	if strings.TrimSpace(draft.Description) == "" {
 		draft.Description = fmt.Sprintf("围绕“%s”展开的沙盒情境简报：调查员进入一个由旧决定、派系时间线和神话锚点共同推动的局势。", seed.Anomaly)
+		log.Printf("[scripter:normalize] filled description=%q", truncateRunes(draft.Description, 300))
 	}
 	if strings.TrimSpace(draft.Author) == "" {
 		draft.Author = defaultScripterAuthor
+		log.Printf("[scripter:normalize] filled author=%q", draft.Author)
 	}
 	if strings.TrimSpace(draft.Tags) == "" {
 		draft.Tags = strings.Join(nonEmptyStrings("sandbox", "coc", constraints.Theme, constraints.TemporalPhase, constraints.ThematicRegister), ",")
+		log.Printf("[scripter:normalize] filled tags=%q", draft.Tags)
 	}
 	if draft.MinPlayers <= 0 {
 		draft.MinPlayers = req.MinPlayers
+		log.Printf("[scripter:normalize] filled min_players from request=%d", draft.MinPlayers)
 	}
 	if draft.MinPlayers <= 0 {
 		draft.MinPlayers = 1
+		log.Printf("[scripter:normalize] default min_players=1")
 	}
 	if draft.MaxPlayers <= 0 {
 		draft.MaxPlayers = req.MaxPlayers
+		log.Printf("[scripter:normalize] filled max_players from request=%d", draft.MaxPlayers)
 	}
 	if draft.MaxPlayers <= 0 {
 		draft.MaxPlayers = 4
+		log.Printf("[scripter:normalize] default max_players=4")
 	}
 	if draft.MaxPlayers < draft.MinPlayers {
+		log.Printf("[scripter:normalize] clamp max_players from=%d to min_players=%d", draft.MaxPlayers, draft.MinPlayers)
 		draft.MaxPlayers = draft.MinPlayers
 	}
 	if strings.TrimSpace(draft.Difficulty) == "" {
 		draft.Difficulty = firstNonEmpty(req.Difficulty, "normal")
+		log.Printf("[scripter:normalize] filled difficulty=%q", draft.Difficulty)
 	}
 	if draft.Content.GameStartSlot < 0 {
+		log.Printf("[scripter:normalize] clamp game_start_slot from=%d to=0", draft.Content.GameStartSlot)
 		draft.Content.GameStartSlot = 0
 	}
 	if draft.Content.GameStartSlot > 47 {
+		log.Printf("[scripter:normalize] clamp game_start_slot from=%d to=47", draft.Content.GameStartSlot)
 		draft.Content.GameStartSlot = 47
 	}
 	if strings.TrimSpace(draft.Content.SystemPrompt) == "" {
 		draft.Content.SystemPrompt = defaultSandboxSystemPrompt(factions)
+		log.Printf("[scripter:normalize] filled system_prompt len=%d", len(draft.Content.SystemPrompt))
 	}
 	if strings.TrimSpace(draft.Content.Setting) == "" {
 		draft.Content.Setting = defaultSetting(constraints, seed, factions)
+		log.Printf("[scripter:normalize] filled setting len=%d", len(draft.Content.Setting))
 	}
 	if strings.TrimSpace(draft.Content.Intro) == "" {
 		draft.Content.Intro = defaultIntro(constraints, world)
+		log.Printf("[scripter:normalize] filled intro len=%d", len(draft.Content.Intro))
 	}
 	if strings.TrimSpace(draft.Content.MapDescription) == "" {
 		draft.Content.MapDescription = defaultMapDescription(world)
+		log.Printf("[scripter:normalize] filled map_description len=%d", len(draft.Content.MapDescription))
 	}
 	if len(draft.Content.Scenes) == 0 {
 		draft.Content.Scenes = scenesFromWorld(world)
+		log.Printf("[scripter:normalize] generated scenes count=%d", len(draft.Content.Scenes))
 	}
 	for i := range draft.Content.Scenes {
 		if strings.TrimSpace(draft.Content.Scenes[i].ID) == "" {
