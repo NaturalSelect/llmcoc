@@ -713,12 +713,13 @@ func (s *foundationSeedSession) review(ctx context.Context, attempt int, seed Fo
 
 func (s *foundationSeedSession) feedRejection(attempt int, seed FoundationSeed, qa FoundationSeedQA) {
 	seedJSON, _ := json.Marshal(seed)
-	qaJSON, _ := json.Marshal(qa)
 	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<qa_rejection attempt="%d">
 <rejected_seed>%s</rejected_seed>
-<qa_result>%s</qa_result>
+<must_fix>
+%s
+</must_fix>
 </qa_rejection>
-请基于同一个创作上下文重写FoundationSeed：必须解决QA指出的规则书对应问题，不要只改措辞；仍只输出合法JSON数组工具调用。`, attempt, string(seedJSON), string(qaJSON))})
+请基于同一个创作上下文重写FoundationSeed：逐条解决must_fix列出的问题，不要只改措辞；仍只输出合法JSON数组工具调用。`, attempt, string(seedJSON), formatFoundationSeedMustFix(qa))})
 }
 
 func runFoundationSeedQALoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage) (FoundationSeedQA, []llm.ChatMessage, error) {
@@ -1051,6 +1052,39 @@ func sandboxQARejectReasons(qa *SandboxQA) []string {
 		return []string{strings.TrimSpace(qa.Reason)}
 	}
 	return []string{"未给出拒绝原因"}
+}
+
+// formatSandboxMustFix 将 SandboxQA 的拒绝原因和建议格式化为编号行动列表，
+// 供 feedRejection 注入 architect 消息，替代纯 JSON 审核结果。
+func formatSandboxMustFix(qa SandboxQA) string {
+	var sb strings.Builder
+	reasons := qa.RejectReasons
+	if len(reasons) == 0 && strings.TrimSpace(qa.Reason) != "" {
+		reasons = []string{strings.TrimSpace(qa.Reason)}
+	}
+	for i, r := range reasons {
+		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, r))
+	}
+	if fix := strings.TrimSpace(qa.SuggestedFix); fix != "" {
+		sb.WriteString("建议：" + fix)
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+// formatFoundationSeedMustFix 将 FoundationSeedQA 的拒绝原因和建议格式化为编号行动列表。
+func formatFoundationSeedMustFix(qa FoundationSeedQA) string {
+	var sb strings.Builder
+	reasons := qa.RejectReasons
+	if len(reasons) == 0 && strings.TrimSpace(qa.Reason) != "" {
+		reasons = []string{strings.TrimSpace(qa.Reason)}
+	}
+	for i, r := range reasons {
+		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, r))
+	}
+	if scope := strings.TrimSpace(qa.SuggestedScope); scope != "" {
+		sb.WriteString("建议修正范围：" + scope)
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 func normalizeFoundationSeed(seed FoundationSeed, req ScenarioCreationRequest) FoundationSeed {
@@ -1412,12 +1446,13 @@ func (s *factionMapSession) review(ctx context.Context, attempt int, factions Fa
 
 func (s *factionMapSession) feedRejection(attempt int, factions FactionMap, qa SandboxQA) {
 	factionsJSON, _ := json.Marshal(factions)
-	qaJSON, _ := json.Marshal(qa)
 	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<qa_rejection attempt="%d">
 <rejected_factions>%s</rejected_factions>
-<qa_result>%s</qa_result>
+<must_fix>
+%s
+</must_fix>
 </qa_rejection>
-请基于同一个创作上下文重写FactionMap：必须解决QA指出的沙盒结构问题；不要只改措辞；仍只输出合法JSON对象。`, attempt, string(factionsJSON), string(qaJSON))})
+请基于同一个创作上下文重写FactionMap：逐条解决must_fix列出的沙盒结构问题；不要只改措辞；仍只输出合法JSON对象。`, attempt, string(factionsJSON), formatSandboxMustFix(qa))})
 }
 
 func generateFactionMapWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed) (FactionMap, error) {
@@ -1643,12 +1678,13 @@ func (s *worldStateSession) review(ctx context.Context, attempt int, world World
 
 func (s *worldStateSession) feedRejection(attempt int, world WorldState, qa SandboxQA) {
 	worldJSON, _ := json.Marshal(world)
-	qaJSON, _ := json.Marshal(qa)
 	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<qa_rejection attempt="%d">
 <rejected_world>%s</rejected_world>
-<qa_result>%s</qa_result>
+<must_fix>
+%s
+</must_fix>
 </qa_rejection>
-请基于同一个创作上下文重写WorldState：必须解决QA指出的沙盒结构问题；不要只改措辞；仍只输出合法JSON对象。`, attempt, string(worldJSON), string(qaJSON))})
+请基于同一个创作上下文重写WorldState：逐条解决must_fix列出的沙盒结构问题；不要只改措辞；仍只输出合法JSON对象。`, attempt, string(worldJSON), formatSandboxMustFix(qa))})
 }
 
 func generateWorldStateWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap) (WorldState, error) {
@@ -1837,12 +1873,13 @@ func (s *assemblySession) review(ctx context.Context, attempt int, draft Scenari
 
 func (s *assemblySession) feedRejection(attempt int, draft ScenarioDraft, qa SandboxQA) {
 	draftJSON, _ := json.Marshal(draft)
-	qaJSON, _ := json.Marshal(qa)
 	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<qa_rejection attempt="%d">
 <rejected_draft>%s</rejected_draft>
-<qa_result>%s</qa_result>
+<must_fix>
+%s
+</must_fix>
 </qa_rejection>
-请基于同一个创作上下文重写ScenarioDraft：必须解决QA指出的runtime合约问题；不要只改措辞；不要更换mythos_anchor；仍只输出合法JSON对象。`, attempt, string(draftJSON), string(qaJSON))})
+请基于同一个创作上下文重写ScenarioDraft：逐条解决must_fix列出的runtime合约问题；不要只改措辞；不要更换mythos_anchor；仍只输出合法JSON对象。`, attempt, string(draftJSON), formatSandboxMustFix(qa))})
 }
 
 func assembleSandboxDraftWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap, world WorldState) (ScenarioDraft, error) {
