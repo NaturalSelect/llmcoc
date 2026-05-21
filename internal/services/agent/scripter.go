@@ -517,7 +517,9 @@ const foundationSeedSystemPrompt = `<role>COC7沙盒基础种子设计师</role>
 <output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
 <schema>{"anomaly":"具体、奇怪、无法立刻解释的事实","mythos_relation":"byproduct或consequence","mythos_seed":"待Stage2核验的神话元素方向"}</schema>
 <rules>
-- anomaly必须是具体事实，不是类型标签；读完就应让调查员想追问。
+- anomaly必须是具体的可观察事实，不是类型标签；读完就应让调查员想追问。
+- anomaly禁止使用物理学、化学、数学或工程学词汇描述神话现象（例如"时空维度坍缩"、"晶体化"、"量子纠缠"、"物理意义上的X"均不合法）；异常只能用普通人能直接感知或目击的现象描述。
+- anomaly禁止使用唯心/意识哲学词汇将抽象概念具象化为代价或物质（例如"以记忆为代价"、"灵魂碎片"、"意识融合"、"用意志换取"均不合法）；代价和损失只能描述为可观察的后果。
 - mythos_relation只能是byproduct或consequence：byproduct=异常是神话力量副产品；consequence=神话是人类行为后果。
 - mythos_seed只是方向，不做规则裁定，不编造数值。
 - 用户brief若非空，必须保留其核心意图。
@@ -563,7 +565,9 @@ const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
   ② anomaly只能通过多步推测、创作延伸或"神话气氛"才能接到规则书方向；
   ③ check_rule只返回"大致类似"或"可以想象"而无具体条目；
   ④ anomaly的核心是普通犯罪、心理疾病、伪科学或高科技现象；
-  ⑤ anomaly与mythos_seed之间的联系无法通过check_rule确认，只能凭创作合理性推断。
+  ⑤ anomaly与mythos_seed之间的联系无法通过check_rule确认，只能凭创作合理性推断；
+  ⑥ anomaly使用了物理学、化学、数学或工程学词汇来描述神话现象（例如"时空维度坍缩"、"晶体化"、"量子X"、"物理意义上的Y"），无论神话锚点是否有效；
+  ⑦ anomaly使用了唯心/意识哲学词汇将抽象概念具象化为代价或物质（例如"以记忆为代价"、"灵魂碎片"、"意识融合"、"用意志换取"），无论神话锚点是否有效。
 - reject_reasons必须具体指出anomaly属于哪种不合格类型，以及与check_rule结果哪里对应不上。
 - rule_check_summary必须写出check_rule返回的具体条目名称或机制，以及异常与神话的联系依据，不能只写"未找到"或留空。
 </audit_rules>`
