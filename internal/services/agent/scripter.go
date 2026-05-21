@@ -513,19 +513,17 @@ type foundationSeedQAToolCall struct {
 }
 
 const foundationSeedSystemPrompt = `<role>COC7沙盒基础种子设计师</role>
-<task>通过think/check_rule/generate工具调用生成FoundationSeed。必须先通过check_rule在COC7规则书中核验mythos_seed方向有对应条目，再输出generate。</task>
+<task>通过check_rule/generate工具调用生成FoundationSeed。必须先通过check_rule在COC7规则书中核验mythos_seed方向有对应条目，再输出generate。</task>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
-- think：说明本轮生成计划。
-  {"action":"think","think":"计划"}
 - check_rule：向COC规则专家查询规则书。必须问具体且可验证的问题：要么问"规则书中是否有X现象/效果的直接条目"，要么问"规则书记载的Y条目会直接导致什么可观察后果"；禁止泛问"某方向有哪些可能"。
   {"action":"check_rule","question":"规则问题"}
 - generate：输出最终FoundationSeed。只有读到check_rule工具结果后才能调用。
   {"action":"generate","anomaly":"具体、奇怪、无法立刻解释的事实","mythos_relation":"byproduct或consequence","mythos_seed":"已有规则书支撑的神话元素方向"}
 </tools>
 <batch_rules>
-- 第一轮必须输出think和至少一个check_rule；禁止第一轮直接generate。
+- 第一轮必须输出至少一个check_rule；禁止第一轮直接generate。
 - check_rule和generate禁止出现在同一轮。先check_rule，读取<INTERNAL_TOOL_RESULT>后，下一轮再generate。
 - generate中的mythos_seed必须引用check_rule结果中的具体规则书条目，不得编造规则书未记载的内容。
 - 如果check_rule结果不足，可继续调用新的check_rule；不要凭常识补齐。
@@ -564,15 +562,13 @@ const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
-- think：说明本轮审核计划。
-  {"action":"think","think":"计划"}
 - check_rule：向COC规则专家查询规则书。必须问具体且可验证的问题：要么问"规则书中是否有X现象/效果的直接条目"，要么问"规则书记载的Y条目会直接导致什么可观察后果"；禁止泛问"某实体有什么效果"或"某方向有哪些可能"。
   {"action":"check_rule","question":"规则问题"}
 - response：最终审核结论。只有读到check_rule工具结果后才能调用。
   {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_scope":"给Stage2或重写阶段的范围","rule_check_summary":"实际依据的check_rule摘要"}
 </tools>
 <batch_rules>
-- 第一轮必须输出think和至少一个check_rule；禁止第一轮直接response。
+- 第一轮必须输出至少一个check_rule；禁止第一轮直接response。
 - check_rule和response禁止出现在同一轮。先check_rule，读取<INTERNAL_TOOL_RESULT>后，下一轮再response。
 - 审核时必须依次完成三步验证，每步都需要check_rule支撑，不可跳过：
   ① anomaly本身有规则书支撑（类型1或类型2）；
@@ -1130,14 +1126,13 @@ type sandboxQAToolCall struct {
 	SuggestedFix  string       `json:"suggested_fix,omitempty"`
 }
 
-// runSandboxQALoop runs the think→response QA loop for stages 2-4.
-// No rulebook tool calls are allowed; only think and response.
+// runSandboxQALoop runs the QA loop for stages 2-4.
+// No rulebook tool calls are allowed; only think (optional) and response.
 func runSandboxQALoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, toolCallExample string, tag string) (SandboxQA, []llm.ChatMessage, error) {
 	if room.qa.provider == nil {
 		return SandboxQA{Pass: true, Reason: "qa provider unavailable, skipping"}, msgs, nil
 	}
 	const maxQARounds = 20
-	seenThink := false
 	for round := 1; round <= maxQARounds; round++ {
 		if ctx.Err() != nil {
 			return SandboxQA{}, msgs, ctx.Err()
@@ -1163,7 +1158,7 @@ func runSandboxQALoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMe
 		for _, call := range calls {
 			switch call.Action {
 			case ToolThink:
-				seenThink = true
+				// think is optional, silently accepted
 			case ToolResponse:
 				hasResponse = true
 			default:
@@ -1172,10 +1167,6 @@ func runSandboxQALoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMe
 			}
 		}
 		if invalidAction {
-			continue
-		}
-		if hasResponse && !seenThink {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 第一轮必须先think，再response。"})
 			continue
 		}
 		if hasResponse {
@@ -1358,13 +1349,10 @@ const factionMapQASystemPrompt = `<role>COC7沙盒派系QA</role>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
-- think：说明本轮审核计划。
-  {"action":"think","think":"计划"}
-- response：最终审核结论。必须先输出至少一个think轮次后才能response。
+- response：最终审核结论。
   {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
 </tools>
 <batch_rules>
-- 第一轮必须包含think；第一轮禁止直接response。
 - response必须包含pass、reason、reject_reasons、suggested_fix。
 </batch_rules>
 <audit_rules>
@@ -1376,7 +1364,7 @@ const factionMapQASystemPrompt = `<role>COC7沙盒派系QA</role>
 不审核：规则书准确性、神话锚点的规则合规性、NPC属性数值、世界/地点细节。
 </audit_rules>`
 
-const factionMapQAToolCallExample = `[{"action":"think","think":"审核派系自主性和干预枢纽有效性。"},{"action":"response","pass":true,"reason":"每个派系有明确当前行动，干预枢纽有具体动作，NPC议程与派系目标绑定，结局信号描述代价分配。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
+const factionMapQAToolCallExample = `[{"action":"response","pass":true,"reason":"每个派系有明确当前行动，干预枢纽有具体动作，NPC议程与派系目标绑定，结局信号描述代价分配。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
 
 type factionMapSession struct {
 	room          *scripterRoom
@@ -1593,13 +1581,10 @@ const worldStateQASystemPrompt = `<role>COC7沙盒世界状态QA</role>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
-- think：说明本轮审核计划。
-  {"action":"think","think":"计划"}
-- response：最终审核结论。必须先输出至少一个think轮次后才能response。
+- response：最终审核结论。
   {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
 </tools>
 <batch_rules>
-- 第一轮必须包含think；第一轮禁止直接response。
 - response必须包含pass、reason、reject_reasons、suggested_fix。
 </batch_rules>
 <audit_rules>
@@ -1611,7 +1596,7 @@ const worldStateQASystemPrompt = `<role>COC7沙盒世界状态QA</role>
 不审核：神话锚点规则合规性、NPC属性数值、叙事质量、地点戏剧张力、Stage2派系设计细节。
 </audit_rules>`
 
-const worldStateQAToolCallExample = `[{"action":"think","think":"审核每个有timeline的派系是否在某地点levers中出现。"},{"action":"response","pass":true,"reason":"每个派系在至少一个地点有对应levers，入口有surface_visible线索，噪声不指向唯一答案，clue_facts有明确来源。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
+const worldStateQAToolCallExample = `[{"action":"response","pass":true,"reason":"每个派系在至少一个地点有对应levers，入口有surface_visible线索，噪声不指向唯一答案，clue_facts有明确来源。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
 
 type worldStateSession struct {
 	room          *scripterRoom
@@ -1779,13 +1764,10 @@ const assemblyQASystemPrompt = `<role>COC7沙盒剧本编译QA</role>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
-- think：说明本轮审核计划。
-  {"action":"think","think":"计划"}
-- response：最终审核结论。必须先输出至少一个think轮次后才能response。
+- response：最终审核结论。
   {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
 </tools>
 <batch_rules>
-- 第一轮必须包含think；第一轮禁止直接response。
 - response必须包含pass、reason、reject_reasons、suggested_fix。
 </batch_rules>
 <audit_rules>
@@ -1799,7 +1781,7 @@ const assemblyQASystemPrompt = `<role>COC7沙盒剧本编译QA</role>
 不审核：派系设计细节（Stage2已审）、世界状态细节（Stage3已审）、规则书合规性、NPC属性数值、游戏时长判断。
 </audit_rules>`
 
-const assemblyQAToolCallExample = `[{"action":"think","think":"审核setting是否只含可观察事实，intro是否有具体行动选项。"},{"action":"response","pass":true,"reason":"setting只含公开可见局势，intro提供了3个具体行动，每个scene有杠杆描述，clues自包含，system_prompt包含三项KP协议。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
+const assemblyQAToolCallExample = `[{"action":"response","pass":true,"reason":"setting只含公开可见局势，intro提供了3个具体行动，每个scene有杠杆描述，clues自包含，system_prompt包含三项KP协议。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
 
 type assemblySession struct {
 	room          *scripterRoom
