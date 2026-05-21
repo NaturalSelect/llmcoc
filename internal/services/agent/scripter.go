@@ -550,7 +550,7 @@ const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
 <tools>
 - think：说明本轮审核计划。
   {"action":"think","think":"计划"}
-- check_rule：向COC规则专家查询规则书。一个question只问一个规则问题，必须围绕mythos_seed能否对应规则书神话实体、典籍、法术、梦境/异界、生物、崇拜或禁忌知识方向。
+- check_rule：向COC规则专家查询规则书。必须问具体且可验证的问题：要么问"规则书中是否有X现象/效果的直接条目"，要么问"规则书记载的Y条目会直接导致什么可观察后果"；禁止泛问"某实体有什么效果"或"某方向有哪些可能"。
   {"action":"check_rule","question":"规则问题"}
 - response：最终审核结论。只有读到check_rule工具结果后才能调用。
   {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_scope":"给Stage2或重写阶段的范围","rule_check_summary":"实际依据的check_rule摘要"}
@@ -563,12 +563,16 @@ const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
 </batch_rules>
 <audit_rules>
 - 只审核Stage1 seed，不锁定具体数值，不扩写派系/NPC/场景。
-- pass=true的最低标准：anomaly具体且怪异；check_rule结果能支持mythos_seed保守接到神话实体、典籍、法术、梦境、异界、生物、崇拜、禁忌知识或宇宙恐怖方向之一；不依赖伪科学、高科技或普通犯罪作为唯一解释。
-- 如果check_rule正文给出了可保守支撑的核心神话锚点，且anomaly的核心表现属于效果层面的创作延伸（异常死亡/失踪/心理效应/行为变化/不明痕迹等），即使check_rule指出部分细节不是规则书明文，也应pass=true；把未覆盖细节写入suggested_scope，要求Stage2保守标注。
-- 禁止自设道具为核心异常：如果anomaly的核心机制依赖规则书中不存在的特殊物品或自设法器（例如"具有时间停滞效果的金色河沙"、"自设防腐器物"），即使mythos_anchor本身有效，也必须pass=false；要求将anomaly改写为以标准规则书效果、实体留下的直接痕迹或有据可查的典籍现象为核心。
-- 只有当check_rule正文没有任何可支撑核心锚点，或只支持普通怪谈、刑侦、心理疾病、科技异常、社会议题时，pass=false。
-- reject_reasons必须具体指出异常、mythos_seed和check_rule结果之间哪里对应不上。
-- rule_check_summary必须简述check_rule返回的核心依据，不能留空。
+- pass=true只允许两类anomaly，必须由check_rule结果支撑，不得凭气氛或方向感判断：
+  【类型1·规则书直接记载】anomaly描述的现象是规则书中某神话实体、法术、典籍或遭遇的直接记录效果；check_rule必须能引用具体条目名称或机制。
+  【类型2·规则书现象的一步推导】anomaly是类型1现象的直接逻辑次级结果，推导链只有一步且不依赖额外假设（例：规则书记载某实体造成地震→地震导致动物异常迁徙）；check_rule必须能找到"直接原因"对应的规则书条目。
+- 以下情况必须pass=false，不接受任何例外：
+  ① anomaly依赖规则书未记载的自设物品、自设法器或自设特殊物质（例如"具有时间停滞效果的金色河沙"），即使mythos_anchor本身有效；
+  ② anomaly只能通过多步推测、创作延伸或"神话气氛"才能接到规则书方向；
+  ③ check_rule只返回"大致类似"或"可以想象"而无具体条目；
+  ④ anomaly的核心是普通犯罪、心理疾病、伪科学或高科技现象。
+- reject_reasons必须具体指出anomaly属于哪种不合格类型，以及与check_rule结果哪里对应不上。
+- rule_check_summary必须写出check_rule返回的具体条目名称或机制，不能只写"未找到"或留空。
 </audit_rules>`
 
 func generateFoundationSeedWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (FoundationSeed, error) {
