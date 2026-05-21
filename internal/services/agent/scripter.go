@@ -157,7 +157,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 
 	log.Printf("[scripter] stage=constraints start")
 	constraints := r.buildConstraints(ctx)
-	log.Printf("[scripter] stage=constraints done archetype=%q entry=%q topology=%q phase=%q register=%q geography=%q", constraints.SituationArchetype, constraints.InvestigatorEntryPosition, constraints.FactionTopology, constraints.TemporalPhase, constraints.ThematicRegister, strings.Join(constraints.GeographyFlavor, " → "))
+	log.Printf("[scripter] stage=constraints done archetype=%q entry=%q topology=%q phase=%q geography=%q", constraints.SituationArchetype, constraints.InvestigatorEntryPosition, constraints.FactionTopology, constraints.TemporalPhase, strings.Join(constraints.GeographyFlavor, " → "))
 	logScripterArtifact("Pre-generation Constraints", constraints)
 
 	log.Printf("[scripter] stage=foundation_seed start")
@@ -234,7 +234,6 @@ type ScripterConstraints struct {
 	InvestigatorEntryPosition string   `json:"investigator_entry_position"`
 	FactionTopology           string   `json:"faction_topology"`
 	TemporalPhase             string   `json:"temporal_phase"`
-	ThematicRegister          string   `json:"thematic_register"`
 	Era                       string   `json:"era"`
 	Theme                     string   `json:"theme"`
 	GeographyFlavor           []string `json:"geography_flavor"`
@@ -272,15 +271,6 @@ var temporalPhaseCandidates = []string{
 	"萌芽期：事情刚开始，线索新鲜但严重性尚不明确",
 	"激烈期：局势快速发展，每拖延一天都有新的后果",
 	"尾声期：主要事件已经发生，调查员追查后果和幸存者",
-	"循环期：这不是第一次，规律被发现后威胁规模才显现",
-}
-
-var thematicRegisterCandidates = []string{
-	"宇宙冷漠：更大的力量不在乎调查员成败",
-	"人性腐败：超自然只是人类欲望的放大器",
-	"悲剧必然：没人想让事情发生，但它还是发生了",
-	"不可信任：无法判断谁说的是真话，包括盟友",
-	"禁忌代价：知道某些事会让人希望自己没有调查",
 }
 
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
@@ -304,9 +294,8 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		InvestigatorEntryPosition: pickCandidate(rng, investigatorEntryCandidates),
 		FactionTopology:           pickCandidate(rng, factionTopologyCandidates),
 		TemporalPhase:             pickCandidate(rng, temporalPhaseCandidates),
-		ThematicRegister:          pickCandidate(rng, thematicRegisterCandidates),
 		Era:                       r.req.Era,
-		Theme:                     firstNonEmpty(r.req.Theme, "克苏鲁调查"),
+		Theme:                     firstNonEmpty(r.req.Theme, ""),
 		GeographyFlavor:           geography,
 		TargetLength:              r.req.TargetLength,
 		PlayerRange:               fmt.Sprintf("%d-%d", r.req.MinPlayers, r.req.MaxPlayers),
@@ -500,7 +489,6 @@ func normalizeElementName(s string) string {
 
 type FoundationSeed struct {
 	Anomaly        string `json:"anomaly"`
-	HumanTragedy   string `json:"human_tragedy"`
 	MythosRelation string `json:"mythos_relation"`
 	MythosSeed     string `json:"mythos_seed"`
 }
@@ -527,17 +515,16 @@ type foundationSeedQAToolCall struct {
 const foundationSeedSystemPrompt = `<role>COC7沙盒基础种子设计师</role>
 <task>只生成FoundationSeed JSON。这个阶段是纯创意阶段，不查询也不引用规则书。</task>
 <output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
-<schema>{"anomaly":"具体、奇怪、无法立刻解释的事实","human_tragedy":"谁做了可理解但导致灾难的决定/为什么/造成什么","mythos_relation":"byproduct或consequence","mythos_seed":"待Stage2核验的神话元素方向"}</schema>
+<schema>{"anomaly":"具体、奇怪、无法立刻解释的事实","mythos_relation":"byproduct或consequence","mythos_seed":"待Stage2核验的神话元素方向"}</schema>
 <rules>
 - anomaly必须是具体事实，不是类型标签；读完就应让调查员想追问。
-- human_tragedy必须先于派系和NPC存在，是整个局势的道德中心。
 - mythos_relation只能是byproduct或consequence：byproduct=异常是神话力量副产品；consequence=神话是人类行为后果。
 - mythos_seed只是方向，不做规则裁定，不编造数值。
 - 用户brief若非空，必须保留其核心意图。
 - 如果收到qa_rejection，必须重写异常与mythos_seed之间的关系；不要只改措辞。
 </rules>`
 
-const foundationSeedExample = `{"anomaly":"邮局每天把信投递到三十年前已经拆除的地址，仍有人在夜里取走这些信。","human_tragedy":"一名邮差为了让失踪孩子的母亲继续相信孩子还活着，开始伪造回信；多年后谎言被某种不属于人的通信方式接管。","mythos_relation":"consequence","mythos_seed":"与梦境、信件、非人传讯或典籍残页有关的神话锚点"}`
+const foundationSeedExample = `{"anomaly":"邮局每天把信投递到三十年前已经拆除的地址，仍有人在夜里取走这些信。","mythos_relation":"consequence","mythos_seed":"与梦境、信件、非人传讯或典籍残页有关的神话锚点"}`
 
 const foundationSeedQAExample = `{"pass":true,"reason":"check_rule结果显示该方向可以保守接入梦境、典籍或非人传讯等规则书神话元素；异常与mythos_seed存在可核验桥接。","reject_reasons":[],"suggested_scope":"保留非线性通信方向，Stage2锁定具体典籍或实体时继续保守标注。","rule_check_summary":"check_rule返回了可用的规则书神话方向，未要求使用未核验数值。"}`
 
@@ -558,6 +545,10 @@ const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
 <batch_rules>
 - 第一轮必须输出think和至少一个check_rule；禁止第一轮直接response。
 - check_rule和response禁止出现在同一轮。先check_rule，读取<INTERNAL_TOOL_RESULT>后，下一轮再response。
+- 审核时必须依次完成三步验证，每步都需要check_rule支撑，不可跳过：
+  ① anomaly本身有规则书支撑（类型1或类型2）；
+  ② mythos_seed描述的神话机制在规则书中有对应条目；
+  ③ mythos_seed机制能合理产生anomaly——即从mythos_seed出发，anomaly是其推导的可观察表现(anomaly需要包含完整的推理链)。
 - 如果check_rule结果不足，可继续调用新的check_rule；不要凭常识补齐。
 - response必须包含pass、reason、reject_reasons、suggested_scope、rule_check_summary。
 </batch_rules>
@@ -566,37 +557,68 @@ const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
 - pass=true只允许两类anomaly，必须由check_rule结果支撑，不得凭气氛或方向感判断：
   【类型1·规则书直接记载】anomaly描述的现象是规则书中某神话实体、法术、典籍或遭遇的直接记录效果；check_rule必须能引用具体条目名称或机制。
   【类型2·规则书现象的推导】anomaly是类型1现象的逻辑推理结果，且提供了完整推导链且不依赖额外假设（例：规则书记载某实体造成地震→地震导致动物异常迁徙）；check_rule必须能找到"直接原因"对应的规则书条目。
+- anomaly与mythos_seed的联系必须成立：即使anomaly和mythos_seed分别有规则书依据，如果无法通过check_rule确认"mythos_seed所描述的神话机制是产生该anomaly的直接原因或一步推导来源"，pass=false；两件独立有规则书依据但彼此无因果关系的事实不构成合格的seed。
 - 以下情况必须pass=false，不接受任何例外：
   ① anomaly依赖规则书未记载的自设物品、自设法器或自设特殊物质（例如"具有时间停滞效果的金色河沙"），即使mythos_anchor本身有效；
   ② anomaly只能通过多步推测、创作延伸或"神话气氛"才能接到规则书方向；
   ③ check_rule只返回"大致类似"或"可以想象"而无具体条目；
-  ④ anomaly的核心是普通犯罪、心理疾病、伪科学或高科技现象。
+  ④ anomaly的核心是普通犯罪、心理疾病、伪科学或高科技现象；
+  ⑤ anomaly与mythos_seed之间的联系无法通过check_rule确认，只能凭创作合理性推断。
 - reject_reasons必须具体指出anomaly属于哪种不合格类型，以及与check_rule结果哪里对应不上。
-- rule_check_summary必须写出check_rule返回的具体条目名称或机制，不能只写"未找到"或留空。
+- rule_check_summary必须写出check_rule返回的具体条目名称或机制，以及异常与神话的联系依据，不能只写"未找到"或留空。
 </audit_rules>`
 
 func generateFoundationSeedWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (FoundationSeed, error) {
-	session := newFoundationSeedSession(room, constraints)
+	const candidateCount = 5
 	const maxAttempts = 30
-	var lastQA *FoundationSeedQA
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		seed, err := session.generate(ctx, attempt)
-		if err != nil {
-			return FoundationSeed{}, err
+	var candidates []FoundationSeed
+	for run := 1; run <= candidateCount; run++ {
+		usedAnomalies := make([]string, len(candidates))
+		for i, c := range candidates {
+			usedAnomalies[i] = c.Anomaly
 		}
-		qa, err := session.review(ctx, attempt, seed)
-		if err != nil {
-			return FoundationSeed{}, err
+		session := newFoundationSeedSession(room, constraints, usedAnomalies)
+		var lastQA *FoundationSeedQA
+		var passed bool
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			seed, err := session.generate(ctx, attempt)
+			if err != nil {
+				return FoundationSeed{}, err
+			}
+			qa, err := session.review(ctx, attempt, seed)
+			if err != nil {
+				return FoundationSeed{}, err
+			}
+			lastQA = &qa
+			log.Printf("[scripter:foundation_seed_qa] run=%d attempt=%d pass=%v reason=%q rejects=%q suggested_scope=%q rule_check=%q", run, attempt, qa.Pass, truncateRunes(qa.Reason, 500), strings.Join(qa.RejectReasons, " | "), truncateRunes(qa.SuggestedScope, 500), truncateRunes(qa.RuleCheckSummary, 500))
+			logScripterArtifact(fmt.Sprintf("Stage 1 Foundation Seed Run %d QA Attempt %d", run, attempt), qa)
+			if qa.Pass {
+				passed = true
+				// 去重：anomaly相同则跳过
+				dup := false
+				for _, c := range candidates {
+					if strings.EqualFold(strings.TrimSpace(c.Anomaly), strings.TrimSpace(seed.Anomaly)) {
+						dup = true
+						break
+					}
+				}
+				if !dup {
+					candidates = append(candidates, seed)
+					log.Printf("[scripter:foundation_seed_qa] run=%d accepted candidates=%d anomaly=%q", run, len(candidates), truncateRunes(seed.Anomaly, 200))
+				} else {
+					log.Printf("[scripter:foundation_seed_qa] run=%d duplicate anomaly skipped", run)
+				}
+				break
+			}
+			session.feedRejection(attempt, seed, qa)
 		}
-		lastQA = &qa
-		log.Printf("[scripter:foundation_seed_qa] attempt=%d pass=%v reason=%q rejects=%q suggested_scope=%q rule_check=%q", attempt, qa.Pass, truncateRunes(qa.Reason, 500), strings.Join(qa.RejectReasons, " | "), truncateRunes(qa.SuggestedScope, 500), truncateRunes(qa.RuleCheckSummary, 500))
-		logScripterArtifact(fmt.Sprintf("Stage 1 Foundation Seed QA Attempt %d", attempt), qa)
-		if qa.Pass {
-			return seed, nil
+		if !passed {
+			return FoundationSeed{}, fmt.Errorf("Foundation Seed QA run=%d 连续拒绝 %d 次，拒绝原因=%v", run, maxAttempts, rejectionRejectReasons(lastQA))
 		}
-		session.feedRejection(attempt, seed, qa)
 	}
-	return FoundationSeed{}, fmt.Errorf("Foundation Seed QA 连续拒绝 %d 次，拒绝原因=%v", maxAttempts, rejectionRejectReasons(lastQA))
+	picked := candidates[rand.Intn(len(candidates))]
+	log.Printf("[scripter:foundation_seed_qa] picked from %d candidates anomaly=%q", len(candidates), truncateRunes(picked.Anomaly, 200))
+	return picked, nil
 }
 
 type foundationSeedSession struct {
@@ -606,13 +628,21 @@ type foundationSeedSession struct {
 	qaMsgs        []llm.ChatMessage
 }
 
-func newFoundationSeedSession(room *scripterRoom, constraints ScripterConstraints) *foundationSeedSession {
+func newFoundationSeedSession(room *scripterRoom, constraints ScripterConstraints, usedAnomalies []string) *foundationSeedSession {
 	reqJSON, _ := json.Marshal(room.req)
 	constraintsJSON, _ := json.Marshal(constraints)
+	usedBlock := ""
+	if len(usedAnomalies) > 0 {
+		quoted := make([]string, len(usedAnomalies))
+		for i, a := range usedAnomalies {
+			quoted[i] = fmt.Sprintf("- %s", a)
+		}
+		usedBlock = fmt.Sprintf("\n<already_generated_anomalies>\n%s\n</already_generated_anomalies>\n以上anomaly已被本次生成使用，必须生成完全不同的anomaly，不得在主题、场所或现象类型上重复。", strings.Join(quoted, "\n"))
+	}
 	architectPrompt := fmt.Sprintf(`<request_json>%s</request_json>
 <constraints>%s</constraints>
-<geography_note>地理只作为风味，不要让它替代异常事实和人类悲剧。</geography_note>
-请生成第1版FoundationSeed。`, string(reqJSON), string(constraintsJSON))
+<geography_note>地理只作为风味，不要让它替代异常事实。</geography_note>%s
+请生成第1版FoundationSeed。`, string(reqJSON), string(constraintsJSON), usedBlock)
 	qaPrompt := fmt.Sprintf(`<constraints>%s</constraints>
 你是持续运行的FoundationSeed QA会话。每次收到<foundation_seed_candidate>后，通过think/check_rule/response工具调用审核它。`, string(constraintsJSON))
 	return &foundationSeedSession{
@@ -846,14 +876,10 @@ func sandboxQARejectReasons(qa *SandboxQA) []string {
 
 func normalizeFoundationSeed(seed FoundationSeed, req ScenarioCreationRequest) FoundationSeed {
 	seed.Anomaly = strings.TrimSpace(seed.Anomaly)
-	seed.HumanTragedy = strings.TrimSpace(seed.HumanTragedy)
 	seed.MythosRelation = strings.ToLower(strings.TrimSpace(seed.MythosRelation))
 	seed.MythosSeed = strings.TrimSpace(seed.MythosSeed)
 	if seed.Anomaly == "" {
 		seed.Anomaly = firstNonEmpty(req.Brief, "一个公开场所反复出现无法解释的细节，普通解释都只能解释其中一半。")
-	}
-	if seed.HumanTragedy == "" {
-		seed.HumanTragedy = "某个普通人为了保护重要的人隐瞒了一个事实，隐瞒本身逐渐成为更大灾难的入口。"
 	}
 	switch {
 	case seed.MythosRelation == "byproduct" || strings.Contains(seed.MythosRelation, "副产品"):
@@ -1092,7 +1118,7 @@ func normalizeFactionMap(factions FactionMap, seed FoundationSeed, conservative 
 				Trigger:           "调查员开始询问异常来源",
 				InterventionPivot: "公开关键记录会迫使其改变行动",
 			}},
-			NPCs: []FactionNPC{{Name: "周砚", PublicIdentity: "地方办事员", Agenda: "维持旧决定不被公开", Secret: seed.HumanTragedy, Attitude: "礼貌回避", StatsNote: "普通人类属性15-70"}},
+			NPCs: []FactionNPC{{Name: "周砚", PublicIdentity: "地方办事员", Agenda: "维持旧决定不被公开", Secret: "知道异常的真实来源但选择隐瞒", Attitude: "礼貌回避", StatsNote: "普通人类属性15-70"}},
 		}}
 	}
 	if len(factions.EndingSignals) == 0 {
@@ -1318,7 +1344,7 @@ func normalizeWorldState(world WorldState, seed FoundationSeed, factions Faction
 		world.Locations = []LocationState{{
 			Name:           "调查入口",
 			SurfaceVisible: seed.Anomaly,
-			Discoverable:   seed.HumanTragedy,
+			Discoverable:   seed.MythosSeed,
 			DeepLayer:      "所有异常最终指向神话锚点：" + factions.MythosAnchor,
 			Levers:         []WorldLever{{Action: "公开异常事实", Change: "相关派系必须暴露各自对异常的解释和利益"}},
 			Noise:          []string{"一个与核心真相无关但具体的地方习惯仍照常发生。"},
@@ -1684,7 +1710,7 @@ func buildStage2RuleContext(ctx context.Context, seed FoundationSeed) (string, b
 		sb.WriteString(fmt.Sprintf("\n[%s]\n%s\n", constant, truncateRunes(text, 1200)))
 	}
 
-	question := fmt.Sprintf("为COC7沙盒剧本核验一个最小神话锚点。异常：%s。人类悲剧：%s。神话关系：%s。候选方向：%s。请只给可保守使用的实体/典籍/法术/物品方向和必须避免的未核验数值。", seed.Anomaly, seed.HumanTragedy, seed.MythosRelation, seed.MythosSeed)
+	question := fmt.Sprintf("为COC7沙盒剧本核验一个最小神话锚点。异常：%s。神话关系：%s。候选方向：%s。请只给可保守使用的实体/典籍/法术/物品方向和必须避免的未核验数值。", seed.Anomaly, seed.MythosRelation, seed.MythosSeed)
 	log.Printf("[scripter:rule_context] lawyer question len=%d body=%s", len(question), truncateRunes(question, scripterPromptLogLimit))
 	lawyerHandle, err := loadSingleAgent(models.AgentRoleLawyer)
 	if err != nil {
@@ -1849,7 +1875,7 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 		log.Printf("[scripter:normalize] filled author=%q", draft.Author)
 	}
 	if strings.TrimSpace(draft.Tags) == "" {
-		draft.Tags = strings.Join(nonEmptyStrings("sandbox", "coc", constraints.Theme, constraints.TemporalPhase, constraints.ThematicRegister), ",")
+		draft.Tags = strings.Join(nonEmptyStrings("sandbox", "coc", constraints.Theme, constraints.TemporalPhase), ",")
 		log.Printf("[scripter:normalize] filled tags=%q", draft.Tags)
 	}
 	if draft.MinPlayers <= 0 {
