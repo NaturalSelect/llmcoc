@@ -520,7 +520,7 @@ const foundationSeedSystemPrompt = `<role>COC7沙盒基础种子设计师</role>
 - check_rule：向COC规则专家查询规则书。必须问具体且可验证的问题：要么问"规则书中是否有X现象/效果的直接条目"，要么问"规则书记载的Y条目会直接导致什么可观察后果"；禁止泛问"某方向有哪些可能"。
   {"action":"check_rule","question":"规则问题"}
 - generate：输出最终FoundationSeed。只有读到check_rule工具结果后才能调用。
-  {"action":"generate","anomaly":"具体、奇怪、无法立刻解释的事实","mythos_relation":"byproduct或consequence","mythos_seed":"已有规则书支撑的神话元素方向"}
+  {"action":"generate","anomaly":"具体、奇怪、无法立刻解释的事实","mythos_relation":"byproduct或consequence","mythos_seed":"已有规则书支撑的神话元素方向(包含完整推理链条, 鼓励多步推理来迷惑调查员)"}
 </tools>
 <batch_rules>
 - 第一轮必须输出至少一个check_rule；禁止第一轮直接generate。
