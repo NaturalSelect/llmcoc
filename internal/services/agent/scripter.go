@@ -34,6 +34,7 @@ type ScenarioCreationRequest struct {
 
 type ScenarioCreationOutput struct {
 	Draft      ScenarioDraft `json:"draft"`
+	IronyCore  *IronyCore    `json:"irony_core,omitempty"`
 	Iterations int           `json:"iterations"`
 }
 
@@ -160,35 +161,35 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	log.Printf("[scripter] stage=constraints done archetype=%q entry=%q topology=%q phase=%q geography=%q", constraints.SituationArchetype, constraints.InvestigatorEntryPosition, constraints.FactionTopology, constraints.TemporalPhase, strings.Join(constraints.GeographyFlavor, " → "))
 	logScripterArtifact("Pre-generation Constraints", constraints)
 
-	log.Printf("[scripter] stage=foundation_seed start")
-	seed, err := generateFoundationSeedWithQA(ctx, r, constraints)
+	log.Printf("[scripter] stage=irony_core start")
+	irony, err := generateIronyCoreWithQA(ctx, r, constraints)
 	if err != nil {
-		log.Printf("[scripter] stage=foundation_seed error=%v", err)
-		return ScenarioCreationOutput{}, fmt.Errorf("Foundation Seed 失败: %w", err)
+		log.Printf("[scripter] stage=irony_core error=%v", err)
+		return ScenarioCreationOutput{}, fmt.Errorf("IronyCore 失败: %w", err)
 	}
-	log.Printf("[scripter] stage=foundation_seed done anomaly=%q relation=%q mythos_seed=%q", truncateRunes(seed.Anomaly, 300), seed.MythosRelation, truncateRunes(seed.MythosSeed, 300))
-	logScripterArtifact("Stage 1 Foundation Seed", seed)
+	log.Printf("[scripter] stage=irony_core done delta=%q surface=%q", irony.DeltaOperator, truncateRunes(irony.SurfaceReading, 300))
+	logScripterArtifact("Stage 1 IronyCore", irony)
 
-	log.Printf("[scripter] stage=faction_map start mythos_seed=%q", truncateRunes(seed.MythosSeed, 300))
-	factions, err := generateFactionMapWithQA(ctx, r, constraints, seed)
+	log.Printf("[scripter] stage=misdirection start")
+	misdirection, err := generateMisdirectionWithQA(ctx, r, constraints, irony)
 	if err != nil {
-		log.Printf("[scripter] stage=faction_map error=%v", err)
-		return ScenarioCreationOutput{}, fmt.Errorf("Factions & Timelines 失败: %w", err)
+		log.Printf("[scripter] stage=misdirection error=%v", err)
+		return ScenarioCreationOutput{}, fmt.Errorf("MisdirectionFabric 失败: %w", err)
 	}
-	log.Printf("[scripter] stage=faction_map done mythos_anchor=%q factions=%d rules_notes=%d ending_signals=%d", truncateRunes(factions.MythosAnchor, 300), len(factions.Factions), len(factions.RulesNotes), len(factions.EndingSignals))
-	logScripterArtifact("Stage 2 Factions & Timelines", factions)
+	log.Printf("[scripter] stage=misdirection done false_lead=%q mythos_anchor=%q factions=%d", truncateRunes(misdirection.FalseLead, 200), truncateRunes(misdirection.MythosAnchor, 200), len(misdirection.Factions))
+	logScripterArtifact("Stage 2 MisdirectionFabric", misdirection)
 
-	log.Printf("[scripter] stage=world_state start mythos_anchor=%q", truncateRunes(factions.MythosAnchor, 300))
-	world, err := generateWorldStateWithQA(ctx, r, constraints, seed, factions)
+	log.Printf("[scripter] stage=investigation_graph start")
+	graph, err := generateInvestigationGraphWithVerification(ctx, r, constraints, irony, misdirection)
 	if err != nil {
-		log.Printf("[scripter] stage=world_state error=%v", err)
-		return ScenarioCreationOutput{}, fmt.Errorf("World Dressing 失败: %w", err)
+		log.Printf("[scripter] stage=investigation_graph error=%v", err)
+		return ScenarioCreationOutput{}, fmt.Errorf("InvestigationGraph 失败: %w", err)
 	}
-	log.Printf("[scripter] stage=world_state done locations=%d clue_facts=%d horror_surface=%q", len(world.Locations), len(world.ClueFacts), truncateRunes(world.HorrorLayers.Surface, 300))
-	logScripterArtifact("Stage 3 World Dressing", world)
+	log.Printf("[scripter] stage=investigation_graph done nodes=%d resolution=%d", len(graph.Nodes), len(graph.ResolutionNodes))
+	logScripterArtifact("Stage 3 InvestigationGraph", graph)
 
 	log.Printf("[scripter] stage=assembly start")
-	draft, err := assembleSandboxDraftWithQA(ctx, r, constraints, seed, factions, world)
+	draft, err := assembleSandboxDraftWithQA(ctx, r, constraints, irony, misdirection, graph)
 	if err != nil {
 		log.Printf("[scripter] stage=assembly error=%v", err)
 		return ScenarioCreationOutput{}, fmt.Errorf("Assembly 失败: %w", err)
@@ -202,7 +203,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 			break
 		}
 		log.Printf("[scripter] stage=assembly_repair round=%d start issues=%d %v", repairRound, len(issues), issues)
-		repaired, repairErr := assembleSandboxDraft(ctx, r, constraints, seed, factions, world, &draft, issues)
+		repaired, repairErr := assembleSandboxDraft(ctx, r, constraints, irony, misdirection, graph, &draft, issues)
 		if repairErr != nil {
 			log.Printf("[scripter] stage=assembly_repair round=%d failed: %v", repairRound, repairErr)
 			break
@@ -214,7 +215,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	}
 	beforeNormalizeIssues := validateDraftCompatibility(draft)
 	log.Printf("[scripter] normalization start pre_issues=%d", len(beforeNormalizeIssues))
-	normalizeDraftBeforeReturn(&draft, r.req, constraints, seed, factions, world)
+	normalizeDraftBeforeReturn(&draft, r.req, constraints, irony, misdirection, graph)
 	log.Printf("[scripter] normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d partial_wins=%d", draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Content.GameStartSlot, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), len(draft.Content.PartialWins))
 	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
 		log.Printf("[scripter] draft compatibility issues after normalization: %v", issues)
@@ -222,7 +223,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	log.Printf("[scripter] sandbox draft name=%q scenes=%d npcs=%d clues=%d", draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 	logScripterArtifact("Stage 4 ScenarioDraft", draft)
 
-	return ScenarioCreationOutput{Draft: draft, Iterations: iterations}, nil
+	return ScenarioCreationOutput{Draft: draft, IronyCore: &irony, Iterations: iterations}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -483,560 +484,6 @@ func normalizeElementName(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// ---------------------------------------------------------------------------
-// Four LLM stages
-// ---------------------------------------------------------------------------
-
-type FoundationSeed struct {
-	Anomaly        string `json:"anomaly"`
-	MythosRelation string `json:"mythos_relation"`
-	MythosSeed     string `json:"mythos_seed"`
-}
-
-type FoundationSeedQA struct {
-	Pass             bool     `json:"pass"`
-	Reason           string   `json:"reason"`
-	RejectReasons    []string `json:"reject_reasons"`
-	SuggestedScope   string   `json:"suggested_scope"`
-	RuleCheckSummary string   `json:"rule_check_summary"`
-}
-
-type foundationSeedQAToolCall struct {
-	Action           ToolCallType `json:"action"`
-	Think            string       `json:"think,omitempty"`
-	Question         string       `json:"question,omitempty"`
-	Pass             bool         `json:"pass,omitempty"`
-	Reason           string       `json:"reason,omitempty"`
-	RejectReasons    []string     `json:"reject_reasons,omitempty"`
-	SuggestedScope   string       `json:"suggested_scope,omitempty"`
-	RuleCheckSummary string       `json:"rule_check_summary,omitempty"`
-}
-
-const foundationSeedSystemPrompt = `<role>COC7沙盒基础种子设计师</role>
-<task>通过check_rule/generate工具调用生成FoundationSeed。必须先通过check_rule在COC7规则书中核验mythos_seed方向有对应条目，再输出generate。</task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
-<tools>
-- check_rule：向COC规则专家查询规则书。必须问具体且可验证的问题：要么问"规则书中是否有X现象/效果的直接条目"，要么问"规则书记载的Y条目会直接导致什么可观察后果"；禁止泛问"某方向有哪些可能"。
-  {"action":"check_rule","question":"规则问题"}
-- generate：输出最终FoundationSeed。只有读到check_rule工具结果后才能调用。
-  {"action":"generate","anomaly":"具体、奇怪、无法立刻解释的事实","mythos_relation":"byproduct或consequence","mythos_seed":"已有规则书支撑的神话元素方向(包含完整推理链条, 鼓励多步推理来迷惑调查员)"}
-</tools>
-<batch_rules>
-- 第一轮必须输出至少一个check_rule；禁止第一轮直接generate。
-- check_rule和generate禁止出现在同一轮。先check_rule，读取<INTERNAL_TOOL_RESULT>后，下一轮再generate。
-- generate中的mythos_seed必须引用check_rule结果中的具体规则书条目，不得编造规则书未记载的内容。
-- 如果check_rule结果不足，可继续调用新的check_rule；不要凭常识补齐。
-</batch_rules>
-<rules>
-- anomaly必须是具体的可观察事实，不是类型标签；读完就应让调查员想追问。
-- anomaly禁止使用物理学、化学、数学或工程学词汇描述神话现象（例如"时空维度坍缩"、"晶体化"、"量子纠缠"、"物理意义上的X"均不合法）；异常只能用普通人能直接感知或目击的现象描述。
-- anomaly禁止使用唯心/意识哲学词汇将抽象概念具象化为代价或物质（例如"以记忆为代价"、"灵魂碎片"、"意识融合"、"用意志换取"均不合法）；代价和损失只能描述为可观察的后果。
-- mythos_relation只能是byproduct或consequence：byproduct=异常是神话力量副产品；consequence=神话是人类行为后果。
-- mythos_seed必须引用check_rule结果中的具体规则书条目，不编造数值。
-- 用户brief若非空，必须保留其核心意图。
-- 如果收到qa_rejection，必须重写异常与mythos_seed之间的关系；不要只改措辞。
-</rules>`
-
-const foundationSeedExample = `{"anomaly":"邮局每天把信投递到三十年前已经拆除的地址，仍有人在夜里取走这些信。","mythos_relation":"consequence","mythos_seed":"与梦境、信件、非人传讯或典籍残页有关的神话锚点"}`
-
-const foundationSeedQAExample = `{"pass":true,"reason":"check_rule结果显示该方向可以保守接入梦境、典籍或非人传讯等规则书神话元素；异常与mythos_seed存在可核验桥接。","reject_reasons":[],"suggested_scope":"保留非线性通信方向，Stage2锁定具体典籍或实体时继续保守标注。","rule_check_summary":"check_rule返回了可用的规则书神话方向，未要求使用未核验数值。"}`
-
-const foundationSeedQAToolCallExample = `[{"action":"think","think":"我需要先核验mythos_seed是否能对应规则书神话方向。"},{"action":"check_rule","question":"COC7规则书中是否存在与梦境、非人传讯或典籍残页相关的神话实体、典籍、法术或禁忌知识方向？"}]`
-
-const foundationSeedArchitectToolCallExample = `[{"action":"think","think":"我需要先通过check_rule核验mythos_seed方向是否有规则书支撑。"},{"action":"check_rule","question":"COC7规则书中是否存在与梦境传信或典籍残页相关的神话实体或法术的直接条目？"}]`
-
-const foundationSeedArchitectGenerateExample = `[{"action":"generate","anomaly":"邮局每天把信投递到三十年前已经拆除的地址，仍有人在夜里取走这些信。","mythos_relation":"consequence","mythos_seed":"梦之书或相关典籍；check_rule确认规则书中有对应传信实体条目"}]`
-
-type foundationSeedArchitectToolCall struct {
-	Action         ToolCallType `json:"action"`
-	Think          string       `json:"think,omitempty"`
-	Question       string       `json:"question,omitempty"`
-	Anomaly        string       `json:"anomaly,omitempty"`
-	MythosRelation string       `json:"mythos_relation,omitempty"`
-	MythosSeed     string       `json:"mythos_seed,omitempty"`
-}
-
-const foundationSeedQASystemPrompt = `<role>COC7沙盒基础种子QA</role>
-<task>审核FoundationSeed中的异常是否能保守对应到克苏鲁神话/规则书方向。你必须像Director一样通过工具调用完成审核。</task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
-<tools>
-- check_rule：向COC规则专家查询规则书。必须问具体且可验证的问题：要么问"规则书中是否有X现象/效果的直接条目"，要么问"规则书记载的Y条目会直接导致什么可观察后果"；禁止泛问"某实体有什么效果"或"某方向有哪些可能"。
-  {"action":"check_rule","question":"规则问题"}
-- response：最终审核结论。只有读到check_rule工具结果后才能调用。
-  {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_scope":"给Stage2或重写阶段的范围","rule_check_summary":"实际依据的check_rule摘要"}
-</tools>
-<batch_rules>
-- 第一轮必须输出至少一个check_rule；禁止第一轮直接response。
-- check_rule和response禁止出现在同一轮。先check_rule，读取<INTERNAL_TOOL_RESULT>后，下一轮再response。
-- 审核时必须依次完成三步验证，每步都需要check_rule支撑，不可跳过：
-  ① anomaly本身有规则书支撑（类型1或类型2）；
-  ② mythos_seed描述的神话机制在规则书中有对应条目；
-  ③ mythos_seed机制能合理产生anomaly——即从mythos_seed出发，anomaly是其推导的可观察表现(anomaly需要包含完整的推理链)。
-- 如果check_rule结果不足，可继续调用新的check_rule；不要凭常识补齐。
-- response必须包含pass、reason、reject_reasons、suggested_scope、rule_check_summary。
-</batch_rules>
-<audit_rules>
-- 只审核Stage1 seed，不锁定具体数值，不扩写派系/NPC/场景。
-- pass=true只允许两类anomaly，必须由check_rule结果支撑，不得凭气氛或方向感判断：
-  【类型1·规则书直接记载】anomaly描述的现象是规则书中某神话实体、法术、典籍或遭遇的直接记录效果；check_rule必须能引用具体条目名称或机制。
-  【类型2·规则书现象的推导】anomaly是类型1现象的逻辑推理结果，且提供了完整推导链且不依赖额外假设（例：规则书记载某实体造成地震→地震导致动物异常迁徙）；check_rule必须能找到"直接原因"对应的规则书条目。
-- anomaly与mythos_seed的联系必须成立：即使anomaly和mythos_seed分别有规则书依据，如果无法通过check_rule确认"mythos_seed所描述的神话机制是产生该anomaly的直接原因或一步推导来源"，pass=false；两件独立有规则书依据但彼此无因果关系的事实不构成合格的seed。
-- 以下情况必须pass=false，不接受任何例外：
-  ① anomaly依赖规则书未记载的自设物品、自设法器或自设特殊物质（例如"具有时间停滞效果的金色河沙"），即使mythos_anchor本身有效；
-  ② anomaly只能通过多步推测、创作延伸或"神话气氛"才能接到规则书方向；
-  ③ check_rule只返回"大致类似"或"可以想象"而无具体条目；
-  ④ anomaly的核心是普通犯罪、心理疾病、伪科学或高科技现象；
-  ⑤ anomaly与mythos_seed之间的联系无法通过check_rule确认，只能凭创作合理性推断；
-  ⑥ anomaly使用了物理学、化学、数学或工程学词汇来描述神话现象（例如"时空维度坍缩"、"晶体化"、"量子X"、"物理意义上的Y"），无论神话锚点是否有效；
-  ⑦ anomaly使用了唯心/意识哲学词汇将抽象概念具象化为代价或物质（例如"以记忆为代价"、"灵魂碎片"、"意识融合"、"用意志换取"），无论神话锚点是否有效。
-- reject_reasons必须具体指出anomaly属于哪种不合格类型，以及与check_rule结果哪里对应不上。
-- rule_check_summary必须写出check_rule返回的具体条目名称或机制，以及异常与神话的联系依据，不能只写"未找到"或留空。
-</audit_rules>`
-
-func generateFoundationSeedWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (FoundationSeed, error) {
-	const candidateCount = 1
-	const maxAttempts = 30
-	var candidates []FoundationSeed
-	for run := 1; run <= candidateCount; run++ {
-		usedAnomalies := make([]string, len(candidates))
-		for i, c := range candidates {
-			usedAnomalies[i] = c.Anomaly
-		}
-		session := newFoundationSeedSession(room, constraints, usedAnomalies)
-		var lastQA *FoundationSeedQA
-		var passed bool
-		for attempt := 1; attempt <= maxAttempts; attempt++ {
-			seed, err := session.generate(ctx, attempt)
-			if err != nil {
-				return FoundationSeed{}, err
-			}
-			qa, err := session.review(ctx, attempt, seed)
-			if err != nil {
-				return FoundationSeed{}, err
-			}
-			lastQA = &qa
-			log.Printf("[scripter:foundation_seed_qa] run=%d attempt=%d pass=%v reason=%q rejects=%q suggested_scope=%q rule_check=%q", run, attempt, qa.Pass, truncateRunes(qa.Reason, 500), strings.Join(qa.RejectReasons, " | "), truncateRunes(qa.SuggestedScope, 500), truncateRunes(qa.RuleCheckSummary, 500))
-			logScripterArtifact(fmt.Sprintf("Stage 1 Foundation Seed Run %d QA Attempt %d", run, attempt), qa)
-			if qa.Pass {
-				passed = true
-				// 去重：anomaly相同则跳过
-				dup := false
-				for _, c := range candidates {
-					if strings.EqualFold(strings.TrimSpace(c.Anomaly), strings.TrimSpace(seed.Anomaly)) {
-						dup = true
-						break
-					}
-				}
-				if !dup {
-					candidates = append(candidates, seed)
-					log.Printf("[scripter:foundation_seed_qa] run=%d accepted candidates=%d anomaly=%q", run, len(candidates), truncateRunes(seed.Anomaly, 200))
-				} else {
-					log.Printf("[scripter:foundation_seed_qa] run=%d duplicate anomaly skipped", run)
-				}
-				break
-			}
-			session.feedRejection(attempt, seed, qa)
-		}
-		if !passed {
-			return FoundationSeed{}, fmt.Errorf("Foundation Seed QA run=%d 连续拒绝 %d 次，拒绝原因=%v", run, maxAttempts, rejectionRejectReasons(lastQA))
-		}
-	}
-	picked := candidates[rand.Intn(len(candidates))]
-	log.Printf("[scripter:foundation_seed_qa] picked from %d candidates anomaly=%q", len(candidates), truncateRunes(picked.Anomaly, 200))
-	return picked, nil
-}
-
-type foundationSeedSession struct {
-	room          *scripterRoom
-	constraints   ScripterConstraints
-	architectMsgs []llm.ChatMessage
-	qaMsgs        []llm.ChatMessage
-}
-
-func newFoundationSeedSession(room *scripterRoom, constraints ScripterConstraints, usedAnomalies []string) *foundationSeedSession {
-	reqJSON, _ := json.Marshal(room.req)
-	constraintsJSON, _ := json.Marshal(constraints)
-	usedBlock := ""
-	if len(usedAnomalies) > 0 {
-		quoted := make([]string, len(usedAnomalies))
-		for i, a := range usedAnomalies {
-			quoted[i] = fmt.Sprintf("- %s", a)
-		}
-		usedBlock = fmt.Sprintf("\n<already_generated_anomalies>\n%s\n</already_generated_anomalies>\n以上anomaly已被本次生成使用，必须生成完全不同的anomaly，不得在主题、场所或现象类型上重复。", strings.Join(quoted, "\n"))
-	}
-	architectPrompt := fmt.Sprintf(`<request_json>%s</request_json>
-<constraints>%s</constraints>
-<geography_note>地理只作为风味，不要让它替代异常事实。</geography_note>%s
-请生成第1版FoundationSeed。`, string(reqJSON), string(constraintsJSON), usedBlock)
-	qaPrompt := fmt.Sprintf(`<constraints>%s</constraints>
-你是持续运行的FoundationSeed QA会话。每次收到<foundation_seed_candidate>后，通过think/check_rule/response工具调用审核它。`, string(constraintsJSON))
-	return &foundationSeedSession{
-		room:        room,
-		constraints: constraints,
-		architectMsgs: []llm.ChatMessage{
-			{Role: "system", Content: room.architect.systemPrompt(foundationSeedSystemPrompt)},
-			{Role: "user", Content: architectPrompt},
-		},
-		qaMsgs: []llm.ChatMessage{
-			{Role: "system", Content: room.qa.systemPrompt(foundationSeedQASystemPrompt)},
-			{Role: "user", Content: qaPrompt},
-		},
-	}
-}
-
-func (s *foundationSeedSession) generate(ctx context.Context, attempt int) (FoundationSeed, error) {
-	logStagePrompt(fmt.Sprintf("foundation_seed_attempt_%d", attempt), s.architectMsgs)
-	seed, msgs, err := runFoundationSeedArchitectLoop(ctx, s.room, s.architectMsgs, attempt)
-	s.architectMsgs = msgs
-	if err != nil {
-		return FoundationSeed{}, err
-	}
-	seed = normalizeFoundationSeed(seed, s.room.req)
-	log.Printf("[scripter:foundation_seed] attempt=%d generated anomaly=%q relation=%q mythos_seed=%q", attempt, truncateRunes(seed.Anomaly, 500), seed.MythosRelation, truncateRunes(seed.MythosSeed, 500))
-	return seed, nil
-}
-
-func (s *foundationSeedSession) review(ctx context.Context, attempt int, seed FoundationSeed) (FoundationSeedQA, error) {
-	seedJSON, _ := json.Marshal(seed)
-	s.qaMsgs = append(s.qaMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<foundation_seed_candidate attempt="%d">%s</foundation_seed_candidate>
-请审核这个候选。`, attempt, string(seedJSON))})
-	qa, msgs, err := runFoundationSeedQALoop(ctx, s.room, s.qaMsgs)
-	s.qaMsgs = msgs
-	return qa, err
-}
-
-func (s *foundationSeedSession) feedRejection(attempt int, seed FoundationSeed, qa FoundationSeedQA) {
-	seedJSON, _ := json.Marshal(seed)
-	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<qa_rejection attempt="%d">
-<rejected_seed>%s</rejected_seed>
-<must_fix>
-%s
-</must_fix>
-</qa_rejection>
-请基于同一个创作上下文重写FoundationSeed：逐条解决must_fix列出的问题，不要只改措辞；仍只输出合法JSON数组工具调用。`, attempt, string(seedJSON), formatFoundationSeedMustFix(qa))})
-}
-
-func runFoundationSeedQALoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage) (FoundationSeedQA, []llm.ChatMessage, error) {
-	const maxQARounds = 30
-	seenCheckRule := false
-	for round := 1; round <= maxQARounds; round++ {
-		if ctx.Err() != nil {
-			return FoundationSeedQA{}, msgs, ctx.Err()
-		}
-		logStagePrompt(fmt.Sprintf("foundation_seed_qa_round_%d", round), msgs)
-		calls, raw, err := runFoundationSeedQA(ctx, room.qa, room.parser, msgs)
-		if err != nil {
-			return FoundationSeedQA{}, msgs, err
-		}
-		log.Printf("[scripter:foundation_seed_qa] round=%d raw_len=%d raw=%s", round, len(raw), truncateRunes(raw, scripterRawLogLimit))
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-		if len(calls) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
-			continue
-		}
-		hasResponse := false
-		hasCheckRule := false
-		for _, call := range calls {
-			switch call.Action {
-			case ToolCheckRule:
-				hasCheckRule = true
-			case ToolResponse:
-				hasResponse = true
-			case ToolThink:
-			default:
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf("SYSTEM REJECT: FoundationSeed QA只允许think/check_rule/response，不允许%s。", call.Action)})
-				continue
-			}
-		}
-		if hasResponse && hasCheckRule {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: check_rule和response不能在同一轮。先调用check_rule，读取结果后下一轮再response。"})
-			continue
-		}
-		if hasResponse {
-			if !seenCheckRule {
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 第一轮禁止直接response，必须先调用check_rule。"})
-				continue
-			}
-			qa, err := foundationSeedQAFromResponse(calls)
-			if err != nil {
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: " + err.Error()})
-				continue
-			}
-			return qa, msgs, nil
-		}
-		toolResults := executeFoundationSeedQATools(ctx, room, calls)
-		if len(toolResults) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 需要调用check_rule获取规则书依据，然后再response。"})
-			continue
-		}
-		seenCheckRule = true
-		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: formatFoundationSeedQAToolResults(toolResults)})
-	}
-	return FoundationSeedQA{}, msgs, fmt.Errorf("Foundation Seed QA 未在%d轮内给出response", maxQARounds)
-}
-
-func runFoundationSeedQA(ctx context.Context, qa agentHandle, parser agentHandle, msgs []llm.ChatMessage) ([]foundationSeedQAToolCall, string, error) {
-	if qa.provider == nil {
-		return nil, "", fmt.Errorf("qa provider unavailable")
-	}
-	raw, err := qa.provider.Chat(ctx, msgs)
-	if err != nil {
-		return nil, "", err
-	}
-	calls, err := parseFoundationSeedQAToolCalls(ctx, parser, raw)
-	if err != nil {
-		return nil, raw, err
-	}
-	return calls, raw, nil
-}
-
-func parseFoundationSeedQAToolCalls(ctx context.Context, parser agentHandle, raw string) ([]foundationSeedQAToolCall, error) {
-	stripped := strings.TrimSpace(llm.StripCodeFence(llm.JsonArryProtect(raw)))
-	var calls []foundationSeedQAToolCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
-		return calls, nil
-	} else if parser.provider != nil {
-		fixed, repairErr := repairJSONWith(ctx, parser, stripped, err, foundationSeedQAToolCallExample)
-		if repairErr != nil {
-			return nil, repairErr
-		}
-		fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
-		if err := json.Unmarshal([]byte(fixed), &calls); err != nil {
-			return nil, err
-		}
-		return calls, nil
-	} else {
-		return nil, err
-	}
-}
-
-func executeFoundationSeedQATools(ctx context.Context, room *scripterRoom, calls []foundationSeedQAToolCall) []ToolResult {
-	toolResults := make([]ToolResult, 0, len(calls))
-	for _, call := range calls {
-		if call.Action != ToolCheckRule {
-			continue
-		}
-		question := strings.TrimSpace(call.Question)
-		if question == "" {
-			toolResults = append(toolResults, ToolResult{Action: ToolCheckRule, Result: "无结果, 默认禁止, 任何操作均不允许。原因：check_rule.question为空。"})
-			continue
-		}
-		log.Printf("[scripter:foundation_seed_qa] check_rule q=%s", truncateRunes(question, scripterPromptLogLimit))
-		results := runLawyer(ctx, room.lawyer, question, rulebook.GlobalIndex)
-		result := formatLawyerResults(results)
-		log.Printf("[scripter:foundation_seed_qa] check_rule result=%s", truncateRunes(result, scripterRepairLogLimit))
-		toolResults = append(toolResults, ToolResult{Action: ToolCheckRule, Result: result})
-	}
-	return toolResults
-}
-
-func formatFoundationSeedQAToolResults(results []ToolResult) string {
-	bs, err := json.Marshal(results)
-	if err != nil {
-		return fmt.Sprintf("<INTERNAL_TOOL_RESULT>ERROR: %v</INTERNAL_TOOL_RESULT>", err)
-	}
-	return fmt.Sprintf("<INTERNAL_TOOL_RESULT>\n%s\n</INTERNAL_TOOL_RESULT>", string(bs))
-}
-
-// ---------------------------------------------------------------------------
-// Stage 1 Architect tool-call loop (think → check_rule → generate)
-// ---------------------------------------------------------------------------
-
-func runFoundationSeedArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, attempt int) (FoundationSeed, []llm.ChatMessage, error) {
-	const maxRounds = 20
-	seenCheckRule := false
-	for round := 1; round <= maxRounds; round++ {
-		if ctx.Err() != nil {
-			return FoundationSeed{}, msgs, ctx.Err()
-		}
-		logStagePrompt(fmt.Sprintf("foundation_seed_architect_attempt_%d_round_%d", attempt, round), msgs)
-		calls, raw, err := runFoundationSeedArchitectCall(ctx, room.architect, room.parser, msgs)
-		if err != nil {
-			return FoundationSeed{}, msgs, err
-		}
-		log.Printf("[scripter:foundation_seed_architect] attempt=%d round=%d raw_len=%d raw=%s", attempt, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-		if len(calls) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
-			continue
-		}
-		hasGenerate := false
-		hasCheckRule := false
-		invalidAction := false
-		for _, call := range calls {
-			switch call.Action {
-			case ToolCheckRule:
-				hasCheckRule = true
-			case ToolThink:
-			case "generate":
-				hasGenerate = true
-			default:
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf("SYSTEM REJECT: FoundationSeed生成只允许think/check_rule/generate，不允许%s。", call.Action)})
-				invalidAction = true
-			}
-		}
-		if invalidAction {
-			continue
-		}
-		if hasGenerate && hasCheckRule {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: check_rule和generate不能在同一轮。先调用check_rule，读取结果后下一轮再generate。"})
-			continue
-		}
-		if hasGenerate {
-			if !seenCheckRule {
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 第一轮禁止直接generate，必须先调用check_rule。"})
-				continue
-			}
-			seed, err := foundationSeedFromGenerateCall(calls)
-			if err != nil {
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: " + err.Error()})
-				continue
-			}
-			return seed, msgs, nil
-		}
-		toolResults := executeFoundationSeedArchitectTools(ctx, room, calls)
-		if len(toolResults) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 需要调用check_rule获取规则书依据，然后再generate。"})
-			continue
-		}
-		seenCheckRule = true
-		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: formatFoundationSeedQAToolResults(toolResults)})
-	}
-	return FoundationSeed{}, msgs, fmt.Errorf("Foundation Seed 生成未在%d轮内给出generate", maxRounds)
-}
-
-func runFoundationSeedArchitectCall(ctx context.Context, architect agentHandle, parser agentHandle, msgs []llm.ChatMessage) ([]foundationSeedArchitectToolCall, string, error) {
-	if architect.provider == nil {
-		return nil, "", fmt.Errorf("architect provider unavailable")
-	}
-	raw, err := architect.provider.Chat(ctx, msgs)
-	if err != nil {
-		return nil, "", err
-	}
-	calls, err := parseFoundationSeedArchitectToolCalls(ctx, parser, raw)
-	if err != nil {
-		return nil, raw, err
-	}
-	return calls, raw, nil
-}
-
-func parseFoundationSeedArchitectToolCalls(ctx context.Context, parser agentHandle, raw string) ([]foundationSeedArchitectToolCall, error) {
-	stripped := strings.TrimSpace(llm.StripCodeFence(llm.JsonArryProtect(raw)))
-	var calls []foundationSeedArchitectToolCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
-		return calls, nil
-	} else if parser.provider != nil {
-		fixed, repairErr := repairJSONWith(ctx, parser, stripped, err, foundationSeedArchitectToolCallExample)
-		if repairErr != nil {
-			return nil, repairErr
-		}
-		fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
-		if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
-			return nil, err2
-		}
-		return calls, nil
-	} else {
-		return nil, err
-	}
-}
-
-func executeFoundationSeedArchitectTools(ctx context.Context, room *scripterRoom, calls []foundationSeedArchitectToolCall) []ToolResult {
-	toolResults := make([]ToolResult, 0, len(calls))
-	for _, call := range calls {
-		if call.Action != ToolCheckRule {
-			continue
-		}
-		question := strings.TrimSpace(call.Question)
-		if question == "" {
-			toolResults = append(toolResults, ToolResult{Action: ToolCheckRule, Result: "无结果, 默认禁止, 任何操作均不允许。原因：check_rule.question为空。"})
-			continue
-		}
-		log.Printf("[scripter:foundation_seed_architect] check_rule q=%s", truncateRunes(question, scripterPromptLogLimit))
-		results := runLawyer(ctx, room.lawyer, question, rulebook.GlobalIndex)
-		result := formatLawyerResults(results)
-		log.Printf("[scripter:foundation_seed_architect] check_rule result=%s", truncateRunes(result, scripterRepairLogLimit))
-		toolResults = append(toolResults, ToolResult{Action: ToolCheckRule, Result: result})
-	}
-	return toolResults
-}
-
-func foundationSeedFromGenerateCall(calls []foundationSeedArchitectToolCall) (FoundationSeed, error) {
-	var gen *foundationSeedArchitectToolCall
-	for i := range calls {
-		if calls[i].Action == "generate" {
-			if gen != nil {
-				return FoundationSeed{}, fmt.Errorf("generate只能有一个")
-			}
-			gen = &calls[i]
-		}
-	}
-	if gen == nil {
-		return FoundationSeed{}, fmt.Errorf("缺少generate")
-	}
-	seed := FoundationSeed{
-		Anomaly:        strings.TrimSpace(gen.Anomaly),
-		MythosRelation: strings.TrimSpace(gen.MythosRelation),
-		MythosSeed:     strings.TrimSpace(gen.MythosSeed),
-	}
-	if seed.Anomaly == "" {
-		return FoundationSeed{}, fmt.Errorf("generate.anomaly不能为空")
-	}
-	if seed.MythosSeed == "" {
-		return FoundationSeed{}, fmt.Errorf("generate.mythos_seed不能为空")
-	}
-	return seed, nil
-}
-
-func foundationSeedQAFromResponse(calls []foundationSeedQAToolCall) (FoundationSeedQA, error) {
-	var response *foundationSeedQAToolCall
-	for i := range calls {
-		if calls[i].Action == ToolResponse {
-			if response != nil {
-				return FoundationSeedQA{}, fmt.Errorf("response只能有一个")
-			}
-			response = &calls[i]
-		}
-	}
-	if response == nil {
-		return FoundationSeedQA{}, fmt.Errorf("缺少response")
-	}
-	qa := FoundationSeedQA{
-		Pass:             response.Pass,
-		Reason:           strings.TrimSpace(response.Reason),
-		RejectReasons:    response.RejectReasons,
-		SuggestedScope:   strings.TrimSpace(response.SuggestedScope),
-		RuleCheckSummary: strings.TrimSpace(response.RuleCheckSummary),
-	}
-	for i := range qa.RejectReasons {
-		qa.RejectReasons[i] = strings.TrimSpace(qa.RejectReasons[i])
-	}
-	if qa.Reason == "" {
-		return FoundationSeedQA{}, fmt.Errorf("response.reason不能为空")
-	}
-	if qa.RuleCheckSummary == "" {
-		return FoundationSeedQA{}, fmt.Errorf("response.rule_check_summary不能为空")
-	}
-	if !qa.Pass && len(qa.RejectReasons) == 0 {
-		qa.RejectReasons = []string{qa.Reason}
-	}
-	return qa, nil
-}
-
-func rejectionRejectReasons(rejection *FoundationSeedQA) []string {
-	if rejection == nil {
-		return nil
-	}
-	if len(rejection.RejectReasons) > 0 {
-		return rejection.RejectReasons
-	}
-	if strings.TrimSpace(rejection.Reason) != "" {
-		return []string{strings.TrimSpace(rejection.Reason)}
-	}
-	return []string{"未给出拒绝原因"}
-}
-
 func sandboxQARejectReasons(qa *SandboxQA) []string {
 	if qa == nil {
 		return nil
@@ -1065,43 +512,6 @@ func formatSandboxMustFix(qa SandboxQA) string {
 		sb.WriteString("建议：" + fix)
 	}
 	return strings.TrimSpace(sb.String())
-}
-
-// formatFoundationSeedMustFix 将 FoundationSeedQA 的拒绝原因和建议格式化为编号行动列表。
-func formatFoundationSeedMustFix(qa FoundationSeedQA) string {
-	var sb strings.Builder
-	reasons := qa.RejectReasons
-	if len(reasons) == 0 && strings.TrimSpace(qa.Reason) != "" {
-		reasons = []string{strings.TrimSpace(qa.Reason)}
-	}
-	for i, r := range reasons {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, r))
-	}
-	if scope := strings.TrimSpace(qa.SuggestedScope); scope != "" {
-		sb.WriteString("建议修正范围：" + scope)
-	}
-	return strings.TrimSpace(sb.String())
-}
-
-func normalizeFoundationSeed(seed FoundationSeed, req ScenarioCreationRequest) FoundationSeed {
-	seed.Anomaly = strings.TrimSpace(seed.Anomaly)
-	seed.MythosRelation = strings.ToLower(strings.TrimSpace(seed.MythosRelation))
-	seed.MythosSeed = strings.TrimSpace(seed.MythosSeed)
-	if seed.Anomaly == "" {
-		seed.Anomaly = firstNonEmpty(req.Brief, "一个公开场所反复出现无法解释的细节，普通解释都只能解释其中一半。")
-	}
-	switch {
-	case seed.MythosRelation == "byproduct" || strings.Contains(seed.MythosRelation, "副产品"):
-		seed.MythosRelation = "byproduct"
-	case seed.MythosRelation == "consequence" || strings.Contains(seed.MythosRelation, "后果"):
-		seed.MythosRelation = "consequence"
-	default:
-		seed.MythosRelation = "consequence"
-	}
-	if seed.MythosSeed == "" {
-		seed.MythosSeed = "待核验的神话实体、典籍、法术或物品"
-	}
-	return seed
 }
 
 // ---------------------------------------------------------------------------
@@ -1232,13 +642,6 @@ func sandboxQAFromResponse(calls []sandboxQAToolCall) (SandboxQA, error) {
 	return qa, nil
 }
 
-type FactionMap struct {
-	MythosAnchor  string        `json:"mythos_anchor"`
-	RulesNotes    []string      `json:"rules_notes"`
-	Factions      []FactionPlan `json:"factions"`
-	EndingSignals []string      `json:"ending_signals"`
-}
-
 type FactionPlan struct {
 	Name         string         `json:"name"`
 	Goal         string         `json:"goal"`
@@ -1262,75 +665,6 @@ type FactionNPC struct {
 	StatsNote      string `json:"stats_note"`
 }
 
-const factionMapSystemPrompt = `<role>COC7沙盒派系与时间线设计师</role>
-<task>从FoundationSeed和固定结构约束生成FactionMap。此阶段是唯一允许使用规则书上下文的阶段，并在此锁定mythos_anchor。</task>
-<output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
-<schema>{"mythos_anchor":"已核验或保守标注的神话锚点","rules_notes":["规则来源/不确定性/保守处理"],"factions":[{"name":"派系名","goal":"目标","current_state":"当前正在做什么","timeline":[{"node":"第0/1/2节点","trigger":"推进条件或时间窗口","intervention_pivot":"调查员怎样能改变方向"}],"npcs":[{"name":"NPC姓名","public_identity":"公开身份","agenda":"独立议程","secret":"秘密","attitude":"初始态度","stats_note":"人类15-90或按规则书注记"}]}],"ending_signals":["如果[条件]，则[谁的处境如何变化]，[什么不可挽回地改变]"]}</schema>
-<rules>
-- 生成2-4个派系；每个派系timeline有2-3个节点，每个节点必须有intervention_pivot。
-- NPC从派系中派生，不是独立线索容器；每个重要NPC必须能被KP作为静态NPC卡使用。
-- mythos_anchor一旦写定，后续阶段不得更换；如果规则上下文不足，必须在rules_notes显式写“不确定/保守处理”。
-- 不要写线性剧情门；时间线描述无人干预时世界如何运动。
-- 如果收到qa_rejection，必须修复干预枢纽或派系自主性问题；不要只改措辞。
-</rules>`
-
-const factionMapExample = `{"mythos_anchor":"保守锚定：梦境相关典籍残页；具体法术效果需KP按规则书裁定","rules_notes":["规则上下文不足时保守处理，不赋予未核验法术数值"],"factions":[{"name":"邮政夜班","goal":"维持信件继续被取走以保护旧谎言","current_state":"正在销毁三十年前的投递登记","timeline":[{"node":"第0天：继续投递异常信件","trigger":"调查员进入邮局或夜晚到来","intervention_pivot":"取得登记簿可迫使他们承认旧谎言"},{"node":"第1天：转移剩余信件","trigger":"无人阻止且早班交接完成","intervention_pivot":"说服夜班员可暂停转移"}],"npcs":[{"name":"陈维舟","public_identity":"夜班分拣员","agenda":"保护已退休邮差","secret":"知道拆除地址仍有取信人","attitude":"紧张而防备","stats_note":"普通人类属性15-70"}]}],"ending_signals":["如果异常信件公开且母亲确认真相，则邮政夜班失去遮掩空间，但收信者会转向新的取信点"]}`
-
-func generateFactionMap(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed) (FactionMap, error) {
-	ruleCtx, conservative := buildStage2RuleContext(ctx, seed)
-	reqJSON, _ := json.Marshal(room.req)
-	constraintsJSON, _ := json.Marshal(constraints)
-	seedJSON, _ := json.Marshal(seed)
-	userPrompt := fmt.Sprintf(`<request_json>%s</request_json>
-<constraints>%s</constraints>
-<foundation_seed>%s</foundation_seed>
-<difficulty_spec>
-%s
-</difficulty_spec>
-<stage2_rule_context conservative="%v">
-%s
-</stage2_rule_context>
-<recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
-请生成FactionMap。`, string(reqJSON), string(constraintsJSON), string(seedJSON), difficultySpec(room.req.Difficulty), conservative, ruleCtx, formatNPCNameBlacklist(room.npcBlacklist))
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.architect.systemPrompt(factionMapSystemPrompt)},
-		{Role: "user", Content: userPrompt},
-	}
-	logStagePrompt("faction_map", msgs)
-	var factions FactionMap
-	if err := chatAndParseJSON(ctx, room.architect, room.parser, msgs, &factions, factionMapExample, "faction_map"); err != nil {
-		return FactionMap{}, err
-	}
-	return normalizeFactionMap(factions, seed, conservative), nil
-}
-
-func normalizeFactionMap(factions FactionMap, seed FoundationSeed, conservative bool) FactionMap {
-	factions.MythosAnchor = strings.TrimSpace(factions.MythosAnchor)
-	if factions.MythosAnchor == "" {
-		factions.MythosAnchor = "保守锚定：" + seed.MythosSeed
-	}
-	if conservative && !containsUncertaintyNote(factions.RulesNotes) {
-		factions.RulesNotes = append(factions.RulesNotes, "规则核验上下文不完整；未确认元素按保守神话锚点处理，具体数值由KP按规则书裁定。")
-	}
-	if len(factions.Factions) == 0 {
-		factions.Factions = []FactionPlan{{
-			Name:         "旧决定的守护者",
-			Goal:         "阻止外人理解异常与人类悲剧之间的关系",
-			CurrentState: "正在销毁或重写能暴露旧决定的记录",
-			Timeline: []TimelineNode{{
-				Node:              "第0天：维持表面秩序",
-				Trigger:           "调查员开始询问异常来源",
-				InterventionPivot: "公开关键记录会迫使其改变行动",
-			}},
-			NPCs: []FactionNPC{{Name: "周砚", PublicIdentity: "地方办事员", Agenda: "维持旧决定不被公开", Secret: "知道异常的真实来源但选择隐瞒", Attitude: "礼貌回避", StatsNote: "普通人类属性15-70"}},
-		}}
-	}
-	if len(factions.EndingSignals) == 0 {
-		factions.EndingSignals = []string{"如果调查员让关键派系承认旧决定，则异常的社会遮掩被打破，但神话锚点会寻找新的承载者。"}
-	}
-	return factions
-}
-
 func containsUncertaintyNote(notes []string) bool {
 	for _, note := range notes {
 		if strings.Contains(note, "不确定") || strings.Contains(note, "未确认") || strings.Contains(strings.ToLower(note), "uncertain") {
@@ -1341,486 +675,104 @@ func containsUncertaintyNote(notes []string) bool {
 }
 
 // ---------------------------------------------------------------------------
-// Stage 2 FactionMap QA session
+// Stage 4: Assembly (compile δ-framework artifacts into ScenarioDraft)
 // ---------------------------------------------------------------------------
-
-const factionMapQASystemPrompt = `<role>COC7沙盒派系QA</role>
-<task>审核FactionMap是否符合沙盒设计原则：派系自主行动、有效干预枢纽、代价式结局信号。不审核规则书内容（Stage2已完成锚定）。</task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
-<tools>
-- response：最终审核结论。
-  {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
-</tools>
-<batch_rules>
-- response必须包含pass、reason、reject_reasons、suggested_fix。
-</batch_rules>
-<audit_rules>
-审核只关注以下四点，其他不管：
-1. 派系自主性：每个派系必须有non-empty current_state，且timeline节点描述无人干预时的世界运动，而不是"等待调查员触发X"。如果所有派系的current_state都是空白或被动等待，pass=false。
-2. 干预枢纽有效性：每个timeline节点的intervention_pivot必须描述一个具体的可执行动作，而不是"调查员可以干预"这种空话。如果所有节点的intervention_pivot都缺乏具体动作，pass=false。
-3. NPC-派系绑定：每个NPC必须有属于其所在派系的具体agenda和secret，不能是空白或"协助调查员"式的被动描述。
-4. 结局信号格式：ending_signals必须描述"如果[条件]，则[谁失去什么/得到什么]，[什么不可挽回地改变]"，不能是简单的"调查员赢了/输了"。
-不审核：规则书准确性、神话锚点的规则合规性、NPC属性数值、世界/地点细节。
-</audit_rules>`
-
-const factionMapQAToolCallExample = `[{"action":"response","pass":true,"reason":"每个派系有明确当前行动，干预枢纽有具体动作，NPC议程与派系目标绑定，结局信号描述代价分配。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
-
-type factionMapSession struct {
-	room          *scripterRoom
-	constraints   ScripterConstraints
-	seed          FoundationSeed
-	ruleCtx       string
-	conservative  bool
-	architectMsgs []llm.ChatMessage
-	qaMsgs        []llm.ChatMessage
-}
-
-func newFactionMapSession(room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, ruleCtx string, conservative bool) *factionMapSession {
-	reqJSON, _ := json.Marshal(room.req)
-	constraintsJSON, _ := json.Marshal(constraints)
-	seedJSON, _ := json.Marshal(seed)
-	architectPrompt := fmt.Sprintf(`<request_json>%s</request_json>
-<constraints>%s</constraints>
-<foundation_seed>%s</foundation_seed>
-<difficulty_spec>
-%s
-</difficulty_spec>
-<stage2_rule_context conservative="%v">
-%s
-</stage2_rule_context>
-<recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
-请生成第1版FactionMap。`, string(reqJSON), string(constraintsJSON), string(seedJSON), difficultySpec(room.req.Difficulty), conservative, ruleCtx, formatNPCNameBlacklist(room.npcBlacklist))
-	qaPrompt := fmt.Sprintf(`<foundation_seed>%s</foundation_seed>
-你是持续运行的FactionMap QA会话。每次收到<faction_map_candidate>后，通过think/response工具调用审核它。`, string(seedJSON))
-	return &factionMapSession{
-		room:         room,
-		constraints:  constraints,
-		seed:         seed,
-		ruleCtx:      ruleCtx,
-		conservative: conservative,
-		architectMsgs: []llm.ChatMessage{
-			{Role: "system", Content: room.architect.systemPrompt(factionMapSystemPrompt)},
-			{Role: "user", Content: architectPrompt},
-		},
-		qaMsgs: []llm.ChatMessage{
-			{Role: "system", Content: room.qa.systemPrompt(factionMapQASystemPrompt)},
-			{Role: "user", Content: qaPrompt},
-		},
-	}
-}
-
-func (s *factionMapSession) generate(ctx context.Context, attempt int) (FactionMap, error) {
-	logStagePrompt(fmt.Sprintf("faction_map_attempt_%d", attempt), s.architectMsgs)
-	var factions FactionMap
-	if err := chatAndParseJSON(ctx, s.room.architect, s.room.parser, s.architectMsgs, &factions, factionMapExample, "faction_map"); err != nil {
-		return FactionMap{}, err
-	}
-	factions = normalizeFactionMap(factions, s.seed, s.conservative)
-	factionsJSON, _ := json.Marshal(factions)
-	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "assistant", Content: string(factionsJSON)})
-	log.Printf("[scripter:faction_map] attempt=%d generated anchor=%q factions=%d", attempt, truncateRunes(factions.MythosAnchor, 300), len(factions.Factions))
-	return factions, nil
-}
-
-func (s *factionMapSession) review(ctx context.Context, attempt int, factions FactionMap) (SandboxQA, error) {
-	factionsJSON, _ := json.Marshal(factions)
-	s.qaMsgs = append(s.qaMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<faction_map_candidate attempt="%d">%s</faction_map_candidate>
-请审核这个候选。`, attempt, string(factionsJSON))})
-	qa, msgs, err := runSandboxQALoop(ctx, s.room, s.qaMsgs, factionMapQAToolCallExample, "faction_map")
-	s.qaMsgs = msgs
-	return qa, err
-}
-
-func (s *factionMapSession) feedRejection(attempt int, factions FactionMap, qa SandboxQA) {
-	factionsJSON, _ := json.Marshal(factions)
-	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<qa_rejection attempt="%d">
-<rejected_factions>%s</rejected_factions>
-<must_fix>
-%s
-</must_fix>
-</qa_rejection>
-请基于同一个创作上下文重写FactionMap：逐条解决must_fix列出的沙盒结构问题；不要只改措辞；仍只输出合法JSON对象。`, attempt, string(factionsJSON), formatSandboxMustFix(qa))})
-}
-
-func generateFactionMapWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed) (FactionMap, error) {
-	ruleCtx, conservative := buildStage2RuleContext(ctx, seed)
-	session := newFactionMapSession(room, constraints, seed, ruleCtx, conservative)
-	const maxAttempts = 20
-	var lastQA *SandboxQA
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		factions, err := session.generate(ctx, attempt)
-		if err != nil {
-			return FactionMap{}, err
-		}
-		qa, err := session.review(ctx, attempt, factions)
-		if err != nil {
-			return FactionMap{}, err
-		}
-		lastQA = &qa
-		log.Printf("[scripter:faction_map_qa] attempt=%d pass=%v reason=%q rejects=%q", attempt, qa.Pass, truncateRunes(qa.Reason, 500), strings.Join(qa.RejectReasons, " | "))
-		logScripterArtifact(fmt.Sprintf("Stage 2 FactionMap QA Attempt %d", attempt), qa)
-		if qa.Pass {
-			return factions, nil
-		}
-		session.feedRejection(attempt, factions, qa)
-	}
-	rejects := sandboxQARejectReasons(lastQA)
-	return FactionMap{}, fmt.Errorf("FactionMap QA 连续拒绝 %d 次，拒绝原因=%v", maxAttempts, rejects)
-}
-
-type WorldState struct {
-	Locations    []LocationState `json:"locations"`
-	HorrorLayers HorrorLayers    `json:"horror_layers"`
-	ClueFacts    []ClueFact      `json:"clue_facts"`
-}
-
-type LocationState struct {
-	Name           string       `json:"name"`
-	SurfaceVisible string       `json:"surface_visible"`
-	Discoverable   string       `json:"discoverable"`
-	DeepLayer      string       `json:"deep_layer"`
-	Levers         []WorldLever `json:"levers"`
-	Noise          []string     `json:"noise"`
-}
-
-type WorldLever struct {
-	Action string `json:"action"`
-	Change string `json:"change"`
-}
-
-type HorrorLayers struct {
-	Surface string `json:"surface"`
-	Middle  string `json:"middle"`
-	Core    string `json:"core"`
-}
-
-type ClueFact struct {
-	Layer       string `json:"layer"`
-	Fact        string `json:"fact"`
-	Source      string `json:"source"`
-	Acquisition string `json:"acquisition"`
-}
-
-const worldStateSystemPrompt = `<role>COC7沙盒世界状态设计师</role>
-<task>从FoundationSeed、FactionMap和结构约束生成WorldState。不要查询规则书，不要更换mythos_anchor。</task>
-<output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
-<schema>{"locations":[{"name":"地点名","surface_visible":"到达即可见","discoverable":"主动询问/检查/交涉后可得","deep_layer":"触及核心层后才感知","levers":[{"action":"调查员行动","change":"世界状态如何变化"}],"noise":["不解释自己的非必要细节"]}],"horror_layers":{"surface":"表面可见条件","middle":"深入调查或时间推进可见","core":"主动追查并付出代价可见"},"clue_facts":[{"layer":"real|hidden|misleading","fact":"从地点和NPC状态中抽出的自包含事实","source":"地点/NPC/物件","acquisition":"获得方式"}]}</schema>
-<rules>
-- locations描述当前状态，不是访问顺序；每个重要地点至少有一个可行动杠杆。
-- 重要NPC如果不在地点中出现，也要通过地点、证词或物件给出可作用的杠杆。
-- noise不是隐藏线索，不要把噪声转换成必经答案。
-- clue_facts只能从地点、派系、NPC当前状态中抽取；不是独立线索迷宫。
-- 如果收到qa_rejection，必须修复派系杠杆覆盖或线索可达性问题；不要只改措辞。
-</rules>`
-
-const worldStateExample = `{"locations":[{"name":"旧邮局分拣室","surface_visible":"夜班灯常亮，退信箱里有写给不存在地址的新信。","discoverable":"查登记簿可发现投递路线被同一人手写修改。","deep_layer":"信封内侧有像梦中潮湿盐霜一样的痕迹，读久后会想起从未去过的门牌。","levers":[{"action":"公开登记簿","change":"邮政夜班派系必须从销毁证据转为解释旧谎言"}],"noise":["墙上有一张与事件无关的过期剧院海报"]}],"horror_layers":{"surface":"异常信件和人为遮掩可以被普通谎言解释","middle":"信件持续回应无人能知道的问题，普通解释失效","core":"取信点不是地点而是神话锚点寻找收件人的方式"},"clue_facts":[{"layer":"real","fact":"投递登记被同一只手连续改写三十年，说明异常有长期人为维护者。","source":"旧邮局登记簿","acquisition":"会计、图书馆利用或说服夜班员"},{"layer":"hidden","fact":"不存在地址收到的回信回答了近期才发生的问题，说明通信并不受正常时间限制。","source":"未投递信件内页","acquisition":"拆阅信件并承担法律/道德风险"}]}`
-
-func generateWorldState(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap) (WorldState, error) {
-	constraintsJSON, _ := json.Marshal(constraints)
-	seedJSON, _ := json.Marshal(seed)
-	factionsJSON, _ := json.Marshal(factions)
-	userPrompt := fmt.Sprintf(`<constraints>%s</constraints>
-<foundation_seed>%s</foundation_seed>
-<faction_map>%s</faction_map>
-<fixed_mythos_anchor>%s</fixed_mythos_anchor>
-<length>%s</length>
-<difficulty_spec>
-%s
-</difficulty_spec>
-请生成WorldState。`, string(constraintsJSON), string(seedJSON), string(factionsJSON), factions.MythosAnchor, lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty))
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.architect.systemPrompt(worldStateSystemPrompt)},
-		{Role: "user", Content: userPrompt},
-	}
-	logStagePrompt("world_state", msgs)
-	var world WorldState
-	if err := chatAndParseJSON(ctx, room.architect, room.parser, msgs, &world, worldStateExample, "world_state"); err != nil {
-		return WorldState{}, err
-	}
-	return normalizeWorldState(world, seed, factions), nil
-}
-
-func normalizeWorldState(world WorldState, seed FoundationSeed, factions FactionMap) WorldState {
-	if len(world.Locations) == 0 {
-		world.Locations = []LocationState{{
-			Name:           "调查入口",
-			SurfaceVisible: seed.Anomaly,
-			Discoverable:   seed.MythosSeed,
-			DeepLayer:      "所有异常最终指向神话锚点：" + factions.MythosAnchor,
-			Levers:         []WorldLever{{Action: "公开异常事实", Change: "相关派系必须暴露各自对异常的解释和利益"}},
-			Noise:          []string{"一个与核心真相无关但具体的地方习惯仍照常发生。"},
-		}}
-	}
-	for i := range world.Locations {
-		if len(world.Locations[i].Levers) == 0 {
-			world.Locations[i].Levers = []WorldLever{{Action: "主动调查或公开此处信息", Change: "至少一个派系的时间线改变方向或提前暴露"}}
-		}
-	}
-	if strings.TrimSpace(world.HorrorLayers.Surface) == "" {
-		world.HorrorLayers.Surface = seed.Anomaly
-	}
-	if strings.TrimSpace(world.HorrorLayers.Middle) == "" {
-		world.HorrorLayers.Middle = "普通解释无法同时解释异常事实和派系遮掩。"
-	}
-	if strings.TrimSpace(world.HorrorLayers.Core) == "" {
-		world.HorrorLayers.Core = "神话锚点显现为：" + factions.MythosAnchor
-	}
-	if len(world.ClueFacts) == 0 {
-		world.ClueFacts = []ClueFact{{Layer: "real", Fact: seed.Anomaly, Source: world.Locations[0].Name, Acquisition: "到达并主动检查公开异常"}}
-	}
-	return world
-}
-
-// ---------------------------------------------------------------------------
-// Stage 3 WorldState QA session
-// ---------------------------------------------------------------------------
-
-const worldStateQASystemPrompt = `<role>COC7沙盒世界状态QA</role>
-<task>审核WorldState是否符合沙盒设计原则：地点为状态而非顺序门、派系有杠杆覆盖、线索可达、噪声无意义。不审核规则书内容。</task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
-<tools>
-- response：最终审核结论。
-  {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
-</tools>
-<batch_rules>
-- response必须包含pass、reason、reject_reasons、suggested_fix。
-</batch_rules>
-<audit_rules>
-审核只关注以下四点，其他不管：
-1. 派系杠杆覆盖：faction_map中每个有timeline的派系，必须在至少一个location的levers[]中有对应动作（做X则该派系时间线改变）；如果有派系在所有location的levers中完全消失，pass=false。
-2. 入口可达性：至少有一个surface_visible或discoverable项目能让调查员有地方起步；不能所有关键事实都只在deep_layer（需要已知答案才能触及）。
-3. 噪声纪律：noise[]中的项目不能是实际上指向唯一答案的必经线索；如果某条noise事实上是通向核心真相的必经信息，pass=false。
-4. 线索来源可追溯：每条clue_facts中的fact必须能追溯到某个location、NPC或physical object；不能凭空出现。
-不审核：神话锚点规则合规性、NPC属性数值、叙事质量、地点戏剧张力、Stage2派系设计细节。
-</audit_rules>`
-
-const worldStateQAToolCallExample = `[{"action":"response","pass":true,"reason":"每个派系在至少一个地点有对应levers，入口有surface_visible线索，噪声不指向唯一答案，clue_facts有明确来源。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
-
-type worldStateSession struct {
-	room          *scripterRoom
-	constraints   ScripterConstraints
-	seed          FoundationSeed
-	factions      FactionMap
-	architectMsgs []llm.ChatMessage
-	qaMsgs        []llm.ChatMessage
-}
-
-func newWorldStateSession(room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap) *worldStateSession {
-	constraintsJSON, _ := json.Marshal(constraints)
-	seedJSON, _ := json.Marshal(seed)
-	factionsJSON, _ := json.Marshal(factions)
-	architectPrompt := fmt.Sprintf(`<constraints>%s</constraints>
-<foundation_seed>%s</foundation_seed>
-<faction_map>%s</faction_map>
-<fixed_mythos_anchor>%s</fixed_mythos_anchor>
-<length>%s</length>
-<difficulty_spec>
-%s
-</difficulty_spec>
-请生成第1版WorldState。`, string(constraintsJSON), string(seedJSON), string(factionsJSON), factions.MythosAnchor, lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty))
-	qaPrompt := fmt.Sprintf(`<foundation_seed>%s</foundation_seed>
-<faction_map>%s</faction_map>
-你是持续运行的WorldState QA会话。每次收到<world_state_candidate>后，通过think/response工具调用审核它。`, string(seedJSON), string(factionsJSON))
-	return &worldStateSession{
-		room:        room,
-		constraints: constraints,
-		seed:        seed,
-		factions:    factions,
-		architectMsgs: []llm.ChatMessage{
-			{Role: "system", Content: room.architect.systemPrompt(worldStateSystemPrompt)},
-			{Role: "user", Content: architectPrompt},
-		},
-		qaMsgs: []llm.ChatMessage{
-			{Role: "system", Content: room.qa.systemPrompt(worldStateQASystemPrompt)},
-			{Role: "user", Content: qaPrompt},
-		},
-	}
-}
-
-func (s *worldStateSession) generate(ctx context.Context, attempt int) (WorldState, error) {
-	logStagePrompt(fmt.Sprintf("world_state_attempt_%d", attempt), s.architectMsgs)
-	var world WorldState
-	if err := chatAndParseJSON(ctx, s.room.architect, s.room.parser, s.architectMsgs, &world, worldStateExample, "world_state"); err != nil {
-		return WorldState{}, err
-	}
-	world = normalizeWorldState(world, s.seed, s.factions)
-	worldJSON, _ := json.Marshal(world)
-	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "assistant", Content: string(worldJSON)})
-	log.Printf("[scripter:world_state] attempt=%d generated locations=%d clue_facts=%d", attempt, len(world.Locations), len(world.ClueFacts))
-	return world, nil
-}
-
-func (s *worldStateSession) review(ctx context.Context, attempt int, world WorldState) (SandboxQA, error) {
-	worldJSON, _ := json.Marshal(world)
-	s.qaMsgs = append(s.qaMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<world_state_candidate attempt="%d">%s</world_state_candidate>
-请审核这个候选。`, attempt, string(worldJSON))})
-	qa, msgs, err := runSandboxQALoop(ctx, s.room, s.qaMsgs, worldStateQAToolCallExample, "world_state")
-	s.qaMsgs = msgs
-	return qa, err
-}
-
-func (s *worldStateSession) feedRejection(attempt int, world WorldState, qa SandboxQA) {
-	worldJSON, _ := json.Marshal(world)
-	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<qa_rejection attempt="%d">
-<rejected_world>%s</rejected_world>
-<must_fix>
-%s
-</must_fix>
-</qa_rejection>
-请基于同一个创作上下文重写WorldState：逐条解决must_fix列出的沙盒结构问题；不要只改措辞；仍只输出合法JSON对象。`, attempt, string(worldJSON), formatSandboxMustFix(qa))})
-}
-
-func generateWorldStateWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap) (WorldState, error) {
-	session := newWorldStateSession(room, constraints, seed, factions)
-	const maxAttempts = 20
-	var lastQA *SandboxQA
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		world, err := session.generate(ctx, attempt)
-		if err != nil {
-			return WorldState{}, err
-		}
-		qa, err := session.review(ctx, attempt, world)
-		if err != nil {
-			return WorldState{}, err
-		}
-		lastQA = &qa
-		log.Printf("[scripter:world_state_qa] attempt=%d pass=%v reason=%q rejects=%q", attempt, qa.Pass, truncateRunes(qa.Reason, 500), strings.Join(qa.RejectReasons, " | "))
-		logScripterArtifact(fmt.Sprintf("Stage 3 WorldState QA Attempt %d", attempt), qa)
-		if qa.Pass {
-			return world, nil
-		}
-		session.feedRejection(attempt, world, qa)
-	}
-	rejects := sandboxQARejectReasons(lastQA)
-	return WorldState{}, fmt.Errorf("WorldState QA 连续拒绝 %d 次，拒绝原因=%v", maxAttempts, rejects)
-}
-
-const assemblySystemPrompt = `<role>COC7沙盒ScenarioDraft编译器</role>
-<task>把FoundationSeed、FactionMap和WorldState编译为兼容models.ScenarioContent的ScenarioDraft。不要查询规则书，不要更换mythos_anchor。</task>
-<output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
-<director_contract>
-- content.setting写玩家当前能看见的局势，不是幕后背景倾倒。
-- content.intro写入场位置和立即可做的行动。
-- content.map_description写可导航地点关系。
-- content.scenes是地点/局势状态摘要，不是有序剧情门；description必须包含可见信息、可发现信息、杠杆、风险、出口。
-- content.npcs是静态NPC卡：派系、议程、秘密、态度，可选stats。
-- content.clues是自包含事实字符串，必须以[真实]/[隐藏]/[误导]开头；不要依赖数组顺序理解。
-- content.clues中必须包含至少一条以'[隐藏]神话本质'开头的线索，描述玩家调查中能发现的神话核心真相（实体本质、典籍目的或仪式代价）；必须注明获取方式和发现后需承担的代价。
-- win_condition/lose_condition/partial_wins写代价分配和结束信号，不写二元奖励。
-- system_prompt必须给KP时间推进、信息可见性和不主动引导三项协议。
-- 如果收到qa_rejection，必须修复setting快照、intro可执行性、scene杠杆或KP协议问题；不要只改措辞；不要更换mythos_anchor。
-</director_contract>`
 
 const scenarioExample = `{"name":"示例沙盒模组名","description":"一份围绕异常事实、派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是本场COC跑团的KP，职责是管理一个会自行推进的局势而不是执行线性故事。按派系时间线推进后果；按可见性分层给信息；不要主动把调查员引向正确答案。","setting":"玩家抵达时能看见的当前局势。只写公开事实、紧张关系和可感知异常，不剧透幕后真相。","intro":"你们以某种身份进入局势，眼前有三件可立即行动的事：询问某人、检查某地、决定是否公开某条信息。","game_start_slot":16,"map_description":"【文字地图】起点A连接地点B和地点C；地点B有公开冲突，地点C有可深入调查的物件；各地点可往返，没有固定访问顺序。","scenes":[{"id":"location_1","name":"地点名","description":"可见：到达即可看到的信息。可发现：主动调查可获得的信息。杠杆：调查员若做X，派系Y的时间线会改变。风险：拖延或失败的后果。出口：可前往的其他地点。","triggers":["available_from_start"]}],"npcs":[{"name":"NPC姓名","description":"公开身份；所属派系；真实议程；秘密；可被说服或施压的杠杆；可能知道但不会主动说出的事实。","attitude":"初始态度和压力下的反应","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"HP":10,"MP":10}}],"clues":["[真实]登记簿矛盾(旧办公室): 自包含事实；获取方式；能改变哪个判断。","[隐藏]神话本质(封存物件): 神话核心真相（实体性质/典籍目的/仪式代价）；获取方式（需要什么技能或条件）；发现后要承担的代价（理智/后果）。","[误导]地方传闻(酒馆): 为什么它表面合理但只能解释一部分。"],"win_condition":"如果调查员让某个结束信号以较低代价固化，则对应派系失去关键优势，但另一个代价留存。","lose_condition":"如果关键时间线终点到达且无人干预，则局势进入新的稳定态，某人或某地不可挽回地改变。","partial_wins":["如果只救出某人但没有公开事实，则个人获救，派系结构保留。"]}}`
 
-func assembleSandboxDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap, world WorldState, previous *ScenarioDraft, mustFix []string) (ScenarioDraft, error) {
+const assemblySystemPrompt = `<role>COC7沙盒ScenarioDraft编译器</role>
+<task>将δ-框架三阶段产物（IronyCore、MisdirectionFabric、InvestigationGraph）编译为兼容models.ScenarioContent的ScenarioDraft。不要查询规则书，不要更换mythos_anchor。</task>
+<output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
+<director_contract>
+- content.setting写玩家当前能看见的局势（表面阅读：irony.surface_reading），不是幕后δ真相。
+- content.intro写入场位置和立即可做的行动，基于graph.hook_node附近地点。
+- content.map_description基于graph.nodes中的地点节点写可导航关系。
+- content.scenes是地点/局势状态摘要，对应InvNode；description必须包含可见信息、可发现信息、杠杆、风险、出口。
+- content.npcs来自misdirection.factions中的NPC；misdirection.misdirector_npc必须包含在内。
+- content.clues是自包含事实字符串，必须以[真实]/[隐藏]/[误导]开头；delta_signal=false_delta→[误导]；delta_signal=true_delta→[隐藏]；delta_signal=ambiguous→[真实]。
+- content.clues中必须包含至少一条以'[隐藏]神话本质'开头的线索（来自misdirection.mythos_anchor）。
+- content.clues中至少一条[误导]线索在事后与irony.delta_operator_desc所描述的认知反转方向兼容。
+- win_condition/lose_condition/partial_wins使用misdirection.ending_signals。
+- system_prompt给KP时间推进、信息可见性分层和不主动引导三项协议；同时注入irony.deep_truth为KP独有内部真相。
+- 如果收到qa_rejection，必须修复标注问题；不要只改措辞；不要更换mythos_anchor。
+</director_contract>`
+
+const assemblyQASystemPrompt = `<role>COC7沙盒剧本编译QA</role>
+<task>审核ScenarioDraft是否符合δ-框架沙盒设计原则，不审核规则书内容。</task>
+<response_format>json_array</response_format>
+<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
+<audit_points>
+1. setting写的是表面阅读（irony.surface_reading），未泄露δ真相或misdirection.true_trace。
+2. intro包含至少三个立即可执行的行动，基于graph.hook_node附近地点。
+3. 每个scene有可见信息、可发现信息、杠杆、风险、出口五项。
+4. clues：至少一条[隐藏]神话本质、至少一条[误导]线索与δ_true事后兼容、每条线索以[真实]/[隐藏]/[误导]开头。
+5. system_prompt包含时间推进、信息可见性分层、不主动引导三项协议，并注入了irony.deep_truth。
+6. win_condition/lose_condition使用结束信号写法，不是二元奖励。
+</audit_points>`
+
+const assemblyQAToolCallExample = `[{"action":"response","pass":true,"reason":"setting只含表面阅读层，intro提供了3个具体行动，每个scene有五项结构，clues包含[隐藏]神话本质和兼容δ_true的[误导]线索，system_prompt含三项KP协议及deep_truth注入。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
+
+func assembleSandboxDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, irony IronyCore, misdirection MisdirectionFabric, graph InvestigationGraph, previous *ScenarioDraft, mustFix []string) (ScenarioDraft, error) {
 	reqJSON, _ := json.Marshal(room.req)
 	constraintsJSON, _ := json.Marshal(constraints)
-	seedJSON, _ := json.Marshal(seed)
-	factionsJSON, _ := json.Marshal(factions)
-	worldJSON, _ := json.Marshal(world)
-	revisionBlock := ""
-	if previous != nil || len(mustFix) > 0 {
+	ironyJSON, _ := json.Marshal(irony)
+	misdirectionJSON, _ := json.Marshal(misdirection)
+	graphJSON, _ := json.Marshal(graph)
+	var userParts []string
+	userParts = append(userParts, fmt.Sprintf("【请求参数】%s", reqJSON))
+	userParts = append(userParts, fmt.Sprintf("【结构约束】%s", constraintsJSON))
+	userParts = append(userParts, fmt.Sprintf("【Stage1 IronyCore】%s", ironyJSON))
+	userParts = append(userParts, fmt.Sprintf("【Stage2 MisdirectionFabric】%s", misdirectionJSON))
+	userParts = append(userParts, fmt.Sprintf("【Stage3 InvestigationGraph】%s", graphJSON))
+	userParts = append(userParts, fmt.Sprintf("【输出示例（仅格式参考）】%s", scenarioExample))
+	userParts = append(userParts, fmt.Sprintf("【规模/难度】长度：%s\n难度：%s", lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty)))
+	userParts = append(userParts, fmt.Sprintf("【NPC名称黑名单】%s", formatNPCNameBlacklist(room.npcBlacklist)))
+	userParts = append(userParts, fmt.Sprintf("【剧本标题黑名单】%s", formatScenarioTitleBlacklist(room.titleSamples)))
+	if previous != nil && len(mustFix) > 0 {
 		prevJSON, _ := json.Marshal(previous)
-		revisionBlock = fmt.Sprintf("\n<previous_draft>%s</previous_draft>\n<must_fix>%s</must_fix>\n请只修复must_fix列出的DB/runtime关键字段，保持神话锚点、线索自包含性和沙盒语义不变。", string(prevJSON), strings.Join(mustFix, "\n- "))
+		userParts = append(userParts, fmt.Sprintf("【上一版本草案】%s", prevJSON))
+		userParts = append(userParts, fmt.Sprintf("【必须修复（按编号全部处理）】\n%s", strings.Join(mustFix, "\n")))
 	}
-	userPrompt := fmt.Sprintf(`<request_json>%s</request_json>
-<constraints>%s</constraints>
-<foundation_seed>%s</foundation_seed>
-<faction_map>%s</faction_map>
-<world_state>%s</world_state>
-<fixed_mythos_anchor>%s</fixed_mythos_anchor>
-<json_example>%s</json_example>
-<length>%s</length>
-<difficulty_spec>
-%s
-</difficulty_spec>
-<recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
-<title_samples_to_avoid>%s</title_samples_to_avoid>%s
-请输出完整ScenarioDraft JSON。`, string(reqJSON), string(constraintsJSON), string(seedJSON), string(factionsJSON), string(worldJSON), factions.MythosAnchor, scenarioExample, lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty), formatNPCNameBlacklist(room.npcBlacklist), formatScenarioTitleBlacklist(room.titleSamples), revisionBlock)
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.architect.systemPrompt(assemblySystemPrompt)},
-		{Role: "user", Content: userPrompt},
+		{Role: "user", Content: strings.Join(userParts, "\n\n")},
 	}
-	if previous != nil || len(mustFix) > 0 {
-		log.Printf("[scripter:scenario_draft] repair_mode previous_present=%v must_fix=%d issues=%v", previous != nil, len(mustFix), mustFix)
-	}
-	logStagePrompt("scenario_draft", msgs)
+	logStagePrompt("assembly", msgs)
 	var draft ScenarioDraft
-	if err := chatAndParseJSON(ctx, room.architect, room.parser, msgs, &draft, scenarioExample, "scenario_draft"); err != nil {
-		return ScenarioDraft{}, err
+	if err := chatAndParseJSON(ctx, room.architect, room.parser, msgs, &draft, scenarioExample, "assembly"); err != nil {
+		return ScenarioDraft{}, fmt.Errorf("assembly chatAndParseJSON: %w", err)
 	}
+	logParsedJSON("assembly_draft", draft)
+	applyGuardrails(&draft, room.req)
 	return draft, nil
 }
 
 // ---------------------------------------------------------------------------
-// Stage 4 Assembly QA session
+// Assembly QA session
 // ---------------------------------------------------------------------------
-
-const assemblyQASystemPrompt = `<role>COC7沙盒剧本编译QA</role>
-<task>审核ScenarioDraft是否符合Director runtime合约：setting是局势快照而非背景倾倒、intro有立即可执行动作、scene描述包含杠杆、clue自包含、KP协议完整。</task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
-<tools>
-- response：最终审核结论。
-  {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
-</tools>
-<batch_rules>
-- response必须包含pass、reason、reject_reasons、suggested_fix。
-</batch_rules>
-<audit_rules>
-审核只关注以下五点，其他不管：
-1. setting局势快照：setting只能包含玩家到达时能直接观察到的事实、紧张关系和可感知异常；不能包含幕后设定、NPC秘密、隐藏事实或玩家不能观察到的信息。
-2. intro可执行性：intro必须为玩家提供至少2个立即可采取的行动选项（询问某人、检查某地、决定公开某信息等具体选项）；不能只是"你们抵达了地点"这种纯描述。
-3. scene杠杆存在：至少有一个scene的description包含明确的杠杆描述（调查员做X会改变局势的说明）；如果所有scene都只有描述没有任何杠杆，pass=false。
-4. clue自包含：每条clue必须包含[真实]/[隐藏]/[误导]前缀、事实本身和获取方式；不能有需要结合其他clue才能理解的条目，不能有"参见其他线索"式的引用。
-5. KP协议完整性：system_prompt必须包含时间推进协议（派系时间线如何推进）、信息可见性协议（按层级给信息）、不主动引导协议（不把玩家引向正确答案）三项；缺少任意一项pass=false。
-6. 神话本质线索：clues中必须至少有一条以'[隐藏]神话本质'开头的线索，描述玩家在调查中能发现的神话核心真相（实体本质、典籍内容或仪式目的）并注明获取方式和代价；缺少此条pass=false。
-不审核：派系设计细节（Stage2已审）、世界状态细节（Stage3已审）、规则书合规性、NPC属性数值、游戏时长判断。
-</audit_rules>`
-
-const assemblyQAToolCallExample = `[{"action":"response","pass":true,"reason":"setting只含公开可见局势，intro提供了3个具体行动，每个scene有杠杆描述，clues自包含，system_prompt包含三项KP协议。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
 
 type assemblySession struct {
 	room          *scripterRoom
-	constraints   ScripterConstraints
-	seed          FoundationSeed
-	factions      FactionMap
-	world         WorldState
 	architectMsgs []llm.ChatMessage
 	qaMsgs        []llm.ChatMessage
 }
 
-func newAssemblySession(room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap, world WorldState) *assemblySession {
+func newAssemblySession(room *scripterRoom, constraints ScripterConstraints, irony IronyCore, misdirection MisdirectionFabric, graph InvestigationGraph) *assemblySession {
 	reqJSON, _ := json.Marshal(room.req)
 	constraintsJSON, _ := json.Marshal(constraints)
-	seedJSON, _ := json.Marshal(seed)
-	factionsJSON, _ := json.Marshal(factions)
-	worldJSON, _ := json.Marshal(world)
-	architectPrompt := fmt.Sprintf(`<request_json>%s</request_json>
-<constraints>%s</constraints>
-<foundation_seed>%s</foundation_seed>
-<faction_map>%s</faction_map>
-<world_state>%s</world_state>
-<fixed_mythos_anchor>%s</fixed_mythos_anchor>
-<json_example>%s</json_example>
-<length>%s</length>
-<difficulty_spec>
-%s
-</difficulty_spec>
-<recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
-<title_samples_to_avoid>%s</title_samples_to_avoid>
-请生成第1版ScenarioDraft。`, string(reqJSON), string(constraintsJSON), string(seedJSON), string(factionsJSON), string(worldJSON), factions.MythosAnchor, scenarioExample, lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty), formatNPCNameBlacklist(room.npcBlacklist), formatScenarioTitleBlacklist(room.titleSamples))
-	qaPrompt := fmt.Sprintf(`<foundation_seed>%s</foundation_seed>
-你是持续运行的Assembly QA会话。每次收到<draft_candidate>后，通过think/response工具调用审核它。`, string(seedJSON))
+	ironyJSON, _ := json.Marshal(irony)
+	misdirectionJSON, _ := json.Marshal(misdirection)
+	graphJSON, _ := json.Marshal(graph)
+	architectPrompt := fmt.Sprintf(
+		"【请求参数】%s\n\n【结构约束】%s\n\n【Stage1 IronyCore】%s\n\n【Stage2 MisdirectionFabric】%s\n\n【Stage3 InvestigationGraph】%s\n\n【输出示例（仅格式参考）】%s\n\n【规模/难度】长度：%s\n难度：%s\n\n【NPC名称黑名单】%s\n\n【剧本标题黑名单】%s\n\n请生成第1版ScenarioDraft。",
+		string(reqJSON), string(constraintsJSON), string(ironyJSON), string(misdirectionJSON), string(graphJSON),
+		scenarioExample, lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty),
+		formatNPCNameBlacklist(room.npcBlacklist), formatScenarioTitleBlacklist(room.titleSamples))
+	qaPrompt := fmt.Sprintf(
+		"【Stage1 IronyCore】%s\n\n【Stage2 MisdirectionFabric】%s\n\n【Stage3 InvestigationGraph】%s\n\n你是持续运行的Assembly QA会话。每次收到<draft_candidate>后，通过audit_points逐条审核。",
+		string(ironyJSON), string(misdirectionJSON), string(graphJSON))
 	return &assemblySession{
-		room:        room,
-		constraints: constraints,
-		seed:        seed,
-		factions:    factions,
-		world:       world,
+		room: room,
 		architectMsgs: []llm.ChatMessage{
 			{Role: "system", Content: room.architect.systemPrompt(assemblySystemPrompt)},
 			{Role: "user", Content: architectPrompt},
@@ -1835,7 +787,7 @@ func newAssemblySession(room *scripterRoom, constraints ScripterConstraints, see
 func (s *assemblySession) generate(ctx context.Context, attempt int) (ScenarioDraft, error) {
 	logStagePrompt(fmt.Sprintf("assembly_attempt_%d", attempt), s.architectMsgs)
 	var draft ScenarioDraft
-	if err := chatAndParseJSON(ctx, s.room.architect, s.room.parser, s.architectMsgs, &draft, scenarioExample, "scenario_draft"); err != nil {
+	if err := chatAndParseJSON(ctx, s.room.architect, s.room.parser, s.architectMsgs, &draft, scenarioExample, fmt.Sprintf("assembly#%d", attempt)); err != nil {
 		return ScenarioDraft{}, err
 	}
 	draftJSON, _ := json.Marshal(draft)
@@ -1846,8 +798,8 @@ func (s *assemblySession) generate(ctx context.Context, attempt int) (ScenarioDr
 
 func (s *assemblySession) review(ctx context.Context, attempt int, draft ScenarioDraft) (SandboxQA, error) {
 	draftJSON, _ := json.Marshal(draft)
-	s.qaMsgs = append(s.qaMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<draft_candidate attempt="%d">%s</draft_candidate>
-请审核这个候选。`, attempt, string(draftJSON))})
+	s.qaMsgs = append(s.qaMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<draft_candidate attempt="%d">%s</draft_candidate>请按audit_points逐条审核这个候选。`, attempt, string(draftJSON))})
+	logStagePrompt(fmt.Sprintf("assembly_qa_attempt_%d", attempt), s.qaMsgs)
 	qa, msgs, err := runSandboxQALoop(ctx, s.room, s.qaMsgs, assemblyQAToolCallExample, "assembly")
 	s.qaMsgs = msgs
 	return qa, err
@@ -1861,11 +813,11 @@ func (s *assemblySession) feedRejection(attempt int, draft ScenarioDraft, qa San
 %s
 </must_fix>
 </qa_rejection>
-请基于同一个创作上下文重写ScenarioDraft：逐条解决must_fix列出的runtime合约问题；不要只改措辞；不要更换mythos_anchor；仍只输出合法JSON对象。`, attempt, string(draftJSON), formatSandboxMustFix(qa))})
+请基于同一个δ-框架上下文重写ScenarioDraft：逐条解决must_fix列出的问题；不要只改措辞；不要更换mythos_anchor；仍只输出合法JSON对象。`, attempt, string(draftJSON), formatSandboxMustFix(qa))})
 }
 
-func assembleSandboxDraftWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap, world WorldState) (ScenarioDraft, error) {
-	session := newAssemblySession(room, constraints, seed, factions, world)
+func assembleSandboxDraftWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, irony IronyCore, misdirection MisdirectionFabric, graph InvestigationGraph) (ScenarioDraft, error) {
+	session := newAssemblySession(room, constraints, irony, misdirection, graph)
 	const maxAttempts = 10
 	var lastQA *SandboxQA
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -1888,52 +840,6 @@ func assembleSandboxDraftWithQA(ctx context.Context, room *scripterRoom, constra
 	}
 	rejects := sandboxQARejectReasons(lastQA)
 	return ScenarioDraft{}, fmt.Errorf("Assembly QA 连续拒绝 %d 次，拒绝原因=%v", maxAttempts, rejects)
-}
-
-// ---------------------------------------------------------------------------
-// Rulebook context helper for Stage 2 only
-// ---------------------------------------------------------------------------
-
-func buildStage2RuleContext(ctx context.Context, seed FoundationSeed) (string, bool) {
-	var sb strings.Builder
-	conservative := false
-	log.Printf("[scripter:rule_context] start mythos_seed=%q relation=%q", truncateRunes(seed.MythosSeed, 500), seed.MythosRelation)
-	sb.WriteString("【规则书常量摘要，仅供Stage2锚定神话元素】\n")
-	for _, constant := range []string{"mythos_creatures", "monsters", "great_old_ones_and_gods", "books", "spells"} {
-		text := strings.TrimSpace(rulebook.ReadConstant(constant))
-		log.Printf("[scripter:rule_context] const=%q len=%d", constant, len(text))
-		if text == "" {
-			continue
-		}
-		sb.WriteString(fmt.Sprintf("\n[%s]\n%s\n", constant, truncateRunes(text, 1200)))
-	}
-
-	question := fmt.Sprintf("为COC7沙盒剧本核验一个最小神话锚点。异常：%s。神话关系：%s。候选方向：%s。请只给可保守使用的实体/典籍/法术/物品方向和必须避免的未核验数值。", seed.Anomaly, seed.MythosRelation, seed.MythosSeed)
-	log.Printf("[scripter:rule_context] lawyer question len=%d body=%s", len(question), truncateRunes(question, scripterPromptLogLimit))
-	lawyerHandle, err := loadSingleAgent(models.AgentRoleLawyer)
-	if err != nil {
-		conservative = true
-		log.Printf("[scripter:rule_context] lawyer unavailable err=%v", err)
-		sb.WriteString(fmt.Sprintf("\n【lawyer_unavailable】%v\n必须在rules_notes标记不确定元素，并避免生成未核验数值。\n", err))
-		ctxText := truncateRunes(sb.String(), 9000)
-		log.Printf("[scripter:rule_context] done conservative=%v len=%d body=%s", conservative, len(ctxText), truncateRunes(ctxText, scripterRepairLogLimit))
-		return ctxText, conservative
-	}
-	results := runLawyer(ctx, lawyerHandle, question, rulebook.GlobalIndex)
-	log.Printf("[scripter:rule_context] lawyer results=%d", len(results))
-	if len(results) == 0 {
-		conservative = true
-		sb.WriteString("\n【lawyer_no_result】规则专家未返回有效裁定；必须在rules_notes标记不确定元素，并避免生成未核验数值。\n")
-		ctxText := truncateRunes(sb.String(), 9000)
-		log.Printf("[scripter:rule_context] done conservative=%v len=%d body=%s", conservative, len(ctxText), truncateRunes(ctxText, scripterRepairLogLimit))
-		return ctxText, conservative
-	}
-	sb.WriteString("\n【lawyer_result】\n")
-	sb.WriteString(formatLawyerResults(results))
-	sb.WriteString("\n")
-	ctxText := truncateRunes(sb.String(), 9000)
-	log.Printf("[scripter:rule_context] done conservative=%v len=%d body=%s", conservative, len(ctxText), truncateRunes(ctxText, scripterRepairLogLimit))
-	return ctxText, conservative
 }
 
 // ---------------------------------------------------------------------------
@@ -2056,16 +962,16 @@ func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest) {
 	}
 }
 
-func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationRequest, constraints ScripterConstraints, seed FoundationSeed, factions FactionMap, world WorldState) {
+func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationRequest, constraints ScripterConstraints, irony IronyCore, misdirection MisdirectionFabric, graph InvestigationGraph) {
 	if draft == nil {
 		return
 	}
 	if strings.TrimSpace(draft.Name) == "" {
-		draft.Name = defaultScenarioName(seed)
+		draft.Name = defaultScenarioName(irony)
 		log.Printf("[scripter:normalize] filled name=%q", draft.Name)
 	}
 	if strings.TrimSpace(draft.Description) == "" {
-		draft.Description = fmt.Sprintf("围绕“%s”展开的沙盒情境简报：调查员进入一个由旧决定、派系时间线和神话锚点共同推动的局势。", seed.Anomaly)
+		draft.Description = fmt.Sprintf("围绕「%s」展开的沙盒调查：调查员进入一个由δ结构驱动的局势，表象与深层真相由一个可逆转的认知算子分隔。", irony.SurfaceReading)
 		log.Printf("[scripter:normalize] filled description=%q", truncateRunes(draft.Description, 300))
 	}
 	if strings.TrimSpace(draft.Author) == "" {
@@ -2109,23 +1015,23 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 		draft.Content.GameStartSlot = 47
 	}
 	if strings.TrimSpace(draft.Content.SystemPrompt) == "" {
-		draft.Content.SystemPrompt = defaultSandboxSystemPrompt(factions)
+		draft.Content.SystemPrompt = defaultSandboxSystemPrompt(misdirection, irony)
 		log.Printf("[scripter:normalize] filled system_prompt len=%d", len(draft.Content.SystemPrompt))
 	}
 	if strings.TrimSpace(draft.Content.Setting) == "" {
-		draft.Content.Setting = defaultSetting(constraints, seed, factions)
+		draft.Content.Setting = defaultSetting(constraints, irony, misdirection)
 		log.Printf("[scripter:normalize] filled setting len=%d", len(draft.Content.Setting))
 	}
 	if strings.TrimSpace(draft.Content.Intro) == "" {
-		draft.Content.Intro = defaultIntro(constraints, world)
+		draft.Content.Intro = defaultIntro(constraints, graph)
 		log.Printf("[scripter:normalize] filled intro len=%d", len(draft.Content.Intro))
 	}
 	if strings.TrimSpace(draft.Content.MapDescription) == "" {
-		draft.Content.MapDescription = defaultMapDescription(world)
+		draft.Content.MapDescription = defaultMapDescription(graph)
 		log.Printf("[scripter:normalize] filled map_description len=%d", len(draft.Content.MapDescription))
 	}
 	if len(draft.Content.Scenes) == 0 {
-		draft.Content.Scenes = scenesFromWorld(world)
+		draft.Content.Scenes = scenesFromGraph(graph, irony)
 		log.Printf("[scripter:normalize] generated scenes count=%d", len(draft.Content.Scenes))
 	}
 	for i := range draft.Content.Scenes {
@@ -2147,7 +1053,7 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 		}
 	}
 	if len(draft.Content.NPCs) == 0 {
-		draft.Content.NPCs = npcsFromFactions(factions)
+		draft.Content.NPCs = npcsFromMisdirection(misdirection)
 		log.Printf("[scripter:normalize] generated npcs count=%d", len(draft.Content.NPCs))
 	}
 	for i := range draft.Content.NPCs {
@@ -2165,7 +1071,7 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 		}
 	}
 	if len(draft.Content.Clues) == 0 {
-		draft.Content.Clues = cluesFromWorld(world, seed)
+		draft.Content.Clues = cluesFromGraph(graph, irony, misdirection)
 		log.Printf("[scripter:normalize] generated clues count=%d", len(draft.Content.Clues))
 	}
 	for i, clue := range draft.Content.Clues {
@@ -2176,51 +1082,61 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 		draft.Content.Clues[i] = normalized
 	}
 	if strings.TrimSpace(draft.Content.WinCondition) == "" {
-		draft.Content.WinCondition = defaultWinCondition(factions)
+		draft.Content.WinCondition = defaultWinCondition(misdirection)
 		log.Printf("[scripter:normalize] filled win_condition=%q", truncateRunes(draft.Content.WinCondition, 300))
 	}
 	if strings.TrimSpace(draft.Content.LoseCondition) == "" {
-		draft.Content.LoseCondition = defaultLoseCondition(factions)
+		draft.Content.LoseCondition = defaultLoseCondition(misdirection)
 		log.Printf("[scripter:normalize] filled lose_condition=%q", truncateRunes(draft.Content.LoseCondition, 300))
 	}
 	if len(draft.Content.PartialWins) == 0 {
-		draft.Content.PartialWins = defaultPartialWins(factions)
+		draft.Content.PartialWins = defaultPartialWins(misdirection)
 		log.Printf("[scripter:normalize] filled partial_wins count=%d", len(draft.Content.PartialWins))
 	}
 }
 
-func defaultScenarioName(seed FoundationSeed) string {
-	anomaly := truncateRunes(strings.TrimSpace(seed.Anomaly), 12)
-	if anomaly == "" {
+func defaultScenarioName(irony IronyCore) string {
+	reading := truncateRunes(strings.TrimSpace(irony.SurfaceReading), 12)
+	if reading == "" {
 		return "未命名沙盒调查"
 	}
-	return "异常调查：" + anomaly
+	return "δ-调查：" + reading
 }
 
-func defaultSandboxSystemPrompt(factions FactionMap) string {
-	return fmt.Sprintf("你是本场COC跑团的KP，职责是管理会自行推进的局势而不是执行线性故事。按派系时间线推进后果；按表面可见、主动询问、需要行动、不可直接获得四层管理信息；不要主动把调查员引向正确答案。固定神话锚点：%s。", firstNonEmpty(factions.MythosAnchor, "按剧本规则注记处理"))
+func defaultSandboxSystemPrompt(misdirection MisdirectionFabric, irony IronyCore) string {
+	return fmt.Sprintf("你是本场COC跑团的KP，职责是管理会自行推进的局势而不是执行线性故事。按派系时间线推进后果；按表面可见、主动询问、需要行动、不可直接获得四层管理信息；不要主动把调查员引向正确答案。\n【KP独有，勿向玩家直说】固定神话锚点：%s。δ内部真相：%s。", firstNonEmpty(misdirection.MythosAnchor, "按剧本规则注记处理"), firstNonEmpty(irony.DeepTruth, "真相将通过调查逐步揭示"))
 }
 
-func defaultSetting(constraints ScripterConstraints, seed FoundationSeed, factions FactionMap) string {
-	return fmt.Sprintf("%s的%s中，调查员面对一个已经开始运动的局势：%s。公开层面只看得到异常、地方压力和派系互相遮掩；无人干预时，各方会按自己的时间线继续行动。", constraints.Era, strings.Join(constraints.GeographyFlavor, " / "), seed.Anomaly+" 神话锚点已由KP后台固定为“"+factions.MythosAnchor+"”，但开局不向玩家直说")
+func defaultSetting(constraints ScripterConstraints, irony IronyCore, misdirection MisdirectionFabric) string {
+	return fmt.Sprintf("%s的%s中，调查员面对一个已经开始运动的局势：%s。公开层面只看得到表象、地方压力和派系互相遮掩；无人干预时，各方会按自己的时间线继续行动。", constraints.Era, strings.Join(constraints.GeographyFlavor, " / "), firstNonEmpty(irony.SurfaceReading, "一个可被多种方式解读的局势已经开始"))
 }
 
-func defaultIntro(constraints ScripterConstraints, world WorldState) string {
-	locations := locationNames(world)
-	if len(locations) == 0 {
-		locations = []string{"调查入口"}
+func defaultIntro(constraints ScripterConstraints, graph InvestigationGraph) string {
+	var nodeNames []string
+	for _, n := range graph.Nodes {
+		if name := strings.TrimSpace(n.Name); name != "" && len(nodeNames) < 3 {
+			nodeNames = append(nodeNames, name)
+		}
 	}
-	return fmt.Sprintf("你们以“%s”进入局势。眼前可立即行动：前往%s，询问公开目击者，或决定是否把已知异常告诉某个派系。", constraints.InvestigatorEntryPosition, strings.Join(locations, "、"))
+	if len(nodeNames) == 0 {
+		nodeNames = []string{"调查入口"}
+	}
+	return fmt.Sprintf("你们以\"%s\"进入局势。眼前可立即行动：前往%s，询问公开目击者，或决定是否把已知异常告诉某个派系。", constraints.InvestigatorEntryPosition, strings.Join(nodeNames, "、"))
 }
 
-func defaultMapDescription(world WorldState) string {
-	locations := locationNames(world)
-	if len(locations) == 0 {
+func defaultMapDescription(graph InvestigationGraph) string {
+	var nodeNames []string
+	for _, n := range graph.Nodes {
+		if name := strings.TrimSpace(n.Name); name != "" {
+			nodeNames = append(nodeNames, name)
+		}
+	}
+	if len(nodeNames) == 0 {
 		return "【文字地图】调查入口连接所有可调查地点；地点之间可往返，没有固定访问顺序。"
 	}
 	var lines []string
 	lines = append(lines, "【文字地图】地点是沙盒状态节点，不是顺序关卡：")
-	for i, name := range locations {
+	for i, name := range nodeNames {
 		if i == 0 {
 			lines = append(lines, fmt.Sprintf("- %s：默认入口，可向其他地点扩散调查。", name))
 		} else {
@@ -2231,85 +1147,109 @@ func defaultMapDescription(world WorldState) string {
 	return strings.Join(lines, "\n")
 }
 
-func scenesFromWorld(world WorldState) []models.SceneData {
-	if len(world.Locations) == 0 {
+func scenesFromGraph(graph InvestigationGraph, irony IronyCore) []models.SceneData {
+	if len(graph.Nodes) == 0 {
 		return []models.SceneData{{ID: "location_1", Name: "调查入口", Description: "可见：异常已经公开出现。可发现：主动调查可获得第一批事实。杠杆：公开或隐瞒信息会改变派系反应。风险：拖延会推进时间线。出口：所有相关地点。", Triggers: []string{"available_from_start"}}}
 	}
-	scenes := make([]models.SceneData, 0, len(world.Locations))
-	for i, loc := range world.Locations {
-		var leverParts []string
-		for _, lever := range loc.Levers {
-			leverParts = append(leverParts, fmt.Sprintf("%s → %s", lever.Action, lever.Change))
+	_ = irony
+	scenes := make([]models.SceneData, 0, len(graph.Nodes))
+	for i, node := range graph.Nodes {
+		prefix := deltaSignalToCluePrefix(node.DeltaSignal)
+		var knowledgeParts []string
+		for _, k := range node.Knowledge {
+			if strings.TrimSpace(k) != "" {
+				knowledgeParts = append(knowledgeParts, prefix+k)
+			}
 		}
-		desc := fmt.Sprintf("可见：%s\n可发现：%s\n深层：%s\n杠杆：%s\n噪声：%s\n风险：拖延会让相关派系时间线推进；错误公开信息会改变NPC态度。\n出口：可返回其他地点继续调查。", firstNonEmpty(loc.SurfaceVisible, "地点表面状态"), firstNonEmpty(loc.Discoverable, "主动调查可获得的事实"), firstNonEmpty(loc.DeepLayer, "触及核心层后的感知"), firstNonEmpty(strings.Join(leverParts, "；"), "主动调查或公开信息 → 派系时间线改变"), firstNonEmpty(strings.Join(loc.Noise, "；"), "存在不指向答案的地方细节"))
-		scenes = append(scenes, models.SceneData{ID: fmt.Sprintf("location_%d", i+1), Name: firstNonEmpty(loc.Name, fmt.Sprintf("地点%d", i+1)), Description: desc, Triggers: []string{"available_from_start"}})
+		knowledgeStr := firstNonEmpty(strings.Join(knowledgeParts, "；"), "主动调查可获得的事实")
+		desc := fmt.Sprintf("可见：到达即可感知的局势。可发现：%s\n杠杆：调查员行动会改变派系时间线。风险：拖延会让世界推进。出口：可前往相关地点。", knowledgeStr)
+		triggers := []string{"available_from_start"}
+		if node.ID == graph.HookNode {
+			triggers = []string{"available_from_start", "hook"}
+		}
+		scenes = append(scenes, models.SceneData{
+			ID:          firstNonEmpty(node.ID, fmt.Sprintf("location_%d", i+1)),
+			Name:        firstNonEmpty(node.Name, fmt.Sprintf("地点%d", i+1)),
+			Description: desc,
+			Triggers:    triggers,
+		})
 	}
 	return scenes
 }
 
-func npcsFromFactions(factions FactionMap) []models.NPCData {
+func npcsFromMisdirection(misdirection MisdirectionFabric) []models.NPCData {
 	var npcs []models.NPCData
-	for _, faction := range factions.Factions {
+	misdirectorName := strings.TrimSpace(misdirection.MisdirectorNPC)
+	for _, faction := range misdirection.Factions {
 		for _, npc := range faction.NPCs {
 			name := strings.TrimSpace(npc.Name)
 			if name == "" {
 				continue
 			}
-			desc := fmt.Sprintf("公开身份：%s。所属派系：%s。派系目标：%s。个人议程：%s。秘密：%s。当前状态：%s。规则注记：%s。", firstNonEmpty(npc.PublicIdentity, "未公开"), firstNonEmpty(faction.Name, "未知派系"), firstNonEmpty(faction.Goal, "未明"), firstNonEmpty(npc.Agenda, "自保并观察局势"), firstNonEmpty(npc.Secret, "掌握部分真相但不会主动全盘托出"), firstNonEmpty(faction.CurrentState, "按时间线行动"), firstNonEmpty(npc.StatsNote, "普通人类属性15-70；特殊能力按规则书裁定"))
+			misdirectorNote := ""
+			if misdirectorName != "" && (strings.EqualFold(name, misdirectorName) || strings.Contains(name, misdirectorName)) {
+				misdirectorNote = "【核心误导NPC】此人支持假δ方向，是玩家最容易信任的误导来源。"
+			}
+			desc := fmt.Sprintf("公开身份：%s。所属派系：%s。派系目标：%s。个人议程：%s。秘密：%s。当前状态：%s。规则注记：%s。%s", firstNonEmpty(npc.PublicIdentity, "未公开"), firstNonEmpty(faction.Name, "未知派系"), firstNonEmpty(faction.Goal, "未明"), firstNonEmpty(npc.Agenda, "自保并观察局势"), firstNonEmpty(npc.Secret, "掌握部分真相但不会主动全盘托出"), firstNonEmpty(faction.CurrentState, "按时间线行动"), firstNonEmpty(npc.StatsNote, "普通人类属性15-70；特殊能力按规则书裁定"), misdirectorNote)
 			npcs = append(npcs, models.NPCData{Name: name, Description: desc, Attitude: firstNonEmpty(npc.Attitude, "谨慎防备")})
 		}
 	}
 	if len(npcs) == 0 {
-		npcs = []models.NPCData{{Name: "周砚", Description: "公开身份：地方协调者。所属派系：旧决定的守护者。真实议程：拖延调查并保护旧秘密。秘密：知道异常与某个可理解但错误的决定有关。", Attitude: "礼貌但回避关键问题"}}
+		npcs = []models.NPCData{{
+			Name:        firstNonEmpty(misdirectorName, "核心NPC"),
+			Description: fmt.Sprintf("公开身份：地方相关人员。误导来源：%s。真实追踪：%s。", firstNonEmpty(misdirection.FalseLead, "支持假δ方向"), firstNonEmpty(misdirection.TrueTrace, "隐含真实δ")),
+			Attitude:    "礼貌但回避关键问题",
+		}}
 	}
 	return npcs
 }
 
-func cluesFromWorld(world WorldState, seed FoundationSeed) []string {
-	clues := make([]string, 0, len(world.ClueFacts)+1)
-	for _, fact := range world.ClueFacts {
-		prefix := cluePrefixForLayer(fact.Layer)
-		name := firstNonEmpty(fact.Source, "现场事实")
-		body := firstNonEmpty(fact.Fact, seed.Anomaly)
-		acquisition := firstNonEmpty(fact.Acquisition, "主动调查")
-		clues = append(clues, fmt.Sprintf("%s%s: %s；获取方式：%s。", prefix, name, body, acquisition))
+func cluesFromGraph(graph InvestigationGraph, irony IronyCore, misdirection MisdirectionFabric) []string {
+	clues := make([]string, 0, len(graph.Nodes)+2)
+	hasMythosCore := false
+	for _, node := range graph.Nodes {
+		prefix := deltaSignalToCluePrefix(node.DeltaSignal)
+		name := firstNonEmpty(node.Name, node.ID)
+		for _, k := range node.Knowledge {
+			if strings.TrimSpace(k) != "" {
+				clue := fmt.Sprintf("%s%s: %s；获取方式：到达该节点并主动调查。", prefix, name, k)
+				if strings.Contains(clue, "神话本质") {
+					hasMythosCore = true
+				}
+				clues = append(clues, clue)
+			}
+		}
+	}
+	if mythosAnchor := strings.TrimSpace(misdirection.MythosAnchor); mythosAnchor != "" && !hasMythosCore {
+		clues = append(clues, fmt.Sprintf("[隐藏]神话本质(核心发现): %s；获取方式：到达终止节点并触发揭示；发现后承担理智代价。", mythosAnchor))
 	}
 	if len(clues) == 0 {
-		clues = append(clues, "[真实]公开异常(调查入口): "+seed.Anomaly+"；获取方式：到达现场并主动询问或检查。")
+		clues = append(clues, "[真实]公开异常(调查入口): "+firstNonEmpty(irony.SurfaceReading, "一个无法普通解释的局势已经开始")+"；获取方式：到达现场并主动询问或检查。")
+		clues = append(clues, "[误导]表象线索(初步调查): "+firstNonEmpty(irony.FalseDelta, "支持错误δ推断的表象证据")+"；表面合理但只能解释一部分。")
 	}
 	return clues
 }
 
-func normalizeClueString(clue string) string {
-	clue = strings.TrimSpace(clue)
-	if clue == "" {
-		return "[真实]未命名线索(现场): 存在一个可由调查员主动确认的事实；获取方式：主动调查。"
-	}
-	if strings.HasPrefix(clue, "[真实]") || strings.HasPrefix(clue, "[隐藏]") || strings.HasPrefix(clue, "[误导]") {
-		return clue
-	}
-	return "[真实]" + clue
-}
-
-func defaultWinCondition(factions FactionMap) string {
-	if len(factions.EndingSignals) > 0 {
-		return "较低代价结束信号：" + factions.EndingSignals[0]
+func defaultWinCondition(misdirection MisdirectionFabric) string {
+	if len(misdirection.EndingSignals) > 0 {
+		return "较低代价结束信号：" + misdirection.EndingSignals[0]
 	}
 	return "如果调查员让关键事实公开并改变至少一个派系时间线，则局势以较低代价固化，但神话锚点的余波仍保留。"
 }
 
-func defaultLoseCondition(factions FactionMap) string {
-	if len(factions.Factions) > 0 && len(factions.Factions[0].Timeline) > 0 {
-		last := factions.Factions[0].Timeline[len(factions.Factions[0].Timeline)-1]
-		return "高代价结束信号：无人干预时，" + firstNonEmpty(last.Node, factions.Factions[0].CurrentState) + "；此后局势进入新的稳定态。"
+func defaultLoseCondition(misdirection MisdirectionFabric) string {
+	n := len(misdirection.EndingSignals)
+	if n >= 2 {
+		return "高代价结束信号：" + misdirection.EndingSignals[n-1]
 	}
 	return "如果关键时间线终点到达且调查员没有改变任何派系行动，则局势进入新的稳定态，某人、某地或某个身份不可挽回地改变。"
 }
 
-func defaultPartialWins(factions FactionMap) []string {
-	partials := make([]string, 0, len(factions.EndingSignals))
-	for i, signal := range factions.EndingSignals {
-		if i == 0 {
+func defaultPartialWins(misdirection MisdirectionFabric) []string {
+	n := len(misdirection.EndingSignals)
+	partials := make([]string, 0, n)
+	for i, signal := range misdirection.EndingSignals {
+		if i == 0 || i == n-1 {
 			continue
 		}
 		partials = append(partials, "部分胜利："+signal)
@@ -2323,14 +1263,15 @@ func defaultPartialWins(factions FactionMap) []string {
 	return partials
 }
 
-func locationNames(world WorldState) []string {
-	names := make([]string, 0, len(world.Locations))
-	for _, loc := range world.Locations {
-		if strings.TrimSpace(loc.Name) != "" {
-			names = append(names, strings.TrimSpace(loc.Name))
-		}
+func normalizeClueString(clue string) string {
+	clue = strings.TrimSpace(clue)
+	if clue == "" {
+		return "[真实]未命名线索(现场): 存在一个可由调查员主动确认的事实；获取方式：主动调查。"
 	}
-	return names
+	if strings.HasPrefix(clue, "[真实]") || strings.HasPrefix(clue, "[隐藏]") || strings.HasPrefix(clue, "[误导]") {
+		return clue
+	}
+	return "[真实]" + clue
 }
 
 func cluePrefixForLayer(layer string) string {
@@ -2528,16 +1469,13 @@ func parseJSONObject[T any](raw string, out *T) error {
 // ---------------------------------------------------------------------------
 
 type scripterToolCall struct {
-	Action     string          `json:"action"`
-	Think      string          `json:"think,omitempty"`
-	Question   string          `json:"question,omitempty"`
-	Constant   string          `json:"constant,omitempty"`
-	Reason     string          `json:"reason,omitempty"`
-	Background *FogBackground  `json:"background,omitempty"`
-	Draft      *ScenarioDraft  `json:"draft,omitempty"`
-	Foundation *FoundationSeed `json:"foundation_seed,omitempty"`
-	Factions   *FactionMap     `json:"faction_map,omitempty"`
-	World      *WorldState     `json:"world_state,omitempty"`
+	Action     string         `json:"action"`
+	Think      string         `json:"think,omitempty"`
+	Question   string         `json:"question,omitempty"`
+	Constant   string         `json:"constant,omitempty"`
+	Reason     string         `json:"reason,omitempty"`
+	Background *FogBackground `json:"background,omitempty"`
+	Draft      *ScenarioDraft `json:"draft,omitempty"`
 }
 
 type FogBackground struct {
@@ -2561,15 +1499,6 @@ func validateScripterResponsePayload(call scripterToolCall, expected string) err
 	if call.Draft != nil {
 		payloads++
 	}
-	if call.Foundation != nil {
-		payloads++
-	}
-	if call.Factions != nil {
-		payloads++
-	}
-	if call.World != nil {
-		payloads++
-	}
 	if payloads != 1 {
 		return fmt.Errorf("response必须且只能包含一个payload, got=%d", payloads)
 	}
@@ -2581,18 +1510,6 @@ func validateScripterResponsePayload(call scripterToolCall, expected string) err
 	case "draft":
 		if call.Draft == nil {
 			return fmt.Errorf("expected draft")
-		}
-	case "foundation_seed":
-		if call.Foundation == nil {
-			return fmt.Errorf("expected foundation_seed")
-		}
-	case "faction_map":
-		if call.Factions == nil {
-			return fmt.Errorf("expected faction_map")
-		}
-	case "world_state":
-		if call.World == nil {
-			return fmt.Errorf("expected world_state")
 		}
 	default:
 		return fmt.Errorf("unknown expected payload %q", expected)
@@ -2635,12 +1552,6 @@ func scripterSchemaExample(expected string) string {
 	switch expected {
 	case "background":
 		return `[{"action":"response","reason":"这个公开背景保留了用户brief并给出调查入口。","background":{"time_and_place":"时代与地点","investigator_hook":"调查入口"}}]`
-	case "foundation_seed":
-		return `[{"action":"response","reason":"异常和人类悲剧先行。","foundation_seed":` + foundationSeedExample + `}]`
-	case "faction_map":
-		return `[{"action":"response","reason":"派系时间线围绕固定神话锚点运动。","faction_map":` + factionMapExample + `}]`
-	case "world_state":
-		return `[{"action":"response","reason":"地点状态提供可见层、深层和杠杆。","world_state":` + worldStateExample + `}]`
 	case "draft":
 		return `[{"action":"response","reason":"最终草案兼容ScenarioContent并保持沙盒语义。","draft":` + scenarioExample + `}]`
 	default:
