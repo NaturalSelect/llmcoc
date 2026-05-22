@@ -29,14 +29,14 @@ func ironyCoreSystemPrompt() string {
 ` + formatDeltaOperatorTable() + `
 <fields>
 {
-  "delta_operator": "翻转类型ID（从上表选择或自定义）",
-  "delta_operator_desc": "自定义新类型时填写该翻转改变的认知维度（中文）；使用已有类型时留空字符串",
-  "surface_reading": "给定情境下普通观察者会立刻产生的推断",
-  "deep_truth": "揭示后的真实关系",
-  "entities": ["实体1", "实体2"],
-  "false_delta": "经验读者会优先错误推断的翻转类型ID",
-  "shared_evidence": "在不知道真相时两种解读都能解释的歧义证据",
-  "emotional_weight": "揭示时某段具体关系/身份/信念被重新定义的感受"
+  "delta_operator": "揭示真相时，读者的理解发生了哪种根本性变化？从上表选一个ID，或自定义新ID",
+  "delta_operator_desc": "仅在自定义新翻转类型时填写：说明「理解的哪个维度」发生了变化（中文）；使用已有类型时留空字符串",
+  "surface_reading": "故事开场时，普通观察者在不知道真相的情况下会自然形成的推断",
+  "deep_truth": "揭示真相后的实际关系或事实",
+  "entities": ["涉及的具体人物、地点或物件"],
+  "false_delta": "有经验的悬疑读者会优先猜测的那种「翻转方式」（填写一个翻转类型ID）——猜对了类型但猜错了具体内容，或猜错了翻转维度",
+  "shared_evidence": "一条在不知道真相时同时支持「surface_reading推断」和「false_delta猜测」两种解读的歧义证据",
+  "emotional_weight": "真相揭示时，哪段具体关系的性质、哪个身份的自我认知、或哪种信念的道德基础被重新定义——必须具体，不接受「震惊」「感动」等通用描述"
 }
 </fields>
 <rules>

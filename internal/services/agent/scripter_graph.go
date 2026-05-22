@@ -20,13 +20,18 @@ import (
 // ---------------------------------------------------------------------------
 
 const invGraphSystemPrompt = `<role>COC7沙盒调查路径图设计师</role>
-<task>根据揭示结构（irony_core）和误导设计（misdirection_fabric），生成形式化的调查路径图——一个带节点ID、知识标签、线索倾向标签（delta_signal）和边集合的有向图JSON。
+<task>你收到了悬疑剧本的揭示结构（irony_core）和误导设计（misdirection_fabric），其中：
+- irony_core.surface_reading：调查员最初会形成的错误推断
+- irony_core.deep_truth：真实情况
+- misdirection_fabric 包含具体的误导线索（false_lead）、误导NPC、真实痕迹（true_trace）、揭示触发事件（reveal_trigger）和回溯线索（retrospective_key）
+
+请生成形式化的调查路径图——一个带节点ID、可获知识点、线索倾向标签和边集合的有向图JSON。
 图必须满足：
-- 从hook_node出发通过leads_to边可到达所有resolution_nodes
-- 非终止节点不能有空leads_to（否则玩家会卡住）
-- requires边不形成循环
-- 至少一个delta_signal=false_delta节点，至少一个true_delta节点
-- 所有到达终止节点的路径合计覆盖required_knowledge中的全部知识点
+- 从入口节点出发通过 leads_to 边可到达所有结局节点
+- 非结局节点不能有空 leads_to（否则玩家会卡住）
+- requires 边不形成循环
+- 至少一个节点的 clue_lean = "mislead"，至少一个节点的 clue_lean = "reveal"
+- 所有到达结局节点的路径合计覆盖 required_knowledge 中的全部知识点
 </task>
 <response_format>json_object</response_format>
 <output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
@@ -37,30 +42,34 @@ const invGraphSystemPrompt = `<role>COC7沙盒调查路径图设计师</role>
       "id": "唯一节点ID（英文下划线格式）",
       "type": "hook|investigation|encounter|resolution",
       "name": "节点名称（中文地点/事件名）",
-      "knowledge": ["在此节点可获取的知识点（自然语言，精确且简短）"],
-      "delta_signal": "false_delta|true_delta|ambiguous",
+      "knowledge": ["在此节点调查员可以获知的具体事实（自然语言，精确且简短）"],
+      "delta_signal": "mislead|reveal|ambiguous  ← 见下方说明",
       "leads_to": ["直接可前往的节点ID列表"],
       "requires": ["此节点仅在访问过这些节点后才可访问（通常为空）"]
     }
   ],
-  "resolution_nodes": ["终止节点ID列表（至少一个）"],
-  "required_knowledge": ["到达任意终止节点前调查员必须已知的知识点"]
+  "resolution_nodes": ["结局节点ID列表（至少一个）"],
+  "required_knowledge": ["调查员到达任意结局节点前必须已经获知的核心事实（3-5条）"]
 }</schema>
+<delta_signal_definition>
+delta_signal 字段说明本节点的「线索倾向」——本节点的发现支持哪种推断方向：
+- "mislead"：本节点的发现主要强化 surface_reading（错误推断），调查员深陷误导
+- "reveal"：本节点的发现主要指向 deep_truth（真实关系），但可能被误读
+- "ambiguous"：本节点的发现同时兼容两种推断方向
+</delta_signal_definition>
 <node_design_rules>
-- hook类型节点：场景入口，delta_signal=ambiguous，leads_to指向2-3个初始调查节点
-- investigation类型节点：普通调查点，knowledge列出可获取事实，delta_signal反映该节点支持哪种推断方向
-- encounter类型节点：与NPC/实体的关键遭遇，通常是true_delta或ambiguous
-- resolution类型节点：scenario终止状态，leads_to为空，knowledge描述最终确认的事实
-- delta_signal=false_delta的节点：该节点强化false_delta推断（调查员深陷误导）
-- delta_signal=true_delta的节点：该节点提供指向deep_truth的关键证据（但可被误读）
-- delta_signal=ambiguous的节点：该节点同时兼容两种解读
+- hook 类型节点：场景入口，delta_signal=ambiguous，leads_to 指向2-3个初始调查节点
+- investigation 类型节点：普通调查点，knowledge 列出可获取事实，delta_signal 反映该节点支持哪种推断方向
+- encounter 类型节点：与NPC/实体的关键遭遇，通常是 reveal 或 ambiguous
+- resolution 类型节点：场景终止状态，leads_to 为空，knowledge 描述最终确认的事实
 </node_design_rules>
-<misdirection_rules>
-- false_lead应体现在某个delta_signal=false_delta的节点中
-- true_trace应体现在某个delta_signal=ambiguous节点中（因为它兼容两种解读）
-- reveal_trigger应是从某个节点leads_to到true_delta节点的转折点
-- retrospective_key可以是hook节点或早期ambiguous节点中的某条knowledge
-</misdirection_rules>
+<misdirection_embedding_rules>
+将误导设计（misdirection_fabric）嵌入图结构的方式：
+- false_lead（误导线索）应体现在某个 delta_signal=mislead 的节点的 knowledge 中
+- true_trace（真实痕迹）应体现在某个 delta_signal=ambiguous 的节点中（因为它兼容两种解读）
+- reveal_trigger（揭示触发事件）应是从某个节点 leads_to 到 delta_signal=reveal 节点的转折
+- retrospective_key（回溯线索）可以是入口节点或早期 ambiguous 节点中的某条 knowledge
+</misdirection_embedding_rules>
 <rules>
 - required_knowledge：只包含"理解结局所必须掌握的核心事实"，通常3-5条；不要列举所有线索
 - 【关键约束】required_knowledge中的每条知识点字符串必须逐字出现在至少一个非resolution节点（hook/investigation/encounter）的knowledge列表中；知识点只在required_knowledge字段里列出但不出现在任何节点knowledge里，系统验证必然失败
@@ -71,7 +80,7 @@ const invGraphSystemPrompt = `<role>COC7沙盒调查路径图设计师</role>
 </rules>`
 
 const invGraphQASystemPrompt = `<role>调查路径图结构QA</role>
-<task>审核调查路径图是否满足结构完备性：可达性、无死端、信息覆盖、线索倾向平衡（false_delta与true_delta节点均存在）。</task>
+<task>审核调查路径图是否满足结构完备性：可达性、无死端、信息覆盖、线索倾向平衡（mislead 与 reveal 节点均存在）。</task>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
@@ -81,11 +90,11 @@ const invGraphQASystemPrompt = `<role>调查路径图结构QA</role>
   {"action":"response","pass":true,"reason":"...","reject_reasons":[],"suggested_fix":"..."}
 </tools>
 <audit_rules>
-1. 可达性：从hook_node通过leads_to能到达所有resolution_nodes。
-2. 无死端：非终止节点均有非空leads_to。
-3. 信息覆盖：每条到终止节点的路径积累required_knowledge中的全部知识点。
-4. 线索倾向平衡：至少一个 delta_signal=false_delta 的节点（强化错误推断）和一个 delta_signal=true_delta 的节点（指向真实揭示）。
-5. 节点ID一致性：leads_to和resolution_nodes中引用的ID全部存在于nodes列表中。
+1. 可达性：从 hook_node 通过 leads_to 能到达所有 resolution_nodes。
+2. 无死端：非结局节点均有非空 leads_to。
+3. 信息覆盖：每条到结局节点的路径积累 required_knowledge 中的全部知识点。
+4. 线索倾向平衡：至少一个 delta_signal=mislead 的节点（强化错误推断）和一个 delta_signal=reveal 的节点（指向真实关系）。
+5. 节点ID一致性：leads_to 和 resolution_nodes 中引用的ID全部存在于 nodes 列表中。
 </audit_rules>`
 
 const invGraphExample = `{
@@ -93,18 +102,18 @@ const invGraphExample = `{
   "nodes": [
     {"id":"scene_hook","type":"hook","name":"图书馆入口","knowledge":["近期有书籍失窃报告，守墓人报警"],"delta_signal":"ambiguous","leads_to":["investigate_library","talk_caretaker"],"requires":[]},
     {"id":"investigate_library","type":"investigation","name":"书架调查","knowledge":["失窃书目上均有同一人手写花押"],"delta_signal":"ambiguous","leads_to":["check_records","discover_trace"],"requires":[]},
-    {"id":"talk_caretaker","type":"investigation","name":"询问守墓人","knowledge":["守墓人描述入侵者体型、举止异常"],"delta_signal":"false_delta","leads_to":["check_records","cemetery_approach"],"requires":[]},
+    {"id":"talk_caretaker","type":"investigation","name":"询问守墓人","knowledge":["守墓人描述入侵者体型、举止异常"],"delta_signal":"mislead","leads_to":["check_records","cemetery_approach"],"requires":[]},
     {"id":"check_records","type":"investigation","name":"查阅记录","knowledge":["花押属于已故图书馆员Douglas Kimball","Douglas三年前死于意外"],"delta_signal":"ambiguous","leads_to":["cemetery_approach"],"requires":[]},
-    {"id":"discover_trace","type":"investigation","name":"发现痕迹","knowledge":["书架间有非人类气味，地板有爪痕"],"delta_signal":"true_delta","leads_to":["cemetery_approach"],"requires":[]},
-    {"id":"cemetery_approach","type":"encounter","name":"墓地夜间遭遇","knowledge":["遭遇非人存在，行为指向寻回旧物而非攻击","实体对Douglas名字有反应"],"delta_signal":"true_delta","leads_to":["resolution_low_cost","resolution_confrontation"],"requires":[]},
-    {"id":"resolution_low_cost","type":"resolution","name":"和平收场","knowledge":["Douglas已变形但保留记忆，取回藏书后退隐"],"delta_signal":"true_delta","leads_to":[],"requires":[]},
+    {"id":"discover_trace","type":"investigation","name":"发现痕迹","knowledge":["书架间有非人类气味，地板有爪痕"],"delta_signal":"reveal","leads_to":["cemetery_approach"],"requires":[]},
+    {"id":"cemetery_approach","type":"encounter","name":"墓地夜间遭遇","knowledge":["遭遇非人存在，行为指向寻回旧物而非攻击","实体对Douglas名字有反应"],"delta_signal":"reveal","leads_to":["resolution_low_cost","resolution_confrontation"],"requires":[]},
+    {"id":"resolution_low_cost","type":"resolution","name":"和平收场","knowledge":["Douglas已变形但保留记忆，取回藏书后退隐"],"delta_signal":"reveal","leads_to":[],"requires":[]},
     {"id":"resolution_confrontation","type":"resolution","name":"对抗收场","knowledge":["实体被迫消失，但书籍问题未解决"],"delta_signal":"ambiguous","leads_to":[],"requires":[]}
   ],
   "resolution_nodes": ["resolution_low_cost","resolution_confrontation"],
   "required_knowledge": ["花押属于Douglas Kimball","实体保留人类记忆并寻回旧物"]
 }`
 
-const invGraphQAToolCallExample = `[{"action":"response","pass":true,"reason":"从hook_node可达所有resolution_nodes，非终止节点均有leads_to，路径覆盖required_knowledge，有false_delta和true_delta节点。","reject_reasons":[],"suggested_fix":""}]`
+const invGraphQAToolCallExample = `[{"action":"response","pass":true,"reason":"从hook_node可达所有resolution_nodes，非结局节点均有leads_to，路径覆盖required_knowledge，有mislead和reveal节点。","reject_reasons":[],"suggested_fix":""}]`
 
 // ---------------------------------------------------------------------------
 // Session (Stage 3)
@@ -300,9 +309,9 @@ func generateInvestigationGraphWithVerification(ctx context.Context, room *scrip
 // used in ScenarioContent.Clues.
 func deltaSignalToCluePrefix(signal string) string {
 	switch strings.ToLower(strings.TrimSpace(signal)) {
-	case "false_delta":
+	case "mislead":
 		return "[误导]"
-	case "true_delta":
+	case "reveal":
 		return "[隐藏]"
 	default: // ambiguous, hook
 		return "[真实]"

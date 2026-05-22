@@ -13,7 +13,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
@@ -22,33 +21,49 @@ import (
 // Prompts (Stage 2)
 // ---------------------------------------------------------------------------
 
-const misdirectionSystemPrompt = `<role>COC7沙盒神话翻译师与误导架构师</role>
-<task>完成两件事：
-①将揭示结构（irony_core中的认知翻转方式）翻译为COC7可运行的神话机制，确定使用哪个具体神话实体/典籍/机制（写入mythos_anchor）；
-②设计系统性的误导网络（false_lead、misdirector_npc、true_trace、reveal_trigger、retrospective_key），确保false_lead在irony.deep_truth框架下事后仍能合理解释。
+const misdirectionSystemPrompt = `<role>COC7剧本误导与神话背景设计师</role>
+<task>你收到了一个悬疑剧本的揭示结构（irony_core），其中包含：
+- surface_reading：调查员最初会自然形成的错误推断（表层叙事）
+- deep_truth：真实情况，即揭示真相后的实际关系
+- false_delta：调查员最容易优先猜测的那种「翻转方式」（例如以为是身份骗局，实际上是因果倒置）
+- shared_evidence：在不知道真相时，同时支持两种解读的歧义证据
+
+工作步骤：
+① 用 translate_anchor 将 deep_truth 的核心概念翻译为具体的COC7规则书元素，确定 mythos_anchor；可多次翻译直到找到合适元素。
+② 若误导设计中还涉及其他神话概念（如 false_lead 引用的神话实体），继续用 translate_anchor 翻译核验。
+③ 所有翻译完成后，用 submit 提交完整的 MisdirectionFabric。
 </task>
-<response_format>json_object</response_format>
-<output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
+<response_format>json_array</response_format>
+<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
+<tools>
+- think：内部推理（可选，无副作用）
+  {"action":"think","think":"推理内容"}
+- translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素（实体/典籍/法术/诅咒物品）；可多次调用，用于①将deep_truth概念翻译为mythos_anchor ②将误导设计概念翻译为规则书元素；提交前必须至少调用一次
+  {"action":"translate_anchor","concept":"概念描述（如「死者被古老力量束缚继续行动」「能腐蚀心智的古籍」「深海中的智慧存在」）","reason":"这个概念在本剧本中承担什么角色（翻译deep_truth / 翻译误导元素）"}
+- submit：提交完整的MisdirectionFabric；只有在translate_anchor确认元素可用后才调用
+  {"action":"submit","fabric":{...完整的MisdirectionFabric JSON对象...}}
+</tools>
 <schema>{
-  "false_lead": "一条有说服力的误导线索，将调查员推向错误推断；必须在irony.deep_truth框架下事后仍能合理解释",
-  "misdirector_npc": "一个NPC，其存在/行为自然支持false_delta解读，不一定是主动欺骗者",
-  "true_trace": "一条表面支持false_delta、但在deep_truth下有更精确解释的线索",
-  "reveal_trigger": "触发从false_delta到deep_truth认知翻转的具体事件或发现",
-  "retrospective_key": "揭示后回头看时，这个细节从开头就一直在指向deep_truth",
-  "mythos_anchor": "本剧本使用的具体COC7神话实体/典籍/机制（如食尸鬼、深潜者等），不确定时在rules_notes说明",
-  "rules_notes": ["规则来源/不确定性/保守处理说明"],
-  "factions": [{"name":"派系名","goal":"目标","current_state":"当前正在做什么","timeline":[{"node":"第N节点","trigger":"推进条件","intervention_pivot":"调查员可执行的干预动作"}],"npcs":[{"name":"NPC名","public_identity":"公开身份","agenda":"独立议程","secret":"秘密","attitude":"初始态度","stats_note":"属性注记"}]}],
+  "false_lead": "一条有说服力的误导性线索，推动调查员相信 surface_reading 的错误推断；【关键要求】在 deep_truth 揭示后，这条线索必须仍能得到合理解释，不得与真相完全矛盾",
+  "misdirector_npc": "一个NPC，其身份或日常行为自然支持错误推断——不一定是主动欺骗者；说明其行为为什么会让调查员误判",
+  "true_trace": "一条表面支持错误推断、但在 deep_truth 框架下有更精确解释的歧义证据——两种解读都说得通",
+  "reveal_trigger": "触发调查员从错误推断转向 deep_truth 的具体事件或发现",
+  "retrospective_key": "回头看时，这个细节从剧本开头就在指向 deep_truth，但当时被忽视",
+  "mythos_anchor": "translate_anchor 翻译并确认可用的COC7神话元素全称（具体实体名/典籍名/机制名）；必须与翻译结果一致",
+  "rules_notes": ["规则书出处说明，或对不确定元素的保守处理说明"],
+  "factions": [{"name":"派系名","goal":"目标","current_state":"无人干预时正在做什么（具体行动，非等待状态）","timeline":[{"node":"第N节点","trigger":"世界自行推进到此节点的条件","intervention_pivot":"调查员在此节点可执行的具体干预动作"}],"npcs":[{"name":"NPC名","public_identity":"公开身份","agenda":"独立议程","secret":"秘密","attitude":"初始态度","stats_note":"属性注记"}]}],
   "ending_signals": ["如果[条件]，则[谁的处境如何变化]，[什么不可挽回地改变]"]
 }</schema>
 <rules>
-- false_lead必须满足后验必然性：在irony.deep_truth揭示后，这条线索必须仍有合理解释，不能是在真相框架下完全矛盾的假线索。
+- 必须先调用 translate_anchor 获得规则书反馈，再调用 submit；不得在未翻译的情况下直接submit。
+- false_lead必须满足后验兼容：在 deep_truth 揭示后，这条线索必须仍有合理解释，不能是只有在错误推断成立时才说得通的假线索。
 - misdirector_npc应有内在动机支持错误推断，不依赖"他是坏人"这种纯功能性设定。
-- true_trace必须是歧义证据：表面支持错误推断，但只需一个额外上下文就能转向deep_truth。
-- mythos_anchor一旦确定，后续阶段（调查路径图和最终剧本）不得更换；不确定时在rules_notes显式说明。
-- 派系必须有non-empty current_state（无人干预时正在做什么），timeline节点必须有具体intervention_pivot。
-- 如果收到qa_rejection，必须修复false_lead的后验兼容性或派系自主性问题；不要只改措辞。
-- mythos_anchor 必须是一个具体的，有规则书支持的神话元素（如食尸鬼、深潜者、某个具体的古神或典籍等），而不是模糊的概念（如"某个邪神"）。如果规则书中没有完全符合的元素，可以选择最接近的一个并在rules_notes说明不完全匹配之处；如果完全没有合适的元素，尝试往人类法师、诅咒物品、古老地点等方向寻找替代锚点，仍找不到时才可以创造一个新元素，但必须在rules_notes详细说明其属性和与规则书元素的关系（如"类似于食尸鬼但更专注于守护知识"）。总之，mythos_anchor必须是具体且可操作的，而不是抽象或模糊的概念。
-- stage2_rule_context中律师给出的"必须避免"和"不要"约束是强制性禁令，不得以任何理由绕过（包括以rules_notes"自定义"名义绕过）；若约束与设计想法冲突，必须修改设计方向，而不是违反约束后做注释说明。
+- true_trace必须是歧义证据：表面支持错误推断，但只需一个额外上下文就能转向 deep_truth。
+- mythos_anchor一旦选定后续阶段不得更换；不确定时在 rules_notes 显式说明。
+- 派系必须有非空 current_state（无人干预时正在做什么），timeline 节点必须有具体 intervention_pivot。
+- 如果收到 qa_rejection，必须修复 false_lead 的后验兼容性或派系自主性问题；不要只改措辞；可再次search_anchor后重新submit。
+- mythos_anchor 必须来自规则书；若translate_anchor返回no_result，可改用其他概念描述重新翻译，或转向人类法师、诅咒物品、古老地点；仍无合适选项时才可创造新元素，但必须在rules_notes详细说明。
+- 用户消息中注入的 stage2_rule_context 仅含规则书常量参考（生物/典籍/法术列表）；具体元素的详细裁定通过 translate_anchor 按需翻译——translate_anchor 结果中的"必须避免"和"不要"是强制性禁令，不得以任何理由绕过。
 </rules>`
 
 const misdirectionQASystemPrompt = `<role>COC7沙盒误导设计QA</role>
@@ -73,6 +88,315 @@ const misdirectionQASystemPrompt = `<role>COC7沙盒误导设计QA</role>
 const misdirectionExample = `{"false_lead":"墓地管理员证实有人定期入侵并窃取书籍，物品清单精确，显示这是有目的的盗窃行为","misdirector_npc":"守墓人，出于对秩序的维护本能，将任何进入禁区者描述为入侵者和盗贼","true_trace":"被带走的书籍上均有一个褪色的书写者姓名花押，与失踪者Douglas Kimball姓名首字母完全吻合","reveal_trigger":"调查员发现Douglas的旧藏书记录，核对后确认图书馆现有馆藏与其遗产清单高度重合","retrospective_key":"Douglas对每本书的位置了如指掌，从未触碰其他书籍——入侵者对馆内布局的熟悉程度超越任何盗贼","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书第XX页；已核验为死者变形后的非人存在类型","rules_notes":["食尸鬼条目已核验，具体属性数值KP按规则书裁定"],"factions":[{"name":"旧知识的守护者","goal":"取回自己的书籍，维持与旧有身份的最后联结","current_state":"每夜进入图书馆取回一本书，行动越来越不谨慎","timeline":[{"node":"第0天：继续取书","trigger":"调查员进入调查","intervention_pivot":"直接与食尸鬼沟通——说出Douglas生前的名字或展示其遗物"},{"node":"第3天：被迫完全撤退","trigger":"调查员公开事件引来大批人员","intervention_pivot":"提前与其达成某种协议"}],"npcs":[{"name":"Douglas Kimball","public_identity":"已死亡的图书馆员（表面身份）","agenda":"取回自己的藏书，维持人性最后的碎片","secret":"已变为食尸鬼，但保留了对书籍的执念","attitude":"警惕、回避，若被识别则可能对话","stats_note":"食尸鬼属性按规则书；保留部分人类记忆"}]}],"ending_signals":["如果调查员让Douglas重获自己的藏书，则他彻底退隐墓地，书籍之谜以一种悲哀而非恐怖的方式收场"]}`
 
 const misdirectionQAToolCallExample = `[{"action":"response","pass":true,"reason":"false_lead在deep_truth框架下有合理解释（守墓人的描述并不虚假），misdirector_npc有内在动机，派系有自主current_state，干预枢纽具体可执行。","reject_reasons":[],"suggested_fix":""}]`
+
+// ---------------------------------------------------------------------------
+// Stage 2 architect tool-call loop
+// ---------------------------------------------------------------------------
+
+// local tool call types for Stage 2 architect only
+const (
+	toolTranslateAnchor    ToolCallType = "translate_anchor"
+	toolMisdirectionSubmit ToolCallType = "submit"
+)
+
+type misdirectionArchitectToolCall struct {
+	Action  ToolCallType        `json:"action"`
+	Think   string              `json:"think,omitempty"`
+	Concept string              `json:"concept,omitempty"` // translate_anchor: 概念描述
+	Reason  string              `json:"reason,omitempty"`  // translate_anchor: 角色说明
+	Fabric  *MisdirectionFabric `json:"fabric,omitempty"`  // submit: 完整输出
+}
+
+// misdirectionArchitectToolCallExample is used by the parser for JSON repair.
+const misdirectionArchitectToolCallExample = `[{"action":"think","think":"translate_anchor已确认食尸鬼可用，开始设计误导网络"},{"action":"submit","fabric":{"false_lead":"墓地管理员证实有人定期入侵并窃取书籍","misdirector_npc":"守墓人将任何进入禁区者描述为入侵者","true_trace":"被带走的书籍上均有褪色的书写者姓名花押","reveal_trigger":"调查员发现旧藏书记录与遗产清单高度重合","retrospective_key":"入侵者从未触碰无关书籍","mythos_anchor":"食尸鬼（Ghoul）","rules_notes":["食尸鬼条目已核验"],"factions":[{"name":"旧知识的守护者","goal":"取回自己的书籍","current_state":"每夜进入图书馆取回一本书","timeline":[{"node":"第0天","trigger":"调查员进入调查","intervention_pivot":"说出Douglas生前的名字或展示其遗物"}],"npcs":[{"name":"Douglas Kimball","public_identity":"已死亡的图书馆员","agenda":"取回藏书","secret":"已变为食尸鬼","attitude":"警惕、回避","stats_note":"食尸鬼属性按规则书"}]}],"ending_signals":["如果调查员让Douglas重获藏书，则他彻底退隐墓地"]}}]`
+
+// runMisdirectionArchitectLoop runs the Stage 2 architect in a tool-call loop.
+//
+// Expected flow:
+//  1. LLM calls search_anchor → system runs rulebook lookup → result injected as user message → loop continues.
+//  2. LLM calls submit (after seeing search results) → fabric returned.
+//
+// If search_anchor and submit appear in the same round, the search results are
+// appended and submit is ignored; the LLM must re-evaluate before submitting.
+func runMisdirectionArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, tag string) (MisdirectionFabric, []llm.ChatMessage, error) {
+	if room.architect.provider == nil {
+		return MisdirectionFabric{}, msgs, fmt.Errorf("%s architect provider unavailable", tag)
+	}
+	const maxRounds = 30
+	for round := 1; round <= maxRounds; round++ {
+		if ctx.Err() != nil {
+			return MisdirectionFabric{}, msgs, ctx.Err()
+		}
+		logStagePrompt(fmt.Sprintf("%s_loop_round_%d", tag, round), msgs)
+		raw, err := room.architect.provider.Chat(ctx, msgs)
+		if err != nil {
+			return MisdirectionFabric{}, msgs, err
+		}
+		log.Printf("[scripter:%s_loop] round=%d raw_len=%d raw=%s", tag, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
+		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
+
+		calls, parseErr := parseMisdirectionArchitectToolCalls(ctx, room.parser, raw)
+		if parseErr != nil {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
+			continue
+		}
+		if len(calls) == 0 {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
+			continue
+		}
+
+		invalid := false
+		hasSearchAnchor := false
+		var submitFabric *MisdirectionFabric
+		var toolResults []string
+
+		for _, call := range calls {
+			switch call.Action {
+			case ToolThink:
+				// silent
+			case toolTranslateAnchor:
+				hasSearchAnchor = true
+				toolResults = append(toolResults, executeMisdirectionTranslateAnchor(ctx, room, call))
+			case toolMisdirectionSubmit:
+				if call.Fabric == nil {
+					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit的fabric字段不能为空。"})
+					invalid = true
+				} else {
+					submitFabric = call.Fabric
+				}
+			default:
+				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
+					"SYSTEM REJECT: 此阶段只允许think/translate_anchor/submit，不允许%s。", call.Action)})
+				invalid = true
+			}
+		}
+		if invalid {
+			continue
+		}
+		// Append all search results as one user message.
+		if len(toolResults) > 0 {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
+		}
+		// If search_anchor was called this round, don't process submit yet —
+		// the LLM needs to see the results before deciding.
+		if hasSearchAnchor {
+			continue
+		}
+		if submitFabric != nil {
+			return *submitFabric, msgs, nil
+		}
+		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须先调用translate_anchor翻译神话元素，再用submit提交。"})
+	}
+	return MisdirectionFabric{}, msgs, fmt.Errorf("%s architect 未在%d轮内提交结果", tag, maxRounds)
+}
+
+func parseMisdirectionArchitectToolCalls(ctx context.Context, parser agentHandle, raw string) ([]misdirectionArchitectToolCall, error) {
+	stripped := strings.TrimSpace(llm.StripCodeFence(llm.JsonArryProtect(raw)))
+	var calls []misdirectionArchitectToolCall
+	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
+		return calls, nil
+	} else if parser.provider != nil {
+		fixed, repairErr := repairJSONWith(ctx, parser, stripped, err, misdirectionArchitectToolCallExample)
+		if repairErr != nil {
+			return nil, repairErr
+		}
+		fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
+		if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
+			return nil, err2
+		}
+		return calls, nil
+	} else {
+		return nil, err
+	}
+}
+
+const misdirectionTranslatorSystemPrompt = `<role>COC7规则书概念翻译专家</role>
+<task>你收到一个创意概念，需要把它翻译为COC7规则书中最匹配、可在剧本中使用的具体元素（实体/典籍/法术/诅咒物品/机制）。你不是规则书检索器；你必须通过 ask_lawyer 向规则书专家提问，依据裁定自行综合，最后用 respond 返回给上层architect的翻译结论。</task>
+<response_format>json_array</response_format>
+<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
+<tools>
+- think：内部推理（可选，无副作用）
+  {"action":"think","think":"推理内容"}
+- ask_lawyer：向COC7规则书专家提出一个具体规则书问题；可多次调用，每次聚焦不同候选、名称、能力、典籍/法术细节或禁用边界
+  {"action":"ask_lawyer","question":"具体规则书问题"}
+- respond：返回最终翻译结论并退出；必须在至少一次ask_lawyer之后调用
+  {"action":"respond","result":"结构化翻译结论"}
+</tools>
+<result_requirements>
+respond.result必须包含：
+1. status：found / no_result / uncertain
+2. selected_anchor：最匹配元素全称；无可靠匹配时写无
+3. rulebook_basis：来自ask_lawyer裁定的来源和依据摘要
+4. usable_interpretation：此元素如何承载原概念
+5. must_avoid：必须避免的未核验数值、能力、行为或误用
+6. fallback：若status不是found，给architect的保守替代方向
+</result_requirements>
+<rules>
+- 第一轮必须至少调用一次ask_lawyer；不得凭常识或记忆直接respond。
+- ask_lawyer问题要具体，优先确认候选元素是否在规则书中存在、出处、核心机制和禁用边界。
+- 如果一次裁定不足以确定匹配，可继续ask_lawyer比较其他候选或追问细节。
+- 不把lawyer原文无筛选地倾倒给architect；必须总结成可执行的翻译结论。
+- 不得编造规则书不存在的正式名称、页码、数值或能力。
+</rules>`
+
+const (
+	toolTranslatorAskLawyer ToolCallType = "ask_lawyer"
+	toolTranslatorRespond   ToolCallType = "respond"
+)
+
+type misdirectionTranslatorToolCall struct {
+	Action   ToolCallType `json:"action"`
+	Think    string       `json:"think,omitempty"`
+	Question string       `json:"question,omitempty"`
+	Result   string       `json:"result,omitempty"`
+}
+
+const misdirectionTranslatorToolCallExample = `[{"action":"ask_lawyer","question":"COC7规则书中哪个神话生物或机制最接近死者被古老力量束缚继续行动？请给出正式名称、出处、核心机制和必须避免的未核验内容。"}]`
+
+func executeMisdirectionTranslateAnchor(ctx context.Context, room *scripterRoom, call misdirectionArchitectToolCall) string {
+	concept := strings.TrimSpace(call.Concept)
+	if concept == "" {
+		return `<translate_anchor_result error="concept字段为空，无法翻译"/>`
+	}
+	reason := strings.TrimSpace(call.Reason)
+	log.Printf("[scripter:translate_anchor] concept=%q reason=%q", truncateRunes(concept, 200), truncateRunes(reason, 200))
+	result, err := runMisdirectionTranslatorAgent(ctx, room, concept, reason)
+	if err != nil {
+		log.Printf("[scripter:translate_anchor] translator error concept=%q err=%v", truncateRunes(concept, 200), err)
+		return fmt.Sprintf(
+			`<translate_anchor_result concept=%q status="translator_error">%s</translate_anchor_result>`,
+			concept, err.Error())
+	}
+	result = strings.TrimSpace(result)
+	if result == "" {
+		return fmt.Sprintf(
+			`<translate_anchor_result concept=%q status="no_result">translator未返回可用结论；可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。</translate_anchor_result>`,
+			concept)
+	}
+	return fmt.Sprintf(`<translate_anchor_result concept=%q status="translated">%s</translate_anchor_result>`, concept, result)
+}
+
+func runMisdirectionTranslatorAgent(ctx context.Context, room *scripterRoom, concept string, reason string) (string, error) {
+	if room.architect.provider == nil {
+		return "", fmt.Errorf("translator provider unavailable")
+	}
+	requestJSON, _ := json.Marshal(struct {
+		Concept string `json:"concept"`
+		Reason  string `json:"reason,omitempty"`
+	}{
+		Concept: concept,
+		Reason:  reason,
+	})
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: room.architect.systemPrompt(misdirectionTranslatorSystemPrompt)},
+		{Role: "user", Content: fmt.Sprintf(`<translate_anchor_request>%s</translate_anchor_request>`, string(requestJSON))},
+	}
+
+	const maxRounds = 16
+	askedLawyer := false
+	for round := 1; round <= maxRounds; round++ {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		logStagePrompt(fmt.Sprintf("misdirection_translate_anchor_round_%d", round), msgs)
+		raw, err := room.architect.provider.Chat(ctx, msgs)
+		if err != nil {
+			return "", err
+		}
+		log.Printf("[scripter:translate_anchor_translator] round=%d raw_len=%d raw=%s", round, len(raw), truncateRunes(raw, scripterRawLogLimit))
+		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
+
+		calls, parseErr := parseMisdirectionTranslatorToolCalls(ctx, room.parser, raw)
+		if parseErr != nil {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
+			continue
+		}
+		if len(calls) == 0 {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
+			continue
+		}
+
+		invalid := false
+		var response string
+		var toolResults []string
+		for _, call := range calls {
+			switch call.Action {
+			case ToolThink:
+				// silent
+			case toolTranslatorAskLawyer:
+				askedLawyer = true
+				toolResults = append(toolResults, executeMisdirectionTranslatorAskLawyer(ctx, room, call))
+			case toolTranslatorRespond:
+				if !askedLawyer {
+					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond前必须至少调用一次ask_lawyer。"})
+					invalid = true
+				} else if strings.TrimSpace(call.Result) == "" {
+					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond的result字段不能为空。"})
+					invalid = true
+				} else {
+					response = call.Result
+				}
+			default:
+				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
+					"SYSTEM REJECT: translator只允许think/ask_lawyer/respond，不允许%s。", call.Action)})
+				invalid = true
+			}
+		}
+		if invalid {
+			continue
+		}
+		if len(toolResults) > 0 {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
+			continue
+		}
+		if response != "" {
+			return response, nil
+		}
+		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须调用ask_lawyer获取规则书裁定，或在已有裁定基础上调用respond返回结论。"})
+	}
+	return "", fmt.Errorf("translator未在%d轮内返回respond", maxRounds)
+}
+
+func parseMisdirectionTranslatorToolCalls(ctx context.Context, parser agentHandle, raw string) ([]misdirectionTranslatorToolCall, error) {
+	stripped := strings.TrimSpace(llm.StripCodeFence(llm.JsonArryProtect(raw)))
+	var calls []misdirectionTranslatorToolCall
+	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
+		return calls, nil
+	} else if parser.provider != nil {
+		fixed, repairErr := repairJSONWith(ctx, parser, stripped, err, misdirectionTranslatorToolCallExample)
+		if repairErr != nil {
+			return nil, repairErr
+		}
+		fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
+		if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
+			return nil, err2
+		}
+		return calls, nil
+	} else {
+		return nil, err
+	}
+}
+
+func executeMisdirectionTranslatorAskLawyer(ctx context.Context, room *scripterRoom, call misdirectionTranslatorToolCall) string {
+	question := strings.TrimSpace(call.Question)
+	if question == "" {
+		return `<ask_lawyer_result error="question字段为空，无法查询规则书"/>`
+	}
+	log.Printf("[scripter:translate_anchor_translator] ask_lawyer question=%q", truncateRunes(question, 300))
+	if room.lawyer.provider == nil {
+		return fmt.Sprintf(
+			`<ask_lawyer_result question=%q status="lawyer_unavailable">规则书专家不可用；不得声称已核验具体规则书元素。</ask_lawyer_result>`,
+			question)
+	}
+	results := runLawyer(ctx, room.lawyer, question, rulebook.GlobalIndex)
+	if len(results) == 0 {
+		return fmt.Sprintf(
+			`<ask_lawyer_result question=%q status="no_result">规则书专家未返回可用裁定；应换一个更具体的候选继续提问，或在最终结论中标记no_result/uncertain。</ask_lawyer_result>`,
+			question)
+	}
+	return fmt.Sprintf(`<ask_lawyer_result question=%q status="found">%s</ask_lawyer_result>`,
+		question, formatLawyerResults(results))
+}
 
 // ---------------------------------------------------------------------------
 // Session (Stage 2)
@@ -133,13 +457,12 @@ func newMisdirectionSession(room *scripterRoom, constraints ScripterConstraints,
 
 func (s *misdirectionSession) generate(ctx context.Context, attempt int) (MisdirectionFabric, error) {
 	logStagePrompt(fmt.Sprintf("misdirection_attempt_%d", attempt), s.architectMsgs)
-	var fabric MisdirectionFabric
-	if err := chatAndParseJSON(ctx, s.room.architect, s.room.parser, s.architectMsgs, &fabric, misdirectionExample, "misdirection"); err != nil {
+	fabric, msgs, err := runMisdirectionArchitectLoop(ctx, s.room, s.architectMsgs, "misdirection")
+	if err != nil {
 		return MisdirectionFabric{}, err
 	}
+	s.architectMsgs = msgs
 	fabric = normalizeMisdirectionFabric(fabric, s.irony, s.conservative)
-	fabricJSON, _ := json.Marshal(fabric)
-	s.architectMsgs = append(s.architectMsgs, llm.ChatMessage{Role: "assistant", Content: string(fabricJSON)})
 	log.Printf("[scripter:misdirection] attempt=%d anchor=%q factions=%d",
 		attempt, truncateRunes(fabric.MythosAnchor, 200), len(fabric.Factions))
 	return fabric, nil
@@ -167,7 +490,8 @@ func (s *misdirectionSession) feedRejection(attempt int, fabric MisdirectionFabr
 %s
 </must_fix>
 </qa_rejection>
-请基于同一个创作上下文重写MisdirectionFabric：逐条解决must_fix列出的问题；不要只改措辞；仍只输出合法JSON对象。`,
+请基于同一个创作上下文重新设计MisdirectionFabric：逐条解决must_fix列出的问题；不要只改措辞；可再次translate_anchor翻译神话元素，最终通过submit提交新版本。`,
+
 			attempt, string(fabricJSON), formatSandboxMustFix(qa)),
 	})
 }
@@ -216,13 +540,12 @@ func generateMisdirectionWithQA(ctx context.Context, room *scripterRoom, constra
 // Rulebook context helper (adapted from old buildStage2RuleContext)
 // ---------------------------------------------------------------------------
 
-func buildStage2RuleContextFromIrony(ctx context.Context, irony IronyCore) (string, bool) {
+// buildStage2RuleContextFromIrony returns a static constants reference for Stage 2.
+// Dynamic rule queries are handled by the search_anchor tool (isolated lawyer context)
+// so no lawyer call is made here — architect context stays clean.
+func buildStage2RuleContextFromIrony(_ context.Context, _ IronyCore) (string, bool) {
 	var sb strings.Builder
-	conservative := false
-
-	log.Printf("[scripter:rule_context] start delta=%q surface=%q",
-		irony.DeltaOperator, truncateRunes(irony.SurfaceReading, 200))
-	sb.WriteString("【规则书常量摘要，仅供Stage2锚定神话元素】\n")
+	sb.WriteString("【规则书常量摘要，仅供Stage2参考；具体元素详情通过search_anchor按需查询】\n")
 	for _, constant := range []string{"mythos_creatures", "monsters", "great_old_ones_and_gods", "books", "spells"} {
 		text := strings.TrimSpace(rulebook.ReadConstant(constant))
 		if text == "" {
@@ -230,32 +553,7 @@ func buildStage2RuleContextFromIrony(ctx context.Context, irony IronyCore) (stri
 		}
 		sb.WriteString(fmt.Sprintf("\n[%s]\n%s\n", constant, truncateRunes(text, 1200)))
 	}
-
-	question := fmt.Sprintf(
-		"为COC7沙盒剧本核验一个最小神话锚点。表层现象：%s。深层真相方向：%s。δ算子：%s。请只给可保守使用的实体/典籍/法术/物品方向和必须避免的未核验数值。",
-		irony.SurfaceReading, irony.DeepTruth, irony.DeltaOperator)
-
-	log.Printf("[scripter:rule_context] lawyer question=%s", truncateRunes(question, scripterPromptLogLimit))
-	lawyerHandle, err := loadSingleAgent(models.AgentRoleLawyer)
-	if err != nil {
-		conservative = true
-		log.Printf("[scripter:rule_context] lawyer unavailable: %v", err)
-		sb.WriteString(fmt.Sprintf("\n【lawyer_unavailable】%v\n必须在rules_notes标记不确定元素。\n", err))
-		return truncateRunes(sb.String(), 9000), conservative
-	}
-
-	results := runLawyer(ctx, lawyerHandle, question, rulebook.GlobalIndex)
-	if len(results) == 0 {
-		conservative = true
-		sb.WriteString("\n【lawyer_no_result】规则专家未返回有效裁定；必须在rules_notes标记不确定元素。\n")
-		return truncateRunes(sb.String(), 9000), conservative
-	}
-	log.Printf("[scripter:rule_context] lawyer results=%d", len(results))
-	sb.WriteString("\n【lawyer_result】\n")
-	sb.WriteString(formatLawyerResults(results))
-	sb.WriteString("\n")
-	log.Printf("[scripter:rule_context] done conservative=%v ctx_len=%d", conservative, len(sb.String()))
-	return truncateRunes(sb.String(), 9000), conservative
+	return truncateRunes(sb.String(), 9000), false
 }
 
 // ---------------------------------------------------------------------------

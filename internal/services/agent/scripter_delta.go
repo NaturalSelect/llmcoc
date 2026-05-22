@@ -74,8 +74,9 @@ var DeltaOperators = []DeltaOperator{
 // sufficient to include it in all generated prompts automatically.
 func formatDeltaOperatorTable() string {
 	var sb strings.Builder
-	sb.WriteString("【认知翻转类型参考（从中选择一个，也可自行定义）】\n")
-	sb.WriteString("delta_operator 字段填写其中一个 ID；如需自定义，选一个新 ID（英文下划线格式）并在 delta_operator_desc 说明其含义。\n")
+	sb.WriteString("【认知翻转类型参考表】\n")
+	sb.WriteString("每个故事的揭示结构依赖一种「认知翻转」——当真相揭晓时，读者对某件事的理解发生了什么根本性变化。\n")
+	sb.WriteString("delta_operator 字段填写下表中的 ID（或自定义一个新 ID，同时在 delta_operator_desc 写明其含义）。\n")
 	for _, op := range DeltaOperators {
 		sb.WriteString(fmt.Sprintf("- %s（%s）：%s", op.ID, op.Name, op.Description))
 		if len(op.Examples) > 0 {
@@ -153,7 +154,7 @@ type InvNode struct {
 	Name      string   `json:"name"`
 	Knowledge []string `json:"knowledge"` // facts learnable at this node
 	// DeltaSignal indicates which hypothesis this node supports.
-	// false_delta → [误导], true_delta → [隐藏], ambiguous → [真实]
+	// mislead → [误导], reveal → [隐藏], ambiguous → [真实]
 	DeltaSignal string   `json:"delta_signal"`
 	LeadsTo     []string `json:"leads_to"` // forward edges (reachable next nodes)
 	Requires    []string `json:"requires"` // prerequisite nodes; keep minimal
@@ -270,19 +271,19 @@ func verifyInvestigationGraph(graph InvestigationGraph) []string {
 	hasFalseDelta, hasTrueDelta := false, false
 	for _, node := range graph.Nodes {
 		switch node.DeltaSignal {
-		case "false_delta":
+		case "mislead":
 			hasFalseDelta = true
-		case "true_delta":
+		case "reveal":
 			hasTrueDelta = true
 		}
 	}
 	if !hasFalseDelta {
 		violations = append(violations,
-			"图中没有 delta_signal=false_delta 的节点：至少需要一个让玩家形成错误δ推断的调查节点")
+			"图中没有 delta_signal=mislead 的节点：至少需要一个让玩家形成错误推断的调查节点")
 	}
 	if !hasTrueDelta {
 		violations = append(violations,
-			"图中没有 delta_signal=true_delta 的节点：至少需要一个指向真实δ的发现节点")
+			"图中没有 delta_signal=reveal 的节点：至少需要一个指向真实关系的发现节点")
 	}
 
 	return violations
