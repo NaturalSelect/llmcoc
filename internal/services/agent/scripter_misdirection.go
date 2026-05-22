@@ -31,7 +31,7 @@ const misdirectionSystemPrompt = `<role>COC7剧本误导与神话背景设计师
 工作步骤：
 ① 用 translate_anchor 将 deep_truth 的核心概念翻译为具体的COC7规则书元素，确定 mythos_anchor；可多次翻译直到找到合适元素。
 ② 若误导设计中还涉及其他神话概念（如 false_lead 引用的神话实体），继续用 translate_anchor 翻译核验。
-③ 所有翻译完成后，用 submit 提交完整的 MisdirectionFabric。
+③ 所有翻译完成后，用 submit 提交完整的 MisdirectionFabric；reward_concept填写通关奖励的叙事概念（若有），实际机械数据由系统独立生成。
 </task>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
@@ -52,7 +52,8 @@ const misdirectionSystemPrompt = `<role>COC7剧本误导与神话背景设计师
   "mythos_anchor": "translate_anchor 翻译并确认可用的COC7神话元素全称（具体实体名/典籍名/机制名）；必须与翻译结果一致",
   "rules_notes": ["规则书出处说明，或对不确定元素的保守处理说明"],
   "factions": [{"name":"派系名","goal":"目标","current_state":"无人干预时正在做什么（具体行动，非等待状态）","timeline":[{"node":"第N节点","trigger":"世界自行推进到此节点的条件","intervention_pivot":"调查员在此节点可执行的具体干预动作"}],"npcs":[{"name":"NPC名","public_identity":"公开身份","agenda":"独立议程","secret":"秘密","attitude":"初始态度","stats_note":"属性注记"}]}],
-  "ending_signals": ["如果[条件]，则[谁的处境如何变化]，[什么不可挽回地改变]"]
+  "ending_signals": ["如果[条件]，则[谁的处境如何变化]，[什么不可挽回地改变]"],
+  "reward_concept": "通关奖励的叙事概念（如「食尸鬼语言研究手稿，能帮助理解神话存在」）；与mythos_anchor有叙事关联；若无合适神话物品则留空字符串"
 }</schema>
 <rules>
 - 必须先调用 translate_anchor 获得规则书反馈，再调用 submit；不得在未翻译的情况下直接submit。
@@ -63,11 +64,12 @@ const misdirectionSystemPrompt = `<role>COC7剧本误导与神话背景设计师
 - 派系必须有非空 current_state（无人干预时正在做什么），timeline 节点必须有具体 intervention_pivot。
 - 如果收到 qa_rejection，必须修复 false_lead 的后验兼容性或派系自主性问题；不要只改措辞；可再次search_anchor后重新submit。
 - mythos_anchor 必须来自规则书；若translate_anchor返回no_result，可改用其他概念描述重新翻译，或转向人类法师、诅咒物品、古老地点；仍无合适选项时才可创造新元素，但必须在rules_notes详细说明。
+- reward_concept描述本剧本通关奖励的类型与叙事意义；与mythos_anchor有机关联；只需描述物品概念（如「与食尸鬼有关的古籍」），机械数据（SAN代价/技能收益）由独立agent生成；若无合适神话物品可留空字符串。
 - 用户消息中注入的 stage2_rule_context 仅含规则书常量参考（生物/典籍/法术列表）；具体元素的详细裁定通过 translate_anchor 按需翻译——translate_anchor 结果中的"必须避免"和"不要"是强制性禁令，不得以任何理由绕过。
 </rules>`
 
 const misdirectionQASystemPrompt = `<role>COC7沙盒误导设计QA</role>
-<task>审核误导设计是否满足：false_lead后验兼容（在deep_truth下仍可解释）、misdirector_npc动机合理、派系自主行动、干预枢纽具体可执行。不审核规则书内容。</task>
+<task>审核误导设计是否满足：false_lead后验兼容（在deep_truth下仍可解释）、misdirector_npc动机合理、派系自主行动、干预枢纽具体可执行。不审核规则书准确性，不审核rewards机械数据。</task>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
@@ -77,17 +79,18 @@ const misdirectionQASystemPrompt = `<role>COC7沙盒误导设计QA</role>
   {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
 </tools>
 <audit_rules>
-审核四点，任意一点不满足则pass=false，reject_reasons必须逐条列出：
+审核五点，任意一点不满足则pass=false，reject_reasons必须逐条列出：
 1. false_lead后验兼容：false_lead在irony.deep_truth揭示后必须仍有合理解释。如果这条线索在真实情况下完全无法解释（只有在错误推断成立时才说得通），pass=false。
 2. misdirector_npc动机合理：misdirector_npc必须有内在动机支持错误推断（被动的存在或行为即可），而不是被写成"专门误导调查员的功能性NPC"。
 3. 派系自主性：每个派系必须有non-empty current_state，且timeline节点描述无人干预时的世界运动，而不是"等待调查员触发X"。
 4. 干预枢纽有效性：每个timeline节点的intervention_pivot必须描述一个具体的可执行动作，而不是"调查员可以干预"这种空话。
+5. reward_concept合理：若非空，必须描述与本剧本mythos_anchor有叙事联系的神话物品类型（tome或artifact）；不审核机械数据（由独立agent生成）。
 不审核：规则书准确性、神话元素细节、NPC属性数值。
 </audit_rules>`
 
-const misdirectionExample = `{"false_lead":"墓地管理员证实有人定期入侵并窃取书籍，物品清单精确，显示这是有目的的盗窃行为","misdirector_npc":"守墓人，出于对秩序的维护本能，将任何进入禁区者描述为入侵者和盗贼","true_trace":"被带走的书籍上均有一个褪色的书写者姓名花押，与失踪者Douglas Kimball姓名首字母完全吻合","reveal_trigger":"调查员发现Douglas的旧藏书记录，核对后确认图书馆现有馆藏与其遗产清单高度重合","retrospective_key":"Douglas对每本书的位置了如指掌，从未触碰其他书籍——入侵者对馆内布局的熟悉程度超越任何盗贼","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书第XX页；已核验为死者变形后的非人存在类型","rules_notes":["食尸鬼条目已核验，具体属性数值KP按规则书裁定"],"factions":[{"name":"旧知识的守护者","goal":"取回自己的书籍，维持与旧有身份的最后联结","current_state":"每夜进入图书馆取回一本书，行动越来越不谨慎","timeline":[{"node":"第0天：继续取书","trigger":"调查员进入调查","intervention_pivot":"直接与食尸鬼沟通——说出Douglas生前的名字或展示其遗物"},{"node":"第3天：被迫完全撤退","trigger":"调查员公开事件引来大批人员","intervention_pivot":"提前与其达成某种协议"}],"npcs":[{"name":"Douglas Kimball","public_identity":"已死亡的图书馆员（表面身份）","agenda":"取回自己的藏书，维持人性最后的碎片","secret":"已变为食尸鬼，但保留了对书籍的执念","attitude":"警惕、回避，若被识别则可能对话","stats_note":"食尸鬼属性按规则书；保留部分人类记忆"}]}],"ending_signals":["如果调查员让Douglas重获自己的藏书，则他彻底退隐墓地，书籍之谜以一种悲哀而非恐怖的方式收场"]}`
+const misdirectionExample = `{"false_lead":"墓地管理员证实有人定期入侵并窃取书籍，物品清单精确，显示这是有目的的盗窃行为","misdirector_npc":"守墓人，出于对秩序的维护本能，将任何进入禁区者描述为入侵者和盗贼","true_trace":"被带走的书籍上均有一个褪色的书写者姓名花押，与失踪者Douglas Kimball姓名首字母完全吻合","reveal_trigger":"调查员发现Douglas的旧藏书记录，核对后确认图书馆现有馆藏与其遗产清单高度重合","retrospective_key":"Douglas对每本书的位置了如指掌，从未触碰其他书籍——入侵者对馆内布局的熟悉程度超越任何盗贼","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书第XX页；已核验为死者变形后的非人存在类型","rules_notes":["食尸鬼条目已核验，具体属性数值KP按规则书裁定"],"factions":[{"name":"旧知识的守护者","goal":"取回自己的书籍，维持与旧有身份的最后联结","current_state":"每夜进入图书馆取回一本书，行动越来越不谨慎","timeline":[{"node":"第0天：继续取书","trigger":"调查员进入调查","intervention_pivot":"直接与食尸鬼沟通——说出Douglas生前的名字或展示其遗物"},{"node":"第3天：被迫完全撤退","trigger":"调查员公开事件引来大批人员","intervention_pivot":"提前与其达成某种协议"}],"npcs":[{"name":"Douglas Kimball","public_identity":"已死亡的图书馆员（表面身份）","agenda":"取回自己的藏书，维持人性最后的碎片","secret":"已变为食尸鬼，但保留了对书籍的执念","attitude":"警惕、回避，若被识别则可能对话","stats_note":"食尸鬼属性按规则书；保留部分人类记忆"}]}],"ending_signals":["如果调查员让Douglas重获自己的藏书，则他彻底退隐墓地，书籍之谜以一种悲哀而非恐怖的方式收场"],"reward_concept":"Douglas生前的食尸鬼语言研究手稿，能帮助理解食尸鬼的思维与神话本质"}`
 
-const misdirectionQAToolCallExample = `[{"action":"response","pass":true,"reason":"false_lead在deep_truth框架下有合理解释（守墓人的描述并不虚假），misdirector_npc有内在动机，派系有自主current_state，干预枢纽具体可执行。","reject_reasons":[],"suggested_fix":""}]`
+const misdirectionQAToolCallExample = `[{"action":"response","pass":true,"reason":"false_lead在deep_truth框架下有合理解释（守墓人的描述并不虚假），misdirector_npc有内在动机，派系有自主current_state，干预枢纽具体可执行，reward_concept与mythos_anchor有叙事关联。","reject_reasons":[],"suggested_fix":""}]`
 
 // ---------------------------------------------------------------------------
 // Stage 2 architect tool-call loop
@@ -108,7 +111,7 @@ type misdirectionArchitectToolCall struct {
 }
 
 // misdirectionArchitectToolCallExample is used by the parser for JSON repair.
-const misdirectionArchitectToolCallExample = `[{"action":"think","think":"translate_anchor已确认食尸鬼可用，开始设计误导网络"},{"action":"submit","fabric":{"false_lead":"墓地管理员证实有人定期入侵并窃取书籍","misdirector_npc":"守墓人将任何进入禁区者描述为入侵者","true_trace":"被带走的书籍上均有褪色的书写者姓名花押","reveal_trigger":"调查员发现旧藏书记录与遗产清单高度重合","retrospective_key":"入侵者从未触碰无关书籍","mythos_anchor":"食尸鬼（Ghoul）","rules_notes":["食尸鬼条目已核验"],"factions":[{"name":"旧知识的守护者","goal":"取回自己的书籍","current_state":"每夜进入图书馆取回一本书","timeline":[{"node":"第0天","trigger":"调查员进入调查","intervention_pivot":"说出Douglas生前的名字或展示其遗物"}],"npcs":[{"name":"Douglas Kimball","public_identity":"已死亡的图书馆员","agenda":"取回藏书","secret":"已变为食尸鬼","attitude":"警惕、回避","stats_note":"食尸鬼属性按规则书"}]}],"ending_signals":["如果调查员让Douglas重获藏书，则他彻底退隐墓地"]}}]`
+const misdirectionArchitectToolCallExample = `[{"action":"think","think":"translate_anchor已确认食尸鬼可用，开始设计误导网络"},{"action":"submit","fabric":{"false_lead":"墓地管理员证实有人定期入侵并窃取书籍","misdirector_npc":"守墓人将任何进入禁区者描述为入侵者","true_trace":"被带走的书籍上均有褪色的书写者姓名花押","reveal_trigger":"调查员发现旧藏书记录与遗产清单高度重合","retrospective_key":"入侵者从未触碰无关书籍","mythos_anchor":"食尸鬼（Ghoul）","rules_notes":["食尸鬼条目已核验"],"factions":[{"name":"旧知识的守护者","goal":"取回自己的书籍","current_state":"每夜进入图书馆取回一本书","timeline":[{"node":"第0天","trigger":"调查员进入调查","intervention_pivot":"说出Douglas生前的名字或展示其遗物"}],"npcs":[{"name":"Douglas Kimball","public_identity":"已死亡的图书馆员","agenda":"取回藏书","secret":"已变为食尸鬼","attitude":"警惕、回避","stats_note":"食尸鬼属性按规则书"}]}],"ending_signals":["如果调查员让Douglas重获藏书，则他彻底退隐墓地"],"reward_concept":"Douglas的食尸鬼语言研究手稿，能帮助调查员理解食尸鬼本质"}}]`
 
 // runMisdirectionArchitectLoop runs the Stage 2 architect in a tool-call loop.
 //

@@ -161,6 +161,7 @@ type MisdirectionFabric struct {
 	RulesNotes    []string      `json:"rules_notes"`
 	Factions      []FactionPlan `json:"factions"`
 	EndingSignals []string      `json:"ending_signals"`
+	RewardConcept string        `json:"reward_concept,omitempty"` // 通关奖励叙事概念，由reward agent生成完整机械数据
 }
 
 // ---------------------------------------------------------------------------

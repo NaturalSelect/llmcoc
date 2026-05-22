@@ -104,19 +104,30 @@ type CharacterCard struct {
 	User          User      `gorm:"foreignKey:UserID" json:"-"`
 }
 
+// NOTE: ScenarioReward describes a findable mythos item or tome pre-placed in the scenario.
+// Designed at Stage 2 (MisdirectionFabric) where the mythos anchor is known.
+type ScenarioReward struct {
+	Name          string `json:"name"`           // COC7正式名称或场景专属名称
+	Type          string `json:"type"`           // "tome" | "artifact"
+	Description   string `json:"description"`    // 外观特征及与场景叙事的关联
+	MechanicsNote string `json:"mechanics_note"` // 规则效果（tome：SAN代价+学习收益；artifact：激活条件+代价）
+	FindCondition string `json:"find_condition"` // 获取条件（技能检定名称+难度，或触发特定事件）
+}
+
 // NOTE: ScenarioContent defines the narrative and structural elements of a playable scenario.
 type ScenarioContent struct {
-	SystemPrompt   string      `json:"system_prompt"`
-	Setting        string      `json:"setting"`
-	Intro          string      `json:"intro"`
-	GameStartSlot  int         `json:"game_start_slot,omitempty"` // 开局时间槽位(0-47),每槽30分钟
-	MapDescription string      `json:"map_description,omitempty"` // 文字描述的场景地图,供KP感知空间关系
-	Scenes         []SceneData `json:"scenes"`
-	NPCs           []NPCData   `json:"npcs"`
-	Clues          []string    `json:"clues"`
-	WinCondition   string      `json:"win_condition"`
-	LoseCondition  string      `json:"lose_condition,omitempty"` // 失败条件
-	PartialWins    []string    `json:"partial_wins,omitempty"`   // 部分胜利情景列表
+	SystemPrompt   string          `json:"system_prompt"`
+	Setting        string          `json:"setting"`
+	Intro          string          `json:"intro"`
+	GameStartSlot  int             `json:"game_start_slot,omitempty"` // 开局时间槽位(0-47),每槽30分钟
+	MapDescription string          `json:"map_description,omitempty"` // 文字描述的场景地图,供KP感知空间关系
+	Scenes         []SceneData     `json:"scenes"`
+	NPCs           []NPCData       `json:"npcs"`
+	Clues          []string        `json:"clues"`
+	WinCondition   string          `json:"win_condition"`
+	LoseCondition  string          `json:"lose_condition,omitempty"` // 失败条件
+	PartialWins    []string        `json:"partial_wins,omitempty"`   // 部分胜利情景列表
+	Reward         *ScenarioReward `json:"reward,omitempty"`         // 通关奖励（典籍/神话物品），完成win_condition时给予
 }
 
 // NOTE: SceneData describes a specific location or event in a scenario.

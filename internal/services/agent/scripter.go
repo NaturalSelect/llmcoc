@@ -179,6 +179,20 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	log.Printf("[scripter] stage=misdirection done false_lead=%q mythos_anchor=%q factions=%d", truncateRunes(misdirection.FalseLead, 200), truncateRunes(misdirection.MythosAnchor, 200), len(misdirection.Factions))
 	logScripterArtifact("Stage 2 MisdirectionFabric", misdirection)
 
+	// Stage 2.5: reward agent — isolated context, queries rulebook for accurate mechanics.
+	var scenarioReward *models.ScenarioReward
+	if strings.TrimSpace(misdirection.RewardConcept) != "" {
+		log.Printf("[scripter] stage=reward_agent start concept=%q anchor=%q", truncateRunes(misdirection.RewardConcept, 200), truncateRunes(misdirection.MythosAnchor, 200))
+		rwd, rewardErr := runRewardAgent(ctx, r, misdirection.RewardConcept, misdirection.MythosAnchor)
+		if rewardErr != nil {
+			log.Printf("[scripter] stage=reward_agent error=%v (continuing without reward)", rewardErr)
+		} else if rwd != nil {
+			scenarioReward = rwd
+			log.Printf("[scripter] stage=reward_agent done name=%q type=%q", rwd.Name, rwd.Type)
+		}
+		logScripterArtifact("Stage 2.5 RewardAgent", scenarioReward)
+	}
+
 	log.Printf("[scripter] stage=investigation_graph start")
 	graph, err := generateInvestigationGraphWithVerification(ctx, r, constraints, irony, misdirection)
 	if err != nil {
@@ -216,6 +230,10 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	beforeNormalizeIssues := validateDraftCompatibility(draft)
 	log.Printf("[scripter] normalization start pre_issues=%d", len(beforeNormalizeIssues))
 	normalizeDraftBeforeReturn(&draft, r.req, constraints, irony, misdirection, graph)
+	// Inject completion reward (generated independently of assembly stage).
+	if scenarioReward != nil {
+		draft.Content.Reward = scenarioReward
+	}
 	log.Printf("[scripter] normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d partial_wins=%d", draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Content.GameStartSlot, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), len(draft.Content.PartialWins))
 	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
 		log.Printf("[scripter] draft compatibility issues after normalization: %v", issues)

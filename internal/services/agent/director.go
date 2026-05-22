@@ -484,6 +484,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			scenarioSB.WriteString(fmt.Sprintf("  • %s: %s %s\n", scene.Name, scene.Description, s))
 		}
 	}
+	if content.Reward != nil {
+		r := content.Reward
+		scenarioSB.WriteString(fmt.Sprintf("【通关奖励】调查员完成通关条件（win_condition满足）时，通过manage_inventory(add)给予：[%s] %s — 效果：%s\n",
+			r.Type, r.Name, r.MechanicsNote))
+	}
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: scenarioSB.String(),
