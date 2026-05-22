@@ -71,7 +71,7 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 
 2. grep — 在规则书 COC_kp.md 中精确搜索关键词,返回匹配行及其上下文原文
 	[{"action":"grep","keyword":"精确关键词(不支持正则表达式)"}]
-	- 普通规则、典籍、系统机制优先使用此工具
+	- 普通规则、典籍、系统机制优先使用此工具、但内容可能在别的文件中出现
 	- 关键词须与原文一致
 	- 搜索结果仅用于本轮分析，不会被缓存
 
@@ -82,7 +82,7 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 
 4. grep_spell — 在法术图鉴 COC_spell.md 中精确搜索关键词
 	[{"action":"grep_spell","keyword":"法术名或精确关键词"}]
-	- 具体法术词条、法术细节、法术MP/SAN消耗优先使用此工具
+	- 具体法术词条、法术细节、法术MP/SAN消耗优先使用此工具、但内容可能在别的文件中出现
 	- 搜索结果仅用于本轮分析
 
 5. read_spell_lines — 直接读取法术图鉴 COC_spell.md 的特定行号范围
@@ -92,7 +92,7 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 
 6. grep_monster — 在怪物图鉴 COC_monster.md 中精确搜索关键词
 	[{"action":"grep_monster","keyword":"怪物/神格/生物名或精确关键词"}]
-	- 具体怪物、神格、生物属性优先使用此工具
+	- 具体怪物、神格、生物属性优先使用此工具、但内容可能在别的文件中出现
 	- 搜索结果仅用于本轮分析
 
 7. read_monster_lines — 直接读取怪物图鉴 COC_monster.md 的特定行号范围
