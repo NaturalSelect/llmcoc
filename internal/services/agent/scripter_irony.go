@@ -23,18 +23,17 @@ import (
 // current without requiring prompt template edits.
 func ironyCoreSystemPrompt() string {
 	return `<role>短篇悬疑故事架构师</role>
-<task>为一个短篇神秘故事设计核心的「揭示结构」：表层叙事与深层真相之间的转化算子（δ算子）。
-你在设计一个文学谜题，不是游戏模组。忘记一切游戏规则和系统；用写短篇小说或电影剧本的逻辑工作。</task>
+<task>为一个短篇神秘故事设计核心揭示结构：表层叙事（外人最初形成的自然推断）与深层真相（揭示后的真实关系）之间通过何种认知翻转连接。你在设计一个文学谜题，不是游戏模组。忘记一切游戏规则和系统；用写短篇小说或电影剧本的逻辑工作。</task>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 ` + formatDeltaOperatorTable() + `
 <tools>
 - think：内部推理（可选，无副作用）
   {"action":"think","think":"推理内容"}
-- generate：输出IronyCore。必须在至少一个think之后调用。
-  {"action":"generate","delta_operator":"算子ID","surface_reading":"表层自然解读","deep_truth":"揭示后的真实关系","entities":["实体1","实体2"],"false_delta":"经验读者会首先推断的另一个算子ID","shared_evidence":"在算子类型层面也保持歧义的证据","emotional_weight":"揭示时某个具体关系/身份/信念被重新定义的感受"}
-如需提出新算子，额外填写 delta_operator_desc：
-  {"action":"generate","delta_operator":"my_new_id","delta_operator_desc":"该算子变换的语义维度（中文）",...}
+- generate：输出揭示结构。必须在至少一个think之后调用。
+  {"action":"generate","delta_operator":"翻转类型ID","surface_reading":"表层自然解读","deep_truth":"揭示后的真实关系","entities":["实体1","实体2"],"false_delta":"经验读者会优先错误推断的翻转类型ID","shared_evidence":"在不知道真相时两种解读都能解释的歧义证据","emotional_weight":"揭示时某段具体关系/身份/信念被重新定义的感受"}
+如需自定义新翻转类型，额外填写 delta_operator_desc：
+  {"action":"generate","delta_operator":"my_new_id","delta_operator_desc":"该翻转改变的认知维度（中文）",...}
 </tools>
 <batch_rules>
 - 第一轮必须输出至少一个think；禁止第一轮直接generate。
@@ -42,12 +41,12 @@ func ironyCoreSystemPrompt() string {
 </batch_rules>
 <rules>
 - surface_reading：给定情境下普通观察者会立刻产生的推断，不要是"不确定"或"存在谜团"。
-- delta_operator：必须将surface_reading精确映射到deep_truth，且映射是非任意的（换一个算子就不对）。
-- false_delta：必须与delta_operator在「变换的语义维度」上不同——不是同一算子的简化版，而是操作于不同的谓词语义角色；经验读者会首先形成这个推断，而不是delta_operator的推断。
-- shared_evidence：这条证据在不知道真相的情况下，既可以被delta_operator的框架解读，也可以被false_delta的框架解读，且无法从证据类型本身判断哪个算子适用。
+- delta_operator：必须唯一且精确地描述从surface_reading到deep_truth的认知翻转——换其他翻转类型就无法解释这个变换。
+- false_delta：必须与delta_operator作用于不同的语义维度（不是同类翻转的简化版）；经验读者会优先形成这个推断，而非delta_operator的推断。
+- shared_evidence：在不知道真相时，这条证据既能支持delta_operator的解读，也能支持false_delta的解读；无法从证据类型本身区分。
 - emotional_weight：揭示时具体发生了什么——某段关系的真实性质、某个身份的自我认知、还是某种信念的道德基础被重新定义？不接受"震惊"、"感动"等通用描述。
 - 禁止从游戏、规则书或桌游机制的角度思考。
-- 如果收到qa_rejection，必须重新思考算子结构，不要只改措辞。
+- 如果收到qa_rejection，必须重新设计翻转结构，不要只改措辞。
 </rules>`
 }
 
@@ -64,17 +63,17 @@ const ironyCoreQASystemPrompt = `<role>悬疑故事揭示结构审核员</role>
 <audit_rules>
 审核六点，任意一点不满足则pass=false，reject_reasons必须逐条列出：
 1. surface_reading自然性：在给定entities和情境下，surface_reading是否是普通观察者的自然第一推断？如果需要已知部分真相才能产生这个推断，pass=false。
-2. 算子精确性：delta_operator能否将surface_reading精确且非任意地映射到deep_truth？如果换一个算子也能产生相同映射，pass=false。
-3. false_delta维度差异：false_delta与delta_operator是否在「变换的语义维度」上不同（不只是细节差异，而是操作于不同的谓词语义角色）？如果false_delta只是delta_operator的浅化版本，pass=false。
-4. shared_evidence算子层面歧义：shared_evidence能否在不知道真相的情况下同时被delta_operator和false_delta两种框架合理解读，且无法从证据类型本身判断哪个算子适用？如果只有一种算子能解释该证据，pass=false。
-5. 后验必然性：surface_reading（表层证据/状态）在deep_truth框架下必须有合理解释——揭示后回头看，所有表层观察仍然说得通，没有哪条线索在delta_true下变得完全无法解释。若有无法兼容的证据，pass=false。
+2. 翻转精确性：delta_operator能否唯一且非任意地解释从surface_reading到deep_truth的认知翻转？如果换其他翻转类型也能产生相同的映射，pass=false。
+3. false_delta维度差异：false_delta与delta_operator是否作用于不同的语义维度（不是同类翻转的轻重或细节版本）？如果false_delta与delta_operator实质上描述同一种认知翻转，pass=false。
+4. shared_evidence歧义性：shared_evidence在不知道真相时，能否同时被delta_operator和false_delta两种解读框架支持？如果该证据只有一种解读能解释，pass=false。
+5. 后验必然性：揭示irony.deep_truth后回头看，surface_reading中的全部表层观察仍然说得通；没有哪条表层线索在deep_truth框架下完全无法解释。若有无法兼容的线索，pass=false。
 6. emotional_weight具体性：揭示时是否有某个具体关系/身份/信念被重新定义？如果emotional_weight只是"震惊"、"感动"等通用描述，pass=false。
 不审核：内容是否有趣、是否是常见谜题类型、风格倾向。
 </audit_rules>`
 
 const ironyCoreToolCallExample = `[{"action":"think","think":"我需要选择一个能将surface_reading精确映射到deep_truth的算子..."},{"action":"generate","delta_operator":"role_swap","surface_reading":"老人每晚去图书馆偷走特定书籍","deep_truth":"书是他自己的，他在取回被窃之物","entities":["老人","图书馆员","书籍收藏"],"false_delta":"identity_collapse","shared_evidence":"老人对书籍的熟悉程度异乎寻常，每次都精准定位，从不乱翻","emotional_weight":"「盗贼」与「失主」的身份在道德上互换，追书之人才是真正的受害者"}]`
 
-const ironyCoreQAToolCallExample = `[{"action":"response","pass":true,"reason":"surface_reading自然，算子映射精确，false_delta在语义维度上不同，shared_evidence算子层面歧义，后验必然性成立，emotional_weight具体。","reject_reasons":[],"suggested_fix":""}]`
+const ironyCoreQAToolCallExample = `[{"action":"response","pass":true,"reason":"surface_reading自然，翻转类型映射精确，false_delta作用于不同语义维度，shared_evidence在两种解读下均成立，后验必然性成立，emotional_weight具体。","reject_reasons":[],"suggested_fix":""}]`
 
 // ---------------------------------------------------------------------------
 // Tool-call types (Stage 1)

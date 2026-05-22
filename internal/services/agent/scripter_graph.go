@@ -19,8 +19,8 @@ import (
 // Prompts (Stage 3)
 // ---------------------------------------------------------------------------
 
-const invGraphSystemPrompt = `<role>COC7沙盒调查图设计师</role>
-<task>根据IronyCore和MisdirectionFabric，生成形式化的InvestigationGraph——一个带节点ID、知识标签、δ信号和边集合的有向图JSON。
+const invGraphSystemPrompt = `<role>COC7沙盒调查路径图设计师</role>
+<task>根据揭示结构（irony_core）和误导设计（misdirection_fabric），生成形式化的调查路径图——一个带节点ID、知识标签、线索倾向标签（delta_signal）和边集合的有向图JSON。
 图必须满足：
 - 从hook_node出发通过leads_to边可到达所有resolution_nodes
 - 非终止节点不能有空leads_to（否则玩家会卡住）
@@ -48,7 +48,7 @@ const invGraphSystemPrompt = `<role>COC7沙盒调查图设计师</role>
 }</schema>
 <node_design_rules>
 - hook类型节点：场景入口，delta_signal=ambiguous，leads_to指向2-3个初始调查节点
-- investigation类型节点：普通调查点，knowledge列出可获取事实，delta_signal反映该节点支持哪种δ推断
+- investigation类型节点：普通调查点，knowledge列出可获取事实，delta_signal反映该节点支持哪种推断方向
 - encounter类型节点：与NPC/实体的关键遭遇，通常是true_delta或ambiguous
 - resolution类型节点：scenario终止状态，leads_to为空，knowledge描述最终确认的事实
 - delta_signal=false_delta的节点：该节点强化false_delta推断（调查员深陷误导）
@@ -69,18 +69,21 @@ const invGraphSystemPrompt = `<role>COC7沙盒调查图设计师</role>
 - 如果收到repair_request，逐条修复列出的问题，不要只改节点名称
 </rules>`
 
-const invGraphQASystemPrompt = `<role>调查图结构QA</role>
-<task>审核InvestigationGraph是否满足结构完备性：可达性、无死端、信息覆盖、δ平衡。</task>
+const invGraphQASystemPrompt = `<role>调查路径图结构QA</role>
+<task>审核调查路径图是否满足结构完备性：可达性、无死端、信息覆盖、线索倾向平衡（false_delta与true_delta节点均存在）。</task>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
-- response：{"action":"response","pass":true,"reason":"...","reject_reasons":[],"suggested_fix":"..."}
+- think：内部推理（可选，无副作用）
+  {"action":"think","think":"推理内容"}
+- response：最终审核结论。
+  {"action":"response","pass":true,"reason":"...","reject_reasons":[],"suggested_fix":"..."}
 </tools>
 <audit_rules>
 1. 可达性：从hook_node通过leads_to能到达所有resolution_nodes。
 2. 无死端：非终止节点均有非空leads_to。
 3. 信息覆盖：每条到终止节点的路径积累required_knowledge中的全部知识点。
-4. δ平衡：至少一个false_delta节点和一个true_delta节点。
+4. 线索倾向平衡：至少一个 delta_signal=false_delta 的节点（强化错误推断）和一个 delta_signal=true_delta 的节点（指向真实揭示）。
 5. 节点ID一致性：leads_to和resolution_nodes中引用的ID全部存在于nodes列表中。
 </audit_rules>`
 

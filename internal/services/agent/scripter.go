@@ -680,37 +680,46 @@ func containsUncertaintyNote(notes []string) bool {
 
 const scenarioExample = `{"name":"示例沙盒模组名","description":"一份围绕异常事实、派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是本场COC跑团的KP，职责是管理一个会自行推进的局势而不是执行线性故事。按派系时间线推进后果；按可见性分层给信息；不要主动把调查员引向正确答案。","setting":"玩家抵达时能看见的当前局势。只写公开事实、紧张关系和可感知异常，不剧透幕后真相。","intro":"你们以某种身份进入局势，眼前有三件可立即行动的事：询问某人、检查某地、决定是否公开某条信息。","game_start_slot":16,"map_description":"【文字地图】起点A连接地点B和地点C；地点B有公开冲突，地点C有可深入调查的物件；各地点可往返，没有固定访问顺序。","scenes":[{"id":"location_1","name":"地点名","description":"可见：到达即可看到的信息。可发现：主动调查可获得的信息。杠杆：调查员若做X，派系Y的时间线会改变。风险：拖延或失败的后果。出口：可前往的其他地点。","triggers":["available_from_start"]}],"npcs":[{"name":"NPC姓名","description":"公开身份；所属派系；真实议程；秘密；可被说服或施压的杠杆；可能知道但不会主动说出的事实。","attitude":"初始态度和压力下的反应","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"HP":10,"MP":10}}],"clues":["[真实]登记簿矛盾(旧办公室): 自包含事实；获取方式；能改变哪个判断。","[隐藏]神话本质(封存物件): 神话核心真相（实体性质/典籍目的/仪式代价）；获取方式（需要什么技能或条件）；发现后要承担的代价（理智/后果）。","[误导]地方传闻(酒馆): 为什么它表面合理但只能解释一部分。"],"win_condition":"如果调查员让某个结束信号以较低代价固化，则对应派系失去关键优势，但另一个代价留存。","lose_condition":"如果关键时间线终点到达且无人干预，则局势进入新的稳定态，某人或某地不可挽回地改变。","partial_wins":["如果只救出某人但没有公开事实，则个人获救，派系结构保留。"]}}`
 
-const assemblySystemPrompt = `<role>COC7沙盒ScenarioDraft编译器</role>
-<task>将δ-框架三阶段产物（IronyCore、MisdirectionFabric、InvestigationGraph）编译为兼容models.ScenarioContent的ScenarioDraft。不要查询规则书，不要更换mythos_anchor。</task>
+const assemblySystemPrompt = `<role>COC7沙盒剧本编译器</role>
+<task>将三阶段设计产物（揭示结构、误导设计、调查路径图）编译为完整的COC7沙盒剧本JSON（ScenarioDraft）。不要查询规则书，不要更换已确认的神话元素（mythos_anchor）。</task>
+<response_format>json_object</response_format>
 <output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
 <director_contract>
-- content.setting写玩家当前能看见的局势（表面阅读：irony.surface_reading），不是幕后δ真相。
+- content.setting写玩家当前能看见的局势（irony.surface_reading的视角），不是幕后真实揭示（irony.deep_truth）。
 - content.intro写入场位置和立即可做的行动，基于graph.hook_node附近地点。
 - content.map_description基于graph.nodes中的地点节点写可导航关系。
 - content.scenes是地点/局势状态摘要，对应InvNode；description必须包含可见信息、可发现信息、杠杆、风险、出口。
 - content.npcs来自misdirection.factions中的NPC；misdirection.misdirector_npc必须包含在内。
 - content.clues是自包含事实字符串，必须以[真实]/[隐藏]/[误导]开头；delta_signal=false_delta→[误导]；delta_signal=true_delta→[隐藏]；delta_signal=ambiguous→[真实]。
-- content.clues中必须包含至少一条以'[隐藏]神话本质'开头的线索（来自misdirection.mythos_anchor）。
-- content.clues中至少一条[误导]线索在事后与irony.delta_operator_desc所描述的认知反转方向兼容。
+- content.clues中必须包含至少一条以'[隐藏]神话本质'开头的线索，涵盖misdirection.mythos_anchor所描述的神话元素。
+- content.clues中至少一条[误导]线索在irony.deep_truth揭示后事后仍能合理解释（不能是在真相下完全矛盾的线索）。
 - win_condition/lose_condition/partial_wins使用misdirection.ending_signals。
-- system_prompt给KP时间推进、信息可见性分层和不主动引导三项协议；同时注入irony.deep_truth为KP独有内部真相。
-- 如果收到qa_rejection，必须修复标注问题；不要只改措辞；不要更换mythos_anchor。
+- system_prompt给KP时间推进、信息可见性分层和不主动引导三项协议；同时注入irony.deep_truth作为KP独有内部真相。
+- 如果收到qa_rejection，必须修复标注问题；不要只改措辞；不要更换已确认的神话元素（mythos_anchor）。
 </director_contract>`
 
 const assemblyQASystemPrompt = `<role>COC7沙盒剧本编译QA</role>
-<task>审核ScenarioDraft是否符合δ-框架沙盒设计原则，不审核规则书内容。</task>
+<task>审核ScenarioDraft是否符合沙盒设计原则，不审核规则书内容。</task>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
-<audit_points>
-1. setting写的是表面阅读（irony.surface_reading），未泄露δ真相或misdirection.true_trace。
-2. intro包含至少三个立即可执行的行动，基于graph.hook_node附近地点。
-3. 每个scene有可见信息、可发现信息、杠杆、风险、出口五项。
-4. clues：至少一条[隐藏]神话本质、至少一条[误导]线索与δ_true事后兼容、每条线索以[真实]/[隐藏]/[误导]开头。
-5. system_prompt包含时间推进、信息可见性分层、不主动引导三项协议，并注入了irony.deep_truth。
-6. win_condition/lose_condition使用结束信号写法，不是二元奖励。
-</audit_points>`
+<tools>
+- think：内部推理（可选，无副作用）
+  {"action":"think","think":"推理内容"}
+- response：最终审核结论。
+  {"action":"response","pass":true,"reason":"审核理由","reject_reasons":[],"suggested_fix":"给architect的具体修改方向"}
+</tools>
+<audit_rules>
+审核六点，任意一点不满足则pass=false，reject_reasons必须逐条列出：
+1. setting只描述当前可见局势（irony.surface_reading视角），未提前泄露irony.deep_truth或misdirection.true_trace。
+2. intro包含至少三个基于hook_node附近地点、立即可执行的具体行动。
+3. 每个scene描述必须包含：可见信息、主动调查可发现的信息、杠杆（调查员的选择如何影响派系时间线）、风险、出口。
+4. clues：每条以[真实]/[隐藏]/[误导]开头；至少一条[隐藏]线索涵盖misdirection.mythos_anchor；至少一条[误导]线索在irony.deep_truth揭示后事后仍能合理解释。
+5. content.system_prompt包含三项KP协议（时间推进、信息可见性分层、不主动引导），并注入了irony.deep_truth作为KP内部真相。
+6. win_condition/lose_condition使用条件句结构（"如果[条件]，则[处境变化]，[什么不可挽回地改变]"），不是"成功/失败"二元裁定。
+不审核：规则书准确性、神话元素细节。
+</audit_rules>`
 
-const assemblyQAToolCallExample = `[{"action":"response","pass":true,"reason":"setting只含表面阅读层，intro提供了3个具体行动，每个scene有五项结构，clues包含[隐藏]神话本质和兼容δ_true的[误导]线索，system_prompt含三项KP协议及deep_truth注入。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
+const assemblyQAToolCallExample = `[{"action":"response","pass":true,"reason":"setting只含表面阅读层，intro提供了3个具体行动，每个scene有五项结构，clues包含[隐藏]神话本质和在deep_truth下仍可解释的[误导]线索，system_prompt含三项KP协议及deep_truth注入。","reject_reasons":[],"suggested_fix":"无需修改。"}]`
 
 func assembleSandboxDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, irony IronyCore, misdirection MisdirectionFabric, graph InvestigationGraph, previous *ScenarioDraft, mustFix []string) (ScenarioDraft, error) {
 	reqJSON, _ := json.Marshal(room.req)
@@ -769,7 +778,7 @@ func newAssemblySession(room *scripterRoom, constraints ScripterConstraints, iro
 		scenarioExample, lengthSpec(room.req.TargetLength), difficultySpec(room.req.Difficulty),
 		formatNPCNameBlacklist(room.npcBlacklist), formatScenarioTitleBlacklist(room.titleSamples))
 	qaPrompt := fmt.Sprintf(
-		"【Stage1 IronyCore】%s\n\n【Stage2 MisdirectionFabric】%s\n\n【Stage3 InvestigationGraph】%s\n\n你是持续运行的Assembly QA会话。每次收到<draft_candidate>后，通过audit_points逐条审核。",
+		"【Stage1 IronyCore】%s\n\n【Stage2 MisdirectionFabric】%s\n\n【Stage3 InvestigationGraph】%s\n\n你是持续运行的剧本编译QA会话。每次收到<draft_candidate>后，通过think/response工具调用审核它。",
 		string(ironyJSON), string(misdirectionJSON), string(graphJSON))
 	return &assemblySession{
 		room: room,
@@ -798,7 +807,7 @@ func (s *assemblySession) generate(ctx context.Context, attempt int) (ScenarioDr
 
 func (s *assemblySession) review(ctx context.Context, attempt int, draft ScenarioDraft) (SandboxQA, error) {
 	draftJSON, _ := json.Marshal(draft)
-	s.qaMsgs = append(s.qaMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<draft_candidate attempt="%d">%s</draft_candidate>请按audit_points逐条审核这个候选。`, attempt, string(draftJSON))})
+	s.qaMsgs = append(s.qaMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`<draft_candidate attempt="%d">%s</draft_candidate>请用think/response工具调用审核这个候选。`, attempt, string(draftJSON))})
 	logStagePrompt(fmt.Sprintf("assembly_qa_attempt_%d", attempt), s.qaMsgs)
 	qa, msgs, err := runSandboxQALoop(ctx, s.room, s.qaMsgs, assemblyQAToolCallExample, "assembly")
 	s.qaMsgs = msgs
@@ -813,7 +822,7 @@ func (s *assemblySession) feedRejection(attempt int, draft ScenarioDraft, qa San
 %s
 </must_fix>
 </qa_rejection>
-请基于同一个δ-框架上下文重写ScenarioDraft：逐条解决must_fix列出的问题；不要只改措辞；不要更换mythos_anchor；仍只输出合法JSON对象。`, attempt, string(draftJSON), formatSandboxMustFix(qa))})
+请基于同一创作上下文重写ScenarioDraft：逐条解决must_fix列出的问题；不要只改措辞；不要更换已确认的神话元素（mythos_anchor）；仍只输出合法JSON对象。`, attempt, string(draftJSON), formatSandboxMustFix(qa))})
 }
 
 func assembleSandboxDraftWithQA(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, irony IronyCore, misdirection MisdirectionFabric, graph InvestigationGraph) (ScenarioDraft, error) {

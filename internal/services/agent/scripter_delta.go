@@ -74,7 +74,8 @@ var DeltaOperators = []DeltaOperator{
 // sufficient to include it in all generated prompts automatically.
 func formatDeltaOperatorTable() string {
 	var sb strings.Builder
-	sb.WriteString("【已知δ算子列表（示例，可扩展）】\n")
+	sb.WriteString("【认知翻转类型参考（从中选择一个，也可自行定义）】\n")
+	sb.WriteString("delta_operator 字段填写其中一个 ID；如需自定义，选一个新 ID（英文下划线格式）并在 delta_operator_desc 说明其含义。\n")
 	for _, op := range DeltaOperators {
 		sb.WriteString(fmt.Sprintf("- %s（%s）：%s", op.ID, op.Name, op.Description))
 		if len(op.Examples) > 0 {
@@ -82,7 +83,7 @@ func formatDeltaOperatorTable() string {
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString("如果以上算子均不能准确描述本故事的揭示结构，你可以提出新算子——提供ID（英文下划线格式）和描述（中文）即可。\n")
+	sb.WriteString("以上类型不够用时，自定义新 ID（英文下划线格式）并在 delta_operator_desc 写明含义即可。\n")
 	return sb.String()
 }
 
