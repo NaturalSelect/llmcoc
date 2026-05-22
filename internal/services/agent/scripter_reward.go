@@ -26,9 +26,16 @@ const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
   {"action":"think","think":"推理内容"}
 - ask_lawyer：向COC7规则书专家提出一个具体规则书问题；确认候选物品是否在规则书中存在、出处、阅读SAN代价、学习收益或激活条件；可多次调用
   {"action":"ask_lawyer","question":"具体规则书问题"}
-- respond：返回完整通关奖励并退出；必须在至少一次ask_lawyer之后调用
+- respond：返回完整通关奖励并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮输出
   {"action":"respond","reward":{"name":"COC7正式名称或场景专属名称","type":"tome|artifact","description":"外观特征及与mythos_anchor和剧本主题的叙事关联","mechanics_note":"tome: 阅读代价≥1d4 SAN（来自规则书裁定）+ 具体学习收益（克苏鲁神话技能+N 或 可学法术名称）；artifact: 激活条件 + 代价/副作用"}}
 </tools>
+<batch_rules>
+- 每轮只能是以下两种批次之一：
+  A. 查询批次：可包含 think 和一个或多个 ask_lawyer；不得包含 respond。
+  B. 最终批次：只能包含一个 respond；不得包含 think、ask_lawyer 或任何其他action。
+- 绝对禁止把 respond 和 think/ask_lawyer 放在同一个JSON数组中。错误示例：[think, ask_lawyer, respond]。
+- 如果还需要向规则书专家提问，本轮只输出查询批次，等待工具结果后下一轮再单独输出 respond。
+</batch_rules>
 <design_rules>
 - 第一轮必须至少调用一次ask_lawyer；不得凭常识或记忆直接respond。
 - type=tome：mechanics_note必须包含具体阅读SAN代价（≥1d4，来自规则书裁定，非猜测）和学习收益（克苏鲁神话技能+N 或 可学法术名称）。
@@ -108,6 +115,11 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 			continue
 		}
 
+		if rewardRespondMixed(calls) {
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond必须单独一轮输出，不能和think、ask_lawyer或任何其他action混在同一个JSON数组中。若还需查询，本轮只输出ask_lawyer；若已有足够信息，下一轮只输出一个respond。"})
+			continue
+		}
+
 		invalid := false
 		var result *rewardAgentReward
 		var toolResults []string
@@ -155,6 +167,16 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须调用ask_lawyer获取规则书裁定，或在已有裁定基础上调用respond返回通关奖励。"})
 	}
 	return nil, fmt.Errorf("reward agent未在%d轮内返回respond", maxRounds)
+}
+
+func rewardRespondMixed(calls []rewardAgentCall) bool {
+	respondCount := 0
+	for _, call := range calls {
+		if call.Action == toolTranslatorRespond {
+			respondCount++
+		}
+	}
+	return respondCount > 0 && len(calls) != 1
 }
 
 func parseRewardAgentToolCalls(ctx context.Context, parser agentHandle, raw string) ([]rewardAgentCall, error) {
