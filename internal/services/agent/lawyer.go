@@ -24,13 +24,13 @@ func lawyerCachePath() string {
 	return "data/lawyer_cache.json"
 }
 
-// LoadLawyerCache loads persisted lawyer rulings when the rulebook hash matches.
-func LoadLawyerCache(rulebookHash string) {
-	if rulebookHash == "" {
+// LoadLawyerCache loads persisted lawyer rulings when all document hashes match.
+func LoadLawyerCache(hashes LawyerCacheHashes) {
+	if !hashes.complete() {
 		return
 	}
 	path := lawyerCachePath()
-	loaded, err := lawyerCache.LoadFromFile(path, rulebookHash)
+	loaded, err := lawyerCache.LoadFromFile(path, hashes)
 	if err != nil {
 		log.Printf("[lawyer] failed to load cache %s: %v", path, err)
 		return
@@ -41,13 +41,13 @@ func LoadLawyerCache(rulebookHash string) {
 	}
 }
 
-// SaveLawyerCache persists lawyer rulings together with the current rulebook hash.
-func SaveLawyerCache(rulebookHash string) {
-	if rulebookHash == "" {
+// SaveLawyerCache persists lawyer rulings together with the current document hashes.
+func SaveLawyerCache(hashes LawyerCacheHashes) {
+	if !hashes.complete() {
 		return
 	}
 	path := lawyerCachePath()
-	if err := lawyerCache.SaveToFile(path, rulebookHash); err != nil {
+	if err := lawyerCache.SaveToFile(path, hashes); err != nil {
 		log.Printf("[lawyer] failed to save cache %s: %v", path, err)
 		return
 	}
@@ -66,20 +66,41 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	[{"action":"search_cache","keyword":"#标签1 #标签2"}]
 	- keyword 必须是以 # 开头的标签，多个标签用空格分隔，例如 "#手枪 #伤害" 或 "#典籍 #SAN损失"
 	- 标签应精准反映问题的核心主题，不得使用自然语言句子
-	- 若返回结果与当前问题高度相关,可直接引用其裁定并输出 response,无需再搜索规则书
+	- 若返回结果与当前问题高度相关,可直接引用其裁定并输出 response,无需再搜索资料
 	- 若无相关结果,再进行grep等搜索
 
-2. grep — 在规则书中精确搜索关键词,返回匹配行及其上下文原文
+2. grep — 在规则书 COC_kp.md 中精确搜索关键词,返回匹配行及其上下文原文
 	[{"action":"grep","keyword":"精确关键词(不支持正则表达式)"}]
-	- 关键词须与规则书原文一致
+	- 普通规则、典籍、系统机制优先使用此工具
+	- 关键词须与原文一致
 	- 搜索结果仅用于本轮分析，不会被缓存
 
-4. read_lines — 直接读取规则书的特定行号范围,适用于已知出处的规则查询
+3. read_lines — 直接读取规则书 COC_kp.md 的特定行号范围
 	[{"action":"read_lines","start":100,"end":120}]
 	- 仅当 grep 已定位相关内容但需要完整上下文时使用
 	- 结果仅用于本轮分析
 
-5. response — 给出最终规则裁定,结束本次查询
+4. grep_spell — 在法术图鉴 COC_spell.md 中精确搜索关键词
+	[{"action":"grep_spell","keyword":"法术名或精确关键词"}]
+	- 具体法术词条、法术细节、法术MP/SAN消耗优先使用此工具
+	- 搜索结果仅用于本轮分析
+
+5. read_spell_lines — 直接读取法术图鉴 COC_spell.md 的特定行号范围
+	[{"action":"read_spell_lines","start":100,"end":120}]
+	- 仅当 grep_spell 已定位相关内容但需要完整法术词条时使用
+	- 结果仅用于本轮分析
+
+6. grep_monster — 在怪物图鉴 COC_monster.md 中精确搜索关键词
+	[{"action":"grep_monster","keyword":"怪物/神格/生物名或精确关键词"}]
+	- 具体怪物、神格、生物属性优先使用此工具
+	- 搜索结果仅用于本轮分析
+
+7. read_monster_lines — 直接读取怪物图鉴 COC_monster.md 的特定行号范围
+	[{"action":"read_monster_lines","start":100,"end":120}]
+	- 仅当 grep_monster 已定位相关内容但需要完整怪物/神格/生物词条时使用
+	- 结果仅用于本轮分析
+
+8. response — 给出最终规则裁定,结束本次查询
    [{"action":"response","cache_key":"#标签1 #标签2 #标签3","ruling":"规则裁定内容(简短只包含必要信息)"}]
    - 直接引用关键规则数值和判定条件
    - 若原文未覆盖该问题,明确说明"规则书未明确规定"
@@ -92,16 +113,17 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 - 回复不能为空
 - **第一轮必须且只能调用 search_cache**，不得跳过，不得在第一轮输出任何其他工具或response
 - 若 search_cache 返回了高度相关的缓存且你认为有足够的信息能够回答当前问题，直接引用并输出 response，不再进行任何搜索
-- 只有缓存未命中时，才允许进行grep/read_lines等搜索
-- 禁止在没有调用grep/search_cache/read_lines的情况下就进行response
+- 只有缓存未命中时，才允许进行 grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines 等搜索
+- 普通规则、典籍、系统机制优先用 grep/read_lines；具体法术词条、法术细节优先用 grep_spell/read_spell_lines；具体怪物、神格、生物属性优先用 grep_monster/read_monster_lines
+- 禁止在没有调用 search_cache 或资料检索工具的情况下就进行response
 - 谨慎判断意图，不要乱搜索，关键词不要乱给, 仔细检查每一个grep结果，确保你能拿到足够多的信息来回答问题, 不要乱猜
 - **输出 response 前的强制自检**（每次必须逐项确认，全部为"是"才可输出 response）：
-  1. 我是否已从规则书原文中看到了回答所需的 **具体数值**（伤害骰、SAN损失范围、技能阈值、法术MP消耗等）？——仅"大致了解"或"只看到名称"不算"是"。
-  2. 若问题涉及典籍/法术：我是否已读取到该词条的 **完整内容**（包括SAN损失数值、克苏鲁神话加成值、可习得法术列表）？——仅找到书名/法术名不算"是"，必须继续grep/read_lines。
+  1. 我是否已从规则资料原文中看到了回答所需的 **具体数值**（伤害骰、SAN损失范围、技能阈值、法术MP消耗等）？——仅"大致了解"或"只看到名称"不算"是"。
+  2. 若问题涉及典籍/法术/怪物/神格：我是否已读取到该词条的 **完整内容**（包括SAN损失数值、克苏鲁神话加成值、可习得法术列表、属性、伤害、护甲等）？——仅找到名称不算"是"，必须继续读取对应行号范围。
   3. 我是否已确认拓展规则和额外规则（如使用道具、学习典籍等）不适用于当前问题，或者已正确应用了这些规则？——如果不确定或有任何可能适用的拓展/额外规则，必须继续搜索，**绝对禁止**在不清楚是否适用的情况下输出 response。
   4. 若有任何一项为"否"，必须继续搜索，**绝对禁止**在数值缺失的情况下输出 response。
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
-- 每轮只包含 search_cache/grep/read_lines 调用(可多个),或只包含单个 response,不混用
+- 每轮只包含 search_cache/grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines 调用(可多个),或只包含单个 response,不混用
 - 仅输出JSON数组, 不加任何说明文字, 你只能输出JSON数组
 - YOUR OUTPUT MUST BE A VALID JSON ARRAY THAT CAN BE PARSED WITHOUT ERRORS. DO NOT OUTPUT ANY MARKDOWN OR OTHER FORMATTING, ONLY THE JSON ARRAY. THE FINAL RESULT MUST BE PROVIDED THROUGH THE "response" ACTION, AND YOU SHOULD NOT PROVIDE ANY CONCLUSIONS OR ANSWERS WITHOUT USING THE SPECIFIED TOOL CALLS.
 
@@ -241,36 +263,29 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				}
 
 			case "grep":
-				if c.Keyword == "" {
-					continue
+				if appendGrepResults(&resultSB, "grep", c.Keyword, "规则书", rulebook.GrepRuleBook) {
+					searchedRulebook = true
 				}
-				searchedRulebook = true
-				log.Printf("[lawyer] grep: %s", c.Keyword)
-				debugf("Lawyer", "iter=%d grep keyword=%q", iter+1, c.Keyword)
-				kws := strings.Fields(c.Keyword)
-				for _, kw := range kws {
-					text := grepRulebook(kw)
-					if text == "" {
-						text = "(规则书中未找到相关内容)"
-					}
-					resultSB.WriteString(fmt.Sprintf("【grep:%s】\n%s\n\n", kw, text))
-					debugf("Grep", "keyword: %v result: %v", kw, text)
+			case "grep_spell":
+				if appendGrepResults(&resultSB, "grep_spell", c.Keyword, "法术图鉴", rulebook.GrepSpellBook) {
+					searchedRulebook = true
+				}
+			case "grep_monster":
+				if appendGrepResults(&resultSB, "grep_monster", c.Keyword, "怪物图鉴", rulebook.GrepMonsterBook) {
+					searchedRulebook = true
 				}
 			case "read_lines":
-				if c.Start == 0 || c.End == 0 {
-					continue
+				if appendLineResults(&resultSB, "read_lines", c.Start, c.End, rulebook.GetContentByLineNum) {
+					searchedRulebook = true
 				}
-				searchedRulebook = true
-				text := rulebook.GetContentByLineNum(c.Start, c.End)
-				resultSB.WriteString(fmt.Sprintf("【read_lines:%d-%d】\n%s\n\n", c.Start, c.End, text))
-				s := text
-				if len(s) > 20 {
-					runes := []rune(s)
-					if len(runes) > 20 {
-						s = string(runes[:20]) + "..."
-					}
+			case "read_spell_lines":
+				if appendLineResults(&resultSB, "read_spell_lines", c.Start, c.End, rulebook.GetSpellContentByLineNum) {
+					searchedRulebook = true
 				}
-				debugf("lawyer", "read_lines: start=%d end=%d result=%s", c.Start, c.End, s)
+			case "read_monster_lines":
+				if appendLineResults(&resultSB, "read_monster_lines", c.Start, c.End, rulebook.GetMonsterContentByLineNum) {
+					searchedRulebook = true
+				}
 			}
 		}
 		if resultSB.Len() == 0 {
@@ -285,6 +300,56 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 
 	log.Printf("[lawyer] max iterations reached without response")
 	return nil
+}
+
+func appendGrepResults(resultSB *strings.Builder, action, keyword, sourceName string, grep func(string) []rulebook.GrepResult) bool {
+	if strings.TrimSpace(keyword) == "" {
+		return false
+	}
+	log.Printf("[lawyer] %s: %s", action, keyword)
+	kws := strings.Fields(keyword)
+	for _, kw := range kws {
+		text := formatGrepResults(grep(kw))
+		if text == "" {
+			text = fmt.Sprintf("(%s中未找到相关内容)", sourceName)
+		}
+		resultSB.WriteString(fmt.Sprintf("【%s:%s】\n%s\n\n", action, kw, text))
+		debugf("Grep", "action=%s keyword=%v result=%v", action, kw, text)
+	}
+	return true
+}
+
+func formatGrepResults(hits []rulebook.GrepResult) string {
+	if len(hits) == 0 {
+		return ""
+	}
+	const maxLen = 20
+	var sb strings.Builder
+	for i, h := range hits {
+		s := h.Text
+		if len([]rune(s)) > maxLen {
+			s = string([]rune(s)[:maxLen]) + "..."
+		}
+		sb.WriteString(fmt.Sprintf("[%v] Hit Line: %v Content: %v\n", i+1, h.LineNum, s))
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+func appendLineResults(resultSB *strings.Builder, action string, start, end int, read func(int, int) string) bool {
+	if start == 0 || end == 0 {
+		return false
+	}
+	text := read(start, end)
+	resultSB.WriteString(fmt.Sprintf("【%s:%d-%d】\n%s\n\n", action, start, end, text))
+	s := text
+	if len(s) > 20 {
+		runes := []rune(s)
+		if len(runes) > 20 {
+			s = string(runes[:20]) + "..."
+		}
+	}
+	debugf("lawyer", "%s: start=%d end=%d result=%s", action, start, end, s)
+	return true
 }
 
 // formatLawyerResults converts lawyer results into a compact string for the Director.

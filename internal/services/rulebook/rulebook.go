@@ -323,41 +323,127 @@ var Monsters = func() []string {
 
 var MythosCreatures = func() []string {
 	text := `
-# 拜亚基
+独立种族（上级）
 # 钻地魔虫
 # 星之彩
-# 蠕行者
-# 达贡&海德拉 (特殊深潜者)
-# 黑山羊幼崽
-# 深潜者
-# 混种深潜者
 # 巨噬蠕虫
+# 飞天水螅
+# 诺弗·刻
+# 绿渊眷族
+# 无形之骏马
+# 罗伊格尔
+# 修格斯领主
+# 廷达罗斯猎犬
+# 廷达罗斯领主
+# 塞克洛托尔星的死之蔓藤
+# 伊斯之伟大种族
+
+独立种族（下级）
+# 埃杜布拉里
+# 阿尔斯卡里
+# 风之子
+# 空鱼
 # 空鬼
-# 古老者
-# 炎之精
-# 飞水螅
-# 无形眷族
+# 远古者
+# 邪恶真菌
 # 妖鬼
 # 食尸鬼
-# 格拉基之仆
-# 诺弗刻
-# 伊斯之伟大种族
-# 庭达罗斯的猎犬
-# 恐怖猎手
-# 罗伊格尔
-# 米-戈,来自犹格斯的真菌
-# 夜魔
-# 人面鼠
-# 潜沙怪
-# 蛇人
-# 外神仆役
-# 夏盖妖虫
-# 夏塔克鸟
-# 修格斯
-# 修格斯主宰
-# 克苏鲁的星之眷族
+# 古革巨人
+# 终北之地住民
+# 昆扬人
+# 冷族人
+# 冷蛛
+# 勒杰赫斯住民
+# 玛尔滕斯一族
+# 火星人
+# 米·戈
+# 精神寄生虫
+# 月兽
+# 奈欧斯·克欧格亥
+# 奈汉·格瑞
+# 鼠人
+# 爬虫人
+# 夏盖
+# 夏盖虫族
+# 原初修格斯
+# 空间食魔
 # 星之精
-# 乔乔人`
+# 猪人
+# 外域恐怖
+# 廷达罗斯混血种
+# 三尖树
+# 地底掘进者
+# 沃米人
+# 沃尔人
+# 亚狄斯住民
+# 耶库伯居民
+# 新伟大种族
+# 祖格
+
+仆从种族（上级）
+# 夏乌戈纳尔·法格恩的弟兄
+# 克苏鲁星之眷族
+# 黯藻
+# 深渊之民
+# 古异子嗣
+# 哈斯塔之眷族
+# 奈亚拉托提普的恐怖猎手
+# 欧图伊格的眷族
+# 外神之仆役
+# 修格斯
+# 黑山羊幼仔
+# 风之眷属
+# 撒托古亚的子孙
+# 乌波·萨丝拉的血裔
+# 看守者
+# 尤格·索托斯之子
+
+仆从种族（下级）
+# 阿布霍斯之眷属
+# 爱伊海伊人
+# 阿尼米丘利
+# 阿特拉克-纳查之女
+# 拜亚基
+# 查寇塔
+# 寒冷者
+# 爬行者
+# 梦境结晶器守护者
+# 克苏鲁之仆役
+# 漆黑者
+# 深潜者
+# 混血深潜者
+# 尘人
+# 艾霍特寄生体
+# 炎之精
+# 星海钓客
+# 格拉基之仆从
+# 夜魇
+# 尼约格达的眷属
+# 奥图姆的奴仆
+# 苍白舞者
+# 人面鼠
+# 潜砂怪
+# 搜寻者
+# 夏塔克鸟
+# 灵体猎手
+# 斯芬克斯的孩子
+# 丘丘人
+# 坟兽
+# 姆巴瓦树人
+# 撒托古亚的无形之子
+# 不可名状的支配者
+# 雪怪
+# 地上蠕虫
+# 伊戈隆纳克的仆从
+# 伊格的子孙
+# 伊格的眷属
+# 于格
+# 扎尔
+
+唯一存在
+# 百万蒙宠者
+# 蠕虫行者
+`
 	lines := strings.Split(text, "\n")
 	var creatures []string
 	for _, line := range lines {
@@ -371,120 +457,532 @@ var MythosCreatures = func() []string {
 
 var Spells = func() []string {
 	text := `
-# 基本的“僵尸创建术”
-# 快速版本的僵尸创建术
-# 灰色束缚(僵尸创建术变体)
-# 增强版本的僵尸创建术
-# 坟墓之吻(僵尸创建术变体)
-# 惊悚版本的僵尸创建术
-# 活尸制造术(僵尸创建术变体)
-# 灵魂分配术
-# 耶德·艾塔德放逐术
-# 束缚术
-# 刀锋祝福术
-# 戈尔戈罗斯形体扭曲术
-# 深渊之息
-# 黄金蜂蜜酒酿造术
-# 请神术与送神术
-# 请神术
-# 阿撒托斯请神术
-# 克图格亚请神术
-# 伊塔库亚请神术
-# 尼约格萨请神术
-# 莎布- 尼古拉丝请神术
-# 犹格-索托斯请神术
-# 送神术
-# 命名送神术
-# 致盲术/治盲术
-# 透特之咏
-# 记忆模糊术
-# 尼约格萨紧握术
-# 相貌吞食术
-# 联络术
-# 钻地魔虫联络术
-# 深潜者联络术
-# 古老者联络术
-# 飞水螅联络术
-# 无形眷族联络术
-# 食尸鬼联络术
-# 诺弗-刻联络术
-# 廷达洛斯之猎犬联络术
-# 米-戈联络术
-# 人面鼠联络术
-# 潜沙怪联络术
-# 外神仆役联络术
-# 死灵联络术
-# 克苏鲁的星之眷族联络术
-# 伊斯人联络术
-# 通神术
-# 昌格纳·方庚通神术
-# 克苏鲁通神术
-# 艾霍特通神术
-# 诺登斯通神术
-# 奈亚拉托提普通神术
-# 撒托古亚通神术
-# 伊戈罗纳克通神术
-# 纳克-提特障壁创建术
-# 拉莱耶造雾术
-# 僵尸创建术
-# 腐烂外皮之诅咒
-# 致死术
-# 支配术
+# 阿波菲斯的诅咒
+# 阿布霍斯唤醒术
+# 阿布霍斯通神术
+# 阿尔瓦萨请神术
+# 阿里阿德涅之线
+# 阿努比斯的守卫
+# 阿佩普放逐术
 # 阿撒托斯的恐怖诅咒
-# 苏莱曼之尘
-# 旧印开光术
-# 附魔法术
-# 书册附魔术
-# 刀具附魔术
-# 笛子附魔术
-# 祭刀附魔术
-# 哨子附魔术
-# 迷身术
-# 邪眼术
-# 犹格-索托斯之拳
-# 血肉防护术
-# 时空门法术
-# 时空门 (空间门)
-# 时空门搜寻术
-# 时空箱创建术
-# 时光门
-# 时空门观察术
-# 绿腐术
-# 恐惧植入术
-# 血肉熔解术
-# 心理暗示术
-# 精神震爆术
-# 精神交换术
-# 精神转移术
-# 塔昆·阿提普之镜
-# 伊本-加齐之粉
-# 蒲林的埃及十字架
-# 修德·梅尔之赤印
-# 复活术
-# 枯萎术
-# 哈斯塔之歌
-# 召唤法术
-# 命令的形式
-# 拜亚基召唤术
-# 空鬼召唤术
-# 炎之精召唤术
-# 恐怖猎手召唤术
-# 外神仆役召唤术
-# 星之精召唤术
-# 独立束缚术
+# 阿撒托斯请神术
+# 阿撒托斯通神术
+# 阿图请神术
+# 艾霍特流放术
+# 艾霍特通神术
+# 爱情魔药酿造法
+# 爱因斯坦公式
+# 奥萨多戈瓦请神术
+# 奥苏耶格通神术
+# 巴尔塞之印创建术
+# 巴卡召唤术
+# 芭丝特的祝福
 # 拜亚基束缚术
+# 拜亚基召唤术
+# 拜亚提斯放逐术
+# 拜亚提斯通神术
+# 悲惨瘙痒术
+# 被诅咒的眼
+# 彼端之旅
+# 蝙蝠化形法
+# 变形术
+# 波罗纳斯的熔炉
+# 博克鲁格通神术
+# 不可名状的诺言
+# 不可言喻的理解
+# 不透明之墙
+# 不朽术
+# 布格-沙什请神术
+# 擦肩无影术
+# 草木号令术
+# 长方形屏障
+# 长矛附魔术
+# 长命坠创建法
+# 超K粉酿造术
+# 鸱鸮之宴
+# 赤印术
+# 炽天使之耀
+# 仇恨雕像
+# 除名术
+# 民俗魔法
+# 大戴什召唤术
+# 大献祭仪式
+# 呆滞震爆术
+# 胆言术
+# 刀锋祝福术
+# 刀具附魔术
+# 道罗斯请神术
+# 登上不朽的阶梯
+# 等边屏幕术
+# 敌人束缚术
+# 笛子附魔术
+# 地脉
+# 第六萨斯拉塔吟诵术
+# 冬眠术
+# 动物残废法/动物治愈法
+# 动物雕像附魔术
+# 动物号令法
+# 动物魅惑法
+# 动物束缚法
+# 毒血法
+# 多尔公式
+# 厄运法
+# 厄运附魔
+# 恶魔的感知
+# 恶魔揭露术
+# 恶神影请神术
+# 恶神影通神术
+# 恩宠移除术
+# 发酵病术
+# 法阵法术
+# 法阵施放术
+# 凡尘平静法
+# 反胃法阵
+# 反转移术
+# 飞行术
+# 飞水螅联络术
+# 翡翠喇嘛通神术
+# 费因疲乏术
+# 分离抛掷术
+# 分沙术
+# 坟墓之吻
+# 焚化术
+# 风暴创建法
+# 封印陷坑
+# 疯狂之笛
+# 弗洛林倾泻术
+# 伏尔瓦多斯的净化之火
+# 符文施放术
+# 符咒创建法
+# 腐烂外皮之诅咒
+# 腐朽之触
+# 附魔的阿努比斯之尘
+# 附魔法术
+# 附魔侦测术
+# 复活术
+# 复生术
+# 复元冥想法
+# 戈尔-戈罗斯请神术
+# 钢铁意志术
+# 戈尔戈罗斯形体扭曲术
+# 活尸创建术
+# 活血偷取术
+# 活衣服
+# 格拉基通神术
+# 格拉基请神术
+# 格哩-格哩附魔术
+# 格利桑德之歌
+# 格罗斯通神术
+# 铬绿之风
+# 古老者联络术
+# 骨骼溶解术
+# 光明与黑暗之眼
+# 鬼魂号令法
+# 棍棒附魔术
+# 过来见我
+# 哈布沙暴发生术
+# 哈斯塔请神术
+# 哈斯塔释放术
+# 哈斯塔之歌
+# 好贼水
+# 和等待着的黑暗交谈之术
+# 河童之息
+# 赫耳墨斯·特里斯墨吉斯忒斯的毒尘
+# 黑暗诅咒
 # 黑山羊幼崽束缚术
-# 空鬼束缚术
-# 炎之精束缚术
-# 恐怖猎手束缚术
-# 夜魔束缚术
-# 星之精束缚术
-# 维瑞之印
+# 黑山羊幼崽召唤术
+# 黑箱术
+# 黑质召集术
+# 轰盲术
+# 护身符
+# 化骨术
+# 坏疽术
+# 坏尸粉创建术
+# 幻梦境魔法
+# 荒芜之风
+# 黄金蜂蜜酒酿造术（甲型）
+# 黄金蜂蜜酒酿造术（乙型）
+# 黄泉深渊术
+# 黄色跃魂封印法
+# 黄印术
+# 恍惚术
+# 火舞术
+# 火焰斗篷术
+# 火焰护盾术
+# 激活术
+# 极乐术
+# 记忆模糊术
+# 记忆吞食术
+# 加速术
+# 加塔诺托亚请神术
+# 僵尸创建术
+# 僵尸召集术
+# 僵尸之眼
+# 郊狼粉尘
+# 戒指附魔术
+# 筋骨打结术
+# 晶石召唤
+# 精神的温暖
+# 精神交换术
+# 精神模糊术
+# 精神囚禁术
+# 精神淹溺术
+# 精神震爆术
+# 精神之舞
+# 精神转移术
+# 净化仪式
+# 酒神狂欢术
+# 旧日辟邪符附魔术
+# 旧印开光术
+# 咀-咀附魔法
+# 巨龟唤醒术
+# 巨噬蠕虫召唤术
+# 剧毒瞥视术
+# 卡戎乞求术
+# 科斯通神术
+# 科斯之印嘱咐术
+# 科西切之死
+# 拉莱耶造雾术
+# 拉略罗娜请神术
+# 拉神闪光术
+# 拉神之声
+# 蜡烛附魔法
+# 乐土施恩术
+# 联络术
+# 辽丹酿造术
+# 灵薄门
+# 灵薄狱
+# 灵魂辨识术
+# 灵魂抽取术
+# 灵魂出窍术
+# 灵魂分配术
+# 灵魂漫游术
+# 灵魂窃取术
+# 灵魂束缚术
+# 灵魂陷阱术
+# 灵魂榨取术
+# 灵魂召唤术
+# 灵魂之歌
+# 灵魂转移术
+# 灵体变身术
+# 灵体猎手变身术
+# 灵体剃刀术
+# 录音附魔术
+# 罗伊格尔联络术
+# 螺旋升空术
+# 绿腐术
+# 马连卡门的瞩目闪击术
+# 曼德拉术
+# 蔓延的丧失
+# 梦境发送术
+# 梦境幻象术
+# 梦境门
+# 梦境驱逐术
+# 梦想家搜寻术
+# 梦想家诱捕术
+# 梦想家助力术
+# 梦学门
+# 梦魇术（甲型）
+# 梦魇术（乙型）
+# 梦魇效果
+# 迷身术
+# 米-戈联络术
+# 面纱轻揭术
+# 面纱撕裂术
+# 藐视重力术
+# 摩摩伊仪式
+# 魔法双杖附魔术
+# 魔鬼逐出术
+# 魔力吸取术
+# 魔力之吟
+# 魔像创建术
+# 末法之龙神请神术
+# 陌生人之眼
+# 莫特兰玻璃幻术
+# 姆纳加拉请神术
+# 姆诺姆夸之蛇
+# 木乃伊活化术
+# 墓穴群虫联络术
+# 纳克特五芒星嘱咐术
+# 纳克-提特障壁创建术
+# 奈哈戈送葬歌
+# 奈亚拉托提普的祭刀附魔术
+# 奈亚拉托提普通神术
+# 奈亚拉托提普之影
+# 耐用奴仆术
+# 内部观测术
+# 内心灵光唤醒术
+# 尼安贝的魔力
+# 尼约格萨紧握术
+# 尼约格萨请神术
+# 拟人术
+# 涅弗伦-卡的封印
+# 努曼西亚术
+# 诺登斯通神术
+# 诺弗-刻联络术
+# 帕维尤特棒附魔法
+# 帕祖祖通神术
+# 帕祖祖之怒
+# 帕祖祖之息
+# 潘药剂酿造术
+# 抛射物附魔术
+# 膨胀术
+# 皮肤控制术
+# 皮行者术
+# 辟邪符创建术
+# 偏转术
+# 飘浮术
+# 平凡无奇术
+# 仆从送还术
+# 蒲林的埃及十字架
+# 普塔斯翡翠飞镖
+# 普塔斯薰衣草球
+# 漆黑者请神术
+# 契约尸巫术
+# 器官转移术
+# 潜沙怪联络术
+# 青春吸取术
+# 清心法
+# 请神术
+# 热利姆·沙伊科尔斯请神术
+# 人化灌丛术
+# 人类联络术
+# 人类引诱术
+# 人面鼠联络术
+# 人面鼠诅咒
+# 人偶附魔术
+# 仁慈感化术
+# 忍耐之吟
+# 日光直视术
+# 荣华生财法
+# 肉傀儡活化术
+# 肉体屈服术
+# 蠕虫的同心圆
+# 蠕虫术
+# 蠕虫召来术
+# 入梦之药酿造术
+# 撒托古亚通神术
+# 萨阿马阿仪式
+# 塞克之光
+# 塞里特的可怕末日
+# 塞壬之歌
+# 塞伊地请神术
+# 塞伊格亚请神术
+# 莎布-尼古拉丝请神术
+# 莎布-尼古拉丝通神术
+# 伤害偏转术
+# 哨子附魔术
+# 蛇臂术
+# 蛇人搜寻术
+# 设备失效术
+# 伸触术
+# 身体部件转移术
+# 深潜者束缚术
+# 深潜者召唤术
+# 深渊之息
+# 深渊之音加速术
+# 神圣蛇蜕术
+# 神圣真理之光
+# 生魂棒创建术
+# 生命觉察术
+# 生命灵药酿造术
+# 生命食粮术
+# 生命偷取术
+# 圣蛇发送术
+# 圣者的堕落
+# 尸体唤起术
+# 尸体占据术
+# 尸体制备术
+# 失物找寻法
+# 石板附魔术
+# 石板诅咒
+# 石化术
+# 时光门
+# 时光陷阱
+# 时空窗创建术
+# 时空门
+# 时空门创建术
+# 时空门观察术
+# 时空门迁移术
+# 时空门搜寻术
+# 时空箱
+# 食尸鬼联络术
+# 手杖附魔术
+# 守卫法阵
 # 守卫术
+# 守卫之印
+# 守卫之咏
+# 兽化人束缚术
+# 书册附魔术
+# 束缚术
+# 水晶世界
+# 水晶调谐术
+# 瞬间启蒙术
+# 思想发声术
+# 斯芬克斯的子嗣创建术
+# 斯芬克斯的子嗣联络术
+# 死灵联络术
+# 死亡面具术
+# 死亡的气息
+# 苏莱曼之尘
+# 苏斯螺旋
+# 岁月之怒
+# 缩小术
+# 索伦白网术
+# 索罗斯强壮术
+# 塔格-克拉图尔的反角度
+# 塔昆·阿提普之镜
+# 炭火盆附魔术
+# 特兹查波特尔之铃
+# 提拔术
+# 天气改换术
+# 天气畸变术
+# 廷达洛斯之猎犬联络术
+# 通神术
+# 痛苦屏障
+# 透特之咏
+# 图鲁亚
+# 图鲁亚幻术
+# 退化术
+# 外神仆役联络术
+# 外神仆役束缚术
+# 外神仆役召唤术
+# 剜心术
+# 完善术
+# 网络幽灵术
 # 忘却之波
-# 肢体调萎术
+# 维瑞之印
+# 未来观测术
+# 瘟疫发生术（甲型）
+# 瘟疫发生术（乙型）
+# 瘟疫召唤术
+# 文本认知术
+# 稳固术
+# 无形眷族联络术
+# 雾之眷属加速术
+# 寤寐术
+# 希什的蕾丝帘幕
+# 夏恩驱赶术
+# 夏恩逐出术
+# 现世裂隙术
+# 相似的敏锐
+# 相貌吞食术
+# 肖格纳尔·方的诅咒
+# 肖格纳尔·方通神术
+# 肖格纳尔·方之兄弟召唤术
+# 肖像画附魔术
+# 消耗病诅咒
+# 消失术
+# 邪眼守卫术
+# 邪眼术
+# 心理暗示术
+# 心灵感应术
+# 心跳停止术
+# 心脏爆炸术
+# 心中的勇气
+# 星之精束缚术
+# 星之精召唤术
+# 星之种
+# 凶暴疯狂术
+# 熊皮法
+# 熊爪法
+# 修格斯号令术
+# 修格斯束缚术
+# 修格斯召唤术
+# 续命术
+# 喧嚣嗉囊术
+# 血清附魔术
+# 血肉防护术
+# 血肉附魔术
+# 血肉熔解术
+# 血肉蠕行者创建术
+# 血肉移植术
+# 血舌的号令
+# 寻龙法
+# 炎之精束缚术
+# 炎之精召唤术
+# 扬升大师联络术
+# 耶德·艾塔德放逐术
+# 野兽唤醒法
+# 野兽之神请神术
+# 业报授予法
+# 夜雾唤起术
+# 夜魇束缚术
+# 夜魇召唤术
+# 液化术
+# 伊本-加齐之粉
+# 伊波恩雾轮术
+# 伊波-兹特尔请神术
+# 伊伯鬼魂唤起术
+# 伊戈罗纳克通神术
+# 伊格的尖牙
+# 伊格请神术
+# 伊格通神术
+# 伊格之子嗣摧毁术
+# 伊南娜的馈赠
+# 伊欧德请神术
+# 伊欧德通神术
+# 伊斯人联络术
+# 伊塔库亚请神术
+# 伊希斯的封印
+# 依诺拉停止术
+# 遗恨术
+# 疑心消除术
+# 抑光术
+# 阴影虚空术
+# 引神术
+# 荧火术
+# 蝇蛆术
+# 犹格-索托斯的拥抱
+# 犹格-索托斯请神术
+# 犹格-索托斯通神术
+# 犹格-索托斯之拳
+# 友善关系断绝术
+# 有角之人请神术
+# 幼体驱除术
+# 诱鱼术
+# 预言术
+# 欲望金笼术
+# 元素控制术
+# 原初之水酿造术
+# 远行涡流术
+# 月光术
+# 月棱镜守护者请神术
+# 月兽联络术
+# 扎尔与罗伊格尔通神术
+# 占卜窗创建术
+# 占卜法
+# 占据术
+# 召唤术
+# 召雷术
+# 折磨术
+# 真实一瞥授予术
 # 真言术
-# 折磨术`
+# 振荡穹庐术
+# 支配术
+# 肢体凋萎术
+# 治愈法
+# 挚爱回归术
+# 致病术
+# 致盲术/治盲术
+# 致死术
+# 终结日预示术
+# 肿胀折磨术
+# 种内之神唤醒/驱散术
+# 咒逐术
+# 朱玛唤醒术
+# 祝福法
+# 转生术
+# 自保袋创建术
+# 诅咒法
+# 诅咒之板创建术
+# 诅咒之笛创建术
+# 祖谢昆请神术
+# 钻地魔虫联络术
+# 最终宴请
+# 尊长创造术
+# 佐斯-奥摩格通神术
+# 作物枯萎法/作物祝福法`
 	lines := strings.Split(text, "\n")
 	var spells []string
 	for _, line := range lines {
@@ -495,7 +993,6 @@ var Spells = func() []string {
 	}
 	return spells
 }()
-
 // AvailableConstantKeys returns names that can be used by agent tool calls.
 func AvailableConstantKeys() []string {
 	return []string{
@@ -507,6 +1004,7 @@ func AvailableConstantKeys() []string {
 		"monsters",
 		"mythos_creatures",
 		"spells",
+		"skills",
 	}
 }
 
@@ -600,7 +1098,11 @@ var GlobalIndex Index
 // GlobalHash is the SHA-256 hash of the loaded rulebook file.
 var GlobalHash string
 
-var ruleBookLines = make([]string, 0)
+var (
+	ruleBookLines    []string
+	spellBookLines   []string
+	monsterBookLines []string
+)
 
 // FileHash returns the SHA-256 hash of the file at path.
 func FileHash(path string) (string, error) {
@@ -620,23 +1122,15 @@ func FileHash(path string) (string, error) {
 // Load reads a Markdown file at the given path and splits it into sections
 // at any Markdown heading level (lines starting with one or more '#').
 func Load(path string) (Index, error) {
-	f, err := os.Open(path)
+	lines, err := loadLines(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	ruleBookLines = lines
 
 	var sections Index
 	var current *Section
-
-	scanner := bufio.NewScanner(f)
-	// Increase scanner buffer for very long lines in the rulebook.
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		ruleBookLines = append(ruleBookLines, line)
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if title, ok := parseHeading(trimmed); ok {
 			// Save previous section.
@@ -648,15 +1142,54 @@ func Load(path string) (Index, error) {
 			current.Content += line + "\n"
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
 	// Flush last section.
 	if current != nil {
 		sections = append(sections, *current)
 	}
 
 	return sections, nil
+}
+
+// LoadSpellBook loads the fixed spell reference document used by Lawyer tools.
+func LoadSpellBook(path string) error {
+	lines, err := loadLines(path)
+	if err != nil {
+		return err
+	}
+	spellBookLines = lines
+	return nil
+}
+
+// LoadMonsterBook loads the fixed monster reference document used by Lawyer tools.
+func LoadMonsterBook(path string) error {
+	lines, err := loadLines(path)
+	if err != nil {
+		return err
+	}
+	monsterBookLines = lines
+	return nil
+}
+
+func loadLines(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	// Increase scanner buffer for very long lines in the reference documents.
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return lines, nil
 }
 
 func parseHeading(line string) (string, bool) {
@@ -683,8 +1216,32 @@ type GrepResult struct {
 }
 
 func GrepRuleBook(keyword string) []GrepResult {
+	return grepLines(ruleBookLines, keyword)
+}
+
+func GetContentByLineNum(firstLine, endLine int) string {
+	return contentByLineNum(ruleBookLines, firstLine, endLine)
+}
+
+func GrepSpellBook(keyword string) []GrepResult {
+	return grepLines(spellBookLines, keyword)
+}
+
+func GetSpellContentByLineNum(firstLine, endLine int) string {
+	return contentByLineNum(spellBookLines, firstLine, endLine)
+}
+
+func GrepMonsterBook(keyword string) []GrepResult {
+	return grepLines(monsterBookLines, keyword)
+}
+
+func GetMonsterContentByLineNum(firstLine, endLine int) string {
+	return contentByLineNum(monsterBookLines, firstLine, endLine)
+}
+
+func grepLines(lines []string, keyword string) []GrepResult {
 	var results []GrepResult
-	for i, line := range ruleBookLines {
+	for i, line := range lines {
 		if strings.Contains(line, keyword) {
 			results = append(results, GrepResult{LineNum: i + 1, Text: line})
 		}
@@ -692,10 +1249,17 @@ func GrepRuleBook(keyword string) []GrepResult {
 	return results
 }
 
-func GetContentByLineNum(firstLine, endLine int) string {
+func contentByLineNum(lines []string, firstLine, endLine int) string {
+	if firstLine < 1 {
+		firstLine = 1
+	}
+	if endLine < firstLine {
+		return ""
+	}
+
 	sb := strings.Builder{}
-	for i := firstLine - 1; i < endLine && i < len(ruleBookLines); i++ {
-		sb.WriteString(ruleBookLines[i])
+	for i := firstLine - 1; i < endLine && i < len(lines); i++ {
+		sb.WriteString(lines[i])
 		sb.WriteString("\n")
 	}
 	return sb.String()

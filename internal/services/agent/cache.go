@@ -39,15 +39,33 @@ type cacheNode struct {
 	size  int64 // Size in bytes
 }
 
+// LawyerCacheHashes binds persisted rulings to the exact reference documents used to produce them.
+type LawyerCacheHashes struct {
+	RulebookHash    string `json:"rulebook_hash"`
+	SpellbookHash   string `json:"spellbook_hash"`
+	MonsterbookHash string `json:"monsterbook_hash"`
+}
+
 type persistentLawyerCache struct {
-	RulebookHash string             `json:"rulebook_hash"`
-	SavedAt      time.Time          `json:"saved_at"`
-	Entries      []persistentRuling `json:"entries"`
+	Hashes  LawyerCacheHashes `json:"hashes"`
+	SavedAt time.Time         `json:"saved_at"`
+	Entries []persistentRuling `json:"entries"`
 }
 
 type persistentRuling struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
+}
+
+func (h LawyerCacheHashes) complete() bool {
+	return h.RulebookHash != "" && h.SpellbookHash != "" && h.MonsterbookHash != ""
+}
+
+func (h LawyerCacheHashes) matches(other LawyerCacheHashes) bool {
+	return h.complete() && other.complete() &&
+		h.RulebookHash == other.RulebookHash &&
+		h.SpellbookHash == other.SpellbookHash &&
+		h.MonsterbookHash == other.MonsterbookHash
 }
 
 // NewLawyerCache creates a new LRU cache with a specified capacity in bytes.
@@ -150,8 +168,8 @@ func (lc *LawyerCache) clearLocked() {
 	lc.curBytes = 0
 }
 
-// LoadFromFile replaces the cache with entries from path when the rulebook hash matches.
-func (lc *LawyerCache) LoadFromFile(path, rulebookHash string) (bool, error) {
+// LoadFromFile replaces the cache with entries from path when all document hashes match.
+func (lc *LawyerCache) LoadFromFile(path string, hashes LawyerCacheHashes) (bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -164,7 +182,7 @@ func (lc *LawyerCache) LoadFromFile(path, rulebookHash string) (bool, error) {
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return false, err
 	}
-	if payload.RulebookHash != rulebookHash {
+	if !payload.Hashes.matches(hashes) {
 		return false, nil
 	}
 
@@ -178,8 +196,8 @@ func (lc *LawyerCache) LoadFromFile(path, rulebookHash string) (bool, error) {
 	return true, nil
 }
 
-// SaveToFile writes the cache to path together with the current rulebook hash.
-func (lc *LawyerCache) SaveToFile(path, rulebookHash string) error {
+// SaveToFile writes the cache to path together with the current document hashes.
+func (lc *LawyerCache) SaveToFile(path string, hashes LawyerCacheHashes) error {
 	lc.mu.RLock()
 	entries := make([]persistentRuling, 0, len(lc.cache))
 	for elem := lc.list.Front(); elem != nil; elem = elem.Next() {
@@ -189,9 +207,9 @@ func (lc *LawyerCache) SaveToFile(path, rulebookHash string) error {
 	lc.mu.RUnlock()
 
 	payload := persistentLawyerCache{
-		RulebookHash: rulebookHash,
-		SavedAt:      time.Now(),
-		Entries:      entries,
+		Hashes:  hashes,
+		SavedAt: time.Now(),
+		Entries: entries,
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {

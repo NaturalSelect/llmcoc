@@ -51,26 +51,57 @@ func main() {
 	// Seed default shop items
 	handlers.SeedShopItems()
 
-	// Load COC rulebook for the Lawyer agent.
+	// Load fixed COC reference documents for the Lawyer agent.
 	rbPath := os.Getenv("RULEBOOK_PATH")
 	if rbPath == "" {
 		rbPath = "COC_kp.md"
 	}
+	spellPath := os.Getenv("SPELLBOOK_PATH")
+	if spellPath == "" {
+		spellPath = "COC_spell.md"
+	}
+	monsterPath := os.Getenv("MONSTERBOOK_PATH")
+	if monsterPath == "" {
+		monsterPath = "COC_monster.md"
+	}
+
 	lawyerCacheEnabled := false
+	lawyerCacheHashes := agent.LawyerCacheHashes{}
 	if hash, err := rulebook.FileHash(rbPath); err != nil {
 		log.Printf("Warning: failed to hash rulebook (%s): %v — Lawyer cache persistence disabled", rbPath, err)
 	} else {
 		rulebook.GlobalHash = hash
+		lawyerCacheHashes.RulebookHash = hash
+	}
+	if hash, err := rulebook.FileHash(spellPath); err != nil {
+		log.Printf("Warning: failed to hash spellbook (%s): %v — Lawyer cache persistence disabled", spellPath, err)
+	} else {
+		lawyerCacheHashes.SpellbookHash = hash
+	}
+	if hash, err := rulebook.FileHash(monsterPath); err != nil {
+		log.Printf("Warning: failed to hash monsterbook (%s): %v — Lawyer cache persistence disabled", monsterPath, err)
+	} else {
+		lawyerCacheHashes.MonsterbookHash = hash
 	}
 	if idx, err := rulebook.Load(rbPath); err != nil {
 		log.Printf("Warning: failed to load rulebook (%s): %v — Lawyer agent will have no rule data", rbPath, err)
 	} else {
 		rulebook.GlobalIndex = idx
 		log.Printf("Rulebook loaded: %d sections from %s", len(idx), rbPath)
-		if rulebook.GlobalHash != "" {
-			lawyerCacheEnabled = true
-			agent.LoadLawyerCache(rulebook.GlobalHash)
-		}
+	}
+	if err := rulebook.LoadSpellBook(spellPath); err != nil {
+		log.Printf("Warning: failed to load spellbook (%s): %v — Lawyer spell lookup unavailable", spellPath, err)
+	} else {
+		log.Printf("Spellbook loaded from %s", spellPath)
+	}
+	if err := rulebook.LoadMonsterBook(monsterPath); err != nil {
+		log.Printf("Warning: failed to load monsterbook (%s): %v — Lawyer monster lookup unavailable", monsterPath, err)
+	} else {
+		log.Printf("Monsterbook loaded from %s", monsterPath)
+	}
+	if lawyerCacheHashes.RulebookHash != "" && lawyerCacheHashes.SpellbookHash != "" && lawyerCacheHashes.MonsterbookHash != "" {
+		lawyerCacheEnabled = true
+		agent.LoadLawyerCache(lawyerCacheHashes)
 	}
 	var saveLawyerCacheOnce sync.Once
 	saveLawyerCache := func() {
@@ -78,7 +109,7 @@ func main() {
 			return
 		}
 		saveLawyerCacheOnce.Do(func() {
-			agent.SaveLawyerCache(rulebook.GlobalHash)
+			agent.SaveLawyerCache(lawyerCacheHashes)
 		})
 	}
 	defer saveLawyerCache()
