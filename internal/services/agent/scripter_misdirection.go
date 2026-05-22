@@ -48,6 +48,7 @@ const misdirectionSystemPrompt = `<role>COC7沙盒神话翻译师与误导架构
 - 派系必须有non-empty current_state（无人干预时正在做什么），timeline节点必须有具体intervention_pivot。
 - 如果收到qa_rejection，必须修复false_lead的后验兼容性或派系自主性问题；不要只改措辞。
 - mythos_anchor 必须是一个具体的，有规则书支持的神话元素（如食尸鬼、深潜者、某个具体的古神或典籍等），而不是模糊的概念（如"某个邪神"）。如果规则书中没有完全符合的元素，可以选择最接近的一个并在rules_notes说明不完全匹配之处；如果完全没有合适的元素，尝试往人类法师、诅咒物品、古老地点等方向寻找替代锚点，仍找不到时才可以创造一个新元素，但必须在rules_notes详细说明其属性和与规则书元素的关系（如"类似于食尸鬼但更专注于守护知识"）。总之，mythos_anchor必须是具体且可操作的，而不是抽象或模糊的概念。
+- stage2_rule_context中律师给出的"必须避免"和"不要"约束是强制性禁令，不得以任何理由绕过（包括以rules_notes"自定义"名义绕过）；若约束与设计想法冲突，必须修改设计方向，而不是违反约束后做注释说明。
 </rules>`
 
 const misdirectionQASystemPrompt = `<role>COC7沙盒误导设计QA</role>

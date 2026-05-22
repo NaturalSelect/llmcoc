@@ -24,21 +24,21 @@ import (
 func ironyCoreSystemPrompt() string {
 	return `<role>短篇悬疑故事架构师</role>
 <task>为一个短篇神秘故事设计核心揭示结构：表层叙事（外人最初形成的自然推断）与深层真相（揭示后的真实关系）之间通过何种认知翻转连接。你在设计一个文学谜题，不是游戏模组。忘记一切游戏规则和系统；用写短篇小说或电影剧本的逻辑工作。</task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
+<response_format>json_object</response_format>
+<output>直接输出一个JSON对象，不要Markdown、标题、解释或代码围栏。</output>
 ` + formatDeltaOperatorTable() + `
-<tools>
-- think：内部推理（可选，无副作用）
-  {"action":"think","think":"推理内容"}
-- generate：输出揭示结构。必须在至少一个think之后调用。
-  {"action":"generate","delta_operator":"翻转类型ID","surface_reading":"表层自然解读","deep_truth":"揭示后的真实关系","entities":["实体1","实体2"],"false_delta":"经验读者会优先错误推断的翻转类型ID","shared_evidence":"在不知道真相时两种解读都能解释的歧义证据","emotional_weight":"揭示时某段具体关系/身份/信念被重新定义的感受"}
-如需自定义新翻转类型，额外填写 delta_operator_desc：
-  {"action":"generate","delta_operator":"my_new_id","delta_operator_desc":"该翻转改变的认知维度（中文）",...}
-</tools>
-<batch_rules>
-- 第一轮必须输出至少一个think；禁止第一轮直接generate。
-- think和generate禁止在同一轮。先think，下一轮再generate。
-</batch_rules>
+<fields>
+{
+  "delta_operator": "翻转类型ID（从上表选择或自定义）",
+  "delta_operator_desc": "自定义新类型时填写该翻转改变的认知维度（中文）；使用已有类型时留空字符串",
+  "surface_reading": "给定情境下普通观察者会立刻产生的推断",
+  "deep_truth": "揭示后的真实关系",
+  "entities": ["实体1", "实体2"],
+  "false_delta": "经验读者会优先错误推断的翻转类型ID",
+  "shared_evidence": "在不知道真相时两种解读都能解释的歧义证据",
+  "emotional_weight": "揭示时某段具体关系/身份/信念被重新定义的感受"
+}
+</fields>
 <rules>
 - surface_reading：给定情境下普通观察者会立刻产生的推断，不要是"不确定"或"存在谜团"。
 - delta_operator：必须唯一且精确地描述从surface_reading到deep_truth的认知翻转——换其他翻转类型就无法解释这个变换。
@@ -71,26 +71,13 @@ const ironyCoreQASystemPrompt = `<role>悬疑故事揭示结构审核员</role>
 不审核：内容是否有趣、是否是常见谜题类型、风格倾向。
 </audit_rules>`
 
-const ironyCoreToolCallExample = `[{"action":"think","think":"我需要选择一个能将surface_reading精确映射到deep_truth的算子..."},{"action":"generate","delta_operator":"role_swap","surface_reading":"老人每晚去图书馆偷走特定书籍","deep_truth":"书是他自己的，他在取回被窃之物","entities":["老人","图书馆员","书籍收藏"],"false_delta":"identity_collapse","shared_evidence":"老人对书籍的熟悉程度异乎寻常，每次都精准定位，从不乱翻","emotional_weight":"「盗贼」与「失主」的身份在道德上互换，追书之人才是真正的受害者"}]`
+const ironyCoreExample = `{"delta_operator":"role_swap","delta_operator_desc":"","surface_reading":"老人每晚去图书馆偷走特定书籍","deep_truth":"书是他自己的，他在取回被窃之物","entities":["老人","图书馆员","书籍收藏"],"false_delta":"identity_collapse","shared_evidence":"老人对书籍的熟悉程度异乎寻常，每次都精准定位，从不乱翻","emotional_weight":"「盗贼」与「失主」的身份在道德上互换，追书之人才是真正的受害者"}`
 
 const ironyCoreQAToolCallExample = `[{"action":"response","pass":true,"reason":"surface_reading自然，翻转类型映射精确，false_delta作用于不同语义维度，shared_evidence在两种解读下均成立，后验必然性成立，emotional_weight具体。","reject_reasons":[],"suggested_fix":""}]`
 
 // ---------------------------------------------------------------------------
 // Tool-call types (Stage 1)
 // ---------------------------------------------------------------------------
-
-type ironyCoreArchitectToolCall struct {
-	Action            ToolCallType `json:"action"`
-	Think             string       `json:"think,omitempty"`
-	DeltaOperator     string       `json:"delta_operator,omitempty"`
-	DeltaOperatorDesc string       `json:"delta_operator_desc,omitempty"`
-	SurfaceReading    string       `json:"surface_reading,omitempty"`
-	DeepTruth         string       `json:"deep_truth,omitempty"`
-	Entities          []string     `json:"entities,omitempty"`
-	FalseDelta        string       `json:"false_delta,omitempty"`
-	SharedEvidence    string       `json:"shared_evidence,omitempty"`
-	EmotionalWeight   string       `json:"emotional_weight,omitempty"`
-}
 
 type ironyCoreQAToolCall struct {
 	Action        ToolCallType `json:"action"`
@@ -149,7 +136,7 @@ func newIronySession(room *scripterRoom, constraints ScripterConstraints, usedOp
 
 func (s *ironySession) generate(ctx context.Context, attempt int) (IronyCore, error) {
 	logStagePrompt(fmt.Sprintf("irony_core_attempt_%d", attempt), s.architectMsgs)
-	core, msgs, err := runIronyCoreArchitectLoop(ctx, s.room, s.architectMsgs, attempt)
+	core, msgs, err := runIronyCoreGenerate(ctx, s.room, s.architectMsgs, attempt)
 	s.architectMsgs = msgs
 	if err != nil {
 		return IronyCore{}, err
@@ -185,7 +172,7 @@ func (s *ironySession) feedRejection(attempt int, core IronyCore, qa SandboxQA) 
 %s
 </must_fix>
 </qa_rejection>
-请基于同一个创作上下文重新设计IronyCore：逐条解决must_fix列出的结构问题；不要只改措辞；仍只输出合法JSON数组工具调用。`,
+请基于同一个创作上下文重新设计IronyCore：逐条解决must_fix列出的结构问题；不要只改措辞；仍只输出合法JSON对象。`,
 			attempt, string(coreJSON), formatSandboxMustFix(qa)),
 	})
 }
@@ -229,17 +216,16 @@ func generateIronyCoreWithQA(ctx context.Context, room *scripterRoom, constraint
 }
 
 // ---------------------------------------------------------------------------
-// Architect loop (think → generate)
+// Architect generate (direct json_object, no tool-call loop)
 // ---------------------------------------------------------------------------
 
-func runIronyCoreArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, attempt int) (IronyCore, []llm.ChatMessage, error) {
-	const maxRounds = 20
-	seenThink := false
+func runIronyCoreGenerate(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, attempt int) (IronyCore, []llm.ChatMessage, error) {
+	const maxRounds = 5
 	for round := 1; round <= maxRounds; round++ {
 		if ctx.Err() != nil {
 			return IronyCore{}, msgs, ctx.Err()
 		}
-		logStagePrompt(fmt.Sprintf("irony_core_architect_a%d_r%d", attempt, round), msgs)
+		logStagePrompt(fmt.Sprintf("irony_core_a%d_r%d", attempt, round), msgs)
 		raw, err := room.architect.provider.Chat(ctx, msgs)
 		if err != nil {
 			return IronyCore{}, msgs, err
@@ -247,61 +233,21 @@ func runIronyCoreArchitectLoop(ctx context.Context, room *scripterRoom, msgs []l
 		log.Printf("[scripter:irony_core_architect] a=%d r=%d raw=%s", attempt, round, truncateRunes(raw, scripterRawLogLimit))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
-		calls, parseErr := parseIronyCoreArchitectCalls(ctx, room.parser, raw)
+		core, parseErr := parseIronyCoreJSON(ctx, room.parser, raw)
 		if parseErr != nil {
 			log.Printf("[scripter:irony_core_architect] a=%d r=%d SYSTEM_REJECT json_parse_err=%v", attempt, round, parseErr)
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON对象。"})
 			continue
 		}
-		if len(calls) == 0 {
-			log.Printf("[scripter:irony_core_architect] a=%d r=%d SYSTEM_REJECT empty_calls", attempt, round)
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
+		if err := validateIronyCoreFields(core); err != nil {
+			log.Printf("[scripter:irony_core_architect] a=%d r=%d SYSTEM_REJECT validation_err=%v", attempt, round, err)
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: " + err.Error()})
 			continue
 		}
-
-		hasGenerate, hasThink, invalidAction := false, false, false
-		for _, call := range calls {
-			switch call.Action {
-			case ToolThink:
-				hasThink = true
-			case "generate":
-				hasGenerate = true
-			default:
-				log.Printf("[scripter:irony_core_architect] a=%d r=%d SYSTEM_REJECT invalid_action=%s", attempt, round, call.Action)
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf("SYSTEM REJECT: IronyCore生成只允许think/generate，不允许%s。", call.Action)})
-				invalidAction = true
-			}
-		}
-		if invalidAction {
-			continue
-		}
-		if hasGenerate && hasThink {
-			log.Printf("[scripter:irony_core_architect] a=%d r=%d SYSTEM_REJECT mixed_think_generate", attempt, round)
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: think和generate不能在同一轮。先think，下一轮再generate。"})
-			continue
-		}
-		if hasThink {
-			seenThink = true
-			log.Printf("[scripter:irony_core_architect] a=%d r=%d think seenThink=%v", attempt, round, seenThink)
-			continue // wait for next round with generate
-		}
-		if hasGenerate {
-			if !seenThink {
-				log.Printf("[scripter:irony_core_architect] a=%d r=%d SYSTEM_REJECT generate_without_prior_think", attempt, round)
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 第一轮禁止直接generate，必须先think。"})
-				continue
-			}
-			core, err := ironyCoreFromGenerateCall(calls)
-			if err != nil {
-				log.Printf("[scripter:irony_core_architect] a=%d r=%d SYSTEM_REJECT validation_err=%v", attempt, round, err)
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: " + err.Error()})
-				continue
-			}
-			log.Printf("[scripter:irony_core_architect] a=%d r=%d generate_ok delta=%q", attempt, round, core.DeltaOperator)
-			return core, msgs, nil
-		}
+		log.Printf("[scripter:irony_core_architect] a=%d r=%d ok delta=%q", attempt, round, core.DeltaOperator)
+		return core, msgs, nil
 	}
-	return IronyCore{}, msgs, fmt.Errorf("IronyCore 生成未在%d轮内给出generate", maxRounds)
+	return IronyCore{}, msgs, fmt.Errorf("IronyCore 生成未在%d轮内成功", maxRounds)
 }
 
 // ---------------------------------------------------------------------------
@@ -317,65 +263,43 @@ func runIronyCoreQALoop(ctx context.Context, room *scripterRoom, msgs []llm.Chat
 // Parse / validate helpers
 // ---------------------------------------------------------------------------
 
-func parseIronyCoreArchitectCalls(ctx context.Context, parser agentHandle, raw string) ([]ironyCoreArchitectToolCall, error) {
-	stripped := strings.TrimSpace(llm.StripCodeFence(llm.JsonArryProtect(raw)))
-	var calls []ironyCoreArchitectToolCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
-		return calls, nil
+func parseIronyCoreJSON(ctx context.Context, parser agentHandle, raw string) (IronyCore, error) {
+	stripped := strings.TrimSpace(llm.StripCodeFence(raw))
+	var core IronyCore
+	if err := json.Unmarshal([]byte(stripped), &core); err == nil {
+		return core, nil
 	}
 	if parser.provider == nil {
-		return nil, fmt.Errorf("JSON解析失败且parser不可用")
+		return IronyCore{}, fmt.Errorf("JSON解析失败且parser不可用")
 	}
-	fixed, repairErr := repairJSONWith(ctx, parser, stripped, fmt.Errorf("parse failed"), ironyCoreToolCallExample)
+	fixed, repairErr := repairJSONWith(ctx, parser, stripped, fmt.Errorf("parse failed"), ironyCoreExample)
 	if repairErr != nil {
-		return nil, repairErr
+		return IronyCore{}, repairErr
 	}
-	fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
-	var calls2 []ironyCoreArchitectToolCall
-	if err := json.Unmarshal([]byte(fixed), &calls2); err != nil {
-		return nil, err
+	var core2 IronyCore
+	if err := json.Unmarshal([]byte(strings.TrimSpace(fixed)), &core2); err != nil {
+		return IronyCore{}, err
 	}
-	return calls2, nil
+	return core2, nil
 }
 
-func ironyCoreFromGenerateCall(calls []ironyCoreArchitectToolCall) (IronyCore, error) {
-	var gen *ironyCoreArchitectToolCall
-	for i := range calls {
-		if calls[i].Action == "generate" {
-			if gen != nil {
-				return IronyCore{}, fmt.Errorf("generate只能有一个")
-			}
-			gen = &calls[i]
-		}
+func validateIronyCoreFields(core IronyCore) error {
+	if strings.TrimSpace(core.DeltaOperator) == "" {
+		return fmt.Errorf("delta_operator不能为空")
 	}
-	if gen == nil {
-		return IronyCore{}, fmt.Errorf("缺少generate")
+	if strings.TrimSpace(core.SurfaceReading) == "" {
+		return fmt.Errorf("surface_reading不能为空")
 	}
-	if strings.TrimSpace(gen.DeltaOperator) == "" {
-		return IronyCore{}, fmt.Errorf("generate.delta_operator不能为空")
+	if strings.TrimSpace(core.DeepTruth) == "" {
+		return fmt.Errorf("deep_truth不能为空")
 	}
-	if strings.TrimSpace(gen.SurfaceReading) == "" {
-		return IronyCore{}, fmt.Errorf("generate.surface_reading不能为空")
+	if strings.TrimSpace(core.FalseDelta) == "" {
+		return fmt.Errorf("false_delta不能为空")
 	}
-	if strings.TrimSpace(gen.DeepTruth) == "" {
-		return IronyCore{}, fmt.Errorf("generate.deep_truth不能为空")
+	if strings.TrimSpace(core.SharedEvidence) == "" {
+		return fmt.Errorf("shared_evidence不能为空")
 	}
-	if strings.TrimSpace(gen.FalseDelta) == "" {
-		return IronyCore{}, fmt.Errorf("generate.false_delta不能为空")
-	}
-	if strings.TrimSpace(gen.SharedEvidence) == "" {
-		return IronyCore{}, fmt.Errorf("generate.shared_evidence不能为空")
-	}
-	return IronyCore{
-		DeltaOperator:     strings.TrimSpace(gen.DeltaOperator),
-		DeltaOperatorDesc: strings.TrimSpace(gen.DeltaOperatorDesc),
-		SurfaceReading:    strings.TrimSpace(gen.SurfaceReading),
-		DeepTruth:         strings.TrimSpace(gen.DeepTruth),
-		Entities:          gen.Entities,
-		FalseDelta:        strings.TrimSpace(gen.FalseDelta),
-		SharedEvidence:    strings.TrimSpace(gen.SharedEvidence),
-		EmotionalWeight:   strings.TrimSpace(gen.EmotionalWeight),
-	}, nil
+	return nil
 }
 
 func normalizeIronyCore(core IronyCore) IronyCore {

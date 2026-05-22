@@ -63,6 +63,7 @@ const invGraphSystemPrompt = `<role>COC7沙盒调查路径图设计师</role>
 </misdirection_rules>
 <rules>
 - required_knowledge：只包含"理解结局所必须掌握的核心事实"，通常3-5条；不要列举所有线索
+- 【关键约束】required_knowledge中的每条知识点字符串必须逐字出现在至少一个非resolution节点（hook/investigation/encounter）的knowledge列表中；知识点只在required_knowledge字段里列出但不出现在任何节点knowledge里，系统验证必然失败
 - leads_to中的ID必须全部存在于nodes列表中
 - hook_node必须在nodes列表中且type=hook
 - resolution_nodes中的每个ID必须在nodes列表中且type=resolution

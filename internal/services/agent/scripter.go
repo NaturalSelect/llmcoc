@@ -678,7 +678,7 @@ func containsUncertaintyNote(notes []string) bool {
 // Stage 4: Assembly (compile δ-framework artifacts into ScenarioDraft)
 // ---------------------------------------------------------------------------
 
-const scenarioExample = `{"name":"示例沙盒模组名","description":"一份围绕异常事实、派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是本场COC跑团的KP，职责是管理一个会自行推进的局势而不是执行线性故事。按派系时间线推进后果；按可见性分层给信息；不要主动把调查员引向正确答案。","setting":"玩家抵达时能看见的当前局势。只写公开事实、紧张关系和可感知异常，不剧透幕后真相。","intro":"你们以某种身份进入局势，眼前有三件可立即行动的事：询问某人、检查某地、决定是否公开某条信息。","game_start_slot":16,"map_description":"【文字地图】起点A连接地点B和地点C；地点B有公开冲突，地点C有可深入调查的物件；各地点可往返，没有固定访问顺序。","scenes":[{"id":"location_1","name":"地点名","description":"可见：到达即可看到的信息。可发现：主动调查可获得的信息。杠杆：调查员若做X，派系Y的时间线会改变。风险：拖延或失败的后果。出口：可前往的其他地点。","triggers":["available_from_start"]}],"npcs":[{"name":"NPC姓名","description":"公开身份；所属派系；真实议程；秘密；可被说服或施压的杠杆；可能知道但不会主动说出的事实。","attitude":"初始态度和压力下的反应","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"HP":10,"MP":10}}],"clues":["[真实]登记簿矛盾(旧办公室): 自包含事实；获取方式；能改变哪个判断。","[隐藏]神话本质(封存物件): 神话核心真相（实体性质/典籍目的/仪式代价）；获取方式（需要什么技能或条件）；发现后要承担的代价（理智/后果）。","[误导]地方传闻(酒馆): 为什么它表面合理但只能解释一部分。"],"win_condition":"如果调查员让某个结束信号以较低代价固化，则对应派系失去关键优势，但另一个代价留存。","lose_condition":"如果关键时间线终点到达且无人干预，则局势进入新的稳定态，某人或某地不可挽回地改变。","partial_wins":["如果只救出某人但没有公开事实，则个人获救，派系结构保留。"]}}`
+const scenarioExample = `{"name":"示例沙盒模组名","description":"一份围绕异常事实、派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是本场COC跑团的KP，职责是管理一个会自行推进的局势而不是执行线性故事。按派系时间线推进后果；按可见性分层给信息；不要主动把调查员引向正确答案。","setting":"玩家抵达时能看见的当前局势。只写公开事实、紧张关系和可感知异常，不剧透幕后真相。","intro":"你们以某种身份进入局势，眼前有三件可立即行动的事：询问某人、检查某地、决定是否公开某条信息。","game_start_slot":16,"map_description":"【文字地图】起点A连接地点B和地点C；地点B有公开冲突，地点C有可深入调查的物件；各地点可往返，没有固定访问顺序。","scenes":[{"id":"location_1","name":"地点名","description":"可见：到达即可看到的信息。可发现：主动调查可获得的信息。杠杆：调查员若做X，派系Y的时间线会改变。风险：拖延或失败的后果。出口：可前往的其他地点。","triggers":["available_from_start"]}],"npcs":[{"name":"NPC姓名","description":"公开身份；所属派系；真实议程；秘密；可被说服或施压的杠杆；可能知道但不会主动说出的事实。","attitude":"初始态度和压力下的反应","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"SAN":50,"HP":10,"MP":10}}],"clues":["[真实]登记簿矛盾(旧办公室): 自包含事实；获取方式；能改变哪个判断。","[隐藏]神话本质(封存物件): 神话核心真相（实体性质/典籍目的/仪式代价）；获取方式（需要什么技能或条件）；发现后要承担的代价（理智/后果）。","[误导]地方传闻(酒馆): 为什么它表面合理但只能解释一部分。"],"win_condition":"如果调查员让某个结束信号以较低代价固化，则对应派系失去关键优势，但另一个代价留存。","lose_condition":"如果关键时间线终点到达且无人干预，则局势进入新的稳定态，某人或某地不可挽回地改变。","partial_wins":["如果只救出某人但没有公开事实，则个人获救，派系结构保留。"]}}`
 
 const assemblySystemPrompt = `<role>COC7沙盒剧本编译器</role>
 <task>将三阶段设计产物（揭示结构、误导设计、调查路径图）编译为完整的COC7沙盒剧本JSON（ScenarioDraft）。不要查询规则书，不要更换已确认的神话元素（mythos_anchor）。</task>
@@ -689,7 +689,7 @@ const assemblySystemPrompt = `<role>COC7沙盒剧本编译器</role>
 - content.intro写入场位置和立即可做的行动，基于graph.hook_node附近地点。
 - content.map_description基于graph.nodes中的地点节点写可导航关系。
 - content.scenes是地点/局势状态摘要，对应InvNode；description必须包含可见信息、可发现信息、杠杆、风险、出口。
-- content.npcs来自misdirection.factions中的NPC；misdirection.misdirector_npc必须包含在内。
+- content.npcs来自misdirection.factions中的NPC；misdirection.misdirector_npc必须包含在内；stats必须包含SAN字段（通常 = POW × 5，可按角色调整）。
 - content.clues是自包含事实字符串，必须以[真实]/[隐藏]/[误导]开头；delta_signal=false_delta→[误导]；delta_signal=true_delta→[隐藏]；delta_signal=ambiguous→[真实]。
 - content.clues中必须包含至少一条以'[隐藏]神话本质'开头的线索，涵盖misdirection.mythos_anchor所描述的神话元素。
 - content.clues中至少一条[误导]线索在irony.deep_truth揭示后事后仍能合理解释（不能是在真相下完全矛盾的线索）。
