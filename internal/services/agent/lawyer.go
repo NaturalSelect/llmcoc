@@ -57,7 +57,6 @@ func SaveLawyerCache(rulebookHash string) {
 
 var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通过调用工具来回答规则问题。
 每次输出必须是一个JSON数组,包含按顺序执行的工具调用列表。
-在使用 grep 之前优先考虑 read_rulebook_const 来获取规则书内置常量(如目录、怪物清单等),以减少搜索次数和提高准确率。
 
 【规则书目录】
 ` + rulebook.RulebookDir + `
@@ -75,17 +74,12 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	- 关键词须与规则书原文一致
 	- 搜索结果仅用于本轮分析，不会被缓存
 
-4. read_rulebook_const — 读取规则书内置常量目录/列表,存在假阴性风险(但不存在假阳性)
-	[{"action":"read_rulebook_const","constant":"常量名"}]
-	- 常量名:rulebook_dir / rulebook_detail_dir / aliens / books / great_old_ones_and_gods / monsters / mythos_creatures / spells
-	- 结果仅用于本轮分析
-
-5. read_lines — 直接读取规则书的特定行号范围,适用于已知出处的规则查询
+4. read_lines — 直接读取规则书的特定行号范围,适用于已知出处的规则查询
 	[{"action":"read_lines","start":100,"end":120}]
 	- 仅当 grep 已定位相关内容但需要完整上下文时使用
 	- 结果仅用于本轮分析
 
-6. response — 给出最终规则裁定,结束本次查询
+5. response — 给出最终规则裁定,结束本次查询
    [{"action":"response","cache_key":"#标签1 #标签2 #标签3","ruling":"规则裁定内容(简短只包含必要信息)"}]
    - 直接引用关键规则数值和判定条件
    - 若原文未覆盖该问题,明确说明"规则书未明确规定"
@@ -98,17 +92,16 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 - 回复不能为空
 - **第一轮必须且只能调用 search_cache**，不得跳过，不得在第一轮输出任何其他工具或response
 - 若 search_cache 返回了高度相关的缓存且你认为有足够的信息能够回答当前问题，直接引用并输出 response，不再进行任何搜索
-- 只有缓存未命中时，才允许进行grep/read_rulebook_const/read_lines等搜索
-- 禁止在没有调用grep/search_cache/read_rulebook_const/read_lines的情况下就进行response
+- 只有缓存未命中时，才允许进行grep/read_lines等搜索
+- 禁止在没有调用grep/search_cache/read_lines的情况下就进行response
 - 谨慎判断意图，不要乱搜索，关键词不要乱给, 仔细检查每一个grep结果，确保你能拿到足够多的信息来回答问题, 不要乱猜
 - **输出 response 前的强制自检**（每次必须逐项确认，全部为"是"才可输出 response）：
   1. 我是否已从规则书原文中看到了回答所需的 **具体数值**（伤害骰、SAN损失范围、技能阈值、法术MP消耗等）？——仅"大致了解"或"只看到名称"不算"是"。
   2. 若问题涉及典籍/法术：我是否已读取到该词条的 **完整内容**（包括SAN损失数值、克苏鲁神话加成值、可习得法术列表）？——仅找到书名/法术名不算"是"，必须继续grep/read_lines。
   3. 我是否已确认拓展规则和额外规则（如使用道具、学习典籍等）不适用于当前问题，或者已正确应用了这些规则？——如果不确定或有任何可能适用的拓展/额外规则，必须继续搜索，**绝对禁止**在不清楚是否适用的情况下输出 response。
   4. 若有任何一项为"否"，必须继续搜索，**绝对禁止**在数值缺失的情况下输出 response。
-- 当需要目录、法术清单、怪物清单等静态信息时,可先调用 read_rulebook_const
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
-- 每轮只包含 search_cache/grep/read_rulebook_const/read_lines 调用(可多个),或只包含单个 response,不混用
+- 每轮只包含 search_cache/grep/read_lines 调用(可多个),或只包含单个 response,不混用
 - 仅输出JSON数组, 不加任何说明文字, 你只能输出JSON数组
 - YOUR OUTPUT MUST BE A VALID JSON ARRAY THAT CAN BE PARSED WITHOUT ERRORS. DO NOT OUTPUT ANY MARKDOWN OR OTHER FORMATTING, ONLY THE JSON ARRAY. THE FINAL RESULT MUST BE PROVIDED THROUGH THE "response" ACTION, AND YOU SHOULD NOT PROVIDE ANY CONCLUSIONS OR ANSWERS WITHOUT USING THE SPECIFIED TOOL CALLS.
 
@@ -146,7 +139,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 		return nil
 	}
 
-	// Track whether the LLM had to search the rulebook (grep/read_lines/read_rulebook_const).
+	// Track whether the LLM had to search the rulebook (grep/read_lines).
 	searchedRulebook := false
 	// Track whether search_cache returned at least one result.
 	cacheSearchHadResults := false
@@ -263,13 +256,6 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 					resultSB.WriteString(fmt.Sprintf("【grep:%s】\n%s\n\n", kw, text))
 					debugf("Grep", "keyword: %v result: %v", kw, text)
 				}
-			case "read_rulebook_const":
-				if c.Constant == "" {
-					continue
-				}
-				searchedRulebook = true
-				text := rulebook.ReadConstant(c.Constant)
-				resultSB.WriteString(fmt.Sprintf("【read_rulebook_const:%s】\n%s\n\n", c.Constant, text))
 			case "read_lines":
 				if c.Start == 0 || c.End == 0 {
 					continue

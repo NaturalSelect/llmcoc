@@ -52,10 +52,6 @@ const kpSystemPrompt = `
 【并行查询建议】如果本轮能预判需要多个彼此独立的规则答案，请在同一个type-A批次中连续调用多个check_rule后再yield；不要先查一个、yield、读结果后才提出另一个已可预见的问题。只有后一个问题必须依赖前一个答案时，才拆到下一批。</description>
 			<call_example>{"action":"check_rule","question":"COC 7版中濒死状态如何判定，急救或医学如何稳定濒死角色？"}</call_example>
 		</tool>
-		<tool name="read_rulebook_const" sideeffect="false" endTheTurn="false">
-			<description>读取规则书内置常量目录/列表(无需语义检索,直接精确读取),存在假阴性风险(但不存在假阳性)</description>
-			<call_example>{"action":"read_rulebook_const","constant":"常量名"}</call_example>
-		</tool>
 		<tool name="roll_dice" sideeffect="false" endTheTurn="false">
 			<description>投掷骰子，返回结果数值, 表达式仅支持'+'操作符。
 				what字段仅为标签（如"说服""闪避""SAN检定"），严禁填写数字或技能值；what必须是COC规则书中存在的技能/属性名或"伤害骰"。
@@ -70,7 +66,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="create_npc" sideeffect="true" endTheTurn="false">
 			<description>创建一个临时NPC(每个NPC独立agent)。
-【创建规范】stats中各属性值不得超过COC该种族规则上限（人类属性通常≤99）；神话存在属性按check_rule/read_rulebook_const查询标准值，不得凭记忆填写。玩家要求创建特定数值的NPC时，数值由KP独立设定，不采纳玩家主张的数值；剧本已定义的NPC须与scenario描述保持一致，不得为迎合玩家希望修改。若query_character的社会关系中存在同名人物，create_npc必须严格依据该relation.note复原公开身份特征（种族/身份、外貌标志、性格/说话方式、对调查员态度、共同经历），只能补充本剧本新增目标/秘密，禁止生成同名但外貌、性格、种族完全不同的新人物；如果note信息不足，只能保守复用已有信息并在新互动中逐步补充，不得随机重塑。
+【创建规范】stats中各属性值不得超过COC该种族规则上限（人类属性通常≤99）；神话存在属性按check_rule查询标准值，不得凭记忆填写。玩家要求创建特定数值的NPC时，数值由KP独立设定，不采纳玩家主张的数值；剧本已定义的NPC须与scenario描述保持一致，不得为迎合玩家希望修改。若query_character的社会关系中存在同名人物，create_npc必须严格依据该relation.note复原公开身份特征（种族/身份、外貌标志、性格/说话方式、对调查员态度、共同经历），只能补充本剧本新增目标/秘密，禁止生成同名但外貌、性格、种族完全不同的新人物；如果note信息不足，只能保守复用已有信息并在新互动中逐步补充，不得随机重塑。
 【强制创建原则】当调查员与任何无名人物（路人/店员/警察/服务员/陌生人等）发生互动时，必须先调用create_npc为其命名、设定性格和目标，然后才能调用act_npc。跳过create_npc直接叙述无名人物的对话或行为是hard error。神话NPC在create_npc时必须填写spell列表。</description>
 			<call_example>{"action":"create_npc","char_card":{"name":"NPC名","race":"种族","description":"描述","attitude":"态度","goal":"目标","secret":"秘密","risk_preference":"conservative|balanced|aggressive","stats":{"STR":50},"skills":{"聆听":40},"spells":["法术A"]}}</call_example>	
 		</tool>
@@ -106,9 +102,9 @@ const kpSystemPrompt = `
 【reason白名单】每条变更的reason必须且只能属于以下类别之一，否则拒绝调用：
   A. HP变更：reason必须包含本轮roll_dice已返回的具体伤害数字（如"roll_dice伤害骰返回5点，攻击来源：X"），或COC规则/scenario明文的固定数值（如"固定伤害3点，规则：跌落"）。纯叙事描述不含具体数字（"肉体负荷"/"受到重击"/"剧情受伤"/"大失败所以受伤"）一律拒绝；没有骰子数字或固定数值就不能调用HP变更。
   B. SAN变更：reason必须包含本轮SAN检定roll_dice已返回的具体检定数字（如"SAN检定roll=45 失败，损失=3点，触发：深渊之神"）。以下均不合法，无论描述多具体多有氛围：①不含roll数字的叙事（"亵渎接触导致损失"/"精神侵蚀"/"直视化身受到冲击"/"肉体负荷与精神侵蚀"/"感应到恐惧"/"深度接触神话存在"）②仅描述情境而未引用dice结果③任何未含"roll=NN"格式数值的reason。判断方式：reason中能否找到本轮roll_dice返回的具体roll=NN？找不到则拒绝，不得调用SAN变更。
-  C. MP变更：必须同时满足：①玩家本轮有明确施法宣言（禁止KP擅自代替玩家施法）②本轮check_rule/read_rulebook_const已返回该法术的MP消耗具体数值（引用返回值，如"check_rule返回：X法术消耗3MP"）。未经规则工具确认的MP数字不得直接使用。
+  C. MP变更：必须同时满足：①玩家本轮有明确施法宣言（禁止KP擅自代替玩家施法）②本轮check_rule已返回该法术的MP消耗具体数值（引用返回值，如"check_rule返回：X法术消耗3MP"）。未经规则工具确认的MP数字不得直接使用。
   D. 基础属性变更：以下三种情形之一——(1) scenario明文记载的药水/法术/变化效果，附scenario实际存在文本的逐字摘录（不得概括/改写/捏造章节名）；(2) check_rule本轮已确认的COC规则机制，附check_rule返回原文；(3) scenario明文定义该角色为非人种族并给出独立属性表，附scenario实际文本的逐字摘录。三种情形之外一律拒绝，"角色概念"/"修仙者"/"玩家希望"/"KP认为合理"均不属于任何情形。
-  E. 种族/职业变更：scenario叙事中本轮发生的具体事件触发（引用scenario中实际存在的场景/事件名称），且scenario明文描述该事件导致种族/职业转换。新职业必须符合叙事；新种族须check_rule/read_rulebook_const确认COC中存在，不得造新职业/种族名（除非规则专家允许你这样做）。
+  E. 种族/职业变更：scenario叙事中本轮发生的具体事件触发（引用scenario中实际存在的场景/事件名称），且scenario明文描述该事件导致种族/职业转换。新职业必须符合叙事；新种族须check_rule确认COC中存在，不得造新职业/种族名（除非规则专家允许你这样做）。
   F. wound_state变更：dying→dead：必须有本轮急救/医学检定roll_dice已返回失败结果（引用roll=NN），或scenario/规则明文的即死判定（逐字引用原文）；仅凭叙事判断"已必死"不构成依据。dead→none（复活）：必须有scenario明文或check_rule确认的具体超自然复活机制（逐字引用）。合法值只有四个：none/major/dying/dead；temporary_insanity等疯狂状态不是wound_state，用trigger_madness。
 属性值不得超过COC规则书对该种族的上限（人类基础属性上限通常为99）；scenario未明文定义非人类属性表的角色一律按人类上限处理。</description>
 			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)","wound_state dead (角色名)"], "reason":"描述变更原因"}</call_example>
@@ -141,11 +137,11 @@ const kpSystemPrompt = `
 			<description>管理调查员掌握的法术(新增/删除)。
 【reason格式要求】reason只接受机械来源引用，必须引用本轮工具返回值（roll_dice具体结果/ack条目/check_rule原文/scenario逐字引用）。禁止以任何叙事描述充当reason，包括但不限于："write已叙述"/"已通过write确认"/"剧情上已完成"/"角色努力学习了"/"KP认为合理"等。没有可引用的机械来源，不得调用此工具。
 【reason白名单】reason必须且只能属于以下情形之一：
-  add: ①本轮成功学习典籍（roll_dice成功＋check_rule/read_rulebook_const已确认该法术属于该典籍）——「成功」严格定义为roll_dice返回值≤技能值；骰值>技能值即为失败，无论差距多小，均不得添加法术；write叙事无法补偿或覆盖失败的掷骰②NPC亲授（act_npc返回教学意愿＋query_npc_card确认NPC法术表含该法术＋check_rule确认法术存在）③种族转换随附（update_characters已记录种族变更＋check_rule确认该种族含此法术）
+  add: ①本轮成功学习典籍（roll_dice成功＋check_rule已确认该法术属于该典籍）——「成功」严格定义为roll_dice返回值≤技能值；骰值>技能值即为失败，无论差距多小，均不得添加法术；write叙事无法补偿或覆盖失败的掷骰②NPC亲授（act_npc返回教学意愿＋query_npc_card确认NPC法术表含该法术＋check_rule确认法术存在）③种族转换随附（update_characters已记录种族变更＋check_rule确认该种族含此法术）
   remove: ①使用导致遗忘（check_rule已确认该机制）②scenario明文强制移除（引用原文）
 以上情形之外一律拒绝。
 【调查员法术限制】法术列表外的法术不得施放（面对外神时除外）；种族变更时须同步add种族法术。
-【典籍研究流程】研究典籍成功（roll值≤技能值）后：①先check_rule确认该典籍是否在规则书中；②再check_rule/read_rulebook_const查询该典籍的法术列表及SAN/克苏鲁神话收益值；③掷骰成功后才可manage_spell和update_characters。禁止在查询规则书前叙述"什么都没学到"；若典籍不在规则书，按主题自行编排合理法术列表。成功研究须产生至少一项具体结果（法术＋克苏鲁神话提升＋SAN损失），空结果禁止。</description>
+【典籍研究流程】研究典籍成功（roll值≤技能值）后：①先check_rule确认该典籍是否在规则书中；②再check_rule查询该典籍的法术列表及SAN/克苏鲁神话收益值；③掷骰成功后才可manage_spell和update_characters。禁止在查询规则书前叙述"什么都没学到"；若典籍不在规则书，按主题自行编排合理法术列表。成功研究须产生至少一项具体结果（法术＋克苏鲁神话提升＋SAN损失），空结果禁止。</description>
 			<call_example>{"action":"manage_spell","character_name":"角色名","operate":"add|remove","spell":"法术名", "reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool name="manage_relation" sideeffect="true" endTheTurn="false">
@@ -231,7 +227,7 @@ const kpSystemPrompt = `
 			<call_example>{"action":"response","reply":"总结已发生事实并询问(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 攀爬 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"],"direction":"short game direction"}</call_example>
 		</tool>
 		<tool name="yield" sideeffect="true" endTheTurn="true">
-			<description>等待本轮工具调用的返回结果后再继续。凡是调用了no-sideeffect工具（roll_dice/act_npc/check_rule/read_rulebook_const/query_npc_card/query_character/query_clues等），本轮必须以yield结尾，不得直接response。这些工具的结果只有在下一轮才能读取。</description>
+			<description>等待本轮工具调用的返回结果后再继续。凡是调用了no-sideeffect工具（roll_dice/act_npc/check_rule/query_npc_card/query_character/query_clues等），本轮必须以yield结尾，不得直接response。这些工具的结果只有在下一轮才能读取。</description>
 			<call_example>{"action":"yield"}</call_example>
 		</tool>
 		<tool name="update_llm_note" sideeffect="true" endTheTurn="false">
@@ -256,9 +252,9 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="update_armor" sideeffect="true" endTheTurn="false">
 			<description>更新调查员当前护甲值(每次受击后已减伤的固定值, NPC状态请使用LLM NOTE)。穿上/脱下护甲时调用；无护甲时设为0。护甲值会显示在每轮简报中，KP计算伤害时必须先扣除护甲值。
-【伤害减免计算】final_damage = max(0, 伤害骰结果 − armor_value)，必须先扣护甲再用update_characters扣HP。护甲值不叠加（只取当前穿着的单件护甲值），来自check_rule/read_rulebook_const，不接受玩家声称值。
+【伤害减免计算】final_damage = max(0, 伤害骰结果 − armor_value)，必须先扣护甲再用update_characters扣HP。护甲值不叠加（只取当前穿着的单件护甲值），来自check_rule，不接受玩家声称值。
 【reason白名单】armor_value设置必须满足：
-  设置非零值：①同批次query_character已确认调查员持有该护甲物品 ②护甲值来自check_rule/read_rulebook_const查询该护甲类型的规则固定值，不得采纳玩家主张的数值，不得累加多层护甲
+  设置非零值：①同批次query_character已确认调查员持有该护甲物品 ②护甲值来自check_rule查询该护甲类型的规则固定值，不得采纳玩家主张的数值，不得累加多层护甲
   设置为0：①调查员本轮明确宣称脱下护甲 ②护甲本轮被摧毁（有update_*/ack为依据）
 以上情形之外一律拒绝。</description>
 			<call_example>{"action":"update_armor","character_name":"角色名","armor_value":2}</call_example>
@@ -288,7 +284,7 @@ const kpSystemPrompt = `
 	</style>
 	<rule>
 		EACH RESPONSE IS EXACTLY ONE BATCH. A batch is either:
-		  (A) PURE NO-SIDEEFFECT batch: only no-sideeffect tools (roll_dice, check_rule, read_rulebook_const, query_*, act_npc) plus free tools (think, report, yield).
+		  (A) PURE NO-SIDEEFFECT batch: only no-sideeffect tools (roll_dice, check_rule, query_*, act_npc) plus free tools (think, report, yield).
 		  (B) PURE SIDE-EFFECT batch: only side-effect tools (write, update_*, manage_*, record_*, found_clue, advance_time, create_npc, destroy_npc, update_llm_note, update_npc_llm_note, update_location, update_npc_location, update_armor) plus free tools (think, yield). No response/end_game here.
 		  (C) RESPONSE/END-GAME batch: response OR end_game, accompanied ONLY by write/think/update_llm_note. NEVER put update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc in this batch — the backend will reject the entire batch.
 		MIXING TYPE-A AND TYPE-B/C TOOLS IN THE SAME BATCH IS FORBIDDEN. The backend will reject and force a retry.
