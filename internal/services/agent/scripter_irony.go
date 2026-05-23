@@ -22,8 +22,11 @@ import (
 // ironyCoreSystemPrompt is built dynamically so the operator table is always
 // current without requiring prompt template edits.
 func ironyCoreSystemPrompt() string {
-	return `<role>短篇悬疑故事架构师</role>
-<task>为一个短篇神秘故事设计核心揭示结构：表层叙事（外人最初形成的自然推断）与深层真相（揭示后的真实关系）之间通过何种认知翻转连接。你在设计一个文学谜题，不是游戏模组。忘记一切游戏规则和系统；用写短篇小说或电影剧本的逻辑工作。</task>
+	return `<role>悬疑故事架构师</role>
+<task>
+	- 为一个悬疑故事设计核心揭示结构：表层叙事（外人最初形成的自然推断）与深层真相（揭示后的真实关系）之间通过何种认知翻转连接。用写小说或电影剧本的逻辑工作。
+	- 避免涉及政治，优先选择侦探类、历史类的故事。
+</task>
 <response_format>json_object</response_format>
 <output>直接输出一个JSON对象，不要Markdown、标题、解释或代码围栏。</output>
 ` + formatDeltaOperatorTable() + `
