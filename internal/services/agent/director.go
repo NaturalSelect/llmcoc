@@ -105,8 +105,9 @@ const kpSystemPrompt = `
   B. SAN变更：reason必须包含本轮SAN检定roll_dice已返回的具体检定数字（如"SAN检定roll=45 失败，损失=3点，触发：深渊之神"）。以下均不合法，无论描述多具体多有氛围：①不含roll数字的叙事（"亵渎接触导致损失"/"精神侵蚀"/"直视化身受到冲击"/"肉体负荷与精神侵蚀"/"感应到恐惧"/"深度接触神话存在"）②仅描述情境而未引用dice结果③任何未含"roll=NN"格式数值的reason。判断方式：reason中能否找到本轮roll_dice返回的具体roll=NN？找不到则拒绝，不得调用SAN变更。
   C. MP变更：必须同时满足：①玩家本轮有明确施法宣言（禁止KP擅自代替玩家施法）②本轮check_rule已返回该法术的MP消耗具体数值（引用返回值，如"check_rule返回：X法术消耗3MP"）。未经规则工具确认的MP数字不得直接使用。
   D. 基础属性变更：以下三种情形之一——(1) scenario明文记载的药水/法术/变化效果，附scenario实际存在文本的逐字摘录（不得概括/改写/捏造章节名）；(2) check_rule本轮已确认的COC规则机制，附check_rule返回原文；(3) scenario明文定义该角色为非人种族并给出独立属性表，附scenario实际文本的逐字摘录。三种情形之外一律拒绝，"角色概念"/"修仙者"/"玩家希望"/"KP认为合理"均不属于任何情形。
-  E. 种族/职业变更：scenario叙事中本轮发生的具体事件触发（引用scenario中实际存在的场景/事件名称），且scenario明文描述该事件导致种族/职业转换。新职业必须符合叙事；新种族须check_rule确认COC中存在，不得造新职业/种族名（除非规则专家允许你这样做）。
-  F. wound_state变更：dying→dead：必须有本轮急救/医学检定roll_dice已返回失败结果（引用roll=NN），或scenario/规则明文的即死判定（逐字引用原文）；仅凭叙事判断"已必死"不构成依据。dead→none（复活）：必须有scenario明文或check_rule确认的具体超自然复活机制（逐字引用）。合法值只有四个：none/major/dying/dead；temporary_insanity等疯狂状态不是wound_state，用trigger_madness。
+  E. 职业变更：新职业必须符合剧本叙事；
+  F. 种族变更：必须有完整的机械来源，不可以纯叙事描述或玩家宣言作为依据。合法的机械来源只包括： check_rule确认的COC规则机制（引用check_rule返回原文）。新种族须check_rule确认COC中存在，不得造新职业/种族名（除非规则专家允许你这样做）。
+  G. wound_state变更：dying→dead：必须有本轮急救/医学检定roll_dice已返回失败结果（引用roll=NN），或scenario/规则明文的即死判定（逐字引用原文）；仅凭叙事判断"已必死"不构成依据。dead→none（复活）：必须有scenario明文或check_rule确认的具体超自然复活机制（逐字引用）。合法值只有四个：none/major/dying/dead；temporary_insanity等疯狂状态不是wound_state，用trigger_madness。
 属性值不得超过COC规则书对该种族的上限（人类基础属性上限通常为99）；scenario未明文定义非人类属性表的角色一律按人类上限处理。</description>
 			<call_example>{"action":"update_characters","changes":["HP -3 (角色名)","SAN -2 (角色名)","cthulhu_mythos +1 (角色名)","race 深潜者混血(角色名)","occupation 记者(角色名)","wound_state dead (角色名)"], "reason":"描述变更原因"}</call_example>
 		</tool>
