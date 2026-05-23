@@ -26,6 +26,8 @@ func ironyCoreSystemPrompt() string {
 <task>
 	- 为一个悬疑故事设计核心揭示结构：表层叙事（外人最初形成的自然推断）与深层真相（揭示后的真实关系）之间通过何种认知翻转连接。用写小说或电影剧本的逻辑工作。
 	- 避免涉及政治，优先选择侦探类、历史类的故事。
+	- 选择哪些具体的、微观的、有生活气息的元素（人物、地点、物件）参与这个揭示结构。
+	- 仔细思考，逐步推理，不要急于提交。
 </task>
 <response_format>json_object</response_format>
 <output>直接输出一个JSON对象，不要Markdown、标题、解释或代码围栏。</output>
