@@ -128,6 +128,7 @@ type ScenarioContent struct {
 	LoseCondition  string          `json:"lose_condition,omitempty"` // 失败条件
 	PartialWins    []string        `json:"partial_wins,omitempty"`   // 部分胜利情景列表
 	Reward         *ScenarioReward `json:"reward,omitempty"`         // 通关奖励（典籍/神话物品），完成win_condition时给予
+	MythosAnchor   string          `json:"mythos_anchor,omitempty"`   // Stage2确认的神话锚点，用于多样性去重
 }
 
 // NOTE: SceneData describes a specific location or event in a scenario.

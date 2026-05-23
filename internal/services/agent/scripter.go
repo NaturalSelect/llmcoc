@@ -82,9 +82,10 @@ type scripterRoom struct {
 	qa           agentHandle
 	lawyer       agentHandle
 	parser       agentHandle
-	req          ScenarioCreationRequest
-	npcBlacklist []string
-	titleSamples []string
+	req            ScenarioCreationRequest
+	npcBlacklist   []string
+	titleSamples   []string
+	mythosBlacklist []string
 }
 
 func newScripterRoom(req ScenarioCreationRequest) (*scripterRoom, error) {
@@ -145,7 +146,8 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 func (r *scripterRoom) prepareContext() {
 	r.npcBlacklist = loadRecentNPCNameBlacklist(200)
 	r.titleSamples = loadScenarioTitleSamples(80)
-	log.Printf("[scripter] context prepared npc_blacklist=%d title_samples=%d", len(r.npcBlacklist), len(r.titleSamples))
+	r.mythosBlacklist = loadRecentMythosAnchors(40)
+	log.Printf("[scripter] context prepared npc_blacklist=%d title_samples=%d mythos_blacklist=%d", len(r.npcBlacklist), len(r.titleSamples), len(r.mythosBlacklist))
 	if len(r.npcBlacklist) > 0 {
 		log.Printf("[scripter] npc blacklist sample=%s", truncateRunes(strings.Join(r.npcBlacklist, ", "), 500))
 	}
@@ -1073,6 +1075,9 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 		draft.Content.PartialWins = defaultPartialWins(misdirection)
 		log.Printf("[scripter:normalize] filled partial_wins count=%d", len(draft.Content.PartialWins))
 	}
+	if strings.TrimSpace(draft.Content.MythosAnchor) == "" && strings.TrimSpace(misdirection.MythosAnchor) != "" {
+		draft.Content.MythosAnchor = misdirection.MythosAnchor
+	}
 }
 
 func defaultScenarioName(irony IronyCore) string {
@@ -1608,6 +1613,41 @@ func loadScenarioTitleSamples(sampleSize int) []string {
 		titles = append(titles, title)
 	}
 	return titles
+}
+
+func loadRecentMythosAnchors(limit int) []string {
+	if limit <= 0 || models.DB == nil {
+		return nil
+	}
+	var scenarios []models.Scenario
+	if err := models.DB.Order("created_at DESC").Limit(limit * 2).Find(&scenarios).Error; err != nil {
+		log.Printf("[scripter] load recent mythos anchors failed: %v", err)
+		return nil
+	}
+	seen := map[string]bool{}
+	anchors := make([]string, 0, limit)
+	for i := range scenarios {
+		if err := scenarios[i].DecodeData(); err != nil {
+			continue
+		}
+		anchor := strings.TrimSpace(scenarios[i].Content.Data.MythosAnchor)
+		if anchor == "" || seen[anchor] {
+			continue
+		}
+		seen[anchor] = true
+		anchors = append(anchors, anchor)
+		if len(anchors) >= limit {
+			break
+		}
+	}
+	return anchors
+}
+
+func formatMythosBlacklist(anchors []string) string {
+	if len(anchors) == 0 {
+		return "(无)"
+	}
+	return "- " + strings.Join(anchors, "\n- ")
 }
 
 func formatNPCNameBlacklist(names []string) string {

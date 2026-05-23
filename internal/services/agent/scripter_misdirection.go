@@ -456,10 +456,12 @@ func newMisdirectionSession(room *scripterRoom, constraints ScripterConstraints,
 %s
 </stage2_rule_context>
 <recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
+<recently_used_mythos_anchors>%s</recently_used_mythos_anchors>
 请生成第1版MisdirectionFabric。`,
 		string(reqJSON), string(constraintsJSON), string(ironyJSON),
 		difficultySpec(room.req.Difficulty), conservative, ruleCtx,
-		formatNPCNameBlacklist(room.npcBlacklist))
+		formatNPCNameBlacklist(room.npcBlacklist),
+		formatMythosBlacklist(room.mythosBlacklist))
 
 	qaPrompt := fmt.Sprintf(
 		`<irony_core>%s</irony_core>
