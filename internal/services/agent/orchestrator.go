@@ -17,7 +17,7 @@ import (
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
-const MaxKpRound = 10
+const MaxKpRound = 20
 
 // activeSessions prevents concurrent agent runs for the same game session.
 var activeSessions sync.Map
