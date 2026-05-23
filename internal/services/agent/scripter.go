@@ -711,6 +711,9 @@ const assemblySystemPrompt = `<role>COC7沙盒剧本编译器</role>
 - misdirection_fabric：误导设计，包含 mythos_anchor（本剧本选用的具体COC7神话元素）、factions（派系）、ending_signals 等字段
 - investigation_graph：调查路径图，包含 nodes（各调查地点/事件节点）、hook_node（入口节点）等字段
 - 避免涉及政治, 优先选择侦探类、历史类的故事。
+- 禁止改动设计产物的内容。
+- 应该存在一条达成完美结局的路径，但不应该在剧本中直接揭示。
+- 仔细思考，理解用户的需求，不要急于提交答案。
 
 将以上三阶段产物编译为完整的COC7沙盒剧本JSON（ScenarioDraft）。不要查询规则书，不要更换已选定的神话元素（mythos_anchor字段值）。</task>
 <response_format>json_object</response_format>
