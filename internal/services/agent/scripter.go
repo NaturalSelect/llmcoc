@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"log"
 	"math/rand"
 	"strings"
@@ -165,7 +164,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 
 	log.Printf("[scripter] stage=constraints start")
 	constraints := r.buildConstraints(ctx)
-	log.Printf("[scripter] stage=constraints done archetype=%q entry=%q topology=%q phase=%q geography=%q", constraints.SituationArchetype, constraints.InvestigatorEntryPosition, constraints.FactionTopology, constraints.TemporalPhase, strings.Join(constraints.GeographyFlavor, " → "))
+	log.Printf("[scripter] stage=constraints done geography=%q", strings.Join(constraints.GeographyFlavor, " → "))
 	logScripterArtifact("Pre-generation Constraints", constraints)
 
 	log.Printf("[scripter] stage=irony_core start")
@@ -256,10 +255,6 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 // ---------------------------------------------------------------------------
 
 type ScripterConstraints struct {
-	SituationArchetype        string   `json:"situation_archetype"`
-	InvestigatorEntryPosition string   `json:"investigator_entry_position"`
-	FactionTopology           string   `json:"faction_topology"`
-	TemporalPhase             string   `json:"temporal_phase"`
 	Era                       string   `json:"era"`
 	Theme                     string   `json:"theme"`
 	GeographyFlavor           []string `json:"geography_flavor"`
@@ -268,41 +263,7 @@ type ScripterConstraints struct {
 	Difficulty                string   `json:"difficulty"`
 }
 
-var situationArchetypeCandidates = []string{
-	"过程失控型：某件没人打算让它发生的事情正在失控，各方都想止损但互相干扰",
-	"秘密分割型：每个相关方只掌握部分真相，调查员可能是第一个拼出全貌的人",
-	"倒计时型：某件事将在固定时间发生，问题是能否提前改变条件",
-	"事后处理型：坏事已经发生，各方正在管理后果、掩盖痕迹或争夺残局",
-	"变形进行型：人、地点、关系或组织正在变化，不同的人对变化有不同立场",
-	"资源争夺型：多方争夺同一件有限的东西，调查员进场时争夺已经开始",
-}
-
-var investigatorEntryCandidates = []string{
-	"外部调查员：局外人被委托调查，必须有清楚的介入动机",
-	"意外卷入者：错误时间出现在错误地点，第一刻就没有安全退出",
-	"单方招募者：一个派系雇用或请求他们，初始立场被框住",
-	"当事参与者：他们本身与旧决定或当前后果有关联",
-	"被驱逐者：有人警告他们离开或保持沉默，压力从入口就存在",
-}
-
-var factionTopologyCandidates = []string{
-	"三角制衡：三方互相牵制，支持其中一方会得罪另一方",
-	"内部裂变：表面一个阵营，内部已分裂，调查员可能触发裂缝",
-	"捕食链：强弱关系明显，弱方需要调查员，强方想阻止调查员",
-	"表面对立实则合谋：两方看似敌对，实际共享利益",
-	"孤立核心：一个主要势力掌控局面，但内部有可利用裂缝",
-}
-
-var temporalPhaseCandidates = []string{
-	"萌芽期：事情刚开始，线索新鲜但严重性尚不明确",
-	"激烈期：局势快速发展，每拖延一天都有新的后果",
-	"尾声期：主要事件已经发生，调查员追查后果和幸存者",
-}
-
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
-	seed := seedFromRequest(r.req)
-	log.Printf("[scripter] constraints random_seed=%d salt=%q", seed, r.req.Salt)
-	rng := rand.New(rand.NewSource(seed))
 	geography, err := generateGeographyChain(ctx, r.architect, r.req.Era)
 	if err != nil || len(geography) == 0 {
 		if err != nil {
@@ -316,35 +277,13 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		log.Printf("[scripter] geography generated=%q", strings.Join(geography, " → "))
 	}
 	return ScripterConstraints{
-		SituationArchetype:        pickCandidate(rng, situationArchetypeCandidates),
-		InvestigatorEntryPosition: pickCandidate(rng, investigatorEntryCandidates),
-		FactionTopology:           pickCandidate(rng, factionTopologyCandidates),
-		TemporalPhase:             pickCandidate(rng, temporalPhaseCandidates),
-		Era:                       r.req.Era,
+		Era: r.req.Era,
 		Theme:                     firstNonEmpty(r.req.Theme, ""),
 		GeographyFlavor:           geography,
 		TargetLength:              r.req.TargetLength,
 		PlayerRange:               fmt.Sprintf("%d-%d", r.req.MinPlayers, r.req.MaxPlayers),
 		Difficulty:                r.req.Difficulty,
 	}
-}
-
-func seedFromRequest(req ScenarioCreationRequest) int64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(req.Salt))
-	_, _ = h.Write([]byte("\x00" + req.Name + "\x00" + req.Theme + "\x00" + req.Era + "\x00" + req.Brief + "\x00" + req.TargetLength))
-	sum := int64(h.Sum64())
-	if sum == 0 {
-		return 1
-	}
-	return sum
-}
-
-func pickCandidate(rng *rand.Rand, candidates []string) string {
-	if len(candidates) == 0 {
-		return ""
-	}
-	return candidates[rng.Intn(len(candidates))]
 }
 
 var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
@@ -1022,7 +961,7 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 		log.Printf("[scripter:normalize] filled author=%q", draft.Author)
 	}
 	if strings.TrimSpace(draft.Tags) == "" {
-		draft.Tags = strings.Join(nonEmptyStrings("sandbox", "coc", constraints.Theme, constraints.TemporalPhase), ",")
+		draft.Tags = strings.Join(nonEmptyStrings("sandbox", "coc", constraints.Theme), ",")
 		log.Printf("[scripter:normalize] filled tags=%q", draft.Tags)
 	}
 	if draft.MinPlayers <= 0 {
@@ -1164,7 +1103,7 @@ func defaultIntro(constraints ScripterConstraints, graph InvestigationGraph) str
 	if len(nodeNames) == 0 {
 		nodeNames = []string{"调查入口"}
 	}
-	return fmt.Sprintf("你们以\"%s\"进入局势。眼前可立即行动：前往%s，询问公开目击者，或决定是否把已知异常告诉某个派系。", constraints.InvestigatorEntryPosition, strings.Join(nodeNames, "、"))
+	return fmt.Sprintf("你们进入局势。眼前可立即行动：前往%s，询问公开目击者，或决定是否把已知异常告诉某个派系。", strings.Join(nodeNames, "、"))
 }
 
 func defaultMapDescription(graph InvestigationGraph) string {
