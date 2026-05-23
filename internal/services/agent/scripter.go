@@ -50,13 +50,20 @@ type ScenarioDraft struct {
 }
 
 const (
-	defaultScripterEra    = "1920s"
 	defaultScripterAuthor = "agent-team"
 
 	scripterPromptLogLimit = 8000
 	scripterRawLogLimit    = 20000
 	scripterRepairLogLimit = 12000
 )
+
+var scriptEra = []string{
+	"1890s", "1920s", "1950s", "1980s", "modern day", "near future",
+}
+
+func defaultScripterEra() string {
+	return scriptEra[rand.Intn(len(scriptEra))]
+}
 
 var genScenarioMutex sync.Mutex
 
@@ -125,7 +132,7 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 		}
 	}
 	if strings.TrimSpace(req.Era) == "" {
-		req.Era = defaultScripterEra
+		req.Era = defaultScripterEra()
 	} else {
 		req.Era = strings.TrimSpace(req.Era)
 	}
@@ -427,7 +434,7 @@ func generateGeographyCandidates(ctx context.Context, architect agentHandle, msg
 }
 
 func fallbackGeographyFlavor(req ScenarioCreationRequest) []string {
-	flavor := []string{firstNonEmpty(req.Era, defaultScripterEra), "城市"}
+	flavor := []string{firstNonEmpty(req.Era, defaultScripterEra()), "城市"}
 	if strings.TrimSpace(req.Theme) != "" {
 		flavor = append(flavor, strings.TrimSpace(req.Theme))
 	}
