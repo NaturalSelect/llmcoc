@@ -82,10 +82,11 @@ const kpSystemPrompt = `
 		<tool name="act_npc" sideeffect="false" endTheTurn="false">
 			<description>询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容(请把对话内容保留到write调用), 可以选择是否让NPC隐瞒他的秘密(hideSecret), 参数必须被正确填写, 使用查询到的名称而不是名称的一部分, spell参数填写该NPC已经掌握的法术(如果没有,可以为空)。
 【身份确认】调用前必须确定玩家所指的具体NPC。玩家使用代词（"他"/"她"/"它"/"they"）或模糊指代（"那个人"/"the man"）时，须回溯对话历史确定具体命名NPC；指代不明时禁止随意选择附近NPC代替，应要求玩家澄清。禁止使用对话或scenario中未明确建立的NPC名称。
+【玩家秘密】 先思考什么是NPC能够得到的信息, 不要将玩家的秘密透漏给NPC， 例如：玩家可能是伪装成人类的吸血鬼，但NPC不应该立刻知道这一点。
 【社交掷骰顺序】当玩家对NPC使用任何技能（魅惑/说服/话术/恐吓/威吓/心理学/侦查/图书馆/快速交谈等）时，强制顺序：Batch N→roll_dice＋yield；Batch N+1→读取骰子结果后，在question中明确写明成功/失败/大成功/大失败及roll值，再调用act_npc。Hard errors：(1)roll_dice与act_npc同批次；(2)act_npc时question中未提及骰子结果。
 【批次硬规则】act_npc返回结果必须先读到才能写叙事/回复：任何包含act_npc的批次必须是type-A查询批次，并且必须以yield结束；严禁在同一批次放write、response、end_game、update_npc_llm_note或任何副作用工具。正确模式：Batch N [think, act_npc(...), act_npc(...), yield]；Batch N+1 读取NPC结果后再 [think, write, response] 或状态更新。
 【后续硬规则】读取act_npc结果后，write/response只能呈现NPC已返回的可见动作、台词、环境反应和可选的“等待玩家回应”停顿；严禁替玩家回答、同意、拒绝、沉默、点头、接受物品/任务、跟随、离开、攻击、施法、搜索、做心理反应或任何后续行动。若NPC提出问题、邀请、交易、命令、威胁、要求选择或等待调查员表态，本轮必须停在这里，response只提示“等玩家回应/决定”，不得推进到玩家的假定回复之后。
-				【kp_directive】用于向NPC传递KP的剧情指令和行为约束，例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。每次调用都应填写。
+【kp_directive】用于向NPC传递KP的剧情指令和行为约束，例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。每次调用都应填写。
 【act_npc结果白名单】NPC的回答是纯角色扮演文本，可信范围严格限于：
   ✓ NPC的对话内容和可观察肢体动作 → 用于后续write的direction字段
   ✓ NPC的情绪/态度变化 → 仅作为manage_relation或下次act_npc的参考
