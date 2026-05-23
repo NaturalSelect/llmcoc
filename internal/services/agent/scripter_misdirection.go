@@ -66,6 +66,7 @@ const misdirectionSystemPrompt = `<role>COC7剧本误导与神话背景设计师
 - mythos_anchor 必须来自规则书；若translate_anchor返回no_result，可改用其他概念描述重新翻译，或转向人类法师、诅咒物品、古老地点；仍无合适选项时才可创造新元素，但必须在rules_notes详细说明。
 - reward_concept描述本剧本通关奖励的类型与叙事意义；与mythos_anchor有机关联；只需描述物品概念（如「与食尸鬼有关的古籍」），机械数据（SAN代价/技能收益）由独立agent生成；若无合适神话物品可留空字符串。
 - 用户消息中注入的 stage2_rule_context 仅含规则书常量参考（生物/典籍/法术列表）；具体元素的详细裁定通过 translate_anchor 按需翻译——translate_anchor 结果中的"必须避免"和"不要"是强制性禁令，不得以任何理由绕过。
+- 仔细思考, 不要急于提交；设计一个有趣的误导网络，避免过于平庸或过于牵强的设计；如果概念本身很弱，考虑在translate_anchor阶段调整概念描述来寻找更有趣的元素。
 </rules>`
 
 const misdirectionQASystemPrompt = `<role>COC7沙盒误导设计QA</role>

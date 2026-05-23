@@ -48,8 +48,8 @@ func ironyCoreSystemPrompt() string {
 - false_delta：必须与delta_operator作用于不同的语义维度（不是同类翻转的简化版）；经验读者会优先形成这个推断，而非delta_operator的推断。
 - shared_evidence：在不知道真相时，这条证据既能支持delta_operator的解读，也能支持false_delta的解读；无法从证据类型本身区分。
 - emotional_weight：揭示时具体发生了什么——某段关系的真实性质、某个身份的自我认知、还是某种信念的道德基础被重新定义？不接受"震惊"、"感动"等通用描述。
-- 禁止从游戏、规则书或桌游机制的角度思考。
 - 如果收到qa_rejection，必须重新设计翻转结构，不要只改措辞。
+- 仔细思考，不要急于提交，代入小说的主角或电影的观众的视角，设计一个有趣的揭示结构，避免过于平庸或过于牵强的设计；如果概念本身很弱，考虑调整surface_reading、deep_truth或delta_operator来寻找更有趣的结构。
 </rules>`
 }
 

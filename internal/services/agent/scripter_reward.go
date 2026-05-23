@@ -26,7 +26,7 @@ const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
   {"action":"think","think":"推理内容"}
 - ask_lawyer：向COC7规则书专家提出一个具体规则书问题；确认候选物品是否在规则书中存在、出处、阅读SAN代价、学习收益或激活条件；可多次调用
   {"action":"ask_lawyer","question":"具体规则书问题"}
-- respond：返回完整通关奖励并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮输出
+- respond：返回完整通关奖励并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮输出。奖励必须有规则书的证据支持。
   {"action":"respond","reward":{"name":"COC7正式名称或场景专属名称","type":"tome|artifact","description":"外观特征及与mythos_anchor和剧本主题的叙事关联","mechanics_note":"tome: 阅读代价≥1d4 SAN（来自规则书裁定）+ 具体学习收益（克苏鲁神话技能+N 或 可学法术名称）；artifact: 激活条件 + 代价/副作用"}}
 </tools>
 <batch_rules>
@@ -43,6 +43,7 @@ const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
 - 优先使用COC7规则书中记载的正式名称；若使用场景专属名称，需在description中说明叙事根据。
 - ask_lawyer返回must_avoid中的禁令不得绕过。
 - description必须说明物品与mythos_anchor的叙事关联。
+- 仔细思考，考虑设计一个有趣的奖励，避免过于平庸或过于强力的奖励；如果概念本身很弱，考虑在respond中设计一个更有趣的奖励来替代概念，但必须有规则书裁定作为支持。奖励设计要兼顾叙事和机制，避免纯叙事或纯数值提升。
 </design_rules>`
 
 const rewardAgentToolCallExample = `[{"action":"ask_lawyer","question":"COC7规则书中与食尸鬼相关的典籍有哪些？阅读SAN代价和学习收益各是什么？"}]`
