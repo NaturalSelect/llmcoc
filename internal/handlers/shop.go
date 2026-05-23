@@ -103,7 +103,10 @@ func PurchaseItem(c *gin.Context) {
 			}
 		}
 		if !exists {
-			s := fmt.Sprintf("%s(%s)", item.Name, item.Description)
+			s := item.Name
+			if item.Description != "" {
+				s = fmt.Sprintf("%s(%s)", item.Name, item.Description)
+			}
 			inv = append(inv, s)
 			card.Inventory = models.JSONField[[]string]{Data: inv}
 			if err := tx.Save(&card).Error; err != nil {
