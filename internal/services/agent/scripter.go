@@ -1214,7 +1214,7 @@ func cluesFromGraph(graph InvestigationGraph, irony IronyCore, misdirection Misd
 	}
 	for i, clue := range clues {
 		if strings.Contains(clue, "神话本质") {
-			clues[i] = strings.Replace(clues[i], "[永远隐藏]", "[隐藏]", 1)
+			clues[i] = strings.Replace(clues[i], "[隐藏]", "[永远隐藏]", 1)
 		}
 	}
 	return clues
