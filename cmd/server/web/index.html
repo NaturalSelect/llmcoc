@@ -2031,13 +2031,90 @@
                     </div>
                 </template>
 
-                <!-- 胜利条件 -->
-                <template x-if="viewingScenario?.content?.win_condition">
-                    <div class="mb-4 p-2.5 rounded" style="background:#0e0d0b;border:1px solid #1e1c17">
-                        <div class="text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider"
-                            style="font-family:system-ui">胜利条件</div>
-                        <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
-                            x-text="viewingScenario.content.win_condition"></p>
+                <!-- 地图说明 -->
+                <template x-if="viewingScenario?.content?.map_description">
+                    <div class="mb-4">
+                        <div class="text-xs font-bold text-amber-500 mb-1.5 flex items-center gap-1.5"
+                            style="font-family:system-ui">
+                            <span style="color:#78350f">▍</span>地图说明
+                        </div>
+                        <div class="text-xs text-amber-200 rounded p-2.5"
+                            style="font-family:system-ui;line-height:1.6;white-space:pre-wrap;background:#0e0d0b;border:1px solid #1e1c17"
+                            x-text="viewingScenario.content.map_description"></div>
+                    </div>
+                </template>
+
+                <!-- 结局条件 -->
+                <template x-if="viewingScenario?.content?.win_condition || viewingScenario?.content?.lose_condition || viewingScenario?.content?.partial_wins?.length">
+                    <div class="mb-4 grid gap-2">
+                        <template x-if="viewingScenario?.content?.win_condition">
+                            <div class="p-2.5 rounded" style="background:#0e0d0b;border:1px solid #1e1c17">
+                                <div class="text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider"
+                                    style="font-family:system-ui">胜利条件</div>
+                                <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
+                                    x-text="viewingScenario.content.win_condition"></p>
+                            </div>
+                        </template>
+                        <template x-if="viewingScenario?.content?.lose_condition">
+                            <div class="p-2.5 rounded" style="background:#0e0d0b;border:1px solid #241714">
+                                <div class="text-[10px] font-bold text-red-700 mb-1 uppercase tracking-wider"
+                                    style="font-family:system-ui">失败条件</div>
+                                <p class="text-xs text-amber-200" style="font-family:system-ui;line-height:1.6"
+                                    x-text="viewingScenario.content.lose_condition"></p>
+                            </div>
+                        </template>
+                        <template x-if="viewingScenario?.content?.partial_wins?.length">
+                            <div class="p-2.5 rounded" style="background:#0e0d0b;border:1px solid #1e1c17">
+                                <div class="text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider"
+                                    style="font-family:system-ui">部分胜利</div>
+                                <div class="space-y-1">
+                                    <template x-for="(partialWin, pwi) in viewingScenario.content.partial_wins" :key="pwi">
+                                        <div class="flex gap-2 items-start text-xs text-amber-200"
+                                            style="font-family:system-ui;line-height:1.6">
+                                            <span class="text-amber-800 shrink-0" x-text="(pwi+1) + '.'"></span>
+                                            <span x-text="partialWin"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <!-- 奖励 -->
+                <template x-if="viewingScenario?.content?.reward">
+                    <div class="mb-4 p-3 rounded" style="background:#120f0a;border:1px solid #3a2a0b">
+                        <div class="flex items-start justify-between gap-2 mb-2">
+                            <div>
+                                <div class="text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider"
+                                    style="font-family:system-ui">奖励</div>
+                                <div class="text-sm font-bold text-amber-200" style="font-family:system-ui"
+                                    x-text="viewingScenario.content.reward.name || '未命名奖励'"></div>
+                            </div>
+                            <template x-if="viewingScenario.content.reward.type">
+                                <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                                    style="background:#1a1408;border:1px solid #2d2410;color:#a16207;font-family:system-ui"
+                                    x-text="viewingScenario.content.reward.type"></span>
+                            </template>
+                        </div>
+                        <template x-if="viewingScenario.content.reward.description">
+                            <p class="text-xs text-amber-200 mb-2" style="font-family:system-ui;line-height:1.6"
+                                x-text="viewingScenario.content.reward.description"></p>
+                        </template>
+                        <div class="space-y-1.5">
+                            <template x-if="viewingScenario.content.reward.mechanics_note">
+                                <div class="text-[11px] text-amber-600" style="font-family:system-ui;line-height:1.5">
+                                    <span class="text-amber-800">机制说明：</span><span
+                                        x-text="viewingScenario.content.reward.mechanics_note"></span>
+                                </div>
+                            </template>
+                            <template x-if="viewingScenario.content.reward.find_condition">
+                                <div class="text-[11px] text-amber-600" style="font-family:system-ui;line-height:1.5">
+                                    <span class="text-amber-800">获得条件：</span><span
+                                        x-text="viewingScenario.content.reward.find_condition"></span>
+                                </div>
+                            </template>
+                        </div>
                     </div>
                 </template>
 
@@ -2057,8 +2134,15 @@
                                         <span class="text-[10px] font-bold shrink-0 mt-0.5"
                                             style="color:#44320a;font-family:system-ui" x-text="(si+1) + '.'"></span>
                                         <div class="flex-1 min-w-0">
-                                            <div class="text-xs font-bold text-amber-300" style="font-family:system-ui"
-                                                x-text="sc.name"></div>
+                                            <div class="flex flex-wrap items-center gap-1.5">
+                                                <div class="text-xs font-bold text-amber-300" style="font-family:system-ui"
+                                                    x-text="sc.name"></div>
+                                                <template x-if="sc.id">
+                                                    <span class="text-[10px] px-1.5 py-0.5 rounded"
+                                                        style="background:#1a1408;border:1px solid #2a1f0a;color:#78350f;font-family:system-ui"
+                                                        x-text="'ID: ' + sc.id"></span>
+                                                </template>
+                                            </div>
                                             <template x-if="sc.description">
                                                 <div class="text-[11px] text-amber-700 mt-0.5"
                                                     style="font-family:system-ui;line-height:1.5"
@@ -2104,6 +2188,25 @@
                                                      'font-family':'system-ui'}" x-text="npc.attitude"></span>
                                         </template>
                                     </div>
+                                    <template x-if="npc.race || npc.occupation || npc.cthulhu_mythos_skill !== undefined && npc.cthulhu_mythos_skill !== null">
+                                        <div class="flex flex-wrap gap-1 mb-1.5">
+                                            <template x-if="npc.race">
+                                                <span class="text-[10px] px-1.5 py-0.5 rounded"
+                                                    style="background:#1a1408;border:1px solid #2a1f0a;color:#a16207;font-family:system-ui"
+                                                    x-text="'种族: ' + npc.race"></span>
+                                            </template>
+                                            <template x-if="npc.occupation">
+                                                <span class="text-[10px] px-1.5 py-0.5 rounded"
+                                                    style="background:#1a1408;border:1px solid #2a1f0a;color:#a16207;font-family:system-ui"
+                                                    x-text="'职业: ' + npc.occupation"></span>
+                                            </template>
+                                            <template x-if="npc.cthulhu_mythos_skill !== undefined && npc.cthulhu_mythos_skill !== null">
+                                                <span class="text-[10px] px-1.5 py-0.5 rounded"
+                                                    style="background:#1a1408;border:1px solid #2a1f0a;color:#a16207;font-family:system-ui"
+                                                    x-text="'克苏鲁神话: ' + npc.cthulhu_mythos_skill"></span>
+                                            </template>
+                                        </div>
+                                    </template>
                                     <template x-if="npc.description">
                                         <div class="text-[11px] text-amber-700 mb-1.5"
                                             style="font-family:system-ui;line-height:1.5" x-text="npc.description">

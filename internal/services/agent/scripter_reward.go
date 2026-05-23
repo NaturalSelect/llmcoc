@@ -26,7 +26,7 @@ const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
   {"action":"think","think":"推理内容"}
 - ask_lawyer：向COC7规则书专家提出一个具体规则书问题；确认候选物品是否在规则书中存在、出处、阅读SAN代价、学习收益或激活条件；可多次调用
   {"action":"ask_lawyer","question":"具体规则书问题"}
-- respond：返回完整通关奖励并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮输出。奖励必须有规则书的证据支持。
+- respond：返回完整通关奖励并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮输出。奖励必须有规则书的证据支持。奖励可以是一个神话物品（artifact）或者一个神话典籍（tome），以及来自其他法师的笔记(tome)
   {"action":"respond","reward":{"name":"COC7正式名称或场景专属名称","type":"tome|artifact","description":"外观特征及与mythos_anchor和剧本主题的叙事关联","mechanics_note":"tome: 阅读代价≥1d4 SAN（来自规则书裁定）+ 具体学习收益（克苏鲁神话技能+N 或 可学法术名称）；artifact: 激活条件 + 代价/副作用"}}
 </tools>
 <batch_rules>
