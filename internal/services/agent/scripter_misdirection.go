@@ -29,7 +29,7 @@ const misdirectionSystemPrompt = `<role>COC7剧本误导与神话背景设计师
 - shared_evidence：在不知道真相时，同时支持两种解读的歧义证据
 
 工作步骤：
-① 用 translate_anchor 将 deep_truth 的核心概念翻译为具体的COC7规则书元素，确定 mythos_anchor；可多次翻译直到找到合适元素。
+① 用 translate_anchor 将 deep_truth 的核心概念翻译为具体的COC7规则书元素，确定 mythos_anchor；可多次翻译直到找到合适元素，需要仔细考虑选择什么元素。
 ② 若误导设计中还涉及其他神话概念（如 false_lead 引用的神话实体），继续用 translate_anchor 翻译核验。
 ③ 所有翻译完成后，用 submit 提交完整的 MisdirectionFabric；reward_concept填写通关奖励的叙事概念（若有），实际机械数据由系统独立生成。
 </task>
