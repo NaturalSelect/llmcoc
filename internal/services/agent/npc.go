@@ -162,6 +162,8 @@ func createNPC(sessionID uint, card *NPCCard) string {
 	if err == nil {
 		existing.Description = desc
 		existing.Race = race
+		existing.Occupation = ""
+		existing.CthulhuMythosSkill = 0
 		existing.Attitude = att
 		existing.Goal = goal
 		existing.Secret = secret
@@ -178,11 +180,11 @@ func createNPC(sessionID uint, card *NPCCard) string {
 	}
 
 	npc := models.SessionNPC{
-		SessionID:   sessionID,
-		Name:        name,
-		Race:        race,
-		Description: desc,
-		Attitude:    att,
+		SessionID:           sessionID,
+		Name:                name,
+		Race:                race,
+		Description:         desc,
+		Attitude:            att,
 		Goal:        goal,
 		Secret:      secret,
 		RiskPref:    riskPref,

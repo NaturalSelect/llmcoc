@@ -1242,7 +1242,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 		}
 		matched++
 		status := npcCompactState(npc)
-		sb.WriteString(fmt.Sprintf(`<npc n=%q race=%q src="tmp" st=%q wound_state=%q loc=%q>`, npc.Name, npc.Race, status, npc.WoundState, npc.Location))
+		sb.WriteString(fmt.Sprintf(`<npc n=%q race=%q job=%q mythos=%q src="tmp" st=%q wound_state=%q loc=%q>`, npc.Name, npc.Race, npc.Occupation, compactInt(npc.CthulhuMythosSkill), status, npc.WoundState, npc.Location))
 		writeCompactText(&sb, "desc", npc.Description)
 		writeCompactText(&sb, "att", strings.TrimSpace(npc.Attitude))
 		writeCompactText(&sb, "goal", strings.TrimSpace(npc.Goal))
@@ -1266,7 +1266,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 			if race == "" {
 				race = "人类"
 			}
-			sb.WriteString(fmt.Sprintf(`<npc n=%q race=%q src="scenario">`, npc.Name, race))
+			sb.WriteString(fmt.Sprintf(`<npc n=%q race=%q job=%q mythos=%q src="scenario">`, npc.Name, race, npc.Occupation, compactInt(npc.CthulhuMythosSkill)))
 			writeCompactText(&sb, "desc", npc.Description)
 			writeCompactText(&sb, "att", npc.Attitude)
 			writeCompactMap(&sb, "stats", npc.Stats)

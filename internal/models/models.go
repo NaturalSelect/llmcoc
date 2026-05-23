@@ -140,11 +140,13 @@ type SceneData struct {
 
 // NOTE: NPCData provides a template for a non-player character within a scenario.
 type NPCData struct {
-	Name        string         `json:"name"`
-	Race        string         `json:"race,omitempty"`
-	Description string         `json:"description"`
-	Attitude    string         `json:"attitude"`
-	Stats       map[string]int `json:"stats,omitempty"`
+	Name                string         `json:"name"`
+	Race                string         `json:"race,omitempty"`
+	Occupation          string         `json:"occupation,omitempty"`
+	Description         string         `json:"description"`
+	Attitude            string         `json:"attitude"`
+	Stats               map[string]int `json:"stats,omitempty"`
+	CthulhuMythosSkill  int            `json:"cthulhu_mythos_skill,omitempty"`
 }
 
 // NOTE: Scenario is the database representation of a playable module or adventure.
@@ -208,25 +210,27 @@ type GameSession struct {
 
 // SessionNPC is a temporary NPC card created during a session (e.g. monsters, minor NPCs).
 type SessionNPC struct {
-	ID          uint                      `gorm:"primaryKey;autoIncrement" json:"id"`
-	SessionID   uint                      `gorm:"not null;index" json:"session_id"`
-	Name        string                    `gorm:"not null;size:100" json:"name"`
-	Race        string                    `gorm:"size:50" json:"race"` // 新增种族字段
-	Description string                    `gorm:"type:text" json:"description"`
-	Attitude    string                    `gorm:"size:100" json:"attitude"`
-	Goal        string                    `gorm:"size:200" json:"goal"`
-	Secret      string                    `gorm:"type:text" json:"secret"`
-	RiskPref    string                    `gorm:"size:50" json:"risk_preference"`
-	Location    string                    `gorm:"size:200" json:"location"`
-	LLMNote     string                    `gorm:"type:text" json:"llm_note"`
-	Stats       JSONField[map[string]int] `gorm:"type:text" json:"stats"`
-	Skills      JSONField[map[string]int] `gorm:"type:text" json:"skills"`
-	Spells      JSONField[[]string]       `gorm:"type:text" json:"spells"`
-	AgentCtx    JSONField[[]ChatMsg]      `gorm:"type:text" json:"agent_ctx"`
-	WoundState  string                    `gorm:"column:wound_state;size:20;default:'none'" json:"wound_state"`
-	IsAlive     bool                      `gorm:"default:true" json:"is_alive"`
-	CreatedAt   time.Time                 `json:"created_at"`
-	UpdatedAt   time.Time                 `json:"updated_at"`
+	ID                 uint                      `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID          uint                      `gorm:"not null;index" json:"session_id"`
+	Name               string                    `gorm:"not null;size:100" json:"name"`
+	Race               string                    `gorm:"size:50" json:"race"` // 新增种族字段
+	Occupation         string                    `gorm:"size:100" json:"occupation"`
+	Description        string                    `gorm:"type:text" json:"description"`
+	Attitude           string                    `gorm:"size:100" json:"attitude"`
+	Goal               string                    `gorm:"size:200" json:"goal"`
+	Secret             string                    `gorm:"type:text" json:"secret"`
+	RiskPref           string                    `gorm:"size:50" json:"risk_preference"`
+	Location           string                    `gorm:"size:200" json:"location"`
+	LLMNote            string                    `gorm:"type:text" json:"llm_note"`
+	Stats              JSONField[map[string]int] `gorm:"type:text" json:"stats"`
+	Skills             JSONField[map[string]int] `gorm:"type:text" json:"skills"`
+	Spells             JSONField[[]string]       `gorm:"type:text" json:"spells"`
+	AgentCtx           JSONField[[]ChatMsg]      `gorm:"type:text" json:"agent_ctx"`
+	CthulhuMythosSkill int                       `gorm:"default:0" json:"cthulhu_mythos_skill"`
+	WoundState         string                    `gorm:"column:wound_state;size:20;default:'none'" json:"wound_state"`
+	IsAlive            bool                      `gorm:"default:true" json:"is_alive"`
+	CreatedAt          time.Time                 `json:"created_at"`
+	UpdatedAt          time.Time                 `json:"updated_at"`
 }
 
 // SessionNPCMemory stores compacted memory for destroyed temporary NPCs.

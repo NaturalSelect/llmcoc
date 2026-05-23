@@ -348,7 +348,7 @@ func pickCandidate(rng *rand.Rand, candidates []string) string {
 }
 
 var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
-<task>根据用户给定阶段列举50个可用于事件发生地的候选。该结果只作为布景风味，不决定剧情结构。</task>
+<task>根据用户给定阶段列举20个可用于事件发生地的候选。该结果只作为布景风味，不决定剧情结构。</task>
 <rules>
 - country阶段输出具体国家或具体政权范围。
 - settlement_scale阶段必须且只能从以下固定选项中选择一个：大都会、城市、市郊、乡镇、无人区。
@@ -357,7 +357,7 @@ var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
 - human_geography阶段必须输出人口密度/当地风俗文化/社会结构。
 - 只输出现实地理/人文地理候选，不输出幕后真相。
 - 禁止输出伪科学、高科技、工程化异常或可诱导伪科学解释神话的候选。
-- 除settlement_scale阶段只输出一个固定选项外，其他阶段每行一个名称，正好50个，不要编号、解释、标题或描述句。</rules>`
+- 除settlement_scale阶段只输出一个固定选项外，其他阶段每行一个名称，正好20个，不要编号、解释、标题或描述句。</rules>`
 
 func generateGeographyChain(ctx context.Context, architect agentHandle, era string) ([]string, error) {
 	if architect.provider == nil {
@@ -410,7 +410,7 @@ func generateGeographyCandidates(ctx context.Context, architect agentHandle, msg
 	if len(chain) > 0 {
 		selected = strings.Join(chain, " → ")
 	}
-	countInstruction := "请只输出本阶段的50个候选。"
+	countInstruction := "请只输出本阶段的20个候选。"
 	if stageKey == "settlement_scale" {
 		countInstruction = "请只输出一个最合适的固定选项，必须完全等于：大都会、城市、市郊、乡镇、无人区 之一。"
 	}

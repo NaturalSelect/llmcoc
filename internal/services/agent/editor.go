@@ -400,15 +400,18 @@ func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.Sessi
 				continue
 			}
 			npc = models.SessionNPC{
-				SessionID:   sessionID,
-				Name:        sNPC.Name,
-				Description: sNPC.Description,
-				Attitude:    sNPC.Attitude,
-				Stats:       models.JSONField[map[string]int]{Data: sNPC.Stats},
-				Skills:      models.JSONField[map[string]int]{Data: map[string]int{}},
-				Spells:      models.JSONField[[]string]{Data: []string{}},
-				WoundState:  "none",
-				IsAlive:     true,
+				SessionID:           sessionID,
+				Name:                sNPC.Name,
+				Race:                sNPC.Race,
+				Occupation:          sNPC.Occupation,
+				Description:         sNPC.Description,
+				Attitude:            sNPC.Attitude,
+				Stats:               models.JSONField[map[string]int]{Data: sNPC.Stats},
+				Skills:              models.JSONField[map[string]int]{Data: map[string]int{}},
+				Spells:              models.JSONField[[]string]{Data: []string{}},
+				CthulhuMythosSkill:  sNPC.CthulhuMythosSkill,
+				WoundState:          "none",
+				IsAlive:             true,
 			}
 			models.DB.Create(&npc)
 			break
@@ -430,86 +433,257 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 	}
 	field := strings.ToLower(upd.Field)
 	switch field {
-	case "hp", "san", "mp", "pow":
-		key := strings.ToUpper(field)
-		curr := 0
-		if v, ok := stats[key]; ok {
-			curr = v
-		} else if v, ok := stats[field]; ok {
-			curr = v
+	case "san":
+		prev := npcStat(stats, "SAN")
+		maxSAN := npcStat(stats, "MaxSAN")
+		if maxSAN == 0 {
+			maxSAN = 99
 		}
-		curr += upd.Delta
-		if curr < 0 {
+		curr := clamp(prev+upd.Delta, 0, maxSAN)
+		setNPCStat(stats, "SAN", curr)
+		npc.Stats.Data = stats
+		log.Printf("[editor] NPC %s: SAN %d→%d", npc.Name, prev, curr)
+
+	case "hp":
+		prev := npcStat(stats, "HP")
+		maxHP := npcStat(stats, "MaxHP")
+		if maxHP == 0 {
+			maxHP = prev
+		}
+		curr := prev + upd.Delta
+		if maxHP > 0 {
+			curr = clamp(curr, 0, maxHP)
+		} else if curr < 0 {
 			curr = 0
 		}
-		stats[key] = curr
-		delete(stats, field)
-		if field == "hp" && curr == 0 {
-			npc.WoundState = "dead"
-			npc.IsAlive = false
-		} else if field == "hp" && curr > 0 {
-			if npc.WoundState == "dead" {
-				npc.WoundState = "none"
+		damage := 0
+		if upd.Delta < 0 {
+			damage = -upd.Delta
+		}
+		wasDead := npc.WoundState == "dead"
+		setNPCStat(stats, "HP", curr)
+		if damage > 0 {
+			switch {
+			case maxHP > 0 && game.CheckInstantDeath(damage, maxHP):
+				npc.WoundState = "dead"
+				npc.IsAlive = false
+			case maxHP > 0 && game.CheckMajorWound(damage, maxHP):
+				npc.WoundState = "major"
+				npc.IsAlive = true
 			}
+		} else if upd.Delta > 0 && wasDead && curr > 0 {
+			npc.WoundState = "none"
+			npc.IsAlive = true
+		} else if upd.Delta > 0 && maxHP > 0 && (curr == maxHP || upd.Delta >= maxHP/2) {
+			npc.WoundState = "none"
+			npc.IsAlive = true
+		}
+		if curr <= 0 && npc.WoundState == "major" {
+			npc.WoundState = "dying"
+			npc.IsAlive = true
+		} else if curr <= 0 && npc.WoundState == "dead" {
+			npc.IsAlive = false
+		} else if curr > 0 && npc.WoundState != "dead" {
 			npc.IsAlive = true
 		}
 		npc.Stats.Data = stats
-		log.Printf("[editor] NPC %s: %s %d→%d", npc.Name, key, curr-upd.Delta, curr)
+		log.Printf("[editor] NPC %s: HP %d→%d", npc.Name, prev, curr)
+
+	case "mp":
+		prev := npcStat(stats, "MP")
+		maxMP := npcStat(stats, "MaxMP")
+		if maxMP == 0 {
+			maxMP = prev
+		}
+		curr := prev + upd.Delta
+		if maxMP > 0 {
+			curr = clamp(curr, 0, maxMP)
+		} else if curr < 0 {
+			curr = 0
+		}
+		setNPCStat(stats, "MP", curr)
+		npc.Stats.Data = stats
+		log.Printf("[editor] NPC %s: MP %d→%d", npc.Name, prev, curr)
+
+	case "pow":
+		prev := npcStat(stats, "POW")
+		oldMaxMP := npcStat(stats, "MaxMP")
+		oldMP := npcStat(stats, "MP")
+		curr := clamp(prev+upd.Delta, 1, 500)
+		newMaxMP := curr / 5
+		if newMaxMP < 1 {
+			newMaxMP = 1
+		}
+		if oldMaxMP > 0 {
+			setNPCStat(stats, "MP", clamp(oldMP*newMaxMP/oldMaxMP, 0, newMaxMP))
+		}
+		setNPCStat(stats, "POW", curr)
+		setNPCStat(stats, "MaxMP", newMaxMP)
+		npc.Stats.Data = stats
+		log.Printf("[editor] NPC %s: POW %d→%d, MaxMP→%d", npc.Name, prev, curr, newMaxMP)
+
+	case "cthulhu_mythos", "cthulhu_mythos_skill":
+		if upd.Delta > 0 {
+			npc.CthulhuMythosSkill = clamp(npc.CthulhuMythosSkill+upd.Delta, 0, 99)
+			newMaxSAN := 99 - npc.CthulhuMythosSkill
+			isHuman := npc.Race == "" || npc.Race == "人类"
+			if isHuman {
+				maxSAN := npcStat(stats, "MaxSAN")
+				if maxSAN == 0 || maxSAN > newMaxSAN {
+					setNPCStat(stats, "MaxSAN", newMaxSAN)
+				}
+				if san := npcStat(stats, "SAN"); san > newMaxSAN {
+					setNPCStat(stats, "SAN", newMaxSAN)
+				}
+			}
+			npc.Stats.Data = stats
+			log.Printf("[editor] NPC %s: cthulhu_mythos=%d, new MaxSAN=%d", npc.Name, npc.CthulhuMythosSkill, newMaxSAN)
+		}
 
 	case "wound_state":
 		switch strings.ToLower(strings.TrimSpace(upd.NewValue)) {
 		case "none":
 			npc.WoundState = "none"
-			npc.IsAlive = true
+			if npcStat(stats, "HP") > 0 {
+				npc.IsAlive = true
+			}
 		case "major":
 			npc.WoundState = "major"
 			npc.IsAlive = true
 		case "dying":
 			npc.WoundState = "dying"
 			npc.IsAlive = true
-			if stats["HP"] > 0 {
-				stats["HP"] = 0
-			} else if stats["hp"] > 0 {
-				stats["HP"] = 0
-				delete(stats, "hp")
-			}
-			npc.Stats.Data = stats
+			setNPCStat(stats, "HP", 0)
 		case "dead":
 			npc.WoundState = "dead"
 			npc.IsAlive = false
-			if stats["HP"] > 0 {
-				stats["HP"] = 0
-			} else if stats["hp"] > 0 {
-				stats["HP"] = 0
-				delete(stats, "hp")
-			}
-			npc.Stats.Data = stats
+			setNPCStat(stats, "HP", 0)
 		default:
 			log.Printf("[editor] NPC %s: invalid wound_state %q", npc.Name, upd.NewValue)
 		}
+		npc.Stats.Data = stats
 		log.Printf("[editor] NPC %s: wound_state changed to %q", npc.Name, npc.WoundState)
 
 	case "race":
 		npc.Race = upd.NewValue
+		if npc.Race != "" && npc.Race != "人类" {
+			setNPCStat(stats, "MaxSAN", 99)
+			npc.Stats.Data = stats
+		}
 		log.Printf("[editor] NPC %s: race changed to %q", npc.Name, npc.Race)
+	case "occupation":
+		npc.Occupation = upd.NewValue
+		log.Printf("[editor] NPC %s: occupation changed to %q", npc.Name, npc.Occupation)
 	case "str", "con", "siz", "dex", "app", "int", "edu":
 		key := strings.ToUpper(field)
-		curr := 0
-		if v, ok := stats[key]; ok {
-			curr = v
-		} else if v, ok := stats[field]; ok {
-			curr = v
-		}
-		curr += upd.Delta
-		if curr < 1 {
-			curr = 1
-		}
-		stats[key] = curr
-		delete(stats, field)
+		prev := npcStat(stats, key)
+		curr := clamp(prev+upd.Delta, 1, 99)
+		setNPCStat(stats, key, curr)
+		updateNPCDerivedStats(stats, field)
 		npc.Stats.Data = stats
-		log.Printf("[editor] NPC %s: %s %d→%d", npc.Name, key, curr-upd.Delta, curr)
+		log.Printf("[editor] NPC %s: %s %d→%d", npc.Name, key, prev, curr)
 	default:
 		log.Printf("[editor] unrecognised field in NPC update: %q", upd.Field)
+	}
+}
+
+func npcStat(stats map[string]int, key string) int {
+	if stats == nil {
+		return 0
+	}
+	for _, candidate := range npcStatKeyCandidates(key) {
+		if v, ok := stats[candidate]; ok {
+			return v
+		}
+	}
+	return 0
+}
+
+func setNPCStat(stats map[string]int, key string, value int) {
+	if stats == nil {
+		return
+	}
+	candidates := npcStatKeyCandidates(key)
+	stats[candidates[0]] = value
+	for _, candidate := range candidates[1:] {
+		delete(stats, candidate)
+	}
+}
+
+func npcStatKeyCandidates(key string) []string {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "maxhp", "max_hp":
+		return []string{"MaxHP", "max_hp", "MAXHP", "maxHP"}
+	case "maxmp", "max_mp":
+		return []string{"MaxMP", "max_mp", "MAXMP", "maxMP"}
+	case "maxsan", "max_san":
+		return []string{"MaxSAN", "max_san", "MAXSAN", "maxSAN"}
+	case "luck":
+		return []string{"Luck", "LUCK", "luck"}
+	case "mov":
+		return []string{"MOV", "mov"}
+	case "build":
+		return []string{"Build", "BUILD", "build"}
+	case "hp", "san", "mp", "pow", "str", "con", "siz", "dex", "app", "int", "edu":
+		upper := strings.ToUpper(strings.TrimSpace(key))
+		return []string{upper, strings.ToLower(upper)}
+	default:
+		return []string{key, strings.ToUpper(key), strings.ToLower(key)}
+	}
+}
+
+func updateNPCDerivedStats(stats map[string]int, changedField string) {
+	switch strings.ToLower(strings.TrimSpace(changedField)) {
+	case "str", "con", "siz", "dex":
+	default:
+		return
+	}
+	con := npcStat(stats, "CON")
+	siz := npcStat(stats, "SIZ")
+	if con > 0 && siz > 0 {
+		maxHP := (con + siz) / 10
+		if (con+siz)%10 != 0 {
+			maxHP++
+		}
+		setNPCStat(stats, "MaxHP", maxHP)
+		if hp := npcStat(stats, "HP"); hp > maxHP {
+			setNPCStat(stats, "HP", maxHP)
+		}
+	}
+	str := npcStat(stats, "STR")
+	if str > 0 && siz > 0 {
+		combined := str + siz
+		var build int
+		var db int
+		switch {
+		case combined <= 64:
+			build, db = -2, -2
+		case combined <= 84:
+			build, db = -1, -1
+		case combined <= 124:
+			build, db = 0, 0
+		case combined <= 164:
+			build, db = 1, 1
+		case combined <= 204:
+			build, db = 2, 2
+		case combined <= 284:
+			build, db = 3, 3
+		default:
+			build = 4 + (combined-285)/80
+			db = build
+		}
+		setNPCStat(stats, "Build", build)
+		setNPCStat(stats, "DB", db)
+	}
+	dex := npcStat(stats, "DEX")
+	if str > 0 && dex > 0 && siz > 0 {
+		mov := 8
+		if str > siz && dex > siz {
+			mov = 9
+		} else if str < siz && dex < siz {
+			mov = 7
+		}
+		setNPCStat(stats, "MOV", mov)
 	}
 }
 
