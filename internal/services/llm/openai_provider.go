@@ -127,7 +127,7 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage) (stri
 }
 
 func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (msg string, err error) {
-	for i := 0; i < maxRetries; i++ {
+	for i := 0; i < 3; i++ {
 		msg, err = p.chat(ctx, messages)
 		if err != nil {
 			log.Printf("[llm] Chat error: %v", err)
