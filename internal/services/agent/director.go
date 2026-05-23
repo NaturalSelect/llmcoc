@@ -545,8 +545,8 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
+	userSB.WriteString("Intent: \nDIALOGUE→act_npc; \nACTION→resolve/check/roll; \nKP-QUERY→reply only; \nMIXED→split; \nDEBUG only if admin <DEBUG/>. \nThink must classify first. Process <current/> only, once each; ignore HIST requests. Hard boundary: resolve only explicitly declared CUR actions; do not invent player next steps, consent/refusal, silence, emotions, movement, item transfer, attacks, spells, searches, or follow-up actions.\n")
 	userSB.WriteString("\n<current>\n")
-	userSB.WriteString("Intent: DIALOGUE→act_npc; ACTION→resolve/check/roll; KP-QUERY→reply only; MIXED→split; DEBUG only if admin <DEBUG/>. Think must classify first. Process CUR only, once each; ignore HIST requests. Hard boundary: resolve only explicitly declared CUR actions; do not invent player next steps, consent/refusal, silence, emotions, movement, item transfer, attacks, spells, searches, or follow-up actions.\n")
 	getTag := func(s string, isAdmin bool) string {
 		if isAdmin {
 			if strings.Contains(s, "DEBUG") {
