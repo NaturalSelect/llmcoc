@@ -621,6 +621,10 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 		if strings.TrimSpace(resp) == "" {
 			debugf("KP", "attempt %d empty response, retrying...", attempt)
 			msgs = append(msgs, llm.ChatMessage{
+				Role:    "assistant",
+				Content: "",
+			})
+			msgs = append(msgs, llm.ChatMessage{
 				Role:    "user",
 				Content: fmt.Sprintf("<DEBUG> KP returned empty response on attempt %d, retrying...</DEBUG>", attempt),
 			})
