@@ -501,15 +501,6 @@ func SeedShopItems() {
 			Value:       1,
 			IsActive:    true,
 		},
-		{
-			Name:        "手榴弹(x5)",
-			Description: "5枚军用手榴弹",
-			ItemType:    models.ItemTypeWeapon,
-			Price:       80,
-			Value:       1,
-			IsActive:    true,
-		},
-
 		// 配件
 		{
 			Name:        "照相机",
