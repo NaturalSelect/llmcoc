@@ -1063,6 +1063,32 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 		}
 		draft.Content.Clues[i] = normalized
 	}
+	// Extract 神话本质 clues → MythosCore; never expose as a discoverable clue.
+	var filteredClues []string
+	for _, clue := range draft.Content.Clues {
+		if strings.Contains(clue, "神话本质") {
+			if strings.TrimSpace(draft.Content.MythosCore) == "" {
+				text := clue
+				if strings.HasPrefix(text, "[") {
+					if end := strings.Index(text, "]"); end != -1 {
+						text = strings.TrimSpace(text[end+1:])
+					}
+				}
+				draft.Content.MythosCore = text
+				log.Printf("[scripter:normalize] extracted mythos_core=%q", truncateRunes(text, 200))
+			}
+		} else {
+			filteredClues = append(filteredClues, clue)
+		}
+	}
+	draft.Content.Clues = filteredClues
+	// Synthesize MythosCore from MythosAnchor if still empty.
+	if strings.TrimSpace(draft.Content.MythosCore) == "" {
+		if anchor := strings.TrimSpace(misdirection.MythosAnchor); anchor != "" {
+			draft.Content.MythosCore = fmt.Sprintf("神话本质(核心发现): %s；到达终止节点并触发揭示后承担理智代价。", anchor)
+			log.Printf("[scripter:normalize] synthesized mythos_core from anchor=%q", truncateRunes(anchor, 200))
+		}
+	}
 	if strings.TrimSpace(draft.Content.WinCondition) == "" {
 		draft.Content.WinCondition = defaultWinCondition(misdirection)
 		log.Printf("[scripter:normalize] filled win_condition=%q", truncateRunes(draft.Content.WinCondition, 300))
@@ -1191,31 +1217,19 @@ func npcsFromMisdirection(misdirection MisdirectionFabric) []models.NPCData {
 
 func cluesFromGraph(graph InvestigationGraph, irony IronyCore, misdirection MisdirectionFabric) []string {
 	clues := make([]string, 0, len(graph.Nodes)+2)
-	hasMythosCore := false
 	for _, node := range graph.Nodes {
 		prefix := deltaSignalToCluePrefix(node.DeltaSignal)
 		name := firstNonEmpty(node.Name, node.ID)
 		for _, k := range node.Knowledge {
 			if strings.TrimSpace(k) != "" {
 				clue := fmt.Sprintf("%s%s: %s；获取方式：到达该节点并主动调查。", prefix, name, k)
-				if strings.Contains(clue, "神话本质") {
-					hasMythosCore = true
-				}
 				clues = append(clues, clue)
 			}
 		}
 	}
-	if mythosAnchor := strings.TrimSpace(misdirection.MythosAnchor); mythosAnchor != "" && !hasMythosCore {
-		clues = append(clues, fmt.Sprintf("[永远隐藏]神话本质(核心发现): %s；获取方式：到达终止节点并触发揭示；发现后承担理智代价。", mythosAnchor))
-	}
 	if len(clues) == 0 {
 		clues = append(clues, "[真实]公开异常(调查入口): "+firstNonEmpty(irony.SurfaceReading, "一个无法普通解释的局势已经开始")+"；获取方式：到达现场并主动询问或检查。")
 		clues = append(clues, "[误导]表象线索(初步调查): "+firstNonEmpty(irony.FalseDelta, "支持错误δ推断的表象证据")+"；表面合理但只能解释一部分。")
-	}
-	for i, clue := range clues {
-		if strings.Contains(clue, "神话本质") {
-			clues[i] = strings.Replace(clues[i], "[隐藏]", "[永远隐藏]", 1)
-		}
 	}
 	return clues
 }

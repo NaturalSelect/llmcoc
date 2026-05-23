@@ -2229,6 +2229,17 @@
                     </div>
                 </template>
 
+                <!-- 神话本质 -->
+                <template x-if="viewingScenario?.content?.mythos_core">
+                    <div class="mb-4 p-3 rounded" style="background:#100b0b;border:1px solid #3d1515">
+                        <div class="text-[10px] font-bold text-red-700 mb-1 uppercase tracking-wider"
+                            style="font-family:system-ui">神话本质（永远隐藏）</div>
+                        <div class="text-xs text-amber-200"
+                            style="font-family:system-ui;line-height:1.6;white-space:pre-wrap"
+                            x-text="viewingScenario.content.mythos_core"></div>
+                    </div>
+                </template>
+
                 <!-- 线索 -->
                 <template x-if="viewingScenario?.content?.clues?.length">
                     <div class="mb-4">
