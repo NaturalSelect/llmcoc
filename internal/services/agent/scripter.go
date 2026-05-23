@@ -1206,11 +1206,16 @@ func cluesFromGraph(graph InvestigationGraph, irony IronyCore, misdirection Misd
 		}
 	}
 	if mythosAnchor := strings.TrimSpace(misdirection.MythosAnchor); mythosAnchor != "" && !hasMythosCore {
-		clues = append(clues, fmt.Sprintf("[隐藏]神话本质(核心发现): %s；获取方式：到达终止节点并触发揭示；发现后承担理智代价。", mythosAnchor))
+		clues = append(clues, fmt.Sprintf("[永远隐藏]神话本质(核心发现): %s；获取方式：到达终止节点并触发揭示；发现后承担理智代价。", mythosAnchor))
 	}
 	if len(clues) == 0 {
 		clues = append(clues, "[真实]公开异常(调查入口): "+firstNonEmpty(irony.SurfaceReading, "一个无法普通解释的局势已经开始")+"；获取方式：到达现场并主动询问或检查。")
 		clues = append(clues, "[误导]表象线索(初步调查): "+firstNonEmpty(irony.FalseDelta, "支持错误δ推断的表象证据")+"；表面合理但只能解释一部分。")
+	}
+	for i, clue := range clues {
+		if strings.Contains(clue, "神话本质") {
+			clues[i] = strings.Replace(clues[i], "[永远隐藏]", "[隐藏]", 1)
+		}
 	}
 	return clues
 }
