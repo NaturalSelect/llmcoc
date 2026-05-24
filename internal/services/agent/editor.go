@@ -176,6 +176,9 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 
 		case "pow":
 			// POW changes affect MaxMP (MaxMP = POW/5) and current MP proportionally.
+			if upd.Delta > 15 {
+				upd.Delta = 15
+			}
 			s := card.Stats.Data
 			oldPOW := s.POW
 			s.POW = clamp(s.POW+upd.Delta, 1, 500)
@@ -400,18 +403,18 @@ func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.Sessi
 				continue
 			}
 			npc = models.SessionNPC{
-				SessionID:           sessionID,
-				Name:                sNPC.Name,
-				Race:                sNPC.Race,
-				Occupation:          sNPC.Occupation,
-				Description:         sNPC.Description,
-				Attitude:            sNPC.Attitude,
-				Stats:               models.JSONField[map[string]int]{Data: sNPC.Stats},
-				Skills:              models.JSONField[map[string]int]{Data: map[string]int{}},
-				Spells:              models.JSONField[[]string]{Data: []string{}},
-				CthulhuMythosSkill:  sNPC.CthulhuMythosSkill,
-				WoundState:          "none",
-				IsAlive:             true,
+				SessionID:          sessionID,
+				Name:               sNPC.Name,
+				Race:               sNPC.Race,
+				Occupation:         sNPC.Occupation,
+				Description:        sNPC.Description,
+				Attitude:           sNPC.Attitude,
+				Stats:              models.JSONField[map[string]int]{Data: sNPC.Stats},
+				Skills:             models.JSONField[map[string]int]{Data: map[string]int{}},
+				Spells:             models.JSONField[[]string]{Data: []string{}},
+				CthulhuMythosSkill: sNPC.CthulhuMythosSkill,
+				WoundState:         "none",
+				IsAlive:            true,
 			}
 			models.DB.Create(&npc)
 			break
@@ -505,22 +508,22 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 		npc.Stats.Data = stats
 		log.Printf("[editor] NPC %s: MP %d→%d", npc.Name, prev, curr)
 
-	case "pow":
-		prev := npcStat(stats, "POW")
-		oldMaxMP := npcStat(stats, "MaxMP")
-		oldMP := npcStat(stats, "MP")
-		curr := clamp(prev+upd.Delta, 1, 500)
-		newMaxMP := curr / 5
-		if newMaxMP < 1 {
-			newMaxMP = 1
-		}
-		if oldMaxMP > 0 {
-			setNPCStat(stats, "MP", clamp(oldMP*newMaxMP/oldMaxMP, 0, newMaxMP))
-		}
-		setNPCStat(stats, "POW", curr)
-		setNPCStat(stats, "MaxMP", newMaxMP)
-		npc.Stats.Data = stats
-		log.Printf("[editor] NPC %s: POW %d→%d, MaxMP→%d", npc.Name, prev, curr, newMaxMP)
+	// case "pow":
+	// 	prev := npcStat(stats, "POW")
+	// 	oldMaxMP := npcStat(stats, "MaxMP")
+	// 	oldMP := npcStat(stats, "MP")
+	// 	curr := clamp(prev+upd.Delta, 1, 500)
+	// 	newMaxMP := curr / 5
+	// 	if newMaxMP < 1 {
+	// 		newMaxMP = 1
+	// 	}
+	// 	if oldMaxMP > 0 {
+	// 		setNPCStat(stats, "MP", clamp(oldMP*newMaxMP/oldMaxMP, 0, newMaxMP))
+	// 	}
+	// 	setNPCStat(stats, "POW", curr)
+	// 	setNPCStat(stats, "MaxMP", newMaxMP)
+	// 	npc.Stats.Data = stats
+	// 	log.Printf("[editor] NPC %s: POW %d→%d, MaxMP→%d", npc.Name, prev, curr, newMaxMP)
 
 	case "cthulhu_mythos", "cthulhu_mythos_skill":
 		if upd.Delta > 0 {
@@ -574,14 +577,14 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 	case "occupation":
 		npc.Occupation = upd.NewValue
 		log.Printf("[editor] NPC %s: occupation changed to %q", npc.Name, npc.Occupation)
-	case "str", "con", "siz", "dex", "app", "int", "edu":
-		key := strings.ToUpper(field)
-		prev := npcStat(stats, key)
-		curr := clamp(prev+upd.Delta, 1, 99)
-		setNPCStat(stats, key, curr)
-		updateNPCDerivedStats(stats, field)
-		npc.Stats.Data = stats
-		log.Printf("[editor] NPC %s: %s %d→%d", npc.Name, key, prev, curr)
+	// case "str", "con", "siz", "dex", "app", "int", "edu":
+	// 	key := strings.ToUpper(field)
+	// 	prev := npcStat(stats, key)
+	// 	curr := clamp(prev+upd.Delta, 1, 99)
+	// 	setNPCStat(stats, key, curr)
+	// 	updateNPCDerivedStats(stats, field)
+	// 	npc.Stats.Data = stats
+	// 	log.Printf("[editor] NPC %s: %s %d→%d", npc.Name, key, prev, curr)
 	default:
 		log.Printf("[editor] unrecognised field in NPC update: %q", upd.Field)
 	}
