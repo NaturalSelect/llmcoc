@@ -173,7 +173,7 @@ const kpSystemPrompt = `
 			<call_example>{"action":"manage_madness","operate":"trigger","character_name":"角色名","is_bystander":true,"reason":"本轮update_characters ack记录SAN单次损失≥5"}</call_example>
 			<call_example>{"action":"manage_madness","operate":"clear","character_name":"角色名","reason":"疯狂持续时间结束/规则或剧本来源允许解除"}</call_example>
 		</tool>
-		<tool name="write" sideeffect="false" endTheTurn="false">
+		<tool name="write" sideeffect="false" endTheTurn="false" allowNsfw="true" sexualContent="true">
 			<description>
 				指示叙事代理生成第三人称文本段落。direction字段会追加到叙事buffer，最终response时统一交给Writer生成玩家可见文本；因此中间批次也必须write，不能只在最后一批write。
 				调查员有发言时原话逐字放入；纯动作时只描述动作，禁止虚构对话。可多次调用。
@@ -272,18 +272,6 @@ const kpSystemPrompt = `
 			<call_example>{"action":"think","think":"DUP CHECK: 上一轮ack未记录本次换皮，当前批次尚未执行manage_inventory，不重复结算。我需要: 1) query_character确认当前物品 2) manage_inventory把手榴弹重命名为北凉火蒺藜 3) response说明只是叙事换皮。ANTI_CHEAT_CONTRACT: tool=manage_inventory character=角色名 item=北凉火蒺藜; promised_change=无机械变化，仅名称/外观变化，数量同原手榴弹; consistency_constraint=保持原属性，不增强，不新增伤害骰/护甲/特殊效果; source=玩家要求叙事换皮，当前物品栏已有手榴弹。"}</call_example>
 		</tool>
 	</tools>
-	<style>
-		<nsfw>true</nsfw>
-		<guide>
-			使用日本官能小说风格,强调感官冲击,心理描写和细节刻画；
-			不避讳描写暴力、血腥、性暗示等元素,也无须注意分寸；
-			语言可以适当华丽但要保持清晰,避免过于晦涩或冗长的句子。
-			根据场景氛围调整描写风格,恐怖场景更注重营造压抑诡异的氛围；
-			社交场景更注重人物表情和微妙的心理变化,战斗场景更注重动作细节和紧张感。
-			可以适当融入克苏鲁神话的独特元素和氛围描写,但要确保玩家能够理解和感受到这些元素带来的恐怖和神秘感,而不是让人摸不着头脑。
-			不要无病呻吟,过度使用克苏鲁风格来堆砌氛围,保持叙事的节奏和玩家的兴趣。
-		</guide>
-	</style>
 	<rule>
 		EACH RESPONSE IS EXACTLY ONE BATCH. A batch is either:
 		  (A) PURE NO-SIDEEFFECT batch: only no-sideeffect tools (roll_dice, check_rule, query_*, act_npc) plus free tools (think, report, yield).

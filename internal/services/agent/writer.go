@@ -18,7 +18,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 	<output format="plain_text" no_markdown="true">
 		充分发挥想象力, 直接输出玩家可见叙事文字，不加任何前言、标题、解释或格式标记。
 	</output>
-	<config nsfw="true" violent="true" sexual="true"/>
+	<config nsfw="true" violent="true" sexualContent="true"/>
 	<requirements>
 		<rule>使用简体中文，官能小说风格，采用第三人称视角。</rule>
 		<rule>NPC 对话用引号标注。</rule>
