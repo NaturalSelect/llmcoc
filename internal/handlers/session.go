@@ -370,6 +370,12 @@ func GetMessages(c *gin.Context) {
 		return
 	}
 
+	isAdmin := false
+	var user models.User
+	if err := models.DB.First(&user, userID).Error; err == nil {
+		isAdmin = user.Role == models.RoleAdmin
+	}
+
 	if session.HasPassword {
 		contain := false
 		for _, pl := range session.Players {
@@ -378,7 +384,7 @@ func GetMessages(c *gin.Context) {
 				break
 			}
 		}
-		if !contain {
+		if !contain && !isAdmin {
 			var messages []models.Message
 			c.JSON(http.StatusOK, messages)
 			return
