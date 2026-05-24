@@ -563,7 +563,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			if tag == "debug" {
 				hasDbg = true
 			}
-			userSB.WriteString(fmt.Sprintf("%s[%s]: %s\n", tag, a.PlayerName, a.Content))
+			userSB.WriteString(fmt.Sprintf("<%s user='%s'>said/claims %s </%s>\n", tag, a.PlayerName, a.Content, tag))
 		}
 		if hasDbg {
 			userSB.WriteString("\nNOTE: USER INPUT DEBUG COMMAND FOLLOW THE COMMAND\n")
@@ -571,7 +571,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	} else {
 		userSB.WriteString("\nInsane investigators cannot act.\n")
 		tag := getTag(gctx.UserInput, gctx.UserInputAdmin)
-		userSB.WriteString(fmt.Sprintf("%s[%s]: %s\n", tag, gctx.UserName, gctx.UserInput))
+		userSB.WriteString(fmt.Sprintf("<%s user='%s'>said/claims %s </%s>\n", tag, gctx.UserName, gctx.UserInput, tag))
 	}
 	userSB.WriteString("</current>\n")
 
