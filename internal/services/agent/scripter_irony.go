@@ -22,9 +22,9 @@ import (
 // ironyCoreSystemPrompt is built dynamically so the operator table is always
 // current without requiring prompt template edits.
 func ironyCoreSystemPrompt() string {
-	return `<role>悬疑故事架构师</role>
+	return `<role>小说架构师</role>
 <task>
-	- 为一个悬疑故事设计核心揭示结构：表层叙事（外人最初形成的自然推断）与深层真相（揭示后的真实关系）之间通过何种认知翻转连接。用写小说或电影剧本的逻辑工作。
+	- 为一个真实的探案小说设计核心揭示结构：表层叙事（外人最初形成的自然推断）与深层真相（揭示后的真实关系）之间通过何种认知翻转连接。用写小说或电影剧本的逻辑工作。
 	- 避免涉及政治。
 	- 仔细思考，逐步推理，不要急于提交。
 </task>
