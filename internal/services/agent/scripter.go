@@ -57,7 +57,7 @@ const (
 )
 
 var scriptEra = []string{
-	"1890s", "1920s", "1950s", "1980s", "modern day", "near future",
+	"1920s", "1950s", "1980s", "modern",
 }
 
 func defaultScripterEra() string {
