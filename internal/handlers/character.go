@@ -130,10 +130,6 @@ func hotFixChar(card *models.CharacterCard) {
 		card.Age = 18
 		needUpdate = true
 	}
-	if card.Stats.Data.POW > 400 {
-		card.Stats.Data.POW = 100
-		needUpdate = true
-	}
 	if needUpdate {
 		models.DB.Save(card)
 	}
