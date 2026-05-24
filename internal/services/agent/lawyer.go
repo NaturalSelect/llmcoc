@@ -111,6 +111,8 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 - 若询问具体剧本内容，直接回答"以外部剧本内容和[KP-AUTHORITY]规则为准", 不要加上任何解释或额外文字
 - 若询问KP权限，直接回答"以[KP-AUTHORITY]规则为准", 不要加上任何解释或额外文字
 - 回复不能为空
+- 你的询问者是KP, KP是一个愚蠢的规则执行者, 所以尽量不要让他自由裁定, 而是要给出明确具体的规则细节和数值, 以便他直接套用
+- 你必须逐步推理和思考, 通过工具调用来收集信息, 而不是直接凭记忆就给出结论
 - **第一轮必须且只能调用 search_cache**，不得跳过，不得在第一轮输出任何其他工具或response
 - 若 search_cache 返回了高度相关的缓存且你认为有足够的信息能够回答当前问题，直接引用并输出 response，不再进行任何搜索
 - 只有缓存未命中时，才允许进行 grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines 等搜索

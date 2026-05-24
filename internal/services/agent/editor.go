@@ -176,9 +176,6 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 
 		case "pow":
 			// POW changes affect MaxMP (MaxMP = POW/5) and current MP proportionally.
-			if upd.Delta > 15 {
-				upd.Delta = 15
-			}
 			s := card.Stats.Data
 			oldPOW := s.POW
 			s.POW = clamp(s.POW+upd.Delta, 1, 500)
