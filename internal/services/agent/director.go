@@ -53,7 +53,7 @@ const kpSystemPrompt = `
 			<call_example>{"action":"check_rule","question":"COC 7版中濒死状态如何判定，急救或医学如何稳定濒死角色？"}</call_example>
 		</tool>
 		<tool name="roll_dice" sideeffect="false" endTheTurn="false">
-			<description>投掷骰子，返回结果数值, 表达式仅支持'+'操作符。
+			<description>投掷骰子，返回结果数值, 表达式仅支持'+'操作符, 也不支持"1D100B1"这类表达式, 仅支持质朴表达式。
 				what字段仅为标签（如"说服""闪避""SAN检定"），严禁填写数字或技能值；what必须是COC规则书中存在的技能/属性名或"伤害骰"。
 				技能值必须在yield后读取query_character的真实返回值，不得从记忆中假设。
 				dice.reason字段必填：注明本次掷骰对应白名单条件（A/B/C/D/E）及具体依据（玩家宣言原文、scenario引用或check_rule返回原文）。
