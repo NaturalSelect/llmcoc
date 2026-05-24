@@ -241,10 +241,13 @@ respond.result必须包含：
 4. usable_interpretation：此元素如何承载原概念
 5. must_avoid：必须避免的未核验数值、能力、行为或误用
 6. fallback：若status不是found，给architect的保守替代方向
+7. blacklist_check：确认selected_anchor不在最近使用元素禁用列表中；若接近禁用元素，说明为什么已避开
 </result_requirements>
 <rules>
 - 第一轮必须至少调用一次ask_lawyer；不得凭常识或记忆直接respond。
-- ask_lawyer问题要具体，优先确认候选元素是否在规则书中存在、出处、核心机制和禁用边界。
+- 用户消息中的<recently_used_mythos_anchors>是硬性禁用列表；respond.result的selected_anchor绝对不得返回列表中的元素，也不得返回同一元素的中文名、英文名、简称、带括号形式或明显同源变体。
+- 如果规则书裁定显示最匹配候选属于最近使用元素禁用列表，不得选择它；必须继续ask_lawyer寻找替代候选，或返回status=uncertain/no_result并在fallback中提出非禁用方向。
+- ask_lawyer问题要具体，优先确认候选元素是否在规则书中存在、出处、核心机制和禁用边界；提问时应主动说明需要避开最近使用过的元素。
 - 如果一次裁定不足以确定匹配，可继续ask_lawyer比较其他候选或追问细节。
 - 不把lawyer原文无筛选地倾倒给architect；必须总结成可执行的翻译结论。
 - 不得编造规则书不存在的正式名称、页码、数值或能力。
@@ -300,9 +303,14 @@ func runMisdirectionTranslatorAgent(ctx context.Context, room *scripterRoom, con
 		Concept: concept,
 		Reason:  reason,
 	})
+	recentAnchors := formatMythosBlacklist(room.mythosBlacklist)
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.architect.systemPrompt(misdirectionTranslatorSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf(`<translate_anchor_request>%s</translate_anchor_request>`, string(requestJSON))},
+		{Role: "user", Content: fmt.Sprintf(`<translate_anchor_request>%s</translate_anchor_request>
+<recently_used_mythos_anchors>
+%s
+</recently_used_mythos_anchors>
+以上最近使用过的元素为硬性禁用列表：selected_anchor 不得返回这些元素、同名别名、简称、括号中英文互译形式或明显同源变体；如最匹配候选命中禁用列表，必须继续查询替代候选或返回uncertain/no_result。`, string(requestJSON), recentAnchors)},
 	}
 
 	const maxRounds = 16
@@ -367,7 +375,11 @@ func runMisdirectionTranslatorAgent(ctx context.Context, room *scripterRoom, con
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
 			continue
 		}
-		if response != "" {
+			if response != "" {
+			if anchor := findForbiddenSelectedAnchor(response, room.mythosBlacklist); anchor != "" {
+				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf("SYSTEM REJECT: selected_anchor命中了最近使用元素禁用列表：%s。selected_anchor不得返回该元素、别名或同源变体；请继续ask_lawyer寻找替代候选，或返回uncertain/no_result并给出非禁用fallback。", anchor)})
+				continue
+			}
 			return response, nil
 		}
 		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须调用ask_lawyer获取规则书裁定，或在已有裁定基础上调用respond返回结论。"})
@@ -383,6 +395,59 @@ func translatorRespondMixed(calls []misdirectionTranslatorToolCall) bool {
 		}
 	}
 	return respondCount > 0 && len(calls) != 1
+}
+
+func findForbiddenSelectedAnchor(response string, anchors []string) string {
+	selectedAnchor := extractTranslatorSelectedAnchor(response)
+	if selectedAnchor == "" || selectedAnchor == "无" {
+		return ""
+	}
+	normalizedSelected := normalizeMythosAnchorForCompare(selectedAnchor)
+	if normalizedSelected == "" {
+		return ""
+	}
+	for _, anchor := range anchors {
+		if normalizedAnchor := normalizeMythosAnchorForCompare(anchor); normalizedAnchor != "" && strings.Contains(normalizedSelected, normalizedAnchor) {
+			return anchor
+		}
+	}
+	return ""
+}
+
+func extractTranslatorSelectedAnchor(response string) string {
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(response)), &obj); err == nil {
+		if selected, ok := obj["selected_anchor"].(string); ok {
+			return strings.TrimSpace(selected)
+		}
+	}
+	for _, line := range strings.Split(response, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "selected_anchor") || strings.HasPrefix(trimmed, "selected_anchor：") || strings.HasPrefix(trimmed, "selected_anchor:") {
+			parts := strings.SplitN(trimmed, ":", 2)
+			if len(parts) != 2 {
+				parts = strings.SplitN(trimmed, "：", 2)
+			}
+			if len(parts) == 2 {
+				return strings.Trim(strings.TrimSpace(parts[1]), " `\"'，。；;")
+			}
+		}
+	}
+	return ""
+}
+
+func normalizeMythosAnchorForCompare(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	replacer := strings.NewReplacer(
+		" ", "", "\t", "", "\n", "", "\r", "",
+		"（", "", "）", "", "(", "", ")", "",
+		"「", "", "」", "", "『", "", "』", "",
+		"《", "", "》", "", "[", "", "]", "",
+		"：", "", ":", "", "，", "", ",", "",
+		"。", "", ".", "", "、", "", "/", "",
+		"-", "", "_", "",
+	)
+	return replacer.Replace(s)
 }
 
 func parseMisdirectionTranslatorToolCalls(ctx context.Context, parser agentHandle, raw string) ([]misdirectionTranslatorToolCall, error) {
