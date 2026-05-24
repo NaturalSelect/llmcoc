@@ -391,6 +391,20 @@ func GetMessages(c *gin.Context) {
 		}
 	}
 
+	if isAdmin {
+		var session models.GameSession
+		if err := models.DB.
+			Preload("Scenario").
+			Preload("Creator").
+			Preload("Players.User").
+			Preload("Players.CharacterCard").
+			First(&session, sessionID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+			return
+		}
+		session.Status = models.SessionStatusPlaying
+	}
+
 	var messages []models.Message
 	models.DB.Where("session_id = ? AND role != ?", sessionID, models.MessageRoleSystem).
 		Order("created_at ASC").
