@@ -750,6 +750,8 @@
                                 <div class="flex flex-col gap-1.5 shrink-0">
                                     <button @click="goToSession(s.id)" class="btn btn-ghost">查看记录</button>
                                     <button @click="toggleFavorite(s.id)" class="btn btn-ghost">☆ 收藏</button>
+                                    <button x-show="user?.role==='admin'" @click="reviveSession(s)"
+                                        :disabled="revivingSession" class="btn btn-green">复活</button>
                                 </div>
                             </div>
                         </div>
@@ -793,6 +795,8 @@
                                 <div class="flex flex-col gap-1.5 shrink-0">
                                     <button @click="goToSession(s.id)" class="btn btn-ghost">查看记录</button>
                                     <button @click="removeFavorite(s.id)" class="btn btn-amber">★ 取消收藏</button>
+                                    <button x-show="user?.role==='admin'" @click="reviveSession(s)"
+                                        :disabled="revivingSession" class="btn btn-green">复活</button>
                                 </div>
                             </div>
                         </div>
@@ -844,6 +848,11 @@
                                     @click="endSession()" :disabled="endingSession"
                                     class="btn btn-red shrink-0 text-xs">
                                     结束
+                                </button>
+                                <button x-show="user?.role==='admin' && currentSession?.status==='ended'"
+                                    @click="reviveCurrentSession()" :disabled="revivingSession"
+                                    class="btn btn-green shrink-0 text-xs">
+                                    复活
                                 </button>
                             </div>
 
@@ -2428,6 +2437,7 @@
                     chatInput: '',
                     endingSession: false,
                     leavingSession: false,
+                    revivingSession: false,
                     sessionRefreshTimer: null,
                     refreshingSession: false,
                     refreshingMessages: false,
@@ -2867,6 +2877,27 @@
                             this.showToast(r.message || '游戏已结束，角色成长已结算。');
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.endingSession = false;
+                    },
+
+                    async reviveSession(session) {
+                        if (!session?.id) return;
+                        if (!confirm(`确认复活房间「${session.name || session.id}」？`)) return;
+                        this.revivingSession = true;
+                        try {
+                            const r = await this.api('POST', '/api/sessions/' + session.id + '/revive');
+                            await Promise.all([this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
+                            if (this.currentSession?.id === session.id) {
+                                await this.refreshCurrentSession(true);
+                                this.messages = this.normalizeMessages((await this.api('GET', '/api/sessions/' + session.id + '/messages')) || []);
+                                this.$nextTick(() => this.scrollChat());
+                            }
+                            this.showToast(r.message || '房间已复活');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                        this.revivingSession = false;
+                    },
+
+                    async reviveCurrentSession() {
+                        await this.reviveSession(this.currentSession);
                     },
 
                     // ═══════════════════════════════════════════════════════

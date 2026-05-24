@@ -360,6 +360,62 @@ func StartSession(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "游戏已开始"})
 }
 
+func ReviveSession(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var session models.GameSession
+	if err := models.DB.
+		Preload("Scenario").
+		Preload("Players.User").
+		Preload("Players.CharacterCard").
+		First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+	if c.GetString("role") != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "只有管理员可以复活房间"})
+		return
+	}
+	if session.Status != models.SessionStatusEnded {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只有已结束的房间可以复活"})
+		return
+	}
+	if len(session.Players) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "至少需要一名玩家"})
+		return
+	}
+
+	username := c.GetString("username")
+	if username == "" {
+		var user models.User
+		if err := models.DB.Select("username").First(&user, userID).Error; err == nil {
+			username = user.Username
+		}
+	}
+	if username == "" {
+		username = "管理员"
+	}
+
+	if err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&session).Update("status", models.SessionStatusPlaying).Error; err != nil {
+			return err
+		}
+		msg := models.Message{
+			SessionID: session.ID,
+			Role:      models.MessageRoleSystem,
+			Content:   fmt.Sprintf("管理员「%s」复活了房间，游戏继续。", username),
+			Username:  "系统",
+		}
+		return tx.Create(&msg).Error
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "复活房间失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "房间已复活"})
+}
+
 func GetMessages(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID := c.GetUint("user_id")
@@ -392,7 +448,7 @@ func GetMessages(c *gin.Context) {
 	}
 
 	var messages []models.Message
-	models.DB.Where("session_id = ? AND role != ?", sessionID, models.MessageRoleSystem).
+	models.DB.Where("session_id = ? AND (role != ? OR content LIKE ?)", sessionID, models.MessageRoleSystem, "管理员「%」复活了房间，游戏继续。").
 		Order("created_at ASC").
 		Find(&messages)
 	c.JSON(http.StatusOK, messages)

@@ -199,6 +199,7 @@ func main() {
 		sessions.POST("/:id/leave", handlers.LeaveSession)
 		sessions.POST("/:id/start", handlers.StartSession)
 		sessions.POST("/:id/end", handlers.EndSession)
+		sessions.POST("/:id/revive", middleware.AdminRequired(), handlers.ReviveSession)
 		sessions.POST("/:id/favorite", handlers.FavoriteSession)
 		sessions.DELETE("/:id/favorite", handlers.UnfavoriteSession)
 		sessions.GET("/:id/messages", handlers.GetMessages)
