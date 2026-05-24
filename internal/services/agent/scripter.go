@@ -105,14 +105,6 @@ func newScripterRoom(req ScenarioCreationRequest) (*scripterRoom, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch req.TargetLength {
-	case "short":
-		req.TargetLength = "剧本时间长度: 1-3d"
-	case "medium":
-		req.TargetLength = "剧本时间长度: 3-7d"
-	case "long":
-		req.TargetLength = "剧本时间长度: 1week-1month"
-	}
 	return &scripterRoom{architect: architect, qa: qa, lawyer: lawyer, parser: parser, req: normalizeScenarioCreationRequest(req)}, nil
 }
 
@@ -138,6 +130,14 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 		if req.TargetLength != "short" && req.TargetLength != "medium" && req.TargetLength != "long" {
 			req.TargetLength = "short"
 		}
+	}
+	switch req.TargetLength {
+	case "short":
+		req.TargetLength = "剧本时间长度: 1-3d"
+	case "medium":
+		req.TargetLength = "剧本时间长度: 3-7d"
+	case "long":
+		req.TargetLength = "剧本时间长度: 1week-1month"
 	}
 	if strings.TrimSpace(req.Era) == "" {
 		req.Era = defaultScripterEra()
