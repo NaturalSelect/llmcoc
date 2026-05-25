@@ -300,7 +300,7 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 	}
 	_ = c.ShouldBindJSON(&req)
 	if req.ModelName == "" {
-		req.ModelName = "gpt-4o-mini"
+		req.ModelName = "gpt-5.4-nano"
 	}
 
 	provider := factory.NewProvider(&p, req.ModelName, 16, 0.1, "")
