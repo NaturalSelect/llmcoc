@@ -95,12 +95,22 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage) (stri
 		Temperature:     p.temperature,
 		ReasoningEffort: p.reasoningEffort,
 	}
+	sessionId := ctx.Value("session")
+	if sessionId != nil {
+		// chatReq.User = fmt.Sprintf("%v", sessionId)
+		metadata := chatReq.Metadata
+		if metadata == nil {
+			metadata = make(map[string]string)
+		}
+		metadata["coc_session_id"] = fmt.Sprintf("%v", sessionId)
+		chatReq.Metadata = metadata
+	}
 	var resp openai.ChatCompletionResponse
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		start := time.Now()
 		resp, err = p.client.CreateChatCompletion(ctx, chatReq)
-		log.Printf("Char model %v using %v\n", p.model, time.Since(start))
+		log.Printf("Chat model %v using %v\n", p.model, time.Since(start))
 		if err == nil || !isRetryableError(err) {
 			break
 		}

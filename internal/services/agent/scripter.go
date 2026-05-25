@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"math"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
@@ -66,6 +67,10 @@ func defaultScripterEra() string {
 
 var genScenarioMutex sync.Mutex
 
+const scriptSessionId = math.MaxInt64
+
+var scripterCounter int
+
 func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (ScenarioCreationOutput, error) {
 	genScenarioMutex.Lock()
 	defer genScenarioMutex.Unlock()
@@ -74,6 +79,8 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	if err != nil {
 		return ScenarioCreationOutput{}, err
 	}
+	ctx = context.WithValue(ctx, "session", scriptSessionId - int64(scripterCounter))
+	scripterCounter++
 	return room.Run(ctx)
 }
 
