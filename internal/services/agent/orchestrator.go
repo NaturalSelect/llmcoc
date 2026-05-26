@@ -221,7 +221,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 		doneKP := timedDebug("KP", "session=%d iter=%d Chat", sid, iter+1)
 		// 请求一次JSON
-		calls, rawResp, err := runKP(context.Background(), handles[models.AgentRoleDirector], kpMsgs)
+		calls, rawResp, err := runKP(ctx, handles[models.AgentRoleDirector], kpMsgs)
 		doneKP()
 		if err != nil {
 			log.Printf("[agent] KP iter %d error: %v", iter+1, err)

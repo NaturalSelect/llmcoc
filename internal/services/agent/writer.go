@@ -48,9 +48,8 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 // appendWriter calls the Writer agent with the given direction and appends
 // the generated narrative to writerState.Buffer.
 //
-// WriterState.History accumulates the full conversation (direction → narrative)
-// so each subsequent call can continue seamlessly from where the previous left off.
-// This satisfies requirement: Writer maintains output history for text continuity.
+// WriterState.History keeps the recent conversation window (direction → narrative)
+// so each subsequent call can continue from where the previous left off.
 func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direction string, gctx GameContext) error {
 	if direction == "" {
 		direction = "继续描述当前场景"
@@ -87,25 +86,15 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 		})
 	}
 
-	// Build messages: system + accumulated history + new direction.
+	state.History = trimWriterHistoryForCache(state.History, 7000)
+
+	// Build messages: system + retained history + new direction.
 	msgs := make([]llm.ChatMessage, 0, len(state.History)+2)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "system",
 		Content: h.systemPrompt(writerDefaultPrompt),
 	})
-	trunc := func(msg []llm.ChatMessage, maxToken int) []llm.ChatMessage {
-		newMsg := make([]llm.ChatMessage, 0)
-		tokenCount := 0
-		for i := len(msg) - 1; i >= 0; i-- {
-			tokenCount += len([]rune(msg[i].Content))
-			if tokenCount > maxToken {
-				break
-			}
-			newMsg = append([]llm.ChatMessage{msg[i]}, newMsg...)
-		}
-		return newMsg
-	}
-	msgs = append(msgs, trunc(state.History, 7000)...)
+	msgs = append(msgs, state.History...)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: "叙事指令:" + direction,
@@ -130,6 +119,44 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	}
 	state.Buffer += resp
 	return nil
+}
+
+func trimWriterHistoryForCache(history []llm.ChatMessage, maxRunes int) []llm.ChatMessage {
+	if writerHistoryRuneCount(history) <= maxRunes {
+		return history
+	}
+
+	targetRunes := maxRunes / 2
+	keptRunes := 0
+	keepFrom := len(history)
+	for i := len(history) - 1; i >= 0; i-- {
+		keptRunes += len([]rune(history[i].Content))
+		if keptRunes > targetRunes {
+			break
+		}
+		keepFrom = i
+	}
+
+	// Keep user/assistant exchanges aligned when possible. Writer history is seeded
+	// and appended in pairs, so preserving an even boundary avoids orphan messages.
+	if keepFrom%2 == 1 {
+		keepFrom++
+	}
+	if keepFrom >= len(history) {
+		keepFrom = len(history) - 1
+	}
+	if keepFrom < 0 {
+		keepFrom = 0
+	}
+	return history[keepFrom:]
+}
+
+func writerHistoryRuneCount(history []llm.ChatMessage) int {
+	runeCount := 0
+	for _, msg := range history {
+		runeCount += len([]rune(msg.Content))
+	}
+	return runeCount
 }
 
 const characterEvolutionPrompt = `你是无限流故事的角色成长编辑。根据角色原有的背景故事、性格特征,以及本次冒险的叙事经历,更新角色的背景故事和性格特征,体现冒险对角色的影响和成长。
