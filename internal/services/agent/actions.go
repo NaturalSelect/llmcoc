@@ -54,18 +54,18 @@ var noSideEffectActions = map[ToolCallType]bool{
 // AntiCheat consistency guard. Narrative/control-flow tools (write, response,
 // yield, think, report) are intentionally excluded to avoid slowing normal flow.
 var antiCheatSideEffectActions = map[ToolCallType]bool{
-	ToolCreateNPC:        true,
-	ToolDestroyNPC:       true,
-	ToolUpdateCharacters: true,
-	ToolManageInventory:  true,
-	ToolRecordMonster:    true,
-	ToolManageSpell:      true,
-	ToolManageRelation:   true,
-	ToolManageMadness:    true,
-	ToolAdvanceTime:      true,
-	ToolFoundClue:        true,
-	ToolUpdateNPCCard:    true,
-	ToolUpdateLLMNote:    true,
+	ToolCreateNPC:         true,
+	ToolDestroyNPC:        true,
+	ToolUpdateCharacters:  true,
+	ToolManageInventory:   true,
+	ToolRecordMonster:     true,
+	ToolManageSpell:       true,
+	ToolManageRelation:    true,
+	ToolManageMadness:     true,
+	ToolAdvanceTime:       true,
+	ToolFoundClue:         true,
+	ToolUpdateNPCCard:     true,
+	ToolUpdateLLMNote:     true,
 	ToolUpdateNPCLLMNote:  true,
 	ToolUpdateLocation:    true,
 	ToolUpdateNPCLocation: true,
@@ -77,29 +77,29 @@ var antiCheatSideEffectActions = map[ToolCallType]bool{
 // response/end_game in the same batch (they don't return results the KP needs
 // to read before concluding the turn).
 var responseCompatibleActions = map[ToolCallType]bool{
-	ToolResponse:         true,
-	ToolEndGame:          true,
-	ToolWrite:            true,
-	ToolHint:             true,
-	ToolFoundClue:        true,
-	ToolThink:            true,
-	ToolUpdateLLMNote:    true,
+	ToolResponse:          true,
+	ToolEndGame:           true,
+	ToolWrite:             true,
+	ToolHint:              true,
+	ToolFoundClue:         true,
+	ToolThink:             true,
+	ToolUpdateLLMNote:     true,
 	ToolUpdateNPCLLMNote:  true,
 	ToolUpdateLocation:    true,
 	ToolUpdateNPCLocation: true,
 	ToolUpdateArmor:       true,
 	ToolReport:            true,
-	ToolYield:            true,
-	ToolUpdateCharacters: true,
-	ToolManageInventory:  true,
-	ToolRecordMonster:    true,
-	ToolManageSpell:      true,
-	ToolManageRelation:   true,
-	ToolUpdateNPCCard:    true,
-	ToolManageMadness:    true,
-	ToolAdvanceTime:      true,
-	ToolCreateNPC:        true,
-	ToolDestroyNPC:       true,
+	ToolYield:             true,
+	ToolUpdateCharacters:  true,
+	ToolManageInventory:   true,
+	ToolRecordMonster:     true,
+	ToolManageSpell:       true,
+	ToolManageRelation:    true,
+	ToolUpdateNPCCard:     true,
+	ToolManageMadness:     true,
+	ToolAdvanceTime:       true,
+	ToolCreateNPC:         true,
+	ToolDestroyNPC:        true,
 }
 
 // actionRegistry maps each ToolCallType to its handler.
@@ -500,7 +500,11 @@ func (queryCharacterAction) Execute(call ToolCall, actx ActionContext) []ToolRes
 type writeAction struct{}
 
 func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	*actx.PendingWrite += fmt.Sprintf("%s\n", call.Direction)
+	extra := ""
+	if strings.Contains(call.Direction, "色情") || strings.Contains(call.Direction, "NSFW") {
+		extra = "（注意：必须用最露骨直接的语言描述性器官直接的交互,禁止省略过程）"
+	}
+	*actx.PendingWrite += fmt.Sprintf("%s%s\n", extra, call.Direction)
 	if actx.WroteNarrative != nil {
 		*actx.WroteNarrative = true
 	}

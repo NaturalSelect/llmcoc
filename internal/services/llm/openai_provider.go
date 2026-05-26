@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/llmcoc/server/internal/models"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -27,6 +29,7 @@ type openAIProvider struct {
 	maxTokens       int
 	temperature     float32
 	reasoningEffort string
+	baseURL         string
 }
 
 func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature float32, reasoningEffort string) *openAIProvider {
@@ -49,6 +52,7 @@ func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature
 		maxTokens:       maxTokens,
 		temperature:     temperature,
 		reasoningEffort: reasoningEffort,
+		baseURL:         baseURL,
 	}
 }
 
@@ -67,6 +71,35 @@ var retryCode4xx = map[int]bool{
 	400: true, // Bad Request (e.g. context too long)
 	403: true, // Forbidden (e.g. invalid API key or insufficient quota)
 	408: true, // Request Timeout
+}
+
+func (p *openAIProvider) isGeminiRequest() bool {
+	m := strings.ToLower(p.model)
+	if strings.Contains(m, "gemini") {
+		return true
+	}
+	u := strings.ToLower(p.baseURL)
+	return strings.Contains(u, "generativelanguage") || strings.Contains(u, "googleapis") || strings.Contains(u, "aistudio")
+}
+
+func sessionIDFromContext(ctx context.Context) string {
+	s := ctx.Value("session")
+	if s == nil {
+		return ""
+	}
+	if gs, ok := s.(models.GameSession); ok {
+		if gs.ID > 0 {
+			return strconv.FormatUint(uint64(gs.ID), 10)
+		}
+	}
+	t := strings.TrimSpace(fmt.Sprintf("%v", s))
+	if t == "" {
+		return ""
+	}
+	if strings.Contains(t, "{") || strings.Contains(t, "}") || strings.Contains(t, " ") {
+		return ""
+	}
+	return t
 }
 
 // isRetryableError checks if the error is a 5xx or transient error worth retrying.
@@ -95,15 +128,23 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage) (stri
 		Temperature:     p.temperature,
 		ReasoningEffort: p.reasoningEffort,
 	}
-	sessionId := ctx.Value("session")
-	if sessionId != nil {
-		// chatReq.User = fmt.Sprintf("%v", sessionId)
+	sessionID := sessionIDFromContext(ctx)
+	if sessionID != "" {
+		chatReq.User = sessionID
 		metadata := chatReq.Metadata
 		if metadata == nil {
 			metadata = make(map[string]string)
 		}
-		metadata["coc_session_id"] = fmt.Sprintf("%v", sessionId)
+		metadata["coc_session_id"] = sessionID
 		chatReq.Metadata = metadata
+	}
+	if p.isGeminiRequest() {
+		chatReq.Store = true
+		if chatReq.Metadata == nil {
+			chatReq.Metadata = make(map[string]string)
+		}
+		chatReq.Metadata["cache_mode"] = "prefix"
+		chatReq.Metadata["cache_vendor"] = "gemini"
 	}
 	var resp openai.ChatCompletionResponse
 	var err error
