@@ -501,8 +501,11 @@ type writeAction struct{}
 
 func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	extra := ""
-	if strings.Contains(call.Direction, "色情") || strings.Contains(call.Direction, "NSFW") {
-		extra = "（注意：必须用最露骨直接的语言描述性器官直接的交互,禁止省略过程）"
+	onlyAdmin := actx.GCtx.UserInputAdmin && len(actx.GCtx.PendingActions) == 0
+	if onlyAdmin {
+		if strings.Contains(call.Direction, "色情") || strings.Contains(call.Direction, "NSFW") {
+			extra = "（注意：必须用最露骨直接的语言描述性器官直接的交互,禁止省略过程）"
+		}
 	}
 	*actx.PendingWrite += fmt.Sprintf("%s%s\n", extra, call.Direction)
 	if actx.WroteNarrative != nil {
