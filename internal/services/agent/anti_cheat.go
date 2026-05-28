@@ -42,7 +42,7 @@ func runAntiCheat(ctx context.Context, h agentHandle, gctx GameContext, calls []
 		{Role: "system", Content: h.systemPrompt(antiCheatDefaultPrompt)},
 		{Role: "user", Content: buildAntiCheatPrompt(gctx, calls, tempNPCs)},
 	}
-	resp, err := h.provider.Chat(ctx, msgs)
+	resp, err := h.provider.JsonChat(ctx, msgs)
 	if err != nil {
 		return AntiCheatVerdict{}, err
 	}

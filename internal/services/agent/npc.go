@@ -180,11 +180,11 @@ func createNPC(sessionID uint, card *NPCCard) string {
 	}
 
 	npc := models.SessionNPC{
-		SessionID:           sessionID,
-		Name:                name,
-		Race:                race,
-		Description:         desc,
-		Attitude:            att,
+		SessionID:   sessionID,
+		Name:        name,
+		Race:        race,
+		Description: desc,
+		Attitude:    att,
 		Goal:        goal,
 		Secret:      secret,
 		RiskPref:    riskPref,
@@ -319,7 +319,7 @@ func runNPC(
 		Content: "KP提问:" + question + "\n\n请给出该NPC本轮的行动和对话。",
 	})
 
-	resp, err := h.provider.Chat(ctx, msgs)
+	resp, err := h.provider.JsonChat(ctx, msgs)
 	if err != nil {
 		return NPCAction{NPCName: npcName, Action: "保持沉默", Dialogue: ""}, fmt.Errorf("npc LLM error: %w", err)
 	}

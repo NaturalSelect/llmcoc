@@ -614,7 +614,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 	h.provider.SetJsonOutput(true)
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		resp, err := h.provider.Chat(ctx, msgs)
+		resp, err := h.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			debugf("KP", "attempt %d Chat error: %v", attempt, err)
 			return nil, "", err

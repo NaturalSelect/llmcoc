@@ -230,7 +230,7 @@ func runIronyCoreGenerate(ctx context.Context, room *scripterRoom, msgs []llm.Ch
 			return IronyCore{}, msgs, ctx.Err()
 		}
 		logStagePrompt(fmt.Sprintf("irony_core_a%d_r%d", attempt, round), msgs)
-		raw, err := room.architect.provider.Chat(ctx, msgs)
+		raw, err := room.architect.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return IronyCore{}, msgs, err
 		}

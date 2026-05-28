@@ -132,7 +132,7 @@ func runMisdirectionArchitectLoop(ctx context.Context, room *scripterRoom, msgs 
 			return MisdirectionFabric{}, msgs, ctx.Err()
 		}
 		logStagePrompt(fmt.Sprintf("%s_loop_round_%d", tag, round), msgs)
-		raw, err := room.architect.provider.Chat(ctx, msgs)
+		raw, err := room.architect.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return MisdirectionFabric{}, msgs, err
 		}
@@ -320,7 +320,7 @@ func runMisdirectionTranslatorAgent(ctx context.Context, room *scripterRoom, con
 			return "", ctx.Err()
 		}
 		logStagePrompt(fmt.Sprintf("misdirection_translate_anchor_round_%d", round), msgs)
-		raw, err := room.architect.provider.Chat(ctx, msgs)
+		raw, err := room.architect.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return "", err
 		}
@@ -375,7 +375,7 @@ func runMisdirectionTranslatorAgent(ctx context.Context, room *scripterRoom, con
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
 			continue
 		}
-			if response != "" {
+		if response != "" {
 			if anchor := findForbiddenSelectedAnchor(response, room.mythosBlacklist); anchor != "" {
 				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf("SYSTEM REJECT: selected_anchor命中了最近使用元素禁用列表：%s。selected_anchor不得返回该元素、别名或同源变体；请继续ask_lawyer寻找替代候选，或返回uncertain/no_result并给出非禁用fallback。", anchor)})
 				continue

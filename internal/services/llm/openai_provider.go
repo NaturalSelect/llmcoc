@@ -124,7 +124,7 @@ func isRetryableError(err error) bool {
 	return false
 }
 
-func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage) (string, error) {
+func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage, json bool) (string, error) {
 	start := time.Now()
 	chatReq := openai.ChatCompletionRequest{
 		Model:           p.model,
@@ -133,7 +133,7 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage) (stri
 		Temperature:     p.temperature,
 		ReasoningEffort: p.reasoningEffort,
 	}
-	if p.jsonOutput {
+	if p.jsonOutput || json {
 		chatReq.ResponseFormat = &openai.ChatCompletionResponseFormat{Type: "json_object"}
 	}
 	sessionID := sessionIDFromContext(ctx)
@@ -187,7 +187,7 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage) (stri
 
 func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (msg string, err error) {
 	for i := 0; i < 3; i++ {
-		msg, err = p.chat(ctx, messages)
+		msg, err = p.chat(ctx, messages, false)
 		if err != nil {
 			log.Printf("[llm] Chat error: %v", err)
 			return "", err
@@ -198,4 +198,19 @@ func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (msg 
 		break
 	}
 	return msg, nil
+}
+
+func (p *openAIProvider) JsonChat(ctx context.Context, messages []ChatMessage) (string, error) {
+	for i := 0; i < 3; i++ {
+		msg, err := p.chat(ctx, messages, true)
+		if err != nil {
+			log.Printf("[llm] JsonChat error: %v", err)
+			return "", err
+		}
+		if msg == "" {
+			continue
+		}
+		return msg, nil
+	}
+	return "", errors.New("LLM returned empty response after 3 attempts")
 }

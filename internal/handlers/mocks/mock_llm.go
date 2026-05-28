@@ -76,3 +76,27 @@ func (m *MockProvider) SetJsonOutput(enabled bool) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "SetJsonOutput", enabled)
 }
+
+// SetJsonOutput indicates an expected call of SetJsonOutput.
+func (mr *MockProviderMockRecorder) SetJsonOutput(enabled any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetJsonOutput", reflect.TypeOf((*MockProvider)(nil).SetJsonOutput), enabled)
+}
+
+// JsonChat mocks base method.
+func (m *MockProvider) JsonChat(ctx context.Context, messages []llm.ChatMessage) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "JsonChat", ctx, messages)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// JsonChat indicates an expected call of JsonChat.
+func (mr *MockProviderMockRecorder) JsonChat(ctx, messages any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JsonChat", reflect.TypeOf((*MockProvider)(nil).JsonChat), ctx, messages)
+}
+
+// compile-time assertion that ensures our mock implements the Provider interface.
+var _ llm.Provider = (*MockProvider)(nil)

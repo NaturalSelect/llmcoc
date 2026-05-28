@@ -183,7 +183,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 			return nil
 		}
 
-		raw, err := h.provider.Chat(ctx, msgs)
+		raw, err := h.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			log.Printf("[lawyer] iter %d LLM error: %v", iter, err)
 			return nil

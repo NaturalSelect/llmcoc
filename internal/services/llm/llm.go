@@ -19,6 +19,7 @@ type ChatMessage struct {
 type Provider interface {
 	// Chat sends a conversation and returns the full response.
 	Chat(ctx context.Context, messages []ChatMessage) (string, error)
+	JsonChat(ctx context.Context, messages []ChatMessage) (string, error)
 	SetJsonOutput(enabled bool)
 }
 

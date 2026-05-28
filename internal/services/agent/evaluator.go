@@ -74,7 +74,7 @@ func RunEvaluator(ctx context.Context, session *models.GameSession, messages []m
 		{Role: "user", Content: "聊天记录:\n" + logBuilder.String()},
 	}
 
-	resp, err := handle.provider.Chat(ctx, msgs)
+	resp, err := handle.provider.JsonChat(ctx, msgs)
 	if err != nil {
 		log.Printf("[agent] evaluator error: %v; using fallback rewards", err)
 		return fallbackEvaluation(session), nil

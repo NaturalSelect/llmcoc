@@ -101,7 +101,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.Chat(ctx, msgs)
+	resp, err := handle.provider.JsonChat(ctx, msgs)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.Chat(ctx, msgs)
+	resp, err := handle.provider.JsonChat(ctx, msgs)
 	if err != nil {
 		return nil, err
 	}

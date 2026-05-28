@@ -527,7 +527,7 @@ func runSandboxQALoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMe
 			return SandboxQA{}, msgs, ctx.Err()
 		}
 		logStagePrompt(fmt.Sprintf("%s_qa_round_%d", tag, round), msgs)
-		raw, err := room.qa.provider.Chat(ctx, msgs)
+		raw, err := room.qa.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return SandboxQA{}, msgs, err
 		}
@@ -1341,7 +1341,7 @@ func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser 
 		return fmt.Errorf("%s generator provider unavailable", tag)
 	}
 	log.Printf("[scripter:%s] chat start messages=%d", tag, len(msgs))
-	raw, err := generator.provider.Chat(ctx, msgs)
+	raw, err := generator.provider.JsonChat(ctx, msgs)
 	if err != nil {
 		log.Printf("[scripter:%s] chat error=%v", tag, err)
 		return err
