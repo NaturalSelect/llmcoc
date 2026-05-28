@@ -176,8 +176,8 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="write" sideeffect="false" endTheTurn="false" allowNsfw="true" sexualContent="true">
 			<description>
-				指示叙事代理生成第三人称文本段落。direction字段会追加到叙事buffer，最终response时统一交给Writer生成玩家可见文本；因此中间批次也必须write，不能只在最后一批write。
-				调查员有发言时原话逐字放入；纯动作时只描述动作，禁止虚构对话。可多次调用。
+				指示叙事代理生成当前场景的详细描述，你需要告诉叙事代理详细的信息包括玩家和NPC的动作、台词和当前环境状态等，不要修改台词。
+				direction字段会追加到叙事buffer，最终response时统一交给Writer生成玩家可见文本；因此中间批次也必须write，不能只在最后一批write。
 				PLAYER-ACTION BOUNDARY: direction只能展开CUR中玩家本轮明确宣言的动作/台词，以及本轮工具已确认的结果；禁止写任何“下一步/顺手/随后/继续/决定/默认/沉默/同意/拒绝/跟随/拿起/交出/攻击/施法/继续搜索”等未由玩家明确声明的后续行为或心理反应。若当前动作产生新的选择点，direction必须停在选择点并写“等待玩家决定”，不得替玩家跨过去。
 				只要玩家有动作或发言(对KP的发言除外)就必须调用；无动作无发言时可跳过。
 				PROCESS VISIBILITY: 每当一个中间过程已经被工具结果确定为玩家可见事实（移动完成、NPC做出反应、骰子导致可见成败、物品被拿起/丢失、线索被发现、伤害发生等），必须立刻在同一批次调用write把这个过程追加到buffer；即使随后还要yield等待更多工具，也不能把这些已确定过程留到最终批次才概括。
