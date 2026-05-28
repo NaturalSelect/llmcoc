@@ -652,7 +652,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 		}
 		unmarshlErr = json.Unmarshal([]byte(stripped), &calls)
 		if unmarshlErr == nil {
-			debugf("KP", "attempt %d JSON repair success, got %d calls", attempt, len(calls))
+			debugf("KP", "attempt %d JSON repair success, got %d calls, repaired JSON=%s", attempt, len(calls), stripped)
 			return calls, lastResp, nil
 		}
 		debugf("KP", "attempt %d JSON parse failed after repair: %v", attempt, unmarshlErr)
