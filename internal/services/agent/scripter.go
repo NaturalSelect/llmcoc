@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"strings"
 	"sync"
-	"math"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
@@ -79,19 +79,19 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	if err != nil {
 		return ScenarioCreationOutput{}, err
 	}
-	ctx = context.WithValue(ctx, "session", scriptSessionId - int64(scripterCounter))
+	ctx = context.WithValue(ctx, "session", scriptSessionId-int64(scripterCounter))
 	scripterCounter++
 	return room.Run(ctx)
 }
 
 type scripterRoom struct {
-	architect    agentHandle
-	qa           agentHandle
-	lawyer       agentHandle
-	parser       agentHandle
-	req            ScenarioCreationRequest
-	npcBlacklist   []string
-	titleSamples   []string
+	architect       agentHandle
+	qa              agentHandle
+	lawyer          agentHandle
+	parser          agentHandle
+	req             ScenarioCreationRequest
+	npcBlacklist    []string
+	titleSamples    []string
 	mythosBlacklist []string
 }
 
@@ -272,12 +272,12 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 // ---------------------------------------------------------------------------
 
 type ScripterConstraints struct {
-	Era                       string   `json:"era"`
-	Theme                     string   `json:"theme"`
-	GeographyFlavor           []string `json:"geography_flavor"`
-	TargetLength              string   `json:"target_length"`
-	PlayerRange               string   `json:"player_range"`
-	Difficulty                string   `json:"difficulty"`
+	Era             string   `json:"era"`
+	Theme           string   `json:"theme"`
+	GeographyFlavor []string `json:"geography_flavor"`
+	TargetLength    string   `json:"target_length"`
+	PlayerRange     string   `json:"player_range"`
+	Difficulty      string   `json:"difficulty"`
 }
 
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
@@ -294,12 +294,12 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		log.Printf("[scripter] geography generated=%q", strings.Join(geography, " → "))
 	}
 	return ScripterConstraints{
-		Era: r.req.Era,
-		Theme:                     firstNonEmpty(r.req.Theme, ""),
-		GeographyFlavor:           geography,
-		TargetLength:              r.req.TargetLength,
-		PlayerRange:               fmt.Sprintf("%d-%d", r.req.MinPlayers, r.req.MaxPlayers),
-		Difficulty:                r.req.Difficulty,
+		Era:             r.req.Era,
+		Theme:           firstNonEmpty(r.req.Theme, ""),
+		GeographyFlavor: geography,
+		TargetLength:    r.req.TargetLength,
+		PlayerRange:     fmt.Sprintf("%d-%d", r.req.MinPlayers, r.req.MaxPlayers),
+		Difficulty:      r.req.Difficulty,
 	}
 }
 
@@ -1376,10 +1376,19 @@ func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser 
 // RepairJSON uses the parser agent to fix malformed JSON. Exported so other
 // subsystems can reuse the same low-temperature fixer.
 func RepairJSON(ctx context.Context, rawJSON string, parseErr error, schemaExample string) (string, error) {
-	if strings.HasPrefix(rawJSON, "```json") {
-		rawJSON = strings.TrimPrefix(rawJSON, "```json")
-		rawJSON = strings.TrimSuffix(rawJSON, "```")
-		return strings.TrimSpace(rawJSON), nil
+	findFirst := strings.Index(rawJSON, "```")
+	if findFirst != -1 {
+		rawJSON = rawJSON[findFirst:]
+		if strings.HasPrefix(rawJSON, "```json") {
+			rawJSON = strings.TrimPrefix(rawJSON, "```json")
+			rawJSON = strings.TrimSuffix(rawJSON, "```")
+			return strings.TrimSpace(rawJSON), nil
+		}
+		if strings.HasPrefix(rawJSON, "```") {
+			rawJSON = strings.TrimPrefix(rawJSON, "```")
+			rawJSON = strings.TrimSuffix(rawJSON, "```")
+			return strings.TrimSpace(rawJSON), nil
+		}
 	}
 	isArray := strings.HasPrefix(strings.TrimSpace(schemaExample), "[") && strings.HasSuffix(strings.TrimSpace(schemaExample), "]")
 	if isArray {
