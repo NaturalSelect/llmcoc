@@ -635,8 +635,8 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 		lastResp = resp
 		debugf("KP", "attempt %d raw_response len=%d, preview=%s", attempt, len([]rune(resp)), resp)
 
-		resp = llm.JsonArryProtect(resp)
 		stripped := llm.StripCodeFence(resp)
+		stripped = llm.JsonArryProtect(stripped)
 		var calls []ToolCall
 		unmarshlErr := json.Unmarshal([]byte(stripped), &calls)
 		if unmarshlErr == nil {
