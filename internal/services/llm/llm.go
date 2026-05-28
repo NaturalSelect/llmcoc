@@ -48,6 +48,16 @@ func LoadProviderFromDB(role models.AgentRole) (Provider, error) {
 
 // StripCodeFence removes markdown code fences from an LLM response.
 func StripCodeFence(s string) string {
+	if strings.HasPrefix(s, "```json") {
+		s = strings.TrimPrefix(s, "```json")
+		s = strings.TrimSuffix(s, "```")
+		return strings.TrimSpace(s)
+	}
+	if strings.HasPrefix(s, "```") {
+		s = strings.TrimPrefix(s, "```")
+		s = strings.TrimSuffix(s, "```")
+		return strings.TrimSpace(s)
+	}
 	start := 0
 	end := len(s)
 	for i := 0; i < len(s)-2; i++ {
