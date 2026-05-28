@@ -573,7 +573,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(fmt.Sprintf("<%s %s='%s'>said/claims %s </%s>\n", tag, userType, gctx.UserName, gctx.UserInput, tag))
 	}
 	userSB.WriteString("</current>\n")
-	userSB.WriteString("\n请输出JSON数组而不加任何多余文本，格式必须严格符合工具调用规范，否则视为无效回应并重试。")
+	userSB.WriteString("\n请输出JSON数组而不加任何多余文本，格式必须严格符合工具调用规范，否则视为无效回应并重试。\n禁止以Markdown格式输出")
 
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
