@@ -30,6 +30,7 @@ type openAIProvider struct {
 	temperature     float32
 	reasoningEffort string
 	baseURL         string
+	jsonOutput      bool
 }
 
 func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature float32, reasoningEffort string) *openAIProvider {
@@ -62,6 +63,10 @@ func (p *openAIProvider) toOpenAIMessages(msgs []ChatMessage) []openai.ChatCompl
 		out[i] = openai.ChatCompletionMessage{Role: m.Role, Content: m.Content}
 	}
 	return out
+}
+
+func (p *openAIProvider) SetJsonOutput(enabled bool) {
+	p.jsonOutput = enabled
 }
 
 const maxRetries = 20
@@ -127,6 +132,9 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage) (stri
 		MaxTokens:       p.maxTokens,
 		Temperature:     p.temperature,
 		ReasoningEffort: p.reasoningEffort,
+	}
+	if p.jsonOutput {
+		chatReq.ResponseFormat = &openai.ChatCompletionResponseFormat{Type: "json_object"}
 	}
 	sessionID := sessionIDFromContext(ctx)
 	if sessionID != "" {

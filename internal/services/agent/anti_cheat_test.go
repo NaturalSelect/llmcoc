@@ -25,6 +25,8 @@ func (f *fakeProvider) Chat(ctx context.Context, messages []llm.ChatMessage) (st
 	return f.resp, nil
 }
 
+func (f *fakeProvider) SetJsonOutput(enabled bool) {}
+
 func TestToolCallUnmarshalPreservesThink(t *testing.T) {
 	raw := `[{"action":"think","think":"保持手榴弹原属性，仅叙事换皮"}]`
 	var calls []ToolCall

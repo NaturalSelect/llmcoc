@@ -614,6 +614,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 	const maxRetries = 20
 	var lastErr error
 	var lastResp string
+	h.provider.SetJsonOutput(true)
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		resp, err := h.provider.Chat(ctx, msgs)

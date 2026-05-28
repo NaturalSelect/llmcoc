@@ -70,3 +70,9 @@ func (mr *MockProviderMockRecorder) ChatStream(ctx, messages any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChatStream", reflect.TypeOf((*MockProvider)(nil).ChatStream), ctx, messages)
 }
+
+// SetJsonOutput mocks base method.
+func (m *MockProvider) SetJsonOutput(enabled bool) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetJsonOutput", enabled)
+}
