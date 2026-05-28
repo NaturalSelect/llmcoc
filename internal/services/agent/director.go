@@ -573,8 +573,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(fmt.Sprintf("<%s %s='%s'>said/claims %s </%s>\n", tag, userType, gctx.UserName, gctx.UserInput, tag))
 	}
 	userSB.WriteString("</current>\n")
-	userSB.WriteString("\n请输出JSON数组而不加任何多余文本，格式必须严格符合工具调用规范，否则视为无效回应并重试。\n禁止以Markdown格式输出, 任何包含Code Fence的回复都将被视为无效回应并重试。\n")
-
+	userSB.WriteString("禁止输出除单个JSON数组以外的任何内容, 禁止输出思考过程, 禁止输出Markdown文本, 禁止输出纯文本\n")
+	userSB.WriteString("KP必须完全按照JSON格式输出工具调用列表, 且只能输出工具调用列表, 任何多余的文本都会被视为KP失误\n")
+	userSB.WriteString("现在给出你的以JSON格式描述的第一批工具调用\n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
