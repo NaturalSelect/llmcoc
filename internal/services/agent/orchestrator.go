@@ -257,7 +257,12 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			data, _ := json.Marshal(tmp)
 			return string(data)
 		}
-		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
+		if strings.Contains(handles[models.AgentRoleDirector].config.ModelName, "deepseek") {
+			// NOTE: cache hint is super cheap to include in KP context, so include full tool call data for deepseek since it can use the extra context to reduce token usage in future calls.
+			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: rawResp})
+		} else {
+			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
+		}
 
 		var toolResults []ToolResult
 		hasEnd := false

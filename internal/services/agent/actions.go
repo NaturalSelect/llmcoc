@@ -501,19 +501,14 @@ type writeAction struct{}
 
 func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	extra := ""
-	onlyAdmin := actx.GCtx.UserInputAdmin && len(actx.GCtx.PendingActions) == 0
 	first10words := []rune(call.Direction)
 	if len(first10words) > 10 {
 		first10words = first10words[:10]
 	}
 	first10 := string(first10words)
-	if onlyAdmin {
+	if len(actx.GCtx.PendingActions) == 0 {
 		if strings.Contains(first10, "色情") || strings.Contains(first10, "NSFW") {
-			extra = "（注意：必须用最露骨直接的语言描述性器官直接的交互,禁止省略过程）"
-		}
-	} else {
-		if strings.Contains(first10, "色情") || strings.Contains(first10, "NSFW") {
-			extra = "（提示：请用适合所有年龄段的语言描述，不要使用露骨直接的词汇）"
+			extra = "（注意：必须用最露骨直接的语言直接描述性器官,禁止省略过程）"
 		}
 	}
 	*actx.PendingWrite += fmt.Sprintf("%s%s\n", extra, call.Direction)
