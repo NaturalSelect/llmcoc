@@ -558,11 +558,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			if tag == "debug" {
 				hasDbg = true
 			}
-			userType := "user"
+			userType := "player"
 			if tag == "debug" {
 				userType = "admin"
 			}
-			userSB.WriteString(fmt.Sprintf("<%s %s='%s'>said/claims %s </%s>\n", tag, userType, a.PlayerName, a.Content, tag))
+			userSB.WriteString(fmt.Sprintf("<%s %s='%s'> %s </%s>\n", tag, userType, a.PlayerName, a.Content, tag))
 		}
 		if hasDbg {
 			userSB.WriteString("\nNOTE: USER INPUT DEBUG COMMAND FOLLOW THE COMMAND\n")
@@ -570,15 +570,16 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	} else {
 		userSB.WriteString("\nInsane investigators cannot act.\n")
 		tag := getTag(gctx.UserInput, gctx.UserInputAdmin)
-		userType := "user"
+		userType := "player"
 		if tag == "debug" {
 			userType = "admin"
 		}
-		userSB.WriteString(fmt.Sprintf("<%s %s='%s'>said/claims %s </%s>\n", tag, userType, gctx.UserName, gctx.UserInput, tag))
+		userSB.WriteString(fmt.Sprintf("<%s %s='%s'> %s </%s>\n", tag, userType, gctx.UserName, gctx.UserInput, tag))
 	}
 	userSB.WriteString("</current>\n")
 	userSB.WriteString(`
 <note>
+* 注意: 玩家只代表他们自己, 不要假设他们的输入代表了其他玩家的意图或者整个局势的发展
 * 你需要理解并处理每一位玩家的意图, 先做计划再行动, 不要急于求成
 * 每个回答都必须包含think调用, 以展示你的思考过程和决策依据
 * 现在进行第一步, 使用 think 和 yield 输出你的计划, 正确的输出应是 [{"action":"think","think":"你的计划和思维链"}, {"action":"yield"}]
