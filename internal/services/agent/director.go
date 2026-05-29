@@ -584,6 +584,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 * 每个回合为30分钟, 你必须仔细思考在这30分钟内可能发生的事情
 * 每个回答都必须包含think调用, 以展示你的思考过程和决策依据
 * 现在进行第一步, 使用 think和yield 输出你的计划
+* 禁止代替玩家作决定
 </note>
 `)
 	msgs = append(msgs, llm.ChatMessage{
