@@ -22,9 +22,9 @@ import (
 // ironyCoreSystemPrompt is built dynamically so the operator table is always
 // current without requiring prompt template edits.
 func ironyCoreSystemPrompt() string {
-	return `<role>剧本杀剧本架构师</role>
+	return `<role>TRPG剧本架构师</role>
 <task>
-	- 为一个真实的剧本杀剧本设计核心揭示结构：表层叙事（外人最初形成的自然推断）与深层真相（揭示后的真实关系）之间通过何种认知翻转连接。用写游戏脚本的逻辑工作。
+	- 为一个真实的TRPG剧本设计核心揭示结构：表层叙事（外人最初形成的自然推断）与深层真相（揭示后的真实关系）之间通过何种认知翻转连接。用写游戏脚本的逻辑工作。
 	- 避免涉及政治。
 	- 仔细思考，逐步推理，不要急于提交。
 </task>
@@ -50,11 +50,11 @@ func ironyCoreSystemPrompt() string {
 - shared_evidence：在不知道真相时，这条证据既能支持delta_operator的解读，也能支持false_delta的解读；无法从证据类型本身区分。
 - emotional_weight：揭示时具体发生了什么——某段关系的真实性质、某个身份的自我认知、还是某种信念的道德基础被重新定义？不接受"震惊"、"感动"等通用描述。
 - 如果收到qa_rejection，必须重新设计翻转结构，不要只改措辞。
-- 仔细思考，不要急于提交，代入剧本杀玩家的视角，设计一个有趣的揭示结构，避免过于平庸或过于牵强的设计；如果概念本身很弱，考虑调整surface_reading、deep_truth或delta_operator来寻找更有趣的结构。
+- 仔细思考，不要急于提交，代入玩家的视角，设计一个有趣的揭示结构，避免过于平庸或过于牵强的设计；如果概念本身很弱，考虑调整surface_reading、deep_truth或delta_operator来寻找更有趣的结构。
 </rules>`
 }
 
-const ironyCoreQASystemPrompt = `<role>剧本杀剧本揭示结构审核员</role>
+const ironyCoreQASystemPrompt = `<role>TPRG剧本揭示结构审核员</role>
 <task>审核IronyCore的结构质量。只关注揭示结构的逻辑完备性，不评判内容好坏。</task>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
