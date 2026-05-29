@@ -629,7 +629,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 			debugf("KP", "attempt %d empty response, retrying...", attempt)
 			msgs = append(msgs, llm.ChatMessage{
 				Role:    "assistant",
-				Content: "",
+				Content: `[{"empty response":""}]`,
 			})
 			msgs = append(msgs, llm.ChatMessage{
 				Role:    "user",
