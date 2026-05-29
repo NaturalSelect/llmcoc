@@ -176,7 +176,7 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="write" sideeffect="false" endTheTurn="false" allowNsfw="true" sexualContent="true">
 			<description>
-				指示叙事代理生成当前场景的详细描述，你需要告诉叙事代理详细的信息包括玩家和NPC的动作、台词和当前环境状态等，不要修改台词。
+				指示叙事代理生成当前场景的详细描述(以第三人称的方式书写)，你需要告诉叙事代理详细的信息包括玩家和NPC的动作、台词和当前环境状态等，不要修改台词。
 				direction字段会追加到叙事buffer，最终response时统一交给Writer生成玩家可见文本；因此中间批次也必须write，不能只在最后一批write。
 				PLAYER-ACTION BOUNDARY: direction只能展开CUR中玩家本轮明确宣言的动作/台词，以及本轮工具已确认的结果；禁止写任何“下一步/顺手/随后/继续/决定/默认/沉默/同意/拒绝/跟随/拿起/交出/攻击/施法/继续搜索”等未由玩家明确声明的后续行为或心理反应。若当前动作产生新的选择点，direction必须停在选择点并写“等待玩家决定”，不得替玩家跨过去。
 				只要玩家有动作或发言(对KP的发言除外)就必须调用；无动作无发言时可跳过。
