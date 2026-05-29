@@ -432,6 +432,13 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					sb.WriteString(xml)
 				}
 				sb.WriteString("\n</INTERNAL_TOOL_RESULT>")
+				sb.WriteString(`
+<nextStep>
+你要求的信息已给出，发起的操作已执行，你可以:
+1. 根据这些结果继续思考并调用工具，或者
+2. 使用response工具直接回复玩家并结束回合
+</nextStep>
+`)
 				return sb.String()
 			}
 			// 输入用户数据

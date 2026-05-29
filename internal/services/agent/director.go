@@ -579,12 +579,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("</current>\n")
 	userSB.WriteString(`
 <note>
-* 你需要处理每一位玩家的意图
-* 禁止quick-win式答复, 处理时必须考虑到玩家的动作会对剧本产生什么影响
-* 每个回合为30分钟, 你必须仔细思考在这30分钟内可能发生的事情
+* 你需要理解并处理每一位玩家的意图, 先做计划再行动, 不要急于求成
 * 每个回答都必须包含think调用, 以展示你的思考过程和决策依据
-* 现在进行第一步, 使用 think和yield 输出你的计划
-* 禁止代替玩家作决定
+* 现在进行第一步, 使用 think 和 yield 输出你的计划, 正确的输出应是 [{"action":"think","think":"你的计划和思维链"}, {"action":"yield"}]
 </note>
 `)
 	msgs = append(msgs, llm.ChatMessage{
