@@ -414,8 +414,6 @@ SPECIFIC CHEAT PATTERNS — treat each as a hard error requiring immediate rejec
 4. Your goal is to provide an engaging and challenging experience for the players while adhering to the core principles of KPM.
 </scenario>
 </rules>
-
-FORBIDDEN TO OUTPUT EMPTY RESPONSES, THE ARRAY [think, yield] IS NOT A VALID RESPONSE.
 `
 
 func extraKPMessage(msg string) (s string) {
@@ -579,6 +577,15 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		userSB.WriteString(fmt.Sprintf("<%s %s='%s'>said/claims %s </%s>\n", tag, userType, gctx.UserName, gctx.UserInput, tag))
 	}
 	userSB.WriteString("</current>\n")
+	userSB.WriteString(`
+<note>
+* 你需要处理每一位玩家的意图
+* 禁止quick-win式答复, 处理时必须考虑到玩家的动作会对剧本产生什么影响
+* 每个回合为30分钟, 你必须仔细思考在这30分钟内可能发生的事情
+* 每个回答都必须包含think调用, 以展示你的思考过程和决策依据
+* 现在进行第一步, 使用 think和yield 输出你的计划
+</note>
+`)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
