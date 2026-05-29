@@ -429,11 +429,15 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				sb.Write(data)
 				if xml != "" {
 					sb.WriteString("\n")
-					sb.WriteString(xml)
 				}
 				sb.WriteString("\n</INTERNAL_TOOL_RESULT>")
+				if xml != "" {
+					sb.WriteString("<INTERNAL_TOOL_RESULT_XML>\n")
+					sb.WriteString(xml)
+					sb.WriteString("\n</INTERNAL_TOOL_RESULT_XML>")
+				}
 				sb.WriteString(`
-<nextStep>
+<NEXT_STEP>
 你要求的信息已给出，发起的操作已执行，你可以:
 1. 根据这些结果继续思考并调用工具，或者
 2. 使用response工具直接回复玩家并结束回合
@@ -443,7 +447,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 * 如果你想回复玩家，请务必使用response工具。
 * 如果你要思考，请务必使用think工具。
 * 像在"桌面上一样"思考，继续主持游戏，然后你会被奖励更多的积分。如果你不知道如何主持游戏, 使用 check_rule工具询问主持游戏的细节
-</nextStep>
+</NEXT_STEP>
 `)
 				return sb.String()
 			}
