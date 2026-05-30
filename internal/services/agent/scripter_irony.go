@@ -22,35 +22,37 @@ import (
 // ironyCoreSystemPrompt is built dynamically so the operator table is always
 // current without requiring prompt template edits.
 func ironyCoreSystemPrompt() string {
-	return `<role>TRPG剧本架构师</role>
+	return `<role>剧本揭示架构师</role>
 <task>
-	- 为一个真实的TRPG剧本设计核心揭示结构：表层叙事（外人最初形成的自然推断）与深层真相（揭示后的真实关系）之间通过何种认知翻转连接。用写游戏脚本的逻辑工作。
-	- 避免涉及政治。
-	- 仔细思考，逐步推理，不要急于提交。
+  - 设计故事的核心揭示结构：surface_reading（表层推断）通过 delta_operator（认知翻转类型）映射到 deep_truth（揭示真相）。
+  - 同时设计两个配套元素：false_delta（经验读者会优先猜测的、与 delta_operator 语义维度不同的翻转类型）和 shared_evidence（在 delta_operator 与 false_delta 两种解读框架下均成立的歧义证据）。
+  - 避免涉及政治。
 </task>
 <response_format>json_object</response_format>
-<output>直接输出一个JSON对象，不要Markdown、标题、解释或代码围栏。</output>
+<output>直接输出 JSON 对象，不要 Markdown、标题、解释或代码围栏。</output>
 ` + formatDeltaOperatorTable() + `
 <fields>
 {
-  "delta_operator": "揭示真相时，读者的理解发生了哪种根本性变化？从上表选一个ID，或自定义新ID",
-  "delta_operator_desc": "仅在自定义新翻转类型时填写：说明「理解的哪个维度」发生了变化（中文）；使用已有类型时留空字符串",
-  "surface_reading": "故事开场时，普通观察者在不知道真相的情况下会自然形成的推断",
-  "deep_truth": "揭示真相后的实际关系或事实",
+  "delta_operator": "从 surface_reading 到 deep_truth 的认知翻转类型——从上表选 ID，或自定义英文下划线格式的新 ID",
+  "delta_operator_desc": "仅自定义新翻转类型时填写：说明「理解的哪个维度」发生了变化（中文）；使用已有类型时留空字符串",
+  "surface_reading": "在不知道真相的情况下，普通观察者对给定情境的第一推断——必须是立刻可形成的判断，不是「不确定」或「存在谜团」",
+  "deep_truth": "揭示后的实际关系或事实",
   "entities": ["涉及的具体人物、地点或物件"],
-  "false_delta": "有经验的悬疑读者会优先猜测的那种「翻转方式」（填写一个翻转类型ID）——猜对了类型但猜错了具体内容，或猜错了翻转维度",
-  "shared_evidence": "一条在不知道真相时同时支持「surface_reading推断」和「false_delta猜测」两种解读的歧义证据",
-  "emotional_weight": "真相揭示时，哪段具体关系的性质、哪个身份的自我认知、或哪种信念的道德基础被重新定义——必须具体，不接受「震惊」「感动」等通用描述"
+  "false_delta": "经验读者对翻转类型的第一猜测（填翻转类型 ID）——必须与 delta_operator 作用于不同的语义维度，不是同一翻转的轻重或细节版本",
+  "shared_evidence": "一条歧义证据：在不知道真相时，它能同时被 delta_operator 和 false_delta 两种解读框架支持，无法从证据表面区分哪种解读正确",
+  "emotional_weight": "揭示时被重新定义的具体内容——某段关系的真实性质 / 某个身份的自我认知 / 某种信念的道德基础；不接受「震惊」「感动」等通用描述"
 }
 </fields>
 <rules>
-- surface_reading：给定情境下普通观察者会立刻产生的推断，不要是"不确定"或"存在谜团"。
-- delta_operator：必须唯一且精确地描述从surface_reading到deep_truth的认知翻转——换其他翻转类型就无法解释这个变换。
-- false_delta：必须与delta_operator作用于不同的语义维度（不是同类翻转的简化版）；经验读者会优先形成这个推断，而非delta_operator的推断。
-- shared_evidence：在不知道真相时，这条证据既能支持delta_operator的解读，也能支持false_delta的解读；无法从证据类型本身区分。
-- emotional_weight：揭示时具体发生了什么——某段关系的真实性质、某个身份的自我认知、还是某种信念的道德基础被重新定义？不接受"震惊"、"感动"等通用描述。
-- 如果收到qa_rejection，必须重新设计翻转结构，不要只改措辞。
-- 仔细思考，不要急于提交，代入玩家的视角，设计一个有趣的揭示结构，避免过于平庸或过于牵强的设计；如果概念本身很弱，考虑调整surface_reading、deep_truth或delta_operator来寻找更有趣的结构。
+提交前逐条自查：
+1. surface_reading 是普通观察者在给定情境下会立刻形成的推断，无需预知任何真相？
+2. delta_operator 唯一且精确地解释 surface_reading → deep_truth 的变换，换其他翻转类型就失效？
+3. false_delta 与 delta_operator 作用于不同的语义维度，不是同一翻转的简化或细节版本？
+4. shared_evidence 在不知道真相时，被 delta_operator 和 false_delta 两种解读框架均能合理支持？
+5. 知道 deep_truth 后，surface_reading 的所有表层观察仍然说得通，没有无法兼容的线索？
+6. emotional_weight 指向一个具体的关系 / 身份 / 信念重新定义，不是通用情绪描述？
+- 仔细思考，逐步推理，不要急于提交；设计一个有趣的结构，避免平庸或牵强；若核心概念太弱，调整整体 surface_reading / deep_truth / delta_operator 组合。
+- 收到 qa_rejection 时，必须重新设计翻转结构，不只改措辞。
 </rules>`
 }
 
