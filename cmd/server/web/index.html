@@ -876,15 +876,15 @@
                                             <div class="narrative-container">
                                                 <template x-if="msg.writer_text || msg.narration_text">
                                                     <div>
-                                                        <p x-show="msg.writer_text" class="narrative"
-                                                            x-text="msg.writer_text"></p>
-                                                        <p x-show="msg.narration_text" class="narration"
-                                                            :class="msg.writer_text ? 'narration-sep' : ''"
-                                                            x-text="'KP：' + msg.narration_text"></p>
+                                                        <p x-show="stripAckContent(msg.writer_text).trim()" class="narrative"
+                                                            x-text="stripAckContent(msg.writer_text)"></p>
+                                                        <p x-show="stripAckContent(msg.narration_text).trim()" class="narration"
+                                                            :class="stripAckContent(msg.writer_text).trim() ? 'narration-sep' : ''"
+                                                            x-text="'KP：' + stripAckContent(msg.narration_text)"></p>
                                                     </div>
                                                 </template>
                                                 <template x-if="!msg.writer_text && !msg.narration_text">
-                                                    <p class="narrative" x-text="msg.content"></p>
+                                                    <p class="narrative" x-text="stripAckContent(msg.content)"></p>
                                                 </template>
                                             </div>
                                         </template>
@@ -906,7 +906,7 @@
                                             style="font-family:monospace">正在回应…</span>
                                     </div>
 
-                                    <div x-show="!writerBuffer && !narrationBuffer"
+                                    <div x-show="!stripAckContent(writerBuffer).trim() && !stripAckContent(narrationBuffer).trim()"
                                         class="flex items-center gap-3 py-1">
                                         <div class="flex gap-1">
                                             <span class="dot"></span><span class="dot"></span><span class="dot"></span>
@@ -916,10 +916,10 @@
                                         </span>
                                     </div>
 
-                                    <p x-show="writerBuffer" class="narrative" :class="narrationBuffer ? '' : 'cursor'"
-                                        x-text="writerBuffer"></p>
-                                    <p x-show="narrationBuffer" class="narration cursor"
-                                        :class="writerBuffer ? 'narration-sep' : ''" x-text="'KP：' + narrationBuffer">
+                                    <p x-show="stripAckContent(writerBuffer).trim()" class="narrative" :class="stripAckContent(narrationBuffer).trim() ? '' : 'cursor'"
+                                        x-text="stripAckContent(writerBuffer)"></p>
+                                    <p x-show="stripAckContent(narrationBuffer).trim()" class="narration cursor"
+                                        :class="stripAckContent(writerBuffer).trim() ? 'narration-sep' : ''" x-text="'KP：' + stripAckContent(narrationBuffer)">
                                     </p>
                                 </div>
 
@@ -3117,8 +3117,8 @@
                     },
 
                     _commitStreamBuffers() {
-                        const wt = this.writerBuffer.trim();
-                        const nt = this.narrationBuffer.trim();
+                        const wt = this.stripAckContent(this.writerBuffer).trim();
+                        const nt = this.stripAckContent(this.narrationBuffer).trim();
                         const fullContent = wt + (nt ? '\n\nKP:' + nt : '');
                         this.messages.push({
                             id: Date.now() + 1,
@@ -3260,7 +3260,18 @@
                     },
 
                     normalizeMessage(message) {
-                        if (!message || message.role !== 'assistant' || message.writer_text || message.narration_text) {
+                        if (!message || message.role !== 'assistant') {
+                            return message;
+                        }
+
+                        message = {
+                            ...message,
+                            content: this.stripAckContent(message.content || ''),
+                            writer_text: this.stripAckContent(message.writer_text || ''),
+                            narration_text: this.stripAckContent(message.narration_text || ''),
+                        };
+
+                        if (message.writer_text || message.narration_text) {
                             return message;
                         }
 
@@ -3274,6 +3285,13 @@
                             writer_text: split.writerText,
                             narration_text: split.narrationText,
                         };
+                    },
+
+                    stripAckContent(content) {
+                        return String(content || '')
+                            .replace(/<ack\b[^>]*>[\s\S]*?<\/ack>/gi, '')
+                            .replace(/<ack\b[^>]*>[\s\S]*$/gi, '')
+                            .trim();
                     },
 
                     splitAssistantContent(content) {

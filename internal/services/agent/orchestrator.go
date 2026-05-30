@@ -389,16 +389,17 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					break
 				}
 				if checkTurnReadyForPlayers(gctx, turnPlayerIDs) {
-					if wroteNarrative {
-						// Real game turn: narrative was written, advance the clock.
-						advanceTurnRound(&gctx)
-					} else {
-						// Pure OOC consultation (KP-QUERY): no in-game action happened,
-						// so TurnRound stays the same. But we must still clear
-						// SessionTurnAction records so the next submission doesn't
-						// immediately look like "all players already submitted".
-						clearTurnActions(gctx)
-					}
+					// if wroteNarrative {
+					// 	// Real game turn: narrative was written, advance the clock.
+					// 	advanceTurnRound(&gctx)
+					// } else {
+					// 	// Pure OOC consultation (KP-QUERY): no in-game action happened,
+					// 	// so TurnRound stays the same. But we must still clear
+					// 	// SessionTurnAction records so the next submission doesn't
+					// 	// immediately look like "all players already submitted".
+					// 	clearTurnActions(gctx)
+					// }
+					clearTurnActions(gctx)
 				}
 			}
 			saveWriterHistory(gctx.Session.ID, writerState)
@@ -430,7 +431,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if xml != "" {
 					sb.WriteString("\n")
 				}
-				sb.WriteString("\n</INTERNAL_TOOL_RESULT>")
+				sb.WriteString("\n</INTERNAL_TOOL_RESULT>\n")
 				if xml != "" {
 					sb.WriteString("<INTERNAL_TOOL_RESULT_XML>\n")
 					sb.WriteString(xml)
@@ -447,7 +448,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 * 你的所有输出都必须是合法的JSON数组格式, 违反格式要求将导致未定义行为, 我们也不知道会发生什么（可能是工具调用失败，可能是玩家看到格式错误的回复，甚至可能是KP的记忆出现混乱）。
 * 如果你想回复玩家，请务必使用response工具。
 * 如果你要思考，请务必使用think工具。
-* 像在"桌面上一样"思考，继续主持游戏，然后你会被奖励更多的积分。如果你不知道如何主持游戏, 使用 check_rule工具询问主持游戏的细节
+* 如果你要推进游戏时间, 使用 advance_time工具, 每个单位代表半小时(如果太多轮次没有推进, 请考虑推进时间)。
+* 像在"桌面上一样"思考，继续主持游戏，然后你会被奖励更多的积分。如果你不知道如何主持游戏, 使用 check_rule工具询问主持游戏的细节。
 </NEXT_STEP>
 `)
 				return sb.String()
