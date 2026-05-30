@@ -304,13 +304,18 @@ func runMisdirectionTranslatorAgent(ctx context.Context, room *scripterRoom, con
 		Reason:  reason,
 	})
 	recentAnchors := formatMythosBlacklist(room.mythosBlacklist)
+	difficulty := strings.ToLower(strings.TrimSpace(room.req.Difficulty))
+	if difficulty != "easy" && difficulty != "normal" && difficulty != "hard" {
+		difficulty = "normal"
+	}
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.architect.systemPrompt(misdirectionTranslatorSystemPrompt)},
 		{Role: "user", Content: fmt.Sprintf(`<translate_anchor_request>%s</translate_anchor_request>
 <recently_used_mythos_anchors>
 %s
 </recently_used_mythos_anchors>
-以上最近使用过的元素为硬性禁用列表：selected_anchor 不得返回这些元素、同名别名、简称、括号中英文互译形式或明显同源变体；如最匹配候选命中禁用列表，必须继续查询替代候选或返回uncertain/no_result。`, string(requestJSON), recentAnchors)},
+<scenario_difficulty>%s</scenario_difficulty>
+以上最近使用过的元素为硬性禁用列表：selected_anchor 不得返回这些元素、同名别名、简称、括号中英文互译形式或明显同源变体；如最匹配候选命中禁用列表，必须继续查询替代候选或返回uncertain/no_result。`, string(requestJSON), recentAnchors, difficulty)},
 	}
 
 	const maxRounds = 16

@@ -10,6 +10,84 @@ import (
 	"github.com/llmcoc/server/internal/services/agent"
 )
 
+const (
+	adminScenarioDefaultPage     = 1
+	adminScenarioDefaultPageSize = 20
+	adminScenarioMaxPageSize     = 100
+)
+
+type AdminScenarioListResponse struct {
+	Items      []models.Scenario `json:"items"`
+	Page       int               `json:"page"`
+	PageSize   int               `json:"page_size"`
+	Total      int64             `json:"total"`
+	TotalPages int               `json:"total_pages"`
+}
+
+func parseAdminPagination(c *gin.Context) (int, int, bool) {
+	page, ok := parsePositiveIntQuery(c, "page", adminScenarioDefaultPage)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be a positive integer"})
+		return 0, 0, false
+	}
+
+	pageSize, ok := parsePositiveIntQuery(c, "page_size", adminScenarioDefaultPageSize)
+	if !ok || pageSize > adminScenarioMaxPageSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be a positive integer no greater than 100"})
+		return 0, 0, false
+	}
+
+	return page, pageSize, true
+}
+
+func parsePositiveIntQuery(c *gin.Context, key string, fallback int) (int, bool) {
+	raw := c.Query(key)
+	if raw == "" {
+		return fallback, true
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return 0, false
+	}
+	return value, true
+}
+
+func AdminListScenarios(c *gin.Context) {
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
+
+	var total int64
+	if err := models.DB.Model(&models.Scenario{}).Where("is_active = ?", true).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询模组总数失败"})
+		return
+	}
+
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	scenarios := make([]models.Scenario, 0)
+	if err := models.DB.Where("is_active = ?", true).
+		Order("created_at DESC, id DESC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&scenarios).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询模组列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, AdminScenarioListResponse{
+		Items:      scenarios,
+		Page:       page,
+		PageSize:   pageSize,
+		Total:      total,
+		TotalPages: totalPages,
+	})
+}
+
 func AdminListUsers(c *gin.Context) {
 	var users []models.User
 	models.DB.Order("created_at DESC").Find(&users)

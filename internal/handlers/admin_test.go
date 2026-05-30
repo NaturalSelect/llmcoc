@@ -15,6 +15,7 @@ func adminRouter() *gin.Engine {
 	r := gin.New()
 	admin := r.Group("/admin", withAuth(1, "admin", "admin"))
 	admin.GET("/users", AdminListUsers)
+	admin.GET("/scenarios", AdminListScenarios)
 	admin.POST("/recharge", AdminRechargeCoins)
 	admin.PUT("/users/:id/role", AdminSetRole)
 	admin.GET("/recharge/history", AdminGetRechargeHistory)
@@ -56,6 +57,141 @@ func TestAdminListUsers_HasUsers(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp) != 2 {
 		t.Errorf("want 2 users, got %d", len(resp))
+	}
+}
+
+func TestAdminListScenarios_Empty(t *testing.T) {
+	initTestDB(t)
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/scenarios", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp AdminScenarioListResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 0 {
+		t.Errorf("want empty items, got %d", len(resp.Items))
+	}
+	if resp.Total != 0 {
+		t.Errorf("total = %d, want 0", resp.Total)
+	}
+	if resp.Page != 1 || resp.PageSize != 20 || resp.TotalPages != 1 {
+		t.Errorf("pagination = page %d size %d totalPages %d, want 1/20/1", resp.Page, resp.PageSize, resp.TotalPages)
+	}
+}
+
+func TestAdminListScenarios_PaginatesFirstPage(t *testing.T) {
+	initTestDB(t)
+	for i := 1; i <= 25; i++ {
+		seedScenario(t, fmt.Sprintf("Scenario %02d", i))
+	}
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/scenarios?page=1&page_size=10", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp AdminScenarioListResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 10 {
+		t.Errorf("want 10 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 {
+		t.Errorf("total = %d, want 25", resp.Total)
+	}
+	if resp.TotalPages != 3 {
+		t.Errorf("total_pages = %d, want 3", resp.TotalPages)
+	}
+	if resp.Page != 1 || resp.PageSize != 10 {
+		t.Errorf("pagination = page %d size %d, want 1/10", resp.Page, resp.PageSize)
+	}
+}
+
+func TestAdminListScenarios_PaginatesThirdPage(t *testing.T) {
+	initTestDB(t)
+	for i := 1; i <= 25; i++ {
+		seedScenario(t, fmt.Sprintf("Scenario %02d", i))
+	}
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/scenarios?page=3&page_size=10", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp AdminScenarioListResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 {
+		t.Errorf("total = %d, want 25", resp.Total)
+	}
+	if resp.TotalPages != 3 {
+		t.Errorf("total_pages = %d, want 3", resp.TotalPages)
+	}
+}
+
+func TestAdminListScenarios_ExcludesInactive(t *testing.T) {
+	initTestDB(t)
+	for i := 1; i <= 3; i++ {
+		seedScenario(t, fmt.Sprintf("Active %d", i))
+	}
+	inactiveID := seedScenario(t, "Inactive")
+	models.DB.Exec("UPDATE scenarios SET is_active = false WHERE id = ?", inactiveID)
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/scenarios?page=1&page_size=10", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp AdminScenarioListResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 3 {
+		t.Errorf("want 3 active items, got %d", len(resp.Items))
+	}
+	if resp.Total != 3 {
+		t.Errorf("total = %d, want 3", resp.Total)
+	}
+}
+
+func TestAdminListScenarios_InvalidPagination(t *testing.T) {
+	tests := []string{
+		"/admin/scenarios?page=0",
+		"/admin/scenarios?page=bad",
+		"/admin/scenarios?page_size=0",
+		"/admin/scenarios?page_size=bad",
+		"/admin/scenarios?page_size=101",
+	}
+
+	for _, path := range tests {
+		t.Run(path, func(t *testing.T) {
+			initTestDB(t)
+			r := adminRouter()
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, jsonReq("GET", path, nil))
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
 

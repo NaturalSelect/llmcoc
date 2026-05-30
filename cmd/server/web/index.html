@@ -1039,7 +1039,7 @@
                         x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'settings',label:'系统设置'},{id:'cache',label:'规则缓存'}]"
                         :key="t.id">
                         <button
-                            @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems(); if (t.id === 'cache') loadCacheStats()"
+                            @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems(); if (t.id === 'cache') loadCacheStats(); if (t.id === 'scenarios') loadAdminScenarios()"
                             class="tab" :class="adminTab===t.id?'active':''" x-text="t.label"></button>
                     </template>
                 </div>
@@ -1219,9 +1219,29 @@
 
                     <!-- Scenario list -->
                     <div class="card rounded p-5 lg:col-span-2">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">已有模组</h3>
-                            <button @click="loadAdminScenarios()" class="btn btn-ghost text-xs">刷新</button>
+                        <div class="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+                            <div>
+                                <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">已有模组</h3>
+                                <p class="text-xs text-amber-800 mt-1" style="font-family:system-ui">
+                                    共 <span x-text="adminScenarioTotal"></span> 个 · 第
+                                    <span x-text="adminScenarioPage"></span> /
+                                    <span x-text="adminScenarioTotalPages"></span> 页
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <label class="text-xs text-amber-800" style="font-family:system-ui">每页</label>
+                                <select x-model.number="adminScenarioPageSize" @change="changeAdminScenarioPageSize()"
+                                    class="inp text-xs py-1 w-20">
+                                    <option :value="10">10</option>
+                                    <option :value="20">20</option>
+                                    <option :value="50">50</option>
+                                </select>
+                                <button @click="prevAdminScenarioPage()" :disabled="adminScenarioPage <= 1"
+                                    class="btn btn-ghost text-xs">上一页</button>
+                                <button @click="nextAdminScenarioPage()" :disabled="adminScenarioPage >= adminScenarioTotalPages"
+                                    class="btn btn-ghost text-xs">下一页</button>
+                                <button @click="loadAdminScenarios(adminScenarioPage)" class="btn btn-ghost text-xs">刷新</button>
+                            </div>
                         </div>
                         <div x-show="adminScenarios.length === 0" class="text-amber-900 text-xs"
                             style="font-family:system-ui">暂无模组</div>
@@ -2473,6 +2493,10 @@
                     adminProviders: [],
                     adminAgents: [],
                     adminScenarios: [],
+                    adminScenarioPage: 1,
+                    adminScenarioPageSize: 20,
+                    adminScenarioTotal: 0,
+                    adminScenarioTotalPages: 1,
                     adminShopItems: [],
                     cacheStats: null,
                     scenarioUploadFile: null,
@@ -2591,15 +2615,52 @@
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
                     async loadAdminProviders() { this.adminProviders = (await this.api('GET', '/api/admin/config/providers')) || []; },
-                    async loadAdminScenarios() { this.adminScenarios = (await this.api('GET', '/api/scenarios')) || []; },
+                    async loadAdminScenarios(page) {
+                        const nextPage = Math.max(1, Number(page || this.adminScenarioPage || 1));
+                        const pageSize = Math.max(1, Number(this.adminScenarioPageSize || 20));
+                        const resp = await this.api('GET', `/api/admin/scenarios?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+
+                        if (Array.isArray(resp)) {
+                            this.adminScenarios = resp;
+                            this.adminScenarioPage = nextPage;
+                            this.adminScenarioPageSize = pageSize;
+                            this.adminScenarioTotal = resp.length;
+                            this.adminScenarioTotalPages = 1;
+                            return;
+                        }
+
+                        this.adminScenarios = resp?.items || [];
+                        this.adminScenarioPage = Math.max(1, Number(resp?.page || nextPage));
+                        this.adminScenarioPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                        this.adminScenarioTotal = Math.max(0, Number(resp?.total || 0));
+                        this.adminScenarioTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                    },
+                    async setAdminScenarioPage(page) {
+                        const totalPages = Math.max(1, Number(this.adminScenarioTotalPages || 1));
+                        const nextPage = Math.min(Math.max(1, Number(page || 1)), totalPages);
+                        await this.loadAdminScenarios(nextPage);
+                    },
+                    async prevAdminScenarioPage() {
+                        await this.setAdminScenarioPage(this.adminScenarioPage - 1);
+                    },
+                    async nextAdminScenarioPage() {
+                        await this.setAdminScenarioPage(this.adminScenarioPage + 1);
+                    },
+                    async changeAdminScenarioPageSize() {
+                        const pageSize = Number(this.adminScenarioPageSize || 20);
+                        this.adminScenarioPageSize = [10, 20, 50].includes(pageSize) ? pageSize : 20;
+                        await this.loadAdminScenarios(1);
+                    },
                     async loadAdminShopItems() { this.adminShopItems = (await this.api('GET', '/api/shop/items')) || []; },
                     async deleteScenario(id) {
                         if (!confirm('确认删除该模组？此操作不可逆。')) return;
                         try {
                             await this.api('DELETE', '/api/scenarios/' + id);
                             this.showToast('模组已删除');
-                            await this.loadAdminScenarios();
-                            await this.loadScenarios();
+                            const nextPage = this.adminScenarios.length === 1 && this.adminScenarioPage > 1
+                                ? this.adminScenarioPage - 1
+                                : this.adminScenarioPage;
+                            await Promise.all([this.loadAdminScenarios(nextPage), this.loadScenarios()]);
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
                     async loadAdminAgents() {
@@ -3497,7 +3558,7 @@
                             if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
                             this.scenarioUploadFile = null;
                             this.showToast('模组导入成功');
-                            await this.loadScenarios();
+                            await Promise.all([this.loadScenarios(), this.loadAdminScenarios(1)]);
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.loading = false;
                     },
@@ -3522,7 +3583,7 @@
                                 difficulty: this.scenarioGenForm.difficulty || 'normal',
                             });
                             this.showToast('AI 模组生成并入库成功');
-                            await Promise.all([this.loadScenarios(), this.loadAdminScenarios()]);
+                            await Promise.all([this.loadScenarios(), this.loadAdminScenarios(1)]);
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.loading = false;
                     },
