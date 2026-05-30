@@ -95,6 +95,15 @@ type scripterRoom struct {
 	mythosBlacklist []string
 }
 
+func (r *scripterRoom) architectModelName() string {
+	if r != nil && r.architect.config != nil {
+		if modelName := strings.TrimSpace(r.architect.config.ModelName); modelName != "" {
+			return modelName
+		}
+	}
+	return defaultScripterAuthor
+}
+
 func newScripterRoom(req ScenarioCreationRequest) (*scripterRoom, error) {
 	architect, err := loadSingleAgent(models.AgentRoleArchitect)
 	if err != nil {
@@ -246,13 +255,13 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 			break
 		}
 		draft = repaired
-		applyGuardrails(&draft, r.req)
+		applyGuardrails(&draft, r.req, r.architectModelName())
 		iterations++
 		log.Printf("[scripter] stage=assembly_repair round=%d done name=%q scenes=%d npcs=%d clues=%d", repairRound, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 	}
 	beforeNormalizeIssues := validateDraftCompatibility(draft)
 	log.Printf("[scripter] normalization start pre_issues=%d", len(beforeNormalizeIssues))
-	normalizeDraftBeforeReturn(&draft, r.req, constraints, irony, misdirection, graph)
+	normalizeDraftBeforeReturn(&draft, r.req, r.architectModelName(), constraints, irony, misdirection, graph)
 	// Inject completion reward (generated independently of assembly stage).
 	if scenarioReward != nil {
 		draft.Content.Reward = scenarioReward
@@ -740,7 +749,7 @@ func assembleSandboxDraft(ctx context.Context, room *scripterRoom, constraints S
 		return ScenarioDraft{}, fmt.Errorf("assembly chatAndParseJSON: %w", err)
 	}
 	logParsedJSON("assembly_draft", draft)
-	applyGuardrails(&draft, room.req)
+	applyGuardrails(&draft, room.req, room.architectModelName())
 	return draft, nil
 }
 
@@ -822,7 +831,7 @@ func assembleSandboxDraftWithQA(ctx context.Context, room *scripterRoom, constra
 		if err != nil {
 			return ScenarioDraft{}, err
 		}
-		applyGuardrails(&draft, room.req)
+		applyGuardrails(&draft, room.req, room.architectModelName())
 		qa, err := session.review(ctx, attempt, draft)
 		if err != nil {
 			return ScenarioDraft{}, err
@@ -929,9 +938,13 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	return issues
 }
 
-func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest) {
+func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest, author string) {
 	if draft == nil {
 		return
+	}
+	author = strings.TrimSpace(author)
+	if author == "" {
+		author = defaultScripterAuthor
 	}
 	if strings.TrimSpace(req.Name) != "" && draft.Name != strings.TrimSpace(req.Name) {
 		log.Printf("[scripter:guardrails] override name from=%q to=%q", draft.Name, strings.TrimSpace(req.Name))
@@ -953,15 +966,19 @@ func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest) {
 		log.Printf("[scripter:guardrails] override difficulty from=%q to=%q", draft.Difficulty, strings.TrimSpace(req.Difficulty))
 		draft.Difficulty = strings.TrimSpace(req.Difficulty)
 	}
-	if strings.TrimSpace(draft.Author) == "" {
-		log.Printf("[scripter:guardrails] default author=%q", defaultScripterAuthor)
-		draft.Author = defaultScripterAuthor
+	if draft.Author != author {
+		log.Printf("[scripter:guardrails] override author from=%q to=%q", draft.Author, author)
+		draft.Author = author
 	}
 }
 
-func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationRequest, constraints ScripterConstraints, irony IronyCore, misdirection MisdirectionFabric, graph InvestigationGraph) {
+func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationRequest, author string, constraints ScripterConstraints, irony IronyCore, misdirection MisdirectionFabric, graph InvestigationGraph) {
 	if draft == nil {
 		return
+	}
+	author = strings.TrimSpace(author)
+	if author == "" {
+		author = defaultScripterAuthor
 	}
 	if strings.TrimSpace(draft.Name) == "" {
 		draft.Name = defaultScenarioName(irony)
@@ -971,9 +988,9 @@ func normalizeDraftBeforeReturn(draft *ScenarioDraft, req ScenarioCreationReques
 		draft.Description = fmt.Sprintf("围绕「%s」展开的沙盒调查：调查员进入一个由δ结构驱动的局势，表象与深层真相由一个可逆转的认知算子分隔。", irony.SurfaceReading)
 		log.Printf("[scripter:normalize] filled description=%q", truncateRunes(draft.Description, 300))
 	}
-	if strings.TrimSpace(draft.Author) == "" {
-		draft.Author = defaultScripterAuthor
-		log.Printf("[scripter:normalize] filled author=%q", draft.Author)
+	if draft.Author != author {
+		draft.Author = author
+		log.Printf("[scripter:normalize] override author=%q", draft.Author)
 	}
 	if strings.TrimSpace(draft.Tags) == "" {
 		draft.Tags = strings.Join(nonEmptyStrings("sandbox", "coc", constraints.Theme), ",")

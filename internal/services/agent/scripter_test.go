@@ -63,7 +63,7 @@ func TestApplyGuardrailsPreservesRequestOverrides(t *testing.T) {
 	draft.Difficulty = "hard"
 
 	req := ScenarioCreationRequest{Name: "用户标题", MinPlayers: 2, MaxPlayers: 5, Difficulty: "normal"}
-	applyGuardrails(&draft, req)
+	applyGuardrails(&draft, req, "architect-model")
 
 	if draft.Name != "用户标题" {
 		t.Fatalf("Name=%q, want 用户标题", draft.Name)
@@ -74,8 +74,8 @@ func TestApplyGuardrailsPreservesRequestOverrides(t *testing.T) {
 	if draft.Difficulty != "normal" {
 		t.Fatalf("Difficulty=%q, want normal", draft.Difficulty)
 	}
-	if draft.Author != "agent-team" {
-		t.Fatalf("Author=%q, want agent-team", draft.Author)
+	if draft.Author != "architect-model" {
+		t.Fatalf("Author=%q, want architect-model", draft.Author)
 	}
 }
 
