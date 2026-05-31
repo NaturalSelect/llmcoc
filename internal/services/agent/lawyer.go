@@ -152,6 +152,21 @@ type lawyerCall struct {
 	Ruling   string `json:"ruling,omitempty"`    // response
 }
 
+var lawyerCallExample = func() string {
+	data := []lawyerCall{
+		{Action: "search_cache", Keyword: "#手枪 #伤害"},
+		{Action: "grep", Keyword: "手枪伤害"},
+		{Action: "read_lines", Start: 100, End: 120},
+		{Action: "response", CacheKey: "#手枪 #伤害 #武器", Ruling: "手枪的伤害是1D10，暴击是2D10。"},
+		{Action: "read_spell_lines", Start: 50, End: 70},
+		{Action: "grep_spell", Keyword: "火焰喷吐"},
+		{Action: "grep_monster", Keyword: "克苏鲁神话生物"},
+		{Action: "read_monster_lines", Start: 200, End: 220},
+	}
+	exampleBytes, _ := json.Marshal(data)
+	return string(exampleBytes)
+}()
+
 // runLawyer is an autonomous rule consultant that mirrors the Director's tool-call loop.
 //
 // Each iteration the model outputs a JSON array of lawyerCalls:

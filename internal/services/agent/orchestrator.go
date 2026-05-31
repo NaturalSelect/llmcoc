@@ -221,7 +221,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 		doneKP := timedDebug("KP", "session=%d iter=%d Chat", sid, iter+1)
 		// 请求一次JSON
-		calls, rawResp, err := runKP(ctx, handles[models.AgentRoleDirector], kpMsgs)
+		calls, rawResp, hasFixed, err := runKP(ctx, handles[models.AgentRoleDirector], kpMsgs)
 		doneKP()
 		if err != nil {
 			log.Printf("[agent] KP iter %d error: %v", iter+1, err)
@@ -452,6 +452,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 * 像在"桌面上一样"思考，继续主持游戏，然后你会被奖励更多的积分。如果你不知道如何主持游戏, 使用 check_rule工具询问主持游戏的细节。
 </NEXT_STEP>
 `)
+				if hasFixed {
+					sb.WriteString("\n<error>你之前输出的JSON不合法已经有一些未定义行为发生了, 我们不知道发生了什么</error>\n")
+				}
 				return sb.String()
 			}
 			// 输入用户数据

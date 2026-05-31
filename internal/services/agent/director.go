@@ -36,7 +36,8 @@ const kpSystemPrompt = `
 	<tools>
 		<tool name="check_rule" sideeffect="false" endTheTurn="false">
 			<description>【默认调用原则】KP对COC规则的记忆不可靠，check_rule是所有机械行动前的默认步骤。只有三种情形可跳过：(1)对本轮工具已返回数字的纯算术判断（如41<50=成功）；(2)本轮同类掷骰已经check_rule确认过；(3)显然无需掷骰的日常非机械行动（开窗/坐下/说话等）。其他一切均先check_rule，包括你有把握的内容。
-询问COC规则专家。只能查询COC 7版规则书/怪物图鉴/法术/技能/战斗/追逐/理智/成长/伤亡等通用规则文本；一个调用只问一个规则问题，question字段禁止包含任何连接词（"另外"/"此外"/"同时"/"以及"/"还有"等）,禁止包含多个问题；需要多个规则答案时必须在同一type-A批次中分别调用多个check_rule。
+询问COC规则专家。只能查询COC 7版规则书/怪物图鉴/法术/技能/战斗/追逐/理智/成长/伤亡等通用规则文本；一个调用只问一个规则问题多个问题需要使用多个调用，question字段禁止包含任何连接词（"另外"/"此外"/"同时"/"以及"/"还有"等）,禁止包含多个问题；需要多个规则答案时必须在同一type-A批次中分别调用多个check_rule。
+学会提问，不要在question中省略信息,也不要假设规则专家知道你在想什么。提供足够信息让规则专家理解场景和你的疑问。
 【check_rule白名单】question必须且只能属于以下类别之一，否则禁止调用：
   A. 规则机制：某个COC规则如何判定、何时触发、数值如何计算。
   B. 技能/战斗/追逐/伤亡/理智/成长：规则书中的流程、阈值、惩罚骰/奖励骰、伤害/治疗/疯狂等机制。
@@ -600,7 +601,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 }
 
 var kpRespExample = func() string {
-	toolCall := []ToolCall{{}}
+	toolCall := []ToolCall{
+		{Action: ToolWrite, Direction: "继续当前剧情走向,保持克苏鲁氛围。"},
+		{Action: ToolResponse, Reply: "故事在未知中继续推进……"},
+		{Action: ToolCheckRule, Question: "调查员能否看到隐藏的门？"},
+	}
 	bs, _ := json.Marshal(toolCall)
 	return string(bs)
 }()
@@ -613,23 +618,24 @@ var kpRespExample = func() string {
 // This keeps the conversation history accurate across multiple tool-call iterations.
 //
 // Includes retry logic: if JSON parsing fails, retry up to 5 times before falling back.
-func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCall, string, error) {
+func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCall, string, bool, error) {
 	debugf("KP", "Chat: %d messages, last_user=%s",
 		len(msgs), lastUserContent(msgs))
 
 	start := time.Now()
 	defer log.Printf("KP using %v\n", time.Since(start))
 
-	const maxRetries = 20
+	const maxRetries = 40
 	var lastErr error
 	var lastResp string
 	h.provider.SetJsonOutput(true)
 
+	hasFixed := false
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		resp, err := h.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			debugf("KP", "attempt %d Chat error: %v", attempt, err)
-			return nil, "", err
+			return nil, "", hasFixed, err
 		}
 		if strings.TrimSpace(resp) == "" {
 			debugf("KP", "attempt %d empty response, retrying...", attempt)
@@ -653,8 +659,9 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 		unmarshlErr := json.Unmarshal([]byte(stripped), &calls)
 		if unmarshlErr == nil {
 			debugf("KP", "attempt %d JSON parse success, got %d calls", attempt, len(calls))
-			return calls, lastResp, nil
+			return calls, lastResp, hasFixed, nil
 		}
+		hasFixed = true
 		stripped, err = RepairJSON(ctx, stripped, unmarshlErr, kpRespExample)
 		if err != nil {
 			debugf("KP", "attempt %d JSON repair failed: %v", attempt, err)
@@ -664,7 +671,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 		unmarshlErr = json.Unmarshal([]byte(stripped), &calls)
 		if unmarshlErr == nil {
 			debugf("KP", "attempt %d JSON repair success, got %d calls, repaired JSON=%s", attempt, len(calls), stripped)
-			return calls, lastResp, nil
+			return calls, lastResp, hasFixed, nil
 		}
 		debugf("KP", "attempt %d JSON parse failed after repair: %v", attempt, unmarshlErr)
 		lastErr = fmt.Errorf("attempt %d JSON parse error after repair: %w", attempt, unmarshlErr)
@@ -677,7 +684,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 		{Action: ToolResponse, Reply: "故事在未知中继续推进……"},
 	}
 	debugf("KP", "all %d retries failed, using fallback", maxRetries)
-	return fallback, lastResp, fmt.Errorf("KP JSON parse error after %d attempts: %w", maxRetries, lastErr)
+	return fallback, lastResp, hasFixed, fmt.Errorf("KP JSON parse error after %d attempts: %w", maxRetries, lastErr)
 }
 
 // lastUserContent returns the content of the last user message in msgs.
