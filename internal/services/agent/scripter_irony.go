@@ -24,9 +24,12 @@ import (
 func ironyCoreSystemPrompt() string {
 	return `<role>剧本揭示架构师</role>
 <task>
-  - 设计故事的核心揭示结构：surface_reading（表层推断）通过 delta_operator（认知翻转类型）映射到 deep_truth（揭示真相）。
+  - 设计克苏鲁神话故事的核心揭示结构：surface_reading（表层推断）通过 delta_operator（认知翻转类型）映射到 deep_truth（揭示真相）。
   - 同时设计两个配套元素：false_delta（经验读者会优先猜测的、与 delta_operator 语义维度不同的翻转类型）和 shared_evidence（在 delta_operator 与 false_delta 两种解读框架下均成立的歧义证据）。
   - 避免涉及政治。
+  - 避免使用科学术语或现代技术细节，保持克苏鲁神话的时代氛围。
+  - 避免使用唯心主义、宿命论、宗教救赎等过于抽象的概念，保持故事的神秘感和不确定性。
+  - 不使用具体的神话实体名称，保持揭示的普适性和象征性。
 </task>
 <response_format>json_object</response_format>
 <output>直接输出 JSON 对象，不要 Markdown、标题、解释或代码围栏。</output>
