@@ -673,7 +673,7 @@ const assemblySystemPrompt = `<role>COC7沙盒剧本编译器</role>
 - irony_core：揭示结构，包含 surface_reading（初始错误推断）、deep_truth（真实关系）等字段
 - misdirection_fabric：误导设计，包含 mythos_anchor（本剧本选用的具体COC7神话元素）、factions（派系）、ending_signals 等字段
 - investigation_graph：调查路径图，包含 nodes（各调查地点/事件节点）、hook_node（入口节点）等字段
-- 避免涉及政治, 优先选择侦探类、历史类的故事。
+- 避免涉及政治。以克苏鲁神话宇宙恐惧为基调：呈现调查员面对超自然存在时的渺小感、理智侵蚀与不可知深渊——这是 CoC 的核心体验，不是侦探小说或历史剧。
 - 禁止改动设计产物的内容。
 - 应该存在一条达成完美结局的路径，但不应该在剧本中直接揭示。
 - 仔细思考，理解用户的需求，不要急于提交答案。
@@ -682,16 +682,16 @@ const assemblySystemPrompt = `<role>COC7沙盒剧本编译器</role>
 <response_format>json_object</response_format>
 <output>只输出合法JSON对象，不要Markdown、标题、解释或代码围栏。</output>
 <director_contract>
-- content.setting 写玩家当前能看见的局势（以 irony.surface_reading 的视角描述），不能泄露幕后真实关系（irony.deep_truth）。
+- content.setting 写玩家当前能看见的局势（以 irony.surface_reading 的视角描述），不能泄露幕后真实关系（irony.deep_truth）；应建立不安感或压迫感，让读者感受到正常表象下的某种错位或威胁。
 - content.intro 写入场位置和立即可做的行动，基于 investigation_graph.hook_node 附近地点。
 - content.map_description 基于 investigation_graph.nodes 中的地点节点写可导航关系。
-- content.scenes 是地点/局势状态摘要，对应调查路径图中的各节点；description 必须包含可见信息、可发现信息、杠杆、风险、出口。
+- content.scenes 是地点/局势状态摘要，对应调查路径图中的各节点；description 必须包含：可见信息、可发现信息、杠杆、风险、出口，以及该场所的恐惧来源（具体感官细节：气味/声响/视觉异常/生理反应，不接受"令人不安"等通用词）。
 - content.npcs 来自 misdirection_fabric.factions 中的NPC；misdirection_fabric.misdirector_npc 必须包含在内；stats 必须包含 SAN 字段（通常 = POW × 5，可按角色调整）。
 - content.clues 是自包含事实字符串，必须以 [真实]/[隐藏]/[误导] 开头；节点的 delta_signal=mislead→[误导]；delta_signal=reveal→[隐藏]；delta_signal=ambiguous→[真实]。
 - content.clues 中必须包含至少一条以 '[隐藏]神话本质' 开头的线索，涵盖 misdirection_fabric.mythos_anchor 所描述的神话元素。
 - content.clues 中至少一条 [误导] 线索在 irony.deep_truth 揭示后事后仍能合理解释（不能是在真相下完全矛盾的线索）。
 - win_condition/lose_condition/partial_wins 使用 misdirection_fabric.ending_signals。
-- system_prompt 给KP时间推进、信息可见性分层和不主动引导三项协议；同时注入 irony.deep_truth 作为KP独有内部真相。
+- system_prompt 给KP四项协议：时间推进、信息可见性分层、不主动引导、恐惧氛围维持（何时以感官细节而非直接说明暗示神话存在的临近、何时提示 SAN 检定）；同时注入 irony.deep_truth 作为KP独有内部真相。
 - 如果收到 qa_rejection，必须修复标注问题；不要只改措辞；不要更换已选定的神话元素（mythos_anchor）。
 </director_contract>`
 

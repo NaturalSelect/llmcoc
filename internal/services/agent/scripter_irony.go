@@ -40,7 +40,7 @@ func ironyCoreSystemPrompt() string {
   "entities": ["涉及的具体人物、地点或物件"],
   "false_delta": "经验读者对翻转类型的第一猜测（填翻转类型 ID）——必须与 delta_operator 作用于不同的语义维度，不是同一翻转的轻重或细节版本",
   "shared_evidence": "一条歧义证据：在不知道真相时，它能同时被 delta_operator 和 false_delta 两种解读框架支持，无法从证据表面区分哪种解读正确",
-  "emotional_weight": "揭示时被重新定义的具体内容——某段关系的真实性质 / 某个身份的自我认知 / 某种信念的道德基础；不接受「震惊」「感动」等通用描述"
+  "emotional_weight": "揭示时被摧毁或重写的具体内容——某段关系的真实性质 / 某个身份的自我认知 / 某种信念的道德基础 / 某条人类视为理所当然的认知边界（安全感、因果秩序、自我存在意义）；优先考虑最后一类：哪种「人类自以为安全的认知保护」在揭示时彻底失效？不接受「震惊」「感动」等通用描述"
 }
 </fields>
 <rules>
@@ -50,13 +50,13 @@ func ironyCoreSystemPrompt() string {
 3. false_delta 与 delta_operator 作用于不同的语义维度，不是同一翻转的简化或细节版本？
 4. shared_evidence 在不知道真相时，被 delta_operator 和 false_delta 两种解读框架均能合理支持？
 5. 知道 deep_truth 后，surface_reading 的所有表层观察仍然说得通，没有无法兼容的线索？
-6. emotional_weight 指向一个具体的关系 / 身份 / 信念重新定义，不是通用情绪描述？
+6. emotional_weight 指向一个具体的关系 / 身份 / 信念重新定义，或某条人类认知边界（安全感、因果秩序、存在意义）的崩塌，不是通用情绪描述？
 - 仔细思考，逐步推理，不要急于提交；设计一个有趣的结构，避免平庸或牵强；若核心概念太弱，调整整体 surface_reading / deep_truth / delta_operator 组合。
 - 收到 qa_rejection 时，必须重新设计翻转结构，不只改措辞。
 </rules>`
 }
 
-const ironyCoreQASystemPrompt = `<role>TPRG剧本揭示结构审核员</role>
+const ironyCoreQASystemPrompt = `<role>剧本揭示结构审核员</role>
 <task>审核IronyCore的结构质量。只关注揭示结构的逻辑完备性，不评判内容好坏。</task>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
