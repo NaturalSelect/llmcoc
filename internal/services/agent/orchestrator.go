@@ -1339,6 +1339,9 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		if p.Armor > 0 {
 			line += fmt.Sprintf("【护甲:%d】", p.Armor)
 		}
+		line += fmt.Sprintf("【DEX:%d】", card.Stats.Data.DEX)
+		line += fmt.Sprintf("【POW:%d】", card.Stats.Data.POW)
+		line += fmt.Sprintf("【APP:%d】", card.Stats.Data.APP)
 		if strings.TrimSpace(p.LLMNote) != "" {
 			line += "【有Session级特殊状态:需query_character查看】"
 			hasSessionNote = true

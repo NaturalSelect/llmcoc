@@ -583,6 +583,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 * 注意: 玩家只代表他们自己, 不要假设他们的输入代表了其他玩家的意图或者整个局势的发展
 * 你需要理解并处理每一位玩家的意图, 先做计划再行动, 不要急于求成
 * 每个回答都必须包含think调用, 以展示你的思考过程和决策依据
+* 当玩家行动时，不要让NPC无动于衷，他们应该有自己的目标和反应
 * 现在进行第一步, 使用 think 和 yield 输出你的计划, 正确的输出应是 [{"action":"think","think":"你的计划和思维链"}, {"action":"yield"}]
 </note>
 `)
