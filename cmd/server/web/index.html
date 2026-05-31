@@ -1819,8 +1819,18 @@
                     <p class="text-sm text-amber-700 leading-relaxed" x-text="editChar?.backstory"></p>
                 </div>
                 <div x-show="editChar?.appearance" class="mb-3">
-                    <h3 class="text-xs font-bold text-amber-400 mb-1 uppercase tracking-wider"
-                        style="font-family:system-ui">外貌描述</h3>
+                    <div class="flex items-center gap-2 mb-1">
+                        <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider"
+                            style="font-family:system-ui">外貌描述</h3>
+                        <button @click="regenAppearance()"
+                            :disabled="regenningAppearance || (user?.coins??0) < 100"
+                            class="btn btn-amber text-xs py-0.5 px-2"
+                            style="font-family:system-ui"
+                            :title="'花费 100 金币重新生成外貌（当前金币：' + (user?.coins??0) + '）'">
+                            <span x-show="!regenningAppearance">重新生成 -100</span>
+                            <span x-show="regenningAppearance">生成中…</span>
+                        </button>
+                    </div>
                     <p class="text-sm text-amber-700" x-text="editChar?.appearance"></p>
                 </div>
                 <div x-show="editChar?.traits">
@@ -2443,6 +2453,7 @@
 
                     // ── Character forms ───────────────────────────────────────────────────
                     editChar: null,
+                    regenningAppearance: false,
                     charForm: { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' },
                     genForm: { name: '', race: '人类', gender: '', age: '', occupation: '', era: '', background: '' },
 
@@ -2824,6 +2835,20 @@
                             this.showToast(`${char.name} 已复活！但部分记忆与装备永久消散……`);
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.reviving = false;
+                    },
+
+                    async regenAppearance() {
+                        if (!this.editChar) return;
+                        if (!confirm(`确认花费 100 金币为「${this.editChar.name}」重新生成外貌？`)) return;
+                        this.regenningAppearance = true;
+                        try {
+                            const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-appearance');
+                            if (this.user) this.user.coins = r.coins;
+                            this.editChar.appearance = r.appearance;
+                            this.syncCharacter({ ...this.editChar, appearance: r.appearance });
+                            this.showToast('外貌已重新生成');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                        this.regenningAppearance = false;
                     },
 
                     syncCharacter(updated) {

@@ -601,6 +601,72 @@ func applyAdjustedSkills(base map[string]int, adjusted map[string]int, stats mod
 	base["闪避"] = stats.DEX / 2
 }
 
+const regenerateAppearanceCost = 100
+
+// RegenerateAppearance spends 100 coins to regenerate a character's appearance via LLM.
+func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+		return
+	}
+
+	var user models.User
+	models.DB.First(&user, userID)
+	if user.Coins < regenerateAppearanceCost {
+		c.JSON(http.StatusPaymentRequired, gin.H{
+			"error":   "金币不足",
+			"need":    regenerateAppearanceCost,
+			"current": user.Coins,
+		})
+		return
+	}
+
+	appearance, err := agent.RegenerateAppearance(c.Request.Context(), &card)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
+		return
+	}
+
+	tx := models.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	if err := tx.Model(&user).Update("coins", user.Coins-regenerateAppearanceCost).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
+		return
+	}
+
+	card.Appearance = appearance
+	if err := tx.Save(&card).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存外貌失败"})
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交事务失败"})
+		return
+	}
+
+	models.DB.First(&user, userID)
+	c.JSON(http.StatusOK, gin.H{
+		"appearance": appearance,
+		"coins":      user.Coins,
+	})
+}
+
 const reviveBaseCost = 2000
 
 // reviveCostFor calculates the next revive cost based on how many times the user has already revived.
