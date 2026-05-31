@@ -415,6 +415,22 @@ SPECIFIC CHEAT PATTERNS — treat each as a hard error requiring immediate rejec
 4. Your goal is to provide an engaging and challenging experience for the players while adhering to the core principles of KPM.
 </scenario>
 </rules>
+
+EXAMPLE JSON OUTPUT:
+[
+	{
+		"action": "think",
+		"think": "I need to check the player's inventory to see if they have a flashlight, then decide how the NPC reacts based on that. I'll call query_character for the player, then act_npc for the NPC's response."
+
+	},
+	{
+		"action": "query_character",
+		"character": "玩家角色名"
+	},
+	{
+		"action": "yield",
+	},
+]
 `
 
 func extraKPMessage(msg string) (s string) {
