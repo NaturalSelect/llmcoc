@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
@@ -59,34 +60,46 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 
 	// Seed history with session context on the first call so Writer knows
 	// the immediate situation (players, recent chat) without the full scenario.
-	if len(state.History) == 0 {
-		playerStatus := buildPlayerStatus(gctx.Session.Players)
+	// if len(state.History) == 0 {
+	// 	playerStatus := buildPlayerStatus(gctx.Session.Players)
 
-		// Inject player status as a context message.
-		contextHint := "【游戏状态参考】\n" + playerStatus
+	// 	// Inject player status as a context message.
+	// 	contextHint := "【游戏状态参考】\n" + playerStatus
 
-		// Inject madness symptoms if any player is in a madness state.
-		for _, p := range gctx.Session.Players {
-			card := p.CharacterCard
-			if (card.MadnessState == "temporary" || card.MadnessState == "indefinite") && card.MadnessSymptom != "" {
-				contextHint += fmt.Sprintf(
-					"\n\n【注意】%s正经历疯狂症状(KP掌控其行为):%s — 请在叙事中自然体现,勿使用游戏术语。",
-					card.Name, card.MadnessSymptom,
-				)
-			}
-		}
+	// 	// Inject madness symptoms if any player is in a madness state.
+	// 	for _, p := range gctx.Session.Players {
+	// 		card := p.CharacterCard
+	// 		if (card.MadnessState == "temporary" || card.MadnessState == "indefinite") && card.MadnessSymptom != "" {
+	// 			contextHint += fmt.Sprintf(
+	// 				"\n\n【注意】%s正经历疯狂症状(KP掌控其行为):%s — 请在叙事中自然体现,勿使用游戏术语。",
+	// 				card.Name, card.MadnessSymptom,
+	// 			)
+	// 		}
+	// 	}
 
-		state.History = append(state.History, llm.ChatMessage{
-			Role:    "user",
-			Content: contextHint,
-		})
-		state.History = append(state.History, llm.ChatMessage{
-			Role:    "assistant",
-			Content: "(已了解当前游戏状态,准备续写叙事。)",
-		})
+	// 	state.History = append(state.History, llm.ChatMessage{
+	// 		Role:    "user",
+	// 		Content: contextHint,
+	// 	})
+	// 	state.History = append(state.History, llm.ChatMessage{
+	// 		Role:    "assistant",
+	// 		Content: "(已了解当前游戏状态,准备续写叙事。)",
+	// 	})
+	// }
+
+	state.History = trimWriterHistoryForCache(state.History, 10000)
+
+	sb := &strings.Builder{}
+	sb.WriteString("<character>")
+	for _, p := range gctx.Session.Players {
+		card := p.CharacterCard
+		line := fmt.Sprintf("<char><name>%s</name><app>%s</app></char>\n", card.Name, card.Appearance)
+		sb.WriteString(line)
 	}
-
-	state.History = trimWriterHistoryForCache(state.History, 7000)
+	sb.WriteString("</character>\n")
+	sb.WriteString("<director_instruction>\n")
+	sb.WriteString(direction)
+	sb.WriteString("\n</director_instruction>\n")
 
 	// Build messages: system + retained history + new direction.
 	msgs := make([]llm.ChatMessage, 0, len(state.History)+2)
@@ -97,7 +110,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	msgs = append(msgs, state.History...)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
-		Content: "叙事指令:" + direction,
+		Content: sb.String(),
 	})
 
 	resp, err := h.provider.Chat(ctx, msgs)
