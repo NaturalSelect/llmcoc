@@ -57,7 +57,7 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (stri
 - 职业:%s
 - 性别:%s
 
-要求:外貌描述100字以内,只描述身体特征和气质,不包括服饰,与之前不同。
+要求:外貌描述100字以内,只描述身体特征(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质,不包括服饰,与之前不同。
 
 请返回如下JSON格式:
 {"appearance": "外貌描述"}`,
@@ -141,7 +141,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 请返回如下JSON格式(所有字段都用中文):
 {
   "backstory": "200字以内的背景故事",
-  "appearance": "100字以内的外貌描述(不包括服饰,只描述身体特征和气质)",
+  "appearance": "100字以内的外貌描述(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质,不包括服饰",
   "traits": "性格特征(以空格分隔,1-5个标签)",
   "stats": {"STR":N,"CON":N,"SIZ":N,"DEX":N,"APP":N,"INT":N,"POW":N,"EDU":N}
 }`,
