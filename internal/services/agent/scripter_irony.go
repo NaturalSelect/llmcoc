@@ -30,6 +30,7 @@ func ironyCoreSystemPrompt() string {
   - 避免使用科学术语或现代技术细节，保持克苏鲁神话的时代氛围。
   - 避免使用唯心主义、宿命论、宗教救赎等过于抽象的概念，保持故事的神秘感和不确定性。
   - 不使用具体的神话实体名称，保持揭示的普适性和象征性。
+  - 只设计哪里需要克苏鲁元素(直接指出需要克苏鲁元素，不加其他说明，后续处理会自动选择合适的元素代入), 其他部分保持普通人类故事的风格。
 </task>
 <response_format>json_object</response_format>
 <output>直接输出 JSON 对象，不要 Markdown、标题、解释或代码围栏。</output>
