@@ -1,8 +1,7 @@
-// scripter_delta.go — δ-operator taxonomy, intermediate stage types, and
-// formal InvestigationGraph verification algorithms.
+// scripter_delta.go — δ-operator taxonomy and IronyCore type.
 //
-// To add a new δ-operator: append one DeltaOperator entry to DeltaOperators
-// and redeploy.  No other code changes are needed.
+// IronyCore is kept for ScenarioCreationOutput backward compatibility.
+// To add a new δ-operator: append one DeltaOperator entry to DeltaOperators.
 package agent
 
 import (
@@ -114,8 +113,7 @@ var DeltaOperators = []DeltaOperator{
 }
 
 // formatDeltaOperatorTable renders DeltaOperators as a human-readable block
-// for injection into LLM prompts.  Adding a new entry to DeltaOperators is
-// sufficient to include it in all generated prompts automatically.
+// for injection into LLM prompts.
 func formatDeltaOperatorTable() string {
 	var sb strings.Builder
 	sb.WriteString("【认知翻转类型参考表】\n")
@@ -143,299 +141,17 @@ func knownDeltaOperatorID(id string) bool {
 }
 
 // ---------------------------------------------------------------------------
-// Stage 1 intermediate: IronyCore
+// IronyCore — kept for ScenarioCreationOutput backward compatibility.
+// In the single-shot pipeline, fields are extracted from oneshotResult.
 // ---------------------------------------------------------------------------
 
-// IronyCore is the δ-framework representation of the thematic irony.
-// Generated WITHOUT CoC context; CoC translation happens in Stage 2.
 type IronyCore struct {
-	// DeltaOperator is an operator ID from DeltaOperators, or a novel ID
-	// proposed by the LLM (logged as [scripter:novel_operator]).
-	DeltaOperator string `json:"delta_operator"`
-	// DeltaOperatorDesc is non-empty only when DeltaOperator is a novel
-	// operator not present in DeltaOperators.
+	DeltaOperator     string   `json:"delta_operator"`
 	DeltaOperatorDesc string   `json:"delta_operator_desc,omitempty"`
-	SurfaceReading    string   `json:"surface_reading"` // natural first interpretation
-	DeepTruth         string   `json:"deep_truth"`      // revealed reality
-	Entities          []string `json:"entities"`        // named participants
-	// FalseDelta is the operator experienced players will first infer;
-	// it must differ from DeltaOperator on at least one semantic dimension.
-	FalseDelta string `json:"false_delta"`
-	// SharedEvidence is ambiguous between SurfaceReading and DeepTruth at
-	// the operator-type level, not just at the entity-specific level.
-	SharedEvidence  string `json:"shared_evidence"`
-	EmotionalWeight string `json:"emotional_weight"`
-}
-
-// ---------------------------------------------------------------------------
-// Stage 2 intermediate: MisdirectionFabric
-// ---------------------------------------------------------------------------
-
-// MisdirectionFabric extends FactionMap with explicit misdirection structure
-// and CoC translation.  FactionPlan is preserved for assembly compatibility.
-type MisdirectionFabric struct {
-	// Misdirection fields
-	FalseLead        string `json:"false_lead"`        // compelling evidence that raises b(δ_wrong)
-	MisdirectorNPC   string `json:"misdirector_npc"`   // NPC whose presence supports false delta
-	TrueTrace        string `json:"true_trace"`        // hint compatible with true delta, easily misread
-	RevealTrigger    string `json:"reveal_trigger"`    // event that collapses the false interpretation
-	RetrospectiveKey string `json:"retrospective_key"` // what "was always there" pointing to true delta
-	// CoC translation fields (equivalent to FactionMap)
-	MythosAnchor  string        `json:"mythos_anchor"`
-	RulesNotes    []string      `json:"rules_notes"`
-	Factions      []FactionPlan `json:"factions"`
-	EndingSignals []string      `json:"ending_signals"`
-	RewardConcept string        `json:"reward_concept,omitempty"` // 通关奖励叙事概念，由reward agent生成完整机械数据
-}
-
-// ---------------------------------------------------------------------------
-// Stage 3 intermediate: InvestigationGraph
-// ---------------------------------------------------------------------------
-
-// InvNode is one node in the investigation graph.
-type InvNode struct {
-	ID        string   `json:"id"`
-	Type      string   `json:"type"` // hook|investigation|encounter|resolution
-	Name      string   `json:"name"`
-	Knowledge []string `json:"knowledge"` // facts learnable at this node
-	// DeltaSignal indicates which hypothesis this node supports.
-	// mislead → [误导], reveal → [隐藏], ambiguous → [真实]
-	DeltaSignal string   `json:"delta_signal"`
-	LeadsTo     []string `json:"leads_to"` // forward edges (reachable next nodes)
-	Requires    []string `json:"requires"` // prerequisite nodes; keep minimal
-}
-
-// InvestigationGraph is the formal structural representation of the scenario.
-type InvestigationGraph struct {
-	HookNode          string    `json:"hook_node"` // entry node ID
-	Nodes             []InvNode `json:"nodes"`
-	ResolutionNodes   []string  `json:"resolution_nodes"`   // terminal node IDs
-	RequiredKnowledge []string  `json:"required_knowledge"` // Φ: epistemic completeness set
-}
-
-// ---------------------------------------------------------------------------
-// Formal verification of InvestigationGraph
-// ---------------------------------------------------------------------------
-
-// verifyInvestigationGraph runs five structural checks and returns a list of
-// violation descriptions.  An empty return means the graph is viable.
-// All checks are pure Go; no LLM calls are made.
-func verifyInvestigationGraph(graph InvestigationGraph) []string {
-	var violations []string
-
-	if len(graph.Nodes) == 0 {
-		return []string{"nodes 为空，无法验证图结构"}
-	}
-
-	// Build node lookup map
-	nodeByID := make(map[string]*InvNode, len(graph.Nodes))
-	for i := range graph.Nodes {
-		nodeByID[graph.Nodes[i].ID] = &graph.Nodes[i]
-	}
-
-	resolutionSet := make(map[string]bool, len(graph.ResolutionNodes))
-	for _, r := range graph.ResolutionNodes {
-		resolutionSet[r] = true
-	}
-
-	// Validate hook_node exists
-	if _, ok := nodeByID[graph.HookNode]; !ok {
-		violations = append(violations, fmt.Sprintf("hook_node %q 不在 nodes 列表中", graph.HookNode))
-		return violations // cannot continue without valid hook
-	}
-
-	if len(graph.ResolutionNodes) == 0 {
-		violations = append(violations, "resolution_nodes 为空：至少需要一个终止节点")
-	}
-
-	// --- Check 1: DAG on requires edges (Kahn's topological sort) ---
-	if cycles := detectRequiresCycles(graph.Nodes); len(cycles) > 0 {
-		violations = append(violations, cycles...)
-	}
-
-	// --- Check 2: BFS reachability from hook_node via leads_to ---
-	reachable := bfsReachableNodes(graph.HookNode, graph.Nodes)
-	for _, rn := range graph.ResolutionNodes {
-		if !reachable[rn] {
-			violations = append(violations,
-				fmt.Sprintf("终止节点 %q 从入口 %q 不可到达（检查 leads_to 边是否形成连通路径）", rn, graph.HookNode))
-		}
-	}
-
-	// --- Check 3: No dead ends among non-resolution nodes ---
-	for _, node := range graph.Nodes {
-		if resolutionSet[node.ID] {
-			continue
-		}
-		if len(node.LeadsTo) == 0 {
-			violations = append(violations,
-				fmt.Sprintf("节点 %q 是死端：非终止节点但 leads_to 为空，玩家将卡住", node.ID))
-		}
-	}
-
-	// --- Check 4: Epistemic completeness on all paths to resolution ---
-	if len(graph.RequiredKnowledge) > 0 {
-		const maxPaths = 60 // cap to avoid exponential blowup on dense graphs
-		for _, rn := range graph.ResolutionNodes {
-			if !reachable[rn] {
-				continue // already reported above
-			}
-			paths := findAllSimplePaths(graph.HookNode, rn, nodeByID, maxPaths)
-			if len(paths) == 0 {
-				continue
-			}
-			for _, path := range paths {
-				covered := make(map[string]bool)
-				for _, nid := range path {
-					if n, ok := nodeByID[nid]; ok {
-						for _, k := range n.Knowledge {
-							covered[k] = true
-						}
-					}
-				}
-				var missing []string
-				for _, req := range graph.RequiredKnowledge {
-					if !covered[req] {
-						missing = append(missing, req)
-					}
-				}
-				if len(missing) > 0 {
-					// Truncate path display for readability
-					pathStr := strings.Join(path, "→")
-					if len([]rune(pathStr)) > 120 {
-						pathStr = string([]rune(pathStr)[:120]) + "..."
-					}
-					violations = append(violations,
-						fmt.Sprintf("路径 [%s] → %q 缺少必要知识: %v", pathStr, rn, missing))
-				}
-			}
-		}
-	}
-
-	// --- Check 5: δ-balance ---
-	hasFalseDelta, hasTrueDelta := false, false
-	for _, node := range graph.Nodes {
-		switch node.DeltaSignal {
-		case "mislead":
-			hasFalseDelta = true
-		case "reveal":
-			hasTrueDelta = true
-		}
-	}
-	if !hasFalseDelta {
-		violations = append(violations,
-			"图中没有 delta_signal=mislead 的节点：至少需要一个让玩家形成错误推断的调查节点")
-	}
-	if !hasTrueDelta {
-		violations = append(violations,
-			"图中没有 delta_signal=reveal 的节点：至少需要一个指向真实关系的发现节点")
-	}
-
-	return violations
-}
-
-// detectRequiresCycles runs Kahn's algorithm on the requires-edge subgraph.
-// Returns a non-empty slice if cycles are detected.
-func detectRequiresCycles(nodes []InvNode) []string {
-	// Build in-degree and adjacency for requires edges.
-	// requires[A] → [B, C] means B and C depend on A.
-	inDegree := make(map[string]int, len(nodes))
-	dependents := make(map[string][]string, len(nodes))
-	for _, n := range nodes {
-		if _, ok := inDegree[n.ID]; !ok {
-			inDegree[n.ID] = 0
-		}
-		for _, req := range n.Requires {
-			dependents[req] = append(dependents[req], n.ID)
-			inDegree[n.ID]++
-		}
-	}
-
-	queue := make([]string, 0, len(nodes))
-	for id, deg := range inDegree {
-		if deg == 0 {
-			queue = append(queue, id)
-		}
-	}
-
-	visited := 0
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		visited++
-		for _, next := range dependents[cur] {
-			inDegree[next]--
-			if inDegree[next] == 0 {
-				queue = append(queue, next)
-			}
-		}
-	}
-
-	if visited < len(nodes) {
-		return []string{"requires 依赖图存在循环（拓扑排序未能访问全部节点）——请确保 requires 只引用不构成环的前置节点"}
-	}
-	return nil
-}
-
-// bfsReachableNodes returns the set of node IDs reachable from start
-// by following leads_to edges.
-func bfsReachableNodes(start string, nodes []InvNode) map[string]bool {
-	leadsTo := make(map[string][]string, len(nodes))
-	for _, n := range nodes {
-		leadsTo[n.ID] = n.LeadsTo
-	}
-	visited := make(map[string]bool, len(nodes))
-	queue := []string{start}
-	visited[start] = true
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		for _, next := range leadsTo[cur] {
-			if !visited[next] {
-				visited[next] = true
-				queue = append(queue, next)
-			}
-		}
-	}
-	return visited
-}
-
-// findAllSimplePaths enumerates all simple paths from start to end via
-// leads_to edges, capped at maxPaths to bound runtime on dense graphs.
-func findAllSimplePaths(start, end string, nodeByID map[string]*InvNode, maxPaths int) [][]string {
-	var results [][]string
-	visited := make(map[string]bool, len(nodeByID))
-
-	var dfs func(cur string, path []string)
-	dfs = func(cur string, path []string) {
-		if len(results) >= maxPaths {
-			return
-		}
-		newPath := append(append([]string(nil), path...), cur)
-		if cur == end {
-			results = append(results, newPath)
-			return
-		}
-		visited[cur] = true
-		defer func() { visited[cur] = false }()
-		if n, ok := nodeByID[cur]; ok {
-			for _, next := range n.LeadsTo {
-				if !visited[next] {
-					dfs(next, newPath)
-				}
-			}
-		}
-	}
-	dfs(start, nil)
-	return results
-}
-
-// formatGraphViolations formats a list of violations as a numbered action list
-// for LLM repair prompts.
-func formatGraphViolations(violations []string) string {
-	var sb strings.Builder
-	for i, v := range violations {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, v))
-	}
-	return strings.TrimSpace(sb.String())
+	SurfaceReading    string   `json:"surface_reading"`
+	DeepTruth         string   `json:"deep_truth"`
+	Entities          []string `json:"entities,omitempty"`
+	FalseDelta        string   `json:"false_delta,omitempty"`
+	SharedEvidence    string   `json:"shared_evidence,omitempty"`
+	EmotionalWeight   string   `json:"emotional_weight,omitempty"`
 }
