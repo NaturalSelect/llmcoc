@@ -596,14 +596,10 @@ func oneshotNormalizeAnchorKey(s string) string {
 func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (ScenarioDraft, IronyCore, string, error) {
 	reqJSON, _ := json.Marshal(room.req)
 	constraintsJSON, _ := json.Marshal(constraints)
-	ruleCtx := buildOneshotRuleContext()
 
 	userMsg := fmt.Sprintf(
 		`<request_json>%s</request_json>
 <constraints>%s</constraints>
-<rule_context>
-%s
-</rule_context>
 <recently_used_mythos_anchors>
 %s
 </recently_used_mythos_anchors>
@@ -617,7 +613,6 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 </difficulty_spec>
 请设计并生成完整的COC7剧本。`,
 		string(reqJSON), string(constraintsJSON),
-		ruleCtx,
 		formatMythosBlacklist(room.mythosBlacklist),
 		formatNPCNameBlacklist(room.npcBlacklist),
 		formatScenarioTitleBlacklist(room.titleSamples),
@@ -854,21 +849,4 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		draft.Content.PartialWins = []string{"如果调查员保护了个人或证据，但没有改变所有派系时间线，则余波继续存在。"}
 		log.Printf("[scripter:normalize] filled partial_wins")
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Rulebook context
-// ---------------------------------------------------------------------------
-
-func buildOneshotRuleContext() string {
-	var sb strings.Builder
-	sb.WriteString("【规则书常量摘要，供architect参考候选范围；具体元素通过translate_anchor工具按需核验】\n")
-	for _, constant := range []string{"mythos_creatures", "monsters", "great_old_ones_and_gods", "books", "spells"} {
-		text := strings.TrimSpace(rulebook.ReadConstant(constant))
-		if text == "" {
-			continue
-		}
-		sb.WriteString(fmt.Sprintf("\n[%s]\n%s\n", constant, truncateRunes(text, 1200)))
-	}
-	return truncateRunes(sb.String(), 10000)
 }
