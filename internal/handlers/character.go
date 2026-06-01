@@ -667,6 +667,138 @@ func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 	})
 }
 
+const regenerateBackstoryCost = 100
+
+// RegenerateBackstory spends 100 coins to regenerate a character's backstory via LLM.
+func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+		return
+	}
+
+	var user models.User
+	models.DB.First(&user, userID)
+	if user.Coins < regenerateBackstoryCost {
+		c.JSON(http.StatusPaymentRequired, gin.H{
+			"error":   "金币不足",
+			"need":    regenerateBackstoryCost,
+			"current": user.Coins,
+		})
+		return
+	}
+
+	backstory, err := agent.RegenerateBackstory(c.Request.Context(), &card)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
+		return
+	}
+
+	tx := models.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	if err := tx.Model(&user).Update("coins", user.Coins-regenerateBackstoryCost).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
+		return
+	}
+
+	card.Backstory = backstory
+	if err := tx.Save(&card).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存背景故事失败"})
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交事务失败"})
+		return
+	}
+
+	models.DB.First(&user, userID)
+	c.JSON(http.StatusOK, gin.H{
+		"backstory": backstory,
+		"coins":     user.Coins,
+	})
+}
+
+const regenerateTraitsCost = 100
+
+// RegenerateTraits spends 100 coins to regenerate a character's traits via LLM.
+func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+		return
+	}
+
+	var user models.User
+	models.DB.First(&user, userID)
+	if user.Coins < regenerateTraitsCost {
+		c.JSON(http.StatusPaymentRequired, gin.H{
+			"error":   "金币不足",
+			"need":    regenerateTraitsCost,
+			"current": user.Coins,
+		})
+		return
+	}
+
+	traits, err := agent.RegenerateTraits(c.Request.Context(), &card)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
+		return
+	}
+
+	tx := models.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	if err := tx.Model(&user).Update("coins", user.Coins-regenerateTraitsCost).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
+		return
+	}
+
+	card.Traits = traits
+	if err := tx.Save(&card).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存性格特征失败"})
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交事务失败"})
+		return
+	}
+
+	models.DB.First(&user, userID)
+	c.JSON(http.StatusOK, gin.H{
+		"traits": traits,
+		"coins":  user.Coins,
+	})
+}
+
 const reviveBaseCost = 2000
 
 // reviveCostFor calculates the next revive cost based on how many times the user has already revived.

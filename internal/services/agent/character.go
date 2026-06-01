@@ -86,6 +86,125 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (stri
 	return out.Appearance, nil
 }
 
+// RegenerateBackstory uses the Writer agent to produce a fresh backstory
+// for an existing character.
+func RegenerateBackstory(ctx context.Context, card *models.CharacterCard) (string, error) {
+	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	if err != nil {
+		return "", err
+	}
+
+	name := card.Name
+	if name == "" {
+		name = "(未指定)"
+	}
+	occupation := card.Occupation
+	if occupation == "" {
+		occupation = "调查员"
+	}
+	gender := card.Gender
+	if gender == "" {
+		gender = "(未指定)"
+	}
+
+	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)调查员重新生成背景故事,以JSON格式返回,不要有任何额外文字。
+
+调查员信息:
+- 姓名:%s
+- 职业:%s
+- 性别:%s
+
+要求:背景故事200字以内,包含成长经历、进入调查行业的契机等,与之前的故事不同。
+
+请返回如下JSON格式:
+{"backstory": "背景故事"}`,
+		name, occupation, gender,
+	)
+
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: "你是一名克苏鲁神话TRPG专家,只输出JSON,不输出任何其他内容。"},
+		{Role: "user", Content: prompt},
+	}
+
+	resp, err := handle.provider.JsonChat(ctx, msgs)
+	if err != nil {
+		return "", err
+	}
+
+	var out struct {
+		Backstory string `json:"backstory"`
+	}
+	if err := json.Unmarshal([]byte(resp), &out); err != nil {
+		return "", fmt.Errorf("parse LLM response failed: %w (raw: %s)", err, resp)
+	}
+	if out.Backstory == "" {
+		return "", fmt.Errorf("LLM returned empty backstory (raw: %s)", resp)
+	}
+	return out.Backstory, nil
+}
+
+// RegenerateTraits uses the Writer agent to produce fresh personality traits
+// for an existing character.
+func RegenerateTraits(ctx context.Context, card *models.CharacterCard) (string, error) {
+	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	if err != nil {
+		return "", err
+	}
+
+	name := card.Name
+	if name == "" {
+		name = "(未指定)"
+	}
+	occupation := card.Occupation
+	if occupation == "" {
+		occupation = "调查员"
+	}
+	gender := card.Gender
+	if gender == "" {
+		gender = "(未指定)"
+	}
+	backstory := card.Backstory
+	if backstory == "" {
+		backstory = "(无)"
+	}
+
+	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)调查员重新生成性格特征,以JSON格式返回,不要有任何额外文字。
+
+调查员信息:
+- 姓名:%s
+- 职业:%s
+- 性别:%s
+- 背景故事:%s
+
+要求:性格特征以空格分隔,1-5个标签,包含语言风格、性格特点等,与之前的特征不同。
+
+请返回如下JSON格式:
+{"traits": "特征1 特征2 特征3"}`,
+		name, occupation, gender, backstory,
+	)
+
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: "你是一名克苏鲁神话TRPG专家,只输出JSON,不输出任何其他内容。"},
+		{Role: "user", Content: prompt},
+	}
+
+	resp, err := handle.provider.JsonChat(ctx, msgs)
+	if err != nil {
+		return "", err
+	}
+
+	var out struct {
+		Traits string `json:"traits"`
+	}
+	if err := json.Unmarshal([]byte(resp), &out); err != nil {
+		return "", fmt.Errorf("parse LLM response failed: %w (raw: %s)", err, resp)
+	}
+	if out.Traits == "" {
+		return "", fmt.Errorf("LLM returned empty traits (raw: %s)", resp)
+	}
+	return out.Traits, nil
+}
+
 // AdjustSkillsReq is the input for AI skill adjustment.
 type AdjustSkillsReq struct {
 	Name       string
@@ -142,7 +261,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 {
   "backstory": "200字以内的背景故事",
   "appearance": "100字以内的外貌描述(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质,不包括服饰",
-  "traits": "性格特征(以空格分隔,1-5个标签)",
+  "traits": "性格特征(以空格分隔,1-5个标签,包含语言风格、性格特点等)",
   "stats": {"STR":N,"CON":N,"SIZ":N,"DEX":N,"APP":N,"INT":N,"POW":N,"EDU":N}
 }`,
 		name, era, occupation, gender, req.Background,

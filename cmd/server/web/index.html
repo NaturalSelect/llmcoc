@@ -876,9 +876,11 @@
                                             <div class="narrative-container">
                                                 <template x-if="msg.writer_text || msg.narration_text">
                                                     <div>
-                                                        <p x-show="stripAckContent(msg.writer_text).trim()" class="narrative"
-                                                            x-text="stripAckContent(msg.writer_text)"></p>
-                                                        <p x-show="stripAckContent(msg.narration_text).trim()" class="narration"
+                                                        <p x-show="stripAckContent(msg.writer_text).trim()"
+                                                            class="narrative" x-text="stripAckContent(msg.writer_text)">
+                                                        </p>
+                                                        <p x-show="stripAckContent(msg.narration_text).trim()"
+                                                            class="narration"
                                                             :class="stripAckContent(msg.writer_text).trim() ? 'narration-sep' : ''"
                                                             x-text="'KP：' + stripAckContent(msg.narration_text)"></p>
                                                     </div>
@@ -916,10 +918,12 @@
                                         </span>
                                     </div>
 
-                                    <p x-show="stripAckContent(writerBuffer).trim()" class="narrative" :class="stripAckContent(narrationBuffer).trim() ? '' : 'cursor'"
+                                    <p x-show="stripAckContent(writerBuffer).trim()" class="narrative"
+                                        :class="stripAckContent(narrationBuffer).trim() ? '' : 'cursor'"
                                         x-text="stripAckContent(writerBuffer)"></p>
                                     <p x-show="stripAckContent(narrationBuffer).trim()" class="narration cursor"
-                                        :class="stripAckContent(writerBuffer).trim() ? 'narration-sep' : ''" x-text="'KP：' + stripAckContent(narrationBuffer)">
+                                        :class="stripAckContent(writerBuffer).trim() ? 'narration-sep' : ''"
+                                        x-text="'KP：' + stripAckContent(narrationBuffer)">
                                     </p>
                                 </div>
 
@@ -1238,9 +1242,11 @@
                                 </select>
                                 <button @click="prevAdminScenarioPage()" :disabled="adminScenarioPage <= 1"
                                     class="btn btn-ghost text-xs">上一页</button>
-                                <button @click="nextAdminScenarioPage()" :disabled="adminScenarioPage >= adminScenarioTotalPages"
+                                <button @click="nextAdminScenarioPage()"
+                                    :disabled="adminScenarioPage >= adminScenarioTotalPages"
                                     class="btn btn-ghost text-xs">下一页</button>
-                                <button @click="loadAdminScenarios(adminScenarioPage)" class="btn btn-ghost text-xs">刷新</button>
+                                <button @click="loadAdminScenarios(adminScenarioPage)"
+                                    class="btn btn-ghost text-xs">刷新</button>
                             </div>
                         </div>
                         <div x-show="adminScenarios.length === 0" class="text-amber-900 text-xs"
@@ -1814,18 +1820,24 @@
                 </div>
 
                 <div x-show="editChar?.backstory" class="mb-3">
-                    <h3 class="text-xs font-bold text-amber-400 mb-1 uppercase tracking-wider"
-                        style="font-family:system-ui">背景故事</h3>
+                    <div class="flex items-center gap-2 mb-1">
+                        <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider"
+                            style="font-family:system-ui">背景故事</h3>
+                        <button @click="regenBackstory()" :disabled="regenningBackstory || (user?.coins??0) < 100"
+                            class="btn btn-amber text-xs py-0.5 px-2" style="font-family:system-ui"
+                            :title="'花费 100 金币重新生成背景故事（当前金币：' + (user?.coins??0) + '）'">
+                            <span x-show="!regenningBackstory">重新生成 -100</span>
+                            <span x-show="regenningBackstory">生成中…</span>
+                        </button>
+                    </div>
                     <p class="text-sm text-amber-700 leading-relaxed" x-text="editChar?.backstory"></p>
                 </div>
                 <div x-show="editChar?.appearance" class="mb-3">
                     <div class="flex items-center gap-2 mb-1">
                         <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider"
                             style="font-family:system-ui">外貌描述</h3>
-                        <button @click="regenAppearance()"
-                            :disabled="regenningAppearance || (user?.coins??0) < 100"
-                            class="btn btn-amber text-xs py-0.5 px-2"
-                            style="font-family:system-ui"
+                        <button @click="regenAppearance()" :disabled="regenningAppearance || (user?.coins??0) < 100"
+                            class="btn btn-amber text-xs py-0.5 px-2" style="font-family:system-ui"
                             :title="'花费 100 金币重新生成外貌（当前金币：' + (user?.coins??0) + '）'">
                             <span x-show="!regenningAppearance">重新生成 -100</span>
                             <span x-show="regenningAppearance">生成中…</span>
@@ -1834,8 +1846,16 @@
                     <p class="text-sm text-amber-700" x-text="editChar?.appearance"></p>
                 </div>
                 <div x-show="editChar?.traits">
-                    <h3 class="text-xs font-bold text-amber-400 mb-1 uppercase tracking-wider"
-                        style="font-family:system-ui">性格特征</h3>
+                    <div class="flex items-center gap-2 mb-1">
+                        <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider"
+                            style="font-family:system-ui">性格特征</h3>
+                        <button @click="regenTraits()" :disabled="regenningTraits || (user?.coins??0) < 100"
+                            class="btn btn-amber text-xs py-0.5 px-2" style="font-family:system-ui"
+                            :title="'花费 100 金币重新生成性格特征（当前金币：' + (user?.coins??0) + '）'">
+                            <span x-show="!regenningTraits">重新生成 -100</span>
+                            <span x-show="regenningTraits">生成中…</span>
+                        </button>
+                    </div>
                     <p class="text-sm text-amber-700" x-text="editChar?.traits"></p>
                 </div>
 
@@ -2084,7 +2104,8 @@
                 </template>
 
                 <!-- 结局条件 -->
-                <template x-if="viewingScenario?.content?.win_condition || viewingScenario?.content?.lose_condition || viewingScenario?.content?.partial_wins?.length">
+                <template
+                    x-if="viewingScenario?.content?.win_condition || viewingScenario?.content?.lose_condition || viewingScenario?.content?.partial_wins?.length">
                     <div class="mb-4 grid gap-2">
                         <template x-if="viewingScenario?.content?.win_condition">
                             <div class="p-2.5 rounded" style="background:#0e0d0b;border:1px solid #1e1c17">
@@ -2107,7 +2128,8 @@
                                 <div class="text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider"
                                     style="font-family:system-ui">部分胜利</div>
                                 <div class="space-y-1">
-                                    <template x-for="(partialWin, pwi) in viewingScenario.content.partial_wins" :key="pwi">
+                                    <template x-for="(partialWin, pwi) in viewingScenario.content.partial_wins"
+                                        :key="pwi">
                                         <div class="flex gap-2 items-start text-xs text-amber-200"
                                             style="font-family:system-ui;line-height:1.6">
                                             <span class="text-amber-800 shrink-0" x-text="(pwi+1) + '.'"></span>
@@ -2174,8 +2196,8 @@
                                             style="color:#44320a;font-family:system-ui" x-text="(si+1) + '.'"></span>
                                         <div class="flex-1 min-w-0">
                                             <div class="flex flex-wrap items-center gap-1.5">
-                                                <div class="text-xs font-bold text-amber-300" style="font-family:system-ui"
-                                                    x-text="sc.name"></div>
+                                                <div class="text-xs font-bold text-amber-300"
+                                                    style="font-family:system-ui" x-text="sc.name"></div>
                                                 <template x-if="sc.id">
                                                     <span class="text-[10px] px-1.5 py-0.5 rounded"
                                                         style="background:#1a1408;border:1px solid #2a1f0a;color:#78350f;font-family:system-ui"
@@ -2227,7 +2249,8 @@
                                                      'font-family':'system-ui'}" x-text="npc.attitude"></span>
                                         </template>
                                     </div>
-                                    <template x-if="npc.race || npc.occupation || npc.cthulhu_mythos_skill !== undefined && npc.cthulhu_mythos_skill !== null">
+                                    <template
+                                        x-if="npc.race || npc.occupation || npc.cthulhu_mythos_skill !== undefined && npc.cthulhu_mythos_skill !== null">
                                         <div class="flex flex-wrap gap-1 mb-1.5">
                                             <template x-if="npc.race">
                                                 <span class="text-[10px] px-1.5 py-0.5 rounded"
@@ -2239,7 +2262,8 @@
                                                     style="background:#1a1408;border:1px solid #2a1f0a;color:#a16207;font-family:system-ui"
                                                     x-text="'职业: ' + npc.occupation"></span>
                                             </template>
-                                            <template x-if="npc.cthulhu_mythos_skill !== undefined && npc.cthulhu_mythos_skill !== null">
+                                            <template
+                                                x-if="npc.cthulhu_mythos_skill !== undefined && npc.cthulhu_mythos_skill !== null">
                                                 <span class="text-[10px] px-1.5 py-0.5 rounded"
                                                     style="background:#1a1408;border:1px solid #2a1f0a;color:#a16207;font-family:system-ui"
                                                     x-text="'克苏鲁神话: ' + npc.cthulhu_mythos_skill"></span>
@@ -2454,6 +2478,8 @@
                     // ── Character forms ───────────────────────────────────────────────────
                     editChar: null,
                     regenningAppearance: false,
+                    regenningBackstory: false,
+                    regenningTraits: false,
                     charForm: { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' },
                     genForm: { name: '', race: '人类', gender: '', age: '', occupation: '', era: '', background: '' },
 
@@ -2849,6 +2875,34 @@
                             this.showToast('外貌已重新生成');
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.regenningAppearance = false;
+                    },
+
+                    async regenBackstory() {
+                        if (!this.editChar) return;
+                        if (!confirm(`确认花费 100 金币为「${this.editChar.name}」重新生成背景故事？`)) return;
+                        this.regenningBackstory = true;
+                        try {
+                            const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-backstory');
+                            if (this.user) this.user.coins = r.coins;
+                            this.editChar.backstory = r.backstory;
+                            this.syncCharacter({ ...this.editChar, backstory: r.backstory });
+                            this.showToast('背景故事已重新生成');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                        this.regenningBackstory = false;
+                    },
+
+                    async regenTraits() {
+                        if (!this.editChar) return;
+                        if (!confirm(`确认花费 100 金币为「${this.editChar.name}」重新生成性格特征？`)) return;
+                        this.regenningTraits = true;
+                        try {
+                            const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-traits');
+                            if (this.user) this.user.coins = r.coins;
+                            this.editChar.traits = r.traits;
+                            this.syncCharacter({ ...this.editChar, traits: r.traits });
+                            this.showToast('性格特征已重新生成');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                        this.regenningTraits = false;
                     },
 
                     syncCharacter(updated) {

@@ -168,6 +168,8 @@ func main() {
 		chars.DELETE("/:id", handlers.DeleteCharacter)
 		chars.POST("/:id/revive", handlers.ReviveCharacter)
 		chars.POST("/:id/regenerate-appearance", chh.RegenerateAppearance)
+		chars.POST("/:id/regenerate-backstory", chh.RegenerateBackstory)
+		chars.POST("/:id/regenerate-traits", chh.RegenerateTraits)
 		chars.DELETE("/:id/dead", handlers.DeleteDeadCharacter)
 		chars.GET("/:id/inventory", handlers.GetCharacterInventory)
 		chars.POST("/:id/inventory", handlers.AddCharacterInventoryItem)

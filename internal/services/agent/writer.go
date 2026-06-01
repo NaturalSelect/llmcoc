@@ -227,7 +227,7 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 	msgs = append(msgs, llm.ChatMessage{
 		Role: "user",
 		Content: fmt.Sprintf(
-			"根据以上冒险叙事,更新角色【%s】的背景故事和性格特征。\n原背景故事:%s\n原性格特征:%s\n\n仅输出JSON:{\"new_backstory\": \"...\", \"new_traits\": \"...\"}",
+			"根据以上叙事,更新角色【%s】的背景故事(100字)和性格特征(语言风格、性格特点等)。\n原背景故事:%s\n原性格特征:%s\n\n仅输出JSON:{\"new_backstory\": \"...\", \"new_traits\": \"...\"}",
 			card.Name, card.Backstory, card.Traits,
 		),
 	})
