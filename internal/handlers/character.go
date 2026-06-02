@@ -271,7 +271,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 	skills["闪避"] = stats.DEX / 2
 
 	// Ask LLM to fill out backstory, name, traits
-	generated, err := agent.GenerateCharacter(c.Request.Context(), agent.GenerateCharacterReq{
+	generated, err := agent.GenerateCharacter(context.Background(), agent.GenerateCharacterReq{
 		Name:       req.Name,
 		Occupation: req.Occupation,
 		Background: req.Background,
