@@ -30,6 +30,7 @@ type ActionContext struct {
 	PendingWrite       *string
 	WroteNarrative     *bool
 	Interrupt          *bool
+	DiceMsg            *string
 }
 
 // Action is implemented by every tool call handler.
@@ -171,6 +172,9 @@ func (rollDiceAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	dcr := executeSingleDiceCheck(*call.Dice, actx.GCtx.Session.Players)
 	debugf("tool", "session=%d roll_dice result=%s", actx.Sid, formatSingleDiceResult(dcr))
+	if !dcr.Hidden {
+		*actx.DiceMsg = formatSingleDiceResult(dcr)
+	}
 	return []ToolResult{{Action: ToolRollDice, Result: formatSingleDiceResult(dcr)}}
 }
 
@@ -538,8 +542,15 @@ type responseAction struct{}
 
 func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	*actx.HasEnd = true
-	call.Reply += "\n<ack>" + strings.Join(call.Ack, ";") + "</ack>"
-	call.Reply += "\n<direction>" + call.Direction + "</direction>"
+	if len(call.Ack) > 0 {
+		call.Reply += "\n<ack>" + strings.Join(call.Ack, ";") + "</ack>"
+	}
+	if call.Direction != "" {
+		call.Reply += "\n<direction>" + call.Direction + "</direction>"
+	}
+	if *actx.DiceMsg != "" {
+		call.Reply += "\n<dice>" + *actx.DiceMsg + "</dice>"
+	}
 	call.Reply += "\n<time_point>" + formatGameTime(actx.GCtx.Session.TurnRound, scenarioStartSlot(actx.GCtx.Session)) + "</time_point>"
 	if *actx.KPNarration != "" {
 		*actx.KPNarration = call.Reply + "\n" + *actx.KPNarration

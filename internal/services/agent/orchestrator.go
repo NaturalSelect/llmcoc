@@ -211,6 +211,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	pendingWrite := ""
 
+	diceMsg := ""
+
 	// warnning := "YOU DONOT FOLLOW THE RULES, THIS ABUSE IS RECORDED BY MONITOR SYSTEM.\n"
 	for iter := 0; iter < MaxKpRound; iter++ {
 		if ctx.Err() != nil {
@@ -283,6 +285,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			Interrupt:          &interrupt,
 			PendingWrite:       &pendingWrite,
 			WroteNarrative:     &wroteNarrative,
+			DiceMsg:            &diceMsg,
 		}
 
 		switchInThisBatch := false
