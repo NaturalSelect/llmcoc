@@ -254,12 +254,14 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 
 	var req GenerateCharacterReq
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("Bad request data: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
 
 	if req.Gender != models.GenderMale && req.Gender != models.GenderFemale {
+		log.Printf("Invalid gender: %s", req.Gender)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别"})
 		return
 	}
@@ -280,6 +282,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		Stats:      stats,
 	})
 	if err != nil {
+		log.Printf("GenerateCharacter LLM error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
 		return
 	}
