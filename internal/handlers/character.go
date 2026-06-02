@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"log"
 	"math/rand"
 	"net/http"
@@ -293,7 +294,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 	}
 
 	// Second LLM call: adjust skill levels based on occupation and background
-	adjustedSkills, skillErr := agent.AdjustSkills(c.Request.Context(), agent.AdjustSkillsReq{
+	adjustedSkills, skillErr := agent.AdjustSkills(context.Background(), agent.AdjustSkillsReq{
 		Name:       req.Name,
 		Occupation: req.Occupation,
 		Background: req.Background,
