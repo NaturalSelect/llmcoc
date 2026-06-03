@@ -299,6 +299,9 @@ func runNPC(
 
 	// Build NPC profile from DB/scenario lookup (profile only, no scenario background).
 	npcProfile := buildNPCProfile(npcName, gctx, tempNPCs)
+	if npcProfile == "" {
+		return NPCAction{}, fmt.Errorf("找不到NPC: %v", npcName)
+	}
 
 	if question == "" {
 		question = fmt.Sprintf("调查员行动:[%s] %s。你要做什么？", gctx.UserName, gctx.UserInput)
@@ -307,7 +310,7 @@ func runNPC(
 	// System prompt + NPC profile as static context.
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(npcDefaultPrompt)},
-		{Role: "user", Content: "NPC资料:\n" + npcProfile},
+		{Role: "user", Content: "你需要扮演该NPC:\n" + npcProfile},
 	}
 	// Each NPC owns independent dialogue history in this session.
 	npcHistory := loadNPCState(gctx.Session.ID, npcName)
@@ -316,7 +319,7 @@ func runNPC(
 	// Current question as the final user message.
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
-		Content: "KP提问:" + question + "\n\n请给出该NPC本轮的行动和对话。",
+		Content: question,
 	})
 
 	resp, err := h.provider.JsonChat(ctx, msgs)
@@ -463,5 +466,5 @@ func buildNPCProfile(name string, gctx GameContext, tempNPCs []models.SessionNPC
 	}
 
 	// Unknown NPC – use name only.
-	return fmt.Sprintf("姓名:%s\n(无详细资料)", name)
+	return ""
 }
