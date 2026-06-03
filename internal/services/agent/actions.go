@@ -204,10 +204,11 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	action, npcErr := actNPC(actx.Ctx, actx.Handles[models.AgentRoleNPC], *actx.GCtx, call.NPCName, question, *actx.TempNPCs)
 	doneNPC()
+	*actx.Interrupt = true
 	if npcErr != nil {
 		log.Printf("[agent] act_npc %q error: %v", call.NPCName, npcErr)
+		return []ToolResult{{Action: ToolActNPC, Result: fmt.Sprintf("NPC行动生成失败: %v", npcErr)}}
 	}
-	*actx.Interrupt = true
 	return []ToolResult{{Action: ToolActNPC, Result: formatNPCAction(action)}}
 }
 

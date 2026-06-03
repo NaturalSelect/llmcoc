@@ -534,16 +534,16 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			state := npcDisplayState(npc)
 			line := fmt.Sprintf("<npc> <name> %s </name> (%s)", npc.Name, state)
 			if strings.TrimSpace(npc.Attitude) != "" {
-				line += " 态度:" + strings.TrimSpace(npc.Attitude)
+				line += " <br/> 态度:" + strings.TrimSpace(npc.Attitude)
 			}
 			if strings.TrimSpace(npc.Goal) != "" {
-				line += " 目标:" + strings.TrimSpace(npc.Goal)
+				line += " <br/> 目标:" + strings.TrimSpace(npc.Goal)
 			}
 			if strings.TrimSpace(npc.Location) != "" {
-				line += " 位置:" + strings.TrimSpace(npc.Location)
+				line += " <br/> 位置:" + strings.TrimSpace(npc.Location)
 			}
 			if strings.TrimSpace(npc.LLMNote) != "" {
-				line += "【有Session级特殊状态:需query_npc_card查看】"
+				line += " <br/>【有Session级特殊状态:需query_npc_card查看】"
 			}
 			line += "</npc>"
 			userSB.WriteString(line + "\n")
