@@ -300,7 +300,7 @@ func runNPC(
 	// Build NPC profile from DB/scenario lookup (profile only, no scenario background).
 	npcProfile := buildNPCProfile(npcName, gctx, tempNPCs)
 	if npcProfile == "" {
-		return NPCAction{}, fmt.Errorf("找不到NPC: %v", npcName)
+		return NPCAction{}, fmt.Errorf("找不到NPC: %v, NPC名称不正确(没有与<name></name>匹配), 或NPC不存在", npcName)
 	}
 
 	if question == "" {
