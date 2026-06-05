@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/llmcoc/server/internal/models"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -92,19 +90,10 @@ func sessionIDFromContext(ctx context.Context) string {
 	if s == nil {
 		return ""
 	}
-	if gs, ok := s.(models.GameSession); ok {
-		if gs.ID > 0 {
-			return strconv.FormatUint(uint64(gs.ID), 10)
-		}
+	if sid, ok := s.(string); ok {
+		return sid
 	}
-	t := strings.TrimSpace(fmt.Sprintf("%v", s))
-	if t == "" {
-		return ""
-	}
-	if strings.Contains(t, "{") || strings.Contains(t, "}") || strings.Contains(t, " ") {
-		return ""
-	}
-	return t
+	return ""
 }
 
 // isRetryableError checks if the error is a 5xx or transient error worth retrying.

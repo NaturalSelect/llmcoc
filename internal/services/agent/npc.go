@@ -122,8 +122,8 @@ func loadNPCState(sessionID uint, npcName string) []llm.ChatMessage {
 }
 
 func saveNPCState(sessionID uint, npcName string, history []llm.ChatMessage) {
-	if len(history) > 16 {
-		history = history[len(history)-16:]
+	if len(history) > 64 {
+		history = history[len(history)-64:]
 	}
 	key := npcStateKey(sessionID, npcName)
 	npcAgentStates.Store(key, history)

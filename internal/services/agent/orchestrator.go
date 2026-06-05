@@ -121,7 +121,7 @@ func Run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	}
 	defer activeSessions.Delete(gctx.Session.ID)
 
-	ctx = context.WithValue(ctx, "session", gctx.Session)
+	ctx = context.WithValue(ctx, "session", fmt.Sprintf("%v", gctx.Session.ID))
 	return run(ctx, gctx)
 }
 

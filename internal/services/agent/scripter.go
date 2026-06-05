@@ -88,7 +88,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	sessionID := scriptSessionId - int64(scripterCounter)
 	scripterCounter++
 	scripterCounterMu.Unlock()
-	ctx = context.WithValue(ctx, "session", sessionID)
+	ctx = context.WithValue(ctx, "session", fmt.Sprintf("%v", sessionID))
 	return room.Run(ctx)
 }
 
