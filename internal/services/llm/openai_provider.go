@@ -132,6 +132,7 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage, json 
 		if metadata == nil {
 			metadata = make(map[string]string)
 		}
+		log.Printf("[chat] using session id %v for model %v", sessionID, p.model)
 		metadata["coc_session_id"] = sessionID
 		chatReq.Metadata = metadata
 	}
