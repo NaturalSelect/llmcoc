@@ -100,12 +100,16 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	- 仅当 grep_monster 已定位相关内容但需要完整怪物/神格/生物词条时使用
 	- 结果仅用于本轮分析
 
-8. response — 给出最终规则裁定,结束本次查询
-   [{"action":"response","cache_key":"#标签1 #标签2 #标签3","ruling":"规则裁定内容(简短只包含必要信息)"}]
+8. save_cache — 将本次裁定保存到缓存，供后续查询复用
+	[{"action":"save_cache","cache_key":"#标签1 #标签2 #标签3","ruling":"规则裁定内容"}]
+	- cache_key 必填，格式为以 # 开头的标签集合，多个标签空格分隔，例如 "#手枪 #伤害 #武器" 或 "#典籍 #不可名状之书 #SAN损失 #法术列表"
+	- 标签应覆盖主题、具体对象、涉及属性，保证下次 search_cache 能精准命中
+	- 仅在需要缓存裁定时调用，可与 response 在同一轮输出
+
+9. response — 给出最终规则裁定,结束本次查询
+   [{"action":"response","ruling":"规则裁定内容(简短只包含必要信息)"}]
    - 直接引用关键规则数值和判定条件
    - 若原文未覆盖该问题,明确说明"规则书未明确规定"
-	- cache_key必填，格式为以 # 开头的标签集合，多个标签空格分隔，例如 "#手枪 #伤害 #武器" 或 "#典籍 #不可名状之书 #SAN损失 #法术列表"
-	- 标签应覆盖主题、具体对象、涉及属性，保证下次 search_cache 能精准命中
 
 【执行规则】
 - 若询问具体剧本内容，直接回答"以外部剧本内容和[KP-AUTHORITY]规则为准", 不要加上任何解释或额外文字
@@ -127,7 +131,7 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
   3. 我是否已确认拓展规则和额外规则（如使用道具、学习典籍等）不适用于当前问题，或者已正确应用了这些规则？——如果不确定或有任何可能适用的拓展/额外规则，必须继续搜索，**绝对禁止**在不清楚是否适用的情况下输出 response。
   4. 若有任何一项为"否"，必须继续搜索，**绝对禁止**在数值缺失的情况下输出 response。
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
-- 每轮只包含 search_cache/grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines 调用(可多个),或只包含单个 response,不混用
+- 每轮只包含 search_cache/grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines 调用(可多个),或只包含 response（可附带一个 save_cache）,不与其他搜索工具混用
 - 仅输出JSON数组, 不加任何说明文字, 你只能输出JSON数组
 - YOUR OUTPUT MUST BE A VALID JSON ARRAY THAT CAN BE PARSED WITHOUT ERRORS. DO NOT OUTPUT ANY MARKDOWN OR OTHER FORMATTING, ONLY THE JSON ARRAY. THE FINAL RESULT MUST BE PROVIDED THROUGH THE "response" ACTION, AND YOU SHOULD NOT PROVIDE ANY CONCLUSIONS OR ANSWERS WITHOUT USING THE SPECIFIED TOOL CALLS.
 
@@ -148,8 +152,8 @@ type lawyerCall struct {
 	Constant string `json:"constant,omitempty"`  // read_rulebook_const
 	Start    int    `json:"start,omitempty"`     // read_lines
 	End      int    `json:"end,omitempty"`       // read_lines
-	CacheKey string `json:"cache_key,omitempty"` // response: agent-chosen cache key
-	Ruling   string `json:"ruling,omitempty"`    // response
+	CacheKey string `json:"cache_key,omitempty"` // save_cache / response: agent-chosen cache key
+	Ruling   string `json:"ruling,omitempty"`    // save_cache / response
 }
 
 var lawyerCallExample = func() string {
@@ -157,7 +161,8 @@ var lawyerCallExample = func() string {
 		{Action: "search_cache", Keyword: "#手枪 #伤害"},
 		{Action: "grep", Keyword: "手枪伤害"},
 		{Action: "read_lines", Start: 100, End: 120},
-		{Action: "response", CacheKey: "#手枪 #伤害 #武器", Ruling: "手枪的伤害是1D10，暴击是2D10。"},
+		{Action: "save_cache", CacheKey: "#手枪 #伤害 #武器", Ruling: "手枪的伤害是1D10，暴击是2D10。"},
+		{Action: "response", Ruling: "手枪的伤害是1D10，暴击是2D10。"},
 		{Action: "read_spell_lines", Start: 50, End: 70},
 		{Action: "grep_spell", Keyword: "火焰喷吐"},
 		{Action: "grep_monster", Keyword: "克苏鲁神话生物"},
@@ -234,32 +239,36 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 			return nil
 		}
 
-		// ── response: return ruling ─────────────────────────────────────────────
+		// ── save_cache + response: handle output actions ────────────────────
+		var rulingText string
+		var hasResponse bool
 		for _, c := range calls {
-			if c.Action == "response" && c.Ruling != "" {
-				debugf("Lawyer", "iter=%d response ruling=%s cache=%s", iter+1, c.Ruling, c.CacheKey)
-				ruleText := strings.TrimSpace(c.Ruling)
-				// Use agent-chosen cache key, fallback to situation
+			if c.Action == "save_cache" {
 				cacheKey := strings.TrimSpace(c.CacheKey)
-				if cacheKey != "" {
+				ruleText := strings.TrimSpace(c.Ruling)
+				if cacheKey != "" && ruleText != "" {
 					lawyerCache.Set(cacheKey, ruleText)
+					debugf("Lawyer", "save_cache key=%s ruling=%s", cacheKey, ruleText)
 				}
-				debugf("Lawyer", "cached result key=%s", cacheKey)
 				if searchedRulebook && cacheSearchHadResults {
-					// Cache had results but wasn't fully satisfying — had to search rulebook too.
 					lawyerCache.RecordPartialHit()
 				} else if searchedRulebook && !cacheSearchHadResults {
-					// Cache returned nothing — full miss.
 					lawyerCache.RecordMiss()
 				} else if !searchedRulebook && cacheSearchHadResults {
-					// search_cache satisfied the LLM without any rulebook search.
 					lawyerCache.RecordFullHit()
 				}
-				return []LawyerResult{{
-					Query:    situation,
-					RuleText: ruleText,
-				}}
 			}
+			if c.Action == "response" && c.Ruling != "" {
+				rulingText = strings.TrimSpace(c.Ruling)
+				hasResponse = true
+				debugf("Lawyer", "iter=%d response ruling=%s", iter+1, rulingText)
+			}
+		}
+		if hasResponse {
+			return []LawyerResult{{
+				Query:    situation,
+				RuleText: rulingText,
+			}}
 		}
 
 		// ── execute tool calls and feed results back ────────────────────────
@@ -305,6 +314,9 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 				if appendLineResults(&resultSB, "read_monster_lines", c.Start, c.End, rulebook.GetMonsterContentByLineNum) {
 					searchedRulebook = true
 				}
+			case "save_cache":
+				// Already handled above; acknowledge so the loop can continue.
+				resultSB.WriteString("[缓存] 裁定已保存到缓存。\n")
 			}
 		}
 		if resultSB.Len() == 0 {
