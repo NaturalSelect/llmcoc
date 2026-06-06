@@ -491,7 +491,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			for k, v := range npc.Stats {
 				statSB.WriteString(fmt.Sprintf("%s: %v; ", k, v))
 			}
-			scenarioSB.WriteString(fmt.Sprintf("<static_npc><name>%s</name><attitude>%s</attitude><description>%s</description><stats>%s</stats></static_npc>\n", npc.Name, npc.Attitude, desc, statSB.String()))
+			scenarioSB.WriteString(fmt.Sprintf("<static_npc><name>%s</name><attitude>%s</attitude><description>%s</description><stats>\n%s\n</stats></static_npc>\n", npc.Name, npc.Attitude, desc, statSB.String()))
 		}
 		scenarioSB.WriteString("</npc_list>\n")
 	}
@@ -555,6 +555,12 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			}
 			if strings.TrimSpace(npc.Location) != "" {
 				line += " <br/> 位置:" + strings.TrimSpace(npc.Location)
+			}
+			app := npc.Stats.Data["APP"]
+			pow := npc.Stats.Data["POW"]
+			dex := npc.Stats.Data["DEX"]
+			if app > 0 || pow > 0 || dex > 0 {
+				line += fmt.Sprintf(" <br/> 主要属性: APP %d / POW %d / DEX %d", app, pow, dex)
 			}
 			if strings.TrimSpace(npc.LLMNote) != "" {
 				line += " <br/>【有Session级特殊状态:需query_npc_card查看】"
