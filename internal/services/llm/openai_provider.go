@@ -190,6 +190,10 @@ func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (msg 
 	return msg, nil
 }
 
+var (
+	ErrEmptyLLMResponse = errors.New("LLM returned empty response")
+)
+
 func (p *openAIProvider) JsonChat(ctx context.Context, messages []ChatMessage) (string, error) {
 	for i := 0; i < 3; i++ {
 		msg, err := p.chat(ctx, messages, true)
@@ -202,5 +206,5 @@ func (p *openAIProvider) JsonChat(ctx context.Context, messages []ChatMessage) (
 		}
 		return msg, nil
 	}
-	return "", errors.New("LLM returned empty response after 3 attempts")
+	return "", ErrEmptyLLMResponse
 }

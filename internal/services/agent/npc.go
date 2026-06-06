@@ -316,10 +316,18 @@ func runNPC(
 	npcHistory := loadNPCState(gctx.Session.ID, npcName)
 	msgs = append(msgs, npcHistory...)
 
+	sb := strings.Builder{}
+	sb.WriteString("<context>\n")
+	sb.WriteString(question)
+	sb.WriteString("\n</context>\n")
+	sb.WriteString("<note>\n")
+	sb.WriteString("在符合NPC人设和context的前提下, 表现NPC的求生欲、求知欲、表现欲、舒适欲、社交欲和性欲等多维度真情实感\n")
+	sb.WriteString("</note>\n")
+
 	// Current question as the final user message.
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
-		Content: question,
+		Content: sb.String(),
 	})
 
 	resp, err := h.provider.JsonChat(ctx, msgs)
