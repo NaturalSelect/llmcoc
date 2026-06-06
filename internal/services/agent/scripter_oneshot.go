@@ -672,7 +672,7 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 		formatMythosBlacklist(room.mythosBlacklist),
 		formatNPCNameBlacklist(room.npcBlacklist),
 		formatScenarioTitleBlacklist(room.titleSamples),
-		lengthSpec(room.req.TargetLength),
+		lengthSpec(room.req.TargetLength)+"\n线索会被直接展示给玩家, 但类型前缀(真实/隐藏/误导)会被隐藏, 设计误导线索时需要注意。",
 		difficultySpec(room.req.Difficulty),
 	)
 
