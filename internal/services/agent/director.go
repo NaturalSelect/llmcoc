@@ -462,47 +462,57 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	})
 
 	var scenarioSB strings.Builder
+	scenarioSB.WriteString("<scenario>\n")
 	scenarioSB.WriteString(fmt.Sprintf("Script: %s\n", gctx.Session.Scenario.Name))
 	if content.Setting != "" {
-		scenarioSB.WriteString("BG:" + content.Setting + "\n")
+		scenarioSB.WriteString("<setting>" + content.Setting + "</setting>\n")
 	}
 	if content.WinCondition != "" {
-		scenarioSB.WriteString("WIN COND:" + content.WinCondition + "\n")
+		scenarioSB.WriteString("<win_cond>" + content.WinCondition + "</win_cond>\n")
 	}
 	if content.LoseCondition != "" {
-		scenarioSB.WriteString("LOSE COND:" + content.LoseCondition + "\n")
+		scenarioSB.WriteString("<lose_cond>" + content.LoseCondition + "</lose_cond>\n")
 	}
 	if len(content.PartialWins) > 0 {
-		scenarioSB.WriteString("PARTIAL WIN COND:\n")
+		scenarioSB.WriteString("<partial_win_cond>\n")
 		for _, cond := range content.PartialWins {
 			scenarioSB.WriteString("  • " + cond + "\n")
 		}
+		scenarioSB.WriteString("</partial_win_cond>\n")
 	}
 	if content.MapDescription != "" {
-		scenarioSB.WriteString("MAP DESC:" + content.MapDescription + "\n")
+		scenarioSB.WriteString("<map>\n" + content.MapDescription + "\n</map>\n")
 	}
 	if len(content.NPCs) > 0 {
-		scenarioSB.WriteString("NPC列表:\n")
+		scenarioSB.WriteString("<npc_list>\n")
 		for _, npc := range content.NPCs {
 			desc := npc.Description
 			scenarioSB.WriteString(fmt.Sprintf("<static_npc><name>%s</name><attitude>%s</attitude><description>%s</description><stats>%v</stats></static_npc>\n", npc.Name, npc.Attitude, desc, npc.Stats))
 		}
+		scenarioSB.WriteString("</npc_list>\n")
 	}
 	if len(content.Scenes) > 0 {
-		scenarioSB.WriteString("场景列表:\n")
+		scenarioSB.WriteString("<scene_list>\n")
 		for _, scene := range content.Scenes {
 			s := ""
 			if len(scene.Triggers) > 0 {
 				s = fmt.Sprintf(" 触发条件: %v", scene.Triggers)
 			}
-			scenarioSB.WriteString(fmt.Sprintf("  • %s: %s %s\n", scene.Name, scene.Description, s))
+			scenarioSB.WriteString(fmt.Sprintf("<scene><name>%s</name><description>%s</description><triggers>%s</triggers></scene>\n", scene.Name, scene.Description, s))
 		}
+		scenarioSB.WriteString("</scene_list>\n")
 	}
+	scenarioSB.WriteString(`
+<note>
+	scene 和 map 的区域应该随着调查进度逐渐解锁，初始状态下只能看到当前场景和相邻场景的描述, 不要一股脑全开让玩家像是开了图一样。
+</note>
+`)
 	if content.Reward != nil {
 		r := content.Reward
-		scenarioSB.WriteString(fmt.Sprintf("【通关奖励】调查员完成通关条件（win_condition满足）时，通过manage_inventory(add)给予：[%s] %s — 效果：%s\n",
+		scenarioSB.WriteString(fmt.Sprintf("<reward>调查员完成通关条件（win_condition满足）时，通过manage_inventory(add)给予：[%s] %s — 效果：%s</reward>\n",
 			r.Type, r.Name, r.MechanicsNote))
 	}
+	scenarioSB.WriteString("\n</scenario>\n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: scenarioSB.String(),
