@@ -1,0 +1,536 @@
+            <h2 class="text-xl font-bold text-red-400 mb-4">管理后台</h2>
+
+            <div class="flex gap-0 mb-5 border-b" style="border-color:#252018">
+                <template
+                    x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'settings',label:'系统设置'},{id:'cache',label:'规则缓存'}]"
+                    :key="t.id">
+                    <button
+                        @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems(); if (t.id === 'cache') loadCacheStats(); if (t.id === 'scenarios') loadAdminScenarios()"
+                        class="tab" :class="adminTab===t.id?'active':''" x-text="t.label"></button>
+                </template>
+            </div>
+
+            <!-- Users -->
+            <div x-show="adminTab==='users'" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <div class="card rounded p-5">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">充值金币</h3>
+                    <div class="space-y-2.5">
+                        <input x-model.number="rechargeForm.user_id" type="number" placeholder="用户 ID"
+                            class="inp" />
+                        <input x-model.number="rechargeForm.amount" type="number" placeholder="充值数量" class="inp" />
+                        <input x-model="rechargeForm.note" placeholder="备注（可选）" class="inp" />
+                        <button @click="adminRecharge()" class="btn btn-amber w-full">确认充值</button>
+                    </div>
+                </div>
+                <div class="card rounded p-5">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">用户列表</h3>
+                        <button @click="loadAdminUsers()" class="text-xs text-amber-800 hover:text-amber-500"
+                            style="font-family:system-ui">刷新</button>
+                    </div>
+                    <div class="space-y-2 max-h-80 overflow-y-auto">
+                        <template x-for="u in adminUsers" :key="u.id">
+                            <div class="flex items-center justify-between text-xs border-b pb-2"
+                                style="border-color:#252018;font-family:system-ui">
+                                <div class="min-w-0 flex-1">
+                                    <span class="text-amber-300 font-bold">#<span x-text="u.id"></span> <span
+                                            x-text="u.username"></span></span>
+                                    <span class="text-amber-800 ml-1.5 truncate" x-text="u.email"></span>
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0 ml-2">
+                                    <span class="text-amber-700" style="font-family:monospace">💰<span
+                                            x-text="u.coins"></span></span>
+                                    <span class="badge"
+                                        :class="u.role==='admin'?'bg-red-950/50 text-red-400 border border-red-900/30':'bg-amber-950/30 text-amber-700 border border-amber-900/20'"
+                                        x-text="u.role"></span>
+                                    <span x-show="u.is_banned"
+                                        class="badge bg-red-950/60 text-red-500 border border-red-900/40">已封</span>
+                                    <button @click="toggleAdmin(u)"
+                                        class="text-amber-800 hover:text-amber-500 transition">切换权限</button>
+                                    <button @click="toggleBan(u)"
+                                        :class="u.is_banned ? 'text-green-700 hover:text-green-400' : 'text-red-900 hover:text-red-500'"
+                                        class="transition" x-text="u.is_banned ? '解封' : '封号'"></button>
+                                </div>
+                            </div>
+                        </template>
+                        <p x-show="adminUsers.length===0" class="text-amber-900 text-center py-4"
+                            style="font-family:system-ui">暂无用户</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LLM Providers -->
+            <div x-show="adminTab==='providers'" class="space-y-4">
+                <div class="flex justify-between items-center">
+                    <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">LLM 提供商</h3>
+                    <button @click="openCreateProvider()" class="btn btn-amber">+ 新建提供商</button>
+                </div>
+                <div class="space-y-2.5">
+                    <template x-for="p in adminProviders" :key="p.id">
+                        <div class="card rounded p-4 flex items-start gap-4">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap mb-1">
+                                    <span class="font-semibold text-amber-100" x-text="p.name"></span>
+                                    <span class="badge bg-amber-950/30 text-amber-600 border border-amber-900/20"
+                                        x-text="p.provider"></span>
+                                    <span x-show="!p.is_active"
+                                        class="badge bg-red-950/30 text-red-500 border border-red-900/20">已停用</span>
+                                </div>
+                                <p class="text-xs text-amber-800 truncate" style="font-family:system-ui"
+                                    x-text="p.base_url || '（OpenAI 默认端点）'"></p>
+                                <p class="text-xs mt-0.5" style="font-family:system-ui"
+                                    :class="p.api_key_set ? 'text-green-700' : 'text-red-600'"
+                                    x-text="p.api_key_set ? '✓ API Key 已配置' : '✗ 未配置 API Key'"></p>
+                            </div>
+                            <div class="flex gap-1.5 shrink-0">
+                                <button @click="pingProvider(p.id)" :disabled="pingLoading===p.id"
+                                    class="btn btn-ghost text-xs"
+                                    x-text="pingLoading===p.id?'测试中…':'Ping'"></button>
+                                <button @click="openEditProvider(p)" class="btn btn-amber text-xs">编辑</button>
+                                <button @click="deleteProvider(p.id)" class="btn btn-red text-xs">删除</button>
+                            </div>
+                        </div>
+                    </template>
+                    <p x-show="adminProviders.length===0" class="text-amber-900 text-sm"
+                        style="font-family:system-ui">
+                        暂无提供商，请创建。</p>
+                </div>
+            </div>
+
+            <!-- Agents -->
+            <div x-show="adminTab==='agents'" class="space-y-3">
+                <div class="flex justify-between items-center">
+                    <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">Agent 配置</h3>
+                    <button @click="loadAdminAgents()" class="text-xs text-amber-800 hover:text-amber-500"
+                        style="font-family:system-ui">刷新</button>
+                </div>
+                <p class="text-xs text-amber-800" style="font-family:system-ui">留空的系统提示词将使用内置默认提示词。</p>
+                <div class="space-y-3">
+                    <template x-for="ag in adminAgents" :key="ag.id">
+                        <div class="card rounded p-4">
+                            <div class="flex items-center gap-2 mb-3 flex-wrap">
+                                <span class="font-bold text-amber-200 text-sm" x-text="agentLabel(ag.role)"></span>
+                                <span class="text-xs text-amber-800" style="font-family:system-ui"
+                                    x-text="agentDesc(ag.role)"></span>
+                                <span x-show="!ag.is_active"
+                                    class="badge bg-red-950/30 text-red-500 border border-red-900/20 ml-auto">已停用</span>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-2.5">
+                                <div>
+                                    <label class="text-xs text-amber-800 mb-1 block"
+                                        style="font-family:system-ui">提供商</label>
+                                    <select x-model="ag.provider_config_id" class="inp">
+                                        <option value="">使用全局配置</option>
+                                        <template x-for="p in adminProviders" :key="p.id">
+                                            <option :value="p.id" x-text="p.name"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-xs text-amber-800 mb-1 block"
+                                        style="font-family:system-ui">模型名称</label>
+                                    <input x-model="ag.model_name" placeholder="如 gpt-4o" class="inp" />
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="text-xs text-amber-800 mb-1 block"
+                                            style="font-family:system-ui">MaxTokens</label>
+                                        <input x-model.number="ag.max_tokens" type="number" class="inp" />
+                                    </div>
+                                    <div>
+                                        <label class="text-xs text-amber-800 mb-1 block"
+                                            style="font-family:system-ui">Temp</label>
+                                        <input x-model.number="ag.temperature" type="number" step="0.1" min="0"
+                                            max="2" class="inp" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-2.5">
+                                <label class="text-xs text-amber-800 mb-1 block"
+                                    style="font-family:system-ui">System
+                                    Prompt（留空使用默认）</label>
+                                <textarea x-model="ag.system_prompt" rows="3"
+                                    :placeholder="agentDefaultHint(ag.role)"
+                                    class="inp resize-none font-mono text-xs"></textarea>
+                            </div>
+                            <div class="mb-2.5">
+                                <label class="text-xs text-amber-800 mb-1 block"
+                                    style="font-family:system-ui">推理强度</label>
+                                <select x-model="ag.thinking_level" class="inp">
+                                    <option value="">默认（high）</option>
+                                    <option value="none">关闭</option>
+                                    <option value="low">低</option>
+                                    <option value="medium">中</option>
+                                    <option value="high">高</option>
+                                    <option value="xhigh">极高</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer"
+                                    style="font-family:system-ui">
+                                    <input type="checkbox" x-model="ag.is_active" class="accent-amber-600" /> 启用
+                                </label>
+                                <button @click="saveAgent(ag)" class="btn btn-amber text-xs ml-auto">保存配置</button>
+                            </div>
+                        </div>
+                    </template>
+                    <p x-show="adminAgents.length===0" class="text-amber-900 text-sm" style="font-family:system-ui">
+                        加载中…
+                    </p>
+                </div>
+            </div>
+
+            <!-- Scenario management -->
+            <div x-show="adminTab==='scenarios'" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+                <!-- Scenario list -->
+                <div class="card rounded p-5 lg:col-span-2">
+                    <div class="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">已有模组</h3>
+                            <p class="text-xs text-amber-800 mt-1" style="font-family:system-ui">
+                                共 <span x-text="adminScenarioTotal"></span> 个 · 第
+                                <span x-text="adminScenarioPage"></span> /
+                                <span x-text="adminScenarioTotalPages"></span> 页
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <label class="text-xs text-amber-800" style="font-family:system-ui">每页</label>
+                            <select x-model.number="adminScenarioPageSize" @change="changeAdminScenarioPageSize()"
+                                class="inp text-xs py-1 w-20">
+                                <option :value="10">10</option>
+                                <option :value="20">20</option>
+                                <option :value="50">50</option>
+                            </select>
+                            <button @click="prevAdminScenarioPage()" :disabled="adminScenarioPage <= 1"
+                                class="btn btn-ghost text-xs">上一页</button>
+                            <button @click="nextAdminScenarioPage()"
+                                :disabled="adminScenarioPage >= adminScenarioTotalPages"
+                                class="btn btn-ghost text-xs">下一页</button>
+                            <button @click="loadAdminScenarios(adminScenarioPage)"
+                                class="btn btn-ghost text-xs">刷新</button>
+                        </div>
+                    </div>
+                    <div x-show="adminScenarios.length === 0" class="text-amber-900 text-xs"
+                        style="font-family:system-ui">暂无模组</div>
+                    <div class="space-y-2">
+                        <template x-for="s in adminScenarios" :key="s.id">
+                            <div class="flex items-center gap-3 p-2 rounded"
+                                style="background:#0e0d0b;border:1px solid #1e1c17">
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm text-amber-200 truncate" style="font-family:system-ui"
+                                        x-text="s.name"></p>
+                                    <p class="text-[11px] text-amber-900 mt-0.5" style="font-family:system-ui"
+                                        x-text="(s.difficulty||'normal') + ' · ' + (s.min_players||1) + '-' + (s.max_players||4) + '人' + (s.author ? ' · ' + s.author : '')">
+                                    </p>
+                                </div>
+                                <button @click="viewScenario(s)" class="btn btn-ghost text-xs shrink-0">查看</button>
+                                <button @click="deleteScenario(s.id)"
+                                    class="btn btn-red text-xs shrink-0">删除</button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="card rounded p-5">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">下载模组模板</h3>
+                    <p class="text-xs text-amber-800 mb-3" style="font-family:system-ui">
+                        下载标准 JSON 模板，填写后可用于导入模组。
+                    </p>
+                    <button @click="downloadScenarioTemplate()" class="btn btn-amber">下载模板</button>
+                </div>
+
+                <div class="card rounded p-5">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">上传模组 JSON</h3>
+                    <p class="text-xs text-amber-800 mb-2" style="font-family:system-ui">支持单个 JSON 文件上传。</p>
+                    <input type="file" accept="application/json,.json" @change="onScenarioFilePicked($event)"
+                        class="inp mb-3" />
+                    <button @click="uploadScenarioFile()" class="btn btn-amber"
+                        :disabled="!scenarioUploadFile || loading">
+                        <span x-show="!loading">上传并导入</span>
+                        <span x-show="loading">导入中…</span>
+                    </button>
+                </div>
+
+                <div class="card rounded p-5 lg:col-span-2">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">AI 生成模组</h3>
+                    <p class="text-xs text-amber-800 mb-3" style="font-family:system-ui">
+                        3阶段流水线：大纲生成 → JSON构建 → QA审查（自动迭代修订）。需要 Architect、QA Guard、Parser 角色已配置并启用。
+                    </p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1"
+                                style="font-family:system-ui">模组名称（可选）</label>
+                            <input x-model="scenarioGenForm.name" type="text" placeholder="留空由AI命名" class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">留空则AI自动命名。</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1" style="font-family:system-ui">主题 /
+                                风格</label>
+                            <input x-model="scenarioGenForm.theme" type="text" placeholder="例如：海洋、都市传说、古埃及"
+                                class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">引导AI的神话题材与氛围。
+                            </p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1"
+                                style="font-family:system-ui">时代背景</label>
+                            <input x-model="scenarioGenForm.era" type="text" placeholder="例如：1920s 波士顿、现代东京"
+                                class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">年代地点，影响NPC和道具。
+                            </p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1"
+                                style="font-family:system-ui">篇幅</label>
+                            <select x-model="scenarioGenForm.target_length" class="inp">
+                                <option value="short">短篇（1-2小时）</option>
+                                <option value="medium">中篇（3-4小时）</option>
+                                <option value="long">长篇（5小时以上）</option>
+                            </select>
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">影响场景数量和线索密度。
+                            </p>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="block text-xs text-amber-700 mb-1"
+                            style="font-family:system-ui">创意简报（可选）</label>
+                        <textarea x-model="scenarioGenForm.brief" rows="2"
+                            placeholder="例如：调查员受雇寻找失踪的渔夫，背后隐藏着古老渔村的祭祀秘密…" class="inp resize-none"></textarea>
+                        <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">一两句话描述核心剧情或特殊要求。
+                        </p>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1"
+                                style="font-family:system-ui">最小玩家数</label>
+                            <input x-model.number="scenarioGenForm.min_players" type="number" min="1"
+                                placeholder="例如：1" class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">建议能开团的最低人数。</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1"
+                                style="font-family:system-ui">最大玩家数</label>
+                            <input x-model.number="scenarioGenForm.max_players" type="number" min="1"
+                                placeholder="例如：4" class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">建议不影响节奏的上限人数。
+                            </p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1"
+                                style="font-family:system-ui">难度等级</label>
+                            <select x-model="scenarioGenForm.difficulty" class="inp">
+                                <option value="easy">easy（入门，容错高）</option>
+                                <option value="normal">normal（标准）</option>
+                                <option value="hard">hard（高压，高风险）</option>
+                            </select>
+                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">
+                                影响线索密度、危机强度与生存压力。
+                            </p>
+                        </div>
+                    </div>
+                    <button @click="generateScenarioByAgents()" class="btn btn-amber" :disabled="loading">
+                        <span x-show="!loading">生成并入库</span>
+                        <span x-show="loading">生成中…</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Shop management -->
+            <div x-show="adminTab==='shop'" class="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-5">
+                <div class="card rounded p-5">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">创建商品</h3>
+                    <div class="space-y-2.5">
+                        <input x-model="newShopItem.name" placeholder="商品名称 *" class="inp" />
+                        <textarea x-model="newShopItem.description" placeholder="商品描述" rows="2"
+                            class="inp resize-none"></textarea>
+                        <select x-model="newShopItem.item_type" class="inp">
+                            <option value="card_slot">人物卡槽位</option>
+                            <option value="coins">金币</option>
+                            <option value="equipment">基础装备</option>
+                            <option value="weapon">武器</option>
+                            <option value="accessory">配件</option>
+                        </select>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input x-model.number="newShopItem.price" type="number" placeholder="价格（金币）"
+                                class="inp" />
+                            <input x-model.number="newShopItem.value" type="number" placeholder="效果值" class="inp" />
+                        </div>
+                        <button @click="adminCreateShopItem()" class="btn btn-amber w-full">创建商品</button>
+                    </div>
+                </div>
+
+                <div class="card rounded p-5 min-w-0">
+                    <div class="flex justify-between items-center mb-4 gap-3">
+                        <div>
+                            <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">已上架商品</h3>
+                            <p class="text-xs text-amber-800 mt-1" style="font-family:system-ui">
+                                删除后会从商城下架，历史购买记录会保留。
+                            </p>
+                        </div>
+                        <button @click="loadAdminShopItems()"
+                            class="text-xs text-amber-800 hover:text-amber-500 shrink-0"
+                            style="font-family:system-ui">刷新</button>
+                    </div>
+
+                    <div x-show="adminShopItems.length === 0" class="text-amber-900 text-xs py-8 text-center"
+                        style="font-family:system-ui">暂无已上架商品</div>
+
+                    <div x-show="adminShopItems.length > 0" class="space-y-2 max-h-[30rem] overflow-y-auto pr-1">
+                        <template x-for="item in adminShopItems" :key="item.id">
+                            <div class="card rounded p-3 flex items-start justify-between gap-3">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                                        <span class="text-sm font-bold text-amber-200" style="font-family:system-ui"
+                                            x-text="item.name"></span>
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded"
+                                            style="background:#1e1c17;color:#92400e;font-family:system-ui"
+                                            x-text="item.item_type"></span>
+                                        <span class="text-[10px] text-amber-700" style="font-family:system-ui"
+                                            x-text="'ID ' + item.id"></span>
+                                    </div>
+                                    <p x-show="item.description" class="text-xs text-amber-700 break-words"
+                                        style="font-family:system-ui" x-text="item.description"></p>
+                                    <div class="flex flex-wrap gap-3 mt-2 text-xs" style="font-family:system-ui">
+                                        <span class="text-amber-500" x-text="'价格: ' + item.price + ' 金币'"></span>
+                                        <span class="text-amber-800" x-text="'效果值: ' + item.value"></span>
+                                    </div>
+                                </div>
+                                <button @click="adminDeleteShopItem(item)"
+                                    class="btn btn-danger text-xs shrink-0">删除</button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lawyer cache stats & clear -->
+            <div x-show="adminTab==='cache'" class="space-y-5">
+                <div class="card rounded p-5 max-w-xl">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">规则缓存统计</h3>
+                        <div class="flex gap-2">
+                            <button @click="loadCacheStats()" class="btn btn-ghost text-xs">刷新</button>
+                            <button @click="clearCache()" class="btn btn-red text-xs">清空缓存</button>
+                        </div>
+                    </div>
+                    <div x-show="!cacheStats" class="text-amber-900 text-sm" style="font-family:system-ui">加载中…
+                    </div>
+                    <div x-show="cacheStats" class="space-y-3">
+                        <!-- Hit / miss counters -->
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="rounded p-3 text-center"
+                                style="background:#0d1a0d;border:1px solid #1a3d1a">
+                                <div class="text-2xl font-bold text-green-400" style="font-family:system-ui"
+                                    x-text="cacheStats?.full_hits ?? 0"></div>
+                                <div class="text-xs mt-1" style="font-family:system-ui;color:#6a9a6a">完全命中</div>
+                                <div class="text-xs mt-0.5" style="font-family:system-ui;color:#3a6a3a">
+                                    LLM没搜索规则书</div>
+                            </div>
+                            <div class="rounded p-3 text-center"
+                                style="background:#1a1a0d;border:1px solid #3d3d1a">
+                                <div class="text-2xl font-bold text-yellow-400" style="font-family:system-ui"
+                                    x-text="cacheStats?.partial_hits ?? 0"></div>
+                                <div class="text-xs mt-1" style="font-family:system-ui;color:#9a9a6a">部分命中</div>
+                                <div class="text-xs mt-0.5" style="font-family:system-ui;color:#6a6a3a">缓存有结果但仍搜了规则书
+                                </div>
+                            </div>
+                            <div class="rounded p-3 text-center"
+                                style="background:#1a0d0d;border:1px solid #3d1a1a">
+                                <div class="text-2xl font-bold text-red-400" style="font-family:system-ui"
+                                    x-text="cacheStats?.misses ?? 0"></div>
+                                <div class="text-xs mt-1" style="font-family:system-ui;color:#9a6a6a">未命中</div>
+                                <div class="text-xs mt-0.5" style="font-family:system-ui;color:#6a3a3a">
+                                    search_cache无结果，完全依赖规则书
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Hit rate bar -->
+                        <div x-show="(cacheStats?.full_hits + cacheStats?.partial_hits + cacheStats?.misses) > 0">
+                            <div class="flex justify-between text-xs mb-1"
+                                style="font-family:system-ui;color:#7a6a50">
+                                <span>命中率</span>
+                                <span
+                                    x-text="cacheStats ? (((cacheStats.full_hits + cacheStats.partial_hits) / (cacheStats.full_hits + cacheStats.partial_hits + cacheStats.misses)) * 100).toFixed(1) + '%' : '-'"></span>
+                            </div>
+                            <div class="w-full rounded-full h-2" style="background:#1a1814">
+                                <div class="h-2 rounded-full"
+                                    style="background:linear-gradient(90deg,#2d6030,#6a8040)"
+                                    :style="'width:' + (cacheStats ? Math.min(100, ((cacheStats.full_hits + cacheStats.partial_hits) / (cacheStats.full_hits + cacheStats.partial_hits + cacheStats.misses)) * 100) : 0) + '%'">
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Capacity -->
+                        <div class="mt-2 pt-3" style="border-top:1px solid #252018">
+                            <div class="flex justify-between text-xs mb-1"
+                                style="font-family:system-ui;color:#7a6a50">
+                                <span>条目数 / 容量使用</span>
+                                <span
+                                    x-text="cacheStats ? cacheStats.entries + ' 条 · ' + (cacheStats.used_bytes / 1048576).toFixed(1) + ' MB / ' + (cacheStats.max_bytes / 1073741824).toFixed(0) + ' GB' : '-'"
+                                    style="font-family:system-ui"></span>
+                            </div>
+                            <div class="w-full rounded-full h-1.5" style="background:#1a1814">
+                                <div class="h-1.5 rounded-full" style="background:#4a3318"
+                                    :style="'width:' + (cacheStats ? Math.min(100, (cacheStats.used_bytes / cacheStats.max_bytes) * 100) : 0) + '%'">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System settings & invite codes -->
+            <div x-show="adminTab==='settings'" class="space-y-5">
+                <!-- Toggle: require invite code -->
+                <div class="card rounded p-5 max-w-md">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">站点设置</h3>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm" style="font-family:system-ui">注册需要邀请码</span>
+                        <button @click="toggleInviteCodeSetting()"
+                            class="w-12 h-6 rounded-full relative transition-colors"
+                            :class="siteSettings.require_invite_code ? 'bg-amber-700' : 'bg-gray-700'">
+                            <span
+                                class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform"
+                                :class="siteSettings.require_invite_code ? 'translate-x-6' : ''"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Invite codes -->
+                <div class="card rounded p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">邀请码管理</h3>
+                        <div class="flex items-center gap-2">
+                            <input x-model.number="inviteCodeCount" type="number" min="1" max="100"
+                                class="inp w-20 text-center text-xs" placeholder="数量" />
+                            <button @click="generateInviteCodes()" class="btn btn-amber text-xs">批量生成</button>
+                            <button @click="loadInviteCodes()" class="text-xs text-amber-800 hover:text-amber-500"
+                                style="font-family:system-ui">刷新</button>
+                        </div>
+                    </div>
+                    <div x-show="inviteCodes.length === 0" class="text-amber-900 text-xs"
+                        style="font-family:system-ui">
+                        暂无邀请码</div>
+                    <div class="space-y-2 max-h-96 overflow-y-auto">
+                        <template x-for="ic in inviteCodes" :key="ic.id">
+                            <div class="flex items-center justify-between text-xs border-b pb-2"
+                                style="border-color:#252018;font-family:system-ui">
+                                <div class="flex items-center gap-3">
+                                    <code class="text-amber-200 font-mono tracking-wider" x-text="ic.code"></code>
+                                    <span x-show="!ic.used_by" class="text-green-500">未使用</span>
+                                    <span x-show="ic.used_by" class="text-amber-800">
+                                        已使用 · <span x-text="ic.used_user?.username || ('用户#'+ic.used_by)"></span>
+                                    </span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-amber-900 text-xs"
+                                        x-text="new Date(ic.created_at).toLocaleDateString()"></span>
+                                    <button x-show="!ic.used_by" @click="deleteInviteCode(ic.id)"
+                                        class="text-red-700 hover:text-red-400">删除</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>

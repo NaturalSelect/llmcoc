@@ -1,0 +1,407 @@
+        [x-cloak] {
+            display: none !important;
+        }
+
+        body {
+            font-family: 'Georgia', serif;
+            background: #080706;
+            color: #d0bfa0;
+            height: 100vh;
+            height: 100dvh;
+            /* 移动端动态视口高度，避免地址栏遮挡 */
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        main {
+            flex: 1;
+            overflow-y: auto;
+            position: relative;
+            min-height: 0;
+            /* 确保 flex 子元素可以正确收缩 */
+        }
+
+        /* ── Scrollbar ─────────────────────────────────────── */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #100e0c;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2a2318;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3d3228;
+        }
+
+        /* ── Cards & surfaces ──────────────────────────────── */
+        .card {
+            background: #131110;
+            border: 1px solid #252018;
+        }
+
+        .card-hover:hover {
+            border-color: #4a3a25;
+            transition: border-color 0.15s;
+        }
+
+        /* ── Buttons ───────────────────────────────────────── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.375rem 0.875rem;
+            border-radius: 3px;
+            font-family: system-ui, sans-serif;
+            font-size: 0.8125rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+
+        .btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .btn-amber {
+            background: #4a3318;
+            border: 1px solid #6a4d28;
+            color: #e0c888;
+        }
+
+        .btn-amber:hover {
+            background: #5d4220;
+            border-color: #8a6840;
+        }
+
+        .btn-red {
+            background: #4a1a1a;
+            border: 1px solid #7a3030;
+            color: #f0a0a0;
+        }
+
+        .btn-red:hover {
+            background: #5e2020;
+            border-color: #9a4040;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid #252018;
+            color: #7a6a50;
+        }
+
+        .btn-ghost:hover {
+            border-color: #4a3a25;
+            color: #d0bfa0;
+        }
+
+        .btn-green {
+            background: #1a3d1a;
+            border: 1px solid #2d6030;
+            color: #88d088;
+        }
+
+        .btn-green:hover {
+            background: #204d20;
+        }
+
+        /* ── Inputs ────────────────────────────────────────── */
+        .inp {
+            background: #0c0b09;
+            border: 1px solid #252018;
+            color: #d0bfa0;
+            padding: 0.375rem 0.625rem;
+            border-radius: 3px;
+            font-family: system-ui, sans-serif;
+            font-size: 0.8125rem;
+            width: 100%;
+        }
+
+        .inp:focus {
+            outline: none;
+            border-color: #6a4d28;
+        }
+
+        .inp::placeholder {
+            color: #3d3228;
+        }
+
+        select.inp option {
+            background: #1a1814;
+        }
+
+        /* ── Nav ───────────────────────────────────────────── */
+        .nav-link {
+            font-family: system-ui, sans-serif;
+            font-size: 0.8125rem;
+            color: #7a6a50;
+            padding: 0.25rem 0.625rem;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .nav-link:hover {
+            color: #d0bfa0;
+        }
+
+        .nav-link.active {
+            color: #d0bfa0;
+            background: #1e1a14;
+            border: 1px solid #252018;
+        }
+
+        /* ── Chat messages ─────────────────────────────────── */
+        .msg {
+            border-radius: 3px;
+            padding: 0.625rem 0.875rem;
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
+        .msg-kp {
+            border-left: 3px solid #7a1515;
+            background: #110d0d;
+        }
+
+        .msg-user {
+            border-left: 3px solid #1a4d1a;
+            background: #0d110d;
+        }
+
+        .msg-sys {
+            border-left: 3px solid #1a2d4a;
+            background: #0d0d14;
+            opacity: 0.75;
+        }
+
+        /* KP writer narrative */
+        .narrative {
+            font-family: 'Georgia', serif;
+            line-height: 1.85;
+            font-size: 0.9375rem;
+            color: #d0bfa0;
+            white-space: pre-wrap;
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
+        /* KP narration - direct KP speech */
+        .narration {
+            font-family: system-ui, sans-serif;
+            font-size: 0.825rem;
+            color: #c09060;
+            font-style: italic;
+            white-space: pre-wrap;
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
+        /* separator only when writer narrative precedes narration */
+        .narration-sep {
+            border-top: 1px solid #3a1a1a;
+            margin-top: 0.625rem;
+            padding-top: 0.625rem;
+        }
+
+        /* Player action */
+        .action {
+            font-size: 0.875rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        /* ── Streaming cursor ──────────────────────────────── */
+        @keyframes blink {
+            50% {
+                opacity: 0;
+            }
+        }
+
+        .cursor::after {
+            content: '\25AE';
+            color: #9b1c1c;
+            animation: blink 0.8s step-end infinite;
+        }
+
+        /* ── Thinking dots ─────────────────────────────────── */
+        @keyframes dot-bounce {
+
+            0%,
+            80%,
+            100% {
+                transform: translateY(0);
+                opacity: 0.3;
+            }
+
+            40% {
+                transform: translateY(-4px);
+                opacity: 1;
+            }
+        }
+
+        .dot {
+            display: inline-block;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #9b1c1c;
+        }
+
+        .dot:nth-child(1) {
+            animation: dot-bounce 1.2s 0s infinite;
+        }
+
+        .dot:nth-child(2) {
+            animation: dot-bounce 1.2s 0.2s infinite;
+        }
+
+        .dot:nth-child(3) {
+            animation: dot-bounce 1.2s 0.4s infinite;
+        }
+
+        /* ── Stat badges ───────────────────────────────────── */
+        .stat-badge {
+            background: #1a1714;
+            border: 1px solid #252018;
+            font-family: monospace;
+            font-size: 0.7rem;
+            padding: 3px 6px;
+            border-radius: 2px;
+            text-align: center;
+        }
+
+        /* ── Resource bars ─────────────────────────────────── */
+        .bar-track {
+            background: #1a1714;
+            height: 4px;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .bar-hp {
+            background: linear-gradient(to right, #8b1a1a, #2d7a2d);
+            height: 100%;
+            border-radius: 2px;
+        }
+
+        .bar-san {
+            background: linear-gradient(to right, #8b1a1a, #b8820a, #2d7a2d);
+            height: 100%;
+            border-radius: 2px;
+        }
+
+        .bar-mp {
+            background: linear-gradient(to right, #1a1a8b, #2d4a8b);
+            height: 100%;
+            border-radius: 2px;
+        }
+
+        /* ── Modal ─────────────────────────────────────────── */
+        .backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            padding: 1rem;
+        }
+
+        .modal {
+            background: #131110;
+            border: 1px solid #2a2318;
+            border-radius: 4px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        /* ── Misc ──────────────────────────────────────────── */
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: none;
+            }
+        }
+
+        .fade-up {
+            animation: fadeUp 0.2s ease-out;
+        }
+
+        .tab {
+            font-family: system-ui, sans-serif;
+            font-size: 0.8125rem;
+            color: #7a6a50;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.15s;
+        }
+
+        .tab:hover {
+            color: #d0bfa0;
+        }
+
+        .tab.active {
+            color: #d0bfa0;
+            border-bottom-color: #c4972c;
+        }
+
+        .badge {
+            font-family: monospace;
+            font-size: 0.68rem;
+            padding: 1px 6px;
+            border-radius: 2px;
+        }
+
+        .badge-lobby {
+            background: #0d2d0d;
+            color: #4a9a4a;
+            border: 1px solid #1d4a1d;
+        }
+
+        .badge-playing {
+            background: #2d1a0d;
+            color: #c47a30;
+            border: 1px solid #4a2d0d;
+        }
+
+        .badge-ended {
+            background: #1a1a1a;
+            color: #5a5a5a;
+            border: 1px solid #2a2a2a;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0a0908;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #2a2318;
+            border-radius: 2px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #3d3228;
+        }
