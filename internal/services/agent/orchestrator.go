@@ -223,7 +223,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 		doneKP := timedDebug("KP", "session=%d iter=%d Chat", sid, iter+1)
 		// 请求一次JSON
-		calls, rawResp, hasFixed, err := runKP(ctx, handles[models.AgentRoleDirector], kpMsgs)
+		calls, rawResp, _, err := runKP(ctx, handles[models.AgentRoleDirector], kpMsgs)
 		doneKP()
 		if err != nil {
 			log.Printf("[agent] KP iter %d error: %v", iter+1, err)
@@ -448,16 +448,13 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 3. 如果游戏已经走向结局, 先清除所有的临时状态(法术效果、NPC、玩家状态等), 再使用end_game工具结束游戏。
 
 注意: 
-* 你的所有输出都必须是合法的JSON数组格式, 违反格式要求或参数填写错误将导致未定义行为, 我们也不知道会发生什么但伴随严重后果（可能是工具调用失败，可能是玩家看到格式错误的回复，甚至可能是KP的记忆出现混乱）。
+* 你的所有输出都必须是合法的JSON数组格式。
 * 如果你想回复玩家，请务必使用response工具。
 * 如果你要思考，请务必使用think工具。
 * 如果你要推进游戏时间, 使用 advance_time工具, 每个单位代表半小时(如果太多轮次没有推进, 请考虑推进时间)。
 * 像在"桌面上一样"思考，继续主持游戏，然后你会被奖励更多的积分。如果你不知道如何主持游戏, 使用 check_rule工具询问主持游戏的细节。
 </NEXT_STEP>
 `)
-				if hasFixed {
-					sb.WriteString("\n<error>你之前输出的JSON不合法已经有一些未定义行为发生了, 我们不知道发生了什么</error>\n")
-				}
 				return sb.String()
 			}
 			// 输入用户数据
