@@ -487,7 +487,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		scenarioSB.WriteString("<npc_list>\n")
 		for _, npc := range content.NPCs {
 			desc := npc.Description
-			scenarioSB.WriteString(fmt.Sprintf("<static_npc><name>%s</name><attitude>%s</attitude><description>%s</description><stats>%v</stats></static_npc>\n", npc.Name, npc.Attitude, desc, npc.Stats))
+			statSB := strings.Builder{}
+			for k, v := range npc.Stats {
+				statSB.WriteString(fmt.Sprintf("%s: %v; ", k, v))
+			}
+			scenarioSB.WriteString(fmt.Sprintf("<static_npc><name>%s</name><attitude>%s</attitude><description>%s</description><stats>%s</stats></static_npc>\n", npc.Name, npc.Attitude, desc, statSB.String()))
 		}
 		scenarioSB.WriteString("</npc_list>\n")
 	}
@@ -614,6 +618,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 * 你需要理解并处理每一位玩家的意图, 先做计划再行动, 不要急于求成
 * 每个回答都必须包含think调用, 以展示你的思考过程和决策依据
 * 当玩家行动时，不要让NPC无动于衷，他们应该有自己的目标和反应
+* 每个人物(包括NPC)之间的行动顺序由他们的DEX决定，DEX高的人先行动
 * 保持剧情连贯一致，注意时间、关系和状态的变化
 * 请先自检确认当前的剧情场景和状态
 </note>
