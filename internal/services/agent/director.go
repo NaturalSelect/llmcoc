@@ -559,8 +559,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			app := npc.Stats.Data["APP"]
 			pow := npc.Stats.Data["POW"]
 			dex := npc.Stats.Data["DEX"]
-			if app > 0 || pow > 0 || dex > 0 {
-				line += fmt.Sprintf(" <br/> 主要属性: APP %d / POW %d / DEX %d", app, pow, dex)
+			mov := npc.Stats.Data["MOV"]
+			if app > 0 || pow > 0 || dex > 0 || mov > 0 {
+				line += fmt.Sprintf(" <br/> 主要属性: APP %d / POW %d / DEX %d / MOV %d", app, pow, dex, mov)
 			}
 			if strings.TrimSpace(npc.LLMNote) != "" {
 				line += " <br/>【有Session级特殊状态:需query_npc_card查看】"
@@ -625,6 +626,9 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 * 每个回答都必须包含think调用, 以展示你的思考过程和决策依据
 * 当玩家行动时，不要让NPC无动于衷，他们应该有自己的目标和反应
 * 每个人物(包括NPC)之间的行动顺序由他们的DEX决定，DEX高的人先行动
+* 每个人物(包括NPC)的APP会影响他们的社交互动和某些技能的表现，外貌好看(数值大)的人更容易获得他人的好感和信任
+* 每个人物(包括NPC)的POW会影响他们的意志力和魔法能力，POW强大(数值大)的人更能抵抗精神攻击，一些法术和魔法效果的施展也需要POW作为基础
+* 每个人物(包括NPC)的MOV会影响他们的移动速度，MOV快(数值大)的人更能迅速逃离危险和追击敌人
 * 保持剧情连贯一致，注意时间、关系和状态的变化
 * 请先自检确认当前的剧情场景和状态
 </note>
