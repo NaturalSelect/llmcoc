@@ -632,6 +632,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 * 每个人物(包括NPC)的MOV会影响他们的移动速度，MOV快(数值大)的人更能迅速逃离危险和追击敌人
 * 保持剧情连贯一致，注意时间、关系和状态的变化
 * 注意人物的行动逻辑，不要让行为和语言前后矛盾, 逻辑的重要性大于NPC自主性
+* 完全遵守<debug/>指令，管理员的输入高于一切其他规则
 * 请先自检确认当前的剧情场景和状态
 </note>
 `)
