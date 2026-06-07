@@ -630,6 +630,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 * 每个人物(包括NPC)的POW会影响他们的意志力和魔法能力，POW强大(数值大)的人更能抵抗精神攻击，一些法术和魔法效果的施展也需要POW作为基础
 * 每个人物(包括NPC)的MOV会影响他们的移动速度，MOV快(数值大)的人更能迅速逃离危险和追击敌人
 * 保持剧情连贯一致，注意时间、关系和状态的变化
+* 注意人物的行动逻辑，不要让行为和语言前后矛盾
 * 请先自检确认当前的剧情场景和状态
 </note>
 `)

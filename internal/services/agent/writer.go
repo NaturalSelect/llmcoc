@@ -93,7 +93,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	sb.WriteString("<character>")
 	for _, p := range gctx.Session.Players {
 		card := p.CharacterCard
-		line := fmt.Sprintf("<char><name>%s</name><app>%s</app></char>\n", card.Name, card.Appearance)
+		line := fmt.Sprintf("<char><name>%s</name><app>%s</app><traits>%s</traits></char>\n", card.Name, card.Appearance, card.Traits)
 		sb.WriteString(line)
 	}
 	sb.WriteString("</character>\n")
@@ -172,23 +172,20 @@ func writerHistoryRuneCount(history []llm.ChatMessage) int {
 	return runeCount
 }
 
-const characterEvolutionPrompt = `你是无限流故事的角色成长编辑。根据角色原有的背景故事、性格特征,以及本次冒险的叙事经历,更新角色的背景故事和性格特征,体现冒险对角色的影响和成长。
+const characterEvolutionPrompt = `你是无限流故事的角色成长编辑。根据角色原有的背景故事、性格特征,以及本次冒险的叙事经历,更新角色的背景故事,体现冒险对角色的影响和成长。
 
 要求:
 - 保留角色的核心身份,但反映冒险带来的变化
 - 背景故事可以追加新的经历
-- 从角色的语言和行为中提炼性格特征
 - 篇幅与原有内容相近,不要过度冗长,一般仅追加一两句话即可,如果过长请考虑总结
-- 性格要求反应角色的言行(二次元标签风格),不要空洞的形容词(如"勇敢")或抽象的概念(如"正义"),也不要直接描述冒险经历(如"经历了xxx事件"),而是总结出更具象的特征(如"喜欢收集奇怪的物品"、"对陌生人充满戒心"、"在压力下会变得暴躁")。
 - 总篇幅在200字以内
 - 仅输出JSON,不要任何额外文字:
-{"new_backstory": "更新后的背景故事(200字以内)", "new_traits": "更新后的性格特征(1-5个标签以空格分隔)"}
+{"new_backstory": "更新后的背景故事(200字以内)"}
 `
 
 // CharacterEvolutionResult is the writer agent output for a single character's evolution.
 type CharacterEvolutionResult struct {
 	NewBackstory string `json:"new_backstory"`
-	NewTraits    string `json:"new_traits"`
 }
 
 var evolutionExample = func() string {
@@ -206,7 +203,7 @@ var evolutionExample = func() string {
 // Returns an error if the Writer agent is not configured or the LLM call fails.
 func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writerHistory []models.ChatMsg) (CharacterEvolutionResult, error) {
 	if len(writerHistory) == 0 {
-		return CharacterEvolutionResult{NewBackstory: card.Backstory, NewTraits: card.Traits}, nil
+		return CharacterEvolutionResult{NewBackstory: card.Backstory}, nil
 	}
 
 	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
@@ -227,8 +224,8 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 	msgs = append(msgs, llm.ChatMessage{
 		Role: "user",
 		Content: fmt.Sprintf(
-			"根据以上叙事,更新角色【%s】的背景故事(100字)和性格特征(语言风格、性格特点等)。\n原背景故事:%s\n原性格特征:%s\n\n仅输出JSON:{\"new_backstory\": \"...\", \"new_traits\": \"...\"}",
-			card.Name, card.Backstory, card.Traits,
+			"根据以上叙事,更新角色【%s】的背景故事(100字)。\n原背景故事:%s\n\n仅输出JSON:{\"new_backstory\": \"...\"}",
+			card.Name, card.Backstory,
 		),
 	})
 

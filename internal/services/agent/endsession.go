@@ -43,7 +43,6 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 	type evolutionEntry struct {
 		cardIdx      int
 		newBackstory string
-		newTraits    string
 	}
 	var evolutions []evolutionEntry
 
@@ -60,7 +59,6 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 		evolutions = append(evolutions, evolutionEntry{
 			cardIdx:      i,
 			newBackstory: evo.NewBackstory,
-			newTraits:    evo.NewTraits,
 		})
 	}
 
@@ -126,9 +124,6 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 			if e, ok := evoByIdx[i]; ok {
 				if e.newBackstory != "" {
 					card.Backstory = e.newBackstory
-				}
-				if e.newTraits != "" {
-					card.Traits = e.newTraits
 				}
 			}
 
