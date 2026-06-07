@@ -322,6 +322,7 @@ func runNPC(
 	sb.WriteString("\n</context>\n")
 	sb.WriteString("<note>\n")
 	sb.WriteString("在符合NPC人设和context的前提下, 表现NPC的求生欲、求知欲、表现欲、舒适欲、社交欲和性欲等多维度真情实感\n")
+	sb.WriteString("注意人物的行动逻辑，不要让行为和语言前后矛盾\n")
 	sb.WriteString("</note>\n")
 
 	// Current question as the final user message.

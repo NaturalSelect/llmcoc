@@ -453,7 +453,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 * 如果你要思考，请务必使用think工具。
 * 如果你要推进游戏时间, 使用 advance_time工具, 每个单位代表半小时(如果太多轮次没有推进, 请考虑推进时间)。
 * 像在"桌面上一样"思考，继续主持游戏，然后你会被奖励更多的积分。如果你不知道如何主持游戏, 使用 check_rule工具询问主持游戏的细节。
-* 注意人物的行动逻辑，不要让行为和语言前后矛盾
+* 注意人物的行动逻辑，不要让行为和语言前后矛盾, 逻辑的重要性大于NPC自主性
 </NEXT_STEP>
 `)
 				return sb.String()
