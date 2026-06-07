@@ -176,7 +176,7 @@ func RegenerateTraits(ctx context.Context, card *models.CharacterCard) (string, 
 - 性别:%s
 - 背景故事:%s
 
-要求:性格特征以空格分隔,1-5个标签,包含语言风格、性格特点等,与之前的特征不同。
+要求:性格特征以空格分隔,1-5个标签,包含语言风格、性格特点等，二次元风格, 如:雌小鬼 大和抚子等,与之前的特征不同。
 
 请返回如下JSON格式:
 {"traits": "特征1 特征2 特征3"}`,
@@ -261,7 +261,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 {
   "backstory": "200字以内的背景故事",
   "appearance": "100字以内的外貌描述(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质,不包括服饰",
-  "traits": "性格特征(以空格分隔,1-5个标签,包含语言风格、性格特点等，二次元风格, 如:雌小鬼 人妻等)",
+  "traits": "性格特征(以空格分隔,1-5个标签,包含语言风格、性格特点等，二次元风格, 如:雌小鬼 大和抚子等)",
   "stats": {"STR":N,"CON":N,"SIZ":N,"DEX":N,"APP":N,"INT":N,"POW":N,"EDU":N}
 }`,
 		name, era, occupation, gender, req.Background,
@@ -290,7 +290,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 				`{
   "backstory": "200字以内的背景故事",
   "appearance": "100字以内的外貌描述(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质,不包括服饰",
-  "traits": "性格特征(以空格分隔,1-5个标签,包含语言风格、性格特点等，二次元风格, 如:雌小鬼 人妻等)",
+  "traits": "性格特征(以空格分隔,1-5个标签,包含语言风格、性格特点等，二次元风格, 如:雌小鬼 大和抚子等)",
   "stats": {"STR":N,"CON":N,"SIZ":N,"DEX":N,"APP":N,"INT":N,"POW":N,"EDU":N}
 }`)
 			if err == nil {
