@@ -113,6 +113,13 @@ func main() {
 		})
 	}
 	defer saveLawyerCache()
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-signalChan
+		saveLawyerCache()
+		os.Exit(0)
+	}()
 
 	// Create Gin engine
 	if os.Getenv("GIN_MODE") == "" {
