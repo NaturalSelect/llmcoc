@@ -109,6 +109,7 @@ func main() {
 			return
 		}
 		saveLawyerCacheOnce.Do(func() {
+			log.Printf("Saving Lawyer cache to disk...")
 			agent.SaveLawyerCache(lawyerCacheHashes)
 		})
 	}
