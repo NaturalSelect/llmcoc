@@ -113,13 +113,6 @@ func main() {
 		})
 	}
 	defer saveLawyerCache()
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-signalChan
-		saveLawyerCache()
-		os.Exit(0)
-	}()
 
 	// Create Gin engine
 	if os.Getenv("GIN_MODE") == "" {
@@ -312,6 +305,7 @@ func main() {
 			log.Fatalf("Server failed: %v", err)
 		}
 	case err := <-errCh:
+		saveLawyerCache()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Server failed: %v", err)
 		}
