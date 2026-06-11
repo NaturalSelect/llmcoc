@@ -9,18 +9,9 @@ import (
 	"time"
 )
 
-// debugEnabled is set once at startup from the AGENT_DEBUG environment variable.
-// Set AGENT_DEBUG=1 (or "true"/"yes") to enable verbose agent tracing.
-var debugEnabled = func() bool {
-	return true
-}()
-
 // debugf writes a formatted debug line only when AGENT_DEBUG is enabled.
 // Format: [agent][TAG] message
 func debugf(tag, format string, args ...any) {
-	if !debugEnabled {
-		return
-	}
 	msg := fmt.Sprintf(format, args...)
 	log.Printf("[agent][%s] %s", tag, msg)
 }
@@ -31,9 +22,6 @@ func debugf(tag, format string, args ...any) {
 //	done := timedDebug("KP", "Chat session=%d iter=%d", sessionID, iter)
 //	defer done()
 func timedDebug(tag, format string, args ...any) func() {
-	if !debugEnabled {
-		return func() {}
-	}
 	label := fmt.Sprintf(format, args...)
 	start := time.Now()
 	return func() {
