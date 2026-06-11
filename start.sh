@@ -14,6 +14,7 @@
 #   DB_PATH       — SQLite database path (overrides config.yaml database.path)
 
 set -euo pipefail
+trap '' PIPE
 
 # ── Load .env if present ──────────────────────────────────────────────────────
 if [[ -f .env ]]; then
@@ -67,11 +68,6 @@ export CONFIG_PATH
 # ── Ensure data directory exists ──────────────────────────────────────────────
 mkdir -p data
 echo "[start.sh] Data directory: $(pwd)/data"
-
-# ── Propagate API key to config env if set ────────────────────────────────────
-if [[ -n "${LLM_API_KEY:-}" ]]; then
-  echo "[start.sh] LLM_API_KEY is set (length=${#LLM_API_KEY})"
-fi
 
 # ── Build and run ─────────────────────────────────────────────────────────────
 if [[ "$MODE" == "dev" ]]; then
