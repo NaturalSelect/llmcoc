@@ -287,7 +287,7 @@ func main() {
 	}
 	signal.Ignore(syscall.SIGPIPE)
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP)
 	defer stop()
 
 	errCh := make(chan error, 1)
