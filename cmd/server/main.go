@@ -285,6 +285,8 @@ func main() {
 		WriteTimeout: 30 * time.Minute, // long AI generation won't be cut off
 		IdleTimeout:  90 * time.Second,
 	}
+	signal.Ignore(syscall.SIGPIPE)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	defer stop()
 
