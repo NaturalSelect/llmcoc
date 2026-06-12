@@ -74,7 +74,7 @@ func checkAntiCheat(ctx context.Context, h agentHandle, gctx GameContext, calls 
 		verdict := AntiCheatVerdict{
 			Verdict: "must_fix",
 			Reason:  "missing_think",
-			Message: "本批次包含副作用工具或你的JSON不合法，必须副作用batch必须包含 think 并在其中写明 ANTI_CHEAT_CONTRACT，请重试本批次, think和要进行的副作用必须被放在同一批次。",
+			Message: "本批次包含副作用工具，副作用batch必须包含 think 并在其中写明 ANTI_CHEAT_CONTRACT，请重试本批次将think和要进行的副作用必须被放在同一批次,以通过系统检查。",
 		}
 		return verdict, false, rejectMessageFromAntiCheat(verdict)
 	}
@@ -162,5 +162,5 @@ func buildAntiCheatPrompt(gctx GameContext, calls []ToolCall, tempNPCs []models.
 }
 
 func rejectMessageFromAntiCheat(verdict AntiCheatVerdict) string {
-	return fmt.Sprintf("SYSTEM REJECT: anti_cheat verdict=%s reason=%s message=%s. You MUST fix the inconsistent tool batch and retry; do not repeat the rejected parameters.", verdict.Verdict, verdict.Reason, verdict.Message)
+	return fmt.Sprintf("SYSTEM REJECT: anti_cheat verdict=%s reason=%s message=%s", verdict.Verdict, verdict.Reason, verdict.Message)
 }
