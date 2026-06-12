@@ -314,7 +314,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			debugf("KP", "session=%d iter=%d rejecting entire batch: response mixed with result-producing tools", sid, iter+1)
 			kpMsgs = append(kpMsgs, llm.ChatMessage{
 				Role:    "user",
-				Content: "SYSTEM REJECT: your entire batch was rejected. response/end_game must be the ONLY action in a batch (except write/hint/introspection/think/update_llm_note). Split into two batches: first call the result-producing tools, then after reading the results call response separately.",
+				Content: "<error>SYSTEM REJECT: your entire batch was rejected. response/end_game must be the ONLY action in a batch (except write/hint/introspection/think/update_llm_note). Split into two batches: first call the result-producing tools, then after reading the results call response separately.</error>",
 			})
 			continue
 		}
@@ -322,7 +322,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			debugf("KP", "session=%d iter=%d rejecting entire batch: empty response", sid, iter+1)
 			kpMsgs = append(kpMsgs, llm.ChatMessage{
 				Role:    "user",
-				Content: "SYSTEM REJECT: empty response",
+				Content: "<error>SYSTEM REJECT: empty response</error>",
 			})
 			continue
 		}
@@ -330,7 +330,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		verdict, allowed, rejectMsg := checkAntiCheat(ctx, handles[models.AgentRoleAntiCheat], gctx, calls, tempNPCs)
 		if !allowed {
 			debugf("anti_cheat", "session=%d iter=%d reject: %s, calls=%+v", sid, iter+1, rejectMsg, calls)
-			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: rejectMsg})
+			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf("<error>%s</error>", rejectMsg)})
 			continue
 		}
 		debugf("anti_cheat", "session=%d iter=%d allow: %s", sid, iter+1, verdict.Reason)
