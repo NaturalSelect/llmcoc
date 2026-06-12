@@ -238,6 +238,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		debugf("KP", "session=%d iter=%d raw_resp=%s",
 			sid, iter+1, rawResp)
 		if len(calls) == 0 {
+			debugf("KP", "session=%d iter=%d no calls, skipping rest of loop", sid, iter+1)
 			continue
 		}
 
@@ -328,7 +329,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 		verdict, allowed, rejectMsg := checkAntiCheat(ctx, handles[models.AgentRoleAntiCheat], gctx, calls, tempNPCs)
 		if !allowed {
-			debugf("anti_cheat", "session=%d iter=%d reject: %s", sid, iter+1, rejectMsg)
+			debugf("anti_cheat", "session=%d iter=%d reject: %s, calls=%+v", sid, iter+1, rejectMsg, calls)
 			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: rejectMsg})
 			continue
 		}
