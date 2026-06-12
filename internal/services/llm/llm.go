@@ -64,26 +64,6 @@ func StripCodeFence(s string) string {
 			return strings.TrimSpace(s)
 		}
 	}
-	start := 0
-	end := len(s)
-	for i := 0; i < len(s)-2; i++ {
-		if s[i] == '`' && s[i+1] == '`' && s[i+2] == '`' {
-			if start == 0 {
-				for j := i + 3; j < len(s); j++ {
-					if s[j] == '\n' {
-						start = j + 1
-						break
-					}
-				}
-			} else {
-				end = i
-				break
-			}
-		}
-	}
-	if start > 0 {
-		return s[start:end]
-	}
 	return s
 }
 

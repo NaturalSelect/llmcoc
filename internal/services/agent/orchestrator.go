@@ -482,6 +482,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	if writerState.Buffer == "" {
 		writerState.Buffer = "(KP思考中,请稍后重试。)"
 	}
+	if kpNarration == "" {
+		kpNarration = "KP: 本轮未生成KP独白。"
+	}
 	saveWriterHistory(gctx.Session.ID, writerState)
 	return RunOutput{WriterText: writerState.Buffer, KPReply: kpNarration}, nil
 }
