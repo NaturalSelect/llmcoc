@@ -102,7 +102,12 @@ window.COC.sessions = {
                     },
 
                     async endSession() {
-                        if (!confirm('确认结束游戏？系统将进行成长评估（可能需要一些时间）。')) return;
+                        const playerCount = this.currentSession?.players?.length || 0;
+                        const costPerPlayer = 200;
+                        const msg = playerCount > 1
+                            ? `确认结束游戏？${playerCount}名玩家每人将消耗${costPerPlayer}金币（共${costPerPlayer * playerCount}金币），系统将进行成长评估。`
+                            : `确认结束游戏？将消耗${costPerPlayer}金币，系统将进行成长评估。`;
+                        if (!confirm(msg)) return;
                         this.endingSession = true;
                         try {
                             const r = await this.api('POST', '/api/sessions/' + this.currentSession.id + '/end');

@@ -960,6 +960,31 @@ func EndSession(c *gin.Context) {
 		return
 	}
 
+	// Deduct 200 coins from every player in the session.
+	const endSessionCost = 200
+	var brokePlayers []string
+	for i := range session.Players {
+		p := &session.Players[i]
+		if p.User.Coins < endSessionCost {
+			brokePlayers = append(brokePlayers, p.User.Username)
+		}
+	}
+	if len(brokePlayers) > 0 {
+		c.JSON(http.StatusPaymentRequired, gin.H{
+			"error":        "金币不足，结束游戏每人需要消耗200金币",
+			"insufficient": brokePlayers,
+		})
+		return
+	}
+	for i := range session.Players {
+		p := &session.Players[i]
+		newCoins := p.User.Coins - endSessionCost
+		if err := models.DB.Model(&p.User).Update("coins", newCoins).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣费失败: " + p.User.Username})
+			return
+		}
+	}
+
 	models.DB.Model(&session).Update("status", models.SessionStatusEnded)
 
 	// Load recent messages as context for evaluator and growth agents
