@@ -428,6 +428,47 @@
             pointer-events: auto;
         }
 
+        /* ── Toast ──────────────────────────────────────────── */
+        .toast-container {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .toast {
+            font-family: system-ui, sans-serif;
+            font-size: 0.8125rem;
+            padding: 0.625rem 1rem;
+            border-radius: 3px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+            pointer-events: auto;
+            max-width: 360px;
+            word-break: break-word;
+            animation: toastIn 0.25s ease-out;
+        }
+
+        .toast-success {
+            background: #0d2d0d;
+            border: 1px solid #1d4a1d;
+            color: #7acc7a;
+        }
+
+        .toast-error {
+            background: #2d0d0d;
+            border: 1px solid #4a1d1d;
+            color: #e07070;
+        }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: none; }
+        }
+
         /* Desktop: non-draggable, keep fixed position */
         @media (min-width: 768px) {
             .drag-panel {

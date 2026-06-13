@@ -1515,6 +1515,9 @@
         </div>
 
         <!-- ══════════════════════════════════════════════════════════════ SCRIPT -->
+        <div class="toast-container" x-show="toast.show" x-transition>
+            <div class="toast" :class="'toast-' + toast.type" x-text="toast.message"></div>
+        </div>
         <script src="./js/app.js"></script>
         <script src="./js/dashboard.js"></script>
         <script src="./js/sessions.js"></script>

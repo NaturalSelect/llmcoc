@@ -14,7 +14,7 @@ window.COC.dashboard = {
                             this.showToast('该玩家未绑定人物卡', 'error');
                             return;
                         }
-                        if (player.user_id !== this.user?.id) {
+                        if (player.user_id !== this.user?.id && this.user?.role !== 'admin') {
                             this.showToast('只能查看自己的角色详细信息', 'error');
                             return;
                         }
