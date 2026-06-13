@@ -173,7 +173,7 @@ func (rollDiceAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	dcr := executeSingleDiceCheck(*call.Dice, actx.GCtx.Session.Players)
 	debugf("tool", "session=%d roll_dice result=%s", actx.Sid, formatSingleDiceResult(dcr))
 	if !dcr.Hidden {
-		*actx.DiceMsg = formatSingleDiceResult(dcr)
+		*actx.DiceMsg += formatSingleDiceResult(dcr)
 	}
 	return []ToolResult{{Action: ToolRollDice, Result: formatSingleDiceResult(dcr)}}
 }
