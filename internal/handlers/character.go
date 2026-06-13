@@ -342,8 +342,12 @@ func UpdateCharacter(c *gin.Context) {
 		return
 	}
 	if card.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
-		return
+		var user models.User
+		models.DB.First(&user, userID)
+		if user.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+			return
+		}
 	}
 
 	var req CreateCharacterReq
@@ -381,8 +385,12 @@ func DeleteCharacter(c *gin.Context) {
 		return
 	}
 	if card.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权删除此人物卡"})
-		return
+		var user models.User
+		models.DB.First(&user, userID)
+		if user.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权删除此人物卡"})
+			return
+		}
 	}
 
 	// Soft delete: set is_active = false
@@ -404,8 +412,12 @@ func GetCharacterInventory(c *gin.Context) {
 		return
 	}
 	if card.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此人物卡"})
-		return
+		var user models.User
+		models.DB.First(&user, userID)
+		if user.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此人物卡"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -424,8 +436,12 @@ func AddCharacterInventoryItem(c *gin.Context) {
 		return
 	}
 	if card.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
-		return
+		var user models.User
+		models.DB.First(&user, userID)
+		if user.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+			return
+		}
 	}
 
 	var req manageInventoryReq
@@ -478,8 +494,6 @@ func RemoveCharacterInventoryItem(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
 			return
 		}
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
-		return
 	}
 
 	list := card.Inventory.Data
@@ -616,19 +630,26 @@ func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 		return
 	}
 	if card.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
-		return
+		var u models.User
+		models.DB.First(&u, userID)
+		if u.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+			return
+		}
 	}
 
+	isOwner := card.UserID == userID
 	var user models.User
-	models.DB.First(&user, userID)
-	if user.Coins < regenerateAppearanceCost {
-		c.JSON(http.StatusPaymentRequired, gin.H{
-			"error":   "金币不足",
-			"need":    regenerateAppearanceCost,
-			"current": user.Coins,
-		})
-		return
+	if isOwner {
+		models.DB.First(&user, userID)
+		if user.Coins < regenerateAppearanceCost {
+			c.JSON(http.StatusPaymentRequired, gin.H{
+				"error":   "金币不足",
+				"need":    regenerateAppearanceCost,
+				"current": user.Coins,
+			})
+			return
+		}
 	}
 
 	appearance, err := agent.RegenerateAppearance(c.Request.Context(), &card)
@@ -644,10 +665,12 @@ func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 		}
 	}()
 
-	if err := tx.Model(&user).Update("coins", user.Coins-regenerateAppearanceCost).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
-		return
+	if isOwner {
+		if err := tx.Model(&user).Update("coins", user.Coins-regenerateAppearanceCost).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
+			return
+		}
 	}
 
 	card.Appearance = appearance
@@ -662,11 +685,12 @@ func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 		return
 	}
 
-	models.DB.First(&user, userID)
-	c.JSON(http.StatusOK, gin.H{
-		"appearance": appearance,
-		"coins":      user.Coins,
-	})
+	resp := gin.H{"appearance": appearance}
+	if isOwner {
+		models.DB.First(&user, userID)
+		resp["coins"] = user.Coins
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 const regenerateBackstoryCost = 100
@@ -682,19 +706,26 @@ func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 		return
 	}
 	if card.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
-		return
+		var u models.User
+		models.DB.First(&u, userID)
+		if u.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+			return
+		}
 	}
 
+	isOwner := card.UserID == userID
 	var user models.User
-	models.DB.First(&user, userID)
-	if user.Coins < regenerateBackstoryCost {
-		c.JSON(http.StatusPaymentRequired, gin.H{
-			"error":   "金币不足",
-			"need":    regenerateBackstoryCost,
-			"current": user.Coins,
-		})
-		return
+	if isOwner {
+		models.DB.First(&user, userID)
+		if user.Coins < regenerateBackstoryCost {
+			c.JSON(http.StatusPaymentRequired, gin.H{
+				"error":   "金币不足",
+				"need":    regenerateBackstoryCost,
+				"current": user.Coins,
+			})
+			return
+		}
 	}
 
 	backstory, err := agent.RegenerateBackstory(c.Request.Context(), &card)
@@ -710,10 +741,12 @@ func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 		}
 	}()
 
-	if err := tx.Model(&user).Update("coins", user.Coins-regenerateBackstoryCost).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
-		return
+	if isOwner {
+		if err := tx.Model(&user).Update("coins", user.Coins-regenerateBackstoryCost).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
+			return
+		}
 	}
 
 	card.Backstory = backstory
@@ -728,11 +761,12 @@ func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 		return
 	}
 
-	models.DB.First(&user, userID)
-	c.JSON(http.StatusOK, gin.H{
-		"backstory": backstory,
-		"coins":     user.Coins,
-	})
+	resp := gin.H{"backstory": backstory}
+	if isOwner {
+		models.DB.First(&user, userID)
+		resp["coins"] = user.Coins
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 const regenerateTraitsCost = 100
@@ -748,19 +782,26 @@ func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
 		return
 	}
 	if card.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
-		return
+		var u models.User
+		models.DB.First(&u, userID)
+		if u.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+			return
+		}
 	}
 
+	isOwner := card.UserID == userID
 	var user models.User
-	models.DB.First(&user, userID)
-	if user.Coins < regenerateTraitsCost {
-		c.JSON(http.StatusPaymentRequired, gin.H{
-			"error":   "金币不足",
-			"need":    regenerateTraitsCost,
-			"current": user.Coins,
-		})
-		return
+	if isOwner {
+		models.DB.First(&user, userID)
+		if user.Coins < regenerateTraitsCost {
+			c.JSON(http.StatusPaymentRequired, gin.H{
+				"error":   "金币不足",
+				"need":    regenerateTraitsCost,
+				"current": user.Coins,
+			})
+			return
+		}
 	}
 
 	traits, err := agent.RegenerateTraits(c.Request.Context(), &card)
@@ -776,10 +817,12 @@ func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
 		}
 	}()
 
-	if err := tx.Model(&user).Update("coins", user.Coins-regenerateTraitsCost).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
-		return
+	if isOwner {
+		if err := tx.Model(&user).Update("coins", user.Coins-regenerateTraitsCost).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
+			return
+		}
 	}
 
 	card.Traits = traits
@@ -794,11 +837,12 @@ func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
 		return
 	}
 
-	models.DB.First(&user, userID)
-	c.JSON(http.StatusOK, gin.H{
-		"traits": traits,
-		"coins":  user.Coins,
-	})
+	resp := gin.H{"traits": traits}
+	if isOwner {
+		models.DB.First(&user, userID)
+		resp["coins"] = user.Coins
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 const reviveBaseCost = 2000
@@ -825,25 +869,37 @@ func ReviveCharacter(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 
 	var card models.CharacterCard
-	if err := models.DB.Where("id = ? AND user_id = ? AND is_deleted = ?", id, userID, false).First(&card).Error; err != nil {
+	if err := models.DB.Where("id = ? AND is_deleted = ?", id, false).First(&card).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
 		return
+	}
+	if card.UserID != userID {
+		var u models.User
+		models.DB.First(&u, userID)
+		if u.Role != "admin" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+			return
+		}
 	}
 	if card.IsActive {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该调查员尚未死亡，无需复活"})
 		return
 	}
 
+	isOwner := card.UserID == userID
 	var user models.User
-	models.DB.First(&user, userID)
-	cost := reviveCostFor(user.ReviveCount)
-	if user.Coins < cost {
-		c.JSON(http.StatusPaymentRequired, gin.H{
-			"error":   "金币不足",
-			"need":    cost,
-			"current": user.Coins,
-		})
-		return
+	var cost int
+	if isOwner {
+		models.DB.First(&user, userID)
+		cost = reviveCostFor(user.ReviveCount)
+		if user.Coins < cost {
+			c.JSON(http.StatusPaymentRequired, gin.H{
+				"error":   "金币不足",
+				"need":    cost,
+				"current": user.Coins,
+			})
+			return
+		}
 	}
 
 	tx := models.DB.Begin()
@@ -853,13 +909,15 @@ func ReviveCharacter(c *gin.Context) {
 		}
 	}()
 
-	if err := tx.Model(&user).Updates(map[string]any{
-		"coins":        user.Coins - cost,
-		"revive_count": user.ReviveCount + 1,
-	}).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
-		return
+	if isOwner {
+		if err := tx.Model(&user).Updates(map[string]any{
+			"coins":        user.Coins - cost,
+			"revive_count": user.ReviveCount + 1,
+		}).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
+			return
+		}
 	}
 
 	// Randomly lose half inventory
@@ -897,15 +955,18 @@ func ReviveCharacter(c *gin.Context) {
 		return
 	}
 
-	models.DB.First(&user, userID)
-	log.Printf("[revive] user_id=%d card_id=%d cost=%d coins_left=%d inv_kept=%d spells_kept=%d",
-		userID, card.ID, cost, user.Coins, len(inv), len(spells))
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"message":        "复活成功",
-		"coins":          user.Coins,
-		"revive_count":   user.ReviveCount,
 		"character_card": card,
-	})
+	}
+	if isOwner {
+		models.DB.First(&user, userID)
+		resp["coins"] = user.Coins
+		resp["revive_count"] = user.ReviveCount
+		log.Printf("[revive] user_id=%d card_id=%d cost=%d coins_left=%d inv_kept=%d spells_kept=%d",
+			userID, card.ID, cost, user.Coins, len(inv), len(spells))
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // DeleteDeadCharacter soft-deletes a dead (is_active=false) character card by setting is_deleted=true.
@@ -914,9 +975,17 @@ func DeleteDeadCharacter(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 
 	var card models.CharacterCard
-	if err := models.DB.Where("id = ? AND user_id = ?", id, userID).First(&card).Error; err != nil {
+	if err := models.DB.Where("id = ?", id).First(&card).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
 		return
+	}
+	if card.UserID != userID {
+		var u models.User
+		models.DB.First(&u, userID)
+		if u.Role != "admin" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+			return
+		}
 	}
 	if card.IsActive {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只能删除已阵亡的调查员"})
