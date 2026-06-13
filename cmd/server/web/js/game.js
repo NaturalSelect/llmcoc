@@ -369,15 +369,6 @@ window.COC.game = {
                         return { writerText, narrationText };
                     },
 
-                    // ═══════════════════════════════════════════════════════
-                    // Character card helper for draggable panel
-                    // ═══════════════════════════════════════════════════════
-                    getMyGameChar() {
-                        const uid = this.user?.id;
-                        const player = this.currentSession?.players?.find(p => p.user_id === uid || p.user?.id === uid);
-                        return player?.character_card || null;
-                    },
-
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -446,8 +437,8 @@ window.draggablePanel = function() {
             }
             const vw = window.innerWidth;
             const vh = window.innerHeight;
-            const panelW = 230;
-            const panelH = Math.min(350, vh * 0.55);
+            const panelW = 60;
+            const panelH = 110;
             this.pos = {
                 right: clamp(this.dragStartRight + dx, 0, vw - panelW),
                 bottom: clamp(this.dragStartBottom + dy, 0, vh - panelH),
@@ -481,8 +472,8 @@ window.draggablePanel = function() {
                 }
                 const vw = window.innerWidth;
                 const vh = window.innerHeight;
-                const panelW = 230;
-                const panelH = Math.min(350, vh * 0.55);
+                const panelW = 60;
+                const panelH = 110;
                 self.pos = {
                     right: clamp(self.dragStartRight + dx, 0, vw - panelW),
                     bottom: clamp(self.dragStartBottom + dy, 0, vh - panelH),
@@ -497,21 +488,6 @@ window.draggablePanel = function() {
             }
             document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', onUp);
-        },
-
-        onBtnTouch(e, callback) {
-            if (this.wasDragged) {
-                e.preventDefault();
-                return;
-            }
-            const self = this;
-            function onEnd(ev) {
-                if (!self.wasDragged && typeof callback === 'function') {
-                    callback();
-                }
-                document.removeEventListener('touchend', onEnd);
-            }
-            document.addEventListener('touchend', onEnd, { once: true });
         },
     };
 };
