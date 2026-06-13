@@ -475,7 +475,7 @@ func AddCharacterInventoryItem(c *gin.Context) {
 func RemoveCharacterInventoryItem(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	item := strings.TrimSpace(c.Param("item"))
+	item := strings.TrimSpace(strings.TrimPrefix(c.Param("item"), "/"))
 	if item == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "物品名不能为空"})
 		return
