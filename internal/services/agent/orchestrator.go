@@ -1379,7 +1379,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		case "major":
 			line += "【重伤】"
 		case "dying":
-			line += "【濒死】"
+			line += "【濒死】(请进行CON判定)"
 		case "dead":
 			line += "【已死亡】"
 		}

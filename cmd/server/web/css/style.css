@@ -405,3 +405,52 @@
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
             background: #3d3228;
         }
+
+        /* ── Draggable Panel (mobile character card + buttons) ── */
+        .drag-panel {
+            right: 16px;
+            bottom: 24px;
+            max-width: 220px;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .drag-panel.dragging {
+            opacity: 0.92;
+            z-index: 60;
+        }
+
+        .drag-panel.drag-idle {
+            transition: all 0.3s ease-out;
+        }
+
+        .drag-char-card {
+            background: #131110;
+            border: 1px solid #252018;
+            min-width: 180px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .drag-btn {
+            pointer-events: auto;
+        }
+
+        /* Snap back animation when released */
+        @keyframes snapBack {
+            from { opacity: 0.85; }
+            to { opacity: 1; }
+        }
+
+        .drag-panel.snap-back {
+            animation: snapBack 0.3s ease-out;
+        }
+
+        /* Desktop: non-draggable, keep fixed position */
+        @media (min-width: 768px) {
+            .drag-panel {
+                right: 16px !important;
+                bottom: 24px !important;
+            }
+        }

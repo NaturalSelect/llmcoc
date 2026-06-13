@@ -369,4 +369,149 @@ window.COC.game = {
                         return { writerText, narrationText };
                     },
 
+                    // ═══════════════════════════════════════════════════════
+                    // Character card helper for draggable panel
+                    // ═══════════════════════════════════════════════════════
+                    getMyGameChar() {
+                        const uid = this.user?.id;
+                        const player = this.currentSession?.players?.find(p => p.user_id === uid || p.user?.id === uid);
+                        return player?.character_card || null;
+                    },
+
+};
+
+// ═══════════════════════════════════════════════════════════════
+// DraggablePanel — Alpine component for mobile drag
+// ═══════════════════════════════════════════════════════════════
+window.draggablePanel = function() {
+    const STORAGE_KEY = 'coc_drag_panel_pos';
+    const DRAG_THRESHOLD = 8;
+
+    function loadPosition() {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                const p = JSON.parse(saved);
+                if (typeof p.right === 'number' && typeof p.bottom === 'number') {
+                    return p;
+                }
+            }
+        } catch (_) {}
+        return { right: 16, bottom: 24 };
+    }
+
+    function savePosition(pos) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pos)); } catch (_) {}
+    }
+
+    function clamp(val, min, max) {
+        return Math.max(min, Math.min(max, val));
+    }
+
+    return {
+        pos: loadPosition(),
+        isDragging: false,
+        wasDragged: false,
+        dragStartX: 0,
+        dragStartY: 0,
+        dragStartRight: 0,
+        dragStartBottom: 0,
+        movedDistance: 0,
+
+        initDrag(el) {
+            this.pos = loadPosition();
+        },
+
+        onTouchStart(e) {
+            if (window.innerWidth >= 768) return;
+            if (!e.touches || !e.touches.length) return;
+            const t = e.touches[0];
+            this.dragStartX = t.clientX;
+            this.dragStartY = t.clientY;
+            this.dragStartRight = this.pos.right;
+            this.dragStartBottom = this.pos.bottom;
+            this.isDragging = true;
+            this.wasDragged = false;
+            this.movedDistance = 0;
+        },
+
+        onTouchMove(e) {
+            if (!this.isDragging || !e.touches || !e.touches.length) return;
+            const t = e.touches[0];
+            const dx = this.dragStartX - t.clientX;
+            const dy = this.dragStartY - t.clientY;
+            this.movedDistance = Math.abs(dx) + Math.abs(dy);
+            if (this.movedDistance > DRAG_THRESHOLD) {
+                this.wasDragged = true;
+            }
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const panelW = 230;
+            const panelH = Math.min(350, vh * 0.55);
+            this.pos = {
+                right: clamp(this.dragStartRight + dx, 0, vw - panelW),
+                bottom: clamp(this.dragStartBottom + dy, 0, vh - panelH),
+            };
+        },
+
+        onTouchEnd(e) {
+            this.isDragging = false;
+            savePosition(this.pos);
+            const self = this;
+            setTimeout(function() { self.wasDragged = false; }, 150);
+        },
+
+        onMouseDown(e) {
+            if (window.innerWidth >= 768) return;
+            this.dragStartX = e.clientX;
+            this.dragStartY = e.clientY;
+            this.dragStartRight = this.pos.right;
+            this.dragStartBottom = this.pos.bottom;
+            this.isDragging = true;
+            this.wasDragged = false;
+            this.movedDistance = 0;
+
+            const self = this;
+            function onMove(ev) {
+                const dx = self.dragStartX - ev.clientX;
+                const dy = self.dragStartY - ev.clientY;
+                self.movedDistance = Math.abs(dx) + Math.abs(dy);
+                if (self.movedDistance > DRAG_THRESHOLD) {
+                    self.wasDragged = true;
+                }
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                const panelW = 230;
+                const panelH = Math.min(350, vh * 0.55);
+                self.pos = {
+                    right: clamp(self.dragStartRight + dx, 0, vw - panelW),
+                    bottom: clamp(self.dragStartBottom + dy, 0, vh - panelH),
+                };
+            }
+            function onUp() {
+                self.isDragging = false;
+                savePosition(self.pos);
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                setTimeout(function() { self.wasDragged = false; }, 150);
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        },
+
+        onBtnTouch(e, callback) {
+            if (this.wasDragged) {
+                e.preventDefault();
+                return;
+            }
+            const self = this;
+            function onEnd(ev) {
+                if (!self.wasDragged && typeof callback === 'function') {
+                    callback();
+                }
+                document.removeEventListener('touchend', onEnd);
+            }
+            document.addEventListener('touchend', onEnd, { once: true });
+        },
+    };
 };
