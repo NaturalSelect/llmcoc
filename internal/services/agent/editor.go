@@ -19,7 +19,7 @@ var stateChangeFields = []string{
 	"str", "con", "siz", "dex", "app", "int", "edu",
 }
 
-func parseStateChange(change string) (CharacterUpdate, bool) {
+func parseStateChange(change string) (CharacterUpdate, string, bool) {
 	change = strings.TrimSpace(change)
 	// Check longest field name first to avoid prefix collisions.
 	for _, field := range stateChangeFields {
@@ -41,19 +41,34 @@ func parseStateChange(change string) (CharacterUpdate, bool) {
 				CharacterName: charName,
 				Field:         strings.ToLower(field),
 				NewValue:      strings.TrimSpace(deltaStr),
-			}, true
+			}, "", true
 		}
 
 		var delta int
-		fmt.Sscanf(deltaStr, "%d", &delta)
+		// Enforce +/- sign for numeric fields: positive must have '+', negative must have '-'.
+		// Plain numbers without a sign (e.g. "40") are rejected.
+		if !strings.HasPrefix(deltaStr, "+") && !strings.HasPrefix(deltaStr, "-") {
+			errMsg := fmt.Sprintf("[%s] 数值字段缺少+/-符号: %q，正确格式如 %s +40(角色名) 或 %s -3(角色名)",
+				field, change, field, field)
+			log.Printf("[editor] %s", errMsg)
+			return CharacterUpdate{}, errMsg, false
+		}
+		_, scanErr := fmt.Sscanf(deltaStr, "%d", &delta)
+		if scanErr != nil {
+			errMsg := fmt.Sprintf("[%s] 无法解析数值: %q，正确格式如 %s +40(角色名) 或 %s -3(角色名)",
+				field, deltaStr, field, field)
+			log.Printf("[editor] %s", errMsg)
+			return CharacterUpdate{}, errMsg, false
+		}
 		return CharacterUpdate{
 			CharacterName: charName,
 			Field:         strings.ToLower(field),
 			Delta:         delta,
-		}, true
+		}, "", true
 	}
-	log.Printf("[editor] unrecognised change string: %q", change)
-	return CharacterUpdate{}, false
+	errMsg := fmt.Sprintf("无法识别的变更字段: %q，支持的字段: HP, SAN, MP, POW, STR, CON, SIZ, DEX, APP, INT, EDU, cthulhu_mythos, race, occupation, wound_state。正确格式如 HP -3(角色名)", change)
+	log.Printf("[editor] %s", errMsg)
+	return CharacterUpdate{}, errMsg, false
 }
 
 func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {

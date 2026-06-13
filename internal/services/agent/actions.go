@@ -239,9 +239,18 @@ func (updateCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolR
 		return nil
 	}
 	debugf("tool", "session=%d update_characters changes=%v", actx.Sid, call.Changes)
+
+	// First pass: parse all changes; if any fails, reject the entire batch.
+	type pendingUpdate struct {
+		upd      CharacterUpdate
+		isPlayer bool
+	}
+	var pending []pendingUpdate
+	var errs []string
 	for _, change := range call.Changes {
-		upd, ok := parseStateChange(change)
+		upd, errMsg, ok := parseStateChange(change)
 		if !ok {
+			errs = append(errs, errMsg)
 			continue
 		}
 		isPlayer := false
@@ -251,11 +260,19 @@ func (updateCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolR
 				break
 			}
 		}
-		if isPlayer {
-			applyCharacterUpdate(upd, actx.GCtx.Session.Players)
+		pending = append(pending, pendingUpdate{upd, isPlayer})
+	}
+	if len(errs) > 0 {
+		return []ToolResult{{Action: ToolUpdateCharacters, Result: "[update_characters 解析失败，整批未应用，请修正后重试]:\n" + strings.Join(errs, "\n")}}
+	}
+
+	// All parsed successfully — apply.
+	for _, p := range pending {
+		if p.isPlayer {
+			applyCharacterUpdate(p.upd, actx.GCtx.Session.Players)
 		} else {
-			upd.IsNPC = true
-			applyNPCUpdate(upd, actx.GCtx.Session.ID, *actx.TempNPCs, actx.GCtx.Session.Scenario.Content.Data.NPCs)
+			p.upd.IsNPC = true
+			applyNPCUpdate(p.upd, actx.GCtx.Session.ID, *actx.TempNPCs, actx.GCtx.Session.Scenario.Content.Data.NPCs)
 		}
 	}
 	return []ToolResult{{Action: ToolUpdateCharacters, Result: "已更新:" + strings.Join(call.Changes, "、")}}
@@ -443,25 +460,33 @@ func (updateNPCCardAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 		return []ToolResult{{Action: ToolUpdateNPCCard, Result: "错误: update_npc_card 参数不足:需要 npc_name 和 changes"}}
 	}
 	debugf("tool", "session=%d update_npc_card npc=%q changes=%v", actx.Sid, call.NPCName, call.Changes)
-	applied := make([]string, 0, len(call.Changes))
+
+	// First pass: parse all changes; if any fails, reject the entire batch.
+	var pending []CharacterUpdate
+	var errs []string
 	for _, change := range call.Changes {
-		upd, ok := parseStateChange(change)
+		upd, errMsg, ok := parseStateChange(change)
 		if !ok {
+			errs = append(errs, errMsg)
 			continue
 		}
 		if upd.CharacterName == "" {
 			upd.CharacterName = call.NPCName
 		}
 		upd.IsNPC = true
+		pending = append(pending, upd)
+	}
+	if len(errs) > 0 {
+		return []ToolResult{{Action: ToolUpdateNPCCard, Result: "[update_npc_card 解析失败，整批未应用，请修正后重试]:\n" + strings.Join(errs, "\n")}}
+	}
+
+	// All parsed successfully — apply.
+	for _, upd := range pending {
 		applyNPCUpdate(upd, actx.GCtx.Session.ID, *actx.TempNPCs, actx.GCtx.Session.Scenario.Content.Data.NPCs)
-		applied = append(applied, change)
 	}
 	*actx.TempNPCs = nil
 	models.DB.Where("session_id = ?", actx.GCtx.Session.ID).Find(actx.TempNPCs)
-	if len(applied) == 0 {
-		return []ToolResult{{Action: ToolUpdateNPCCard, Result: "未识别可应用的变更"}}
-	}
-	return []ToolResult{{Action: ToolUpdateNPCCard, Result: "已更新NPC:" + strings.Join(applied, "、")}}
+	return []ToolResult{{Action: ToolUpdateNPCCard, Result: "已更新NPC:" + strings.Join(call.Changes, "、")}}
 }
 
 // ── Query actions ─────────────────────────────────────────────────────────────
