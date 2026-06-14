@@ -247,7 +247,7 @@ func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (msg 
 		msg, err = p.chat(ctx, messages, false)
 		if err != nil {
 			log.Printf("[llm] Chat error: %v", err)
-			return "", err
+			continue
 		}
 		if msg == "" {
 			continue
@@ -266,7 +266,7 @@ func (p *openAIProvider) JsonChat(ctx context.Context, messages []ChatMessage) (
 		msg, err := p.chat(ctx, messages, true)
 		if err != nil {
 			log.Printf("[llm] JsonChat error: %v", err)
-			return "", err
+			continue
 		}
 		if msg == "" {
 			continue
