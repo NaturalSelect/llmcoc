@@ -468,13 +468,18 @@
                                             <div class="narrative-container">
                                                 <template x-if="msg.writer_text || msg.narration_text">
                                                     <div>
-                                                        <p x-show="stripAckContent(msg.writer_text).trim()"
-                                                            class="narrative" x-text="stripAckContent(msg.writer_text)">
-                                                        </p>
                                                         <p x-show="stripAckContent(msg.narration_text).trim()"
                                                             class="narration"
-                                                            :class="stripAckContent(msg.writer_text).trim() ? 'narration-sep' : ''"
                                                             x-text="'KP：' + stripAckContent(msg.narration_text)"></p>
+                                                        <p x-show="stripAckContent(msg.writer_text).trim()"
+                                                            class="narrative"
+                                                            :class="(stripAckContent(msg.narration_text).trim() ? 'narrative-after-kp ' : '') + (msg._writer_streaming ? 'cursor' : '')"
+                                                            x-text="stripAckContent(msg.writer_text)">
+                                                        </p>
+                                                        <p x-show="msg._writer_streaming && !stripAckContent(msg.writer_text).trim()"
+                                                            class="narrative narrative-after-kp cursor text-amber-200/60">
+                                                            叙事正文生成中…
+                                                        </p>
                                                     </div>
                                                 </template>
                                                 <template x-if="!msg.writer_text && !msg.narration_text">
@@ -505,18 +510,16 @@
                                         <div class="flex gap-1">
                                             <span class="dot"></span><span class="dot"></span><span class="dot"></span>
                                         </div>
-                                        <span class="text-xs text-red-900 italic" style="font-family:system-ui">
-                                            Agent 团队运行中，请稍候…
-                                        </span>
+                                        <span class="text-xs text-red-900 italic" style="font-family:system-ui"
+                                            x-text="progressText || 'Agent 团队运行中，请稍候…'"></span>
                                     </div>
 
-                                    <p x-show="stripAckContent(writerBuffer).trim()" class="narrative"
-                                        :class="stripAckContent(narrationBuffer).trim() ? '' : 'cursor'"
-                                        x-text="stripAckContent(writerBuffer)"></p>
                                     <p x-show="stripAckContent(narrationBuffer).trim()" class="narration cursor"
-                                        :class="stripAckContent(writerBuffer).trim() ? 'narration-sep' : ''"
                                         x-text="'KP：' + stripAckContent(narrationBuffer)">
                                     </p>
+                                    <p x-show="stripAckContent(writerBuffer).trim()" class="narrative"
+                                        :class="stripAckContent(narrationBuffer).trim() ? 'narrative-after-kp cursor' : 'cursor'"
+                                        x-text="stripAckContent(writerBuffer)"></p>
                                 </div>
 
                                 <!-- Waiting for other players -->
@@ -530,9 +533,24 @@
 
                             <!-- 输入区 -->
                             <div class="card border-t p-3 bg-[#131110] border-[#252018] shrink-0">
+                                <template x-if="activeResponseSuggestions()">
+                                    <div class="response-suggestions">
+                                        <div class="response-suggestions-head">推荐行动</div>
+                                        <div class="response-suggestions-list">
+                                            <template x-for="(opt, idx) in activeResponseSuggestions().options"
+                                                :key="idx">
+                                                <button type="button" class="response-suggestion"
+                                                    @click="appendResponseSuggestion(opt)"
+                                                    x-text="opt"></button>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
                                 <div class="flex flex-col sm:flex-row gap-2">
                                     <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()"
-                                        placeholder="描述你的行动… (Ctrl+Enter 发送)" rows="2"
+                                        id="chatInputBox"
+                                        placeholder="描述你的行动… (Ctrl+Enter 发送)"
+                                        rows="2"
                                         :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers"
                                         class="inp flex-1 resize-none bg-[#0a0908] focus:border-amber-700 transition-colors"
                                         style="line-height:1.5"></textarea>

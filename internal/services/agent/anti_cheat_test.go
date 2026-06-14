@@ -25,6 +25,19 @@ func (f *fakeProvider) Chat(ctx context.Context, messages []llm.ChatMessage) (st
 	return f.resp, nil
 }
 
+func (f *fakeProvider) ChatStream(ctx context.Context, messages []llm.ChatMessage) (<-chan string, <-chan error, error) {
+	tokenCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+	if f.err != nil {
+		errCh <- f.err
+	} else {
+		tokenCh <- f.resp
+	}
+	close(tokenCh)
+	close(errCh)
+	return tokenCh, errCh, nil
+}
+
 func (f *fakeProvider) SetJsonOutput(enabled bool) {}
 
 func (f *fakeProvider) JsonChat(ctx context.Context, messages []llm.ChatMessage) (string, error) {
@@ -42,6 +55,18 @@ func TestToolCallUnmarshalPreservesThink(t *testing.T) {
 	}
 	if calls[0].Think != "保持手榴弹原属性，仅叙事换皮" {
 		t.Fatalf("think not preserved: %q", calls[0].Think)
+	}
+}
+
+func TestCleanDuplicateEmptyReplyKeepsNonEmptyReply(t *testing.T) {
+	raw := `[{"action":"response","reply":"正常回复","ack":[],"reply":""}]`
+	cleaned := cleanDuplicateEmptyReply(raw)
+	var calls []ToolCall
+	if err := json.Unmarshal([]byte(cleaned), &calls); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+	if len(calls) != 1 || calls[0].Reply != "正常回复" {
+		t.Fatalf("reply = %q, want %q", calls[0].Reply, "正常回复")
 	}
 }
 
@@ -85,7 +110,9 @@ func TestCheckAntiCheatRejectsKPInconsistency(t *testing.T) {
 	if verdict.Verdict != "must_fix" {
 		t.Fatalf("unexpected verdict: %+v", verdict)
 	}
-	if !strings.Contains(rejectMsg, "SYSTEM REJECT: anti_cheat verdict=must_fix") || !strings.Contains(rejectMsg, "仅叙事换皮") || !strings.Contains(rejectMsg, "MUST fix") {
+	if !strings.Contains(rejectMsg, "SYSTEM REJECT: anti_cheat verdict=must_fix") ||
+		!strings.Contains(rejectMsg, "think承诺仅换皮") ||
+		!strings.Contains(rejectMsg, "只能写属性同原物品/仅叙事换皮") {
 		t.Fatalf("unexpected reject message: %q", rejectMsg)
 	}
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -23,16 +24,18 @@ import (
 
 func initTestDB(t *testing.T) {
 	t.Helper()
-	// Each test gets its own named in-memory DB so concurrent/sequential tests
-	// don't share state via the SQLite shared-cache.
-	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared",
-		strings.ReplaceAll(t.Name(), "/", "_"))
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+	// 每个测试使用独立内存库,并限制单连接避免SQLite多连接看不到schema。
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.CharacterCard{},
@@ -55,7 +58,10 @@ func initTestDB(t *testing.T) {
 	}
 	prev := models.DB
 	models.DB = db
-	t.Cleanup(func() { models.DB = prev })
+	t.Cleanup(func() {
+		models.DB = prev
+		_ = sqlDB.Close()
+	})
 }
 
 // seedPlayingSession creates a scenario, user, playing session, character and
@@ -134,10 +140,13 @@ func makeTestRouter(h *SessionHandlers, userID uint, username string) *gin.Engin
 	return r
 }
 
-// parseSSE returns a map[eventType][]data parsed from an SSE response body.
-// Gin's SSE encoder writes "event:name" and "data:value" (no space after colon).
-func parseSSE(body string) map[string][]string {
-	events := map[string][]string{}
+type parsedSSEEvent struct {
+	name string
+	data string
+}
+
+func parseSSEEvents(body string) []parsedSSEEvent {
+	var events []parsedSSEEvent
 	scanner := bufio.NewScanner(strings.NewReader(body))
 	var curEvent string
 	for scanner.Scan() {
@@ -147,8 +156,26 @@ func parseSSE(body string) map[string][]string {
 			curEvent = strings.TrimPrefix(line, "event:")
 		case strings.HasPrefix(line, "data:"):
 			data := strings.TrimPrefix(line, "data:")
-			events[curEvent] = append(events[curEvent], data)
+			events = append(events, parsedSSEEvent{name: curEvent, data: data})
 		}
+	}
+	return events
+}
+
+func firstSSEEventIndex(events []parsedSSEEvent, name string) int {
+	for i, event := range events {
+		if event.name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// parseSSE 按事件类型聚合SSE响应数据。
+func parseSSE(body string) map[string][]string {
+	events := map[string][]string{}
+	for _, event := range parseSSEEvents(body) {
+		events[event.name] = append(events[event.name], event.data)
 	}
 	return events
 }
@@ -292,9 +319,15 @@ func TestChatStream_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	runner := mocks.NewMockAgentRunner(ctrl)
 	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
-		WriterText: "克苏鲁觉醒了",
-		KPReply:    "恐惧正在蔓延。",
+		WriterDirection: "描述古籍翻开后的异变",
+		KPReply:         "恐惧正在蔓延。",
 	}, nil)
+	runner.EXPECT().RunWriterStream(gomock.Any(), gomock.Any(), "描述古籍翻开后的异变", gomock.Any()).
+		DoAndReturn(func(ctx context.Context, gctx agent.GameContext, direction string, onToken func(string)) (string, error) {
+			onToken("克苏鲁")
+			onToken("觉醒了")
+			return "克苏鲁觉醒了", nil
+		})
 
 	h := NewSessionHandlers(runner)
 	r := makeTestRouter(h, userID, "tester")
@@ -306,6 +339,10 @@ func TestChatStream_Success(t *testing.T) {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
 	events := parseSSE(w.Body.String())
+	eventOrder := parseSSEEvents(w.Body.String())
+	if len(events["progress"]) == 0 {
+		t.Fatalf("expected progress event; body:\n%s", w.Body.String())
+	}
 
 	// Concatenate token events (Writer text).
 	var gotWriter string
@@ -324,6 +361,15 @@ func TestChatStream_Success(t *testing.T) {
 	if gotNarration != "恐惧正在蔓延。" {
 		t.Errorf("narration tokens = %q, want %q", gotNarration, "恐惧正在蔓延。")
 	}
+	narrationIdx := firstSSEEventIndex(eventOrder, "narration")
+	kpDoneIdx := firstSSEEventIndex(eventOrder, "kp_done")
+	tokenIdx := firstSSEEventIndex(eventOrder, "token")
+	if narrationIdx < 0 || kpDoneIdx < 0 || tokenIdx < 0 {
+		t.Fatalf("expected narration, kp_done and token events; body:\n%s", w.Body.String())
+	}
+	if !(narrationIdx < kpDoneIdx && kpDoneIdx < tokenIdx) {
+		t.Fatalf("SSE order want narration -> kp_done -> token, got narration=%d kp_done=%d token=%d", narrationIdx, kpDoneIdx, tokenIdx)
+	}
 
 	if len(events["done"]) == 0 {
 		t.Errorf("expected SSE done event; body:\n%s", w.Body.String())
@@ -335,10 +381,82 @@ func TestChatStream_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no assistant message persisted: %v", err)
 	}
-	// DB stores writer + narration combined.
+	// DB保存为writer+KP拼接格式,便于历史上下文读取KP段。
 	wantContent := "克苏鲁觉醒了\n\nKP:恐惧正在蔓延。"
 	if msg.Content != wantContent {
 		t.Errorf("persisted content = %q, want %q", msg.Content, wantContent)
+	}
+}
+
+func TestSaveChatMessagesMarksWriterPending(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+
+	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, agent.RunOutput{
+		WriterDirection: "描述门锁上的痕迹",
+		KPReply:         "你注意到锁孔边缘有新鲜划痕。",
+	})
+	if err != nil {
+		t.Fatalf("save chat messages: %v", err)
+	}
+	if msg == nil {
+		t.Fatal("assistant message is nil")
+	}
+	if !strings.Contains(msg.Content, writerPendingTag) {
+		t.Fatalf("pending content missing marker: %q", msg.Content)
+	}
+
+	if err := updateAssistantMessageWriter(msg.ID, "你注意到锁孔边缘有新鲜划痕。", "门锁泛着冷光。"); err != nil {
+		t.Fatalf("update writer: %v", err)
+	}
+	var updated models.Message
+	if err := models.DB.First(&updated, msg.ID).Error; err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if strings.Contains(updated.Content, writerPendingTag) {
+		t.Fatalf("final content should remove pending marker: %q", updated.Content)
+	}
+}
+
+func TestStartWriterJobClearsPendingWhenWriterReturnsEmpty(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+
+	output := agent.RunOutput{
+		WriterDirection: "描述门锁上的痕迹",
+		KPReply:         "你注意到锁孔边缘有新鲜划痕。",
+	}
+	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, output)
+	if err != nil {
+		t.Fatalf("save chat messages: %v", err)
+	}
+	if msg == nil || !strings.Contains(msg.Content, writerPendingTag) {
+		t.Fatalf("pending marker not saved: %#v", msg)
+	}
+
+	ctrl := gomock.NewController(t)
+	runner := mocks.NewMockAgentRunner(ctrl)
+	runner.EXPECT().RunWriterStream(gomock.Any(), gomock.Any(), output.WriterDirection, gomock.Any()).
+		Return("", nil)
+	h := NewSessionHandlers(runner)
+	clientDone := make(chan struct{})
+	defer close(clientDone)
+	ch := h.startWriterJob(msg.ID, agent.GameContext{}, output, clientDone)
+	if ch == nil {
+		t.Fatal("writer job channel is nil")
+	}
+	for range ch {
+	}
+
+	var updated models.Message
+	if err := models.DB.First(&updated, msg.ID).Error; err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if strings.Contains(updated.Content, writerPendingTag) {
+		t.Fatalf("empty writer result should clear pending marker: %q", updated.Content)
+	}
+	if updated.Content != "KP:你注意到锁孔边缘有新鲜划痕。" {
+		t.Fatalf("content = %q", updated.Content)
 	}
 }
 

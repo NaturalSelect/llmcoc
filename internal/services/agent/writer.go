@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
 )
+
+var writerSessionLocks sync.Map
 
 const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN">
 	<identity>
@@ -46,46 +49,118 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 	</style>
 </system>`
 
-// appendWriter calls the Writer agent with the given direction and appends
-// the generated narrative to writerState.Buffer.
-//
-// WriterState.History keeps the recent conversation window (direction → narrative)
-// so each subsequent call can continue from where the previous left off.
+func writerLock(sessionID uint) *sync.Mutex {
+	lock, _ := writerSessionLocks.LoadOrStore(sessionID, &sync.Mutex{})
+	return lock.(*sync.Mutex)
+}
+
+// RunWriter 独立生成白字描述,不参与KP主流程成败。
+func RunWriter(ctx context.Context, gctx GameContext, direction string) (string, error) {
+	lock := writerLock(gctx.Session.ID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	writerHandle, state, err := loadWriterState(gctx)
+	if err != nil {
+		return "", err
+	}
+
+	if err := appendWriter(ctx, writerHandle, state, direction, gctx); err != nil {
+		return "", err
+	}
+	saveWriterHistory(gctx.Session.ID, state)
+	return state.Buffer, nil
+}
+
+// RunWriterStream 流式生成白字描述,token会直接回调给上层SSE。
+func RunWriterStream(ctx context.Context, gctx GameContext, direction string, onToken func(string)) (string, error) {
+	lock := writerLock(gctx.Session.ID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	writerHandle, state, err := loadWriterState(gctx)
+	if err != nil {
+		return "", err
+	}
+
+	err = appendWriterStream(ctx, writerHandle, state, direction, gctx, onToken)
+	if err == nil {
+		saveWriterHistory(gctx.Session.ID, state)
+	}
+	return state.Buffer, err
+}
+
+func loadWriterState(gctx GameContext) (agentHandle, *WriterState, error) {
+	handles, err := getCachedAgents(gctx.Session.ID)
+	if err != nil {
+		return agentHandle{}, nil, err
+	}
+	writerHandle := handles[models.AgentRoleWriter]
+	if !writerHandle.isEnabled() {
+		return agentHandle{}, nil, fmt.Errorf("writer agent 未配置或未启用")
+	}
+
+	state := &WriterState{}
+	var session models.GameSession
+	if err := models.DB.Select("id", "writer_history").First(&session, gctx.Session.ID).Error; err == nil {
+		state.History = chatMsgsToLLM(session.WriterHistory.Data)
+	} else {
+		state.History = chatMsgsToLLM(gctx.Session.WriterHistory.Data)
+	}
+	return writerHandle, state, nil
+}
+
+// appendWriter 根据导演指令调用Writer,并把生成结果追加到本次白字缓冲。
 func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direction string, gctx GameContext) error {
+	if !h.isEnabled() {
+		return fmt.Errorf("writer agent 未配置或未启用")
+	}
+	msgs, direction := buildWriterMessages(h, state, direction, gctx)
+
+	resp, err := h.provider.Chat(ctx, msgs)
+	if err != nil {
+		return err
+	}
+
+	debugf("Writer", "response len=%d preview=%s", len([]rune(resp)), resp)
+	appendWriterResponse(state, direction, resp, true)
+	return nil
+}
+
+func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, direction string, gctx GameContext, onToken func(string)) error {
+	if !h.isEnabled() {
+		return fmt.Errorf("writer agent 未配置或未启用")
+	}
+	msgs, direction := buildWriterMessages(h, state, direction, gctx)
+
+	tokenCh, errCh, err := h.provider.ChatStream(ctx, msgs)
+	if err != nil {
+		return err
+	}
+
+	var resp strings.Builder
+	for token := range tokenCh {
+		resp.WriteString(token)
+		if onToken != nil {
+			onToken(token)
+		}
+	}
+	streamErr := <-errCh
+	text := strings.TrimSpace(resp.String())
+	if streamErr == nil && text == "" {
+		streamErr = fmt.Errorf("writer stream returned empty content")
+	}
+	debugf("Writer", "stream response len=%d preview=%s", len([]rune(text)), text)
+	appendWriterResponse(state, direction, text, streamErr == nil)
+	return streamErr
+}
+
+func buildWriterMessages(h agentHandle, state *WriterState, direction string, gctx GameContext) ([]llm.ChatMessage, string) {
 	if direction == "" {
 		direction = "继续描述当前场景"
 	}
 
 	debugf("Writer", "direction=%s history_msgs=%d", direction, len(state.History))
-
-	// Seed history with session context on the first call so Writer knows
-	// the immediate situation (players, recent chat) without the full scenario.
-	// if len(state.History) == 0 {
-	// 	playerStatus := buildPlayerStatus(gctx.Session.Players)
-
-	// 	// Inject player status as a context message.
-	// 	contextHint := "【游戏状态参考】\n" + playerStatus
-
-	// 	// Inject madness symptoms if any player is in a madness state.
-	// 	for _, p := range gctx.Session.Players {
-	// 		card := p.CharacterCard
-	// 		if (card.MadnessState == "temporary" || card.MadnessState == "indefinite") && card.MadnessSymptom != "" {
-	// 			contextHint += fmt.Sprintf(
-	// 				"\n\n【注意】%s正经历疯狂症状(KP掌控其行为):%s — 请在叙事中自然体现,勿使用游戏术语。",
-	// 				card.Name, card.MadnessSymptom,
-	// 			)
-	// 		}
-	// 	}
-
-	// 	state.History = append(state.History, llm.ChatMessage{
-	// 		Role:    "user",
-	// 		Content: contextHint,
-	// 	})
-	// 	state.History = append(state.History, llm.ChatMessage{
-	// 		Role:    "assistant",
-	// 		Content: "(已了解当前游戏状态,准备续写叙事。)",
-	// 	})
-	// }
 
 	state.History = trimWriterHistoryForCache(state.History, 10000)
 
@@ -101,7 +176,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	sb.WriteString(direction)
 	sb.WriteString("\n</director_instruction>\n")
 
-	// Build messages: system + retained history + new direction.
+	// 组装Writer消息:系统提示词、保留历史、本次导演指令。
 	msgs := make([]llm.ChatMessage, 0, len(state.History)+2)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "system",
@@ -112,26 +187,25 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 		Role:    "user",
 		Content: sb.String(),
 	})
+	return msgs, direction
+}
 
-	resp, err := h.provider.Chat(ctx, msgs)
-	if err != nil {
-		return err
+func appendWriterResponse(state *WriterState, direction, resp string, saveHistory bool) {
+	if saveHistory {
+		// 写回本次交换,供后续叙事正文保持连续性。
+		state.History = append(state.History,
+			llm.ChatMessage{Role: "user", Content: "叙事指令:" + direction},
+			llm.ChatMessage{Role: "assistant", Content: resp},
+		)
 	}
-
-	debugf("Writer", "response len=%d preview=%s", len([]rune(resp)), resp)
-
-	// Update history with this exchange for continuity in subsequent calls.
-	state.History = append(state.History,
-		llm.ChatMessage{Role: "user", Content: "叙事指令:" + direction},
-		llm.ChatMessage{Role: "assistant", Content: resp},
-	)
-
-	// Accumulate narrative in the buffer (separated by newlines between chunks).
+	if resp == "" {
+		return
+	}
+	// 本次可能有多段Writer输出,段落之间保留空行。
 	if state.Buffer != "" {
 		state.Buffer += "\n\n"
 	}
 	state.Buffer += resp
-	return nil
 }
 
 func trimWriterHistoryForCache(history []llm.ChatMessage, maxRunes int) []llm.ChatMessage {

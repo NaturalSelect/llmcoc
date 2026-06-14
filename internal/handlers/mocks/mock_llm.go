@@ -56,16 +56,17 @@ func (mr *MockProviderMockRecorder) Chat(ctx, messages any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Chat", reflect.TypeOf((*MockProvider)(nil).Chat), ctx, messages)
 }
 
-// ChatStream mocks base method.
-func (m *MockProvider) ChatStream(ctx context.Context, messages []llm.ChatMessage) (<-chan string, error) {
+// ChatStream 模拟基础方法。
+func (m *MockProvider) ChatStream(ctx context.Context, messages []llm.ChatMessage) (<-chan string, <-chan error, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ChatStream", ctx, messages)
 	ret0, _ := ret[0].(<-chan string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(<-chan error)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
-// ChatStream indicates an expected call of ChatStream.
+// ChatStream 声明期望调用。
 func (mr *MockProviderMockRecorder) ChatStream(ctx, messages any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChatStream", reflect.TypeOf((*MockProvider)(nil).ChatStream), ctx, messages)

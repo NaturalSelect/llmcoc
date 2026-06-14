@@ -115,6 +115,7 @@ func TestCreateCharacter_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("POST", "/characters", map[string]any{
 		"name":   "Investigator",
+		"age":    25,
 		"gender": "男",
 	}))
 

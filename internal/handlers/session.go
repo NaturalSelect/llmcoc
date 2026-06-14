@@ -770,6 +770,15 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	// ── Run agent pipeline ────────────────────────────────────────────────────
 	log.Printf("[chat] session=%d user=%q pipeline start round=%d", sessionID, username, session.TurnRound)
 	pipelineStart := time.Now()
+	sendProgress := func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		c.SSEvent("progress", text)
+		c.Writer.Flush()
+	}
+	sendProgress("已收到行动,正在整理本轮信息")
 
 	// Run the synchronous agent pipeline in a goroutine so we can send
 	// "thinking" heartbeats while it executes.
@@ -778,6 +787,17 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		err    error
 	}
 	resultCh := make(chan runResult, 1)
+	progressCh := make(chan string, 32)
+	gctx.Progress = func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		select {
+		case progressCh <- text:
+		default:
+		}
+	}
 	go func() {
 		// NOTE: should running in background be safe since the pipeline should respect context cancellation
 		out, err := h.Runner.Run(context.Background(), gctx)
@@ -801,24 +821,27 @@ loop:
 			}
 			output = res.output
 			break loop
+		case progress := <-progressCh:
+			sendProgress(progress)
 		case <-ticker.C:
 			c.SSEvent("thinking", "")
 			c.Writer.Flush()
 		case <-c.Request.Context().Done():
 			ticker.Stop()
-			// Client disconnected while pipeline is running (e.g. device was blocked
-			// behind sessionLock and timed out). The pipeline uses context.Background()
-			// so it will still complete; wait for the result and persist it so the
-			// message is visible on refresh / next poll.
+			// 客户端断开后仍等待KP主流程结束,保证刷新/轮询能看到主流程结果。
 			res := <-resultCh
 			if res.err == nil {
-				saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, res.output)
+				assistantMsg, err := saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, res.output)
+				if err != nil {
+					log.Printf("[chat] session=%d user=%q save after disconnect error: %v", sessionID, username, err)
+				} else if assistantMsg != nil {
+					h.startWriterJob(assistantMsg.ID, gctx, res.output, nil)
+				}
 			}
 			return
 		}
 	}
 
-	// Emit Writer narrative as "token" events (large text on frontend).
 	sseChunk := func(eventType, text string) {
 		runes := []rune(text)
 		for i := 0; i < len(runes); {
@@ -831,83 +854,212 @@ loop:
 			i = end
 		}
 	}
-	sseChunk("token", output.WriterText)
 
-	// Emit KP narration as "narration" events (small text on frontend).
+	assistantMsg, err := saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, output)
+	if err != nil {
+		log.Printf("[chat] session=%d user=%q save error: %v", sessionID, username, err)
+		c.SSEvent("error", "保存消息失败")
+		c.Writer.Flush()
+		return
+	}
+	sendProgress("KP主流程已保存")
+
+	// KP是游戏主流程,先推给前端并解除输入锁。
 	if output.KPReply != "" {
 		sseChunk("narration", output.KPReply)
 	}
+	if assistantMsg != nil {
+		c.SSEvent("kp_done", gin.H{
+			"message_id":  assistantMsg.ID,
+			"created_at":  assistantMsg.CreatedAt,
+			"has_writer":  output.WriterText != "" || output.WriterDirection != "",
+			"writer_done": output.WriterText != "" && output.WriterDirection == "",
+		})
+	} else {
+		c.SSEvent("kp_done", gin.H{})
+	}
+	c.Writer.Flush()
 
-	// Persist the full KP reply (writer + narration) so polling players can retrieve it.
-	saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, output)
-
-	fullReply := output.WriterText
-	if output.KPReply != "" {
-		narration := output.KPReply
-		if !strings.HasPrefix(narration, "KP:") {
-			narration = "KP:" + narration
-		}
-		if fullReply != "" {
-			fullReply += "\n\n"
-		}
-		fullReply += narration
+	var writerCh <-chan writerJobResult
+	if assistantMsg != nil {
+		writerClientDone := make(chan struct{})
+		defer close(writerClientDone)
+		writerCh = h.startWriterJob(assistantMsg.ID, gctx, output, writerClientDone)
 	}
 
+	streamedWriter := output.WriterText
+	if streamedWriter != "" {
+		sendProgress("叙事正文生成中")
+		sseChunk("token", streamedWriter)
+	}
+	if writerCh != nil {
+		sendProgress("叙事正文生成中")
+	writerLoop:
+		for {
+			select {
+			case wr, ok := <-writerCh:
+				if !ok {
+					break writerLoop
+				}
+				if wr.token != "" {
+					streamedWriter += wr.token
+					c.SSEvent("token", wr.token)
+					c.Writer.Flush()
+				}
+				if !wr.done {
+					continue
+				}
+				if wr.text != "" {
+					streamedWriter = wr.text
+				}
+				if wr.err != nil {
+					log.Printf("[chat] session=%d user=%q writer async error: %v", sessionID, username, wr.err)
+				}
+				break writerLoop
+			case <-c.Request.Context().Done():
+				return
+			}
+		}
+	}
+
+	fullReply := buildAssistantContent(streamedWriter, output.KPReply)
 	log.Printf("[chat] session=%d user=%q done tokens=%d elapsed=%.0fms",
 		sessionID, username, len([]rune(fullReply)), float64(time.Since(pipelineStart).Milliseconds()))
 	c.SSEvent("done", "")
 	c.Writer.Flush()
 }
 
-// saveChatMessages persists the user message(s) and KP reply to the database.
-// It is called both on the normal completion path and when the client has
-// disconnected mid-stream (so that messages are visible on refresh/poll).
+type writerJobResult struct {
+	token string
+	text  string
+	done  bool
+	err   error
+}
+
+const writerPendingTag = "<writer_pending>true</writer_pending>"
+
+func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext, output agent.RunOutput, clientDone <-chan struct{}) <-chan writerJobResult {
+	direction := strings.TrimSpace(output.WriterDirection)
+	if messageID == 0 || direction == "" || strings.TrimSpace(output.WriterText) != "" {
+		return nil
+	}
+	var ch chan writerJobResult
+	if clientDone != nil {
+		ch = make(chan writerJobResult, 128)
+	}
+	go func() {
+		if ch != nil {
+			defer close(ch)
+		}
+		send := func(result writerJobResult) {
+			if ch == nil {
+				return
+			}
+			select {
+			case ch <- result:
+			case <-clientDone:
+			}
+		}
+		text, err := h.Runner.RunWriterStream(context.Background(), gctx, direction, func(token string) {
+			if token == "" {
+				return
+			}
+			send(writerJobResult{token: token})
+		})
+		// Writer结束时即使没有生成正文,也要重写消息以清除刷新恢复用的pending标记。
+		dbErr := updateAssistantMessageWriter(messageID, output.KPReply, text)
+		if err == nil {
+			err = dbErr
+		} else if dbErr != nil {
+			log.Printf("[chat] writer message update after stream error failed: %v", dbErr)
+		}
+		send(writerJobResult{text: text, done: true, err: err})
+	}()
+	return ch
+}
+
+func updateAssistantMessageWriter(messageID uint, kpReply, writerText string) error {
+	content := buildAssistantContent(writerText, kpReply)
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	return models.DB.Model(&models.Message{}).
+		Where("id = ?", messageID).
+		Update("content", content).Error
+}
+
+func buildAssistantContent(writerText, kpReply string) string {
+	fullReply := strings.TrimSpace(writerText)
+	if strings.TrimSpace(kpReply) == "" {
+		return fullReply
+	}
+	narration := strings.TrimSpace(kpReply)
+	narration = strings.TrimPrefix(narration, "KP:")
+	narration = strings.TrimPrefix(narration, "KP：")
+	narration = "KP:" + strings.TrimSpace(narration)
+	if fullReply != "" {
+		fullReply += "\n\n"
+	}
+	return fullReply + narration
+}
+
+func appendWriterPendingMarker(content string, pending bool) string {
+	if !pending || strings.TrimSpace(content) == "" {
+		return content
+	}
+	return strings.TrimSpace(content) + "\n" + writerPendingTag
+}
+
+// saveChatMessages 保存玩家消息和KP主流程回复,并返回可被Writer后续补写的消息。
 func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content string,
-	turnActions []models.SessionTurnAction, output agent.RunOutput) {
-	fullReply := output.WriterText
-	// NOTE: only save response to KP history
-	if output.KPReply != "" {
-		narration := output.KPReply
-		if !strings.HasPrefix(narration, "KP:") {
-			narration = "KP:" + narration
-		}
-		if fullReply != "" {
-			fullReply += "\n\n"
-		}
-		fullReply += narration
-	}
+	turnActions []models.SessionTurnAction, output agent.RunOutput) (*models.Message, error) {
+	fullReply := buildAssistantContent(output.WriterText, output.KPReply)
 	if fullReply == "" {
-		return
+		return nil, nil
 	}
+	fullReply = appendWriterPendingMarker(fullReply,
+		strings.TrimSpace(output.WriterDirection) != "" && strings.TrimSpace(output.WriterText) == "")
 	log.Printf("[chat] session=%d user=%q saving messages content_len=%d reply_len=%d turn_actions=%d",
 		sessionID, playerDisplayName, len([]rune(content)), len([]rune(fullReply)), len(turnActions))
-	if len(turnActions) > 0 {
-		for _, ta := range turnActions {
-			uid := ta.UserID
-			models.DB.Create(&models.Message{
+	var assistantMsg models.Message
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if len(turnActions) > 0 {
+			for _, ta := range turnActions {
+				uid := ta.UserID
+				if err := tx.Create(&models.Message{
+					SessionID: uint(sessionID),
+					UserID:    &uid,
+					Role:      models.MessageRoleUser,
+					Content:   ta.ActionSummary,
+					Username:  ta.Username,
+				}).Error; err != nil {
+					return err
+				}
+			}
+		} else {
+			uid := userID
+			if err := tx.Create(&models.Message{
 				SessionID: uint(sessionID),
 				UserID:    &uid,
 				Role:      models.MessageRoleUser,
-				Content:   ta.ActionSummary,
-				Username:  ta.Username,
-			})
+				Content:   content,
+				Username:  playerDisplayName,
+			}).Error; err != nil {
+				return err
+			}
 		}
-	} else {
-		uid := userID
-		models.DB.Create(&models.Message{
+		assistantMsg = models.Message{
 			SessionID: uint(sessionID),
-			UserID:    &uid,
-			Role:      models.MessageRoleUser,
-			Content:   content,
-			Username:  playerDisplayName,
-		})
-	}
-	models.DB.Create(&models.Message{
-		SessionID: uint(sessionID),
-		Role:      models.MessageRoleAssistant,
-		Content:   fullReply,
-		Username:  "KP",
+			Role:      models.MessageRoleAssistant,
+			Content:   fullReply,
+			Username:  "KP",
+		}
+		return tx.Create(&assistantMsg).Error
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &assistantMsg, nil
 }
 
 // chatTruncate truncates s to at most maxLen runes, appending "…" when trimmed.

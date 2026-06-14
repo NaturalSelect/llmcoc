@@ -144,16 +144,16 @@ func seedDefaultAgentConfigs() {
 
 	// Ensure each active agent has a config row (upsert-style: create only if missing).
 	required := []AgentConfig{
-		{Role: AgentRoleDirector, ProviderConfigID: provID, ModelName: model, MaxTokens: 1500, Temperature: 0.5, IsActive: true},
-		{Role: AgentRoleArchitect, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.5, IsActive: true},
-		{Role: AgentRoleQAGuard, ProviderConfigID: provID, ModelName: model, MaxTokens: 2000, Temperature: 0.5, IsActive: true},
-		{Role: AgentRoleAntiCheat, ProviderConfigID: provID, ModelName: model, MaxTokens: 1200, Temperature: 0.0, ThinkingLevel: "low", IsActive: true},
-		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.5, IsActive: true},
-		{Role: AgentRoleLawyer, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.5, IsActive: true},
-		{Role: AgentRoleNPC, ProviderConfigID: provID, ModelName: model, MaxTokens: 600, Temperature: 0.5, IsActive: true},
-		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, IsActive: true},
-		{Role: AgentRoleEvaluator, ProviderConfigID: provID, ModelName: model, MaxTokens: 1200, Temperature: 0.5, IsActive: true},
-		{Role: AgentRoleGrowth, ProviderConfigID: provID, ModelName: model, MaxTokens: 1000, Temperature: 0.5, IsActive: true},
+		{Role: AgentRoleDirector, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleArchitect, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleQAGuard, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleAntiCheat, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.0, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleLawyer, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleNPC, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleEvaluator, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleGrowth, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 	}
 	for _, ag := range required {
 		var existing AgentConfig

@@ -5,16 +5,27 @@ window.COC.game = {
                     // Chat / SSE
                     // ═══════════════════════════════════════════════════════
                     async sendChat() {
-                        const content = this.chatInput.trim();
-                        if (!content || this.streaming || this.waitingForPlayers) return;
+                        const content = String(this.chatInput).trim();
+                        if (!content || this.streaming || this.waitingForPlayers) return false;
+
+                        const streamID = Date.now() + ':' + Math.random().toString(16).slice(2);
+                        const unlockKP = () => {
+                            if (this.activeStreamID === streamID) {
+                                this.streaming = false;
+                                this.activeStreamID = null;
+                            }
+                        };
 
                         this.chatInput = '';
                         this.streaming = true;
+                        this.activeStreamID = streamID;
                         this.writerBuffer = '';
                         this.narrationBuffer = '';
+                        this.progressText = '已收到行动,正在整理本轮信息';
 
                         const submittedAt = new Date();
-                        this.preSendMessageCount = this.messages.length;
+                        const tailAnchor = this.messages.length;
+                        this.preSendMessageCount = tailAnchor;
                         this.messages.push({
                             id: Date.now(), role: 'user',
                             username: this.currentPlayerDisplayName(), content,
@@ -28,6 +39,9 @@ window.COC.game = {
 
                         let receivedWaiting = false;
                         let receivedDone = false;
+                        let committedKP = false;
+                        let assistantMessageID = null;
+                        let writerText = '';
 
                         const abortCtrl = new AbortController();
                         const abortTimer = setTimeout(() => abortCtrl.abort(), 10 * 60 * 1000);
@@ -43,8 +57,8 @@ window.COC.game = {
                             if (!resp.ok) {
                                 const err = await resp.json().catch(() => ({ error: '请求失败' }));
                                 this.showToast(err.error || '发送失败', 'error');
-                                this.streaming = false;
-                                return;
+                                unlockKP();
+                                return false;
                             }
 
                             const reader = resp.body.getReader();
@@ -70,11 +84,23 @@ window.COC.game = {
                                         switch (currentEvent) {
 
                                             case 'thinking':
+                                                if (!this.progressText) {
+                                                    this.progressText = 'Agent 团队运行中，请稍候…';
+                                                }
+                                                break;
+
+                                            case 'progress':
+                                                this.progressText = data || this.progressText;
                                                 break;
 
                                             case 'token':
                                                 if (data) {
-                                                    this.writerBuffer += data;
+                                                    if (assistantMessageID) {
+                                                        writerText += data;
+                                                        this._appendWriterToMessage(assistantMessageID, writerText);
+                                                    } else {
+                                                        this.writerBuffer += data;
+                                                    }
                                                     this.$nextTick(() => this.scrollChat());
                                                 }
                                                 break;
@@ -98,10 +124,36 @@ window.COC.game = {
                                                 this.showToast(data || '处理失败', 'error');
                                                 break;
 
+                                            case 'kp_done':
+                                                try {
+                                                    const info = JSON.parse(data || '{}');
+                                                    assistantMessageID = info.message_id || assistantMessageID;
+                                                    const msg = this._commitStreamBuffers({
+                                                        id: assistantMessageID,
+                                                        created_at: info.created_at,
+                                                        writerStreaming: !!info.has_writer && !info.writer_done,
+                                                        anchor: tailAnchor,
+                                                    });
+                                                    if (msg) assistantMessageID = msg.id;
+                                                    committedKP = !!msg;
+                                                } catch (_) {
+                                                    const msg = this._commitStreamBuffers({ anchor: tailAnchor });
+                                                    if (msg) assistantMessageID = msg.id;
+                                                    committedKP = !!msg;
+                                                }
+                                                unlockKP();
+                                                break;
+
                                             case 'done':
                                                 receivedDone = true;
-                                                if (!receivedWaiting && (this.writerBuffer || this.narrationBuffer)) {
-                                                    this._commitStreamBuffers();
+                                                this.progressText = '';
+                                                if (assistantMessageID) {
+                                                    this._setMessageWriterDone(assistantMessageID);
+                                                }
+                                                if (!committedKP && !receivedWaiting && (this.writerBuffer || this.narrationBuffer)) {
+                                                    const msg = this._commitStreamBuffers({ anchor: tailAnchor });
+                                                    if (msg) assistantMessageID = msg.id;
+                                                    committedKP = !!msg;
                                                 }
                                                 break;
                                         }
@@ -114,26 +166,31 @@ window.COC.game = {
                             if (e.name !== 'AbortError') {
                                 this.showToast(e.message || '网络错误', 'error');
                             }
+                            this.progressText = '';
                         } finally {
                             clearTimeout(abortTimer);
-                            this.streaming = false;
+                            unlockKP();
                         }
 
                         if (receivedWaiting) {
+                            this.writerBuffer = '';
+                            this.narrationBuffer = '';
+                            this.progressText = '';
                             this.waitingForPlayers = true;
                             this.waitingSince = submittedAt;
                             this.pollForKPResponse(submittedAt);
-                        } else if (receivedDone) {
+                        } else if (receivedDone && !committedKP) {
                             if (this.writerBuffer || this.narrationBuffer) {
-                                this._commitStreamBuffers();
+                                this._commitStreamBuffers({ anchor: tailAnchor });
                             }
-                        } else {
+                        } else if (!committedKP) {
                             if (this.writerBuffer || this.narrationBuffer) {
-                                this._commitStreamBuffers();
+                                this._commitStreamBuffers({ anchor: tailAnchor });
                             } else {
                                 this._recoverFromDrop(submittedAt);
                             }
                         }
+                        return true;
                     },
 
                     async _recoverFromDrop(since) {
@@ -156,35 +213,71 @@ window.COC.game = {
                         }
                     },
 
-                    _commitStreamBuffers() {
+                    _assistantContent(writerText, narrationText) {
+                        const wt = this.stripAckContent(writerText).trim();
+                        const nt = this.stripAckContent(narrationText).trim();
+                        if (!nt) return wt;
+                        return (wt ? wt + '\n\n' : '') + 'KP:' + nt;
+                    },
+
+                    _commitStreamBuffers(meta = {}) {
+                        const responseOptions = this.extractResponseOptionsPayload(this.narrationBuffer) || this.extractResponseOptionsPayload(this.writerBuffer);
                         const wt = this.stripAckContent(this.writerBuffer).trim();
                         const nt = this.stripAckContent(this.narrationBuffer).trim();
-                        const fullContent = wt + (nt ? '\n\nKP:' + nt : '');
-                        this.messages.push({
-                            id: Date.now() + 1,
+                        if (!wt && !nt) return null;
+                        const msg = {
+                            id: meta.id || Date.now() + 1,
                             role: 'assistant', username: 'KP',
-                            content: fullContent,
+                            content: this._assistantContent(wt, nt),
                             writer_text: wt,
                             narration_text: nt,
-                            created_at: new Date().toISOString(),
+                            response_options: responseOptions,
+                            created_at: meta.created_at || new Date().toISOString(),
+                            _writer_streaming: !!meta.writerStreaming,
                             _new: true,
-                        });
+                        };
+                        this.messages.push(msg);
                         this.writerBuffer = '';
                         this.narrationBuffer = '';
                         this.refreshCurrentSession(true).catch(() => { });
                         this.$nextTick(() => this.scrollChat());
-                        // Sync tail from DB so all players' actions appear in correct order.
-                        // In multi-player the last submitter only has their own action locally;
-                        // DB (already written before 'done' SSE) has every player's action.
-                        this._syncTailFromDB();
+                        // 同步数据库尾部消息,保证多人回合里的玩家行动顺序以服务端为准。
+                        this._syncTailFromDB(meta.anchor);
+                        return msg;
                     },
 
-                    async _syncTailFromDB() {
-                        if (!this.currentSession?.id || this.preSendMessageCount < 0) return;
-                        const anchor = this.preSendMessageCount;
-                        this.preSendMessageCount = -1;
-                        // Reuse refreshingMessages guard to prevent concurrent refreshCurrentMessages
-                        // from running an incremental append while we do the full splice.
+                    _appendWriterToMessage(messageID, writerText) {
+                        const idx = this.messages.findIndex(m => String(m.id) === String(messageID));
+                        if (idx < 0) return;
+                        const msg = this.messages[idx];
+                        const wt = this.stripAckContent(writerText).trim();
+                        this.messages.splice(idx, 1, {
+                            ...msg,
+                            writer_text: wt,
+                            content: this._assistantContent(wt, msg.narration_text || ''),
+                            _writer_streaming: true,
+                        });
+                    },
+
+                    _setMessageWriterDone(messageID) {
+                        const idx = this.messages.findIndex(m => String(m.id) === String(messageID));
+                        if (idx < 0) return;
+                        this.messages.splice(idx, 1, {
+                            ...this.messages[idx],
+                            _writer_streaming: false,
+                        });
+                    },
+
+                    async _syncTailFromDB(anchor = null) {
+                        if (!this.currentSession?.id) return;
+                        if (anchor === null || anchor === undefined) {
+                            if (this.preSendMessageCount < 0) return;
+                            anchor = this.preSendMessageCount;
+                        }
+                        if (this.preSendMessageCount === anchor) {
+                            this.preSendMessageCount = -1;
+                        }
+                        // 复用刷新锁,避免常规轮询在这里做尾部替换时同时追加消息。
                         if (this.refreshingMessages) return;
                         this.refreshingMessages = true;
                         try {
@@ -192,11 +285,16 @@ window.COC.game = {
                                 (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
                             );
                             if (msgs.length > anchor) {
-                                // Replace everything from anchor onwards with the DB-canonical tail
+                                const localByID = new Map(this.messages.map(m => [String(m.id), m]));
+                                const tail = msgs.slice(anchor).map(m => {
+                                    const local = localByID.get(String(m.id));
+                                    return { ...this._mergeStreamingMessage(local, m), _new: true };
+                                });
+                                // 用数据库尾部替换本地尾部,修正多人行动顺序。
                                 this.messages.splice(
                                     anchor,
                                     this.messages.length - anchor,
-                                    ...msgs.slice(anchor).map(m => ({ ...m, _new: true }))
+                                    ...tail
                                 );
                                 this.$nextTick(() => this.scrollChat());
                             }
@@ -251,8 +349,34 @@ window.COC.game = {
                                 (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
                             );
 
-                            // 增量追加：只取比当前多出来的新消息，避免全量替换导致滚动位置重置
-                            const newMsgs = msgs.slice(this.messages.length).map(m => ({ ...m, _new: true }));
+                            const existingByID = new Map(this.messages.map((m, idx) => [String(m.id), idx]));
+                            const newMsgs = [];
+                            let changed = false;
+
+                            for (const msg of msgs) {
+                                const idx = existingByID.get(String(msg.id));
+                                if (idx === undefined) {
+                                    newMsgs.push({ ...msg, _new: true });
+                                    continue;
+                                }
+                                const old = this.messages[idx];
+                                const merged = this._mergeStreamingMessage(old, msg);
+                                if (
+                                    old.content !== merged.content ||
+                                    old.writer_text !== merged.writer_text ||
+                                    old.narration_text !== merged.narration_text ||
+                                    old._writer_streaming !== merged._writer_streaming
+                                ) {
+                                    this.messages.splice(idx, 1, {
+                                        ...old,
+                                        ...merged,
+                                        _new: old._new,
+                                        response_options: merged.response_options,
+                                    });
+                                    changed = true;
+                                }
+                            }
+
                             if (newMsgs.length > 0) {
                                 this.messages.push(...newMsgs);
                                 if (this.waitingForPlayers && this.waitingSince) {
@@ -263,6 +387,8 @@ window.COC.game = {
                                         this.waitingInfo = { pending: 0, total: 0 };
                                     }
                                 }
+                            }
+                            if (changed || newMsgs.length > 0) {
                                 this.$nextTick(() => this.scrollChat());
                             }
                         } catch (e) {
@@ -299,16 +425,45 @@ window.COC.game = {
                         return messages.map(msg => this.normalizeMessage(msg));
                     },
 
+                    _mergeStreamingMessage(local, fresh) {
+                        if (!local || local.role !== 'assistant' || fresh.role !== 'assistant') {
+                            return fresh;
+                        }
+                        const localWriter = this.stripAckContent(local.writer_text || '').trim();
+                        const freshWriter = this.stripAckContent(fresh.writer_text || '').trim();
+                        if (!local._writer_streaming || !localWriter || localWriter.length <= freshWriter.length) {
+                            return fresh;
+                        }
+                        const narrationText = fresh.narration_text || local.narration_text || '';
+                        return {
+                            ...fresh,
+                            writer_text: localWriter,
+                            narration_text: narrationText,
+                            content: this._assistantContent(localWriter, narrationText),
+                            response_options: fresh.response_options || local.response_options,
+                            _writer_streaming: true,
+                        };
+                    },
+
                     normalizeMessage(message) {
                         if (!message || message.role !== 'assistant') {
                             return message;
                         }
 
+                        const writerPending = this.extractWriterPending(message.content || '')
+                            || this.extractWriterPending(message.narration_text || '')
+                            || this.extractWriterPending(message.writer_text || '')
+                            || !!message._writer_streaming;
+                        const responseOptions = this.extractResponseOptionsPayload(message.content || '')
+                            || this.extractResponseOptionsPayload(message.narration_text || '')
+                            || this.extractResponseOptionsPayload(message.writer_text || '');
                         message = {
                             ...message,
                             content: this.stripAckContent(message.content || ''),
                             writer_text: this.stripAckContent(message.writer_text || ''),
                             narration_text: this.stripAckContent(message.narration_text || ''),
+                            response_options: message.response_options || responseOptions,
+                            _writer_streaming: !!writerPending,
                         };
 
                         if (message.writer_text || message.narration_text) {
@@ -327,11 +482,59 @@ window.COC.game = {
                         };
                     },
 
+                    extractWriterPending(content) {
+                        return /<writer_pending\b[^>]*>\s*true\s*<\/writer_pending>/i.test(String(content || ''));
+                    },
+
+                    extractResponseOptionsPayload(content) {
+                        const match = String(content || '').match(/<response_options\b[^>]*>([\s\S]*?)<\/response_options>/i);
+                        if (!match) return null;
+                        try {
+                            const payload = JSON.parse(match[1]);
+                            const options = Array.isArray(payload.options)
+                                ? payload.options.map(opt => String(opt || '').trim()).filter(Boolean)
+                                : [];
+                            return {
+                                question: String(payload.question || '').trim(),
+                                options,
+                            };
+                        } catch (_) {
+                            return null;
+                        }
+                    },
+
                     stripAckContent(content) {
                         return String(content || '')
-                            .replace(/<ack\b[^>]*>[\s\S]*?<\/ack>/gi, '')
-                            .replace(/<ack\b[^>]*>[\s\S]*$/gi, '')
+                            .replace(/<(ack|direction|dice|time_point|response_options|writer_pending)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+                            .replace(/<(ack|direction|dice|time_point|response_options|writer_pending)\b[^>]*>[\s\S]*$/gi, '')
                             .trim();
+                    },
+
+                    activeResponseSuggestions() {
+                        for (let i = this.messages.length - 1; i >= 0; i--) {
+                            const msg = this.messages[i];
+                            if (msg.role === 'user') return null;
+                            if (
+                                msg.role === 'assistant' &&
+                                msg.response_options &&
+                                Array.isArray(msg.response_options.options) &&
+                                msg.response_options.options.length > 0
+                            ) {
+                                return msg.response_options;
+                            }
+                        }
+                        return null;
+                    },
+
+                    appendResponseSuggestion(option) {
+                        const text = String(option || '').trim();
+                        if (!text) return;
+                        const current = String(this.chatInput || '').trimEnd();
+                        this.chatInput = current ? `${current}\n${text}` : text;
+                        this.$nextTick(() => {
+                            const input = document.getElementById('chatInputBox');
+                            if (input) input.focus();
+                        });
                     },
 
                     splitAssistantContent(content) {

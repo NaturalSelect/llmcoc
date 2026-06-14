@@ -185,18 +185,18 @@
             opacity: 0.75;
         }
 
-        /* KP writer narrative */
+        /* 白字叙事描述 */
         .narrative {
             font-family: 'Georgia', serif;
             line-height: 1.85;
             font-size: 0.9375rem;
-            color: #d0bfa0;
+            color: #eee8dc;
             white-space: pre-wrap;
             user-select: text;
             -webkit-user-select: text;
         }
 
-        /* KP narration - direct KP speech */
+        /* KP主流程回复 */
         .narration {
             font-family: system-ui, sans-serif;
             font-size: 0.825rem;
@@ -207,11 +207,48 @@
             -webkit-user-select: text;
         }
 
-        /* separator only when writer narrative precedes narration */
-        .narration-sep {
+        /* KP之后的白字描述分隔 */
+        .narration-sep,
+        .narrative-after-kp {
             border-top: 1px solid #3a1a1a;
             margin-top: 0.625rem;
             padding-top: 0.625rem;
+        }
+
+        .response-suggestions {
+            margin-bottom: 0.625rem;
+            font-family: system-ui, sans-serif;
+        }
+
+        .response-suggestions-head {
+            margin-bottom: 0.375rem;
+            color: #a98555;
+            font-size: 0.75rem;
+        }
+
+        .response-suggestions-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.375rem;
+        }
+
+        .response-suggestion {
+            max-width: 100%;
+            border: 1px solid #3a2a18;
+            background: #0f0c09;
+            color: #d8c39a;
+            padding: 0.3125rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.8125rem;
+            line-height: 1.45;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .response-suggestion:hover {
+            border-color: #76552b;
+            background: #1c130b;
+            color: #f0d79f;
         }
 
         /* Player action */

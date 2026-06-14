@@ -526,7 +526,7 @@ func TestGetMessages_Success(t *testing.T) {
 	}
 }
 
-func TestGetMessages_NotInSession(t *testing.T) {
+func TestGetMessages_PublicRoomAllowsSpectator(t *testing.T) {
 	initTestDB(t)
 	sessID, _ := seedPlayingSession(t)
 	stranger := seedUser(t, "stranger", "user", 0, 3)
@@ -535,8 +535,8 @@ func TestGetMessages_NotInSession(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/messages", sessID), nil))
 
-	if w.Code != http.StatusForbidden {
-		t.Errorf("want 403, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("want 200, got %d", w.Code)
 	}
 }
 
