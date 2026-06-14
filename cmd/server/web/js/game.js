@@ -285,11 +285,16 @@ window.COC.game = {
                                 (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
                             );
                             if (msgs.length > anchor) {
+                                const localByID = new Map(this.messages.map(m => [String(m.id), m]));
+                                const tail = msgs.slice(anchor).map(m => {
+                                    const local = localByID.get(String(m.id));
+                                    return { ...this._mergeStreamingMessage(local, m), _new: true };
+                                });
                                 // 用数据库尾部替换本地尾部,修正多人行动顺序。
                                 this.messages.splice(
                                     anchor,
                                     this.messages.length - anchor,
-                                    ...msgs.slice(anchor).map(m => ({ ...m, _new: true }))
+                                    ...tail
                                 );
                                 this.$nextTick(() => this.scrollChat());
                             }
@@ -355,17 +360,18 @@ window.COC.game = {
                                     continue;
                                 }
                                 const old = this.messages[idx];
+                                const merged = this._mergeStreamingMessage(old, msg);
                                 if (
-                                    old.content !== msg.content ||
-                                    old.writer_text !== msg.writer_text ||
-                                    old.narration_text !== msg.narration_text
+                                    old.content !== merged.content ||
+                                    old.writer_text !== merged.writer_text ||
+                                    old.narration_text !== merged.narration_text ||
+                                    old._writer_streaming !== merged._writer_streaming
                                 ) {
                                     this.messages.splice(idx, 1, {
                                         ...old,
-                                        ...msg,
+                                        ...merged,
                                         _new: old._new,
-                                        _writer_streaming: old._writer_streaming,
-                                        response_options: msg.response_options,
+                                        response_options: merged.response_options,
                                     });
                                     changed = true;
                                 }
@@ -419,11 +425,35 @@ window.COC.game = {
                         return messages.map(msg => this.normalizeMessage(msg));
                     },
 
+                    _mergeStreamingMessage(local, fresh) {
+                        if (!local || local.role !== 'assistant' || fresh.role !== 'assistant') {
+                            return fresh;
+                        }
+                        const localWriter = this.stripAckContent(local.writer_text || '').trim();
+                        const freshWriter = this.stripAckContent(fresh.writer_text || '').trim();
+                        if (!local._writer_streaming || !localWriter || localWriter.length <= freshWriter.length) {
+                            return fresh;
+                        }
+                        const narrationText = fresh.narration_text || local.narration_text || '';
+                        return {
+                            ...fresh,
+                            writer_text: localWriter,
+                            narration_text: narrationText,
+                            content: this._assistantContent(localWriter, narrationText),
+                            response_options: fresh.response_options || local.response_options,
+                            _writer_streaming: true,
+                        };
+                    },
+
                     normalizeMessage(message) {
                         if (!message || message.role !== 'assistant') {
                             return message;
                         }
 
+                        const writerPending = this.extractWriterPending(message.content || '')
+                            || this.extractWriterPending(message.narration_text || '')
+                            || this.extractWriterPending(message.writer_text || '')
+                            || !!message._writer_streaming;
                         const responseOptions = this.extractResponseOptionsPayload(message.content || '')
                             || this.extractResponseOptionsPayload(message.narration_text || '')
                             || this.extractResponseOptionsPayload(message.writer_text || '');
@@ -433,6 +463,7 @@ window.COC.game = {
                             writer_text: this.stripAckContent(message.writer_text || ''),
                             narration_text: this.stripAckContent(message.narration_text || ''),
                             response_options: message.response_options || responseOptions,
+                            _writer_streaming: !!writerPending,
                         };
 
                         if (message.writer_text || message.narration_text) {
@@ -449,6 +480,10 @@ window.COC.game = {
                             writer_text: split.writerText,
                             narration_text: split.narrationText,
                         };
+                    },
+
+                    extractWriterPending(content) {
+                        return /<writer_pending\b[^>]*>\s*true\s*<\/writer_pending>/i.test(String(content || ''));
                     },
 
                     extractResponseOptionsPayload(content) {
@@ -470,8 +505,8 @@ window.COC.game = {
 
                     stripAckContent(content) {
                         return String(content || '')
-                            .replace(/<(ack|direction|dice|time_point|response_options)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
-                            .replace(/<(ack|direction|dice|time_point|response_options)\b[^>]*>[\s\S]*$/gi, '')
+                            .replace(/<(ack|direction|dice|time_point|response_options|writer_pending)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+                            .replace(/<(ack|direction|dice|time_point|response_options|writer_pending)\b[^>]*>[\s\S]*$/gi, '')
                             .trim();
                     },
 

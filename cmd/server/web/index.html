@@ -476,6 +476,10 @@
                                                             :class="(stripAckContent(msg.narration_text).trim() ? 'narrative-after-kp ' : '') + (msg._writer_streaming ? 'cursor' : '')"
                                                             x-text="stripAckContent(msg.writer_text)">
                                                         </p>
+                                                        <p x-show="msg._writer_streaming && !stripAckContent(msg.writer_text).trim()"
+                                                            class="narrative narrative-after-kp cursor text-amber-200/60">
+                                                            白字描述生成中…
+                                                        </p>
                                                     </div>
                                                 </template>
                                                 <template x-if="!msg.writer_text && !msg.narration_text">

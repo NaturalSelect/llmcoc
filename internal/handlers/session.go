@@ -936,6 +936,8 @@ type writerJobResult struct {
 	err   error
 }
 
+const writerPendingTag = "<writer_pending>true</writer_pending>"
+
 func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext, output agent.RunOutput, clientDone <-chan struct{}) <-chan writerJobResult {
 	direction := strings.TrimSpace(output.WriterDirection)
 	if messageID == 0 || direction == "" || strings.TrimSpace(output.WriterText) != "" {
@@ -1002,6 +1004,13 @@ func buildAssistantContent(writerText, kpReply string) string {
 	return fullReply + narration
 }
 
+func appendWriterPendingMarker(content string, pending bool) string {
+	if !pending || strings.TrimSpace(content) == "" {
+		return content
+	}
+	return strings.TrimSpace(content) + "\n" + writerPendingTag
+}
+
 // saveChatMessages 保存玩家消息和KP主流程回复,并返回可被Writer后续补写的消息。
 func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content string,
 	turnActions []models.SessionTurnAction, output agent.RunOutput) (*models.Message, error) {
@@ -1009,6 +1018,8 @@ func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content 
 	if fullReply == "" {
 		return nil, nil
 	}
+	fullReply = appendWriterPendingMarker(fullReply,
+		strings.TrimSpace(output.WriterDirection) != "" && strings.TrimSpace(output.WriterText) == "")
 	log.Printf("[chat] session=%d user=%q saving messages content_len=%d reply_len=%d turn_actions=%d",
 		sessionID, playerDisplayName, len([]rune(content)), len([]rune(fullReply)), len(turnActions))
 	var assistantMsg models.Message

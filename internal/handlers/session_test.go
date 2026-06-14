@@ -383,6 +383,36 @@ func TestChatStream_Success(t *testing.T) {
 	}
 }
 
+func TestSaveChatMessagesMarksWriterPending(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+
+	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, agent.RunOutput{
+		WriterDirection: "描述门锁上的痕迹",
+		KPReply:         "你注意到锁孔边缘有新鲜划痕。",
+	})
+	if err != nil {
+		t.Fatalf("save chat messages: %v", err)
+	}
+	if msg == nil {
+		t.Fatal("assistant message is nil")
+	}
+	if !strings.Contains(msg.Content, writerPendingTag) {
+		t.Fatalf("pending content missing marker: %q", msg.Content)
+	}
+
+	if err := updateAssistantMessageWriter(msg.ID, "你注意到锁孔边缘有新鲜划痕。", "门锁泛着冷光。"); err != nil {
+		t.Fatalf("update writer: %v", err)
+	}
+	var updated models.Message
+	if err := models.DB.First(&updated, msg.ID).Error; err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if strings.Contains(updated.Content, writerPendingTag) {
+		t.Fatalf("final content should remove pending marker: %q", updated.Content)
+	}
+}
+
 func TestChatStream_UserMessagePersisted(t *testing.T) {
 	initTestDB(t)
 	sessionID, userID := seedPlayingSession(t)
