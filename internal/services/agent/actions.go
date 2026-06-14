@@ -12,17 +12,16 @@ import (
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
-// ActionContext carries the shared execution environment for every action handler.
+// ActionContext 是各工具执行器共享的上下文。
 type ActionContext struct {
 	Ctx      context.Context
 	GCtx     *GameContext
 	Sid      uint
 	Handles  map[models.AgentRole]agentHandle
 	TempNPCs *[]models.SessionNPC
-	Writer   *WriterState
 	RbIdx    rulebook.Index
 
-	// Mutable flags written by action handlers and read by the dispatch loop.
+	// 工具执行器写入、调度循环读取的可变状态。
 	HasEnd             *bool
 	TimeAdvancedInTurn *bool
 	SwitchRole         *bool
@@ -74,9 +73,8 @@ var antiCheatSideEffectActions = map[ToolCallType]bool{
 	ToolHint:              true,
 }
 
-// responseCompatibleActions is the set of actions that MAY coexist with
-// response/end_game in the same batch (they don't return results the KP needs
-// to read before concluding the turn).
+// responseCompatibleActions 表示可与response/end_game同批执行的动作。
+// 这些动作不需要把结果再交给KP阅读后才能结束回合。
 var responseCompatibleActions = map[ToolCallType]bool{
 	ToolResponse:          true,
 	ToolEndGame:           true,
@@ -103,8 +101,8 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolDestroyNPC:        true,
 }
 
-// actionRegistry maps each ToolCallType to its handler.
-// Handlers not listed here produce no result and are silently skipped.
+// actionRegistry 映射工具动作到具体执行器。
+// 未列出的动作不会产生结果。
 var actionRegistry = map[ToolCallType]Action{
 	ToolCheckRule:         checkRuleAction{},
 	ToolReadRulebookConst: readRulebookConstAction{},
@@ -549,21 +547,6 @@ func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	return nil
 }
 
-func flushPendingWrite(actx ActionContext) {
-	if actx.PendingWrite == nil || *actx.PendingWrite == "" {
-		return
-	}
-	direction := *actx.PendingWrite
-	doneW := timedDebug("Writer", "session=%d direction=%s", actx.Sid, direction)
-	writeErr := appendWriter(actx.Ctx, actx.Handles[models.AgentRoleWriter], actx.Writer, direction, *actx.GCtx)
-	doneW()
-	if writeErr != nil {
-		log.Printf("[agent] writer error: %v", writeErr)
-	}
-	*actx.PendingWrite = ""
-	debugf("tool", "session=%d write buffer_len=%d", actx.Sid, len([]rune(actx.Writer.Buffer)))
-}
-
 type responseAction struct{}
 
 func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
@@ -571,19 +554,11 @@ func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	if len(call.Ack) > 0 {
 		call.Reply += "\n<ack>" + strings.Join(call.Ack, ";") + "</ack>"
 	}
-	if call.Direction != "" {
-		call.Reply += "\n<direction>" + call.Direction + "</direction>"
-	}
-	if *actx.DiceMsg != "" {
-		call.Reply += "\n<dice>" + *actx.DiceMsg + "</dice>"
-	}
-	call.Reply += "\n<time_point>" + formatGameTime(actx.GCtx.Session.TurnRound, scenarioStartSlot(actx.GCtx.Session)) + "</time_point>"
 	if *actx.KPNarration != "" {
 		*actx.KPNarration = call.Reply + "\n" + *actx.KPNarration
 	} else {
 		*actx.KPNarration = call.Reply
 	}
-	flushPendingWrite(actx)
 	debugf("tool", "session=%d response narration=%s", actx.Sid, call.Reply)
 	return nil
 }

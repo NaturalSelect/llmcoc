@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -113,8 +114,7 @@ func isRetryableError(err error) bool {
 	return false
 }
 
-func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage, json bool) (string, error) {
-	start := time.Now()
+func (p *openAIProvider) chatCompletionRequest(ctx context.Context, messages []ChatMessage, json bool) openai.ChatCompletionRequest {
 	chatReq := openai.ChatCompletionRequest{
 		Model:           p.model,
 		Messages:        p.toOpenAIMessages(messages),
@@ -144,6 +144,12 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage, json 
 		chatReq.Metadata["cache_mode"] = "prefix"
 		chatReq.Metadata["cache_vendor"] = "gemini"
 	}
+	return chatReq
+}
+
+func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage, json bool) (string, error) {
+	start := time.Now()
+	chatReq := p.chatCompletionRequest(ctx, messages, json)
 	var resp openai.ChatCompletionResponse
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
@@ -173,6 +179,54 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage, json 
 			p.model, float64(elapsed.Microseconds())/1000, len([]rune(result)))
 	}
 	return result, nil
+}
+
+func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage) (<-chan string, <-chan error, error) {
+	start := time.Now()
+	chatReq := p.chatCompletionRequest(ctx, messages, false)
+	stream, err := p.client.CreateChatCompletionStream(ctx, chatReq)
+	if err != nil {
+		return nil, nil, fmt.Errorf("LLM chat stream error: %w", err)
+	}
+
+	tokenCh := make(chan string)
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(tokenCh)
+		defer close(errCh)
+		defer stream.Close()
+
+		var tokenRunes int
+		for {
+			resp, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				if llmDebug {
+					elapsed := time.Since(start)
+					log.Printf("[llm] ChatStream done model=%s elapsed=%.0fms response_len=%d",
+						p.model, float64(elapsed.Microseconds())/1000, tokenRunes)
+				}
+				return
+			}
+			if err != nil {
+				errCh <- fmt.Errorf("LLM chat stream receive error: %w", err)
+				return
+			}
+			for _, choice := range resp.Choices {
+				token := choice.Delta.Content
+				if token == "" {
+					continue
+				}
+				tokenRunes += len([]rune(token))
+				select {
+				case tokenCh <- token:
+				case <-ctx.Done():
+					errCh <- ctx.Err()
+					return
+				}
+			}
+		}
+	}()
+	return tokenCh, errCh, nil
 }
 
 func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (msg string, err error) {

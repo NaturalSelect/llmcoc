@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
 )
+
+var emptyReplyFieldPattern = regexp.MustCompile(`,\s*"reply"\s*:\s*""`)
 
 // kpSystemPrompt is the static system prompt for the master KP agent.
 // It defines the tool interface and COC rules guidelines.
@@ -182,11 +185,11 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="write" sideeffect="false" endTheTurn="false" allowNsfw="true" sexualContent="true">
 			<description>
-				指示叙事代理生成当前场景的详细描述(以第三人称的方式书写)，你需要告诉叙事代理详细的信息包括玩家和NPC的动作、台词和当前环境状态等，不要修改台词。
-				direction字段会追加到叙事buffer，最终response时统一交给Writer生成玩家可见文本；因此中间批次也必须write，不能只在最后一批write。
+				指示叙事代理生成当前场景的白字详细描述(以第三人称书写)。白字是可选阅读层,不承载游戏主流程必要信息; 玩家只看KP回复也必须知道已发生什么、接下来能做什么。
+				direction字段会在KP主流程结束后异步交给Writer生成白字,不会阻塞response.reply。中间批次可以继续write来收集过程素材,但所有关键裁定、状态变化、下一步选择必须同时能在response.reply或ack中成立。
 				PLAYER-ACTION BOUNDARY: direction只能展开CUR中玩家本轮明确宣言的动作/台词，以及本轮工具已确认的结果；禁止写任何“下一步/顺手/随后/继续/决定/默认/沉默/同意/拒绝/跟随/拿起/交出/攻击/施法/继续搜索”等未由玩家明确声明的后续行为或心理反应。若当前动作产生新的选择点，direction必须停在选择点并写“等待玩家决定”，不得替玩家跨过去。
 				只要玩家有动作或发言(对KP的发言除外)就必须调用；无动作无发言时可跳过。
-				PROCESS VISIBILITY: 每当一个中间过程已经被工具结果确定为玩家可见事实（移动完成、NPC做出反应、骰子导致可见成败、物品被拿起/丢失、线索被发现、伤害发生等），必须立刻在同一批次调用write把这个过程追加到buffer；即使随后还要yield等待更多工具，也不能把这些已确定过程留到最终批次才概括。
+				PROCESS VISIBILITY: 每当一个中间过程已经被工具结果确定为玩家可见事实（移动完成、NPC做出反应、骰子导致可见成败、物品被拿起/丢失、线索被发现、伤害发生等），可以在同一批次调用write收集白字素材；若该事实影响玩家决策或游戏状态,必须同时通过response.reply/ack让只看KP的玩家也能理解。
 				LAZY-WRITE HARD ERROR: direction禁止只写“继续描述/处理玩家行动/进入下一场景/他们来到X/简单回应”等空泛指令。每次write都必须给足可写内容，至少包含：①行动者和动作 ②当前地点/目标位置 ③行动造成的可见变化或NPC/环境即时反应 ④本段情绪节奏(日常/调查/紧张/恐怖/战斗) ⑤如果发生场景转换，要写清离开点、路上过渡、到达点第一眼看到的具体事物。
 				SCENE CONTINUITY: 玩家行动推进剧情时，write必须把“动作→环境反馈→下一可互动状态”写完整，不能把剧情停在半句确认或纯总结；“下一可互动状态”是玩家可选择的局面，不是玩家已经做出的下一步。若有多个玩家/NPC在场，说明每个关键对象的位置和可见反应，但不得代替任何玩家回应或行动。
 				SECRECY: direction禁止包含未发现线索内容、NPC秘密或调查员尚未通过行动获取的剧情事实。每次对线索或可疑物的感官描写必须包含具体细节（颜色/形状/质感/气味/声音等），禁止使用"感觉有些不对"/"发现了什么奇怪的东西"等模糊短语——这是hard error。
@@ -231,10 +234,10 @@ const kpSystemPrompt = `
 			<call_example>{"action":"update_npc_card","npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"],"reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool name="response" sideeffect="true" shouldBeLast="true" endTheTurn="true">
-			<description>结束本回合并给出KP对玩家的回复和行为确认留痕(必填)。reply只能总结已发生事实并询问/提示下一步可选行动；禁止在reply中描述或默认玩家接下来会做什么、想什么、同意/拒绝/沉默、移动、交接物品、攻击、施法、搜索或继续行动。
+			<description>结束本回合并给出KP对玩家的主流程回复和行为确认留痕(必填)。reply会先于白字输出,必须短且足够完整:总结已发生事实、关键裁定和下一步可选行动；禁止在reply中描述或默认玩家接下来会做什么、想什么、同意/拒绝/沉默、移动、交接物品、攻击、施法、搜索或继续行动。
 				ack字段规则: (1) 本回合每一次roll_dice都必须记录一条: "roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败"。(2) 每一个其他有副作用的工具(update_*/manage_*/record_*/advance_time)记录一条: "tool_name: reason"(过去时)。不加其他文字，每条最长100字。ack数组中禁止出现任何规则说明文字, act_npc 不需要ack, 但roll_dice 需要ack。
 				【批次硬规则】response只能与write/think/update_llm_note同批次，严禁与update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc同批次——后端会拒绝整批。正确模式：先在独立批次完成所有状态更新(type-B)，yield后再发response批次(type-C)。</description>
-			<call_example>{"action":"response","reply":"总结已发生事实并询问(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 攀爬 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"],"direction":"short game direction"}</call_example>
+			<call_example>{"action":"response","reply":"总结已发生事实并询问(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 攀爬 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"]}</call_example>
 		</tool>
 		<tool name="yield" sideeffect="true" endTheTurn="true">
 			<description>等待本轮工具调用的返回结果后再继续。凡是调用了no-sideeffect工具（roll_dice/act_npc/check_rule/query_npc_card/query_character/query_clues等），本轮必须以yield结尾，不得直接response。这些工具的结果只有在下一轮才能读取。</description>
@@ -323,8 +326,8 @@ THOROUGHNESS IS MANDATORY — LAZY TOOL USE IS A HARD ERROR:
   - act_npc: any NPC present during an interaction must respond.
   - check_rule: any mechanical action requires a rule check unless explicitly exempted by [CHECK-RULE-DEFAULT].
   - update_location / update_npc_location: any investigator or temporary NPC movement requires a location update.
-  - write: any investigator action or speech requires a write call to narrate it. Write is a buffer append, so it is safe and required in intermediate batches; do not postpone all visible process narration to the final batch. After act_npc, write must not invent any investigator reply or follow-up action.
-• If a visible process has been resolved by current tool results, call write in that same batch before yield/response so the buffer records the full sequence. Final response should conclude, not summarize missing middle steps.
+  - write: use write to prepare optional white-text scene description. Write is async after the KP reply and has no mechanical authority; do not put must-read game-flow information only in write. After act_npc, write must not invent any investigator reply or follow-up action.
+• If a visible process has been resolved by current tool results, write may record the full sequence for optional description, while response.reply/ack must still carry the facts needed by players who only read KP.
 • If you find yourself about to call response without having called write, check_rule, act_npc (for present NPCs), or roll_dice (for skill checks) — stop and ask yourself what you skipped.
 
 NO ASSUMPTIONS — ZERO TOLERANCE:
@@ -720,6 +723,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 
 		stripped := llm.StripCodeFence(resp)
 		stripped = llm.JsonArryProtect(stripped)
+		stripped = cleanDuplicateEmptyReply(stripped)
 		var calls []ToolCall
 		unmarshlErr := json.Unmarshal([]byte(stripped), &calls)
 		if unmarshlErr == nil {
@@ -733,6 +737,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 			lastErr = fmt.Errorf("attempt %d JSON parse error: %w", attempt, unmarshlErr)
 			continue
 		}
+		stripped = cleanDuplicateEmptyReply(stripped)
 		unmarshlErr = json.Unmarshal([]byte(stripped), &calls)
 		if unmarshlErr == nil {
 			debugf("KP", "attempt %d JSON repair success, got %d calls, repaired JSON=%s", attempt, len(calls), stripped)
@@ -750,6 +755,12 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 	}
 	debugf("KP", "all %d retries failed, using fallback", maxRetries)
 	return fallback, lastResp, hasFixed, fmt.Errorf("KP JSON parse error after %d attempts: %w", maxRetries, lastErr)
+}
+
+func cleanDuplicateEmptyReply(raw string) string {
+	// Kimi偶尔会在同一个response对象里先输出正常reply,再补一个空reply。
+	// 标准JSON解析会保留最后一个空值,这里先删掉空reply字段,避免误判为空回复。
+	return emptyReplyFieldPattern.ReplaceAllString(raw, "")
 }
 
 // lastUserContent returns the content of the last user message in msgs.

@@ -468,13 +468,14 @@
                                             <div class="narrative-container">
                                                 <template x-if="msg.writer_text || msg.narration_text">
                                                     <div>
-                                                        <p x-show="stripAckContent(msg.writer_text).trim()"
-                                                            class="narrative" x-text="stripAckContent(msg.writer_text)">
-                                                        </p>
                                                         <p x-show="stripAckContent(msg.narration_text).trim()"
                                                             class="narration"
-                                                            :class="stripAckContent(msg.writer_text).trim() ? 'narration-sep' : ''"
                                                             x-text="'KP：' + stripAckContent(msg.narration_text)"></p>
+                                                        <p x-show="stripAckContent(msg.writer_text).trim()"
+                                                            class="narrative"
+                                                            :class="(stripAckContent(msg.narration_text).trim() ? 'narrative-after-kp ' : '') + (msg._writer_streaming ? 'cursor' : '')"
+                                                            x-text="stripAckContent(msg.writer_text)">
+                                                        </p>
                                                     </div>
                                                 </template>
                                                 <template x-if="!msg.writer_text && !msg.narration_text">
@@ -510,13 +511,12 @@
                                         </span>
                                     </div>
 
-                                    <p x-show="stripAckContent(writerBuffer).trim()" class="narrative"
-                                        :class="stripAckContent(narrationBuffer).trim() ? '' : 'cursor'"
-                                        x-text="stripAckContent(writerBuffer)"></p>
                                     <p x-show="stripAckContent(narrationBuffer).trim()" class="narration cursor"
-                                        :class="stripAckContent(writerBuffer).trim() ? 'narration-sep' : ''"
                                         x-text="'KP：' + stripAckContent(narrationBuffer)">
                                     </p>
+                                    <p x-show="stripAckContent(writerBuffer).trim()" class="narrative"
+                                        :class="stripAckContent(narrationBuffer).trim() ? 'narrative-after-kp cursor' : 'cursor'"
+                                        x-text="stripAckContent(writerBuffer)"></p>
                                 </div>
 
                                 <!-- Waiting for other players -->

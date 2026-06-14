@@ -8,13 +8,23 @@ window.COC.game = {
                         const content = this.chatInput.trim();
                         if (!content || this.streaming || this.waitingForPlayers) return;
 
+                        const streamID = Date.now() + ':' + Math.random().toString(16).slice(2);
+                        const unlockKP = () => {
+                            if (this.activeStreamID === streamID) {
+                                this.streaming = false;
+                                this.activeStreamID = null;
+                            }
+                        };
+
                         this.chatInput = '';
                         this.streaming = true;
+                        this.activeStreamID = streamID;
                         this.writerBuffer = '';
                         this.narrationBuffer = '';
 
                         const submittedAt = new Date();
-                        this.preSendMessageCount = this.messages.length;
+                        const tailAnchor = this.messages.length;
+                        this.preSendMessageCount = tailAnchor;
                         this.messages.push({
                             id: Date.now(), role: 'user',
                             username: this.currentPlayerDisplayName(), content,
@@ -28,6 +38,9 @@ window.COC.game = {
 
                         let receivedWaiting = false;
                         let receivedDone = false;
+                        let committedKP = false;
+                        let assistantMessageID = null;
+                        let writerText = '';
 
                         const abortCtrl = new AbortController();
                         const abortTimer = setTimeout(() => abortCtrl.abort(), 10 * 60 * 1000);
@@ -43,7 +56,7 @@ window.COC.game = {
                             if (!resp.ok) {
                                 const err = await resp.json().catch(() => ({ error: '请求失败' }));
                                 this.showToast(err.error || '发送失败', 'error');
-                                this.streaming = false;
+                                unlockKP();
                                 return;
                             }
 
@@ -74,7 +87,12 @@ window.COC.game = {
 
                                             case 'token':
                                                 if (data) {
-                                                    this.writerBuffer += data;
+                                                    if (assistantMessageID) {
+                                                        writerText += data;
+                                                        this._appendWriterToMessage(assistantMessageID, writerText);
+                                                    } else {
+                                                        this.writerBuffer += data;
+                                                    }
                                                     this.$nextTick(() => this.scrollChat());
                                                 }
                                                 break;
@@ -98,10 +116,35 @@ window.COC.game = {
                                                 this.showToast(data || '处理失败', 'error');
                                                 break;
 
+                                            case 'kp_done':
+                                                try {
+                                                    const info = JSON.parse(data || '{}');
+                                                    assistantMessageID = info.message_id || assistantMessageID;
+                                                    const msg = this._commitStreamBuffers({
+                                                        id: assistantMessageID,
+                                                        created_at: info.created_at,
+                                                        writerStreaming: !!info.has_writer && !info.writer_done,
+                                                        anchor: tailAnchor,
+                                                    });
+                                                    if (msg) assistantMessageID = msg.id;
+                                                    committedKP = !!msg;
+                                                } catch (_) {
+                                                    const msg = this._commitStreamBuffers({ anchor: tailAnchor });
+                                                    if (msg) assistantMessageID = msg.id;
+                                                    committedKP = !!msg;
+                                                }
+                                                unlockKP();
+                                                break;
+
                                             case 'done':
                                                 receivedDone = true;
-                                                if (!receivedWaiting && (this.writerBuffer || this.narrationBuffer)) {
-                                                    this._commitStreamBuffers();
+                                                if (assistantMessageID) {
+                                                    this._setMessageWriterDone(assistantMessageID);
+                                                }
+                                                if (!committedKP && !receivedWaiting && (this.writerBuffer || this.narrationBuffer)) {
+                                                    const msg = this._commitStreamBuffers({ anchor: tailAnchor });
+                                                    if (msg) assistantMessageID = msg.id;
+                                                    committedKP = !!msg;
                                                 }
                                                 break;
                                         }
@@ -116,20 +159,22 @@ window.COC.game = {
                             }
                         } finally {
                             clearTimeout(abortTimer);
-                            this.streaming = false;
+                            unlockKP();
                         }
 
                         if (receivedWaiting) {
+                            this.writerBuffer = '';
+                            this.narrationBuffer = '';
                             this.waitingForPlayers = true;
                             this.waitingSince = submittedAt;
                             this.pollForKPResponse(submittedAt);
-                        } else if (receivedDone) {
+                        } else if (receivedDone && !committedKP) {
                             if (this.writerBuffer || this.narrationBuffer) {
-                                this._commitStreamBuffers();
+                                this._commitStreamBuffers({ anchor: tailAnchor });
                             }
-                        } else {
+                        } else if (!committedKP) {
                             if (this.writerBuffer || this.narrationBuffer) {
-                                this._commitStreamBuffers();
+                                this._commitStreamBuffers({ anchor: tailAnchor });
                             } else {
                                 this._recoverFromDrop(submittedAt);
                             }
@@ -156,35 +201,69 @@ window.COC.game = {
                         }
                     },
 
-                    _commitStreamBuffers() {
+                    _assistantContent(writerText, narrationText) {
+                        const wt = this.stripAckContent(writerText).trim();
+                        const nt = this.stripAckContent(narrationText).trim();
+                        if (!nt) return wt;
+                        return (wt ? wt + '\n\n' : '') + 'KP:' + nt;
+                    },
+
+                    _commitStreamBuffers(meta = {}) {
                         const wt = this.stripAckContent(this.writerBuffer).trim();
                         const nt = this.stripAckContent(this.narrationBuffer).trim();
-                        const fullContent = wt + (nt ? '\n\nKP:' + nt : '');
-                        this.messages.push({
-                            id: Date.now() + 1,
+                        if (!wt && !nt) return null;
+                        const msg = {
+                            id: meta.id || Date.now() + 1,
                             role: 'assistant', username: 'KP',
-                            content: fullContent,
+                            content: this._assistantContent(wt, nt),
                             writer_text: wt,
                             narration_text: nt,
-                            created_at: new Date().toISOString(),
+                            created_at: meta.created_at || new Date().toISOString(),
+                            _writer_streaming: !!meta.writerStreaming,
                             _new: true,
-                        });
+                        };
+                        this.messages.push(msg);
                         this.writerBuffer = '';
                         this.narrationBuffer = '';
                         this.refreshCurrentSession(true).catch(() => { });
                         this.$nextTick(() => this.scrollChat());
-                        // Sync tail from DB so all players' actions appear in correct order.
-                        // In multi-player the last submitter only has their own action locally;
-                        // DB (already written before 'done' SSE) has every player's action.
-                        this._syncTailFromDB();
+                        // 同步数据库尾部消息,保证多人回合里的玩家行动顺序以服务端为准。
+                        this._syncTailFromDB(meta.anchor);
+                        return msg;
                     },
 
-                    async _syncTailFromDB() {
-                        if (!this.currentSession?.id || this.preSendMessageCount < 0) return;
-                        const anchor = this.preSendMessageCount;
-                        this.preSendMessageCount = -1;
-                        // Reuse refreshingMessages guard to prevent concurrent refreshCurrentMessages
-                        // from running an incremental append while we do the full splice.
+                    _appendWriterToMessage(messageID, writerText) {
+                        const idx = this.messages.findIndex(m => String(m.id) === String(messageID));
+                        if (idx < 0) return;
+                        const msg = this.messages[idx];
+                        const wt = this.stripAckContent(writerText).trim();
+                        this.messages.splice(idx, 1, {
+                            ...msg,
+                            writer_text: wt,
+                            content: this._assistantContent(wt, msg.narration_text || ''),
+                            _writer_streaming: true,
+                        });
+                    },
+
+                    _setMessageWriterDone(messageID) {
+                        const idx = this.messages.findIndex(m => String(m.id) === String(messageID));
+                        if (idx < 0) return;
+                        this.messages.splice(idx, 1, {
+                            ...this.messages[idx],
+                            _writer_streaming: false,
+                        });
+                    },
+
+                    async _syncTailFromDB(anchor = null) {
+                        if (!this.currentSession?.id) return;
+                        if (anchor === null || anchor === undefined) {
+                            if (this.preSendMessageCount < 0) return;
+                            anchor = this.preSendMessageCount;
+                        }
+                        if (this.preSendMessageCount === anchor) {
+                            this.preSendMessageCount = -1;
+                        }
+                        // 复用刷新锁,避免常规轮询在这里做尾部替换时同时追加消息。
                         if (this.refreshingMessages) return;
                         this.refreshingMessages = true;
                         try {
@@ -192,7 +271,7 @@ window.COC.game = {
                                 (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
                             );
                             if (msgs.length > anchor) {
-                                // Replace everything from anchor onwards with the DB-canonical tail
+                                // 用数据库尾部替换本地尾部,修正多人行动顺序。
                                 this.messages.splice(
                                     anchor,
                                     this.messages.length - anchor,
@@ -251,8 +330,32 @@ window.COC.game = {
                                 (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
                             );
 
-                            // 增量追加：只取比当前多出来的新消息，避免全量替换导致滚动位置重置
-                            const newMsgs = msgs.slice(this.messages.length).map(m => ({ ...m, _new: true }));
+                            const existingByID = new Map(this.messages.map((m, idx) => [String(m.id), idx]));
+                            const newMsgs = [];
+                            let changed = false;
+
+                            for (const msg of msgs) {
+                                const idx = existingByID.get(String(msg.id));
+                                if (idx === undefined) {
+                                    newMsgs.push({ ...msg, _new: true });
+                                    continue;
+                                }
+                                const old = this.messages[idx];
+                                if (
+                                    old.content !== msg.content ||
+                                    old.writer_text !== msg.writer_text ||
+                                    old.narration_text !== msg.narration_text
+                                ) {
+                                    this.messages.splice(idx, 1, {
+                                        ...old,
+                                        ...msg,
+                                        _new: old._new,
+                                        _writer_streaming: old._writer_streaming,
+                                    });
+                                    changed = true;
+                                }
+                            }
+
                             if (newMsgs.length > 0) {
                                 this.messages.push(...newMsgs);
                                 if (this.waitingForPlayers && this.waitingSince) {
@@ -263,6 +366,8 @@ window.COC.game = {
                                         this.waitingInfo = { pending: 0, total: 0 };
                                     }
                                 }
+                            }
+                            if (changed || newMsgs.length > 0) {
                                 this.$nextTick(() => this.scrollChat());
                             }
                         } catch (e) {
@@ -329,8 +434,8 @@ window.COC.game = {
 
                     stripAckContent(content) {
                         return String(content || '')
-                            .replace(/<ack\b[^>]*>[\s\S]*?<\/ack>/gi, '')
-                            .replace(/<ack\b[^>]*>[\s\S]*$/gi, '')
+                            .replace(/<(ack|direction|dice|time_point)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+                            .replace(/<(ack|direction|dice|time_point)\b[^>]*>[\s\S]*$/gi, '')
                             .trim();
                     },
 

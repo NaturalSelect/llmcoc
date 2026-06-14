@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -134,10 +135,13 @@ func makeTestRouter(h *SessionHandlers, userID uint, username string) *gin.Engin
 	return r
 }
 
-// parseSSE returns a map[eventType][]data parsed from an SSE response body.
-// Gin's SSE encoder writes "event:name" and "data:value" (no space after colon).
-func parseSSE(body string) map[string][]string {
-	events := map[string][]string{}
+type parsedSSEEvent struct {
+	name string
+	data string
+}
+
+func parseSSEEvents(body string) []parsedSSEEvent {
+	var events []parsedSSEEvent
 	scanner := bufio.NewScanner(strings.NewReader(body))
 	var curEvent string
 	for scanner.Scan() {
@@ -147,8 +151,26 @@ func parseSSE(body string) map[string][]string {
 			curEvent = strings.TrimPrefix(line, "event:")
 		case strings.HasPrefix(line, "data:"):
 			data := strings.TrimPrefix(line, "data:")
-			events[curEvent] = append(events[curEvent], data)
+			events = append(events, parsedSSEEvent{name: curEvent, data: data})
 		}
+	}
+	return events
+}
+
+func firstSSEEventIndex(events []parsedSSEEvent, name string) int {
+	for i, event := range events {
+		if event.name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// parseSSE 按事件类型聚合SSE响应数据。
+func parseSSE(body string) map[string][]string {
+	events := map[string][]string{}
+	for _, event := range parseSSEEvents(body) {
+		events[event.name] = append(events[event.name], event.data)
 	}
 	return events
 }
@@ -292,9 +314,15 @@ func TestChatStream_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	runner := mocks.NewMockAgentRunner(ctrl)
 	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
-		WriterText: "克苏鲁觉醒了",
-		KPReply:    "恐惧正在蔓延。",
+		WriterDirection: "描述古籍翻开后的异变",
+		KPReply:         "恐惧正在蔓延。",
 	}, nil)
+	runner.EXPECT().RunWriterStream(gomock.Any(), gomock.Any(), "描述古籍翻开后的异变", gomock.Any()).
+		DoAndReturn(func(ctx context.Context, gctx agent.GameContext, direction string, onToken func(string)) (string, error) {
+			onToken("克苏鲁")
+			onToken("觉醒了")
+			return "克苏鲁觉醒了", nil
+		})
 
 	h := NewSessionHandlers(runner)
 	r := makeTestRouter(h, userID, "tester")
@@ -306,6 +334,7 @@ func TestChatStream_Success(t *testing.T) {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
 	events := parseSSE(w.Body.String())
+	eventOrder := parseSSEEvents(w.Body.String())
 
 	// Concatenate token events (Writer text).
 	var gotWriter string
@@ -324,6 +353,15 @@ func TestChatStream_Success(t *testing.T) {
 	if gotNarration != "恐惧正在蔓延。" {
 		t.Errorf("narration tokens = %q, want %q", gotNarration, "恐惧正在蔓延。")
 	}
+	narrationIdx := firstSSEEventIndex(eventOrder, "narration")
+	kpDoneIdx := firstSSEEventIndex(eventOrder, "kp_done")
+	tokenIdx := firstSSEEventIndex(eventOrder, "token")
+	if narrationIdx < 0 || kpDoneIdx < 0 || tokenIdx < 0 {
+		t.Fatalf("expected narration, kp_done and token events; body:\n%s", w.Body.String())
+	}
+	if !(narrationIdx < kpDoneIdx && kpDoneIdx < tokenIdx) {
+		t.Fatalf("SSE order want narration -> kp_done -> token, got narration=%d kp_done=%d token=%d", narrationIdx, kpDoneIdx, tokenIdx)
+	}
 
 	if len(events["done"]) == 0 {
 		t.Errorf("expected SSE done event; body:\n%s", w.Body.String())
@@ -335,7 +373,7 @@ func TestChatStream_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no assistant message persisted: %v", err)
 	}
-	// DB stores writer + narration combined.
+	// DB保存为writer+KP拼接格式,便于历史上下文读取KP段。
 	wantContent := "克苏鲁觉醒了\n\nKP:恐惧正在蔓延。"
 	if msg.Content != wantContent {
 		t.Errorf("persisted content = %q, want %q", msg.Content, wantContent)

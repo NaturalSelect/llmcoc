@@ -87,7 +87,6 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 	}
 	requiredRoles := map[models.AgentRole]bool{
 		models.AgentRoleDirector: true,
-		models.AgentRoleWriter:   true,
 		models.AgentRoleLawyer:   true,
 		models.AgentRoleNPC:      true,
 	}
@@ -103,7 +102,11 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 		}
 		h, err := newAgentHandleFromConfig(cfg, nil)
 		if err != nil {
-			return nil, err
+			if requiredRoles[role] {
+				return nil, err
+			}
+			result[role] = agentHandle{config: cfg, enabled: false}
+			continue
 		}
 		if requiredRoles[role] && !h.isEnabled() {
 			return nil, fmt.Errorf("agent %q 已禁用,请在管理面板启用", role)
@@ -156,18 +159,9 @@ func ClearAllCachedAgents() {
 	}
 }
 
-// run implements the master-slave agent loop.
-//
-// Architecture:
-//   - Master (KP/Director): Has full scenario info. Outputs JSON arrays of tool calls.
-//   - Slaves (Writer, Lawyer, Editor, NPC): No scenario info; provide specific services.
-//
-// The loop continues until the KP issues an "response" tool call or max iterations reached.
-// Writer maintains conversation history across write calls for narrative continuity.
-// At "response", the accumulated writer buffer is returned to the caller.
-//
-// Turn-action recording is handled by the caller (ChatStream handler) before run() is
-// invoked, so run() does not call recordTurnAction itself.
+// run 执行KP主流程工具循环。
+// KP负责游戏状态推进和短回复; write动作只收集白字导演指令,不在主流程里调用Writer。
+// 玩家行动记录由ChatStream在调用run前完成。
 func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	handles, err := getCachedAgents(gctx.Session.ID)
 	if err != nil {
@@ -185,13 +179,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	// Load temp NPCs for this session.
 	var tempNPCs []models.SessionNPC
 	models.DB.Where("session_id = ?", gctx.Session.ID).Find(&tempNPCs)
-
-	// Writer state accumulates narrative across multiple write calls.
-	// Load persisted history from DB so the Writer has continuity across rounds.
-	writerState := &WriterState{}
-	if len(gctx.Session.WriterHistory.Data) > 0 {
-		writerState.History = chatMsgsToLLM(gctx.Session.WriterHistory.Data)
-	}
 
 	rbIdx := rulebook.GlobalIndex
 
@@ -277,7 +264,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			Sid:                sid,
 			Handles:            handles,
 			TempNPCs:           &tempNPCs,
-			Writer:             writerState,
 			RbIdx:              rbIdx,
 			HasEnd:             &hasEnd,
 			TimeAdvancedInTurn: &timeAdvancedInTurn,
@@ -419,10 +405,10 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					clearTurnActions(gctx)
 				}
 			}
-			saveWriterHistory(gctx.Session.ID, writerState)
-			debugf("run", "session=%d completed iter=%d writer_len=%d narration_len=%d",
-				sid, iter+1, len([]rune(writerState.Buffer)), len([]rune(kpNarration)))
-			return RunOutput{WriterText: writerState.Buffer, KPReply: kpNarration}, nil
+			writerDirection := strings.TrimSpace(pendingWrite)
+			debugf("run", "session=%d completed iter=%d writer_direction_len=%d narration_len=%d",
+				sid, iter+1, len([]rune(writerDirection)), len([]rune(kpNarration)))
+			return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration}, nil
 		}
 
 		// Feed tool results back as a user message so the next KP call has proper
@@ -479,15 +465,10 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 	}
 
-	// Max iterations reached — return whatever Writer produced.
-	if writerState.Buffer == "" {
-		writerState.Buffer = "(KP思考中,请稍后重试。)"
-	}
 	if kpNarration == "" {
 		kpNarration = "本轮未生成KP独白。"
 	}
-	saveWriterHistory(gctx.Session.ID, writerState)
-	return RunOutput{WriterText: writerState.Buffer, KPReply: kpNarration}, nil
+	return RunOutput{WriterDirection: strings.TrimSpace(pendingWrite), KPReply: kpNarration}, nil
 }
 
 // executeParallelBatch runs check_rule calls and act_npc calls targeting distinct

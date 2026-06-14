@@ -6,23 +6,20 @@ import (
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
-// GameContext carries all information the agent pipeline needs for one chat turn.
+// GameContext 承载一次聊天回合所需的全部上下文。
 type GameContext struct {
 	Session        models.GameSession
-	History        []models.Message // recent messages, system role excluded
+	History        []models.Message // 最近消息,不含system角色
 	UserInput      string
 	UserName       string
 	UserInputAdmin bool // true if the user input is from the admin (KP), false for regular players
-	// PendingActions holds all player actions collected for the current round.
-	// Populated only in multi-player sessions once all players have submitted;
-	// when non-empty the KP prompt shows a combined action summary instead of
-	// the single UserInput/UserName fields.
+	// PendingActions 保存本轮已收集的玩家行动;多人房间只在所有人提交后填充。
 	PendingActions []PlayerAction
 }
 
-// PlayerAction is one player's submitted action for the current round.
+// PlayerAction 是一个玩家在当前回合提交的行动。
 type PlayerAction struct {
-	IsAdmin    bool // true if the player is the admin (KP), false for regular players
+	IsAdmin    bool // true表示管理员/KP输入,false表示普通玩家输入
 	PlayerName string
 	Content    string
 }
@@ -124,20 +121,18 @@ type ToolResult struct {
 	Result string       `json:"result"`
 }
 
-// WriterState holds the writer's conversation history and accumulated narrative buffer.
-// It is maintained across multiple write calls within the same turn to ensure continuity.
+// WriterState 保存Writer自己的上下文和本次生成的白字描述。
 type WriterState struct {
-	History []llm.ChatMessage // writer's own chat history for text continuity
-	Buffer  string            // accumulated narrative text; streamed to player at turn end
+	History []llm.ChatMessage // Writer自己的历史,用于保持文本连续性
+	Buffer  string            // 本次生成的白字描述
 }
 
-// RunOutput is the structured result of a single agent pipeline run.
-// WriterText and KPReply are kept separate so the handler can send them
-// as distinct SSE event types, allowing the frontend to render them differently
-// (e.g. writer narrative in large text, KP's spoken reply in smaller text).
+// RunOutput 是一次KP主流程的结构化结果。
+// KPReply 是游戏主流程输出; WriterDirection 只用于之后异步生成白字描述。
 type RunOutput struct {
-	WriterText string // narrative from the Writer agent
-	KPReply    string // KP's direct reply to the player (like a friend at the table)
+	WriterText      string // 已生成的白字描述,主要用于测试或兼容旧调用
+	WriterDirection string // Writer后续生成描述所需的导演指令
+	KPReply         string // KP对玩家的主流程回复
 }
 
 // ── Dice types ────────────────────────────────────────────────────────────────
