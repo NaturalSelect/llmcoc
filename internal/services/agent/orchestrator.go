@@ -918,9 +918,13 @@ func chaseAPSummary(parts []models.ChaseParticipant, minMOV int) string {
 func formatSingleDiceResult(r DiceCheckResult) string {
 	hidden := ""
 	if r.Hidden {
-		hidden = "(暗骰)"
+		hidden = " (暗骰)"
 	}
-	return fmt.Sprintf("%v鉴定: %v %v", r.What, r.Roll, hidden)
+	level := ""
+	if r.Level != "" {
+		level = fmt.Sprintf("难度:%s ", r.Level)
+	}
+	return fmt.Sprintf("%v鉴定: %v %v%v", r.What, r.Roll, level, hidden)
 }
 
 // formatNPCAction formats an NPCAction as an unverified roleplay result for the KP.

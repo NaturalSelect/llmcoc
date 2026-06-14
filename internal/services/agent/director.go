@@ -63,7 +63,7 @@ const kpSystemPrompt = `
   B. scenario明文要求在此节点掷骰（逐字引用scenario中的具体触发条件）。
   C. 先询问规则专家，如果规则专家确认你可以投掷，且规则专家返回了具体的骰型或检定方式（如"需要进行听力检定，难度为50"或"需要掷1D10伤害骰"），你就可以投掷；如果规则专家确认你不应该投掷（如"这个情境下规则没有要求进行检定"），你就不能投掷。
 【禁止调用】以下情形禁止roll_dice：①不在A–E范围内的KP自创检定，包括"神性接触抵抗检定"/"承受神圣冲击"/"长时间接触代价"等在规则书和scenario中均不存在的检定——无论叙事多有氛围；②玩家未宣言行动而KP代替玩家主动发起检定；③在check_rule确认某情境是否需要检定之前，先掷骰再倒推理由。</description>
-			<call_example>{"action":"roll_dice","dice":{"dice_expr":"1D100","what":"说服","character":"角色名","reason":"A: 玩家宣言'我尝试说服侦探相信我的话'"}}</call_example>
+			<call_example>{"action":"roll_dice","dice":{"dice_expr":"1D100","what":"说服","character":"角色名","level":"一般/困难/极难","reason":"A: 玩家宣言'我尝试说服侦探相信我的话'"}}</call_example>
 		</tool>
 		<tool name="create_npc" sideeffect="true" endTheTurn="false">
 			<description>创建一个临时NPC(每个NPC独立agent)。

@@ -148,6 +148,7 @@ type DiceCheck struct {
 	Hidden    bool   `json:"hidden"`              // 暗骰:玩家不可见具体数值,KP将结果融入叙事
 	What      string `json:"what"`                // 检定内容描述(如 "攻击检定"/"智力检定")
 	DiceExpr  string `json:"dice_expr,omitempty"` // 可选的骰子表达式(如 "1D100+20"),优先于固定值
+	Level     string `json:"level,omitempty"`     // 可选的检定难度等级(如 "简单"/"困难"),仅供KP参考
 }
 
 // DiceCheckResult is the outcome of an auto-executed dice check.
