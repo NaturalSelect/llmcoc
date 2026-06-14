@@ -468,18 +468,18 @@
                                             <div class="narrative-container">
                                                 <template x-if="msg.writer_text || msg.narration_text">
                                                     <div>
-                                                        <p x-show="stripAckContent(msg.narration_text).trim()"
-                                                            class="narration"
-                                                            x-text="'KP：' + stripAckContent(msg.narration_text)"></p>
                                                         <p x-show="stripAckContent(msg.writer_text).trim()"
                                                             class="narrative"
-                                                            :class="(stripAckContent(msg.narration_text).trim() ? 'narrative-after-kp ' : '') + (msg._writer_streaming ? 'cursor' : '')"
+                                                            :class="(msg._writer_streaming ? 'cursor' : '')"
                                                             x-text="stripAckContent(msg.writer_text)">
                                                         </p>
                                                         <p x-show="msg._writer_streaming && !stripAckContent(msg.writer_text).trim()"
-                                                            class="narrative narrative-after-kp cursor text-amber-200/60">
+                                                            class="narrative cursor text-amber-200/60">
                                                             叙事正文生成中…
                                                         </p>
+                                                        <p x-show="stripAckContent(msg.narration_text).trim()"
+                                                            class="narration narrative-after-kp"
+                                                            x-text="'KP：' + stripAckContent(msg.narration_text)"></p>
                                                     </div>
                                                 </template>
                                                 <template x-if="!msg.writer_text && !msg.narration_text">
@@ -514,12 +514,12 @@
                                             x-text="progressText || 'Agent 团队运行中，请稍候…'"></span>
                                     </div>
 
-                                    <p x-show="stripAckContent(narrationBuffer).trim()" class="narration cursor"
+                                    <p x-show="stripAckContent(writerBuffer).trim()" class="narrative"
+                                        :class="'cursor'"
+                                        x-text="stripAckContent(writerBuffer)"></p>
+                                    <p x-show="stripAckContent(narrationBuffer).trim()" class="narration narrative-after-kp cursor"
                                         x-text="'KP：' + stripAckContent(narrationBuffer)">
                                     </p>
-                                    <p x-show="stripAckContent(writerBuffer).trim()" class="narrative"
-                                        :class="stripAckContent(narrationBuffer).trim() ? 'narrative-after-kp cursor' : 'cursor'"
-                                        x-text="stripAckContent(writerBuffer)"></p>
                                 </div>
 
                                 <!-- Waiting for other players -->
