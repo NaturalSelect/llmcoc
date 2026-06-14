@@ -242,29 +242,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		emitProgress(progressPlannedCalls(calls))
 
 		// LLM 的结果加回去
-		// Record what the KP decided so the next iteration has proper context.
-		truncStr := func(s string, max int) string {
-			if len(s) <= max {
-				return s
-			}
-			return fmt.Sprintf("%s...", s[:max])
-		}
-		compressRawResp := func(calls []ToolCall) string {
-			tmp := append([]ToolCall{}, calls...)
-			for i := range tmp {
-				act := &tmp[i]
-				act.Reply = truncStr(act.Reply, 10)
-				act.Direction = truncStr(act.Direction, 10)
-			}
-			data, _ := json.Marshal(tmp)
-			return string(data)
-		}
-		if strings.Contains(handles[models.AgentRoleDirector].config.ModelName, "deepseek") {
-			// NOTE: cache hint is super cheap to include in KP context, so include full tool call data for deepseek since it can use the extra context to reduce token usage in future calls.
-			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: rawResp})
-		} else {
-			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: compressRawResp(calls)})
-		}
+		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: rawResp})
 
 		var toolResults []ToolResult
 		hasEnd := false
