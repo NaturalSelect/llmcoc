@@ -587,7 +587,7 @@ func normalizeResponseOptionsPayload(call ToolCall) (responseOptionsPayload, boo
 		}
 		seen[opt] = true
 		options = append(options, opt)
-		if len(options) >= 8 {
+		if len(options) >= 3 {
 			break
 		}
 	}

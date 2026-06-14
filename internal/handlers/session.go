@@ -821,12 +821,13 @@ loop:
 			}
 			output = res.output
 			// 排空 progressCh 中剩余的消息，避免丢失
+		drainLoop:
 			for {
 				select {
 				case progress := <-progressCh:
 					sendProgress(progress)
 				default:
-					break
+					break drainLoop
 				}
 			}
 			break loop
