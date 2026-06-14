@@ -208,13 +208,13 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	logScripterArtifact("Constraints", constraints)
 
 	log.Printf("[scripter] stage=oneshot start")
-	draft, irony, rewardConcept, err := generateOneshotDraft(ctx, r, constraints)
+	draft, _, rewardConcept, err := generateOneshotDraft(ctx, r, constraints)
 	if err != nil {
 		log.Printf("[scripter] stage=oneshot error=%v", err)
 		return ScenarioCreationOutput{}, fmt.Errorf("单步生成失败: %w", err)
 	}
-	log.Printf("[scripter] stage=oneshot done name=%q scenes=%d npcs=%d clues=%d delta=%q",
-		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), irony.DeltaOperator)
+	log.Printf("[scripter] stage=oneshot done name=%q scenes=%d npcs=%d clues=%d",
+		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 
 	applyGuardrails(&draft, r.req, r.architectModelName())
 
@@ -226,7 +226,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 			break
 		}
 		log.Printf("[scripter] stage=repair round=%d issues=%d %v", round, len(issues), issues)
-		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, irony, issues)
+		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, issues)
 		if repairErr != nil {
 			log.Printf("[scripter] stage=repair round=%d failed: %v", round, repairErr)
 			break
@@ -253,7 +253,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 
 	beforeIssues := validateDraftCompatibility(draft)
 	log.Printf("[scripter] normalization start pre_issues=%d", len(beforeIssues))
-	normalizeOneshotDraft(&draft, r.req, r.architectModelName(), constraints, irony)
+	normalizeOneshotDraft(&draft, r.req, r.architectModelName(), constraints)
 	log.Printf("[scripter] normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d partial_wins=%d",
 		draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Content.GameStartSlot,
 		len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), len(draft.Content.PartialWins))
@@ -263,7 +263,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	}
 	logScripterArtifact("Final ScenarioDraft", draft)
 
-	return ScenarioCreationOutput{Draft: draft, IronyCore: &irony, Iterations: iterations}, nil
+	return ScenarioCreationOutput{Draft: draft, IronyCore: &IronyCore{}, Iterations: iterations}, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -26,18 +26,8 @@ import (
 // ---------------------------------------------------------------------------
 
 // oneshotResult is the JSON payload inside the architect's submit tool call.
-// It carries both the standard ScenarioDraft fields and design-metadata fields
-// (delta_operator, surface_reading, etc.) used for IronyCore compat and reward agent.
 type oneshotResult struct {
-	// Design metadata
-	DeltaOperator     string `json:"delta_operator,omitempty"`
-	DeltaOperatorDesc string `json:"delta_operator_desc,omitempty"`
-	SurfaceReading    string `json:"surface_reading,omitempty"`
-	DeepTruth         string `json:"deep_truth,omitempty"`
-	FalseDelta        string `json:"false_delta,omitempty"`
-	SharedEvidence    string `json:"shared_evidence,omitempty"`
-	EmotionalWeight   string `json:"emotional_weight,omitempty"`
-	RewardConcept     string `json:"reward_concept,omitempty"`
+	RewardConcept string `json:"reward_concept,omitempty"`
 	// ScenarioDraft fields
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
@@ -58,20 +48,8 @@ func (r oneshotResult) toScenarioDraft() ScenarioDraft {
 	}
 }
 
-func (r oneshotResult) toIronyCore() IronyCore {
-	return IronyCore{
-		DeltaOperator:     r.DeltaOperator,
-		DeltaOperatorDesc: r.DeltaOperatorDesc,
-		SurfaceReading:    r.SurfaceReading,
-		DeepTruth:         r.DeepTruth,
-		FalseDelta:        r.FalseDelta,
-		SharedEvidence:    r.SharedEvidence,
-		EmotionalWeight:   r.EmotionalWeight,
-	}
-}
-
 // oneshotExample is the JSON schema example used for parsing/repair prompts.
-const oneshotExample = `{"delta_operator":"role_swap","delta_operator_desc":"","surface_reading":"老人每晚去图书馆取走特定书籍——表面是盗窃","deep_truth":"书是他自己的，他在取回被窃之物","false_delta":"identity_collapse","shared_evidence":"老人对书籍位置异乎寻常地熟悉，从不乱翻","emotional_weight":"「盗贼」与「失主」的身份在道德上互换","reward_concept":"与食尸鬼有关的古籍手稿","name":"示例模组","description":"围绕派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是KP，管理会自行推进的局势。【KP独有】δ内部真相：书是Douglas自己的，他在取回被窃之物。","setting":"镇图书馆连续三夜有书籍失踪，守墓人向警方报告了一个体型异常的入侵者。","intro":"你们进入局势。立即可做的事：①询问守墓人入侵者描述；②检查失窃书目；③决定是否公开异常气味。","game_start_slot":16,"map_description":"【文字地图】图书馆→书架区↔档案室↔墓地。","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。","scenes":[{"id":"library_main","name":"图书馆大厅","description":"可见：失窃公告。可发现：书目来自同一捐赠者。杠杆：公开规律会导致图书馆关闭。风险：拖延三天后永久关闭。出口：书架区、档案室。感官：潮湿泥土气息与旧纸味格格不入。","triggers":["available_from_start"]}],"npcs":[{"name":"守墓人Henrik","description":"公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。","attitude":"警惕、简短","stats":{"STR":55,"CON":60,"SIZ":65,"DEX":50,"APP":40,"INT":55,"POW":50,"EDU":55,"SAN":50,"HP":12,"MP":10}}],"clues":["[真实]失窃书目规律(书架区): 全部来自同一捐赠者。","[隐藏]神话本质(墓地): 食尸鬼是死者变形后的存在，保留人类记忆；SAN检定1/1d6；具体属性按规则书裁定。","[误导]守墓人描述(大厅): 体型异常、动作迅速——在deep_truth揭示后仍然准确，只是「盗贼」身份完全颠倒。"],"win_condition":"如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。","lose_condition":"如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。","partial_wins":["如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"]}}`
+const oneshotExample = `{"reward_concept":"与食尸鬼有关的古籍手稿","name":"示例模组","description":"围绕派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。","setting":"镇图书馆连续三夜有书籍失踪，守墓人向警方报告了一个体型异常的入侵者。","intro":"你们进入局势。立即可做的事：①询问守墓人入侵者描述；②检查失窃书目；③决定是否公开异常气味。","game_start_slot":16,"map_description":"【文字地图】图书馆→书架区↔档案室↔墓地。","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。","scenes":[{"id":"library_main","name":"图书馆大厅","description":"可见：失窃公告。可发现：书目来自同一捐赠者。杠杆：公开规律会导致图书馆关闭。风险：拖延三天后永久关闭。出口：书架区、档案室。感官：潮湿泥土气息与旧纸味格格不入。","triggers":["available_from_start"]}],"npcs":[{"name":"守墓人Henrik","description":"公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。","attitude":"警惕、简短","stats":{"STR":55,"CON":60,"SIZ":65,"DEX":50,"APP":40,"INT":55,"POW":50,"EDU":55,"SAN":50,"HP":12,"MP":10}}],"clues":["[真实]失窃书目规律(书架区): 全部来自同一捐赠者。","[隐藏]神话本质(墓地): 食尸鬼是死者变形后的存在，保留人类记忆；SAN检定1/1d6；具体属性按规则书裁定。","[误导]守墓人描述(大厅): 体型异常、动作迅速——在真相揭示后仍然准确，只是「盗贼」身份完全颠倒。"],"win_condition":"如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。","lose_condition":"如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。","partial_wins":["如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"]}}`
 
 // ---------------------------------------------------------------------------
 // System prompt
@@ -84,56 +62,35 @@ func oneshotSystemPrompt() string {
 
 内部创作流程必须遵循COC模组写作法：先确定恐怖内核，再确定调查焦点，再搭建洋葱式谜团与非线性线索网络，最后编译为可运行的剧本JSON。COC的核心是谜团、调查、氛围与逐步揭露的恐怖，不是战斗。
 
-在内部（不输出中间步骤）按以下六步推理，然后通过工具提交结果：
+在内部（不输出中间步骤）按以下步骤推理，然后通过工具提交结果：
 
 【步骤①：核心概念与恐怖内核】
 先明确：
-- 恐怖内核：身体恐怖（变异/腐蚀） / 宇宙恐怖（知识即疯狂） / 哥特恐怖（家族诅咒） / 社会恐怖（"你身边的人都已经被替换了"） / 环境恐怖（"土地本身在排斥人类"） 
-- 神话关联度：旧日支配者本体 / 眷属 / 神话物品 / 神话知识污染
+- 选择恐怖内核：身体恐怖（变异/腐蚀） / 宇宙恐怖（知识即疯狂） / 哥特恐怖（家族诅咒） / 社会恐怖（"你身边的人都已经被替换了"） / 环境恐怖（"土地本身在排斥人类"） 
+- 选择神话关联度：旧日支配者本体 / 眷属 / 神话物品 / 神话知识污染
 - 时代与地域风味：只作为氛围和行动约束，不直接代替谜团
-- 调查焦点：失踪、离奇死亡、古物失窃、异常仪式、家族秘密、地方传闻等一个明确入口
+- 决定调查焦点：失踪、离奇死亡、古物失窃、异常仪式、家族秘密、地方传闻等一个明确入口
 
 要求：
 - 开场问题必须让调查员愿意主动调查
 - 不要先想战斗或Boss，而是先想调查员最初看到的异常
+- 至少设计两个表面相似或同期发生的事件：一个是通向核心真相的调查入口（主线事件），另一个是看似相关但最终指向无关结论的红鲱鱼（干扰事件）；两者必须有各自的完整线索链，红鲱鱼在排除后不能导致剧情卡死
 - brief若为空，也必须先构造一个可调查的表层事件
 
-【步骤②：洋葱式谜团与δ-认知翻转设计】
-先把谜团分成三层，再选择delta_operator：
-- 表层事件：调查员一开始接触到的案件/异常
-- 中层真相：邪教活动、人类阴谋、伪装、掩盖、利益冲突、误认
-- 深层恐怖：真正的神话真相、不可名状的知识、存在论崩塌
-
-然后从下方认知翻转类型参考表选择 delta_operator，设计：
-- surface_reading：普通观察者立刻形成的推断（不需要预知任何真相）
-- deep_truth：揭示后的实际情况
-- false_delta：经验读者优先猜测的错误翻转类型（必须与delta_operator作用于不同语义维度）
-- shared_evidence：在两种解读框架下均成立的歧义证据
-- emotional_weight：揭示时被摧毁的具体认知边界/关系/身份
-
-内部自查②：
-✓ surface_reading无需预知真相即可形成？
-✓ 表层事件、中层真相、深层恐怖彼此递进，而不是同一句话改写？
-✓ delta_operator唯一精确地解释surface→deep变换（换类型就失效）？
-✓ 知道deep_truth后，surface_reading的所有表层观察仍然说得通（后验必然性）？
-✓ false_delta与delta_operator作用于不同语义维度？
-
-【步骤③：COC神话元素选择与验证】
-通过 translate_anchor 工具将 deep_truth 核心概念翻译为COC7规则书元素：
+【步骤②：COC神话元素选择与验证】
+通过 translate_anchor 工具将核心概念翻译为COC7规则书元素：
 - 必须先调用 translate_anchor 获得规则书裁定，再调用 submit
 - 若首选元素在禁用列表中，继续 translate_anchor 寻找替代
 - mythos_anchor 应优先支持调查、异化、理智侵蚀和氛围恐怖，而不是鼓励直接战斗解决问题
 
-【步骤④：线索网络、误导与场景设计】
+【步骤③：线索网络、误导与场景设计】
 把剧情设计成线索矩阵，而不是单一路径。
 - core clue：推进所必需的关键信息
 - support clue：帮助理解背景、提高推理确定性的辅助线索
 - red herring：增强真实感但不能堵死推进的误导线索
 - clue carrier：文件 / NPC / 现场 / 超自然痕迹 / 仪式遗留 / 梦境等
-- false_lead：在 deep_truth 揭示后必须仍有合理解释（后验兼容）
 - misdirector_npc：有内在动机，不是功能性欺骗工具
-- true_trace：兼容两种解读的歧义证据
-- reveal_trigger：触发认知翻转的具体事件
+- reveal_trigger：触发真相揭示的具体事件
 
 场景要求：
 - 至少隐含导入、调查、启示、高潮、余波这几个功能中的大部分；不要求显式分标题，但内容要能承载这些阶段
@@ -144,14 +101,16 @@ func oneshotSystemPrompt() string {
 线索要求：
 - 关键推进信息不能只有单一路径；如果A线索错过，也要能通过B或C抵达同一真相
 - 至少一条[误导]线索在真相揭晓后仍能解释得通，不能是纯假线索
-- 至少一条[隐藏]线索承担“神话本质”说明，并与 mythos_anchor 强绑定
+- 至少一条[隐藏]线索承担”神话本质”说明，并与 mythos_anchor 强绑定
+	- [隐藏]的神话本质说明只能引用 translate_anchor 已确认的规则书元素（神格/怪物/法术/典籍/物品），禁止自创规则书中不存在的法术名、物品名、材质名或机制名
+	- 神话本质的因果链条必须逻辑自洽：前因→触发条件→可观察后果，每一步都必须在剧本设定的世界观中成立，不能为了”看起来恐怖”而堆砌不通顺的伪科学解释
 
-内部自查④：
-✓ false_lead在deep_truth框架下仍能被合理解释？
+内部自查③：
 ✓ 是否存在至少两条不同来源的推进路径，而不是把唯一关键线索锁在单一检定里？
 ✓ 场景之间是可回访、可交叉验证的调查网络，而不是线性过关房间？
+✓ [误导]线索在真相揭示后仍有合理解释？
 
-【步骤⑤：NPC、时间线、SAN与结局推进】
+【步骤④：NPC、时间线、SAN与结局推进】
 NPC应承担叙事功能，而不是填表：
 - 至少考虑知情者、阻碍者、牺牲品/示警者中的若干角色
 - 每个重要NPC要有公开身份、议程、秘密或保留信息的理由
@@ -167,28 +126,33 @@ SAN要求：
 - 恐怖暴露应渐进升级：先是诡异与不协调，再到尸体/仪式，再到直视神话本质
 - 不要求在clues里写精确数值表，但至少要体现由轻到重的理智压力升级
 
-内部自查⑤：
+内部自查④：
 ✓ 每个派系或关键行动者有自主行动的current_state？
 ✓ 每个intervention_pivot是具体可执行动作？
 ✓ 恐怖体验是否呈渐进式升级，而不是一上来直接终极真相？
 
-【步骤⑥：剧本编译最终检查】
-✓ setting只描述surface_reading视角，未泄露deep_truth？
+【步骤⑤：剧本编译最终检查】
+✓ setting只描述表层视角，未泄露核心真相？
 ✓ intro包含至少3个立即可执行的具体行动？
 ✓ scenes体现调查网络、场景功能与五感氛围，而不是空泛地点介绍？
 ✓ clues每条以[真实]/[隐藏]/[误导]开头；至少一条[隐藏]神话本质涵盖mythos_anchor？
-✓ 至少一条[误导]线索在deep_truth揭示后仍能合理解释？
+✓ [隐藏]神话本质说明中引用的所有法术名、物品名、怪物名、材质名均来自规则书（通过 translate_anchor 已确认），无自创元素？
+✓ [隐藏]神话本质的因果链条逻辑自洽，每一步在剧本世界观中成立，无不通顺的伪科学拼凑？
+✓ 至少一条[误导]线索在真相揭示后仍能合理解释？
+✓ 是否至少存在两个事件（主线 + 红鲱鱼），各自有完整线索链，且红鲱鱼排除后主线仍可推进？
 ✓ 关键推进信息是否具备多入口，而不是依赖单一检定成功？
-✓ system_prompt含三项KP协议（时间推进/信息分层/不主动引导）+ deep_truth注入？
+✓ system_prompt含三项KP协议（时间推进/信息分层/不主动引导）+ 核心真相注入？
 ✓ win/lose_condition使用条件句，不是二元裁定？
 ✓ 所有NPC stats含SAN字段？
-✓ 最终体验重点是“调查员亲手揭开可怕真相”，而不是“被剧情推着走”或“靠战斗通关”？
+✓ 最终体验重点是”调查员亲手揭开可怕真相”，而不是”被剧情推着走”或”靠战斗通关”？
 
 其他硬性要求：
 - 避免政治话题
 - 以克苏鲁宇宙恐惧为基调（渺小感、理智侵蚀、不可知深渊）
 - 禁用科学术语/现代技术细节，不要把神话现象解释成硬科幻或工程异常
 - 避免把战斗写成主要解法；对抗神话时优先调查、规避、谈判、阻止仪式、改变局势
+- 神话本质说明严禁自创规则书中不存在的元素：不得编造法术名（如"季节之怒"）、物品名（如"衰变砂"）、材质名、怪物名或原创机制；所有神话元素必须来自 translate_anchor 确认的规则书内容，或由 lawyer 裁定支持
+- 因果逻辑自洽要求：神话本质的说明链必须每一步都能在剧本世界观中成立，禁止为了恐怖效果而堆砌不通顺的伪科学因果链（如"折射共振频率→夺走寿命→肉体沙化"这类无依据的拼凑）
 </task>
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
@@ -200,18 +164,9 @@ SAN要求：
 - submit：提交完整剧本；只有在translate_anchor确认元素可用后才调用；必须单独一轮输出
   {"action":"submit","draft":{...完整oneshotResult JSON对象...}}
 </tools>
-` + formatDeltaOperatorTable() + `
 <draft_schema>
 submit.draft 必须包含以下字段：
 {
-  // 设计元数据（用于日志/奖励agent/IronyCore兼容）
-  "delta_operator": "认知翻转类型ID",
-  "delta_operator_desc": "仅自定义时填写",
-  "surface_reading": "表层推断",
-  "deep_truth": "揭示真相",
-  "false_delta": "错误翻转类型ID",
-  "shared_evidence": "歧义证据",
-  "emotional_weight": "揭示时崩塌的认知内容",
   "reward_concept": "通关奖励叙事概念（若无则留空字符串）",
   // ScenarioDraft 字段
   "name": "剧本名称",
@@ -222,8 +177,8 @@ submit.draft 必须包含以下字段：
   "max_players": 4,
   "difficulty": "normal",
   "content": {
-    "system_prompt": "KP四项协议 + deep_truth注入",
-    "setting": "surface_reading视角的当前局势（不泄露deep_truth）",
+    "system_prompt": "KP四项协议 + 核心真相注入",
+    "setting": "表层视角的当前局势（不泄露核心真相）",
     "intro": "入场位置 + 至少3个立即可执行的具体行动",
     "game_start_slot": 16,
     "map_description": "文字地图；体现可回访、可交叉验证的调查网络",
@@ -271,7 +226,7 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		return oneshotResult{}, msgs, fmt.Errorf("architect provider unavailable")
 	}
 	const maxRounds = 30
-	translatedOnce := false
+	hasValidAnchor := false
 	for round := 1; round <= maxRounds; round++ {
 		if ctx.Err() != nil {
 			return oneshotResult{}, msgs, ctx.Err()
@@ -311,7 +266,6 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 				// silent
 			case toolOneshotTranslateAnchor:
 				hasTranslate = true
-				translatedOnce = true
 				toolResults = append(toolResults, executeOneshotTranslateAnchor(ctx, room, call))
 			case toolOneshotSubmit:
 				if call.Draft == nil {
@@ -333,12 +287,26 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
 		}
 		if hasTranslate {
+			// Check whether any translate_anchor in this batch found a valid
+			// rulebook element. Only "found" counts; no_result / uncertain /
+			// translator_error all require the architect to redesign.
+			batchFound := false
+			for _, tr := range toolResults {
+				if isTranslateAnchorFound(tr) {
+					batchFound = true
+					hasValidAnchor = true
+					break
+				}
+			}
+			if !batchFound {
+				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: translate_anchor 未在规则书中找到匹配元素（status 为 no_result / uncertain / error）。你必须重新设计核心神话概念，调整方向后再次调用 translate_anchor，禁止在未获得规则书确认的情况下 submit。可尝试的方向：更换神格/怪物、改用诅咒物品、改用古老仪式、改用典籍知识污染。"})
+			}
 			// wait for the LLM to process results before submitting
 			continue
 		}
 		if submitDraft != nil {
-			if !translatedOnce {
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须先调用translate_anchor验证神话元素，再调用submit。"})
+			if !hasValidAnchor {
+				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: translate_anchor 尚未返回规则书确认（status=found）。必须先通过 translate_anchor 获得规则书匹配后，才能 submit。若之前 translate_anchor 返回了 no_result/uncertain，必须重新设计核心概念并再次调用 translate_anchor。"})
 				continue
 			}
 			return *submitDraft, msgs, nil
@@ -399,6 +367,38 @@ func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, call
 		return fmt.Sprintf(`<translate_anchor_result concept=%q status="no_result">translator未返回可用结论；可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。</translate_anchor_result>`, concept)
 	}
 	return fmt.Sprintf(`<translate_anchor_result concept=%q status="translated">%s</translate_anchor_result>`, concept, result)
+}
+
+// isTranslateAnchorFound checks whether a translate_anchor result represents a
+// successful rulebook match (status "found"). Returns false for no_result,
+// uncertain, translator_error, and empty results — all of which require the
+// architect to redesign the concept or try a different direction.
+func isTranslateAnchorFound(result string) bool {
+	if result == "" {
+		return false
+	}
+	// Check wrapper-level status first.
+	if strings.Contains(result, `status="no_result"`) || strings.Contains(result, `status="translator_error"`) {
+		return false
+	}
+	// The wrapper says "translated"; now check the inner translator respond.
+	// Look for the inner status field — only "found" is acceptable.
+	// The inner result is a JSON object with a "status" field.
+	if strings.Contains(result, `"status":"found"`) || strings.Contains(result, `"status": "found"`) {
+		return true
+	}
+	// If we can't find an explicit "found", check for explicit failure indicators.
+	if strings.Contains(result, `"status":"no_result"`) || strings.Contains(result, `"status": "no_result"`) ||
+		strings.Contains(result, `"status":"uncertain"`) || strings.Contains(result, `"status": "uncertain"`) {
+		return false
+	}
+	// If the inner status is not explicitly parseable, check whether
+	// selected_anchor is a real element (not "无").
+	if strings.Contains(result, `"selected_anchor"`) &&
+		!strings.Contains(result, `"无"`) {
+		return true
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -691,35 +691,29 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 		return ScenarioDraft{}, IronyCore{}, "", err
 	}
 
-	if !knownDeltaOperatorID(result.DeltaOperator) && result.DeltaOperator != "" {
-		log.Printf("[scripter:oneshot_novel_operator] operator=%q desc=%q — not in DeltaOperators",
-			result.DeltaOperator, result.DeltaOperatorDesc)
-	}
-	log.Printf("[scripter:oneshot] done delta=%q anchor=%q scenes=%d npcs=%d clues=%d",
-		result.DeltaOperator, truncateRunes(result.Content.MythosAnchor, 80),
+	log.Printf("[scripter:oneshot] done anchor=%q scenes=%d npcs=%d clues=%d",
+		truncateRunes(result.Content.MythosAnchor, 80),
 		len(result.Content.Scenes), len(result.Content.NPCs), len(result.Content.Clues))
 	logScripterArtifact("Oneshot Result", result)
 
-	return result.toScenarioDraft(), result.toIronyCore(), strings.TrimSpace(result.RewardConcept), nil
+	return result.toScenarioDraft(), IronyCore{}, strings.TrimSpace(result.RewardConcept), nil
 }
 
-func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, previous *ScenarioDraft, irony IronyCore, issues []string) (ScenarioDraft, error) {
+func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, previous *ScenarioDraft, issues []string) (ScenarioDraft, error) {
 	reqJSON, _ := json.Marshal(room.req)
 	constraintsJSON, _ := json.Marshal(constraints)
 	prevJSON, _ := json.Marshal(previous)
-	ironyJSON, _ := json.Marshal(irony)
 
 	userMsg := fmt.Sprintf(
 		`<request_json>%s</request_json>
 <constraints>%s</constraints>
-<irony_context>%s</irony_context>
 <previous_draft>%s</previous_draft>
 <must_fix>
 %s
 </must_fix>
 请修复上述问题并重新调用translate_anchor验证神话元素，然后通过submit提交修复后的完整剧本JSON。不要只改措辞；不要更换已确认的神话元素（mythos_anchor）。`,
 		string(reqJSON), string(constraintsJSON),
-		string(ironyJSON), string(prevJSON),
+		string(prevJSON),
 		strings.Join(issues, "\n"),
 	)
 
@@ -744,7 +738,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 // Normalization
 // ---------------------------------------------------------------------------
 
-func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, author string, constraints ScripterConstraints, irony IronyCore) {
+func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, author string, constraints ScripterConstraints) {
 	if draft == nil {
 		return
 	}
@@ -753,19 +747,14 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		author = defaultScripterAuthor
 	}
 	if strings.TrimSpace(draft.Name) == "" {
-		reading := truncateRunes(strings.TrimSpace(irony.SurfaceReading), 12)
-		if reading == "" {
-			draft.Name = "未命名剧本"
-		} else {
-			draft.Name = "δ-调查：" + reading
-		}
+		draft.Name = "未命名剧本"
 		log.Printf("[scripter:normalize] filled name=%q", draft.Name)
 	}
 	if strings.TrimSpace(req.Name) != "" && draft.Name != strings.TrimSpace(req.Name) {
 		draft.Name = strings.TrimSpace(req.Name)
 	}
 	if strings.TrimSpace(draft.Description) == "" {
-		draft.Description = fmt.Sprintf("围绕「%s」展开的剧本：调查员进入一个由δ结构驱动的局势，表象与深层真相由一个可逆转的认知算子分隔。", irony.SurfaceReading)
+		draft.Description = "围绕派系时间线和调查员可拉动杠杆展开的COC情境简报。"
 		log.Printf("[scripter:normalize] filled description")
 	}
 	if draft.Author != author {
@@ -800,8 +789,8 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	}
 	if strings.TrimSpace(draft.Content.SystemPrompt) == "" {
 		draft.Content.SystemPrompt = fmt.Sprintf(
-			"你是本场COC跑团的KP，职责是管理会自行推进的局势而不是执行线性故事。按派系时间线推进后果；按表面可见、主动询问、需要行动、不可直接获得四层管理信息；不要主动把调查员引向正确答案。【KP独有，勿向玩家直说】δ内部真相：%s。固定神话锚点：%s；具体数值按规则书裁定。",
-			firstNonEmpty(irony.DeepTruth, "真相将通过调查逐步揭示"),
+			"你是本场COC跑团的KP，职责是管理会自行推进的局势而不是执行线性故事。按派系时间线推进后果；按表面可见、主动询问、需要行动、不可直接获得四层管理信息；不要主动把调查员引向正确答案。【KP独有，勿向玩家直说】内部真相：%s。固定神话锚点：%s；具体数值按规则书裁定。",
+			"真相将通过调查逐步揭示",
 			firstNonEmpty(draft.Content.MythosAnchor, "按规则书已收录神话元素处理"),
 		)
 		log.Printf("[scripter:normalize] filled system_prompt")
@@ -810,7 +799,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		draft.Content.Setting = fmt.Sprintf(
 			"%s的%s中，调查员面对一个已经开始运动的局势：%s。公开层面只看得到表象、地方压力和派系互相遮掩；无人干预时，各方会按自己的时间线继续行动。",
 			constraints.Era, strings.Join(constraints.GeographyFlavor, " / "),
-			firstNonEmpty(irony.SurfaceReading, "一个可被多种方式解读的局势已经开始"),
+			"一个可被多种方式解读的局势已经开始",
 		)
 		log.Printf("[scripter:normalize] filled setting")
 	}
@@ -866,7 +855,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	}
 	if len(draft.Content.Clues) == 0 {
 		draft.Content.Clues = []string{
-			"[真实]公开异常(调查入口): " + firstNonEmpty(irony.SurfaceReading, "一个无法普通解释的局势已经开始") + "；获取方式：到达现场并主动询问或检查。",
+			"[真实]公开异常(调查入口): 一个无法普通解释的局势已经开始；获取方式：到达现场并主动询问或检查。",
 			"[误导]表象线索(初步调查): 支持错误推断的表象证据；表面合理但只能解释一部分。",
 		}
 		log.Printf("[scripter:normalize] generated default clues count=2")
