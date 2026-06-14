@@ -24,16 +24,18 @@ import (
 
 func initTestDB(t *testing.T) {
 	t.Helper()
-	// Each test gets its own named in-memory DB so concurrent/sequential tests
-	// don't share state via the SQLite shared-cache.
-	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared",
-		strings.ReplaceAll(t.Name(), "/", "_"))
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+	// 每个测试使用独立内存库,并限制单连接避免SQLite多连接看不到schema。
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.CharacterCard{},
@@ -56,7 +58,10 @@ func initTestDB(t *testing.T) {
 	}
 	prev := models.DB
 	models.DB = db
-	t.Cleanup(func() { models.DB = prev })
+	t.Cleanup(func() {
+		models.DB = prev
+		_ = sqlDB.Close()
+	})
 }
 
 // seedPlayingSession creates a scenario, user, playing session, character and
@@ -410,6 +415,48 @@ func TestSaveChatMessagesMarksWriterPending(t *testing.T) {
 	}
 	if strings.Contains(updated.Content, writerPendingTag) {
 		t.Fatalf("final content should remove pending marker: %q", updated.Content)
+	}
+}
+
+func TestStartWriterJobClearsPendingWhenWriterReturnsEmpty(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+
+	output := agent.RunOutput{
+		WriterDirection: "描述门锁上的痕迹",
+		KPReply:         "你注意到锁孔边缘有新鲜划痕。",
+	}
+	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, output)
+	if err != nil {
+		t.Fatalf("save chat messages: %v", err)
+	}
+	if msg == nil || !strings.Contains(msg.Content, writerPendingTag) {
+		t.Fatalf("pending marker not saved: %#v", msg)
+	}
+
+	ctrl := gomock.NewController(t)
+	runner := mocks.NewMockAgentRunner(ctrl)
+	runner.EXPECT().RunWriterStream(gomock.Any(), gomock.Any(), output.WriterDirection, gomock.Any()).
+		Return("", nil)
+	h := NewSessionHandlers(runner)
+	clientDone := make(chan struct{})
+	defer close(clientDone)
+	ch := h.startWriterJob(msg.ID, agent.GameContext{}, output, clientDone)
+	if ch == nil {
+		t.Fatal("writer job channel is nil")
+	}
+	for range ch {
+	}
+
+	var updated models.Message
+	if err := models.DB.First(&updated, msg.ID).Error; err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if strings.Contains(updated.Content, writerPendingTag) {
+		t.Fatalf("empty writer result should clear pending marker: %q", updated.Content)
+	}
+	if updated.Content != "KP:你注意到锁孔边缘有新鲜划痕。" {
+		t.Fatalf("content = %q", updated.Content)
 	}
 }
 

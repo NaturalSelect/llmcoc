@@ -110,7 +110,9 @@ func TestCheckAntiCheatRejectsKPInconsistency(t *testing.T) {
 	if verdict.Verdict != "must_fix" {
 		t.Fatalf("unexpected verdict: %+v", verdict)
 	}
-	if !strings.Contains(rejectMsg, "SYSTEM REJECT: anti_cheat verdict=must_fix") || !strings.Contains(rejectMsg, "仅叙事换皮") || !strings.Contains(rejectMsg, "MUST fix") {
+	if !strings.Contains(rejectMsg, "SYSTEM REJECT: anti_cheat verdict=must_fix") ||
+		!strings.Contains(rejectMsg, "think承诺仅换皮") ||
+		!strings.Contains(rejectMsg, "只能写属性同原物品/仅叙事换皮") {
 		t.Fatalf("unexpected reject message: %q", rejectMsg)
 	}
 }

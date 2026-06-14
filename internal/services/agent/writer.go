@@ -146,7 +146,10 @@ func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, 
 		}
 	}
 	streamErr := <-errCh
-	text := resp.String()
+	text := strings.TrimSpace(resp.String())
+	if streamErr == nil && text == "" {
+		streamErr = fmt.Errorf("writer stream returned empty content")
+	}
 	debugf("Writer", "stream response len=%d preview=%s", len([]rune(text)), text)
 	appendWriterResponse(state, direction, text, streamErr == nil)
 	return streamErr
@@ -189,7 +192,7 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 
 func appendWriterResponse(state *WriterState, direction, resp string, saveHistory bool) {
 	if saveHistory {
-		// 写回本次交换,供后续白字保持连续性。
+		// 写回本次交换,供后续叙事正文保持连续性。
 		state.History = append(state.History,
 			llm.ChatMessage{Role: "user", Content: "叙事指令:" + direction},
 			llm.ChatMessage{Role: "assistant", Content: resp},

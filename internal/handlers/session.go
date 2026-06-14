@@ -889,11 +889,11 @@ loop:
 
 	streamedWriter := output.WriterText
 	if streamedWriter != "" {
-		sendProgress("白字描述生成中")
+		sendProgress("叙事正文生成中")
 		sseChunk("token", streamedWriter)
 	}
 	if writerCh != nil {
-		sendProgress("白字描述生成中")
+		sendProgress("叙事正文生成中")
 	writerLoop:
 		for {
 			select {
@@ -966,13 +966,12 @@ func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext,
 			}
 			send(writerJobResult{token: token})
 		})
-		if strings.TrimSpace(text) != "" {
-			dbErr := updateAssistantMessageWriter(messageID, output.KPReply, text)
-			if err == nil {
-				err = dbErr
-			} else if dbErr != nil {
-				log.Printf("[chat] writer message update after stream error failed: %v", dbErr)
-			}
+		// Writer结束时即使没有生成正文,也要重写消息以清除刷新恢复用的pending标记。
+		dbErr := updateAssistantMessageWriter(messageID, output.KPReply, text)
+		if err == nil {
+			err = dbErr
+		} else if dbErr != nil {
+			log.Printf("[chat] writer message update after stream error failed: %v", dbErr)
 		}
 		send(writerJobResult{text: text, done: true, err: err})
 	}()
