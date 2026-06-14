@@ -534,9 +534,12 @@
                             <!-- 输入区 -->
                             <div class="card border-t p-3 bg-[#131110] border-[#252018] shrink-0">
                                 <template x-if="activeResponseSuggestions()">
-                                    <div class="response-suggestions">
-                                        <div class="response-suggestions-head">推荐行动</div>
-                                        <div class="response-suggestions-list">
+                                    <div class="response-suggestions" x-data="{ collapsed: true }">
+                                        <div class="response-suggestions-head" @click="collapsed = !collapsed">
+                                            <span x-text="collapsed ? '▶' : '▼'" class="toggle-arrow"></span>
+                                            推荐行动
+                                        </div>
+                                        <div class="response-suggestions-list" x-show="!collapsed">
                                             <template x-for="(opt, idx) in activeResponseSuggestions().options"
                                                 :key="idx">
                                                 <button type="button" class="response-suggestion"
