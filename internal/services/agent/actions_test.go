@@ -44,3 +44,13 @@ func TestResponseActionFormatsOptionsAndPayload(t *testing.T) {
 		t.Fatalf("unexpected payload: %+v", payload)
 	}
 }
+
+func TestFallbackWriterDirectionUsesVisibleKPReply(t *testing.T) {
+	direction := fallbackWriterDirection("你回到阁楼。\n<response_options>{\"options\":[\"离开\"]}</response_options>\n<ack>tool</ack>")
+	if !strings.Contains(direction, "你回到阁楼。") {
+		t.Fatalf("direction should include player visible reply: %q", direction)
+	}
+	if strings.Contains(direction, "response_options") || strings.Contains(direction, "<ack>") {
+		t.Fatalf("direction should strip internal tags: %q", direction)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +19,8 @@ import (
 )
 
 const MaxKpRound = 20
+
+var internalTagPattern = regexp.MustCompile(`(?s)<(?:ack|direction|dice|time_point|response_options)\b[^>]*>.*?</(?:ack|direction|dice|time_point|response_options)>`)
 
 // activeSessions prevents concurrent agent runs for the same game session.
 var activeSessions sync.Map
@@ -192,6 +195,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	// normal per-turn +1 advancement at the end (the KP already pushed the clock).
 	timeAdvancedInTurn := false
 	wroteNarrative := false
+	needsWriterFallback := false
 	var kpNarration string
 
 	// Seed KP with read-only transcript context. Do not pass previous user turns
@@ -352,6 +356,12 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		if useParallel {
 			debugf("KP", "session=%d iter=%d parallel batch: %d check_rule, %d distinct npcs", sid, iter+1, nCheckRule, len(npcNames))
 			emitProgress(progressExecutingCalls(calls))
+			for _, call := range calls {
+				if visibleActionNeedsWriter(call.Action) {
+					needsWriterFallback = true
+					break
+				}
+			}
 			toolResults = executeParallelBatch(calls, actx)
 		} else {
 			for _, call := range calls {
@@ -378,6 +388,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				if handler, ok := actionRegistry[call.Action]; ok {
 					emitProgress(progressExecutingCall(call))
 					results := handler.Execute(call, actx)
+					if visibleActionNeedsWriter(call.Action) {
+						needsWriterFallback = true
+					}
 					if len(results) > 0 {
 						toolResults = append(toolResults, results...)
 					}
@@ -420,6 +433,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				}
 			}
 			writerDirection := strings.TrimSpace(pendingWrite)
+			if writerDirection == "" && needsWriterFallback {
+				writerDirection = fallbackWriterDirection(kpNarration)
+			}
 			debugf("run", "session=%d completed iter=%d writer_direction_len=%d narration_len=%d",
 				sid, iter+1, len([]rune(writerDirection)), len([]rune(kpNarration)))
 			emitProgress("KP主流程裁定完成")
@@ -484,14 +500,54 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	if kpNarration == "" {
 		kpNarration = "本轮未生成KP独白。"
 	}
-	return RunOutput{WriterDirection: strings.TrimSpace(pendingWrite), KPReply: kpNarration}, nil
+	writerDirection := strings.TrimSpace(pendingWrite)
+	if writerDirection == "" && needsWriterFallback {
+		writerDirection = fallbackWriterDirection(kpNarration)
+	}
+	return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration}, nil
 }
 
-func progressKPIteration(iter, max int) string {
+func visibleActionNeedsWriter(action ToolCallType) bool {
+	switch action {
+	case ToolRollDice,
+		ToolCreateNPC,
+		ToolDestroyNPC,
+		ToolActNPC,
+		ToolUpdateCharacters,
+		ToolManageInventory,
+		ToolRecordMonster,
+		ToolManageSpell,
+		ToolManageRelation,
+		ToolManageMadness,
+		ToolAdvanceTime,
+		ToolUpdateNPCCard,
+		ToolUpdateLocation,
+		ToolUpdateNPCLocation,
+		ToolUpdateArmor,
+		ToolFoundClue:
+		return true
+	default:
+		return false
+	}
+}
+
+func fallbackWriterDirection(kpReply string) string {
+	reply := cleanPlayerVisibleText(kpReply)
+	if reply == "" {
+		return ""
+	}
+	return "根据以下KP主流程回复生成白字描述,只展开已经发生的可见事实和环境/NPC反应,停在玩家选择点,不要替玩家决定后续行动:\n" + reply
+}
+
+func cleanPlayerVisibleText(text string) string {
+	return strings.TrimSpace(internalTagPattern.ReplaceAllString(text, ""))
+}
+
+func progressKPIteration(iter, _ int) string {
 	if iter == 0 {
 		return "KP正在判断本轮需要哪些裁定"
 	}
-	return fmt.Sprintf("KP正在继续处理工具结果(%d/%d)", iter+1, max)
+	return "KP正在继续处理工具结果"
 }
 
 func progressPlannedCalls(calls []ToolCall) string {

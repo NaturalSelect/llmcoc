@@ -184,7 +184,20 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage, json 
 func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage) (<-chan string, <-chan error, error) {
 	start := time.Now()
 	chatReq := p.chatCompletionRequest(ctx, messages, false)
-	stream, err := p.client.CreateChatCompletionStream(ctx, chatReq)
+	var stream *openai.ChatCompletionStream
+	var err error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		stream, err = p.client.CreateChatCompletionStream(ctx, chatReq)
+		if err == nil || !isRetryableError(err) {
+			break
+		}
+		log.Printf("[llm] ChatStream attempt %d/%d failed, retrying in 8s: %v", attempt+1, maxRetries, err)
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case <-time.After(8 * time.Second):
+		}
+	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("LLM chat stream error: %w", err)
 	}
