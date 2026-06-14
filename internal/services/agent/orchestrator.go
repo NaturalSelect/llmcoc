@@ -417,6 +417,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			debugf("run", "session=%d completed iter=%d writer_direction_len=%d narration_len=%d",
 				sid, iter+1, len([]rune(writerDirection)), len([]rune(kpNarration)))
 			emitProgress("KP主流程裁定完成")
+			// 将骰子结果和当前时间注入到玩家可见的回复中
+			if diceMsg != "" {
+				kpNarration += "\n<dice>" + strings.TrimSuffix(diceMsg, "; ") + "</dice>"
+			}
+			kpNarration += "\n<time_point>" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</time_point>"
 			return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration}, nil
 		}
 
@@ -482,6 +487,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	if writerDirection == "" && needsWriterFallback {
 		writerDirection = fallbackWriterDirection(kpNarration)
 	}
+	// 将骰子结果和当前时间注入到玩家可见的回复中
+	if diceMsg != "" {
+		kpNarration += "\n<dice>" + strings.TrimSuffix(diceMsg, "; ") + "</dice>"
+	}
+	kpNarration += "\n<time_point>" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</time_point>"
 	return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration}, nil
 }
 
