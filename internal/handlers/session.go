@@ -770,6 +770,15 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	// ── Run agent pipeline ────────────────────────────────────────────────────
 	log.Printf("[chat] session=%d user=%q pipeline start round=%d", sessionID, username, session.TurnRound)
 	pipelineStart := time.Now()
+	sendProgress := func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		c.SSEvent("progress", text)
+		c.Writer.Flush()
+	}
+	sendProgress("已收到行动,正在整理本轮信息")
 
 	// Run the synchronous agent pipeline in a goroutine so we can send
 	// "thinking" heartbeats while it executes.
@@ -778,6 +787,17 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		err    error
 	}
 	resultCh := make(chan runResult, 1)
+	progressCh := make(chan string, 32)
+	gctx.Progress = func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		select {
+		case progressCh <- text:
+		default:
+		}
+	}
 	go func() {
 		// NOTE: should running in background be safe since the pipeline should respect context cancellation
 		out, err := h.Runner.Run(context.Background(), gctx)
@@ -801,6 +821,8 @@ loop:
 			}
 			output = res.output
 			break loop
+		case progress := <-progressCh:
+			sendProgress(progress)
 		case <-ticker.C:
 			c.SSEvent("thinking", "")
 			c.Writer.Flush()
@@ -840,6 +862,7 @@ loop:
 		c.Writer.Flush()
 		return
 	}
+	sendProgress("KP主流程已保存")
 
 	// KP是游戏主流程,先推给前端并解除输入锁。
 	if output.KPReply != "" {
@@ -866,9 +889,11 @@ loop:
 
 	streamedWriter := output.WriterText
 	if streamedWriter != "" {
+		sendProgress("白字描述生成中")
 		sseChunk("token", streamedWriter)
 	}
 	if writerCh != nil {
+		sendProgress("白字描述生成中")
 	writerLoop:
 		for {
 			select {

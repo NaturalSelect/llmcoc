@@ -21,6 +21,7 @@ window.COC.game = {
                         this.activeStreamID = streamID;
                         this.writerBuffer = '';
                         this.narrationBuffer = '';
+                        this.progressText = '已收到行动,正在整理本轮信息';
 
                         const submittedAt = new Date();
                         const tailAnchor = this.messages.length;
@@ -83,6 +84,13 @@ window.COC.game = {
                                         switch (currentEvent) {
 
                                             case 'thinking':
+                                                if (!this.progressText) {
+                                                    this.progressText = 'Agent 团队运行中，请稍候…';
+                                                }
+                                                break;
+
+                                            case 'progress':
+                                                this.progressText = data || this.progressText;
                                                 break;
 
                                             case 'token':
@@ -138,6 +146,7 @@ window.COC.game = {
 
                                             case 'done':
                                                 receivedDone = true;
+                                                this.progressText = '';
                                                 if (assistantMessageID) {
                                                     this._setMessageWriterDone(assistantMessageID);
                                                 }
@@ -157,6 +166,7 @@ window.COC.game = {
                             if (e.name !== 'AbortError') {
                                 this.showToast(e.message || '网络错误', 'error');
                             }
+                            this.progressText = '';
                         } finally {
                             clearTimeout(abortTimer);
                             unlockKP();
@@ -165,6 +175,7 @@ window.COC.game = {
                         if (receivedWaiting) {
                             this.writerBuffer = '';
                             this.narrationBuffer = '';
+                            this.progressText = '';
                             this.waitingForPlayers = true;
                             this.waitingSince = submittedAt;
                             this.pollForKPResponse(submittedAt);

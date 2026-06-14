@@ -167,10 +167,16 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	if err != nil {
 		return RunOutput{}, err
 	}
+	emitProgress := func(text string) {
+		if gctx.Progress != nil {
+			gctx.Progress(text)
+		}
+	}
 
 	sid := gctx.Session.ID
 	debugf("run", "session=%d user=%q input=%s",
 		sid, gctx.UserName, gctx.UserInput)
+	emitProgress("KP正在整理本轮行动")
 	if len(gctx.PendingActions) > 1 {
 		debugf("run", "session=%d multi-player round: %d actions", sid, len(gctx.PendingActions))
 	}
@@ -207,6 +213,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 
 		debugf("KP", "session=%d iter=%d/%d — calling LLM", sid, iter+1, MaxKpRound)
+		emitProgress(progressKPIteration(iter, MaxKpRound))
 
 		doneKP := timedDebug("KP", "session=%d iter=%d Chat", sid, iter+1)
 		// 请求一次JSON
@@ -228,6 +235,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			debugf("KP", "session=%d iter=%d no calls, skipping rest of loop", sid, iter+1)
 			continue
 		}
+		emitProgress(progressPlannedCalls(calls))
 
 		// LLM 的结果加回去
 		// Record what the KP decided so the next iteration has proper context.
@@ -298,6 +306,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 		if hasResponse && hasNonCompatible {
 			debugf("KP", "session=%d iter=%d rejecting entire batch: response mixed with result-producing tools", sid, iter+1)
+			emitProgress("KP正在修正工具调用顺序")
 			kpMsgs = append(kpMsgs, llm.ChatMessage{
 				Role:    "user",
 				Content: "<error>SYSTEM REJECT: your entire batch was rejected. response/end_game must be the ONLY action in a batch (except write/hint/introspection/think/update_llm_note). Split into two batches: first call the result-producing tools, then after reading the results call response separately.</error>",
@@ -306,6 +315,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 		if hasResponse && respStr == "" {
 			debugf("KP", "session=%d iter=%d rejecting entire batch: empty response", sid, iter+1)
+			emitProgress("KP正在补全主流程回复")
 			kpMsgs = append(kpMsgs, llm.ChatMessage{
 				Role:    "user",
 				Content: "<error>SYSTEM REJECT: empty response</error>",
@@ -313,9 +323,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			continue
 		}
 
+		emitProgress("系统正在审查裁定一致性")
 		verdict, allowed, rejectMsg := checkAntiCheat(ctx, handles[models.AgentRoleAntiCheat], gctx, calls, tempNPCs)
 		if !allowed {
 			debugf("anti_cheat", "session=%d iter=%d reject: %s, calls=%+v", sid, iter+1, rejectMsg, calls)
+			emitProgress("KP正在修正不一致的裁定")
 			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf("<error>%s</error>", rejectMsg)})
 			continue
 		}
@@ -339,6 +351,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		useParallel := nCheckRule > 1 || len(npcNames) > 1
 		if useParallel {
 			debugf("KP", "session=%d iter=%d parallel batch: %d check_rule, %d distinct npcs", sid, iter+1, nCheckRule, len(npcNames))
+			emitProgress(progressExecutingCalls(calls))
 			toolResults = executeParallelBatch(calls, actx)
 		} else {
 			for _, call := range calls {
@@ -363,6 +376,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 				prevSwitch := switchRole
 				if handler, ok := actionRegistry[call.Action]; ok {
+					emitProgress(progressExecutingCall(call))
 					results := handler.Execute(call, actx)
 					if len(results) > 0 {
 						toolResults = append(toolResults, results...)
@@ -408,12 +422,14 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			writerDirection := strings.TrimSpace(pendingWrite)
 			debugf("run", "session=%d completed iter=%d writer_direction_len=%d narration_len=%d",
 				sid, iter+1, len([]rune(writerDirection)), len([]rune(kpNarration)))
+			emitProgress("KP主流程裁定完成")
 			return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration}, nil
 		}
 
 		// Feed tool results back as a user message so the next KP call has proper
 		// multi-turn context (assistant decided → tools ran → user reports results).
 		if len(toolResults) > 0 {
+			emitProgress("KP正在读取工具结果")
 			formatResult := func(r []ToolResult) string {
 				var sb strings.Builder
 				sb.WriteString("<INTERNAL_TOOL_RESULT>\n")
@@ -469,6 +485,89 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		kpNarration = "本轮未生成KP独白。"
 	}
 	return RunOutput{WriterDirection: strings.TrimSpace(pendingWrite), KPReply: kpNarration}, nil
+}
+
+func progressKPIteration(iter, max int) string {
+	if iter == 0 {
+		return "KP正在判断本轮需要哪些裁定"
+	}
+	return fmt.Sprintf("KP正在继续处理工具结果(%d/%d)", iter+1, max)
+}
+
+func progressPlannedCalls(calls []ToolCall) string {
+	labels := compactProgressLabels(calls)
+	if len(labels) == 0 {
+		return "KP正在整理下一步"
+	}
+	return "KP计划：" + strings.Join(labels, "、")
+}
+
+func progressExecutingCalls(calls []ToolCall) string {
+	labels := compactProgressLabels(calls)
+	if len(labels) == 0 {
+		return "系统正在执行工具"
+	}
+	return "系统正在并行处理：" + strings.Join(labels, "、")
+}
+
+func progressExecutingCall(call ToolCall) string {
+	return "系统正在" + progressToolLabel(call.Action)
+}
+
+func compactProgressLabels(calls []ToolCall) []string {
+	seen := map[string]bool{}
+	labels := make([]string, 0, len(calls))
+	for _, call := range calls {
+		label := progressToolLabel(call.Action)
+		if label == "" || seen[label] {
+			continue
+		}
+		seen[label] = true
+		labels = append(labels, label)
+		if len(labels) >= 4 {
+			break
+		}
+	}
+	return labels
+}
+
+func progressToolLabel(action ToolCallType) string {
+	switch action {
+	case ToolThink:
+		return "规划回合步骤"
+	case ToolCheckRule, ToolReadRulebookConst:
+		return "查询规则"
+	case ToolRollDice:
+		return "掷骰检定"
+	case ToolCreateNPC, ToolDestroyNPC:
+		return "处理NPC登场"
+	case ToolActNPC:
+		return "处理NPC行动"
+	case ToolQueryCharacter, ToolQueryNPCCard:
+		return "读取角色状态"
+	case ToolUpdateCharacters, ToolUpdateNPCCard, ToolUpdateLocation, ToolUpdateNPCLocation, ToolUpdateArmor:
+		return "更新角色和场景状态"
+	case ToolManageInventory, ToolManageSpell, ToolManageRelation, ToolManageMadness:
+		return "更新角色记录"
+	case ToolRecordMonster, ToolFoundClue, ToolQueryClues:
+		return "处理线索"
+	case ToolAdvanceTime:
+		return "推进时间"
+	case ToolWrite:
+		return "整理白字素材"
+	case ToolResponse:
+		return "生成KP主回复"
+	case ToolEndGame:
+		return "结算结局"
+	case ToolUpdateLLMNote, ToolUpdateNPCLLMNote, ToolHint:
+		return "记录局势备注"
+	case ToolYield:
+		return "等待下一步输入"
+	case ToolReport:
+		return "记录异常报告"
+	default:
+		return "处理工具调用"
+	}
 }
 
 // executeParallelBatch runs check_rule calls and act_npc calls targeting distinct

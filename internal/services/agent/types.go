@@ -15,6 +15,8 @@ type GameContext struct {
 	UserInputAdmin bool // true if the user input is from the admin (KP), false for regular players
 	// PendingActions 保存本轮已收集的玩家行动;多人房间只在所有人提交后填充。
 	PendingActions []PlayerAction
+	// Progress 用于把KP主流程的真实阶段推给上层SSE;为空时静默。
+	Progress func(string)
 }
 
 // PlayerAction 是一个玩家在当前回合提交的行动。

@@ -58,6 +58,7 @@ window.COC.core = function() {
                     activeStreamID: null,
                     writerBuffer: '',   // 兼容旧token事件,新白字直接写入对应消息
                     narrationBuffer: '',   // 当前KP主流程回复
+                    progressText: '',   // 当前后端真实处理阶段
 
                     // Multi-player waiting
                     waitingForPlayers: false,
@@ -168,7 +169,7 @@ window.COC.core = function() {
                     goTo(p) {
                         if (this.page === 'game') {
                             this.stopGameAutoRefresh();
-                            this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = '';
+                            this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.progressText = '';
                             this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0 };
                             this.waitingSince = null;
                         }
@@ -191,7 +192,7 @@ window.COC.core = function() {
                     },
 
                     async goToSession(id) {
-                        this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = '';
+                        this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.progressText = '';
                         this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0 };
                         this.waitingSince = null;
                         try {

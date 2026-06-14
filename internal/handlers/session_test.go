@@ -335,6 +335,9 @@ func TestChatStream_Success(t *testing.T) {
 	}
 	events := parseSSE(w.Body.String())
 	eventOrder := parseSSEEvents(w.Body.String())
+	if len(events["progress"]) == 0 {
+		t.Fatalf("expected progress event; body:\n%s", w.Body.String())
+	}
 
 	// Concatenate token events (Writer text).
 	var gotWriter string

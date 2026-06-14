@@ -506,9 +506,8 @@
                                         <div class="flex gap-1">
                                             <span class="dot"></span><span class="dot"></span><span class="dot"></span>
                                         </div>
-                                        <span class="text-xs text-red-900 italic" style="font-family:system-ui">
-                                            Agent 团队运行中，请稍候…
-                                        </span>
+                                        <span class="text-xs text-red-900 italic" style="font-family:system-ui"
+                                            x-text="progressText || 'Agent 团队运行中，请稍候…'"></span>
                                     </div>
 
                                     <p x-show="stripAckContent(narrationBuffer).trim()" class="narration cursor"
