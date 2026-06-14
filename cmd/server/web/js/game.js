@@ -505,8 +505,8 @@ window.COC.game = {
 
                     stripAckContent(content) {
                         return String(content || '')
-                            .replace(/<(ack|direction|dice|time_point|response_options|writer_pending)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
-                            .replace(/<(ack|direction|dice|time_point|response_options|writer_pending)\b[^>]*>[\s\S]*$/gi, '')
+                            .replace(/<(ack|direction|response_options|writer_pending)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+                            .replace(/<(ack|direction|response_options|writer_pending)\b[^>]*>[\s\S]*$/gi, '')
                             .trim();
                     },
 

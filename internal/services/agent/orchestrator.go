@@ -20,7 +20,7 @@ import (
 
 const MaxKpRound = 20
 
-var internalTagPattern = regexp.MustCompile(`(?s)<(?:ack|direction|dice|time_point|response_options)\b[^>]*>.*?</(?:ack|direction|dice|time_point|response_options)>`)
+var internalTagPattern = regexp.MustCompile(`(?s)<(?:ack|direction|response_options)\b[^>]*>.*?</(?:ack|direction|response_options)>`)
 
 // activeSessions prevents concurrent agent runs for the same game session.
 var activeSessions sync.Map
