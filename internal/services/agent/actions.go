@@ -3,6 +3,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -551,6 +552,11 @@ type responseAction struct{}
 
 func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	*actx.HasEnd = true
+	if payload, ok := normalizeResponseOptionsPayload(call); ok {
+		if data, err := json.Marshal(payload); err == nil {
+			call.Reply += "\n<response_options>" + string(data) + "</response_options>"
+		}
+	}
 	if len(call.Ack) > 0 {
 		call.Reply += "\n<ack>" + strings.Join(call.Ack, ";") + "</ack>"
 	}
@@ -561,6 +567,37 @@ func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	debugf("tool", "session=%d response narration=%s", actx.Sid, call.Reply)
 	return nil
+}
+
+type responseOptionsPayload struct {
+	Options []string `json:"options,omitempty"`
+}
+
+func normalizeResponseOptionsPayload(call ToolCall) (responseOptionsPayload, bool) {
+	if len(call.Options) == 0 {
+		return responseOptionsPayload{}, false
+	}
+
+	options := make([]string, 0, len(call.Options))
+	seen := map[string]bool{}
+	for _, opt := range call.Options {
+		opt = strings.TrimSpace(opt)
+		if opt == "" || seen[opt] {
+			continue
+		}
+		seen[opt] = true
+		options = append(options, opt)
+		if len(options) >= 8 {
+			break
+		}
+	}
+	if len(options) == 0 {
+		return responseOptionsPayload{}, false
+	}
+
+	return responseOptionsPayload{
+		Options: options,
+	}, true
 }
 
 type yieldAction struct{}

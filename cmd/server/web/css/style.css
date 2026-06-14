@@ -215,6 +215,42 @@
             padding-top: 0.625rem;
         }
 
+        .response-suggestions {
+            margin-bottom: 0.625rem;
+            font-family: system-ui, sans-serif;
+        }
+
+        .response-suggestions-head {
+            margin-bottom: 0.375rem;
+            color: #a98555;
+            font-size: 0.75rem;
+        }
+
+        .response-suggestions-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.375rem;
+        }
+
+        .response-suggestion {
+            max-width: 100%;
+            border: 1px solid #3a2a18;
+            background: #0f0c09;
+            color: #d8c39a;
+            padding: 0.3125rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.8125rem;
+            line-height: 1.45;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .response-suggestion:hover {
+            border-color: #76552b;
+            background: #1c130b;
+            color: #f0d79f;
+        }
+
         /* Player action */
         .action {
             font-size: 0.875rem;

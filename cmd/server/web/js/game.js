@@ -5,8 +5,8 @@ window.COC.game = {
                     // Chat / SSE
                     // ═══════════════════════════════════════════════════════
                     async sendChat() {
-                        const content = this.chatInput.trim();
-                        if (!content || this.streaming || this.waitingForPlayers) return;
+                        const content = String(this.chatInput).trim();
+                        if (!content || this.streaming || this.waitingForPlayers) return false;
 
                         const streamID = Date.now() + ':' + Math.random().toString(16).slice(2);
                         const unlockKP = () => {
@@ -57,7 +57,7 @@ window.COC.game = {
                                 const err = await resp.json().catch(() => ({ error: '请求失败' }));
                                 this.showToast(err.error || '发送失败', 'error');
                                 unlockKP();
-                                return;
+                                return false;
                             }
 
                             const reader = resp.body.getReader();
@@ -179,6 +179,7 @@ window.COC.game = {
                                 this._recoverFromDrop(submittedAt);
                             }
                         }
+                        return true;
                     },
 
                     async _recoverFromDrop(since) {
@@ -209,6 +210,7 @@ window.COC.game = {
                     },
 
                     _commitStreamBuffers(meta = {}) {
+                        const responseOptions = this.extractResponseOptionsPayload(this.narrationBuffer) || this.extractResponseOptionsPayload(this.writerBuffer);
                         const wt = this.stripAckContent(this.writerBuffer).trim();
                         const nt = this.stripAckContent(this.narrationBuffer).trim();
                         if (!wt && !nt) return null;
@@ -218,6 +220,7 @@ window.COC.game = {
                             content: this._assistantContent(wt, nt),
                             writer_text: wt,
                             narration_text: nt,
+                            response_options: responseOptions,
                             created_at: meta.created_at || new Date().toISOString(),
                             _writer_streaming: !!meta.writerStreaming,
                             _new: true,
@@ -351,6 +354,7 @@ window.COC.game = {
                                         ...msg,
                                         _new: old._new,
                                         _writer_streaming: old._writer_streaming,
+                                        response_options: msg.response_options,
                                     });
                                     changed = true;
                                 }
@@ -409,11 +413,15 @@ window.COC.game = {
                             return message;
                         }
 
+                        const responseOptions = this.extractResponseOptionsPayload(message.content || '')
+                            || this.extractResponseOptionsPayload(message.narration_text || '')
+                            || this.extractResponseOptionsPayload(message.writer_text || '');
                         message = {
                             ...message,
                             content: this.stripAckContent(message.content || ''),
                             writer_text: this.stripAckContent(message.writer_text || ''),
                             narration_text: this.stripAckContent(message.narration_text || ''),
+                            response_options: message.response_options || responseOptions,
                         };
 
                         if (message.writer_text || message.narration_text) {
@@ -432,11 +440,55 @@ window.COC.game = {
                         };
                     },
 
+                    extractResponseOptionsPayload(content) {
+                        const match = String(content || '').match(/<response_options\b[^>]*>([\s\S]*?)<\/response_options>/i);
+                        if (!match) return null;
+                        try {
+                            const payload = JSON.parse(match[1]);
+                            const options = Array.isArray(payload.options)
+                                ? payload.options.map(opt => String(opt || '').trim()).filter(Boolean)
+                                : [];
+                            return {
+                                question: String(payload.question || '').trim(),
+                                options,
+                            };
+                        } catch (_) {
+                            return null;
+                        }
+                    },
+
                     stripAckContent(content) {
                         return String(content || '')
-                            .replace(/<(ack|direction|dice|time_point)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
-                            .replace(/<(ack|direction|dice|time_point)\b[^>]*>[\s\S]*$/gi, '')
+                            .replace(/<(ack|direction|dice|time_point|response_options)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+                            .replace(/<(ack|direction|dice|time_point|response_options)\b[^>]*>[\s\S]*$/gi, '')
                             .trim();
+                    },
+
+                    activeResponseSuggestions() {
+                        for (let i = this.messages.length - 1; i >= 0; i--) {
+                            const msg = this.messages[i];
+                            if (msg.role === 'user') return null;
+                            if (
+                                msg.role === 'assistant' &&
+                                msg.response_options &&
+                                Array.isArray(msg.response_options.options) &&
+                                msg.response_options.options.length > 0
+                            ) {
+                                return msg.response_options;
+                            }
+                        }
+                        return null;
+                    },
+
+                    appendResponseSuggestion(option) {
+                        const text = String(option || '').trim();
+                        if (!text) return;
+                        const current = String(this.chatInput || '').trimEnd();
+                        this.chatInput = current ? `${current}\n${text}` : text;
+                        this.$nextTick(() => {
+                            const input = document.getElementById('chatInputBox');
+                            if (input) input.focus();
+                        });
                     },
 
                     splitAssistantContent(content) {

@@ -235,9 +235,11 @@ const kpSystemPrompt = `
 		</tool>
 		<tool name="response" sideeffect="true" shouldBeLast="true" endTheTurn="true">
 			<description>结束本回合并给出KP对玩家的主流程回复和行为确认留痕(必填)。reply会先于白字输出,必须短且足够完整:总结已发生事实、关键裁定和下一步可选行动；禁止在reply中描述或默认玩家接下来会做什么、想什么、同意/拒绝/沉默、移动、交接物品、攻击、施法、搜索或继续行动。
+				当回合停在玩家行动点时,仍然使用response,不要调用单独的问询工具。可选字段options用于给出2到8个推荐可行行动,每个选项要能直接行动,不能写"其他"这种空选项。options只是推荐,不是限制,界面会把它们显示在输入框上方供玩家点击复制进输入框;玩家可以点多个、修改文字、补充说明,也可以完全不采用推荐。reply中不要重复列出同一组选项。
 				ack字段规则: (1) 本回合每一次roll_dice都必须记录一条: "roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败"。(2) 每一个其他有副作用的工具(update_*/manage_*/record_*/advance_time)记录一条: "tool_name: reason"(过去时)。不加其他文字，每条最长100字。ack数组中禁止出现任何规则说明文字, act_npc 不需要ack, 但roll_dice 需要ack。
 				【批次硬规则】response只能与write/think/update_llm_note同批次，严禁与update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc同批次——后端会拒绝整批。正确模式：先在独立批次完成所有状态更新(type-B)，yield后再发response批次(type-C)。</description>
 			<call_example>{"action":"response","reply":"总结已发生事实并询问(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 攀爬 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"]}</call_example>
+			<call_example>{"action":"response","reply":"抽屉锁住了,窗台有一层新灰,书架最下层有被挪动过的痕迹。你想先怎么做？","options":["检查书桌抽屉","查看窗台灰尘","翻阅墙边书架"],"ack":[]}</call_example>
 		</tool>
 		<tool name="yield" sideeffect="true" endTheTurn="true">
 			<description>等待本轮工具调用的返回结果后再继续。凡是调用了no-sideeffect工具（roll_dice/act_npc/check_rule/query_npc_card/query_character/query_clues等），本轮必须以yield结尾，不得直接response。这些工具的结果只有在下一轮才能读取。</description>
