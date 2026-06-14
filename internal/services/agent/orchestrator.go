@@ -458,7 +458,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 <NEXT_STEP>
 你要求的信息已给出，发起的操作已执行，你可以:
 1. 根据这些结果继续思考并调用工具，或者
-2. 使用response工具直接回复玩家并结束回合, 或者
+2. 使用response工具直接回复玩家(注意不要剧透)并结束回合, 或者
 3. 如果游戏已经走向结局, 先清除所有的临时状态(法术效果、NPC、玩家状态等), 再使用end_game工具结束游戏。
 
 注意: 
