@@ -787,7 +787,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		err    error
 	}
 	resultCh := make(chan runResult, 1)
-	progressCh := make(chan string, 32)
+	progressCh := make(chan string, 256)
 	gctx.Progress = func(text string) {
 		text = strings.TrimSpace(text)
 		if text == "" {
@@ -820,6 +820,15 @@ loop:
 				return
 			}
 			output = res.output
+			// 排空 progressCh 中剩余的消息，避免丢失
+			for {
+				select {
+				case progress := <-progressCh:
+					sendProgress(progress)
+				default:
+					break
+				}
+			}
 			break loop
 		case progress := <-progressCh:
 			sendProgress(progress)
