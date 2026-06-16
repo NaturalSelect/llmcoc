@@ -185,7 +185,7 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 func (r *scripterRoom) prepareContext() {
 	r.npcBlacklist = loadRecentNPCNameBlacklist(200)
 	r.titleSamples = loadScenarioTitleSamples(80)
-	r.mythosBlacklist = loadRecentMythosAnchors(40)
+	r.mythosBlacklist = loadRecentMythosAnchors(80)
 	log.Printf("[scripter] context prepared npc_blacklist=%d title_samples=%d mythos_blacklist=%d",
 		len(r.npcBlacklist), len(r.titleSamples), len(r.mythosBlacklist))
 }
