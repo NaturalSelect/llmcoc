@@ -165,9 +165,9 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 	state.History = trimWriterHistoryForCache(state.History, 10000)
 
 	sb := &strings.Builder{}
-	if toneBlock := buildWriterScenarioToneBlock(gctx); toneBlock != "" {
-		sb.WriteString(toneBlock)
-	}
+	// if toneBlock := buildWriterScenarioToneBlock(gctx); toneBlock != "" {
+	// 	sb.WriteString(toneBlock)
+	// }
 	sb.WriteString("<character>")
 	for _, p := range gctx.Session.Players {
 		card := p.CharacterCard
