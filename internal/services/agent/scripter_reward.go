@@ -73,6 +73,7 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 	if concept == "" {
 		return nil, nil
 	}
+	sessionID := scripterSessionID(ctx, room)
 	provider := room.architect
 	if provider.provider == nil {
 		provider = room.lawyer
@@ -98,12 +99,12 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		logStagePrompt(fmt.Sprintf("reward_agent_round_%d", round), msgs)
+		logStagePrompt(fmt.Sprintf("reward_agent_round_%d", round), sessionID, msgs)
 		raw, err := provider.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("[scripter:reward_agent] round=%d raw_len=%d raw=%s", round, len(raw), truncateRunes(raw, scripterRawLogLimit))
+		log.Printf("[scripter:reward_agent] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
 		calls, parseErr := parseRewardAgentToolCalls(ctx, room.parser, raw)
@@ -201,11 +202,12 @@ func parseRewardAgentToolCalls(ctx context.Context, parser agentHandle, raw stri
 }
 
 func rewardAgentAskLawyer(ctx context.Context, room *scripterRoom, question string) string {
+	sessionID := scripterSessionID(ctx, room)
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return `<ask_lawyer_result error="question字段为空"/>`
 	}
-	log.Printf("[scripter:reward_agent] ask_lawyer question=%q", truncateRunes(question, 300))
+	log.Printf("[scripter:reward_agent] session=%s ask_lawyer question=%q", sessionID, truncateRunes(question, 300))
 	if room.lawyer.provider == nil {
 		return fmt.Sprintf(`<ask_lawyer_result question=%q status="lawyer_unavailable">规则书专家不可用；不得声称已核验具体规则书数据。</ask_lawyer_result>`, question)
 	}

@@ -49,7 +49,7 @@ func (r oneshotResult) toScenarioDraft() ScenarioDraft {
 }
 
 // oneshotExample is the JSON schema example used for parsing/repair prompts.
-const oneshotExample = `{"reward_concept":"与食尸鬼有关的古籍手稿","name":"示例模组","description":"围绕派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。","setting":"镇图书馆连续三夜有书籍失踪，守墓人向警方报告了一个体型异常的入侵者。","intro":"你们进入局势。立即可做的事：①询问守墓人入侵者描述；②检查失窃书目；③决定是否公开异常气味。","game_start_slot":16,"map_description":"【文字地图】图书馆→书架区↔档案室↔墓地。","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。","scenes":[{"id":"library_main","name":"图书馆大厅","description":"可见：失窃公告。可发现：书目来自同一捐赠者。杠杆：公开规律会导致图书馆关闭。风险：拖延三天后永久关闭。出口：书架区、档案室。感官：潮湿泥土气息与旧纸味格格不入。","triggers":["available_from_start"]}],"npcs":[{"name":"守墓人Henrik","description":"公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。","attitude":"警惕、简短","stats":{"STR":55,"CON":60,"SIZ":65,"DEX":50,"APP":40,"INT":55,"POW":50,"EDU":55,"SAN":50,"HP":12,"MP":10}}],"clues":["[真实]失窃书目规律(书架区): 全部来自同一捐赠者。","[隐藏]神话本质(墓地): 食尸鬼是死者变形后的存在，保留人类记忆；SAN检定1/1d6；具体属性按规则书裁定。","[误导]守墓人描述(大厅): 体型异常、动作迅速——在真相揭示后仍然准确，只是「盗贼」身份完全颠倒。"],"win_condition":"如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。","lose_condition":"如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。","partial_wins":["如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"]}}`
+const oneshotExample = `{"reward_concept":"与食尸鬼有关的古籍手稿","name":"示例模组","description":"围绕派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。","setting":"镇图书馆连续三夜有书籍失踪，守墓人向警方报告了一个体型异常的入侵者。","tone_tags":["gothic","slow-burn","occult-noir"],"horror_mode":"gothic_horror","invest_focus":"artifact_theft","intro":"你们进入局势。立即可做的事：①询问守墓人入侵者描述；②检查失窃书目；③决定是否公开异常气味。","game_start_slot":16,"map_description":"【文字地图】图书馆→书架区↔档案室↔墓地。","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。","scenes":[{"id":"library_main","name":"图书馆大厅","description":"可见：失窃公告。可发现：书目来自同一捐赠者。杠杆：公开规律会导致图书馆关闭。风险：拖延三天后永久关闭。出口：书架区、档案室。感官：潮湿泥土气息与旧纸味格格不入。","triggers":["available_from_start"]}],"npcs":[{"name":"守墓人Henrik","description":"公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。","attitude":"警惕、简短","stats":{"STR":55,"CON":60,"SIZ":65,"DEX":50,"APP":40,"INT":55,"POW":50,"EDU":55,"SAN":50,"HP":12,"MP":10}}],"clues":["[真实]失窃书目规律(书架区): 全部来自同一捐赠者。","[隐藏]神话本质(墓地): 食尸鬼是死者变形后的存在，保留人类记忆；SAN检定1/1d6；具体属性按规则书裁定。","[误导]守墓人描述(大厅): 体型异常、动作迅速——在真相揭示后仍然准确，只是「盗贼」身份完全颠倒。"],"win_condition":"如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。","lose_condition":"如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。","partial_wins":["如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"]}}`
 
 // ---------------------------------------------------------------------------
 // System prompt
@@ -66,10 +66,10 @@ func oneshotSystemPrompt() string {
 
 【步骤①：核心概念与恐怖内核】
 先明确：
-- 选择恐怖内核：身体恐怖（变异/腐蚀） / 宇宙恐怖（知识即疯狂） / 哥特恐怖（家族诅咒） / 社会恐怖（"你身边的人都已经被替换了"） / 环境恐怖（"土地本身在排斥人类"） 
+- 恐怖内核必须使用用户消息 <diversity_constraints> 中指定的 horror_mode，不得自行替换；只允许把它具体化为剧情执行方式
 - 选择神话关联度：旧日支配者本体 / 眷属 / 神话物品 / 神话知识污染
 - 时代与地域风味：只作为氛围和行动约束，不直接代替谜团
-- 决定调查焦点：失踪、离奇死亡、古物失窃、异常仪式、家族秘密、地方传闻等一个明确入口
+- 调查焦点必须使用用户消息 <diversity_constraints> 中指定的 invest_focus，不得自行替换；只允许把它落到具体事件
 
 要求：
 - 开场问题必须让调查员愿意主动调查
@@ -179,6 +179,9 @@ submit.draft 必须包含以下字段：
   "content": {
     "system_prompt": "KP四项协议 + 核心真相注入",
     "setting": "表层视角的当前局势（不泄露核心真相）",
+    "tone_tags": ["必须等于diversity_constraints.tone_tags中的标签"],
+    "horror_mode": "必须等于diversity_constraints.horror_mode",
+    "invest_focus": "必须等于diversity_constraints.invest_focus",
     "intro": "入场位置 + 至少3个立即可执行的具体行动",
     "game_start_slot": 16,
     "map_description": "文字地图；体现可回访、可交叉验证的调查网络",
@@ -225,18 +228,19 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 	if room.architect.provider == nil {
 		return oneshotResult{}, msgs, fmt.Errorf("architect provider unavailable")
 	}
+	sessionID := scripterSessionID(ctx, room)
 	const maxRounds = 30
 	hasValidAnchor := false
 	for round := 1; round <= maxRounds; round++ {
 		if ctx.Err() != nil {
 			return oneshotResult{}, msgs, ctx.Err()
 		}
-		logStagePrompt(fmt.Sprintf("oneshot_loop_round_%d", round), msgs)
+		logStagePrompt(fmt.Sprintf("oneshot_loop_round_%d", round), sessionID, msgs)
 		raw, err := room.architect.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return oneshotResult{}, msgs, err
 		}
-		log.Printf("[scripter:oneshot_loop] round=%d raw_len=%d raw=%s", round, len(raw), truncateRunes(raw, scripterRawLogLimit))
+		log.Printf("[scripter:oneshot_loop] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
 		calls, parseErr := parseOneshotArchitectToolCalls(ctx, room.parser, raw)
@@ -351,15 +355,16 @@ func parseOneshotArchitectToolCalls(ctx context.Context, parser agentHandle, raw
 // ---------------------------------------------------------------------------
 
 func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, call oneshotArchitectToolCall) string {
+	sessionID := scripterSessionID(ctx, room)
 	concept := strings.TrimSpace(call.Concept)
 	if concept == "" {
 		return `<translate_anchor_result error="concept字段为空，无法翻译"/>`
 	}
 	reason := strings.TrimSpace(call.Reason)
-	log.Printf("[scripter:oneshot_translate_anchor] concept=%q reason=%q", truncateRunes(concept, 200), truncateRunes(reason, 200))
+	log.Printf("[scripter:oneshot_translate_anchor] session=%s concept=%q reason=%q", sessionID, truncateRunes(concept, 200), truncateRunes(reason, 200))
 	result, err := runOneshotTranslatorAgent(ctx, room, concept, reason)
 	if err != nil {
-		log.Printf("[scripter:oneshot_translate_anchor] error concept=%q err=%v", truncateRunes(concept, 200), err)
+		log.Printf("[scripter:oneshot_translate_anchor] session=%s error concept=%q err=%v", sessionID, truncateRunes(concept, 200), err)
 		return fmt.Sprintf(`<translate_anchor_result concept=%q status="translator_error">%s</translate_anchor_result>`, concept, err.Error())
 	}
 	result = strings.TrimSpace(result)
@@ -458,6 +463,7 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 	if room.architect.provider == nil {
 		return "", fmt.Errorf("translator provider unavailable")
 	}
+	sessionID := scripterSessionID(ctx, room)
 	requestJSON, _ := json.Marshal(struct {
 		Concept string `json:"concept"`
 		Reason  string `json:"reason,omitempty"`
@@ -479,12 +485,12 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		logStagePrompt(fmt.Sprintf("oneshot_translator_round_%d", round), msgs)
+		logStagePrompt(fmt.Sprintf("oneshot_translator_round_%d", round), sessionID, msgs)
 		raw, err := room.architect.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return "", err
 		}
-		log.Printf("[scripter:oneshot_translator] round=%d raw_len=%d raw=%s", round, len(raw), truncateRunes(raw, scripterRawLogLimit))
+		log.Printf("[scripter:oneshot_translator] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
 		calls, parseErr := parseOneshotTranslatorToolCalls(ctx, room.parser, raw)
@@ -578,11 +584,12 @@ func parseOneshotTranslatorToolCalls(ctx context.Context, parser agentHandle, ra
 }
 
 func oneshotTranslatorAskLawyer(ctx context.Context, room *scripterRoom, call oneshotTranslatorToolCall) string {
+	sessionID := scripterSessionID(ctx, room)
 	question := strings.TrimSpace(call.Question)
 	if question == "" {
 		return `<ask_lawyer_result error="question字段为空，无法查询规则书"/>`
 	}
-	log.Printf("[scripter:oneshot_translator] ask_lawyer question=%q", truncateRunes(question, 300))
+	log.Printf("[scripter:oneshot_translator] session=%s ask_lawyer question=%q", sessionID, truncateRunes(question, 300))
 	if room.lawyer.provider == nil {
 		return fmt.Sprintf(`<ask_lawyer_result question=%q status="lawyer_unavailable">规则书专家不可用；不得声称已核验具体规则书元素。</ask_lawyer_result>`, question)
 	}
@@ -649,17 +656,37 @@ func oneshotNormalizeAnchorKey(s string) string {
 	return replacer.Replace(s)
 }
 
+func diversityConstraintsBlock(constraints ScripterConstraints) string {
+	var sb strings.Builder
+	sb.WriteString("<diversity_constraints>\n")
+	sb.WriteString(fmt.Sprintf("horror_mode: %s\n", constraints.HorrorMode))
+	if label := horrorModeChineseLabels[constraints.HorrorMode]; label != "" {
+		sb.WriteString(fmt.Sprintf("horror_mode_zh: %s\n", label))
+	}
+	sb.WriteString(fmt.Sprintf("invest_focus: %s\n", constraints.InvestFocus))
+	if label := investFocusChineseLabels[constraints.InvestFocus]; label != "" {
+		sb.WriteString(fmt.Sprintf("invest_focus_zh: %s\n", label))
+	}
+	sb.WriteString(fmt.Sprintf("tone_tags: %s\n", strings.Join(constraints.ToneTags, ", ")))
+	sb.WriteString("硬约束：本次submit.draft.content.horror_mode、invest_focus、tone_tags必须逐字使用上述值，不得自行替换、翻译、改名或省略。\n")
+	sb.WriteString("含义：horror_mode决定恐怖表现结构；invest_focus决定调查入口；tone_tags只约束文风、节奏、场面选择和NPC反应风格，不覆盖剧本事实、规则书裁定或工具结果。\n")
+	sb.WriteString("</diversity_constraints>")
+	return sb.String()
+}
+
 // ---------------------------------------------------------------------------
 // Top-level generation functions
 // ---------------------------------------------------------------------------
 
 func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (ScenarioDraft, IronyCore, string, error) {
+	sessionID := scripterSessionID(ctx, room)
 	reqJSON, _ := json.Marshal(room.req)
 	constraintsJSON, _ := json.Marshal(constraints)
 
 	userMsg := fmt.Sprintf(
 		`<request_json>%s</request_json>
 <constraints>%s</constraints>
+%s
 <recently_used_mythos_anchors>
 %s
 </recently_used_mythos_anchors>
@@ -673,6 +700,7 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 </difficulty_spec>
 请设计并生成完整的COC7剧本。`,
 		string(reqJSON), string(constraintsJSON),
+		diversityConstraintsBlock(constraints),
 		formatMythosBlacklist(room.mythosBlacklist),
 		formatNPCNameBlacklist(room.npcBlacklist),
 		formatScenarioTitleBlacklist(room.titleSamples),
@@ -684,22 +712,23 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 		{Role: "system", Content: room.architect.systemPrompt(oneshotSystemPrompt())},
 		{Role: "user", Content: userMsg},
 	}
-	logStagePrompt("oneshot", msgs)
+	logStagePrompt("oneshot", sessionID, msgs)
 
 	result, _, err := runOneshotArchitectLoop(ctx, room, msgs)
 	if err != nil {
 		return ScenarioDraft{}, IronyCore{}, "", err
 	}
 
-	log.Printf("[scripter:oneshot] done anchor=%q scenes=%d npcs=%d clues=%d",
-		truncateRunes(result.Content.MythosAnchor, 80),
+	log.Printf("[scripter:oneshot] session=%s done anchor=%q scenes=%d npcs=%d clues=%d",
+		sessionID, truncateRunes(result.Content.MythosAnchor, 80),
 		len(result.Content.Scenes), len(result.Content.NPCs), len(result.Content.Clues))
-	logScripterArtifact("Oneshot Result", result)
+	logScripterArtifact("Oneshot Result", sessionID, result)
 
 	return result.toScenarioDraft(), IronyCore{}, strings.TrimSpace(result.RewardConcept), nil
 }
 
 func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, previous *ScenarioDraft, issues []string) (ScenarioDraft, error) {
+	sessionID := scripterSessionID(ctx, room)
 	reqJSON, _ := json.Marshal(room.req)
 	constraintsJSON, _ := json.Marshal(constraints)
 	prevJSON, _ := json.Marshal(previous)
@@ -707,12 +736,14 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 	userMsg := fmt.Sprintf(
 		`<request_json>%s</request_json>
 <constraints>%s</constraints>
+%s
 <previous_draft>%s</previous_draft>
 <must_fix>
 %s
 </must_fix>
-请修复上述问题并重新调用translate_anchor验证神话元素，然后通过submit提交修复后的完整剧本JSON。不要只改措辞；不要更换已确认的神话元素（mythos_anchor）。`,
+请修复上述问题并重新调用translate_anchor验证神话元素，然后通过submit提交修复后的完整剧本JSON。不要只改措辞；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags。`,
 		string(reqJSON), string(constraintsJSON),
+		diversityConstraintsBlock(constraints),
 		string(prevJSON),
 		strings.Join(issues, "\n"),
 	)
@@ -721,7 +752,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 		{Role: "system", Content: room.architect.systemPrompt(oneshotSystemPrompt())},
 		{Role: "user", Content: userMsg},
 	}
-	logStagePrompt("oneshot_repair", msgs)
+	logStagePrompt("oneshot_repair", sessionID, msgs)
 
 	result, _, err := runOneshotArchitectLoop(ctx, room, msgs)
 	if err != nil {
@@ -729,8 +760,8 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 	}
 
 	draft := result.toScenarioDraft()
-	log.Printf("[scripter:oneshot_repair] done name=%q scenes=%d npcs=%d clues=%d",
-		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+	log.Printf("[scripter:oneshot_repair] session=%s done name=%q scenes=%d npcs=%d clues=%d",
+		sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 	return draft, nil
 }
 
@@ -738,9 +769,13 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 // Normalization
 // ---------------------------------------------------------------------------
 
-func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, author string, constraints ScripterConstraints) {
+func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, author string, constraints ScripterConstraints, sessionIDs ...string) {
 	if draft == nil {
 		return
+	}
+	sessionID := ""
+	if len(sessionIDs) > 0 {
+		sessionID = sessionIDs[0]
 	}
 	author = strings.TrimSpace(author)
 	if author == "" {
@@ -748,14 +783,14 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	}
 	if strings.TrimSpace(draft.Name) == "" {
 		draft.Name = "未命名剧本"
-		log.Printf("[scripter:normalize] filled name=%q", draft.Name)
+		log.Printf("[scripter:normalize] session=%s filled name=%q", sessionID, draft.Name)
 	}
 	if strings.TrimSpace(req.Name) != "" && draft.Name != strings.TrimSpace(req.Name) {
 		draft.Name = strings.TrimSpace(req.Name)
 	}
 	if strings.TrimSpace(draft.Description) == "" {
 		draft.Description = "围绕派系时间线和调查员可拉动杠杆展开的COC情境简报。"
-		log.Printf("[scripter:normalize] filled description")
+		log.Printf("[scripter:normalize] session=%s filled description", sessionID)
 	}
 	if draft.Author != author {
 		draft.Author = author
@@ -793,7 +828,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			"真相将通过调查逐步揭示",
 			firstNonEmpty(draft.Content.MythosAnchor, "按规则书已收录神话元素处理"),
 		)
-		log.Printf("[scripter:normalize] filled system_prompt")
+		log.Printf("[scripter:normalize] session=%s filled system_prompt", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.Setting) == "" {
 		draft.Content.Setting = fmt.Sprintf(
@@ -801,15 +836,27 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			constraints.Era, strings.Join(constraints.GeographyFlavor, " / "),
 			"一个可被多种方式解读的局势已经开始",
 		)
-		log.Printf("[scripter:normalize] filled setting")
+		log.Printf("[scripter:normalize] session=%s filled setting", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.Intro) == "" {
 		draft.Content.Intro = "你们进入局势。眼前可立即行动：前往最近的关键地点，询问公开目击者，或决定是否把已知异常告诉某个派系。"
-		log.Printf("[scripter:normalize] filled intro")
+		log.Printf("[scripter:normalize] session=%s filled intro", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.MapDescription) == "" {
 		draft.Content.MapDescription = "【文字地图】各调查地点是剧本状态节点，不是顺序关卡：入口连接所有可调查地点；地点之间可往返；时间推进时，各地点状态可能因派系行动而改变。"
-		log.Printf("[scripter:normalize] filled map_description")
+		log.Printf("[scripter:normalize] session=%s filled map_description", sessionID)
+	}
+	if strings.TrimSpace(constraints.HorrorMode) != "" && strings.TrimSpace(draft.Content.HorrorMode) != strings.TrimSpace(constraints.HorrorMode) {
+		log.Printf("[scripter:normalize] session=%s override horror_mode from=%q to=%q", sessionID, draft.Content.HorrorMode, constraints.HorrorMode)
+		draft.Content.HorrorMode = strings.TrimSpace(constraints.HorrorMode)
+	}
+	if strings.TrimSpace(constraints.InvestFocus) != "" && strings.TrimSpace(draft.Content.InvestFocus) != strings.TrimSpace(constraints.InvestFocus) {
+		log.Printf("[scripter:normalize] session=%s override invest_focus from=%q to=%q", sessionID, draft.Content.InvestFocus, constraints.InvestFocus)
+		draft.Content.InvestFocus = strings.TrimSpace(constraints.InvestFocus)
+	}
+	if len(constraints.ToneTags) > 0 && !sameStringSlice(draft.Content.ToneTags, constraints.ToneTags) {
+		log.Printf("[scripter:normalize] session=%s override tone_tags from=%q to=%q", sessionID, strings.Join(draft.Content.ToneTags, ","), strings.Join(constraints.ToneTags, ","))
+		draft.Content.ToneTags = append([]string(nil), constraints.ToneTags...)
 	}
 	if len(draft.Content.Scenes) == 0 {
 		draft.Content.Scenes = []models.SceneData{{
@@ -818,7 +865,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			Description: "可见：异常已经公开出现。可发现：主动调查可获得第一批事实。杠杆：公开或隐瞒信息会改变派系反应。风险：拖延会推进时间线。出口：所有相关地点。",
 			Triggers:    []string{"available_from_start"},
 		}}
-		log.Printf("[scripter:normalize] generated default scene")
+		log.Printf("[scripter:normalize] session=%s generated default scene", sessionID)
 	}
 	for i := range draft.Content.Scenes {
 		if strings.TrimSpace(draft.Content.Scenes[i].ID) == "" {
@@ -840,7 +887,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			Description: "公开身份：地方相关人员。真实议程：自保并观察局势。秘密：掌握部分真相但不会主动全盘托出。",
 			Attitude:    "谨慎防备",
 		}}
-		log.Printf("[scripter:normalize] generated default npc")
+		log.Printf("[scripter:normalize] session=%s generated default npc", sessionID)
 	}
 	for i := range draft.Content.NPCs {
 		if strings.TrimSpace(draft.Content.NPCs[i].Name) == "" {
@@ -858,7 +905,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			"[真实]公开异常(调查入口): 一个无法普通解释的局势已经开始；获取方式：到达现场并主动询问或检查。",
 			"[误导]表象线索(初步调查): 支持错误推断的表象证据；表面合理但只能解释一部分。",
 		}
-		log.Printf("[scripter:normalize] generated default clues count=2")
+		log.Printf("[scripter:normalize] session=%s generated default clues count=2", sessionID)
 	}
 	for i, clue := range draft.Content.Clues {
 		draft.Content.Clues[i] = normalizeClueString(clue)
@@ -875,7 +922,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 					}
 				}
 				draft.Content.MythosCore = text
-				log.Printf("[scripter:normalize] extracted mythos_core=%q", truncateRunes(text, 200))
+				log.Printf("[scripter:normalize] session=%s extracted mythos_core=%q", sessionID, truncateRunes(text, 200))
 			}
 		} else {
 			filteredClues = append(filteredClues, clue)
@@ -884,18 +931,18 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	draft.Content.Clues = filteredClues
 	if strings.TrimSpace(draft.Content.MythosCore) == "" && strings.TrimSpace(draft.Content.MythosAnchor) != "" {
 		draft.Content.MythosCore = fmt.Sprintf("神话本质(核心发现): %s；到达终止节点并触发揭示后承担理智代价。", draft.Content.MythosAnchor)
-		log.Printf("[scripter:normalize] synthesized mythos_core from anchor")
+		log.Printf("[scripter:normalize] session=%s synthesized mythos_core from anchor", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.WinCondition) == "" {
 		draft.Content.WinCondition = "如果调查员让关键事实公开并改变至少一个派系时间线，则局势以较低代价固化，但神话锚点的余波仍保留。"
-		log.Printf("[scripter:normalize] filled win_condition")
+		log.Printf("[scripter:normalize] session=%s filled win_condition", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.LoseCondition) == "" {
 		draft.Content.LoseCondition = "如果关键时间线终点到达且调查员没有改变任何派系行动，则局势进入新的稳定态，某人或某地不可挽回地改变。"
-		log.Printf("[scripter:normalize] filled lose_condition")
+		log.Printf("[scripter:normalize] session=%s filled lose_condition", sessionID)
 	}
 	if len(draft.Content.PartialWins) == 0 {
 		draft.Content.PartialWins = []string{"如果调查员保护了个人或证据，但没有改变所有派系时间线，则余波继续存在。"}
-		log.Printf("[scripter:normalize] filled partial_wins")
+		log.Printf("[scripter:normalize] session=%s filled partial_wins", sessionID)
 	}
 }

@@ -165,6 +165,9 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 	state.History = trimWriterHistoryForCache(state.History, 10000)
 
 	sb := &strings.Builder{}
+	if toneBlock := buildWriterScenarioToneBlock(gctx); toneBlock != "" {
+		sb.WriteString(toneBlock)
+	}
 	sb.WriteString("<character>")
 	for _, p := range gctx.Session.Players {
 		card := p.CharacterCard
@@ -188,6 +191,33 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 		Content: sb.String(),
 	})
 	return msgs, direction
+}
+
+func buildWriterScenarioToneBlock(gctx GameContext) string {
+	content := gctx.Session.Scenario.Content.Data
+	if strings.TrimSpace(content.HorrorMode) == "" && strings.TrimSpace(content.InvestFocus) == "" && len(content.ToneTags) == 0 && strings.TrimSpace(content.Setting) == "" {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("<scenario_tone>\n")
+	if strings.TrimSpace(gctx.Session.Scenario.Name) != "" {
+		sb.WriteString("script: " + strings.TrimSpace(gctx.Session.Scenario.Name) + "\n")
+	}
+	if strings.TrimSpace(content.Setting) != "" {
+		sb.WriteString("setting_summary: " + truncateRunes(content.Setting, 300) + "\n")
+	}
+	if strings.TrimSpace(content.HorrorMode) != "" {
+		sb.WriteString("horror_mode: " + strings.TrimSpace(content.HorrorMode) + "\n")
+	}
+	if strings.TrimSpace(content.InvestFocus) != "" {
+		sb.WriteString("invest_focus: " + strings.TrimSpace(content.InvestFocus) + "\n")
+	}
+	if len(content.ToneTags) > 0 {
+		sb.WriteString("tone_tags: " + strings.Join(content.ToneTags, ", ") + "\n")
+	}
+	sb.WriteString("指令：根据这些标签调整文风、节奏、感官焦点，但不得新增未确认线索或玩家行为。\n")
+	sb.WriteString("</scenario_tone>\n")
+	return sb.String()
 }
 
 func appendWriterResponse(state *WriterState, direction, resp string, saveHistory bool) {

@@ -472,6 +472,20 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	if content.Setting != "" {
 		scenarioSB.WriteString("<setting>" + content.Setting + "</setting>\n")
 	}
+	if strings.TrimSpace(content.HorrorMode) != "" || strings.TrimSpace(content.InvestFocus) != "" || len(content.ToneTags) > 0 {
+		scenarioSB.WriteString("<tone_profile>\n")
+		if strings.TrimSpace(content.HorrorMode) != "" {
+			scenarioSB.WriteString("horror_mode: " + strings.TrimSpace(content.HorrorMode) + "\n")
+		}
+		if strings.TrimSpace(content.InvestFocus) != "" {
+			scenarioSB.WriteString("invest_focus: " + strings.TrimSpace(content.InvestFocus) + "\n")
+		}
+		if len(content.ToneTags) > 0 {
+			scenarioSB.WriteString("tone_tags: " + strings.Join(content.ToneTags, ", ") + "\n")
+		}
+		scenarioSB.WriteString("指令：这些标签只影响节奏、场面选择和NPC反应风格，不得覆盖剧本事实和工具结果。\n")
+		scenarioSB.WriteString("</tone_profile>\n")
+	}
 	if content.WinCondition != "" {
 		scenarioSB.WriteString("<win_cond>" + content.WinCondition + "</win_cond>\n")
 	}

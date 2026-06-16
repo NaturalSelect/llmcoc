@@ -66,6 +66,48 @@ var scriptEra = []string{
 	"1920s", "1950s", "1980s", "modern",
 }
 
+var scripterHorrorModes = []string{
+	"body_horror",
+	"cosmic_horror",
+	"gothic_horror",
+	"social_horror",
+	"environmental_horror",
+	"folk_horror",
+	"psychological_horror",
+}
+
+var scripterInvestFocuses = []string{
+	"disappearance",
+	"bizarre_death",
+	"artifact_theft",
+	"ritual_interruption",
+	"family_secret",
+	"local_legend",
+	"sealed_location",
+	"identity_replacement",
+}
+
+var horrorModeChineseLabels = map[string]string{
+	"body_horror":          "身体恐怖：变异、腐蚀、肉身边界被破坏",
+	"cosmic_horror":        "宇宙恐怖：知识、尺度和不可知深渊压垮理性",
+	"gothic_horror":        "哥特恐怖：旧宅、血缘、遗产、诅咒和迟来的真相",
+	"social_horror":        "社会恐怖：亲密关系、社区秩序或身份信任被侵蚀",
+	"environmental_horror": "环境恐怖：土地、天气、建筑或生态本身排斥人类",
+	"folk_horror":          "民俗恐怖：地方传说、仪式、禁忌和共同体沉默",
+	"psychological_horror": "心理恐怖：感知、记忆和自我判断逐步失稳",
+}
+
+var investFocusChineseLabels = map[string]string{
+	"disappearance":        "失踪：从人或物的持续消失进入调查",
+	"bizarre_death":        "离奇死亡：从异常尸体、死亡方式或死亡时间进入调查",
+	"artifact_theft":       "古物失窃：从重要物品被盗、替换或争夺进入调查",
+	"ritual_interruption":  "仪式中断：从未完成或被打断的仪式现场进入调查",
+	"family_secret":        "家族秘密：从血缘、遗产、旧信件或亲属隐瞒进入调查",
+	"local_legend":         "地方传闻：从口述传说、禁地或旧俗异常复现进入调查",
+	"sealed_location":      "封闭地点：从被封锁、隔离或无法离开的空间进入调查",
+	"identity_replacement": "身份替换：从某人不再像本人或关系证据矛盾进入调查",
+}
+
 func defaultScripterEra() string {
 	return scriptEra[rand.Intn(len(scriptEra))]
 }
@@ -85,10 +127,11 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 		return ScenarioCreationOutput{}, err
 	}
 	scripterCounterMu.Lock()
-	sessionID := scriptSessionId - int64(scripterCounter)
+	sessionID := fmt.Sprintf("%v", scriptSessionId-int64(scripterCounter))
 	scripterCounter++
 	scripterCounterMu.Unlock()
-	ctx = context.WithValue(ctx, "session", fmt.Sprintf("%v", sessionID))
+	room.sessionID = sessionID
+	ctx = context.WithValue(ctx, "session", sessionID)
 	return room.Run(ctx)
 }
 
@@ -101,6 +144,7 @@ type scripterRoom struct {
 	qa              agentHandle
 	lawyer          agentHandle
 	parser          agentHandle
+	sessionID       string
 	req             ScenarioCreationRequest
 	npcBlacklist    []string
 	titleSamples    []string
@@ -114,6 +158,27 @@ func (r *scripterRoom) architectModelName() string {
 		}
 	}
 	return defaultScripterAuthor
+}
+
+func sessionIDFromContextValue(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	value := ctx.Value("session")
+	if value == nil {
+		return ""
+	}
+	if sessionID, ok := value.(string); ok {
+		return sessionID
+	}
+	return fmt.Sprintf("%v", value)
+}
+
+func scripterSessionID(ctx context.Context, room *scripterRoom) string {
+	if room != nil && room.sessionID != "" {
+		return room.sessionID
+	}
+	return sessionIDFromContextValue(ctx)
 }
 
 func newScripterRoom(req ScenarioCreationRequest) (*scripterRoom, error) {
@@ -183,11 +248,11 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 }
 
 func (r *scripterRoom) prepareContext() {
-	r.npcBlacklist = loadRecentNPCNameBlacklist(200)
-	r.titleSamples = loadScenarioTitleSamples(80)
-	r.mythosBlacklist = loadRecentMythosAnchors(80)
-	log.Printf("[scripter] context prepared npc_blacklist=%d title_samples=%d mythos_blacklist=%d",
-		len(r.npcBlacklist), len(r.titleSamples), len(r.mythosBlacklist))
+	r.npcBlacklist = loadRecentNPCNameBlacklist(200, r.sessionID)
+	r.titleSamples = loadScenarioTitleSamples(80, r.sessionID)
+	r.mythosBlacklist = loadRecentMythosAnchors(200, r.sessionID)
+	log.Printf("[scripter] session=%s context prepared npc_blacklist=%d title_samples=%d mythos_blacklist=%d",
+		r.sessionID, len(r.npcBlacklist), len(r.titleSamples), len(r.mythosBlacklist))
 }
 
 // ---------------------------------------------------------------------------
@@ -195,28 +260,32 @@ func (r *scripterRoom) prepareContext() {
 // ---------------------------------------------------------------------------
 
 func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) {
+	if r.sessionID == "" {
+		r.sessionID = sessionIDFromContextValue(ctx)
+	}
+	sessionID := r.sessionID
 	r.prepareContext()
 	if ctx.Err() != nil {
 		return ScenarioCreationOutput{}, ctx.Err()
 	}
 	reqJSON, _ := json.Marshal(r.req)
-	log.Printf("[scripter] single-shot generation start req=%s", reqJSON)
+	log.Printf("[scripter] session=%s single-shot generation start req=%s", sessionID, reqJSON)
 
-	log.Printf("[scripter] stage=constraints start")
+	log.Printf("[scripter] session=%s stage=constraints start", sessionID)
 	constraints := r.buildConstraints(ctx)
-	log.Printf("[scripter] stage=constraints done geography=%q", strings.Join(constraints.GeographyFlavor, " → "))
-	logScripterArtifact("Constraints", constraints)
+	log.Printf("[scripter] session=%s stage=constraints done geography=%q", sessionID, strings.Join(constraints.GeographyFlavor, " → "))
+	logScripterArtifact("Constraints", sessionID, constraints)
 
-	log.Printf("[scripter] stage=oneshot start")
+	log.Printf("[scripter] session=%s stage=oneshot start", sessionID)
 	draft, _, rewardConcept, err := generateOneshotDraft(ctx, r, constraints)
 	if err != nil {
-		log.Printf("[scripter] stage=oneshot error=%v", err)
+		log.Printf("[scripter] session=%s stage=oneshot error=%v", sessionID, err)
 		return ScenarioCreationOutput{}, fmt.Errorf("单步生成失败: %w", err)
 	}
-	log.Printf("[scripter] stage=oneshot done name=%q scenes=%d npcs=%d clues=%d",
-		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+	log.Printf("[scripter] session=%s stage=oneshot done name=%q scenes=%d npcs=%d clues=%d",
+		sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 
-	applyGuardrails(&draft, r.req, r.architectModelName())
+	applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
 
 	// Repair loop: up to 2 rounds for structural issues
 	iterations := 1
@@ -225,43 +294,44 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		if len(issues) == 0 {
 			break
 		}
-		log.Printf("[scripter] stage=repair round=%d issues=%d %v", round, len(issues), issues)
+		log.Printf("[scripter] session=%s stage=repair round=%d issues=%d %v", sessionID, round, len(issues), issues)
 		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, issues)
 		if repairErr != nil {
-			log.Printf("[scripter] stage=repair round=%d failed: %v", round, repairErr)
+			log.Printf("[scripter] session=%s stage=repair round=%d failed: %v", sessionID, round, repairErr)
 			break
 		}
 		draft = repaired
-		applyGuardrails(&draft, r.req, r.architectModelName())
+		applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
 		iterations++
-		log.Printf("[scripter] stage=repair round=%d done name=%q scenes=%d npcs=%d clues=%d",
-			round, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+		log.Printf("[scripter] session=%s stage=repair round=%d done name=%q scenes=%d npcs=%d clues=%d",
+			sessionID, round, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 	}
 
 	// Reward agent (isolated context, optional)
 	if strings.TrimSpace(rewardConcept) != "" {
-		log.Printf("[scripter] stage=reward_agent start concept=%q anchor=%q",
-			truncateRunes(rewardConcept, 200), truncateRunes(draft.Content.MythosAnchor, 200))
+		log.Printf("[scripter] session=%s stage=reward_agent start concept=%q anchor=%q",
+			sessionID, truncateRunes(rewardConcept, 200), truncateRunes(draft.Content.MythosAnchor, 200))
 		rwd, rewardErr := runRewardAgent(ctx, r, rewardConcept, draft.Content.MythosAnchor)
 		if rewardErr != nil {
-			log.Printf("[scripter] stage=reward_agent error=%v (continuing without reward)", rewardErr)
+			log.Printf("[scripter] session=%s stage=reward_agent error=%v (continuing without reward)", sessionID, rewardErr)
 		} else if rwd != nil {
 			draft.Content.Reward = rwd
-			log.Printf("[scripter] stage=reward_agent done name=%q type=%q", rwd.Name, rwd.Type)
+			log.Printf("[scripter] session=%s stage=reward_agent done name=%q type=%q", sessionID, rwd.Name, rwd.Type)
 		}
 	}
 
 	beforeIssues := validateDraftCompatibility(draft)
-	log.Printf("[scripter] normalization start pre_issues=%d", len(beforeIssues))
-	normalizeOneshotDraft(&draft, r.req, r.architectModelName(), constraints)
-	log.Printf("[scripter] normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d partial_wins=%d",
-		draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Content.GameStartSlot,
+	log.Printf("[scripter] session=%s normalization start pre_issues=%d", sessionID, len(beforeIssues))
+	normalizeOneshotDraft(&draft, r.req, r.architectModelName(), constraints, sessionID)
+	applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
+	log.Printf("[scripter] session=%s normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d partial_wins=%d",
+		sessionID, draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Content.GameStartSlot,
 		len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), len(draft.Content.PartialWins))
 
 	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
-		log.Printf("[scripter] draft issues after normalization: %v", issues)
+		log.Printf("[scripter] session=%s draft issues after normalization: %v", sessionID, issues)
 	}
-	logScripterArtifact("Final ScenarioDraft", draft)
+	logScripterArtifact("Final ScenarioDraft", sessionID, draft)
 
 	return ScenarioCreationOutput{Draft: draft, IronyCore: &IronyCore{}, Iterations: iterations}, nil
 }
@@ -277,19 +347,26 @@ type ScripterConstraints struct {
 	TargetLength    string   `json:"target_length"`
 	PlayerRange     string   `json:"player_range"`
 	Difficulty      string   `json:"difficulty"`
+	HorrorMode      string   `json:"horror_mode"`
+	InvestFocus     string   `json:"invest_focus"`
+	ToneTags        []string `json:"tone_tags,omitempty"`
 }
 
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
+	sessionID := scripterSessionID(ctx, r)
 	geography, err := generateGeographyChain(ctx, r.architect, r.req.Era)
 	if err != nil || len(geography) == 0 {
 		if err != nil {
-			log.Printf("[scripter] geography flavor generation failed: %v", err)
+			log.Printf("[scripter] session=%s geography flavor generation failed: %v", sessionID, err)
 		}
 		geography = fallbackGeographyFlavor(r.req)
-		log.Printf("[scripter] geography fallback=%q", strings.Join(geography, " → "))
+		log.Printf("[scripter] session=%s geography fallback=%q", sessionID, strings.Join(geography, " → "))
 	} else {
-		log.Printf("[scripter] geography generated=%q", strings.Join(geography, " → "))
+		log.Printf("[scripter] session=%s geography generated=%q", sessionID, strings.Join(geography, " → "))
 	}
+	horrorMode, investFocus, toneTags := selectDiversityConstraints(r.req, sessionID)
+	log.Printf("[scripter] session=%s diversity selected horror_mode=%q invest_focus=%q tone_tags=%q",
+		sessionID, horrorMode, investFocus, strings.Join(toneTags, ","))
 	return ScripterConstraints{
 		Era:             r.req.Era,
 		Theme:           firstNonEmpty(r.req.Theme, ""),
@@ -297,6 +374,9 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		TargetLength:    r.req.TargetLength,
 		PlayerRange:     fmt.Sprintf("%d-%d", r.req.MinPlayers, r.req.MaxPlayers),
 		Difficulty:      r.req.Difficulty,
+		HorrorMode:      horrorMode,
+		InvestFocus:     investFocus,
+		ToneTags:        toneTags,
 	}
 }
 
@@ -315,7 +395,8 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 	if architect.provider == nil {
 		return nil, fmt.Errorf("architect provider unavailable")
 	}
-	log.Printf("[scripter:geography] start era=%q", era)
+	sessionID := sessionIDFromContextValue(ctx)
+	log.Printf("[scripter:geography] session=%s start era=%q", sessionID, era)
 	stages := []struct {
 		Key      string
 		Mode     string
@@ -328,10 +409,10 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 	chain := make([]string, 0, len(stages))
 	msgs := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)}}
 	for _, stage := range stages {
-		log.Printf("[scripter:geography] stage=%q selected_so_far=%q", stage.Key, strings.Join(chain, " → "))
+		log.Printf("[scripter:geography] session=%s stage=%q selected_so_far=%q", sessionID, stage.Key, strings.Join(chain, " → "))
 		items, err := generateGeographyCandidates(ctx, architect, &msgs, era, stage.Key, stage.Mode, stage.Examples, chain)
 		if err != nil {
-			log.Printf("[scripter:geography] stage=%q error=%v", stage.Key, err)
+			log.Printf("[scripter:geography] session=%s stage=%q error=%v", sessionID, stage.Key, err)
 			return chain, err
 		}
 		if len(items) == 0 {
@@ -348,7 +429,7 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 			choice = items[rand.Intn(len(items))]
 		}
 		chain = append(chain, choice)
-		log.Printf("[scripter] geography stage=%q candidates=%d chosen=%q", stage.Key, len(items), choice)
+		log.Printf("[scripter] session=%s geography stage=%q candidates=%d chosen=%q", sessionID, stage.Key, len(items), choice)
 	}
 	return chain, nil
 }
@@ -357,6 +438,7 @@ func generateGeographyCandidates(ctx context.Context, architect agentHandle, msg
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	sessionID := sessionIDFromContextValue(ctx)
 	selected := "无，第一轮先选择具体国家或政权范围"
 	if len(chain) > 0 {
 		selected = strings.Join(chain, " → ")
@@ -366,19 +448,19 @@ func generateGeographyCandidates(ctx context.Context, architect agentHandle, msg
 		countInstruction = "请只输出一个最合适的固定选项，必须完全等于：大都会、城市、市郊、乡镇、无人区 之一。"
 	}
 	prompt := fmt.Sprintf("已随机选中的前置布景：%s\n现在进入下一阶段：%s\n时代：%s\n输出要求：%s\n示例范围：%s\n\n%s", selected, stageKey, era, mode, examples, countInstruction)
-	log.Printf("[scripter:geography] prompt stage=%q len=%d body=%s", stageKey, len(prompt), truncateRunes(prompt, scripterPromptLogLimit))
+	log.Printf("[scripter:geography] session=%s prompt stage=%q len=%d body=%s", sessionID, stageKey, len(prompt), truncateRunes(prompt, scripterPromptLogLimit))
 	*msgs = append(*msgs, llm.ChatMessage{Role: "user", Content: prompt})
 	raw, err := architect.provider.Chat(ctx, *msgs)
 	if err != nil {
-		log.Printf("[scripter:geography] chat error stage=%q err=%v", stageKey, err)
+		log.Printf("[scripter:geography] session=%s chat error stage=%q err=%v", sessionID, stageKey, err)
 		return nil, err
 	}
-	log.Printf("[scripter:geography] raw stage=%q len=%d body=%s", stageKey, len(raw), truncateRunes(raw, scripterRawLogLimit))
+	log.Printf("[scripter:geography] session=%s raw stage=%q len=%d body=%s", sessionID, stageKey, len(raw), truncateRunes(raw, scripterRawLogLimit))
 	*msgs = append(*msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 	items := parseElementNames(raw)
-	log.Printf("[scripter:geography] parsed stage=%q count=%d items=%q", stageKey, len(items), strings.Join(items, " | "))
+	log.Printf("[scripter:geography] session=%s parsed stage=%q count=%d items=%q", sessionID, stageKey, len(items), strings.Join(items, " | "))
 	if len(items) == 0 {
-		log.Printf("[scripter:geography] parse empty stage=%q raw=%s", stageKey, truncateRunes(raw, scripterRawLogLimit))
+		log.Printf("[scripter:geography] session=%s parse empty stage=%q raw=%s", sessionID, stageKey, truncateRunes(raw, scripterRawLogLimit))
 		return nil, fmt.Errorf("地理候选列表为空")
 	}
 	return items, nil
@@ -391,6 +473,169 @@ func fallbackGeographyFlavor(req ScenarioCreationRequest) []string {
 	}
 	flavor = append(flavor, "具备地方关系、交通阻力和可调查公共空间的地点")
 	return flavor
+}
+
+func selectDiversityConstraints(req ScenarioCreationRequest, sessionID string) (horrorMode string, investFocus string, toneTags []string) {
+	recent := loadRecentDiversityCombos(30, sessionID)
+	recentSet := map[string]bool{}
+	for _, combo := range recent {
+		key := diversityComboKey(combo.HorrorMode, combo.InvestFocus)
+		if key != "" {
+			recentSet[key] = true
+		}
+	}
+
+	type candidate struct {
+		Mode  string
+		Focus string
+	}
+	candidates := make([]candidate, 0, len(scripterHorrorModes)*len(scripterInvestFocuses))
+	for _, mode := range scripterHorrorModes {
+		for _, focus := range scripterInvestFocuses {
+			candidates = append(candidates, candidate{Mode: mode, Focus: focus})
+		}
+	}
+	if len(candidates) == 0 {
+		return "cosmic_horror", "disappearance", toneTagsForDiversity("cosmic_horror", "disappearance", req)
+	}
+
+	available := make([]candidate, 0, len(candidates))
+	for _, c := range candidates {
+		if !recentSet[diversityComboKey(c.Mode, c.Focus)] {
+			available = append(available, c)
+		}
+	}
+	pool := available
+	if len(pool) == 0 {
+		pool = candidates
+	}
+	chosen := pool[rand.Intn(len(pool))]
+	return chosen.Mode, chosen.Focus, toneTagsForDiversity(chosen.Mode, chosen.Focus, req)
+}
+
+type diversityCombo struct {
+	HorrorMode  string
+	InvestFocus string
+}
+
+func diversityComboKey(horrorMode, investFocus string) string {
+	horrorMode = strings.TrimSpace(horrorMode)
+	investFocus = strings.TrimSpace(investFocus)
+	if horrorMode == "" || investFocus == "" {
+		return ""
+	}
+	return horrorMode + "|" + investFocus
+}
+
+func loadRecentDiversityCombos(limit int, sessionID string) []diversityCombo {
+	if limit <= 0 || models.DB == nil {
+		return nil
+	}
+	var scenarios []models.Scenario
+	if err := models.DB.Order("created_at DESC").Limit(limit).Find(&scenarios).Error; err != nil {
+		log.Printf("[scripter] session=%s load diversity combos failed: %v", sessionID, err)
+		return nil
+	}
+	combos := make([]diversityCombo, 0, len(scenarios))
+	for i := range scenarios {
+		if err := scenarios[i].DecodeData(); err != nil {
+			continue
+		}
+		mode := strings.TrimSpace(scenarios[i].Content.Data.HorrorMode)
+		focus := strings.TrimSpace(scenarios[i].Content.Data.InvestFocus)
+		if mode == "" || focus == "" {
+			continue
+		}
+		combos = append(combos, diversityCombo{HorrorMode: mode, InvestFocus: focus})
+	}
+	return combos
+}
+
+func toneTagsForDiversity(horrorMode, investFocus string, req ScenarioCreationRequest) []string {
+	tags := make([]string, 0, 4)
+	addTag := func(tag string) {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			return
+		}
+		for _, existing := range tags {
+			if existing == tag {
+				return
+			}
+		}
+		if len(tags) < 4 {
+			tags = append(tags, tag)
+		}
+	}
+
+	switch horrorMode {
+	case "body_horror":
+		addTag("body-horror")
+		addTag("visceral")
+	case "cosmic_horror":
+		addTag("cosmic-dread")
+		addTag("slow-burn")
+	case "gothic_horror":
+		addTag("gothic")
+		addTag("slow-burn")
+	case "social_horror":
+		addTag("paranoia")
+		addTag("social-dread")
+	case "environmental_horror":
+		addTag("isolation")
+		addTag("environmental-dread")
+	case "folk_horror":
+		addTag("folk-horror")
+		addTag("ritualistic")
+	case "psychological_horror":
+		addTag("paranoia")
+		addTag("unreliable-perception")
+	default:
+		addTag("slow-burn")
+	}
+
+	switch investFocus {
+	case "disappearance":
+		addTag("vanishing")
+	case "bizarre_death":
+		addTag("morbid")
+	case "artifact_theft":
+		addTag("occult-noir")
+	case "ritual_interruption":
+		addTag("ritualistic")
+	case "family_secret":
+		addTag("gothic")
+	case "local_legend":
+		addTag("folk-horror")
+	case "sealed_location":
+		addTag("claustrophobic")
+	case "identity_replacement":
+		addTag("paranoia")
+	}
+
+	era := strings.ToLower(strings.TrimSpace(req.Era))
+	if strings.Contains(era, "1920") || strings.Contains(era, "1950") {
+		addTag("noir")
+	}
+	theme := strings.ToLower(strings.TrimSpace(req.Theme + " " + req.Brief))
+	switch {
+	case strings.Contains(theme, "民俗") || strings.Contains(theme, "传说") || strings.Contains(theme, "folk") || strings.Contains(theme, "legend"):
+		addTag("folk-horror")
+	case strings.Contains(theme, "家族") || strings.Contains(theme, "宅") || strings.Contains(theme, "gothic") || strings.Contains(theme, "family"):
+		addTag("gothic")
+	case strings.Contains(theme, "身份") || strings.Contains(theme, "替换") || strings.Contains(theme, "identity"):
+		addTag("paranoia")
+	case strings.Contains(theme, "仪式") || strings.Contains(theme, "ritual"):
+		addTag("ritualistic")
+	}
+
+	for _, fallback := range []string{"slow-burn", "investigative", "coc-dread"} {
+		if len(tags) >= 2 {
+			break
+		}
+		addTag(fallback)
+	}
+	return tags
 }
 
 func settlementScaleCandidates() []string {
@@ -525,36 +770,116 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	return issues
 }
 
-func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest, author string) {
+func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest, author string, sessionIDs ...string) {
 	if draft == nil {
 		return
 	}
+	sessionID := ""
+	if len(sessionIDs) > 0 {
+		sessionID = sessionIDs[0]
+	}
+	applyGuardrailsBase(draft, req, author, sessionID)
+}
+
+func applyGuardrailsWithNPCBlacklist(draft *ScenarioDraft, req ScenarioCreationRequest, author string, sessionID string, npcBlacklist []string) {
+	if draft == nil {
+		return
+	}
+	applyGuardrailsBase(draft, req, author, sessionID)
+	enforceNPCBlacklist(draft, npcBlacklist, sessionID)
+}
+
+func applyGuardrailsBase(draft *ScenarioDraft, req ScenarioCreationRequest, author string, sessionID string) {
 	author = strings.TrimSpace(author)
 	if author == "" {
 		author = defaultScripterAuthor
 	}
 	if strings.TrimSpace(req.Name) != "" && draft.Name != strings.TrimSpace(req.Name) {
-		log.Printf("[scripter:guardrails] override name from=%q to=%q", draft.Name, strings.TrimSpace(req.Name))
+		log.Printf("[scripter:guardrails] session=%s override name from=%q to=%q", sessionID, draft.Name, strings.TrimSpace(req.Name))
 		draft.Name = strings.TrimSpace(req.Name)
 	}
 	if req.MinPlayers > 0 && draft.MinPlayers != req.MinPlayers {
-		log.Printf("[scripter:guardrails] override min_players from=%d to=%d", draft.MinPlayers, req.MinPlayers)
+		log.Printf("[scripter:guardrails] session=%s override min_players from=%d to=%d", sessionID, draft.MinPlayers, req.MinPlayers)
 		draft.MinPlayers = req.MinPlayers
 	}
 	if req.MaxPlayers > 0 && draft.MaxPlayers != req.MaxPlayers {
-		log.Printf("[scripter:guardrails] override max_players from=%d to=%d", draft.MaxPlayers, req.MaxPlayers)
+		log.Printf("[scripter:guardrails] session=%s override max_players from=%d to=%d", sessionID, draft.MaxPlayers, req.MaxPlayers)
 		draft.MaxPlayers = req.MaxPlayers
 	}
 	if draft.MaxPlayers > 0 && draft.MinPlayers > 0 && draft.MaxPlayers < draft.MinPlayers {
 		draft.MaxPlayers = draft.MinPlayers
 	}
 	if strings.TrimSpace(req.Difficulty) != "" && draft.Difficulty != strings.TrimSpace(req.Difficulty) {
-		log.Printf("[scripter:guardrails] override difficulty from=%q to=%q", draft.Difficulty, strings.TrimSpace(req.Difficulty))
+		log.Printf("[scripter:guardrails] session=%s override difficulty from=%q to=%q", sessionID, draft.Difficulty, strings.TrimSpace(req.Difficulty))
 		draft.Difficulty = strings.TrimSpace(req.Difficulty)
 	}
 	if draft.Author != author {
 		draft.Author = author
 	}
+}
+
+func enforceNPCBlacklist(draft *ScenarioDraft, npcBlacklist []string, sessionID string) {
+	if draft == nil || len(npcBlacklist) == 0 {
+		return
+	}
+	blacklist := map[string]bool{}
+	for _, name := range npcBlacklist {
+		key := npcBlacklistKey(name)
+		if key != "" {
+			blacklist[key] = true
+		}
+	}
+	if len(blacklist) == 0 {
+		return
+	}
+	used := map[string]bool{}
+	for i := range draft.Content.NPCs {
+		name := strings.TrimSpace(draft.Content.NPCs[i].Name)
+		if name == "" {
+			continue
+		}
+		key := npcBlacklistKey(name)
+		if !blacklist[key] {
+			used[key] = true
+			continue
+		}
+		newName := uniqueNPCReplacementName(name, i+1, blacklist, used)
+		draft.Content.NPCs[i].Name = newName
+		used[npcBlacklistKey(newName)] = true
+		log.Printf("[scripter:guardrails] session=%s npc name blacklisted from=%q to=%q", sessionID, name, newName)
+	}
+}
+
+func uniqueNPCReplacementName(original string, index int, blacklist map[string]bool, used map[string]bool) string {
+	base := strings.TrimSpace(original)
+	if base == "" {
+		base = fmt.Sprintf("替身NPC%d", index)
+	}
+	candidates := []string{
+		fmt.Sprintf("%s·异名", base),
+		fmt.Sprintf("%s·线人", base),
+		fmt.Sprintf("%s·替身", base),
+		fmt.Sprintf("替身NPC%d", index),
+	}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		key := npcBlacklistKey(candidate)
+		if candidate != "" && key != "" && !blacklist[key] && !used[key] {
+			return candidate
+		}
+	}
+	for i := 1; i <= 99; i++ {
+		candidate := fmt.Sprintf("替身NPC%d_%d", index, i)
+		key := npcBlacklistKey(candidate)
+		if !blacklist[key] && !used[key] {
+			return candidate
+		}
+	}
+	return fmt.Sprintf("替身NPC%d", index)
+}
+
+func npcBlacklistKey(name string) string {
+	return strings.ToLower(normalizeNPCName(name))
 }
 
 // ---------------------------------------------------------------------------
@@ -594,20 +919,21 @@ func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser 
 	if generator.provider == nil {
 		return fmt.Errorf("%s generator provider unavailable", tag)
 	}
-	log.Printf("[scripter:%s] chat start messages=%d", tag, len(msgs))
+	sessionID := sessionIDFromContextValue(ctx)
+	log.Printf("[scripter:%s] session=%s chat start messages=%d", tag, sessionID, len(msgs))
 	raw, err := generator.provider.JsonChat(ctx, msgs)
 	if err != nil {
-		log.Printf("[scripter:%s] chat error=%v", tag, err)
+		log.Printf("[scripter:%s] session=%s chat error=%v", tag, sessionID, err)
 		return err
 	}
-	log.Printf("[scripter:%s] raw len=%d body=%s", tag, len(raw), truncateRunes(raw, scripterRawLogLimit))
+	log.Printf("[scripter:%s] session=%s raw len=%d body=%s", tag, sessionID, len(raw), truncateRunes(raw, scripterRawLogLimit))
 	parseErr := parseJSONObject(raw, out)
 	if parseErr == nil {
-		log.Printf("[scripter:%s] parse ok without repair", tag)
-		logParsedJSON(tag, out)
+		log.Printf("[scripter:%s] session=%s parse ok without repair", tag, sessionID)
+		logParsedJSON(tag, sessionID, out)
 		return nil
 	}
-	log.Printf("[scripter:%s] JSON parse failed: %v raw=%s", tag, parseErr, truncateRunes(raw, scripterRawLogLimit))
+	log.Printf("[scripter:%s] session=%s JSON parse failed: %v raw=%s", tag, sessionID, parseErr, truncateRunes(raw, scripterRawLogLimit))
 	fixed, repairErr := repairJSONWith(ctx, parser, raw, parseErr, schemaExample)
 	if repairErr != nil {
 		return fmt.Errorf("%s JSON 修复失败: %w (原始错误: %v)", tag, repairErr, parseErr)
@@ -615,7 +941,7 @@ func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser 
 	if err := parseJSONObject(fixed, out); err == nil {
 		return nil
 	} else {
-		log.Printf("[%s] parser output schema mismatch, retry parser: %v", tag, err)
+		log.Printf("[%s] session=%s parser output schema mismatch, retry parser: %v", tag, sessionID, err)
 		repairedAgain, repairErr2 := repairJSONWith(ctx, parser, fixed, err, schemaExample)
 		if repairErr2 != nil {
 			return fmt.Errorf("修复后的 %s JSON 结构仍不匹配,二次修复失败: %w", tag, repairErr2)
@@ -656,7 +982,7 @@ func RepairJSON(ctx context.Context, rawJSON string, parseErr error, schemaExamp
 			fixed = true
 		}
 		if fixed && json.Valid([]byte(trimmed)) {
-			debugf("repair", "fixed: %v", trimmed)
+			debugf("repair", "session=%s fixed: %v", sessionIDFromContextValue(ctx), trimmed)
 			return trimmed, nil
 		}
 	}
@@ -671,6 +997,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 	if parser.provider == nil {
 		return "", fmt.Errorf("parser provider unavailable")
 	}
+	sessionID := sessionIDFromContextValue(ctx)
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: "你是 JSON 修复工具。用户会给你一段有问题的 JSON 和错误信息,你需要修复它使其匹配目标格式。仅输出修正后的合法 JSON,不要有任何其他文字。"},
 	}
@@ -697,17 +1024,17 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 			fixed = strings.TrimPrefix(fixed, "```json")
 			fixed = strings.TrimSuffix(fixed, "```")
 		}
-		debugf("Parser", "Fixed JSON: %v", fixed)
+		debugf("Parser", "session=%s Fixed JSON: %v", sessionID, fixed)
 		stripped := llm.StripCodeFence(strings.TrimSpace(fixed))
 		if json.Valid([]byte(stripped)) {
-			log.Printf("[parser] JSON 修复成功 attempt=%d", attempt)
+			log.Printf("[parser] session=%s JSON 修复成功 attempt=%d", sessionID, attempt)
 			return stripped, nil
 		}
 		if s := strings.Index(stripped, "{"); s >= 0 {
 			if e := strings.LastIndex(stripped, "}"); e > s {
 				candidate := stripped[s : e+1]
 				if json.Valid([]byte(candidate)) {
-					log.Printf("[parser] JSON 修复成功(提取) attempt=%d", attempt)
+					log.Printf("[parser] session=%s JSON 修复成功(提取) attempt=%d", sessionID, attempt)
 					return candidate, nil
 				}
 			}
@@ -716,7 +1043,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 			if e := strings.LastIndex(stripped, "]"); e > s {
 				candidate := stripped[s : e+1]
 				if json.Valid([]byte(candidate)) {
-					log.Printf("[parser] JSON 修复成功(提取数组) attempt=%d", attempt)
+					log.Printf("[parser] session=%s JSON 修复成功(提取数组) attempt=%d", sessionID, attempt)
 					return candidate, nil
 				}
 			}
@@ -724,7 +1051,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 		currentErr = fmt.Errorf("修复后的 JSON 仍然无效")
 		raw = fixed
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: fixed})
-		log.Printf("[parser] attempt=%d 修复后仍无效", attempt)
+		log.Printf("[parser] session=%s attempt=%d 修复后仍无效", sessionID, attempt)
 	}
 	return "", fmt.Errorf("parser 修复失败(%d次尝试)", maxAttempts)
 }
@@ -861,13 +1188,17 @@ func grepRulebook(keyword string) string {
 // DB helpers
 // ---------------------------------------------------------------------------
 
-func loadRecentNPCNameBlacklist(limit int) []string {
+func loadRecentNPCNameBlacklist(limit int, sessionIDs ...string) []string {
+	sessionID := ""
+	if len(sessionIDs) > 0 {
+		sessionID = sessionIDs[0]
+	}
 	if limit <= 0 || models.DB == nil {
 		return nil
 	}
 	var scenarios []models.Scenario
 	if err := models.DB.Order("created_at DESC").Limit(limit * 3).Find(&scenarios).Error; err != nil {
-		log.Printf("[scripter] load recent npc blacklist failed: %v", err)
+		log.Printf("[scripter] session=%s load recent npc blacklist failed: %v", sessionID, err)
 		return nil
 	}
 	seen := map[string]bool{}
@@ -891,13 +1222,17 @@ func loadRecentNPCNameBlacklist(limit int) []string {
 	return names
 }
 
-func loadScenarioTitleSamples(sampleSize int) []string {
+func loadScenarioTitleSamples(sampleSize int, sessionIDs ...string) []string {
+	sessionID := ""
+	if len(sessionIDs) > 0 {
+		sessionID = sessionIDs[0]
+	}
 	if sampleSize <= 0 || models.DB == nil {
 		return nil
 	}
 	var scenarios []models.Scenario
 	if err := models.DB.Order("created_at DESC").Limit(sampleSize).Find(&scenarios).Error; err != nil {
-		log.Printf("[scripter] load scenario titles failed: %v", err)
+		log.Printf("[scripter] session=%s load scenario titles failed: %v", sessionID, err)
 		return nil
 	}
 	titles := make([]string, 0, len(scenarios))
@@ -913,13 +1248,17 @@ func loadScenarioTitleSamples(sampleSize int) []string {
 	return titles
 }
 
-func loadRecentMythosAnchors(limit int) []string {
+func loadRecentMythosAnchors(limit int, sessionIDs ...string) []string {
+	sessionID := ""
+	if len(sessionIDs) > 0 {
+		sessionID = sessionIDs[0]
+	}
 	if limit <= 0 || models.DB == nil {
 		return nil
 	}
 	var scenarios []models.Scenario
 	if err := models.DB.Order("created_at DESC").Limit(limit * 2).Find(&scenarios).Error; err != nil {
-		log.Printf("[scripter] load recent mythos anchors failed: %v", err)
+		log.Printf("[scripter] session=%s load recent mythos anchors failed: %v", sessionID, err)
 		return nil
 	}
 	seen := map[string]bool{}
@@ -1006,29 +1345,29 @@ func cluePrefixForLayer(layer string) string {
 // Logging helpers
 // ---------------------------------------------------------------------------
 
-func logScripterArtifact(stage string, artifact any) {
+func logScripterArtifact(stage string, sessionID string, artifact any) {
 	bs, err := json.MarshalIndent(artifact, "", "  ")
 	if err != nil {
-		log.Printf("[scripter-artifact] %s marshal failed: %v", stage, err)
+		log.Printf("[scripter-artifact] session=%s %s marshal failed: %v", sessionID, stage, err)
 		return
 	}
-	log.Printf("[scripter-artifact] %s len=%d\n%s", stage, len(bs), string(bs))
+	log.Printf("[scripter-artifact] session=%s %s len=%d\n%s", sessionID, stage, len(bs), string(bs))
 }
 
-func logStagePrompt(tag string, msgs []llm.ChatMessage) {
-	log.Printf("[scripter:%s] prompt messages=%d", tag, len(msgs))
+func logStagePrompt(tag string, sessionID string, msgs []llm.ChatMessage) {
+	log.Printf("[scripter:%s] session=%s prompt messages=%d", tag, sessionID, len(msgs))
 	for i, msg := range msgs {
-		log.Printf("[scripter:%s] prompt[%d] role=%s len=%d body=%s", tag, i, msg.Role, len(msg.Content), truncateRunes(msg.Content, scripterPromptLogLimit))
+		log.Printf("[scripter:%s] session=%s prompt[%d] role=%s len=%d body=%s", tag, sessionID, i, msg.Role, len(msg.Content), truncateRunes(msg.Content, scripterPromptLogLimit))
 	}
 }
 
-func logParsedJSON(tag string, value any) {
+func logParsedJSON(tag string, sessionID string, value any) {
 	bs, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
-		log.Printf("[scripter:%s] parsed JSON marshal failed: %v", tag, err)
+		log.Printf("[scripter:%s] session=%s parsed JSON marshal failed: %v", tag, sessionID, err)
 		return
 	}
-	log.Printf("[scripter:%s] parsed JSON len=%d body=%s", tag, len(bs), truncateRunes(string(bs), scripterRawLogLimit))
+	log.Printf("[scripter:%s] session=%s parsed JSON len=%d body=%s", tag, sessionID, len(bs), truncateRunes(string(bs), scripterRawLogLimit))
 }
 
 // ---------------------------------------------------------------------------
@@ -1052,6 +1391,18 @@ func nonEmptyStrings(values ...string) []string {
 		}
 	}
 	return out
+}
+
+func sameStringSlice(a []string, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if strings.TrimSpace(a[i]) != strings.TrimSpace(b[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func truncateRunes(s string, maxLen int) string {

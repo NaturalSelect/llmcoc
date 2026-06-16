@@ -79,6 +79,52 @@ func TestApplyGuardrailsPreservesRequestOverrides(t *testing.T) {
 	}
 }
 
+func TestApplyGuardrailsRenamesBlacklistedNPCs(t *testing.T) {
+	draft := validScripterTestDraft()
+	draft.Content.NPCs = []models.NPCData{
+		{Name: "林秋", Description: "旧名命中黑名单。", Attitude: "谨慎"},
+		{Name: "王岚", Description: "未命中。", Attitude: "谨慎"},
+	}
+
+	applyGuardrailsWithNPCBlacklist(&draft, ScenarioCreationRequest{}, "agent-team", "test-session", []string{"林秋"})
+
+	if strings.TrimSpace(draft.Content.NPCs[0].Name) == "" {
+		t.Fatal("renamed NPC name must not be empty")
+	}
+	if draft.Content.NPCs[0].Name == "林秋" {
+		t.Fatalf("expected blacklisted NPC to be renamed, got %q", draft.Content.NPCs[0].Name)
+	}
+	if draft.Content.NPCs[1].Name != "王岚" {
+		t.Fatalf("unexpected rename for non-blacklisted NPC: %q", draft.Content.NPCs[1].Name)
+	}
+}
+
+func TestNormalizeOneshotDraftAppliesDiversityConstraints(t *testing.T) {
+	draft := validScripterTestDraft()
+	draft.Content.HorrorMode = "cosmic_horror"
+	draft.Content.InvestFocus = "disappearance"
+	draft.Content.ToneTags = []string{"old"}
+	constraints := ScripterConstraints{
+		Era:             "1920s",
+		GeographyFlavor: []string{"美国", "乡镇"},
+		HorrorMode:      "gothic_horror",
+		InvestFocus:     "family_secret",
+		ToneTags:        []string{"gothic", "slow-burn"},
+	}
+
+	normalizeOneshotDraft(&draft, ScenarioCreationRequest{}, "agent-team", constraints, "test-session")
+
+	if draft.Content.HorrorMode != "gothic_horror" {
+		t.Fatalf("HorrorMode=%q, want gothic_horror", draft.Content.HorrorMode)
+	}
+	if draft.Content.InvestFocus != "family_secret" {
+		t.Fatalf("InvestFocus=%q, want family_secret", draft.Content.InvestFocus)
+	}
+	if !sameStringSlice(draft.Content.ToneTags, []string{"gothic", "slow-burn"}) {
+		t.Fatalf("ToneTags=%v, want [gothic slow-burn]", draft.Content.ToneTags)
+	}
+}
+
 func TestParseJSONObjectExtractsFencedJSON(t *testing.T) {
 	raw := "```json\n{\"name\":\"测试模组\",\"description\":\"简介\"}\n```"
 	var result ScenarioDraft
@@ -127,6 +173,9 @@ func validScripterTestDraft() ScenarioDraft {
 		Content: models.ScenarioContent{
 			SystemPrompt:   "你是KP。",
 			Setting:        "公开背景。",
+			ToneTags:       []string{"slow-burn", "investigative"},
+			HorrorMode:     "cosmic_horror",
+			InvestFocus:    "disappearance",
 			Intro:          "开场导入。",
 			GameStartSlot:  16,
 			MapDescription: "起点、路径、终点。",

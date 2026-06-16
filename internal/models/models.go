@@ -118,6 +118,9 @@ type ScenarioReward struct {
 type ScenarioContent struct {
 	SystemPrompt   string          `json:"system_prompt"`
 	Setting        string          `json:"setting"`
+	ToneTags       []string        `json:"tone_tags,omitempty"`
+	HorrorMode     string          `json:"horror_mode,omitempty"`
+	InvestFocus    string          `json:"invest_focus,omitempty"`
 	Intro          string          `json:"intro"`
 	GameStartSlot  int             `json:"game_start_slot,omitempty"` // 开局时间槽位(0-47),每槽30分钟
 	MapDescription string          `json:"map_description,omitempty"` // 文字描述的场景地图,供KP感知空间关系
@@ -128,8 +131,8 @@ type ScenarioContent struct {
 	LoseCondition  string          `json:"lose_condition,omitempty"` // 失败条件
 	PartialWins    []string        `json:"partial_wins,omitempty"`   // 部分胜利情景列表
 	Reward         *ScenarioReward `json:"reward,omitempty"`         // 通关奖励（典籍/神话物品），完成win_condition时给予
-	MythosAnchor   string          `json:"mythos_anchor,omitempty"`   // Stage2确认的神话锚点，用于多样性去重
-	MythosCore     string          `json:"mythos_core,omitempty"`     // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
+	MythosAnchor   string          `json:"mythos_anchor,omitempty"`  // Stage2确认的神话锚点，用于多样性去重
+	MythosCore     string          `json:"mythos_core,omitempty"`    // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
 }
 
 // NOTE: SceneData describes a specific location or event in a scenario.
@@ -142,13 +145,13 @@ type SceneData struct {
 
 // NOTE: NPCData provides a template for a non-player character within a scenario.
 type NPCData struct {
-	Name                string         `json:"name"`
-	Race                string         `json:"race,omitempty"`
-	Occupation          string         `json:"occupation,omitempty"`
-	Description         string         `json:"description"`
-	Attitude            string         `json:"attitude"`
-	Stats               map[string]int `json:"stats,omitempty"`
-	CthulhuMythosSkill  int            `json:"cthulhu_mythos_skill,omitempty"`
+	Name               string         `json:"name"`
+	Race               string         `json:"race,omitempty"`
+	Occupation         string         `json:"occupation,omitempty"`
+	Description        string         `json:"description"`
+	Attitude           string         `json:"attitude"`
+	Stats              map[string]int `json:"stats,omitempty"`
+	CthulhuMythosSkill int            `json:"cthulhu_mythos_skill,omitempty"`
 }
 
 // NOTE: Scenario is the database representation of a playable module or adventure.
