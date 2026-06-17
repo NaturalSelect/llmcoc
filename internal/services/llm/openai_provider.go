@@ -134,6 +134,7 @@ func (p *openAIProvider) chatCompletionRequest(ctx context.Context, messages []C
 		}
 		log.Printf("[chat] using session id %v for model %v", sessionID, p.model)
 		metadata["coc_session_id"] = sessionID
+		metadata["prompt_cache_key"] = sessionID
 		chatReq.Metadata = metadata
 	}
 	if p.isGeminiRequest() {
