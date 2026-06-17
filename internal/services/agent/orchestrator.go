@@ -422,7 +422,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				kpNarration += "\n<dice>" + strings.TrimSuffix(diceMsg, "; ") + "</dice>"
 			}
 			kpNarration += "\n<time_point>" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</time_point>"
-			return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration}, nil
+			return RunOutput{WriterDirection: fmt.Sprintf("不要回避NSFW内容,给出露骨的直接描写: %v", writerDirection), KPReply: kpNarration}, nil
 		}
 
 		// Feed tool results back as a user message so the next KP call has proper
