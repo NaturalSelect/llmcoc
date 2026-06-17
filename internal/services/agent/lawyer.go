@@ -69,10 +69,12 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	- 若返回结果与当前问题高度相关,可直接引用其裁定并输出 response,无需再搜索资料
 	- 若无相关结果,再进行grep等搜索
 
-2. grep — 在规则书 COC_kp.md 中精确搜索关键词,返回匹配行及其上下文原文
-	[{"action":"grep","keyword":"精确关键词(不支持正则表达式)"}]
+2. grep — 在规则书 COC_kp.md 中搜索关键词或Go正则表达式,返回匹配行及其上下文原文
+	[{"action":"grep","keyword":"关键词或Go正则表达式(例如: 理智.*检定)"}]
 	- 普通规则、典籍、系统机制优先使用此工具、但内容可能在别的文件中出现
-	- 关键词须与原文一致
+	- 普通关键词可直接填写；正则元字符按Go regexp语义使用，必要时转义
+	- 如需搜索多个备选词,请使用正则 | 写法,不要用空格分隔
+	- 若提供的正则表达式无效,会按字面量关键词回退搜索
 	- 搜索结果仅用于本轮分析，不会被缓存
 
 3. read_lines — 直接读取规则书 COC_kp.md 的特定行号范围
@@ -80,9 +82,11 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	- 仅当 grep 已定位相关内容但需要完整上下文时使用
 	- 结果仅用于本轮分析
 
-4. grep_spell — 在法术图鉴 COC_spell.md 中精确搜索关键词
-	[{"action":"grep_spell","keyword":"法术名或精确关键词"}]
+4. grep_spell — 在法术图鉴 COC_spell.md 中搜索关键词或Go正则表达式
+	[{"action":"grep_spell","keyword":"法术名、关键词或Go正则表达式"}]
 	- 具体法术词条、法术细节、法术MP/SAN消耗优先使用此工具、但内容可能在别的文件中出现
+	- 普通关键词可直接填写；正则无效时按字面量关键词回退搜索
+	- 如需搜索多个备选词,请使用正则 | 写法,不要用空格分隔
 	- 搜索结果仅用于本轮分析
 
 5. read_spell_lines — 直接读取法术图鉴 COC_spell.md 的特定行号范围
@@ -90,9 +94,11 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 	- 仅当 grep_spell 已定位相关内容但需要完整法术词条时使用
 	- 结果仅用于本轮分析
 
-6. grep_monster — 在怪物图鉴 COC_monster.md 中精确搜索关键词
-	[{"action":"grep_monster","keyword":"怪物/神格/生物名或精确关键词"}]
+6. grep_monster — 在怪物图鉴 COC_monster.md 中搜索关键词或Go正则表达式
+	[{"action":"grep_monster","keyword":"怪物/神格/生物名、关键词或Go正则表达式"}]
 	- 具体怪物、神格、生物属性优先使用此工具、但内容可能在别的文件中出现
+	- 普通关键词可直接填写；正则无效时按字面量关键词回退搜索
+	- 如需搜索多个备选词,请使用正则 | 写法,不要用空格分隔
 	- 搜索结果仅用于本轮分析
 
 7. read_monster_lines — 直接读取怪物图鉴 COC_monster.md 的特定行号范围
@@ -337,19 +343,17 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 }
 
 func appendGrepResults(resultSB *strings.Builder, action, keyword, sourceName string, grep func(string) []rulebook.GrepResult) bool {
-	if strings.TrimSpace(keyword) == "" {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
 		return false
 	}
 	log.Printf("[lawyer] %s: %s", action, keyword)
-	kws := strings.Fields(keyword)
-	for _, kw := range kws {
-		text := formatGrepResults(grep(kw))
-		if text == "" {
-			text = fmt.Sprintf("(%s中未找到相关内容)", sourceName)
-		}
-		resultSB.WriteString(fmt.Sprintf("【%s:%s】\n%s\n\n", action, kw, text))
-		debugf("Grep", "action=%s keyword=%v result=%v", action, kw, text)
+	text := formatGrepResults(grep(keyword))
+	if text == "" {
+		text = fmt.Sprintf("(%s中未找到相关内容)", sourceName)
 	}
+	resultSB.WriteString(fmt.Sprintf("【%s:%s】\n%s\n\n", action, keyword, text))
+	debugf("Grep", "action=%s keyword=%v result=%v", action, keyword, text)
 	return true
 }
 

@@ -59,6 +59,68 @@ func TestLoadRulebookResetsLineCache(t *testing.T) {
 	}
 }
 
+func TestGrepSupportsRegexpAndLiteralKeyword(t *testing.T) {
+	dir := t.TempDir()
+	spellPath := filepath.Join(dir, "spell.md")
+	writeTestFile(t, spellPath, "# 法术\n血肉防护术 消耗MP\n拜亚基召唤术\n理智 损失 检定\n结束\n")
+
+	if err := LoadSpellBook(spellPath); err != nil {
+		t.Fatalf("LoadSpellBook failed: %v", err)
+	}
+
+	literalHits := GrepSpellBook("血肉防护术")
+	if len(literalHits) != 1 || literalHits[0].LineNum != 2 || literalHits[0].Text != "血肉防护术 消耗MP" {
+		t.Fatalf("unexpected literal grep hits: %#v", literalHits)
+	}
+
+	regexHits := GrepSpellBook("血肉.*术")
+	if len(regexHits) != 1 || regexHits[0].LineNum != 2 || regexHits[0].Text != "血肉防护术 消耗MP" {
+		t.Fatalf("unexpected regexp grep hits: %#v", regexHits)
+	}
+
+	alternativeHits := GrepSpellBook("血肉防护术|拜亚基")
+	if len(alternativeHits) != 2 || alternativeHits[0].LineNum != 2 || alternativeHits[1].LineNum != 3 {
+		t.Fatalf("unexpected regexp alternative hits: %#v", alternativeHits)
+	}
+
+	spaceRegexHits := GrepSpellBook("理智 .* 检定")
+	if len(spaceRegexHits) != 1 || spaceRegexHits[0].LineNum != 4 || spaceRegexHits[0].Text != "理智 损失 检定" {
+		t.Fatalf("unexpected regexp with spaces hits: %#v", spaceRegexHits)
+	}
+}
+
+func TestGrepInvalidRegexpFallsBackToLiteral(t *testing.T) {
+	dir := t.TempDir()
+	rulebookPath := filepath.Join(dir, "rulebook.md")
+	writeTestFile(t, rulebookPath, "# 测试规则\n包含 a[ 字面量\n另一行\n")
+
+	if _, err := Load(rulebookPath); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	hits := GrepRuleBook("a[")
+	if len(hits) != 1 || hits[0].LineNum != 2 || hits[0].Text != "包含 a[ 字面量" {
+		t.Fatalf("unexpected invalid-regexp fallback hits: %#v", hits)
+	}
+}
+
+func TestGrepEmptyKeywordReturnsNoResults(t *testing.T) {
+	dir := t.TempDir()
+	rulebookPath := filepath.Join(dir, "rulebook.md")
+	writeTestFile(t, rulebookPath, "# 测试规则\n任意内容\n")
+
+	if _, err := Load(rulebookPath); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if hits := GrepRuleBook(""); len(hits) != 0 {
+		t.Fatalf("empty keyword should not match all lines: %#v", hits)
+	}
+	if hits := GrepRuleBook("   "); len(hits) != 0 {
+		t.Fatalf("blank keyword should not match all lines: %#v", hits)
+	}
+}
+
 func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {

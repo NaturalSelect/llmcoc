@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -993,6 +994,7 @@ var Spells = func() []string {
 	}
 	return spells
 }()
+
 // AvailableConstantKeys returns names that can be used by agent tool calls.
 func AvailableConstantKeys() []string {
 	return []string{
@@ -1240,9 +1242,18 @@ func GetMonsterContentByLineNum(firstLine, endLine int) string {
 }
 
 func grepLines(lines []string, keyword string) []GrepResult {
+	if strings.TrimSpace(keyword) == "" {
+		return nil
+	}
+
+	re, err := regexp.Compile(keyword)
+	if err != nil {
+		re = nil
+	}
+
 	var results []GrepResult
 	for i, line := range lines {
-		if strings.Contains(line, keyword) {
+		if strings.Contains(line, keyword) || (re != nil && re.MatchString(line)) {
 			results = append(results, GrepResult{LineNum: i + 1, Text: line})
 		}
 	}

@@ -54,11 +54,22 @@ func writerLock(sessionID uint) *sync.Mutex {
 	return lock.(*sync.Mutex)
 }
 
+func withWriterGameSessionID(ctx context.Context, gctx GameContext) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if gctx.Session.ID == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, "session", fmt.Sprintf("%v", gctx.Session.ID))
+}
+
 // RunWriter 独立生成白字描述,不参与KP主流程成败。
 func RunWriter(ctx context.Context, gctx GameContext, direction string) (string, error) {
 	lock := writerLock(gctx.Session.ID)
 	lock.Lock()
 	defer lock.Unlock()
+	ctx = withWriterGameSessionID(ctx, gctx)
 
 	writerHandle, state, err := loadWriterState(gctx)
 	if err != nil {
@@ -77,6 +88,7 @@ func RunWriterStream(ctx context.Context, gctx GameContext, direction string, on
 	lock := writerLock(gctx.Session.ID)
 	lock.Lock()
 	defer lock.Unlock()
+	ctx = withWriterGameSessionID(ctx, gctx)
 
 	writerHandle, state, err := loadWriterState(gctx)
 	if err != nil {
