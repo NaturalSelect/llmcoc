@@ -486,7 +486,7 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 			return "", ctx.Err()
 		}
 		logStagePrompt(fmt.Sprintf("oneshot_translator_round_%d", round), sessionID, msgs)
-		raw, err := room.architect.provider.JsonChat(ctx, msgs)
+		raw, err := room.lawyer.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return "", err
 		}
