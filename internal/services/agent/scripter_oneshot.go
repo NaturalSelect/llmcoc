@@ -261,7 +261,6 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		invalid := false
 		var submitDraft *oneshotResult
 		var toolResults []string
-
 		for _, call := range calls {
 			switch call.Action {
 			case ToolThink:
@@ -273,6 +272,10 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit的draft字段不能为空。"})
 					invalid = true
 				} else {
+					if len(calls) > 1 {
+						msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit必须单独一轮输出，不能和think、translate_anchor或任何其他action混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；若已有足够信息，下一轮只输出一个submit。"})
+						continue
+					}
 					submitDraft = call.Draft
 				}
 			default:
