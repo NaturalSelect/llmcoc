@@ -260,7 +260,6 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		}
 
 		invalid := false
-		hasTranslate := false
 		var submitDraft *oneshotResult
 		var toolResults []string
 
@@ -269,7 +268,6 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 			case ToolThink:
 				// silent
 			case toolOneshotTranslateAnchor:
-				hasTranslate = true
 				toolResults = append(toolResults, executeOneshotTranslateAnchor(ctx, room, call))
 			case toolOneshotSubmit:
 				if call.Draft == nil {
@@ -289,24 +287,6 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		}
 		if len(toolResults) > 0 {
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
-		}
-		if hasTranslate {
-			// Check whether any translate_anchor in this batch found a valid
-			// rulebook element. Only "found" counts; no_result / uncertain /
-			// translator_error all require the architect to redesign.
-			batchFound := false
-			for _, tr := range toolResults {
-				if isTranslateAnchorFound(tr) {
-					batchFound = true
-					hasValidAnchor = true
-					break
-				}
-			}
-			if !batchFound {
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: translate_anchor 未在规则书中找到匹配元素（status 为 no_result / uncertain / error）。你必须重新设计核心神话概念，调整方向后再次调用 translate_anchor，禁止在未获得规则书确认的情况下 submit。可尝试的方向：更换神格/怪物、改用诅咒物品、改用古老仪式、改用典籍知识污染。"})
-			}
-			// wait for the LLM to process results before submitting
-			continue
 		}
 		if submitDraft != nil {
 			if !hasValidAnchor {
