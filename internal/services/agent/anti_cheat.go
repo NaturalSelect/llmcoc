@@ -74,7 +74,7 @@ func checkAntiCheat(ctx context.Context, h agentHandle, gctx GameContext, calls 
 		verdict := AntiCheatVerdict{
 			Verdict: "must_fix",
 			Reason:  "missing_think",
-			Message: "本批次包含副作用工具，含有副作用的batch必须包含一个 think 调用并在其中写明 ANTI_CHEAT_CONTRACT，重试本批次将think和要进行的副作用必须被放在同一批次(单独的think没有任何作用且将被禁止),以通过系统检查。重发相同的消息会被直接拒绝，修改后重试。\n唯一有效的形式: [think, other actions]",
+			Message: "每一个消息是一个批次，本批次包含副作用工具，含有副作用的batch必须包含一个 think 调用并在其中写明 ANTI_CHEAT_CONTRACT，重试本批次将think和要进行的副作用必须被放在同一批次(单独的think没有任何作用且将被禁止),以通过系统检查。重发相同的消息会被直接拒绝，修改后重试。\n唯一有效的形式: [think, other actions]\n 认真看这条错误消息，想清楚再回答，先用think回答你对这条消息的理解",
 		}
 		return verdict, false, rejectMessageFromAntiCheat(verdict)
 	}
