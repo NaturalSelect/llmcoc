@@ -174,6 +174,16 @@ type Scenario struct {
 	Content     JSONField[ScenarioContent] `gorm:"-" json:"content"`
 }
 
+type ScenarioGenerationLog struct {
+	ID           uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ScenarioID   uint      `gorm:"not null;index" json:"scenario_id"`
+	ScenarioName string    `gorm:"not null;size:200;index" json:"scenario_name"`
+	LogText      string    `gorm:"type:text;not null" json:"log_text"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Scenario     Scenario  `gorm:"foreignKey:ScenarioID" json:"-"`
+}
+
 type SessionStatus string
 
 const (

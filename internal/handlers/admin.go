@@ -1,13 +1,17 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
+	"gorm.io/gorm"
 )
 
 const (
@@ -22,6 +26,15 @@ type AdminScenarioListResponse struct {
 	PageSize   int               `json:"page_size"`
 	Total      int64             `json:"total"`
 	TotalPages int               `json:"total_pages"`
+}
+
+type AdminScenarioGenerationLogResponse struct {
+	ScenarioID   uint      `json:"scenario_id"`
+	ScenarioName string    `json:"scenario_name"`
+	HasLog       bool      `json:"has_log"`
+	LogText      string    `json:"log_text"`
+	CreatedAt    time.Time `json:"created_at,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at,omitempty"`
 }
 
 func parseAdminPagination(c *gin.Context) (int, int, bool) {
@@ -85,6 +98,44 @@ func AdminListScenarios(c *gin.Context) {
 		PageSize:   pageSize,
 		Total:      total,
 		TotalPages: totalPages,
+	})
+}
+
+func AdminGetScenarioGenerationLog(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "模组ID无效"})
+		return
+	}
+
+	var scenario models.Scenario
+	if err := models.DB.First(&scenario, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "模组不存在"})
+		return
+	}
+
+	var generationLog models.ScenarioGenerationLog
+	err = models.DB.Where("scenario_id = ?", scenario.ID).Order("created_at DESC, id DESC").First(&generationLog).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusOK, AdminScenarioGenerationLogResponse{
+			ScenarioID:   scenario.ID,
+			ScenarioName: scenario.Name,
+			HasLog:       false,
+		})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询生成记录失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, AdminScenarioGenerationLogResponse{
+		ScenarioID:   scenario.ID,
+		ScenarioName: generationLog.ScenarioName,
+		HasLog:       strings.TrimSpace(generationLog.LogText) != "",
+		LogText:      generationLog.LogText,
+		CreatedAt:    generationLog.CreatedAt,
+		UpdatedAt:    generationLog.UpdatedAt,
 	})
 }
 

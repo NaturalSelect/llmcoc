@@ -211,6 +211,18 @@ func GenerateScenarioByAgents(c *gin.Context) {
 			log.Printf("[agent] failed to save generated scenario to DB: %v", err)
 			return
 		}
+
+		generationLog := models.ScenarioGenerationLog{
+			ScenarioID:   scenario.ID,
+			ScenarioName: scenario.Name,
+			LogText:      strings.TrimSpace(gen.GenerationLog),
+		}
+		if generationLog.LogText == "" {
+			generationLog.LogText = "本次 AI 生成未捕获到 LLM 对话记录。"
+		}
+		if err := models.DB.Create(&generationLog).Error; err != nil {
+			log.Printf("[agent] failed to save scenario generation log scenario_id=%d: %v", scenario.ID, err)
+		}
 	}()
 
 	c.JSON(http.StatusCreated, gin.H{"message": "模组生成中, 请稍后查看列表", "name": req.Name})

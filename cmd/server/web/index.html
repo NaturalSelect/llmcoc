@@ -1436,6 +1436,34 @@
             </div>
         </div>
 
+        <div x-show="modal === 'scenarioGenerationLog'" class="backdrop" @click.self="modal=null">
+            <div class="modal max-w-4xl p-6" style="max-height:85vh;overflow-y:auto">
+                <div class="flex justify-between items-start mb-4 gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-amber-100">LLM 生成记录</h2>
+                        <p class="text-xs text-amber-700 mt-1" style="font-family:system-ui"
+                            x-text="scenarioGenerationLog?.scenario_name || '未命名模组'"></p>
+                    </div>
+                    <button @click="modal=null"
+                        class="text-amber-800 hover:text-amber-400 text-xl leading-none shrink-0">✕</button>
+                </div>
+                <div x-show="scenarioGenerationLogLoading" class="text-amber-900 text-sm py-8 text-center"
+                    style="font-family:system-ui">加载中…</div>
+                <div x-show="!scenarioGenerationLogLoading && !scenarioGenerationLog?.has_log"
+                    class="rounded p-4 text-sm text-amber-800" style="background:#0e0d0b;border:1px solid #1e1c17;font-family:system-ui">
+                    该模组没有 AI 生成对话记录，可能是手动创建或上传导入的模组。
+                </div>
+                <template x-if="!scenarioGenerationLogLoading && scenarioGenerationLog?.has_log">
+                    <pre class="text-[11px] text-amber-200 rounded p-3 overflow-x-auto"
+                        style="background:#0a0908;border:1px solid #1e1c17;font-family:monospace;line-height:1.55;white-space:pre-wrap;max-height:65vh"
+                        x-text="scenarioGenerationLog?.log_text || ''"></pre>
+                </template>
+                <div class="flex justify-end mt-4">
+                    <button @click="modal=null" class="btn btn-ghost">关闭</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Join session modal -->
         <div x-show="modal === 'joinSession'" class="backdrop" @click.self="modal=null">
             <div class="modal max-w-sm p-6">

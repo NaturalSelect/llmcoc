@@ -35,6 +35,7 @@ func InitDB() error {
 		&User{},
 		&CharacterCard{},
 		&Scenario{},
+		&ScenarioGenerationLog{},
 		&GameSession{},
 		&SessionPlayer{},
 		&SessionFavorite{},

@@ -100,10 +100,12 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 			return nil, ctx.Err()
 		}
 		logStagePrompt(fmt.Sprintf("reward_agent_round_%d", round), sessionID, msgs)
+		callMessages := append([]llm.ChatMessage(nil), msgs...)
 		raw, err := provider.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return nil, err
 		}
+		recordScripterLLMExchange(ctx, room, fmt.Sprintf("reward_agent_round_%d", round), callMessages, raw)
 		log.Printf("[scripter:reward_agent] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 

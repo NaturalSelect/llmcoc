@@ -34,9 +34,10 @@ type ScenarioCreationRequest struct {
 }
 
 type ScenarioCreationOutput struct {
-	Draft      ScenarioDraft `json:"draft"`
-	IronyCore  *IronyCore    `json:"irony_core,omitempty"`
-	Iterations int           `json:"iterations"`
+	Draft         ScenarioDraft `json:"draft"`
+	IronyCore     *IronyCore    `json:"irony_core,omitempty"`
+	Iterations    int           `json:"iterations"`
+	GenerationLog string        `json:"generation_log,omitempty"`
 }
 
 type ScenarioDraft struct {
@@ -131,8 +132,15 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	scripterCounter++
 	scripterCounterMu.Unlock()
 	room.sessionID = sessionID
+	room.generationLog = newScripterGenerationLog(sessionID, room.req)
 	ctx = context.WithValue(ctx, "session", sessionID)
-	return room.Run(ctx)
+	ctx = contextWithScripterGenerationLog(ctx, room.generationLog)
+	out, err := room.Run(ctx)
+	if err != nil {
+		return out, err
+	}
+	out.GenerationLog = room.generationLogText()
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +157,7 @@ type scripterRoom struct {
 	npcBlacklist    []string
 	titleSamples    []string
 	mythosBlacklist []string
+	generationLog   *scripterGenerationLog
 }
 
 func (r *scripterRoom) architectModelName() string {
@@ -264,6 +273,10 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		r.sessionID = sessionIDFromContextValue(ctx)
 	}
 	sessionID := r.sessionID
+	if r.generationLog == nil {
+		r.generationLog = newScripterGenerationLog(sessionID, r.req)
+	}
+	ctx = contextWithScripterGenerationLog(ctx, r.generationLog)
 	r.prepareContext()
 	if ctx.Err() != nil {
 		return ScenarioCreationOutput{}, ctx.Err()
@@ -333,7 +346,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	}
 	logScripterArtifact("Final ScenarioDraft", sessionID, draft)
 
-	return ScenarioCreationOutput{Draft: draft, IronyCore: &IronyCore{}, Iterations: iterations}, nil
+	return ScenarioCreationOutput{Draft: draft, IronyCore: &IronyCore{}, Iterations: iterations, GenerationLog: r.generationLogText()}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +367,7 @@ type ScripterConstraints struct {
 
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
 	sessionID := scripterSessionID(ctx, r)
-	geography, err := generateGeographyChain(ctx, r.architect, r.req.Era)
+	geography, err := generateGeographyChain(ctx, r, r.req.Era)
 	if err != nil || len(geography) == 0 {
 		if err != nil {
 			log.Printf("[scripter] session=%s geography flavor generation failed: %v", sessionID, err)
@@ -391,7 +404,11 @@ var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
 - 禁止输出伪科学、高科技、工程化异常或可诱导伪科学解释神话的候选。
 - 除settlement_scale阶段只输出一个固定选项外，其他阶段每行一个名称，正好20个，不要编号、解释、标题或描述句。</rules>`
 
-func generateGeographyChain(ctx context.Context, architect agentHandle, era string) ([]string, error) {
+func generateGeographyChain(ctx context.Context, room *scripterRoom, era string) ([]string, error) {
+	var architect agentHandle
+	if room != nil {
+		architect = room.architect
+	}
 	if architect.provider == nil {
 		return nil, fmt.Errorf("architect provider unavailable")
 	}
@@ -410,7 +427,7 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 	msgs := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)}}
 	for _, stage := range stages {
 		log.Printf("[scripter:geography] session=%s stage=%q selected_so_far=%q", sessionID, stage.Key, strings.Join(chain, " → "))
-		items, err := generateGeographyCandidates(ctx, architect, &msgs, era, stage.Key, stage.Mode, stage.Examples, chain)
+		items, err := generateGeographyCandidates(ctx, room, &msgs, era, stage.Key, stage.Mode, stage.Examples, chain)
 		if err != nil {
 			log.Printf("[scripter:geography] session=%s stage=%q error=%v", sessionID, stage.Key, err)
 			return chain, err
@@ -434,7 +451,14 @@ func generateGeographyChain(ctx context.Context, architect agentHandle, era stri
 	return chain, nil
 }
 
-func generateGeographyCandidates(ctx context.Context, architect agentHandle, msgs *[]llm.ChatMessage, era string, stageKey string, mode string, examples string, chain []string) ([]string, error) {
+func generateGeographyCandidates(ctx context.Context, room *scripterRoom, msgs *[]llm.ChatMessage, era string, stageKey string, mode string, examples string, chain []string) ([]string, error) {
+	var architect agentHandle
+	if room != nil {
+		architect = room.architect
+	}
+	if architect.provider == nil {
+		return nil, fmt.Errorf("architect provider unavailable")
+	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -450,11 +474,13 @@ func generateGeographyCandidates(ctx context.Context, architect agentHandle, msg
 	prompt := fmt.Sprintf("已随机选中的前置布景：%s\n现在进入下一阶段：%s\n时代：%s\n输出要求：%s\n示例范围：%s\n\n%s", selected, stageKey, era, mode, examples, countInstruction)
 	log.Printf("[scripter:geography] session=%s prompt stage=%q len=%d body=%s", sessionID, stageKey, len(prompt), truncateRunes(prompt, scripterPromptLogLimit))
 	*msgs = append(*msgs, llm.ChatMessage{Role: "user", Content: prompt})
+	callMessages := append([]llm.ChatMessage(nil), (*msgs)...)
 	raw, err := architect.provider.Chat(ctx, *msgs)
 	if err != nil {
 		log.Printf("[scripter:geography] session=%s chat error stage=%q err=%v", sessionID, stageKey, err)
 		return nil, err
 	}
+	recordScripterLLMExchange(ctx, room, fmt.Sprintf("geography_%s", stageKey), callMessages, raw)
 	log.Printf("[scripter:geography] session=%s raw stage=%q len=%d body=%s", sessionID, stageKey, len(raw), truncateRunes(raw, scripterRawLogLimit))
 	*msgs = append(*msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 	items := parseElementNames(raw)
@@ -921,11 +947,13 @@ func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser 
 	}
 	sessionID := sessionIDFromContextValue(ctx)
 	log.Printf("[scripter:%s] session=%s chat start messages=%d", tag, sessionID, len(msgs))
+	callMessages := append([]llm.ChatMessage(nil), msgs...)
 	raw, err := generator.provider.JsonChat(ctx, msgs)
 	if err != nil {
 		log.Printf("[scripter:%s] session=%s chat error=%v", tag, sessionID, err)
 		return err
 	}
+	recordScripterLLMExchange(ctx, nil, tag, callMessages, raw)
 	log.Printf("[scripter:%s] session=%s raw len=%d body=%s", tag, sessionID, len(raw), truncateRunes(raw, scripterRawLogLimit))
 	parseErr := parseJSONObject(raw, out)
 	if parseErr == nil {
@@ -1016,10 +1044,12 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 				"请修复并输出完整的合法 JSON。",
 			currentErr.Error(), raw, schemaExample)
 		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fixPrompt})
+		callMessages := append([]llm.ChatMessage(nil), msgs...)
 		fixed, chatErr := parser.provider.Chat(ctx, msgs)
 		if chatErr != nil {
 			return "", fmt.Errorf("parser 调用失败: %w", chatErr)
 		}
+		recordScripterLLMExchange(ctx, nil, fmt.Sprintf("parser_repair_attempt_%d", attempt), callMessages, fixed)
 		if strings.HasPrefix(fixed, "```json") {
 			fixed = strings.TrimPrefix(fixed, "```json")
 			fixed = strings.TrimSuffix(fixed, "```")

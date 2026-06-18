@@ -58,6 +58,7 @@ func initWriterTestDB(t *testing.T) {
 		&models.User{},
 		&models.CharacterCard{},
 		&models.Scenario{},
+		&models.ScenarioGenerationLog{},
 		&models.GameSession{},
 		&models.SessionPlayer{},
 	); err != nil {

@@ -325,6 +325,20 @@ window.COC.admin = {
                     },
 
                     viewScenario(s) { this.viewingScenario = s; this.modal = 'scenarioDetail'; },
+                    async viewScenarioGenerationLog(s) {
+                        if (!s?.id) return;
+                        this.scenarioGenerationLog = { scenario_id: s.id, scenario_name: s.name || '', has_log: false, log_text: '' };
+                        this.scenarioGenerationLogLoading = true;
+                        this.modal = 'scenarioGenerationLog';
+                        try {
+                            const resp = await this.api('GET', '/api/admin/scenarios/' + s.id + '/generation-log');
+                            this.scenarioGenerationLog = resp || this.scenarioGenerationLog;
+                        } catch (e) {
+                            this.showToast(e.message, 'error');
+                            this.modal = null;
+                        }
+                        this.scenarioGenerationLogLoading = false;
+                    },
                     slotToTime(slot) {
                         if (!slot && slot !== 0) return '未设置';
                         const h = Math.floor(slot / 2);
@@ -376,4 +390,3 @@ window.COC.admin = {
         } catch (_) {}
     },
 };
-

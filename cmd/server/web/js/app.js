@@ -95,6 +95,8 @@ window.COC.core = function() {
                     cacheStats: null,
                     scenarioUploadFile: null,
                     viewingScenario: null,
+                    scenarioGenerationLog: null,
+                    scenarioGenerationLogLoading: false,
                     scenarioGenForm: { name: '', theme: '', era: '', brief: '', target_length: 'short', min_players: 1, max_players: 4, difficulty: 'normal' },
                     rechargeForm: { user_id: '', amount: 100, note: '' },
                     providerForm: { name: '', provider: 'openai', base_url: '', api_key: '', is_active: true },

@@ -222,21 +222,24 @@ type oneshotArchitectToolCall struct {
 // Architect loop
 // ---------------------------------------------------------------------------
 
-func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage) (oneshotResult, []llm.ChatMessage, error) {
+func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (oneshotResult, []llm.ChatMessage, error) {
 	if room.architect.provider == nil {
 		return oneshotResult{}, msgs, fmt.Errorf("architect provider unavailable")
 	}
 	sessionID := scripterSessionID(ctx, room)
+	stageName = firstNonEmpty(stageName, "oneshot_architect")
 	const maxRounds = 30
 	for round := 1; round <= maxRounds; round++ {
 		if ctx.Err() != nil {
 			return oneshotResult{}, msgs, ctx.Err()
 		}
-		logStagePrompt(fmt.Sprintf("oneshot_loop_round_%d", round), sessionID, msgs)
+		logStagePrompt(fmt.Sprintf("%s_round_%d", stageName, round), sessionID, msgs)
+		callMessages := append([]llm.ChatMessage(nil), msgs...)
 		raw, err := room.architect.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return oneshotResult{}, msgs, err
 		}
+		recordScripterLLMExchange(ctx, room, fmt.Sprintf("%s_round_%d", stageName, round), callMessages, raw)
 		log.Printf("[scripter:oneshot_loop] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
@@ -460,10 +463,12 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 			return "", ctx.Err()
 		}
 		logStagePrompt(fmt.Sprintf("oneshot_translator_round_%d", round), sessionID, msgs)
+		callMessages := append([]llm.ChatMessage(nil), msgs...)
 		raw, err := room.lawyer.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			return "", err
 		}
+		recordScripterLLMExchange(ctx, room, fmt.Sprintf("oneshot_translator_round_%d", round), callMessages, raw)
 		log.Printf("[scripter:oneshot_translator] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
@@ -688,7 +693,7 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 	}
 	logStagePrompt("oneshot", sessionID, msgs)
 
-	result, _, err := runOneshotArchitectLoop(ctx, room, msgs)
+	result, _, err := runOneshotArchitectLoop(ctx, room, msgs, "oneshot_architect")
 	if err != nil {
 		return ScenarioDraft{}, IronyCore{}, "", err
 	}
@@ -728,7 +733,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 	}
 	logStagePrompt("oneshot_repair", sessionID, msgs)
 
-	result, _, err := runOneshotArchitectLoop(ctx, room, msgs)
+	result, _, err := runOneshotArchitectLoop(ctx, room, msgs, "oneshot_repair_architect")
 	if err != nil {
 		return ScenarioDraft{}, fmt.Errorf("oneshot repair failed: %w", err)
 	}

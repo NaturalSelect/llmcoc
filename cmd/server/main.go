@@ -223,6 +223,7 @@ func main() {
 	{
 		admin.GET("/users", handlers.AdminListUsers)
 		admin.GET("/scenarios", handlers.AdminListScenarios)
+		admin.GET("/scenarios/:id/generation-log", handlers.AdminGetScenarioGenerationLog)
 		admin.POST("/recharge", handlers.AdminRechargeCoins)
 		admin.PUT("/users/:id/role", handlers.AdminSetRole)
 		admin.GET("/recharges", handlers.AdminGetRechargeHistory)

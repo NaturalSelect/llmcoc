@@ -212,11 +212,13 @@ func runLawyer(ctx context.Context, h agentHandle, situation string, idx ruleboo
 			return nil
 		}
 
+		callMessages := append([]llm.ChatMessage(nil), msgs...)
 		raw, err := h.provider.JsonChat(ctx, msgs)
 		if err != nil {
 			log.Printf("[lawyer] iter %d LLM error: %v", iter, err)
 			return nil
 		}
+		recordScripterLLMExchange(ctx, nil, fmt.Sprintf("lawyer_round_%d", iter+1), callMessages, raw)
 		mark := ""
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 		var calls []lawyerCall

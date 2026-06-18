@@ -16,6 +16,7 @@ func adminRouter() *gin.Engine {
 	admin := r.Group("/admin", withAuth(1, "admin", "admin"))
 	admin.GET("/users", AdminListUsers)
 	admin.GET("/scenarios", AdminListScenarios)
+	admin.GET("/scenarios/:id/generation-log", AdminGetScenarioGenerationLog)
 	admin.POST("/recharge", AdminRechargeCoins)
 	admin.PUT("/users/:id/role", AdminSetRole)
 	admin.GET("/recharge/history", AdminGetRechargeHistory)
@@ -192,6 +193,53 @@ func TestAdminListScenarios_InvalidPagination(t *testing.T) {
 				t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
 			}
 		})
+	}
+}
+
+func TestAdminGetScenarioGenerationLog_ReturnsLog(t *testing.T) {
+	initTestDB(t)
+	scenarioID := seedScenario(t, "Generated")
+	if err := models.DB.Create(&models.ScenarioGenerationLog{
+		ScenarioID:   scenarioID,
+		ScenarioName: "Generated",
+		LogText:      "[Architect]\nuser: prompt\nassistant: response",
+	}).Error; err != nil {
+		t.Fatalf("seed generation log: %v", err)
+	}
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/admin/scenarios/%d/generation-log", scenarioID), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp AdminScenarioGenerationLogResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.HasLog || resp.ScenarioID != scenarioID || resp.LogText == "" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestAdminGetScenarioGenerationLog_NoLog(t *testing.T) {
+	initTestDB(t)
+	scenarioID := seedScenario(t, "Manual")
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/admin/scenarios/%d/generation-log", scenarioID), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp AdminScenarioGenerationLogResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.HasLog || resp.LogText != "" || resp.ScenarioID != scenarioID {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
 
