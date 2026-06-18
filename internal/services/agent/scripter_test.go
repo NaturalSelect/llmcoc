@@ -148,15 +148,15 @@ func TestValidateScripterResponsePayloadRequiresReason(t *testing.T) {
 }
 
 func TestParseScripterToolCallsRequiresArrayShape(t *testing.T) {
-	calls, err := parseScripterToolCalls(context.Background(), agentHandle{}, `[{"action":"think","think":"先查规则"}]`, scripterSchemaExample("background"))
+	calls, err := parseScripterToolCalls(context.Background(), agentHandle{}, `[{"action":"contract","contract":"先查规则"}]`, scripterSchemaExample("background"))
 	if err != nil {
 		t.Fatalf("parseScripterToolCalls valid array failed: %v", err)
 	}
-	if len(calls) != 1 || calls[0].Action != "think" || calls[0].Think != "先查规则" {
+	if len(calls) != 1 || calls[0].Action != "contract" || calls[0].Contract != "先查规则" {
 		t.Fatalf("unexpected calls: %+v", calls)
 	}
 
-	if _, err := parseScripterToolCalls(context.Background(), agentHandle{}, `{"action":"think"}`, scripterSchemaExample("background")); err == nil {
+	if _, err := parseScripterToolCalls(context.Background(), agentHandle{}, `{"action":"contract"}`, scripterSchemaExample("background")); err == nil {
 		t.Fatal("expected object-shaped tool calls to fail")
 	}
 }

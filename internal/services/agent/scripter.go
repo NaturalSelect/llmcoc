@@ -1107,7 +1107,7 @@ func parseJSONObject[T any](raw string, out *T) error {
 
 type scripterToolCall struct {
 	Action     string         `json:"action"`
-	Think      string         `json:"think,omitempty"`
+	Contract   string         `json:"contract,omitempty"`
 	Question   string         `json:"question,omitempty"`
 	Constant   string         `json:"constant,omitempty"`
 	Reason     string         `json:"reason,omitempty"`

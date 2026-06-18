@@ -60,14 +60,14 @@ const (
 	ToolFoundClue         ToolCallType = "found_clue"          // 记录玩家发现的线索并注入旁白
 	ToolResponse          ToolCallType = "response"            // 结束本轮并给出回复
 	ToolYield             ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
-	ToolThink             ToolCallType = "think"               // 内心独白,不需要对玩家说的想法
+	ToolContract          ToolCallType = "contract"            // 批次合约,代表本batch的改动
 	ToolReport            ToolCallType = "report"              // 向管理系统自首
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
 type ToolCall struct {
 	Action        ToolCallType           `json:"action"`
-	Think         string                 `json:"think,omitempty"`          // think: KP执行计划文本
+	Contract      string                 `json:"contract,omitempty"`       // contract: KP本批次合约/执行计划文本
 	Question      string                 `json:"question,omitempty"`       // check_rule: 规则问题的语义描述
 	Constant      string                 `json:"constant,omitempty"`       // read_rulebook_const: 常量名
 	Dice          *DiceCheck             `json:"dice,omitempty"`           // roll_dice: 骰子检定请求

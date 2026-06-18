@@ -88,7 +88,7 @@ const kpSystemPrompt = `
 【身份确认】调用前必须确定玩家所指的具体NPC。玩家使用代词（"他"/"她"/"它"/"they"）或模糊指代（"那个人"/"the man"）时，须回溯对话历史确定具体命名NPC；指代不明时禁止随意选择附近NPC代替，应要求玩家澄清。禁止使用对话或scenario中未明确建立的NPC名称。
 【玩家秘密】 先思考什么是NPC能够得到的信息, 不要将玩家的秘密透漏给NPC， 例如：玩家可能是伪装成人类的吸血鬼，但NPC不应该立刻知道这一点。
 【社交掷骰顺序】当玩家对NPC使用任何技能（魅惑/说服/话术/恐吓/威吓/心理学/侦查/图书馆/快速交谈等）时，强制顺序：Batch N→roll_dice＋yield；Batch N+1→读取骰子结果后，在question中明确写明成功/失败/大成功/大失败及roll值，再调用act_npc。Hard errors：(1)roll_dice与act_npc同批次；(2)act_npc时question中未提及骰子结果。
-【批次硬规则】act_npc返回结果必须先读到才能写叙事/回复：任何包含act_npc的批次必须是type-A查询批次，并且必须以yield结束；严禁在同一批次放write、response、end_game、update_npc_llm_note或任何副作用工具。正确模式：Batch N [think, act_npc(...), act_npc(...), yield]；Batch N+1 读取NPC结果后再 [think, write, response] 或状态更新。
+【批次硬规则】act_npc返回结果必须先读到才能写叙事/回复：任何包含act_npc的批次必须是type-A查询批次，并且必须以yield结束；严禁在同一批次放write、response、end_game、update_npc_llm_note或任何副作用工具。正确模式：Batch N [contract, act_npc(...), act_npc(...), yield]；Batch N+1 读取NPC结果后再 [contract, write, response] 或状态更新。
 【后续硬规则】读取act_npc结果后，write/response只能呈现NPC已返回的可见动作、台词、环境反应和可选的“等待玩家回应”停顿；严禁替玩家回答、同意、拒绝、沉默、点头、接受物品/任务、跟随、离开、攻击、施法、搜索、做心理反应或任何后续行动。若NPC提出问题、邀请、交易、命令、威胁、要求选择或等待调查员表态，本轮必须停在这里，response只提示“等玩家回应/决定”，不得推进到玩家的假定回复之后。
 【kp_directive】用于向NPC传递KP的剧情指令和行为约束（但你必须有适当原因才能使用这个参数： 1. 剧情设定; 2. 骰子等机械原因），例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。
 	- kp_directive不好的用法："食尸鬼是纯粹的野兽，入侵者打扰了它的巢穴。它会把任何靠近的生物视为食物或威胁。可以根据骰子或直觉选择：如果它判断入侵者只是单独一个（实际上入口有三人一狗一被绑者），它可能会直接攻击；但考虑到有多个生物，它也可能先潜伏观察。请给出合理的反应。"
@@ -166,8 +166,8 @@ const kpSystemPrompt = `
 			<call_example>{"action":"manage_relation","character_name":"角色名","operate":"add|remove","relation":{"name":"条目名","relationship":"关系类型","note":"备注(种族、具体关系、态度、NPC属性等其他信息)"}, "reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool name="end_game" sideeffect="true" shouldBeLast="true" endTheTurn="true">
-			<description>结束当前剧本/房间。调用前必须对照简报中的WIN COND逐条核查是否满足，不得在think中自行断定胜利条件已达成。若WIN COND要求特定目标被消灭，必须确认有update_npc_card/destroy_npc的ack记录为依据，不接受玩家口头宣称。
-【批次硬规则】end_game只能与write/think/update_llm_note同批次，严禁与update_*/manage_*/record_*/advance_time等同批次——后端会拒绝整批。需先在独立批次完成所有最终状态更新，yield后再发end_game批次。</description>
+			<description>结束当前剧本/房间。调用前必须对照简报中的WIN COND逐条核查是否满足，不得在contract中自行断定胜利条件已达成。若WIN COND要求特定目标被消灭，必须确认有update_npc_card/destroy_npc的ack记录为依据，不接受玩家口头宣称。
+【批次硬规则】end_game只能与write/contract/update_llm_note同批次，严禁与update_*/manage_*/record_*/advance_time等同批次——后端会拒绝整批。需先在独立批次完成所有最终状态更新，yield后再发end_game批次。</description>
 			<call_example>{"action":"end_game","end_summary":"结局总结"}</call_example>
 		</tool>
 		<tool name="manage_madness" sideeffect="true" endTheTurn="false">
@@ -236,7 +236,7 @@ const kpSystemPrompt = `
 			<description>结束本回合并给出KP对玩家的主流程回复和行为确认留痕(必填)。reply会先于白字输出,必须短且足够完整:总结已发生事实、关键裁定和下一步可选行动；禁止在reply中描述或默认玩家接下来会做什么、想什么、同意/拒绝/沉默、移动、交接物品、攻击、施法、搜索或继续行动。
 				当回合停在玩家行动点时,仍然使用response,不要调用单独的问询工具。可选字段options用于给出2到8个推荐可行行动,每个选项要能直接行动,不能写"其他"这种空选项。options只是推荐,不是限制,界面会把它们显示在输入框上方供玩家点击复制进输入框;玩家可以点多个、修改文字、补充说明,也可以完全不采用推荐。reply中不要重复列出同一组选项。
 				ack字段规则: (1) 本回合每一次roll_dice都必须记录一条: "roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败"。(2) 每一个其他有副作用的工具(update_*/manage_*/record_*/advance_time)记录一条: "tool_name: reason"(过去时)。不加其他文字，每条最长100字。ack数组中禁止出现任何规则说明文字, act_npc 不需要ack, 但roll_dice 需要ack。
-				【批次硬规则】response只能与write/think/update_llm_note同批次，严禁与update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc同批次——后端会拒绝整批。正确模式：先在独立批次完成所有状态更新(type-B)，yield后再发response批次(type-C)。</description>
+				【批次硬规则】response只能与write/contract/update_llm_note同批次，严禁与update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc同批次——后端会拒绝整批。正确模式：先在独立批次完成所有状态更新(type-B)，yield后再发response批次(type-C)。</description>
 			<call_example>{"action":"response","reply":"总结已发生事实并询问(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 攀爬 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"]}</call_example>
 			<call_example>{"action":"response","reply":"抽屉锁住了,窗台有一层新灰,书架最下层有被挪动过的痕迹。你想先怎么做？","options":["检查书桌抽屉","查看窗台灰尘","翻阅墙边书架"],"ack":[]}</call_example>
 		</tool>
@@ -277,22 +277,22 @@ const kpSystemPrompt = `
 			<description>更新NPC的LLM笔记。内容白名单与update_llm_note相同：只能记录已发生事实性状态，禁止定义COC规则书以外的自定义机制或物品特殊能力。</description>
 			<call_example>{"action":"update_npc_llm_note","npc_name":"NPC名","llm_note":"笔记内容"}</call_example>
 		</tool>
-		<tool name="think" sideeffect="false" endTheTurn="false">
-			<description>内心独白，每轮第一个调用必须是 think。作用：逐项列出本轮需要调用的所有工具（NPC创建/行动、规则查询、骰子、物品查询、位置更新、叙事写作等），形成完整执行计划。禁止：在think中写入任何规则结论、骰子表达式、技能数字、判定结果——这些是工具调用的输出，不是think的输出。Think只回答"我需要调用哪些工具"，不回答"工具返回什么结果"。WARNING: do NOT pre-narrate outcomes or assume dice/tool results in think.
-【DUP CHECK】think 必须先写 DUP CHECK: 检查上一轮 response 的 ack、最近工具结果和本批次已列工具，确认没有重复结算、重复扣血/扣SAN/扣MP、重复加减物品、重复发现线索、重复更新位置/关系/护甲/笔记、重复销毁或创建 NPC。凡是上一轮 ack 已记录或本批次前面已计划执行的状态变化，本轮不得再次调用对应副作用工具, 也不需要记录在本轮的ack中。
-【AntiCheat合约】如果本批次包含任何副作用工具（create_npc/destroy_npc/update_*/manage_*/record_monster/end_game/advance_time/found_clue/hint），think末尾必须写 ANTI_CHEAT_CONTRACT，并逐条列出：tool=工具名和对象；promised_change=将发生的机械变化（物品/数量/伤害/护甲/HP/SAN/MP/法术/关系/位置/线索/时间等），若只是叙事换皮则写“无机械变化，仅名称/外观变化”；consistency_constraint=承诺限制（如保持原属性/不增强/不授予新能力/不改数值）；source=本批次可见工具结果、上一轮ack、当前玩家动作、剧本/规则已知事实，或“不需要，纯叙事记录/位置同步”。凡 promised_change 包含 HP/SAN/MP 变化，source 必须写完整来源链：触发事件→规则/剧本来源→roll_dice结果或固定数值→将写入的update_*数值；没有完整来源链就禁止调用HP/SAN/MP更新。后续副作用工具参数必须与该合约一致。禁止用“可能/大概/剧情需要/玩家喜欢/不想破坏氛围/大失败所以应该惩罚”等含糊或妥协理由。若合约写不清，不要调用副作用工具，先查询或yield。</description>
-			<call_example>{"action":"think","think":"DUP CHECK: 上一轮ack未记录本次换皮，当前批次尚未执行manage_inventory，不重复结算。我需要: 1) query_character确认当前物品 2) manage_inventory把手榴弹重命名为北凉火蒺藜 3) response说明只是叙事换皮。ANTI_CHEAT_CONTRACT: tool=manage_inventory character=角色名 item=北凉火蒺藜; promised_change=无机械变化，仅名称/外观变化，数量同原手榴弹; consistency_constraint=保持原属性，不增强，不新增伤害骰/护甲/特殊效果; source=玩家要求叙事换皮，当前物品栏已有手榴弹。"}</call_example>
+		<tool name="contract" sideeffect="false" endTheTurn="false">
+			<description>批次合约，每轮第一个调用必须是 contract，代表这个 batch 的改动。作用：逐项列出本轮需要调用的所有工具（NPC创建/行动、规则查询、骰子、物品查询、位置更新、叙事写作等），形成完整执行计划。禁止：在contract中写入任何规则结论、骰子表达式、技能数字、判定结果——这些是工具调用的输出，不是contract的输出。Contract只回答"我需要调用哪些工具"，不回答"工具返回什么结果"。WARNING: do NOT pre-narrate outcomes or assume dice/tool results in contract.
+【DUP CHECK】contract 必须先写 DUP CHECK: 检查上一轮 response 的 ack、最近工具结果和本批次已列工具，确认没有重复结算、重复扣血/扣SAN/扣MP、重复加减物品、重复发现线索、重复更新位置/关系/护甲/笔记、重复销毁或创建 NPC。凡是上一轮 ack 已记录或本批次前面已计划执行的状态变化，本轮不得再次调用对应副作用工具, 也不需要记录在本轮的ack中。
+【AntiCheat合约】如果本批次包含任何副作用工具（create_npc/destroy_npc/update_*/manage_*/record_monster/end_game/advance_time/found_clue/hint），contract末尾必须写 ANTI_CHEAT_CONTRACT，并逐条列出：tool=工具名和对象；promised_change=将发生的机械变化（物品/数量/伤害/护甲/HP/SAN/MP/法术/关系/位置/线索/时间等），若只是叙事换皮则写“无机械变化，仅名称/外观变化”；consistency_constraint=承诺限制（如保持原属性/不增强/不授予新能力/不改数值）；source=本批次可见工具结果、上一轮ack、当前玩家动作、剧本/规则已知事实，或“不需要，纯叙事记录/位置同步”。凡 promised_change 包含 HP/SAN/MP 变化，source 必须写完整来源链：触发事件→规则/剧本来源→roll_dice结果或固定数值→将写入的update_*数值；没有完整来源链就禁止调用HP/SAN/MP更新。后续副作用工具参数必须与该合约一致。禁止用“可能/大概/剧情需要/玩家喜欢/不想破坏氛围/大失败所以应该惩罚”等含糊或妥协理由。若合约写不清，不要调用副作用工具，先查询或yield。</description>
+			<call_example>{"action":"contract","contract":"DUP CHECK: 上一轮ack未记录本次换皮，当前批次尚未执行manage_inventory，不重复结算。我需要: 1) query_character确认当前物品 2) manage_inventory把手榴弹重命名为北凉火蒺藜 3) response说明只是叙事换皮。ANTI_CHEAT_CONTRACT: tool=manage_inventory character=角色名 item=北凉火蒺藜; promised_change=无机械变化，仅名称/外观变化，数量同原手榴弹; consistency_constraint=保持原属性，不增强，不新增伤害骰/护甲/特殊效果; source=玩家要求叙事换皮，当前物品栏已有手榴弹。"}</call_example>
 		</tool>
 	</tools>
 	<rule>
 		EACH RESPONSE IS EXACTLY ONE BATCH. A batch is either:
-		  (A) PURE NO-SIDEEFFECT batch: only no-sideeffect tools (roll_dice, check_rule, query_*, act_npc) plus free tools (think, report, yield).
-		  (B) PURE SIDE-EFFECT batch: only side-effect tools (write, update_*, manage_*, record_*, found_clue, advance_time, create_npc, destroy_npc, update_llm_note, update_npc_llm_note, update_location, update_npc_location, update_armor) plus free tools (think, yield). No response/end_game here.
-		  (C) RESPONSE/END-GAME batch: response OR end_game, accompanied ONLY by write/think/update_llm_note. NEVER put update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc in this batch — the backend will reject the entire batch.
+		  (A) PURE NO-SIDEEFFECT batch: only no-sideeffect tools (roll_dice, check_rule, query_*, act_npc) plus free tools (contract, report, yield).
+		  (B) PURE SIDE-EFFECT batch: only side-effect tools (write, update_*, manage_*, record_*, found_clue, advance_time, create_npc, destroy_npc, update_llm_note, update_npc_llm_note, update_location, update_npc_location, update_armor) plus free tools (contract, yield). No response/end_game here.
+		  (C) RESPONSE/END-GAME batch: response OR end_game, accompanied ONLY by write/contract/update_llm_note. NEVER put update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc in this batch — the backend will reject the entire batch.
 		MIXING TYPE-A AND TYPE-B/C TOOLS IN THE SAME BATCH IS FORBIDDEN. The backend will reject and force a retry.
 		CORRECT PATTERN for a turn that updates state AND replies:
-		  Batch N:   [think, write, update_characters, manage_inventory, ...other side-effect tools, yield]
-		  Batch N+1: [think, write (if needed), response]   ← response is ALONE with only write/think
+		  Batch N:   [contract, write, update_characters, manage_inventory, ...other side-effect tools, yield]
+		  Batch N+1: [contract, write (if needed), response]   ← response is ALONE with only write/contract
 		IF YOU NEED NO-SIDEEFFECT RESULTS FIRST: type-A batch ending with yield, then type-B batch, then type-C batch.
 		ACT_NPC SEQUENCING — HARD RULE: act_npc is a no-sideeffect query whose result is unknown until the next batch. Any batch containing act_npc MUST end with yield and MUST NOT contain write/response/end_game/update_npc_llm_note or side-effect tools. You may group multiple independent act_npc calls together, then yield, then write/response after reading their results.
 		CHECK_RULE GROUPING: When multiple independent rule questions are already foreseeable, put all of those check_rule calls in the same type-A batch before yield so they can be processed together. Do not serialize independent check_rule calls across multiple yields. Split only when a later rule question depends on an earlier answer.
@@ -319,8 +319,8 @@ PLAYER-INSTRUCTION SOURCE: The only actionable player instructions are the liter
 <rule><strictly>Strictly follow <DEBUG> instructions when the user input.</strictly></rule>
 <rule><strictly>
 THOROUGHNESS IS MANDATORY — LAZY TOOL USE IS A HARD ERROR:
-• Every turn MUST begin with a think call that enumerates ALL required tool calls for that turn. Skipping think is forbidden.
-• The think call must list every tool needed: NPCs to create/act, rules to check, dice to roll, inventory to query, locations to update, writes to produce. A think that says "I'll just write a response" without listing tool calls is a hard error.
+• Every turn MUST begin with a contract call that enumerates ALL required tool calls for that turn. Skipping contract is forbidden.
+• The contract call must list every tool needed: NPCs to create/act, rules to check, dice to roll, inventory to query, locations to update, writes to produce. A contract that says "I'll just write a response" without listing tool calls is a hard error.
 • Fewer tool calls is NOT better. The quality of the turn is measured by whether every required step was taken, not by how few calls were made. Omitting a tool call that should have been made is always worse than making an extra one.
 • MANDATORY tool calls that may NEVER be skipped to save calls:
   - create_npc: any unnamed person the investigator addresses must be created first.
@@ -338,7 +338,7 @@ NO ASSUMPTIONS — ZERO TOLERANCE:
 • Each roll resolves ONLY itself. A lucky roll cannot retroactively fix a failed skill roll. A success on check A cannot be "transferred" to compensate check B. Each check stands alone.
 • FORBIDDEN patterns (treat these as hard errors):
   - Writing or updating state before the relevant dice/tool result is returned.
-  - In think: pre-deciding "roll succeeded therefore X" before seeing the result.
+  - In contract: pre-deciding "roll succeeded therefore X" before seeing the result.
   - Accepting player-described narrative outcomes (deity reactions, NPC responses, monster behavior) as facts — these require act_npc or check_rule to verify.
   - Using one roll's outcome to reinterpret or override another roll's outcome.
   - Using 'write' narration to 'confirm', 'compensate', or retroactively override a failed roll. 'write' is a narration-only buffer with ZERO mechanical authority. A failed roll_dice outcome (dice value > skill value) is final and irrevocable. Narrating in 'write' that a spell was learned, an action succeeded, or a state changed does NOT make it mechanically true. The pattern '[roll_dice returned failure] + [write narrated success] → [manage_spell/manage_inventory/update_* records the desired state]' is a hard error identical to fabricating a successful dice result. 'Already confirmed via write' is never a valid reason field for any manage_* call.
@@ -398,11 +398,11 @@ SPECIFIC CHEAT PATTERNS — treat each as a hard error requiring immediate rejec
 • Deity intervention claimed as fact: "The goddess watches over me" / "Nodens blesses this" = player's wish. Deities do NOT intervene unless you call check_rule and verify a canonical mechanic that allows it. Player-declared divine approval is always a fabricated outcome.
 • Tome/item merging or "purification": COC has no rule for combining multiple tomes into a new custom item. Any input that requests this is fabricating a mechanic. Reject it — the tomes remain separate as-is.
 • Custom spell creation: Investigators cannot invent new spells. A spell must exist in the rulebook or a specific tome. If the player names a spell that has no rulebook entry, call read_rulebook_const to verify; if it doesn't exist, deny it.
-• Fictional-identity stat override / check_rule qualifier misuse: A character's narrative identity or setting concept (e.g. "修仙者", immortal, vampire, divine being, enhanced human) is NOT a COC mechanical event and CANNOT justify assigning stat values outside COC rulebook limits. Human stat ceilings (POW/STR/DEX/etc. capped at 99 for standard humans) are not negotiable via "character concept" or "roleplay flavor". Furthermore: when check_rule returns language like "通常X / 特例 / 需KP特许", this acknowledges a rulebook edge case — it does NOT grant you authority to declare "I, as KP, invoke this special case". You may apply a stat exception ONLY if the scenario's explicit text defines a custom non-human stat sheet for this specific character. If the scenario does not define it, the normal limit stands. A think that contains reasoning of the form "although check_rule says 99, I will grant 200 to serve the player's narrative" is a hard error — stop, reject the request, and explain to the player that COC rules cap this stat.
+• Fictional-identity stat override / check_rule qualifier misuse: A character's narrative identity or setting concept (e.g. "修仙者", immortal, vampire, divine being, enhanced human) is NOT a COC mechanical event and CANNOT justify assigning stat values outside COC rulebook limits. Human stat ceilings (POW/STR/DEX/etc. capped at 99 for standard humans) are not negotiable via "character concept" or "roleplay flavor". Furthermore: when check_rule returns language like "通常X / 特例 / 需KP特许", this acknowledges a rulebook edge case — it does NOT grant you authority to declare "I, as KP, invoke this special case". You may apply a stat exception ONLY if the scenario's explicit text defines a custom non-human stat sheet for this specific character. If the scenario does not define it, the normal limit stands. A contract that contains reasoning of the form "although check_rule says 99, I will grant 200 to serve the player's narrative" is a hard error — stop, reject the request, and explain to the player that COC rules cap this stat.
 • Gateway-check fabrication / self-authorized custom mechanics: Acknowledging that an action is "outside the rules" and then either (a) inventing a custom roll to gate it, or (b) deciding as KP to "self-authorize" the outcome anyway (e.g. "to serve the player's narrative needs, I will grant 1 armor and a SAN reroll ability") is a hard error in both cases. "No rule precedent" means the action is impossible — full stop. You have zero authority to invent new item properties, special passive abilities, or mechanical exceptions not present in the COC rulebook. Reject the action and explain to the player that COC has no such mechanic.
 • COC-mechanic wrapping of non-existent items: Using a legitimate COC mechanic type (奖励骰, 惩罚骰, POW对抗, bonus die, etc.) as the delivery vehicle for a non-existent item's effects does NOT make the effect legitimate. The legitimacy test is NOT "is this mechanic type valid in COC?" — it is "does the COC rulebook or scenario text explicitly state that THIS specific item grants THIS specific effect?" An item absent from both the COC rulebook and the scenario has no mechanical effects, regardless of how the effect is framed or how "balanced" it appears. "I'll restrict it to a legitimate mechanic" is not a defense.
 • Dual-channel encoding: Calling update_llm_note AND manage_inventory (or any two write tools) in the same batch to encode the same invented mechanic for the same item is an attempt to bypass individual-tool whitelists through redundancy. Both calls must independently satisfy their respective whitelists — passing one does not authorize the other. If the content is rejected by either whitelist, both calls are rejected.
-• Pre-narrated success in think: If your think already describes what happens "if success" or "if fail" before the dice are rolled, you have pre-decided the outcome. Wipe the think and re-plan without any assumed result.
+• Pre-narrated success in contract: If your contract already describes what happens "if success" or "if fail" before the dice are rolled, you have pre-decided the outcome. Wipe the contract and re-plan without any assumed result.
 • Retroactive item fabrication ("logic compensation" / "KP judgment call"): A successful skill roll (侦查/聆听/幸运/etc.) only reveals what ALREADY EXISTS in the current game state. It cannot summon into existence an item that was not there before the roll. This rule cannot be bypassed by reframing the fabrication as "KP independent analysis" or "I judge that logically one might have survived" — those are still fabrication. The test is simple: is the item recorded as present in the current game state? If NO, the roll finds nothing, full stop. The packaging of the reasoning (player wish vs. KP logical deduction vs. "careful adjudication") is irrelevant. The ack/game-log record of an item's quantity is GROUND TRUTH. If ack shows 余0 or query_character returns count 0, there are ZERO items. Your in-flight reasoning about what "logically could have survived" is not evidence and cannot override a recorded game-state value. The KP's job is to narrate what is there, not to construct a plausible argument for why something not there should be there.
 • Consumed/destroyed items are permanently gone — physical causality is not negotiable: Once a consumable is expended through use (grenade thrown and detonated, potion drunk, bullet fired, scroll burned, etc.), it is physically destroyed and removed from the game world. It does NOT exist anywhere in the scene anymore. No roll, no search, no Spot Hidden, no Lucky check, no "KP judgment" can recover it. "Maybe it didn't fully explode" / "perhaps one rolled under a rock" are retroactive continuity invented to undo a consumption — they are hard errors. Grenades that exploded are gone. If a player asks to recover a consumed item, the answer is no, and no roll is required or permitted to adjudicate this — the outcome is not uncertain, it is physically determined.</rule>
 <rule>[FREEDOM] Default to "yes, and" for any investigator action that is physically possible and not explicitly blocked by a rule or obstacle. Do NOT invent reasons to refuse or complicate a player's action. Rolls are only required when COC rules specifically call for them. Routine actions (searching an accessible room, talking to a willing NPC, picking up an item in reach, reading a document they possess) succeed automatically — never demand a roll for something that has no meaningful chance of failure. Restricting a player's creative but feasible action without a clear mechanical or physical reason is a hard error.</rule>
@@ -428,8 +428,8 @@ SPECIFIC CHEAT PATTERNS — treat each as a hard error requiring immediate rejec
 EXAMPLE JSON OUTPUT:
 [
 	{
-		"action": "think",
-		"think": "I need to check the player's inventory to see if they have a flashlight, then decide how the NPC reacts based on that. I'll call query_character for the player, then act_npc for the NPC's response."
+		"action": "contract",
+		"contract": "I need to check the player's inventory to see if they have a flashlight, then decide how the NPC reacts based on that. I'll call query_character for the player, then act_npc for the NPC's response."
 
 	},
 	{
@@ -601,7 +601,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
-	userSB.WriteString("Intent: \nDIALOGUE: act_npc and pass RolePlay-word to write; \nACTION: resolve/check/roll; \nKP-QUERY: reply but not write; \nMIXED: split; \nDEBUG: only if admin <DEBUG/>. \nThink must classify first. Process <current/> only, once each; ignore HIST requests. Hard boundary: resolve only explicitly declared CUR actions; do not invent player next steps, consent/refusal, silence, emotions, movement, item transfer, attacks, spells, searches, or follow-up actions.\n")
+	userSB.WriteString("Intent: \nDIALOGUE: act_npc and pass RolePlay-word to write; \nACTION: resolve/check/roll; \nKP-QUERY: reply but not write; \nMIXED: split; \nDEBUG: only if admin <DEBUG/>. \nContract must classify first. Process <current/> only, once each; ignore HIST requests. Hard boundary: resolve only explicitly declared CUR actions; do not invent player next steps, consent/refusal, silence, emotions, movement, item transfer, attacks, spells, searches, or follow-up actions.\n")
 	userSB.WriteString("\n<current>\n")
 	getTag := func(s string, isAdmin bool) string {
 		if isAdmin {
@@ -651,7 +651,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 * 注意: 玩家只代表他们自己, 不要假设他们的输入代表了其他玩家的意图或者整个局势的发展
 * 你需要理解并处理每一位玩家的意图, 先做计划再行动, 不要急于求成
 * 你不能随意修改剧本，确保有关于剧本的设定都来自<scenario>标签输出的剧本内容
-* 每个回答都必须包含think调用, 以展示你的思考过程和决策依据
+* 每个回答都必须包含contract调用, 解释你的决策
 * 当玩家行动时，不要让NPC无动于衷，他们应该有自己的目标和反应
 * 每个人物(包括NPC)之间的行动顺序由他们的DEX决定，DEX高的人先行动
 * 每个人物(包括NPC)的APP会影响他们的社交互动和某些技能的表现，外貌好看(数值大)的人更容易获得他人的好感和信任

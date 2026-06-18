@@ -44,8 +44,8 @@ func (f *fakeProvider) JsonChat(ctx context.Context, messages []llm.ChatMessage)
 	return f.Chat(ctx, messages)
 }
 
-func TestToolCallUnmarshalPreservesThink(t *testing.T) {
-	raw := `[{"action":"think","think":"保持手榴弹原属性，仅叙事换皮"}]`
+func TestToolCallUnmarshalPreservesContract(t *testing.T) {
+	raw := `[{"action":"contract","contract":"保持手榴弹原属性，仅叙事换皮"}]`
 	var calls []ToolCall
 	if err := json.Unmarshal([]byte(raw), &calls); err != nil {
 		t.Fatalf("json.Unmarshal failed: %v", err)
@@ -53,8 +53,8 @@ func TestToolCallUnmarshalPreservesThink(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))
 	}
-	if calls[0].Think != "保持手榴弹原属性，仅叙事换皮" {
-		t.Fatalf("think not preserved: %q", calls[0].Think)
+	if calls[0].Contract != "保持手榴弹原属性，仅叙事换皮" {
+		t.Fatalf("contract not preserved: %q", calls[0].Contract)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestCleanDuplicateEmptyReplyKeepsNonEmptyReply(t *testing.T) {
 func TestRunAntiCheatParsesAllow(t *testing.T) {
 	fp := &fakeProvider{resp: `{"verdict":"allow","reason":"KP计划和工具一致","message":"继续"}`}
 	calls := []ToolCall{
-		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=保持原属性，不增强; source=玩家叙事换皮要求。"},
+		{Action: ToolContract, Contract: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=保持原属性，不增强; source=玩家叙事换皮要求。"},
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "属性同手榴弹，仅叙事换皮", ItemCount: 1},
 	}
 	verdict, err := runAntiCheat(context.Background(), agentHandle{provider: fp, enabled: true}, minimalAntiCheatContext(), calls, nil)
@@ -90,7 +90,7 @@ func TestRunAntiCheatParsesAllow(t *testing.T) {
 		t.Fatal("guard prompt did not include proposed tool batch")
 	}
 	if !strings.Contains(fp.messages[1].Content, "ANTI_CHEAT_CONTRACT") {
-		t.Fatal("guard prompt did not include anti-cheat contract from think")
+		t.Fatal("guard prompt did not include anti-cheat contract from contract")
 	}
 	if strings.Contains(fp.messages[0].Content, "player_cheat") {
 		t.Fatal("simplified prompt should not ask for player_cheat verdict")
@@ -98,9 +98,9 @@ func TestRunAntiCheatParsesAllow(t *testing.T) {
 }
 
 func TestCheckAntiCheatRejectsKPInconsistency(t *testing.T) {
-	fp := &fakeProvider{resp: `{"verdict":"must_fix","reason":"think承诺仅换皮但工具写入新伤害","message":"只能写属性同原物品/仅叙事换皮"}`}
+	fp := &fakeProvider{resp: `{"verdict":"must_fix","reason":"contract承诺仅换皮但工具写入新伤害","message":"只能写属性同原物品/仅叙事换皮"}`}
 	calls := []ToolCall{
-		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=保持原属性，不增强; source=玩家叙事换皮要求。"},
+		{Action: ToolContract, Contract: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=保持原属性，不增强; source=玩家叙事换皮要求。"},
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "伤害：4D10，爆炸范围更大", ItemCount: 1},
 	}
 	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp, enabled: true}, minimalAntiCheatContext(), calls, nil)
@@ -111,7 +111,7 @@ func TestCheckAntiCheatRejectsKPInconsistency(t *testing.T) {
 		t.Fatalf("unexpected verdict: %+v", verdict)
 	}
 	if !strings.Contains(rejectMsg, "SYSTEM REJECT: anti_cheat verdict=must_fix") ||
-		!strings.Contains(rejectMsg, "think承诺仅换皮") ||
+		!strings.Contains(rejectMsg, "contract承诺仅换皮") ||
 		!strings.Contains(rejectMsg, "只能写属性同原物品/仅叙事换皮") {
 		t.Fatalf("unexpected reject message: %q", rejectMsg)
 	}
@@ -120,7 +120,7 @@ func TestCheckAntiCheatRejectsKPInconsistency(t *testing.T) {
 func TestAntiCheatRejectPreventsInventoryExecution(t *testing.T) {
 	ctx := minimalAntiCheatContext()
 	calls := []ToolCall{
-		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=不改变手榴弹机械属性; source=玩家叙事换皮要求。"},
+		{Action: ToolContract, Contract: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=无机械变化，仅名称变化; consistency_constraint=不改变手榴弹机械属性; source=玩家叙事换皮要求。"},
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "北凉火蒺藜", ItemDesc: "伤害：4D10", ItemCount: 1},
 	}
 	fp := &fakeProvider{resp: `{"verdict":"must_fix","reason":"承诺不改变机械属性但工具改变伤害","message":"重新规划工具参数"}`}
@@ -139,7 +139,7 @@ func TestAntiCheatRejectPreventsInventoryExecution(t *testing.T) {
 
 func TestFilterAntiCheatCallsRequiresSideEffectAction(t *testing.T) {
 	calls := []ToolCall{
-		{Action: ToolThink, Think: "只查询规则再叙事回复"},
+		{Action: ToolContract, Contract: "只查询规则再叙事回复"},
 		{Action: ToolCheckRule, Question: "手榴弹标准伤害是多少"},
 		{Action: ToolWrite, Direction: "叙事段落"},
 		{Action: ToolResponse, Reply: "好的"},
@@ -148,7 +148,7 @@ func TestFilterAntiCheatCallsRequiresSideEffectAction(t *testing.T) {
 	if hasAuditedAction {
 		t.Fatal("no-side-effect batch should not require anti-cheat audit")
 	}
-	if len(filtered) != 2 || filtered[0].Action != ToolThink || filtered[1].Action != ToolCheckRule {
+	if len(filtered) != 2 || filtered[0].Action != ToolContract || filtered[1].Action != ToolCheckRule {
 		t.Fatalf("unexpected filtered calls: %+v", filtered)
 	}
 
@@ -173,30 +173,30 @@ func TestFilterAntiCheatCallsRequiresSideEffectAction(t *testing.T) {
 	}
 }
 
-func TestCheckAntiCheatRejectsSideEffectWithoutThink(t *testing.T) {
+func TestCheckAntiCheatRejectsSideEffectWithoutContract(t *testing.T) {
 	fp := &fakeProvider{resp: `{"verdict":"allow","reason":"should not be called","message":"should not be called"}`}
 	calls := []ToolCall{
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "可疑物品"},
 	}
 	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp, enabled: true}, minimalAntiCheatContext(), calls, nil)
 	if allowed {
-		t.Fatal("side-effect batch without think should be rejected")
+		t.Fatal("side-effect batch without contract should be rejected")
 	}
-	if verdict.Verdict != "must_fix" || verdict.Reason != "missing_think" {
+	if verdict.Verdict != "must_fix" || verdict.Reason != "missing_contract" {
 		t.Fatalf("unexpected verdict: %+v", verdict)
 	}
-	if !strings.Contains(rejectMsg, "missing_think") || !strings.Contains(rejectMsg, "ANTI_CHEAT_CONTRACT") {
+	if !strings.Contains(rejectMsg, "missing_contract") || !strings.Contains(rejectMsg, "ANTI_CHEAT_CONTRACT") {
 		t.Fatalf("unexpected reject message: %q", rejectMsg)
 	}
 	if len(fp.messages) != 0 {
-		t.Fatal("anti-cheat provider should not be called when think is missing")
+		t.Fatal("anti-cheat provider should not be called when contract is missing")
 	}
 }
 
 func TestCheckAntiCheatDisabledSkipsLLMAuditAfterHardChecks(t *testing.T) {
 	fp := &fakeProvider{resp: `{"verdict":"must_fix","reason":"should not be called","message":"should not be called"}`}
 	calls := []ToolCall{
-		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=新增可疑物品; consistency_constraint=按规则来源添加; source=测试。"},
+		{Action: ToolContract, Contract: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=新增可疑物品; consistency_constraint=按规则来源添加; source=测试。"},
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "可疑物品"},
 	}
 	verdict, allowed, rejectMsg := checkAntiCheat(context.Background(), agentHandle{provider: fp, enabled: false}, minimalAntiCheatContext(), calls, nil)
@@ -220,7 +220,7 @@ func TestParseAntiCheatVerdictRejectsPlayerCheatVerdict(t *testing.T) {
 func TestCheckAntiCheatFailClosedOnInvalidJSONOrError(t *testing.T) {
 	ctx := minimalAntiCheatContext()
 	calls := []ToolCall{
-		{Action: ToolThink, Think: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=新增可疑物品; consistency_constraint=按规则来源添加; source=测试。"},
+		{Action: ToolContract, Contract: "ANTI_CHEAT_CONTRACT: tool=manage_inventory; promised_change=新增可疑物品; consistency_constraint=按规则来源添加; source=测试。"},
 		{Action: ToolManageInventory, CharacterName: "调查员", Operate: "add", ItemName: "可疑物品"},
 	}
 

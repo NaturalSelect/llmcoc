@@ -53,7 +53,7 @@ var noSideEffectActions = map[ToolCallType]bool{
 
 // antiCheatSideEffectActions are state-changing tools that should trigger the
 // AntiCheat consistency guard. Narrative/control-flow tools (write, response,
-// yield, think, report) are intentionally excluded to avoid slowing normal flow.
+// yield, contract, report) are intentionally excluded to avoid slowing normal flow.
 var antiCheatSideEffectActions = map[ToolCallType]bool{
 	ToolCreateNPC:         true,
 	ToolDestroyNPC:        true,
@@ -82,7 +82,7 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolWrite:             true,
 	ToolHint:              true,
 	ToolFoundClue:         true,
-	ToolThink:             true,
+	ToolContract:          true,
 	ToolUpdateLLMNote:     true,
 	ToolUpdateNPCLLMNote:  true,
 	ToolUpdateLocation:    true,
@@ -133,7 +133,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolHint:              hintAction{},
 	ToolFoundClue:         foundClueAction{},
 	ToolResponse:          responseAction{},
-	ToolThink:             emptyAction{actionName: string(ToolThink)},
+	ToolContract:          emptyAction{actionName: string(ToolContract)},
 	ToolReport:            reportAction{},
 }
 
