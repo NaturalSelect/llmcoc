@@ -292,7 +292,6 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		if submitDraft != nil {
 			return *submitDraft, msgs, nil
 		}
-		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须先调用translate_anchor，再用submit提交完整剧本。"})
 	}
 	return oneshotResult{}, msgs, fmt.Errorf("oneshot architect 未在%d轮内提交结果", maxRounds)
 }
