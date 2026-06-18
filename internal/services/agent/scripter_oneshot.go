@@ -230,7 +230,6 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 	}
 	sessionID := scripterSessionID(ctx, room)
 	const maxRounds = 30
-	hasValidAnchor := false
 	for round := 1; round <= maxRounds; round++ {
 		if ctx.Err() != nil {
 			return oneshotResult{}, msgs, ctx.Err()
@@ -289,10 +288,6 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
 		}
 		if submitDraft != nil {
-			if !hasValidAnchor {
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: translate_anchor 尚未返回规则书确认（status=found）。必须先通过 translate_anchor 获得规则书匹配后，才能 submit。若之前 translate_anchor 返回了 no_result/uncertain，必须重新设计核心概念并再次调用 translate_anchor。"})
-				continue
-			}
 			return *submitDraft, msgs, nil
 		}
 		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须先调用translate_anchor，再用submit提交完整剧本。"})
