@@ -157,8 +157,6 @@ SAN要求：
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
-- think：内部推理（可选，无副作用）
-  {"action":"think","think":"推理内容"}
 - translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
   {"action":"translate_anchor","concept":"概念描述（如「死者被古老力量束缚继续行动」）","reason":"这个概念在剧本中承担什么角色"}
 - submit：提交完整剧本；只有在translate_anchor确认元素可用后才调用；必须单独一轮输出
@@ -263,8 +261,6 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		var toolResults []string
 		for _, call := range calls {
 			switch call.Action {
-			case ToolThink:
-				// silent
 			case toolOneshotTranslateAnchor:
 				toolResults = append(toolResults, executeOneshotTranslateAnchor(ctx, room, call))
 			case toolOneshotSubmit:
