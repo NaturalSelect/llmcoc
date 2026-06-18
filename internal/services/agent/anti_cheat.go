@@ -81,7 +81,9 @@ func checkAntiCheat(ctx context.Context, h agentHandle, gctx GameContext, calls 
 			  {"action":"think","think":"<ANTI_CHEAT_CONTRACT>"},
 			  {"action":"other","reason":"<reason>"},
 ]
-认真看这条错误消息，想清楚再回答,生成一个带think的JSON数组有这么难吗?每次都错`,
+认真看这条错误消息，想清楚再回答;
+生成一个带think的JSON数组有这么难吗?每次都错
+他妈的例子给你了还不会写？`,
 		}
 		return verdict, false, rejectMessageFromAntiCheat(verdict)
 	}
