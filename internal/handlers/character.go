@@ -59,6 +59,10 @@ func ListCharacters(c *gin.Context) {
 
 func hotFixChar(card *models.CharacterCard) {
 	needUpdate := false
+	if card.Skills.Data == nil {
+		card.Skills.Data = map[string]int{}
+		needUpdate = true
+	}
 	for skill := range card.Skills.Data {
 		if !game.IsValidSkill(skill) {
 			delete(card.Skills.Data, skill)
@@ -69,56 +73,11 @@ func hotFixChar(card *models.CharacterCard) {
 		card.Race = "人类"
 		needUpdate = true
 	}
-	if card.Stats.Data.HP > 0 && card.WoundState != "none" {
-		card.WoundState = "none"
-		card.IsActive = true
-		needUpdate = true
-	}
-	maxHp := (card.Stats.Data.CON + card.Stats.Data.SIZ) / 10
-	if (card.Stats.Data.CON+card.Stats.Data.SIZ)%10 != 0 {
-		maxHp++ // round up if not a multiple of 10
-	}
-	if card.Stats.Data.MaxHP != maxHp {
-		card.Stats.Data.MaxHP = maxHp
-		needUpdate = true
-	}
-	combined := card.Stats.Data.STR + card.Stats.Data.SIZ
-	var build int
-	var db string
-	switch {
-	case combined <= 64:
-		build, db = -2, "-2"
-	case combined <= 84:
-		build, db = -1, "-1"
-	case combined <= 124:
-		build, db = 0, "0"
-	case combined <= 164:
-		build, db = 1, "1D4"
-	case combined <= 204:
-		build, db = 2, "1D6"
-	case combined <= 284:
-		build, db = 3, "2D6"
-	default:
-		build, db = 4, "2D6+1D6"
-	}
-	if card.Stats.Data.Build != build {
-		card.Stats.Data.Build = build
-		needUpdate = true
-	}
-	if card.Stats.Data.DB != db {
-		card.Stats.Data.DB = db
-		needUpdate = true
-	}
-	var mov int
-	if card.Stats.Data.STR > card.Stats.Data.SIZ && card.Stats.Data.DEX > card.Stats.Data.SIZ {
-		mov = 9
-	} else if card.Stats.Data.STR < card.Stats.Data.SIZ && card.Stats.Data.DEX < card.Stats.Data.SIZ {
-		mov = 7
-	} else {
-		mov = 8
-	}
-	if card.Stats.Data.MOV != mov {
-		card.Stats.Data.MOV = mov
+	before := card.Stats.Data
+	game.ApplyDerivedStats(&card.Stats.Data, card.Age, false)
+	if before.MaxHP != card.Stats.Data.MaxHP || before.MaxMP != card.Stats.Data.MaxMP || before.MaxSAN != card.Stats.Data.MaxSAN ||
+		before.MOV != card.Stats.Data.MOV || before.Build != card.Stats.Data.Build || before.DB != card.Stats.Data.DB ||
+		before.HP != card.Stats.Data.HP || before.MP != card.Stats.Data.MP || before.SAN != card.Stats.Data.SAN {
 		needUpdate = true
 	}
 	trimed := strings.TrimSpace(card.Name)
@@ -128,6 +87,25 @@ func hotFixChar(card *models.CharacterCard) {
 	}
 	if card.Age < 18 {
 		card.Age = 18
+		needUpdate = true
+	}
+	if card.Age > 89 {
+		card.Age = 89
+		needUpdate = true
+	}
+	before = card.Stats.Data
+	game.ApplyDerivedStats(&card.Stats.Data, card.Age, false)
+	if before.MaxHP != card.Stats.Data.MaxHP || before.MaxMP != card.Stats.Data.MaxMP || before.MaxSAN != card.Stats.Data.MaxSAN ||
+		before.MOV != card.Stats.Data.MOV || before.Build != card.Stats.Data.Build || before.DB != card.Stats.Data.DB ||
+		before.HP != card.Stats.Data.HP || before.MP != card.Stats.Data.MP || before.SAN != card.Stats.Data.SAN {
+		needUpdate = true
+	}
+	if card.Skills.Data["母语"] != card.Stats.Data.EDU {
+		card.Skills.Data["母语"] = card.Stats.Data.EDU
+		needUpdate = true
+	}
+	if card.Skills.Data["闪避"] != card.Stats.Data.DEX/2 {
+		card.Skills.Data["闪避"] = card.Stats.Data.DEX / 2
 		needUpdate = true
 	}
 	if needUpdate {
@@ -185,27 +163,40 @@ func CreateCharacter(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别"})
 		return
 	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "姓名不能为空"})
+		return
+	}
 
 	if req.Age < 18 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "年龄必须至少为18岁"})
 		return
 	}
-
-	// Use provided stats or generate
-	stats := models.CharacterStats{}
-	if req.Stats != nil {
-		stats = *req.Stats
-	} else {
-		stats = game.GenerateStats()
+	if req.Age > 89 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "年龄不能超过89岁"})
+		return
+	}
+	if err := game.RejectClientStats(req.Stats); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
-	// Default skills with EDU/DEX adjustments
-	skills := game.DefaultSkills()
-	skills["母语"] = stats.EDU * 1 // EDU×5 but stored as actual value
-	skills["闪避"] = stats.DEX / 2
-	// Merge provided skills
-	for k, v := range req.Skills {
-		skills[k] = v
+	stats, _, err := game.GenerateStatsForAge(req.Age)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	skills, spent, err := game.NormalizeSkills(req.Skills, stats)
+	if err != nil {
+		payload := gin.H{"error": "技能分配不符合规则", "spent": spent, "budget": game.SkillPointBudget(stats)}
+		if ve, ok := err.(game.SkillValidationError); ok {
+			payload["details"] = ve.Details
+		} else {
+			payload["details"] = []string{err.Error()}
+		}
+		c.JSON(http.StatusBadRequest, payload)
+		return
 	}
 
 	card := models.CharacterCard{
@@ -264,9 +255,23 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别"})
 		return
 	}
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "姓名不能为空"})
+		return
+	}
+	if req.Age < 18 {
+		req.Age = 18
+	}
+	if req.Age > 89 {
+		req.Age = 89
+	}
 
 	// Generate base stats
-	stats := game.GenerateStats()
+	stats, _, err := game.GenerateStatsForAge(req.Age)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	skills := game.DefaultSkills()
 	skills["母语"] = stats.EDU
 	skills["闪避"] = stats.DEX / 2
@@ -278,6 +283,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		Background: req.Background,
 		Era:        req.Era,
 		Gender:     req.Gender,
+		Age:        req.Age,
 		Stats:      stats,
 	})
 	if err != nil {
@@ -286,10 +292,8 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		return
 	}
 
-	// Apply LLM-adjusted stats if valid (total unchanged, all values multiples of 5 within range)
 	if s := generated.Stats; s != nil {
-		if applyAdjustedStats(&stats, s) {
-			// Recalculate derived values
+		if applyAdjustedStats(&stats, s, req.Age) {
 			skills["母语"] = stats.EDU
 			skills["闪避"] = stats.DEX / 2
 		}
@@ -341,12 +345,19 @@ func UpdateCharacter(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
 		return
 	}
+	isAdmin := false
 	if card.UserID != userID {
 		var user models.User
 		models.DB.First(&user, userID)
 		if user.Role != "admin" {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
 			return
+		}
+		isAdmin = true
+	} else {
+		var user models.User
+		if err := models.DB.First(&user, userID).Error; err == nil && user.Role == models.RoleAdmin {
+			isAdmin = true
 		}
 	}
 
@@ -356,9 +367,23 @@ func UpdateCharacter(c *gin.Context) {
 		return
 	}
 
-	card.Name = req.Name
-	card.Age = req.Age
-	card.Gender = req.Gender
+	if strings.TrimSpace(req.Name) != "" {
+		card.Name = strings.TrimSpace(req.Name)
+	}
+	if req.Age != 0 {
+		if req.Age < 18 || req.Age > 89 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "年龄必须在18-89之间"})
+			return
+		}
+		card.Age = req.Age
+	}
+	if req.Gender != "" {
+		if req.Gender != models.GenderMale && req.Gender != models.GenderFemale {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别"})
+			return
+		}
+		card.Gender = req.Gender
+	}
 	card.Occupation = req.Occupation
 	card.Birthplace = req.Birthplace
 	card.Residence = req.Residence
@@ -366,12 +391,55 @@ func UpdateCharacter(c *gin.Context) {
 	card.Appearance = req.Appearance
 	card.Traits = req.Traits
 	if req.Stats != nil {
-		card.Stats = models.JSONField[models.CharacterStats]{Data: *req.Stats}
+		if !isAdmin {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "不能直接提交属性，请使用规则车卡流程"})
+			return
+		}
+		stats := *req.Stats
+		if err := game.ValidateManualStats(stats); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "属性不符合规则", "details": []string{err.Error()}})
+			return
+		}
+		game.ApplyDerivedStats(&stats, card.Age, true)
+		card.Stats = models.JSONField[models.CharacterStats]{Data: stats}
+	} else {
+		stats := card.Stats.Data
+		game.ApplyDerivedStats(&stats, card.Age, false)
+		card.Stats = models.JSONField[models.CharacterStats]{Data: stats}
 	}
 	if req.Skills != nil {
-		card.Skills = models.JSONField[map[string]int]{Data: req.Skills}
+		skills, spent, err := game.NormalizeSkills(req.Skills, card.Stats.Data)
+		if err != nil {
+			payload := gin.H{"error": "技能分配不符合规则", "spent": spent, "budget": game.SkillPointBudget(card.Stats.Data)}
+			if ve, ok := err.(game.SkillValidationError); ok {
+				payload["details"] = ve.Details
+			} else {
+				payload["details"] = []string{err.Error()}
+			}
+			c.JSON(http.StatusBadRequest, payload)
+			return
+		}
+		card.Skills = models.JSONField[map[string]int]{Data: skills}
+	} else {
+		if skills, _, err := game.NormalizeSkills(card.Skills.Data, card.Stats.Data); err == nil {
+			card.Skills = models.JSONField[map[string]int]{Data: skills}
+		} else {
+			if card.Skills.Data == nil {
+				card.Skills.Data = map[string]int{}
+			}
+			for skill := range card.Skills.Data {
+				if !game.IsValidSkill(skill) {
+					delete(card.Skills.Data, skill)
+				}
+			}
+			card.Skills.Data["母语"] = card.Stats.Data.EDU
+			card.Skills.Data["闪避"] = card.Stats.Data.DEX / 2
+		}
 	}
-	models.DB.Save(&card)
+	if err := models.DB.Save(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存人物卡失败"})
+		return
+	}
 	c.JSON(http.StatusOK, card)
 }
 
@@ -512,16 +580,9 @@ func RemoveCharacterInventoryItem(c *gin.Context) {
 	c.JSON(http.StatusOK, card)
 }
 
-// applyAdjustedStats validates and applies LLM-returned stat adjustments.
-// Rules:
-//   - Group A (STR/CON/DEX/APP/POW) total must equal original Group A total.
-//   - Group B (SIZ/INT/EDU) total must equal original Group B total.
-//   - Every value must be a multiple of 5.
-//   - STR/CON/DEX/APP/POW: 15–90; SIZ/INT/EDU: 40–90.
-//
-// Returns true and mutates base if valid, false otherwise (base unchanged).
-func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats) bool {
-	// Group totals must be preserved.
+// NOTE: applyAdjustedStats validates and applies LLM-returned stat adjustments.
+// NOTE: It preserves group totals, keeps base attributes human-range, and recalculates derived values.
+func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats, age int) bool {
 	origA := base.STR + base.CON + base.DEX + base.APP + base.POW
 	adjA := adj.STR + adj.CON + adj.DEX + adj.APP + adj.POW
 	origB := base.SIZ + base.INT + base.EDU
@@ -530,12 +591,15 @@ func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats)
 		return false
 	}
 
-	// Validate individual ranges and multiples of 5.
-	type check struct{ v, lo, hi int }
+	type check struct {
+		v  int
+		lo int
+		hi int
+	}
 	checks := []check{
-		{adj.STR, 15, 90}, {adj.CON, 15, 90}, {adj.DEX, 15, 90},
-		{adj.APP, 15, 90}, {adj.POW, 15, 90},
-		{adj.SIZ, 40, 90}, {adj.INT, 40, 90}, {adj.EDU, 40, 90},
+		{adj.STR, 1, 99}, {adj.CON, 1, 99}, {adj.DEX, 1, 99},
+		{adj.APP, 1, 99}, {adj.POW, 1, 99},
+		{adj.SIZ, 1, 99}, {adj.INT, 1, 99}, {adj.EDU, 1, 99},
 	}
 	for _, ck := range checks {
 		if ck.v%5 != 0 || ck.v < ck.lo || ck.v > ck.hi {
@@ -543,7 +607,6 @@ func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats)
 		}
 	}
 
-	// Apply core attributes; recalculate derived values.
 	base.STR = adj.STR
 	base.CON = adj.CON
 	base.SIZ = adj.SIZ
@@ -553,43 +616,7 @@ func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats)
 	base.POW = adj.POW
 	base.EDU = adj.EDU
 
-	hp := (base.CON + base.SIZ) / 10
-	if (base.CON+base.SIZ)%10 != 0 {
-		hp++ // round up if not a multiple of 10
-	}
-	base.HP, base.MaxHP = hp, hp
-	mp := base.POW / 5
-	base.MP, base.MaxMP = mp, mp
-	base.SAN = base.POW
-	base.MaxSAN = 99
-
-	// MOV
-	if base.STR > base.SIZ && base.DEX > base.SIZ {
-		base.MOV = 9
-	} else if base.STR < base.SIZ && base.DEX < base.SIZ {
-		base.MOV = 7
-	} else {
-		base.MOV = 8
-	}
-
-	// Build & DB
-	combined := base.STR + base.SIZ
-	switch {
-	case combined <= 64:
-		base.Build, base.DB = -2, "-2"
-	case combined <= 84:
-		base.Build, base.DB = -1, "-1"
-	case combined <= 124:
-		base.Build, base.DB = 0, "0"
-	case combined <= 164:
-		base.Build, base.DB = 1, "1D4"
-	case combined <= 204:
-		base.Build, base.DB = 2, "1D6"
-	case combined <= 284:
-		base.Build, base.DB = 3, "2D6"
-	default:
-		base.Build, base.DB = 4, "2D6+1D6"
-	}
+	game.ApplyDerivedStats(base, age, true)
 	return true
 }
 

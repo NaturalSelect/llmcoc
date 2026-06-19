@@ -95,6 +95,7 @@
                         <div class="flex items-center justify-between mb-4">
                             <h2 class="text-lg font-bold text-amber-100">我的调查员</h2>
                             <div class="flex gap-2">
+                                <button @click="openCreateChar()" class="btn btn-ghost">+ 创建</button>
                                 <button @click="openGenerateChar()" class="btn btn-amber">✨ AI生成</button>
                             </div>
                         </div>
@@ -962,23 +963,39 @@
 
         <!-- Create character modal -->
         <div x-show="modal === 'createChar'" class="backdrop" @click.self="modal=null">
-            <div class="modal max-w-md p-6">
+            <div class="modal max-w-4xl p-6 max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-lg font-bold text-amber-100">创建调查员</h2>
                     <button @click="modal=null"
                         class="text-amber-800 hover:text-amber-400 text-xl leading-none">✕</button>
                 </div>
+
+                <div class="flex gap-1 mb-4 border-b border-[#252018]" style="font-family:system-ui">
+                    <button @click="createCharMode='quick'" class="tab text-sm px-4 py-1.5"
+                        :class="createCharMode==='quick'?'active':''">快速创建</button>
+                    <button @click="createCharMode='manual'; manualStep=manualDraft?2:1; loadSkillDefaults().catch(()=>{})" class="tab text-sm px-4 py-1.5"
+                        :class="createCharMode==='manual'?'active':''">规则车卡</button>
+                </div>
+
                 <div class="space-y-3">
+                    <div x-show="createCharMode === 'quick'" class="space-y-3">
                     <div class="grid grid-cols-2 gap-2">
                         <input x-model="charForm.name" placeholder="姓名 *" class="inp" />
                     </div>
                     <div class="grid grid-cols-3 gap-2">
-                        <input x-model.number="charForm.age" type="number" placeholder="年龄" class="inp" />
-                        <input x-model="charForm.gender" placeholder="性别" class="inp" />
+                        <input x-model.number="charForm.age" type="number" min="18" max="89" placeholder="年龄" class="inp" />
+                        <select x-model="charForm.gender" class="inp">
+                            <option value="">性别</option>
+                            <option value="男">男</option>
+                            <option value="女">女</option>
+                        </select>
                         <input x-model="charForm.occupation" placeholder="职业" class="inp" />
                     </div>
                     <input x-model="charForm.birthplace" placeholder="出生地" class="inp" />
+                    <input x-model="charForm.residence" placeholder="现居地" class="inp" />
                     <textarea x-model="charForm.backstory" placeholder="背景故事" rows="3"
+                        class="inp resize-none"></textarea>
+                    <textarea x-model="charForm.appearance" placeholder="外貌描述" rows="2"
                         class="inp resize-none"></textarea>
                     <textarea x-model="charForm.traits" placeholder="性格特征" rows="2" class="inp resize-none"></textarea>
                     <p class="text-xs text-amber-800" style="font-family:system-ui">属性将按 COC7 版掷骰规则自动生成。</p>
@@ -988,6 +1005,108 @@
                             <span x-show="!loading">创建</span>
                             <span x-show="loading">创建中…</span>
                         </button>
+                    </div>
+                    </div>
+
+                    <div x-show="createCharMode === 'manual'" class="space-y-4" style="font-family:system-ui">
+                        <div class="flex items-center gap-2 text-xs text-amber-800">
+                            <span :class="manualStep>=1?'text-amber-300':'text-amber-900'">1 年龄投掷</span>
+                            <span>→</span>
+                            <span :class="manualStep>=2?'text-amber-300':'text-amber-900'">2 基本资料</span>
+                            <span>→</span>
+                            <span :class="manualStep>=3?'text-amber-300':'text-amber-900'">3 技能分配</span>
+                        </div>
+
+                        <div x-show="manualStep === 1" class="card rounded p-4 space-y-3">
+                            <p class="text-sm text-amber-700">规则车卡会先在服务器掷骰并锁定属性，草稿15分钟内有效且只能使用一次。</p>
+                            <div class="grid grid-cols-3 gap-2 items-end">
+                                <div class="col-span-2">
+                                    <label class="text-xs text-amber-800 mb-1 block">年龄（18-89）</label>
+                                    <input x-model.number="charForm.age" type="number" min="18" max="89" class="inp" />
+                                </div>
+                                <button @click="rollManualChar()" :disabled="loading" class="btn btn-amber">
+                                    <span x-show="!loading">服务器掷骰</span>
+                                    <span x-show="loading">掷骰中…</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div x-show="manualDraft" class="card rounded p-4 space-y-3">
+                            <div class="flex justify-between text-xs text-amber-800">
+                                <span>已锁定属性</span>
+                                <span x-text="manualDraft?.expires_at ? ('过期时间：' + fmtDate(manualDraft.expires_at)) : ''"></span>
+                            </div>
+                            <div class="grid grid-cols-4 md:grid-cols-8 gap-2">
+                                <template x-for="[k,v] in [['STR',manualDraft?.stats?.str],['CON',manualDraft?.stats?.con],['SIZ',manualDraft?.stats?.siz],['DEX',manualDraft?.stats?.dex],['APP',manualDraft?.stats?.app],['INT',manualDraft?.stats?.int],['POW',manualDraft?.stats?.pow],['EDU',manualDraft?.stats?.edu]]" :key="k">
+                                    <div class="stat-badge">
+                                        <div class="text-amber-800" x-text="k"></div>
+                                        <div class="text-amber-300 font-bold" x-text="v"></div>
+                                    </div>
+                                </template>
+                            </div>
+                            <div class="grid grid-cols-3 md:grid-cols-6 gap-2 text-xs">
+                                <div class="stat-badge"><div class="text-amber-800">Luck</div><div class="text-amber-300" x-text="manualDraft?.stats?.luck"></div></div>
+                                <div class="stat-badge"><div class="text-amber-800">HP</div><div class="text-amber-300" x-text="manualDraft?.stats?.hp + '/' + manualDraft?.stats?.max_hp"></div></div>
+                                <div class="stat-badge"><div class="text-amber-800">MP</div><div class="text-amber-300" x-text="manualDraft?.stats?.mp + '/' + manualDraft?.stats?.max_mp"></div></div>
+                                <div class="stat-badge"><div class="text-amber-800">SAN</div><div class="text-amber-300" x-text="manualDraft?.stats?.san + '/' + manualDraft?.stats?.max_san"></div></div>
+                                <div class="stat-badge"><div class="text-amber-800">MOV</div><div class="text-amber-300" x-text="manualDraft?.stats?.mov"></div></div>
+                                <div class="stat-badge"><div class="text-amber-800">DB/Build</div><div class="text-amber-300" x-text="(manualDraft?.stats?.db||'0') + '/' + (manualDraft?.stats?.build??0)"></div></div>
+                            </div>
+                            <div class="text-xs text-amber-800 space-y-1">
+                                <template x-for="line in (manualDraft?.raw_rolls?.age_log || [])" :key="line">
+                                    <p x-text="'· ' + line"></p>
+                                </template>
+                            </div>
+                        </div>
+
+                        <div x-show="manualStep === 2" class="card rounded p-4 space-y-3">
+                            <div class="grid grid-cols-2 gap-2">
+                                <input x-model="charForm.name" placeholder="姓名 *" class="inp" />
+                                <select x-model="charForm.gender" class="inp">
+                                    <option value="">性别 *</option>
+                                    <option value="男">男</option>
+                                    <option value="女">女</option>
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <input x-model="charForm.occupation" placeholder="职业" class="inp" />
+                                <input x-model="charForm.birthplace" placeholder="出生地" class="inp" />
+                                <input x-model="charForm.residence" placeholder="现居地" class="inp" />
+                            </div>
+                            <textarea x-model="charForm.background_prompt" placeholder="背景提示词 / 角色概念：如家族背景、性格倾向、希望的氛围等" rows="4" class="inp resize-none"></textarea>
+                            <p class="text-xs text-amber-800">AI会根据提示词、姓名、性别、职业和已锁定属性生成背景故事、外貌与性格特征。</p>
+                            <div class="flex gap-2">
+                                <button @click="manualStep=1" class="btn btn-ghost flex-1">重新投掷</button>
+                                <button @click="manualStep=3" :disabled="!manualDraft || !charForm.name.trim() || !charForm.gender" class="btn btn-amber flex-1">下一步：分配技能</button>
+                            </div>
+                        </div>
+
+                        <div x-show="manualStep === 3" class="card rounded p-4 space-y-3">
+                            <div class="flex justify-between items-center text-sm">
+                                <span class="text-amber-700">技能点：职业 <span x-text="manualSkillBudget?.occupation||0"></span> + 兴趣 <span x-text="manualSkillBudget?.interest||0"></span></span>
+                                <span :class="manualRemainingPoints() < 0 ? 'text-red-400' : 'text-amber-300'">剩余 <span x-text="manualRemainingPoints()"></span></span>
+                            </div>
+                            <p class="text-xs text-amber-800">技能最终值不能低于基础值且最高90；母语和闪避由服务器强制计算，克苏鲁神话不可分配。</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
+                                <template x-for="name in manualSkillNames" :key="name">
+                                    <div x-show="name !== '克苏鲁神话'" class="flex items-center gap-2 text-xs">
+                                        <label class="w-28 text-amber-700 truncate" x-text="name"></label>
+                                        <span class="w-12 text-amber-900" x-text="'基础 ' + (manualSkillDefaults[name] ?? 0)"></span>
+                                        <input x-model.number="manualSkills[name]" @input="clampManualSkill(name)" type="number"
+                                            :min="manualSkillDefaults[name] ?? 0" max="90"
+                                            :disabled="name==='母语' || name==='闪避'" class="inp flex-1 py-1" />
+                                    </div>
+                                </template>
+                            </div>
+                            <p class="text-xs text-amber-900">目前前端提供通用技能清单；职业点与兴趣点合并为总预算，最终以服务器校验为准。</p>
+                            <div class="flex gap-2 pt-1">
+                                <button @click="manualStep=2" class="btn btn-ghost flex-1">返回资料</button>
+                                <button @click="finalizeManualChar()" :disabled="loading || manualRemainingPoints() < 0" class="btn btn-amber flex-1">
+                                    <span x-show="!loading">确认创建并生成背景</span>
+                                    <span x-show="loading">AI生成中…</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1016,7 +1135,7 @@
                         </div>
                         <div>
                             <label class="text-xs text-amber-800 mb-1 block" style="font-family:system-ui">年龄</label>
-                            <input x-model.number="genForm.age" type="number" min="16" max="90" placeholder="如：28"
+                            <input x-model.number="genForm.age" type="number" min="18" max="89" placeholder="如：28"
                                 class="inp" />
                         </div>
                     </div>

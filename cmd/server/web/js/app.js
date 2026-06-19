@@ -33,7 +33,14 @@ window.COC.core = function() {
                     regenningAppearance: false,
                     regenningBackstory: false,
                     regenningTraits: false,
-                    charForm: { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' },
+                    charForm: { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', residence: '', backstory: '', appearance: '', traits: '', background_prompt: '' },
+                    createCharMode: 'quick',
+                    manualDraft: null,
+                    manualStep: 1,
+                    manualSkillDefaults: {},
+                    manualSkills: {},
+                    manualSkillBudget: { occupation: 0, interest: 0, total: 0 },
+                    manualSkillNames: [],
                     genForm: { name: '', race: '人类', gender: '', age: '', occupation: '', era: '', background: '' },
 
                     // ── Session forms ─────────────────────────────────────────────────────
@@ -236,7 +243,10 @@ window.COC.core = function() {
                         if (body !== undefined && method !== 'GET') opts.body = JSON.stringify(body);
                         const resp = await fetch(path, opts);
                         const data = await resp.json().catch(() => ({}));
-                        if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+                        if (!resp.ok) {
+                            const details = Array.isArray(data.details) ? '：' + data.details.join('；') : '';
+                            throw new Error((data.error || `HTTP ${resp.status}`) + details);
+                        }
                         return data;
                     },
     };

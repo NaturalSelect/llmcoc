@@ -18,6 +18,7 @@ type GenerateCharacterReq struct {
 	Background string
 	Era        string
 	Gender     string
+	Age        int
 	Stats      models.CharacterStats
 }
 
@@ -239,12 +240,17 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 	if gender == "" {
 		gender = "(未指定)"
 	}
+	age := "(未指定)"
+	if req.Age > 0 {
+		age = fmt.Sprintf("%d", req.Age)
+	}
 
 	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)生成一名调查员的详细信息,以JSON格式返回,不要有任何额外文字。
 
 要求:
 - 调查员姓名:%s
 - 时代背景:%s
+- 年龄:%s
 - 职业:%s
 - 性别:%s
 - 玩家背景提示:%s
@@ -264,7 +270,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
   "traits": "性格特征(以空格分隔,1-5个标签,包含语言风格、性格特点等，二次元风格, 如:雌小鬼 大和抚子等)",
   "stats": {"STR":N,"CON":N,"SIZ":N,"DEX":N,"APP":N,"INT":N,"POW":N,"EDU":N}
 }`,
-		name, era, occupation, gender, req.Background,
+		name, era, age, occupation, gender, req.Background,
 		req.Stats.STR, req.Stats.CON, req.Stats.SIZ,
 		req.Stats.DEX, req.Stats.APP, req.Stats.INT,
 		req.Stats.POW, req.Stats.EDU,

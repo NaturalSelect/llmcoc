@@ -59,6 +59,58 @@ type CharacterStats struct {
 	DB     string `json:"db"`      // 伤害加值
 }
 
+type CharacterAttributeRoll struct {
+	Formula string `json:"formula"`
+	Dice    []int  `json:"dice"`
+	Total   int    `json:"total"`
+	Base    int    `json:"base"`
+	Final   int    `json:"final"`
+}
+
+type CharacterLuckRoll struct {
+	Formula string                   `json:"formula"`
+	Rolls   []CharacterAttributeRoll `json:"rolls"`
+	Kept    int                      `json:"kept"`
+}
+
+type CharacterEDUEnhancementRoll struct {
+	Index       int  `json:"index"`
+	D100        int  `json:"d100"`
+	BeforeEDU   int  `json:"before_edu"`
+	Improved    bool `json:"improved"`
+	IncreaseDie int  `json:"increase_die,omitempty"`
+	Increase    int  `json:"increase,omitempty"`
+	AfterEDU    int  `json:"after_edu"`
+}
+
+type CharacterRawRolls struct {
+	Age             int                           `json:"age"`
+	STR             CharacterAttributeRoll        `json:"str"`
+	CON             CharacterAttributeRoll        `json:"con"`
+	SIZ             CharacterAttributeRoll        `json:"siz"`
+	DEX             CharacterAttributeRoll        `json:"dex"`
+	APP             CharacterAttributeRoll        `json:"app"`
+	INT             CharacterAttributeRoll        `json:"int"`
+	POW             CharacterAttributeRoll        `json:"pow"`
+	EDU             CharacterAttributeRoll        `json:"edu"`
+	Luck            CharacterLuckRoll             `json:"luck"`
+	EDUEnhancements []CharacterEDUEnhancementRoll `json:"edu_enhancements"`
+	AgeLog          []string                      `json:"age_log"`
+}
+
+type CharacterDraft struct {
+	ID        uint                         `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID    uint                         `gorm:"not null;index:idx_character_drafts_user_active" json:"user_id"`
+	Stats     JSONField[CharacterStats]    `gorm:"type:text;not null" json:"stats"`
+	RawRolls  JSONField[CharacterRawRolls] `gorm:"type:text;not null" json:"raw_rolls"`
+	ExpiresAt time.Time                    `gorm:"not null;index:idx_character_drafts_user_active" json:"expires_at"`
+	IsUsed    bool                         `gorm:"default:false;not null;index:idx_character_drafts_user_active" json:"is_used"`
+	UsedAt    *time.Time                   `json:"used_at,omitempty"`
+	CreatedAt time.Time                    `json:"created_at"`
+	UpdatedAt time.Time                    `json:"updated_at"`
+	User      User                         `gorm:"foreignKey:UserID" json:"-"`
+}
+
 // SocialRelation represents a named relationship on a character card.
 // NOTE: Tracks connections an investigator has to other people or entities.
 type SocialRelation struct {

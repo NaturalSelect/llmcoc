@@ -124,6 +124,24 @@ func TestCreateCharacter_Success(t *testing.T) {
 	}
 }
 
+func TestCreateCharacter_RejectsClientStats(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/characters", map[string]any{
+		"name":   "Cheater",
+		"age":    25,
+		"gender": "男",
+		"stats":  map[string]any{"str": 90, "con": 90, "siz": 90, "dex": 90, "app": 90, "int": 90, "pow": 90, "edu": 90, "luck": 90},
+	}))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestCreateCharacter_SlotFull(t *testing.T) {
 	initTestDB(t)
 	uid := seedUser(t, "alice", "user", 0, 1) // only 1 slot

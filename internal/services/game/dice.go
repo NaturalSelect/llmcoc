@@ -106,52 +106,11 @@ func RollDiceExpr(expr string) int {
 
 // GenerateStats generates COC 7th edition character statistics
 func GenerateStats() models.CharacterStats {
-	roll3d6x5 := func() int {
-		v, _ := Roll(3, 6)
-		return v * 5
+	stats, _, err := GenerateStatsForAge(25)
+	if err != nil {
+		return models.CharacterStats{}
 	}
-	roll2d6p6x5 := func() int {
-		v, _ := Roll(2, 6)
-		return (v + 6) * 5
-	}
-	roll3d6 := func() int {
-		v, _ := Roll(3, 6)
-		return v * 5
-	}
-	_ = roll3d6
-
-	str := roll3d6x5()
-	con := roll3d6x5()
-	siz := roll2d6p6x5()
-	dex := roll3d6x5()
-	app := roll3d6x5()
-	intel := roll2d6p6x5()
-	pow := roll3d6x5()
-	edu := roll2d6p6x5()
-
-	luckVal, _ := Roll(3, 6)
-	luck := luckVal * 5
-
-	hp := (con + siz) / 10
-	mp := pow / 5
-	san := pow
-	// COC 7th: 最大理智值固定为99(规则书"每位调查员能拥有的最大理智值都是99"),
-	// 随克苏鲁神话技能增长而降低(99 - cthulhu_mythos)。
-	maxSAN := 99
-	mov := calcMOV(str, dex, siz)
-	build, db := calcBuildAndDB(str, siz)
-
-	return models.CharacterStats{
-		STR: str, CON: con, SIZ: siz, DEX: dex,
-		APP: app, INT: intel, POW: pow, EDU: edu,
-		HP: hp, MaxHP: hp,
-		MP: mp, MaxMP: mp,
-		SAN: san, MaxSAN: maxSAN,
-		Luck:  luck,
-		MOV:   mov,
-		Build: build,
-		DB:    db,
-	}
+	return stats
 }
 
 func calcMOV(str, dex, siz int) int {

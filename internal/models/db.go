@@ -34,6 +34,7 @@ func InitDB() error {
 	if err := DB.AutoMigrate(
 		&User{},
 		&CharacterCard{},
+		&CharacterDraft{},
 		&Scenario{},
 		&ScenarioGenerationLog{},
 		&GameSession{},

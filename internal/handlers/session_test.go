@@ -39,6 +39,7 @@ func initTestDB(t *testing.T) {
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.CharacterCard{},
+		&models.CharacterDraft{},
 		&models.Scenario{},
 		&models.ScenarioGenerationLog{},
 		&models.GameSession{},

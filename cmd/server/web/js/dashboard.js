@@ -6,7 +6,18 @@ window.COC.dashboard = {
                     // ══════════════════════════════════════════════════════════════════════
                     // Characters
                     // ══════════════════════════════════════════════════════════════════════
-                    openCreateChar() { this.charForm = { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', backstory: '', traits: '' }; this.modal = 'createChar'; },
+                    openCreateChar() {
+                        this.createCharMode = 'quick';
+                        this.manualStep = 1;
+                        this.manualDraft = null;
+                        this.manualSkillDefaults = {};
+                        this.manualSkills = {};
+                        this.manualSkillBudget = { occupation: 0, interest: 0, total: 0 };
+                        this.manualSkillNames = [];
+                        this.charForm = { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', residence: '', backstory: '', appearance: '', traits: '', background_prompt: '' };
+                        this.loadSkillDefaults().catch(() => {});
+                        this.modal = 'createChar';
+                    },
                     openGenerateChar() { this.genForm = { name: '', race: '人类', gender: '', age: '', occupation: '', era: '', background: '' }; this.modal = 'generateChar'; },
                     openCharDetail(c) { this.editChar = c; this.inventoryInput = ''; this.modal = 'charDetail'; },
                     openSessionPlayerCharDetail(player) {
@@ -37,6 +48,109 @@ window.COC.dashboard = {
                             const c = await this.api('POST', '/api/characters', this.charForm);
                             this.characters.push(c); this.modal = null;
                             await this.loadMe(); this.showToast('人物卡创建成功！');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                        this.loading = false;
+                    },
+
+                    async loadSkillDefaults() {
+                        const r = await this.api('GET', '/api/characters/skill-defaults');
+                        this.manualSkillDefaults = r.skill_defaults || {};
+                        if (this.manualDraft?.stats) {
+                            this.manualSkillDefaults['母语'] = this.manualDraft.stats.edu || 0;
+                            this.manualSkillDefaults['闪避'] = Math.floor((this.manualDraft.stats.dex || 0) / 2);
+                        }
+                        this.manualSkillNames = (r.skill_names || Object.keys(this.manualSkillDefaults)).filter(n => n !== '克苏鲁神话');
+                    },
+
+                    async rollManualChar() {
+                        const age = Number(this.charForm.age || 0);
+                        if (age < 18 || age > 89) {
+                            this.showToast('年龄必须在18-89之间', 'error');
+                            return;
+                        }
+                        this.loading = true;
+                        try {
+                            const r = await this.api('POST', '/api/characters/roll', { age });
+                            this.manualDraft = r;
+                            this.manualSkillDefaults = r.skill_defaults || this.manualSkillDefaults || {};
+                            this.manualSkillDefaults['母语'] = r.stats?.edu || this.manualSkillDefaults['母语'] || 0;
+                            this.manualSkillDefaults['闪避'] = Math.floor((r.stats?.dex || 0) / 2);
+                            this.manualSkillBudget = r.skill_budget || { occupation: 0, interest: 0, total: 0 };
+                            const names = this.manualSkillNames.length ? this.manualSkillNames : Object.keys(this.manualSkillDefaults).sort();
+                            this.manualSkillNames = names.filter(n => n !== '克苏鲁神话');
+                            this.manualSkills = { ...this.manualSkillDefaults };
+                            this.manualSkills['母语'] = r.stats?.edu || this.manualSkills['母语'] || 0;
+                            this.manualSkills['闪避'] = Math.floor((r.stats?.dex || 0) / 2);
+                            this.manualStep = 2;
+                            this.showToast('属性已锁定，请继续填写调查员资料');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                        this.loading = false;
+                    },
+
+                    manualSpentPoints() {
+                        const defaults = this.manualSkillDefaults || {};
+                        const skills = this.manualSkills || {};
+                        return Object.keys(skills).reduce((sum, name) => {
+                            if (name === '母语' || name === '闪避' || name === '克苏鲁神话') return sum;
+                            const base = Number(defaults[name] ?? 0);
+                            const val = Number(skills[name] ?? base);
+                            return sum + Math.max(0, val - base);
+                        }, 0);
+                    },
+
+                    manualRemainingPoints() {
+                        return Number(this.manualSkillBudget?.total || 0) - this.manualSpentPoints();
+                    },
+
+                    clampManualSkill(name) {
+                        const base = Number(this.manualSkillDefaults?.[name] ?? 0);
+                        if (name === '母语') {
+                            this.manualSkills[name] = this.manualDraft?.stats?.edu || base;
+                            return;
+                        }
+                        if (name === '闪避') {
+                            this.manualSkills[name] = Math.floor((this.manualDraft?.stats?.dex || 0) / 2);
+                            return;
+                        }
+                        let val = Number(this.manualSkills[name] ?? base);
+                        if (!Number.isFinite(val)) val = base;
+                        if (val < base) val = base;
+                        if (val > 90) val = 90;
+                        this.manualSkills[name] = Math.floor(val);
+                    },
+
+                    async finalizeManualChar() {
+                        if (!this.manualDraft?.draft_id || !this.manualDraft?.token) {
+                            this.showToast('请先投掷并锁定属性', 'error');
+                            return;
+                        }
+                        if (!this.charForm.name.trim()) {
+                            this.showToast('姓名不能为空', 'error');
+                            return;
+                        }
+                        if (!['男', '女'].includes(this.charForm.gender)) {
+                            this.showToast('请选择性别', 'error');
+                            return;
+                        }
+                        if (this.manualRemainingPoints() < 0) {
+                            this.showToast('技能点已超出预算', 'error');
+                            return;
+                        }
+                        this.loading = true;
+                        try {
+                            const c = await this.api('POST', '/api/characters/finalize', {
+                                draft_id: this.manualDraft.draft_id,
+                                token: this.manualDraft.token,
+                                name: this.charForm.name,
+                                gender: this.charForm.gender,
+                                occupation: this.charForm.occupation,
+                                birthplace: this.charForm.birthplace,
+                                residence: this.charForm.residence,
+                                background_prompt: this.charForm.background_prompt || this.charForm.backstory,
+                                skills: this.manualSkills,
+                            });
+                            this.characters.push(c); this.modal = null;
+                            await this.loadMe(); this.showToast('规则车卡创建成功，AI背景已生成！');
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.loading = false;
                     },

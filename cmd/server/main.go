@@ -162,6 +162,9 @@ func main() {
 	{
 		chars.GET("", handlers.ListCharacters)
 		chars.GET("/dead", handlers.ListDeadCharacters)
+		chars.GET("/skill-defaults", handlers.GetCharacterSkillDefaults)
+		chars.POST("/roll", handlers.RollCharacterDraft)
+		chars.POST("/finalize", handlers.FinalizeCharacterDraft)
 		chars.POST("", handlers.CreateCharacter)
 		chars.POST("/generate", chh.GenerateCharacter)
 		chars.GET("/:id", handlers.GetCharacter)
