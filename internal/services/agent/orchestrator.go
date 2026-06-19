@@ -18,7 +18,7 @@ import (
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
-const MaxKpRound = 20
+const MaxKpRound = 30
 
 var internalTagPattern = regexp.MustCompile(`(?s)<(?:ack|direction|response_options)\b[^>]*>.*?</(?:ack|direction|response_options)>`)
 
