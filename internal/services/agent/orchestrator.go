@@ -274,6 +274,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		hasResponse := false
 		respStr := ""
 		hasNonCompatible := false
+		hasContract := false
 		for _, call := range calls {
 			if call.Action == ToolResponse || call.Action == ToolEndGame {
 				hasResponse = true
@@ -282,9 +283,21 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					respStr = call.EndSummary
 				}
 			}
+			if call.Action == ToolContract {
+				hasContract = true
+			}
 			if !responseCompatibleActions[call.Action] {
 				hasNonCompatible = true
 			}
+		}
+		if !hasContract {
+			debugf("KP", "session=%d iter=%d rejecting entire batch: missing contract", sid, iter+1)
+			emitProgress("KP正在补全裁定合约")
+			kpMsgs = append(kpMsgs, llm.ChatMessage{
+				Role:    "user",
+				Content: "<error>SYSTEM REJECT: your entire batch was rejected. missing contract call. every batch must include a contract call describing the ANTI_CHEAT_CONTRACT.</error>",
+			})
+			continue
 		}
 		if hasResponse && hasNonCompatible {
 			debugf("KP", "session=%d iter=%d rejecting entire batch: response mixed with result-producing tools", sid, iter+1)
