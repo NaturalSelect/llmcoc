@@ -74,7 +74,7 @@ func checkAntiCheat(ctx context.Context, h agentHandle, gctx GameContext, calls 
 		verdict := AntiCheatVerdict{
 			Verdict: "must_fix",
 			Reason:  "missing_contract",
-			Message: `回答中缺少 contract 调用`,
+			Message: `"回答中缺少 contract 调用, 请仔细查阅相关schemes, 本消息无效, 系统已拒绝并登记审计"`,
 		}
 		return verdict, false, rejectMessageFromAntiCheat(verdict)
 	}
