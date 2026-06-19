@@ -1092,9 +1092,9 @@
                                     <div x-show="name !== '克苏鲁神话'" class="flex items-center gap-2 text-xs">
                                         <label class="w-28 text-amber-700 truncate" x-text="name"></label>
                                         <span class="w-12 text-amber-900" x-text="'基础 ' + (manualSkillDefaults[name] ?? 0)"></span>
-                                        <input x-model.number="manualSkills[name]" @input="clampManualSkill(name)" type="number"
+                                        <input x-model.number="manualSkills[name]" @blur="clampManualSkill(name)" @keydown.enter.prevent="clampManualSkill(name); $event.target.blur()" type="number"
                                             :min="manualSkillDefaults[name] ?? 0" max="90"
-                                            :disabled="name==='母语' || name==='闪避'" class="inp flex-1 py-1" />
+                                            :disabled="name==='母语' || name==='闪避'" class="inp flex-1 py-1 text-center font-mono" />
                                     </div>
                                 </template>
                             </div>
