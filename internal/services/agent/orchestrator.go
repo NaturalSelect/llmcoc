@@ -294,8 +294,14 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			debugf("KP", "session=%d iter=%d rejecting entire batch: missing contract", sid, iter+1)
 			emitProgress("KP正在补全裁定合约")
 			kpMsgs = append(kpMsgs, llm.ChatMessage{
-				Role:    "user",
-				Content: "<error>SYSTEM REJECT: your entire batch was rejected. missing contract call. every batch must include a contract call describing the ANTI_CHEAT_CONTRACT.</error>",
+				Role: "user",
+				Content: `
+<error>
+	1. your entire batch was rejected. 
+	2. missing contract call. 
+	3. every batch must include a contract call describing the ANTI_CHEAT_CONTRACT.
+	4. **LOOK THIS ERROR MESSAGE CAREFULLY, FOLLOW THE INSTRUCTIONS TO FIX THE ISSUE.**
+</error>`,
 			})
 			continue
 		}

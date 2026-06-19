@@ -70,14 +70,6 @@ func checkAntiCheat(ctx context.Context, h agentHandle, gctx GameContext, calls 
 	if !hasAuditedAction {
 		return AntiCheatVerdict{Verdict: "allow", Reason: "no side-effect tools"}, true, ""
 	}
-	if !hasNonEmptyContract(calls) {
-		verdict := AntiCheatVerdict{
-			Verdict: "must_fix",
-			Reason:  "missing_contract",
-			Message: `"回答中缺少 contract 调用, 请仔细查阅 contract工具, 本消息无效, 系统已拒绝并登记审计。副作用工具必须伴随 contract 工具"`,
-		}
-		return verdict, false, rejectMessageFromAntiCheat(verdict)
-	}
 	if !h.isEnabled() {
 		return AntiCheatVerdict{Verdict: "allow", Reason: "anti-cheat disabled"}, true, ""
 	}
@@ -109,15 +101,6 @@ func filterAntiCheatCalls(calls []ToolCall) ([]ToolCall, bool) {
 		}
 	}
 	return filtered, hasSideEffectAction
-}
-
-func hasNonEmptyContract(calls []ToolCall) bool {
-	for _, call := range calls {
-		if call.Action == ToolContract && strings.TrimSpace(call.Contract) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 func buildAntiCheatPrompt(gctx GameContext, calls []ToolCall, tempNPCs []models.SessionNPC) string {
