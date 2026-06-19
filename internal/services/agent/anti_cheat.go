@@ -74,7 +74,7 @@ func checkAntiCheat(ctx context.Context, h agentHandle, gctx GameContext, calls 
 		verdict := AntiCheatVerdict{
 			Verdict: "must_fix",
 			Reason:  "missing_contract",
-			Message: `"回答中缺少 contract 调用, 请仔细查阅相关schemes, 本消息无效, 系统已拒绝并登记审计"`,
+			Message: `"回答中缺少 contract 调用, 请仔细查阅 contract工具, 本消息无效, 系统已拒绝并登记审计。副作用工具必须伴随 contract 工具"`,
 		}
 		return verdict, false, rejectMessageFromAntiCheat(verdict)
 	}
@@ -162,5 +162,5 @@ func buildAntiCheatPrompt(gctx GameContext, calls []ToolCall, tempNPCs []models.
 }
 
 func rejectMessageFromAntiCheat(verdict AntiCheatVerdict) string {
-	return fmt.Sprintf("SYSTEM REJECT: anti_cheat verdict=%s reason=%s message=%s", verdict.Verdict, verdict.Reason, verdict.Message)
+	return fmt.Sprintf("SYSTEM REJECT: verdict: %s reason: %s message: %s", verdict.Verdict, verdict.Reason, verdict.Message)
 }
