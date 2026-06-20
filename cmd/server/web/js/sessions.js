@@ -35,7 +35,13 @@ window.COC.sessions = {
                     },
 
                     async createSession() {
-                        if (!this.sessionForm.name || !this.sessionForm.scenario_id) return;
+                        if (!this.sessionForm.scenario_id) return;
+                        // NOTE: 默认用剧本名作为房间名
+                        if (!this.sessionForm.name) {
+                            const sc = this.scenarioList.find(s => s.id === this.sessionForm.scenario_id);
+                            this.sessionForm.name = sc?.name || '';
+                        }
+                        if (!this.sessionForm.name) return;
                         this.loading = true;
                         try {
                             const s = await this.api('POST', '/api/sessions', this.sessionForm);

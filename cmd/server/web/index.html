@@ -1123,8 +1123,8 @@
                         class="text-amber-800 hover:text-amber-400 text-xl leading-none">✕</button>
                 </div>
                 <div class="space-y-3">
-                    <input x-model="sessionForm.name" placeholder="房间名称 *" class="inp" />
-                    <select x-model.number="sessionForm.scenario_id" class="inp">
+                    <input x-model="sessionForm.name" placeholder="房间名称（默认使用剧本名）" class="inp" />
+                    <select x-model.number="sessionForm.scenario_id" @change="sessionForm.name = scenarioList.find(s => s.id === sessionForm.scenario_id)?.name || sessionForm.name" class="inp">
                         <option value="">选择剧本 *</option>
                         <template x-for="s in scenarioList" :key="s.id">
                             <option :value="s.id" x-text="s.name + ' (' + s.min_players + '-' + s.max_players + '人)'">
@@ -1148,7 +1148,7 @@
                         <div>
                             <label class="text-xs text-amber-800 mb-1 block"
                                 style="font-family:system-ui">密码（可选）</label>
-                            <input x-model="sessionForm.password" type="password" placeholder="留空则公开" class="inp" />
+                            <input x-model="sessionForm.password" type="text" placeholder="留空则公开" class="inp" />
                         </div>
                     </div>
                     <div class="flex gap-2 pt-1">
@@ -1559,7 +1559,7 @@
                             <option :value="c.id" x-text="c.name + ' (' + (c.occupation||'未知职业') + ')'"></option>
                         </template>
                     </select>
-                    <input x-show="joinTargetSession?.has_password" x-model="joinForm.password" type="password"
+                    <input x-show="joinTargetSession?.has_password" x-model="joinForm.password" type="text"
                         placeholder="房间密码" class="inp" />
                     <div class="flex gap-2 pt-1">
                         <button @click="modal=null" class="btn btn-ghost flex-1">取消</button>
