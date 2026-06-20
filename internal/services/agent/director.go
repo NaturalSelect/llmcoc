@@ -166,7 +166,7 @@ const kpSystemPrompt = `
 			<call_example>{"action":"manage_relation","character_name":"角色名","operate":"add|remove","relation":{"name":"条目名","relationship":"关系类型","note":"备注(种族、具体关系、态度、NPC属性等其他信息)"}, "reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool name="manage_asset" sideeffect="true" endTheTurn="false">
-			<description>管理调查员资产(manage_asset，新增/删除/更新)。资产指调查员拥有或控制的稳定资产，如房产、载具、存款/债务、重要藏品、长期装备来源等；不要把一次性临时物品放这里，临时物品仍用inventory。
+			<description>管理调查员资产(manage_asset，新增/删除/更新)。资产指调查员拥有或控制的稳定资产，如房产、金融资产、公司；不要把一次性临时物品放这里，临时物品仍用inventory。
 operate=add时，同名资产会更新；operate=remove时按asset.name删除。asset.note应写明资产状态、来源或限制，避免只写空泛名称。</description>
 			<call_example>{"action":"manage_asset","character_name":"角色名","operate":"add|remove","asset":{"name":"资产名","category":"类别","note":"备注(状态、来源、限制等)"}, "reason":"描述变更原因"}</call_example>
 		</tool>
