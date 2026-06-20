@@ -250,6 +250,8 @@ func main() {
 		// Lawyer cache management
 		admin.GET("/cache/stats", handlers.AdminGetCacheStats)
 		admin.DELETE("/cache", handlers.AdminClearCache)
+		admin.GET("/cache/keys", handlers.AdminListCacheKeys)
+		admin.DELETE("/cache/entry", handlers.AdminDeleteCacheEntry)
 		// Ban management
 		admin.PUT("/users/:id/ban", handlers.AdminBanUser)
 		admin.PUT("/users/:id/unban", handlers.AdminUnbanUser)

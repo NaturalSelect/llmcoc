@@ -437,3 +437,45 @@ func ClearLawyerCacheAll() {
 	lawyerCache.Clear()
 	lawyerCache.ResetStats()
 }
+
+// DeleteLawyerCacheEntry removes a single cached entry by key.
+// Returns true if the key existed and was deleted.
+func DeleteLawyerCacheEntry(key string) bool {
+	return lawyerCache.Delete(key)
+}
+
+// ListLawyerCacheKeys returns all cache keys.
+func ListLawyerCacheKeys() []string {
+	return lawyerCache.ListKeys()
+}
+
+// CacheKeysResult holds paginated cache key listing results.
+type CacheKeysResult struct {
+	Keys       []string `json:"keys"`
+	Total      int      `json:"total"`
+	Page       int      `json:"page"`
+	PageSize   int      `json:"page_size"`
+	TotalPages int      `json:"total_pages"`
+}
+
+// ListLawyerCacheKeysPaginated returns a sorted page of cache keys.
+func ListLawyerCacheKeysPaginated(page, pageSize int) CacheKeysResult {
+	keys, total := lawyerCache.ListKeysPaginated(page, pageSize)
+	totalPages := 1
+	if pageSize > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if keys == nil {
+		keys = []string{}
+	}
+	return CacheKeysResult{
+		Keys:       keys,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+	}
+}

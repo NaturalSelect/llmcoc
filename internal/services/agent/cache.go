@@ -154,6 +154,22 @@ func (lc *LawyerCache) evictLocked() {
 	lc.curBytes -= node.size
 }
 
+// Delete removes a single entry by key. Returns true if the key existed.
+func (lc *LawyerCache) Delete(key string) bool {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+
+	elem, exists := lc.cache[key]
+	if !exists {
+		return false
+	}
+	lc.list.Remove(elem)
+	node := elem.Value.(*cacheNode)
+	delete(lc.cache, node.key)
+	lc.curBytes -= node.size
+	return true
+}
+
 // Clear removes all entries from the cache.
 func (lc *LawyerCache) Clear() {
 	lc.mu.Lock()
@@ -264,6 +280,42 @@ func (lc *LawyerCache) ListKeys() []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// ListKeysPaginated returns a sorted page of cache keys and the total count.
+// page and pageSize are 1-based; returns empty slice if out of range.
+func (lc *LawyerCache) ListKeysPaginated(page, pageSize int) (keys []string, total int) {
+	lc.mu.RLock()
+	defer lc.mu.RUnlock()
+
+	total = len(lc.cache)
+	if page < 1 || pageSize < 1 {
+		return
+	}
+	all := make([]string, 0, total)
+	for k := range lc.cache {
+		all = append(all, k)
+	}
+	sortStrings(all)
+	start := (page - 1) * pageSize
+	if start >= total {
+		return
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	keys = all[start:end]
+	return
+}
+
+// sortStrings sorts a string slice in ascending order via insertion sort.
+func sortStrings(a []string) {
+	for i := 1; i < len(a); i++ {
+		for j := i; j > 0 && a[j-1] > a[j]; j-- {
+			a[j-1], a[j] = a[j], a[j-1]
+		}
+	}
 }
 
 // CacheMatch is one result returned by Search.

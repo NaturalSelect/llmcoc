@@ -5,7 +5,7 @@
                     x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'settings',label:'系统设置'},{id:'cache',label:'规则缓存'}]"
                     :key="t.id">
                     <button
-                        @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems(); if (t.id === 'cache') loadCacheStats(); if (t.id === 'scenarios') loadAdminScenarios()"
+                        @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems(); if (t.id === 'cache') { loadCacheStats(); loadCacheKeys(); } if (t.id === 'scenarios') loadAdminScenarios()"
                         class="tab" :class="adminTab===t.id?'active':''" x-text="t.label"></button>
                 </template>
             </div>
@@ -475,6 +475,35 @@
                                 <div class="h-1.5 rounded-full" style="background:#4a3318"
                                     :style="'width:' + (cacheStats ? Math.min(100, (cacheStats.used_bytes / cacheStats.max_bytes) * 100) : 0) + '%'">
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Cache key list & single-entry delete -->
+                <div class="card rounded p-5 max-w-xl">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">缓存条目列表</h3>
+                        <button @click="loadCacheKeys()" class="btn btn-ghost text-xs">刷新</button>
+                    </div>
+                    <div x-show="cacheKeyTotal === 0" class="text-amber-900 text-sm" style="font-family:system-ui">暂无缓存条目</div>
+                    <div x-show="cacheKeyTotal > 0" class="space-y-1">
+                        <template x-for="key in cacheKeys" :key="key">
+                            <div class="flex items-center justify-between rounded px-3 py-1.5" style="background:#141210;border:1px solid #252018">
+                                <span class="text-xs truncate mr-2" style="font-family:system-ui;color:#b0a080" x-text="key"></span>
+                                <button @click="deleteCacheEntry(key)" class="btn btn-red text-xs flex-shrink-0" style="padding:2px 8px">删除</button>
+                            </div>
+                        </template>
+                        <!-- Pagination -->
+                        <div class="flex items-center justify-between mt-3 pt-3" style="border-top:1px solid #252018">
+                            <span class="text-xs" style="font-family:system-ui;color:#7a6a50"
+                                x-text="cacheKeyTotal + ' 条 · 第 ' + cacheKeyPage + '/' + cacheKeyTotalPages + ' 页'"></span>
+                            <div class="flex gap-1">
+                                <button @click="prevCacheKeyPage()" class="btn btn-ghost text-xs"
+                                    :disabled="cacheKeyPage <= 1"
+                                    :style="cacheKeyPage <= 1 ? 'opacity:0.4;cursor:default' : ''">上一页</button>
+                                <button @click="nextCacheKeyPage()" class="btn btn-ghost text-xs"
+                                    :disabled="cacheKeyPage >= cacheKeyTotalPages"
+                                    :style="cacheKeyPage >= cacheKeyTotalPages ? 'opacity:0.4;cursor:default' : ''">下一页</button>
                             </div>
                         </div>
                     </div>

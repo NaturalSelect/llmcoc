@@ -269,6 +269,42 @@ func AdminClearCache(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "缓存已清空"})
 }
 
+// AdminListCacheKeys handles GET /admin/cache/keys.
+// Returns paginated cache keys for admin browsing.
+// Query params: page (default 1), page_size (default 20, max 100).
+func AdminListCacheKeys(c *gin.Context) {
+	page, ok := parsePositiveIntQuery(c, "page", 1)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be a positive integer"})
+		return
+	}
+	pageSize, ok := parsePositiveIntQuery(c, "page_size", 20)
+	if !ok || pageSize > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be a positive integer no greater than 100"})
+		return
+	}
+	result := agent.ListLawyerCacheKeysPaginated(page, pageSize)
+	c.JSON(http.StatusOK, result)
+}
+
+// AdminDeleteCacheEntry handles DELETE /admin/cache/entry.
+// Deletes a single cache entry by key (passed as query param).
+func AdminDeleteCacheEntry(c *gin.Context) {
+	adminID := c.GetUint("user_id")
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 key 参数"})
+		return
+	}
+	deleted := agent.DeleteLawyerCacheEntry(key)
+	if !deleted {
+		c.JSON(http.StatusNotFound, gin.H{"error": "缓存条目不存在"})
+		return
+	}
+	log.Printf("[admin] delete_cache_entry admin_id=%d key=%q", adminID, key)
+	c.JSON(http.StatusOK, gin.H{"message": "缓存条目已删除", "key": key})
+}
+
 // AdminBanUser handles PUT /admin/users/:id/ban.
 func AdminBanUser(c *gin.Context) {
 	adminID := c.GetUint("user_id")

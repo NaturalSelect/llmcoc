@@ -8,7 +8,51 @@ window.COC.admin = {
                         try {
                             await this.api('DELETE', '/api/admin/cache');
                             this.showToast('缓存已清空');
-                            await this.loadCacheStats();
+                            await Promise.all([this.loadCacheStats(), this.loadCacheKeys()]);
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+                    async loadCacheKeys(page) {
+                        const nextPage = Math.max(1, Number(page || this.cacheKeyPage || 1));
+                        const pageSize = Math.max(1, Number(this.cacheKeyPageSize || 20));
+                        try {
+                            const resp = await this.api('GET', `/api/admin/cache/keys?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+                            if (Array.isArray(resp)) {
+                                // backward compat
+                                this.cacheKeys = (resp || []).sort();
+                                this.cacheKeyPage = 1;
+                                this.cacheKeyTotal = this.cacheKeys.length;
+                                this.cacheKeyTotalPages = 1;
+                            } else {
+                                this.cacheKeys = resp?.keys || [];
+                                this.cacheKeyPage = Math.max(1, Number(resp?.page || nextPage));
+                                this.cacheKeyPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                                this.cacheKeyTotal = Math.max(0, Number(resp?.total || 0));
+                                this.cacheKeyTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                            }
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+                    async setCacheKeyPage(page) {
+                        const totalPages = Math.max(1, Number(this.cacheKeyTotalPages || 1));
+                        const nextPage = Math.min(Math.max(1, Number(page || 1)), totalPages);
+                        await this.loadCacheKeys(nextPage);
+                    },
+                    async prevCacheKeyPage() {
+                        await this.setCacheKeyPage(this.cacheKeyPage - 1);
+                    },
+                    async nextCacheKeyPage() {
+                        await this.setCacheKeyPage(this.cacheKeyPage + 1);
+                    },
+                    async deleteCacheEntry(key) {
+                        if (!confirm('确认删除缓存条目：' + key + '？')) return;
+                        try {
+                            await this.api('DELETE', '/api/admin/cache/entry?key=' + encodeURIComponent(key));
+                            this.showToast('条目已删除');
+                            // 若当前页只剩1条且不是第1页，回退一页
+                            if (this.cacheKeys.length <= 1 && this.cacheKeyPage > 1) {
+                                await Promise.all([this.loadCacheStats(), this.loadCacheKeys(this.cacheKeyPage - 1)]);
+                            } else {
+                                await Promise.all([this.loadCacheStats(), this.loadCacheKeys()]);
+                            }
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
                     async loadAdminProviders() { this.adminProviders = (await this.api('GET', '/api/admin/config/providers')) || []; },
