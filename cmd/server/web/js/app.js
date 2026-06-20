@@ -34,7 +34,7 @@ window.COC.core = function() {
                     regenningBackstory: false,
                     regenningTraits: false,
                     charForm: { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', residence: '', backstory: '', appearance: '', traits: '', background_prompt: '' },
-                    createCharMode: 'quick',
+                    createCharMode: 'ai',
                     manualDraft: null,
                     manualStep: 1,
                     manualSkillDefaults: {},

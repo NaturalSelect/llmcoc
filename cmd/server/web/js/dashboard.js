@@ -7,7 +7,7 @@ window.COC.dashboard = {
                     // Characters
                     // ══════════════════════════════════════════════════════════════════════
                     openCreateChar() {
-                        this.createCharMode = 'quick';
+                        this.createCharMode = 'ai';
                         this.manualStep = 1;
                         this.manualDraft = null;
                         this.manualSkillDefaults = {};
@@ -15,10 +15,10 @@ window.COC.dashboard = {
                         this.manualSkillBudget = { occupation: 0, interest: 0, total: 0 };
                         this.manualSkillNames = [];
                         this.charForm = { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', residence: '', backstory: '', appearance: '', traits: '', background_prompt: '' };
+                        this.genForm = { name: '', race: '人类', gender: '', age: '', occupation: '', era: '', background: '' };
                         this.loadSkillDefaults().catch(() => {});
                         this.modal = 'createChar';
                     },
-                    openGenerateChar() { this.genForm = { name: '', race: '人类', gender: '', age: '', occupation: '', era: '', background: '' }; this.modal = 'generateChar'; },
                     openCharDetail(c) { this.editChar = c; this.inventoryInput = ''; this.modal = 'charDetail'; },
                     openSessionPlayerCharDetail(player) {
                         if (!player?.character_card) {
@@ -39,17 +39,6 @@ window.COC.dashboard = {
                             return;
                         }
                         this.showToast('未找到当前房间绑定的人物卡', 'error');
-                    },
-
-                    async createChar() {
-                        if (!this.charForm.name.trim()) return;
-                        this.loading = true;
-                        try {
-                            const c = await this.api('POST', '/api/characters', this.charForm);
-                            this.characters.push(c); this.modal = null;
-                            await this.loadMe(); this.showToast('人物卡创建成功！');
-                        } catch (e) { this.showToast(e.message, 'error'); }
-                        this.loading = false;
                     },
 
                     async loadSkillDefaults() {

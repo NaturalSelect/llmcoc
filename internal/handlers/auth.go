@@ -29,7 +29,7 @@ type LoginReq struct {
 func Register(c *gin.Context) {
 	var req RegisterReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写完整的注册信息"})
 		return
 	}
 	log.Printf("[register] username=%q email=%q", req.Username, req.Email)
@@ -104,7 +104,7 @@ func Register(c *gin.Context) {
 func Login(c *gin.Context) {
 	var req LoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写完整的登录信息"})
 		return
 	}
 	log.Printf("[login] username=%q", req.Username)

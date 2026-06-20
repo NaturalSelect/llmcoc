@@ -53,8 +53,10 @@
                 </button>
             </div>
 
-            <p x-show="authError" class="mt-3 text-red-400 text-xs text-center" style="font-family:system-ui"
-                x-text="authError"></p>
+            <div x-show="authError" x-transition class="mt-3 rounded px-3 py-2 text-sm text-center"
+                style="font-family:system-ui; background:#2d0d0d; border:1px solid #4a1d1d; color:#e07070;">
+                <span x-text="authError"></span>
+            </div>
         </div>
     </div>
 
@@ -94,10 +96,7 @@
                     <div class="lg:col-span-2">
                         <div class="flex items-center justify-between mb-4">
                             <h2 class="text-lg font-bold text-amber-100">我的调查员</h2>
-                            <div class="flex gap-2">
-                                <button @click="openCreateChar()" class="btn btn-ghost">+ 创建</button>
-                                <button @click="openGenerateChar()" class="btn btn-amber">✨ AI生成</button>
-                            </div>
+                            <button @click="openCreateChar()" class="btn btn-amber">+ 创建角色</button>
                         </div>
 
                         <div x-show="characters.length === 0" class="card rounded p-8 text-center text-amber-900">
@@ -971,43 +970,13 @@
                 </div>
 
                 <div class="flex gap-1 mb-4 border-b border-[#252018]" style="font-family:system-ui">
-                    <button @click="createCharMode='quick'" class="tab text-sm px-4 py-1.5"
-                        :class="createCharMode==='quick'?'active':''">快速创建</button>
                     <button @click="createCharMode='manual'; manualStep=manualDraft?2:1; loadSkillDefaults().catch(()=>{})" class="tab text-sm px-4 py-1.5"
                         :class="createCharMode==='manual'?'active':''">规则车卡</button>
+                    <button @click="createCharMode='ai'" class="tab text-sm px-4 py-1.5"
+                        :class="createCharMode==='ai'?'active':''">AI生成</button>
                 </div>
 
                 <div class="space-y-3">
-                    <div x-show="createCharMode === 'quick'" class="space-y-3">
-                    <div class="grid grid-cols-2 gap-2">
-                        <input x-model="charForm.name" placeholder="姓名 *" class="inp" />
-                    </div>
-                    <div class="grid grid-cols-3 gap-2">
-                        <input x-model.number="charForm.age" type="number" min="18" max="89" placeholder="年龄" class="inp" />
-                        <select x-model="charForm.gender" class="inp">
-                            <option value="">性别</option>
-                            <option value="男">男</option>
-                            <option value="女">女</option>
-                        </select>
-                        <input x-model="charForm.occupation" placeholder="职业" class="inp" />
-                    </div>
-                    <input x-model="charForm.birthplace" placeholder="出生地" class="inp" />
-                    <input x-model="charForm.residence" placeholder="现居地" class="inp" />
-                    <textarea x-model="charForm.backstory" placeholder="背景故事" rows="3"
-                        class="inp resize-none"></textarea>
-                    <textarea x-model="charForm.appearance" placeholder="外貌描述" rows="2"
-                        class="inp resize-none"></textarea>
-                    <textarea x-model="charForm.traits" placeholder="性格特征" rows="2" class="inp resize-none"></textarea>
-                    <p class="text-xs text-amber-800" style="font-family:system-ui">属性将按 COC7 版掷骰规则自动生成。</p>
-                    <div class="flex gap-2 pt-1">
-                        <button @click="modal=null" class="btn btn-ghost flex-1">取消</button>
-                        <button @click="createChar()" :disabled="loading" class="btn btn-amber flex-1">
-                            <span x-show="!loading">创建</span>
-                            <span x-show="loading">创建中…</span>
-                        </button>
-                    </div>
-                    </div>
-
                     <div x-show="createCharMode === 'manual'" class="space-y-4" style="font-family:system-ui">
                         <div class="flex items-center gap-2 text-xs text-amber-800">
                             <span :class="manualStep>=1?'text-amber-300':'text-amber-900'">1 年龄投掷</span>
@@ -1108,48 +1077,38 @@
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Generate character modal -->
-        <div x-show="modal === 'generateChar'" class="backdrop" @click.self="modal=null">
-            <div class="modal max-w-sm p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-lg font-bold text-amber-100">✨ AI 生成调查员</h2>
-                    <button @click="modal=null"
-                        class="text-amber-800 hover:text-amber-400 text-xl leading-none">✕</button>
-                </div>
-                <div class="space-y-3">
-                    <div class="grid grid-cols-2 gap-2">
-                        <input x-model="genForm.name" placeholder="姓名 *" class="inp" />
-                    </div>
-                    <div class="grid grid-cols-2 gap-2">
-                        <div>
-                            <label class="text-xs text-amber-800 mb-1 block" style="font-family:system-ui">性别</label>
-                            <select x-model="genForm.gender" class="inp">
-                                <option value="">请指定</option>
-                                <option value="男">男</option>
-                                <option value="女">女</option>
-                            </select>
+                    <div x-show="createCharMode === 'ai'" class="max-w-sm mx-auto space-y-3">
+                        <div class="grid grid-cols-2 gap-2">
+                            <input x-model="genForm.name" placeholder="姓名 *" class="inp" />
                         </div>
-                        <div>
-                            <label class="text-xs text-amber-800 mb-1 block" style="font-family:system-ui">年龄</label>
-                            <input x-model.number="genForm.age" type="number" min="18" max="89" placeholder="如：28"
-                                class="inp" />
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-xs text-amber-800 mb-1 block" style="font-family:system-ui">性别</label>
+                                <select x-model="genForm.gender" class="inp">
+                                    <option value="">请指定</option>
+                                    <option value="男">男</option>
+                                    <option value="女">女</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs text-amber-800 mb-1 block" style="font-family:system-ui">年龄</label>
+                                <input x-model.number="genForm.age" type="number" min="18" max="89" placeholder="如：28"
+                                    class="inp" />
+                            </div>
                         </div>
-                    </div>
-                    <input x-model="genForm.occupation" placeholder="职业（如：记者、医生、考古学家）" class="inp" />
-                    <input x-model="genForm.era" placeholder="时代（默认：1920年代）" class="inp" />
-                    <textarea x-model="genForm.background" placeholder="背景提示（可选）" rows="3"
-                        class="inp resize-none"></textarea>
-                    <div class="flex gap-2 pt-1">
-                        <button @click="modal=null" class="btn btn-ghost flex-1">取消</button>
-                        <button @click="generateChar()" :disabled="loading || !genForm.name.trim()"
-                            class="btn btn-amber flex-1">
-                            <span x-show="!loading">✨ AI 生成</span>
-                            <span x-show="loading">生成中…</span>
-                        </button>
+                        <input x-model="genForm.occupation" placeholder="职业（如：记者、医生、考古学家）" class="inp" />
+                        <input x-model="genForm.era" placeholder="时代（默认：1920年代）" class="inp" />
+                        <textarea x-model="genForm.background" placeholder="背景提示（可选）" rows="3"
+                            class="inp resize-none"></textarea>
+                        <div class="flex gap-2 pt-1">
+                            <button @click="modal=null" class="btn btn-ghost flex-1">取消</button>
+                            <button @click="generateChar()" :disabled="loading || !genForm.name.trim()"
+                                class="btn btn-amber flex-1">
+                                <span x-show="!loading">✨ AI 生成</span>
+                                <span x-show="loading">生成中…</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
