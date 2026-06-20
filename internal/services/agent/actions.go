@@ -62,6 +62,7 @@ var antiCheatSideEffectActions = map[ToolCallType]bool{
 	ToolRecordMonster:     true,
 	ToolManageSpell:       true,
 	ToolManageRelation:    true,
+	ToolManageAsset:       true,
 	ToolManageMadness:     true,
 	ToolAdvanceTime:       true,
 	ToolFoundClue:         true,
@@ -95,6 +96,7 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolRecordMonster:     true,
 	ToolManageSpell:       true,
 	ToolManageRelation:    true,
+	ToolManageAsset:       true,
 	ToolUpdateNPCCard:     true,
 	ToolManageMadness:     true,
 	ToolAdvanceTime:       true,
@@ -116,6 +118,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolRecordMonster:     recordMonsterAction{},
 	ToolManageSpell:       manageSpellAction{},
 	ToolManageRelation:    manageRelationAction{},
+	ToolManageAsset:       manageAssetAction{},
 	ToolYield:             yieldAction{},
 	ToolEndGame:           endGameAction{},
 	ToolManageMadness:     manageMadnessAction{},
@@ -308,6 +311,13 @@ type manageRelationAction struct{}
 func (manageRelationAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	result := manageSocialRelation(actx.GCtx.Session.Players, call.CharacterName, call.Operate, call.Relation)
 	return []ToolResult{{Action: ToolManageRelation, Result: result}}
+}
+
+type manageAssetAction struct{}
+
+func (manageAssetAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	result := manageAsset(actx.GCtx.Session.Players, call.CharacterName, call.Operate, call.Asset)
+	return []ToolResult{{Action: ToolManageAsset, Result: result}}
 }
 
 type updateLLMNoteAction struct{}

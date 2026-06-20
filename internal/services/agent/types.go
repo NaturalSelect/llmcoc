@@ -43,6 +43,7 @@ const (
 	ToolRecordMonster     ToolCallType = "record_monster"      // 记录已见神话存在
 	ToolManageSpell       ToolCallType = "manage_spell"        // 管理已掌握法术
 	ToolManageRelation    ToolCallType = "manage_relation"     // 管理社会关系
+	ToolManageAsset       ToolCallType = "manage_asset"        // 管理资产
 	ToolEndGame           ToolCallType = "end_game"            // 结束游戏
 	ToolManageMadness     ToolCallType = "manage_madness"      // 管理疯狂状态
 	ToolWrite             ToolCallType = "write"               // 生成叙事段落
@@ -86,6 +87,7 @@ type ToolCall struct {
 	Monster       string                 `json:"monster,omitempty"`        // record_monster: 神话存在名称
 	Spell         string                 `json:"spell,omitempty"`          // manage_spell: 法术名称
 	Relation      *models.SocialRelation `json:"relation,omitempty"`       // manage_relation: 社会关系条目
+	Asset         *models.Asset          `json:"asset,omitempty"`          // manage_asset: 资产条目
 	IsBystander   bool                   `json:"is_bystander,omitempty"`   // manage_madness trigger: 是否有旁观者
 	Direction     string                 `json:"direction,omitempty"`      // write: 叙事方向(供Writer参考)
 	TimeRounds    int                    `json:"time_rounds,omitempty"`    // advance_time: 推进的回合数

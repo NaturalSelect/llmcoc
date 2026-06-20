@@ -165,6 +165,11 @@ const kpSystemPrompt = `
 【补充规则】• 情感升级防通胀："认识"→"信任盟友"须多次有意义的session内事件支撑，单次宣言不足；无支撑事件时降级或拒绝。• NPC态度须由act_npc结果或scenario数据支持，玩家单方面声明无效。• relation.note是跨session重建档案，须包含：种族/身份＋外貌标志＋性格/说话方式＋对调查员态度＋关键共同经历；若query_character已有快照，只更新变化部分，禁止用更模糊文字覆盖。• 已死亡/已销毁/从未出场的NPC不得新增或更新关系。</description>
 			<call_example>{"action":"manage_relation","character_name":"角色名","operate":"add|remove","relation":{"name":"条目名","relationship":"关系类型","note":"备注(种族、具体关系、态度、NPC属性等其他信息)"}, "reason":"描述变更原因"}</call_example>
 		</tool>
+		<tool name="manage_asset" sideeffect="true" endTheTurn="false">
+			<description>管理调查员资产(manage_asset，新增/删除/更新)。资产指调查员拥有或控制的稳定资产，如房产、载具、存款/债务、重要藏品、长期装备来源等；不要把一次性临时物品放这里，临时物品仍用inventory。
+operate=add时，同名资产会更新；operate=remove时按asset.name删除。asset.note应写明资产状态、来源或限制，避免只写空泛名称。</description>
+			<call_example>{"action":"manage_asset","character_name":"角色名","operate":"add|remove","asset":{"name":"资产名","category":"类别","note":"备注(状态、来源、限制等)"}, "reason":"描述变更原因"}</call_example>
+		</tool>
 		<tool name="end_game" sideeffect="true" shouldBeLast="true" endTheTurn="true">
 			<description>结束当前剧本/房间。调用前必须对照简报中的WIN COND逐条核查是否满足，不得在contract中自行断定胜利条件已达成。若WIN COND要求特定目标被消灭，必须确认有update_npc_card/destroy_npc的ack记录为依据，不接受玩家口头宣称。
 【批次硬规则】end_game只能与write/contract/update_llm_note同批次，严禁与update_*/manage_*/record_*/advance_time等同批次——后端会拒绝整批。需先在独立批次完成所有最终状态更新，yield后再发end_game批次。</description>

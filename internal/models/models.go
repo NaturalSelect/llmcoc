@@ -119,6 +119,12 @@ type SocialRelation struct {
 	Note         string `json:"note"`
 }
 
+type Asset struct {
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Note     string `json:"note"`
+}
+
 // NOTE: CharacterCard represents a player's investigator, containing all their stats, skills, inventory, and current state.
 type CharacterCard struct {
 	ID              uint                        `gorm:"primaryKey;autoIncrement" json:"id"`
@@ -137,6 +143,7 @@ type CharacterCard struct {
 	Traits          string                      `gorm:"type:text" json:"traits"`
 	Inventory       JSONField[[]string]         `gorm:"type:text" json:"inventory"`
 	SocialRelations JSONField[[]SocialRelation] `gorm:"type:text" json:"social_relations"`
+	Assets          JSONField[[]Asset]          `gorm:"type:text" json:"assets"`
 	Spells          JSONField[[]string]         `gorm:"type:text" json:"spells"`
 	SeenMonsters    JSONField[[]string]         `gorm:"type:text" json:"seen_monsters"` // 已见过的神话存在(见过的不掉SAN)
 	IsActive        bool                        `gorm:"default:true" json:"is_active"`

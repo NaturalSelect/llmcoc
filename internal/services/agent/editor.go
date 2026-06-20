@@ -268,6 +268,23 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				models.DB.Save(card)
 			}
 
+		case "assets":
+			if upd.AddValue != "" {
+				parts := strings.SplitN(upd.AddValue, "|", 3)
+				asset := models.Asset{}
+				if len(parts) >= 1 {
+					asset.Name = parts[0]
+				}
+				if len(parts) >= 2 {
+					asset.Category = parts[1]
+				}
+				if len(parts) >= 3 {
+					asset.Note = parts[2]
+				}
+				card.Assets.Data = append(card.Assets.Data, asset)
+				models.DB.Save(card)
+			}
+
 		case "race":
 			card.Race = upd.NewValue
 			if card.Race != "" && card.Race != "人类" {

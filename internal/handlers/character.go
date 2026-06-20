@@ -34,15 +34,17 @@ type CreateCharacterReq struct {
 	Traits     string                 `json:"traits"`
 	Stats      *models.CharacterStats `json:"stats"`
 	Skills     map[string]int         `json:"skills"`
+	Assets     []models.Asset         `json:"assets"`
 }
 
 type GenerateCharacterReq struct {
-	Name       string `json:"name"`
-	Age        int    `json:"age"`
-	Gender     string `json:"gender"`
-	Occupation string `json:"occupation"`
-	Background string `json:"background"`
-	Era        string `json:"era"`
+	Name       string         `json:"name"`
+	Age        int            `json:"age"`
+	Gender     string         `json:"gender"`
+	Occupation string         `json:"occupation"`
+	Background string         `json:"background"`
+	Era        string         `json:"era"`
+	Assets     []models.Asset `json:"assets"`
 }
 
 func ListCharacters(c *gin.Context) {
@@ -213,6 +215,7 @@ func CreateCharacter(c *gin.Context) {
 		Traits:     req.Traits,
 		Stats:      models.JSONField[models.CharacterStats]{Data: stats},
 		Skills:     models.JSONField[map[string]int]{Data: skills},
+		Assets:     models.JSONField[[]models.Asset]{Data: req.Assets},
 		IsActive:   true,
 	}
 
@@ -326,6 +329,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		Traits:     generated.Traits,
 		Stats:      models.JSONField[models.CharacterStats]{Data: stats},
 		Skills:     models.JSONField[map[string]int]{Data: skills},
+		Assets:     models.JSONField[[]models.Asset]{Data: req.Assets},
 		IsActive:   true,
 	}
 
@@ -435,6 +439,9 @@ func UpdateCharacter(c *gin.Context) {
 			card.Skills.Data["母语"] = card.Stats.Data.EDU
 			card.Skills.Data["闪避"] = card.Stats.Data.DEX / 2
 		}
+	}
+	if req.Assets != nil {
+		card.Assets = models.JSONField[[]models.Asset]{Data: req.Assets}
 	}
 	if err := models.DB.Save(&card).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存人物卡失败"})

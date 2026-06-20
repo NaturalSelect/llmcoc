@@ -42,6 +42,7 @@ type finalizeCharacterReq struct {
 	Appearance       string         `json:"appearance"`
 	Traits           string         `json:"traits"`
 	Skills           map[string]int `json:"skills"`
+	Assets           []models.Asset `json:"assets"`
 }
 
 type finalizedDraftData struct {
@@ -194,6 +195,7 @@ func FinalizeCharacterDraft(c *gin.Context) {
 			Traits:     traits,
 			Stats:      models.JSONField[models.CharacterStats]{Data: txPrepared.stats},
 			Skills:     models.JSONField[map[string]int]{Data: txPrepared.skills},
+			Assets:     models.JSONField[[]models.Asset]{Data: req.Assets},
 			IsActive:   true,
 		}
 		if err := tx.Create(&created).Error; err != nil {

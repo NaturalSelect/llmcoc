@@ -908,6 +908,26 @@
                         style="font-family:system-ui">—</p>
                 </div>
 
+                <div class="mb-4">
+                    <h3 class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider"
+                        style="font-family:system-ui">资产</h3>
+                    <div x-show="(editChar?.assets||[]).length" class="space-y-1.5">
+                        <template x-for="(asset, idx) in (editChar?.assets||[])" :key="idx">
+                            <div class="card rounded p-2">
+                                <p class="text-xs text-amber-300 font-bold" style="font-family:system-ui"
+                                    x-text="asset?.name || '未命名资产'"></p>
+                                <p class="text-xs text-amber-700" style="font-family:system-ui"
+                                    x-text="'类别：' + (asset?.category || '—')"></p>
+                                <p x-show="asset?.note" class="text-xs text-amber-800" style="font-family:system-ui"
+                                    x-text="asset?.note || ''">
+                                </p>
+                            </div>
+                        </template>
+                    </div>
+                    <p x-show="!(editChar?.assets||[]).length" class="text-xs text-amber-800"
+                        style="font-family:system-ui">—</p>
+                </div>
+
                 <div x-show="editChar?.backstory" class="mb-3">
                     <div class="flex items-center gap-2 mb-1">
                         <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider"

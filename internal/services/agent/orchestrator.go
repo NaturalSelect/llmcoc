@@ -525,6 +525,7 @@ func visibleActionNeedsWriter(action ToolCallType) bool {
 		ToolRecordMonster,
 		ToolManageSpell,
 		ToolManageRelation,
+		ToolManageAsset,
 		ToolManageMadness,
 		ToolAdvanceTime,
 		ToolUpdateNPCCard,
@@ -610,7 +611,7 @@ func progressToolLabel(action ToolCallType) string {
 		return "读取角色状态"
 	case ToolUpdateCharacters, ToolUpdateNPCCard, ToolUpdateLocation, ToolUpdateNPCLocation, ToolUpdateArmor:
 		return "更新角色和场景状态"
-	case ToolManageInventory, ToolManageSpell, ToolManageRelation, ToolManageMadness:
+	case ToolManageInventory, ToolManageSpell, ToolManageRelation, ToolManageAsset, ToolManageMadness:
 		return "更新角色记录"
 	case ToolRecordMonster, ToolFoundClue, ToolQueryClues:
 		return "处理线索"
@@ -1332,6 +1333,13 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			}
 			sb.WriteString("</rels>")
 		}
+		if len(card.Assets.Data) > 0 {
+			sb.WriteString("<assets>")
+			for _, a := range card.Assets.Data {
+				sb.WriteString(fmt.Sprintf(`<asset n=%q cat=%q note=%q/>`, a.Name, a.Category, a.Note))
+			}
+			sb.WriteString("</assets>")
+		}
 		if p.LLMNote != "" {
 			sb.WriteString(fmt.Sprintf("<note>%s</note>", xmlEscape(p.LLMNote)))
 		}
@@ -1797,6 +1805,47 @@ func manageSocialRelation(players []models.SessionPlayer, characterName, operate
 		return fmt.Sprintf("%s 更新社会关系:%s(%s)", card.Name, rel.Name, rel.Relationship)
 	}
 	return fmt.Sprintf("社会关系操作失败:未找到角色 %s", characterName)
+}
+
+func manageAsset(players []models.SessionPlayer, characterName, operate string, asset *models.Asset) string {
+	if characterName == "" || asset == nil || asset.Name == "" {
+		return "资产操作失败:缺少角色名或资产条目"
+	}
+	for i := range players {
+		card := &players[i].CharacterCard
+		if card.Name != characterName {
+			continue
+		}
+		list := card.Assets.Data
+		if operate == "remove" {
+			filtered := make([]models.Asset, 0, len(list))
+			for _, existing := range list {
+				if existing.Name == asset.Name {
+					continue
+				}
+				filtered = append(filtered, existing)
+			}
+			card.Assets.Data = filtered
+			models.DB.Save(card)
+			return fmt.Sprintf("%s 移除资产:%s", card.Name, asset.Name)
+		}
+
+		updated := false
+		for idx := range list {
+			if list[idx].Name == asset.Name {
+				list[idx] = *asset
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			list = append(list, *asset)
+		}
+		card.Assets.Data = list
+		models.DB.Save(card)
+		return fmt.Sprintf("%s 更新资产:%s(%s)", card.Name, asset.Name, asset.Category)
+	}
+	return fmt.Sprintf("资产操作失败:未找到角色 %s", characterName)
 }
 
 func appendUniqueString(list []string, value string) []string {

@@ -25,6 +25,10 @@ func (j JSONField[T]) Value() (driver.Value, error) {
 func (j *JSONField[T]) Scan(src any) error {
 	var bytes []byte
 	switch v := src.(type) {
+	case nil:
+		var zero T
+		j.Data = zero
+		return nil
 	case string:
 		bytes = []byte(v)
 	case []byte:

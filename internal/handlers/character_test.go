@@ -117,10 +117,18 @@ func TestCreateCharacter_Success(t *testing.T) {
 		"name":   "Investigator",
 		"age":    25,
 		"gender": "男",
+		"assets": []map[string]any{{"name": "老宅", "category": "不动产", "note": "祖宅"}},
 	}))
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp models.CharacterCard
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Assets.Data) != 1 || resp.Assets.Data[0].Name != "老宅" || resp.Assets.Data[0].Category != "不动产" {
+		t.Fatalf("assets not returned: %#v", resp.Assets.Data)
 	}
 }
 
@@ -180,7 +188,8 @@ func TestUpdateCharacter_Success(t *testing.T) {
 	r := charRouter(uid)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("PUT", fmt.Sprintf("/characters/%d", cid), map[string]any{
-		"name": "New Name",
+		"name":   "New Name",
+		"assets": []map[string]any{{"name": "古董怀表", "category": "随身物", "note": "父亲遗物"}},
 	}))
 
 	if w.Code != http.StatusOK {
@@ -190,6 +199,9 @@ func TestUpdateCharacter_Success(t *testing.T) {
 	models.DB.First(&card, cid)
 	if card.Name != "New Name" {
 		t.Errorf("name = %q, want 'New Name'", card.Name)
+	}
+	if len(card.Assets.Data) != 1 || card.Assets.Data[0].Name != "古董怀表" || card.Assets.Data[0].Note != "父亲遗物" {
+		t.Fatalf("assets not saved: %#v", card.Assets.Data)
 	}
 }
 
