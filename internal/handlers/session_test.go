@@ -15,6 +15,7 @@ import (
 	"github.com/llmcoc/server/internal/handlers/mocks"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
+	"github.com/llmcoc/server/internal/services/imagestore"
 	"go.uber.org/mock/gomock"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -391,8 +392,10 @@ func TestChatStream_Success(t *testing.T) {
 	}
 }
 
-func TestChatStream_ForwardsImageSSEAndPersistsDataURL(t *testing.T) {
+func TestChatStream_ForwardsImageSSEAndPersistsImageRef(t *testing.T) {
 	initTestDB(t)
+	restore := imagestore.SetDefaultDir(t.TempDir())
+	t.Cleanup(restore)
 	sessionID, userID := seedPlayingSession(t)
 
 	ctrl := gomock.NewController(t)
@@ -424,14 +427,22 @@ func TestChatStream_ForwardsImageSSEAndPersistsDataURL(t *testing.T) {
 	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).Last(&msg).Error; err != nil {
 		t.Fatalf("no assistant message persisted: %v", err)
 	}
-	wantImageTag := imageDataURLStartTag + "data:image/png;base64,YWJj" + imageDataURLEndTag
-	if !strings.Contains(msg.Content, wantImageTag) {
-		t.Fatalf("persisted content missing image data tag")
+	if strings.Contains(msg.Content, "data:image") || strings.Contains(msg.Content, imageDataURLStartTag) {
+		t.Fatalf("persisted content should not contain raw image data: %q", msg.Content)
+	}
+	refs := extractImageRefs(msg.Content)
+	if len(refs) != 1 || refs[0].MIME != "image/png" {
+		t.Fatalf("persisted content missing image ref: %q", msg.Content)
+	}
+	if _, err := imagestore.DefaultStore().Resolve(refs[0].Hash); err != nil {
+		t.Fatalf("stored image not found: %v", err)
 	}
 }
 
 func TestChatStream_ImageSSEAfterKPDone(t *testing.T) {
 	initTestDB(t)
+	restore := imagestore.SetDefaultDir(t.TempDir())
+	t.Cleanup(restore)
 	sessionID, userID := seedPlayingSession(t)
 
 	ctrl := gomock.NewController(t)
@@ -465,9 +476,11 @@ func TestChatStream_ImageSSEAfterKPDone(t *testing.T) {
 	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).Last(&msg).Error; err != nil {
 		t.Fatalf("no assistant message persisted: %v", err)
 	}
-	wantImageTag := imageDataURLStartTag + "data:image/png;base64,YWJj" + imageDataURLEndTag
-	if !strings.Contains(msg.Content, wantImageTag) {
-		t.Fatalf("persisted content missing image data tag")
+	if strings.Contains(msg.Content, "data:image") || strings.Contains(msg.Content, imageDataURLStartTag) {
+		t.Fatalf("persisted content should not contain raw image data: %q", msg.Content)
+	}
+	if refs := extractImageRefs(msg.Content); len(refs) != 1 {
+		t.Fatalf("persisted content missing image ref: %q", msg.Content)
 	}
 }
 
@@ -549,8 +562,10 @@ func TestSaveChatMessagesMarksWriterPending(t *testing.T) {
 	}
 }
 
-func TestUpdateAssistantMessageWriterPreservesImageDataURL(t *testing.T) {
+func TestUpdateAssistantMessageWriterPreservesImageRef(t *testing.T) {
 	initTestDB(t)
+	restore := imagestore.SetDefaultDir(t.TempDir())
+	t.Cleanup(restore)
 	sessionID, userID := seedPlayingSession(t)
 
 	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, agent.RunOutput{
@@ -565,7 +580,7 @@ func TestUpdateAssistantMessageWriterPreservesImageDataURL(t *testing.T) {
 	}
 
 	dataURL := "data:image/png;base64,YWJj"
-	if err := appendAssistantMessageImageDataURL(msg.ID, dataURL); err != nil {
+	if err := appendAssistantMessageImage(msg.ID, dataURL); err != nil {
 		t.Fatalf("append image data url: %v", err)
 	}
 	if err := updateAssistantMessageWriter(msg.ID, "你注意到锁孔边缘有新鲜划痕。", "门锁泛着冷光。"); err != nil {
@@ -579,11 +594,11 @@ func TestUpdateAssistantMessageWriterPreservesImageDataURL(t *testing.T) {
 	if strings.Contains(updated.Content, writerPendingTag) {
 		t.Fatalf("final content should remove pending marker")
 	}
-	if !strings.Contains(updated.Content, imageDataURLStartTag+dataURL+imageDataURLEndTag) {
-		t.Fatalf("final content should preserve image data tag")
+	if strings.Contains(updated.Content, dataURL) || strings.Contains(updated.Content, imageDataURLStartTag) {
+		t.Fatalf("final content should not preserve raw image data: %q", updated.Content)
 	}
-	if strings.Count(updated.Content, imageDataURLStartTag) != 1 {
-		t.Fatalf("final content should contain one image data tag")
+	if refs := extractImageRefs(updated.Content); len(refs) != 1 || refs[0].MIME != "image/png" {
+		t.Fatalf("final content should contain one image ref: %q", updated.Content)
 	}
 }
 

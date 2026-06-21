@@ -24,6 +24,7 @@ import (
 	"github.com/llmcoc/server/internal/middleware"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
+	"github.com/llmcoc/server/internal/services/imagestore"
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
@@ -114,6 +115,9 @@ func main() {
 		})
 	}
 	defer saveLawyerCache()
+	cleanupCtx, stopImageCleanup := context.WithCancel(context.Background())
+	defer stopImageCleanup()
+	imagestore.StartCleanup(cleanupCtx, imagestore.DefaultStore(), 14*24*time.Hour, 24*time.Hour)
 
 	// Create Gin engine
 	if os.Getenv("GIN_MODE") == "" {
@@ -146,6 +150,7 @@ func main() {
 
 	// ─── API routes ───────────────────────────────────────────────────────────
 	api := r.Group("/api")
+	api.GET("/images/:hash", handlers.ServeImage)
 
 	// Auth (public)
 	auth := api.Group("/auth")

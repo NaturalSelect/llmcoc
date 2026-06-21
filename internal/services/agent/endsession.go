@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"log"
+	"regexp"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -11,9 +12,11 @@ import (
 	"gorm.io/gorm"
 )
 
-const imageDataURLStartTag = "<image_data_url>"
 const imageDataURLTagOpenPrefix = "<image_data_url"
 const imageDataURLEndTag = "</image_data_url>"
+const imageRefTagOpenPrefix = "<image_ref"
+
+var imageRefTagPattern = regexp.MustCompile(`(?is)<image_ref\b[^>]*(?:/>|>\s*</image_ref>)`)
 
 // EndSessionResult bundles the evaluation and growth results from RunEndSession.
 type EndSessionResult struct {
@@ -187,8 +190,14 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 
 func stripMessageImageDataURLTags(messages []models.Message) {
 	for i := range messages {
-		messages[i].Content = stripImageDataURLTags(messages[i].Content)
+		messages[i].Content = stripInternalImageTags(messages[i].Content)
 	}
+}
+
+func stripInternalImageTags(content string) string {
+	content = stripImageDataURLTags(content)
+	content = stripImageRefTags(content)
+	return strings.TrimSpace(content)
 }
 
 func stripImageDataURLTags(content string) string {
@@ -216,4 +225,11 @@ func stripImageDataURLTags(content string) string {
 		rest = afterStart[end+len(imageDataURLEndTag):]
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func stripImageRefTags(content string) string {
+	if !strings.Contains(strings.ToLower(content), imageRefTagOpenPrefix) {
+		return strings.TrimSpace(content)
+	}
+	return strings.TrimSpace(imageRefTagPattern.ReplaceAllString(content, ""))
 }

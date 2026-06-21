@@ -488,7 +488,7 @@
                                                 <template x-if="msg.images && msg.images.length">
                                                     <div class="mt-3 grid gap-2">
                                                         <template x-for="(img, idx) in msg.images" :key="idx">
-                                                            <img :src="img" alt="KP生成的场景图" class="rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20">
+                                                            <img :src="img" alt="KP生成的场景图" loading="lazy" decoding="async" class="rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20">
                                                         </template>
                                                     </div>
                                                 </template>
@@ -529,7 +529,7 @@
                                     </p>
                                     <div x-show="imageBuffer && imageBuffer.length" class="mt-3 grid gap-2">
                                         <template x-for="(img, idx) in imageBuffer" :key="idx">
-                                            <img :src="img" alt="KP生成的场景图" class="rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20">
+                                            <img :src="img" alt="KP生成的场景图" loading="lazy" decoding="async" class="rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20">
                                         </template>
                                     </div>
                                 </div>

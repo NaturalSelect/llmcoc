@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/imagestore"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -575,6 +576,52 @@ func TestGetMessages_StripsPersistedImageTagsAndReturnsImages(t *testing.T) {
 	}
 	if !strings.Contains(stored.Content, imageDataURLStartTag+dataURL+imageDataURLEndTag) {
 		t.Fatalf("DB content should keep image data tag")
+	}
+}
+
+func TestGetMessages_ReturnsImageURLForFileBackedRef(t *testing.T) {
+	initTestDB(t)
+	restore := imagestore.SetDefaultDir(t.TempDir())
+	t.Cleanup(restore)
+	sessID, userID := seedPlayingSession(t)
+	ref, err := imagestore.DefaultStore().SaveDataURL("data:image/png;base64,YWJj")
+	if err != nil {
+		t.Fatalf("save image: %v", err)
+	}
+
+	models.DB.Create(&models.Message{
+		SessionID: sessID,
+		Role:      models.MessageRoleAssistant,
+		Content:   "灯塔门缝中透出冷光。\n" + fmt.Sprintf(`<image_ref hash="%s" mime="%s"/>`, ref.Hash, ref.MIME),
+		Username:  "KP",
+	})
+
+	r := sessionCRUDRouter(userID, "tester", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/messages", sessID), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "data:image") || strings.Contains(w.Body.String(), "image_ref") {
+		t.Fatalf("response should not contain raw image data or ref tags")
+	}
+	var msgs []struct {
+		Content string   `json:"content"`
+		Images  []string `json:"images"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&msgs); err != nil {
+		t.Fatalf("decode messages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("want 1 message, got %d", len(msgs))
+	}
+	if msgs[0].Content != "灯塔门缝中透出冷光。" {
+		t.Fatalf("content = %q", msgs[0].Content)
+	}
+	wantURL := "/api/images/" + ref.Hash
+	if len(msgs[0].Images) != 1 || msgs[0].Images[0] != wantURL {
+		t.Fatalf("images = %#v, want %q", msgs[0].Images, wantURL)
 	}
 }
 

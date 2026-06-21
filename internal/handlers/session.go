@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
+	"github.com/llmcoc/server/internal/services/imagestore"
 	"github.com/llmcoc/server/internal/services/llm"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -52,7 +54,7 @@ type messageResponse struct {
 }
 
 func newMessageResponse(msg models.Message) messageResponse {
-	images := extractImageDataURLs(msg.Content)
+	images := extractImageSources(msg.Content)
 	if images == nil {
 		images = []string{}
 	}
@@ -61,7 +63,7 @@ func newMessageResponse(msg models.Message) messageResponse {
 		SessionID: msg.SessionID,
 		UserID:    msg.UserID,
 		Role:      msg.Role,
-		Content:   stripImageDataURLTags(msg.Content),
+		Content:   stripInternalImageTags(msg.Content),
 		Username:  msg.Username,
 		CreatedAt: msg.CreatedAt,
 		Images:    images,
@@ -1027,6 +1029,10 @@ const writerPendingTag = "<writer_pending>true</writer_pending>"
 const imageDataURLStartTag = "<image_data_url>"
 const imageDataURLTagOpenPrefix = "<image_data_url"
 const imageDataURLEndTag = "</image_data_url>"
+const imageRefTagName = "image_ref"
+
+var imageRefTagPattern = regexp.MustCompile(`(?is)<image_ref\b[^>]*(?:/>|>\s*</image_ref>)`)
+var imageRefAttrPattern = regexp.MustCompile(`(?is)\b(hash|mime)\s*=\s*(?:"([^"]*)"|'([^']*)')`)
 
 const assistantMessageUpdateRetries = 3
 
@@ -1108,14 +1114,14 @@ func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext
 			}
 		}
 		if err == nil && messageID != 0 {
-			if dbErr := appendAssistantMessageImageDataURL(messageID, dataURL); dbErr != nil {
-				err = fmt.Errorf("persist painter image data: %w", dbErr)
+			if dbErr := appendAssistantMessageImage(messageID, dataURL); dbErr != nil {
+				err = fmt.Errorf("persist painter image: %w", dbErr)
 			}
 		}
 		if err != nil {
 			log.Printf("[chat] session=%d painter async finished error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
 		} else {
-			log.Printf("[chat] session=%d painter async finished success elapsed=%.0fms data_url_len=%d", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, len(dataURL))
+			log.Printf("[chat] session=%d painter async finished success elapsed=%.0fms", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000)
 		}
 		result := painterJobResult{dataURL: dataURL, err: err}
 		if ch == nil {
@@ -1154,7 +1160,7 @@ func updateAssistantMessageWriter(messageID uint, kpReply, writerText string) er
 		if err := models.DB.Select("id", "content").First(&msg, messageID).Error; err != nil {
 			return err
 		}
-		content := appendImageDataURLTags(baseContent, extractImageDataURLs(msg.Content))
+		content := appendInternalImageTags(baseContent, extractImageRefs(msg.Content), extractImageDataURLs(msg.Content))
 		if strings.TrimSpace(content) == "" {
 			return nil
 		}
@@ -1174,23 +1180,25 @@ func updateAssistantMessageWriter(messageID uint, kpReply, writerText string) er
 	return fmt.Errorf("assistant message %d content changed while updating writer", messageID)
 }
 
-func appendAssistantMessageImageDataURL(messageID uint, dataURL string) error {
+func appendAssistantMessageImage(messageID uint, dataURL string) error {
 	dataURL = strings.TrimSpace(dataURL)
 	if messageID == 0 {
 		return nil
 	}
-	if !isValidImageDataURL(dataURL) {
-		return fmt.Errorf("invalid image data URL")
+	ref, err := imagestore.DefaultStore().SaveDataURL(dataURL)
+	if err != nil {
+		return err
 	}
+	imageRef := storedImageRef{Hash: ref.Hash, MIME: ref.MIME}
 	for attempt := 0; attempt < assistantMessageUpdateRetries; attempt++ {
 		var msg models.Message
 		if err := models.DB.Select("id", "content").First(&msg, messageID).Error; err != nil {
 			return err
 		}
-		if imageDataURLExists(msg.Content, dataURL) {
+		if imageRefExists(msg.Content, imageRef.Hash) {
 			return nil
 		}
-		content := appendImageDataURLTags(msg.Content, []string{dataURL})
+		content := appendInternalImageTags(msg.Content, []storedImageRef{imageRef}, nil)
 		if content == msg.Content {
 			return nil
 		}
@@ -1211,13 +1219,77 @@ func isValidImageDataURL(dataURL string) bool {
 	return strings.HasPrefix(strings.TrimSpace(dataURL), "data:image/")
 }
 
-func imageDataURLExists(content, dataURL string) bool {
-	for _, existing := range extractImageDataURLs(content) {
-		if existing == dataURL {
+type storedImageRef struct {
+	Hash string
+	MIME string
+}
+
+func imageRefExists(content, hash string) bool {
+	hash = strings.ToLower(strings.TrimSpace(hash))
+	if !imagestore.ValidHash(hash) {
+		return false
+	}
+	for _, ref := range extractImageRefs(content) {
+		if strings.EqualFold(ref.Hash, hash) {
 			return true
 		}
 	}
 	return false
+}
+
+func extractImageSources(content string) []string {
+	var images []string
+	seen := make(map[string]bool)
+	for _, ref := range extractImageRefs(content) {
+		url := imagestore.URL(ref.Hash)
+		if !seen[url] {
+			images = append(images, url)
+			seen[url] = true
+		}
+	}
+	for _, dataURL := range extractImageDataURLs(content) {
+		if !seen[dataURL] {
+			images = append(images, dataURL)
+			seen[dataURL] = true
+		}
+	}
+	return images
+}
+
+func extractImageRefs(content string) []storedImageRef {
+	var refs []storedImageRef
+	seen := make(map[string]bool)
+	for _, tag := range imageRefTagPattern.FindAllString(content, -1) {
+		attrs := parseImageRefAttrs(tag)
+		hash := strings.ToLower(strings.TrimSpace(attrs["hash"]))
+		if !imagestore.ValidHash(hash) || seen[hash] {
+			continue
+		}
+		mime := strings.TrimSpace(attrs["mime"])
+		if normalized, _, ok := imagestore.NormalizeMIME(mime); ok {
+			mime = normalized
+		} else if mime != "" {
+			continue
+		}
+		refs = append(refs, storedImageRef{Hash: hash, MIME: mime})
+		seen[hash] = true
+	}
+	return refs
+}
+
+func parseImageRefAttrs(tag string) map[string]string {
+	attrs := make(map[string]string)
+	for _, match := range imageRefAttrPattern.FindAllStringSubmatch(tag, -1) {
+		if len(match) < 4 {
+			continue
+		}
+		value := match[2]
+		if value == "" {
+			value = match[3]
+		}
+		attrs[strings.ToLower(match[1])] = value
+	}
+	return attrs
 }
 
 func extractImageDataURLs(content string) []string {
@@ -1243,6 +1315,14 @@ func extractImageDataURLs(content string) []string {
 		}
 		rest = afterStart[end+len(imageDataURLEndTag):]
 	}
+}
+
+func stripInternalImageTags(content string) string {
+	content = stripImageDataURLTags(content)
+	if strings.Contains(strings.ToLower(content), "<"+imageRefTagName) {
+		content = imageRefTagPattern.ReplaceAllString(content, "")
+	}
+	return strings.TrimSpace(content)
 }
 
 func stripImageDataURLTags(content string) string {
@@ -1274,12 +1354,38 @@ func stripImageDataURLTags(content string) string {
 
 func stripMessageImageDataURLTags(messages []models.Message) {
 	for i := range messages {
-		messages[i].Content = stripImageDataURLTags(messages[i].Content)
+		messages[i].Content = stripInternalImageTags(messages[i].Content)
 	}
 }
 
-func appendImageDataURLTags(content string, dataURLs []string) string {
+func appendInternalImageTags(content string, refs []storedImageRef, dataURLs []string) string {
 	content = strings.TrimSpace(content)
+	seenRefs := make(map[string]bool)
+	for _, ref := range extractImageRefs(content) {
+		seenRefs[strings.ToLower(ref.Hash)] = true
+	}
+	for _, ref := range refs {
+		hash := strings.ToLower(strings.TrimSpace(ref.Hash))
+		if !imagestore.ValidHash(hash) || seenRefs[hash] {
+			continue
+		}
+		mime, _, ok := imagestore.NormalizeMIME(ref.MIME)
+		if !ok {
+			if stored, err := imagestore.DefaultStore().Resolve(hash); err == nil {
+				mime = stored.MIME
+				ok = true
+			}
+		}
+		if content != "" {
+			content += "\n"
+		}
+		if ok {
+			content += fmt.Sprintf(`<image_ref hash="%s" mime="%s"/>`, hash, mime)
+		} else {
+			content += fmt.Sprintf(`<image_ref hash="%s"/>`, hash)
+		}
+		seenRefs[hash] = true
+	}
 	seen := make(map[string]bool)
 	for _, dataURL := range extractImageDataURLs(content) {
 		seen[dataURL] = true
@@ -1287,6 +1393,18 @@ func appendImageDataURLTags(content string, dataURLs []string) string {
 	for _, dataURL := range dataURLs {
 		dataURL = strings.TrimSpace(dataURL)
 		if !isValidImageDataURL(dataURL) || seen[dataURL] {
+			continue
+		}
+		if ref, err := imagestore.DefaultStore().SaveDataURL(dataURL); err == nil {
+			legacyRef := storedImageRef{Hash: ref.Hash, MIME: ref.MIME}
+			if !seenRefs[legacyRef.Hash] {
+				if content != "" {
+					content += "\n"
+				}
+				content += fmt.Sprintf(`<image_ref hash="%s" mime="%s"/>`, legacyRef.Hash, legacyRef.MIME)
+				seenRefs[legacyRef.Hash] = true
+			}
+			seen[dataURL] = true
 			continue
 		}
 		if content != "" {

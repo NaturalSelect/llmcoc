@@ -114,7 +114,7 @@ window.COC.game = {
                                                 break;
 
                                             case 'image':
-                                                if (data && data.startsWith('data:image/')) {
+                                                if (this.isChatImageSource(data)) {
                                                     if (assistantMessageID) {
                                                         this._appendImageToMessage(assistantMessageID, data);
                                                     } else {
@@ -284,18 +284,18 @@ window.COC.game = {
                         });
                     },
 
-                    _appendImageToMessage(messageID, dataURL) {
+                    _appendImageToMessage(messageID, imageSrc) {
                         const idx = this.messages.findIndex(m => String(m.id) === String(messageID));
                         if (idx < 0) {
-                            if (!this.imageBuffer.includes(dataURL)) {
-                                this.imageBuffer.push(dataURL);
+                            if (!this.imageBuffer.includes(imageSrc)) {
+                                this.imageBuffer.push(imageSrc);
                             }
                             return;
                         }
                         const msg = this.messages[idx];
                         const images = Array.isArray(msg.images) ? [...msg.images] : [];
-                        if (!images.includes(dataURL)) {
-                            images.push(dataURL);
+                        if (!images.includes(imageSrc)) {
+                            images.push(imageSrc);
                         }
                         this.messages.splice(idx, 1, { ...msg, images });
                     },
@@ -465,9 +465,12 @@ window.COC.game = {
                         const localImages = Array.isArray(local.images) ? local.images : [];
                         const freshImages = Array.isArray(fresh.images) ? fresh.images : [];
                         const mergedImages = [...freshImages];
-                        for (const image of localImages) {
-                            if (!mergedImages.includes(image)) {
-                                mergedImages.push(image);
+                        const freshHasStoredURL = freshImages.some(image => typeof image === 'string' && image.startsWith('/api/images/'));
+                        if (!freshHasStoredURL) {
+                            for (const image of localImages) {
+                                if (!mergedImages.includes(image)) {
+                                    mergedImages.push(image);
+                                }
                             }
                         }
                         const freshWithImages = mergedImages.length > 0
@@ -512,7 +515,7 @@ window.COC.game = {
                         const images = [];
                         if (Array.isArray(message.images)) {
                             for (const image of message.images) {
-                                if (typeof image === 'string' && image.startsWith('data:image/') && !images.includes(image)) {
+                                if (this.isChatImageSource(image) && !images.includes(image)) {
                                     images.push(image);
                                 }
                             }
@@ -577,11 +580,16 @@ window.COC.game = {
                         let match;
                         while ((match = re.exec(String(content || ''))) !== null) {
                             const dataURL = String(match[1] || '').trim();
-                            if (dataURL.startsWith('data:image/') && !images.includes(dataURL)) {
+                            if (this.isChatImageSource(dataURL) && !images.includes(dataURL)) {
                                 images.push(dataURL);
                             }
                         }
                         return images;
+                    },
+
+                    isChatImageSource(src) {
+                        if (typeof src !== 'string') return false;
+                        return src.startsWith('data:image/') || src.startsWith('/api/images/');
                     },
 
                     stripAckContent(content) {
@@ -590,10 +598,12 @@ window.COC.game = {
                             !content.includes('<direction') &&
                             !content.includes('<response_options') &&
                             !content.includes('<writer_pending') &&
-                            !content.includes('<image_data_url')) {
+                            !content.includes('<image_data_url') &&
+                            !content.includes('<image_ref')) {
                             return content.trim();
                         }
                         return content
+                            .replace(/<image_ref\b[^>]*(?:\/>|>\s*<\/image_ref>)/gi, '')
                             .replace(/<(ack|direction|response_options|writer_pending|image_data_url)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
                             .replace(/<(ack|direction|response_options|writer_pending|image_data_url)\b[^>]*>[\s\S]*$/gi, '')
                             .trim();

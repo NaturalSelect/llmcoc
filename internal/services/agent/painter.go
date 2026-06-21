@@ -25,7 +25,7 @@ var animeImageStyleRequirements = []string{
 	"3D render",
 }
 
-const animeImageStylePrompt = "anime style, 2D illustration, Japanese animation aesthetic, clean line art, expressive lighting, atmospheric horror, high detail, avoid photorealism, realistic photography, 3D render"
+const animeImageStylePrompt = "anime style, 2D illustration, Japanese animation aesthetic, clean line art, expressive lighting, atmospheric horror, high detail, 使用简约的日式动漫番剧画风，画风清新干净，线条清晰，带有手绘风，一张二次元氛围感CG，角色保留参考图中的核心外观标识。修改角色的动作使其与画面相符合。 avoid photorealism, realistic photography, 3D render"
 
 // NOTE: Painter统一追加二次元画风,防止普通场景提示词绕过图片风格设定。
 func animeStyledImagePrompt(prompt string) string {
@@ -155,7 +155,7 @@ func enrichImagePromptWithWriterCharacterDescriptions(ctx context.Context, sessi
 		debugf("Painter", "session=%d character visual description skipped matched_character_count=%d err=%v", sessionID, len(cards), fmt.Errorf("writer agent unavailable"))
 		return prompt, len(cards)
 	}
-	description, err := writeImagePromptCharacterVisualDescription(ctx, writerHandle, cards)
+	description, err := writeImagePromptCharacterVisualDescription(ctx, writerHandle, prompt, cards)
 	if err != nil {
 		debugf("Painter", "session=%d character visual description skipped matched_character_count=%d err=%v", sessionID, len(cards), err)
 		return prompt, len(cards)
@@ -196,13 +196,13 @@ Focus on visible body/face/hair/clothing/posture and concrete visual cues; inven
 You only generate a pure appearance description, without any other attributes.
 `
 
-func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHandle, cards []models.CharacterCard) (string, error) {
+func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHandle, scenePrompt string, cards []models.CharacterCard) (string, error) {
 	if !h.isEnabled() {
 		return "", fmt.Errorf("writer agent unavailable")
 	}
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(imagePromptCharacterVisualSystemPrompt)},
-		{Role: "user", Content: buildImagePromptCharacterVisualUserPrompt(cards)},
+		{Role: "user", Content: buildImagePromptCharacterVisualUserPrompt(scenePrompt, cards)},
 	}
 	resp, err := h.provider.Chat(ctx, msgs)
 	if err != nil {
@@ -216,9 +216,12 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 	return resp, nil
 }
 
-func buildImagePromptCharacterVisualUserPrompt(cards []models.CharacterCard) string {
+func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []models.CharacterCard) string {
 	var sb strings.Builder
-	sb.WriteString("Task: Convert the following player character card data into concise English visual descriptions for image generation. Use appearance as the main source; inventory is optional visible-item hints only, not a carried list. Omit item properties, mythos/lore names, rules, titles, hidden inscriptions, parenthetical metadata, and anything not clearly visible/worn/held.\n\n")
+	sb.WriteString("Task: Convert the following player character card data into concise English visual descriptions for image generation. Use the scene image prompt to choose which appearance features and character actions matter for the current picture. Use appearance as the main source; inventory is optional visible-item hints only, not a carried list. Omit item properties, mythos/lore names, rules, titles, hidden inscriptions, parenthetical metadata, and anything not clearly visible/worn/held.\n\n")
+	sb.WriteString("Scene image prompt: ")
+	sb.WriteString(compactPromptText(scenePrompt))
+	sb.WriteString("\n\n")
 	for i, card := range cards {
 		if i > 0 {
 			sb.WriteString("\n")
