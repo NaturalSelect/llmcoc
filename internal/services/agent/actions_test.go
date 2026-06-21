@@ -1,15 +1,46 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+type fakeImageProvider struct {
+	fakeProvider
+	base64Data string
+	mimeType   string
+	prompt     string
+	size       string
+	err        error
+	called     atomic.Bool
+	block      <-chan struct{}
+}
+
+func (f *fakeImageProvider) GenerateImage(ctx context.Context, prompt string, size string) (string, string, error) {
+	f.called.Store(true)
+	f.prompt = prompt
+	f.size = size
+	if f.block != nil {
+		select {
+		case <-f.block:
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		}
+	}
+	if f.err != nil {
+		return "", "", f.err
+	}
+	return f.base64Data, f.mimeType, nil
+}
 
 func TestResponseActionFormatsOptionsAndPayload(t *testing.T) {
 	hasEnd := false
@@ -57,6 +88,108 @@ func TestFallbackWriterDirectionUsesVisibleKPReply(t *testing.T) {
 	}
 	if strings.Contains(direction, "response_options") || strings.Contains(direction, "<ack>") {
 		t.Fatalf("direction should strip internal tags: %q", direction)
+	}
+}
+
+func TestToolCallUnmarshalPreservesImagePrompt(t *testing.T) {
+	raw := `[{"action":"generate_image","image_prompt":"A foggy lighthouse at night"}]`
+	var calls []ToolCall
+	if err := json.Unmarshal([]byte(raw), &calls); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Action != ToolGenerateImage || calls[0].ImagePrompt != "A foggy lighthouse at night" {
+		t.Fatalf("image prompt not preserved: %+v", calls[0])
+	}
+}
+
+func TestGenerateImageActionQueuesPromptWithoutCallingGenerator(t *testing.T) {
+	provider := &fakeImageProvider{base64Data: "YWJj", mimeType: "image/jpeg"}
+	var prompts []string
+	actx := ActionContext{
+		Ctx:  context.Background(),
+		GCtx: &GameContext{},
+		Handles: map[models.AgentRole]agentHandle{
+			models.AgentRolePainter: {
+				provider: provider,
+				enabled:  true,
+				config:   &models.AgentConfig{IsActive: true},
+			},
+		},
+		PendingImages: &prompts,
+	}
+
+	results := generateImageAction{}.Execute(ToolCall{ImagePrompt: "A foggy lighthouse"}, actx)
+	if provider.called.Load() || provider.prompt != "" || provider.size != "" {
+		t.Fatalf("generator should not be called during KP tool execution, called=%v prompt=%q size=%q", provider.called.Load(), provider.prompt, provider.size)
+	}
+	if len(prompts) != 1 || prompts[0] != "A foggy lighthouse" {
+		t.Fatalf("queued prompts = %#v", prompts)
+	}
+	if len(results) != 1 || !strings.Contains(results[0].Result, "queued") {
+		t.Fatalf("unexpected tool result: %+v", results)
+	}
+	if strings.Contains(results[0].Result, "YWJj") || strings.Contains(results[0].Result, "data:image") {
+		t.Fatalf("tool result leaked image data: %q", results[0].Result)
+	}
+}
+
+func TestGenerateImageActionDoesNotBlockOnGenerator(t *testing.T) {
+	provider := &fakeImageProvider{block: make(chan struct{})}
+	var prompts []string
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	actx := ActionContext{
+		Ctx:  ctx,
+		GCtx: &GameContext{},
+		Handles: map[models.AgentRole]agentHandle{
+			models.AgentRolePainter: {
+				provider: provider,
+				enabled:  true,
+				config:   &models.AgentConfig{IsActive: true},
+			},
+		},
+		PendingImages: &prompts,
+	}
+
+	start := time.Now()
+	done := make(chan []ToolResult, 1)
+	go func() {
+		done <- generateImageAction{}.Execute(ToolCall{ImagePrompt: "A foggy lighthouse"}, actx)
+	}()
+	var results []ToolResult
+	select {
+	case results = <-done:
+	case <-time.After(100 * time.Millisecond):
+		cancel()
+		t.Fatal("generate_image Execute blocked on image generator")
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("generate_image Execute blocked for %v", elapsed)
+	}
+	if provider.called.Load() {
+		t.Fatal("GenerateImage must not be called by Execute")
+	}
+	if len(results) != 1 || !strings.Contains(results[0].Result, "queued") {
+		t.Fatalf("unexpected tool result: %+v", results)
+	}
+}
+
+func TestGenerateImageActionUnavailableWithoutPainter(t *testing.T) {
+	var prompts []string
+	results := generateImageAction{}.Execute(ToolCall{ImagePrompt: "A foggy lighthouse"}, ActionContext{
+		Ctx:           context.Background(),
+		GCtx:          &GameContext{},
+		Handles:       map[models.AgentRole]agentHandle{},
+		PendingImages: &prompts,
+	})
+	if len(prompts) != 0 {
+		t.Fatalf("image prompt should not be queued without painter: %#v", prompts)
+	}
+	if len(results) != 1 || !strings.Contains(results[0].Result, "unavailable") {
+		t.Fatalf("unexpected tool result: %+v", results)
 	}
 }
 

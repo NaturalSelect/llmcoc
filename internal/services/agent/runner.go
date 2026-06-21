@@ -8,6 +8,7 @@ type AgentRunner interface {
 	Run(ctx context.Context, gctx GameContext) (RunOutput, error)
 	RunWriter(ctx context.Context, gctx GameContext, direction string) (string, error)
 	RunWriterStream(ctx context.Context, gctx GameContext, direction string, onToken func(string)) (string, error)
+	RunPainter(ctx context.Context, gctx GameContext, prompt string) (string, error)
 }
 
 // DefaultRunner 使用默认agent编排实现。
@@ -23,4 +24,8 @@ func (DefaultRunner) RunWriter(ctx context.Context, gctx GameContext, direction 
 
 func (DefaultRunner) RunWriterStream(ctx context.Context, gctx GameContext, direction string, onToken func(string)) (string, error) {
 	return RunWriterStream(ctx, gctx, direction, onToken)
+}
+
+func (DefaultRunner) RunPainter(ctx context.Context, gctx GameContext, prompt string) (string, error) {
+	return RunPainter(ctx, gctx, prompt)
 }

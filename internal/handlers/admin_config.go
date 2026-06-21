@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -168,7 +169,7 @@ func AdminUpdateAgent(c *gin.Context) {
 	validRoles := map[string]bool{
 		"director": true, "writer": true, "lawyer": true, "npc": true, "evaluator": true, "growth": true,
 		"scripter": true, "architect": true, "lore_researcher": true, "encounter_designer": true, "qa_guard": true,
-		"anti_cheat": true, "parser": true,
+		"anti_cheat": true, "parser": true, "painter": true,
 	}
 	if !validRoles[role] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent 角色"})
@@ -263,30 +264,38 @@ func toFloat(v any) float64 {
 	return 0
 }
 
-// ProviderFactory abstracts llm.Provider construction so ping can be tested without real HTTP calls.
+// NOTE: ProviderFactory 抽象 llm.Provider 构造，方便 ping 测试注入替身。
 type ProviderFactory interface {
 	NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, reasoningEffort string) llm.Provider
 }
 
-// defaultProviderFactory is the production factory that calls llm.NewProviderFromConfig.
+// NOTE: defaultProviderFactory 是生产环境使用的 Provider 工厂。
 type defaultProviderFactory struct{}
 
 func (defaultProviderFactory) NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, reasoningEffort string) llm.Provider {
 	return llm.NewProviderFromConfig(cfg, modelName, maxTokens, temperature, reasoningEffort)
 }
 
-// DefaultProviderFactory is the singleton used by production handlers.
+// NOTE: DefaultProviderFactory 是生产 handler 使用的单例工厂。
 var DefaultProviderFactory ProviderFactory = defaultProviderFactory{}
 
-// AdminPingProvider sends a minimal Chat request to verify LLM connectivity.
-// POST /admin/config/providers/:id/ping
-// Body: {"model_name": "gpt-4o-mini"}  (model_name is optional)
-// The factory parameter lets tests inject a mock; pass nil to use DefaultProviderFactory.
+// NOTE: AdminPingProvider 根据请求模式测试 Provider 文本或图片模型连通性。
+// NOTE: POST /admin/config/providers/:id/ping
+// NOTE: Body: {"model_name":"gpt-4o-mini","mode":"chat|image","role":"painter"}。
 func AdminPingProvider(c *gin.Context) {
 	adminPingProviderWithFactory(c, DefaultProviderFactory)
 }
 
+type pingProviderRequest struct {
+	ModelName string `json:"model_name"`
+	Mode      string `json:"mode"`
+	Role      string `json:"role"`
+}
+
 func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
+	if factory == nil {
+		factory = DefaultProviderFactory
+	}
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	log.Printf("[admin_config] ping_provider id=%d", id)
 	var p models.LLMProviderConfig
@@ -295,10 +304,15 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 		return
 	}
 
-	var req struct {
-		ModelName string `json:"model_name"`
-	}
+	var req pingProviderRequest
 	_ = c.ShouldBindJSON(&req)
+	req.ModelName = strings.TrimSpace(req.ModelName)
+	req.Mode = strings.ToLower(strings.TrimSpace(req.Mode))
+	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
+	if req.Mode == "image" || req.Role == string(models.AgentRolePainter) {
+		adminPingImageProvider(c, factory, &p, req.ModelName)
+		return
+	}
 	if req.ModelName == "" {
 		req.ModelName = "gpt-5.4-nano"
 	}
@@ -313,9 +327,42 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 
 	if err != nil {
 		log.Printf("[admin_config] ping_provider id=%d error: %v", id, err)
-		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "mode": "chat", "error": err.Error()})
 		return
 	}
 	log.Printf("[admin_config] ping_provider ok id=%d latency_ms=%d", id, latencyMs)
-	c.JSON(http.StatusOK, gin.H{"ok": true, "latency_ms": latencyMs})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "mode": "chat", "latency_ms": latencyMs})
+}
+
+func adminPingImageProvider(c *gin.Context, factory ProviderFactory, p *models.LLMProviderConfig, modelName string) {
+	if modelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "mode": "image", "error": "请先填写模型名称"})
+		return
+	}
+
+	provider := factory.NewProvider(p, modelName, 0, 0, "none")
+	generator, ok := provider.(llm.ImageGenerator)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "mode": "image", "error": "当前 Provider 不支持图片生成接口，无法测试 Painter 图片模型"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	base64Data, _, err := generator.GenerateImage(ctx, "A simple black and white test icon", "1024x1024")
+	latencyMs := time.Since(start).Milliseconds()
+	if err != nil {
+		log.Printf("[admin_config] ping_provider image id=%d error: %v", p.ID, err)
+		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "mode": "image", "error": "图片生成测试失败: " + err.Error()})
+		return
+	}
+	if strings.TrimSpace(base64Data) == "" {
+		log.Printf("[admin_config] ping_provider image id=%d empty image data", p.ID)
+		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "mode": "image", "error": "图片生成测试未返回图片数据"})
+		return
+	}
+	log.Printf("[admin_config] ping_provider image ok id=%d latency_ms=%d", p.ID, latencyMs)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "mode": "image", "latency_ms": latencyMs})
 }

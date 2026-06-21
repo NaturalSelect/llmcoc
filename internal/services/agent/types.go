@@ -58,6 +58,7 @@ const (
 	ToolUpdateNPCLocation ToolCallType = "update_npc_location" // 更新NPC当前位置
 	ToolUpdateArmor       ToolCallType = "update_armor"        // 更新调查员护甲值
 	ToolHint              ToolCallType = "hint"                // KP写入当前场景高密度提示
+	ToolGenerateImage     ToolCallType = "generate_image"      // NOTE: 生成即时场景图片
 	ToolFoundClue         ToolCallType = "found_clue"          // 记录玩家发现的线索并注入旁白
 	ToolResponse          ToolCallType = "response"            // 结束本轮并给出回复
 	ToolYield             ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
@@ -97,6 +98,7 @@ type ToolCall struct {
 	NewLocation   string                 `json:"new_location,omitempty"`   // update_location/update_npc_location: 新位置名称
 	ArmorValue    int                    `json:"armor_value"`              // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
+	ImagePrompt   string                 `json:"image_prompt,omitempty"`   // NOTE: generate_image: 英文画图提示词
 	ClueIdx       int                    `json:"clue_idx"`                 // found_clue: 线索在剧本clues数组中的0-based索引
 	Options       []string               `json:"options,omitempty"`        // response: 推荐给玩家的可行行动
 	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
@@ -135,9 +137,10 @@ type WriterState struct {
 // RunOutput 是一次KP主流程的结构化结果。
 // KPReply 是游戏主流程输出; WriterDirection 只用于之后异步生成白字描述。
 type RunOutput struct {
-	WriterText      string // 已生成的白字描述,主要用于测试或兼容旧调用
-	WriterDirection string // Writer后续生成描述所需的导演指令
-	KPReply         string // KP对玩家的主流程回复
+	WriterText      string   // 已生成的白字描述,主要用于测试或兼容旧调用
+	WriterDirection string   // Writer后续生成描述所需的导演指令
+	KPReply         string   // KP对玩家的主流程回复
+	ImagePrompts    []string // NOTE: 本轮KP主流程排队的临时画图提示词,不持久化。
 }
 
 // ── Dice types ────────────────────────────────────────────────────────────────

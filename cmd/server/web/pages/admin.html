@@ -170,7 +170,11 @@
                                     style="font-family:system-ui">
                                     <input type="checkbox" x-model="ag.is_active" class="accent-amber-600" /> 启用
                                 </label>
-                                <button @click="saveAgent(ag)" class="btn btn-amber text-xs ml-auto">保存配置</button>
+                                <button @click="pingAgentModel(ag)"
+                                    :disabled="agentPingLoading === (ag.role + ':' + Number(ag.provider_config_id || 0))"
+                                    class="btn btn-ghost text-xs ml-auto"
+                                    x-text="agentPingLoading === (ag.role + ':' + Number(ag.provider_config_id || 0)) ? '测试中…' : '测试模型'"></button>
+                                <button @click="saveAgent(ag)" class="btn btn-amber text-xs">保存配置</button>
                             </div>
                         </div>
                     </template>

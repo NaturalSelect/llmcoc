@@ -153,6 +153,7 @@ func seedDefaultAgentConfigs() {
 		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleLawyer, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleNPC, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRolePainter, ProviderConfigID: provID, ModelName: "dall-e-3", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
 		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleEvaluator, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleGrowth, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},

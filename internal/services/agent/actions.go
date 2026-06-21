@@ -28,6 +28,7 @@ type ActionContext struct {
 	SwitchRole         *bool
 	KPNarration        *string
 	PendingWrite       *string
+	PendingImages      *[]string
 	WroteNarrative     *bool
 	Interrupt          *bool
 	DiceMsg            *string
@@ -48,6 +49,7 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolQueryClues:        true,
 	ToolQueryCharacter:    true,
 	ToolQueryNPCCard:      true,
+	ToolGenerateImage:     true,
 	ToolActNPC:            true, // returns NPC reaction that must be read before response
 }
 
@@ -82,6 +84,7 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolEndGame:           true,
 	ToolWrite:             true,
 	ToolHint:              true,
+	ToolGenerateImage:     true,
 	ToolFoundClue:         true,
 	ToolContract:          true,
 	ToolUpdateLLMNote:     true,
@@ -134,6 +137,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolUpdateNPCLocation: updateNPCLocationAction{},
 	ToolUpdateArmor:       updateArmorAction{},
 	ToolHint:              hintAction{},
+	ToolGenerateImage:     generateImageAction{},
 	ToolFoundClue:         foundClueAction{},
 	ToolResponse:          responseAction{},
 	ToolContract:          emptyAction{actionName: string(ToolContract)},

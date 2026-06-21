@@ -253,6 +253,35 @@ func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (msg 
 	return msg, nil
 }
 
+func (p *openAIProvider) GenerateImage(ctx context.Context, prompt string, size string) (string, string, error) {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return "", "", errors.New("image prompt is empty")
+	}
+	model := strings.TrimSpace(p.model)
+	if model == "" {
+		return "", "", errors.New("image model is empty")
+	}
+	if strings.TrimSpace(size) == "" {
+		size = openai.CreateImageSize1024x1024
+	}
+
+	resp, err := p.client.CreateImage(ctx, openai.ImageRequest{
+		Model:          model,
+		Prompt:         prompt,
+		N:              1,
+		Size:           size,
+		ResponseFormat: openai.CreateImageResponseFormatB64JSON,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("LLM image error: %w", err)
+	}
+	if len(resp.Data) == 0 || strings.TrimSpace(resp.Data[0].B64JSON) == "" {
+		return "", "", errors.New("LLM returned no image data")
+	}
+	return resp.Data[0].B64JSON, "image/png", nil
+}
+
 var (
 	ErrEmptyLLMResponse = errors.New("LLM returned empty response")
 )

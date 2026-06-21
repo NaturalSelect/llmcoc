@@ -799,7 +799,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		}
 	}
 	go func() {
-		// NOTE: should running in background be safe since the pipeline should respect context cancellation
+		// NOTE: 后台运行由流水线内部检查context取消,断线后仍可完成主流程落库。
 		out, err := h.Runner.Run(context.Background(), gctx)
 		resultCh <- runResult{output: out, err: err}
 	}()
@@ -896,20 +896,30 @@ loop:
 		defer close(writerClientDone)
 		writerCh = h.startWriterJob(assistantMsg.ID, gctx, output, writerClientDone)
 	}
+	var painterCh <-chan painterJobResult
+	if len(output.ImagePrompts) > 0 {
+		painterClientDone := make(chan struct{})
+		defer close(painterClientDone)
+		painterCh = h.startPainterJob(gctx, output.ImagePrompts[0], painterClientDone)
+	}
 
 	streamedWriter := output.WriterText
 	if streamedWriter != "" {
 		sendProgress("叙事正文生成中")
 		sseChunk("token", streamedWriter)
 	}
-	if writerCh != nil {
-		sendProgress("叙事正文生成中")
-	writerLoop:
-		for {
+	if writerCh != nil || painterCh != nil {
+		if writerCh != nil {
+			sendProgress("叙事正文生成中")
+		} else {
+			sendProgress("场景图像生成中")
+		}
+		for writerCh != nil || painterCh != nil {
 			select {
 			case wr, ok := <-writerCh:
 				if !ok {
-					break writerLoop
+					writerCh = nil
+					continue
 				}
 				if wr.token != "" {
 					streamedWriter += wr.token
@@ -925,7 +935,22 @@ loop:
 				if wr.err != nil {
 					log.Printf("[chat] session=%d user=%q writer async error: %v", sessionID, username, wr.err)
 				}
-				break writerLoop
+				writerCh = nil
+			case pr, ok := <-painterCh:
+				if !ok {
+					painterCh = nil
+					continue
+				}
+				if pr.err != nil {
+					log.Printf("[chat] session=%d user=%q painter async error: %v", sessionID, username, pr.err)
+					painterCh = nil
+					continue
+				}
+				if pr.dataURL != "" {
+					c.SSEvent("image", pr.dataURL)
+					c.Writer.Flush()
+				}
+				painterCh = nil
 			case <-c.Request.Context().Done():
 				return
 			}
@@ -946,7 +971,14 @@ type writerJobResult struct {
 	err   error
 }
 
+type painterJobResult struct {
+	dataURL string
+	err     error
+}
+
 const writerPendingTag = "<writer_pending>true</writer_pending>"
+
+const painterJobTimeout = 60 * time.Second
 
 func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext, output agent.RunOutput, clientDone <-chan struct{}) <-chan writerJobResult {
 	direction := strings.TrimSpace(output.WriterDirection)
@@ -984,6 +1016,44 @@ func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext,
 			log.Printf("[chat] writer message update after stream error failed: %v", dbErr)
 		}
 		send(writerJobResult{text: text, done: true, err: err})
+	}()
+	return ch
+}
+
+func (h *SessionHandlers) startPainterJob(gctx agent.GameContext, prompt string, clientDone <-chan struct{}) <-chan painterJobResult {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return nil
+	}
+	ch := make(chan painterJobResult, 1)
+	go func() {
+		defer close(ch)
+		ctx, cancel := context.WithTimeout(context.Background(), painterJobTimeout)
+		defer cancel()
+		if clientDone != nil {
+			go func() {
+				select {
+				case <-clientDone:
+					cancel()
+				case <-ctx.Done():
+				}
+			}()
+		}
+		dataURL, err := h.Runner.RunPainter(ctx, gctx, prompt)
+		if err == nil {
+			dataURL = strings.TrimSpace(dataURL)
+			if dataURL == "" || !strings.HasPrefix(dataURL, "data:image/") {
+				err = fmt.Errorf("painter returned invalid image data")
+			}
+		}
+		result := painterJobResult{dataURL: dataURL, err: err}
+		if clientDone == nil {
+			return
+		}
+		select {
+		case ch <- result:
+		case <-clientDone:
+		}
 	}()
 	return ch
 }

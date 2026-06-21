@@ -495,6 +495,7 @@ const (
 	AgentRoleGrowth    AgentRole = "growth"
 	AgentRoleLawyer    AgentRole = "lawyer"
 	AgentRoleNPC       AgentRole = "npc"
+	AgentRolePainter   AgentRole = "painter"
 	AgentRoleParser    AgentRole = "parser"
 )
 

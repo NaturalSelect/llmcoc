@@ -87,6 +87,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 		models.AgentRoleWriter,
 		models.AgentRoleLawyer,
 		models.AgentRoleNPC,
+		models.AgentRolePainter,
 	}
 	requiredRoles := map[models.AgentRole]bool{
 		models.AgentRoleDirector: true,
@@ -207,8 +208,10 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	switchRole := false
 
 	pendingWrite := ""
+	pendingImages := []string{}
 
 	diceMsg := ""
+	imageGeneratedThisTurn := false
 
 	// warnning := "YOU DONOT FOLLOW THE RULES, THIS ABUSE IS RECORDED BY MONITOR SYSTEM.\n"
 	for iter := 0; iter < MaxKpRound; iter++ {
@@ -261,6 +264,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			KPNarration:        &kpNarration,
 			Interrupt:          &interrupt,
 			PendingWrite:       &pendingWrite,
+			PendingImages:      &pendingImages,
 			WroteNarrative:     &wroteNarrative,
 			DiceMsg:            &diceMsg,
 		}
@@ -310,7 +314,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			emitProgress("KP正在修正工具调用顺序")
 			kpMsgs = append(kpMsgs, llm.ChatMessage{
 				Role:    "user",
-				Content: "<error>SYSTEM REJECT: your entire batch was rejected. response/end_game must be the ONLY action in a batch (except write/hint/introspection/contract/update_llm_note). Split into two batches: first call the result-producing tools, then after reading the results call response separately.</error>",
+				Content: "<error>SYSTEM REJECT: your entire batch was rejected. response/end_game may only share a batch with write/generate_image/hint/introspection/contract/update_llm_note. Split into two batches: first call the result-producing tools, then after reading the results call response separately.</error>",
 			})
 			continue
 		}
@@ -320,6 +324,21 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			kpMsgs = append(kpMsgs, llm.ChatMessage{
 				Role:    "user",
 				Content: "<error>SYSTEM REJECT: empty response</error>",
+			})
+			continue
+		}
+		generateImageCalls := 0
+		for _, call := range calls {
+			if call.Action == ToolGenerateImage {
+				generateImageCalls++
+			}
+		}
+		if generateImageCalls > 1 || (generateImageCalls > 0 && imageGeneratedThisTurn) {
+			debugf("KP", "session=%d iter=%d rejecting batch: generate_image over limit", sid, iter+1)
+			emitProgress("KP正在减少重复画图调用")
+			kpMsgs = append(kpMsgs, llm.ChatMessage{
+				Role:    "user",
+				Content: "<error>SYSTEM REJECT: generate_image may be called at most once per turn. Keep only the single most necessary visual moment.</error>",
 			})
 			continue
 		}
@@ -333,6 +352,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			continue
 		}
 		debugf("anti_cheat", "session=%d iter=%d allow: %s", sid, iter+1, verdict.Reason)
+		if generateImageCalls > 0 {
+			imageGeneratedThisTurn = true
+		}
 
 		// When a batch has multiple check_rule calls, run them concurrently since
 		// each is an independent LLM query with no shared mutable state.
@@ -441,7 +463,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				kpNarration += "\n<dice>" + strings.TrimSuffix(diceMsg, "; ") + "</dice>"
 			}
 			kpNarration += "\n<time_point>" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</time_point>"
-			return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration}, nil
+			return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration, ImagePrompts: pendingImages}, nil
 		}
 
 		// Feed tool results back as a user message so the next KP call has proper
@@ -511,7 +533,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		kpNarration += "\n<dice>" + strings.TrimSuffix(diceMsg, "; ") + "</dice>"
 	}
 	kpNarration += "\n<time_point>" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</time_point>"
-	return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration}, nil
+	return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration, ImagePrompts: pendingImages}, nil
 }
 
 func visibleActionNeedsWriter(action ToolCallType) bool {
@@ -615,6 +637,8 @@ func progressToolLabel(action ToolCallType) string {
 		return "更新角色记录"
 	case ToolRecordMonster, ToolFoundClue, ToolQueryClues:
 		return "处理线索"
+	case ToolGenerateImage:
+		return "生成场景图像"
 	case ToolAdvanceTime:
 		return "推进时间"
 	case ToolWrite:

@@ -131,6 +131,7 @@ window.COC.admin = {
                             writer: { max_tokens: 800, temperature: 0.85 },
                             lawyer: { max_tokens: 800, temperature: 0.3 },
                             npc: { max_tokens: 600, temperature: 0.9 },
+                            painter: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
                             evaluator: { max_tokens: 1200, temperature: 0.5 },
                             growth: { max_tokens: 1000, temperature: 0.4 },
                             architect: { max_tokens: 4000, temperature: 0.7 },
@@ -149,11 +150,12 @@ window.COC.admin = {
                                 id: 'new-' + role,
                                 role,
                                 provider_config_id: '',
-                                model_name: '',
+                                model_name: d.model_name || '',
                                 max_tokens: d.max_tokens,
                                 temperature: d.temperature,
+                                thinking_level: d.thinking_level || '',
                                 system_prompt: '',
-                                is_active: true,
+                                is_active: d.is_active !== undefined ? d.is_active : true,
                             });
                         }
 
@@ -239,6 +241,38 @@ window.COC.admin = {
                             this.showToast(`连通正常，延迟 ${r.latency_ms} ms`);
                         } catch (e) { this.showToast('连接失败：' + e.message, 'error'); }
                         this.pingLoading = null;
+                    },
+
+                    async pingAgentModel(ag) {
+                        const providerID = ag?.provider_config_id ? Number(ag.provider_config_id) : 0;
+                        const modelName = (ag?.model_name || '').trim();
+                        if (!providerID) {
+                            this.showToast('请先选择 Provider', 'error');
+                            return;
+                        }
+                        if (!modelName) {
+                            this.showToast('请先填写模型名称', 'error');
+                            return;
+                        }
+
+                        const role = ag.role || '';
+                        const isPainter = role === 'painter';
+                        const loadingKey = `${role}:${providerID}`;
+                        this.agentPingLoading = loadingKey;
+                        try {
+                            const payload = { model_name: modelName, role };
+                            if (isPainter) payload.mode = 'image';
+                            const r = await this.api('POST', '/api/admin/config/providers/' + providerID + '/ping', payload);
+                            if (isPainter) {
+                                this.showToast(`Painter 图片模型连通正常，延迟 ${r.latency_ms} ms`);
+                            } else {
+                                this.showToast(`${this.agentLabel(role)} 模型连通正常，延迟 ${r.latency_ms} ms`);
+                            }
+                        } catch (e) {
+                            const prefix = isPainter ? 'Painter 图片模型测试失败：' : `${this.agentLabel(role)} 模型测试失败：`;
+                            this.showToast(prefix + e.message, 'error');
+                        }
+                        this.agentPingLoading = null;
                     },
 
                     async saveAgent(ag) {
@@ -410,7 +444,7 @@ window.COC.admin = {
                     agentLabel(role) {
                         return {
                             director: '🎬 Director', writer: '✍️ Writer', lawyer: '⚖️ Lawyer',
-                            npc: '🎭 NPC', evaluator: '📊 Evaluator', growth: '🌱 Growth',
+                            npc: '🎭 NPC', painter: '🎨 Painter', evaluator: '📊 Evaluator', growth: '🌱 Growth',
                             architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
                             parser: '🔧 Parser',
                         }[role] || role;
@@ -421,6 +455,7 @@ window.COC.admin = {
                             writer: '叙事撰写 — 生成面向玩家的克苏鲁叙述（流式输出）',
                             lawyer: '规则顾问 — 查阅规则书提供裁决依据',
                             npc: 'NPC扮演 — 给出场景NPC的行动与对话',
+                            painter: '画图代理 — 按需生成场景图片（默认关闭，不落库）',
                             evaluator: '成长评估 — 分析本场表现建议奖励',
                             growth: '成长应用 — 将评估结果写入角色卡',
                             architect: '模组设计 — 生成大纲并转化为完整JSON模组',
@@ -434,6 +469,7 @@ window.COC.admin = {
                             writer: '留空使用内置 Writer 提示词（克苏鲁散文风格）',
                             lawyer: '留空使用内置 Lawyer 提示词（规则查阅模式）',
                             npc: '留空使用内置 NPC 提示词',
+                            painter: '配置 OpenAI 兼容图片模型，如 dall-e-3（默认关闭）',
                             evaluator: '留空使用内置 Evaluator 提示词',
                             growth: '留空使用内置 Growth 提示词',
                             architect: '留空使用内置 Architect 提示词（大纲+JSON生成）',

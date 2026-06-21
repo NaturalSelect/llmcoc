@@ -21,6 +21,7 @@ window.COC.game = {
                         this.activeStreamID = streamID;
                         this.writerBuffer = '';
                         this.narrationBuffer = '';
+                        this.imageBuffer = [];
                         this.progressText = '已收到行动,正在整理本轮信息';
 
                         const submittedAt = new Date();
@@ -112,6 +113,17 @@ window.COC.game = {
                                                 }
                                                 break;
 
+                                            case 'image':
+                                                if (data && data.startsWith('data:image/')) {
+                                                    if (assistantMessageID) {
+                                                        this._appendImageToMessage(assistantMessageID, data);
+                                                    } else {
+                                                        this.imageBuffer.push(data);
+                                                    }
+                                                    this.$nextTick(() => this.scrollChat());
+                                                }
+                                                break;
+
                                             case 'waiting':
                                                 receivedWaiting = true;
                                                 try {
@@ -150,7 +162,7 @@ window.COC.game = {
                                                 if (assistantMessageID) {
                                                     this._setMessageWriterDone(assistantMessageID);
                                                 }
-                                                if (!committedKP && !receivedWaiting && (this.writerBuffer || this.narrationBuffer)) {
+                                                if (!committedKP && !receivedWaiting && (this.writerBuffer || this.narrationBuffer || this.imageBuffer.length)) {
                                                     const msg = this._commitStreamBuffers({ anchor: tailAnchor });
                                                     if (msg) assistantMessageID = msg.id;
                                                     committedKP = !!msg;
@@ -175,16 +187,17 @@ window.COC.game = {
                         if (receivedWaiting) {
                             this.writerBuffer = '';
                             this.narrationBuffer = '';
+                            this.imageBuffer = [];
                             this.progressText = '';
                             this.waitingForPlayers = true;
                             this.waitingSince = submittedAt;
                             this.pollForKPResponse(submittedAt);
                         } else if (receivedDone && !committedKP) {
-                            if (this.writerBuffer || this.narrationBuffer) {
+                            if (this.writerBuffer || this.narrationBuffer || this.imageBuffer.length) {
                                 this._commitStreamBuffers({ anchor: tailAnchor });
                             }
                         } else if (!committedKP) {
-                            if (this.writerBuffer || this.narrationBuffer) {
+                            if (this.writerBuffer || this.narrationBuffer || this.imageBuffer.length) {
                                 this._commitStreamBuffers({ anchor: tailAnchor });
                             } else {
                                 this._recoverFromDrop(submittedAt);
@@ -224,13 +237,15 @@ window.COC.game = {
                         const responseOptions = this.extractResponseOptionsPayload(this.narrationBuffer) || this.extractResponseOptionsPayload(this.writerBuffer);
                         const wt = this.stripAckContent(this.writerBuffer).trim();
                         const nt = this.stripAckContent(this.narrationBuffer).trim();
-                        if (!wt && !nt) return null;
+                        const images = Array.isArray(this.imageBuffer) ? [...this.imageBuffer] : [];
+                        if (!wt && !nt && images.length === 0) return null;
                         const msg = {
                             id: meta.id || Date.now() + 1,
                             role: 'assistant', username: 'KP',
                             content: this._assistantContent(wt, nt),
                             writer_text: wt,
                             narration_text: nt,
+                            images,
                             response_options: responseOptions,
                             created_at: meta.created_at || new Date().toISOString(),
                             _writer_streaming: !!meta.writerStreaming,
@@ -239,6 +254,7 @@ window.COC.game = {
                         this.messages.push(msg);
                         this.writerBuffer = '';
                         this.narrationBuffer = '';
+                        this.imageBuffer = [];
                         this.refreshCurrentSession(true).catch(() => { });
                         this.$nextTick(() => this.scrollChat());
                         // 同步数据库尾部消息,保证多人回合里的玩家行动顺序以服务端为准。
@@ -266,6 +282,18 @@ window.COC.game = {
                             ...this.messages[idx],
                             _writer_streaming: false,
                         });
+                    },
+
+                    _appendImageToMessage(messageID, dataURL) {
+                        const idx = this.messages.findIndex(m => String(m.id) === String(messageID));
+                        if (idx < 0) {
+                            this.imageBuffer.push(dataURL);
+                            return;
+                        }
+                        const msg = this.messages[idx];
+                        const images = Array.isArray(msg.images) ? [...msg.images] : [];
+                        images.push(dataURL);
+                        this.messages.splice(idx, 1, { ...msg, images });
                     },
 
                     async _syncTailFromDB(anchor = null) {
@@ -429,14 +457,18 @@ window.COC.game = {
                         if (!local || local.role !== 'assistant' || fresh.role !== 'assistant') {
                             return fresh;
                         }
+                        const localImages = Array.isArray(local.images) ? local.images : [];
+                        const freshWithImages = localImages.length > 0 && !Array.isArray(fresh.images)
+                            ? { ...fresh, images: localImages }
+                            : fresh;
                         const localWriter = this.stripAckContent(local.writer_text || '').trim();
-                        const freshWriter = this.stripAckContent(fresh.writer_text || '').trim();
+                        const freshWriter = this.stripAckContent(freshWithImages.writer_text || '').trim();
                         if (!local._writer_streaming || !localWriter || localWriter.length <= freshWriter.length) {
-                            return fresh;
+                            return freshWithImages;
                         }
-                        const narrationText = fresh.narration_text || local.narration_text || '';
+                        const narrationText = freshWithImages.narration_text || local.narration_text || '';
                         return {
-                            ...fresh,
+                            ...freshWithImages,
                             writer_text: localWriter,
                             narration_text: narrationText,
                             content: this._assistantContent(localWriter, narrationText),

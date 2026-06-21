@@ -60,11 +60,12 @@ window.COC.core = function() {
                     refreshingMessages: false,
                     waitingSince: null,
 
-                    // SSE流式状态
+                    // NOTE: SSE流式状态
                     streaming: false,
                     activeStreamID: null,
                     writerBuffer: '',   // 兼容旧token事件,新白字直接写入对应消息
                     narrationBuffer: '',   // 当前KP主流程回复
+                    imageBuffer: [],   // NOTE: 当前SSE临时图片,刷新后不保留
                     progressText: '',   // 当前后端真实处理阶段
 
                     // Multi-player waiting
@@ -116,6 +117,7 @@ window.COC.core = function() {
                     providerForm: { name: '', provider: 'openai', base_url: '', api_key: '', is_active: true },
                     editingProvider: null,
                     pingLoading: null,
+                    agentPingLoading: null,
                     newShopItem: { name: '', description: '', item_type: 'card_slot', price: 0, value: 1, is_active: true },
                     siteSettings: { require_invite_code: false },
                     inviteCodes: [],
@@ -185,7 +187,7 @@ window.COC.core = function() {
                     goTo(p) {
                         if (this.page === 'game') {
                             this.stopGameAutoRefresh();
-                            this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.progressText = '';
+                            this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.imageBuffer = []; this.progressText = '';
                             this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0 };
                             this.waitingSince = null;
                         }

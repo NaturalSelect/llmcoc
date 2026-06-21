@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -271,6 +273,9 @@ func TestAdminPingProvider_Success(t *testing.T) {
 	if resp["ok"] != true {
 		t.Errorf("ok = %v, want true", resp["ok"])
 	}
+	if resp["mode"] != "chat" {
+		t.Errorf("mode = %v, want chat", resp["mode"])
+	}
 }
 
 func TestAdminPingProvider_LLMError(t *testing.T) {
@@ -301,7 +306,156 @@ func TestAdminPingProvider_LLMError(t *testing.T) {
 	if resp["ok"] != false {
 		t.Errorf("ok = %v, want false", resp["ok"])
 	}
+	if resp["mode"] != "chat" {
+		t.Errorf("mode = %v, want chat", resp["mode"])
+	}
 }
 
-// compile-time check: llm.Provider is used in this file.
+type fakeImageProvider struct {
+	base64Data string
+	mimeType   string
+	err        error
+	called     bool
+	prompt     string
+	size       string
+	chatCalled bool
+}
+
+func (p *fakeImageProvider) Chat(ctx context.Context, messages []llm.ChatMessage) (string, error) {
+	p.chatCalled = true
+	return "pong", nil
+}
+
+func (p *fakeImageProvider) ChatStream(ctx context.Context, messages []llm.ChatMessage) (<-chan string, <-chan error, error) {
+	return nil, nil, nil
+}
+
+func (p *fakeImageProvider) JsonChat(ctx context.Context, messages []llm.ChatMessage) (string, error) {
+	return "{}", nil
+}
+
+func (p *fakeImageProvider) GenerateImage(ctx context.Context, prompt string, size string) (string, string, error) {
+	p.called = true
+	p.prompt = prompt
+	p.size = size
+	return p.base64Data, p.mimeType, p.err
+}
+
+func TestAdminPingProvider_ImageSuccess(t *testing.T) {
+	initTestDB(t)
+	pid := seedProvider(t, "Painter")
+
+	ctrl := gomock.NewController(t)
+	imageProv := &fakeImageProvider{base64Data: "ZmFrZS1pbWFnZQ==", mimeType: "image/png"}
+	mockFac := mocks.NewMockProviderFactory(ctrl)
+	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), "none").Return(imageProv)
+
+	r := gin.New()
+	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
+		adminPingProviderWithFactory(c, mockFac)
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/admin/config/providers/%d/ping", pid), map[string]any{
+		"model_name": "dall-e-3",
+		"role":       "painter",
+	}))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !imageProv.called {
+		t.Fatal("GenerateImage was not called")
+	}
+	if imageProv.chatCalled {
+		t.Fatal("Chat must not be called for image ping")
+	}
+	if imageProv.prompt != "A simple black and white test icon" || imageProv.size != "1024x1024" {
+		t.Fatalf("GenerateImage prompt/size = %q/%q", imageProv.prompt, imageProv.size)
+	}
+	if strings.Contains(w.Body.String(), imageProv.base64Data) {
+		t.Fatal("response must not contain generated image base64")
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["ok"] != true {
+		t.Errorf("ok = %v, want true", resp["ok"])
+	}
+	if resp["mode"] != "image" {
+		t.Errorf("mode = %v, want image", resp["mode"])
+	}
+	if _, ok := resp["base64"]; ok {
+		t.Fatal("response must not include base64 field")
+	}
+}
+
+func TestAdminPingProvider_ImageRequiresModel(t *testing.T) {
+	initTestDB(t)
+	pid := seedProvider(t, "Painter")
+
+	ctrl := gomock.NewController(t)
+	mockFac := mocks.NewMockProviderFactory(ctrl)
+
+	r := gin.New()
+	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
+		adminPingProviderWithFactory(c, mockFac)
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/admin/config/providers/%d/ping", pid), map[string]any{
+		"role": "painter",
+	}))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["ok"] != false || resp["mode"] != "image" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+	if !strings.Contains(fmt.Sprint(resp["error"]), "请先填写模型名称") {
+		t.Fatalf("error = %v, want model hint", resp["error"])
+	}
+}
+
+func TestAdminPingProvider_ImageUnsupported(t *testing.T) {
+	initTestDB(t)
+	pid := seedProvider(t, "TextOnly")
+
+	ctrl := gomock.NewController(t)
+	mockProv := mocks.NewMockProvider(ctrl)
+	mockFac := mocks.NewMockProviderFactory(ctrl)
+	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), "none").Return(mockProv)
+
+	r := gin.New()
+	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
+		adminPingProviderWithFactory(c, mockFac)
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/admin/config/providers/%d/ping", pid), map[string]any{
+		"model_name": "dall-e-3",
+		"mode":       "image",
+	}))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["ok"] != false {
+		t.Errorf("ok = %v, want false", resp["ok"])
+	}
+	if resp["mode"] != "image" {
+		t.Errorf("mode = %v, want image", resp["mode"])
+	}
+	if !strings.Contains(fmt.Sprint(resp["error"]), "不支持图片生成接口") {
+		t.Fatalf("error = %v, want unsupported image hint", resp["error"])
+	}
+}
+
+// NOTE: 编译期确认测试替身满足对应接口。
 var _ llm.Provider = (*mocks.MockProvider)(nil)
+var _ llm.Provider = (*fakeImageProvider)(nil)
+var _ llm.ImageGenerator = (*fakeImageProvider)(nil)

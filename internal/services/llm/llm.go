@@ -23,6 +23,10 @@ type Provider interface {
 	JsonChat(ctx context.Context, messages []ChatMessage) (string, error)
 }
 
+type ImageGenerator interface {
+	GenerateImage(ctx context.Context, prompt string, size string) (base64Data string, mimeType string, err error)
+}
+
 // NewProviderFromConfig creates a provider from a DB-stored LLMProviderConfig.
 func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, reasoningEffort string) Provider {
 	return newOpenAIProvider(cfg.APIKey, cfg.BaseURL, modelName, maxTokens, temperature, reasoningEffort)

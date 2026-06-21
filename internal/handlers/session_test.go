@@ -390,6 +390,81 @@ func TestChatStream_Success(t *testing.T) {
 	}
 }
 
+func TestChatStream_ForwardsImageSSEWithoutPersistingDataURL(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+
+	ctrl := gomock.NewController(t)
+	runner := mocks.NewMockAgentRunner(ctrl)
+	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
+		KPReply:      "你看见灯塔门缝中透出冷光。",
+		ImagePrompts: []string{"A foggy lighthouse"},
+	}, nil)
+	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), "A foggy lighthouse").Return("data:image/png;base64,YWJj", nil)
+
+	h := NewSessionHandlers(runner)
+	r := makeTestRouter(h, userID, "tester")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我走近灯塔"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	events := parseSSE(w.Body.String())
+	if len(events["image"]) != 1 || events["image"][0] != "data:image/png;base64,YWJj" {
+		t.Fatalf("image event mismatch: %#v body:\n%s", events["image"], w.Body.String())
+	}
+
+	var msg models.Message
+	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).Last(&msg).Error; err != nil {
+		t.Fatalf("no assistant message persisted: %v", err)
+	}
+	if strings.Contains(msg.Content, "data:image") || strings.Contains(msg.Content, "YWJj") {
+		t.Fatalf("persisted content leaked image data: %q", msg.Content)
+	}
+}
+
+func TestChatStream_ImageSSEAfterKPDone(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+
+	ctrl := gomock.NewController(t)
+	runner := mocks.NewMockAgentRunner(ctrl)
+	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
+		KPReply:      "灯塔门缝中透出冷光。",
+		ImagePrompts: []string{"A foggy lighthouse"},
+	}, nil)
+	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), "A foggy lighthouse").Return("data:image/png;base64,YWJj", nil)
+
+	h := NewSessionHandlers(runner)
+	r := makeTestRouter(h, userID, "tester")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我走近灯塔"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	order := parseSSEEvents(w.Body.String())
+	kpDoneIdx := firstSSEEventIndex(order, "kp_done")
+	imageIdx := firstSSEEventIndex(order, "image")
+	if kpDoneIdx < 0 || imageIdx < 0 {
+		t.Fatalf("expected kp_done and image events; body:\n%s", w.Body.String())
+	}
+	if !(kpDoneIdx < imageIdx) {
+		t.Fatalf("image should be streamed after kp_done, got kp_done=%d image=%d", kpDoneIdx, imageIdx)
+	}
+
+	var msg models.Message
+	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).Last(&msg).Error; err != nil {
+		t.Fatalf("no assistant message persisted: %v", err)
+	}
+	if strings.Contains(msg.Content, "data:image") || strings.Contains(msg.Content, "YWJj") {
+		t.Fatalf("persisted content leaked image data: %q", msg.Content)
+	}
+}
+
 func TestSaveChatMessagesMarksWriterPending(t *testing.T) {
 	initTestDB(t)
 	sessionID, userID := seedPlayingSession(t)
