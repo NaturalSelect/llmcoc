@@ -39,8 +39,6 @@ func (p *writerContextProvider) JsonChat(ctx context.Context, messages []llm.Cha
 	return p.Chat(ctx, messages)
 }
 
-func (p *writerContextProvider) SetJsonOutput(enabled bool) {}
-
 func initWriterTestDB(t *testing.T) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{

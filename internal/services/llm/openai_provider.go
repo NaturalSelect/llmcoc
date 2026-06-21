@@ -63,9 +63,6 @@ func (p *openAIProvider) toOpenAIMessages(msgs []ChatMessage) []openai.ChatCompl
 	return out
 }
 
-func (p *openAIProvider) SetJsonOutput(enabled bool) {
-}
-
 const maxRetries = 20
 
 var retryCode4xx = map[int]bool{

@@ -38,8 +38,6 @@ func (f *fakeProvider) ChatStream(ctx context.Context, messages []llm.ChatMessag
 	return tokenCh, errCh, nil
 }
 
-func (f *fakeProvider) SetJsonOutput(enabled bool) {}
-
 func (f *fakeProvider) JsonChat(ctx context.Context, messages []llm.ChatMessage) (string, error) {
 	return f.Chat(ctx, messages)
 }

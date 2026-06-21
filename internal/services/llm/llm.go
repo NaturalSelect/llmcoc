@@ -21,7 +21,6 @@ type Provider interface {
 	Chat(ctx context.Context, messages []ChatMessage) (string, error)
 	ChatStream(ctx context.Context, messages []ChatMessage) (<-chan string, <-chan error, error)
 	JsonChat(ctx context.Context, messages []ChatMessage) (string, error)
-	SetJsonOutput(enabled bool)
 }
 
 // NewProviderFromConfig creates a provider from a DB-stored LLMProviderConfig.
