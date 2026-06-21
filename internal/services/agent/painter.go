@@ -190,8 +190,8 @@ func findImagePromptCharacterCard(name string, players []models.SessionPlayer, u
 const imagePromptCharacterVisualSystemPrompt = `You are the Writer agent preparing character appearance notes for an anime image model.
 
 Output only concise English visual descriptions, as one paragraph or a short bullet list.
-Use only the provided card data. Do not invent clothing, equipment, secrets, injuries, powers, or personality traits.
-Focus on visible appearance, clothing, carried items, and concrete visual cues that help an anime image model draw the characters.
+Use only the provided card data. Do not invent clothing, equipment, secrets, injuries, powers, personality traits, item properties, mythos names, rules, lore, titles, hidden inscriptions, or parenthetical metadata.
+Focus on visible body/face/hair/clothing/posture and concrete visual cues; inventory is not a carried-items list, so mention only clearly worn or currently held visible accessories and omit all uncertain items.
 
 You only generate a pure appearance description, without any other attributes.
 `
@@ -218,7 +218,7 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 
 func buildImagePromptCharacterVisualUserPrompt(cards []models.CharacterCard) string {
 	var sb strings.Builder
-	sb.WriteString("Task: Convert the following player character card data into concise English visual descriptions for image generation. Use all provided appearance and inventory details, but do not add anything not present in the cards.\n\n")
+	sb.WriteString("Task: Convert the following player character card data into concise English visual descriptions for image generation. Use appearance as the main source; inventory is optional visible-item hints only, not a carried list. Omit item properties, mythos/lore names, rules, titles, hidden inscriptions, parenthetical metadata, and anything not clearly visible/worn/held.\n\n")
 	for i, card := range cards {
 		if i > 0 {
 			sb.WriteString("\n")
