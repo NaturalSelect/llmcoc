@@ -941,7 +941,7 @@ loop:
 	var painterCh <-chan painterJobResult
 	if len(output.ImagePrompts) > 0 {
 		imageRequest := output.ImagePrompts[0]
-		log.Printf("[chat] session=%d user=%q painter queued prompt_len=%d character_count=%d prompt=%q", sessionID, username, len([]rune(imageRequest.Prompt)), len(imageRequest.Characters), chatTruncate(imageRequest.Prompt, 200))
+		log.Printf("[chat] session=%d user=%q painter queued prompt_len=%d prompt=%q", sessionID, username, len([]rune(imageRequest.Prompt)), chatTruncate(imageRequest.Prompt, 200))
 		painterClientDone := make(chan struct{})
 		defer close(painterClientDone)
 		assistantMessageID := uint(0)
@@ -1080,7 +1080,6 @@ func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext,
 
 func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext, request agent.ImagePromptRequest, clientDone <-chan struct{}) <-chan painterJobResult {
 	request.Prompt = strings.TrimSpace(request.Prompt)
-	request.Characters = sanitizeImageRequestCharacters(request.Characters)
 	prompt := request.Prompt
 	if prompt == "" {
 		return nil
@@ -1096,7 +1095,7 @@ func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext
 		ctx, cancel := context.WithTimeout(context.Background(), painterJobTimeout)
 		defer cancel()
 		start := time.Now()
-		log.Printf("[chat] session=%d painter async start prompt_len=%d character_count=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), len(request.Characters), chatTruncate(prompt, 200))
+		log.Printf("[chat] session=%d painter async start prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), chatTruncate(prompt, 200))
 		if clientDone != nil && messageID == 0 {
 			go func() {
 				select {
@@ -1133,24 +1132,6 @@ func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext
 		}
 	}()
 	return ch
-}
-
-func sanitizeImageRequestCharacters(names []string) []string {
-	result := make([]string, 0, len(names))
-	seen := make(map[string]bool, len(names))
-	for _, name := range names {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		key := strings.ToLower(name)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		result = append(result, name)
-	}
-	return result
 }
 
 func updateAssistantMessageWriter(messageID uint, kpReply, writerText string) error {

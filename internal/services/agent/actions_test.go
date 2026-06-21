@@ -128,11 +128,8 @@ func TestGenerateImageActionQueuesPromptWithoutCallingGenerator(t *testing.T) {
 	if provider.called.Load() || provider.prompt != "" || provider.size != "" {
 		t.Fatalf("generator should not be called during KP tool execution, called=%v prompt=%q size=%q", provider.called.Load(), provider.prompt, provider.size)
 	}
-	if len(prompts) != 1 || prompts[0].Prompt != "A foggy lighthouse" {
+	if len(prompts) != 1 || prompts[0] != (ImagePromptRequest{Prompt: "A foggy lighthouse"}) {
 		t.Fatalf("queued prompts = %#v", prompts)
-	}
-	if len(prompts[0].Characters) != 2 || prompts[0].Characters[0] != "约翰" || prompts[0].Characters[1] != "艾琳" {
-		t.Fatalf("queued characters = %#v", prompts[0].Characters)
 	}
 	if len(results) != 1 || !strings.Contains(results[0].Result, "queued") {
 		t.Fatalf("unexpected tool result: %+v", results)
@@ -199,83 +196,61 @@ func TestGenerateImageActionUnavailableWithoutPainter(t *testing.T) {
 	}
 }
 
-func TestRunPainterSendsAnimeStyledPrompt(t *testing.T) {
+func TestRunPainterSendsPromptAsProvided(t *testing.T) {
 	const sessionID uint = 424301
 	provider := &fakeImageProvider{base64Data: "YWJj", mimeType: "image/png"}
-	sessionAgents.Store(sessionID, map[models.AgentRole]agentHandle{
-		models.AgentRolePainter: {provider: provider, enabled: true},
-	})
-	t.Cleanup(func() { deleteCachedAgents(sessionID) })
-
-	dataURL, err := RunPainter(context.Background(), GameContext{Session: models.GameSession{ID: sessionID}}, ImagePromptRequest{Prompt: "A foggy lighthouse at night"})
-	if err != nil {
-		t.Fatalf("RunPainter failed: %v", err)
-	}
-	if dataURL != "data:image/png;base64,YWJj" {
-		t.Fatalf("unexpected data URL: %q", dataURL)
-	}
-	if provider.prompt == "A foggy lighthouse at night" {
-		t.Fatal("RunPainter sent raw prompt without anime style")
-	}
-	for _, want := range []string{"A foggy lighthouse at night", "anime style", "2D illustration", "Japanese animation aesthetic", "avoid photorealism", "realistic photography", "3D render"} {
-		if !strings.Contains(provider.prompt, want) {
-			t.Fatalf("styled prompt missing %q: %q", want, provider.prompt)
-		}
-	}
-	if provider.size != "1024x1024" {
-		t.Fatalf("size=%q, want 1024x1024", provider.size)
-	}
-}
-
-func TestRunPainterUsesWriterCharacterVisualDescription(t *testing.T) {
-	const sessionID uint = 424302
-	provider := &fakeImageProvider{base64Data: "YWJj", mimeType: "image/png"}
-	writer := &fakeProvider{resp: "John is depicted as a gaunt anime investigator in an emerald raincoat, carrying a silver revolver and a compact camera."}
+	writer := &fakeProvider{resp: "John is depicted as a gaunt investigator in an emerald raincoat."}
 	sessionAgents.Store(sessionID, map[models.AgentRole]agentHandle{
 		models.AgentRolePainter: {provider: provider, enabled: true},
 		models.AgentRoleWriter:  {provider: writer, enabled: true},
 	})
 	t.Cleanup(func() { deleteCachedAgents(sessionID) })
 
-	gctx := GameContext{Session: models.GameSession{
-		ID: sessionID,
-		Players: []models.SessionPlayer{{
-			CharacterCard: models.CharacterCard{
-				ID:         1,
-				Name:       "约翰",
-				Appearance: "RAW_APPEARANCE_DETAIL: sunken eyes behind round spectacles and a torn emerald raincoat.",
-				Inventory:  models.JSONField[[]string]{Data: []string{"silver revolver", "field camera serial RAW-123"}},
-			},
-		}},
-	}}
-
-	_, err := RunPainter(context.Background(), gctx, ImagePromptRequest{
-		Prompt:     "Investigators stand at a stormy lighthouse doorway",
-		Characters: []string{"  约翰  ", "不存在"},
-	})
+	prompt := "A foggy lighthouse at night"
+	dataURL, err := RunPainter(context.Background(), GameContext{Session: models.GameSession{ID: sessionID}}, ImagePromptRequest{Prompt: prompt})
 	if err != nil {
 		t.Fatalf("RunPainter failed: %v", err)
 	}
-	for _, want := range []string{
-		"Investigators stand at a stormy lighthouse doorway",
-		"Character visual descriptions written by Writer from player cards",
-		"John is depicted as a gaunt anime investigator in an emerald raincoat",
-		"emerald raincoat",
-		"silver revolver",
-		"compact camera",
-		"anime style",
-	} {
-		if !strings.Contains(provider.prompt, want) {
-			t.Fatalf("provider prompt missing %q: %q", want, provider.prompt)
-		}
+	if dataURL != "data:image/png;base64,YWJj" {
+		t.Fatalf("unexpected data URL: %q", dataURL)
 	}
-	for _, rawOnly := range []string{"RAW_APPEARANCE_DETAIL", "field camera serial RAW-123"} {
-		if strings.Contains(provider.prompt, rawOnly) {
-			t.Fatalf("provider prompt leaked raw card detail %q: %q", rawOnly, provider.prompt)
-		}
+	if provider.prompt != prompt {
+		t.Fatalf("RunPainter prompt = %q, want raw prompt %q", provider.prompt, prompt)
 	}
-	if strings.Contains(provider.prompt, "不存在") {
-		t.Fatalf("unmatched character name should not be appended: %q", provider.prompt)
+	if provider.size != "1024x1024" {
+		t.Fatalf("size=%q, want 1024x1024", provider.size)
+	}
+	if len(writer.messages) != 0 {
+		t.Fatalf("RunPainter should not call Writer, got %d messages", len(writer.messages))
+	}
+}
+
+func TestDescribeCharactersUsesWriterVisualDescription(t *testing.T) {
+	writer := &fakeProvider{resp: "John is a gaunt investigator with sunken eyes behind round spectacles and a torn emerald raincoat."}
+	actx := ActionContext{
+		Ctx: context.Background(),
+		GCtx: &GameContext{Session: models.GameSession{
+			ID: 424302,
+			Players: []models.SessionPlayer{{
+				CharacterCard: models.CharacterCard{
+					ID:         1,
+					Name:       "约翰",
+					Appearance: "RAW_APPEARANCE_DETAIL: sunken eyes behind round spectacles and a torn emerald raincoat.",
+					Inventory:  models.JSONField[[]string]{Data: []string{"silver revolver", "field camera serial RAW-123"}},
+				},
+			}},
+		}},
+		Handles: map[models.AgentRole]agentHandle{
+			models.AgentRoleWriter: {provider: writer, enabled: true},
+		},
+	}
+
+	results := describeCharactersAction{}.Execute(ToolCall{Characters: []string{"  约翰  ", "不存在", "约翰"}}, actx)
+	if len(results) != 1 || results[0].Action != ToolDescribeCharacters {
+		t.Fatalf("unexpected result: %+v", results)
+	}
+	if results[0].Result != writer.resp {
+		t.Fatalf("describe_characters result = %q, want writer response %q", results[0].Result, writer.resp)
 	}
 	if len(writer.messages) != 2 {
 		t.Fatalf("writer messages = %d, want 2", len(writer.messages))
@@ -288,50 +263,63 @@ func TestRunPainterUsesWriterCharacterVisualDescription(t *testing.T) {
 	}
 }
 
-func TestRunPainterFallsBackWhenWriterUnavailable(t *testing.T) {
-	const sessionID uint = 424303
-	provider := &fakeImageProvider{base64Data: "YWJj", mimeType: "image/png"}
-	sessionAgents.Store(sessionID, map[models.AgentRole]agentHandle{
-		models.AgentRolePainter: {provider: provider, enabled: true},
-	})
-	t.Cleanup(func() { deleteCachedAgents(sessionID) })
-
-	gctx := GameContext{Session: models.GameSession{
-		ID: sessionID,
-		Players: []models.SessionPlayer{{
-			CharacterCard: models.CharacterCard{
-				ID:         1,
-				Name:       "约翰",
-				Appearance: "RAW_APPEARANCE_DETAIL: brass goggles and a patched black coat.",
-				Inventory:  models.JSONField[[]string]{Data: []string{"field camera serial RAW-456"}},
-			},
+func TestDescribeCharactersFallsBackToAppearanceOnly(t *testing.T) {
+	writer := &fakeProvider{err: context.Canceled}
+	actx := ActionContext{
+		Ctx: context.Background(),
+		GCtx: &GameContext{Session: models.GameSession{
+			ID: 424303,
+			Players: []models.SessionPlayer{{
+				CharacterCard: models.CharacterCard{
+					ID:         1,
+					Name:       "约翰",
+					Appearance: "brass goggles and a patched black coat.",
+					Inventory:  models.JSONField[[]string]{Data: []string{"field camera serial RAW-456"}},
+				},
+			}},
 		}},
-	}}
+		Handles: map[models.AgentRole]agentHandle{
+			models.AgentRoleWriter: {provider: writer, enabled: true},
+		},
+	}
 
-	_, err := RunPainter(context.Background(), gctx, ImagePromptRequest{
-		Prompt:     "Investigators stand at a stormy lighthouse doorway",
-		Characters: []string{"约翰"},
-	})
-	if err != nil {
-		t.Fatalf("RunPainter failed: %v", err)
+	results := describeCharactersAction{}.Execute(ToolCall{Characters: []string{"约翰"}}, actx)
+	if len(results) != 1 || results[0].Action != ToolDescribeCharacters {
+		t.Fatalf("unexpected result: %+v", results)
 	}
-	for _, want := range []string{"Investigators stand at a stormy lighthouse doorway", "anime style"} {
-		if !strings.Contains(provider.prompt, want) {
-			t.Fatalf("fallback prompt missing %q: %q", want, provider.prompt)
+	for _, want := range []string{"约翰", "brass goggles", "patched black coat"} {
+		if !strings.Contains(results[0].Result, want) {
+			t.Fatalf("fallback result missing %q: %q", want, results[0].Result)
 		}
 	}
-	for _, notWant := range []string{"Character visual descriptions written by Writer", "RAW_APPEARANCE_DETAIL", "field camera serial RAW-456"} {
-		if strings.Contains(provider.prompt, notWant) {
-			t.Fatalf("fallback prompt should not contain %q: %q", notWant, provider.prompt)
-		}
+	if strings.Contains(results[0].Result, "field camera serial RAW-456") {
+		t.Fatalf("fallback result should not include inventory details: %q", results[0].Result)
+	}
+	if len(writer.messages) != 2 {
+		t.Fatalf("writer should be attempted before fallback, got %d messages", len(writer.messages))
 	}
 }
 
-func TestAnimeStyledImagePromptAvoidsDuplicateStyle(t *testing.T) {
-	prompt := "A rain-soaked alley, " + animeImageStylePrompt
-	styledPrompt := animeStyledImagePrompt("  " + prompt + "  ")
-	if styledPrompt != prompt {
-		t.Fatalf("styled prompt duplicated or failed to trim: %q", styledPrompt)
+func TestDescribeCharactersFallsBackWhenWriterUnavailable(t *testing.T) {
+	actx := ActionContext{
+		Ctx: context.Background(),
+		GCtx: &GameContext{Session: models.GameSession{
+			ID: 424304,
+			Players: []models.SessionPlayer{{
+				CharacterCard: models.CharacterCard{
+					ID:         1,
+					Name:       "约翰",
+					Appearance: "brass goggles and a patched black coat.",
+					Inventory:  models.JSONField[[]string]{Data: []string{"field camera serial RAW-456"}},
+				},
+			}},
+		}},
+		Handles: map[models.AgentRole]agentHandle{},
+	}
+
+	results := describeCharactersAction{}.Execute(ToolCall{Characters: []string{"约翰"}}, actx)
+	if len(results) != 1 || !strings.Contains(results[0].Result, "brass goggles") {
+		t.Fatalf("unexpected fallback result: %+v", results)
 	}
 }
 

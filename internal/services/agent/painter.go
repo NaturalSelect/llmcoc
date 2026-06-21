@@ -12,36 +12,6 @@ import (
 
 type generateImageAction struct{}
 
-var animeImageStyleRequirements = []string{
-	"anime style",
-	"2D illustration",
-	"Japanese animation aesthetic",
-	"clean line art",
-	"expressive lighting",
-	"atmospheric horror",
-	"high detail",
-	"avoid photorealism",
-	"realistic photography",
-	"3D render",
-}
-
-const animeImageStylePrompt = "anime style, 2D illustration, Japanese animation aesthetic, clean line art, expressive lighting, atmospheric horror, high detail, 使用简约的日式动漫番剧画风，画风清新干净，线条清晰，带有手绘风，一张二次元氛围感CG，角色保留参考图中的核心外观标识。修改角色的动作使其与画面相符合。 avoid photorealism, realistic photography, 3D render"
-
-// NOTE: Painter统一追加二次元画风,防止普通场景提示词绕过图片风格设定。
-func animeStyledImagePrompt(prompt string) string {
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		return ""
-	}
-	lowerPrompt := strings.ToLower(prompt)
-	for _, requirement := range animeImageStyleRequirements {
-		if !strings.Contains(lowerPrompt, strings.ToLower(requirement)) {
-			return prompt + ", " + animeImageStylePrompt
-		}
-	}
-	return prompt
-}
-
 func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	imagePrompt := strings.TrimSpace(call.ImagePrompt)
 	if imagePrompt == "" {
@@ -58,23 +28,62 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 		debugf("tool", "session=%d generate_image unavailable: provider lacks image generation prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
 		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation unavailable"}}
 	}
-	characters := sanitizeImageCharacters(call.Characters)
 	if actx.PendingImages != nil {
-		*actx.PendingImages = append(*actx.PendingImages, ImagePromptRequest{Prompt: imagePrompt, Characters: characters})
+		*actx.PendingImages = append(*actx.PendingImages, ImagePromptRequest{Prompt: imagePrompt})
 	}
-	debugf("tool", "session=%d generate_image queued prompt_len=%d character_count=%d characters=%q prompt=%q", actx.Sid, len([]rune(imagePrompt)), len(characters), truncateRunes(strings.Join(characters, ","), 120), imagePrompt)
+	debugf("tool", "session=%d generate_image queued prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), imagePrompt)
 	return []ToolResult{{Action: ToolGenerateImage, Result: "image generation queued"}}
+}
+
+type describeCharactersAction struct{}
+
+func (describeCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	names := sanitizeImageCharacters(call.Characters)
+	if len(names) == 0 {
+		return []ToolResult{{Action: ToolDescribeCharacters, Result: "No character names were provided."}}
+	}
+	if actx.GCtx == nil {
+		return []ToolResult{{Action: ToolDescribeCharacters, Result: fallbackMissingCharacterVisualDescription(names)}}
+	}
+	cards := collectImagePromptCharacterCards(names, actx.GCtx.Session.Players)
+	if len(cards) == 0 {
+		return []ToolResult{{Action: ToolDescribeCharacters, Result: fallbackMissingCharacterVisualDescription(names)}}
+	}
+
+	description := ""
+	writerHandle := actx.Handles[models.AgentRoleWriter]
+	if writerHandle.isEnabled() {
+		ctx := actx.Ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		ctx = withWriterGameSessionID(ctx, *actx.GCtx)
+		var err error
+		description, err = writeImagePromptCharacterVisualDescription(ctx, writerHandle, "", cards)
+		if err != nil {
+			debugf("tool", "session=%d describe_characters writer fallback matched_character_count=%d err=%v", actx.Sid, len(cards), err)
+		}
+	} else {
+		debugf("tool", "session=%d describe_characters writer fallback matched_character_count=%d err=%v", actx.Sid, len(cards), fmt.Errorf("writer agent unavailable"))
+	}
+	description = strings.TrimSpace(description)
+	if description == "" {
+		description = fallbackCharacterVisualDescriptions(cards)
+	}
+	debugf("tool", "session=%d describe_characters result_len=%d requested_count=%d matched_character_count=%d", actx.Sid, len([]rune(description)), len(names), len(cards))
+	return []ToolResult{{Action: ToolDescribeCharacters, Result: description}}
 }
 
 // NOTE: 根据排队请求生成图片data URL;handler负责把结果持久化到助手消息。
 func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptRequest) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	prompt := strings.TrimSpace(request.Prompt)
 	if prompt == "" {
 		return "", fmt.Errorf("image prompt is empty")
 	}
-	characters := sanitizeImageCharacters(request.Characters)
 	start := time.Now()
-	ctx = withWriterGameSessionID(ctx, gctx)
 	handles, err := getCachedAgents(gctx.Session.ID)
 	if err != nil {
 		debugf("Painter", "session=%d load agents error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
@@ -90,10 +99,8 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 		debugf("Painter", "session=%d unavailable: provider lacks image generation elapsed=%.0fms", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000)
 		return "", fmt.Errorf("当前 Painter provider 不支持图片生成")
 	}
-	enrichedPrompt, matchedCharacters := enrichImagePromptWithWriterCharacterDescriptions(ctx, gctx.Session.ID, prompt, characters, gctx.Session.Players, handles[models.AgentRoleWriter])
-	styledPrompt := animeStyledImagePrompt(enrichedPrompt)
-	debugf("Painter", "session=%d start prompt_len=%d enriched_prompt_len=%d styled_prompt_len=%d character_count=%d matched_character_count=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), len([]rune(enrichedPrompt)), len([]rune(styledPrompt)), len(characters), matchedCharacters, truncateRunes(prompt, 200))
-	base64Data, mimeType, err := generator.GenerateImage(ctx, styledPrompt, "1024x1024")
+	debugf("Painter", "session=%d start prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), truncateRunes(prompt, 200))
+	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, "1024x1024")
 	if err != nil {
 		debugf("Painter", "session=%d error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
 		return "", err
@@ -145,24 +152,6 @@ func collectImagePromptCharacterCards(names []string, players []models.SessionPl
 	return cards
 }
 
-// NOTE: Painter只接收Writer整理后的视觉描述,避免把原始角色卡明细直接交给图片模型。
-func enrichImagePromptWithWriterCharacterDescriptions(ctx context.Context, sessionID uint, prompt string, names []string, players []models.SessionPlayer, writerHandle agentHandle) (string, int) {
-	cards := collectImagePromptCharacterCards(names, players)
-	if len(cards) == 0 {
-		return prompt, 0
-	}
-	if !writerHandle.isEnabled() {
-		debugf("Painter", "session=%d character visual description skipped matched_character_count=%d err=%v", sessionID, len(cards), fmt.Errorf("writer agent unavailable"))
-		return prompt, len(cards)
-	}
-	description, err := writeImagePromptCharacterVisualDescription(ctx, writerHandle, prompt, cards)
-	if err != nil {
-		debugf("Painter", "session=%d character visual description skipped matched_character_count=%d err=%v", sessionID, len(cards), err)
-		return prompt, len(cards)
-	}
-	return strings.TrimSpace(prompt) + "\n\nCharacter visual descriptions written by Writer from player cards (use these details):\n" + description, len(cards)
-}
-
 func findImagePromptCharacterCard(name string, players []models.SessionPlayer, usedCards map[uint]bool) (models.CharacterCard, bool) {
 	name = strings.TrimSpace(name)
 	for _, p := range players {
@@ -187,7 +176,8 @@ func findImagePromptCharacterCard(name string, players []models.SessionPlayer, u
 	return models.CharacterCard{}, false
 }
 
-const imagePromptCharacterVisualSystemPrompt = `You are the Writer agent preparing character appearance notes for an anime image model.
+const imagePromptCharacterVisualSystemPrompt = `You are the Writer agent preparing character appearance notes for an image generation model.
+Chinese intent: 将角色卡外貌转换为简短英文视觉外貌描写,不泄露隐藏信息或规则信息。
 
 Output only concise English visual descriptions, as one paragraph or a short bullet list.
 Use only the provided card data. Do not invent clothing, equipment, secrets, injuries, powers, personality traits, item properties, mythos names, rules, lore, titles, hidden inscriptions, or parenthetical metadata.
@@ -218,7 +208,7 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 
 func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []models.CharacterCard) string {
 	var sb strings.Builder
-	sb.WriteString("Task: Convert the following player character card data into concise English visual descriptions for image generation. Use the scene image prompt to choose which appearance features and character actions matter for the current picture. Use appearance as the main source; inventory is optional visible-item hints only, not a carried list. Omit item properties, mythos/lore names, rules, titles, hidden inscriptions, parenthetical metadata, and anything not clearly visible/worn/held.\n\n")
+	sb.WriteString("Task: Convert the following player character card data into concise English visual descriptions for image generation. The Director will decide whether and how to incorporate this text into a later natural-language image prompt. Use the scene image prompt, if present, only to choose which visible appearance features matter. Use appearance as the main source; inventory is optional visible-item hints only, not a carried list. Omit item properties, mythos/lore names, rules, titles, hidden inscriptions, parenthetical metadata, and anything not clearly visible/worn/held. Chinese intent: 为Director提供英文外貌素材,由Director自行写入后续image_prompt。\n\n")
 	sb.WriteString("Scene image prompt: ")
 	sb.WriteString(compactPromptText(scenePrompt))
 	sb.WriteString("\n\n")
@@ -252,6 +242,27 @@ func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []model
 		}
 	}
 	return sb.String()
+}
+
+func fallbackCharacterVisualDescriptions(cards []models.CharacterCard) string {
+	lines := make([]string, 0, len(cards))
+	for _, card := range cards {
+		name := compactPromptText(card.Name)
+		if name == "" {
+			name = "Unnamed investigator"
+		}
+		appearance := compactPromptText(card.Appearance)
+		if appearance == "" {
+			lines = append(lines, fmt.Sprintf("%s: no recorded visual appearance details.", name))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s: visible appearance from the character card: %s", name, appearance))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func fallbackMissingCharacterVisualDescription(names []string) string {
+	return "No matching investigator character cards were found for: " + strings.Join(names, ", ") + "."
 }
 
 func compactPromptText(text string) string {

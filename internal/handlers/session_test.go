@@ -402,9 +402,9 @@ func TestChatStream_ForwardsImageSSEAndPersistsImageRef(t *testing.T) {
 	runner := mocks.NewMockAgentRunner(ctrl)
 	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
 		KPReply:      "你看见灯塔门缝中透出冷光。",
-		ImagePrompts: []agent.ImagePromptRequest{{Prompt: "A foggy lighthouse", Characters: []string{"约翰"}}},
+		ImagePrompts: []agent.ImagePromptRequest{{Prompt: "A foggy lighthouse"}},
 	}, nil)
-	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), agent.ImagePromptRequest{Prompt: "A foggy lighthouse", Characters: []string{"约翰"}}).Return("data:image/png;base64,YWJj", nil)
+	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), agent.ImagePromptRequest{Prompt: "A foggy lighthouse"}).Return("data:image/png;base64,YWJj", nil)
 
 	h := NewSessionHandlers(runner)
 	r := makeTestRouter(h, userID, "tester")
@@ -449,9 +449,9 @@ func TestChatStream_ImageSSEAfterKPDone(t *testing.T) {
 	runner := mocks.NewMockAgentRunner(ctrl)
 	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
 		KPReply:      "灯塔门缝中透出冷光。",
-		ImagePrompts: []agent.ImagePromptRequest{{Prompt: "A foggy lighthouse", Characters: []string{"约翰"}}},
+		ImagePrompts: []agent.ImagePromptRequest{{Prompt: "A foggy lighthouse"}},
 	}, nil)
-	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), agent.ImagePromptRequest{Prompt: "A foggy lighthouse", Characters: []string{"约翰"}}).Return("data:image/png;base64,YWJj", nil)
+	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), agent.ImagePromptRequest{Prompt: "A foggy lighthouse"}).Return("data:image/png;base64,YWJj", nil)
 
 	h := NewSessionHandlers(runner)
 	r := makeTestRouter(h, userID, "tester")

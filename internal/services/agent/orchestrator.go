@@ -314,7 +314,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			emitProgress("KP正在修正工具调用顺序")
 			kpMsgs = append(kpMsgs, llm.ChatMessage{
 				Role:    "user",
-				Content: "<error>SYSTEM REJECT: your entire batch was rejected. response/end_game may only share a batch with write/generate_image/hint/introspection/contract/update_llm_note. Split into two batches: first call the result-producing tools, then after reading the results call response separately.</error>",
+				Content: "<error>SYSTEM REJECT: your entire batch was rejected. response/end_game may only share a batch with write/generate_image/hint/contract/update_llm_note. Split into two batches: first call the result-producing tools, then after reading the results call response separately.</error>",
 			})
 			continue
 		}
@@ -631,6 +631,8 @@ func progressToolLabel(action ToolCallType) string {
 		return "处理NPC行动"
 	case ToolQueryCharacter, ToolQueryNPCCard:
 		return "读取角色状态"
+	case ToolDescribeCharacters:
+		return "整理角色外貌"
 	case ToolUpdateCharacters, ToolUpdateNPCCard, ToolUpdateLocation, ToolUpdateNPCLocation, ToolUpdateArmor:
 		return "更新角色和场景状态"
 	case ToolManageInventory, ToolManageSpell, ToolManageRelation, ToolManageAsset, ToolManageMadness:

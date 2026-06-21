@@ -32,38 +32,39 @@ type PlayerAction struct {
 type ToolCallType string
 
 const (
-	ToolCheckRule         ToolCallType = "check_rule"          // 查阅规则书
-	ToolReadRulebookConst ToolCallType = "read_rulebook_const" // 读取规则书常量目录/列表
-	ToolRollDice          ToolCallType = "roll_dice"           // 骰子检定
-	ToolCreateNPC         ToolCallType = "create_npc"          // 创建临时NPC
-	ToolDestroyNPC        ToolCallType = "destroy_npc"         // 销毁临时NPC
-	ToolActNPC            ToolCallType = "act_npc"             // 与指定NPC对话并获取反应
-	ToolUpdateCharacters  ToolCallType = "update_characters"   // 更新角色状态
-	ToolManageInventory   ToolCallType = "manage_inventory"    // 角色物品增删
-	ToolRecordMonster     ToolCallType = "record_monster"      // 记录已见神话存在
-	ToolManageSpell       ToolCallType = "manage_spell"        // 管理已掌握法术
-	ToolManageRelation    ToolCallType = "manage_relation"     // 管理社会关系
-	ToolManageAsset       ToolCallType = "manage_asset"        // 管理资产
-	ToolEndGame           ToolCallType = "end_game"            // 结束游戏
-	ToolManageMadness     ToolCallType = "manage_madness"      // 管理疯狂状态
-	ToolWrite             ToolCallType = "write"               // 生成叙事段落
-	ToolAdvanceTime       ToolCallType = "advance_time"        // 推进游戏内时间
-	ToolQueryClues        ToolCallType = "query_clues"         // 查询剧本线索
-	ToolQueryCharacter    ToolCallType = "query_character"     // 查询调查员完整人物卡
-	ToolQueryNPCCard      ToolCallType = "query_npc_card"      // 查询NPC完整角色卡
-	ToolUpdateNPCCard     ToolCallType = "update_npc_card"     // 更新NPC角色卡状态
-	ToolUpdateLLMNote     ToolCallType = "update_llm_note"     // 更新Session级玩家LLMNote记录
-	ToolUpdateNPCLLMNote  ToolCallType = "update_npc_llm_note" // 更新Session级NPC LLMNote记录
-	ToolUpdateLocation    ToolCallType = "update_location"     // 更新调查员当前位置
-	ToolUpdateNPCLocation ToolCallType = "update_npc_location" // 更新NPC当前位置
-	ToolUpdateArmor       ToolCallType = "update_armor"        // 更新调查员护甲值
-	ToolHint              ToolCallType = "hint"                // KP写入当前场景高密度提示
-	ToolGenerateImage     ToolCallType = "generate_image"      // NOTE: 生成即时场景图片
-	ToolFoundClue         ToolCallType = "found_clue"          // 记录玩家发现的线索并注入旁白
-	ToolResponse          ToolCallType = "response"            // 结束本轮并给出回复
-	ToolYield             ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
-	ToolContract          ToolCallType = "contract"            // 批次合约,代表本batch的改动
-	ToolReport            ToolCallType = "report"              // 向管理系统自首
+	ToolCheckRule          ToolCallType = "check_rule"          // 查阅规则书
+	ToolReadRulebookConst  ToolCallType = "read_rulebook_const" // 读取规则书常量目录/列表
+	ToolRollDice           ToolCallType = "roll_dice"           // 骰子检定
+	ToolCreateNPC          ToolCallType = "create_npc"          // 创建临时NPC
+	ToolDestroyNPC         ToolCallType = "destroy_npc"         // 销毁临时NPC
+	ToolActNPC             ToolCallType = "act_npc"             // 与指定NPC对话并获取反应
+	ToolUpdateCharacters   ToolCallType = "update_characters"   // 更新角色状态
+	ToolManageInventory    ToolCallType = "manage_inventory"    // 角色物品增删
+	ToolRecordMonster      ToolCallType = "record_monster"      // 记录已见神话存在
+	ToolManageSpell        ToolCallType = "manage_spell"        // 管理已掌握法术
+	ToolManageRelation     ToolCallType = "manage_relation"     // 管理社会关系
+	ToolManageAsset        ToolCallType = "manage_asset"        // 管理资产
+	ToolEndGame            ToolCallType = "end_game"            // 结束游戏
+	ToolManageMadness      ToolCallType = "manage_madness"      // 管理疯狂状态
+	ToolWrite              ToolCallType = "write"               // 生成叙事段落
+	ToolAdvanceTime        ToolCallType = "advance_time"        // 推进游戏内时间
+	ToolQueryClues         ToolCallType = "query_clues"         // 查询剧本线索
+	ToolQueryCharacter     ToolCallType = "query_character"     // 查询调查员完整人物卡
+	ToolQueryNPCCard       ToolCallType = "query_npc_card"      // 查询NPC完整角色卡
+	ToolUpdateNPCCard      ToolCallType = "update_npc_card"     // 更新NPC角色卡状态
+	ToolUpdateLLMNote      ToolCallType = "update_llm_note"     // 更新Session级玩家LLMNote记录
+	ToolUpdateNPCLLMNote   ToolCallType = "update_npc_llm_note" // 更新Session级NPC LLMNote记录
+	ToolUpdateLocation     ToolCallType = "update_location"     // 更新调查员当前位置
+	ToolUpdateNPCLocation  ToolCallType = "update_npc_location" // 更新NPC当前位置
+	ToolUpdateArmor        ToolCallType = "update_armor"        // 更新调查员护甲值
+	ToolHint               ToolCallType = "hint"                // KP写入当前场景高密度提示
+	ToolGenerateImage      ToolCallType = "generate_image"      // NOTE: 生成即时场景图片
+	ToolDescribeCharacters ToolCallType = "describe_characters" // NOTE: 获取调查员可见外貌描写
+	ToolFoundClue          ToolCallType = "found_clue"          // 记录玩家发现的线索并注入旁白
+	ToolResponse           ToolCallType = "response"            // 结束本轮并给出回复
+	ToolYield              ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
+	ToolContract           ToolCallType = "contract"            // 批次合约,代表本batch的改动
+	ToolReport             ToolCallType = "report"              // 向管理系统自首
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
@@ -98,8 +99,8 @@ type ToolCall struct {
 	NewLocation   string                 `json:"new_location,omitempty"`   // update_location/update_npc_location: 新位置名称
 	ArmorValue    int                    `json:"armor_value"`              // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
-	ImagePrompt   string                 `json:"image_prompt,omitempty"`   // NOTE: generate_image: 英文画图提示词
-	Characters    []string               `json:"characters,omitempty"`     // NOTE: generate_image: 参与画面的调查员人物卡名称,由后端补充外貌和物品
+	ImagePrompt   string                 `json:"image_prompt,omitempty"`   // NOTE: generate_image: 英文自然语言画图描述
+	Characters    []string               `json:"characters,omitempty"`     // NOTE: describe_characters 参数;兼容旧 generate_image JSON,但生成图片时忽略
 	ClueIdx       int                    `json:"clue_idx"`                 // found_clue: 线索在剧本clues数组中的0-based索引
 	Options       []string               `json:"options,omitempty"`        // response: 推荐给玩家的可行行动
 	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
@@ -129,11 +130,9 @@ type ToolResult struct {
 	Result string       `json:"result"`
 }
 
-// NOTE: ImagePromptRequest carries the Director's visual prompt plus card names.
-// NOTE: Real appearance/inventory is appended before calling Painter.
+// NOTE: ImagePromptRequest carries the Director's final visual prompt only.
 type ImagePromptRequest struct {
-	Prompt     string   `json:"prompt"`
-	Characters []string `json:"characters,omitempty"`
+	Prompt string `json:"prompt"`
 }
 
 // WriterState 保存Writer自己的上下文和本次生成的白字描述。
