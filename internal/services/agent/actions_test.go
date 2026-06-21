@@ -227,11 +227,13 @@ func TestRunPainterSendsAnimeStyledPrompt(t *testing.T) {
 	}
 }
 
-func TestRunPainterIncludesNamedCharacterCardDetails(t *testing.T) {
+func TestRunPainterUsesWriterCharacterVisualDescription(t *testing.T) {
 	const sessionID uint = 424302
 	provider := &fakeImageProvider{base64Data: "YWJj", mimeType: "image/png"}
+	writer := &fakeProvider{resp: "John is depicted as a gaunt anime investigator in an emerald raincoat, carrying a silver revolver and a compact camera."}
 	sessionAgents.Store(sessionID, map[models.AgentRole]agentHandle{
 		models.AgentRolePainter: {provider: provider, enabled: true},
+		models.AgentRoleWriter:  {provider: writer, enabled: true},
 	})
 	t.Cleanup(func() { deleteCachedAgents(sessionID) })
 
@@ -241,8 +243,8 @@ func TestRunPainterIncludesNamedCharacterCardDetails(t *testing.T) {
 			CharacterCard: models.CharacterCard{
 				ID:         1,
 				Name:       "约翰",
-				Appearance: "A tired investigator in an emerald raincoat with round spectacles.",
-				Inventory:  models.JSONField[[]string]{Data: []string{"silver revolver", "field camera"}},
+				Appearance: "RAW_APPEARANCE_DETAIL: sunken eyes behind round spectacles and a torn emerald raincoat.",
+				Inventory:  models.JSONField[[]string]{Data: []string{"silver revolver", "field camera serial RAW-123"}},
 			},
 		}},
 	}}
@@ -256,18 +258,72 @@ func TestRunPainterIncludesNamedCharacterCardDetails(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Investigators stand at a stormy lighthouse doorway",
-		"Character reference: 约翰",
+		"Character visual descriptions written by Writer from player cards",
+		"John is depicted as a gaunt anime investigator in an emerald raincoat",
 		"emerald raincoat",
 		"silver revolver",
-		"field camera",
+		"compact camera",
 		"anime style",
 	} {
 		if !strings.Contains(provider.prompt, want) {
 			t.Fatalf("provider prompt missing %q: %q", want, provider.prompt)
 		}
 	}
+	for _, rawOnly := range []string{"RAW_APPEARANCE_DETAIL", "field camera serial RAW-123"} {
+		if strings.Contains(provider.prompt, rawOnly) {
+			t.Fatalf("provider prompt leaked raw card detail %q: %q", rawOnly, provider.prompt)
+		}
+	}
 	if strings.Contains(provider.prompt, "不存在") {
 		t.Fatalf("unmatched character name should not be appended: %q", provider.prompt)
+	}
+	if len(writer.messages) != 2 {
+		t.Fatalf("writer messages = %d, want 2", len(writer.messages))
+	}
+	writerUserPrompt := writer.messages[1].Content
+	for _, want := range []string{"约翰", "RAW_APPEARANCE_DETAIL", "field camera serial RAW-123", "silver revolver"} {
+		if !strings.Contains(writerUserPrompt, want) {
+			t.Fatalf("writer prompt missing raw card data %q: %q", want, writerUserPrompt)
+		}
+	}
+}
+
+func TestRunPainterFallsBackWhenWriterUnavailable(t *testing.T) {
+	const sessionID uint = 424303
+	provider := &fakeImageProvider{base64Data: "YWJj", mimeType: "image/png"}
+	sessionAgents.Store(sessionID, map[models.AgentRole]agentHandle{
+		models.AgentRolePainter: {provider: provider, enabled: true},
+	})
+	t.Cleanup(func() { deleteCachedAgents(sessionID) })
+
+	gctx := GameContext{Session: models.GameSession{
+		ID: sessionID,
+		Players: []models.SessionPlayer{{
+			CharacterCard: models.CharacterCard{
+				ID:         1,
+				Name:       "约翰",
+				Appearance: "RAW_APPEARANCE_DETAIL: brass goggles and a patched black coat.",
+				Inventory:  models.JSONField[[]string]{Data: []string{"field camera serial RAW-456"}},
+			},
+		}},
+	}}
+
+	_, err := RunPainter(context.Background(), gctx, ImagePromptRequest{
+		Prompt:     "Investigators stand at a stormy lighthouse doorway",
+		Characters: []string{"约翰"},
+	})
+	if err != nil {
+		t.Fatalf("RunPainter failed: %v", err)
+	}
+	for _, want := range []string{"Investigators stand at a stormy lighthouse doorway", "anime style"} {
+		if !strings.Contains(provider.prompt, want) {
+			t.Fatalf("fallback prompt missing %q: %q", want, provider.prompt)
+		}
+	}
+	for _, notWant := range []string{"Character visual descriptions written by Writer", "RAW_APPEARANCE_DETAIL", "field camera serial RAW-456"} {
+		if strings.Contains(provider.prompt, notWant) {
+			t.Fatalf("fallback prompt should not contain %q: %q", notWant, provider.prompt)
+		}
 	}
 }
 
