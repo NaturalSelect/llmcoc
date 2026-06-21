@@ -62,7 +62,7 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 	if actx.PendingImages != nil {
 		*actx.PendingImages = append(*actx.PendingImages, ImagePromptRequest{Prompt: imagePrompt, Characters: characters})
 	}
-	debugf("tool", "session=%d generate_image queued prompt_len=%d character_count=%d characters=%q prompt=%q", actx.Sid, len([]rune(imagePrompt)), len(characters), truncateRunes(strings.Join(characters, ","), 120), truncateRunes(imagePrompt, 200))
+	debugf("tool", "session=%d generate_image queued prompt_len=%d character_count=%d characters=%q prompt=%q", actx.Sid, len([]rune(imagePrompt)), len(characters), truncateRunes(strings.Join(characters, ","), 120), imagePrompt)
 	return []ToolResult{{Action: ToolGenerateImage, Result: "image generation queued"}}
 }
 
