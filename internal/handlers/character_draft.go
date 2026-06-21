@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const characterDraftTTL = 15 * time.Minute
+const characterDraftTTL = 24 * time.Hour
 const maxActiveCharacterDrafts = 3
 
 var generateCharacterNarrative = agent.GenerateCharacter
