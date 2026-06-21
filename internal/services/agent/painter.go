@@ -188,11 +188,13 @@ func findImagePromptCharacterCard(name string, players []models.SessionPlayer, u
 }
 
 const imagePromptCharacterVisualSystemPrompt = `You are the Writer agent preparing character appearance notes for an anime image model.
-中文含义: 你要把角色卡外貌和随身物品改写成适合图片模型的简洁英文视觉描述,不要新增信息。
 
 Output only concise English visual descriptions, as one paragraph or a short bullet list.
 Use only the provided card data. Do not invent clothing, equipment, secrets, injuries, powers, or personality traits.
-Focus on visible appearance, clothing, carried items, and concrete visual cues that help an anime image model draw the characters.`
+Focus on visible appearance, clothing, carried items, and concrete visual cues that help an anime image model draw the characters.
+
+You only generate a pure appearance description, without any other attributes.
+`
 
 func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHandle, cards []models.CharacterCard) (string, error) {
 	if !h.isEnabled() {
@@ -210,6 +212,7 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 	if resp == "" {
 		return "", fmt.Errorf("writer returned empty visual description")
 	}
+	debugf("writeImagePromptCharacterVisualDescription", "session=%d got character visual description from Writer %v", ctx.Value("session_id"), resp)
 	return resp, nil
 }
 

@@ -208,6 +208,7 @@ operate=add时，同名资产会更新；operate=remove时按asset.name删除。
 【信息边界】image_prompt只能描述玩家当前可见事实和氛围，禁止包含未发现线索、NPC秘密、未来事件、机械数值、工具结果base64或任何隐藏剧透。不要让图片替代response.reply中的必要文字说明。
 【提示词要求】image_prompt必须用英文，写成适合图片模型的视觉描述，包含主体、地点、光线、二次元/anime风格和构图；不要写中文，不要写“generate an image of”。风格应明确为 anime style, 2D illustration, Japanese animation aesthetic, clean line art；避免 photorealism/realistic photography/3D render。
 【调查员引用】可选characters数组填写画面中可见/参与的玩家调查员角色名；只填名字，不要把外貌或物品文本写进characters。后端会按当前人物卡自动补充真实Appearance和Inventory，禁止自行编造。
+【image_prompt】不需要再次描述调查员人设,它已经包含在characters里了；image_prompt应该专注于环境、NPC、动作、氛围和构图等视觉元素。
 【批次规则】generate_image可以与write/response同批次，不需要yield；返回结果只表示图片生成已排队，KP不需要也不能读取图片内容。</description>
 			<call_example>{"action":"generate_image","image_prompt":"A dim 1920s island lighthouse interior, wet stone stairs, a cracked brass lantern casting sickly green light, investigators silhouetted at the doorway, cosmic horror atmosphere, anime style, 2D illustration, Japanese animation aesthetic, clean line art, expressive lighting, atmospheric horror, high detail, dynamic composition, avoid photorealism, realistic photography, 3D render","characters":["约翰","艾琳"]}</call_example>
 		</tool>
