@@ -139,3 +139,19 @@ func TestLawyerCachePersistencePreservesRecentEntriesUnderCapacity(t *testing.T)
 		t.Fatalf("expected c to be restored, ok=%v value=%q", ok, got)
 	}
 }
+
+func TestLawyerCacheGetEntryReturnsValueAndSize(t *testing.T) {
+	cache := NewLawyerCache(1024)
+	cache.Set("#手枪 #伤害", "手枪伤害为1D10。")
+
+	entry, ok := cache.GetEntry("#手枪 #伤害")
+	if !ok {
+		t.Fatal("expected cache entry to exist")
+	}
+	if entry.Key != "#手枪 #伤害" || entry.Value != "手枪伤害为1D10。" {
+		t.Fatalf("unexpected entry: %+v", entry)
+	}
+	if want := int64(len(entry.Key) + len(entry.Value)); entry.Size != want {
+		t.Fatalf("size = %d, want %d", entry.Size, want)
+	}
+}

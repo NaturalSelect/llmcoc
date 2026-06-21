@@ -3,10 +3,26 @@ window.COC = window.COC || {};
 window.COC.admin = {
                     async loadAdminUsers() { this.adminUsers = (await this.api('GET', '/api/admin/users')) || []; },
                     async loadCacheStats() { this.cacheStats = await this.api('GET', '/api/admin/cache/stats'); },
+                    async viewCacheEntry(key) {
+                        this.cacheEntryLoading = true;
+                        this.selectedCacheEntry = { key, value: '' };
+                        try {
+                            this.selectedCacheEntry = await this.api('GET', '/api/admin/cache/entry?key=' + encodeURIComponent(key));
+                        } catch (e) {
+                            this.selectedCacheEntry = null;
+                            this.showToast('获取缓存详情失败：' + e.message, 'error');
+                        }
+                        this.cacheEntryLoading = false;
+                    },
+                    closeCacheEntry() {
+                        this.selectedCacheEntry = null;
+                        this.cacheEntryLoading = false;
+                    },
                     async clearCache() {
                         if (!confirm('确认清空所有规则缓存？统计计数也将重置。')) return;
                         try {
                             await this.api('DELETE', '/api/admin/cache');
+                            this.closeCacheEntry();
                             this.showToast('缓存已清空');
                             await Promise.all([this.loadCacheStats(), this.loadCacheKeys()]);
                         } catch (e) { this.showToast(e.message, 'error'); }
@@ -46,6 +62,7 @@ window.COC.admin = {
                         if (!confirm('确认删除缓存条目：' + key + '？')) return;
                         try {
                             await this.api('DELETE', '/api/admin/cache/entry?key=' + encodeURIComponent(key));
+                            if (this.selectedCacheEntry?.key === key) this.closeCacheEntry();
                             this.showToast('条目已删除');
                             // 若当前页只剩1条且不是第1页，回退一页
                             if (this.cacheKeys.length <= 1 && this.cacheKeyPage > 1) {

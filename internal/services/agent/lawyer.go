@@ -444,6 +444,11 @@ func DeleteLawyerCacheEntry(key string) bool {
 	return lawyerCache.Delete(key)
 }
 
+// NOTE: GetLawyerCacheEntry 返回单条规则缓存详情，供管理员只读查看。
+func GetLawyerCacheEntry(key string) (CacheEntry, bool) {
+	return lawyerCache.GetEntry(key)
+}
+
 // ListLawyerCacheKeys returns all cache keys.
 func ListLawyerCacheKeys() []string {
 	return lawyerCache.ListKeys()

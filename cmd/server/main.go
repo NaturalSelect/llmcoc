@@ -251,6 +251,7 @@ func main() {
 		admin.GET("/cache/stats", handlers.AdminGetCacheStats)
 		admin.DELETE("/cache", handlers.AdminClearCache)
 		admin.GET("/cache/keys", handlers.AdminListCacheKeys)
+		admin.GET("/cache/entry", handlers.AdminGetCacheEntry)
 		admin.DELETE("/cache/entry", handlers.AdminDeleteCacheEntry)
 		// Ban management
 		admin.PUT("/users/:id/ban", handlers.AdminBanUser)

@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/agent"
 )
 
 func adminRouter() *gin.Engine {
@@ -22,6 +26,7 @@ func adminRouter() *gin.Engine {
 	admin.GET("/recharge/history", AdminGetRechargeHistory)
 	admin.POST("/shop/items", AdminCreateShopItem)
 	admin.DELETE("/shop/items/:id", AdminDeleteShopItem)
+	admin.GET("/cache/entry", AdminGetCacheEntry)
 	return r
 }
 
@@ -240,6 +245,71 @@ func TestAdminGetScenarioGenerationLog_NoLog(t *testing.T) {
 	}
 	if resp.HasLog || resp.LogText != "" || resp.ScenarioID != scenarioID {
 		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestAdminGetCacheEntry_ReturnsEntry(t *testing.T) {
+	agent.ClearLawyerCacheAll()
+	t.Cleanup(agent.ClearLawyerCacheAll)
+	key := "#手枪 #伤害"
+	value := "手枪伤害为1D10。"
+	hashes := agent.LawyerCacheHashes{RulebookHash: "rule-hash", SpellbookHash: "spell-hash", MonsterbookHash: "monster-hash"}
+	payload := map[string]any{
+		"hashes":   hashes,
+		"saved_at": "2026-01-01T00:00:00Z",
+		"entries":  []map[string]string{{"key": key, "value": value}},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal cache payload: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "lawyer_cache.json")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("write cache payload: %v", err)
+	}
+	t.Setenv("LAWYER_CACHE_PATH", path)
+	agent.LoadLawyerCache(hashes)
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/cache/entry?key="+url.QueryEscape(key), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp agent.CacheEntry
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Key != key || resp.Value != value {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if want := int64(len(key) + len(value)); resp.Size != want {
+		t.Fatalf("size = %d, want %d", resp.Size, want)
+	}
+}
+
+func TestAdminGetCacheEntry_MissingKey(t *testing.T) {
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/cache/entry", nil))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminGetCacheEntry_NotFound(t *testing.T) {
+	agent.ClearLawyerCacheAll()
+	t.Cleanup(agent.ClearLawyerCacheAll)
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/cache/entry?key="+url.QueryEscape("不存在"), nil))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

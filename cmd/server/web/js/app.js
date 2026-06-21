@@ -105,6 +105,8 @@ window.COC.core = function() {
                     cacheKeyPageSize: 20,
                     cacheKeyTotal: 0,
                     cacheKeyTotalPages: 1,
+                    selectedCacheEntry: null,
+                    cacheEntryLoading: false,
                     scenarioUploadFile: null,
                     viewingScenario: null,
                     scenarioGenerationLog: null,

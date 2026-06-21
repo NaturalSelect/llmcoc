@@ -11,10 +11,11 @@ import (
 	"time"
 )
 
-// CacheEntry represents a single cached item.
+// NOTE: CacheEntry 表示单条缓存快照，供管理接口安全返回。
 type CacheEntry struct {
-	Key   string
-	Value string
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Size  int64  `json:"size"`
 }
 
 // LawyerCache is an LRU cache for final lawyer rulings.
@@ -47,8 +48,8 @@ type LawyerCacheHashes struct {
 }
 
 type persistentLawyerCache struct {
-	Hashes  LawyerCacheHashes `json:"hashes"`
-	SavedAt time.Time         `json:"saved_at"`
+	Hashes  LawyerCacheHashes  `json:"hashes"`
+	SavedAt time.Time          `json:"saved_at"`
 	Entries []persistentRuling `json:"entries"`
 }
 
@@ -81,22 +82,25 @@ func NewLawyerCache(maxBytes int64) *LawyerCache {
 
 // Get retrieves a cached value by key.
 func (lc *LawyerCache) Get(key string) (string, bool) {
-	lc.mu.RLock()
-	elem, exists := lc.cache[key]
-	lc.mu.RUnlock()
-
-	if !exists {
+	entry, ok := lc.GetEntry(key)
+	if !ok {
 		return "", false
 	}
+	return entry.Value, true
+}
 
-	// Move to front (most recently used)
+// NOTE: GetEntry 返回缓存条目的完整只读快照，并刷新 LRU 顺序。
+func (lc *LawyerCache) GetEntry(key string) (CacheEntry, bool) {
 	lc.mu.Lock()
+	defer lc.mu.Unlock()
+
+	elem, exists := lc.cache[key]
+	if !exists {
+		return CacheEntry{}, false
+	}
 	lc.list.MoveToFront(elem)
 	node := elem.Value.(*cacheNode)
-	value := node.value
-	lc.mu.Unlock()
-
-	return value, true
+	return CacheEntry{Key: node.key, Value: node.value, Size: node.size}, true
 }
 
 // Set stores a value in the cache with the given key.

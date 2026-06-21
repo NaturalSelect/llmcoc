@@ -287,6 +287,21 @@ func AdminListCacheKeys(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// NOTE: AdminGetCacheEntry 处理 GET /admin/cache/entry，返回单条规则缓存详情。
+func AdminGetCacheEntry(c *gin.Context) {
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 key 参数"})
+		return
+	}
+	entry, ok := agent.GetLawyerCacheEntry(key)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "缓存条目不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, entry)
+}
+
 // AdminDeleteCacheEntry handles DELETE /admin/cache/entry.
 // Deletes a single cache entry by key (passed as query param).
 func AdminDeleteCacheEntry(c *gin.Context) {
