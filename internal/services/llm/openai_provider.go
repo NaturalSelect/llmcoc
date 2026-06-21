@@ -283,7 +283,7 @@ func (p *openAIProvider) generateImage(ctx context.Context, prompt string, size 
 }
 
 func (p *openAIProvider) GenerateImage(ctx context.Context, prompt string, size string) (string, string, error) {
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 30; i++ {
 		data, mime, err := p.generateImage(ctx, prompt, size)
 		if err != nil {
 			log.Printf("[llm] GenerateImage error: %v", err)
@@ -294,7 +294,7 @@ func (p *openAIProvider) GenerateImage(ctx context.Context, prompt string, size 
 		}
 		return data, mime, nil
 	}
-	return "", "", errors.New("LLM failed to generate image after 5 attempts")
+	return "", "", errors.New("LLM failed to generate image after 30 attempts")
 }
 
 var (
