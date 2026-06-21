@@ -253,7 +253,7 @@ func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (msg 
 	return msg, nil
 }
 
-func (p *openAIProvider) GenerateImage(ctx context.Context, prompt string, size string) (string, string, error) {
+func (p *openAIProvider) generateImage(ctx context.Context, prompt string, size string) (string, string, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return "", "", errors.New("image prompt is empty")
@@ -280,6 +280,21 @@ func (p *openAIProvider) GenerateImage(ctx context.Context, prompt string, size 
 		return "", "", errors.New("LLM returned no image data")
 	}
 	return resp.Data[0].B64JSON, "image/png", nil
+}
+
+func (p *openAIProvider) GenerateImage(ctx context.Context, prompt string, size string) (string, string, error) {
+	for i := 0; i < 5; i++ {
+		data, mime, err := p.generateImage(ctx, prompt, size)
+		if err != nil {
+			log.Printf("[llm] GenerateImage error: %v", err)
+			continue
+		}
+		if data == "" {
+			continue
+		}
+		return data, mime, nil
+	}
+	return "", "", errors.New("LLM failed to generate image after 5 attempts")
 }
 
 var (
