@@ -193,6 +193,42 @@ func TestGenerateImageActionUnavailableWithoutPainter(t *testing.T) {
 	}
 }
 
+func TestRunPainterSendsAnimeStyledPrompt(t *testing.T) {
+	const sessionID uint = 424301
+	provider := &fakeImageProvider{base64Data: "YWJj", mimeType: "image/png"}
+	sessionAgents.Store(sessionID, map[models.AgentRole]agentHandle{
+		models.AgentRolePainter: {provider: provider, enabled: true},
+	})
+	t.Cleanup(func() { deleteCachedAgents(sessionID) })
+
+	dataURL, err := RunPainter(context.Background(), GameContext{Session: models.GameSession{ID: sessionID}}, "A foggy lighthouse at night")
+	if err != nil {
+		t.Fatalf("RunPainter failed: %v", err)
+	}
+	if dataURL != "data:image/png;base64,YWJj" {
+		t.Fatalf("unexpected data URL: %q", dataURL)
+	}
+	if provider.prompt == "A foggy lighthouse at night" {
+		t.Fatal("RunPainter sent raw prompt without anime style")
+	}
+	for _, want := range []string{"A foggy lighthouse at night", "anime style", "2D illustration", "Japanese animation aesthetic", "avoid photorealism", "realistic photography", "3D render"} {
+		if !strings.Contains(provider.prompt, want) {
+			t.Fatalf("styled prompt missing %q: %q", want, provider.prompt)
+		}
+	}
+	if provider.size != "1024x1024" {
+		t.Fatalf("size=%q, want 1024x1024", provider.size)
+	}
+}
+
+func TestAnimeStyledImagePromptAvoidsDuplicateStyle(t *testing.T) {
+	prompt := "A rain-soaked alley, " + animeImageStylePrompt
+	styledPrompt := animeStyledImagePrompt("  " + prompt + "  ")
+	if styledPrompt != prompt {
+		t.Fatalf("styled prompt duplicated or failed to trim: %q", styledPrompt)
+	}
+}
+
 func TestBuildCharacterDetailIncludesAssets(t *testing.T) {
 	players := []models.SessionPlayer{{
 		CharacterCard: models.CharacterCard{

@@ -12,6 +12,36 @@ import (
 
 type generateImageAction struct{}
 
+var animeImageStyleRequirements = []string{
+	"anime style",
+	"2D illustration",
+	"Japanese animation aesthetic",
+	"clean line art",
+	"expressive lighting",
+	"atmospheric horror",
+	"high detail",
+	"avoid photorealism",
+	"realistic photography",
+	"3D render",
+}
+
+const animeImageStylePrompt = "anime style, 2D illustration, Japanese animation aesthetic, clean line art, expressive lighting, atmospheric horror, high detail, avoid photorealism, realistic photography, 3D render"
+
+// NOTE: Painter统一追加二次元画风,防止普通场景提示词绕过图片风格设定。
+func animeStyledImagePrompt(prompt string) string {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return ""
+	}
+	lowerPrompt := strings.ToLower(prompt)
+	for _, requirement := range animeImageStyleRequirements {
+		if !strings.Contains(lowerPrompt, strings.ToLower(requirement)) {
+			return prompt + ", " + animeImageStylePrompt
+		}
+	}
+	return prompt
+}
+
 func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	imagePrompt := strings.TrimSpace(call.ImagePrompt)
 	if imagePrompt == "" {
@@ -41,8 +71,9 @@ func RunPainter(ctx context.Context, gctx GameContext, prompt string) (string, e
 	if prompt == "" {
 		return "", fmt.Errorf("image prompt is empty")
 	}
+	styledPrompt := animeStyledImagePrompt(prompt)
 	start := time.Now()
-	debugf("Painter", "session=%d start prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), truncateRunes(prompt, 200))
+	debugf("Painter", "session=%d start prompt_len=%d styled_prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), len([]rune(styledPrompt)), truncateRunes(prompt, 200))
 	ctx = withWriterGameSessionID(ctx, gctx)
 	handles, err := getCachedAgents(gctx.Session.ID)
 	if err != nil {
@@ -59,7 +90,7 @@ func RunPainter(ctx context.Context, gctx GameContext, prompt string) (string, e
 		debugf("Painter", "session=%d unavailable: provider lacks image generation elapsed=%.0fms", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000)
 		return "", fmt.Errorf("当前 Painter provider 不支持图片生成")
 	}
-	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, "1024x1024")
+	base64Data, mimeType, err := generator.GenerateImage(ctx, styledPrompt, "1024x1024")
 	if err != nil {
 		debugf("Painter", "session=%d error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
 		return "", err

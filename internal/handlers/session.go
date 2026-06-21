@@ -846,6 +846,9 @@ loop:
 					log.Printf("[chat] session=%d user=%q save after disconnect error: %v", sessionID, username, err)
 				} else if assistantMsg != nil {
 					h.startWriterJob(assistantMsg.ID, gctx, res.output, nil)
+					if len(res.output.ImagePrompts) > 0 {
+						h.startPainterJob(assistantMsg.ID, gctx, res.output.ImagePrompts[0], nil)
+					}
 				}
 			}
 			return
@@ -901,7 +904,11 @@ loop:
 		log.Printf("[chat] session=%d user=%q painter queued prompt_len=%d prompt=%q", sessionID, username, len([]rune(output.ImagePrompts[0])), chatTruncate(output.ImagePrompts[0], 200))
 		painterClientDone := make(chan struct{})
 		defer close(painterClientDone)
-		painterCh = h.startPainterJob(gctx, output.ImagePrompts[0], painterClientDone)
+		assistantMessageID := uint(0)
+		if assistantMsg != nil {
+			assistantMessageID = assistantMsg.ID
+		}
+		painterCh = h.startPainterJob(assistantMessageID, gctx, output.ImagePrompts[0], painterClientDone)
 	}
 
 	streamedWriter := output.WriterText
@@ -979,6 +986,11 @@ type painterJobResult struct {
 
 const writerPendingTag = "<writer_pending>true</writer_pending>"
 
+const imageDataURLStartTag = "<image_data_url>"
+const imageDataURLEndTag = "</image_data_url>"
+
+const assistantMessageUpdateRetries = 3
+
 const painterJobTimeout = 600 * time.Second
 
 func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext, output agent.RunOutput, clientDone <-chan struct{}) <-chan writerJobResult {
@@ -1021,19 +1033,24 @@ func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext,
 	return ch
 }
 
-func (h *SessionHandlers) startPainterJob(gctx agent.GameContext, prompt string, clientDone <-chan struct{}) <-chan painterJobResult {
+func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext, prompt string, clientDone <-chan struct{}) <-chan painterJobResult {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil
 	}
-	ch := make(chan painterJobResult, 1)
+	var ch chan painterJobResult
+	if clientDone != nil {
+		ch = make(chan painterJobResult, 1)
+	}
 	go func() {
-		defer close(ch)
+		if ch != nil {
+			defer close(ch)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), painterJobTimeout)
 		defer cancel()
 		start := time.Now()
 		log.Printf("[chat] session=%d painter async start prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), chatTruncate(prompt, 200))
-		if clientDone != nil {
+		if clientDone != nil && messageID == 0 {
 			go func() {
 				select {
 				case <-clientDone:
@@ -1049,13 +1066,18 @@ func (h *SessionHandlers) startPainterJob(gctx agent.GameContext, prompt string,
 				err = fmt.Errorf("painter returned invalid image data")
 			}
 		}
+		if err == nil && messageID != 0 {
+			if dbErr := appendAssistantMessageImageDataURL(messageID, dataURL); dbErr != nil {
+				err = fmt.Errorf("persist painter image data: %w", dbErr)
+			}
+		}
 		if err != nil {
 			log.Printf("[chat] session=%d painter async finished error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
 		} else {
 			log.Printf("[chat] session=%d painter async finished success elapsed=%.0fms data_url_len=%d", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, len(dataURL))
 		}
 		result := painterJobResult{dataURL: dataURL, err: err}
-		if clientDone == nil {
+		if ch == nil {
 			return
 		}
 		select {
@@ -1067,13 +1089,117 @@ func (h *SessionHandlers) startPainterJob(gctx agent.GameContext, prompt string,
 }
 
 func updateAssistantMessageWriter(messageID uint, kpReply, writerText string) error {
-	content := buildAssistantContent(writerText, kpReply)
-	if strings.TrimSpace(content) == "" {
+	baseContent := buildAssistantContent(writerText, kpReply)
+	for attempt := 0; attempt < assistantMessageUpdateRetries; attempt++ {
+		var msg models.Message
+		if err := models.DB.Select("id", "content").First(&msg, messageID).Error; err != nil {
+			return err
+		}
+		content := appendImageDataURLTags(baseContent, extractImageDataURLs(msg.Content))
+		if strings.TrimSpace(content) == "" {
+			return nil
+		}
+		if content == msg.Content {
+			return nil
+		}
+		res := models.DB.Model(&models.Message{}).
+			Where("id = ? AND content = ?", messageID, msg.Content).
+			Update("content", content)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("assistant message %d content changed while updating writer", messageID)
+}
+
+func appendAssistantMessageImageDataURL(messageID uint, dataURL string) error {
+	dataURL = strings.TrimSpace(dataURL)
+	if messageID == 0 {
 		return nil
 	}
-	return models.DB.Model(&models.Message{}).
-		Where("id = ?", messageID).
-		Update("content", content).Error
+	if !isValidImageDataURL(dataURL) {
+		return fmt.Errorf("invalid image data URL")
+	}
+	for attempt := 0; attempt < assistantMessageUpdateRetries; attempt++ {
+		var msg models.Message
+		if err := models.DB.Select("id", "content").First(&msg, messageID).Error; err != nil {
+			return err
+		}
+		if imageDataURLExists(msg.Content, dataURL) {
+			return nil
+		}
+		content := appendImageDataURLTags(msg.Content, []string{dataURL})
+		if content == msg.Content {
+			return nil
+		}
+		res := models.DB.Model(&models.Message{}).
+			Where("id = ? AND content = ?", messageID, msg.Content).
+			Update("content", content)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("assistant message %d content changed while appending image", messageID)
+}
+
+func isValidImageDataURL(dataURL string) bool {
+	return strings.HasPrefix(strings.TrimSpace(dataURL), "data:image/")
+}
+
+func imageDataURLExists(content, dataURL string) bool {
+	for _, existing := range extractImageDataURLs(content) {
+		if existing == dataURL {
+			return true
+		}
+	}
+	return false
+}
+
+func extractImageDataURLs(content string) []string {
+	var urls []string
+	rest := content
+	for {
+		start := strings.Index(rest, imageDataURLStartTag)
+		if start < 0 {
+			return urls
+		}
+		afterStart := rest[start+len(imageDataURLStartTag):]
+		end := strings.Index(afterStart, imageDataURLEndTag)
+		if end < 0 {
+			return urls
+		}
+		dataURL := strings.TrimSpace(afterStart[:end])
+		if isValidImageDataURL(dataURL) {
+			urls = append(urls, dataURL)
+		}
+		rest = afterStart[end+len(imageDataURLEndTag):]
+	}
+}
+
+func appendImageDataURLTags(content string, dataURLs []string) string {
+	content = strings.TrimSpace(content)
+	seen := make(map[string]bool)
+	for _, dataURL := range extractImageDataURLs(content) {
+		seen[dataURL] = true
+	}
+	for _, dataURL := range dataURLs {
+		dataURL = strings.TrimSpace(dataURL)
+		if !isValidImageDataURL(dataURL) || seen[dataURL] {
+			continue
+		}
+		if content != "" {
+			content += "\n"
+		}
+		content += imageDataURLStartTag + dataURL + imageDataURLEndTag
+		seen[dataURL] = true
+	}
+	return content
 }
 
 func buildAssistantContent(writerText, kpReply string) string {

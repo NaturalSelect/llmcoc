@@ -140,7 +140,7 @@ type RunOutput struct {
 	WriterText      string   // 已生成的白字描述,主要用于测试或兼容旧调用
 	WriterDirection string   // Writer后续生成描述所需的导演指令
 	KPReply         string   // KP对玩家的主流程回复
-	ImagePrompts    []string // NOTE: 本轮KP主流程排队的临时画图提示词,不持久化。
+	ImagePrompts    []string // NOTE: 本轮KP主流程排队的画图提示词;生成后的data URL由handler持久化到消息内容。
 }
 
 // ── Dice types ────────────────────────────────────────────────────────────────
