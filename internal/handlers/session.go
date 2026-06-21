@@ -898,6 +898,7 @@ loop:
 	}
 	var painterCh <-chan painterJobResult
 	if len(output.ImagePrompts) > 0 {
+		log.Printf("[chat] session=%d user=%q painter queued prompt_len=%d prompt=%q", sessionID, username, len([]rune(output.ImagePrompts[0])), chatTruncate(output.ImagePrompts[0], 200))
 		painterClientDone := make(chan struct{})
 		defer close(painterClientDone)
 		painterCh = h.startPainterJob(gctx, output.ImagePrompts[0], painterClientDone)
@@ -978,7 +979,7 @@ type painterJobResult struct {
 
 const writerPendingTag = "<writer_pending>true</writer_pending>"
 
-const painterJobTimeout = 60 * time.Second
+const painterJobTimeout = 600 * time.Second
 
 func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext, output agent.RunOutput, clientDone <-chan struct{}) <-chan writerJobResult {
 	direction := strings.TrimSpace(output.WriterDirection)
@@ -1030,6 +1031,8 @@ func (h *SessionHandlers) startPainterJob(gctx agent.GameContext, prompt string,
 		defer close(ch)
 		ctx, cancel := context.WithTimeout(context.Background(), painterJobTimeout)
 		defer cancel()
+		start := time.Now()
+		log.Printf("[chat] session=%d painter async start prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), chatTruncate(prompt, 200))
 		if clientDone != nil {
 			go func() {
 				select {
@@ -1045,6 +1048,11 @@ func (h *SessionHandlers) startPainterJob(gctx agent.GameContext, prompt string,
 			if dataURL == "" || !strings.HasPrefix(dataURL, "data:image/") {
 				err = fmt.Errorf("painter returned invalid image data")
 			}
+		}
+		if err != nil {
+			log.Printf("[chat] session=%d painter async finished error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
+		} else {
+			log.Printf("[chat] session=%d painter async finished success elapsed=%.0fms data_url_len=%d", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, len(dataURL))
 		}
 		result := painterJobResult{dataURL: dataURL, err: err}
 		if clientDone == nil {
