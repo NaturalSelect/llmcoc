@@ -28,7 +28,7 @@ type ActionContext struct {
 	SwitchRole         *bool
 	KPNarration        *string
 	PendingWrite       *string
-	PendingImages      *[]string
+	PendingImages      *[]ImagePromptRequest
 	WroteNarrative     *bool
 	Interrupt          *bool
 	DiceMsg            *string

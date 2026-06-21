@@ -526,6 +526,58 @@ func TestGetMessages_Success(t *testing.T) {
 	}
 }
 
+func TestGetMessages_StripsPersistedImageTagsAndReturnsImages(t *testing.T) {
+	initTestDB(t)
+	sessID, userID := seedPlayingSession(t)
+	dataURL := "data:image/png;base64,YWJj"
+
+	models.DB.Create(&models.Message{
+		SessionID: sessID,
+		Role:      models.MessageRoleAssistant,
+		Content:   "灯塔门缝中透出冷光。\n" + imageDataURLStartTag + dataURL + imageDataURLEndTag,
+		Username:  "KP",
+	})
+
+	r := sessionCRUDRouter(userID, "tester", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/messages", sessID), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), imageDataURLStartTag) || strings.Contains(w.Body.String(), imageDataURLEndTag) {
+		t.Fatalf("response should not contain image data tags")
+	}
+	var msgs []struct {
+		Role    models.MessageRole `json:"role"`
+		Content string             `json:"content"`
+		Images  []string           `json:"images"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&msgs); err != nil {
+		t.Fatalf("decode messages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("want 1 message, got %d", len(msgs))
+	}
+	if strings.Contains(msgs[0].Content, "data:image") || strings.Contains(msgs[0].Content, "image_data_url") {
+		t.Fatalf("content should be stripped")
+	}
+	if msgs[0].Content != "灯塔门缝中透出冷光。" {
+		t.Fatalf("content = %q", msgs[0].Content)
+	}
+	if len(msgs[0].Images) != 1 || msgs[0].Images[0] != dataURL {
+		t.Fatalf("images should contain the persisted data URL")
+	}
+
+	var stored models.Message
+	if err := models.DB.Where("session_id = ? AND role = ?", sessID, models.MessageRoleAssistant).First(&stored).Error; err != nil {
+		t.Fatalf("reload stored message: %v", err)
+	}
+	if !strings.Contains(stored.Content, imageDataURLStartTag+dataURL+imageDataURLEndTag) {
+		t.Fatalf("DB content should keep image data tag")
+	}
+}
+
 func TestGetMessages_PublicRoomAllowsSpectator(t *testing.T) {
 	initTestDB(t)
 	sessID, _ := seedPlayingSession(t)

@@ -58,22 +58,25 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 		debugf("tool", "session=%d generate_image unavailable: provider lacks image generation prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
 		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation unavailable"}}
 	}
+	characters := sanitizeImageCharacters(call.Characters)
 	if actx.PendingImages != nil {
-		*actx.PendingImages = append(*actx.PendingImages, imagePrompt)
+		*actx.PendingImages = append(*actx.PendingImages, ImagePromptRequest{Prompt: imagePrompt, Characters: characters})
 	}
-	debugf("tool", "session=%d generate_image queued prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
+	debugf("tool", "session=%d generate_image queued prompt_len=%d character_count=%d characters=%q prompt=%q", actx.Sid, len([]rune(imagePrompt)), len(characters), truncateRunes(strings.Join(characters, ","), 120), truncateRunes(imagePrompt, 200))
 	return []ToolResult{{Action: ToolGenerateImage, Result: "image generation queued"}}
 }
 
-// NOTE: 根据排队提示词生成一张临时图片data URL;结果只用于当前SSE,不写入数据库。
-func RunPainter(ctx context.Context, gctx GameContext, prompt string) (string, error) {
-	prompt = strings.TrimSpace(prompt)
+// NOTE: 根据排队请求生成图片data URL;handler负责把结果持久化到助手消息。
+func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptRequest) (string, error) {
+	prompt := strings.TrimSpace(request.Prompt)
 	if prompt == "" {
 		return "", fmt.Errorf("image prompt is empty")
 	}
-	styledPrompt := animeStyledImagePrompt(prompt)
+	characters := sanitizeImageCharacters(request.Characters)
+	enrichedPrompt, matchedCharacters := enrichImagePromptWithCharacterCards(prompt, characters, gctx.Session.Players)
+	styledPrompt := animeStyledImagePrompt(enrichedPrompt)
 	start := time.Now()
-	debugf("Painter", "session=%d start prompt_len=%d styled_prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), len([]rune(styledPrompt)), truncateRunes(prompt, 200))
+	debugf("Painter", "session=%d start prompt_len=%d enriched_prompt_len=%d styled_prompt_len=%d character_count=%d matched_character_count=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), len([]rune(enrichedPrompt)), len([]rune(styledPrompt)), len(characters), matchedCharacters, truncateRunes(prompt, 200))
 	ctx = withWriterGameSessionID(ctx, gctx)
 	handles, err := getCachedAgents(gctx.Session.ID)
 	if err != nil {
@@ -102,6 +105,104 @@ func RunPainter(ctx context.Context, gctx GameContext, prompt string) (string, e
 	}
 	debugf("Painter", "session=%d success elapsed=%.0fms mime=%q base64_len=%d", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, mimeType, len(base64Data))
 	return dataURL, nil
+}
+
+func sanitizeImageCharacters(names []string) []string {
+	result := make([]string, 0, len(names))
+	seen := make(map[string]bool, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, name)
+	}
+	return result
+}
+
+func enrichImagePromptWithCharacterCards(prompt string, names []string, players []models.SessionPlayer) (string, int) {
+	names = sanitizeImageCharacters(names)
+	if len(names) == 0 || len(players) == 0 {
+		return prompt, 0
+	}
+	var refs []string
+	usedCards := map[uint]bool{}
+	for _, name := range names {
+		card, ok := findImagePromptCharacterCard(name, players, usedCards)
+		if !ok {
+			continue
+		}
+		if card.ID != 0 {
+			usedCards[card.ID] = true
+		}
+		refs = append(refs, formatImagePromptCharacterReference(card))
+	}
+	if len(refs) == 0 {
+		return prompt, 0
+	}
+	return strings.TrimSpace(prompt) + "\n\nCharacter references from player cards (use these exact details; do not invent appearance or carried items):\n" + strings.Join(refs, "\n"), len(refs)
+}
+
+func findImagePromptCharacterCard(name string, players []models.SessionPlayer, usedCards map[uint]bool) (models.CharacterCard, bool) {
+	name = strings.TrimSpace(name)
+	for _, p := range players {
+		card := p.CharacterCard
+		if card.ID != 0 && usedCards[card.ID] {
+			continue
+		}
+		if strings.TrimSpace(card.Name) == name {
+			return card, true
+		}
+	}
+	lowerName := strings.ToLower(name)
+	for _, p := range players {
+		card := p.CharacterCard
+		if card.ID != 0 && usedCards[card.ID] {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(card.Name)) == lowerName {
+			return card, true
+		}
+	}
+	return models.CharacterCard{}, false
+}
+
+func formatImagePromptCharacterReference(card models.CharacterCard) string {
+	parts := []string{"- Character reference: " + compactPromptText(card.Name)}
+	appearance := compactPromptText(card.Appearance)
+	if appearance != "" {
+		parts = append(parts, "appearance: "+appearance)
+	} else {
+		parts = append(parts, "no appearance description available")
+	}
+	if inventory := compactImagePromptInventory(card.Inventory.Data); inventory != "" {
+		parts = append(parts, "inventory/items carried: "+inventory)
+	}
+	return strings.Join(parts, "; ") + "."
+}
+
+func compactImagePromptInventory(items []string) string {
+	compact := make([]string, 0, len(items))
+	for _, item := range items {
+		item = compactPromptText(item)
+		if item == "" {
+			continue
+		}
+		compact = append(compact, item)
+	}
+	if len(compact) == 0 {
+		return ""
+	}
+	return strings.Join(compact, ", ")
+}
+
+func compactPromptText(text string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
 }
 
 func buildImageDataURL(base64Data string, mimeType string) (string, bool) {

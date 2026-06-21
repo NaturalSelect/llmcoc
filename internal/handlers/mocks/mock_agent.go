@@ -87,16 +87,16 @@ func (mr *MockAgentRunnerMockRecorder) RunWriterStream(ctx, gctx, direction, onT
 }
 
 // NOTE: RunPainter 模拟基础方法。
-func (m *MockAgentRunner) RunPainter(ctx context.Context, gctx agent.GameContext, prompt string) (string, error) {
+func (m *MockAgentRunner) RunPainter(ctx context.Context, gctx agent.GameContext, request agent.ImagePromptRequest) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunPainter", ctx, gctx, prompt)
+	ret := m.ctrl.Call(m, "RunPainter", ctx, gctx, request)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // NOTE: RunPainter 声明期望调用。
-func (mr *MockAgentRunnerMockRecorder) RunPainter(ctx, gctx, prompt any) *gomock.Call {
+func (mr *MockAgentRunnerMockRecorder) RunPainter(ctx, gctx, request any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunPainter", reflect.TypeOf((*MockAgentRunner)(nil).RunPainter), ctx, gctx, prompt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunPainter", reflect.TypeOf((*MockAgentRunner)(nil).RunPainter), ctx, gctx, request)
 }

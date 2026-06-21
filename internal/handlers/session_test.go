@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -184,7 +185,7 @@ func parseSSE(body string) map[string][]string {
 
 // formPost builds an application/x-www-form-urlencoded POST request.
 func formPost(path, content string) *http.Request {
-	body := strings.NewReader("content=" + content)
+	body := strings.NewReader("content=" + url.QueryEscape(content))
 	req, _ := http.NewRequest(http.MethodPost, path, body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return req
@@ -398,9 +399,9 @@ func TestChatStream_ForwardsImageSSEAndPersistsDataURL(t *testing.T) {
 	runner := mocks.NewMockAgentRunner(ctrl)
 	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
 		KPReply:      "你看见灯塔门缝中透出冷光。",
-		ImagePrompts: []string{"A foggy lighthouse"},
+		ImagePrompts: []agent.ImagePromptRequest{{Prompt: "A foggy lighthouse", Characters: []string{"约翰"}}},
 	}, nil)
-	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), "A foggy lighthouse").Return("data:image/png;base64,YWJj", nil)
+	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), agent.ImagePromptRequest{Prompt: "A foggy lighthouse", Characters: []string{"约翰"}}).Return("data:image/png;base64,YWJj", nil)
 
 	h := NewSessionHandlers(runner)
 	r := makeTestRouter(h, userID, "tester")
@@ -412,8 +413,11 @@ func TestChatStream_ForwardsImageSSEAndPersistsDataURL(t *testing.T) {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
 	events := parseSSE(w.Body.String())
-	if len(events["image"]) != 1 || events["image"][0] != "data:image/png;base64,YWJj" {
-		t.Fatalf("image event mismatch: %#v body:\n%s", events["image"], w.Body.String())
+	if len(events["image"]) != 1 {
+		t.Fatalf("image event count mismatch: %d", len(events["image"]))
+	}
+	if events["image"][0] != "data:image/png;base64,YWJj" {
+		t.Fatalf("image event should match painter result")
 	}
 
 	var msg models.Message
@@ -434,9 +438,9 @@ func TestChatStream_ImageSSEAfterKPDone(t *testing.T) {
 	runner := mocks.NewMockAgentRunner(ctrl)
 	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
 		KPReply:      "灯塔门缝中透出冷光。",
-		ImagePrompts: []string{"A foggy lighthouse"},
+		ImagePrompts: []agent.ImagePromptRequest{{Prompt: "A foggy lighthouse", Characters: []string{"约翰"}}},
 	}, nil)
-	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), "A foggy lighthouse").Return("data:image/png;base64,YWJj", nil)
+	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), agent.ImagePromptRequest{Prompt: "A foggy lighthouse", Characters: []string{"约翰"}}).Return("data:image/png;base64,YWJj", nil)
 
 	h := NewSessionHandlers(runner)
 	r := makeTestRouter(h, userID, "tester")
@@ -451,7 +455,7 @@ func TestChatStream_ImageSSEAfterKPDone(t *testing.T) {
 	kpDoneIdx := firstSSEEventIndex(order, "kp_done")
 	imageIdx := firstSSEEventIndex(order, "image")
 	if kpDoneIdx < 0 || imageIdx < 0 {
-		t.Fatalf("expected kp_done and image events; body:\n%s", w.Body.String())
+		t.Fatalf("expected kp_done and image events")
 	}
 	if !(kpDoneIdx < imageIdx) {
 		t.Fatalf("image should be streamed after kp_done, got kp_done=%d image=%d", kpDoneIdx, imageIdx)
@@ -464,6 +468,54 @@ func TestChatStream_ImageSSEAfterKPDone(t *testing.T) {
 	wantImageTag := imageDataURLStartTag + "data:image/png;base64,YWJj" + imageDataURLEndTag
 	if !strings.Contains(msg.Content, wantImageTag) {
 		t.Fatalf("persisted content missing image data tag")
+	}
+}
+
+func TestChatStream_StripsImageDataFromAgentHistory(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	dataURL := "data:image/png;base64,OLD"
+	if err := models.DB.Create(&models.Message{
+		SessionID: sessionID,
+		Role:      models.MessageRoleAssistant,
+		Content:   "旧场景描述\n" + imageDataURLStartTag + dataURL + imageDataURLEndTag,
+		Username:  "KP",
+	}).Error; err != nil {
+		t.Fatalf("seed assistant message: %v", err)
+	}
+
+	ctrl := gomock.NewController(t)
+	runner := mocks.NewMockAgentRunner(ctrl)
+	var capturedHistory []models.Message
+	runner.EXPECT().Run(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+			capturedHistory = append([]models.Message(nil), gctx.History...)
+			return agent.RunOutput{WriterText: "ok"}, nil
+		})
+
+	h := NewSessionHandlers(runner)
+	r := makeTestRouter(h, userID, "tester")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "继续调查"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	if len(capturedHistory) == 0 {
+		t.Fatal("expected runner to receive history")
+	}
+	for _, msg := range capturedHistory {
+		if strings.Contains(msg.Content, imageDataURLStartTag) || strings.Contains(msg.Content, imageDataURLEndTag) || strings.Contains(msg.Content, "data:image") {
+			t.Fatalf("agent history should be stripped")
+		}
+	}
+
+	var stored models.Message
+	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).First(&stored).Error; err != nil {
+		t.Fatalf("reload stored assistant message: %v", err)
+	}
+	if !strings.Contains(stored.Content, imageDataURLStartTag+dataURL+imageDataURLEndTag) {
+		t.Fatalf("DB content should keep image data tag")
 	}
 }
 

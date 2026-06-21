@@ -92,7 +92,7 @@ func TestFallbackWriterDirectionUsesVisibleKPReply(t *testing.T) {
 }
 
 func TestToolCallUnmarshalPreservesImagePrompt(t *testing.T) {
-	raw := `[{"action":"generate_image","image_prompt":"A foggy lighthouse at night"}]`
+	raw := `[{"action":"generate_image","image_prompt":"A foggy lighthouse at night","characters":["约翰","艾琳"]}]`
 	var calls []ToolCall
 	if err := json.Unmarshal([]byte(raw), &calls); err != nil {
 		t.Fatalf("json.Unmarshal failed: %v", err)
@@ -103,11 +103,14 @@ func TestToolCallUnmarshalPreservesImagePrompt(t *testing.T) {
 	if calls[0].Action != ToolGenerateImage || calls[0].ImagePrompt != "A foggy lighthouse at night" {
 		t.Fatalf("image prompt not preserved: %+v", calls[0])
 	}
+	if len(calls[0].Characters) != 2 || calls[0].Characters[0] != "约翰" || calls[0].Characters[1] != "艾琳" {
+		t.Fatalf("image characters not preserved: %+v", calls[0].Characters)
+	}
 }
 
 func TestGenerateImageActionQueuesPromptWithoutCallingGenerator(t *testing.T) {
 	provider := &fakeImageProvider{base64Data: "YWJj", mimeType: "image/jpeg"}
-	var prompts []string
+	var prompts []ImagePromptRequest
 	actx := ActionContext{
 		Ctx:  context.Background(),
 		GCtx: &GameContext{},
@@ -121,12 +124,15 @@ func TestGenerateImageActionQueuesPromptWithoutCallingGenerator(t *testing.T) {
 		PendingImages: &prompts,
 	}
 
-	results := generateImageAction{}.Execute(ToolCall{ImagePrompt: "A foggy lighthouse"}, actx)
+	results := generateImageAction{}.Execute(ToolCall{ImagePrompt: "A foggy lighthouse", Characters: []string{"约翰", " ", "约翰", "艾琳"}}, actx)
 	if provider.called.Load() || provider.prompt != "" || provider.size != "" {
 		t.Fatalf("generator should not be called during KP tool execution, called=%v prompt=%q size=%q", provider.called.Load(), provider.prompt, provider.size)
 	}
-	if len(prompts) != 1 || prompts[0] != "A foggy lighthouse" {
+	if len(prompts) != 1 || prompts[0].Prompt != "A foggy lighthouse" {
 		t.Fatalf("queued prompts = %#v", prompts)
+	}
+	if len(prompts[0].Characters) != 2 || prompts[0].Characters[0] != "约翰" || prompts[0].Characters[1] != "艾琳" {
+		t.Fatalf("queued characters = %#v", prompts[0].Characters)
 	}
 	if len(results) != 1 || !strings.Contains(results[0].Result, "queued") {
 		t.Fatalf("unexpected tool result: %+v", results)
@@ -138,7 +144,7 @@ func TestGenerateImageActionQueuesPromptWithoutCallingGenerator(t *testing.T) {
 
 func TestGenerateImageActionDoesNotBlockOnGenerator(t *testing.T) {
 	provider := &fakeImageProvider{block: make(chan struct{})}
-	var prompts []string
+	var prompts []ImagePromptRequest
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	actx := ActionContext{
@@ -178,7 +184,7 @@ func TestGenerateImageActionDoesNotBlockOnGenerator(t *testing.T) {
 }
 
 func TestGenerateImageActionUnavailableWithoutPainter(t *testing.T) {
-	var prompts []string
+	var prompts []ImagePromptRequest
 	results := generateImageAction{}.Execute(ToolCall{ImagePrompt: "A foggy lighthouse"}, ActionContext{
 		Ctx:           context.Background(),
 		GCtx:          &GameContext{},
@@ -201,7 +207,7 @@ func TestRunPainterSendsAnimeStyledPrompt(t *testing.T) {
 	})
 	t.Cleanup(func() { deleteCachedAgents(sessionID) })
 
-	dataURL, err := RunPainter(context.Background(), GameContext{Session: models.GameSession{ID: sessionID}}, "A foggy lighthouse at night")
+	dataURL, err := RunPainter(context.Background(), GameContext{Session: models.GameSession{ID: sessionID}}, ImagePromptRequest{Prompt: "A foggy lighthouse at night"})
 	if err != nil {
 		t.Fatalf("RunPainter failed: %v", err)
 	}
@@ -218,6 +224,50 @@ func TestRunPainterSendsAnimeStyledPrompt(t *testing.T) {
 	}
 	if provider.size != "1024x1024" {
 		t.Fatalf("size=%q, want 1024x1024", provider.size)
+	}
+}
+
+func TestRunPainterIncludesNamedCharacterCardDetails(t *testing.T) {
+	const sessionID uint = 424302
+	provider := &fakeImageProvider{base64Data: "YWJj", mimeType: "image/png"}
+	sessionAgents.Store(sessionID, map[models.AgentRole]agentHandle{
+		models.AgentRolePainter: {provider: provider, enabled: true},
+	})
+	t.Cleanup(func() { deleteCachedAgents(sessionID) })
+
+	gctx := GameContext{Session: models.GameSession{
+		ID: sessionID,
+		Players: []models.SessionPlayer{{
+			CharacterCard: models.CharacterCard{
+				ID:         1,
+				Name:       "约翰",
+				Appearance: "A tired investigator in an emerald raincoat with round spectacles.",
+				Inventory:  models.JSONField[[]string]{Data: []string{"silver revolver", "field camera"}},
+			},
+		}},
+	}}
+
+	_, err := RunPainter(context.Background(), gctx, ImagePromptRequest{
+		Prompt:     "Investigators stand at a stormy lighthouse doorway",
+		Characters: []string{"  约翰  ", "不存在"},
+	})
+	if err != nil {
+		t.Fatalf("RunPainter failed: %v", err)
+	}
+	for _, want := range []string{
+		"Investigators stand at a stormy lighthouse doorway",
+		"Character reference: 约翰",
+		"emerald raincoat",
+		"silver revolver",
+		"field camera",
+		"anime style",
+	} {
+		if !strings.Contains(provider.prompt, want) {
+			t.Fatalf("provider prompt missing %q: %q", want, provider.prompt)
+		}
+	}
+	if strings.Contains(provider.prompt, "不存在") {
+		t.Fatalf("unmatched character name should not be appended: %q", provider.prompt)
 	}
 }
 

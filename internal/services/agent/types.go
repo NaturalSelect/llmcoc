@@ -99,6 +99,7 @@ type ToolCall struct {
 	ArmorValue    int                    `json:"armor_value"`              // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
 	ImagePrompt   string                 `json:"image_prompt,omitempty"`   // NOTE: generate_image: 英文画图提示词
+	Characters    []string               `json:"characters,omitempty"`     // NOTE: generate_image: 参与画面的调查员人物卡名称,由后端补充外貌和物品
 	ClueIdx       int                    `json:"clue_idx"`                 // found_clue: 线索在剧本clues数组中的0-based索引
 	Options       []string               `json:"options,omitempty"`        // response: 推荐给玩家的可行行动
 	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
@@ -128,6 +129,13 @@ type ToolResult struct {
 	Result string       `json:"result"`
 }
 
+// NOTE: ImagePromptRequest carries the Director's visual prompt plus card names.
+// NOTE: Real appearance/inventory is appended before calling Painter.
+type ImagePromptRequest struct {
+	Prompt     string   `json:"prompt"`
+	Characters []string `json:"characters,omitempty"`
+}
+
 // WriterState 保存Writer自己的上下文和本次生成的白字描述。
 type WriterState struct {
 	History []llm.ChatMessage // Writer自己的历史,用于保持文本连续性
@@ -137,10 +145,10 @@ type WriterState struct {
 // RunOutput 是一次KP主流程的结构化结果。
 // KPReply 是游戏主流程输出; WriterDirection 只用于之后异步生成白字描述。
 type RunOutput struct {
-	WriterText      string   // 已生成的白字描述,主要用于测试或兼容旧调用
-	WriterDirection string   // Writer后续生成描述所需的导演指令
-	KPReply         string   // KP对玩家的主流程回复
-	ImagePrompts    []string // NOTE: 本轮KP主流程排队的画图提示词;生成后的data URL由handler持久化到消息内容。
+	WriterText      string               // 已生成的白字描述,主要用于测试或兼容旧调用
+	WriterDirection string               // Writer后续生成描述所需的导演指令
+	KPReply         string               // KP对玩家的主流程回复
+	ImagePrompts    []ImagePromptRequest // NOTE: 本轮KP主流程排队的画图请求;生成后的data URL由handler持久化到消息内容。
 }
 
 // ── Dice types ────────────────────────────────────────────────────────────────

@@ -4,11 +4,16 @@ package agent
 import (
 	"context"
 	"log"
+	"strings"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
 	"gorm.io/gorm"
 )
+
+const imageDataURLStartTag = "<image_data_url>"
+const imageDataURLTagOpenPrefix = "<image_data_url"
+const imageDataURLEndTag = "</image_data_url>"
 
 // EndSessionResult bundles the evaluation and growth results from RunEndSession.
 type EndSessionResult struct {
@@ -27,6 +32,7 @@ type EndSessionResult struct {
 // The session must have Players and CharacterCard pre-loaded.
 func RunEndSession(ctx context.Context, session *models.GameSession, messages []models.Message) (EndSessionResult, error) {
 	defer deleteCachedAgents(session.ID)
+	stripMessageImageDataURLTags(messages)
 	// ── Evaluator ────────────────────────────────────────────────────────────
 	evalResult, err := RunEvaluator(ctx, session, messages)
 	if err != nil {
@@ -175,8 +181,39 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 
 	if txErr != nil {
 		log.Printf("[agent] RunEndSession transaction error for session %d: %v", session.ID, txErr)
-		return EndSessionResult{Evaluation: evalResult, Growth: growthResult}, txErr
 	}
+	return EndSessionResult{Evaluation: evalResult, Growth: growthResult}, txErr
+}
 
-	return EndSessionResult{Evaluation: evalResult, Growth: growthResult}, nil
+func stripMessageImageDataURLTags(messages []models.Message) {
+	for i := range messages {
+		messages[i].Content = stripImageDataURLTags(messages[i].Content)
+	}
+}
+
+func stripImageDataURLTags(content string) string {
+	if !strings.Contains(content, imageDataURLTagOpenPrefix) {
+		return strings.TrimSpace(content)
+	}
+	var b strings.Builder
+	rest := content
+	for {
+		start := strings.Index(rest, imageDataURLTagOpenPrefix)
+		if start < 0 {
+			b.WriteString(rest)
+			break
+		}
+		b.WriteString(rest[:start])
+		tagEnd := strings.Index(rest[start:], ">")
+		if tagEnd < 0 {
+			break
+		}
+		afterStart := rest[start+tagEnd+1:]
+		end := strings.Index(afterStart, imageDataURLEndTag)
+		if end < 0 {
+			break
+		}
+		rest = afterStart[end+len(imageDataURLEndTag):]
+	}
+	return strings.TrimSpace(b.String())
 }

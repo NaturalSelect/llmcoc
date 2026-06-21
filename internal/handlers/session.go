@@ -40,6 +40,42 @@ type JoinSessionReq struct {
 	Password        string `json:"password"`
 }
 
+type messageResponse struct {
+	ID        uint               `json:"id"`
+	SessionID uint               `json:"session_id"`
+	UserID    *uint              `json:"user_id"`
+	Role      models.MessageRole `json:"role"`
+	Content   string             `json:"content"`
+	Username  string             `json:"username"`
+	CreatedAt time.Time          `json:"created_at"`
+	Images    []string           `json:"images"`
+}
+
+func newMessageResponse(msg models.Message) messageResponse {
+	images := extractImageDataURLs(msg.Content)
+	if images == nil {
+		images = []string{}
+	}
+	return messageResponse{
+		ID:        msg.ID,
+		SessionID: msg.SessionID,
+		UserID:    msg.UserID,
+		Role:      msg.Role,
+		Content:   stripImageDataURLTags(msg.Content),
+		Username:  msg.Username,
+		CreatedAt: msg.CreatedAt,
+		Images:    images,
+	}
+}
+
+func newMessageResponses(messages []models.Message) []messageResponse {
+	responses := make([]messageResponse, 0, len(messages))
+	for _, msg := range messages {
+		responses = append(responses, newMessageResponse(msg))
+	}
+	return responses
+}
+
 func ListSessions(c *gin.Context) {
 	var sessions []models.GameSession
 	models.DB.
@@ -441,7 +477,7 @@ func GetMessages(c *gin.Context) {
 			}
 		}
 		if !contain && !isAdmin {
-			var messages []models.Message
+			messages := []messageResponse{}
 			c.JSON(http.StatusOK, messages)
 			return
 		}
@@ -451,7 +487,7 @@ func GetMessages(c *gin.Context) {
 	models.DB.Where("session_id = ? AND (role != ? OR content LIKE ?)", sessionID, models.MessageRoleSystem, "管理员「%」复活了房间，游戏继续。").
 		Order("created_at ASC").
 		Find(&messages)
-	c.JSON(http.StatusOK, messages)
+	c.JSON(http.StatusOK, newMessageResponses(messages))
 }
 
 var sessionMutex = sync.Map{}
@@ -753,6 +789,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	models.DB.Where("session_id = ? AND role != ?", sessionID, models.MessageRoleSystem).
 		Order("created_at DESC").
 		Find(&recentMsgs)
+	stripMessageImageDataURLTags(recentMsgs)
 	// Reverse to chronological order.
 	for i, j := 0, len(recentMsgs)-1; i < j; i, j = i+1, j-1 {
 		recentMsgs[i], recentMsgs[j] = recentMsgs[j], recentMsgs[i]
@@ -901,14 +938,15 @@ loop:
 	}
 	var painterCh <-chan painterJobResult
 	if len(output.ImagePrompts) > 0 {
-		log.Printf("[chat] session=%d user=%q painter queued prompt_len=%d prompt=%q", sessionID, username, len([]rune(output.ImagePrompts[0])), chatTruncate(output.ImagePrompts[0], 200))
+		imageRequest := output.ImagePrompts[0]
+		log.Printf("[chat] session=%d user=%q painter queued prompt_len=%d character_count=%d prompt=%q", sessionID, username, len([]rune(imageRequest.Prompt)), len(imageRequest.Characters), chatTruncate(imageRequest.Prompt, 200))
 		painterClientDone := make(chan struct{})
 		defer close(painterClientDone)
 		assistantMessageID := uint(0)
 		if assistantMsg != nil {
 			assistantMessageID = assistantMsg.ID
 		}
-		painterCh = h.startPainterJob(assistantMessageID, gctx, output.ImagePrompts[0], painterClientDone)
+		painterCh = h.startPainterJob(assistantMessageID, gctx, imageRequest, painterClientDone)
 	}
 
 	streamedWriter := output.WriterText
@@ -987,6 +1025,7 @@ type painterJobResult struct {
 const writerPendingTag = "<writer_pending>true</writer_pending>"
 
 const imageDataURLStartTag = "<image_data_url>"
+const imageDataURLTagOpenPrefix = "<image_data_url"
 const imageDataURLEndTag = "</image_data_url>"
 
 const assistantMessageUpdateRetries = 3
@@ -1033,8 +1072,10 @@ func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext,
 	return ch
 }
 
-func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext, prompt string, clientDone <-chan struct{}) <-chan painterJobResult {
-	prompt = strings.TrimSpace(prompt)
+func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext, request agent.ImagePromptRequest, clientDone <-chan struct{}) <-chan painterJobResult {
+	request.Prompt = strings.TrimSpace(request.Prompt)
+	request.Characters = sanitizeImageRequestCharacters(request.Characters)
+	prompt := request.Prompt
 	if prompt == "" {
 		return nil
 	}
@@ -1049,7 +1090,7 @@ func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext
 		ctx, cancel := context.WithTimeout(context.Background(), painterJobTimeout)
 		defer cancel()
 		start := time.Now()
-		log.Printf("[chat] session=%d painter async start prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), chatTruncate(prompt, 200))
+		log.Printf("[chat] session=%d painter async start prompt_len=%d character_count=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), len(request.Characters), chatTruncate(prompt, 200))
 		if clientDone != nil && messageID == 0 {
 			go func() {
 				select {
@@ -1059,7 +1100,7 @@ func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext
 				}
 			}()
 		}
-		dataURL, err := h.Runner.RunPainter(ctx, gctx, prompt)
+		dataURL, err := h.Runner.RunPainter(ctx, gctx, request)
 		if err == nil {
 			dataURL = strings.TrimSpace(dataURL)
 			if dataURL == "" || !strings.HasPrefix(dataURL, "data:image/") {
@@ -1086,6 +1127,24 @@ func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext
 		}
 	}()
 	return ch
+}
+
+func sanitizeImageRequestCharacters(names []string) []string {
+	result := make([]string, 0, len(names))
+	seen := make(map[string]bool, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, name)
+	}
+	return result
 }
 
 func updateAssistantMessageWriter(messageID uint, kpReply, writerText string) error {
@@ -1165,11 +1224,15 @@ func extractImageDataURLs(content string) []string {
 	var urls []string
 	rest := content
 	for {
-		start := strings.Index(rest, imageDataURLStartTag)
+		start := strings.Index(rest, imageDataURLTagOpenPrefix)
 		if start < 0 {
 			return urls
 		}
-		afterStart := rest[start+len(imageDataURLStartTag):]
+		tagEnd := strings.Index(rest[start:], ">")
+		if tagEnd < 0 {
+			return urls
+		}
+		afterStart := rest[start+tagEnd+1:]
 		end := strings.Index(afterStart, imageDataURLEndTag)
 		if end < 0 {
 			return urls
@@ -1179,6 +1242,39 @@ func extractImageDataURLs(content string) []string {
 			urls = append(urls, dataURL)
 		}
 		rest = afterStart[end+len(imageDataURLEndTag):]
+	}
+}
+
+func stripImageDataURLTags(content string) string {
+	if !strings.Contains(content, imageDataURLTagOpenPrefix) {
+		return strings.TrimSpace(content)
+	}
+	var b strings.Builder
+	rest := content
+	for {
+		start := strings.Index(rest, imageDataURLTagOpenPrefix)
+		if start < 0 {
+			b.WriteString(rest)
+			break
+		}
+		b.WriteString(rest[:start])
+		tagEnd := strings.Index(rest[start:], ">")
+		if tagEnd < 0 {
+			break
+		}
+		afterStart := rest[start+tagEnd+1:]
+		end := strings.Index(afterStart, imageDataURLEndTag)
+		if end < 0 {
+			break
+		}
+		rest = afterStart[end+len(imageDataURLEndTag):]
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func stripMessageImageDataURLTags(messages []models.Message) {
+	for i := range messages {
+		messages[i].Content = stripImageDataURLTags(messages[i].Content)
 	}
 }
 
@@ -1359,6 +1455,7 @@ func EndSession(c *gin.Context) {
 		Order("created_at ASC").
 		Limit(150).
 		Find(&messages)
+	stripMessageImageDataURLTags(messages)
 
 	result, txErr := agent.RunEndSession(context.Background(), &session, messages)
 

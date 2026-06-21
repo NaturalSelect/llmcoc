@@ -202,13 +202,14 @@ operate=add时，同名资产会更新；operate=remove时按asset.name删除。
 			<call_example>{"action":"write","direction":"节奏:日常。约翰在图书馆二楼窗边停下，伸手拉开厚窗帘；请描写窗帘滑动的声音、灰尘和窗外街灯照进来的变化。约翰：「这里有什么异常…」不要揭示未发现线索，结尾停在他能继续检查窗台/书桌/窗外的状态。"}</call_example>
 		</tool>
 		<tool name="generate_image" sideeffect="false" endTheTurn="false">
-			<description>按需生成一张玩家可见的即时场景图片。图片只通过前端临时展示，不写入数据库、历史消息、工具结果或日志；刷新页面后消失。
+			<description>按需生成一张玩家可见的即时场景图片。图片会异步生成并附加在本轮助手消息中；工具结果只表示已排队，不包含图片内容。
 【调用时机】仅在出现强视觉锚点且图片能显著增强体验时调用，例如首次进入关键地点、重要NPC初登场、怪异景象显现、战斗/追逐开始前的环境定格。日常对话、重复地点、纯规则结算、线索文字说明、玩家未真正看见的秘密内容，不要调用。
 【频率限制】每个玩家回合最多调用一次；如果本轮已经生成过图，后续批次禁止再调用。
 【信息边界】image_prompt只能描述玩家当前可见事实和氛围，禁止包含未发现线索、NPC秘密、未来事件、机械数值、工具结果base64或任何隐藏剧透。不要让图片替代response.reply中的必要文字说明。
 【提示词要求】image_prompt必须用英文，写成适合图片模型的视觉描述，包含主体、地点、光线、二次元/anime风格和构图；不要写中文，不要写“generate an image of”。风格应明确为 anime style, 2D illustration, Japanese animation aesthetic, clean line art；避免 photorealism/realistic photography/3D render。
+【调查员引用】可选characters数组填写画面中可见/参与的玩家调查员角色名；只填名字，不要把外貌或物品文本写进characters。后端会按当前人物卡自动补充真实Appearance和Inventory，禁止自行编造。
 【批次规则】generate_image可以与write/response同批次，不需要yield；返回结果只表示图片生成已排队，KP不需要也不能读取图片内容。</description>
-			<call_example>{"action":"generate_image","image_prompt":"A dim 1920s island lighthouse interior, wet stone stairs, a cracked brass lantern casting sickly green light, investigators silhouetted at the doorway, cosmic horror atmosphere, anime style, 2D illustration, Japanese animation aesthetic, clean line art, expressive lighting, atmospheric horror, high detail, dynamic composition, avoid photorealism, realistic photography, 3D render"}</call_example>
+			<call_example>{"action":"generate_image","image_prompt":"A dim 1920s island lighthouse interior, wet stone stairs, a cracked brass lantern casting sickly green light, investigators silhouetted at the doorway, cosmic horror atmosphere, anime style, 2D illustration, Japanese animation aesthetic, clean line art, expressive lighting, atmospheric horror, high detail, dynamic composition, avoid photorealism, realistic photography, 3D render","characters":["约翰","艾琳"]}</call_example>
 		</tool>
 		<tool name="advance_time" sideeffect="true" endTheTurn="false">
 			<description>推进游戏内时间(耗时活动, 每一轮代表30分钟, 需要注意规则时间与游戏时间的转换, 为0则不推进时间, 否则默认推进30分钟)</description>

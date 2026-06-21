@@ -501,24 +501,28 @@ window.COC.game = {
                             return message;
                         }
 
-                        const writerPending = this.extractWriterPending(message.content || '')
+                        const content = message.content || '';
+                        const writerPending = this.extractWriterPending(content)
                             || this.extractWriterPending(message.narration_text || '')
                             || this.extractWriterPending(message.writer_text || '')
                             || !!message._writer_streaming;
-                        const responseOptions = this.extractResponseOptionsPayload(message.content || '')
+                        const responseOptions = this.extractResponseOptionsPayload(content)
                             || this.extractResponseOptionsPayload(message.narration_text || '')
                             || this.extractResponseOptionsPayload(message.writer_text || '');
-                        const images = this.extractImageDataURLs(message.content || '');
+                        const images = [];
                         if (Array.isArray(message.images)) {
                             for (const image of message.images) {
-                                if (!images.includes(image)) {
+                                if (typeof image === 'string' && image.startsWith('data:image/') && !images.includes(image)) {
                                     images.push(image);
                                 }
                             }
                         }
+                        if (images.length === 0 && String(content).includes('<image_data_url')) {
+                            images.push(...this.extractImageDataURLs(content));
+                        }
                         message = {
                             ...message,
-                            content: this.stripAckContent(message.content || ''),
+                            content: this.stripAckContent(content),
                             writer_text: this.stripAckContent(message.writer_text || ''),
                             narration_text: this.stripAckContent(message.narration_text || ''),
                             images,
@@ -543,11 +547,15 @@ window.COC.game = {
                     },
 
                     extractWriterPending(content) {
-                        return /<writer_pending\b[^>]*>\s*true\s*<\/writer_pending>/i.test(String(content || ''));
+                        content = String(content || '');
+                        if (!content.includes('<writer_pending')) return false;
+                        return /<writer_pending\b[^>]*>\s*true\s*<\/writer_pending>/i.test(content);
                     },
 
                     extractResponseOptionsPayload(content) {
-                        const match = String(content || '').match(/<response_options\b[^>]*>([\s\S]*?)<\/response_options>/i);
+                        content = String(content || '');
+                        if (!content.includes('<response_options')) return null;
+                        const match = content.match(/<response_options\b[^>]*>([\s\S]*?)<\/response_options>/i);
                         if (!match) return null;
                         try {
                             const payload = JSON.parse(match[1]);
@@ -577,7 +585,15 @@ window.COC.game = {
                     },
 
                     stripAckContent(content) {
-                        return String(content || '')
+                        content = String(content || '');
+                        if (!content.includes('<ack') &&
+                            !content.includes('<direction') &&
+                            !content.includes('<response_options') &&
+                            !content.includes('<writer_pending') &&
+                            !content.includes('<image_data_url')) {
+                            return content.trim();
+                        }
+                        return content
                             .replace(/<(ack|direction|response_options|writer_pending|image_data_url)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
                             .replace(/<(ack|direction|response_options|writer_pending|image_data_url)\b[^>]*>[\s\S]*$/gi, '')
                             .trim();

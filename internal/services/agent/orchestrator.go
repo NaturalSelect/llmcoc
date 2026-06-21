@@ -208,7 +208,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	switchRole := false
 
 	pendingWrite := ""
-	pendingImages := []string{}
+	pendingImages := []ImagePromptRequest{}
 
 	diceMsg := ""
 	imageGeneratedThisTurn := false
