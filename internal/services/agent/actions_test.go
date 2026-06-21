@@ -91,7 +91,7 @@ func TestFallbackWriterDirectionUsesVisibleKPReply(t *testing.T) {
 	}
 }
 
-func TestToolCallUnmarshalPreservesImagePrompt(t *testing.T) {
+func TestToolCallUnmarshalPreservesLegacyImageCharacters(t *testing.T) {
 	raw := `[{"action":"generate_image","image_prompt":"A foggy lighthouse at night","characters":["约翰","艾琳"]}]`
 	var calls []ToolCall
 	if err := json.Unmarshal([]byte(raw), &calls); err != nil {

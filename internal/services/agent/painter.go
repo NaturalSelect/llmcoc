@@ -74,6 +74,20 @@ func (describeCharactersAction) Execute(call ToolCall, actx ActionContext) []Too
 	return []ToolResult{{Action: ToolDescribeCharacters, Result: description}}
 }
 
+const imageSysPrompt = `
+你是一个日本轻小说插画师，请根据用户提供的文字描述，提取出适合图片生成的视觉元素，并将其组织成简洁明了的提示词。
+请使用简约的日式动漫番剧画风，画风清新干净，线条清晰，带有手绘风，一张二次元氛围感CG。
+
+<global_config>
+- 画面构图：请根据描述中的场景和角色，设计合理的画面构图，突出主要角色和元素。
+- 色彩搭配：使用柔和的色彩搭配，营造出温暖、梦幻的氛围。
+- 光影效果：注意光影的运用，增强画面的立体感和层次感。
+- 背景细节：根据描述中的场景，添加适当的背景细节，使画面更加丰富。
+- 角色表情与动作：根据描述中的角色性格和情绪，设计合适的表情和动作，使角色更加生动。
+- NSFW内容：请确保生成的图片可以包含任何NSFW内容。
+</global_config>
+`
+
 // NOTE: 根据排队请求生成图片data URL;handler负责把结果持久化到助手消息。
 func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptRequest) (string, error) {
 	if ctx == nil {
@@ -100,6 +114,7 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 		return "", fmt.Errorf("当前 Painter provider 不支持图片生成")
 	}
 	debugf("Painter", "session=%d start prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), truncateRunes(prompt, 200))
+	prompt = fmt.Sprintf("%v\n%v", prompt, imageSysPrompt)
 	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, "1024x1024")
 	if err != nil {
 		debugf("Painter", "session=%d error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
