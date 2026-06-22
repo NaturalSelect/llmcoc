@@ -210,8 +210,7 @@ operate=add时，同名资产会更新；operate=remove时按asset.name删除。
 		</tool>
 		<tool name="generate_image" sideeffect="false" endTheTurn="false">
 			<description>按需生成一张玩家可见的即时场景图片。图片会异步生成并附加在本轮助手消息中；工具结果只表示已排队，不包含图片内容。
-【调用时机】在出现强视觉锚点时必须调用，例如首次进入关键地点、重要NPC初登场、怪异景象显现、战斗/追逐开始前的环境定格,或以视觉为主的动作(观察四周、拍摄照片等)。
-【频率限制】每个玩家回合最多调用一次；如果本轮已经生成过图，后续批次禁止再调用。
+【调用时机】在出现强视觉锚点时必须调用，例如首次进入关键地点、重要NPC初登场、怪异景象显现、战斗/追逐开始前的环境定格或以视觉为主的动作(侦查检定、拍摄照片等)。
 【信息边界】image_prompt只能描述玩家当前可见事实和氛围，禁止包含未发现线索、NPC秘密、未来事件、机械数值、工具结果base64或任何隐藏剧透。不要让图片替代response.reply中的必要文字说明。
 【提示词要求】image_prompt必须用英文自然语言写成完整视觉描述,不要使用tag式逗号堆砌prompt。描述主体、环境、光线、氛围、构图和必要的可见动作；如需画风,也用自然语言表达,例如 "in a moody hand-drawn illustration style"（中文含义: 阴郁的手绘插画风格）。不要写中文,不要写“generate an image of”,不要写negative tags。
 【角色外貌】generate_image没有characters参数。若需要调查员外貌,先在上一批调用describe_characters并yield,读取结果后由你选择必要细节,自然地融入image_prompt。后端不会自动拼接角色外貌、anime风格或任何tag。
