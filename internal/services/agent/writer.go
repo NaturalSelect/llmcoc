@@ -238,6 +238,7 @@ func buildWriterScenarioToneBlock(gctx GameContext) string {
 }
 
 func appendWriterResponse(state *WriterState, direction, resp string, saveHistory bool) {
+	resp = stripWriterThinkingBlock(resp)
 	if saveHistory {
 		// 写回本次交换,供后续叙事正文保持连续性。
 		state.History = append(state.History,
@@ -253,6 +254,29 @@ func appendWriterResponse(state *WriterState, direction, resp string, saveHistor
 		state.Buffer += "\n\n"
 	}
 	state.Buffer += resp
+}
+
+// stripWriterThinkingBlock 清理 Writer 输出前导的思考痕迹。
+// 形如:
+//
+//	Thinking...
+//	> something reasoning
+//	> more reasoning
+//	正文...
+//
+// 规则:若首行以 "Thinking..." 开头则删除该行,并继续删除其后所有以 ">" 开头的行,
+// 直到遇到第一个非 ">" 开头的行,之后的内容原样保留。
+func stripWriterThinkingBlock(text string) string {
+	lines := strings.Split(text, "\n")
+	idx := 0
+	if idx >= len(lines) || !strings.HasPrefix(strings.TrimSpace(lines[idx]), "Thinking...") {
+		return text
+	}
+	idx++ // 跳过 Thinking... 行
+	for idx < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[idx]), ">") {
+		idx++
+	}
+	return strings.TrimSpace(strings.Join(lines[idx:], "\n"))
 }
 
 func trimWriterHistoryForCache(history []llm.ChatMessage, maxRunes int) []llm.ChatMessage {
