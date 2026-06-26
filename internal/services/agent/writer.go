@@ -155,11 +155,20 @@ func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, 
 		return err
 	}
 
+	// NOTE: 流式过滤 thinking 块,onToken 只收到正文部分;resp 仍累积原始全文。
 	var resp strings.Builder
+	var filter streamThinkingFilter
 	for token := range tokenCh {
 		resp.WriteString(token)
 		if onToken != nil {
-			onToken(token)
+			if emit := filter.feed(token); emit != "" {
+				onToken(emit)
+			}
+		}
+	}
+	if onToken != nil {
+		if emit := filter.eof(); emit != "" {
+			onToken(emit)
 		}
 	}
 	streamErr := <-errCh
@@ -277,6 +286,157 @@ func stripThinkingBlock(text string) string {
 		idx++
 	}
 	return strings.TrimSpace(strings.Join(lines[idx:], "\n"))
+}
+
+// NOTE: streamThinkingFilter 流式过滤 thinking 块的有状态过滤器。
+// token 边界不确定,需要先累积到能判定首行,再决定跳过还是转发。
+type streamThinkingFilter struct {
+	buf       strings.Builder // 累积未判定的 token
+	state     int             // 0=peeking, 1=skipping(丢弃 > 行), 2=pass-through(直通)
+	peekLimit int             // peek 模式最大累积字节数,超过则强制 flush
+}
+
+const (
+	stfPeek       = 0 // 正在累积首行,尚未判定
+	stfSkip       = 1 // 确认有 thinking 块,正在跳过 > 行
+	stfPassThrough = 2 // 已进入正文,后续 token 直接转发
+)
+
+// feed 将一个 token 输入过滤器,返回应转发给前端的文本(可能为空)。
+func (f *streamThinkingFilter) feed(token string) string {
+	if f.state == stfPassThrough {
+		return token
+	}
+	if f.peekLimit == 0 {
+		f.peekLimit = 256
+	}
+	f.buf.WriteString(token)
+	return f.processBuf()
+}
+
+// eof 在流结束后调用,处理缓冲区中可能残留的正文。
+func (f *streamThinkingFilter) eof() string {
+	if f.state == stfPassThrough {
+		return ""
+	}
+	content := f.buf.String()
+	f.buf.Reset()
+	if f.state == stfPeek {
+		// NOTE: 整段输出没有换行;如果首行不是 Thinking...,则属于正文需 flush。
+		trimmed := strings.TrimSpace(content)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "Thinking...") {
+			return content
+		}
+		// NOTE: 全是 thinking 块且没遇到正文,丢弃。
+		return ""
+	}
+	// stfSkip: 跳块模式收尾,可能最后还有正文(非 > 行没换行收尾)。
+	// 从 buffer 中找出最后一段连续非 > 行并 flush。
+	return f.flushSkipTail(content)
+}
+
+// processBuf 检查缓冲区中的完整行,进行状态转换和内容输出。
+func (f *streamThinkingFilter) processBuf() string {
+	content := f.buf.String()
+
+	// NOTE: 安全阈值:累积超过 peekLimit 仍无换行,假设没有 thinking 块。
+	if f.state == stfPeek && f.buf.Len() > f.peekLimit {
+		f.buf.Reset()
+		f.state = stfPassThrough
+		return content
+	}
+
+	// 找最后一个换行符,将内容分为"完整行部分"和"不完整尾部"。
+	lastNL := strings.LastIndex(content, "\n")
+	if lastNL < 0 {
+		return "" // 还没有完整行,继续累积
+	}
+
+	completeLines := content[:lastNL+1] // 含末尾换行
+	tail := content[lastNL+1:]          // 换行后不完整的部分
+
+	var result string
+	if f.state == stfPeek {
+		// 提取首行(第一个换行前的内容)
+		firstNL := strings.Index(content, "\n")
+		firstLine := strings.TrimSpace(content[:firstNL])
+		if !strings.HasPrefix(firstLine, "Thinking...") {
+			// NOTE: 首行不是 Thinking...,无 thinking 块,flush 全部累积内容。
+			f.buf.Reset()
+			f.buf.WriteString(tail)
+			f.state = stfPassThrough
+			return completeLines
+		}
+		// NOTE: 确认有 thinking 块,进入 skip 模式,丢弃首行(Thinking... 行)。
+		f.state = stfSkip
+		f.buf.Reset()
+		f.buf.WriteString(tail)
+		// NOTE: 只处理首行之后的完整行(首行已确认为 Thinking... 并被丢弃)。
+		result = f.processSkipLines(completeLines[firstNL+1:])
+	} else if f.state == stfSkip {
+		f.buf.Reset()
+		f.buf.WriteString(tail)
+		result = f.processSkipLines(completeLines)
+	}
+
+	// NOTE: 进入正文模式时,缓冲区中的不完整尾部也属于正文,一并 flush。
+	if f.state == stfPassThrough && f.buf.Len() > 0 {
+		result += f.buf.String()
+		f.buf.Reset()
+	}
+
+	return result
+}
+
+// processSkipLines 处理 skip 模式中的完整行,丢弃 > 行,遇到非 > 行则 flush 正文。
+func (f *streamThinkingFilter) processSkipLines(completeLines string) string {
+	// 按行扫描,找到第一个非 > 行后 flush 剩余。
+	lines := strings.SplitAfter(completeLines, "\n")
+	// NOTE: SplitAfter 保留换行,最后一行若非空则为空字符串。
+	var emit strings.Builder
+	foundBody := false
+	for _, line := range lines {
+		if !foundBody {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				// NOTE: 空行(可能只是换行符)仍属于 thinking 块区域,继续跳过。
+				continue
+			}
+			if strings.HasPrefix(trimmed, ">") {
+				continue // > 行继续跳过
+			}
+			// NOTE: 遇到首个非 > 行,正文开始。不带前导换行,正文从该行内容起。
+			foundBody = true
+			// 去掉行首换行(如果有),保持正文自然开头。
+			emit.WriteString(strings.TrimPrefix(line, "\n"))
+		} else {
+			emit.WriteString(line)
+		}
+	}
+	if foundBody {
+		f.state = stfPassThrough
+	}
+	result := emit.String()
+	return result
+}
+
+// flushSkipTail 在流结束时,从 skip 模式的残留内容中提取正文。
+func (f *streamThinkingFilter) flushSkipTail(content string) string {
+	// 按行从后往前找,确认尾部非 > 行属于正文。
+	lines := strings.Split(content, "\n")
+	// NOTE: 找到第一个非 > 行的起始位置(从前往后)。
+	startIdx := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, ">") {
+			startIdx = i
+			break
+		}
+	}
+	if startIdx < 0 {
+		return "" // 全是 thinking 块
+	}
+	return strings.Join(lines[startIdx:], "\n")
 }
 
 func trimWriterHistoryForCache(history []llm.ChatMessage, maxRunes int) []llm.ChatMessage {

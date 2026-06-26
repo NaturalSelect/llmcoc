@@ -213,6 +213,8 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 	if err != nil {
 		return "", err
 	}
+	// NOTE: Writer 模型可能输出 thinking 头,先清理再 TrimSpace,避免污染下游 image prompt。
+	resp = stripThinkingBlock(resp)
 	resp = strings.TrimSpace(resp)
 	if resp == "" {
 		return "", fmt.Errorf("writer returned empty visual description")
