@@ -335,6 +335,7 @@ func runNPC(
 	if err != nil {
 		return NPCAction{NPCName: npcName, Action: "保持沉默", Dialogue: ""}, fmt.Errorf("npc LLM error: %w", err)
 	}
+	resp = stripThinkingBlock(resp)
 
 	var action NPCAction
 	if err := json.Unmarshal([]byte(resp), &action); err != nil {
