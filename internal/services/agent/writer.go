@@ -188,7 +188,7 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 
 	debugf("Writer", "direction=%s history_msgs=%d", direction, len(state.History))
 
-	state.History = trimWriterHistoryForCache(state.History, 10000)
+	state.History = trimWriterHistoryForCache(state.History, 7000)
 
 	sb := &strings.Builder{}
 	// if toneBlock := buildWriterScenarioToneBlock(gctx); toneBlock != "" {
@@ -297,8 +297,8 @@ type streamThinkingFilter struct {
 }
 
 const (
-	stfPeek       = 0 // 正在累积首行,尚未判定
-	stfSkip       = 1 // 确认有 thinking 块,正在跳过 > 行
+	stfPeek        = 0 // 正在累积首行,尚未判定
+	stfSkip        = 1 // 确认有 thinking 块,正在跳过 > 行
 	stfPassThrough = 2 // 已进入正文,后续 token 直接转发
 )
 
