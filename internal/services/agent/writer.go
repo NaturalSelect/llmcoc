@@ -204,6 +204,7 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 	sb.WriteString("<director_instruction>\n")
 	sb.WriteString(direction)
 	sb.WriteString("\n</director_instruction>\n")
+	sb.WriteString("<limit>1000字以内</limit>")
 
 	// 组装Writer消息:系统提示词、保留历史、本次导演指令。
 	msgs := make([]llm.ChatMessage, 0, len(state.History)+2)
