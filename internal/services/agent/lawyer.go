@@ -189,8 +189,8 @@ var lawyerCallExample = func() string {
 //
 // The conversation grows naturally (system → user → assistant → user → …) so the model
 // always sees its own prior decisions alongside the search evidence.
-func runLawyer(ctx context.Context, h agentHandle, situation string, idx rulebook.Index) []LawyerResult {
-	if len(idx) == 0 || situation == "" {
+func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerResult {
+	if situation == "" {
 		return nil
 	}
 

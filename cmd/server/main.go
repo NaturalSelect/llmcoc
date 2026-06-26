@@ -84,11 +84,10 @@ func main() {
 	} else {
 		lawyerCacheHashes.MonsterbookHash = hash
 	}
-	if idx, err := rulebook.Load(rbPath); err != nil {
+	if err := rulebook.Load(rbPath); err != nil {
 		log.Printf("Warning: failed to load rulebook (%s): %v — Lawyer agent will have no rule data", rbPath, err)
 	} else {
-		rulebook.GlobalIndex = idx
-		log.Printf("Rulebook loaded: %d sections from %s", len(idx), rbPath)
+		log.Printf("Rulebook loaded from %s", rbPath)
 	}
 	if err := rulebook.LoadSpellBook(spellPath); err != nil {
 		log.Printf("Warning: failed to load spellbook (%s): %v — Lawyer spell lookup unavailable", spellPath, err)

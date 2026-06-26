@@ -18,7 +18,6 @@ import (
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
-	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 // ---------------------------------------------------------------------------
@@ -578,7 +577,7 @@ func oneshotTranslatorAskLawyer(ctx context.Context, room *scripterRoom, call on
 	if room.lawyer.provider == nil {
 		return fmt.Sprintf(`<ask_lawyer_result question=%q status="lawyer_unavailable">规则书专家不可用；不得声称已核验具体规则书元素。</ask_lawyer_result>`, question)
 	}
-	results := runLawyer(ctx, room.lawyer, question, rulebook.GlobalIndex)
+	results := runLawyer(ctx, room.lawyer, question)
 	if len(results) == 0 {
 		return fmt.Sprintf(`<ask_lawyer_result question=%q status="no_result">规则书专家未返回可用裁定；应换一个更具体的候选继续提问，或在最终结论中标记no_result/uncertain。</ask_lawyer_result>`, question)
 	}

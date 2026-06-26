@@ -20,7 +20,6 @@ type ActionContext struct {
 	Sid      uint
 	Handles  map[models.AgentRole]agentHandle
 	TempNPCs *[]models.SessionNPC
-	RbIdx    rulebook.Index
 
 	// 工具执行器写入、调度循环读取的可变状态。
 	HasEnd             *bool
@@ -153,7 +152,7 @@ type checkRuleAction struct{}
 func (checkRuleAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d check_rule q=%s", actx.Sid, call.Question)
 	doneL := timedDebug("Lawyer", "session=%d question=%s", actx.Sid, call.Question)
-	results := runLawyer(actx.Ctx, actx.Handles[models.AgentRoleLawyer], call.Question, actx.RbIdx)
+	results := runLawyer(actx.Ctx, actx.Handles[models.AgentRoleLawyer], call.Question)
 	doneL()
 	debugf("tool", "session=%d check_rule result=%s", actx.Sid, formatLawyerResults(results))
 	return []ToolResult{{Action: ToolCheckRule, Result: formatLawyerResults(results)}}

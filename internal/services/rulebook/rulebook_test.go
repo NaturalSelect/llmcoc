@@ -44,10 +44,10 @@ func TestLoadRulebookResetsLineCache(t *testing.T) {
 	writeTestFile(t, firstPath, "# 第一版\n旧规则\n")
 	writeTestFile(t, secondPath, "# 第二版\n新规则\n")
 
-	if _, err := Load(firstPath); err != nil {
+	if err := Load(firstPath); err != nil {
 		t.Fatalf("first Load failed: %v", err)
 	}
-	if _, err := Load(secondPath); err != nil {
+	if err := Load(secondPath); err != nil {
 		t.Fatalf("second Load failed: %v", err)
 	}
 
@@ -94,7 +94,7 @@ func TestGrepInvalidRegexpFallsBackToLiteral(t *testing.T) {
 	rulebookPath := filepath.Join(dir, "rulebook.md")
 	writeTestFile(t, rulebookPath, "# 测试规则\n包含 a[ 字面量\n另一行\n")
 
-	if _, err := Load(rulebookPath); err != nil {
+	if err := Load(rulebookPath); err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
 
@@ -109,7 +109,7 @@ func TestGrepEmptyKeywordReturnsNoResults(t *testing.T) {
 	rulebookPath := filepath.Join(dir, "rulebook.md")
 	writeTestFile(t, rulebookPath, "# 测试规则\n任意内容\n")
 
-	if _, err := Load(rulebookPath); err != nil {
+	if err := Load(rulebookPath); err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
 

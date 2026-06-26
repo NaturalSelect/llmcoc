@@ -15,7 +15,6 @@ import (
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
 	"github.com/llmcoc/server/internal/services/llm"
-	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 const MaxKpRound = 30
@@ -190,8 +189,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	var tempNPCs []models.SessionNPC
 	models.DB.Where("session_id = ?", gctx.Session.ID).Find(&tempNPCs)
 
-	rbIdx := rulebook.GlobalIndex
-
 	// timeAdvancedInTurn tracks whether advance_time was called so we can skip the
 	// normal per-turn +1 advancement at the end (the KP already pushed the clock).
 	timeAdvancedInTurn := false
@@ -257,7 +254,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			Sid:                sid,
 			Handles:            handles,
 			TempNPCs:           &tempNPCs,
-			RbIdx:              rbIdx,
 			HasEnd:             &hasEnd,
 			TimeAdvancedInTurn: &timeAdvancedInTurn,
 			SwitchRole:         &switchRole,

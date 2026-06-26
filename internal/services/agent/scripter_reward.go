@@ -14,7 +14,6 @@ import (
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
-	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
@@ -213,7 +212,7 @@ func rewardAgentAskLawyer(ctx context.Context, room *scripterRoom, question stri
 	if room.lawyer.provider == nil {
 		return fmt.Sprintf(`<ask_lawyer_result question=%q status="lawyer_unavailable">规则书专家不可用；不得声称已核验具体规则书数据。</ask_lawyer_result>`, question)
 	}
-	results := runLawyer(ctx, room.lawyer, question, rulebook.GlobalIndex)
+	results := runLawyer(ctx, room.lawyer, question)
 	if len(results) == 0 {
 		return fmt.Sprintf(`<ask_lawyer_result question=%q status="no_result">规则书中未找到相关裁定；可换用更具体的候选重新提问，或在结论中标记uncertain。</ask_lawyer_result>`, question)
 	}
