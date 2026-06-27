@@ -205,3 +205,201 @@ func containsIssue(issues []string, substr string) bool {
 	}
 	return false
 }
+
+// ---------------------------------------------------------------------------
+// buildDiversityCandidates / parseDiversityAIResponse tests
+// ---------------------------------------------------------------------------
+
+func TestBuildDiversityCandidates_FullCartesianWhenDBNil(t *testing.T) {
+	// models.DB == nil 时应返回全笛卡尔积 (7×8=56)
+	candidates := buildDiversityCandidates(ScenarioCreationRequest{}, "test-session")
+	if len(candidates) != 56 {
+		t.Fatalf("expected 56 candidates when DB is nil, got %d", len(candidates))
+	}
+	// 去重后也应是 56
+	seen := map[string]bool{}
+	for _, c := range candidates {
+		key := diversityComboKey(c.HorrorMode, c.InvestFocus)
+		if key == "" {
+			t.Fatalf("got empty key for candidate %+v", c)
+		}
+		if seen[key] {
+			t.Fatalf("duplicate candidate key %q", key)
+		}
+		seen[key] = true
+	}
+	if len(seen) != 56 {
+		t.Fatalf("expected 56 unique keys, got %d", len(seen))
+	}
+}
+
+func TestParseDiversityAIResponse_Valid(t *testing.T) {
+	raw := "mode: cosmic_horror\nfocus: disappearance"
+	candidates := []diversityCombo{
+		{HorrorMode: "cosmic_horror", InvestFocus: "disappearance"},
+		{HorrorMode: "gothic_horror", InvestFocus: "family_secret"},
+	}
+	mode, focus, ok := parseDiversityAIResponse(raw, candidates)
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if mode != "cosmic_horror" {
+		t.Fatalf("mode=%q, want cosmic_horror", mode)
+	}
+	if focus != "disappearance" {
+		t.Fatalf("focus=%q, want disappearance", focus)
+	}
+}
+
+func TestParseDiversityAIResponse_ExtraLines(t *testing.T) {
+	raw := "好的，让我来分析一下。\nmode: gothic_horror\nfocus: family_secret\n谢谢，希望对你有帮助！"
+	candidates := []diversityCombo{
+		{HorrorMode: "gothic_horror", InvestFocus: "family_secret"},
+		{HorrorMode: "cosmic_horror", InvestFocus: "disappearance"},
+	}
+	mode, focus, ok := parseDiversityAIResponse(raw, candidates)
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if mode != "gothic_horror" {
+		t.Fatalf("mode=%q, want gothic_horror", mode)
+	}
+	if focus != "family_secret" {
+		t.Fatalf("focus=%q, want family_secret", focus)
+	}
+}
+
+func TestParseDiversityAIResponse_OutOfPool(t *testing.T) {
+	raw := "mode: cosmic_horror\nfocus: disappearance"
+	// 候选不含 cosmic_horror+disappearance
+	candidates := []diversityCombo{
+		{HorrorMode: "gothic_horror", InvestFocus: "family_secret"},
+		{HorrorMode: "folk_horror", InvestFocus: "local_legend"},
+	}
+	mode, focus, ok := parseDiversityAIResponse(raw, candidates)
+	if ok {
+		t.Fatal("expected ok=false for out-of-pool combination")
+	}
+	if mode != "" || focus != "" {
+		t.Fatalf("expected empty mode/focus on failure, got mode=%q focus=%q", mode, focus)
+	}
+}
+
+func TestParseDiversityAIResponse_MissingFocus(t *testing.T) {
+	raw := "mode: cosmic_horror"
+	candidates := []diversityCombo{
+		{HorrorMode: "cosmic_horror", InvestFocus: "disappearance"},
+	}
+	_, _, ok := parseDiversityAIResponse(raw, candidates)
+	if ok {
+		t.Fatal("expected ok=false when focus line is missing")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// normalizeOneshotDraft diversity-source tests
+// ---------------------------------------------------------------------------
+
+func TestNormalizeOneshotDraft_AISourcePreservesArchitectChoice(t *testing.T) {
+	draft := validScripterTestDraft()
+	draft.Content.HorrorMode = "gothic_horror"
+	draft.Content.InvestFocus = "family_secret"
+
+	constraints := ScripterConstraints{
+		Era:             "1920s",
+		GeographyFlavor: []string{"美国", "乡镇"},
+		HorrorMode:      "cosmic_horror",
+		InvestFocus:     "disappearance",
+		ToneTags:        []string{"cosmic-dread", "slow-burn"},
+		DiversitySource: "ai",
+	}
+
+	normalizeOneshotDraft(&draft, ScenarioCreationRequest{}, "agent-team", constraints, "test-session")
+
+	// AI source 下 architect 输出应被保留
+	if draft.Content.HorrorMode != "gothic_horror" {
+		t.Fatalf("HorrorMode=%q, want gothic_horror (architect choice preserved)", draft.Content.HorrorMode)
+	}
+	if draft.Content.InvestFocus != "family_secret" {
+		t.Fatalf("InvestFocus=%q, want family_secret (architect choice preserved)", draft.Content.InvestFocus)
+	}
+	// ToneTags 仍被覆盖
+	if !sameStringSlice(draft.Content.ToneTags, []string{"cosmic-dread", "slow-burn"}) {
+		t.Fatalf("ToneTags=%v, want [cosmic-dread slow-burn]", draft.Content.ToneTags)
+	}
+}
+
+func TestNormalizeOneshotDraft_AISourceFillsEmpty(t *testing.T) {
+	draft := validScripterTestDraft()
+	draft.Content.HorrorMode = ""
+	draft.Content.InvestFocus = ""
+
+	constraints := ScripterConstraints{
+		Era:             "1920s",
+		GeographyFlavor: []string{"美国", "乡镇"},
+		HorrorMode:      "cosmic_horror",
+		InvestFocus:     "disappearance",
+		ToneTags:        []string{"cosmic-dread", "slow-burn"},
+		DiversitySource: "ai",
+	}
+
+	normalizeOneshotDraft(&draft, ScenarioCreationRequest{}, "agent-team", constraints, "test-session")
+
+	// AI source 下空值应被填充
+	if draft.Content.HorrorMode != "cosmic_horror" {
+		t.Fatalf("HorrorMode=%q, want cosmic_horror (filled from constraint)", draft.Content.HorrorMode)
+	}
+	if draft.Content.InvestFocus != "disappearance" {
+		t.Fatalf("InvestFocus=%q, want disappearance (filled from constraint)", draft.Content.InvestFocus)
+	}
+}
+
+func TestNormalizeOneshotDraft_FallbackSourceOverrides(t *testing.T) {
+	draft := validScripterTestDraft()
+	draft.Content.HorrorMode = "cosmic_horror"
+	draft.Content.InvestFocus = "disappearance"
+
+	constraints := ScripterConstraints{
+		Era:             "1920s",
+		GeographyFlavor: []string{"美国", "乡镇"},
+		HorrorMode:      "gothic_horror",
+		InvestFocus:     "family_secret",
+		ToneTags:        []string{"gothic", "slow-burn"},
+		DiversitySource: "fallback",
+	}
+
+	normalizeOneshotDraft(&draft, ScenarioCreationRequest{}, "agent-team", constraints, "test-session")
+
+	// fallback 下强制覆盖
+	if draft.Content.HorrorMode != "gothic_horror" {
+		t.Fatalf("HorrorMode=%q, want gothic_horror (forced override)", draft.Content.HorrorMode)
+	}
+	if draft.Content.InvestFocus != "family_secret" {
+		t.Fatalf("InvestFocus=%q, want family_secret (forced override)", draft.Content.InvestFocus)
+	}
+}
+
+func TestNormalizeOneshotDraft_EmptySourceOverrides(t *testing.T) {
+	// DiversitySource 为空时行为等同 fallback
+	draft := validScripterTestDraft()
+	draft.Content.HorrorMode = "cosmic_horror"
+	draft.Content.InvestFocus = "disappearance"
+
+	constraints := ScripterConstraints{
+		Era:             "1920s",
+		GeographyFlavor: []string{"美国", "乡镇"},
+		HorrorMode:      "gothic_horror",
+		InvestFocus:     "family_secret",
+		ToneTags:        []string{"gothic", "slow-burn"},
+		// DiversitySource 留空
+	}
+
+	normalizeOneshotDraft(&draft, ScenarioCreationRequest{}, "agent-team", constraints, "test-session")
+
+	if draft.Content.HorrorMode != "gothic_horror" {
+		t.Fatalf("HorrorMode=%q, want gothic_horror (empty source = fallback)", draft.Content.HorrorMode)
+	}
+	if draft.Content.InvestFocus != "family_secret" {
+		t.Fatalf("InvestFocus=%q, want family_secret (empty source = fallback)", draft.Content.InvestFocus)
+	}
+}

@@ -830,13 +830,33 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		draft.Content.MapDescription = "【文字地图】各调查地点是剧本状态节点，不是顺序关卡：入口连接所有可调查地点；地点之间可往返；时间推进时，各地点状态可能因派系行动而改变。"
 		log.Printf("[scripter:normalize] session=%s filled map_description", sessionID)
 	}
-	if strings.TrimSpace(constraints.HorrorMode) != "" && strings.TrimSpace(draft.Content.HorrorMode) != strings.TrimSpace(constraints.HorrorMode) {
-		log.Printf("[scripter:normalize] session=%s override horror_mode from=%q to=%q", sessionID, draft.Content.HorrorMode, constraints.HorrorMode)
-		draft.Content.HorrorMode = strings.TrimSpace(constraints.HorrorMode)
+	if strings.TrimSpace(constraints.HorrorMode) != "" {
+		if constraints.DiversitySource == "ai" {
+			// NOTE: AI 围池选择时尊重 architect 输出，仅补空值
+			if strings.TrimSpace(draft.Content.HorrorMode) == "" {
+				draft.Content.HorrorMode = strings.TrimSpace(constraints.HorrorMode)
+			}
+		} else {
+			// fallback 或空: 维持强制覆盖
+			if strings.TrimSpace(draft.Content.HorrorMode) != strings.TrimSpace(constraints.HorrorMode) {
+				log.Printf("[scripter:normalize] session=%s override horror_mode from=%q to=%q", sessionID, draft.Content.HorrorMode, constraints.HorrorMode)
+				draft.Content.HorrorMode = strings.TrimSpace(constraints.HorrorMode)
+			}
+		}
 	}
-	if strings.TrimSpace(constraints.InvestFocus) != "" && strings.TrimSpace(draft.Content.InvestFocus) != strings.TrimSpace(constraints.InvestFocus) {
-		log.Printf("[scripter:normalize] session=%s override invest_focus from=%q to=%q", sessionID, draft.Content.InvestFocus, constraints.InvestFocus)
-		draft.Content.InvestFocus = strings.TrimSpace(constraints.InvestFocus)
+	if strings.TrimSpace(constraints.InvestFocus) != "" {
+		if constraints.DiversitySource == "ai" {
+			// NOTE: AI 围池选择时尊重 architect 输出，仅补空值
+			if strings.TrimSpace(draft.Content.InvestFocus) == "" {
+				draft.Content.InvestFocus = strings.TrimSpace(constraints.InvestFocus)
+			}
+		} else {
+			// fallback 或空: 维持强制覆盖
+			if strings.TrimSpace(draft.Content.InvestFocus) != strings.TrimSpace(constraints.InvestFocus) {
+				log.Printf("[scripter:normalize] session=%s override invest_focus from=%q to=%q", sessionID, draft.Content.InvestFocus, constraints.InvestFocus)
+				draft.Content.InvestFocus = strings.TrimSpace(constraints.InvestFocus)
+			}
+		}
 	}
 	if len(constraints.ToneTags) > 0 && !sameStringSlice(draft.Content.ToneTags, constraints.ToneTags) {
 		log.Printf("[scripter:normalize] session=%s override tone_tags from=%q to=%q", sessionID, strings.Join(draft.Content.ToneTags, ","), strings.Join(constraints.ToneTags, ","))

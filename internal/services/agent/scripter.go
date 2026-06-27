@@ -363,6 +363,7 @@ type ScripterConstraints struct {
 	HorrorMode      string   `json:"horror_mode"`
 	InvestFocus     string   `json:"invest_focus"`
 	ToneTags        []string `json:"tone_tags,omitempty"`
+	DiversitySource string   `json:"diversity_source,omitempty"` // NOTE: "ai"=AI围池选择，"fallback"=随机降级
 }
 
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
@@ -377,9 +378,25 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 	} else {
 		log.Printf("[scripter] session=%s geography generated=%q", sessionID, strings.Join(geography, " → "))
 	}
-	horrorMode, investFocus, toneTags := selectDiversityConstraints(r.req, sessionID)
-	log.Printf("[scripter] session=%s diversity selected horror_mode=%q invest_focus=%q tone_tags=%q",
-		sessionID, horrorMode, investFocus, strings.Join(toneTags, ","))
+
+	// NOTE: 先尝试 AI 从围池内选择，失败则降级随机
+	candidates := buildDiversityCandidates(r.req, sessionID)
+	var horrorMode, investFocus, source string
+	mode, focus, src, aiErr := selectDiversityConstraintsWithAI(ctx, r, candidates)
+	if aiErr != nil || src != "ai" || mode == "" {
+		horrorMode, investFocus, _ = selectDiversityConstraints(r.req, sessionID)
+		source = "fallback"
+		log.Printf("[scripter] session=%s diversity fallback horror_mode=%q invest_focus=%q", sessionID, horrorMode, investFocus)
+	} else {
+		horrorMode = mode
+		investFocus = focus
+		source = "ai"
+		log.Printf("[scripter] session=%s diversity ai horror_mode=%q invest_focus=%q", sessionID, horrorMode, investFocus)
+	}
+	toneTags := toneTagsForDiversity(horrorMode, investFocus, r.req)
+	log.Printf("[scripter] session=%s diversity final horror_mode=%q invest_focus=%q tone_tags=%q source=%q",
+		sessionID, horrorMode, investFocus, strings.Join(toneTags, ","), source)
+
 	return ScripterConstraints{
 		Era:             r.req.Era,
 		Theme:           firstNonEmpty(r.req.Theme, ""),
@@ -390,6 +407,7 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		HorrorMode:      horrorMode,
 		InvestFocus:     investFocus,
 		ToneTags:        toneTags,
+		DiversitySource: source,
 	}
 }
 
@@ -501,7 +519,8 @@ func fallbackGeographyFlavor(req ScenarioCreationRequest) []string {
 	return flavor
 }
 
-func selectDiversityConstraints(req ScenarioCreationRequest, sessionID string) (horrorMode string, investFocus string, toneTags []string) {
+// buildDiversityCandidates 返回剔除近N条已用组合后的候选围池；DB为空时返回全笛卡尔积。
+func buildDiversityCandidates(req ScenarioCreationRequest, sessionID string) []diversityCombo {
 	recent := loadRecentDiversityCombos(30, sessionID)
 	recentSet := map[string]bool{}
 	for _, combo := range recent {
@@ -511,32 +530,129 @@ func selectDiversityConstraints(req ScenarioCreationRequest, sessionID string) (
 		}
 	}
 
-	type candidate struct {
-		Mode  string
-		Focus string
-	}
-	candidates := make([]candidate, 0, len(scripterHorrorModes)*len(scripterInvestFocuses))
+	// 全笛卡尔积
+	candidates := make([]diversityCombo, 0, len(scripterHorrorModes)*len(scripterInvestFocuses))
 	for _, mode := range scripterHorrorModes {
 		for _, focus := range scripterInvestFocuses {
-			candidates = append(candidates, candidate{Mode: mode, Focus: focus})
+			candidates = append(candidates, diversityCombo{HorrorMode: mode, InvestFocus: focus})
 		}
 	}
-	if len(candidates) == 0 {
-		return "cosmic_horror", "disappearance", toneTagsForDiversity("cosmic_horror", "disappearance", req)
-	}
 
-	available := make([]candidate, 0, len(candidates))
+	// 剔除最近用过的组合
+	available := make([]diversityCombo, 0, len(candidates))
 	for _, c := range candidates {
-		if !recentSet[diversityComboKey(c.Mode, c.Focus)] {
+		if !recentSet[diversityComboKey(c.HorrorMode, c.InvestFocus)] {
 			available = append(available, c)
 		}
 	}
-	pool := available
-	if len(pool) == 0 {
-		pool = candidates
+	// 围池耗尽时退化为全笛卡尔积
+	if len(available) > 0 {
+		return available
 	}
-	chosen := pool[rand.Intn(len(pool))]
-	return chosen.Mode, chosen.Focus, toneTagsForDiversity(chosen.Mode, chosen.Focus, req)
+	return candidates
+}
+
+func selectDiversityConstraints(req ScenarioCreationRequest, sessionID string) (horrorMode string, investFocus string, toneTags []string) {
+	candidates := buildDiversityCandidates(req, sessionID)
+	if len(candidates) == 0 {
+		return "cosmic_horror", "disappearance", toneTagsForDiversity("cosmic_horror", "disappearance", req)
+	}
+	chosen := candidates[rand.Intn(len(candidates))]
+	return chosen.HorrorMode, chosen.InvestFocus, toneTagsForDiversity(chosen.HorrorMode, chosen.InvestFocus, req)
+}
+
+// selectDiversityConstraintsWithAI 让 architect 从围池候选中选最契合题材的组合；
+// 失败时返回 ("", "", "fallback", nil)，调用方应降级到随机选取。
+func selectDiversityConstraintsWithAI(ctx context.Context, room *scripterRoom, candidates []diversityCombo) (horrorMode, investFocus, source string, err error) {
+	if len(candidates) == 0 {
+		return "", "", "fallback", nil
+	}
+	if room == nil || room.architect.provider == nil {
+		return "", "", "fallback", nil
+	}
+	sessionID := scripterSessionID(ctx, room)
+
+	// 构建候选列表文本
+	var candLines []string
+	for i, c := range candidates {
+		modeLabel := horrorModeChineseLabels[c.HorrorMode]
+		focusLabel := investFocusChineseLabels[c.InvestFocus]
+		candLines = append(candLines, fmt.Sprintf("%d. mode=%s(%s) / focus=%s(%s)",
+			i+1, c.HorrorMode, modeLabel, c.InvestFocus, focusLabel))
+	}
+	candidatesText := strings.Join(candLines, "\n")
+
+	geographyFlavor := ""
+	if room.req.Theme != "" {
+		geographyFlavor = room.req.Theme
+	}
+	era := room.req.Era
+	theme := room.req.Theme
+
+	systemPrompt := `<role>COC7剧本架构师</role>
+<task>从候选围池内挑最契合题材与时代氛围的一个恐怖模式(horror_mode / 恐怖叙事风格) + 调查焦点(invest_focus / 调查切入点)组合。</task>`
+
+	userPrompt := fmt.Sprintf(`时代(Era): %s
+主题(Theme): %s
+地理风味: %s
+
+候选围池(编号 → 恐怖模式 / 调查焦点):
+%s
+
+强制规则: 只能从围池内选, 不得创造新的 mode 或 focus; 严格输出两行, 第一行 mode: <英文值>, 第二行 focus: <英文值>, 不要任何其他内容或解释。`,
+		era, theme, geographyFlavor, candidatesText)
+
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: room.architect.systemPrompt(systemPrompt)},
+		{Role: "user", Content: userPrompt},
+	}
+
+	log.Printf("[scripter:diversity_ai] session=%s prompt candidates=%d", sessionID, len(candidates))
+	callMessages := append([]llm.ChatMessage(nil), msgs...)
+	raw, chatErr := room.architect.provider.Chat(ctx, msgs)
+	if chatErr != nil {
+		log.Printf("[scripter:diversity_ai] session=%s chat error=%v", sessionID, chatErr)
+		return "", "", "fallback", chatErr
+	}
+	raw = strings.TrimSpace(raw)
+	recordScripterLLMExchange(ctx, room, "diversity_ai", callMessages, raw)
+	log.Printf("[scripter:diversity_ai] session=%s raw=%s", sessionID, truncateRunes(raw, scripterRawLogLimit))
+
+	mode, focus, ok := parseDiversityAIResponse(raw, candidates)
+	if !ok {
+		log.Printf("[scripter:diversity_ai] session=%s parse failed or out-of-pool, falling back to random", sessionID)
+		return "", "", "fallback", nil
+	}
+	log.Printf("[scripter:diversity_ai] session=%s selected mode=%q focus=%q source=ai", sessionID, mode, focus)
+	return mode, focus, "ai", nil
+}
+
+// parseDiversityAIResponse 解析 AI 围池选择的纯文本响应，验证组合是否在候选内。
+func parseDiversityAIResponse(raw string, candidates []diversityCombo) (horrorMode, investFocus string, ok bool) {
+	var modeVal, focusVal string
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		if strings.HasPrefix(lower, "mode:") {
+			modeVal = strings.TrimSpace(line[len("mode:"):])
+		} else if strings.HasPrefix(lower, "focus:") {
+			focusVal = strings.TrimSpace(line[len("focus:"):])
+		}
+	}
+	if modeVal == "" || focusVal == "" {
+		return "", "", false
+	}
+	// 围池校验
+	for _, c := range candidates {
+		if strings.TrimSpace(c.HorrorMode) == modeVal && strings.TrimSpace(c.InvestFocus) == focusVal {
+			return modeVal, focusVal, true
+		}
+	}
+	return "", "", false
 }
 
 type diversityCombo struct {
