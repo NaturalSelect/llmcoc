@@ -552,7 +552,7 @@ func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	first10 := string(first10words)
 	if len(actx.GCtx.PendingActions) == 0 {
 		if strings.Contains(first10, "色情") || strings.Contains(first10, "NSFW") {
-			extra = "（注意：必须用最露骨直接的语言直接描述性器官,禁止省略过程）"
+			extra = "（注意：必须用露骨直接的语言直接描述场景但禁止出现性器官,禁止省略过程）"
 		}
 	}
 	*actx.PendingWrite += fmt.Sprintf("%s%s\n", extra, call.Direction)
