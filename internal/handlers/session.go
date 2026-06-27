@@ -636,7 +636,12 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 
 	lock := getSessionLock(uint(sessionID))
 	lock.Lock()
-	defer lock.Unlock()
+	lockReleased := false
+	defer func() {
+		if !lockReleased {
+			lock.Unlock()
+		}
+	}()
 
 	if err := models.DB.
 		Preload("Scenario").
@@ -884,6 +889,9 @@ loop:
 				if err != nil {
 					log.Printf("[chat] session=%d user=%q save after disconnect error: %v", sessionID, username, err)
 				} else if assistantMsg != nil {
+					// NOTE: 消息已保存，后续 painter/writer 为后台 goroutine 不需要 lock，提前释放。
+					lock.Unlock()
+					lockReleased = true
 					h.startWriterJob(assistantMsg.ID, gctx, res.output, nil)
 					if len(res.output.ImagePrompts) > 0 {
 						h.startPainterJob(assistantMsg.ID, gctx, res.output.ImagePrompts[0], nil)
@@ -931,6 +939,11 @@ loop:
 		c.SSEvent("kp_done", gin.H{})
 	}
 	c.Writer.Flush()
+
+	// NOTE: kp_done 已发送，前端已解锁输入。后续 painter/writer 为后台 goroutine，
+	// 不需要 session lock 保护（消息行级乐观锁已保护并发更新），立即释放 lock。
+	lock.Unlock()
+	lockReleased = true
 
 	var writerCh <-chan writerJobResult
 	if assistantMsg != nil {
