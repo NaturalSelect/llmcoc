@@ -8,7 +8,3 @@ database:
 jwt:
   secret: "change-me-to-a-long-random-secret-in-production"
   expire_hours: 168   # 7 days
-
-shop:
-  initial_coins: 600
-  initial_card_slots: 3

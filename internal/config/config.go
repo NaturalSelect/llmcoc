@@ -11,7 +11,6 @@ type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
 	JWT      JWTConfig      `yaml:"jwt"`
-	Shop     ShopConfig     `yaml:"shop"`
 }
 
 type ServerConfig struct {
@@ -26,11 +25,6 @@ type DatabaseConfig struct {
 type JWTConfig struct {
 	Secret      string `yaml:"secret"`
 	ExpireHours int    `yaml:"expire_hours"`
-}
-
-type ShopConfig struct {
-	InitialCoins     int `yaml:"initial_coins"`
-	InitialCardSlots int `yaml:"initial_card_slots"`
 }
 
 var Global Config
@@ -66,11 +60,5 @@ func setDefaults() {
 	}
 	if Global.JWT.ExpireHours == 0 {
 		Global.JWT.ExpireHours = 168
-	}
-	if Global.Shop.InitialCoins == 0 {
-		Global.Shop.InitialCoins = 600
-	}
-	if Global.Shop.InitialCardSlots == 0 {
-		Global.Shop.InitialCardSlots = 3
 	}
 }

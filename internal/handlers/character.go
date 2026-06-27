@@ -651,10 +651,9 @@ func applyAdjustedSkills(base map[string]int, adjusted map[string]int, stats mod
 	base["闪避"] = stats.DEX / 2
 }
 
-const regenerateAppearanceCost = 100
-
-// RegenerateAppearance spends 100 coins to regenerate a character's appearance via LLM.
+	// NOTE: RegenerateAppearance 通过 SiteSetting 读取费率，扣除金币后重新生成外貌
 func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
+	cost := siteSettingInt("regenerate_appearance_cost", 100)
 	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 
@@ -676,10 +675,10 @@ func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 	var user models.User
 	if isOwner {
 		models.DB.First(&user, userID)
-		if user.Coins < regenerateAppearanceCost {
+		if user.Coins < cost {
 			c.JSON(http.StatusPaymentRequired, gin.H{
 				"error":   "金币不足",
-				"need":    regenerateAppearanceCost,
+				"need":    cost,
 				"current": user.Coins,
 			})
 			return
@@ -700,7 +699,7 @@ func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 	}()
 
 	if isOwner {
-		if err := tx.Model(&user).Update("coins", user.Coins-regenerateAppearanceCost).Error; err != nil {
+		if err := tx.Model(&user).Update("coins", user.Coins-cost).Error; err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
 			return
@@ -727,10 +726,9 @@ func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-const regenerateBackstoryCost = 100
-
-// RegenerateBackstory spends 100 coins to regenerate a character's backstory via LLM.
+	// NOTE: RegenerateBackstory 通过 SiteSetting 读取费率，扣除金币后重新生成背景故事
 func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
+	cost := siteSettingInt("regenerate_backstory_cost", 100)
 	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 
@@ -752,10 +750,10 @@ func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 	var user models.User
 	if isOwner {
 		models.DB.First(&user, userID)
-		if user.Coins < regenerateBackstoryCost {
+		if user.Coins < cost {
 			c.JSON(http.StatusPaymentRequired, gin.H{
 				"error":   "金币不足",
-				"need":    regenerateBackstoryCost,
+				"need":    cost,
 				"current": user.Coins,
 			})
 			return
@@ -776,7 +774,7 @@ func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 	}()
 
 	if isOwner {
-		if err := tx.Model(&user).Update("coins", user.Coins-regenerateBackstoryCost).Error; err != nil {
+		if err := tx.Model(&user).Update("coins", user.Coins-cost).Error; err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
 			return
@@ -803,10 +801,9 @@ func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-const regenerateTraitsCost = 100
-
-// RegenerateTraits spends 100 coins to regenerate a character's traits via LLM.
+	// NOTE: RegenerateTraits 通过 SiteSetting 读取费率，扣除金币后重新生成性格特征
 func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
+	cost := siteSettingInt("regenerate_traits_cost", 100)
 	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 
@@ -828,10 +825,10 @@ func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
 	var user models.User
 	if isOwner {
 		models.DB.First(&user, userID)
-		if user.Coins < regenerateTraitsCost {
+		if user.Coins < cost {
 			c.JSON(http.StatusPaymentRequired, gin.H{
 				"error":   "金币不足",
-				"need":    regenerateTraitsCost,
+				"need":    cost,
 				"current": user.Coins,
 			})
 			return
@@ -852,7 +849,7 @@ func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
 	}()
 
 	if isOwner {
-		if err := tx.Model(&user).Update("coins", user.Coins-regenerateTraitsCost).Error; err != nil {
+		if err := tx.Model(&user).Update("coins", user.Coins-cost).Error; err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣除金币失败"})
 			return
@@ -879,11 +876,9 @@ func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-const reviveBaseCost = 2000
-
 // reviveCostFor calculates the next revive cost based on how many times the user has already revived.
 func reviveCostFor(reviveCount int) int {
-	return (reviveCount + 1) * reviveBaseCost
+	return (reviveCount + 1) * siteSettingInt("revive_base_cost", 2000)
 }
 
 // ListDeadCharacters returns dead (is_active=false, is_deleted=false) character cards belonging to the user.

@@ -59,8 +59,8 @@ func Register(c *gin.Context) {
 		Email:        req.Email,
 		PasswordHash: string(hash),
 		Role:         models.RoleUser,
-		Coins:        config.Global.Shop.InitialCoins,
-		CardSlots:    config.Global.Shop.InitialCardSlots,
+		Coins:        siteSettingInt("initial_coins", 600),
+		CardSlots:    siteSettingInt("initial_card_slots", 3),
 	}
 
 	txErr := models.DB.Transaction(func(tx *gorm.DB) error {

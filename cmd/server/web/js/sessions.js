@@ -109,7 +109,7 @@ window.COC.sessions = {
 
                     async endSession() {
                         const playerCount = this.currentSession?.players?.length || 0;
-                        const costPerPlayer = 200;
+                        const costPerPlayer = this.shopCosts?.end_session_cost ?? 200;
                         const msg = playerCount > 1
                             ? `确认结束游戏？${playerCount}名玩家每人将消耗${costPerPlayer}金币（共${costPerPlayer * playerCount}金币），系统将进行成长评估。`
                             : `确认结束游戏？将消耗${costPerPlayer}金币，系统将进行成长评估。`;

@@ -198,13 +198,13 @@
                                         <div class="flex items-center justify-between mt-3">
                                             <span class="text-xs text-amber-800"
                                                 style="font-family:system-ui">复活费用：<span
-                                                    class="text-amber-500 font-bold">2000</span> 金币</span>
+                                                    class="text-amber-500 font-bold" x-text="shopCosts?.revive_base_cost ?? 2000"></span> 金币</span>
                                             <div class="flex gap-2">
                                                 <button @click="deleteDeadCharacter(char)"
                                                     class="btn text-xs bg-red-900/40 hover:bg-red-900/70 text-red-300 border border-red-900/50">🗑
                                                     彻底删除</button>
                                                 <button @click="reviveCharacter(char)"
-                                                    :disabled="(user?.coins??0) < 2000 || reviving"
+                                                    :disabled="(user?.coins??0) < (shopCosts?.revive_base_cost ?? 2000) || reviving"
                                                     class="btn btn-amber text-xs">✨ 复活</button>
                                             </div>
                                         </div>
@@ -944,10 +944,10 @@
                     <div class="flex items-center gap-2 mb-1">
                         <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider"
                             style="font-family:system-ui">背景故事</h3>
-                        <button @click="regenBackstory()" :disabled="regenningBackstory || (user?.coins??0) < 100"
+                        <button @click="regenBackstory()" :disabled="regenningBackstory || (user?.coins??0) < (shopCosts?.regenerate_backstory_cost ?? 100)"
                             class="btn btn-amber text-xs py-0.5 px-2" style="font-family:system-ui"
-                            :title="'花费 100 金币重新生成背景故事（当前金币：' + (user?.coins??0) + '）'">
-                            <span x-show="!regenningBackstory">重新生成 -100</span>
+                            :title="'花费 ' + (shopCosts?.regenerate_backstory_cost ?? 100) + ' 金币重新生成背景故事（当前金币：' + (user?.coins??0) + '）'">
+                            <span x-show="!regenningBackstory" x-text="'重新生成 -' + (shopCosts?.regenerate_backstory_cost ?? 100)"></span>
                             <span x-show="regenningBackstory">生成中…</span>
                         </button>
                     </div>
@@ -957,10 +957,10 @@
                     <div class="flex items-center gap-2 mb-1">
                         <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider"
                             style="font-family:system-ui">外貌描述</h3>
-                        <button @click="regenAppearance()" :disabled="regenningAppearance || (user?.coins??0) < 100"
+                        <button @click="regenAppearance()" :disabled="regenningAppearance || (user?.coins??0) < (shopCosts?.regenerate_appearance_cost ?? 100)"
                             class="btn btn-amber text-xs py-0.5 px-2" style="font-family:system-ui"
-                            :title="'花费 100 金币重新生成外貌（当前金币：' + (user?.coins??0) + '）'">
-                            <span x-show="!regenningAppearance">重新生成 -100</span>
+                            :title="'花费 ' + (shopCosts?.regenerate_appearance_cost ?? 100) + ' 金币重新生成外貌（当前金币：' + (user?.coins??0) + '）'">
+                            <span x-show="!regenningAppearance" x-text="'重新生成 -' + (shopCosts?.regenerate_appearance_cost ?? 100)"></span>
                             <span x-show="regenningAppearance">生成中…</span>
                         </button>
                     </div>
@@ -970,10 +970,10 @@
                     <div class="flex items-center gap-2 mb-1">
                         <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider"
                             style="font-family:system-ui">性格特征</h3>
-                        <button @click="regenTraits()" :disabled="regenningTraits || (user?.coins??0) < 100"
+                        <button @click="regenTraits()" :disabled="regenningTraits || (user?.coins??0) < (shopCosts?.regenerate_traits_cost ?? 100)"
                             class="btn btn-amber text-xs py-0.5 px-2" style="font-family:system-ui"
-                            :title="'花费 100 金币重新生成性格特征（当前金币：' + (user?.coins??0) + '）'">
-                            <span x-show="!regenningTraits">重新生成 -100</span>
+                            :title="'花费 ' + (shopCosts?.regenerate_traits_cost ?? 100) + ' 金币重新生成性格特征（当前金币：' + (user?.coins??0) + '）'">
+                            <span x-show="!regenningTraits" x-text="'重新生成 -' + (shopCosts?.regenerate_traits_cost ?? 100)"></span>
                             <span x-show="regenningTraits">生成中…</span>
                         </button>
                     </div>

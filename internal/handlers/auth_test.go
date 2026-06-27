@@ -16,7 +16,6 @@ func init() {
 	// Ensure a JWT secret is set for token generation in tests.
 	config.Global.JWT.Secret = "test-secret"
 	config.Global.JWT.ExpireHours = 1
-	config.Global.Shop.InitialCardSlots = 3
 }
 
 // authRouter sets up a minimal router for auth endpoints.

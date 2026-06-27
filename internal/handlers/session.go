@@ -1534,8 +1534,8 @@ func EndSession(c *gin.Context) {
 		return
 	}
 
-	// Deduct 200 coins from every player in the session.
-	const endSessionCost = 200
+	// NOTE: 结束游戏每人扣费，费率通过 SiteSetting 可配
+	endSessionCost := siteSettingInt("end_session_cost", 200)
 	var brokePlayers []string
 	for i := range session.Players {
 		p := &session.Players[i]
@@ -1545,7 +1545,7 @@ func EndSession(c *gin.Context) {
 	}
 	if len(brokePlayers) > 0 {
 		c.JSON(http.StatusPaymentRequired, gin.H{
-			"error":        "金币不足，结束游戏每人需要消耗200金币",
+			"error":        fmt.Sprintf("金币不足，结束游戏每人需要消耗%d金币", endSessionCost),
 			"insufficient": brokePlayers,
 		})
 		return

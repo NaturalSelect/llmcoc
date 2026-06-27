@@ -318,12 +318,30 @@ window.COC.admin = {
                         const map = {};
                         settings.forEach(s => map[s.key] = s.value);
                         this.siteSettings.require_invite_code = map.require_invite_code === 'true';
+                        this.siteSettings.initial_coins = parseInt(map.initial_coins) || 600;
+                        this.siteSettings.initial_card_slots = parseInt(map.initial_card_slots) || 3;
+                        this.siteSettings.regenerate_appearance_cost = parseInt(map.regenerate_appearance_cost) || 100;
+                        this.siteSettings.regenerate_backstory_cost = parseInt(map.regenerate_backstory_cost) || 100;
+                        this.siteSettings.regenerate_traits_cost = parseInt(map.regenerate_traits_cost) || 100;
+                        this.siteSettings.revive_base_cost = parseInt(map.revive_base_cost) || 2000;
+                        this.siteSettings.end_session_cost = parseInt(map.end_session_cost) || 200;
                     },
                     async toggleInviteCodeSetting() {
                         const newVal = this.siteSettings.require_invite_code ? 'false' : 'true';
                         try {
                             await this.api('PUT', '/api/admin/config/settings/require_invite_code', { value: newVal });
                             this.siteSettings.require_invite_code = newVal === 'true';
+                            this.showToast('设置已更新');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+                    async updateSiteSettingCost(key) {
+                        const val = String(this.siteSettings[key] ?? '');
+                        if (!val || isNaN(parseInt(val)) || parseInt(val) < 0) {
+                            this.showToast('请输入有效的正整数', 'error');
+                            return;
+                        }
+                        try {
+                            await this.api('PUT', '/api/admin/config/settings/' + key, { value: val });
                             this.showToast('设置已更新');
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },

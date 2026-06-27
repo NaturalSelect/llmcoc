@@ -224,6 +224,8 @@ func main() {
 		shop.POST("/purchase", handlers.PurchaseItem)
 		shop.GET("/transactions", handlers.GetMyTransactions)
 	}
+	// NOTE: 费率公开接口，无需鉴权，供前端页面初始化时读取
+	api.GET("/shop/costs", handlers.GetShopCosts)
 
 	// Admin
 	admin := api.Group("/admin", middleware.AuthRequired(), middleware.AdminRequired())

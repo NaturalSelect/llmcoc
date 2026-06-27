@@ -4,10 +4,37 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
 )
+
+// NOTE: siteSettingInt 读取 SiteSetting 并解析为 int，解析失败或空值时返回 fallback。
+func siteSettingInt(key string, fallback int) int {
+	s := models.GetSiteSetting(key, "")
+	if s == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return fallback
+	}
+	return v
+}
+
+// NOTE: GetShopCosts 返回商城各项金币费率，供前端动态展示
+func GetShopCosts(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"initial_coins":              siteSettingInt("initial_coins", 600),
+		"initial_card_slots":         siteSettingInt("initial_card_slots", 3),
+		"regenerate_appearance_cost": siteSettingInt("regenerate_appearance_cost", 100),
+		"regenerate_backstory_cost":  siteSettingInt("regenerate_backstory_cost", 100),
+		"regenerate_traits_cost":     siteSettingInt("regenerate_traits_cost", 100),
+		"revive_base_cost":           siteSettingInt("revive_base_cost", 2000),
+		"end_session_cost":           siteSettingInt("end_session_cost", 200),
+	})
+}
 
 func ListShopItems(c *gin.Context) {
 	var items []models.ShopItem

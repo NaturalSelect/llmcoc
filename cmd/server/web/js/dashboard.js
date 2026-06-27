@@ -174,7 +174,7 @@ window.COC.dashboard = {
                     },
 
                     async reviveCharacter(char) {
-                        if (!confirm(`确认花费 2000 金币复活「${char.name}」？\n复活后HP为最大值的一半，随机失去一半装备，遗忘一半法术。`)) return;
+                        if (!confirm(`确认花费 ${this.shopCosts?.revive_base_cost ?? 2000} 金币复活「${char.name}」？\n复活后HP为最大值的一半，随机失去一半装备，遗忘一半法术。`)) return;
                         this.reviving = true;
                         try {
                             const r = await this.api('POST', '/api/characters/' + char.id + '/revive');
@@ -188,7 +188,7 @@ window.COC.dashboard = {
 
                     async regenAppearance() {
                         if (!this.editChar) return;
-                        if (!confirm(`确认花费 100 金币为「${this.editChar.name}」重新生成外貌？`)) return;
+                        if (!confirm(`确认花费 ${this.shopCosts?.regenerate_appearance_cost ?? 100} 金币为「${this.editChar.name}」重新生成外貌？`)) return;
                         this.regenningAppearance = true;
                         try {
                             const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-appearance');
@@ -202,7 +202,7 @@ window.COC.dashboard = {
 
                     async regenBackstory() {
                         if (!this.editChar) return;
-                        if (!confirm(`确认花费 100 金币为「${this.editChar.name}」重新生成背景故事？`)) return;
+                        if (!confirm(`确认花费 ${this.shopCosts?.regenerate_backstory_cost ?? 100} 金币为「${this.editChar.name}」重新生成背景故事？`)) return;
                         this.regenningBackstory = true;
                         try {
                             const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-backstory');
@@ -216,7 +216,7 @@ window.COC.dashboard = {
 
                     async regenTraits() {
                         if (!this.editChar) return;
-                        if (!confirm(`确认花费 100 金币为「${this.editChar.name}」重新生成性格特征？`)) return;
+                        if (!confirm(`确认花费 ${this.shopCosts?.regenerate_traits_cost ?? 100} 金币为「${this.editChar.name}」重新生成性格特征？`)) return;
                         this.regenningTraits = true;
                         try {
                             const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-traits');

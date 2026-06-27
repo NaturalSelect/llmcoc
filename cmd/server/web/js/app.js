@@ -27,6 +27,8 @@ window.COC.core = function() {
                     scenarioList: [],
                     shopItems: [],
                     transactions: [],
+                    // NOTE: 商城费率配置，由 loadShopCosts 从后端加载
+                    shopCosts: {},
 
                     // ── Character forms ───────────────────────────────────────────────────
                     editChar: null,
@@ -119,7 +121,16 @@ window.COC.core = function() {
                     pingLoading: null,
                     agentPingLoading: null,
                     newShopItem: { name: '', description: '', item_type: 'card_slot', price: 0, value: 1, is_active: true },
-                    siteSettings: { require_invite_code: false },
+                    siteSettings: {
+                        require_invite_code: false,
+                        initial_coins: 600,
+                        initial_card_slots: 3,
+                        regenerate_appearance_cost: 100,
+                        regenerate_backstory_cost: 100,
+                        regenerate_traits_cost: 100,
+                        revive_base_cost: 2000,
+                        end_session_cost: 200,
+                    },
                     inviteCodes: [],
                     inviteCodeCount: 5,
 
@@ -134,6 +145,8 @@ window.COC.core = function() {
                             const ps = await this.api('GET', '/api/auth/settings/public');
                             this.requireInviteCode = !!ps.require_invite_code;
                         } catch { }
+                        // NOTE: 加载商城费率配置，无需鉴权
+                        this.loadShopCosts().catch(() => {});
                         if (this.token) {
                             try {
                                 await this.loadMe();
@@ -229,6 +242,15 @@ window.COC.core = function() {
                     // ═══════════════════════════════════════════════════════
                     // Utilities
                     // ═══════════════════════════════════════════════════════
+                    // NOTE: 从后端加载商城各项金币费率
+                    async loadShopCosts() {
+                        try {
+                            const costs = await this.api('GET', '/api/shop/costs');
+                            this.shopCosts = costs || {};
+                        } catch (_) {
+                            this.shopCosts = {};
+                        }
+                    },
                     fmtTime(iso) {
                         if (!iso) return '';
                         return new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });

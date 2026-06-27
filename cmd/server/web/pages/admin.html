@@ -562,6 +562,76 @@
                     </div>
                 </div>
 
+                <!-- Coin cost settings -->
+                <div class="card rounded p-5 max-w-md">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">金币与初始配置</h3>
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between gap-3">
+                            <label class="text-sm shrink-0" style="font-family:system-ui">初始金币（新用户注册）</label>
+                            <div class="flex items-center gap-2">
+                                <input x-model.number="siteSettings.initial_coins" type="number" min="0"
+                                    class="inp w-24 text-right text-xs" />
+                                <button @click="updateSiteSettingCost('initial_coins')"
+                                    class="btn btn-amber text-xs shrink-0">保存</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between gap-3">
+                            <label class="text-sm shrink-0" style="font-family:system-ui">初始卡槽数（新用户注册）</label>
+                            <div class="flex items-center gap-2">
+                                <input x-model.number="siteSettings.initial_card_slots" type="number" min="0"
+                                    class="inp w-24 text-right text-xs" />
+                                <button @click="updateSiteSettingCost('initial_card_slots')"
+                                    class="btn btn-amber text-xs shrink-0">保存</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between gap-3">
+                            <label class="text-sm shrink-0" style="font-family:system-ui">重造外貌费用</label>
+                            <div class="flex items-center gap-2">
+                                <input x-model.number="siteSettings.regenerate_appearance_cost" type="number" min="0"
+                                    class="inp w-24 text-right text-xs" />
+                                <button @click="updateSiteSettingCost('regenerate_appearance_cost')"
+                                    class="btn btn-amber text-xs shrink-0">保存</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between gap-3">
+                            <label class="text-sm shrink-0" style="font-family:system-ui">重造背景故事费用</label>
+                            <div class="flex items-center gap-2">
+                                <input x-model.number="siteSettings.regenerate_backstory_cost" type="number" min="0"
+                                    class="inp w-24 text-right text-xs" />
+                                <button @click="updateSiteSettingCost('regenerate_backstory_cost')"
+                                    class="btn btn-amber text-xs shrink-0">保存</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between gap-3">
+                            <label class="text-sm shrink-0" style="font-family:system-ui">重造性格特征费用</label>
+                            <div class="flex items-center gap-2">
+                                <input x-model.number="siteSettings.regenerate_traits_cost" type="number" min="0"
+                                    class="inp w-24 text-right text-xs" />
+                                <button @click="updateSiteSettingCost('regenerate_traits_cost')"
+                                    class="btn btn-amber text-xs shrink-0">保存</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between gap-3">
+                            <label class="text-sm shrink-0" style="font-family:system-ui">复活基础费用</label>
+                            <div class="flex items-center gap-2">
+                                <input x-model.number="siteSettings.revive_base_cost" type="number" min="0"
+                                    class="inp w-24 text-right text-xs" />
+                                <button @click="updateSiteSettingCost('revive_base_cost')"
+                                    class="btn btn-amber text-xs shrink-0">保存</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between gap-3">
+                            <label class="text-sm shrink-0" style="font-family:system-ui">结束游戏费用（每人）</label>
+                            <div class="flex items-center gap-2">
+                                <input x-model.number="siteSettings.end_session_cost" type="number" min="0"
+                                    class="inp w-24 text-right text-xs" />
+                                <button @click="updateSiteSettingCost('end_session_cost')"
+                                    class="btn btn-amber text-xs shrink-0">保存</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Invite codes -->
                 <div class="card rounded p-5">
                     <div class="flex items-center justify-between mb-4">
