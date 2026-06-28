@@ -41,6 +41,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		<rule>进行详细的描写, 包括环境、人物动作、物件位置、光线、声音、对话反应等</rule>
 		<rule>仔细思考每个细节, 将连贯精彩的画面呈现给玩家, 进行想象让人物的动作更生动具体</rule>
 		<rule>禁止避讳色情描写和露骨描写</rule>
+		<rule>情节发展必须绝对遵循导演指令, 不得自行添加剧情或人物行为</rule>
 	</requirements>
 	<style>
 		<rule>日常/调查/移动/交谈场景要保持自然、具体、可见可闻：写人物动作、物件位置、光线、声音、对话反应，不要强行制造怪异感。</rule>
