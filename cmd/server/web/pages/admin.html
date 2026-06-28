@@ -629,10 +629,18 @@
                                     class="btn btn-amber text-xs shrink-0">保存</button>
                             </div>
                         </div>
+                        <div class="flex items-center justify-between text-xs"
+                            style="font-family:system-ui">
+                            <span class="text-amber-700">Writer 历史缓存上限（字符数）</span>
+                            <div class="flex items-center gap-2">
+                                <input x-model.number="siteSettings.writer_history_max_runes" type="number" min="1000"
+                                    class="inp w-28 text-right text-xs" />
+                                <button @click="updateSiteSettingCost('writer_history_max_runes')"
+                                    class="btn btn-amber text-xs shrink-0">保存</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
-
-                <!-- Invite codes -->
                 <div class="card rounded p-5">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">邀请码管理</h3>
