@@ -30,10 +30,10 @@ type GeneratedCharacter struct {
 	Stats      *models.CharacterStats `json:"stats,omitempty"`
 }
 
-// RegenerateAppearance uses the Writer agent to produce a fresh appearance description
+// RegenerateAppearance uses the Evaluator agent to produce a fresh appearance description
 // for an existing character. It only needs the fields already stored on the card.
 func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (string, error) {
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
 	if err != nil {
 		return "", err
 	}
@@ -50,6 +50,10 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (stri
 	if gender == "" {
 		gender = "(未指定)"
 	}
+	age := "(未指定)"
+	if card.Age > 0 {
+		age = fmt.Sprintf("%d", card.Age)
+	}
 
 	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)调查员重新生成外貌描述,以JSON格式返回,不要有任何额外文字。
 
@@ -57,12 +61,40 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (stri
 - 姓名:%s
 - 职业:%s
 - 性别:%s
+- 年龄:%s
+- 属性:STR=%d CON=%d SIZ=%d DEX=%d APP=%d
+
+【属性与外貌的对应关系(来自COC第七版规则书)】
+力量(STR): 15=虚弱, 50=普通人, 90=你见过的力气最大的人, 99=世界水平(举重冠军)
+体质(CON): 15=体弱多病, 50=普通人, 90=不惧寒冷强壮精神, 99=钢铁之躯
+体型(SIZ): 15=孩童或身短体瘦(约15kg), 65=普通体型(约75kg), 80=非常高强健或非常胖(约110kg), 99=超大号(约150kg)
+敏捷(DEX): 15=缓慢笨拙, 50=普通人, 90=高速灵活(杂技演员), 99=世界级运动员
+外貌(APP): 0=十分难看令人恐惧厌恶, 15=挫(受伤或先天), 50=普通人, 90=最漂亮的人天然吸引力, 99=魅力巅峰(超级名模/世界影星)
+伤害加值与体格由STR+SIZ决定: 2-64=-2伤害体格-2(瘦小), 65-84=-1伤害体格-1, 85-124=无加值体格0(普通), 125-164=+1d4伤害体格1(壮实), 165-204=+1d6伤害体格2(魁梧)
+
+【年龄对外貌的影响(来自COC第七版规则书)】
+15-19岁: 少年体态,略显青涩
+20-39岁: 成年全盛期
+40-49岁: 开始显老,外貌(APP)减5
+50-59岁: 明显老态,外貌(APP)减10
+60-69岁: 老年貌,外貌(APP)减15
+70-79岁: 年迈苍老,外貌(APP)减20
+80+岁: 风烛残年,外貌(APP)减25
+
+请严格参照上述属性数值和年龄来描写体型和气质:
+- STR/SIZ高→身材高大壮实,体格魁梧;STR/SIZ低→身材瘦小纤细
+- CON高→面色红润精力充沛;CON低→面色苍白体弱多病
+- DEX高→动作矫健姿态灵活;DEX低→动作迟缓笨拙
+- APP高→容貌出众气质迷人;APP低→相貌平平甚至丑陋
+- 年龄大→白发皱纹老态;年龄小→青春稚嫩
 
 要求:外貌描述100字以内,只描述身体特征(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质,不包括服饰,与之前不同。
 
 请返回如下JSON格式:
 {"appearance": "外貌描述"}`,
-		name, occupation, gender,
+		name, occupation, gender, age,
+		card.Stats.Data.STR, card.Stats.Data.CON, card.Stats.Data.SIZ,
+		card.Stats.Data.DEX, card.Stats.Data.APP,
 	)
 
 	msgs := []llm.ChatMessage{
@@ -90,7 +122,7 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (stri
 // RegenerateBackstory uses the Writer agent to produce a fresh backstory
 // for an existing character.
 func RegenerateBackstory(ctx context.Context, card *models.CharacterCard) (string, error) {
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
 	if err != nil {
 		return "", err
 	}
@@ -147,7 +179,7 @@ func RegenerateBackstory(ctx context.Context, card *models.CharacterCard) (strin
 // RegenerateTraits uses the Writer agent to produce fresh personality traits
 // for an existing character.
 func RegenerateTraits(ctx context.Context, card *models.CharacterCard) (string, error) {
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
 	if err != nil {
 		return "", err
 	}
@@ -219,7 +251,7 @@ type AdjustSkillsReq struct {
 // GenerateCharacter uses the Writer agent to fill in character backstory, appearance,
 // traits, and optionally redistributes base stats.
 func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*GeneratedCharacter, error) {
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +294,20 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
   - 第二组(可自由互换):SIZ、INT、EDU — 当前总和=%d
   - 约束:每个属性均为5的倍数；STR/CON/DEX/APP/POW 范围 15-90；SIZ/INT/EDU 范围 40-90
   - 若无需调整,原样返回即可
+
+【属性与外貌的对应关系(来自COC第七版规则书)】
+力量(STR): 15=虚弱, 50=普通人, 90=你见过的力气最大的人, 99=世界水平(举重冠军)
+体质(CON): 15=体弱多病, 50=普通人, 90=不惧寒冷强壮精神, 99=钢铁之躯
+体型(SIZ): 15=孩童或身短体瘦(约15kg), 65=普通体型(约75kg), 80=非常高强健或非常胖(约110kg), 99=超大号(约150kg)
+敏捷(DEX): 15=缓慢笨拙, 50=普通人, 90=高速灵活(杂技演员), 99=世界级运动员
+外貌(APP): 0=十分难看令人恐惧厌恶, 15=挫(受伤或先天), 50=普通人, 90=最漂亮的人天然吸引力, 99=魅力巅峰(超级名模/世界影星)
+伤害加值与体格由STR+SIZ决定: 2-64=-2伤害体格-2(瘦小), 65-84=-1伤害体格-1, 85-124=无加值体格0(普通), 125-164=+1d4伤害体格1(壮实), 165-204=+1d6伤害体格2(魁梧)
+
+请严格参照上述属性数值来描写体型和气质:
+- STR/SIZ高→身材高大壮实,体格魁梧;STR/SIZ低→身材瘦小纤细
+- CON高→面色红润精力充沛;CON低→面色苍白体弱多病
+- DEX高→动作矫健姿态灵活;DEX低→动作迟缓笨拙
+- APP高→容貌出众气质迷人;APP低→相貌平平甚至丑陋
 
 请返回如下JSON格式(所有字段都用中文):
 {
