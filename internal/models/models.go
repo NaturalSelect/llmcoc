@@ -520,6 +520,8 @@ type AgentConfig struct {
 	ModelName        string             `gorm:"size:200" json:"model_name"`
 	MaxTokens        int                `gorm:"default:1024" json:"max_tokens"`
 	Temperature      float32            `gorm:"default:0.7;type:real" json:"temperature"`
+	// DisableTemperature 为 true 时不在 API 请求中发送 temperature 参数（用于不支持的模型）
+	DisableTemperature bool           `gorm:"default:false" json:"disable_temperature"`
 	SystemPrompt     string             `gorm:"type:text" json:"system_prompt"`
 	ThinkingLevel    string             `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh
 	IsActive         bool               `gorm:"default:true" json:"is_active"`

@@ -42,15 +42,15 @@ func (m *MockProviderFactory) EXPECT() *MockProviderFactoryMockRecorder {
 }
 
 // NewProvider mocks base method.
-func (m *MockProviderFactory) NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, reasoningEffort string) llm.Provider {
+func (m *MockProviderFactory) NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string) llm.Provider {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewProvider", cfg, modelName, maxTokens, temperature, reasoningEffort)
+	ret := m.ctrl.Call(m, "NewProvider", cfg, modelName, maxTokens, temperature, disableTemperature, reasoningEffort)
 	ret0, _ := ret[0].(llm.Provider)
 	return ret0
 }
 
 // NewProvider indicates an expected call of NewProvider.
-func (mr *MockProviderFactoryMockRecorder) NewProvider(cfg, modelName, maxTokens, temperature, reasoningEffort any) *gomock.Call {
+func (mr *MockProviderFactoryMockRecorder) NewProvider(cfg, modelName, maxTokens, temperature, disableTemperature, reasoningEffort any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewProvider", reflect.TypeOf((*MockProviderFactory)(nil).NewProvider), cfg, modelName, maxTokens, temperature, reasoningEffort)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewProvider", reflect.TypeOf((*MockProviderFactory)(nil).NewProvider), cfg, modelName, maxTokens, temperature, disableTemperature, reasoningEffort)
 }

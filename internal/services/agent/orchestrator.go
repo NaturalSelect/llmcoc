@@ -64,7 +64,7 @@ func newAgentHandleFromConfig(cfg *models.AgentConfig, temperatureOverride *floa
 	if temperatureOverride != nil {
 		temperature = *temperatureOverride
 	}
-	p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, temperature, cfg.ThinkingLevel)
+	p := llm.NewProviderFromConfig(cfg.ProviderConfig, cfg.ModelName, maxTok, temperature, cfg.DisableTemperature, cfg.ThinkingLevel)
 	return agentHandle{provider: p, config: cfg, enabled: true}, nil
 }
 

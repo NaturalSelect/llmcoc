@@ -23,15 +23,17 @@ var llmDebug = func() bool {
 const defaultReasoningEffort = "high"
 
 type openAIProvider struct {
-	client          *openai.Client
-	model           string
-	maxTokens       int
-	temperature     float32
-	reasoningEffort string
-	baseURL         string
+	client             *openai.Client
+	model              string
+	maxTokens          int
+	temperature        float32
+	// disableTemperature 为 true 时不发送 temperature 参数（用于不支持的模型）
+	disableTemperature bool
+	reasoningEffort    string
+	baseURL            string
 }
 
-func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature float32, reasoningEffort string) *openAIProvider {
+func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string) *openAIProvider {
 	cfg := openai.DefaultConfig(apiKey)
 	if baseURL != "" {
 		cfg.BaseURL = baseURL
@@ -39,19 +41,21 @@ func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature
 	if maxTokens == 0 {
 		maxTokens = 2048
 	}
-	if temperature == 0 {
+	// NOTE: 仅在未禁用 temperature 且未指定值时使用默认值
+	if !disableTemperature && temperature == 0 {
 		temperature = 0.8
 	}
 	if reasoningEffort == "" {
 		reasoningEffort = defaultReasoningEffort
 	}
 	return &openAIProvider{
-		client:          openai.NewClientWithConfig(cfg),
-		model:           model,
-		maxTokens:       maxTokens,
-		temperature:     temperature,
-		reasoningEffort: reasoningEffort,
-		baseURL:         baseURL,
+		client:             openai.NewClientWithConfig(cfg),
+		model:              model,
+		maxTokens:          maxTokens,
+		temperature:        temperature,
+		disableTemperature: disableTemperature,
+		reasoningEffort:    reasoningEffort,
+		baseURL:            baseURL,
 	}
 }
 
@@ -114,8 +118,11 @@ func (p *openAIProvider) chatCompletionRequest(ctx context.Context, messages []C
 		Model:           p.model,
 		Messages:        p.toOpenAIMessages(messages),
 		MaxTokens:       p.maxTokens,
-		Temperature:     p.temperature,
 		ReasoningEffort: p.reasoningEffort,
+	}
+	// NOTE: 禁用 temperature 时不设置该参数(部分模型如 o1/o3 不支持)
+	if !p.disableTemperature {
+		chatReq.Temperature = p.temperature
 	}
 	if json {
 		chatReq.ResponseFormat = &openai.ChatCompletionResponseFormat{Type: "json_object"}

@@ -213,13 +213,21 @@ func AdminUpdateAgent(c *gin.Context) {
 			isActive = &b
 		}
 	}
+	// NOTE: 解析 disable_temperature 开关,用于不支持 temperature 参数的模型
+	disableTemperature := false
+	if v, ok := raw["disable_temperature"]; ok {
+		if b, ok := v.(bool); ok {
+			disableTemperature = b
+		}
+	}
 
 	updates := map[string]interface{}{
-		"provider_config_id": providerConfigID,
-		"model_name":         modelName,
-		"max_tokens":         maxTokens,
-		"temperature":        temperature,
-		"thinking_level":     thinkingLevel,
+		"provider_config_id":  providerConfigID,
+		"model_name":          modelName,
+		"max_tokens":          maxTokens,
+		"temperature":         temperature,
+		"disable_temperature": disableTemperature,
+		"thinking_level":      thinkingLevel,
 	}
 	if isActive != nil {
 		updates["is_active"] = *isActive
@@ -234,13 +242,14 @@ func AdminUpdateAgent(c *gin.Context) {
 			active = *isActive
 		}
 		agentCfg = models.AgentConfig{
-			Role:             models.AgentRole(role),
-			ProviderConfigID: providerConfigID,
-			ModelName:        modelName,
-			MaxTokens:        maxTokens,
-			Temperature:      temperature,
-			ThinkingLevel:    thinkingLevel,
-			IsActive:         active,
+			Role:               models.AgentRole(role),
+			ProviderConfigID:   providerConfigID,
+			ModelName:          modelName,
+			MaxTokens:          maxTokens,
+			Temperature:        temperature,
+			DisableTemperature: disableTemperature,
+			ThinkingLevel:      thinkingLevel,
+			IsActive:           active,
 		}
 		models.DB.Create(&agentCfg)
 	} else {
@@ -266,14 +275,14 @@ func toFloat(v any) float64 {
 
 // NOTE: ProviderFactory 抽象 llm.Provider 构造，方便 ping 测试注入替身。
 type ProviderFactory interface {
-	NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, reasoningEffort string) llm.Provider
+	NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string) llm.Provider
 }
 
 // NOTE: defaultProviderFactory 是生产环境使用的 Provider 工厂。
 type defaultProviderFactory struct{}
 
-func (defaultProviderFactory) NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, reasoningEffort string) llm.Provider {
-	return llm.NewProviderFromConfig(cfg, modelName, maxTokens, temperature, reasoningEffort)
+func (defaultProviderFactory) NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string) llm.Provider {
+	return llm.NewProviderFromConfig(cfg, modelName, maxTokens, temperature, disableTemperature, reasoningEffort)
 }
 
 // NOTE: DefaultProviderFactory 是生产 handler 使用的单例工厂。
@@ -317,7 +326,7 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 		req.ModelName = "gpt-5.4-nano"
 	}
 
-	provider := factory.NewProvider(&p, req.ModelName, 16, 0.1, "")
+	provider := factory.NewProvider(&p, req.ModelName, 16, 0.1, false, "")
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
@@ -340,7 +349,7 @@ func adminPingImageProvider(c *gin.Context, factory ProviderFactory, p *models.L
 		return
 	}
 
-	provider := factory.NewProvider(p, modelName, 0, 0, "none")
+	provider := factory.NewProvider(p, modelName, 0, 0, false, "none")
 	generator, ok := provider.(llm.ImageGenerator)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "mode": "image", "error": "当前 Provider 不支持图片生成接口，无法测试 Painter 图片模型"})

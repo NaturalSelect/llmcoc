@@ -141,9 +141,16 @@
                                         <label class="text-xs text-amber-800 mb-1 block"
                                             style="font-family:system-ui">Temp</label>
                                         <input x-model.number="ag.temperature" type="number" step="0.1" min="0"
-                                            max="2" class="inp" />
+                                            max="2" class="inp" :disabled="ag.disable_temperature"
+                                            :class="ag.disable_temperature ? 'opacity-40 cursor-not-allowed' : ''" />
                                     </div>
                                 </div>
+                                <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer mb-2.5"
+                                    style="font-family:system-ui">
+                                    <input type="checkbox" x-model="ag.disable_temperature"
+                                        class="accent-amber-600" />
+                                    <span>关闭 Temperature（不支持温度参数的模型，如 o1/o3）</span>
+                                </label>
                             </div>
                             <div class="mb-2.5">
                                 <label class="text-xs text-amber-800 mb-1 block"

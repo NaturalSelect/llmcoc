@@ -28,8 +28,8 @@ type ImageGenerator interface {
 }
 
 // NewProviderFromConfig creates a provider from a DB-stored LLMProviderConfig.
-func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, reasoningEffort string) Provider {
-	return newOpenAIProvider(cfg.APIKey, cfg.BaseURL, modelName, maxTokens, temperature, reasoningEffort)
+func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string) Provider {
+	return newOpenAIProvider(cfg.APIKey, cfg.BaseURL, modelName, maxTokens, temperature, disableTemperature, reasoningEffort)
 }
 
 // LoadProviderFromDB loads an LLM provider for the given agent role from the database.
@@ -49,7 +49,7 @@ func LoadProviderFromDB(role models.AgentRole) (Provider, error) {
 	if maxTok == 0 {
 		maxTok = 1024
 	}
-	return newOpenAIProvider(cfg.ProviderConfig.APIKey, cfg.ProviderConfig.BaseURL, cfg.ModelName, maxTok, cfg.Temperature, cfg.ThinkingLevel), nil
+	return newOpenAIProvider(cfg.ProviderConfig.APIKey, cfg.ProviderConfig.BaseURL, cfg.ModelName, maxTok, cfg.Temperature, cfg.DisableTemperature, cfg.ThinkingLevel), nil
 }
 
 // StripCodeFence removes markdown code fences from an LLM response.

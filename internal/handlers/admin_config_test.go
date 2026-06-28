@@ -253,7 +253,7 @@ func TestAdminPingProvider_Success(t *testing.T) {
 	mockProv.EXPECT().Chat(gomock.Any(), gomock.Any()).Return("pong", nil)
 
 	mockFac := mocks.NewMockProviderFactory(ctrl)
-	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(mockProv)
+	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(mockProv)
 
 	r := gin.New()
 	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
@@ -287,7 +287,7 @@ func TestAdminPingProvider_LLMError(t *testing.T) {
 	mockProv.EXPECT().Chat(gomock.Any(), gomock.Any()).Return("", errors.New("connection refused"))
 
 	mockFac := mocks.NewMockProviderFactory(ctrl)
-	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(mockProv)
 
 	r := gin.New()
@@ -348,7 +348,7 @@ func TestAdminPingProvider_ImageSuccess(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	imageProv := &fakeImageProvider{base64Data: "ZmFrZS1pbWFnZQ==", mimeType: "image/png"}
 	mockFac := mocks.NewMockProviderFactory(ctrl)
-	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), "none").Return(imageProv)
+	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), false, "none").Return(imageProv)
 
 	r := gin.New()
 	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
@@ -426,7 +426,7 @@ func TestAdminPingProvider_ImageUnsupported(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockProv := mocks.NewMockProvider(ctrl)
 	mockFac := mocks.NewMockProviderFactory(ctrl)
-	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), "none").Return(mockProv)
+	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), false, "none").Return(mockProv)
 
 	r := gin.New()
 	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
