@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -182,6 +183,20 @@ func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, 
 	return streamErr
 }
 
+// NOTE: siteSettingInt 读取 SiteSetting 并解析为 int，解析失败或空值时返回 fallback。
+// 与 handlers 包的同名函数逻辑一致，因包隔离各自维护。
+func siteSettingInt(key string, fallback int) int {
+	s := models.GetSiteSetting(key, "")
+	if s == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return fallback
+	}
+	return v
+}
+
 func buildWriterMessages(h agentHandle, state *WriterState, direction string, gctx GameContext) ([]llm.ChatMessage, string) {
 	if direction == "" {
 		direction = "继续描述当前场景"
@@ -189,7 +204,9 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 
 	debugf("Writer", "direction=%s history_msgs=%d", direction, len(state.History))
 
-	state.History = trimWriterHistoryForCache(state.History, 7000)
+	// NOTE: writer_history_max_runes 从 SiteSetting 读取，管理员可在后台调整 Writer 历史缓存上限。
+	writerHistoryMaxRunes := siteSettingInt("writer_history_max_runes", 20000)
+	state.History = trimWriterHistoryForCache(state.History, writerHistoryMaxRunes)
 
 	sb := &strings.Builder{}
 	// if toneBlock := buildWriterScenarioToneBlock(gctx); toneBlock != "" {
