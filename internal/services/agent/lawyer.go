@@ -8,10 +8,15 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"github.com/llmcoc/server/internal/services/llm"
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
+
+// lawyerGlobalIdx 全局自增序号,用于 runLawyer 的 prompt cache key,
+// 使同一 session 内不同问题自动错开缓存,避免上下文互相污染。
+var lawyerGlobalIdx uint64
 
 // lawyerCache is a global LRU cache for final lawyer rulings.
 // Capacity: 4GB (extremely large fixed capacity)
@@ -194,6 +199,11 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 		return nil
 	}
 
+	// NOTE: 每次调用取一个全局自增 idx,拼入 cache key,
+	// 使不同问题在同一 session 内自动错开 prompt cache。
+	lawyerIdx := atomic.AddUint64(&lawyerGlobalIdx, 1)
+	cacheKey := h.cacheKey(sessionIDFromContextValue(ctx)) + fmt.Sprintf(":q%d", lawyerIdx)
+
 	// Track whether the LLM had to search the rulebook (grep/read_lines).
 	searchedRulebook := false
 	// Track whether search_cache returned at least one result.
@@ -213,7 +223,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 		}
 
 		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		raw, err := h.provider.JsonChat(ctx, msgs)
+		raw, err := h.provider.JsonChat(ctx, cacheKey, msgs)
 		if err != nil {
 			log.Printf("[lawyer] iter %d LLM error: %v", iter, err)
 			return nil

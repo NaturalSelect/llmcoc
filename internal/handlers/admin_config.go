@@ -331,7 +331,7 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 	defer cancel()
 
 	start := time.Now()
-	_, err := provider.Chat(ctx, []llm.ChatMessage{{Role: "user", Content: "Reply with: pong"}})
+	_, err := provider.Chat(ctx, "admin:ping", []llm.ChatMessage{{Role: "user", Content: "Reply with: pong"}})
 	latencyMs := time.Since(start).Milliseconds()
 
 	if err != nil {

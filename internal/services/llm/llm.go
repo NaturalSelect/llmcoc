@@ -16,11 +16,12 @@ type ChatMessage struct {
 }
 
 // Provider defines the interface for interacting with various LLM backends.
+// cacheKey 用于 prompt cache 隔离,需区分 agent 角色和 NPC 实例,避免跨 agent 缓存污染。
 type Provider interface {
 	// Chat sends a conversation and returns the full response.
-	Chat(ctx context.Context, messages []ChatMessage) (string, error)
-	ChatStream(ctx context.Context, messages []ChatMessage) (<-chan string, <-chan error, error)
-	JsonChat(ctx context.Context, messages []ChatMessage) (string, error)
+	Chat(ctx context.Context, cacheKey string, messages []ChatMessage) (string, error)
+	ChatStream(ctx context.Context, cacheKey string, messages []ChatMessage) (<-chan string, <-chan error, error)
+	JsonChat(ctx context.Context, cacheKey string, messages []ChatMessage) (string, error)
 }
 
 type ImageGenerator interface {

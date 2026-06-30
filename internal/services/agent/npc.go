@@ -331,7 +331,7 @@ func runNPC(
 		Content: sb.String(),
 	})
 
-	resp, err := h.provider.JsonChat(ctx, msgs)
+	resp, err := h.provider.JsonChat(ctx, sessionIDFromContextValue(ctx)+":npc:"+npcName, msgs)
 	if err != nil {
 		return NPCAction{NPCName: npcName, Action: "保持沉默", Dialogue: ""}, fmt.Errorf("npc LLM error: %w", err)
 	}

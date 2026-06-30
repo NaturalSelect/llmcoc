@@ -80,7 +80,7 @@ func RunGrowth(ctx context.Context, session *models.GameSession, messages []mode
 		{Role: "user", Content: "聊天记录:\n" + logBuilder.String()},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, msgs)
+	resp, err := handle.provider.JsonChat(ctx, fmt.Sprintf("%v:evaluator", session.ID), msgs)
 	if err != nil {
 		log.Printf("[growth] LLM error: %v; skipping growth", err)
 		return GrowthResult{}, nil

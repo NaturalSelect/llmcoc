@@ -493,7 +493,7 @@ func generateGeographyCandidates(ctx context.Context, room *scripterRoom, msgs *
 	log.Printf("[scripter:geography] session=%s prompt stage=%q len=%d body=%s", sessionID, stageKey, len(prompt), truncateRunes(prompt, scripterPromptLogLimit))
 	*msgs = append(*msgs, llm.ChatMessage{Role: "user", Content: prompt})
 	callMessages := append([]llm.ChatMessage(nil), (*msgs)...)
-	raw, err := architect.provider.Chat(ctx, *msgs)
+	raw, err := architect.provider.Chat(ctx, sessionIDFromContextValue(ctx)+":"+string(models.AgentRoleArchitect), *msgs)
 	if err != nil {
 		log.Printf("[scripter:geography] session=%s chat error stage=%q err=%v", sessionID, stageKey, err)
 		return nil, err
@@ -609,7 +609,7 @@ func selectDiversityConstraintsWithAI(ctx context.Context, room *scripterRoom, c
 
 	log.Printf("[scripter:diversity_ai] session=%s prompt candidates=%d", sessionID, len(candidates))
 	callMessages := append([]llm.ChatMessage(nil), msgs...)
-	raw, chatErr := room.architect.provider.Chat(ctx, msgs)
+	raw, chatErr := room.architect.provider.Chat(ctx, room.sessionID+":"+string(models.AgentRoleArchitect), msgs)
 	if chatErr != nil {
 		log.Printf("[scripter:diversity_ai] session=%s chat error=%v", sessionID, chatErr)
 		return "", "", "fallback", chatErr
@@ -1064,7 +1064,7 @@ func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser 
 	sessionID := sessionIDFromContextValue(ctx)
 	log.Printf("[scripter:%s] session=%s chat start messages=%d", tag, sessionID, len(msgs))
 	callMessages := append([]llm.ChatMessage(nil), msgs...)
-	raw, err := generator.provider.JsonChat(ctx, msgs)
+	raw, err := generator.provider.JsonChat(ctx, generator.cacheKey(sessionIDFromContextValue(ctx)), msgs)
 	if err != nil {
 		log.Printf("[scripter:%s] session=%s chat error=%v", tag, sessionID, err)
 		return err
@@ -1161,7 +1161,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 			currentErr.Error(), raw, schemaExample)
 		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fixPrompt})
 		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		fixed, chatErr := parser.provider.Chat(ctx, msgs)
+		fixed, chatErr := parser.provider.Chat(ctx, parser.cacheKey(sessionIDFromContextValue(ctx)), msgs)
 		if chatErr != nil {
 			return "", fmt.Errorf("parser 调用失败: %w", chatErr)
 		}

@@ -23,10 +23,10 @@ var llmDebug = func() bool {
 const defaultReasoningEffort = "high"
 
 type openAIProvider struct {
-	client             *openai.Client
-	model              string
-	maxTokens          int
-	temperature        float32
+	client      *openai.Client
+	model       string
+	maxTokens   int
+	temperature float32
 	// disableTemperature 为 true 时不发送 temperature 参数（用于不支持的模型）
 	disableTemperature bool
 	reasoningEffort    string
@@ -113,7 +113,7 @@ func isRetryableError(err error) bool {
 	return false
 }
 
-func (p *openAIProvider) chatCompletionRequest(ctx context.Context, messages []ChatMessage, json bool) openai.ChatCompletionRequest {
+func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey string, messages []ChatMessage, json bool) openai.ChatCompletionRequest {
 	chatReq := openai.ChatCompletionRequest{
 		Model:           p.model,
 		Messages:        p.toOpenAIMessages(messages),
@@ -135,8 +135,12 @@ func (p *openAIProvider) chatCompletionRequest(ctx context.Context, messages []C
 			metadata = make(map[string]string)
 		}
 		log.Printf("[chat] using session id %v for model %v", sessionID, p.model)
-		metadata["coc_session_id"] = sessionID
-		metadata["prompt_cache_key"] = sessionID
+		// NOTE: prompt_cache_key 必须按 agent 角色/NPC 实例隔离,避免跨 agent 缓存污染。
+		cacheKeyValue := cacheKey
+		if cacheKeyValue == "" {
+			cacheKeyValue = sessionID
+		}
+		metadata["prompt_cache_key"] = cacheKeyValue
 		chatReq.Metadata = metadata
 	}
 	if p.isGeminiRequest() {
@@ -150,9 +154,9 @@ func (p *openAIProvider) chatCompletionRequest(ctx context.Context, messages []C
 	return chatReq
 }
 
-func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage, json bool) (string, error) {
+func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, json bool) (string, error) {
 	start := time.Now()
-	chatReq := p.chatCompletionRequest(ctx, messages, json)
+	chatReq := p.chatCompletionRequest(ctx, cacheKey, messages, json)
 	var resp openai.ChatCompletionResponse
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
@@ -184,9 +188,9 @@ func (p *openAIProvider) chat(ctx context.Context, messages []ChatMessage, json 
 	return result, nil
 }
 
-func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage) (<-chan string, <-chan error, error) {
+func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messages []ChatMessage) (<-chan string, <-chan error, error) {
 	start := time.Now()
-	chatReq := p.chatCompletionRequest(ctx, messages, false)
+	chatReq := p.chatCompletionRequest(ctx, cacheKey, messages, false)
 	var stream *openai.ChatCompletionStream
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
@@ -245,9 +249,9 @@ func (p *openAIProvider) ChatStream(ctx context.Context, messages []ChatMessage)
 	return tokenCh, errCh, nil
 }
 
-func (p *openAIProvider) Chat(ctx context.Context, messages []ChatMessage) (msg string, err error) {
+func (p *openAIProvider) Chat(ctx context.Context, cacheKey string, messages []ChatMessage) (msg string, err error) {
 	for i := 0; i < 3; i++ {
-		msg, err = p.chat(ctx, messages, false)
+		msg, err = p.chat(ctx, cacheKey, messages, false)
 		if err != nil {
 			log.Printf("[llm] Chat error: %v", err)
 			continue
@@ -308,9 +312,9 @@ var (
 	ErrEmptyLLMResponse = errors.New("LLM returned empty response")
 )
 
-func (p *openAIProvider) JsonChat(ctx context.Context, messages []ChatMessage) (string, error) {
+func (p *openAIProvider) JsonChat(ctx context.Context, cacheKey string, messages []ChatMessage) (string, error) {
 	for i := 0; i < 3; i++ {
-		msg, err := p.chat(ctx, messages, true)
+		msg, err := p.chat(ctx, cacheKey, messages, true)
 		if err != nil {
 			log.Printf("[llm] JsonChat error: %v", err)
 			continue

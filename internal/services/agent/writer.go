@@ -136,7 +136,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	}
 	msgs, direction := buildWriterMessages(h, state, direction, gctx)
 
-	resp, err := h.provider.Chat(ctx, msgs)
+	resp, err := h.provider.Chat(ctx, h.cacheKey(fmt.Sprintf("%v", gctx.Session.ID)), msgs)
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, 
 	}
 	msgs, direction := buildWriterMessages(h, state, direction, gctx)
 
-	tokenCh, errCh, err := h.provider.ChatStream(ctx, msgs)
+	tokenCh, errCh, err := h.provider.ChatStream(ctx, h.cacheKey(fmt.Sprintf("%v", gctx.Session.ID)), msgs)
 	if err != nil {
 		return err
 	}
@@ -552,7 +552,7 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 		),
 	})
 
-	resp, err := handle.provider.Chat(ctx, msgs)
+	resp, err := handle.provider.Chat(ctx, handle.cacheKey(sessionIDFromContextValue(ctx)), msgs)
 	if err != nil {
 		return CharacterEvolutionResult{}, fmt.Errorf("character evolution LLM error: %w", err)
 	}

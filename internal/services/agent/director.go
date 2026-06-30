@@ -720,7 +720,7 @@ func runKP(ctx context.Context, h agentHandle, msgs []llm.ChatMessage) ([]ToolCa
 
 	hasFixed := false
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		resp, err := h.provider.Chat(ctx, msgs)
+		resp, err := h.provider.Chat(ctx, h.cacheKey(sessionIDFromContextValue(ctx)), msgs)
 		if err != nil && err != llm.ErrEmptyLLMResponse {
 			debugf("KP", "attempt %d Chat error: %v", attempt, err)
 			return nil, "", hasFixed, err

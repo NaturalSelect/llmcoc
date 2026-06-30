@@ -102,7 +102,7 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (stri
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, msgs)
+	resp, err := handle.provider.JsonChat(ctx, "nosession:evaluator", msgs)
 	if err != nil {
 		return "", err
 	}
@@ -159,7 +159,7 @@ func RegenerateBackstory(ctx context.Context, card *models.CharacterCard) (strin
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, msgs)
+	resp, err := handle.provider.JsonChat(ctx, "nosession:evaluator", msgs)
 	if err != nil {
 		return "", err
 	}
@@ -221,7 +221,7 @@ func RegenerateTraits(ctx context.Context, card *models.CharacterCard) (string, 
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, msgs)
+	resp, err := handle.provider.JsonChat(ctx, "nosession:evaluator", msgs)
 	if err != nil {
 		return "", err
 	}
@@ -329,7 +329,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, msgs)
+	resp, err := handle.provider.JsonChat(ctx, "nosession:evaluator", msgs)
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +425,7 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, msgs)
+	resp, err := handle.provider.JsonChat(ctx, "nosession:evaluator", msgs)
 	if err != nil {
 		return nil, err
 	}

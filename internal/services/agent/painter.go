@@ -59,7 +59,7 @@ func (describeCharactersAction) Execute(call ToolCall, actx ActionContext) []Too
 		}
 		ctx = withWriterGameSessionID(ctx, *actx.GCtx)
 		var err error
-		description, err = writeImagePromptCharacterVisualDescription(ctx, writerHandle, "", cards)
+		description, err = writeImagePromptCharacterVisualDescription(ctx, writerHandle, "", fmt.Sprintf("%v", actx.GCtx.Session.ID), cards)
 		if err != nil {
 			debugf("tool", "session=%d describe_characters writer fallback matched_character_count=%d err=%v", actx.Sid, len(cards), err)
 		}
@@ -201,7 +201,7 @@ Focus on visible body/face/hair/clothing/posture and concrete visual cues; inven
 You only generate a pure appearance description, without any other attributes.
 `
 
-func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHandle, scenePrompt string, cards []models.CharacterCard) (string, error) {
+func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHandle, scenePrompt string, sessionID string, cards []models.CharacterCard) (string, error) {
 	if !h.isEnabled() {
 		return "", fmt.Errorf("writer agent unavailable")
 	}
@@ -209,7 +209,7 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 		{Role: "system", Content: h.systemPrompt(imagePromptCharacterVisualSystemPrompt)},
 		{Role: "user", Content: buildImagePromptCharacterVisualUserPrompt(scenePrompt, cards)},
 	}
-	resp, err := h.provider.Chat(ctx, msgs)
+	resp, err := h.provider.Chat(ctx, sessionID+":"+string(models.AgentRoleWriter), msgs)
 	if err != nil {
 		return "", err
 	}

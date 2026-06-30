@@ -236,7 +236,7 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		}
 		logStagePrompt(fmt.Sprintf("%s_round_%d", stageName, round), sessionID, msgs)
 		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		raw, err := room.architect.provider.JsonChat(ctx, msgs)
+		raw, err := room.architect.provider.JsonChat(ctx, room.sessionID+":"+string(models.AgentRoleArchitect), msgs)
 		if err != nil {
 			return oneshotResult{}, msgs, err
 		}
@@ -469,7 +469,7 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 		}
 		logStagePrompt(fmt.Sprintf("oneshot_translator_round_%d", round), sessionID, msgs)
 		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		raw, err := room.lawyer.provider.JsonChat(ctx, msgs)
+		raw, err := room.lawyer.provider.JsonChat(ctx, room.sessionID+":"+string(models.AgentRoleLawyer), msgs)
 		if err != nil {
 			return "", err
 		}

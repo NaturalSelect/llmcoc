@@ -46,6 +46,19 @@ func (h agentHandle) systemPrompt(defaultPrompt string) string {
 	return defaultPrompt
 }
 
+// roleName 返回 agent 配置的角色名,用于 prompt cache key 隔离。
+func (h agentHandle) roleName() string {
+	if h.config != nil {
+		return string(h.config.Role)
+	}
+	return "unknown"
+}
+
+// cacheKey 组成 sessionID:role,用于 prompt cache 隔离。
+func (h agentHandle) cacheKey(sessionID string) string {
+	return sessionID + ":" + h.roleName()
+}
+
 func newAgentHandleFromConfig(cfg *models.AgentConfig, temperatureOverride *float32) (agentHandle, error) {
 	if cfg == nil {
 		return agentHandle{}, fmt.Errorf("agent config is nil")

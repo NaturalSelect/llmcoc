@@ -100,7 +100,7 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 		}
 		logStagePrompt(fmt.Sprintf("reward_agent_round_%d", round), sessionID, msgs)
 		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		raw, err := provider.provider.JsonChat(ctx, msgs)
+		raw, err := provider.provider.JsonChat(ctx, provider.cacheKey(sessionIDFromContextValue(ctx)), msgs)
 		if err != nil {
 			return nil, err
 		}
