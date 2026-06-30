@@ -118,7 +118,6 @@ window.COC.core = function() {
                     rechargeForm: { user_id: '', amount: 100, note: '' },
                     providerForm: { name: '', provider: 'openai', base_url: '', api_key: '', is_active: true },
                     editingProvider: null,
-                    pingLoading: null,
                     agentPingLoading: null,
                     newShopItem: { name: '', description: '', item_type: 'card_slot', price: 0, value: 1, is_active: true },
                     siteSettings: {

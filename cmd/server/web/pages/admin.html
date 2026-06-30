@@ -83,9 +83,6 @@
                                     x-text="p.api_key_set ? '✓ API Key 已配置' : '✗ 未配置 API Key'"></p>
                             </div>
                             <div class="flex gap-1.5 shrink-0">
-                                <button @click="pingProvider(p.id)" :disabled="pingLoading===p.id"
-                                    class="btn btn-ghost text-xs"
-                                    x-text="pingLoading===p.id?'测试中…':'Ping'"></button>
                                 <button @click="openEditProvider(p)" class="btn btn-amber text-xs">编辑</button>
                                 <button @click="deleteProvider(p.id)" class="btn btn-red text-xs">删除</button>
                             </div>

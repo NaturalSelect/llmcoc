@@ -235,15 +235,6 @@ window.COC.admin = {
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 
-                    async pingProvider(id) {
-                        this.pingLoading = id;
-                        try {
-                            const r = await this.api('POST', '/api/admin/config/providers/' + id + '/ping', {});
-                            this.showToast(`连通正常，延迟 ${r.latency_ms} ms`);
-                        } catch (e) { this.showToast('连接失败：' + e.message, 'error'); }
-                        this.pingLoading = null;
-                    },
-
                     async pingAgentModel(ag) {
                         const providerID = ag?.provider_config_id ? Number(ag.provider_config_id) : 0;
                         const modelName = (ag?.model_name || '').trim();
