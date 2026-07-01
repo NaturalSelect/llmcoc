@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -582,6 +583,54 @@ func RemoveCharacterInventoryItem(c *gin.Context) {
 
 	if err := models.DB.Save(&card).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存物品栏失败"})
+		return
+	}
+	c.JSON(http.StatusOK, card)
+}
+
+// NOTE: RemoveCharacterSocialRelation removes a social relation by name from a character card.
+// NOTE: Only the card owner or admin can perform this action.
+func RemoveCharacterSocialRelation(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	// URL decode the name parameter because Chinese characters may be encoded
+	name, err := url.QueryUnescape(c.Param("name"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "社交关系名称解码失败"})
+		return
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "社交关系名称不能为空"})
+		return
+	}
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		var user models.User
+		models.DB.First(&user, userID)
+		if user.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+			return
+		}
+	}
+
+	list := card.SocialRelations.Data
+	out := make([]models.SocialRelation, 0, len(list))
+	for _, rel := range list {
+		if rel.Name != name {
+			out = append(out, rel)
+		}
+	}
+	card.SocialRelations = models.JSONField[[]models.SocialRelation]{Data: out}
+
+	if err := models.DB.Save(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存社交关系失败"})
 		return
 	}
 	c.JSON(http.StatusOK, card)

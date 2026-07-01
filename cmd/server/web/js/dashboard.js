@@ -255,4 +255,14 @@ window.COC.dashboard = {
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 
+                    async removeSocialRelation(name) {
+                        if (!this.editChar?.id || !name) return;
+                        if (!confirm('确定要删除与「' + name + '」的社会关系吗？此操作不可撤销。')) return;
+                        try {
+                            const updated = await this.api('DELETE', '/api/characters/' + this.editChar.id + '/social-relations/' + encodeURIComponent(name));
+                            this.syncCharacter(updated);
+                            this.showToast('已删除社会关系');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+
 };

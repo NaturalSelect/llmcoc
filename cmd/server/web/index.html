@@ -905,14 +905,18 @@
                         style="font-family:system-ui">社会关系</h3>
                     <div x-show="(editChar?.social_relations||[]).length" class="space-y-1.5">
                         <template x-for="(rel, idx) in (editChar?.social_relations||[])" :key="idx">
-                            <div class="card rounded p-2">
-                                <p class="text-xs text-amber-300 font-bold" style="font-family:system-ui"
-                                    x-text="rel?.name || '未命名关系'"></p>
-                                <p class="text-xs text-amber-700" style="font-family:system-ui"
-                                    x-text="'关系：' + (rel?.relationship || '—')"></p>
-                                <p class="text-xs text-amber-800" style="font-family:system-ui"
-                                    x-text="rel?.note || ''">
-                                </p>
+                            <div class="card rounded p-2 flex items-start justify-between">
+                                <div>
+                                    <p class="text-xs text-amber-300 font-bold" style="font-family:system-ui"
+                                        x-text="rel?.name || '未命名关系'"></p>
+                                    <p class="text-xs text-amber-700" style="font-family:system-ui"
+                                        x-text="'关系：' + (rel?.relationship || '—')"></p>
+                                    <p class="text-xs text-amber-800" style="font-family:system-ui"
+                                        x-text="rel?.note || ''">
+                                    </p>
+                                </div>
+                                <button @click="removeSocialRelation(rel.name)"
+                                    class="text-red-700 hover:text-red-400 transition text-xs leading-none ml-2 shrink-0">删除</button>
                             </div>
                         </template>
                     </div>

@@ -192,6 +192,7 @@ func main() {
 		chars.GET("/:id/inventory", handlers.GetCharacterInventory)
 		chars.POST("/:id/inventory", handlers.AddCharacterInventoryItem)
 		chars.DELETE("/:id/inventory/*item", handlers.RemoveCharacterInventoryItem)
+		chars.DELETE("/:id/social-relations/:name", handlers.RemoveCharacterSocialRelation)
 	}
 
 	// Scenarios
