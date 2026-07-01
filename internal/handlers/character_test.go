@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,7 @@ func charRouter(userID uint) *gin.Engine {
 	r.GET("/characters/:id", auth, GetCharacter)
 	r.PUT("/characters/:id", auth, UpdateCharacter)
 	r.DELETE("/characters/:id", auth, DeleteCharacter)
+	r.DELETE("/characters/:id/assets/:name", auth, RemoveCharacterAsset)
 	return r
 }
 
@@ -254,6 +256,73 @@ func TestDeleteCharacter_Forbidden(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/characters/%d", cid), nil))
 
+	if w.Code != http.StatusForbidden {
+		t.Errorf("want 403, got %d", w.Code)
+	}
+}
+
+// ── RemoveCharacterAsset ───────────────────────────────────────────────────────
+
+func TestRemoveCharacterAsset_Success(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	card := models.CharacterCard{
+		UserID:   uid,
+		Name:     "Investigator",
+		IsActive: true,
+		Stats:    models.JSONField[models.CharacterStats]{},
+		Skills:   models.JSONField[map[string]int]{Data: map[string]int{}},
+		Assets:   models.JSONField[[]models.Asset]{Data: []models.Asset{{Name: "老宅", Category: "不动产", Note: "祖宅"}, {Name: "汽车", Category: "载具", Note: "破旧"}}},
+	}
+	if err := models.DB.Create(&card).Error; err != nil {
+		t.Fatalf("seed card: %v", err)
+	}
+
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/characters/%d/assets/%s", card.ID, url.PathEscape("老宅")), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp models.CharacterCard
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Assets.Data) != 1 || resp.Assets.Data[0].Name != "汽车" {
+		t.Fatalf("asset not removed: %#v", resp.Assets.Data)
+	}
+}
+
+func TestRemoveCharacterAsset_NotFound(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", "/characters/9999/assets/whatever", nil))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("want 404, got %d", w.Code)
+	}
+}
+
+func TestRemoveCharacterAsset_OtherCard_Forbidden(t *testing.T) {
+	initTestDB(t)
+	uid1 := seedUser(t, "alice", "user", 0, 3)
+	uid2 := seedUser(t, "bob", "user", 0, 3)
+	card := models.CharacterCard{
+		UserID:   uid2,
+		Name:     "Bob's",
+		IsActive: true,
+		Stats:    models.JSONField[models.CharacterStats]{},
+		Skills:   models.JSONField[map[string]int]{Data: map[string]int{}},
+		Assets:   models.JSONField[[]models.Asset]{Data: []models.Asset{{Name: "老宅"}}},
+	}
+	if err := models.DB.Create(&card).Error; err != nil {
+		t.Fatalf("seed card: %v", err)
+	}
+	r := charRouter(uid1)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/characters/%d/assets/%s", card.ID, url.PathEscape("老宅")), nil))
 	if w.Code != http.StatusForbidden {
 		t.Errorf("want 403, got %d", w.Code)
 	}

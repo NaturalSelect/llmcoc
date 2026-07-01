@@ -636,6 +636,54 @@ func RemoveCharacterSocialRelation(c *gin.Context) {
 	c.JSON(http.StatusOK, card)
 }
 
+// NOTE: RemoveCharacterAsset removes an asset by name from a character card.
+// NOTE: Only the card owner or admin can perform this action.
+func RemoveCharacterAsset(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	// URL decode the name parameter because Chinese characters may be encoded
+	name, err := url.QueryUnescape(c.Param("name"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "资产名称解码失败"})
+		return
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "资产名称不能为空"})
+		return
+	}
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		var user models.User
+		models.DB.First(&user, userID)
+		if user.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+			return
+		}
+	}
+
+	list := card.Assets.Data
+	out := make([]models.Asset, 0, len(list))
+	for _, a := range list {
+		if a.Name != name {
+			out = append(out, a)
+		}
+	}
+	card.Assets = models.JSONField[[]models.Asset]{Data: out}
+
+	if err := models.DB.Save(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存资产失败"})
+		return
+	}
+	c.JSON(http.StatusOK, card)
+}
+
 // NOTE: applyAdjustedStats validates and applies LLM-returned stat adjustments.
 // NOTE: It preserves group totals, keeps base attributes human-range, and recalculates derived values.
 func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats, age int) bool {

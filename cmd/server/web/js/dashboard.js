@@ -265,4 +265,14 @@ window.COC.dashboard = {
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 
+                    async removeAsset(name) {
+                        if (!this.editChar?.id || !name) return;
+                        if (!confirm('确定要删除资产「' + name + '」吗？此操作不可撤销。')) return;
+                        try {
+                            const updated = await this.api('DELETE', '/api/characters/' + this.editChar.id + '/assets/' + encodeURIComponent(name));
+                            this.syncCharacter(updated);
+                            this.showToast('已删除资产');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+
 };

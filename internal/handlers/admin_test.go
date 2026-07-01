@@ -249,6 +249,7 @@ func TestAdminGetScenarioGenerationLog_NoLog(t *testing.T) {
 }
 
 func TestAdminGetCacheEntry_ReturnsEntry(t *testing.T) {
+	initTestDB(t)
 	agent.ClearLawyerCacheAll()
 	t.Cleanup(agent.ClearLawyerCacheAll)
 	key := "#手枪 #伤害"
@@ -301,6 +302,7 @@ func TestAdminGetCacheEntry_MissingKey(t *testing.T) {
 }
 
 func TestAdminGetCacheEntry_NotFound(t *testing.T) {
+	initTestDB(t)
 	agent.ClearLawyerCacheAll()
 	t.Cleanup(agent.ClearLawyerCacheAll)
 	r := adminRouter()

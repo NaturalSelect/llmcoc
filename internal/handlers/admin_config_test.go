@@ -250,7 +250,7 @@ func TestAdminPingProvider_Success(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	mockProv := mocks.NewMockProvider(ctrl)
-	mockProv.EXPECT().Chat(gomock.Any(), gomock.Any()).Return("pong", nil)
+	mockProv.EXPECT().Chat(gomock.Any(), gomock.Any(), gomock.Any()).Return("pong", nil)
 
 	mockFac := mocks.NewMockProviderFactory(ctrl)
 	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(mockProv)
@@ -284,7 +284,7 @@ func TestAdminPingProvider_LLMError(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	mockProv := mocks.NewMockProvider(ctrl)
-	mockProv.EXPECT().Chat(gomock.Any(), gomock.Any()).Return("", errors.New("connection refused"))
+	mockProv.EXPECT().Chat(gomock.Any(), gomock.Any(), gomock.Any()).Return("", errors.New("connection refused"))
 
 	mockFac := mocks.NewMockProviderFactory(ctrl)
 	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
@@ -321,16 +321,16 @@ type fakeImageProvider struct {
 	chatCalled bool
 }
 
-func (p *fakeImageProvider) Chat(ctx context.Context, messages []llm.ChatMessage) (string, error) {
+func (p *fakeImageProvider) Chat(ctx context.Context, cacheKey string, messages []llm.ChatMessage) (string, error) {
 	p.chatCalled = true
 	return "pong", nil
 }
 
-func (p *fakeImageProvider) ChatStream(ctx context.Context, messages []llm.ChatMessage) (<-chan string, <-chan error, error) {
+func (p *fakeImageProvider) ChatStream(ctx context.Context, cacheKey string, messages []llm.ChatMessage) (<-chan string, <-chan error, error) {
 	return nil, nil, nil
 }
 
-func (p *fakeImageProvider) JsonChat(ctx context.Context, messages []llm.ChatMessage) (string, error) {
+func (p *fakeImageProvider) JsonChat(ctx context.Context, cacheKey string, messages []llm.ChatMessage) (string, error) {
 	return "{}", nil
 }
 

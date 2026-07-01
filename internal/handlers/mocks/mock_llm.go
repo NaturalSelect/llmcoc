@@ -42,24 +42,24 @@ func (m *MockProvider) EXPECT() *MockProviderMockRecorder {
 }
 
 // Chat mocks base method.
-func (m *MockProvider) Chat(ctx context.Context, messages []llm.ChatMessage) (string, error) {
+func (m *MockProvider) Chat(ctx context.Context, cacheKey string, messages []llm.ChatMessage) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Chat", ctx, messages)
+	ret := m.ctrl.Call(m, "Chat", ctx, cacheKey, messages)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Chat indicates an expected call of Chat.
-func (mr *MockProviderMockRecorder) Chat(ctx, messages any) *gomock.Call {
+func (mr *MockProviderMockRecorder) Chat(ctx, cacheKey, messages any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Chat", reflect.TypeOf((*MockProvider)(nil).Chat), ctx, messages)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Chat", reflect.TypeOf((*MockProvider)(nil).Chat), ctx, cacheKey, messages)
 }
 
 // ChatStream 模拟基础方法。
-func (m *MockProvider) ChatStream(ctx context.Context, messages []llm.ChatMessage) (<-chan string, <-chan error, error) {
+func (m *MockProvider) ChatStream(ctx context.Context, cacheKey string, messages []llm.ChatMessage) (<-chan string, <-chan error, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ChatStream", ctx, messages)
+	ret := m.ctrl.Call(m, "ChatStream", ctx, cacheKey, messages)
 	ret0, _ := ret[0].(<-chan string)
 	ret1, _ := ret[1].(<-chan error)
 	ret2, _ := ret[2].(error)
@@ -67,24 +67,24 @@ func (m *MockProvider) ChatStream(ctx context.Context, messages []llm.ChatMessag
 }
 
 // ChatStream 声明期望调用。
-func (mr *MockProviderMockRecorder) ChatStream(ctx, messages any) *gomock.Call {
+func (mr *MockProviderMockRecorder) ChatStream(ctx, cacheKey, messages any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChatStream", reflect.TypeOf((*MockProvider)(nil).ChatStream), ctx, messages)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChatStream", reflect.TypeOf((*MockProvider)(nil).ChatStream), ctx, cacheKey, messages)
 }
 
 // JsonChat mocks base method.
-func (m *MockProvider) JsonChat(ctx context.Context, messages []llm.ChatMessage) (string, error) {
+func (m *MockProvider) JsonChat(ctx context.Context, cacheKey string, messages []llm.ChatMessage) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "JsonChat", ctx, messages)
+	ret := m.ctrl.Call(m, "JsonChat", ctx, cacheKey, messages)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // JsonChat indicates an expected call of JsonChat.
-func (mr *MockProviderMockRecorder) JsonChat(ctx, messages any) *gomock.Call {
+func (mr *MockProviderMockRecorder) JsonChat(ctx, cacheKey, messages any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JsonChat", reflect.TypeOf((*MockProvider)(nil).JsonChat), ctx, messages)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JsonChat", reflect.TypeOf((*MockProvider)(nil).JsonChat), ctx, cacheKey, messages)
 }
 
 // compile-time assertion that ensures our mock implements the Provider interface.

@@ -929,14 +929,18 @@
                         style="font-family:system-ui">资产</h3>
                     <div x-show="(editChar?.assets||[]).length" class="space-y-1.5">
                         <template x-for="(asset, idx) in (editChar?.assets||[])" :key="idx">
-                            <div class="card rounded p-2">
-                                <p class="text-xs text-amber-300 font-bold" style="font-family:system-ui"
-                                    x-text="asset?.name || '未命名资产'"></p>
-                                <p class="text-xs text-amber-700" style="font-family:system-ui"
-                                    x-text="'类别：' + (asset?.category || '—')"></p>
-                                <p x-show="asset?.note" class="text-xs text-amber-800" style="font-family:system-ui"
-                                    x-text="asset?.note || ''">
-                                </p>
+                            <div class="card rounded p-2 flex items-start justify-between">
+                                <div>
+                                    <p class="text-xs text-amber-300 font-bold" style="font-family:system-ui"
+                                        x-text="asset?.name || '未命名资产'"></p>
+                                    <p class="text-xs text-amber-700" style="font-family:system-ui"
+                                        x-text="'类别：' + (asset?.category || '—')"></p>
+                                    <p x-show="asset?.note" class="text-xs text-amber-800" style="font-family:system-ui"
+                                        x-text="asset?.note || ''">
+                                    </p>
+                                </div>
+                                <button @click="removeAsset(asset.name)"
+                                    class="text-red-700 hover:text-red-400 transition text-xs leading-none ml-2 shrink-0">删除</button>
                             </div>
                         </template>
                     </div>
