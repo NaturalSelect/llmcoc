@@ -102,7 +102,9 @@ func main() {
 	if lawyerCacheHashes.RulebookHash != "" && lawyerCacheHashes.SpellbookHash != "" && lawyerCacheHashes.MonsterbookHash != "" {
 		lawyerCacheEnabled = true
 		agent.LoadLawyerCache(lawyerCacheHashes)
+		agent.LoadLawyerCacheStats()
 	}
+	var stopStatsPersistence func()
 	var saveLawyerCacheOnce sync.Once
 	saveLawyerCache := func() {
 		if !lawyerCacheEnabled {
@@ -113,7 +115,15 @@ func main() {
 			agent.SaveLawyerCache(lawyerCacheHashes)
 		})
 	}
-	defer saveLawyerCache()
+	if lawyerCacheEnabled {
+		stopStatsPersistence = agent.StartLawyerCacheStatsPersistence(30 * time.Second)
+	}
+	defer func() {
+		if stopStatsPersistence != nil {
+			stopStatsPersistence()
+		}
+		saveLawyerCache()
+	}()
 	cleanupCtx, stopImageCleanup := context.WithCancel(context.Background())
 	defer stopImageCleanup()
 	imagestore.StartCleanup(cleanupCtx, imagestore.DefaultStore(), 14*24*time.Hour, 24*time.Hour)
@@ -316,11 +326,17 @@ func main() {
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			log.Printf("Server shutdown failed: %v", err)
 		}
+		if stopStatsPersistence != nil {
+			stopStatsPersistence()
+		}
 		saveLawyerCache()
 		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Server failed: %v", err)
 		}
 	case err := <-errCh:
+		if stopStatsPersistence != nil {
+			stopStatsPersistence()
+		}
 		saveLawyerCache()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Server failed: %v", err)

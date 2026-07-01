@@ -267,6 +267,13 @@ func (lc *LawyerCache) HitStats() (full, partial, miss int64) {
 	return lc.fullHits.Load(), lc.partialHits.Load(), lc.misses.Load()
 }
 
+// SetStats sets all hit/miss counters to the given values.
+func (lc *LawyerCache) SetStats(full, partial, miss int64) {
+	lc.fullHits.Store(full)
+	lc.partialHits.Store(partial)
+	lc.misses.Store(miss)
+}
+
 // ResetStats resets all hit/miss counters to zero.
 func (lc *LawyerCache) ResetStats() {
 	lc.fullHits.Store(0)

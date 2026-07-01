@@ -586,3 +586,13 @@ func GetSiteSetting(key, defaultVal string) string {
 func SetSiteSetting(key, val string) error {
 	return DB.Where("key = ?", key).Assign(SiteSetting{Value: val}).FirstOrCreate(&SiteSetting{Key: key}).Error
 }
+
+// LawyerCacheStats stores cumulative lawyer cache hit/miss statistics.
+// Only one row should exist (ID=1) and it is periodically refreshed.
+type LawyerCacheStats struct {
+	ID           uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	FullHits     int64     `gorm:"not null;default:0" json:"full_hits"`
+	PartialHits  int64     `gorm:"not null;default:0" json:"partial_hits"`
+	Misses       int64     `gorm:"not null;default:0" json:"misses"`
+	SavedAt      time.Time `json:"saved_at"`
+}

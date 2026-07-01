@@ -4,11 +4,16 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
+
+	"github.com/llmcoc/server/internal/models"
+	"gorm.io/gorm"
 
 	"github.com/llmcoc/server/internal/services/llm"
 	"github.com/llmcoc/server/internal/services/rulebook"
@@ -271,19 +276,21 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 					lawyerCache.Set(cacheKey, ruleText)
 					debugf("Lawyer", "save_cache key=%s ruling=%s", cacheKey, ruleText)
 				}
-				if searchedRulebook && cacheSearchHadResults {
-					lawyerCache.RecordPartialHit()
-				} else if searchedRulebook && !cacheSearchHadResults {
-					lawyerCache.RecordMiss()
-				} else if !searchedRulebook && cacheSearchHadResults {
-					lawyerCache.RecordFullHit()
-				}
 			}
 			if c.Action == "response" && c.Ruling != "" {
 				rulingText = strings.TrimSpace(c.Ruling)
 				hasResponse = true
 				debugf("Lawyer", "iter=%d response ruling=%s", iter+1, rulingText)
 			}
+		}
+		// NOTE: 统计记录应在每次循环迭代末尾执行一次，
+		// 不依赖于 save_cache 是否出现。
+		if searchedRulebook && cacheSearchHadResults {
+			lawyerCache.RecordPartialHit()
+		} else if searchedRulebook && !cacheSearchHadResults {
+			lawyerCache.RecordMiss()
+		} else if !searchedRulebook && cacheSearchHadResults {
+			lawyerCache.RecordFullHit()
 		}
 		if hasResponse {
 			return []LawyerResult{{
@@ -446,6 +453,7 @@ func GetLawyerCacheStats() CacheStatsResult {
 func ClearLawyerCacheAll() {
 	lawyerCache.Clear()
 	lawyerCache.ResetStats()
+	models.DB.Delete(&models.LawyerCacheStats{})
 }
 
 // DeleteLawyerCacheEntry removes a single cached entry by key.
@@ -492,5 +500,61 @@ func ListLawyerCacheKeysPaginated(page, pageSize int) CacheKeysResult {
 		Page:       page,
 		PageSize:   pageSize,
 		TotalPages: totalPages,
+	}
+}
+
+// LoadLawyerCacheStats loads previously persisted cache statistics into memory.
+// It should be called once at startup after the database is ready.
+func LoadLawyerCacheStats() {
+	var stats models.LawyerCacheStats
+	if err := models.DB.Order("id DESC").First(&stats).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Printf("[lawyer] failed to load cache stats: %v", err)
+		}
+		return
+	}
+	lawyerCache.SetStats(stats.FullHits, stats.PartialHits, stats.Misses)
+	log.Printf("[lawyer] loaded cache stats: full=%d partial=%d miss=%d",
+		stats.FullHits, stats.PartialHits, stats.Misses)
+}
+
+// StartLawyerCacheStatsPersistence starts a background ticker that periodically
+// writes the current in-memory cache statistics to the database.
+// It returns a stop function that should be called on shutdown to flush the
+// final snapshot before the process exits.
+func StartLawyerCacheStatsPersistence(interval time.Duration) (stop func()) {
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				persistLawyerCacheStats()
+			case <-done:
+				ticker.Stop()
+				persistLawyerCacheStats()
+				return
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
+// persistLawyerCacheStats snapshots the current in-memory hit/miss counters
+// into the single LawyerCacheStats row (ID=1). It uses GORM's Save which
+// performs an upinsert when the primary key is non-zero.
+func persistLawyerCacheStats() {
+	full, partial, miss := lawyerCache.HitStats()
+	if err := models.DB.Save(&models.LawyerCacheStats{
+		ID:          1,
+		FullHits:    full,
+		PartialHits: partial,
+		Misses:      miss,
+		SavedAt:     time.Now(),
+	}).Error; err != nil {
+		log.Printf("[lawyer] persist cache stats error: %v", err)
 	}
 }

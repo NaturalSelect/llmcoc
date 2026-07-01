@@ -53,6 +53,7 @@ func InitDB() error {
 		&SessionGrowthMark{},
 		&SiteSetting{},
 		&InviteCode{},
+		&LawyerCacheStats{},
 	); err != nil {
 		return err
 	}
