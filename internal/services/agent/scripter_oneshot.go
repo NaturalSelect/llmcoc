@@ -48,7 +48,7 @@ func (r oneshotResult) toScenarioDraft() ScenarioDraft {
 }
 
 // oneshotExample is the JSON schema example used for parsing/repair prompts.
-const oneshotExample = `{"reward_concept":"与食尸鬼有关的古籍手稿","name":"示例模组","description":"围绕派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。","setting":"镇图书馆连续三夜有书籍失踪，守墓人向警方报告了一个体型异常的入侵者。","tone_tags":["gothic","slow-burn","occult-noir"],"horror_mode":"gothic_horror","invest_focus":"artifact_theft","intro":"你们进入局势。立即可做的事：①询问守墓人入侵者描述；②检查失窃书目；③决定是否公开异常气味。","game_start_slot":16,"map_description":"【文字地图】图书馆→书架区↔档案室↔墓地。","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。","scenes":[{"id":"library_main","name":"图书馆大厅","description":"可见：失窃公告。可发现：书目来自同一捐赠者。杠杆：公开规律会导致图书馆关闭。风险：拖延三天后永久关闭。出口：书架区、档案室。感官：潮湿泥土气息与旧纸味格格不入。","triggers":["available_from_start"]}],"npcs":[{"name":"守墓人Henrik","description":"公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。","attitude":"警惕、简短","stats":{"STR":55,"CON":60,"SIZ":65,"DEX":50,"APP":40,"INT":55,"POW":50,"EDU":55,"SAN":50,"HP":12,"MP":10}}],"clues":["[真实]失窃书目规律(书架区): 全部来自同一捐赠者。","[隐藏]神话本质(墓地): 食尸鬼是死者变形后的存在，保留人类记忆；SAN检定1/1d6；具体属性按规则书裁定。","[误导]守墓人描述(大厅): 体型异常、动作迅速——在真相揭示后仍然准确，只是「盗贼」身份完全颠倒。"],"win_condition":"如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。","lose_condition":"如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。","partial_wins":["如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"]}}`
+const oneshotExample = `{"reward_concept":"与食尸鬼有关的古籍手稿","name":"示例模组","description":"围绕派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。","setting":"镇图书馆连续三夜有书籍失踪，守墓人向警方报告了一个体型异常的入侵者。","tone_tags":["gothic","slow-burn","occult-noir"],"horror_mode":"gothic_horror","invest_focus":"artifact_theft","intro":"你们进入局势。立即可做的事：①询问守墓人入侵者描述；②检查失窃书目；③决定是否公开异常气味。","game_start_slot":16,"map_description":"【文字地图】图书馆→书架区↔档案室↔墓地。","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。","scenes":[{"id":"library_main","name":"图书馆大厅","description":"可见：失窃公告。可发现：书目来自同一捐赠者。杠杆：公开规律会导致图书馆关闭。风险：拖延三天后永久关闭。出口：书架区、档案室。感官：潮湿泥土气息与旧纸味格格不入。","triggers":["available_from_start"]}],"npcs":[{"name":"守墓人Henrik","description":"公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。","attitude":"警惕、简短","stats":{"STR":55,"CON":60,"SIZ":65,"DEX":50,"APP":40,"INT":55,"POW":50,"EDU":55,"SAN":50,"HP":12,"MP":10}}],"clues":["[真实]失窃书目规律(书架区): 全部来自同一捐赠者。","[隐藏]神话本质(墓地): 食尸鬼是死者变形后的存在，保留人类记忆；SAN检定1/1d6；具体属性按规则书裁定。","[误导]守墓人描述(大厅): 体型异常、动作迅速、指甲带泥土——守墓人坚称是惯偷活人趁夜盗墓；此说在真相揭晓后仍部分成立：那些体征确实像活人窃贼，只是掩盖了入侵者本是食尸鬼这一核心；排除「活人盗贼」解释不会堵死调查，反而促使调查员核对泥土成分与墓地痕迹。"],"win_condition":"如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。","lose_condition":"如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。","partial_wins":["如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"]}}`
 
 // ---------------------------------------------------------------------------
 // System prompt
@@ -86,9 +86,9 @@ func oneshotSystemPrompt() string {
 把剧情设计成线索矩阵，而不是单一路径。
 - core clue：推进所必需的关键信息
 - support clue：帮助理解背景、提高推理确定性的辅助线索
-- red herring：增强真实感但不能堵死推进的误导线索
-- clue carrier：文件 / NPC / 现场 / 超自然痕迹 / 仪式遗留 / 梦境等
-- misdirector_npc：有内在动机，不是功能性欺骗工具
+- red herring（[误导]线索）：一条「真实可观察的事实」被某个sincere的承载者错误解读为通向无关结论的证据；误导力来自支持一个看似合理但错误的推论，而不是来自编造、怪异感或与真相无关的离奇堆砌
+- clue carrier：文件 / NPC / 现场 / 超自然痕迹 / 仪式遗留 / 梦境等；[误导]线索必须有一个sincere的承载者（真心相信错误解释的NPC或文件），不是KP硬塞给玩家的假证据
+- misdirector_npc：有内在动机，不是功能性欺骗工具；他传播错误解释是因为该解释对他自洽（自保、利益、认知局限），而不是为了骗调查员
 - reveal_trigger：触发真相揭示的具体事件
 
 场景要求：
@@ -99,7 +99,13 @@ func oneshotSystemPrompt() string {
 
 线索要求：
 - 关键推进信息不能只有单一路径；如果A线索错过，也要能通过B或C抵达同一真相
-- 至少一条[误导]线索在真相揭晓后仍能解释得通，不能是纯假线索
+- [误导]线索必须是一条「真实可被调查员亲见亲验的观察」+「承载者sincere给出的错误解释」，二者缺一不可；禁止把怪异、不通顺或纯编造的内容标为[误导]
+- 每条[误导]线索需覆盖四要素（可压缩进一句长描述）：
+  ① 表面假象：调查员能亲见/亲验的具体异常（如伤口渗液、行为迟钝）
+  ② 错误解释：某个sincere承载者据此坚称的世俗化结论（如「塌方缺氧后遗症加真菌感染」）
+  ③ 真相后仍成立：揭晓核心真相后，假象本身依然真实、错误解释仍部分说得通（躯壳溃烂确实像感染）
+  ④ 排除后推进：调查员一旦推翻该错误解释，非但不会堵死，反而被推向真正的调查方向（转向坟墓与岩穴）
+- 至少一条[误导]线索完整覆盖上述四要素；不能只写「在真相后仍准确」了事
 - 至少一条[隐藏]线索承担”神话本质”说明，并与 mythos_anchor 强绑定
 	- [隐藏]的神话本质说明只能引用 translate_anchor 已确认的规则书元素（神格/怪物/法术/典籍/物品），禁止自创规则书中不存在的法术名、物品名、材质名或机制名
 	- 神话本质的因果链条必须逻辑自洽：前因→触发条件→可观察后果，每一步都必须在剧本设定的世界观中成立，不能为了”看起来恐怖”而堆砌不通顺的伪科学解释
@@ -107,7 +113,7 @@ func oneshotSystemPrompt() string {
 内部自查③：
 ✓ 是否存在至少两条不同来源的推进路径，而不是把唯一关键线索锁在单一检定里？
 ✓ 场景之间是可回访、可交叉验证的调查网络，而不是线性过关房间？
-✓ [误导]线索在真相揭示后仍有合理解释？
+✓ 每条[误导]线索是否同时满足：①是调查员可亲见亲验的真实观察（非编造、非怪异堆砌）②有sincere承载者给出世俗化错误解释 ③真相揭晓后假象仍真实、错误解释仍部分成立 ④推翻该解释会把调查导向而非堵死主线？
 
 【步骤④：NPC、时间线、SAN与结局推进】
 NPC应承担叙事功能，而不是填表：
@@ -137,7 +143,7 @@ SAN要求：
 ✓ clues每条以[真实]/[隐藏]/[误导]开头；至少一条[隐藏]神话本质涵盖mythos_anchor？
 ✓ [隐藏]神话本质说明中引用的所有法术名、物品名、怪物名、材质名均来自规则书（通过 translate_anchor 已确认），无自创元素？
 ✓ [隐藏]神话本质的因果链条逻辑自洽，每一步在剧本世界观中成立，无不通顺的伪科学拼凑？
-✓ 至少一条[误导]线索在真相揭示后仍能合理解释？
+✓ 每条[误导]线索是否同时满足：①是调查员可亲见亲验的真实观察（非编造、非怪异堆砌）②有sincere承载者给出世俗化错误解释 ③真相揭晓后假象仍真实、错误解释仍部分成立 ④推翻该解释会把调查导向而非堵死主线？
 ✓ 是否至少存在两个事件（主线 + 红鲱鱼），各自有完整线索链，且红鲱鱼排除后主线仍可推进？
 ✓ 关键推进信息是否具备多入口，而不是依赖单一检定成功？
 ✓ system_prompt含三项KP协议（时间推进/信息分层/不主动引导）+ 核心真相注入？
@@ -187,7 +193,7 @@ submit.draft 必须包含以下字段：
     "mythos_anchor": "translate_anchor确认的COC7元素全称",
     "scenes": [{"id":"...","name":"...","description":"可见/可发现/杠杆/风险/出口/感官细节；体现安全区/危险区/神话逼近区中的至少一种功能","triggers":["available_from_start"]}],
     "npcs": [{"name":"...","description":"公开身份/议程/秘密或保留理由","attitude":"...","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"SAN":50,"HP":10,"MP":10}}],
-    "clues": ["[真实]来自地点A的推进线索：...", "[真实]来自NPC或文件的平行推进线索：...", "[隐藏]神话本质(...): ...", "[误导]..."],
+    "clues": ["[真实]来自地点A的推进线索：...", "[真实]来自NPC或文件的平行推进线索：...", "[隐藏]神话本质(...): ...", "[误导]表面假象(地点): 具体可观察异常；承载者及其sincere的错误解释——真相揭晓后此假象仍真实、错误解释仍部分成立，只是掩盖了核心；排除该解释会把调查导向真正方向。"],
     "win_condition": "如果[条件]，则[处境变化]，[什么不可挽回地改变]",
     "lose_condition": "如果[条件]，则[局势进入新稳定态]，[什么不可挽回地改变]",
     "partial_wins": ["如果[条件]，则[部分结局]"]
@@ -688,7 +694,7 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 		formatMythosBlacklist(room.mythosBlacklist),
 		formatNPCNameBlacklist(room.npcBlacklist),
 		formatScenarioTitleBlacklist(room.titleSamples),
-		lengthSpec(room.req.TargetLength)+"\n线索会被直接展示给玩家, 但类型前缀(真实/隐藏/误导)会被隐藏, 设计误导线索时需要注意。",
+		lengthSpec(room.req.TargetLength)+"\n线索会被直接展示给玩家, 但类型前缀(真实/隐藏/误导)会被隐藏；因此[误导]线索在表面上必须与[真实]线索无法区分——它必须是真实可验证的观察，误导力来自支持错误结论，而非靠编造或怪异感蒙混。",
 		difficultySpec(room.req.Difficulty),
 	)
 
