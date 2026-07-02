@@ -625,6 +625,15 @@
                             </div>
                         </div>
                         <div class="flex items-center justify-between gap-3">
+                            <label class="text-sm shrink-0" style="font-family:system-ui">角色草稿最大数量</label>
+                            <div class="flex items-center gap-2">
+                                <input x-model.number="siteSettings.max_character_drafts" type="number" min="1"
+                                    class="inp w-24 text-right text-xs" />
+                                <button @click="updateSiteSettingCost('max_character_drafts')"
+                                    class="btn btn-amber text-xs shrink-0">保存</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between gap-3">
                             <label class="text-sm shrink-0" style="font-family:system-ui">结束游戏费用（每人）</label>
                             <div class="flex items-center gap-2">
                                 <input x-model.number="siteSettings.end_session_cost" type="number" min="0"

@@ -317,6 +317,7 @@ window.COC.admin = {
                         this.siteSettings.regenerate_backstory_cost = parseInt(map.regenerate_backstory_cost) || 100;
                         this.siteSettings.regenerate_traits_cost = parseInt(map.regenerate_traits_cost) || 100;
                         this.siteSettings.revive_base_cost = parseInt(map.revive_base_cost) || 2000;
+                        this.siteSettings.max_character_drafts = parseInt(map.max_character_drafts) || 3;
                         this.siteSettings.end_session_cost = parseInt(map.end_session_cost) || 200;
                         this.siteSettings.writer_history_max_runes = parseInt(map.writer_history_max_runes) || 20000;
                     },

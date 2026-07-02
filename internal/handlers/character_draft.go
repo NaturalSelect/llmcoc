@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +22,15 @@ import (
 )
 
 const characterDraftTTL = 24 * time.Hour
-const maxActiveCharacterDrafts = 3
+
+func getMaxActiveCharacterDrafts() int {
+	v := models.GetSiteSetting("max_character_drafts", "3")
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 3
+	}
+	return n
+}
 
 var generateCharacterNarrative = agent.GenerateCharacter
 
@@ -72,7 +81,7 @@ func RollCharacterDraft(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查草稿失败"})
 		return
 	}
-	if activeCount >= maxActiveCharacterDrafts {
+	if activeCount >= int64(getMaxActiveCharacterDrafts()) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "未过期车卡草稿过多，请稍后再试或完成已有草稿"})
 		return
 	}
