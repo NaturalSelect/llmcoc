@@ -79,8 +79,8 @@ func seedDefaultSiteSettings() {
 		"regenerate_traits_cost":     "100",
 		"revive_base_cost":           "2000",
 		"end_session_cost":           "200",
-		"writer_history_max_runes":     "20000",
-		"max_character_drafts":         "3",
+		"writer_history_max_runes":   "20000",
+		"max_character_drafts":       "3",
 	}
 	for k, v := range defaults {
 		var s SiteSetting
@@ -140,7 +140,7 @@ func seedDefaultAgentConfigs() {
 	}
 
 	// Remove obsolete agent roles that no longer exist in the pipeline.
-	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer"}).Delete(&AgentConfig{})
+	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer", "anti_cheat"}).Delete(&AgentConfig{})
 
 	var provID *uint
 	var prov LLMProviderConfig
@@ -159,7 +159,6 @@ func seedDefaultAgentConfigs() {
 		{Role: AgentRoleDirector, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleArchitect, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleQAGuard, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
-		{Role: AgentRoleAntiCheat, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.0, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleLawyer, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleNPC, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},

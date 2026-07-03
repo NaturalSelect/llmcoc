@@ -53,29 +53,6 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolActNPC:             true, // returns NPC reaction that must be read before response
 }
 
-// antiCheatSideEffectActions are state-changing tools that should trigger the
-// AntiCheat consistency guard. Narrative/control-flow tools (write, response,
-// yield, contract, report) are intentionally excluded to avoid slowing normal flow.
-var antiCheatSideEffectActions = map[ToolCallType]bool{
-	ToolCreateNPC:         true,
-	ToolDestroyNPC:        true,
-	ToolUpdateCharacters:  true,
-	ToolManageInventory:   true,
-	ToolRecordMonster:     true,
-	ToolManageSpell:       true,
-	ToolManageRelation:    true,
-	ToolManageAsset:       true,
-	ToolManageMadness:     true,
-	ToolAdvanceTime:       true,
-	ToolUpdateNPCCard:     true,
-	ToolUpdateLLMNote:     true,
-	ToolUpdateNPCLLMNote:  true,
-	ToolUpdateLocation:    true,
-	ToolUpdateNPCLocation: true,
-	ToolUpdateArmor:       true,
-	ToolHint:              true,
-}
-
 // responseCompatibleActions 表示可与response/end_game同批执行的动作。
 // 这些动作不需要把结果再交给KP阅读后才能结束回合。
 var responseCompatibleActions = map[ToolCallType]bool{

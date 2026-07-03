@@ -95,7 +95,6 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 
 	roles := []models.AgentRole{
 		models.AgentRoleDirector,
-		models.AgentRoleAntiCheat,
 		models.AgentRoleWriter,
 		models.AgentRoleLawyer,
 		models.AgentRoleNPC,
@@ -312,7 +311,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 <error>
 	1. your entire batch was rejected. 
 	2. missing contract call. 
-	3. every batch must include a contract call describing the ANTI_CHEAT_CONTRACT.
+	3. every batch must include a contract call describing the planned tool changes.
 	4. **LOOK THIS ERROR MESSAGE CAREFULLY, FOLLOW THE INSTRUCTIONS TO FIX THE ISSUE.**
 </error>`,
 			})
@@ -352,15 +351,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			continue
 		}
 
-		emitProgress("系统正在审查裁定一致性")
-		verdict, allowed, rejectMsg := checkAntiCheat(ctx, handles[models.AgentRoleAntiCheat], gctx, calls, tempNPCs)
-		if !allowed {
-			debugf("anti_cheat", "session=%d iter=%d reject: %s, calls=%+v", sid, iter+1, rejectMsg, calls)
-			emitProgress("KP正在修正不一致的裁定")
-			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf("<error>%s</error>", rejectMsg)})
-			continue
-		}
-		debugf("anti_cheat", "session=%d iter=%d allow: %s", sid, iter+1, verdict.Reason)
 		if generateImageCalls > 0 {
 			imageGeneratedThisTurn = true
 		}

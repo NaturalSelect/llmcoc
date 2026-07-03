@@ -50,7 +50,6 @@
 - Writer：`internal/services/agent/writer.go`，负责玩家可见叙事正文。
 - Lawyer：`internal/services/agent/lawyer.go`，负责规则资料检索和裁定。
 - NPC：`internal/services/agent/npc.go`，负责临时 NPC 独立行动与记忆。
-- AntiCheat：`internal/services/agent/anti_cheat.go`，负责副作用工具一致性审查。
 - Evaluator / Growth：`internal/services/agent/evaluator.go`、`internal/services/agent/growth.go`，负责结算评价和成长。
 - Scripter：`internal/services/agent/scripter*.go`，负责 AI 模组生成。
 

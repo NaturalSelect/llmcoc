@@ -488,7 +488,6 @@ const (
 	AgentRoleLore      AgentRole = "lore_researcher"
 	AgentRoleEncounter AgentRole = "encounter_designer"
 	AgentRoleQAGuard   AgentRole = "qa_guard"
-	AgentRoleAntiCheat AgentRole = "anti_cheat"
 	AgentRoleWriter    AgentRole = "writer"
 	AgentRoleEvaluator AgentRole = "evaluator"
 	AgentRoleGrowth    AgentRole = "growth"
