@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -16,8 +15,7 @@ import (
 
 // llmDebug controls per-request LLM timing logs (set LLM_DEBUG=1 to enable).
 var llmDebug = func() bool {
-	v := strings.ToLower(os.Getenv("AGENT_DEBUG"))
-	return v == "1" || v == "true" || v == "yes"
+	return true
 }()
 
 const defaultReasoningEffort = "high"
@@ -115,10 +113,10 @@ func isRetryableError(err error) bool {
 
 func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey string, messages []ChatMessage, json bool) openai.ChatCompletionRequest {
 	chatReq := openai.ChatCompletionRequest{
-		Model:              p.model,
-		Messages:           p.toOpenAIMessages(messages),
+		Model:               p.model,
+		Messages:            p.toOpenAIMessages(messages),
 		MaxCompletionTokens: p.maxTokens,
-		ReasoningEffort:    p.reasoningEffort,
+		ReasoningEffort:     p.reasoningEffort,
 	}
 	// NOTE: 禁用 temperature 时不设置该参数(部分模型如 o1/o3 不支持)
 	if !p.disableTemperature {
