@@ -129,6 +129,16 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 				card.Skills.Data = skills
 			}
 
+			// POW
+			limit := card.Stats.Data.POW % 100
+			if game.RollD100() > limit {
+				point := 5 - card.Stats.Data.POW/100
+				if point > 0 {
+					total, _ := game.Roll(1, point)
+					card.Stats.Data.POW = clamp(card.Stats.Data.POW+total, 0, 500)
+				}
+			}
+
 			// Apply character evolution for living characters.
 			if e, ok := evoByIdx[i]; ok {
 				if e.newBackstory != "" {
