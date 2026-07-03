@@ -67,7 +67,6 @@ var antiCheatSideEffectActions = map[ToolCallType]bool{
 	ToolManageAsset:       true,
 	ToolManageMadness:     true,
 	ToolAdvanceTime:       true,
-	ToolFoundClue:         true,
 	ToolUpdateNPCCard:     true,
 	ToolUpdateLLMNote:     true,
 	ToolUpdateNPCLLMNote:  true,
@@ -85,7 +84,6 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolWrite:             true,
 	ToolHint:              true,
 	ToolGenerateImage:     true,
-	ToolFoundClue:         true,
 	ToolContract:          true,
 	ToolUpdateLLMNote:     true,
 	ToolUpdateNPCLLMNote:  true,
@@ -139,7 +137,6 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolUpdateArmor:        updateArmorAction{},
 	ToolHint:               hintAction{},
 	ToolGenerateImage:      generateImageAction{},
-	ToolFoundClue:          foundClueAction{},
 	ToolResponse:           responseAction{},
 	ToolContract:           emptyAction{actionName: string(ToolContract)},
 	ToolReport:             reportAction{},
@@ -423,38 +420,6 @@ func (hintAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	return []ToolResult{{Action: ToolHint, Result: call.Hint}}
 }
 
-type foundClueAction struct{}
-
-func (foundClueAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	clues := actx.GCtx.Session.Scenario.Content.Data.Clues
-	idx := call.ClueIdx
-	if idx < 0 || idx >= len(clues) {
-		return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("error: clue_idx %d out of range (0-%d), check query_clues for valid indices", idx, len(clues)-1)}}
-	}
-	debugf("tool", "session=%d found_clue idx=%d", actx.Sid, idx)
-
-	// Deduplicate.
-	for _, f := range actx.GCtx.Session.FoundClues.Data {
-		if f == idx {
-			return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("clue[%d] already recorded", idx)}}
-		}
-	}
-
-	actx.GCtx.Session.FoundClues.Data = append(actx.GCtx.Session.FoundClues.Data, idx)
-	models.DB.Model(&models.GameSession{}).
-		Where("id = ?", actx.GCtx.Session.ID).
-		Update("found_clue_indices", actx.GCtx.Session.FoundClues)
-	clubsText := clues[idx]
-	if strings.HasPrefix(clubsText, "[") {
-		start := strings.Index(clubsText, "]")
-		if start != -1 && start < len(clubsText)-1 {
-			clubsText = clubsText[start+1:]
-		}
-	}
-	*actx.KPNarration += fmt.Sprintf("\n【线索已获得】%s\n", clubsText)
-	return []ToolResult{{Action: ToolFoundClue, Result: fmt.Sprintf("clue[%d] recorded: %s", idx, clubsText)}}
-}
-
 // ── NPC card actions ──────────────────────────────────────────────────────────
 
 type queryNPCCardAction struct{}
@@ -512,17 +477,9 @@ func (queryCluesAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	clues := actx.GCtx.Session.Scenario.Content.Data.Clues
 	clueResult := "(无线索)"
 	if len(clues) > 0 {
-		foundSet := make(map[int]bool, len(actx.GCtx.Session.FoundClues.Data))
-		for _, i := range actx.GCtx.Session.FoundClues.Data {
-			foundSet[i] = true
-		}
 		var sb strings.Builder
 		for i, c := range clues {
-			if foundSet[i] {
-				sb.WriteString(fmt.Sprintf("[Idx: %d][已发现] %s\n", i, c))
-			} else {
-				sb.WriteString(fmt.Sprintf("[Idx: %d][未发现] %s\n", i, c))
-			}
+			sb.WriteString(fmt.Sprintf("[Idx: %d] %s\n", i, c))
 		}
 		clueResult = sb.String()
 	}

@@ -563,8 +563,7 @@ func visibleActionNeedsWriter(action ToolCallType) bool {
 		ToolUpdateNPCCard,
 		ToolUpdateLocation,
 		ToolUpdateNPCLocation,
-		ToolUpdateArmor,
-		ToolFoundClue:
+		ToolUpdateArmor:
 		return true
 	default:
 		return false
@@ -647,7 +646,7 @@ func progressToolLabel(action ToolCallType) string {
 		return "更新角色和场景状态"
 	case ToolManageInventory, ToolManageSpell, ToolManageRelation, ToolManageAsset, ToolManageMadness:
 		return "更新角色记录"
-	case ToolRecordMonster, ToolFoundClue, ToolQueryClues:
+	case ToolRecordMonster, ToolQueryClues:
 		return "处理线索"
 	case ToolGenerateImage:
 		return "生成场景图像"

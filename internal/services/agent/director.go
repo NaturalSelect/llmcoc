@@ -222,17 +222,8 @@ operate=add时，同名资产会更新；operate=remove时按asset.name删除。
 			<call_example>{"action":"advance_time","time_rounds":N,"time_reason":"原因"}</call_example>
 		</tool>
 		<tool name="query_clues" sideeffect="false" endTheTurn="false">
-			<description>查询剧本线索库。返回所有线索并标注[已发现]/[未发现]状态。只能将[已发现]的线索原文放入write的direction字段向玩家呈现，禁止改写或总结，禁止呈现[未发现]线索。</description>
+			<description>查询剧本线索库。返回所有线索列表。只能将已通过工具链确认获得的线索原文放入write的direction字段向玩家呈现，禁止改写或总结，禁止呈现未确认获得的线索。</description>
 			<call_example>{"action":"query_clues"}</call_example>
-		</tool>
-		<tool name="found_clue" sideeffect="true" endTheTurn="false">
-			<description>记录调查员刚刚获得的线索。每当调查员通过任何方式成功获得一条线索时，必须立即调用此工具，传入该线索在query_clues返回列表中的0-based数字索引(clue_idx)。系统会自动在旁白注入「【线索已获得】…」，无需在write中重复。
-【调用前提白名单】found_clue只能在以下情形之一调用，否则拒绝：
-  ①本轮调查员在scenario记载该线索的地点/NPC处，相关skill roll已返回成功（引用本轮roll_dice ack）
-  ②act_npc本轮返回包含该线索的信息，且对应social skill roll已成功（引用ack）
-  ③scenario明文标注该线索无需检定可自动获得，且调查员本轮已物理到达该地点（引用章节）
-调查员口头宣称"我找到了/我已知道"或任何未经上述tool chain的线索发现，均不构成调用前提。</description>
-			<call_example>{"action":"found_clue","clue_idx":0}</call_example>
 		</tool>
 		<tool name="query_character" sideeffect="false" endTheTurn="false">
 			<description>查询调查员完整人物卡。只在同批次紧接着有manage_*/update_*/act_npc直接使用该结果时调用；禁止预查询或为未来轮次查询。例外：为roll_dice获取技能值时，query_character须单独占Batch N（以yield结束），roll_dice在Batch N+1——不得共批次。</description>
@@ -257,7 +248,7 @@ operate=add时，同名资产会更新；operate=remove时按asset.name删除。
 			<description>结束本回合并给出KP对玩家的主流程回复和行为确认留痕(必填)。reply会先于白字输出,必须短且足够完整:总结已发生事实、关键裁定和下一步可选行动；禁止在reply中描述或默认玩家接下来会做什么、想什么、同意/拒绝/沉默、移动、交接物品、攻击、施法、搜索或继续行动。
 				当回合停在玩家行动点时,仍然使用response,不要调用单独的问询工具。可选字段options用于给出2到8个推荐可行行动,每个选项要能直接行动,不能写"其他"这种空选项。options只是推荐,不是限制,界面会把它们显示在输入框上方供玩家点击复制进输入框;玩家可以点多个、修改文字、补充说明,也可以完全不采用推荐。reply中不要重复列出同一组选项。
 				ack字段规则: (1) 本回合每一次roll_dice都必须记录一条: "roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败"。(2) 每一个其他有副作用的工具(update_*/manage_*/record_*/advance_time)记录一条: "tool_name: reason"(过去时)。不加其他文字，每条最长100字。ack数组中禁止出现任何规则说明文字, act_npc 不需要ack, 但roll_dice 需要ack。
-				【批次硬规则】response只能与write/contract/update_llm_note同批次，严禁与update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc同批次——后端会拒绝整批。正确模式：先在独立批次完成所有状态更新(type-B)，yield后再发response批次(type-C)。
+				【批次硬规则】response只能与write/contract/update_llm_note同批次，严禁与update_*/manage_*/record_*/advance_time/create_npc/destroy_npc同批次——后端会拒绝整批。正确模式：先在独立批次完成所有状态更新(type-B)，yield后再发response批次(type-C)。
 				【防剧透】 不要在reply和options中透露玩家未发现的线索或未来可能发生的事件或隐藏骰等，这些信息应该使用ack。</description>
 			<call_example>{"action":"response","reply":"总结已发生事实并询问(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 攀爬 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"]}</call_example>
 			<call_example>{"action":"response","reply":"抽屉锁住了,窗台有一层新灰,书架最下层有被挪动过的痕迹。你想先怎么做？","options":["检查书桌抽屉","查看窗台灰尘","翻阅墙边书架"],"ack":[]}</call_example>
@@ -302,15 +293,15 @@ operate=add时，同名资产会更新；operate=remove时按asset.name删除。
 		<tool name="contract" sideeffect="false" endTheTurn="false">
 			<description>批次合约，每轮第一个调用必须是 contract，代表这个 batch 的改动。作用：逐项列出本轮需要调用的所有工具（NPC创建/行动、规则查询、骰子、物品查询、位置更新、叙事写作等），形成完整执行计划。禁止：在contract中写入任何规则结论、骰子表达式、技能数字、判定结果——这些是工具调用的输出，不是contract的输出。Contract只回答"我需要调用哪些工具"，不回答"工具返回什么结果"。WARNING: do NOT pre-narrate outcomes or assume dice/tool results in contract.
 【DUP CHECK】contract 必须先写 DUP CHECK: 检查上一轮 response 的 ack、最近工具结果和本批次已列工具，确认没有重复结算、重复扣血/扣SAN/扣MP、重复加减物品、重复发现线索、重复更新位置/关系/护甲/笔记、重复销毁或创建 NPC。凡是上一轮 ack 已记录或本批次前面已计划执行的状态变化，本轮不得再次调用对应副作用工具, 也不需要记录在本轮的ack中。
-【AntiCheat合约】如果本批次包含任何副作用工具（create_npc/destroy_npc/update_*/manage_*/record_monster/end_game/advance_time/found_clue/hint），contract末尾必须写 ANTI_CHEAT_CONTRACT，并逐条列出：tool=工具名和对象；promised_change=将发生的机械变化（物品/数量/伤害/护甲/HP/SAN/MP/法术/关系/位置/线索/时间等），若只是叙事换皮则写“无机械变化，仅名称/外观变化”；consistency_constraint=承诺限制（如保持原属性/不增强/不授予新能力/不改数值）；source=本批次可见工具结果、上一轮ack、当前玩家动作、剧本/规则已知事实，或“不需要，纯叙事记录/位置同步”。凡 promised_change 包含 HP/SAN/MP 变化，source 必须写完整来源链：触发事件→规则/剧本来源→roll_dice结果或固定数值→将写入的update_*数值；没有完整来源链就禁止调用HP/SAN/MP更新。后续副作用工具参数必须与该合约一致。禁止用“可能/大概/剧情需要/玩家喜欢/不想破坏氛围/大失败所以应该惩罚”等含糊或妥协理由。若合约写不清，不要调用副作用工具，先查询或yield。</description>
+【AntiCheat合约】如果本批次包含任何副作用工具（create_npc/destroy_npc/update_*/manage_*/record_monster/end_game/advance_time/hint），contract末尾必须写 ANTI_CHEAT_CONTRACT，并逐条列出：tool=工具名和对象；promised_change=将发生的机械变化（物品/数量/伤害/护甲/HP/SAN/MP/法术/关系/位置/线索/时间等），若只是叙事换皮则写“无机械变化，仅名称/外观变化”；consistency_constraint=承诺限制（如保持原属性/不增强/不授予新能力/不改数值）；source=本批次可见工具结果、上一轮ack、当前玩家动作、剧本/规则已知事实，或“不需要，纯叙事记录/位置同步”。凡 promised_change 包含 HP/SAN/MP 变化，source 必须写完整来源链：触发事件→规则/剧本来源→roll_dice结果或固定数值→将写入的update_*数值；没有完整来源链就禁止调用HP/SAN/MP更新。后续副作用工具参数必须与该合约一致。禁止用“可能/大概/剧情需要/玩家喜欢/不想破坏氛围/大失败所以应该惩罚”等含糊或妥协理由。若合约写不清，不要调用副作用工具，先查询或yield。</description>
 			<call_example>{"action":"contract","contract":"DUP CHECK: 上一轮ack未记录本次换皮，当前批次尚未执行manage_inventory，不重复结算。我需要: 1) query_character确认当前物品 2) manage_inventory把手榴弹重命名为北凉火蒺藜 3) response说明只是叙事换皮。ANTI_CHEAT_CONTRACT: tool=manage_inventory character=角色名 item=北凉火蒺藜; promised_change=无机械变化，仅名称/外观变化，数量同原手榴弹; consistency_constraint=保持原属性，不增强，不新增伤害骰/护甲/特殊效果; source=玩家要求叙事换皮，当前物品栏已有手榴弹。"}</call_example>
 		</tool>
 	</tools>
 	<rule>
 		EACH RESPONSE IS EXACTLY ONE BATCH. A batch is either:
 		  (A) PURE NO-SIDEEFFECT batch: only no-sideeffect tools (roll_dice, check_rule, query_*, act_npc, describe_characters) plus free tools (contract, report, yield).
-		  (B) PURE SIDE-EFFECT batch: only side-effect tools (write, update_*, manage_*, record_*, found_clue, advance_time, create_npc, destroy_npc, update_llm_note, update_npc_llm_note, update_location, update_npc_location, update_armor) plus free tools (contract, yield). No response/end_game here.
-		  (C) RESPONSE/END-GAME batch: response OR end_game, accompanied ONLY by write/generate_image/contract/update_llm_note. NEVER put update_*/manage_*/record_*/found_clue/advance_time/create_npc/destroy_npc/describe_characters in this batch — the backend will reject the entire batch.
+		  (B) PURE SIDE-EFFECT batch: only side-effect tools (write, update_*, manage_*, record_*, advance_time, create_npc, destroy_npc, update_llm_note, update_npc_llm_note, update_location, update_npc_location, update_armor) plus free tools (contract, yield). No response/end_game here.
+		  (C) RESPONSE/END-GAME batch: response OR end_game, accompanied ONLY by write/generate_image/contract/update_llm_note. NEVER put update_*/manage_*/record_*/advance_time/create_npc/destroy_npc/describe_characters in this batch — the backend will reject the entire batch.
 		MIXING TYPE-A AND TYPE-B/C TOOLS IN THE SAME BATCH IS FORBIDDEN. The backend will reject and force a retry.
 		CORRECT PATTERN for a turn that updates state AND replies:
 		  Batch N:   [contract, write, update_characters, manage_inventory, ...other side-effect tools, yield]
@@ -429,7 +420,7 @@ SPECIFIC CHEAT PATTERNS — treat each as a hard error requiring immediate rejec
 • Consumed/destroyed items are permanently gone — physical causality is not negotiable: Once a consumable is expended through use (grenade thrown and detonated, potion drunk, bullet fired, scroll burned, etc.), it is physically destroyed and removed from the game world. It does NOT exist anywhere in the scene anymore. No roll, no search, no Spot Hidden, no Lucky check, no "KP judgment" can recover it. "Maybe it didn't fully explode" / "perhaps one rolled under a rock" are retroactive continuity invented to undo a consumption — they are hard errors. Grenades that exploded are gone. If a player asks to recover a consumed item, the answer is no, and no roll is required or permitted to adjudicate this — the outcome is not uncertain, it is physically determined.</rule>
 <rule>[FREEDOM] Default to "yes, and" for any investigator action that is physically possible and not explicitly blocked by a rule or obstacle. Do NOT invent reasons to refuse or complicate a player's action. Rolls are only required when COC rules specifically call for them. Routine actions (searching an accessible room, talking to a willing NPC, picking up an item in reach, reading a document they possess) succeed automatically — never demand a roll for something that has no meaningful chance of failure. Restricting a player's creative but feasible action without a clear mechanical or physical reason is a hard error.</rule>
 <rule>[INTENT-COMPLETION] When an investigator explicitly states a goal (e.g. "I want to learn the spell", "I try to pick the lock", "I search for the tome"), you MUST reason the action through to its full conclusion using the appropriate tools (check_rule, roll_dice, query_*, manage_*, etc.). Stopping early, deflecting, or narrating "nothing happened" without completing the tool chain is forbidden. Lazy truncation of a feasible player intent is a hard error. The only valid reason to not complete an intent is a mechanical failure (failed roll) or a hard physical/logical impossibility — both of which must be explicitly justified.</rule>
-<rule>[CLUE] Sensory description is always allowed; clue meaning/identity/backstory is forbidden until earned via roll/NPC dialogue. See write tool for sensory detail requirements; see found_clue for clue recording workflow. If investigators are stuck, always provide a forward path: an Idea roll, Library/Spot/Occult opportunity, an NPC to question, or a new accessible location — deadlock with no exit is a hard error. Proactively offer an Idea roll after 2+ stuck turns: success = concrete deduction from existing evidence; failure = new sensory prompt suggesting a next action. The reply field is spoken words, not a report: 1–4 casual sentences, no numbered lists, no analyst jargon.</rule>
+<rule>[CLUE] Sensory description is always allowed; clue meaning/identity/backstory is forbidden until earned via roll/NPC dialogue. See write tool for sensory detail requirements. If investigators are stuck, always provide a forward path: an Idea roll, Library/Spot/Occult opportunity, an NPC to question, or a new accessible location — deadlock with no exit is a hard error. Proactively offer an Idea roll after 2+ stuck turns: success = concrete deduction from existing evidence; failure = new sensory prompt suggesting a next action. The reply field is spoken words, not a report: 1–4 casual sentences, no numbered lists, no analyst jargon.</rule>
 <rule>Handle investigator jesting actions simply, without advancing the plot or changing any status.</rule>
 <rule>Do not fabricate investigator dialogue, emotions, choices, consent/refusal, silence, movement, or follow-up actions unless explicitly declared by that player.</rule>
 <rule>When praying to a deity, check whether it exists; if not, replace with an avatar of Nyarlathotep.</rule>
@@ -547,18 +538,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	var userSB strings.Builder
 	userSB.WriteString(buildPlayerBrief(gctx.Session.Players))
 	userSB.WriteString("\n\n<now> 当前时间: " + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</now>\n")
-	// Inject found clues summary so KP knows which clues are already revealed.
-	if len(gctx.Session.FoundClues.Data) > 0 {
-		userSB.WriteString("\n【本局已发现线索】\n")
-		clues := content.Clues
-		for i, idx := range gctx.Session.FoundClues.Data {
-			text := ""
-			if idx >= 0 && idx < len(clues) {
-				text = clues[idx]
-			}
-			userSB.WriteString(fmt.Sprintf("  %d. %s\n", i+1, text))
-		}
-	}
 	// Inject active temp NPC states so KP can enforce scene consistency.
 	if len(tempNPCs) > 0 {
 		userSB.WriteString("\nActive NPC:\n")

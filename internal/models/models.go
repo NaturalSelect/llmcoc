@@ -272,9 +272,8 @@ type GameSession struct {
 	WriterHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
 	CombatState   JSONField[*CombatState] `gorm:"type:text" json:"-"`
 	ChaseState    JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
-	KPHint        string                  `gorm:"type:text" json:"-"`                           // KP自写的当前场景高密度提示
-	Introspection string                  `gorm:"type:text" json:"-"`                           // KP自写的当前场景推理过程
-	FoundClues    JSONField[[]int]        `gorm:"column:found_clue_indices;type:text" json:"-"` // 本局已被玩家发现的线索索引列表(对应ScenarioContent.Clues的下标)
+	KPHint        string                  `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
+	Introspection string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
 	CreatedAt     time.Time               `json:"created_at"`
 	UpdatedAt     time.Time               `json:"updated_at"`
 	Scenario      Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
@@ -514,20 +513,20 @@ type LLMProviderConfig struct {
 
 // AgentConfig holds per-agent model and prompt configuration.
 type AgentConfig struct {
-	ID               uint               `gorm:"primaryKey;autoIncrement" json:"id"`
-	Role             AgentRole          `gorm:"not null;size:50;uniqueIndex" json:"role"`
-	ProviderConfigID *uint              `json:"provider_config_id"`
-	ModelName        string             `gorm:"size:200" json:"model_name"`
-	MaxTokens        int                `gorm:"default:1024" json:"max_tokens"`
-	Temperature      float32            `gorm:"default:0.7;type:real" json:"temperature"`
+	ID               uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Role             AgentRole `gorm:"not null;size:50;uniqueIndex" json:"role"`
+	ProviderConfigID *uint     `json:"provider_config_id"`
+	ModelName        string    `gorm:"size:200" json:"model_name"`
+	MaxTokens        int       `gorm:"default:1024" json:"max_tokens"`
+	Temperature      float32   `gorm:"default:0.7;type:real" json:"temperature"`
 	// DisableTemperature 为 true 时不在 API 请求中发送 temperature 参数（用于不支持的模型）
-	DisableTemperature bool           `gorm:"default:false" json:"disable_temperature"`
-	SystemPrompt     string             `gorm:"type:text" json:"system_prompt"`
-	ThinkingLevel    string             `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh
-	IsActive         bool               `gorm:"default:true" json:"is_active"`
-	CreatedAt        time.Time          `json:"created_at"`
-	UpdatedAt        time.Time          `json:"updated_at"`
-	ProviderConfig   *LLMProviderConfig `gorm:"foreignKey:ProviderConfigID" json:"provider_config,omitempty"`
+	DisableTemperature bool               `gorm:"default:false" json:"disable_temperature"`
+	SystemPrompt       string             `gorm:"type:text" json:"system_prompt"`
+	ThinkingLevel      string             `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh
+	IsActive           bool               `gorm:"default:true" json:"is_active"`
+	CreatedAt          time.Time          `json:"created_at"`
+	UpdatedAt          time.Time          `json:"updated_at"`
+	ProviderConfig     *LLMProviderConfig `gorm:"foreignKey:ProviderConfigID" json:"provider_config,omitempty"`
 }
 
 // GameEvaluation stores the end-of-session LLM evaluation result.
@@ -590,9 +589,9 @@ func SetSiteSetting(key, val string) error {
 // LawyerCacheStats stores cumulative lawyer cache hit/miss statistics.
 // Only one row should exist (ID=1) and it is periodically refreshed.
 type LawyerCacheStats struct {
-	ID           uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	FullHits     int64     `gorm:"not null;default:0" json:"full_hits"`
-	PartialHits  int64     `gorm:"not null;default:0" json:"partial_hits"`
-	Misses       int64     `gorm:"not null;default:0" json:"misses"`
-	SavedAt      time.Time `json:"saved_at"`
+	ID          uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	FullHits    int64     `gorm:"not null;default:0" json:"full_hits"`
+	PartialHits int64     `gorm:"not null;default:0" json:"partial_hits"`
+	Misses      int64     `gorm:"not null;default:0" json:"misses"`
+	SavedAt     time.Time `json:"saved_at"`
 }

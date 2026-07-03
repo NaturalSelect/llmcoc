@@ -60,8 +60,7 @@ const (
 	ToolHint               ToolCallType = "hint"                // KP写入当前场景高密度提示
 	ToolGenerateImage      ToolCallType = "generate_image"      // NOTE: 生成即时场景图片
 	ToolDescribeCharacters ToolCallType = "describe_characters" // NOTE: 获取调查员可见外貌描写
-	ToolFoundClue          ToolCallType = "found_clue"          // 记录玩家发现的线索并注入旁白
-	ToolResponse           ToolCallType = "response"            // 结束本轮并给出回复
+	ToolResponse           ToolCallType = "response"             // 结束本轮并给出回复
 	ToolYield              ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
 	ToolContract           ToolCallType = "contract"            // 批次合约,代表本batch的改动
 	ToolReport             ToolCallType = "report"              // 向管理系统自首
@@ -101,7 +100,6 @@ type ToolCall struct {
 	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
 	ImagePrompt   string                 `json:"image_prompt,omitempty"`   // NOTE: generate_image: 英文自然语言画图描述
 	Characters    []string               `json:"characters,omitempty"`     // NOTE: describe_characters 参数;兼容旧 generate_image JSON,但生成图片时忽略
-	ClueIdx       int                    `json:"clue_idx"`                 // found_clue: 线索在剧本clues数组中的0-based索引
 	Options       []string               `json:"options,omitempty"`        // response: 推荐给玩家的可行行动
 	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结(可选)
