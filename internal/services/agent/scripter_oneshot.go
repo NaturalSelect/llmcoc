@@ -1,9 +1,8 @@
 // scripter_oneshot.go — Single-shot scenario generation with translate_anchor validation.
 //
 // The architect runs in a tool-call loop:
-//  1. contract (optional batch contract)
-//  2. translate_anchor (one or more times) — validates CoC element via rulebook
-//  3. submit — carries the complete oneshotResult JSON
+//  1. translate_anchor (one or more times) — validates CoC element via rulebook
+//  2. submit — carries the complete oneshotResult JSON
 //
 // This preserves real-time rulebook validation while eliminating separate
 // IronyCore / MisdirectionFabric / InvestigationGraph stages.
@@ -162,8 +161,6 @@ SAN要求：
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
-- contract：内部合约，代表这个 batch 的动作（可选，无副作用）
-  {"action":"contract","contract":"推理内容"}
 - translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
   {"action":"translate_anchor","concept":"概念描述（如「死者被古老力量束缚继续行动」）","reason":"这个概念在剧本中承担什么角色"}
 - submit：提交完整剧本；只有在translate_anchor确认元素可用后才调用；必须单独一轮输出
@@ -218,11 +215,10 @@ const (
 )
 
 type oneshotArchitectToolCall struct {
-	Action   ToolCallType   `json:"action"`
-	Contract string         `json:"contract,omitempty"`
-	Concept  string         `json:"concept,omitempty"` // translate_anchor
-	Reason   string         `json:"reason,omitempty"`  // translate_anchor
-	Draft    *oneshotResult `json:"draft,omitempty"`   // submit
+	Action  ToolCallType   `json:"action"`
+	Concept string         `json:"concept,omitempty"` // translate_anchor
+	Reason  string         `json:"reason,omitempty"`  // translate_anchor
+	Draft   *oneshotResult `json:"draft,omitempty"`   // submit
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +258,7 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 
 		// submit must be alone
 		if oneshotSubmitMixed(calls) {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit必须单独一轮输出，不能和contract、translate_anchor或任何其他action混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；若已有足够信息，下一轮只输出一个submit。"})
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit必须单独一轮输出，不能和translate_anchor或任何其他action混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；若已有足够信息，下一轮只输出一个submit。"})
 			continue
 		}
 
@@ -271,8 +267,6 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		var toolResults []string
 		for _, call := range calls {
 			switch call.Action {
-			case ToolContract:
-				// silent
 			case toolOneshotTranslateAnchor:
 				toolResults = append(toolResults, executeOneshotTranslateAnchor(ctx, room, call))
 			case toolOneshotSubmit:
@@ -281,14 +275,14 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 					invalid = true
 				} else {
 					if len(calls) > 1 {
-						msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit必须单独一轮输出，不能和contract、translate_anchor或任何其他action混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；若已有足够信息，下一轮只输出一个submit。"})
+						msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit必须单独一轮输出，不能和translate_anchor或任何其他action混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；若已有足够信息，下一轮只输出一个submit。"})
 						continue
 					}
 					submitDraft = call.Draft
 				}
 			default:
 				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
-					"SYSTEM REJECT: 此阶段只允许contract/translate_anchor/submit，不允许%s。", call.Action)})
+					"SYSTEM REJECT: 此阶段只允许translate_anchor/submit，不允许%s。", call.Action)})
 				invalid = true
 			}
 		}
@@ -403,8 +397,6 @@ const oneshotTranslatorSystemPrompt = `<role>COC7规则书概念翻译专家</ro
 <response_format>json_array</response_format>
 <output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
-- contract：内部合约，代表这个 batch 的改动（可选，无副作用）
-  {"action":"contract","contract":"推理内容"}
 - ask_lawyer：向COC7规则书专家提出一个具体规则书问题；可多次调用
   {"action":"ask_lawyer","question":"具体规则书问题"}
 - respond：返回最终翻译结论并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮输出
@@ -412,9 +404,9 @@ const oneshotTranslatorSystemPrompt = `<role>COC7规则书概念翻译专家</ro
 </tools>
 <batch_rules>
 - 每轮只能是以下两种批次之一：
-  A. 查询批次：可包含 contract 和一个或多个 ask_lawyer；不得包含 respond。
-  B. 最终批次：只能包含一个 respond；不得包含 contract、ask_lawyer 或任何其他action。
-- 绝对禁止把 respond 和 contract/ask_lawyer 放在同一个JSON数组中。
+  A. 查询批次：可包含一个或多个 ask_lawyer；不得包含 respond。
+  B. 最终批次：只能包含一个 respond；不得包含 ask_lawyer 或任何其他action。
+- 绝对禁止把 respond 和 ask_lawyer 放在同一个JSON数组中。
 </batch_rules>
 <result_requirements>
 respond.result 必须包含：
@@ -442,7 +434,6 @@ const oneshotTranslatorToolCallExample = `[{"action":"ask_lawyer","question":"CO
 
 type oneshotTranslatorToolCall struct {
 	Action   ToolCallType `json:"action"`
-	Contract string       `json:"contract,omitempty"`
 	Question string       `json:"question,omitempty"`
 	Result   string       `json:"result,omitempty"`
 }
@@ -493,7 +484,7 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 			continue
 		}
 		if oneshotTranslatorRespondMixed(calls) {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond必须单独一轮输出，不能和contract、ask_lawyer或任何其他action混在同一个JSON数组中。"})
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond必须单独一轮输出，不能和ask_lawyer或任何其他action混在同一个JSON数组中。"})
 			continue
 		}
 
@@ -502,8 +493,6 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 		var toolResults []string
 		for _, call := range calls {
 			switch call.Action {
-			case ToolContract:
-				// silent
 			case toolTranslatorAskLawyer:
 				askedLawyer = true
 				toolResults = append(toolResults, oneshotTranslatorAskLawyer(ctx, room, call))
@@ -519,7 +508,7 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 				}
 			default:
 				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
-					"SYSTEM REJECT: translator只允许contract/ask_lawyer/respond，不允许%s。", call.Action)})
+					"SYSTEM REJECT: translator只允许ask_lawyer/respond，不允许%s。", call.Action)})
 				invalid = true
 			}
 		}

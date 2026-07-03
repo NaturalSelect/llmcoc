@@ -115,10 +115,10 @@ func isRetryableError(err error) bool {
 
 func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey string, messages []ChatMessage, json bool) openai.ChatCompletionRequest {
 	chatReq := openai.ChatCompletionRequest{
-		Model:           p.model,
-		Messages:        p.toOpenAIMessages(messages),
-		MaxTokens:       p.maxTokens,
-		ReasoningEffort: p.reasoningEffort,
+		Model:              p.model,
+		Messages:           p.toOpenAIMessages(messages),
+		MaxCompletionTokens: p.maxTokens,
+		ReasoningEffort:    p.reasoningEffort,
 	}
 	// NOTE: 禁用 temperature 时不设置该参数(部分模型如 o1/o3 不支持)
 	if !p.disableTemperature {
@@ -180,6 +180,15 @@ func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []C
 		return "", errors.New("LLM returned no choices")
 	}
 	result := resp.Choices[0].Message.Content
+	// NOTE: 提取reasoning_content用于审计日志
+	reasoning := resp.Choices[0].Message.ReasoningContent
+	if reasoning != "" {
+		log.Printf("[llm-reasoning] session=%s model=%s len=%d",
+			sessionIDFromContext(ctx), p.model, len([]rune(reasoning)))
+		if llmDebug {
+			log.Printf("[llm-reasoning-full] %s", reasoning)
+		}
+	}
 	if llmDebug {
 		elapsed := time.Since(start)
 		log.Printf("[llm] Chat done model=%s elapsed=%.0fms response_len=%d",
@@ -233,6 +242,12 @@ func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messag
 			}
 			for _, choice := range resp.Choices {
 				token := choice.Delta.Content
+				// NOTE: 捕获流式reasoning token用于审计
+				reasoningToken := choice.Delta.ReasoningContent
+				if reasoningToken != "" {
+					log.Printf("[llm-reasoning-stream] session=%s model=%s token_len=%d",
+						sessionIDFromContext(ctx), p.model, len([]rune(reasoningToken)))
+				}
 				if token == "" {
 					continue
 				}

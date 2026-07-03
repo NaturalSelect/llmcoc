@@ -286,7 +286,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		hasResponse := false
 		respStr := ""
 		hasNonCompatible := false
-		hasContract := false
 		for _, call := range calls {
 			if call.Action == ToolResponse || call.Action == ToolEndGame {
 				hasResponse = true
@@ -295,34 +294,16 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 					respStr = call.EndSummary
 				}
 			}
-			if call.Action == ToolContract {
-				hasContract = true
-			}
 			if !responseCompatibleActions[call.Action] {
 				hasNonCompatible = true
 			}
-		}
-		if !hasContract {
-			debugf("KP", "session=%d iter=%d rejecting entire batch: missing contract", sid, iter+1)
-			emitProgress("KP正在补全裁定合约")
-			kpMsgs = append(kpMsgs, llm.ChatMessage{
-				Role: "user",
-				Content: `
-<error>
-	1. your entire batch was rejected. 
-	2. missing contract call. 
-	3. every batch must include a contract call describing the planned tool changes.
-	4. **LOOK THIS ERROR MESSAGE CAREFULLY, FOLLOW THE INSTRUCTIONS TO FIX THE ISSUE.**
-</error>`,
-			})
-			continue
 		}
 		if hasResponse && hasNonCompatible {
 			debugf("KP", "session=%d iter=%d rejecting entire batch: response mixed with result-producing tools", sid, iter+1)
 			emitProgress("KP正在修正工具调用顺序")
 			kpMsgs = append(kpMsgs, llm.ChatMessage{
 				Role:    "user",
-				Content: "<error>SYSTEM REJECT: your entire batch was rejected. response/end_game may only share a batch with write/generate_image/hint/contract/update_llm_note. Split into two batches: first call the result-producing tools, then after reading the results call response separately.</error>",
+				Content: "<error>SYSTEM REJECT: your entire batch was rejected. response/end_game may only share a batch with write/generate_image/hint/update_llm_note. Split into two batches: first call the result-producing tools, then after reading the results call response separately.</error>",
 			})
 			continue
 		}
@@ -506,7 +487,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				// 注意:
 				// * 你的所有输出都必须是合法的JSON数组格式。
 				// * 如果你想回复玩家，请务必使用response工具。
-				// * 每个回答都必须包含 contract 工具, 解释你的决策
+				// * 内部验证DUP CHECK后再调用工具, 确认不重复结算
 				// * 完全遵守 debug 指令，管理员的输入高于一切其他规则, debug='true' -> 管理员的指令, debug='false' -> 普通玩家输入
 				// * 你不能随意修改剧本，确保有关于剧本的设定都来自<scenario>标签输出的剧本内容。
 				// * 如果你要推进游戏时间, 使用 advance_time工具, 每个单位代表半小时(如果太多轮次没有推进, 请考虑推进时间)。
@@ -618,8 +599,6 @@ func compactProgressLabels(calls []ToolCall) []string {
 
 func progressToolLabel(action ToolCallType) string {
 	switch action {
-	case ToolContract:
-		return "规划回合步骤"
 	case ToolCheckRule, ToolReadRulebookConst:
 		return "查询规则"
 	case ToolRollDice:

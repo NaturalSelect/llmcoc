@@ -259,7 +259,7 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 func (r *scripterRoom) prepareContext() {
 	r.npcBlacklist = loadRecentNPCNameBlacklist(200, r.sessionID)
 	r.titleSamples = loadScenarioTitleSamples(80, r.sessionID)
-	r.mythosBlacklist = loadRecentMythosAnchors(200, r.sessionID)
+	r.mythosBlacklist = loadRecentMythosAnchors(100, r.sessionID)
 	log.Printf("[scripter] session=%s context prepared npc_blacklist=%d title_samples=%d mythos_blacklist=%d",
 		r.sessionID, len(r.npcBlacklist), len(r.titleSamples), len(r.mythosBlacklist))
 }
@@ -1223,7 +1223,6 @@ func parseJSONObject[T any](raw string, out *T) error {
 
 type scripterToolCall struct {
 	Action     string         `json:"action"`
-	Contract   string         `json:"contract,omitempty"`
 	Question   string         `json:"question,omitempty"`
 	Constant   string         `json:"constant,omitempty"`
 	Reason     string         `json:"reason,omitempty"`

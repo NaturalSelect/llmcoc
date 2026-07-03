@@ -61,7 +61,6 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolWrite:             true,
 	ToolHint:              true,
 	ToolGenerateImage:     true,
-	ToolContract:          true,
 	ToolUpdateLLMNote:     true,
 	ToolUpdateNPCLLMNote:  true,
 	ToolUpdateLocation:    true,
@@ -115,7 +114,6 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolHint:               hintAction{},
 	ToolGenerateImage:      generateImageAction{},
 	ToolResponse:           responseAction{},
-	ToolContract:           emptyAction{actionName: string(ToolContract)},
 	ToolReport:             reportAction{},
 }
 
