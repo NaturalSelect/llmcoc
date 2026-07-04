@@ -47,11 +47,36 @@ func (r oneshotResult) toScenarioDraft() ScenarioDraft {
 }
 
 // oneshotExample is the JSON schema example used for parsing/repair prompts.
-const oneshotExample = `{"reward_concept":"与食尸鬼有关的古籍手稿","name":"示例模组","description":"围绕派系时间线和调查员可拉动杠杆展开的COC情境简报。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。","setting":"镇图书馆连续三夜有书籍失踪，守墓人向警方报告了一个体型异常的入侵者。","tone_tags":["gothic","slow-burn","occult-noir"],"horror_mode":"gothic_horror","invest_focus":"artifact_theft","intro":"你们进入局势。立即可做的事：①询问守墓人入侵者描述；②检查失窃书目；③决定是否公开异常气味。","game_start_slot":16,"map_description":"【文字地图】图书馆→书架区↔档案室↔墓地。","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。","scenes":[{"id":"library_main","name":"图书馆大厅","description":"可见：失窃公告。可发现：书目来自同一捐赠者。杠杆：公开规律会导致图书馆关闭。风险：拖延三天后永久关闭。出口：书架区、档案室。感官：潮湿泥土气息与旧纸味格格不入。","triggers":["available_from_start"]}],"npcs":[{"name":"守墓人Henrik","description":"公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。","attitude":"警惕、简短","stats":{"STR":55,"CON":60,"SIZ":65,"DEX":50,"APP":40,"INT":55,"POW":50,"EDU":55,"SAN":50,"HP":12,"MP":10}}],"clues":["[真实]失窃书目规律(书架区): 全部来自同一捐赠者。","[隐藏]神话本质(墓地): 食尸鬼是死者变形后的存在，保留人类记忆；SAN检定1/1d6；具体属性按规则书裁定。","[误导]守墓人描述(大厅): 体型异常、动作迅速、指甲带泥土——守墓人坚称是惯偷活人趁夜盗墓；此说在真相揭晓后仍部分成立：那些体征确实像活人窃贼，只是掩盖了入侵者本是食尸鬼这一核心；排除「活人盗贼」解释不会堵死调查，反而促使调查员核对泥土成分与墓地痕迹。"],"win_condition":"如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。","lose_condition":"如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。","partial_wins":["如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"]}}`
+const oneshotExample = `{"reward_concept":"与食尸鬼有关的古籍手稿","name":"示例模组","description":"一座宁静小镇的老图书馆正在整理一批新到的捐赠藏书，馆方邀请你们前来协助编目。一次寻常的委托，一段关于旧书与小镇的日子就此开始。","author":"agent-team","tags":"sandbox,coc","min_players":1,"max_players":4,"difficulty":"normal","content":{"system_prompt":"你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。","setting":"初秋的傍晚，你们受镇图书馆之邀前来协助整理一批新捐赠的藏书。馆内灯光温暖，管理员热情地引你们入座，窗外街区安静而寻常。","tone_tags":["gothic","slow-burn","occult-noir"],"horror_mode":"gothic_horror","invest_focus":"artifact_theft","intro":"你们在图书馆大厅集合。管理员正在前台核对今天的编目清单，先去和她打个招呼也好；门口的访客登记簿还空着一栏，或者干脆四处走走，认认书架区和档案室的门朝哪边开。","game_start_slot":16,"map_description":"【文字地图】图书馆→书架区↔档案室↔墓地。","mythos_anchor":"食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。","scenes":[{"id":"library_main","name":"图书馆大厅","description":"可见：失窃公告。可发现：书目来自同一捐赠者。杠杆：公开规律会导致图书馆关闭。风险：拖延三天后永久关闭。出口：书架区、档案室。感官：潮湿泥土气息与旧纸味格格不入。","triggers":["available_from_start"]}],"npcs":[{"name":"守墓人Henrik","description":"公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。标志性细节：说话时总用拇指摩挲一把黄铜钥匙。关系：受馆长雇佣，与Douglas生前是牌友。","attitude":"警惕、简短","stats":{"STR":55,"CON":60,"SIZ":65,"DEX":50,"APP":40,"INT":55,"POW":50,"EDU":55,"SAN":50,"HP":12,"MP":10}}],"clues":["[真实]失窃书目规律(书架区): 全部来自同一捐赠者。","[隐藏]神话本质(墓地): 食尸鬼是死者变形后的存在，保留人类记忆；SAN检定1/1d6；具体属性按规则书裁定。","[误导]守墓人描述(大厅): 体型异常、动作迅速、指甲带泥土——守墓人坚称是惯偷活人趁夜盗墓；此说在真相揭晓后仍部分成立：那些体征确实像活人窃贼，只是掩盖了入侵者本是食尸鬼这一核心；排除「活人盗贼」解释不会堵死调查，反而促使调查员核对泥土成分与墓地痕迹。"],"win_condition":"如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。","lose_condition":"如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。","partial_wins":["如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"]}}`
 
 // ---------------------------------------------------------------------------
 // System prompt
 // ---------------------------------------------------------------------------
+
+// humanWritingRules 是人写化写作标准；architect 生成与 QA 审查共用同一份，避免双方标准漂移。
+const humanWritingRules = `- 具体性：散文要落在具体名词上——人名、地名、年份、器物、气味、价钱、路名；不堆叠"神秘的/诡异的/不祥的"等抽象形容词
+- 禁止编号与模板腔：description/setting/intro中不得出现①②③、1.2.3.、"首先/其次/最后"式结构或列表排版；开场行动选项用自然叙述带出
+- 句式错落：长短句交替；不连续使用三个以上结构雷同的句子；不写成对仗排比
+- 标题像人起的：不用"低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒"等滥用词；优先取材于剧本内的具体名词（地名、物件、日期、一句当地人的话）
+- NPC人味：每个重要NPC给一个标志性小细节（口头禅、习惯动作、随身物件、外貌特征选其一）；NPC之间至少存在两条现实关系（亲属/雇佣/债务/旧怨/邻里）；可以保留一个与主线无关的纯地方色彩NPC
+- 密度不均：允许一处地点信息厚重、另一些地点只有一两笔；不给每个地点机械配满同样数量的要素`
+
+// proseVoiceBlock 把随机抽取的作者声线注入用户消息；只约束文风质感，不改变字段功能。
+func proseVoiceBlock(constraints ScripterConstraints) string {
+	voice := strings.TrimSpace(constraints.ProseVoice)
+	if voice == "" {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("<prose_voice>\n")
+	sb.WriteString(fmt.Sprintf("voice: %s\n", voice))
+	if guide := proseVoiceGuides[voice]; guide != "" {
+		sb.WriteString(fmt.Sprintf("guide: %s\n", guide))
+	}
+	sb.WriteString("适用范围：只作用于name/description/setting/intro等玩家可见散文的用词与节奏；不改变字段的功能与信息要求；不使用信头、落款、日期行等格式排版；不影响scenes/npcs/clues的结构化要素。\n")
+	sb.WriteString("</prose_voice>")
+	return sb.String()
+}
 
 func oneshotSystemPrompt() string {
 	return `<role>COC7剧本生成专家</role>
@@ -70,10 +95,10 @@ func oneshotSystemPrompt() string {
 - 调查焦点必须使用用户消息 <diversity_constraints> 中指定的 invest_focus，不得自行替换；只允许把它落到具体事件
 
 要求：
-- 开场问题必须让调查员愿意主动调查
-- 不要先想战斗或Boss，而是先想调查员最初看到的异常
+- 剧本要给调查员一个自然的到场理由（受邀、路过、日常工作、访友等），异常在开场时尚未显露，需要玩家在调查中逐步发现
+- 不要先想战斗或Boss，而是先想调查员深入后会发现的异常；但这些异常写进scenes/clues，不写进开场的setting/intro
 - 至少设计两个表面相似或同期发生的事件：一个是通向核心真相的调查入口（主线事件），另一个是看似相关但最终指向无关结论的红鲱鱼（干扰事件）；两者必须有各自的完整线索链，红鲱鱼在排除后不能导致剧情卡死
-- brief若为空，也必须先构造一个可调查的表层事件
+- brief若为空，也必须先构造一个可调查的表层事件（同样只在调查中揭示，不在开场剧透）
 
 【步骤②：COC神话元素选择与验证】
 通过 translate_anchor 工具将核心概念翻译为COC7规则书元素：
@@ -93,6 +118,7 @@ func oneshotSystemPrompt() string {
 场景要求：
 - 至少隐含导入、调查、启示、高潮、余波这几个功能中的大部分；不要求显式分标题，但内容要能承载这些阶段
 - 每个scene必须包含：可见信息、可发现信息、杠杆、风险、出口、感官细节
+- 地点密度允许不均：可以一处地点信息厚重、其余地点简笔带过，不要机械地给每个地点配满同样体量的内容
 - 场景应区分相对安全区、危险区、接近神话本质的区域
 - 场景需要随着调查推进而解锁，而不是一股脑全开
 
@@ -118,6 +144,9 @@ func oneshotSystemPrompt() string {
 NPC应承担叙事功能，而不是填表：
 - 至少考虑知情者、阻碍者、牺牲品/示警者中的若干角色
 - 每个重要NPC要有公开身份、议程、秘密或保留信息的理由
+- 每个重要NPC给一个标志性小细节（口头禅、习惯动作、随身物件、外貌特征选其一），写进description
+- NPC之间要有现实关系网（亲属、雇佣、债务、旧怨、邻里），不是彼此孤立的功能件
+- 可以保留一个与主线无关的纯地方色彩NPC，让世界看起来不是专为调查员布置的舞台
 
 时间线要求：
 - 必须存在“过去线”痕迹：事情为何发展到现在
@@ -135,9 +164,20 @@ SAN要求：
 ✓ 每个intervention_pivot是具体可执行动作？
 ✓ 恐怖体验是否呈渐进式升级，而不是一上来直接终极真相？
 
+【写作质感要求（反AI腔）】
+成品要读起来像人类作者写的模组，而不是AI生成的设计文档：
+` + humanWritingRules + `
+- 用户消息<prose_voice>指定了本剧本的作者声线；name/description/setting/intro按该声线书写
+- scenes/npcs的"可见/可发现/杠杆"等结构化要素标签保留（KP运行需要），但要素内容必须具体、不套话
+
 【步骤⑤：剧本编译最终检查】
-✓ setting只描述表层视角，未泄露核心真相？
-✓ intro包含至少3个立即可执行的具体行动？
+✓ description(简介)、setting(背景)、intro(开场)三者均为中性日常语气：读者/玩家从中看不出剧情、案件、真相、神话或恐怖走向，且不带任何惊悚、诡异、压抑或不祥的氛围词（如恐怖、诡异、血腥、亡魂、不祥、阴森、扭曲等）？
+✓ 恐怖与真相只存在于system_prompt(KP独有)、scenes、clues、mythos_anchor中，绝不出现在description/setting/intro？
+✓ setting只描述表层日常视角，未泄露核心真相，也未提前渲染恐怖气氛？
+✓ intro包含至少3个立即可执行的具体行动，且以平静日常语气给出，不预告危险？
+✓ description/setting/intro无编号列表、无"首先/其次"式排比、无模板腔，符合<prose_voice>声线？
+✓ 标题与散文落在具体名词上；标题不含"低语/深渊/阴影"等滥用词？
+✓ 每个重要NPC有标志性小细节，并嵌入NPC关系网？
 ✓ scenes体现调查网络、场景功能与五感氛围，而不是空泛地点介绍？
 ✓ clues每条以[真实]/[隐藏]/[误导]开头；至少一条[隐藏]神话本质涵盖mythos_anchor？
 ✓ [隐藏]神话本质说明中引用的所有法术名、物品名、怪物名、材质名均来自规则书（通过 translate_anchor 已确认），无自创元素？
@@ -151,6 +191,8 @@ SAN要求：
 ✓ 最终体验重点是”调查员亲手揭开可怕真相”，而不是”被剧情推着走”或”靠战斗通关”？
 
 其他硬性要求：
+- description(简介)、setting(背景)、intro(开场)必须是「冷开场」：以平静、日常、生活化的语气呈现一个看似普通的表层情境，只交代时代、地点、调查员为何到场和最初可做的事；读者和玩家从这三处看不出剧情走向、案件性质、幕后真相或神话存在，也读不到任何恐怖、惊悚、诡异、压抑、不祥的氛围。恐怖是玩家在调查中逐步自行发现的，不能在开场剧透或提前渲染。
+- 恐怖内核、真相、神话本质只能写进system_prompt(KP独有)、scenes、clues、mythos_anchor；严禁泄露到description/setting/intro。
 - 避免政治话题
 - 以克苏鲁宇宙恐惧为基调（渺小感、理智侵蚀、不可知深渊）
 - 禁用科学术语/现代技术细节，不要把神话现象解释成硬科幻或工程异常
@@ -171,8 +213,8 @@ submit.draft 必须包含以下字段：
 {
   "reward_concept": "通关奖励叙事概念（若无则留空字符串）",
   // ScenarioDraft 字段
-  "name": "剧本名称",
-  "description": "剧本描述",
+  "name": "剧本名称：取材于剧本内具体名词（地名/物件/日期/一句当地话），像人类作者起的名字；不用滥用恐怖词",
+  "description": "剧本简介：中性、不剧透的吸引性简介；读者从中看不出剧情、真相、案件或恐怖走向，也不带惊悚氛围",
   "author": "agent-team",
   "tags": "sandbox,coc",
   "min_players": 1,
@@ -180,11 +222,11 @@ submit.draft 必须包含以下字段：
   "difficulty": "normal",
   "content": {
     "system_prompt": "KP四项协议 + 核心真相注入",
-    "setting": "表层视角的当前局势（不泄露核心真相）",
+    "setting": "开场时的日常、平静表层局势；只交代时代、地点和调查员为何到场，读者看不出剧情、案件、真相或恐怖走向，不带任何惊悚/诡异/不祥氛围",
     "tone_tags": ["必须等于diversity_constraints.tone_tags中的标签"],
     "horror_mode": "必须等于diversity_constraints.horror_mode",
     "invest_focus": "必须等于diversity_constraints.invest_focus",
-    "intro": "入场位置 + 至少3个立即可执行的具体行动",
+    "intro": "入场位置（日常、平静语气）+ 至少3个立即可执行的具体行动；用自然叙述带出行动选项，禁止①②③等编号列表；不预告危险、不渲染恐怖、不暗示真相",
     "game_start_slot": 16,
     "map_description": "文字地图；体现可回访、可交叉验证的调查网络",
     "mythos_anchor": "translate_anchor确认的COC7元素全称",
@@ -666,6 +708,7 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 		`<request_json>%s</request_json>
 <constraints>%s</constraints>
 %s
+%s
 <recently_used_mythos_anchors>
 %s
 </recently_used_mythos_anchors>
@@ -680,6 +723,7 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 请设计并生成完整的COC7剧本。`,
 		string(reqJSON), string(constraintsJSON),
 		diversityConstraintsBlock(constraints),
+		proseVoiceBlock(constraints),
 		formatMythosBlacklist(room.mythosBlacklist),
 		formatNPCNameBlacklist(room.npcBlacklist),
 		formatScenarioTitleBlacklist(room.titleSamples),
@@ -716,13 +760,15 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 		`<request_json>%s</request_json>
 <constraints>%s</constraints>
 %s
+%s
 <previous_draft>%s</previous_draft>
 <must_fix>
 %s
 </must_fix>
-请修复上述问题并重新调用translate_anchor验证神话元素，然后通过submit提交修复后的完整剧本JSON。不要只改措辞；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags。`,
+请修复上述问题并重新调用translate_anchor验证神话元素，然后通过submit提交修复后的完整剧本JSON。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags。`,
 		string(reqJSON), string(constraintsJSON),
 		diversityConstraintsBlock(constraints),
+		proseVoiceBlock(constraints),
 		string(prevJSON),
 		strings.Join(issues, "\n"),
 	)
@@ -742,6 +788,90 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 	log.Printf("[scripter:oneshot_repair] session=%s done name=%q scenes=%d npcs=%d clues=%d",
 		sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 	return draft, nil
+}
+
+// ---------------------------------------------------------------------------
+// QA humanization review — 用闲置的 QA agent 审查 AI 腔，问题清单喂给修复循环
+// ---------------------------------------------------------------------------
+
+type qaReviewResult struct {
+	Issues []string `json:"issues"`
+}
+
+const qaReviewSchemaExample = `{"issues":["intro使用了①②③编号列表，应改为自然叙述","NPC 陈默 缺少标志性小细节，可补一个习惯动作"]}`
+
+// qaReviewSystemPrompt 与 architect 共用 humanWritingRules，保证审查标准一致。
+func qaReviewSystemPrompt() string {
+	return `<role>剧本人写化审查员</role>
+<task>审查AI生成的COC剧本文本是否带有"AI腔"，输出必须整改的问题清单。只审文字质感与人味，不审剧情设计、规则正确性或结构完整性。</task>
+<standards>
+` + humanWritingRules + `
+</standards>
+<scope>
+- 编号/模板腔禁令只适用于name/description/setting/intro（玩家可见散文）
+- scenes.description与npcs.description是KP用的结构化数据，保留"可见/可发现/杠杆/公开身份/议程/秘密"等要素标签是正常的，不要因此报问题；但要素内容若空泛套话（如"异常的气味""神秘的声音"）应报问题
+- description/setting/intro必须保持日常、平静、无恐怖氛围、不剧透真相；若违反必须报告（这是硬约束）
+- <prose_voice>是本剧本的作者声线，仅当散文明显是说明文/设计文档腔时才报问题，不苛求声线完美贴合
+</scope>
+<output>只输出JSON对象：{"issues":["问题1","问题2"]}；每条问题指明字段或对象名并给出可执行的修改方向；按严重程度排序，最多8条；没有问题输出{"issues":[]}。</output>`
+}
+
+// buildQAReviewPayload 只送审文字质感相关字段，剔除stats等噪音，控制token开销。
+func buildQAReviewPayload(draft *ScenarioDraft) map[string]any {
+	scenes := make([]map[string]string, 0, len(draft.Content.Scenes))
+	for _, s := range draft.Content.Scenes {
+		scenes = append(scenes, map[string]string{"name": s.Name, "description": s.Description})
+	}
+	npcs := make([]map[string]string, 0, len(draft.Content.NPCs))
+	for _, n := range draft.Content.NPCs {
+		npcs = append(npcs, map[string]string{"name": n.Name, "description": n.Description, "attitude": n.Attitude})
+	}
+	return map[string]any{
+		"name":        draft.Name,
+		"description": draft.Description,
+		"setting":     draft.Content.Setting,
+		"intro":       draft.Content.Intro,
+		"scenes":      scenes,
+		"npcs":        npcs,
+		"clues":       draft.Content.Clues,
+	}
+}
+
+// runOneshotQAReview 返回人写化整改清单；审查不可用或失败时返回nil（非致命，跳过即可）。
+func runOneshotQAReview(ctx context.Context, room *scripterRoom, draft *ScenarioDraft, constraints ScripterConstraints) []string {
+	if room == nil || room.qa.provider == nil || draft == nil {
+		return nil
+	}
+	sessionID := scripterSessionID(ctx, room)
+	payloadJSON, err := json.Marshal(buildQAReviewPayload(draft))
+	if err != nil {
+		log.Printf("[scripter:qa_humanize] session=%s marshal payload failed: %v", sessionID, err)
+		return nil
+	}
+	userMsg := fmt.Sprintf(`%s
+<draft_for_review>%s</draft_for_review>
+请按standards审查以上剧本文本，输出问题清单JSON。`,
+		proseVoiceBlock(constraints), string(payloadJSON))
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: room.qa.systemPrompt(qaReviewSystemPrompt())},
+		{Role: "user", Content: userMsg},
+	}
+	logStagePrompt("qa_humanize", sessionID, msgs)
+	var result qaReviewResult
+	if err := chatAndParseJSON(ctx, room.qa, room.parser, msgs, &result, qaReviewSchemaExample, "qa_humanize"); err != nil {
+		log.Printf("[scripter:qa_humanize] session=%s review failed: %v (skipping)", sessionID, err)
+		return nil
+	}
+	issues := make([]string, 0, len(result.Issues))
+	for _, issue := range result.Issues {
+		if issue = strings.TrimSpace(issue); issue != "" {
+			issues = append(issues, "[人写化] "+issue)
+		}
+	}
+	if len(issues) > 8 {
+		issues = issues[:8]
+	}
+	return issues
 }
 
 // ---------------------------------------------------------------------------
@@ -768,7 +898,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		draft.Name = strings.TrimSpace(req.Name)
 	}
 	if strings.TrimSpace(draft.Description) == "" {
-		draft.Description = "围绕派系时间线和调查员可拉动杠杆展开的COC情境简报。"
+		draft.Description = "一段看似寻常的经历正在等待几位到访者。接受这份邀约，故事便从平常的一天开始。"
 		log.Printf("[scripter:normalize] session=%s filled description", sessionID)
 	}
 	if draft.Author != author {
@@ -811,14 +941,13 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	}
 	if strings.TrimSpace(draft.Content.Setting) == "" {
 		draft.Content.Setting = fmt.Sprintf(
-			"%s的%s中，调查员面对一个已经开始运动的局势：%s。公开层面只看得到表象、地方压力和派系互相遮掩；无人干预时，各方会按自己的时间线继续行动。",
+			"%s的%s。这是平常的一天，你们因各自的缘由来到此地，眼前的一切安静而寻常，尚无任何异样。",
 			constraints.Era, strings.Join(constraints.GeographyFlavor, " / "),
-			"一个可被多种方式解读的局势已经开始",
 		)
 		log.Printf("[scripter:normalize] session=%s filled setting", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.Intro) == "" {
-		draft.Content.Intro = "你们进入局势。眼前可立即行动：前往最近的关键地点，询问公开目击者，或决定是否把已知异常告诉某个派系。"
+		draft.Content.Intro = "你们抵达此地。可以先四处走走熟悉环境，与在场的人搭上几句话，或者安顿下来处理手头的事。"
 		log.Printf("[scripter:normalize] session=%s filled intro", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.MapDescription) == "" {

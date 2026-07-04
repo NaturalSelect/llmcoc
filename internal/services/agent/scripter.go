@@ -109,6 +109,26 @@ var investFocusChineseLabels = map[string]string{
 	"identity_replacement": "身份替换：从某人不再像本人或关系证据矛盾进入调查",
 }
 
+// NOTE: 散文声线池：每次生成随机注入一种"作者声线"，让玩家可见散文（简介/背景/开场）
+// 摆脱统一的设计文档腔，更接近人类作者的文风。只影响用词与节奏，不影响剧情事实。
+var scripterProseVoices = []string{
+	"地方志体",
+	"新闻纪实体",
+	"冷硬白描体",
+	"口述回忆体",
+	"田园散文体",
+	"旅行手记体",
+}
+
+var proseVoiceGuides = map[string]string{
+	"地方志体":  "以县志、地方志的平实笔调记录地点、物产与人事；克制，不渲染，不评价",
+	"新闻纪实体": "像地方报纸的纪实报道：时间、地点、人名具体，句子短，只陈述可核实的事",
+	"冷硬白描体": "短句白描，落在具体名词上，少用形容词；观察者视角，不抒情",
+	"口述回忆体": "像当事人事后向熟人讲述：带一点口语衬词，偶尔停在某个具体小物件上，再拉回正题",
+	"田园散文体": "季节、天气、日常劳作的舒缓白描；节奏慢，细节温和",
+	"旅行手记体": "途中见闻的实用记录：路线、食宿、价钱、风物，偶有一句节制的个人感想",
+}
+
 func defaultScripterEra() string {
 	return scriptEra[rand.Intn(len(scriptEra))]
 }
@@ -320,6 +340,25 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 			sessionID, round, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 	}
 
+	// 人写化审查：QA 审 AI 腔与写作质感，问题清单走一轮修复；失败不阻塞生成
+	log.Printf("[scripter] session=%s stage=qa_humanize start", sessionID)
+	if qaIssues := runOneshotQAReview(ctx, r, &draft, constraints); len(qaIssues) > 0 {
+		log.Printf("[scripter] session=%s stage=qa_humanize issues=%d %v", sessionID, len(qaIssues), qaIssues)
+		logScripterArtifact("QA Humanize Issues", sessionID, qaIssues)
+		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, qaIssues)
+		if repairErr != nil {
+			log.Printf("[scripter] session=%s stage=qa_humanize repair failed: %v (keeping draft)", sessionID, repairErr)
+		} else {
+			draft = repaired
+			applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
+			iterations++
+			log.Printf("[scripter] session=%s stage=qa_humanize done name=%q scenes=%d npcs=%d clues=%d",
+				sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+		}
+	} else {
+		log.Printf("[scripter] session=%s stage=qa_humanize no issues", sessionID)
+	}
+
 	// Reward agent (isolated context, optional)
 	if strings.TrimSpace(rewardConcept) != "" {
 		log.Printf("[scripter] session=%s stage=reward_agent start concept=%q anchor=%q",
@@ -363,6 +402,7 @@ type ScripterConstraints struct {
 	HorrorMode      string   `json:"horror_mode"`
 	InvestFocus     string   `json:"invest_focus"`
 	ToneTags        []string `json:"tone_tags,omitempty"`
+	ProseVoice      string   `json:"prose_voice,omitempty"` // NOTE: 玩家可见散文的作者声线，只影响文风不影响事实
 	DiversitySource string   `json:"diversity_source,omitempty"` // NOTE: "ai"=AI围池选择，"fallback"=随机降级
 }
 
@@ -397,6 +437,9 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 	log.Printf("[scripter] session=%s diversity final horror_mode=%q invest_focus=%q tone_tags=%q source=%q",
 		sessionID, horrorMode, investFocus, strings.Join(toneTags, ","), source)
 
+	proseVoice := scripterProseVoices[rand.Intn(len(scripterProseVoices))]
+	log.Printf("[scripter] session=%s prose_voice=%q", sessionID, proseVoice)
+
 	return ScripterConstraints{
 		Era:             r.req.Era,
 		Theme:           firstNonEmpty(r.req.Theme, ""),
@@ -407,6 +450,7 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		HorrorMode:      horrorMode,
 		InvestFocus:     investFocus,
 		ToneTags:        toneTags,
+		ProseVoice:      proseVoice,
 		DiversitySource: source,
 	}
 }
