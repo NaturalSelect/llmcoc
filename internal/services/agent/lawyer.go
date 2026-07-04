@@ -261,8 +261,8 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 			msgs[len(msgs)-1].Content = mark + "\n" + msgs[len(msgs)-1].Content
 		}
 		if len(calls) == 0 {
-			log.Printf("[lawyer] iter %d: no parseable calls, aborting", iter)
-			return nil
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "你必须输出一个非空的JSON数组, 且数组中每个元素必须是合法的工具调用对象。"})
+			continue
 		}
 
 		// ── save_cache + response: handle output actions ────────────────────
