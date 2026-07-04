@@ -151,6 +151,9 @@ func (rollDiceAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	dcr := executeSingleDiceCheck(*call.Dice, actx.GCtx.Session.Players)
 	debugf("tool", "session=%d roll_dice result=%s", actx.Sid, formatSingleDiceResult(dcr))
+	if dcr.Roll == 0 {
+		return []ToolResult{{Action: ToolRollDice, Result: fmt.Sprintf("不支持的表达式: %v", call.Dice.DiceExpr)}}
+	}
 	if !dcr.Hidden {
 		*actx.DiceMsg += fmt.Sprintf("%s; ", formatSingleDiceResult(dcr))
 	}
