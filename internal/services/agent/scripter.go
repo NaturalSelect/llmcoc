@@ -402,7 +402,7 @@ type ScripterConstraints struct {
 	HorrorMode      string   `json:"horror_mode"`
 	InvestFocus     string   `json:"invest_focus"`
 	ToneTags        []string `json:"tone_tags,omitempty"`
-	ProseVoice      string   `json:"prose_voice,omitempty"` // NOTE: 玩家可见散文的作者声线，只影响文风不影响事实
+	ProseVoice      string   `json:"prose_voice,omitempty"`      // NOTE: 玩家可见散文的作者声线，只影响文风不影响事实
 	DiversitySource string   `json:"diversity_source,omitempty"` // NOTE: "ai"=AI围池选择，"fallback"=随机降级
 }
 
@@ -1189,7 +1189,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: "你是 JSON 修复工具。用户会给你一段有问题的 JSON 和错误信息,你需要修复它使其匹配目标格式。仅输出修正后的合法 JSON,不要有任何其他文字。"},
 	}
-	const maxAttempts = 20
+	const maxAttempts = 200
 	currentErr := parseErr
 	raw := rawJSON
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
