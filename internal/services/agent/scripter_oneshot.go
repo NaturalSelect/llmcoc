@@ -360,7 +360,7 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 
 		// submit must be alone
 		if oneshotSubmitMixed(calls) {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit必须单独一轮输出，不能和translate_anchor或任何其他action混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；若已有足够信息，下一轮只输出一个submit。"})
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 1. 你输出的JSON不合法; 2. submit必须单独一轮输出，不能和translate_anchor或任何其他action混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；若已有足够信息，下一轮只输出一个submit。"})
 			continue
 		}
 
