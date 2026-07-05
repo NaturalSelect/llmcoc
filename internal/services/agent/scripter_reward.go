@@ -43,7 +43,18 @@ const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
 - 仔细思考，考虑设计一个有趣的奖励，避免过于平庸或过于强力的奖励；如果概念本身很弱，考虑在respond中设计一个更有趣的奖励来替代概念，但必须有规则书裁定作为支持。奖励设计要兼顾叙事和机制，避免纯叙事或纯数值提升。
 </design_rules>`
 
-const rewardAgentToolCallExample = `[{"action":"ask_lawyer","question":"COC7规则书中与食尸鬼相关的典籍有哪些？阅读SAN代价和学习收益各是什么？"}]`
+var rewardAgentToolCallExample = func() string {
+	data, err := json.Marshal([]rewardAgentCall{
+		{
+			Action:   toolTranslatorAskLawyer,
+			Question: "COC7规则书中与食尸鬼相关的典籍有哪些？阅读SAN代价和学习收益各是什么？",
+		},
+	})
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}()
 
 // rewardAgentCall is a tool call in the reward agent's dispatch loop.
 type rewardAgentCall struct {
