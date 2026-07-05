@@ -288,7 +288,7 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		log.Printf("[scripter:oneshot_loop] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
-		calls, parseErr := parseOneshotArchitectToolCalls(ctx, room.parser, raw)
+		calls, parseErr := parseOneshotArchitectToolCalls(ctx, raw)
 		if parseErr != nil {
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
 			continue
@@ -354,24 +354,22 @@ func oneshotSubmitMixed(calls []oneshotArchitectToolCall) bool {
 	return submitCount > 0 && len(calls) != 1
 }
 
-func parseOneshotArchitectToolCalls(ctx context.Context, parser agentHandle, raw string) ([]oneshotArchitectToolCall, error) {
+func parseOneshotArchitectToolCalls(ctx context.Context, raw string) ([]oneshotArchitectToolCall, error) {
 	stripped := strings.TrimSpace(llm.StripCodeFence(llm.JsonArryProtect(raw)))
 	var calls []oneshotArchitectToolCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
+	err := json.Unmarshal([]byte(stripped), &calls)
+	if err == nil {
 		return calls, nil
-	} else if parser.provider != nil {
-		fixed, repairErr := repairJSONWith(ctx, parser, stripped, err, oneshotArchitectToolCallExample)
-		if repairErr != nil {
-			return nil, repairErr
-		}
-		fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
-		if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
-			return nil, err2
-		}
-		return calls, nil
-	} else {
-		return nil, err
 	}
+	fixed, repairErr := RepairJSON(ctx, stripped, err, oneshotArchitectToolCallExample)
+	if repairErr != nil {
+		return nil, repairErr
+	}
+	fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
+	if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
+		return nil, err2
+	}
+	return calls, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -516,7 +514,7 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 		log.Printf("[scripter:oneshot_translator] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
-		calls, parseErr := parseOneshotTranslatorToolCalls(ctx, room.parser, raw)
+		calls, parseErr := parseOneshotTranslatorToolCalls(ctx, raw)
 		if parseErr != nil {
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
 			continue
@@ -584,24 +582,22 @@ func oneshotTranslatorRespondMixed(calls []oneshotTranslatorToolCall) bool {
 	return n > 0 && len(calls) != 1
 }
 
-func parseOneshotTranslatorToolCalls(ctx context.Context, parser agentHandle, raw string) ([]oneshotTranslatorToolCall, error) {
+func parseOneshotTranslatorToolCalls(ctx context.Context, raw string) ([]oneshotTranslatorToolCall, error) {
 	stripped := strings.TrimSpace(llm.StripCodeFence(llm.JsonArryProtect(raw)))
 	var calls []oneshotTranslatorToolCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
+	err := json.Unmarshal([]byte(stripped), &calls)
+	if err == nil {
 		return calls, nil
-	} else if parser.provider != nil {
-		fixed, repairErr := repairJSONWith(ctx, parser, stripped, err, oneshotTranslatorToolCallExample)
-		if repairErr != nil {
-			return nil, repairErr
-		}
-		fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
-		if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
-			return nil, err2
-		}
-		return calls, nil
-	} else {
-		return nil, err
 	}
+	fixed, repairErr := RepairJSON(ctx, stripped, err, oneshotTranslatorToolCallExample)
+	if repairErr != nil {
+		return nil, repairErr
+	}
+	fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
+	if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
+		return nil, err2
+	}
+	return calls, nil
 }
 
 func oneshotTranslatorAskLawyer(ctx context.Context, room *scripterRoom, call oneshotTranslatorToolCall) string {
@@ -858,7 +854,7 @@ func runOneshotQAReview(ctx context.Context, room *scripterRoom, draft *Scenario
 	}
 	logStagePrompt("qa_humanize", sessionID, msgs)
 	var result qaReviewResult
-	if err := chatAndParseJSON(ctx, room.qa, room.parser, msgs, &result, qaReviewSchemaExample, "qa_humanize"); err != nil {
+	if err := chatAndParseJSON(ctx, room.qa, msgs, &result, qaReviewSchemaExample, "qa_humanize"); err != nil {
 		log.Printf("[scripter:qa_humanize] session=%s review failed: %v (skipping)", sessionID, err)
 		return nil
 	}

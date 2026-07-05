@@ -171,7 +171,6 @@ type scripterRoom struct {
 	architect       agentHandle
 	qa              agentHandle
 	lawyer          agentHandle
-	parser          agentHandle
 	sessionID       string
 	req             ScenarioCreationRequest
 	npcBlacklist    []string
@@ -223,12 +222,8 @@ func newScripterRoom(req ScenarioCreationRequest) (*scripterRoom, error) {
 	if err != nil {
 		return nil, err
 	}
-	parser, err := loadSingleAgent(models.AgentRoleParser)
-	if err != nil {
-		return nil, err
-	}
 	return &scripterRoom{
-		architect: architect, qa: qa, lawyer: lawyer, parser: parser,
+		architect: architect, qa: qa, lawyer: lawyer,
 		req: normalizeScenarioCreationRequest(req),
 	}, nil
 }
@@ -1098,7 +1093,7 @@ func lengthSpec(targetLength string) string {
 // JSON repair helpers
 // ---------------------------------------------------------------------------
 
-func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser agentHandle, msgs []llm.ChatMessage, out *T, schemaExample string, tag string) error {
+func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, msgs []llm.ChatMessage, out *T, schemaExample string, tag string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -1122,7 +1117,7 @@ func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser 
 		return nil
 	}
 	log.Printf("[scripter:%s] session=%s JSON parse failed: %v raw=%s", tag, sessionID, parseErr, truncateRunes(raw, scripterRawLogLimit))
-	fixed, repairErr := repairJSONWith(ctx, parser, raw, parseErr, schemaExample)
+	fixed, repairErr := RepairJSON(ctx, raw, parseErr, schemaExample)
 	if repairErr != nil {
 		return fmt.Errorf("%s JSON 修复失败: %w (原始错误: %v)", tag, repairErr, parseErr)
 	}
@@ -1130,7 +1125,7 @@ func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser 
 		return nil
 	} else {
 		log.Printf("[%s] session=%s parser output schema mismatch, retry parser: %v", tag, sessionID, err)
-		repairedAgain, repairErr2 := repairJSONWith(ctx, parser, fixed, err, schemaExample)
+		repairedAgain, repairErr2 := RepairJSON(ctx, fixed, err, schemaExample)
 		if repairErr2 != nil {
 			return fmt.Errorf("修复后的 %s JSON 结构仍不匹配,二次修复失败: %w", tag, repairErr2)
 		}
@@ -1314,7 +1309,7 @@ func validateScripterResponsePayload(call scripterToolCall, expected string) err
 	return nil
 }
 
-func parseScripterToolCalls(ctx context.Context, parser agentHandle, raw string, schemaExample string) ([]scripterToolCall, error) {
+func parseScripterToolCalls(ctx context.Context, raw string, schemaExample string) ([]scripterToolCall, error) {
 	stripped := strings.TrimSpace(llm.StripCodeFence(raw))
 	var calls []scripterToolCall
 	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
@@ -1331,10 +1326,7 @@ func parseScripterToolCalls(ctx context.Context, parser agentHandle, raw string,
 				}
 			}
 		}
-		if parser.provider == nil {
-			return nil, fmt.Errorf("必须输出JSON数组: %w", parseErr)
-		}
-		fixed, repairErr := repairJSONWith(ctx, parser, stripped, parseErr, schemaExample)
+		fixed, repairErr := RepairJSON(ctx, stripped, parseErr, schemaExample)
 		if repairErr != nil {
 			return nil, repairErr
 		}

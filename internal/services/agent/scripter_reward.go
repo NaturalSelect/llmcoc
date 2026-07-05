@@ -105,7 +105,7 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 		log.Printf("[scripter:reward_agent] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
-		calls, parseErr := parseRewardAgentToolCalls(ctx, room.parser, raw)
+		calls, parseErr := parseRewardAgentToolCalls(ctx, raw)
 		if parseErr != nil {
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
 			continue
@@ -177,24 +177,22 @@ func rewardRespondMixed(calls []rewardAgentCall) bool {
 	return respondCount > 0 && len(calls) != 1
 }
 
-func parseRewardAgentToolCalls(ctx context.Context, parser agentHandle, raw string) ([]rewardAgentCall, error) {
+func parseRewardAgentToolCalls(ctx context.Context, raw string) ([]rewardAgentCall, error) {
 	stripped := strings.TrimSpace(llm.StripCodeFence(llm.JsonArryProtect(raw)))
 	var calls []rewardAgentCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
+	err := json.Unmarshal([]byte(stripped), &calls)
+	if err == nil {
 		return calls, nil
-	} else if parser.provider != nil {
-		fixed, repairErr := repairJSONWith(ctx, parser, stripped, err, rewardAgentToolCallExample)
-		if repairErr != nil {
-			return nil, repairErr
-		}
-		fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
-		if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
-			return nil, err2
-		}
-		return calls, nil
-	} else {
-		return nil, err
 	}
+	fixed, repairErr := RepairJSON(ctx, stripped, err, rewardAgentToolCallExample)
+	if repairErr != nil {
+		return nil, repairErr
+	}
+	fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
+	if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
+		return nil, err2
+	}
+	return calls, nil
 }
 
 func rewardAgentAskLawyer(ctx context.Context, room *scripterRoom, question string) string {
