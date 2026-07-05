@@ -1241,6 +1241,18 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 	return "", fmt.Errorf("parser 修复失败(%d次尝试)", maxAttempts)
 }
 
+// marshalExample renders a fully-populated value as a compact JSON string for use
+// in schema/repair prompts. The value must marshal cleanly; a marshal failure means
+// the example itself is malformed, so it panics at init time rather than silently
+// emitting an empty string that would hide the whole structure from the repair LLM.
+func marshalExample(v any) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("marshalExample: %v", err))
+	}
+	return string(data)
+}
+
 func parseJSONObject[T any](raw string, out *T) error {
 	stripped := llm.StripCodeFence(strings.TrimSpace(raw))
 	if err := json.Unmarshal([]byte(stripped), out); err == nil {
@@ -1262,11 +1274,11 @@ func parseJSONObject[T any](raw string, out *T) error {
 
 type scripterToolCall struct {
 	Action     string         `json:"action"`
-	Question   string         `json:"question"`
-	Constant   string         `json:"constant"`
-	Reason     string         `json:"reason"`
-	Background *FogBackground `json:"background"`
-	Draft      *ScenarioDraft `json:"draft"`
+	Question   string         `json:"question,omitempty"`
+	Constant   string         `json:"constant,omitempty"`
+	Reason     string         `json:"reason,omitempty"`
+	Background *FogBackground `json:"background,omitempty"`
+	Draft      *ScenarioDraft `json:"draft,omitempty"`
 }
 
 type FogBackground struct {
@@ -1339,11 +1351,26 @@ func parseScripterToolCalls(ctx context.Context, raw string, schemaExample strin
 func scripterSchemaExample(expected string) string {
 	switch expected {
 	case "background":
-		return `[{"action":"response","reason":"这个公开背景保留了用户brief并给出调查入口。","background":{"time_and_place":"时代与地点","investigator_hook":"调查入口"}}]`
+		return marshalExample([]scripterToolCall{{
+			Action: "response",
+			Reason: "这个公开背景保留了用户brief并给出调查入口。",
+			Background: &FogBackground{
+				TimeAndPlace:     "时代与地点",
+				InvestigatorHook: "调查入口",
+			},
+		}})
 	case "draft":
-		return `[{"action":"response","reason":"最终草案兼容ScenarioContent并保持剧本语义。","draft":` + oneshotExample + `}]`
+		draft := oneshotResultExample.toScenarioDraft()
+		return marshalExample([]scripterToolCall{{
+			Action: "response",
+			Reason: "最终草案兼容ScenarioContent并保持剧本语义。",
+			Draft:  &draft,
+		}})
 	default:
-		return `[{"action":"response","reason":"解释为什么这样响应。"}]`
+		return marshalExample([]scripterToolCall{{
+			Action: "response",
+			Reason: "解释为什么这样响应。",
+		}})
 	}
 }
 

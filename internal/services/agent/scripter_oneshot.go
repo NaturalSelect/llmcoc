@@ -23,8 +23,8 @@ import (
 // Output type
 // ---------------------------------------------------------------------------
 
-// oneshotResult is the JSON payload inside the architect's submit tool call.
-type oneshotResult struct {
+// OneshotResult is the JSON payload inside the architect's submit tool call.
+type OneshotResult struct {
 	RewardConcept string `json:"reward_concept"`
 	// ScenarioDraft fields
 	Name        string                 `json:"name"`
@@ -37,7 +37,7 @@ type oneshotResult struct {
 	Content     models.ScenarioContent `json:"content"`
 }
 
-func (r oneshotResult) toScenarioDraft() ScenarioDraft {
+func (r OneshotResult) toScenarioDraft() ScenarioDraft {
 	return ScenarioDraft{
 		Name: r.Name, Description: r.Description,
 		Author: r.Author, Tags: r.Tags,
@@ -46,58 +46,56 @@ func (r oneshotResult) toScenarioDraft() ScenarioDraft {
 	}
 }
 
-// oneshotExample is the JSON schema example used for parsing/repair prompts.
-var oneshotExample = func() string {
-	data, err := json.Marshal(oneshotResult{
-		RewardConcept: "与食尸鬼有关的古籍手稿",
-		Name:          "示例模组",
-		Description:   "一座宁静小镇的老图书馆正在整理一批新到的捐赠藏书，馆方邀请你们前来协助编目。一次寻常的委托，一段关于旧书与小镇的日子就此开始。",
-		Author:        "agent-team",
-		Tags:          "sandbox,coc",
-		MinPlayers:    1,
-		MaxPlayers:    4,
-		Difficulty:    "normal",
-		Content: models.ScenarioContent{
-			SystemPrompt:   "你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。",
-			Setting:        "初秋的傍晚，你们受镇图书馆之邀前来协助整理一批新捐赠的藏书。馆内灯光温暖，管理员热情地引你们入座，窗外街区安静而寻常。",
-			ToneTags:       []string{"gothic", "slow-burn", "occult-noir"},
-			HorrorMode:     "gothic_horror",
-			InvestFocus:    "artifact_theft",
-			Intro:          "你们在图书馆大厅集合。管理员正在前台核对今天的编目清单，先去和她打个招呼也好；门口的访客登记簿还空着一栏，或者干脆四处走走，认认书架区和档案室的门朝哪边开。",
-			GameStartSlot:  16,
-			MapDescription: "【文字地图】图书馆→书架区↔档案室↔墓地。",
-			MythosAnchor:   "食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。",
-			Scenes: []models.SceneData{
-				{
-					ID:          "library_main",
-					Name:        "图书馆大厅",
-					Description: "可见：失窃公告。可发现：书目来自同一捐赠者。杠杆：公开规律会导致图书馆关闭。风险：拖延三天后永久关闭。出口：书架区、档案室。感官：潮湿泥土气息与旧纸味格格不入。",
-					Triggers:    []string{"available_from_start"},
-				},
+// oneshotResultExample is a fully-populated example scenario reused by every
+// schema/repair prompt that needs to show the complete oneshotResult structure.
+var oneshotResultExample = OneshotResult{
+	RewardConcept: "与食尸鬼有关的古籍手稿",
+	Name:          "示例模组",
+	Description:   "一座宁静小镇的老图书馆正在整理一批新到的捐赠藏书，馆方邀请你们前来协助编目。一次寻常的委托，一段关于旧书与小镇的日子就此开始。",
+	Author:        "agent-team",
+	Tags:          "sandbox,coc",
+	MinPlayers:    1,
+	MaxPlayers:    4,
+	Difficulty:    "normal",
+	Content: models.ScenarioContent{
+		SystemPrompt:   "你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。",
+		Setting:        "初秋的傍晚，你们受镇图书馆之邀前来协助整理一批新捐赠的藏书。馆内灯光温暖，管理员热情地引你们入座，窗外街区安静而寻常。",
+		ToneTags:       []string{"gothic", "slow-burn", "occult-noir"},
+		HorrorMode:     "gothic_horror",
+		InvestFocus:    "artifact_theft",
+		Intro:          "你们在图书馆大厅集合。管理员正在前台核对今天的编目清单，先去和她打个招呼也好；门口的访客登记簿还空着一栏，或者干脆四处走走，认认书架区和档案室的门朝哪边开。",
+		GameStartSlot:  16,
+		MapDescription: "【文字地图】图书馆→书架区↔档案室↔墓地。",
+		MythosAnchor:   "食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。",
+		Scenes: []models.SceneData{
+			{
+				ID:          "library_main",
+				Name:        "图书馆大厅",
+				Description: "可见：失窃公告。可发现：书目来自同一捐赠者。杠杆：公开规律会导致图书馆关闭。风险：拖延三天后永久关闭。出口：书架区、档案室。感官：潮湿泥土气息与旧纸味格格不入。",
+				Triggers:    []string{"available_from_start"},
 			},
-			NPCs: []models.NPCData{
-				{
-					Name:        "守墓人Henrik",
-					Description: "公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。标志性细节：说话时总用拇指摩挲一把黄铜钥匙。关系：受馆长雇佣，与Douglas生前是牌友。",
-					Attitude:    "警惕、简短",
-					Stats:       map[string]int{"STR": 55, "CON": 60, "SIZ": 65, "DEX": 50, "APP": 40, "INT": 55, "POW": 50, "EDU": 55, "SAN": 50, "HP": 12, "MP": 10},
-				},
-			},
-			Clues: []string{
-				"[真实]失窃书目规律(书架区): 全部来自同一捐赠者。",
-				"[隐藏]神话本质(墓地): 食尸鬼是死者变形后的存在，保留人类记忆；SAN检定1/1d6；具体属性按规则书裁定。",
-				"[误导]守墓人描述(大厅): 体型异常、动作迅速、指甲带泥土——守墓人坚称是惯偷活人趁夜盗墓；此说在真相揭晓后仍部分成立：那些体征确实像活人窃贼，只是掩盖了入侵者本是食尸鬼这一核心；排除「活人盗贼」解释不会堵死调查，反而促使调查员核对泥土成分与墓地痕迹。",
-			},
-			WinCondition:  "如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。",
-			LoseCondition: "如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。",
-			PartialWins:   []string{"如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"},
 		},
-	})
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}()
+		NPCs: []models.NPCData{
+			{
+				Name:        "守墓人Henrik",
+				Description: "公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。标志性细节：说话时总用拇指摩挲一把黄铜钥匙。关系：受馆长雇佣，与Douglas生前是牌友。",
+				Attitude:    "警惕、简短",
+				Stats:       map[string]int{"STR": 55, "CON": 60, "SIZ": 65, "DEX": 50, "APP": 40, "INT": 55, "POW": 50, "EDU": 55, "SAN": 50, "HP": 12, "MP": 10},
+			},
+		},
+		Clues: []string{
+			"[真实]失窃书目规律(书架区): 全部来自同一捐赠者。",
+			"[隐藏]神话本质(墓地): 食尸鬼是死者变形后的存在，保留人类记忆；SAN检定1/1d6；具体属性按规则书裁定。",
+			"[误导]守墓人描述(大厅): 体型异常、动作迅速、指甲带泥土——守墓人坚称是惯偷活人趁夜盗墓；此说在真相揭晓后仍部分成立：那些体征确实像活人窃贼，只是掩盖了入侵者本是食尸鬼这一核心；排除「活人盗贼」解释不会堵死调查，反而促使调查员核对泥土成分与墓地痕迹。",
+		},
+		WinCondition:  "如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。",
+		LoseCondition: "如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。",
+		PartialWins:   []string{"如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"},
+	},
+}
+
+// oneshotExample is the JSON schema example used for parsing/repair prompts.
+var oneshotExample = marshalExample(oneshotResultExample)
 
 // ---------------------------------------------------------------------------
 // System prompt
@@ -291,19 +289,19 @@ submit.draft 必须包含以下字段：
 </draft_schema>`
 }
 
-var oneshotArchitectToolCallExample = func() string {
-	data, err := json.Marshal([]oneshotArchitectToolCall{
-		{
-			Action:  toolOneshotTranslateAnchor,
-			Concept: "死者被古老力量束缚继续行动",
-			Reason:  "作为本剧本mythos_anchor的核心概念",
-		},
-	})
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}()
+// oneshotArchitectToolCallExample shows both tool variants so the repair LLM
+// sees the full shape of translate_anchor AND submit (with a complete draft).
+var oneshotArchitectToolCallExample = marshalExample([]oneshotArchitectToolCall{
+	{
+		Action:  toolOneshotTranslateAnchor,
+		Concept: "死者被古老力量束缚继续行动",
+		Reason:  "作为本剧本mythos_anchor的核心概念",
+	},
+	{
+		Action: toolOneshotSubmit,
+		Draft:  &oneshotResultExample,
+	},
+})
 
 // ---------------------------------------------------------------------------
 // Tool types
@@ -322,29 +320,29 @@ type oneshotArchitectToolCall struct {
 	Action  ToolCallType   `json:"action"`
 	Concept string         `json:"concept"` // translate_anchor
 	Reason  string         `json:"reason"`  // translate_anchor
-	Draft   *oneshotResult `json:"draft"`   // submit
+	Draft   *OneshotResult `json:"draft"`   // submit
 }
 
 // ---------------------------------------------------------------------------
 // Architect loop
 // ---------------------------------------------------------------------------
 
-func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (oneshotResult, []llm.ChatMessage, error) {
+func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (OneshotResult, []llm.ChatMessage, error) {
 	if room.architect.provider == nil {
-		return oneshotResult{}, msgs, fmt.Errorf("architect provider unavailable")
+		return OneshotResult{}, msgs, fmt.Errorf("architect provider unavailable")
 	}
 	sessionID := scripterSessionID(ctx, room)
 	stageName = firstNonEmpty(stageName, "oneshot_architect")
 	const maxRounds = 30
 	for round := 1; round <= maxRounds; round++ {
 		if ctx.Err() != nil {
-			return oneshotResult{}, msgs, ctx.Err()
+			return OneshotResult{}, msgs, ctx.Err()
 		}
 		logStagePrompt(fmt.Sprintf("%s_round_%d", stageName, round), sessionID, msgs)
 		callMessages := append([]llm.ChatMessage(nil), msgs...)
 		raw, err := room.architect.provider.Chat(ctx, room.sessionID+":"+string(models.AgentRoleArchitect), msgs)
 		if err != nil {
-			return oneshotResult{}, msgs, err
+			return OneshotResult{}, msgs, err
 		}
 		recordScripterLLMExchange(ctx, room, fmt.Sprintf("%s_round_%d", stageName, round), callMessages, raw)
 		log.Printf("[scripter:oneshot_loop] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
@@ -367,7 +365,7 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		}
 
 		invalid := false
-		var submitDraft *oneshotResult
+		var submitDraft *OneshotResult
 		var toolResults []string
 		for _, call := range calls {
 			switch call.Action {
@@ -403,7 +401,7 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须调用translate_anchor获取规则书裁定，或在已有裁定基础上调用submit提交剧本。"})
 		}
 	}
-	return oneshotResult{}, msgs, fmt.Errorf("oneshot architect 未在%d轮内提交结果", maxRounds)
+	return OneshotResult{}, msgs, fmt.Errorf("oneshot architect 未在%d轮内提交结果", maxRounds)
 }
 
 func oneshotSubmitMixed(calls []oneshotArchitectToolCall) bool {
@@ -532,24 +530,23 @@ respond.result 必须包含：
 - 翻译的结果必须直接来自规则书裁定，不能是基于规则书裁定的二次创作，但可以是合理的推导链条（例如： 规则书支持A，从A引发了B，B正好符合概念要求，那么B可以是selected_anchor，但必须在rulebook_basis里清晰说明推导链条和每一步的规则书依据）。
 </rules>`
 
-var oneshotTranslatorToolCallExample = func() string {
-	data, err := json.Marshal([]oneshotTranslatorToolCall{
-		{
-			Action:   "",
-			Question: "",
-			Result:   "",
-		},
-	})
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}()
+// oneshotTranslatorToolCallExample shows both tool variants so the repair LLM
+// sees the full shape of ask_lawyer (with question) AND respond (with result).
+var oneshotTranslatorToolCallExample = marshalExample([]oneshotTranslatorToolCall{
+	{
+		Action:   toolTranslatorAskLawyer,
+		Question: "COC7规则书中哪个神话生物或机制最接近死者被古老力量束缚继续行动？请给出正式名称、出处和核心机制。",
+	},
+	{
+		Action: toolTranslatorRespond,
+		Result: `{"status":"found","selected_anchor":"食尸鬼（Ghoul）","rulebook_basis":"COC7规则书已收录，死者变形后保留人类记忆继续行动","usable_interpretation":"食尸鬼作为死者变形后的存在，可承载死者被古老力量束缚继续行动的概念","must_avoid":"不得自创规则书未记载的属性或能力数值","fallback":"无","blacklist_check":"selected_anchor不在最近使用元素禁用列表中"}`,
+	},
+})
 
 type oneshotTranslatorToolCall struct {
 	Action   ToolCallType `json:"action"`
-	Question string       `json:"question"`
-	Result   string       `json:"result"`
+	Question string       `json:"question,omitempty"`
+	Result   string       `json:"result,omitempty"`
 }
 
 func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept string, reason string) (string, error) {
@@ -868,18 +865,12 @@ type qaReviewResult struct {
 	Issues []string `json:"issues"`
 }
 
-var qaReviewSchemaExample = func() string {
-	data, err := json.Marshal(qaReviewResult{
-		Issues: []string{
-			"intro使用了①②③编号列表，应改为自然叙述",
-			"NPC 陈默 缺少标志性小细节，可补一个习惯动作",
-		},
-	})
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}()
+var qaReviewSchemaExample = marshalExample(qaReviewResult{
+	Issues: []string{
+		"intro使用了①②③编号列表，应改为自然叙述",
+		"NPC 陈默 缺少标志性小细节，可补一个习惯动作",
+	},
+})
 
 // qaReviewSystemPrompt 与 architect 共用 humanWritingRules，保证审查标准一致。
 func qaReviewSystemPrompt() string {
