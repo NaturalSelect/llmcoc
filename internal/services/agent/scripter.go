@@ -1210,7 +1210,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 			fixed = strings.TrimSuffix(fixed, "```")
 		}
 		debugf("Parser", "session=%s Fixed JSON: %v", sessionID, fixed)
-		stripped := llm.StripCodeFence(strings.TrimSpace(fixed))
+		stripped := fixed
 		if json.Valid([]byte(stripped)) {
 			log.Printf("[parser] session=%s JSON 修复成功 attempt=%d", sessionID, attempt)
 			return stripped, nil
