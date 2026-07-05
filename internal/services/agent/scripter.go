@@ -1196,7 +1196,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 				"【解析错误】\n%s\n\n"+
 				"【原始 JSON】\n%s\n\n"+
 				"【目标格式示例】\n%s\n\n"+
-				"请修复并输出完整的合法 JSON。\n想清楚再修改，例子是给你看的不是让你无脑套用。\n\n"+
+				"请修复并输出完整的合法 JSON。\n想清楚再修改，例子是给你看的不是让你无脑套用。\n如果有数组，禁止改变元素的个数\n"+
 				"注意: 仅输出修正后的 JSON,不要有任何其他文字。",
 			currentErr.Error(), raw, schemaExample)
 		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fixPrompt})
