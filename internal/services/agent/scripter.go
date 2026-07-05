@@ -1108,7 +1108,7 @@ func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, parser 
 	sessionID := sessionIDFromContextValue(ctx)
 	log.Printf("[scripter:%s] session=%s chat start messages=%d", tag, sessionID, len(msgs))
 	callMessages := append([]llm.ChatMessage(nil), msgs...)
-	raw, err := generator.provider.JsonChat(ctx, generator.cacheKey(sessionIDFromContextValue(ctx)), msgs)
+	raw, err := generator.provider.Chat(ctx, generator.cacheKey(sessionIDFromContextValue(ctx)), msgs)
 	if err != nil {
 		log.Printf("[scripter:%s] session=%s chat error=%v", tag, sessionID, err)
 		return err

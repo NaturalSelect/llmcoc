@@ -228,7 +228,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 		}
 
 		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		raw, err := h.provider.JsonChat(ctx, cacheKey, msgs)
+		raw, err := h.provider.Chat(ctx, cacheKey, msgs)
 		if err != nil {
 			log.Printf("[lawyer] iter %d LLM error: %v", iter, err)
 			return nil
