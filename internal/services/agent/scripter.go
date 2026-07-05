@@ -1241,6 +1241,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 		currentErr = fmt.Errorf("修复后的 JSON 仍然无效")
 		raw = fixed
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: fixed})
+		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "修复后仍无效"})
 		log.Printf("[parser] session=%s attempt=%d 修复后仍无效", sessionID, attempt)
 	}
 	return "", fmt.Errorf("parser 修复失败(%d次尝试)", maxAttempts)
