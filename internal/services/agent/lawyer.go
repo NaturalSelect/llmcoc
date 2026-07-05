@@ -167,12 +167,12 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 // lawyerCall is one item in the Lawyer's tool-call output sequence.
 type lawyerCall struct {
 	Action   string `json:"action"`
-	Keyword  string `json:"keyword,omitempty"`   // grep / search_cache
-	Constant string `json:"constant,omitempty"`  // read_rulebook_const
-	Start    int    `json:"start,omitempty"`     // read_lines
-	End      int    `json:"end,omitempty"`       // read_lines
-	CacheKey string `json:"cache_key,omitempty"` // save_cache / response: agent-chosen cache key
-	Ruling   string `json:"ruling,omitempty"`    // save_cache / response
+	Keyword  string `json:"keyword"`   // grep / search_cache
+	Constant string `json:"constant"`  // read_rulebook_const
+	Start    int    `json:"start"`     // read_lines
+	End      int    `json:"end"`       // read_lines
+	CacheKey string `json:"cache_key"` // save_cache / response: agent-chosen cache key
+	Ruling   string `json:"ruling"`    // save_cache / response
 }
 
 var lawyerCallExample = func() string {

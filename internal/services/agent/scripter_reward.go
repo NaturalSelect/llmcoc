@@ -59,8 +59,8 @@ var rewardAgentToolCallExample = func() string {
 // rewardAgentCall is a tool call in the reward agent's dispatch loop.
 type rewardAgentCall struct {
 	Action   ToolCallType       `json:"action"`
-	Question string             `json:"question,omitempty"` // ask_lawyer
-	Reward   *rewardAgentReward `json:"reward,omitempty"`   // respond
+	Question string             `json:"question"` // ask_lawyer
+	Reward   *rewardAgentReward `json:"reward"`   // respond
 }
 
 // rewardAgentReward is the structured reward returned by respond.
@@ -91,7 +91,7 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 
 	requestJSON, _ := json.Marshal(struct {
 		Concept      string `json:"concept"`
-		MythosAnchor string `json:"mythos_anchor,omitempty"`
+		MythosAnchor string `json:"mythos_anchor"`
 	}{Concept: concept, MythosAnchor: mythosAnchor})
 
 	// Isolated context: fresh message history, no shared state with main pipeline.

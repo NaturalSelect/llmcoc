@@ -27,7 +27,7 @@ type GeneratedCharacter struct {
 	Backstory  string                 `json:"backstory"`
 	Appearance string                 `json:"appearance"`
 	Traits     string                 `json:"traits"`
-	Stats      *models.CharacterStats `json:"stats,omitempty"`
+	Stats      *models.CharacterStats `json:"stats"`
 }
 
 // RegenerateAppearance uses the Evaluator agent to produce a fresh appearance description

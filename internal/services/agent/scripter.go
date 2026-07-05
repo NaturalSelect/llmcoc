@@ -35,9 +35,9 @@ type ScenarioCreationRequest struct {
 
 type ScenarioCreationOutput struct {
 	Draft         ScenarioDraft `json:"draft"`
-	IronyCore     *IronyCore    `json:"irony_core,omitempty"`
+	IronyCore     *IronyCore    `json:"irony_core"`
 	Iterations    int           `json:"iterations"`
-	GenerationLog string        `json:"generation_log,omitempty"`
+	GenerationLog string        `json:"generation_log"`
 }
 
 type ScenarioDraft struct {
@@ -396,9 +396,9 @@ type ScripterConstraints struct {
 	Difficulty      string   `json:"difficulty"`
 	HorrorMode      string   `json:"horror_mode"`
 	InvestFocus     string   `json:"invest_focus"`
-	ToneTags        []string `json:"tone_tags,omitempty"`
-	ProseVoice      string   `json:"prose_voice,omitempty"`      // NOTE: 玩家可见散文的作者声线，只影响文风不影响事实
-	DiversitySource string   `json:"diversity_source,omitempty"` // NOTE: "ai"=AI围池选择，"fallback"=随机降级
+	ToneTags        []string `json:"tone_tags"`
+	ProseVoice      string   `json:"prose_voice"`      // NOTE: 玩家可见散文的作者声线，只影响文风不影响事实
+	DiversitySource string   `json:"diversity_source"` // NOTE: "ai"=AI围池选择，"fallback"=随机降级
 }
 
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
@@ -1262,21 +1262,21 @@ func parseJSONObject[T any](raw string, out *T) error {
 
 type scripterToolCall struct {
 	Action     string         `json:"action"`
-	Question   string         `json:"question,omitempty"`
-	Constant   string         `json:"constant,omitempty"`
-	Reason     string         `json:"reason,omitempty"`
-	Background *FogBackground `json:"background,omitempty"`
-	Draft      *ScenarioDraft `json:"draft,omitempty"`
+	Question   string         `json:"question"`
+	Constant   string         `json:"constant"`
+	Reason     string         `json:"reason"`
+	Background *FogBackground `json:"background"`
+	Draft      *ScenarioDraft `json:"draft"`
 }
 
 type FogBackground struct {
 	TimeAndPlace       string   `json:"time_and_place"`
-	InvestigatorHook   string   `json:"investigator_hook,omitempty"`
-	DailyBeauty        string   `json:"daily_beauty,omitempty"`
-	UnsettlingDetail   string   `json:"unsettling_detail,omitempty"`
-	PublicProblem      string   `json:"public_problem,omitempty"`
-	BriefPreserved     string   `json:"brief_preserved,omitempty"`
-	AntiTropeExecution []string `json:"anti_trope_execution,omitempty"`
+	InvestigatorHook   string   `json:"investigator_hook"`
+	DailyBeauty        string   `json:"daily_beauty"`
+	UnsettlingDetail   string   `json:"unsettling_detail"`
+	PublicProblem      string   `json:"public_problem"`
+	BriefPreserved     string   `json:"brief_preserved"`
+	AntiTropeExecution []string `json:"anti_trope_execution"`
 }
 
 func validateScripterResponsePayload(call scripterToolCall, expected string) error {

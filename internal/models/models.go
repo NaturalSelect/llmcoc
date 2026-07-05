@@ -27,7 +27,7 @@ type User struct {
 	PasswordHash string    `gorm:"not null" json:"-"`
 	Role         Role      `gorm:"default:'user';not null" json:"role"`
 	IsBanned     bool      `gorm:"default:false;not null" json:"is_banned"`
-	BanReason    string    `gorm:"size:500" json:"ban_reason,omitempty"`
+	BanReason    string    `gorm:"size:500" json:"ban_reason"`
 	Coins        int       `gorm:"default:0;not null" json:"coins"`
 	CardSlots    int       `gorm:"default:3;not null" json:"card_slots"`
 	ReviveCount  int       `gorm:"default:0;not null" json:"revive_count"` // 累计复活次数，影响后续复活费用
@@ -78,8 +78,8 @@ type CharacterEDUEnhancementRoll struct {
 	D100        int  `json:"d100"`
 	BeforeEDU   int  `json:"before_edu"`
 	Improved    bool `json:"improved"`
-	IncreaseDie int  `json:"increase_die,omitempty"`
-	Increase    int  `json:"increase,omitempty"`
+	IncreaseDie int  `json:"increase_die"`
+	Increase    int  `json:"increase"`
 	AfterEDU    int  `json:"after_edu"`
 }
 
@@ -105,7 +105,7 @@ type CharacterDraft struct {
 	RawRolls  JSONField[CharacterRawRolls] `gorm:"type:text;not null" json:"raw_rolls"`
 	ExpiresAt time.Time                    `gorm:"not null;index:idx_character_drafts_user_active" json:"expires_at"`
 	IsUsed    bool                         `gorm:"default:false;not null;index:idx_character_drafts_user_active" json:"is_used"`
-	UsedAt    *time.Time                   `json:"used_at,omitempty"`
+	UsedAt    *time.Time                   `json:"used_at"`
 	CreatedAt time.Time                    `json:"created_at"`
 	UpdatedAt time.Time                    `json:"updated_at"`
 	User      User                         `gorm:"foreignKey:UserID" json:"-"`
@@ -177,21 +177,21 @@ type ScenarioReward struct {
 type ScenarioContent struct {
 	SystemPrompt   string          `json:"system_prompt"`
 	Setting        string          `json:"setting"`
-	ToneTags       []string        `json:"tone_tags,omitempty"`
-	HorrorMode     string          `json:"horror_mode,omitempty"`
-	InvestFocus    string          `json:"invest_focus,omitempty"`
+	ToneTags       []string        `json:"tone_tags"`
+	HorrorMode     string          `json:"horror_mode"`
+	InvestFocus    string          `json:"invest_focus"`
 	Intro          string          `json:"intro"`
-	GameStartSlot  int             `json:"game_start_slot,omitempty"` // 开局时间槽位(0-47),每槽30分钟
-	MapDescription string          `json:"map_description,omitempty"` // 文字描述的场景地图,供KP感知空间关系
+	GameStartSlot  int             `json:"game_start_slot"` // 开局时间槽位(0-47),每槽30分钟
+	MapDescription string          `json:"map_description"` // 文字描述的场景地图,供KP感知空间关系
 	Scenes         []SceneData     `json:"scenes"`
 	NPCs           []NPCData       `json:"npcs"`
 	Clues          []string        `json:"clues"`
 	WinCondition   string          `json:"win_condition"`
-	LoseCondition  string          `json:"lose_condition,omitempty"` // 失败条件
-	PartialWins    []string        `json:"partial_wins,omitempty"`   // 部分胜利情景列表
-	Reward         *ScenarioReward `json:"reward,omitempty"`         // 通关奖励（典籍/神话物品），完成win_condition时给予
-	MythosAnchor   string          `json:"mythos_anchor,omitempty"`  // Stage2确认的神话锚点，用于多样性去重
-	MythosCore     string          `json:"mythos_core,omitempty"`    // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
+	LoseCondition  string          `json:"lose_condition"` // 失败条件
+	PartialWins    []string        `json:"partial_wins"`   // 部分胜利情景列表
+	Reward         *ScenarioReward `json:"reward"`         // 通关奖励（典籍/神话物品），完成win_condition时给予
+	MythosAnchor   string          `json:"mythos_anchor"`  // Stage2确认的神话锚点，用于多样性去重
+	MythosCore     string          `json:"mythos_core"`    // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
 }
 
 // NOTE: SceneData describes a specific location or event in a scenario.
@@ -205,12 +205,12 @@ type SceneData struct {
 // NOTE: NPCData provides a template for a non-player character within a scenario.
 type NPCData struct {
 	Name               string         `json:"name"`
-	Race               string         `json:"race,omitempty"`
-	Occupation         string         `json:"occupation,omitempty"`
+	Race               string         `json:"race"`
+	Occupation         string         `json:"occupation"`
 	Description        string         `json:"description"`
 	Attitude           string         `json:"attitude"`
-	Stats              map[string]int `json:"stats,omitempty"`
-	CthulhuMythosSkill int            `json:"cthulhu_mythos_skill,omitempty"`
+	Stats              map[string]int `json:"stats"`
+	CthulhuMythosSkill int            `json:"cthulhu_mythos_skill"`
 }
 
 // NOTE: Scenario is the database representation of a playable module or adventure.
@@ -276,9 +276,9 @@ type GameSession struct {
 	Introspection string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
 	CreatedAt     time.Time               `json:"created_at"`
 	UpdatedAt     time.Time               `json:"updated_at"`
-	Scenario      Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
-	Creator       User                    `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
-	Players       []SessionPlayer         `gorm:"foreignKey:SessionID" json:"players,omitempty"`
+	Scenario      Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario"`
+	Creator       User                    `gorm:"foreignKey:CreatedBy" json:"creator"`
+	Players       []SessionPlayer         `gorm:"foreignKey:SessionID" json:"players"`
 }
 
 // SessionNPC is a temporary NPC card created during a session (e.g. monsters, minor NPCs).
@@ -347,8 +347,8 @@ type SessionPlayer struct {
 	LLMNote         string        `gorm:"type:text" json:"llm_note"`
 	Location        string        `gorm:"size:200" json:"location"` // 当前所在地点，由 update_location 工具维护
 	Armor           int           `gorm:"default:0" json:"armor"`   // 当前护甲值，由 update_armor 工具维护
-	User            User          `gorm:"foreignKey:UserID" json:"user,omitempty"`
-	CharacterCard   CharacterCard `gorm:"foreignKey:CharacterCardID" json:"character_card,omitempty"`
+	User            User          `gorm:"foreignKey:UserID" json:"user"`
+	CharacterCard   CharacterCard `gorm:"foreignKey:CharacterCardID" json:"character_card"`
 }
 
 // SessionFavorite stores a user's favorite sessions (many-to-many relationship)
@@ -410,7 +410,7 @@ type Transaction struct {
 	CoinsSpent int       `gorm:"not null" json:"coins_spent"`
 	CreatedAt  time.Time `json:"created_at"`
 	User       User      `gorm:"foreignKey:UserID" json:"-"`
-	ShopItem   ShopItem  `gorm:"foreignKey:ShopItemID" json:"shop_item,omitempty"`
+	ShopItem   ShopItem  `gorm:"foreignKey:ShopItemID" json:"shop_item"`
 }
 
 type CoinRecharge struct {
@@ -420,8 +420,8 @@ type CoinRecharge struct {
 	AdminID   uint      `gorm:"not null" json:"admin_id"`
 	Note      string    `gorm:"size:500" json:"note"`
 	CreatedAt time.Time `json:"created_at"`
-	User      User      `gorm:"foreignKey:UserID" json:"user,omitempty"`
-	Admin     User      `gorm:"foreignKey:AdminID" json:"admin,omitempty"`
+	User      User      `gorm:"foreignKey:UserID" json:"user"`
+	Admin     User      `gorm:"foreignKey:AdminID" json:"admin"`
 }
 
 // ── Combat cross-round state ──────────────────────────────────────────────────
@@ -525,7 +525,7 @@ type AgentConfig struct {
 	IsActive           bool               `gorm:"default:true" json:"is_active"`
 	CreatedAt          time.Time          `json:"created_at"`
 	UpdatedAt          time.Time          `json:"updated_at"`
-	ProviderConfig     *LLMProviderConfig `gorm:"foreignKey:ProviderConfigID" json:"provider_config,omitempty"`
+	ProviderConfig     *LLMProviderConfig `gorm:"foreignKey:ProviderConfigID" json:"provider_config"`
 }
 
 // GameEvaluation stores the end-of-session LLM evaluation result.
@@ -567,8 +567,8 @@ type InviteCode struct {
 	UsedBy    *uint      `json:"used_by"`
 	UsedAt    *time.Time `json:"used_at"`
 	CreatedAt time.Time  `json:"created_at"`
-	Creator   User       `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
-	UsedUser  *User      `gorm:"foreignKey:UsedBy" json:"used_user,omitempty"`
+	Creator   User       `gorm:"foreignKey:CreatedBy" json:"creator"`
+	UsedUser  *User      `gorm:"foreignKey:UsedBy" json:"used_user"`
 }
 
 // GetSiteSetting returns the value for the given key, or defaultVal if not found.

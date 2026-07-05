@@ -33,8 +33,8 @@ type AdminScenarioGenerationLogResponse struct {
 	ScenarioName string    `json:"scenario_name"`
 	HasLog       bool      `json:"has_log"`
 	LogText      string    `json:"log_text"`
-	CreatedAt    time.Time `json:"created_at,omitempty"`
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func parseAdminPagination(c *gin.Context) (int, int, bool) {

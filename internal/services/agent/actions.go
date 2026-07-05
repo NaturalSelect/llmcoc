@@ -520,7 +520,7 @@ func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 }
 
 type responseOptionsPayload struct {
-	Options []string `json:"options,omitempty"`
+	Options []string `json:"options"`
 }
 
 func normalizeResponseOptionsPayload(call ToolCall) (responseOptionsPayload, bool) {

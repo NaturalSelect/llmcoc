@@ -60,7 +60,7 @@ const (
 	ToolHint               ToolCallType = "hint"                // KP写入当前场景高密度提示
 	ToolGenerateImage      ToolCallType = "generate_image"      // NOTE: 生成即时场景图片
 	ToolDescribeCharacters ToolCallType = "describe_characters" // NOTE: 获取调查员可见外貌描写
-	ToolResponse           ToolCallType = "response"             // 结束本轮并给出回复
+	ToolResponse           ToolCallType = "response"            // 结束本轮并给出回复
 	ToolYield              ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
 	ToolReport             ToolCallType = "report"              // 向管理系统自首
 )
@@ -68,56 +68,56 @@ const (
 // ToolCall is one item in the master KP agent's output sequence.
 type ToolCall struct {
 	Action        ToolCallType           `json:"action"`
-	Question      string                 `json:"question,omitempty"`       // check_rule: 规则问题的语义描述
-	Constant      string                 `json:"constant,omitempty"`       // read_rulebook_const: 常量名
-	Dice          *DiceCheck             `json:"dice,omitempty"`           // roll_dice: 骰子检定请求
-	CharCard      *NPCCard               `json:"char_card,omitempty"`      // create_npc: NPC角色卡
-	NPCName       string                 `json:"npc_name,omitempty"`       // npc_act: NPC名称
-	NPCCtx        string                 `json:"npc_ctx,omitempty"`        // npc_act: 当前情境简述
-	KPDirective   string                 `json:"kp_directive,omitempty"`   // act_npc: KP剧情指令(最高优先级行为约束)
-	DestroyReason string                 `json:"destroy_reason,omitempty"` // destroy_npc: dead|out_of_range|cleanup
-	Changes       []string               `json:"changes,omitempty"`        // update_characters: 状态变化列表
-	CharacterName string                 `json:"character_name,omitempty"` // manage_madness / query_character: 角色名称
-	Operate       string                 `json:"operate,omitempty"`        // 通用操作: add/remove
-	Item          string                 `json:"item,omitempty"`           // manage_inventory: 物品名称(仅保留兼容,优先使用 item_name+item_desc+item_count)
-	ItemName      string                 `json:"item_name,omitempty"`      // manage_inventory: 物品基础名称
-	ItemDesc      string                 `json:"item_desc,omitempty"`      // manage_inventory: 物品状态描述(可选)
-	ItemCount     int                    `json:"item_count,omitempty"`     // manage_inventory: 物品数量(省略或0均视为1)
-	Monster       string                 `json:"monster,omitempty"`        // record_monster: 神话存在名称
-	Spell         string                 `json:"spell,omitempty"`          // manage_spell: 法术名称
-	Relation      *models.SocialRelation `json:"relation,omitempty"`       // manage_relation: 社会关系条目
-	Asset         *models.Asset          `json:"asset,omitempty"`          // manage_asset: 资产条目
-	IsBystander   bool                   `json:"is_bystander,omitempty"`   // manage_madness trigger: 是否有旁观者
-	Direction     string                 `json:"direction,omitempty"`      // write: 叙事方向(供Writer参考)
-	TimeRounds    int                    `json:"time_rounds,omitempty"`    // advance_time: 推进的回合数
-	TimeReason    string                 `json:"time_reason,omitempty"`    // advance_time: 原因(如"睡觉"/"吃饭")
-	Keyword       string                 `json:"keyword,omitempty"`        // query_clues: 已废弃(保留仅为兼容旧输出)
-	LLMNote       string                 `json:"llm_note,omitempty"`       // update_llm_note: 玩家LLMNote内容
-	NewLocation   string                 `json:"new_location,omitempty"`   // update_location/update_npc_location: 新位置名称
-	ArmorValue    int                    `json:"armor_value"`              // update_armor: 新护甲值(0=无护甲)
-	Hint          string                 `json:"hint,omitempty"`           // hit: KP当前场景高密度提示
-	ImagePrompt   string                 `json:"image_prompt,omitempty"`   // NOTE: generate_image: 英文自然语言画图描述
-	Characters    []string               `json:"characters,omitempty"`     // NOTE: describe_characters 参数;兼容旧 generate_image JSON,但生成图片时忽略
-	Options       []string               `json:"options,omitempty"`        // response: 推荐给玩家的可行行动
-	Reply         string                 `json:"reply"`                    // response: KP对玩家说的话(必填)
-	EndSummary    string                 `json:"end_summary,omitempty"`    // end_game: 结局总结(可选)
-	Reason        string                 `json:"reason,omitempty"`         // reasoning: KP本轮推理过程
-	Context       string                 `json:"context,omitempty"`        // response: 剧本推进到此处的完整上下文
+	Question      string                 `json:"question"`       // check_rule: 规则问题的语义描述
+	Constant      string                 `json:"constant"`       // read_rulebook_const: 常量名
+	Dice          *DiceCheck             `json:"dice"`           // roll_dice: 骰子检定请求
+	CharCard      *NPCCard               `json:"char_card"`      // create_npc: NPC角色卡
+	NPCName       string                 `json:"npc_name"`       // npc_act: NPC名称
+	NPCCtx        string                 `json:"npc_ctx"`        // npc_act: 当前情境简述
+	KPDirective   string                 `json:"kp_directive"`   // act_npc: KP剧情指令(最高优先级行为约束)
+	DestroyReason string                 `json:"destroy_reason"` // destroy_npc: dead|out_of_range|cleanup
+	Changes       []string               `json:"changes"`        // update_characters: 状态变化列表
+	CharacterName string                 `json:"character_name"` // manage_madness / query_character: 角色名称
+	Operate       string                 `json:"operate"`        // 通用操作: add/remove
+	Item          string                 `json:"item"`           // manage_inventory: 物品名称(仅保留兼容,优先使用 item_name+item_desc+item_count)
+	ItemName      string                 `json:"item_name"`      // manage_inventory: 物品基础名称
+	ItemDesc      string                 `json:"item_desc"`      // manage_inventory: 物品状态描述(可选)
+	ItemCount     int                    `json:"item_count"`     // manage_inventory: 物品数量(省略或0均视为1)
+	Monster       string                 `json:"monster"`        // record_monster: 神话存在名称
+	Spell         string                 `json:"spell"`          // manage_spell: 法术名称
+	Relation      *models.SocialRelation `json:"relation"`       // manage_relation: 社会关系条目
+	Asset         *models.Asset          `json:"asset"`          // manage_asset: 资产条目
+	IsBystander   bool                   `json:"is_bystander"`   // manage_madness trigger: 是否有旁观者
+	Direction     string                 `json:"direction"`      // write: 叙事方向(供Writer参考)
+	TimeRounds    int                    `json:"time_rounds"`    // advance_time: 推进的回合数
+	TimeReason    string                 `json:"time_reason"`    // advance_time: 原因(如"睡觉"/"吃饭")
+	Keyword       string                 `json:"keyword"`        // query_clues: 已废弃(保留仅为兼容旧输出)
+	LLMNote       string                 `json:"llm_note"`       // update_llm_note: 玩家LLMNote内容
+	NewLocation   string                 `json:"new_location"`   // update_location/update_npc_location: 新位置名称
+	ArmorValue    int                    `json:"armor_value"`    // update_armor: 新护甲值(0=无护甲)
+	Hint          string                 `json:"hint"`           // hit: KP当前场景高密度提示
+	ImagePrompt   string                 `json:"image_prompt"`   // NOTE: generate_image: 英文自然语言画图描述
+	Characters    []string               `json:"characters"`     // NOTE: describe_characters 参数;兼容旧 generate_image JSON,但生成图片时忽略
+	Options       []string               `json:"options"`        // response: 推荐给玩家的可行行动
+	Reply         string                 `json:"reply"`          // response: KP对玩家说的话(必填)
+	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(可选)
+	Reason        string                 `json:"reason"`         // reasoning: KP本轮推理过程
+	Context       string                 `json:"context"`        // response: 剧本推进到此处的完整上下文
 
 	// ── Combat fields ─────────────────────────────────────────────────────────
-	CombatParticipants []CombatParticipantInput `json:"combat_participants,omitempty"` // start_combat: 参与者列表
-	CombatActorName    string                   `json:"combat_actor_name,omitempty"`   // combat_act: 本轮行动者名称
-	CombatAction       *CombatActionDetail      `json:"combat_action,omitempty"`       // combat_act: 行动详情
-	CombatEndReason    string                   `json:"combat_end_reason,omitempty"`   // end_combat: 战斗结束原因
+	CombatParticipants []CombatParticipantInput `json:"combat_participants"` // start_combat: 参与者列表
+	CombatActorName    string                   `json:"combat_actor_name"`   // combat_act: 本轮行动者名称
+	CombatAction       *CombatActionDetail      `json:"combat_action"`       // combat_act: 行动详情
+	CombatEndReason    string                   `json:"combat_end_reason"`   // end_combat: 战斗结束原因
 
 	// ── Chase fields ──────────────────────────────────────────────────────────
-	ChaseParticipants []ChaseParticipantInput `json:"chase_participants,omitempty"` // start_chase: 参与者列表
-	ChaseActorName    string                  `json:"chase_actor_name,omitempty"`   // chase_act: 本轮行动者名称
-	ChaseAction       *ChaseActionDetail      `json:"chase_action,omitempty"`       // chase_act: 行动详情
-	ChaseEndReason    string                  `json:"chase_end_reason,omitempty"`   // end_chase: 追逐结束原因
-	Report            string                  `json:"report,omitempty"`             // report: agent self-report
-	Ack               []string                `json:"ack,omitempty"`                // response: 对玩家动作的正式确认
-	HideSecret        bool                    `json:"hide_secret,omitempty"`        // npc_act: 是否隐藏NPC反应中的敏感信息(如HP变化), 由KP根据当前情境决定
+	ChaseParticipants []ChaseParticipantInput `json:"chase_participants"` // start_chase: 参与者列表
+	ChaseActorName    string                  `json:"chase_actor_name"`   // chase_act: 本轮行动者名称
+	ChaseAction       *ChaseActionDetail      `json:"chase_action"`       // chase_act: 行动详情
+	ChaseEndReason    string                  `json:"chase_end_reason"`   // end_chase: 追逐结束原因
+	Report            string                  `json:"report"`             // report: agent self-report
+	Ack               []string                `json:"ack"`                // response: 对玩家动作的正式确认
+	HideSecret        bool                    `json:"hide_secret"`        // npc_act: 是否隐藏NPC反应中的敏感信息(如HP变化), 由KP根据当前情境决定
 }
 
 // ToolResult wraps the result of executing one ToolCall.
@@ -151,10 +151,10 @@ type RunOutput struct {
 // DiceCheck represents a skill check requested by the KP.
 type DiceCheck struct {
 	Character string `json:"character"`
-	Hidden    bool   `json:"hidden"`              // 暗骰:玩家不可见具体数值,KP将结果融入叙事
-	What      string `json:"what"`                // 检定内容描述(如 "攻击检定"/"智力检定")
-	DiceExpr  string `json:"dice_expr,omitempty"` // 可选的骰子表达式(如 "1D100+20"),优先于固定值
-	Level     string `json:"level,omitempty"`     // 可选的检定难度等级(如 "简单"/"困难"),仅供KP参考
+	Hidden    bool   `json:"hidden"`    // 暗骰:玩家不可见具体数值,KP将结果融入叙事
+	What      string `json:"what"`      // 检定内容描述(如 "攻击检定"/"智力检定")
+	DiceExpr  string `json:"dice_expr"` // 可选的骰子表达式(如 "1D100+20"),优先于固定值
+	Level     string `json:"level"`     // 可选的检定难度等级(如 "简单"/"困难"),仅供KP参考
 }
 
 // DiceCheckResult is the outcome of an auto-executed dice check.
@@ -189,15 +189,15 @@ type NPCAction struct {
 // NPCCard is the input schema for create_npc(char_card).
 type NPCCard struct {
 	Name           string         `json:"name"`
-	Race           string         `json:"race,omitempty"`
+	Race           string         `json:"race"`
 	Description    string         `json:"description"`
 	Attitude       string         `json:"attitude"`
-	Goal           string         `json:"goal,omitempty"`
-	Secret         string         `json:"secret,omitempty"`
-	RiskPreference string         `json:"risk_preference,omitempty"`
-	Stats          map[string]int `json:"stats,omitempty"`
-	Skills         map[string]int `json:"skills,omitempty"`
-	Spells         []string       `json:"spells,omitempty"`
+	Goal           string         `json:"goal"`
+	Secret         string         `json:"secret"`
+	RiskPreference string         `json:"risk_preference"`
+	Stats          map[string]int `json:"stats"`
+	Skills         map[string]int `json:"skills"`
+	Spells         []string       `json:"spells"`
 }
 
 // ── Lawyer types ─────────────────────────────────────────────────────────────
@@ -257,10 +257,10 @@ type CombatParticipantInput struct {
 
 // CombatActionDetail describes the specific action a combatant takes this turn.
 type CombatActionDetail struct {
-	Type       string `json:"type"`                   // attack/dodge/fight_back/aim/take_cover/other
-	TargetName string `json:"target_name,omitempty"`  // 攻击/闪避/反击目标
-	WeaponName string `json:"weapon_name,omitempty"`  // 使用的武器
-	APDebtNext int    `json:"ap_debt_next,omitempty"` // 下轮扣除的AP(如寻找掩体)
+	Type       string `json:"type"`         // attack/dodge/fight_back/aim/take_cover/other
+	TargetName string `json:"target_name"`  // 攻击/闪避/反击目标
+	WeaponName string `json:"weapon_name"`  // 使用的武器
+	APDebtNext int    `json:"ap_debt_next"` // 下轮扣除的AP(如寻找掩体)
 }
 
 // ── Chase input types ─────────────────────────────────────────────────────────
@@ -276,11 +276,11 @@ type ChaseParticipantInput struct {
 
 // ChaseActionDetail describes the specific chase action taken this turn.
 type ChaseActionDetail struct {
-	Type          string `json:"type"`                    // move/hazard/obstacle/conflict/other
-	MoveDelta     int    `json:"move_delta,omitempty"`    // 移动的地点数(正=追近,负=拉开)
-	ObstacleName  string `json:"obstacle_name,omitempty"` // 通过/攻击的障碍名称
-	ObstacleHP    int    `json:"obstacle_hp,omitempty"`   // 障碍当前HP(创建障碍时使用)
-	ObstacleMaxHP int    `json:"obstacle_max_hp,omitempty"`
-	APDebtNext    int    `json:"ap_debt_next,omitempty"` // 险境失败时下轮扣除的AP
-	TargetName    string `json:"target_name,omitempty"`  // 冲突目标名称
+	Type          string `json:"type"`          // move/hazard/obstacle/conflict/other
+	MoveDelta     int    `json:"move_delta"`    // 移动的地点数(正=追近,负=拉开)
+	ObstacleName  string `json:"obstacle_name"` // 通过/攻击的障碍名称
+	ObstacleHP    int    `json:"obstacle_hp"`   // 障碍当前HP(创建障碍时使用)
+	ObstacleMaxHP int    `json:"obstacle_max_hp"`
+	APDebtNext    int    `json:"ap_debt_next"` // 险境失败时下轮扣除的AP
+	TargetName    string `json:"target_name"`  // 冲突目标名称
 }

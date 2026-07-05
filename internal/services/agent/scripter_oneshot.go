@@ -25,7 +25,7 @@ import (
 
 // oneshotResult is the JSON payload inside the architect's submit tool call.
 type oneshotResult struct {
-	RewardConcept string `json:"reward_concept,omitempty"`
+	RewardConcept string `json:"reward_concept"`
 	// ScenarioDraft fields
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
@@ -320,9 +320,9 @@ const (
 
 type oneshotArchitectToolCall struct {
 	Action  ToolCallType   `json:"action"`
-	Concept string         `json:"concept,omitempty"` // translate_anchor
-	Reason  string         `json:"reason,omitempty"`  // translate_anchor
-	Draft   *oneshotResult `json:"draft,omitempty"`   // submit
+	Concept string         `json:"concept"` // translate_anchor
+	Reason  string         `json:"reason"`  // translate_anchor
+	Draft   *oneshotResult `json:"draft"`   // submit
 }
 
 // ---------------------------------------------------------------------------
@@ -535,8 +535,9 @@ respond.result 必须包含：
 var oneshotTranslatorToolCallExample = func() string {
 	data, err := json.Marshal([]oneshotTranslatorToolCall{
 		{
-			Action:   toolTranslatorAskLawyer,
-			Question: "COC7规则书中哪个神话生物或机制最接近死者被古老力量束缚继续行动？请给出正式名称、出处和核心机制。",
+			Action:   "",
+			Question: "",
+			Result:   "",
 		},
 	})
 	if err != nil {
@@ -547,8 +548,8 @@ var oneshotTranslatorToolCallExample = func() string {
 
 type oneshotTranslatorToolCall struct {
 	Action   ToolCallType `json:"action"`
-	Question string       `json:"question,omitempty"`
-	Result   string       `json:"result,omitempty"`
+	Question string       `json:"question"`
+	Result   string       `json:"result"`
 }
 
 func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept string, reason string) (string, error) {
@@ -558,7 +559,7 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 	sessionID := scripterSessionID(ctx, room)
 	requestJSON, _ := json.Marshal(struct {
 		Concept string `json:"concept"`
-		Reason  string `json:"reason,omitempty"`
+		Reason  string `json:"reason"`
 	}{Concept: concept, Reason: reason})
 
 	msgs := []llm.ChatMessage{

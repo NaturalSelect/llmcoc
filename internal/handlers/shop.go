@@ -48,7 +48,7 @@ func PurchaseItem(c *gin.Context) {
 
 	var req struct {
 		ItemID          uint  `json:"item_id" binding:"required"`
-		CharacterCardID *uint `json:"character_card_id,omitempty"`
+		CharacterCardID *uint `json:"character_card_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
