@@ -320,6 +320,18 @@ window.COC.admin = {
                         this.siteSettings.max_character_drafts = parseInt(map.max_character_drafts) || 3;
                         this.siteSettings.end_session_cost = parseInt(map.end_session_cost) || 200;
                         this.siteSettings.writer_history_max_runes = parseInt(map.writer_history_max_runes) || 20000;
+                        this.siteSettings.balance_rules = map.balance_rules !== undefined ? map.balance_rules : '';
+                    },
+                    async updateBalanceRules() {
+                        const val = this.siteSettings.balance_rules || '';
+                        if ([...val].length > 2000) {
+                            this.showToast('平衡调整规则不能超过 2000 个字符', 'error');
+                            return;
+                        }
+                        try {
+                            await this.api('PUT', '/api/admin/config/settings/balance_rules', { value: val });
+                            this.showToast('平衡调整规则已保存');
+                        } catch (e) { this.showToast(e.message, 'error'); }
                     },
                     async toggleInviteCodeSetting() {
                         const newVal = this.siteSettings.require_invite_code ? 'false' : 'true';

@@ -84,7 +84,7 @@ func TestRollCharacterDraft_InvalidAge(t *testing.T) {
 	r := draftRouter(uid)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq("POST", "/characters/roll", map[string]any{"age": 17}))
+	r.ServeHTTP(w, jsonReq("POST", "/characters/roll", map[string]any{"age": 14}))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
 	}
@@ -124,19 +124,19 @@ func TestFinalizeCharacterDraft_Success(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("POST", "/characters/finalize", map[string]any{
-		"draft_id":          roll.DraftID,
-		"token":             roll.Token,
-		"name":              "调查员",
-		"gender":            "男",
-		"occupation":        "记者",
-		"birthplace":        "上海",
-		"residence":         "伦敦",
-		"background_prompt": "没落家族，语气冷峻",
-		"backstory":         "玩家填写的成品背景不应保存",
-		"appearance":        "玩家填写的外貌不应保存",
-		"traits":            "玩家填写的性格不应保存",
-		"stats":             map[string]any{"str": 999},
-		"skills":            map[string]any{"侦查": roll.SkillDefaults["侦查"] + 10, "母语": 1, "闪避": 1},
+		"draft_id":      roll.DraftID,
+		"token":         roll.Token,
+		"name":          "调查员",
+		"gender":        "男",
+		"occupation":    "记者",
+		"birthplace":    "上海",
+		"residence":     "伦敦",
+		"creation_hint": "没落家族，语气冷峻",
+		"backstory":     "玩家填写的成品背景不应保存",
+		"appearance":    "玩家填写的外貌不应保存",
+		"traits":        "玩家填写的性格不应保存",
+		"stats":         map[string]any{"str": 999},
+		"skills":        map[string]any{"侦查": roll.SkillDefaults["侦查"] + 10, "母语": 1, "闪避": 1},
 	}))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
@@ -208,11 +208,11 @@ func TestFinalizeCharacterDraft_AIFailureKeepsDraftUnused(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("POST", "/characters/finalize", map[string]any{
-		"draft_id":          roll.DraftID,
-		"token":             roll.Token,
-		"name":              "调查员",
-		"gender":            "男",
-		"background_prompt": "失败后可重试",
+		"draft_id":      roll.DraftID,
+		"token":         roll.Token,
+		"name":          "调查员",
+		"gender":        "男",
+		"creation_hint": "失败后可重试",
 	}))
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("want 502, got %d: %s", w.Code, w.Body.String())

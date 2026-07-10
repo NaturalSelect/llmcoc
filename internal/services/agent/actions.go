@@ -257,7 +257,7 @@ func (updateCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolR
 			applyNPCUpdate(p.upd, actx.GCtx.Session.ID, *actx.TempNPCs, actx.GCtx.Session.Scenario.Content.Data.NPCs)
 		}
 	}
-	return []ToolResult{{Action: ToolUpdateCharacters, Result: "已更新:" + strings.Join(call.Changes, "、")}}
+	return []ToolResult{{Action: ToolUpdateCharacters, Result: "已更新:" + strings.Join(call.Changes, "、") + "; 如果减少了SAN注意检查疯狂条件"}}
 }
 
 type manageInventoryAction struct{}

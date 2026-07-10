@@ -39,19 +39,19 @@ type rollCharacterReq struct {
 }
 
 type finalizeCharacterReq struct {
-	DraftID          uint           `json:"draft_id"`
-	Token            string         `json:"token"`
-	Name             string         `json:"name"`
-	Gender           string         `json:"gender"`
-	Occupation       string         `json:"occupation"`
-	Birthplace       string         `json:"birthplace"`
-	Residence        string         `json:"residence"`
-	BackgroundPrompt string         `json:"background_prompt"`
-	Backstory        string         `json:"backstory"`
-	Appearance       string         `json:"appearance"`
-	Traits           string         `json:"traits"`
-	Skills           map[string]int `json:"skills"`
-	Assets           []models.Asset `json:"assets"`
+	DraftID      uint           `json:"draft_id"`
+	Token        string         `json:"token"`
+	Name         string         `json:"name"`
+	Gender       string         `json:"gender"`
+	Occupation   string         `json:"occupation"`
+	Birthplace   string         `json:"birthplace"`
+	Residence    string         `json:"residence"`
+	CreationHint string         `json:"creation_hint"`
+	Backstory    string         `json:"backstory"`
+	Appearance   string         `json:"appearance"`
+	Traits       string         `json:"traits"`
+	Skills       map[string]int `json:"skills"`
+	Assets       []models.Asset `json:"assets"`
 }
 
 type finalizedDraftData struct {
@@ -125,9 +125,9 @@ func FinalizeCharacterDraft(c *gin.Context) {
 	req.Occupation = strings.TrimSpace(req.Occupation)
 	req.Birthplace = strings.TrimSpace(req.Birthplace)
 	req.Residence = strings.TrimSpace(req.Residence)
-	req.BackgroundPrompt = strings.TrimSpace(req.BackgroundPrompt)
-	if req.BackgroundPrompt == "" {
-		req.BackgroundPrompt = strings.TrimSpace(req.Backstory)
+	req.CreationHint = strings.TrimSpace(req.CreationHint)
+	if req.CreationHint == "" {
+		req.CreationHint = strings.TrimSpace(req.Backstory)
 	}
 	if req.DraftID == 0 || strings.TrimSpace(req.Token) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少车卡草稿凭证"})
@@ -155,7 +155,7 @@ func FinalizeCharacterDraft(c *gin.Context) {
 	generated, err := generateCharacterNarrative(context.Background(), agent.GenerateCharacterReq{
 		Name:       req.Name,
 		Occupation: req.Occupation,
-		Background: req.BackgroundPrompt,
+		Background: req.CreationHint,
 		Gender:     req.Gender,
 		Age:        prepared.age,
 		Stats:      prepared.stats,

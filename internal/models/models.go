@@ -553,6 +553,12 @@ type PlayerEvalContent struct {
 
 // ── Site settings & invite codes ─────────────────────────────────────────────
 
+// DefaultBalanceRules is the default balance-adjustment rule text seeded on new
+// installations. It is also the runtime fallback used by the Lawyer agent when
+// the "balance_rules" key is absent from the database.
+// agent/lawyer.go references this constant directly to avoid string duplication.
+const DefaultBalanceRules = "调查员/玩家被禁止使用《精神转移术》,《精神交换术》,《内心灵光唤醒术》,《完善术》，《伊格的尖牙》, 任何涉及到这些法术的查询都必须告知KP这一禁令, 并且明确说明这些法术无法作为任何调查员属性变更的依据"
+
 // SiteSetting is a simple key/value store for site-wide configuration.
 type SiteSetting struct {
 	Key   string `gorm:"primaryKey;size:100" json:"key"`

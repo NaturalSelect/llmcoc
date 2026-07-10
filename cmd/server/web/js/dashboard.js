@@ -14,7 +14,7 @@ window.COC.dashboard = {
                         this.manualSkills = {};
                         this.manualSkillBudget = { occupation: 0, interest: 0, total: 0 };
                         this.manualSkillNames = [];
-                        this.charForm = { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', residence: '', backstory: '', appearance: '', traits: '', background_prompt: '' };
+                        this.charForm = { name: '', race: '人类', age: 25, gender: '', occupation: '', birthplace: '', residence: '', backstory: '', appearance: '', traits: '', creation_hint: '' };
                         this.genForm = { name: '', race: '人类', gender: '', age: '', occupation: '', era: '', background: '' };
                         this.loadSkillDefaults().catch(() => {});
                         this.modal = 'createChar';
@@ -53,8 +53,8 @@ window.COC.dashboard = {
 
                     async rollManualChar() {
                         const age = Number(this.charForm.age || 0);
-                        if (age < 18 || age > 89) {
-                            this.showToast('年龄必须在18-89之间', 'error');
+                        if (age < 15 || age > 90) {
+                            this.showToast('年龄必须在15-90之间', 'error');
                             return;
                         }
                         this.loading = true;
@@ -135,7 +135,7 @@ window.COC.dashboard = {
                                 occupation: this.charForm.occupation,
                                 birthplace: this.charForm.birthplace,
                                 residence: this.charForm.residence,
-                                background_prompt: this.charForm.background_prompt || this.charForm.backstory,
+                                creation_hint: this.charForm.creation_hint || this.charForm.backstory,
                                 skills: this.manualSkills,
                             });
                             this.characters.push(c); this.modal = null;
@@ -202,14 +202,14 @@ window.COC.dashboard = {
 
                     async regenBackstory() {
                         if (!this.editChar) return;
-                        if (!confirm(`确认花费 ${this.shopCosts?.regenerate_backstory_cost ?? 100} 金币为「${this.editChar.name}」重新生成背景故事？`)) return;
+                        if (!confirm(`确认花费 ${this.shopCosts?.regenerate_backstory_cost ?? 100} 金币为「${this.editChar.name}」重新生成个人经历？`)) return;
                         this.regenningBackstory = true;
                         try {
                             const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-backstory');
                             if (this.user) this.user.coins = r.coins;
                             this.editChar.backstory = r.backstory;
                             this.syncCharacter({ ...this.editChar, backstory: r.backstory });
-                            this.showToast('背景故事已重新生成');
+                            this.showToast('个人经历已重新生成');
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.regenningBackstory = false;
                     },

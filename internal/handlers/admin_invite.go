@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
@@ -32,8 +33,16 @@ func AdminGetSiteSettings(c *gin.Context) {
 }
 
 // AdminUpdateSiteSetting upserts a site setting by key.
+// The balance_rules key receives special validation: empty string is allowed and
+// the value is trimmed to at most 2000 Unicode runes before saving.
 func AdminUpdateSiteSetting(c *gin.Context) {
 	key := c.Param("key")
+
+	if key == "balance_rules" {
+		adminUpdateBalanceRules(c)
+		return
+	}
+
 	var body struct {
 		Value string `json:"value" binding:"required"`
 	}
@@ -46,6 +55,33 @@ func AdminUpdateSiteSetting(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"key": key, "value": body.Value})
+}
+
+// adminUpdateBalanceRules handles PUT /config/settings/balance_rules.
+// Empty string is valid (disables all balance rules).
+// The value is trimmed and must not exceed 2000 Unicode runes.
+func adminUpdateBalanceRules(c *gin.Context) {
+	var body struct {
+		Value *string `json:"value"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if body.Value == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 value 字段"})
+		return
+	}
+	trimmed := strings.TrimSpace(*body.Value)
+	if len([]rune(trimmed)) > 2000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "平衡调整规则不能超过 2000 个字符（按 Unicode 字符计算）"})
+		return
+	}
+	if err := models.SetSiteSetting("balance_rules", trimmed); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"key": "balance_rules", "value": trimmed})
 }
 
 // AdminListInviteCodes returns all invite codes with creator/user info.

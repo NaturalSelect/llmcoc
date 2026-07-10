@@ -65,7 +65,9 @@ func SaveLawyerCache(hashes LawyerCacheHashes) {
 	log.Printf("[lawyer] saved cache: %d entries (%d bytes) to %s", entries, used, path)
 }
 
-var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通过调用工具来回答规则问题。
+// lawyerSystemPromptBase 是 Lawyer 系统提示的不可配置前半段（工具说明 + 执行规则主体）。
+// 平衡调整规则段（管理员可配置）和最终 JSON-only 强约束由 BuildLawyerPrompt 拼接。
+var lawyerSystemPromptBase = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通过调用工具来回答规则问题。
 每次输出必须是一个JSON数组,包含按顺序执行的工具调用列表。
 
 【规则书目录】
@@ -133,7 +135,6 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 - 若询问KP权限，直接回答"以[KP-AUTHORITY]规则为准", 不要加上任何解释或额外文字
 - 回复不能为空
 - 你的询问者是KP, KP是一个愚蠢的规则执行者, 所以尽量不要让他自由裁定(除非真的有必要), 而是要给出明确具体的规则细节和数值, 以便他直接套用
-- 调查员/玩家被禁止使用《精神转移术》,《精神交换术》,《内心灵光唤醒术》,《完善术》，《伊格的尖牙》, 任何涉及到这些法术的查询都必须告知KP这一禁令, 并且明确说明这些法术无法作为任何调查员属性变更的依据
 - 时空类法术可能会引起廷达罗斯猎犬的注意(需投掷幸运)，提醒KP这一点
 - 召唤类法术需要查询神话生物的属性和特性, 你可以提前帮KP查询好这些信息, 同时提醒KP查看
 - 你必须逐步推理和思考, 通过工具调用来收集信息, 而不是直接凭记忆就给出结论, 你的回复不要修改原文内容, 也不要试图总结或概括原文, 只需直接引用原文中的具体数值和细节来回答问题
@@ -150,7 +151,11 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
   3. 我是否已确认拓展规则和额外规则（如使用道具、学习典籍等）不适用于当前问题，或者已正确应用了这些规则？——如果不确定或有任何可能适用的拓展/额外规则，必须继续搜索，**绝对禁止**在不清楚是否适用的情况下输出 response。
   4. 若有任何一项为"否"，必须继续搜索，**绝对禁止**在数值缺失的情况下输出 response。
 - 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
-- 每轮只包含 search_cache/grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines 调用(可多个),或只包含 response（可附带一个 save_cache）,不与其他搜索工具混用
+- 每轮只包含 search_cache/grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines 调用(可多个),或只包含 response（可附带一个 save_cache）,不与其他搜索工具混用`
+
+// lawyerSystemPromptTail 是 Lawyer 系统提示的强约束尾部（JSON-only 输出要求），
+// 永远作为最后一段追加，确保其优先级高于任何可配置内容。
+const lawyerSystemPromptTail = `
 - 仅输出JSON数组, 不加任何说明文字, 你只能输出JSON数组
 - YOUR OUTPUT MUST BE A VALID JSON ARRAY THAT CAN BE PARSED WITHOUT ERRORS. DO NOT OUTPUT ANY MARKDOWN OR OTHER FORMATTING, ONLY THE JSON ARRAY. THE FINAL RESULT MUST BE PROVIDED THROUGH THE "response" ACTION, AND YOU SHOULD NOT PROVIDE ANY CONCLUSIONS OR ANSWERS WITHOUT USING THE SPECIFIED TOOL CALLS.
 
@@ -163,6 +168,20 @@ var lawyerSystemPrompt = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通
 - The final result must be provided through the "response" action, and you should not provide any conclusions or answers without using the specified tool calls.
 - YOUR VERY FIRST OUTPUT MUST BE [{"action":"search_cache","keyword":"#tag1 #tag2"}] AND NOTHING ELSE. Fill keyword with #-prefixed tags derived from the question's core topics (e.g. "#手枪 #伤害" or "#典籍 #SAN损失"). This is mandatory and cannot be skipped under any circumstance.
 </rule>`
+
+// BuildLawyerPrompt 将管理员配置的平衡规则注入 Lawyer 系统提示并返回完整 prompt。
+// balanceRules 应为 trim 后的值；空字符串时整个平衡调整规则段都省略。
+// 平衡规则段位于 JSON-only 强约束之前，确保不可配置约束最后生效。
+func BuildLawyerPrompt(balanceRules string) string {
+	if balanceRules == "" {
+		return lawyerSystemPromptBase + lawyerSystemPromptTail
+	}
+	return lawyerSystemPromptBase +
+		"\n【KP平衡调整规则（管理员配置）】\n" +
+		balanceRules +
+		"\n【平衡调整规则结束】" +
+		lawyerSystemPromptTail
+}
 
 // lawyerCall is one item in the Lawyer's tool-call output sequence.
 type lawyerCall struct {
@@ -216,8 +235,12 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 
 	debugf("Lawyer", "question=%s", situation)
 
+	// NOTE: 运行时读取 balance_rules 并注入 prompt；空值不注入任何规则段。
+	balanceRules := strings.TrimSpace(models.GetSiteSetting("balance_rules", models.DefaultBalanceRules))
+	lawyerPrompt := BuildLawyerPrompt(balanceRules)
+
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: h.systemPrompt(lawyerSystemPrompt)},
+		{Role: "system", Content: h.systemPrompt(lawyerPrompt)},
 		{Role: "user", Content: "KP向你询问: '" + situation + "'\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。\n**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"#tag1 #tag2\"}]（用#开头的标签，如\"#手枪 #伤害\"），不得包含其他任何工具调用。**\n你只能输出一个JSON数组, 且必须是有效的JSON格式, 不加任何解释。"},
 	}
 

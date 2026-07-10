@@ -81,6 +81,9 @@ func seedDefaultSiteSettings() {
 		"end_session_cost":           "200",
 		"writer_history_max_runes":   "20000",
 		"max_character_drafts":       "3",
+		// NOTE: 默认平衡调整规则，与 models.DefaultBalanceRules 保持同一来源；
+		// 已有该 key（含空字符串）时绝不覆盖。
+		"balance_rules": DefaultBalanceRules,
 	}
 	for k, v := range defaults {
 		var s SiteSetting

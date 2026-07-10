@@ -951,10 +951,10 @@
                 <div x-show="editChar?.backstory" class="mb-3">
                     <div class="flex items-center gap-2 mb-1">
                         <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider"
-                            style="font-family:system-ui">背景故事</h3>
+                            style="font-family:system-ui">个人经历</h3>
                         <button @click="regenBackstory()" :disabled="regenningBackstory || (user?.coins??0) < (shopCosts?.regenerate_backstory_cost ?? 100)"
                             class="btn btn-amber text-xs py-0.5 px-2" style="font-family:system-ui"
-                            :title="'花费 ' + (shopCosts?.regenerate_backstory_cost ?? 100) + ' 金币重新生成背景故事（当前金币：' + (user?.coins??0) + '）'">
+                            :title="'花费 ' + (shopCosts?.regenerate_backstory_cost ?? 100) + ' 金币重新生成个人经历（当前金币：' + (user?.coins??0) + '）'">
                             <span x-show="!regenningBackstory" x-text="'重新生成 -' + (shopCosts?.regenerate_backstory_cost ?? 100)"></span>
                             <span x-show="regenningBackstory">生成中…</span>
                         </button>
@@ -1030,8 +1030,8 @@
                             <p class="text-sm text-amber-700">规则车卡会先在服务器掷骰并锁定属性，草稿15分钟内有效且只能使用一次。</p>
                             <div class="grid grid-cols-3 gap-2 items-end">
                                 <div class="col-span-2">
-                                    <label class="text-xs text-amber-800 mb-1 block">年龄（18-89）</label>
-                                    <input x-model.number="charForm.age" type="number" min="18" max="89" class="inp" />
+                                    <label class="text-xs text-amber-800 mb-1 block">年龄（15-90）</label>
+                                    <input x-model.number="charForm.age" type="number" min="15" max="90" class="inp" />
                                 </div>
                                 <button @click="rollManualChar()" :disabled="loading" class="btn btn-amber">
                                     <span x-show="!loading">服务器掷骰</span>
@@ -1082,7 +1082,7 @@
                                 <input x-model="charForm.birthplace" placeholder="出生地" class="inp" />
                                 <input x-model="charForm.residence" placeholder="现居地" class="inp" />
                             </div>
-                            <textarea x-model="charForm.background_prompt" placeholder="背景提示词 / 角色概念：如家族背景、性格倾向、希望的氛围等" rows="4" class="inp resize-none"></textarea>
+                            <textarea x-model="charForm.creation_hint" placeholder="角色构思（可选）：如家族背景、性格倾向、希望的氛围等" rows="4" class="inp resize-none"></textarea>
                             <p class="text-xs text-amber-800">AI会根据提示词、姓名、性别、职业和已锁定属性生成背景故事、外貌与性格特征。</p>
                             <div class="flex gap-2">
                                 <button @click="manualStep=1" class="btn btn-ghost flex-1">重新投掷</button>
@@ -1133,7 +1133,7 @@
                             </div>
                             <div>
                                 <label class="text-xs text-amber-800 mb-1 block" style="font-family:system-ui">年龄</label>
-                                <input x-model.number="genForm.age" type="number" min="18" max="89" placeholder="如：28"
+                                 <input x-model.number="genForm.age" type="number" min="15" max="90" placeholder="如：28"
                                     class="inp" />
                             </div>
                         </div>

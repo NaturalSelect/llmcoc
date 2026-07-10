@@ -4,6 +4,7 @@ package agent
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -12,10 +13,10 @@ import (
 
 // parseStateChange parses a director change string (e.g. "HP -3(角色名)" or
 // "cthulhu_mythos +1(角色名)") into a CharacterUpdate.
-// Supported fields: HP, SAN, MP, POW, cthulhu_mythos, race, occupation, wound_state.
+// Supported fields: HP, SAN, MP, POW, cthulhu_mythos, race, occupation, wound_state, age.
 // Returns false if the string cannot be matched to a known field.
 var stateChangeFields = []string{
-	"cthulhu_mythos", "wound_state", "HP", "SAN", "MP", "POW", "race", "occupation",
+	"cthulhu_mythos", "wound_state", "HP", "SAN", "MP", "POW", "race", "occupation", "age",
 	"str", "con", "siz", "dex", "app", "int", "edu",
 }
 
@@ -35,7 +36,7 @@ func parseStateChange(change string) (CharacterUpdate, string, bool) {
 			deltaStr = rest
 		}
 
-		if strings.ToLower(field) == "race" || strings.ToLower(field) == "occupation" || strings.ToLower(field) == "wound_state" {
+		if strings.ToLower(field) == "race" || strings.ToLower(field) == "occupation" || strings.ToLower(field) == "wound_state" || strings.ToLower(field) == "age" {
 			// For string fields, deltaStr is actually the new value string.
 			return CharacterUpdate{
 				CharacterName: charName,
@@ -66,7 +67,7 @@ func parseStateChange(change string) (CharacterUpdate, string, bool) {
 			Delta:         delta,
 		}, "", true
 	}
-	errMsg := fmt.Sprintf("无法识别的变更字段: %q，支持的字段: HP, SAN, MP, POW, STR, CON, SIZ, DEX, APP, INT, EDU, cthulhu_mythos, race, occupation, wound_state。正确格式如 HP -3(角色名)", change)
+	errMsg := fmt.Sprintf("无法识别的变更字段: %q，支持的字段: HP, SAN, MP, POW, STR, CON, SIZ, DEX, APP, INT, EDU, age, cthulhu_mythos, race, occupation, wound_state。正确格式如 HP -3(角色名)", change)
 	log.Printf("[editor] %s", errMsg)
 	return CharacterUpdate{}, errMsg, false
 }
@@ -83,30 +84,9 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 		switch strings.ToLower(upd.Field) {
 		case "san":
 			s := card.Stats.Data
-			prevSAN := s.SAN
 			newSAN := s.SAN + upd.Delta
 			s.SAN = clamp(newSAN, 0, card.Stats.Data.MaxSAN)
 			card.Stats.Data = s
-
-			// ── 理智损失事件:检查疯狂触发 ──────────────────────────────────────
-			if upd.Delta < 0 {
-				sanLoss := prevSAN - s.SAN // actual points lost (positive)
-				if sanLoss > 0 {
-					card.DailySanLoss += sanLoss
-
-					// 潜在疯狂期(临时/不定性):哪怕只损失1点SAN,立即再次触发疯狂发作
-					if card.MadnessState == "temporary" || card.MadnessState == "indefinite" {
-						// Re-roll a new symptom for the relapse episode.
-						sym := game.RollMadnessSymptom(true)
-						card.MadnessSymptom = sym.Description
-						card.MadnessDuration = sym.Duration
-						log.Printf("[editor] %s: latent madness relapse triggered (state=%s, sanLoss=%d)", card.Name, card.MadnessState, sanLoss)
-					} else {
-						kind := game.EvalMadness(sanLoss, s.SAN, card.DailySanLoss, s.MaxSAN)
-						applyMadnessToCard(card, kind)
-					}
-				}
-			}
 			models.DB.Save(card)
 
 		case "wound_state":
@@ -293,6 +273,17 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			models.DB.Save(card)
 		case "occupation":
 			card.Occupation = upd.NewValue
+			models.DB.Save(card)
+		case "age":
+			newAge, err := strconv.Atoi(strings.TrimSpace(upd.NewValue))
+			if err != nil || newAge < game.MinManualCharacterAge || newAge > game.MaxManualCharacterAge {
+				log.Printf("[editor] %s: invalid age value %q (must be %d-%d)", card.Name, upd.NewValue, game.MinManualCharacterAge, game.MaxManualCharacterAge)
+				return // character found but update rejected; nothing saved
+			}
+			card.Age = newAge
+			stats := card.Stats.Data
+			game.ApplyDerivedStats(&stats, card.Age, false)
+			card.Stats.Data = stats
 			models.DB.Save(card)
 		case "str", "con", "siz", "dex", "app", "int", "edu":
 			s := card.Stats.Data

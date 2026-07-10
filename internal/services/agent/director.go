@@ -106,7 +106,7 @@ const kpSystemPrompt = `
 			<call_example>{"action":"act_npc","npc_name":"NPC名称","question":"你要问NPC的问题(请注意: 不要告诉NPC, 他不应该知道的信息, 不要预设结果,完整地描述场景), 例如: 有一名少女在此时接近你, 给出你的反应", "hide_secret":true, "spell":"该NPC的已掌握法术","kp_directive":"指导NPC回复(使用必须有机械原因)，例如:说服失败(某个机械结果)：NPC应拒绝查看档案，可以找借口或转移话题，但不要透露真实原因。"}</call_example>
 		</tool>
 		<tool name="update_characters" sideeffect="true" endTheTurn="false">
-			<description>更新调查员的状态。格式严格为: "FIELD VALUE (角色名)" — 角色名必须用圆括号包裹且紧跟在值之后，这是解析关键字。FIELD和VALUE之间只用空格，VALUE中禁止再出现圆括号(例如不能写"-3(重伤)")。仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、种族、职业、wound_state，其他临时信息请用llm_note。禁止修改角色名称(name字段不存在)。HP伤害/治疗必须优先使用HP变更路径，系统会自动处理即死/重伤/濒死/复活，不要因为怕忘记状态而跳过HP修改；wound_state只用于HP自动路径无法表达的规则/剧情状态（none|major|dying|dead）。
+			<description>更新调查员的状态。格式严格为: "FIELD VALUE (角色名)" — 角色名必须用圆括号包裹且紧跟在值之后，这是解析关键字。FIELD和VALUE之间只用空格，VALUE中禁止再出现圆括号(例如不能写"-3(重伤)")。仅支持修改HP、MP、SAN、基础属性(自动计算衍生属性)、年龄(15-90岁,格式"age 25(角色名)",自动重算衍生属性)、种族、职业、wound_state，其他临时信息请用llm_note。禁止修改角色名称(name字段不存在)。HP伤害/治疗必须优先使用HP变更路径，系统会自动处理即死/重伤/濒死/复活，不要因为怕忘记状态而跳过HP修改；wound_state只用于HP自动路径无法表达的规则/剧情状态（none|major|dying|dead）。
 请注意，数值的修改是增量语义: STR +40(Char) 代表增加40 STR到当前值，而不是直接设置为40。正增量必须带+号（如+40），负增量必须带-号（如-3），省略符号（如"40"）会被拒绝。race/occupation/wound_state为非数值字段，不需要+/-号。
 【HP/SAN/MP来源链】每次HP/SAN/MP变更须有完整来源链：触发事件→规则/剧本来源→roll_dice结果或固定数值。大失败/失败本身不是伤害或SAN损失；叙事氛围（恐惧/疼痛/震惊/黑暗/惊叫/NPC情绪/戏剧性后果）不是数值来源。SAN损失仅在以下两种情形触发：①直面神话恐怖；②施法/种族能力的禁忌代价。感官不适/情绪冲击/尸体/普通暴力/剧情氛围均不造成SAN损失，除非规则/剧本明确指定数值。调查员已知神话存在列表中的实体不再造成SAN损失。
 【reason白名单】每条变更的reason必须且只能属于以下类别之一，否则拒绝调用：

@@ -654,6 +654,25 @@
                         </div>
                     </div>
                 </div>
+                <!-- Balance rules -->
+                <div class="card rounded p-5 max-w-2xl">
+                    <h3 class="font-bold text-amber-300 mb-3 text-sm" style="font-family:system-ui">平衡调整规则</h3>
+                    <p class="text-xs text-amber-800 mb-3" style="font-family:system-ui">
+                        这是站点全局规则，会注入 Lawyer，作为 Lawyer/KP 裁定参考，不是执行层硬拦截；
+                        留空表示不设置额外平衡规则；下次 Lawyer 调用将读取最新规则。
+                    </p>
+                    <textarea x-model="siteSettings.balance_rules"
+                        rows="6"
+                        class="inp w-full text-xs resize-y"
+                        style="font-family:monospace;min-height:100px"
+                        placeholder="留空表示不设置额外平衡规则..."></textarea>
+                    <div class="flex items-center justify-between mt-2">
+                        <span class="text-xs text-amber-800" style="font-family:system-ui"
+                            x-text="([...(siteSettings.balance_rules || '')].length) + '/2000'"></span>
+                        <button @click="updateBalanceRules()" class="btn btn-amber text-xs">保存</button>
+                    </div>
+                </div>
+
                 <div class="card rounded p-5">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">邀请码管理</h3>

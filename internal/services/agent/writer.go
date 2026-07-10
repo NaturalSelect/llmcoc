@@ -222,6 +222,7 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 	sb.WriteString("<director_instruction>\n")
 	sb.WriteString(direction)
 	sb.WriteString("\n</director_instruction>\n")
+	sb.WriteString("请在上文的基础上续写文章,并保持逻辑、时间、空间上的连贯")
 
 	// 组装Writer消息:系统提示词、保留历史、本次导演指令。
 	msgs := make([]llm.ChatMessage, 0, len(state.History)+2)
@@ -495,15 +496,15 @@ func writerHistoryRuneCount(history []llm.ChatMessage) int {
 	return runeCount
 }
 
-const characterEvolutionPrompt = `你是无限流故事的角色成长编辑。根据角色原有的背景故事、性格特征,以及本次冒险的叙事经历,更新角色的背景故事,体现冒险对角色的影响和成长。
+const characterEvolutionPrompt = `你是无限流故事的角色成长编辑。根据角色原有的个人经历、性格特征,以及本次冒险的叙事经历,更新角色的个人经历,体现冒险对角色的影响和成长。
 
 要求:
 - 保留角色的核心身份,但反映冒险带来的变化
-- 背景故事可以追加新的经历
+- 个人经历可以追加新的经历
 - 篇幅与原有内容相近,不要过度冗长,一般仅追加一两句话即可,如果过长请考虑总结
 - 总篇幅在200字以内
 - 仅输出JSON,不要任何额外文字:
-{"new_backstory": "更新后的背景故事(200字以内)"}
+{"new_backstory": "更新后的个人经历(200字以内)"}
 `
 
 // CharacterEvolutionResult is the writer agent output for a single character's evolution.

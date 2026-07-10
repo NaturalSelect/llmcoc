@@ -140,17 +140,17 @@ func RegenerateBackstory(ctx context.Context, card *models.CharacterCard) (strin
 		gender = "(未指定)"
 	}
 
-	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)调查员重新生成背景故事,以JSON格式返回,不要有任何额外文字。
+	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)调查员重新生成个人经历,以JSON格式返回,不要有任何额外文字。
 
 调查员信息:
 - 姓名:%s
 - 职业:%s
 - 性别:%s
 
-要求:背景故事200字以内,包含成长经历、进入调查行业的契机等,与之前的故事不同。
+要求:个人经历200字以内,记录成长经历等人生轨迹,与之前的内容不同。
 
 请返回如下JSON格式:
-{"backstory": "背景故事"}`,
+{"backstory": "个人经历"}`,
 		name, occupation, gender,
 	)
 
@@ -285,7 +285,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 - 年龄:%s
 - 职业:%s
 - 性别:%s
-- 玩家背景提示:%s
+	- 角色构思:%s
 - 骰子已生成的基础属性:STR=%d CON=%d SIZ=%d DEX=%d APP=%d INT=%d POW=%d EDU=%d
 
 【属性重分配规则】
@@ -311,7 +311,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 
 请返回如下JSON格式(所有字段都用中文):
 {
-  "backstory": "200字以内的背景故事",
+  "backstory": "200字以内的个人经历（成长背景、人生轨迹等）",
   "appearance": "100字以内的外貌描述(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质,不包括服饰",
   "traits": "性格特征(以空格分隔,1-5个标签,包含语言风格、性格特点等，二次元风格, 如:雌小鬼 大和抚子等)",
   "stats": {"STR":N,"CON":N,"SIZ":N,"DEX":N,"APP":N,"INT":N,"POW":N,"EDU":N}

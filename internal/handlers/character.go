@@ -88,12 +88,12 @@ func hotFixChar(card *models.CharacterCard) {
 		card.Name = trimed
 		needUpdate = true
 	}
-	if card.Age < 18 {
-		card.Age = 18
+	if card.Age < 15 {
+		card.Age = 15
 		needUpdate = true
 	}
-	if card.Age > 89 {
-		card.Age = 89
+	if card.Age > 90 {
+		card.Age = 90
 		needUpdate = true
 	}
 	before = card.Stats.Data
@@ -172,12 +172,12 @@ func CreateCharacter(c *gin.Context) {
 		return
 	}
 
-	if req.Age < 18 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "年龄必须至少为18岁"})
+	if req.Age < 15 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "年龄必须至少为15岁"})
 		return
 	}
-	if req.Age > 89 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "年龄不能超过89岁"})
+	if req.Age > 90 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "年龄不能超过90岁"})
 		return
 	}
 	if err := game.RejectClientStats(req.Stats); err != nil {
@@ -263,11 +263,11 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "姓名不能为空"})
 		return
 	}
-	if req.Age < 18 {
-		req.Age = 18
+	if req.Age < 15 {
+		req.Age = 15
 	}
-	if req.Age > 89 {
-		req.Age = 89
+	if req.Age > 90 {
+		req.Age = 90
 	}
 
 	// Generate base stats
@@ -376,8 +376,8 @@ func UpdateCharacter(c *gin.Context) {
 		card.Name = strings.TrimSpace(req.Name)
 	}
 	if req.Age != 0 {
-		if req.Age < 18 || req.Age > 89 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "年龄必须在18-89之间"})
+		if req.Age < 15 || req.Age > 90 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "年龄必须在15-90之间"})
 			return
 		}
 		card.Age = req.Age
@@ -748,7 +748,7 @@ func applyAdjustedSkills(base map[string]int, adjusted map[string]int, stats mod
 	base["闪避"] = stats.DEX / 2
 }
 
-	// NOTE: RegenerateAppearance 通过 SiteSetting 读取费率，扣除金币后重新生成外貌
+// NOTE: RegenerateAppearance 通过 SiteSetting 读取费率，扣除金币后重新生成外貌
 func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 	cost := siteSettingInt("regenerate_appearance_cost", 100)
 	userID := c.GetUint("user_id")
@@ -823,7 +823,7 @@ func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-	// NOTE: RegenerateBackstory 通过 SiteSetting 读取费率，扣除金币后重新生成背景故事
+// NOTE: RegenerateBackstory 通过 SiteSetting 读取费率，扣除金币后重新生成个人经历
 func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 	cost := siteSettingInt("regenerate_backstory_cost", 100)
 	userID := c.GetUint("user_id")
@@ -881,7 +881,7 @@ func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 	card.Backstory = backstory
 	if err := tx.Save(&card).Error; err != nil {
 		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存背景故事失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存个人经历失败"})
 		return
 	}
 
@@ -898,7 +898,7 @@ func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-	// NOTE: RegenerateTraits 通过 SiteSetting 读取费率，扣除金币后重新生成性格特征
+// NOTE: RegenerateTraits 通过 SiteSetting 读取费率，扣除金币后重新生成性格特征
 func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
 	cost := siteSettingInt("regenerate_traits_cost", 100)
 	userID := c.GetUint("user_id")

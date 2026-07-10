@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	MinManualCharacterAge = 18
-	MaxManualCharacterAge = 89
+	MinManualCharacterAge = 15
+	MaxManualCharacterAge = 90
 )
 
 type SkillBudget struct {
@@ -83,7 +83,7 @@ func rollLuck(age int) models.CharacterLuckRoll {
 		return models.CharacterAttributeRoll{Formula: "3D6×5", Dice: dice, Total: v, Base: base, Final: base}
 	}
 	first := rollOnce()
-	if age < 18 || age > 19 {
+	if age < 15 || age > 19 {
 		return models.CharacterLuckRoll{Formula: "3D6×5", Rolls: []models.CharacterAttributeRoll{first}, Kept: first.Base}
 	}
 	second := rollOnce()
@@ -96,7 +96,7 @@ func rollLuck(age int) models.CharacterLuckRoll {
 
 func applyAgeRules(age int, stats *models.CharacterStats, raw *models.CharacterRawRolls) {
 	switch {
-	case age >= 18 && age <= 19:
+	case age >= 15 && age <= 19:
 		reducedAttr := "STR"
 		if stats.SIZ > stats.STR {
 			stats.SIZ -= 5
@@ -105,7 +105,7 @@ func applyAgeRules(age int, stats *models.CharacterStats, raw *models.CharacterR
 			stats.STR -= 5
 		}
 		stats.EDU -= 5
-		raw.AgeLog = append(raw.AgeLog, fmt.Sprintf("18-19岁：STR+SIZ合计-5（本次从%s扣除5），EDU-5，Luck掷两次取高。", reducedAttr))
+		raw.AgeLog = append(raw.AgeLog, fmt.Sprintf("15-19岁：STR+SIZ合计-5（本次从%s扣除5），EDU-5，Luck掷两次取高。", reducedAttr))
 	case age >= 20 && age <= 39:
 		raw.AgeLog = append(raw.AgeLog, "20-39岁：EDU增强1次。")
 		applyEDUEnhancements(1, stats, raw)
@@ -129,8 +129,8 @@ func applyAgeRules(age int, stats *models.CharacterStats, raw *models.CharacterR
 		applyEDUEnhancements(4, stats, raw)
 		reducePhysical(stats, 40)
 		stats.APP -= 20
-	case age >= 80 && age <= 89:
-		raw.AgeLog = append(raw.AgeLog, "80-89岁：EDU增强4次，STR/CON/DEX合计-80，APP-25，MOV-5。")
+	case age >= 80 && age <= 90:
+		raw.AgeLog = append(raw.AgeLog, "80-90岁：EDU增强4次，STR/CON/DEX合计-80，APP-25，MOV-5。")
 		applyEDUEnhancements(4, stats, raw)
 		reducePhysical(stats, 80)
 		stats.APP -= 25
