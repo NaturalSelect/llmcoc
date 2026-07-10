@@ -495,6 +495,8 @@ const (
 	AgentRoleNPC       AgentRole = "npc"
 	AgentRolePainter   AgentRole = "painter"
 	AgentRoleParser    AgentRole = "parser"
+	// NOTE: AgentRoleTranslator 负责发散联想、世界知识和资料转译；独立于Lawyer，不复用其provider/model。
+	AgentRoleTranslator AgentRole = "translator"
 )
 
 // LLMProviderConfig stores a named LLM API endpoint configuration.

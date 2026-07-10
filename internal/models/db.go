@@ -169,6 +169,8 @@ func seedDefaultAgentConfigs() {
 		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleEvaluator, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleGrowth, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		// NOTE: Translator 负责发散联想、世界知识和资料转译；独立配置，建议配置世界知识丰富、发散能力较好的模型。
+		{Role: AgentRoleTranslator, ProviderConfigID: provID, ModelName: model, MaxTokens: 2000, Temperature: 0.7, ThinkingLevel: "low", IsActive: true},
 	}
 	for _, ag := range required {
 		var existing AgentConfig

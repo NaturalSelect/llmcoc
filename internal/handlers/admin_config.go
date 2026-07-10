@@ -170,6 +170,8 @@ func AdminUpdateAgent(c *gin.Context) {
 		"director": true, "writer": true, "lawyer": true, "npc": true, "evaluator": true, "growth": true,
 		"scripter": true, "architect": true, "lore_researcher": true, "encounter_designer": true, "qa_guard": true,
 		"parser": true, "painter": true,
+		// NOTE: translator 是独立的资料转译 Agent，允许管理员配置其 provider/model。
+		"translator": true,
 	}
 	if !validRoles[role] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent 角色"})

@@ -550,7 +550,8 @@ type oneshotTranslatorToolCall struct {
 }
 
 func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept string, reason string) (string, error) {
-	if room.architect.provider == nil {
+	// NOTE: translator 独立 provider/session key，不复用 lawyer；fail-fast，不退回 lawyer。
+	if room.translator.provider == nil {
 		return "", fmt.Errorf("translator provider unavailable")
 	}
 	sessionID := scripterSessionID(ctx, room)
@@ -560,7 +561,7 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 	}{Concept: concept, Reason: reason})
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.architect.systemPrompt(oneshotTranslatorSystemPrompt)},
+		{Role: "system", Content: room.translator.systemPrompt(oneshotTranslatorSystemPrompt)},
 		{Role: "user", Content: fmt.Sprintf(`<translate_anchor_request>%s</translate_anchor_request>
 <recently_used_mythos_anchors>
 %s
@@ -577,7 +578,8 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 		}
 		logStagePrompt(fmt.Sprintf("oneshot_translator_round_%d", round), sessionID, msgs)
 		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		raw, err := room.lawyer.provider.Chat(ctx, room.sessionID+":"+string(models.AgentRoleLawyer), msgs)
+		// NOTE: Chat 走 translator provider，session key 包含 AgentRoleTranslator，与 lawyer 完全隔离。
+		raw, err := room.translator.provider.Chat(ctx, room.sessionID+":"+string(models.AgentRoleTranslator), msgs)
 		if err != nil {
 			return "", err
 		}
@@ -606,6 +608,7 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 			switch call.Action {
 			case toolTranslatorAskLawyer:
 				askedLawyer = true
+				// NOTE: ask_lawyer 仍然走 room.lawyer，与 translator Chat 路由严格隔离。
 				toolResults = append(toolResults, oneshotTranslatorAskLawyer(ctx, room, call))
 			case toolTranslatorRespond:
 				if !askedLawyer {

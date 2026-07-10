@@ -168,9 +168,11 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 // ---------------------------------------------------------------------------
 
 type scripterRoom struct {
-	architect       agentHandle
-	qa              agentHandle
-	lawyer          agentHandle
+	architect agentHandle
+	qa        agentHandle
+	lawyer    agentHandle
+	// NOTE: translator 是独立的发散联想/资料转译 Agent，不复用 lawyer 的 provider/model。
+	translator      agentHandle
 	sessionID       string
 	req             ScenarioCreationRequest
 	npcBlacklist    []string
@@ -222,8 +224,13 @@ func newScripterRoom(req ScenarioCreationRequest) (*scripterRoom, error) {
 	if err != nil {
 		return nil, err
 	}
+	// NOTE: translator 独立加载，不可用或禁用时 fail-fast，绝不退回 lawyer。
+	translator, err := loadSingleAgent(models.AgentRoleTranslator)
+	if err != nil {
+		return nil, fmt.Errorf("translator agent 加载失败: %w", err)
+	}
 	return &scripterRoom{
-		architect: architect, qa: qa, lawyer: lawyer,
+		architect: architect, qa: qa, lawyer: lawyer, translator: translator,
 		req: normalizeScenarioCreationRequest(req),
 	}, nil
 }

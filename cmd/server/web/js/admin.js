@@ -137,6 +137,8 @@ window.COC.admin = {
                             architect: { max_tokens: 4000, temperature: 0.7 },
                             qa_guard: { max_tokens: 2000, temperature: 0.3 },
                             parser: { max_tokens: 4000, temperature: 0.1 },
+                            // NOTE: translator 负责发散联想、世界知识和资料转译，建议配置世界知识丰富、发散能力较好的模型。
+                            translator: { max_tokens: 2000, temperature: 0.7 },
                         };
                         const expectedRoles = Object.keys(roleDefaults).filter(r => r !== 'scripter');
                         const byRole = new Map(agents.filter(a => a.role !== 'scripter').map(a => [a.role, a]));
@@ -472,6 +474,8 @@ window.COC.admin = {
                             npc: '🎭 NPC', painter: '🎨 Painter', evaluator: '📊 Evaluator', growth: '🌱 Growth',
                             architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
                             parser: '🔧 Parser',
+                            // NOTE: translator — 翻译/资料转译
+                            translator: '🌐 Translator',
                         }[role] || role;
                     },
                     agentDesc(role) {
@@ -486,6 +490,8 @@ window.COC.admin = {
                             architect: '模组设计 — 生成大纲并转化为完整JSON模组',
                             qa_guard: '质量审查 — 审查模组可玩性、规则合规与线索设计',
                             parser: 'JSON修复 — 低温度结构化输出，修复其他Agent的JSON格式错误',
+                            // NOTE: translator — 翻译/资料转译；负责发散联想、世界知识和COC元素转译
+                            translator: '翻译/资料转译 — 发散联想与COC元素转译；建议配置世界知识丰富、发散能力较好的模型',
                         }[role] || '';
                     },
                     agentDefaultHint(role) {
@@ -500,6 +506,8 @@ window.COC.admin = {
                             architect: '留空使用内置 Architect 提示词（大纲+JSON生成）',
                             qa_guard: '留空使用内置 QA Guard 提示词（模组质量审查）',
                             parser: '留空使用内置 Parser 提示词（JSON格式修复）',
+                            // NOTE: translator 留空使用内置 Translator 提示词（翻译/资料转译）
+                            translator: '留空使用内置 Translator 提示词（翻译/资料转译）；建议配置世界知识丰富的模型',
                         }[role] || '留空使用默认';
                     },
 
