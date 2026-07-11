@@ -67,14 +67,16 @@ var scriptEra = []string{
 	"1920s", "1950s", "1980s", "modern",
 }
 
+// NOTE: 8 种神话力量介入机制，替代原泛恐怖美学分类；每种描述神话如何进入人类世界，而非恐怖风格或具体怪物。
 var scripterHorrorModes = []string{
-	"body_horror",
-	"cosmic_horror",
-	"gothic_horror",
-	"social_horror",
-	"environmental_horror",
-	"folk_horror",
-	"psychological_horror",
+	"cult_ritual",
+	"forbidden_knowledge",
+	"mythos_infiltration",
+	"bloodline_corruption",
+	"mythos_predation",
+	"sealed_awakening",
+	"dimensional_intrusion",
+	"sorcerous_usurpation",
 }
 
 var scripterInvestFocuses = []string{
@@ -88,14 +90,16 @@ var scripterInvestFocuses = []string{
 	"identity_replacement",
 }
 
+// NOTE: 中文标签对应 8 种介入机制，描述神话力量进入人类世界的方式，而非恐怖美学或具体怪物。
 var horrorModeChineseLabels = map[string]string{
-	"body_horror":          "身体恐怖：变异、腐蚀、肉身边界被破坏",
-	"cosmic_horror":        "宇宙恐怖：知识、尺度和不可知深渊压垮理性",
-	"gothic_horror":        "哥特恐怖：旧宅、血缘、遗产、诅咒和迟来的真相",
-	"social_horror":        "社会恐怖：亲密关系、社区秩序或身份信任被侵蚀",
-	"environmental_horror": "环境恐怖：土地、天气、建筑或生态本身排斥人类",
-	"folk_horror":          "民俗恐怖：地方传说、仪式、禁忌和共同体沉默",
-	"psychological_horror": "心理恐怖：感知、记忆和自我判断逐步失稳",
+	"cult_ritual":           "邪教仪式——崇拜者通过献祭、召唤、开门或转化仪式引入神话力量",
+	"forbidden_knowledge":   "禁忌知识——典籍、铭文、公式或梦中授知传播足以腐化理解者的真相",
+	"mythos_infiltration":   "异族渗透——非人种族通过伪装、替换、混血或代理人潜入人类社会",
+	"bloodline_corruption":  "血脉腐化——家族中的非人血统、祖先契约或遗传诅咒逐渐显现",
+	"mythos_predation":      "神话猎食——神话生物将人类视为食物、宿主、祭品或繁殖材料",
+	"sealed_awakening":      "封印苏醒——人为活动破坏古老封印，使沉睡的神话存在重新活动",
+	"dimensional_intrusion": "异界侵入——梦境、异维度或异常时空突破边界并侵蚀现实",
+	"sorcerous_usurpation":  "巫术夺舍——施法者借助附身、意识转移或身体窃取延续自身",
 }
 
 var investFocusChineseLabels = map[string]string{
@@ -601,7 +605,8 @@ func buildDiversityCandidates(req ScenarioCreationRequest, sessionID string) []d
 func selectDiversityConstraints(req ScenarioCreationRequest, sessionID string) (horrorMode string, investFocus string, toneTags []string) {
 	candidates := buildDiversityCandidates(req, sessionID)
 	if len(candidates) == 0 {
-		return "cosmic_horror", "disappearance", toneTagsForDiversity("cosmic_horror", "disappearance", req)
+		// NOTE: 围池意外耗尽时的最终兜底；forbidden_knowledge 与 disappearance 均属候选池。
+		return "forbidden_knowledge", "disappearance", toneTagsForDiversity("forbidden_knowledge", "disappearance", req)
 	}
 	chosen := candidates[rand.Intn(len(candidates))]
 	return chosen.HorrorMode, chosen.InvestFocus, toneTagsForDiversity(chosen.HorrorMode, chosen.InvestFocus, req)
@@ -636,7 +641,7 @@ func selectDiversityConstraintsWithAI(ctx context.Context, room *scripterRoom, c
 	theme := room.req.Theme
 
 	systemPrompt := `<role>COC7剧本架构师</role>
-<task>从候选围池内挑最契合题材与时代氛围的一个恐怖模式(horror_mode / 恐怖叙事风格) + 调查焦点(invest_focus / 调查切入点)组合。</task>`
+<task>从候选围池内挑最契合题材与时代氛围的一个神话介入机制(horror_mode / 神话力量介入人类世界的主要机制) + 调查焦点(invest_focus / 调查切入点)组合。</task>`
 
 	userPrompt := fmt.Sprintf(`时代(Era): %s
 主题(Theme): %s
@@ -756,28 +761,32 @@ func toneTagsForDiversity(horrorMode, investFocus string, req ScenarioCreationRe
 		}
 	}
 
+	// NOTE: 按神话介入机制映射文风标签；旧 mode 字符串落入 default 分支，历史数据可读但不产生新候选。
 	switch horrorMode {
-	case "body_horror":
-		addTag("body-horror")
-		addTag("visceral")
-	case "cosmic_horror":
+	case "cult_ritual":
+		addTag("ritualistic")
+		addTag("social-dread")
+	case "forbidden_knowledge":
+		addTag("forbidden-knowledge")
 		addTag("cosmic-dread")
-		addTag("slow-burn")
-	case "gothic_horror":
-		addTag("gothic")
-		addTag("slow-burn")
-	case "social_horror":
+	case "mythos_infiltration":
 		addTag("paranoia")
 		addTag("social-dread")
-	case "environmental_horror":
-		addTag("isolation")
-		addTag("environmental-dread")
-	case "folk_horror":
-		addTag("folk-horror")
-		addTag("ritualistic")
-	case "psychological_horror":
-		addTag("paranoia")
-		addTag("unreliable-perception")
+	case "bloodline_corruption":
+		addTag("gothic")
+		addTag("body-horror")
+	case "mythos_predation":
+		addTag("visceral")
+		addTag("survival-dread")
+	case "sealed_awakening":
+		addTag("ancient-ruins")
+		addTag("cosmic-dread")
+	case "dimensional_intrusion":
+		addTag("reality-distortion")
+		addTag("cosmic-dread")
+	case "sorcerous_usurpation":
+		addTag("occult")
+		addTag("loss-of-agency")
 	default:
 		addTag("slow-burn")
 	}

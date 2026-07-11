@@ -60,8 +60,8 @@ var oneshotResultExample = OneshotResult{
 	Content: models.ScenarioContent{
 		SystemPrompt:   "你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。",
 		Setting:        "初秋的傍晚，你们受镇图书馆之邀前来协助整理一批新捐赠的藏书。馆内灯光温暖，管理员热情地引你们入座，窗外街区安静而寻常。",
-		ToneTags:       []string{"gothic", "slow-burn", "occult-noir"},
-		HorrorMode:     "gothic_horror",
+		ToneTags:       []string{"forbidden-knowledge", "cosmic-dread", "occult-noir"},
+		HorrorMode:     "forbidden_knowledge",
 		InvestFocus:    "artifact_theft",
 		Intro:          "你们在图书馆大厅集合。管理员正在前台核对今天的编目清单，先去和她打个招呼也好；门口的访客登记簿还空着一栏，或者干脆四处走走，认认书架区和档案室的门朝哪边开。",
 		GameStartSlot:  16,
@@ -137,7 +137,7 @@ func oneshotSystemPrompt() string {
 
 【步骤①：核心概念与恐怖内核】
 先明确：
-- 恐怖内核必须使用用户消息 <diversity_constraints> 中指定的 horror_mode，不得自行替换；只允许把它具体化为剧情执行方式
+- 恐怖内核必须使用用户消息 <diversity_constraints> 中指定的 horror_mode（神话力量介入人类世界的主要机制，非恐怖风格或美学），不得自行替换；只允许把它具体化为剧情执行方式
 - 选择神话关联度：旧日支配者本体 / 眷属 / 神话物品 / 神话知识污染
 - 时代与地域风味：只作为氛围和行动约束，不直接代替谜团
 - 调查焦点必须使用用户消息 <diversity_constraints> 中指定的 invest_focus，不得自行替换；只允许把它落到具体事件
@@ -272,7 +272,7 @@ submit.draft 必须包含以下字段：
     "system_prompt": "KP四项协议 + 核心真相注入",
     "setting": "开场时的日常、平静表层局势；只交代时代、地点和调查员为何到场，读者看不出剧情、案件、真相或恐怖走向，不带任何惊悚/诡异/不祥氛围",
     "tone_tags": ["必须等于diversity_constraints.tone_tags中的标签"],
-    "horror_mode": "必须等于diversity_constraints.horror_mode",
+    "horror_mode": "必须等于diversity_constraints.horror_mode（神话力量介入人类世界的主要机制）",
     "invest_focus": "必须等于diversity_constraints.invest_focus",
     "intro": "入场位置（日常、平静语气）+ 至少3个立即可执行的具体行动；用自然叙述带出行动选项，禁止①②③等编号列表；不预告危险、不渲染恐怖、不暗示真相",
     "game_start_slot": 16,
@@ -760,7 +760,7 @@ func diversityConstraintsBlock(constraints ScripterConstraints) string {
 	}
 	sb.WriteString(fmt.Sprintf("tone_tags: %s\n", strings.Join(constraints.ToneTags, ", ")))
 	sb.WriteString("硬约束：本次submit.draft.content.horror_mode、invest_focus、tone_tags必须逐字使用上述值，不得自行替换、翻译、改名或省略。\n")
-	sb.WriteString("含义：horror_mode决定恐怖表现结构；invest_focus决定调查入口；tone_tags只约束文风、节奏、场面选择和NPC反应风格，不覆盖剧本事实、规则书裁定或工具结果。\n")
+	sb.WriteString("含义：horror_mode指明神话力量介入人类世界的主要机制（非恐怖风格、美学或具体怪物）；invest_focus决定调查入口；tone_tags只约束文风、节奏、场面选择和NPC反应风格，不覆盖剧本事实、规则书裁定或工具结果。\n")
 	sb.WriteString("</diversity_constraints>")
 	return sb.String()
 }
