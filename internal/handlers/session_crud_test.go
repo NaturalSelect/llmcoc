@@ -269,6 +269,112 @@ func TestJoinSession_WrongPassword(t *testing.T) {
 	}
 }
 
+// ── JoinSession 生存状态校验 ────────────────────────────────────────────────────
+
+func TestJoinSession_InactiveCard(t *testing.T) {
+	initTestDB(t)
+	sessID, _ := setupLobbySession(t)
+	joinerID := seedUser(t, "joiner", "user", 0, 3)
+	// 创建 is_active=false 的人物卡；GORM 对 bool 零值不写 INSERT，需建后显式置 false
+	card := models.CharacterCard{
+		UserID: joinerID,
+		Name:   "Dead Inactive",
+		Stats:  models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, HP: 10, MaxHP: 10}},
+		Skills: models.JSONField[map[string]int]{Data: map[string]int{}},
+	}
+	models.DB.Create(&card)
+	models.DB.Model(&card).Update("is_active", false) // 显式置为 false（零值 bool 需单独 Update）
+
+	r := sessionCRUDRouter(joinerID, "joiner", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sessID), map[string]any{
+		"character_card_id": card.ID,
+	}))
+	// 校验: is_active=false 的人物卡应被拒绝
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("want 400 (inactive card), got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "已死亡或无法继续冒险") {
+		t.Errorf("want dead/inactive error message, got: %s", w.Body.String())
+	}
+}
+
+func TestJoinSession_DeadWoundState(t *testing.T) {
+	initTestDB(t)
+	sessID, _ := setupLobbySession(t)
+	joinerID := seedUser(t, "joiner", "user", 0, 3)
+	// 创建 is_active=true 但 wound_state="dead" 的人物卡
+	card := models.CharacterCard{
+		UserID:     joinerID,
+		Name:       "Wound Dead",
+		IsActive:   true,
+		WoundState: "dead", // 死亡状态
+		Stats:      models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, HP: 0, MaxHP: 10}},
+		Skills:     models.JSONField[map[string]int]{Data: map[string]int{}},
+	}
+	models.DB.Create(&card)
+
+	r := sessionCRUDRouter(joinerID, "joiner", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sessID), map[string]any{
+		"character_card_id": card.ID,
+	}))
+	// 校验: wound_state="dead" 的人物卡应被拒绝（即使 is_active=true）
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("want 400 (dead wound state), got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "已死亡或无法继续冒险") {
+		t.Errorf("want dead/inactive error message, got: %s", w.Body.String())
+	}
+}
+
+func TestJoinSession_ZeroHP(t *testing.T) {
+	initTestDB(t)
+	sessID, _ := setupLobbySession(t)
+	joinerID := seedUser(t, "joiner", "user", 0, 3)
+	// 创建 is_active=true、wound_state="dying"、HP=0 的人物卡
+	card := models.CharacterCard{
+		UserID:     joinerID,
+		Name:       "Dying Zero HP",
+		IsActive:   true,
+		WoundState: "dying",
+		Stats:      models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, HP: 0, MaxHP: 10}},
+		Skills:     models.JSONField[map[string]int]{Data: map[string]int{}},
+	}
+	models.DB.Create(&card)
+
+	r := sessionCRUDRouter(joinerID, "joiner", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sessID), map[string]any{
+		"character_card_id": card.ID,
+	}))
+	// 校验: HP=0 的人物卡应被拒绝（dying 且 HP=0）
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("want 400 (zero HP), got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "已死亡或无法继续冒险") {
+		t.Errorf("want dead/inactive error message, got: %s", w.Body.String())
+	}
+}
+
+func TestJoinSession_AliveCard(t *testing.T) {
+	initTestDB(t)
+	sessID, _ := setupLobbySession(t)
+	joinerID := seedUser(t, "joiner2", "user", 0, 3)
+	// 正常存活卡: is_active=true, wound_state="none", HP=10
+	cardID := seedCard(t, joinerID, "Alive Card")
+
+	r := sessionCRUDRouter(joinerID, "joiner2", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sessID), map[string]any{
+		"character_card_id": cardID,
+	}))
+	// 校验: 正常存活卡仍可加入
+	if w.Code != http.StatusOK {
+		t.Errorf("want 200 (alive card), got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 // ── LeaveSession ───────────────────────────────────────────────────────────────
 
 func TestLeaveSession_Success(t *testing.T) {

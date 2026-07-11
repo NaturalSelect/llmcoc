@@ -235,6 +235,11 @@ func JoinSession(c *gin.Context) {
 		return
 	}
 	hotFixChar(&card)
+	// NOTE: 仅活跃且未死亡且HP>0的人物卡允许加入游戏，死亡卡由商城/复活流程处理
+	if !checkCardCanJoinSession(&card) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该人物卡已死亡或无法继续冒险"})
+		return
+	}
 
 	// Lock check: a character card may only participate in one active session at a time.
 	// Query whether this card already appears in any non-ended session.
@@ -1491,6 +1496,12 @@ func chatTruncate(s string, maxLen int) string {
 		return string(runes[:maxLen]) + "…"
 	}
 	return s
+}
+
+// NOTE: checkCardCanJoinSession 校验人物卡是否满足加入游戏的生存条件：
+// is_active=true 且 wound_state!="dead" 且 HP>0
+func checkCardCanJoinSession(card *models.CharacterCard) bool {
+	return card.IsActive && card.WoundState != "dead" && card.Stats.Data.HP > 0
 }
 
 func isInSession(userID, sessionID uint) bool {

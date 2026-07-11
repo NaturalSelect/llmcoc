@@ -243,8 +243,8 @@ func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messag
 				// NOTE: 捕获流式reasoning token用于审计
 				reasoningToken := choice.Delta.ReasoningContent
 				if reasoningToken != "" {
-					log.Printf("[llm-reasoning-stream] session=%s model=%s token_len=%d",
-						sessionIDFromContext(ctx), p.model, len([]rune(reasoningToken)))
+					log.Printf("[llm-reasoning-stream] session=%s model=%s token_len=%d token=%s",
+						sessionIDFromContext(ctx), p.model, len([]rune(reasoningToken)), reasoningToken)
 				}
 				if token == "" {
 					continue

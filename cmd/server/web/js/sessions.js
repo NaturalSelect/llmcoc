@@ -1,6 +1,15 @@
 // LLM-COC Sessions — Room management
 window.COC = window.COC || {};
 window.COC.sessions = {
+                    // NOTE: 仅供加入游戏房间使用的候选人物卡：活跃、未死亡、HP>0
+                    // 不修改全局 characters 数组，商城/复活列表不受影响
+                    joinableCharacters() {
+                        return (this.characters || []).filter(c =>
+                            c.is_active !== false &&
+                            c.wound_state !== 'dead' &&
+                            (c.stats?.hp ?? 0) > 0
+                        );
+                    },
                     async loadSessions() { this.sessions = (await this.api('GET', '/api/sessions')) || []; },
                     async loadMyHistory() { this.myHistory = (await this.api('GET', '/api/sessions/my-history')) || []; },
                     async loadMyFavorites() { this.myFavorites = (await this.api('GET', '/api/sessions/my-favorites')) || []; },

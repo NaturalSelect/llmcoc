@@ -1595,7 +1595,7 @@
                 <div class="space-y-3">
                     <select x-model.number="joinForm.character_card_id" class="inp">
                         <option value="">选择携带的人物卡 *</option>
-                        <template x-for="c in characters" :key="c.id">
+                        <template x-for="c in joinableCharacters()" :key="c.id">
                             <option :value="c.id" x-text="c.name + ' (' + (c.occupation||'未知职业') + ')'"></option>
                         </template>
                     </select>

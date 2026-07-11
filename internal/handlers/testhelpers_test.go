@@ -82,14 +82,17 @@ func seedProvider(t *testing.T, name string) uint {
 }
 
 // seedCard inserts a CharacterCard for the given userID and returns its ID.
+// 默认给予有效生存属性(CON=50 SIZ=50 → MaxHP=10, HP=10)，确保可以加入游戏房间。
 func seedCard(t *testing.T, userID uint, name string) uint {
 	t.Helper()
 	card := models.CharacterCard{
 		UserID:   userID,
 		Name:     name,
 		IsActive: true,
-		Stats:    models.JSONField[models.CharacterStats]{},
-		Skills:   models.JSONField[map[string]int]{Data: map[string]int{}},
+		Stats: models.JSONField[models.CharacterStats]{Data: models.CharacterStats{
+			CON: 50, SIZ: 50, HP: 10, MaxHP: 10,
+		}},
+		Skills: models.JSONField[map[string]int]{Data: map[string]int{}},
 	}
 	if err := models.DB.Create(&card).Error; err != nil {
 		t.Fatalf("seedCard %q: %v", name, err)
