@@ -2,13 +2,10 @@ package game
 
 import (
 	"fmt"
-	"math/rand"
 	"testing"
 )
 
 func TestRollMadnessSymptom(t *testing.T) {
-	rand.Seed(1)
-
 	// Test instantaneous madness
 	t.Run("Instantaneous", func(t *testing.T) {
 		for i := 0; i < 50; i++ {

@@ -1,12 +1,10 @@
 package game
 
 import (
-	"math/rand"
 	"testing"
 )
 
 func TestRollDiceExpr(t *testing.T) {
-	rand.Seed(1)
 	testCases := []struct {
 		expr     string
 		min, max int
@@ -38,8 +36,6 @@ func TestRollDiceExpr(t *testing.T) {
 }
 
 func TestSkillCheck(t *testing.T) {
-	rand.Seed(1) // For predictable rolls across runs
-	
 	// Test logical consistency of the result rather than mocking the roll
 	skillValue := 50
 	extreme := skillValue / 5
@@ -47,11 +43,11 @@ func TestSkillCheck(t *testing.T) {
 
 	for i := 0; i < 1000; i++ {
 		res := SkillCheck(skillValue)
-		
+
 		if res.Value < 1 || res.Value > 100 {
 			t.Errorf("SkillCheck roll out of bounds: %d", res.Value)
 		}
-		
+
 		switch {
 		case res.Value == 1:
 			if !res.Success || res.Level != "critical" {
@@ -82,7 +78,6 @@ func TestSkillCheck(t *testing.T) {
 }
 
 func TestDamageRoll(t *testing.T) {
-	rand.Seed(1)
 	testCases := []struct {
 		formula  string
 		min, max int
@@ -105,14 +100,14 @@ func TestDamageRoll(t *testing.T) {
 		t.Run(tc.formula, func(t *testing.T) {
 			for i := 0; i < 50; i++ {
 				result, err := DamageRoll(tc.formula)
-				
+
 				if tc.hasError {
 					if err == nil && i == 0 {
 						t.Errorf("DamageRoll(%q) expected error but got none", tc.formula)
 					}
 					continue
 				}
-				
+
 				if err != nil {
 					t.Fatalf("DamageRoll(%q) unexpected error: %v", tc.formula, err)
 				}
@@ -121,5 +116,67 @@ func TestDamageRoll(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRollRange 验证 Roll(n,m) 结果始终落在 [n, n*m] 范围内。
+func TestRollRange(t *testing.T) {
+	cases := [][2]int{{1, 6}, {2, 10}, {3, 6}, {1, 100}}
+	for _, c := range cases {
+		n, m := c[0], c[1]
+		for i := 0; i < 200; i++ {
+			total, dice := Roll(n, m)
+			if total < n || total > n*m {
+				t.Errorf("Roll(%d,%d) total=%d out of [%d,%d]", n, m, total, n, n*m)
+			}
+			if len(dice) != n {
+				t.Errorf("Roll(%d,%d) dice count=%d want %d", n, m, len(dice), n)
+			}
+			for _, d := range dice {
+				if d < 1 || d > m {
+					t.Errorf("Roll(%d,%d) die=%d out of [1,%d]", n, m, d, m)
+				}
+			}
+		}
+	}
+}
+
+// TestRollD100Range 验证 RollD100 结果始终落在 [1,100]。
+func TestRollD100Range(t *testing.T) {
+	for i := 0; i < 500; i++ {
+		v := RollD100()
+		if v < 1 || v > 100 {
+			t.Errorf("RollD100() = %d, want [1,100]", v)
+		}
+	}
+}
+
+// TestSkillCheckWithModifierRange 验证奖励/惩罚骰结果始终落在 [1,100]，且成功等级与骰值一致。
+func TestSkillCheckWithModifierRange(t *testing.T) {
+	cases := []struct {
+		bonus, penalty int
+	}{
+		{1, 0}, // 奖励骰
+		{2, 0}, // 双奖励骰
+		{0, 1}, // 惩罚骰
+		{0, 2}, // 双惩罚骰
+		{1, 1}, // 相互抵消→普通检定
+	}
+	skillValue := 50
+	for _, c := range cases {
+		for i := 0; i < 200; i++ {
+			res := SkillCheckWithModifier(skillValue, c.bonus, c.penalty)
+			if res.Value < 1 || res.Value > 100 {
+				t.Errorf("SkillCheckWithModifier(%d,%d,%d) value=%d out of [1,100]",
+					skillValue, c.bonus, c.penalty, res.Value)
+			}
+			// 验证成功/失败标志与骰值一致
+			if res.Value <= skillValue && !res.Success {
+				t.Errorf("roll %d <= skill %d but Success=false", res.Value, skillValue)
+			}
+			if res.Value > skillValue && res.Value < 96 && res.Value != 100 && res.Success {
+				t.Errorf("roll %d > skill %d but Success=true", res.Value, skillValue)
+			}
+		}
 	}
 }

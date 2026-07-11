@@ -1,7 +1,7 @@
 // NOTE: Implements sanity and madness mechanics for Call of Cthulhu.
 package game
 
-import "math/rand"
+import "math/rand/v2"
 
 // MadnessSymptom describes a madness effect from the COC 7th edition symptom tables.
 type MadnessSymptom struct {
@@ -47,7 +47,7 @@ var summarySymptoms = [10]string{
 // instantaneous=true → table for bystander situations; lasts exactly 10 combat rounds (COC 7th rule).
 // instantaneous=false → summary table for lone situations; time skips 1D10 hours.
 func RollMadnessSymptom(instantaneous bool) MadnessSymptom {
-	idx := rand.Intn(10)
+	idx := rand.IntN(10)
 	if instantaneous {
 		// COC 7th: "疯狂发作只会持续10个战斗轮(应用即时症状时)"——固定10轮,不是随机
 		return MadnessSymptom{

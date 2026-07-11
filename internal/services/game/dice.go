@@ -3,7 +3,7 @@ package game
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 
@@ -16,7 +16,7 @@ func Roll(n, m int) (int, []int) {
 	dice := make([]int, n)
 	total := 0
 	for i := range dice {
-		dice[i] = rand.Intn(m) + 1
+		dice[i] = rand.IntN(m) + 1
 		total += dice[i]
 	}
 	return total, dice
@@ -158,13 +158,13 @@ func SkillCheckWithModifier(skillValue, bonusDice, penaltyDice int) SkillCheckRe
 	}
 
 	// Roll units die once (0-9)
-	units := rand.Intn(10)
+	units := rand.IntN(10)
 
 	// Roll abs(net)+1 tens dice (0,10,20,...,90)
 	count := abs(net) + 1
 	tensDice := make([]int, count)
 	for i := range tensDice {
-		tensDice[i] = rand.Intn(10) * 10
+		tensDice[i] = rand.IntN(10) * 10
 	}
 
 	// Pick the tens die: bonus→lowest, penalty→highest
