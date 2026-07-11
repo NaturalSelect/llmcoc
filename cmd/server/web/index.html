@@ -412,40 +412,92 @@
                         <div class="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col min-h-0 overflow-hidden">
 
                             <!-- 会话头部 -->
-                            <div
-                                class="card border-b px-3 py-2 flex items-center gap-2 shrink-0 bg-[#131110] z-10 border-[#252018] text-sm flex-wrap">
-                                <button @click="goTo('sessions')"
-                                    class="text-amber-800 hover:text-amber-400 transition">←
-                                    返回</button>
-                                <span class="font-bold text-amber-100 truncate hidden sm:inline"
-                                    x-text="currentSession?.name"></span>
-                                <span class="text-xs text-amber-800 truncate hidden md:inline"
-                                    x-text="currentSession?.scenario?.name"></span>
-                                <span class="badge ml-auto"
-                                    :class="currentSession?.status==='lobby'?'badge-lobby':currentSession?.status==='playing'?'badge-playing':'badge-ended'"
-                                    x-text="currentSession?.status==='lobby'?'等待中':currentSession?.status==='playing'?'游戏中':'已结束'">
-                                </span>
-                                <button @click="openCurrentSessionCharDetail()"
-                                    class="btn btn-ghost shrink-0 text-xs">我的角色</button>
-                                <button x-show="currentSession?.status==='lobby' && isInSession(currentSession)"
-                                    @click="leaveCurrentSession()" :disabled="leavingSession"
-                                    class="btn btn-red shrink-0 text-xs">
-                                    退出
-                                </button>
-                                <button
-                                    x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
-                                    @click="startSession()" class="btn btn-green shrink-0 text-xs">▶ 开始</button>
-                                <button
-                                    x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
-                                    @click="endSession()" :disabled="endingSession"
-                                    class="btn btn-red shrink-0 text-xs">
-                                    结束
-                                </button>
-                                <button x-show="user?.role==='admin' && currentSession?.status==='ended'"
-                                    @click="reviveCurrentSession()" :disabled="revivingSession"
-                                    class="btn btn-green shrink-0 text-xs">
-                                    复活
-                                </button>
+                            <div class="card border-b shrink-0 bg-[#131110] z-10 border-[#252018]"
+                                x-data="{ moreMenuOpen: false }"
+                                @keydown.escape.window="moreMenuOpen = false">
+                                <div class="px-3 py-2 flex items-center gap-2 text-sm">
+                                    <!-- 返回按钮（常驻） -->
+                                    <button @click="goTo('sessions')"
+                                        class="text-amber-800 hover:text-amber-400 transition shrink-0"
+                                        aria-label="返回房间列表">← 返回</button>
+
+                                    <!-- 房间名（截断，手机端可见） -->
+                                    <span class="font-bold text-amber-100 truncate min-w-0 flex-1"
+                                        x-text="currentSession?.name"></span>
+
+                                    <!-- 剧本名（中等屏幕起显示） -->
+                                    <span class="text-xs text-amber-800 truncate hidden md:inline shrink-0"
+                                        x-text="currentSession?.scenario?.name"></span>
+
+                                    <!-- 状态徽章 -->
+                                    <span class="badge shrink-0"
+                                        :class="currentSession?.status==='lobby'?'badge-lobby':currentSession?.status==='playing'?'badge-playing':'badge-ended'"
+                                        x-text="currentSession?.status==='lobby'?'等待中':currentSession?.status==='playing'?'游戏中':'已结束'">
+                                    </span>
+
+                                    <!-- 桌面端操作按钮（sm+）——原有操作按钮，响应式隐藏 -->
+                                    <div class="hidden sm:flex items-center gap-1.5 shrink-0">
+                                        <button @click="openCurrentSessionCharDetail()"
+                                            class="btn btn-ghost text-xs">我的角色</button>
+                                        <button x-show="currentSession?.status==='lobby' && isInSession(currentSession)"
+                                            @click="leaveCurrentSession()" :disabled="leavingSession"
+                                            class="btn btn-red text-xs">退出</button>
+                                        <button
+                                            x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
+                                            @click="startSession()" class="btn btn-green text-xs">▶ 开始</button>
+                                        <button
+                                            x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
+                                            @click="endSession()" :disabled="endingSession"
+                                            class="btn btn-red text-xs">结束</button>
+                                        <button x-show="user?.role==='admin' && currentSession?.status==='ended'"
+                                            @click="reviveCurrentSession()" :disabled="revivingSession"
+                                            class="btn btn-green text-xs">复活</button>
+                                    </div>
+
+                                    <!-- 手机端"更多"按钮（< sm） -->
+                                    <div class="relative sm:hidden shrink-0">
+                                        <button @click="moreMenuOpen = !moreMenuOpen"
+                                            :aria-expanded="moreMenuOpen ? 'true' : 'false'"
+                                            aria-controls="game-header-menu"
+                                            aria-label="更多操作"
+                                            class="btn btn-ghost text-xs px-2.5 py-1.5">⋯</button>
+                                        <!-- 下拉菜单 -->
+                                        <div x-show="moreMenuOpen"
+                                            @click.outside="moreMenuOpen = false"
+                                            id="game-header-menu"
+                                            role="menu"
+                                            x-transition:enter="transition ease-out duration-150"
+                                            x-transition:enter-start="opacity-0 -translate-y-1"
+                                            x-transition:enter-end="opacity-100 translate-y-0"
+                                            x-transition:leave="transition ease-in duration-100"
+                                            x-transition:leave-start="opacity-100 translate-y-0"
+                                            x-transition:leave-end="opacity-0 -translate-y-1"
+                                            class="absolute right-0 top-full mt-1 min-w-[6.5rem] py-1 rounded border border-[#252018] bg-[#1a1814] shadow-xl z-50">
+                                            <button role="menuitem"
+                                                @click="moreMenuOpen = false; openCurrentSessionCharDetail()"
+                                                class="game-menu-item">我的角色</button>
+                                            <button role="menuitem"
+                                                x-show="currentSession?.status==='lobby' && isInSession(currentSession)"
+                                                @click="moreMenuOpen = false; leaveCurrentSession()"
+                                                :disabled="leavingSession"
+                                                class="game-menu-item">退出</button>
+                                            <button role="menuitem"
+                                                x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
+                                                @click="moreMenuOpen = false; startSession()"
+                                                class="game-menu-item">▶ 开始</button>
+                                            <button role="menuitem"
+                                                x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
+                                                @click="moreMenuOpen = false; endSession()"
+                                                :disabled="endingSession"
+                                                class="game-menu-item">结束</button>
+                                            <button role="menuitem"
+                                                x-show="user?.role==='admin' && currentSession?.status==='ended'"
+                                                @click="moreMenuOpen = false; reviveCurrentSession()"
+                                                :disabled="revivingSession"
+                                                class="game-menu-item">复活</button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- 消息区域（可滚动） -->
@@ -456,11 +508,11 @@
                                         :class="(msg._new ? 'fade-up ' : '') + (msg.role==='assistant'?'msg-kp':msg.role==='user'?'msg-user':'msg-sys')">
 
                                         <div class="flex items-baseline gap-2 mb-1.5 border-b border-[#252018] pb-1">
-                                            <span class="text-xs font-bold" style="font-family:monospace"
-                                                :class="msg.role==='assistant'?'text-red-500':msg.role==='user'?'text-green-500':'text-blue-500'"
+                                            <span class="text-[0.8rem] font-bold" style="font-family:monospace"
+                                                :class="msg.role==='assistant'?'text-red-400':msg.role==='user'?'text-green-400':'text-blue-400'"
                                                 x-text="msg.role==='assistant'?'🎭 KP':msg.role==='system'?'⚙ 系统':('👤 '+(msg.username||'玩家'))">
                                             </span>
-                                            <span class="text-[10px] text-amber-900" style="font-family:monospace"
+                                            <span class="text-xs text-amber-700" style="font-family:monospace"
                                                 x-text="fmtTime(msg.created_at)"></span>
                                         </div>
 
@@ -506,9 +558,9 @@
                                 <!-- Streaming block -->
                                 <div x-show="streaming" class="msg msg-kp fade-up shadow-sm border border-[#3a1515]">
                                     <div class="flex items-baseline gap-2 mb-1.5 border-b border-[#3a1515] pb-1">
-                                        <span class="text-xs font-bold text-red-500" style="font-family:monospace">🎭
+                                        <span class="text-[0.8rem] font-bold text-red-400" style="font-family:monospace">🎭
                                             KP</span>
-                                        <span class="text-[10px] text-red-900"
+                                        <span class="text-xs text-red-900"
                                             style="font-family:monospace">正在回应…</span>
                                     </div>
 
@@ -535,10 +587,46 @@
                                 </div>
 
                                 <!-- Waiting for other players -->
-                                <div x-show="waitingForPlayers" class="msg msg-sys fade-up border border-[#1a2d4a]">
-                                    <p class="text-blue-300/70 text-xs italic" style="font-family:system-ui">
+                                <div x-show="waitingForPlayers && !connectionRecovering"
+                                    class="msg msg-sys fade-up border border-[#1a2d4a]">
+                                    <!-- NOTE: 服务端返回姓名列表时显示 badges，否则回退"还差 N 人" -->
+                                    <div x-show="(waitingInfo.submitted_names || []).length > 0 || (waitingInfo.pending_names || []).length > 0"
+                                        class="space-y-1.5">
+                                        <p class="text-blue-300/70 text-xs italic" style="font-family:system-ui">⏳
+                                            等待其他调查员提交行动…</p>
+                                        <div x-show="(waitingInfo.submitted_names || []).length > 0"
+                                            class="flex flex-wrap gap-1 items-center">
+                                            <span class="text-[10px] text-green-800 shrink-0"
+                                                style="font-family:system-ui">已提交：</span>
+                                            <template x-for="name in (waitingInfo.submitted_names || [])" :key="name">
+                                                <span class="waiting-badge waiting-badge-submitted"
+                                                    x-text="name"></span>
+                                            </template>
+                                        </div>
+                                        <div x-show="(waitingInfo.pending_names || []).length > 0"
+                                            class="flex flex-wrap gap-1 items-center">
+                                            <span class="text-[10px] text-amber-900 shrink-0"
+                                                style="font-family:system-ui">待提交：</span>
+                                            <template x-for="name in (waitingInfo.pending_names || [])" :key="name">
+                                                <span class="waiting-badge waiting-badge-pending"
+                                                    x-text="name"></span>
+                                            </template>
+                                        </div>
+                                    </div>
+                                    <!-- 姓名列表为空时回退计数格式 -->
+                                    <p x-show="!(waitingInfo.submitted_names || []).length && !(waitingInfo.pending_names || []).length"
+                                        class="text-blue-300/70 text-xs italic" style="font-family:system-ui">
                                         ⏳ 已提交行动，等待其他调查员…（还差
-                                        <span class="font-bold text-blue-400" x-text="waitingInfo.pending"></span> 人）
+                                        <span class="font-bold text-blue-400"
+                                            x-text="waitingInfo.pending"></span> 人）
+                                    </p>
+                                </div>
+
+                                <!-- 连接恢复中 -->
+                                <div x-show="connectionRecovering"
+                                    class="msg msg-sys fade-up border border-[#1a2a3a]">
+                                    <p class="text-blue-400/60 text-xs italic" style="font-family:system-ui">
+                                        🔄 连接已中断，正在恢复… 请稍候
                                     </p>
                                 </div>
                             </div>
@@ -566,19 +654,20 @@
                                         id="chatInputBox"
                                         placeholder="描述你的行动… (Ctrl+Enter 发送)"
                                         rows="2"
-                                        :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers"
-                                        class="inp flex-1 resize-none bg-[#0a0908] focus:border-amber-700 transition-colors"
+                                        :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || connectionRecovering"
+                                        class="inp game-chat-input flex-1 resize-none bg-[#0a0908] focus:border-amber-700 transition-colors"
                                         style="line-height:1.5"></textarea>
                                     <button @click="sendChat()"
-                                        :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || !chatInput.trim()"
-                                        class="btn btn-amber self-stretch sm:self-end px-5 py-2 h-auto sm:h-[48px] shadow-lg min-w-[80px] flex items-center justify-center">
-                                        <span x-show="!streaming && !waitingForPlayers">发送</span>
-                                        <span x-show="streaming" class="flex gap-1 items-center">
+                                        :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || connectionRecovering || !chatInput.trim()"
+                                        class="btn btn-amber self-stretch sm:self-end px-5 py-2 h-auto sm:h-[48px] min-h-[40px] shadow-lg min-w-[80px] flex items-center justify-center">
+                                        <span x-show="!streaming && !waitingForPlayers && !connectionRecovering">发送</span>
+                                        <span x-show="streaming && !waitingForPlayers && !connectionRecovering" class="flex gap-1 items-center">
                                             <span class="dot" style="width:4px;height:4px"></span>
                                             <span class="dot" style="width:4px;height:4px"></span>
                                             <span class="dot" style="width:4px;height:4px"></span>
                                         </span>
-                                        <span x-show="waitingForPlayers && !streaming">等待中</span>
+                                        <span x-show="waitingForPlayers && !connectionRecovering">等待中</span>
+                                        <span x-show="connectionRecovering">恢复中</span>
                                     </button>
                                 </div>
                             </div>
@@ -1624,16 +1713,23 @@
                     <template x-for="p in (currentSession?.players??[])" :key="p.id">
                         <div class="card rounded-sm p-3 bg-[#151312] border-[#252018] hover:bg-[#1a1817] cursor-pointer"
                             @click="openSessionPlayerCharDetail(p)">
-                            <div class="flex justify-between items-start mb-2">
-                                <div class="min-w-0 flex-1">
-                                    <p class="text-sm font-bold text-amber-200 truncate" style="font-family:system-ui"
-                                        x-text="p.character_card?.name || p.user?.username"></p>
-                                    <p class="text-[10px] text-amber-700 truncate mt-0.5" style="font-family:system-ui"
-                                        x-text="p.character_card?.occupation || '未知职业'"></p>
-                                </div>
-                                <span x-show="p.user?.id === user?.id"
-                                    class="text-[9px] bg-amber-900/30 text-amber-600 px-1 rounded border border-amber-800/30">YOU</span>
-                            </div>
+                                <div class="flex justify-between items-start mb-2">
+                                            <div class="min-w-0 flex-1">
+                                                <div class="flex items-center gap-1.5 flex-wrap">
+                                                    <p class="text-sm font-bold text-amber-200 truncate" style="font-family:system-ui"
+                                                        x-text="p.character_card?.name || p.user?.username"></p>
+                                                    <!-- NOTE: waitingForPlayers 时显示本轮提交状态 badge -->
+                                                    <span x-show="playerTurnSubmitState(p) === 'submitted'"
+                                                        class="waiting-badge waiting-badge-submitted shrink-0">已提交</span>
+                                                    <span x-show="playerTurnSubmitState(p) === 'pending'"
+                                                        class="waiting-badge waiting-badge-pending shrink-0">待提交</span>
+                                                </div>
+                                                <p class="text-[10px] text-amber-700 truncate mt-0.5" style="font-family:system-ui"
+                                                    x-text="p.character_card?.occupation || '未知职业'"></p>
+                                            </div>
+                                            <span x-show="p.user?.id === user?.id"
+                                                class="text-[9px] bg-amber-900/30 text-amber-600 px-1 rounded border border-amber-800/30 shrink-0">YOU</span>
+                                        </div>
 
                             <div class="space-y-2" x-show="p.character_card">
                                 <div class="grid grid-cols-3 gap-2">

@@ -69,10 +69,12 @@ window.COC.core = function() {
                     narrationBuffer: '',   // 当前KP主流程回复
                     imageBuffer: [],   // NOTE: 当前SSE临时图片,刷新后不保留
                     progressText: '',   // 当前后端真实处理阶段
+                    // NOTE: 连接恢复状态（SSE断线后轮询恢复期间为true）
+                    connectionRecovering: false,
 
                     // Multi-player waiting
                     waitingForPlayers: false,
-                    waitingInfo: { pending: 0, total: 0 },
+                    waitingInfo: { pending: 0, total: 0, submitted_names: [], pending_names: [] },
                     preSendMessageCount: -1, // snapshot of messages.length before local user push
                     refreshIntervals: {
                         gameAuto: 5000,
@@ -202,8 +204,9 @@ window.COC.core = function() {
                         if (this.page === 'game') {
                             this.stopGameAutoRefresh();
                             this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.imageBuffer = []; this.progressText = '';
-                            this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0 };
+                            this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
                             this.waitingSince = null;
+                            this.connectionRecovering = false;
                         }
                         this.page = p;
                         if (p === 'sessions') {
@@ -225,8 +228,9 @@ window.COC.core = function() {
 
                     async goToSession(id) {
                         this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.progressText = '';
-                        this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0 };
+                        this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
                         this.waitingSince = null;
+                        this.connectionRecovering = false;
                         try {
                             const [session, msgs] = await Promise.all([
                                 this.api('GET', '/api/sessions/' + id),

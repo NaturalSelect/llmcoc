@@ -124,13 +124,21 @@ window.COC.game = {
                                                 }
                                                 break;
 
-                                            case 'waiting':
-                                                receivedWaiting = true;
-                                                try {
-                                                    const info = JSON.parse(data);
-                                                    if (info.pending !== undefined) this.waitingInfo = info;
-                                                } catch (_) { }
-                                                break;
+                            case 'waiting':
+                                receivedWaiting = true;
+                                try {
+                                    const info = JSON.parse(data);
+                                    if (info.pending !== undefined) {
+                                        // NOTE: 合并新字段（submitted_names/pending_names）到 waitingInfo
+                                        this.waitingInfo = {
+                                            pending: info.pending ?? 0,
+                                            total: info.total ?? 0,
+                                            submitted_names: Array.isArray(info.submitted_names) ? info.submitted_names : [],
+                                            pending_names: Array.isArray(info.pending_names) ? info.pending_names : [],
+                                        };
+                                    }
+                                } catch (_) { }
+                                break;
 
                                             case 'error':
                                                 this.showToast(data || '处理失败', 'error');
@@ -207,14 +215,24 @@ window.COC.game = {
                     },
 
                     async _recoverFromDrop(since) {
-                        if (!this.currentSession?.id || this.page !== 'game') return;
+                        if (!this.currentSession?.id || this.page !== 'game') {
+                            this.connectionRecovering = false;
+                            return;
+                        }
+                        this.connectionRecovering = true;
                         await new Promise(r => setTimeout(r, this.refreshIntervals.recoveryPoll));
+                        // NOTE: 等待后再次检查，用户可能已离开游戏页
+                        if (!this.currentSession?.id || this.page !== 'game') {
+                            this.connectionRecovering = false;
+                            return;
+                        }
                         try {
                             const msgs = this.normalizeMessages(
                                 (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
                             );
                             const kp = msgs.find(m => m.role === 'assistant' && new Date(m.created_at) > since);
                             if (kp) {
+                                this.connectionRecovering = false;
                                 await this.refreshCurrentSession(true);
                                 await this.refreshCurrentMessages(true);
                                 return;
@@ -223,6 +241,8 @@ window.COC.game = {
 
                         if (this.currentSession?.id && this.page === 'game') {
                             this._recoverFromDrop(since);
+                        } else {
+                            this.connectionRecovering = false;
                         }
                     },
 
@@ -344,7 +364,7 @@ window.COC.game = {
                             if (newKP) {
                                 this.waitingForPlayers = false;
                                 this.waitingSince = null;
-                                this.waitingInfo = { pending: 0, total: 0 };
+                                this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
                                 await this.refreshCurrentSession(true);
                                 await this.refreshCurrentMessages(true);
                                 return;
@@ -417,7 +437,7 @@ window.COC.game = {
                                     if (gotKP) {
                                         this.waitingForPlayers = false;
                                         this.waitingSince = null;
-                                        this.waitingInfo = { pending: 0, total: 0 };
+                                        this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
                                     }
                                 }
                             }
@@ -669,6 +689,25 @@ window.COC.game = {
                         }
 
                         return { writerText, narrationText };
+                    },
+
+                    // NOTE: 重置等待状态到空初值，含新字段
+                    resetWaitingInfo() {
+                        this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
+                    },
+
+                    // NOTE: 判断调查员在当前轮的提交状态，供调查员列表 modal 展示 badge。
+                    // 匹配时 trim 规范化，与后端 sessionPlayerDisplayName 逻辑一致。
+                    // 返回 'submitted' | 'pending' | null
+                    playerTurnSubmitState(player) {
+                        if (!this.waitingForPlayers) return null;
+                        const name = (player?.character_card?.name || player?.user?.username || '').trim();
+                        if (!name) return null;
+                        const submittedNames = (this.waitingInfo?.submitted_names || []).map(n => String(n).trim());
+                        const pendingNames = (this.waitingInfo?.pending_names || []).map(n => String(n).trim());
+                        if (submittedNames.includes(name)) return 'submitted';
+                        if (pendingNames.includes(name)) return 'pending';
+                        return null;
                     },
 
 };

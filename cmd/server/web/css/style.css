@@ -520,3 +520,62 @@
                 bottom: 24px !important;
             }
         }
+
+        /* ── Game header more-menu items (mobile) ── */
+        .game-menu-item {
+            display: block;
+            width: 100%;
+            padding: 0.5rem 0.875rem;
+            text-align: left;
+            font-family: system-ui, sans-serif;
+            font-size: 0.8125rem;
+            color: #d0bfa0;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .game-menu-item:hover {
+            background: #252018;
+            color: #f0e8d0;
+        }
+
+        .game-menu-item:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        /* ── Waiting status badges ── */
+        .waiting-badge {
+            font-family: system-ui, sans-serif;
+            font-size: 0.67rem;
+            padding: 1px 6px;
+            border-radius: 2px;
+            white-space: nowrap;
+        }
+
+        .waiting-badge-submitted {
+            background: #0d2d0d;
+            color: #4a9a4a;
+            border: 1px solid #1d4a1d;
+        }
+
+        .waiting-badge-pending {
+            background: #2d1a0d;
+            color: #c47a30;
+            border: 1px solid #4a2d0d;
+        }
+
+        /* NOTE: 游戏输入区 placeholder 局部样式，不影响全站 .inp */
+        .game-chat-input::placeholder {
+            color: #4a4030;
+            font-size: 0.75rem;
+        }
+
+        /* NOTE: 320-375px 超窄屏幕下输入区最小可点击高度保障 */
+        @media (max-width: 375px) {
+            .game-chat-input {
+                font-size: 0.875rem;
+            }
+        }

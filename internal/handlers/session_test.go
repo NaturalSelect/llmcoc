@@ -3,6 +3,7 @@ package handlers
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -669,5 +670,168 @@ func TestChatStream_UserMessagePersisted(t *testing.T) {
 	}
 	if msg.Content != "玩家输入" {
 		t.Errorf("user message content = %q, want %q", msg.Content, "玩家输入")
+	}
+}
+
+// seedTwoPlayerSession 创建含两名活跃玩家的游戏房间，返回 sessionID、两个 userID 及角色名。
+func seedTwoPlayerSession(t *testing.T, charName1, charName2 string) (sessionID, user1ID, user2ID uint) {
+	t.Helper()
+	scenarioID := seedScenario(t, "multi-scenario")
+
+	creator := models.User{Username: "creator_mp", Email: "creator_mp@t.com", PasswordHash: "x", CardSlots: 3}
+	if err := models.DB.Create(&creator).Error; err != nil {
+		t.Fatalf("create creator: %v", err)
+	}
+	session := models.GameSession{
+		Name:       "Multi Room",
+		ScenarioID: scenarioID,
+		Status:     models.SessionStatusPlaying,
+		MaxPlayers: 4,
+		CreatedBy:  creator.ID,
+		TurnRound:  1,
+	}
+	if err := models.DB.Create(&session).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// 玩家1
+	u1 := models.User{Username: "mp_user1", Email: "mp1@t.com", PasswordHash: "x", CardSlots: 3}
+	models.DB.Create(&u1)
+	c1 := models.CharacterCard{
+		UserID: u1.ID, Name: charName1, IsActive: true,
+		Stats:  models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, HP: 10, MaxHP: 10}},
+		Skills: models.JSONField[map[string]int]{Data: map[string]int{}},
+	}
+	models.DB.Create(&c1)
+	models.DB.Create(&models.SessionPlayer{SessionID: session.ID, UserID: u1.ID, CharacterCardID: c1.ID, JoinedAt: time.Now()})
+
+	// 玩家2
+	u2 := models.User{Username: "mp_user2", Email: "mp2@t.com", PasswordHash: "x", CardSlots: 3}
+	models.DB.Create(&u2)
+	c2 := models.CharacterCard{
+		UserID: u2.ID, Name: charName2, IsActive: true,
+		Stats:  models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, HP: 10, MaxHP: 10}},
+		Skills: models.JSONField[map[string]int]{Data: map[string]int{}},
+	}
+	models.DB.Create(&c2)
+	models.DB.Create(&models.SessionPlayer{SessionID: session.ID, UserID: u2.ID, CharacterCardID: c2.ID, JoinedAt: time.Now()})
+
+	return session.ID, u1.ID, u2.ID
+}
+
+// TestChatStream_WaitingPayload_Fields 验证 waiting SSE 载荷含必要字段，
+// 并且已提交/待提交姓名分类准确（旧字段 pending/total 仍存在）。
+func TestChatStream_WaitingPayload_Fields(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+
+	ctrl := gomock.NewController(t)
+	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
+	// 玩家1先提交，尚未满足全员到位，应收到 waiting SSE
+	r := makeTestRouter(h, user1ID, "mp_user1")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我查探房间"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	events := parseSSE(w.Body.String())
+	if len(events["waiting"]) == 0 {
+		t.Fatalf("expected waiting SSE event; body:\n%s", w.Body.String())
+	}
+
+	var payload struct {
+		Pending        int64    `json:"pending"`
+		Total          int64    `json:"total"`
+		SubmittedNames []string `json:"submitted_names"`
+		PendingNames   []string `json:"pending_names"`
+	}
+	rawData := strings.TrimSpace(events["waiting"][0])
+	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
+		t.Fatalf("waiting payload invalid JSON: %v\ndata: %s", err, rawData)
+	}
+
+	// 旧字段兼容
+	if payload.Total != 2 {
+		t.Errorf("total = %d, want 2", payload.Total)
+	}
+	if payload.Pending != 1 {
+		t.Errorf("pending = %d, want 1", payload.Pending)
+	}
+	// 新字段
+	if payload.SubmittedNames == nil {
+		t.Error("submitted_names is nil, want non-nil slice")
+	}
+	if payload.PendingNames == nil {
+		t.Error("pending_names is nil, want non-nil slice")
+	}
+	if len(payload.SubmittedNames) != 1 || payload.SubmittedNames[0] != "爱丽丝" {
+		t.Errorf("submitted_names = %v, want [\"爱丽丝\"]", payload.SubmittedNames)
+	}
+	if len(payload.PendingNames) != 1 || payload.PendingNames[0] != "鲍勃" {
+		t.Errorf("pending_names = %v, want [\"鲍勃\"]", payload.PendingNames)
+	}
+}
+
+// TestChatStream_WaitingPayload_SpecialCharsJSON 验证角色名含特殊字符时 JSON 仍合法。
+func TestChatStream_WaitingPayload_SpecialCharsJSON(t *testing.T) {
+	initTestDB(t)
+	specialName := `角色"特殊\名称<>&`
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, specialName, "普通角色")
+
+	ctrl := gomock.NewController(t)
+	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
+	r := makeTestRouter(h, user1ID, "mp_user1")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "行动"))
+
+	events := parseSSE(w.Body.String())
+	if len(events["waiting"]) == 0 {
+		t.Fatalf("expected waiting SSE event")
+	}
+
+	rawData := strings.TrimSpace(events["waiting"][0])
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
+		t.Fatalf("waiting payload invalid JSON: %v\ndata: %s", err, rawData)
+	}
+
+	submittedNames, _ := payload["submitted_names"].([]any)
+	if len(submittedNames) != 1 {
+		t.Fatalf("submitted_names len = %d, want 1", len(submittedNames))
+	}
+	if submittedNames[0] != specialName {
+		t.Errorf("submitted_names[0] = %v, want %q", submittedNames[0], specialName)
+	}
+}
+
+// TestChatStream_WaitingPayload_UsernameFallback 验证角色名为空时回退使用用户名。
+func TestChatStream_WaitingPayload_UsernameFallback(t *testing.T) {
+	initTestDB(t)
+	// 玩家1 的角色名为空，期望回退为用户名 "mp_user1"
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "", "有名角色")
+
+	ctrl := gomock.NewController(t)
+	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
+	r := makeTestRouter(h, user1ID, "mp_user1")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "行动"))
+
+	events := parseSSE(w.Body.String())
+	if len(events["waiting"]) == 0 {
+		t.Fatalf("expected waiting SSE event")
+	}
+
+	var payload struct {
+		SubmittedNames []string `json:"submitted_names"`
+	}
+	rawData := strings.TrimSpace(events["waiting"][0])
+	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
+		t.Fatalf("waiting payload invalid JSON: %v", err)
+	}
+
+	// 角色名为空，期望显示用户名
+	if len(payload.SubmittedNames) != 1 || payload.SubmittedNames[0] != "mp_user1" {
+		t.Errorf("submitted_names = %v, want [\"mp_user1\"]", payload.SubmittedNames)
 	}
 }

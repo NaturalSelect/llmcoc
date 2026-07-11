@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -570,6 +571,94 @@ func loadLatestTurnActions(sessionID uint, round int, activePlayerIDs map[uint]b
 	return turnActions
 }
 
+// waitingPayload 是"等待其他玩家"SSE 事件的 JSON 结构。
+// submitted_names/pending_names 按房间 Players 顺序排列，前端可直接展示 badges。
+type waitingPayload struct {
+	Pending        int      `json:"pending"`
+	Total          int      `json:"total"`
+	SubmittedNames []string `json:"submitted_names"`
+	PendingNames   []string `json:"pending_names"`
+}
+
+// sessionPlayerDisplayName 返回玩家的显示名：优先角色名（trim 后非空），回退用户名。
+// 与前端 currentPlayerDisplayName() 和后端 playerDisplayName 逻辑保持一致。
+func sessionPlayerDisplayName(p models.SessionPlayer) string {
+	if name := strings.TrimSpace(p.CharacterCard.Name); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(p.User.Username); name != "" {
+		return name
+	}
+	return "玩家"
+}
+
+// buildWaitingSSEPayload 查询本轮已提交行动的玩家集合，按房间 Players 顺序
+// 生成已提交/待提交姓名列表。若查询失败则返回 error，由调用方决定是否降级。
+func buildWaitingSSEPayload(db *gorm.DB, session models.GameSession, activePlayerIDs map[uint]bool, cutoff time.Time, hasCutoff bool) (waitingPayload, error) {
+	ids := mapKeys(activePlayerIDs)
+	total := len(ids)
+	if total == 0 {
+		return waitingPayload{SubmittedNames: []string{}, PendingNames: []string{}}, nil
+	}
+
+	q := db.Model(&models.SessionTurnAction{}).
+		Select("user_id").
+		Where("session_id = ? AND round = ? AND user_id IN ?", session.ID, session.TurnRound, ids)
+	if hasCutoff {
+		q = q.Where("created_at > ?", cutoff)
+	}
+	var rows []struct{ UserID uint }
+	if err := q.Group("user_id").Find(&rows).Error; err != nil {
+		return waitingPayload{}, err
+	}
+
+	submittedSet := make(map[uint]bool, len(rows))
+	for _, r := range rows {
+		submittedSet[r.UserID] = true
+	}
+
+	submitted := len(rows)
+	pending := total - submitted
+	if pending < 0 {
+		pending = 0
+	}
+
+	// NOTE: 按房间 Players 顺序遍历，保证姓名列表顺序稳定
+	submittedNames := make([]string, 0, submitted)
+	pendingNames := make([]string, 0, pending)
+	for _, p := range session.Players {
+		if !activePlayerIDs[p.UserID] {
+			continue
+		}
+		name := sessionPlayerDisplayName(p)
+		if submittedSet[p.UserID] {
+			submittedNames = append(submittedNames, name)
+		} else {
+			pendingNames = append(pendingNames, name)
+		}
+	}
+
+	return waitingPayload{
+		Pending:        pending,
+		Total:          total,
+		SubmittedNames: submittedNames,
+		PendingNames:   pendingNames,
+	}, nil
+}
+
+// sendWaitingSSE 序列化 waitingPayload 并发送 "waiting" SSE 事件。
+// 使用 encoding/json 确保特殊字符正确转义，序列化失败时降级为最小安全 JSON。
+func sendWaitingSSE(c *gin.Context, payload waitingPayload) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		// NOTE: 极端异常：降级为最小安全 JSON，保持 pending/total 兼容旧客户端
+		data = []byte(fmt.Sprintf(`{"pending":%d,"total":%d,"submitted_names":[],"pending_names":[]}`,
+			payload.Pending, payload.Total))
+	}
+	c.SSEvent("waiting", string(data))
+	c.Writer.Flush()
+}
+
 // ChatStream handles SSE streaming for game chat using the multi-agent pipeline.
 //
 // NOTE: This is the core gameplay loop endpoint. It handles receiving player actions,
@@ -743,13 +832,21 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		}
 
 		if !isLastToSubmit {
-			// Tell the player how many are still pending and let them poll.
-			submitted := countSubmittedTurnPlayers(models.DB, session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
-			pending := int64(activePlayerCount) - submitted
+			// NOTE: 构建含已提交/待提交姓名的等待载荷，查询失败时降级为计数格式
+			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, activePlayerIDs, actionCutoff, hasActionCutoff)
+			if wErr != nil {
+				log.Printf("[chat] session=%d user=%q waiting payload error: %v", sessionID, username, wErr)
+				submitted := countSubmittedTurnPlayers(models.DB, session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
+				wPayload = waitingPayload{
+					Pending:        activePlayerCount - int(submitted),
+					Total:          activePlayerCount,
+					SubmittedNames: []string{},
+					PendingNames:   []string{},
+				}
+			}
 			log.Printf("[chat] session=%d user=%q waiting pending=%d/%d",
-				sessionID, username, pending, activePlayerCount)
-			c.SSEvent("waiting", fmt.Sprintf(`{"pending":%d,"total":%d}`, pending, activePlayerCount))
-			c.Writer.Flush()
+				sessionID, username, wPayload.Pending, wPayload.Total)
+			sendWaitingSSE(c, wPayload)
 			c.SSEvent("done", "")
 			c.Writer.Flush()
 			return
@@ -758,10 +855,19 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		// Last to submit: load exactly one latest action per active actor for the KP prompt.
 		turnActions = loadLatestTurnActions(session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
 		if len(turnActions) < activePlayerCount {
-			pending := activePlayerCount - len(turnActions)
-			log.Printf("[chat] session=%d user=%q waiting after load pending=%d/%d", sessionID, username, pending, activePlayerCount)
-			c.SSEvent("waiting", fmt.Sprintf(`{"pending":%d,"total":%d}`, pending, activePlayerCount))
-			c.Writer.Flush()
+			// NOTE: 构建含已提交/待提交姓名的等待载荷，查询失败时降级为计数格式
+			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, activePlayerIDs, actionCutoff, hasActionCutoff)
+			if wErr != nil {
+				log.Printf("[chat] session=%d user=%q waiting payload error: %v", sessionID, username, wErr)
+				wPayload = waitingPayload{
+					Pending:        activePlayerCount - len(turnActions),
+					Total:          activePlayerCount,
+					SubmittedNames: []string{},
+					PendingNames:   []string{},
+				}
+			}
+			log.Printf("[chat] session=%d user=%q waiting after load pending=%d/%d", sessionID, username, wPayload.Pending, wPayload.Total)
+			sendWaitingSSE(c, wPayload)
 			c.SSEvent("done", "")
 			c.Writer.Flush()
 			return
