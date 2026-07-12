@@ -1686,7 +1686,8 @@ func EndSession(c *gin.Context) {
 		Find(&messages)
 	stripMessageImageDataURLTags(messages)
 
-	result, txErr := agent.RunEndSession(context.Background(), &session, messages)
+	// NOTE: HTTP 手动结束由后端固定传 win=false（失败无角色成长），不解析客户端胜负。
+	result, txErr := agent.RunEndSession(context.Background(), &session, messages, false)
 
 	removeSessionLock(session.ID)
 

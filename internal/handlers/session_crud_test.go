@@ -605,6 +605,50 @@ func TestEndSession_AlreadyEnded(t *testing.T) {
 	}
 }
 
+// TestEndSession_Owner_Succeeds_WinFalse 验证房主手动结束时接口返回 200。
+// NOTE: HTTP 手动结束由后端固定传 win=false；无 LLM 时 RunEndSession 使用 fallback 结算，
+// growth.characters 为空，证明跳过了成长路径。
+func TestEndSession_Owner_Succeeds_WinFalse(t *testing.T) {
+	initTestDB(t)
+	// NOTE: 给予足够金币以通过 end_session_cost(200) 检查。
+	uid := seedUser(t, "endowner", "user", 500, 3)
+	sID := seedScenario(t, "WinFalseScenario")
+	sess := models.GameSession{
+		Name: "WinFalseSession", ScenarioID: sID,
+		Status: models.SessionStatusPlaying, MaxPlayers: 4, CreatedBy: uid,
+	}
+	models.DB.Create(&sess)
+
+	r := sessionCRUDRouter(uid, "endowner", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/end", sess.ID), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	msg, _ := resp["message"].(string)
+	if !strings.HasPrefix(msg, "游戏已结束") {
+		t.Errorf("message = %q, want '游戏已结束...'", msg)
+	}
+
+	// NOTE: win=false 跳过 RunGrowth，growth.characters 应为空（零值）。
+	if growth, ok := resp["growth"].(map[string]any); ok {
+		if chars, ok := growth["characters"].([]any); ok && len(chars) != 0 {
+			t.Errorf("win=false: growth.characters should be empty, got %d", len(chars))
+		}
+	}
+
+	// 确认 session 已在 DB 中标记为 ended。
+	var updated models.GameSession
+	models.DB.First(&updated, sess.ID)
+	if updated.Status != models.SessionStatusEnded {
+		t.Errorf("session status = %q, want ended", updated.Status)
+	}
+}
+
 // ── GetMessages ────────────────────────────────────────────────────────────────
 
 func TestGetMessages_Success(t *testing.T) {

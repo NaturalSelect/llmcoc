@@ -670,6 +670,16 @@ func (manageMadnessAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 type endGameAction struct{}
 
 func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	// NOTE: win 字段必须显式填写；缺失时拒绝执行任何副作用，让 Director 可重发。
+	if call.Win == nil {
+		debugf("tool", "session=%d end_game rejected: win field missing", actx.Sid)
+		return []ToolResult{{
+			Action: ToolEndGame,
+			Result: "end_game 缺少必填字段 win（true=胜利/false=失败），请重新发送并明确填写 win。",
+		}}
+	}
+	win := *call.Win
+
 	var results []ToolResult
 	if call.EndSummary != "" {
 		results = append(results, ToolResult{Action: ToolEndGame, Result: "剧本结局:" + call.EndSummary})
@@ -700,7 +710,7 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	} else {
 		*actx.KPNarration = closing
 	}
-	debugf("tool", "session=%d end_game summary=%s", actx.Sid, call.EndSummary)
+	debugf("tool", "session=%d end_game summary=%s win=%v", actx.Sid, call.EndSummary, win)
 
 	var msgs []models.Message
 	models.DB.Where("session_id = ? AND role != ?", actx.GCtx.Session.ID, models.MessageRoleSystem).
@@ -708,7 +718,8 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		Limit(150).
 		Find(&msgs)
 	sessionSnap := actx.GCtx.Session
-	if _, err := RunEndSession(actx.Ctx, &sessionSnap, msgs); err != nil {
+	// NOTE: 将 win 透传给 RunEndSession，控制是否执行成长类结算。
+	if _, err := RunEndSession(actx.Ctx, &sessionSnap, msgs, win); err != nil {
 		debugf("tool", "session=%d RunEndSession error: %v", actx.GCtx.Session.ID, err)
 	}
 	return results

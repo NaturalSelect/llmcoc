@@ -172,8 +172,10 @@ operate=add时，同名资产会更新；operate=remove时按asset.name删除。
 		</tool>
 		<tool name="end_game" sideeffect="true" shouldBeLast="true" endTheTurn="true">
 			<description>结束当前剧本/房间。调用前必须对照简报中的WIN COND逐条核查是否满足，不得在reasoning中自行断定胜利条件已达成。若WIN COND要求特定目标被消灭，必须确认有update_npc_card/destroy_npc的ack记录为依据，不接受玩家口头宣称。
+【win字段必填】win=true表示调查员完整满足WIN COND或落入partial_wins；win=false表示失败结局。win字段缺失或为null时后端会拒绝整批并返回错误，要求重发。
 【批次硬规则】end_game只能与write/update_llm_note同批次，严禁与update_*/manage_*/record_*/advance_time等同批次——后端会拒绝整批。需先在独立批次完成所有最终状态更新，yield后再发end_game批次。</description>
-			<call_example>{"action":"end_game","end_summary":"结局总结"}</call_example>
+			<call_example>{"action":"end_game","win":true,"end_summary":"调查员成功封印了古神，胜利结束冒险"}</call_example>
+			<call_example>{"action":"end_game","win":false,"end_summary":"调查员全灭，冒险以失败告终"}</call_example>
 		</tool>
 		<tool name="manage_madness" sideeffect="true" endTheTurn="false">
 			<description>管理调查员的疯狂状态(COC第八章疯狂机制,NPC状态请使用LLM NOTE)。operate支持trigger|clear；省略operate时按trigger处理。

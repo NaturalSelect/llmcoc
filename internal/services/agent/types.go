@@ -101,6 +101,9 @@ type ToolCall struct {
 	Options       []string               `json:"options"`        // response: 推荐给玩家的可行行动
 	Reply         string                 `json:"reply"`          // response: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(可选)
+	// NOTE: Win 使用指针以区分 false（失败）与缺失/null（未填写）。
+	// Director 必须显式填写 true 或 false；缺失时 endGameAction.Execute 拒绝并返回错误。
+	Win           *bool                  `json:"win"`            // end_game: 是否胜利(必填,true=胜/false=败)
 	Reason        string                 `json:"reason"`         // reasoning: KP本轮推理过程
 	Context       string                 `json:"context"`        // response: 剧本推进到此处的完整上下文
 
