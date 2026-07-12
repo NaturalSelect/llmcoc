@@ -212,7 +212,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	// as active LLM user messages, otherwise the KP may process old requests again.
 	kpMsgs := []llm.ChatMessage{{Role: "user", Content: formatHistoryTranscript(gctx.History)}}
 
-	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(kpSystemPrompt), kpMsgs, tempNPCs)
+	// NOTE: 运行时读取 balance_rules 并注入 Director 用户消息；与 Lawyer 保持一致语义。
+	kpBalanceRules := strings.TrimSpace(models.GetSiteSetting("balance_rules", models.DefaultBalanceRules))
+	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(kpSystemPrompt), kpMsgs, tempNPCs, kpBalanceRules)
 
 	switchRole := false
 

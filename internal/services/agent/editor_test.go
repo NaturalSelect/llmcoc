@@ -204,3 +204,198 @@ func TestApplyCharacterUpdate_AgeBoundaryConstants(t *testing.T) {
 		t.Errorf("MaxManualCharacterAge=%d, want 90", game.MaxManualCharacterAge)
 	}
 }
+
+// applyCthulhuUpdate 辅助函数：对单个角色卡执行克苏鲁神话技能变更。
+func applyCthulhuUpdate(card *models.CharacterCard, delta int) {
+	players := []models.SessionPlayer{{CharacterCard: *card}}
+	applyCharacterUpdate(CharacterUpdate{
+		CharacterName: card.Name,
+		Field:         "cthulhu_mythos",
+		Delta:         delta,
+	}, players)
+}
+
+// ── cthulhu_mythos 增加行为（无回归）────────────────────────────────────────
+
+// TestApplyCharacterUpdate_CthulhuIncrease_MaxSANReduced 验证增加克苏鲁神话时
+// MaxSAN 随之降低，当前 SAN 若超出则被下调。
+func TestApplyCharacterUpdate_CthulhuIncrease_MaxSANReduced(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员增加", 30)
+	// 初始：CthulhuMythosSkill=0, MaxSAN=99, SAN=50
+
+	applyCthulhuUpdate(card, 10)
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.CthulhuMythosSkill != 10 {
+		t.Errorf("CthulhuMythosSkill: got %d, want 10", saved.CthulhuMythosSkill)
+	}
+	wantMaxSAN := 99 - 10
+	if saved.Stats.Data.MaxSAN != wantMaxSAN {
+		t.Errorf("MaxSAN: got %d, want %d", saved.Stats.Data.MaxSAN, wantMaxSAN)
+	}
+	// SAN=50 < 89，不应被下调。
+	if saved.Stats.Data.SAN != 50 {
+		t.Errorf("SAN should remain 50, got %d", saved.Stats.Data.SAN)
+	}
+}
+
+// TestApplyCharacterUpdate_CthulhuIncrease_SANCapped 验证 SAN 超过新 MaxSAN 时被同步下调。
+func TestApplyCharacterUpdate_CthulhuIncrease_SANCapped(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员SAN下调", 30)
+	// 先把 SAN 设高
+	card.Stats.Data.SAN = 95
+	card.Stats.Data.MaxSAN = 99
+	models.DB.Save(card)
+
+	applyCthulhuUpdate(card, 20) // 新 MaxSAN = 79
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.Stats.Data.MaxSAN != 79 {
+		t.Errorf("MaxSAN: got %d, want 79", saved.Stats.Data.MaxSAN)
+	}
+	if saved.Stats.Data.SAN != 79 {
+		t.Errorf("SAN should be capped to 79, got %d", saved.Stats.Data.SAN)
+	}
+}
+
+// ── cthulhu_mythos 降低行为 ──────────────────────────────────────────────────
+
+// TestApplyCharacterUpdate_CthulhuDecrease_Normal 验证普通降低场景：
+// MaxSAN 按实际降低量提升（不超过上限），当前 SAN 不变。
+func TestApplyCharacterUpdate_CthulhuDecrease_Normal(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员降低", 30)
+	// 先增到 20，MaxSAN 降到 79，SAN=50
+	card.CthulhuMythosSkill = 20
+	card.Stats.Data.MaxSAN = 79
+	card.Stats.Data.SAN = 50
+	models.DB.Save(card)
+
+	applyCthulhuUpdate(card, -5) // 降低5，CthulhuMythosSkill→15，MaxSAN上限=84
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.CthulhuMythosSkill != 15 {
+		t.Errorf("CthulhuMythosSkill: got %d, want 15", saved.CthulhuMythosSkill)
+	}
+	// MaxSAN 应从 79 提升 5 → 84（等于上限 99-15=84）。
+	if saved.Stats.Data.MaxSAN != 84 {
+		t.Errorf("MaxSAN: got %d, want 84", saved.Stats.Data.MaxSAN)
+	}
+	// SAN 不应恢复。
+	if saved.Stats.Data.SAN != 50 {
+		t.Errorf("SAN should not change, got %d", saved.Stats.Data.SAN)
+	}
+}
+
+// TestApplyCharacterUpdate_CthulhuDecrease_ClampedAtZero 验证降低越过0时按实际变化量计算
+// MaxSAN 恢复量，而非请求的 Delta。
+func TestApplyCharacterUpdate_CthulhuDecrease_ClampedAtZero(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员降至零", 30)
+	// CthulhuMythosSkill=3, MaxSAN=96, SAN=50
+	card.CthulhuMythosSkill = 3
+	card.Stats.Data.MaxSAN = 96
+	card.Stats.Data.SAN = 50
+	models.DB.Save(card)
+
+	// 请求降低 10，但只能降 3（0 下限），实际降低量=3
+	applyCthulhuUpdate(card, -10)
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.CthulhuMythosSkill != 0 {
+		t.Errorf("CthulhuMythosSkill: got %d, want 0", saved.CthulhuMythosSkill)
+	}
+	// 实际降低量=3，MaxSAN 从 96 恢复 3 → 99（等于上限 99-0=99）。
+	if saved.Stats.Data.MaxSAN != 99 {
+		t.Errorf("MaxSAN: got %d, want 99", saved.Stats.Data.MaxSAN)
+	}
+	// SAN 不变。
+	if saved.Stats.Data.SAN != 50 {
+		t.Errorf("SAN should not change, got %d", saved.Stats.Data.SAN)
+	}
+}
+
+// TestApplyCharacterUpdate_CthulhuDecrease_MaxSANCap 验证 MaxSAN 恢复不超过
+// 99 - 新克苏鲁神话 的上限。
+func TestApplyCharacterUpdate_CthulhuDecrease_MaxSANCap(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员MaxSAN上限", 30)
+	// CthulhuMythosSkill=10, MaxSAN=60（已有额外损失），SAN=50
+	card.CthulhuMythosSkill = 10
+	card.Stats.Data.MaxSAN = 60
+	card.Stats.Data.SAN = 50
+	models.DB.Save(card)
+
+	// 降低 5，CthulhuMythosSkill→5，上限=94；MaxSAN 本可恢复到 65，但不超过 94。
+	applyCthulhuUpdate(card, -5)
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.CthulhuMythosSkill != 5 {
+		t.Errorf("CthulhuMythosSkill: got %d, want 5", saved.CthulhuMythosSkill)
+	}
+	// 60+5=65，未超过 94，应为 65。
+	if saved.Stats.Data.MaxSAN != 65 {
+		t.Errorf("MaxSAN: got %d, want 65", saved.Stats.Data.MaxSAN)
+	}
+}
+
+// TestApplyCharacterUpdate_CthulhuDecrease_MaxSANCap_HardCap 验证恢复量超过上限时取上限。
+func TestApplyCharacterUpdate_CthulhuDecrease_MaxSANCap_HardCap(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员硬上限", 30)
+	// CthulhuMythosSkill=10, MaxSAN=88（接近上限 89），SAN=50
+	card.CthulhuMythosSkill = 10
+	card.Stats.Data.MaxSAN = 88
+	card.Stats.Data.SAN = 50
+	models.DB.Save(card)
+
+	// 降低 5，CthulhuMythosSkill→5，上限=94；MaxSAN 本要恢复到 93，不超过 94。
+	applyCthulhuUpdate(card, -5)
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	// 88+5=93，未超过 94（99-5），应为 93。
+	if saved.Stats.Data.MaxSAN != 93 {
+		t.Errorf("MaxSAN: got %d, want 93", saved.Stats.Data.MaxSAN)
+	}
+}
+
+// TestApplyCharacterUpdate_CthulhuDecrease_SANUnchanged 验证降低时当前 SAN 不恢复。
+func TestApplyCharacterUpdate_CthulhuDecrease_SANUnchanged(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员SAN不恢复", 30)
+	card.CthulhuMythosSkill = 20
+	card.Stats.Data.MaxSAN = 79
+	card.Stats.Data.SAN = 30 // 刻意设为低值
+	models.DB.Save(card)
+
+	applyCthulhuUpdate(card, -10)
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	// SAN 必须保持 30，不因 MaxSAN 提升而恢复。
+	if saved.Stats.Data.SAN != 30 {
+		t.Errorf("SAN should remain 30, got %d", saved.Stats.Data.SAN)
+	}
+}

@@ -169,18 +169,16 @@ const lawyerSystemPromptTail = `
 - YOUR VERY FIRST OUTPUT MUST BE [{"action":"search_cache","keyword":"#tag1 #tag2"}] AND NOTHING ELSE. Fill keyword with #-prefixed tags derived from the question's core topics (e.g. "#手枪 #伤害" or "#典籍 #SAN损失"). This is mandatory and cannot be skipped under any circumstance.
 </rule>`
 
-// BuildLawyerPrompt 将管理员配置的平衡规则注入 Lawyer 系统提示并返回完整 prompt。
-// balanceRules 应为 trim 后的值；空字符串时整个平衡调整规则段都省略。
-// 平衡规则段位于 JSON-only 强约束之前，确保不可配置约束最后生效。
+// BuildLawyerPrompt 将管理员配置的平衡规则构造为注入 Lawyer 用户消息的段落并返回。
+// balanceRules 应为 trim 后的值；空字符串时返回空字符串（不产生任何段落）。
+// 使用 XML 风格标签，与 Director 用户消息中的其他段落保持一致。
 func BuildLawyerPrompt(balanceRules string) string {
 	if balanceRules == "" {
-		return lawyerSystemPromptBase + lawyerSystemPromptTail
+		return ""
 	}
-	return lawyerSystemPromptBase +
-		"\n【KP平衡调整规则（管理员配置）】\n" +
+	return "\n<kp_balance_rules>\n" +
 		balanceRules +
-		"\n【平衡调整规则结束】" +
-		lawyerSystemPromptTail
+		"\n</kp_balance_rules>\n"
 }
 
 // lawyerCall is one item in the Lawyer's tool-call output sequence.
@@ -235,13 +233,25 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 
 	debugf("Lawyer", "question=%s", situation)
 
-	// NOTE: 运行时读取 balance_rules 并注入 prompt；空值不注入任何规则段。
+	// NOTE: 运行时读取 balance_rules 并注入用户消息；空值不注入任何规则段。
 	balanceRules := strings.TrimSpace(models.GetSiteSetting("balance_rules", models.DefaultBalanceRules))
-	lawyerPrompt := BuildLawyerPrompt(balanceRules)
+	lawyerSystemPrompt := lawyerSystemPromptBase + lawyerSystemPromptTail
+
+	var userSB strings.Builder
+	userSB.WriteString("<question>" + situation + "</question>\n")
+	if section := BuildLawyerPrompt(balanceRules); section != "" {
+		userSB.WriteString(section)
+	}
+	userSB.WriteString("<instruction>\n")
+	userSB.WriteString("请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n")
+	userSB.WriteString("仅输出JSON数组, 不要添加任何解释或说明文字。\n")
+	userSB.WriteString("**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"#tag1 #tag2\"}]（用#开头的标签，如\"#手枪 #伤害\"），不得包含其他任何工具调用。**\n")
+	userSB.WriteString("你只能输出一个JSON数组, 且必须是有效的JSON格式, 不加任何解释。\n")
+	userSB.WriteString("</instruction>\n")
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: h.systemPrompt(lawyerPrompt)},
-		{Role: "user", Content: "KP向你询问: '" + situation + "'\n请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n仅输出JSON数组, 不要添加任何解释或说明文字。\n**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"#tag1 #tag2\"}]（用#开头的标签，如\"#手枪 #伤害\"），不得包含其他任何工具调用。**\n你只能输出一个JSON数组, 且必须是有效的JSON格式, 不加任何解释。"},
+		{Role: "system", Content: h.systemPrompt(lawyerSystemPrompt)},
+		{Role: "user", Content: userSB.String()},
 	}
 
 	const maxIter = 30

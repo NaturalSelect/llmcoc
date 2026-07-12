@@ -455,6 +455,18 @@ SPECIFIC CHEAT PATTERNS — treat each as a hard error requiring immediate rejec
 </rules>
 `
 
+// BuildDirectorPrompt 将管理员配置的平衡规则构造为注入 Director 用户消息的段落并返回。
+// balanceRules 应为 trim 后的值；空字符串时返回空字符串（不产生任何段落）。
+// 该段落追加在每轮用户消息末尾，不修改系统提示；使用 XML 风格标签与其他用户消息段落保持一致。
+func BuildDirectorPrompt(balanceRules string) string {
+	if balanceRules == "" {
+		return ""
+	}
+	return "\n<kp_balance_rules>\n" +
+		balanceRules +
+		"\n</kp_balance_rules>\n"
+}
+
 // kpTableTemperaments 是KP桌面人格池：只影响reply语气和吐槽风格，
 // 不影响任何裁定、规则边界与工具行为。按session ID稳定选取，同一局全程一致，换局换人格。
 var kpTableTemperaments = []struct {
@@ -493,7 +505,8 @@ func extraKPMessage(msg string) (s string) {
 // The user message provides scenario context, player state, game time, history, and the current action.
 // Subsequent iterations append assistant (KP response) and user (tool results) messages to the
 // returned slice, giving the model proper multi-turn context instead of a flat text dump.
-func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMessage, tempNPCs []models.SessionNPC) []llm.ChatMessage {
+// balanceRules 为运行时从 SiteSetting 读取的平衡调整规则，非空时追加到用户消息。
+func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMessage, tempNPCs []models.SessionNPC, balanceRules string) []llm.ChatMessage {
 	content := gctx.Session.Scenario.Content.Data
 
 	// Always start with system prompt + scenario context, then append DB history.
@@ -622,6 +635,10 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	userSB.WriteString("\n<config> 剧情特定法术:禁用 | 规则书中法术:启用 | 严格反作弊:启用 | 社交关系更新:实时变更(需推理) | 法术表更新:实时变更(需推理) | 学习时间:极短 | 物品栏更新:实时变更(需推理) | 种族更新:实时变更(需推理) | 已知神话生物更新:实时变更(需推理) | 使用道具: 允许 | 学习典籍: 严格按照典籍中记载的法术选择随机一个法术(禁止判定什么都没学到) </config>\n")
 	if content.SystemPrompt != "" {
 		userSB.WriteString("\n<kp_instruction>\n" + content.SystemPrompt + "\n</kp_instruction>\n")
+	}
+	// NOTE: 运行时注入 balance_rules；空值时跳过，不产生任何段落。
+	if section := BuildDirectorPrompt(balanceRules); section != "" {
+		userSB.WriteString(section)
 	}
 	userSB.WriteString("\n")
 	// Show all players' actions when everyone has submitted (multi-player),

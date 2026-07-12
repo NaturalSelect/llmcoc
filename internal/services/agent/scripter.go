@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -906,6 +907,14 @@ func normalizeElementName(s string) string {
 // Structural validation
 // ---------------------------------------------------------------------------
 
+// settingDateRe 匹配 setting 中嵌入的具体年月日，如"1923年10月15日"或"1923年10月15号"。
+var settingDateRe = regexp.MustCompile(`\d{3,4}年\d{1,2}月\d{1,2}[日号]`)
+
+// settingHasDate 检查 setting 文本是否包含具体的年月日。
+func settingHasDate(s string) bool {
+	return settingDateRe.MatchString(s)
+}
+
 func validateDraftCompatibility(draft ScenarioDraft) []string {
 	var issues []string
 	if strings.TrimSpace(draft.Name) == "" {
@@ -923,6 +932,8 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	}
 	if strings.TrimSpace(content.Setting) == "" {
 		issues = append(issues, "content.setting 为空")
+	} else if !settingHasDate(content.Setting) {
+		issues = append(issues, "content.setting 缺少具体年月日（如\"1923年10月15日\"）；setting须嵌入与时代、地点及剧情氛围一致的开局日期")
 	}
 	if strings.TrimSpace(content.Intro) == "" {
 		issues = append(issues, "content.intro 为空")

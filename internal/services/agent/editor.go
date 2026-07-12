@@ -188,7 +188,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			models.DB.Save(card)
 
 		case "cthulhu_mythos", "cthulhu_mythos_skill":
-			// ── 克苏鲁神话技能增长 → 降低最大SAN上限 ─────────────────────────
+			// ── 克苏鲁神话技能变更 → 同步调整最大SAN上限 ──────────────────────
 			if upd.Delta > 0 {
 				maxVal := 99
 				card.CthulhuMythosSkill = clamp(card.CthulhuMythosSkill+upd.Delta, 0, maxVal)
@@ -204,6 +204,21 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				}
 				card.Stats.Data = s
 				log.Printf("[editor] %s: cthulhu_mythos=%d, new MaxSAN=%d", card.Name, card.CthulhuMythosSkill, newMaxSAN)
+				models.DB.Save(card)
+			} else if upd.Delta < 0 {
+				// 降低克苏鲁神话：按实际降低量（考虑0下限）同步提高人类角色的 MaxSAN，
+				// 但不超过 99 - 新克苏鲁神话；当前 SAN 不恢复。
+				oldVal := card.CthulhuMythosSkill
+				card.CthulhuMythosSkill = clamp(card.CthulhuMythosSkill+upd.Delta, 0, 99)
+				actualDecrease := oldVal - card.CthulhuMythosSkill // 实际降低量（≥0）
+				if isHuman && actualDecrease > 0 {
+					s := card.Stats.Data
+					newMaxSAN := 99 - card.CthulhuMythosSkill
+					// MaxSAN 可恢复的上限即 99 - 新克苏鲁神话；不超过该值。
+					s.MaxSAN = clamp(s.MaxSAN+actualDecrease, 0, newMaxSAN)
+					card.Stats.Data = s
+				}
+				log.Printf("[editor] %s: cthulhu_mythos=%d→%d, new MaxSAN=%d", card.Name, oldVal, card.CthulhuMythosSkill, card.Stats.Data.MaxSAN)
 				models.DB.Save(card)
 			}
 
@@ -561,6 +576,19 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 			}
 			npc.Stats.Data = stats
 			log.Printf("[editor] NPC %s: cthulhu_mythos=%d, new MaxSAN=%d", npc.Name, npc.CthulhuMythosSkill, newMaxSAN)
+		} else if upd.Delta < 0 {
+			// 降低克苏鲁神话：按实际降低量同步提高人类 NPC 的 MaxSAN，不恢复当前 SAN。
+			oldVal := npc.CthulhuMythosSkill
+			npc.CthulhuMythosSkill = clamp(npc.CthulhuMythosSkill+upd.Delta, 0, 99)
+			actualDecrease := oldVal - npc.CthulhuMythosSkill
+			isHuman := npc.Race == "" || npc.Race == "人类"
+			if isHuman && actualDecrease > 0 {
+				newMaxSAN := 99 - npc.CthulhuMythosSkill
+				maxSAN := npcStat(stats, "MaxSAN")
+				setNPCStat(stats, "MaxSAN", clamp(maxSAN+actualDecrease, 0, newMaxSAN))
+			}
+			npc.Stats.Data = stats
+			log.Printf("[editor] NPC %s: cthulhu_mythos=%d→%d, new MaxSAN=%d", npc.Name, oldVal, npc.CthulhuMythosSkill, npcStat(stats, "MaxSAN"))
 		}
 
 	case "wound_state":

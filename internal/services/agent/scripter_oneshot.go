@@ -59,7 +59,7 @@ var oneshotResultExample = OneshotResult{
 	Difficulty:    "normal",
 	Content: models.ScenarioContent{
 		SystemPrompt:   "你是KP，管理会自行推进的局势。【KP独有】内部真相：书是Douglas自己的，他在取回被窃之物。",
-		Setting:        "初秋的傍晚，你们受镇图书馆之邀前来协助整理一批新捐赠的藏书。馆内灯光温暖，管理员热情地引你们入座，窗外街区安静而寻常。",
+		Setting:        "1924年9月3日，初秋的傍晚，你们受镇图书馆之邀前来协助整理一批新捐赠的藏书。馆内灯光温暖，管理员热情地引你们入座，窗外街区安静而寻常。",
 		ToneTags:       []string{"forbidden-knowledge", "cosmic-dread", "occult-noir"},
 		HorrorMode:     "forbidden_knowledge",
 		InvestFocus:    "artifact_theft",
@@ -220,6 +220,7 @@ SAN要求：
 
 【步骤⑤：剧本编译最终检查】
 ✓ description(简介)、setting(背景)、intro(开场)三者均为中性日常语气：读者/玩家从中看不出剧情、案件、真相、神话或恐怖走向，且不带任何惊悚、诡异、压抑或不祥的氛围词（如恐怖、诡异、血腥、亡魂、不祥、阴森、扭曲等）？
+✓ setting文本中嵌入了与时代、地点及剧情氛围一致的具体年月日（如"1923年10月15日"，非仅写年份或时刻）？
 ✓ 恐怖与真相只存在于system_prompt(KP独有)、scenes、clues、mythos_anchor中，绝不出现在description/setting/intro？
 ✓ setting只描述表层日常视角，未泄露核心真相，也未提前渲染恐怖气氛？
 ✓ intro包含至少3个立即可执行的具体行动，且以平静日常语气给出，不预告危险？
@@ -239,7 +240,7 @@ SAN要求：
 ✓ 最终体验重点是”调查员亲手揭开可怕真相”，而不是”被剧情推着走”或”靠战斗通关”？
 
 其他硬性要求：
-- description(简介)、setting(背景)、intro(开场)必须是「冷开场」：以平静、日常、生活化的语气呈现一个看似普通的表层情境，只交代时代、地点、调查员为何到场和最初可做的事；读者和玩家从这三处看不出剧情走向、案件性质、幕后真相或神话存在，也读不到任何恐怖、惊悚、诡异、压抑、不祥的氛围。恐怖是玩家在调查中逐步自行发现的，不能在开场剧透或提前渲染。
+- description(简介)、setting(背景)、intro(开场)必须是「冷开场」：以平静、日常、生活化的语气呈现一个看似普通的表层情境，只交代时代、地点、调查员为何到场和最初可做的事；读者和玩家从这三处看不出剧情走向、案件性质、幕后真相或神话存在，也读不到任何恐怖、惊悚、诡异、压抑、不祥的氛围。恐怖是玩家在调查中逐步自行发现的，不能在开场剧透或提前渲染。setting须在文本中嵌入具体的开局年月日（如"1923年10月15日"，模型按剧本自行选择合理日期，不得固定套用示例日期）；game_start_slot保留表示时刻的语义（0-47，每槽30分钟），与日期无关，不得混淆。
 - 恐怖内核、真相、神话本质只能写进system_prompt(KP独有)、scenes、clues、mythos_anchor；严禁泄露到description/setting/intro。
 - 避免政治话题
 - 以克苏鲁宇宙恐惧为基调（渺小感、理智侵蚀、不可知深渊）
@@ -270,7 +271,7 @@ submit.draft 必须包含以下字段：
   "difficulty": "normal",
   "content": {
     "system_prompt": "KP四项协议 + 核心真相注入",
-    "setting": "开场时的日常、平静表层局势；只交代时代、地点和调查员为何到场，读者看不出剧情、案件、真相或恐怖走向，不带任何惊悚/诡异/不祥氛围",
+    "setting": "开场时的日常、平静表层局势；文本中须嵌入与时代、地点及剧情氛围相符的具体年月日（如"1923年10月15日"，模型按剧本自行选择合理日期，不得固定套用示例日期）；只交代时代、地点和调查员为何到场，读者看不出剧情、案件、真相或恐怖走向，不带任何惊悚/诡异/不祥氛围",
     "tone_tags": ["必须等于diversity_constraints.tone_tags中的标签"],
     "horror_mode": "必须等于diversity_constraints.horror_mode（神话力量介入人类世界的主要机制）",
     "invest_focus": "必须等于diversity_constraints.invest_focus",
