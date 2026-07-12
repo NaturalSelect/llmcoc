@@ -142,12 +142,16 @@ const scriptSessionId = math.MaxInt64
 
 var scripterCounter int
 var scripterCounterMu sync.Mutex
+var scripterRunMu sync.Mutex
 
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
 func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (ScenarioCreationOutput, error) {
+	scripterRunMu.Lock()
+	defer scripterRunMu.Unlock()
+
 	room, err := newScripterRoom(req)
 	if err != nil {
 		return ScenarioCreationOutput{}, err
