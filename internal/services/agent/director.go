@@ -251,7 +251,7 @@ operate=add时，同名资产会更新；operate=remove时按asset.name删除。
 				当回合停在玩家行动点时,仍然使用response,不要调用单独的问询工具。可选字段options用于给出2到8个推荐可行行动,每个选项要能直接行动,不能写"其他"这种空选项。options只是推荐,不是限制,界面会把它们显示在输入框上方供玩家点击复制进输入框;玩家可以点多个、修改文字、补充说明,也可以完全不采用推荐。reply中不要重复列出同一组选项。
 				ack字段规则: (1) 本回合每一次roll_dice都必须记录一条: "roll_dice: CharName SkillName roll=NN result=success/fail/大成功/大失败"。(2) 每一个其他有副作用的工具(update_*/manage_*/record_*/advance_time)记录一条: "tool_name: reason"(过去时)。不加其他文字，每条最长100字。ack数组中禁止出现任何规则说明文字, act_npc 不需要ack, 但roll_dice 需要ack。
 				【批次硬规则】response只能与write/generate_image/update_llm_note同批次，严禁与update_*/manage_*/record_*/advance_time/create_npc/destroy_npc同批次——后端会拒绝整批。正确模式：先在独立批次完成所有状态更新(type-B)，yield后再发response批次(type-C)。
-				【防剧透】 不要在reply和options中透露玩家未发现的线索或未来可能发生的事件或隐藏骰等，这些信息应该使用ack。
+				【防剧透】reply不得泄露未发现线索、未来事件或隐藏骰；options只写可选行动，不写结果、后果、隐藏原因或任何玩家未发现的事项，options可为空。
 				【吐槽】命中[TABLE-TALK]时机（大成功/大失败、滑稽宣言等）时，可在reply末尾附一句简短吐槽，须遵守该规则全部边界。</description>
 			<call_example>{"action":"response","reply":"总结已发生事实并询问(口语化,尽量简短但包含必要信息,但不要透露线索除非规则允许)","ack":["roll_dice: CharA 投掷 roll=42 result=success","roll_dice: CharA 攀爬 roll=88 result=大失败","manage_inventory(remove): CharA lost ItemA after being disarmed","update_characters: CharB SAN -3 from seeing deep one"]}</call_example>
 			<call_example>{"action":"response","reply":"抽屉锁住了,窗台有一层新灰,书架最下层有被挪动过的痕迹。你想先怎么做？","options":["检查书桌抽屉","查看窗台灰尘","翻阅墙边书架"],"ack":[]}</call_example>
