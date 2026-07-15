@@ -321,7 +321,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	logScripterArtifact("Constraints", sessionID, constraints)
 
 	log.Printf("[scripter] session=%s stage=oneshot start", sessionID)
-	draft, _, rewardConcept, err := generateOneshotDraft(ctx, r, constraints)
+	draft, _, rewardConcept, skeleton, err := generateOneshotDraft(ctx, r, constraints)
 	if err != nil {
 		log.Printf("[scripter] session=%s stage=oneshot error=%v", sessionID, err)
 		return ScenarioCreationOutput{}, fmt.Errorf("单步生成失败: %w", err)
@@ -368,6 +368,25 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		}
 	} else {
 		log.Printf("[scripter] session=%s stage=qa_humanize no issues", sessionID)
+	}
+
+	// 逻辑审查：QA agent 审因果可达性与神话一致性，问题清单走一轮修复；失败不阻塞生成
+	log.Printf("[scripter] session=%s stage=logic_review start", sessionID)
+	if logicIssues := runLogicReview(ctx, r, &draft, skeleton); len(logicIssues) > 0 {
+		log.Printf("[scripter] session=%s stage=logic_review issues=%d %v", sessionID, len(logicIssues), logicIssues)
+		logScripterArtifact("Logic Review Issues", sessionID, logicIssues)
+		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, logicIssues)
+		if repairErr != nil {
+			log.Printf("[scripter] session=%s stage=logic_review repair failed: %v (keeping draft)", sessionID, repairErr)
+		} else {
+			draft = repaired
+			applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
+			iterations++
+			log.Printf("[scripter] session=%s stage=logic_review done name=%q scenes=%d npcs=%d clues=%d",
+				sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+		}
+	} else {
+		log.Printf("[scripter] session=%s stage=logic_review no issues", sessionID)
 	}
 
 	// Reward agent (isolated context, optional)
@@ -979,7 +998,52 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	if strings.TrimSpace(content.LoseCondition) == "" {
 		issues = append(issues, "content.lose_condition 为空")
 	}
+	if strings.TrimSpace(content.MythosAnchor) == "" {
+		issues = append(issues, "content.mythos_anchor 为空；神话锚点必须明确写出，作为宇宙法则的具体载体")
+	}
+	if !hasMythosEssenceClue(content) {
+		issues = append(issues, "content.clues 中缺少揭示神话本质的[隐藏]线索（且content.mythos_core也为空）；至少需要一处说明神话真相本身")
+	}
+	realClueCount := 0
+	for _, clue := range content.Clues {
+		if strings.HasPrefix(strings.TrimSpace(clue), "[真实]") {
+			realClueCount++
+		}
+	}
+	if realClueCount < 2 {
+		issues = append(issues, fmt.Sprintf("content.clues 中[真实]线索仅%d条，至少需要2条互相独立、可组合推导的[真实]线索", realClueCount))
+	}
+	if len(content.NPCs) > 0 && !anyNPCHasSecretDescription(content.NPCs) {
+		issues = append(issues, "content.npcs 中没有任何一位NPC的description写明「秘密」或「保留」信息，NPC需要有不主动交代的知情边界")
+	}
+	if trimmed := strings.TrimSpace(content.SystemPrompt); trimmed != "" && !strings.Contains(trimmed, "真相") && !strings.Contains(trimmed, "内部") {
+		issues = append(issues, "content.system_prompt 未体现KP独有的内部真相，建议明确写出「内部真相」或类似表述")
+	}
 	return issues
+}
+
+// hasMythosEssenceClue 容错检查：神话本质既可能仍在clues里以[隐藏]线索呈现，
+// 也可能已被normalizeOneshotDraft提取进content.mythos_core，两者满足其一即可。
+func hasMythosEssenceClue(content models.ScenarioContent) bool {
+	if strings.TrimSpace(content.MythosCore) != "" {
+		return true
+	}
+	for _, clue := range content.Clues {
+		clue = strings.TrimSpace(clue)
+		if strings.HasPrefix(clue, "[隐藏]") && strings.Contains(clue, "神话本质") {
+			return true
+		}
+	}
+	return false
+}
+
+func anyNPCHasSecretDescription(npcs []models.NPCData) bool {
+	for _, npc := range npcs {
+		if strings.Contains(npc.Description, "秘密") || strings.Contains(npc.Description, "保留") {
+			return true
+		}
+	}
+	return false
 }
 
 func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest, author string, sessionIDs ...string) {

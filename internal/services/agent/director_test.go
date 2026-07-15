@@ -57,3 +57,26 @@ func TestBuildDirectorPromptOpenTagBeforeCloseTag(t *testing.T) {
 		t.Error("closing tag must appear after opening tag")
 	}
 }
+
+func TestKPSystemPromptUsesActivePacingWithoutTemperament(t *testing.T) {
+	for _, want := range []string{
+		"[ACTIVE-PACING]",
+		"文字风格不是节奏",
+		"[KP-REPLY]",
+		"[TABLE-TALK]",
+	} {
+		if !strings.Contains(kpSystemPrompt, want) {
+			t.Errorf("kp system prompt should contain %q", want)
+		}
+	}
+
+	for _, removed := range []string{
+		"<kp_temperament",
+		"[KP-HABITS]",
+		"[KP-VOICE]",
+	} {
+		if strings.Contains(kpSystemPrompt, removed) {
+			t.Errorf("kp system prompt should not contain removed style rule %q", removed)
+		}
+	}
+}
