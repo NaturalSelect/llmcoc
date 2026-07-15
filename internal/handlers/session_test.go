@@ -155,23 +155,38 @@ type blockingRunner struct {
 	output  agent.RunOutput
 }
 
-type blockingWriterRunner struct {
-	writerStarted chan struct{}
-	writerRelease chan struct{}
+type blockingAuxRunner struct {
+	mu             sync.Mutex
+	runCount       int
+	writerStarted  chan struct{}
+	writerRelease  chan struct{}
+	painterStarted chan struct{}
+	painterRelease chan struct{}
 }
 
-func (*blockingWriterRunner) Run(context.Context, agent.GameContext) (agent.RunOutput, error) {
+func (r *blockingAuxRunner) Run(context.Context, agent.GameContext) (agent.RunOutput, error) {
+	r.mu.Lock()
+	r.runCount++
+	runCount := r.runCount
+	r.mu.Unlock()
+	if runCount == 1 {
+		return agent.RunOutput{
+			KPReply:         "你听见门后传来脚步声。",
+			WriterDirection: "描述门后的压迫感",
+			ImagePrompts:    []agent.ImagePromptRequest{{Prompt: "A dark wooden door"}},
+		}, nil
+	}
 	return agent.RunOutput{
-		KPReply:         "你听见门后传来脚步声。",
-		WriterDirection: "描述门后的压迫感",
+		KPReply:    "你继续向前探索。",
+		WriterText: "走廊尽头亮起微光。",
 	}, nil
 }
 
-func (*blockingWriterRunner) RunWriter(context.Context, agent.GameContext, string) (string, error) {
+func (*blockingAuxRunner) RunWriter(context.Context, agent.GameContext, string) (string, error) {
 	return "", nil
 }
 
-func (r *blockingWriterRunner) RunWriterStream(_ context.Context, _ agent.GameContext, _ string, onToken func(string)) (string, error) {
+func (r *blockingAuxRunner) RunWriterStream(_ context.Context, _ agent.GameContext, _ string, onToken func(string)) (string, error) {
 	select {
 	case <-r.writerStarted:
 	default:
@@ -182,8 +197,14 @@ func (r *blockingWriterRunner) RunWriterStream(_ context.Context, _ agent.GameCo
 	return "门后的呼吸声越来越近。", nil
 }
 
-func (*blockingWriterRunner) RunPainter(context.Context, agent.GameContext, agent.ImagePromptRequest) (string, error) {
-	return "", nil
+func (r *blockingAuxRunner) RunPainter(context.Context, agent.GameContext, agent.ImagePromptRequest) (string, error) {
+	select {
+	case <-r.painterStarted:
+	default:
+		close(r.painterStarted)
+	}
+	<-r.painterRelease
+	return "data:image/png;base64,YWJj", nil
 }
 
 func (r *blockingRunner) Run(context.Context, agent.GameContext) (agent.RunOutput, error) {
@@ -487,12 +508,16 @@ func TestGetChatStatus_SinglePlayerProcessingRecoversAfterRefresh(t *testing.T) 
 	}
 }
 
-func TestChatStream_RemainsBusyUntilWriterFinishes(t *testing.T) {
+func TestChatStream_WriterAndPainterDoNotBlockNextMainProcessing(t *testing.T) {
 	initTestDB(t)
+	restore := imagestore.SetDefaultDir(t.TempDir())
+	t.Cleanup(restore)
 	sessionID, userID := seedPlayingSession(t)
-	runner := &blockingWriterRunner{
-		writerStarted: make(chan struct{}),
-		writerRelease: make(chan struct{}),
+	runner := &blockingAuxRunner{
+		writerStarted:  make(chan struct{}),
+		writerRelease:  make(chan struct{}),
+		painterStarted: make(chan struct{}),
+		painterRelease: make(chan struct{}),
 	}
 	r := makeTestRouter(NewSessionHandlers(runner), userID, "tester")
 
@@ -507,25 +532,42 @@ func TestChatStream_RemainsBusyUntilWriterFinishes(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("writer did not start")
 	}
+	select {
+	case <-runner.painterStarted:
+	case <-time.After(time.Second):
+		t.Fatal("painter did not start")
+	}
 
 	statusRecorder := httptest.NewRecorder()
 	r.ServeHTTP(statusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
 	status := decodeChatStatus(t, statusRecorder.Body.String())
-	if !status.Processing || status.Phase != "processing" {
-		t.Fatalf("writer phase should remain processing: %+v", status)
+	if status.Processing || status.Phase != "idle" {
+		t.Fatalf("writer phase must not block main processing: %+v", status)
 	}
-
-	second := httptest.NewRecorder()
-	r.ServeHTTP(second, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我继续前进"))
-	if second.Code != http.StatusConflict {
-		t.Fatalf("request during writer status = %d, want 409", second.Code)
+	secondDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我继续前进"))
+		secondDone <- w
+	}()
+	select {
+	case second := <-secondDone:
+		if second.Code != http.StatusOK {
+			t.Fatalf("second main processing status = %d; body: %s", second.Code, second.Body.String())
+		}
+		if len(parseSSE(second.Body.String())["done"]) == 0 {
+			t.Fatalf("second main processing did not complete; body: %s", second.Body.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second main processing was blocked by writer/painter")
 	}
 
 	close(runner.writerRelease)
+	close(runner.painterRelease)
 	select {
 	case <-firstDone:
 	case <-time.After(time.Second):
-		t.Fatal("request did not finish after writer release")
+		t.Fatal("first request did not finish after writer/painter release")
 	}
 }
 

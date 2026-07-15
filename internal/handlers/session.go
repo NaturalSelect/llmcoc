@@ -1150,16 +1150,14 @@ loop:
 				assistantMsg, err := saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, res.output)
 				if err != nil {
 					log.Printf("[chat] session=%d user=%q save after disconnect error: %v", sessionID, username, err)
-				} else if assistantMsg != nil {
-					jobClientDone := make(chan struct{})
-					writerCh := h.startWriterJob(assistantMsg.ID, gctx, res.output, jobClientDone)
-					var painterCh <-chan painterJobResult
-					if len(res.output.ImagePrompts) > 0 {
-						painterCh = h.startPainterJob(assistantMsg.ID, gctx, res.output.ImagePrompts[0], jobClientDone)
-					}
-					if writerCh != nil || painterCh != nil {
-						processingOwned = false
-						finishSessionProcessingAfterJobs(session.ID, writerCh, painterCh)
+				} else {
+					finishSessionProcessing(session.ID)
+					processingOwned = false
+					if assistantMsg != nil {
+						h.startWriterJob(assistantMsg.ID, gctx, res.output, nil)
+						if len(res.output.ImagePrompts) > 0 {
+							h.startPainterJob(assistantMsg.ID, gctx, res.output.ImagePrompts[0], nil)
+						}
 					}
 				}
 			}
@@ -1188,8 +1186,10 @@ loop:
 		return
 	}
 	sendProgress("KP主流程已保存")
+	finishSessionProcessing(session.ID)
+	processingOwned = false
 
-	// KP主流程先推给前端；输入保持锁定到 Writer/Painter 全部结束。
+	// NOTE: KP主流程结果已落库，立即解除输入锁；Writer/Painter 继续异步更新当前消息。
 	if output.KPReply != "" {
 		sseChunk("narration", output.KPReply)
 	}
@@ -1273,8 +1273,6 @@ loop:
 				}
 				painterCh = nil
 			case <-c.Request.Context().Done():
-				processingOwned = false
-				finishSessionProcessingAfterJobs(session.ID, writerCh, painterCh)
 				return
 			}
 		}
@@ -1283,8 +1281,6 @@ loop:
 	fullReply := buildAssistantContent(streamedWriter, output.KPReply)
 	log.Printf("[chat] session=%d user=%q done tokens=%d elapsed=%.0fms",
 		sessionID, username, len([]rune(fullReply)), float64(time.Since(pipelineStart).Milliseconds()))
-	finishSessionProcessing(session.ID)
-	processingOwned = false
 	c.SSEvent("done", "")
 	c.Writer.Flush()
 }
@@ -1299,24 +1295,6 @@ type writerJobResult struct {
 type painterJobResult struct {
 	dataURL string
 	err     error
-}
-
-func finishSessionProcessingAfterJobs(sessionID uint, writerCh <-chan writerJobResult, painterCh <-chan painterJobResult) {
-	go func() {
-		for writerCh != nil || painterCh != nil {
-			select {
-			case _, ok := <-writerCh:
-				if !ok {
-					writerCh = nil
-				}
-			case _, ok := <-painterCh:
-				if !ok {
-					painterCh = nil
-				}
-			}
-		}
-		finishSessionProcessing(sessionID)
-	}()
 }
 
 const writerPendingTag = "<writer_pending>true</writer_pending>"

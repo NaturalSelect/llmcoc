@@ -177,6 +177,7 @@ window.COC.game = {
                                                     if (msg) assistantMessageID = msg.id;
                                                     committedKP = !!msg;
                                                 }
+                                                unlockKP();
                                                 break;
 
                                             case 'done':
@@ -190,7 +191,6 @@ window.COC.game = {
                                                     if (msg) assistantMessageID = msg.id;
                                                     committedKP = !!msg;
                                                 }
-                                                unlockKP();
                                                 break;
                                         }
                                     } else if (line === '') {
