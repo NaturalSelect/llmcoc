@@ -6,7 +6,9 @@ window.COC.game = {
                     // ═══════════════════════════════════════════════════════
                     async sendChat() {
                         const content = String(this.chatInput).trim();
-                        if (!content || this.streaming || this.waitingForPlayers) return false;
+                        if (!content || this.streaming || this.waitingForPlayers || this.connectionRecovering) return false;
+
+                        this.stopChatStatusPolling();
 
                         const streamID = Date.now() + ':' + Math.random().toString(16).slice(2);
                         const unlockKP = () => {
@@ -27,12 +29,13 @@ window.COC.game = {
                         const submittedAt = new Date();
                         const tailAnchor = this.messages.length;
                         this.preSendMessageCount = tailAnchor;
-                        this.messages.push({
+                        const optimisticMessage = {
                             id: Date.now(), role: 'user',
                             username: this.currentPlayerDisplayName(), content,
                             created_at: submittedAt.toISOString(),
                             _new: true,
-                        });
+                        };
+                        this.messages.push(optimisticMessage);
                         this.$nextTick(() => this.scrollChat());
 
                         const formData = new FormData();
@@ -40,6 +43,7 @@ window.COC.game = {
 
                         let receivedWaiting = false;
                         let receivedDone = false;
+                        let receivedError = false;
                         let committedKP = false;
                         let assistantMessageID = null;
                         let writerText = '';
@@ -57,8 +61,17 @@ window.COC.game = {
 
                             if (!resp.ok) {
                                 const err = await resp.json().catch(() => ({ error: '请求失败' }));
+                                const optimisticIndex = this.messages.indexOf(optimisticMessage);
+                                if (optimisticIndex >= 0) this.messages.splice(optimisticIndex, 1);
+                                this.chatInput = content;
                                 this.showToast(err.error || '发送失败', 'error');
                                 unlockKP();
+                                if (resp.status === 409) {
+                                    const status = await this.refreshChatStatus(true);
+                                    if (status && (status.processing || (status.waiting_for_players && status.submitted))) {
+                                        this.pollChatStatus();
+                                    }
+                                }
                                 return false;
                             }
 
@@ -124,23 +137,26 @@ window.COC.game = {
                                                 }
                                                 break;
 
-                            case 'waiting':
-                                receivedWaiting = true;
-                                try {
-                                    const info = JSON.parse(data);
-                                    if (info.pending !== undefined) {
-                                        // NOTE: 合并新字段（submitted_names/pending_names）到 waitingInfo
-                                        this.waitingInfo = {
-                                            pending: info.pending ?? 0,
-                                            total: info.total ?? 0,
-                                            submitted_names: Array.isArray(info.submitted_names) ? info.submitted_names : [],
-                                            pending_names: Array.isArray(info.pending_names) ? info.pending_names : [],
-                                        };
-                                    }
-                                } catch (_) { }
-                                break;
+                                            case 'waiting':
+                                                receivedWaiting = true;
+                                                this.waitingForPlayers = true;
+                                                this.waitingSince = submittedAt;
+                                                try {
+                                                    const info = JSON.parse(data);
+                                                    if (info.pending !== undefined) {
+                                                        // NOTE: 合并新字段（submitted_names/pending_names）到 waitingInfo
+                                                        this.waitingInfo = {
+                                                            pending: info.pending ?? 0,
+                                                            total: info.total ?? 0,
+                                                            submitted_names: Array.isArray(info.submitted_names) ? info.submitted_names : [],
+                                                            pending_names: Array.isArray(info.pending_names) ? info.pending_names : [],
+                                                        };
+                                                    }
+                                                } catch (_) { }
+                                                break;
 
                                             case 'error':
+                                                receivedError = true;
                                                 this.showToast(data || '处理失败', 'error');
                                                 break;
 
@@ -161,7 +177,6 @@ window.COC.game = {
                                                     if (msg) assistantMessageID = msg.id;
                                                     committedKP = !!msg;
                                                 }
-                                                unlockKP();
                                                 break;
 
                                             case 'done':
@@ -175,6 +190,7 @@ window.COC.game = {
                                                     if (msg) assistantMessageID = msg.id;
                                                     committedKP = !!msg;
                                                 }
+                                                unlockKP();
                                                 break;
                                         }
                                     } else if (line === '') {
@@ -199,17 +215,16 @@ window.COC.game = {
                             this.progressText = '';
                             this.waitingForPlayers = true;
                             this.waitingSince = submittedAt;
-                            this.pollForKPResponse(submittedAt);
+                            this.pollChatStatus();
                         } else if (receivedDone && !committedKP) {
                             if (this.writerBuffer || this.narrationBuffer || this.imageBuffer.length) {
                                 this._commitStreamBuffers({ anchor: tailAnchor });
                             }
-                        } else if (!committedKP) {
+                        } else if (!receivedDone && !receivedError) {
                             if (this.writerBuffer || this.narrationBuffer || this.imageBuffer.length) {
                                 this._commitStreamBuffers({ anchor: tailAnchor });
-                            } else {
-                                this._recoverFromDrop(submittedAt);
                             }
+                            this._recoverFromDrop(submittedAt);
                         }
                         return true;
                     },
@@ -227,16 +242,25 @@ window.COC.game = {
                             return;
                         }
                         try {
-                            const msgs = this.normalizeMessages(
-                                (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
-                            );
+                            const [status, rawMessages] = await Promise.all([
+                                this.api('GET', '/api/sessions/' + this.currentSession.id + '/chat-status'),
+                                this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages'),
+                            ]);
+                            const msgs = this.normalizeMessages(rawMessages || []);
                             const kp = msgs.find(m => m.role === 'assistant' && new Date(m.created_at) > since);
+                            this.connectionRecovering = false;
+                            if (this.applyChatStatus(status)) {
+                                await this.refreshCurrentMessages(true);
+                                this.pollChatStatus();
+                                return;
+                            }
                             if (kp) {
-                                this.connectionRecovering = false;
                                 await this.refreshCurrentSession(true);
                                 await this.refreshCurrentMessages(true);
                                 return;
                             }
+                            this.showToast('上一条消息未完成，请重新发送', 'error');
+                            return;
                         } catch (_) { }
 
                         if (this.currentSession?.id && this.page === 'game') {
@@ -244,6 +268,86 @@ window.COC.game = {
                         } else {
                             this.connectionRecovering = false;
                         }
+                    },
+
+                    applyChatStatus(status) {
+                        if (!status || this.activeStreamID) return false;
+
+                        const waiting = status.waiting || {};
+                        this.waitingInfo = {
+                            pending: waiting.pending ?? 0,
+                            total: waiting.total ?? 0,
+                            submitted_names: Array.isArray(waiting.submitted_names) ? waiting.submitted_names : [],
+                            pending_names: Array.isArray(waiting.pending_names) ? waiting.pending_names : [],
+                        };
+                        this.connectionRecovering = false;
+
+                        if (status.processing) {
+                            this.streaming = true;
+                            this.waitingForPlayers = false;
+                            this.waitingSince = status.started_at ? new Date(status.started_at) : this.waitingSince;
+                            this.progressText = '服务器仍在处理本轮行动，请稍候…';
+                            return true;
+                        }
+
+                        if (status.waiting_for_players && status.submitted) {
+                            this.streaming = false;
+                            this.waitingForPlayers = true;
+                            this.waitingSince = status.submitted_at ? new Date(status.submitted_at) : (this.waitingSince || new Date());
+                            this.progressText = '';
+                            return true;
+                        }
+
+                        this.streaming = false;
+                        this.waitingForPlayers = false;
+                        this.waitingSince = null;
+                        this.progressText = '';
+                        this.resetWaitingInfo();
+                        this.stopChatStatusPolling();
+                        return false;
+                    },
+
+                    async refreshChatStatus(silent = true) {
+                        if (!this.currentSession?.id || this.page !== 'game' || this.refreshingChatStatus || this.activeStreamID) return null;
+                        this.refreshingChatStatus = true;
+                        try {
+                            const status = await this.api('GET', '/api/sessions/' + this.currentSession.id + '/chat-status');
+                            const active = this.applyChatStatus(status);
+                            if (active) this.pollChatStatus();
+                            return status;
+                        } catch (e) {
+                            if (!silent) this.showToast(e.message, 'error');
+                            return null;
+                        } finally {
+                            this.refreshingChatStatus = false;
+                        }
+                    },
+
+                    pollChatStatus() {
+                        if (this.chatStatusPollTimer || !this.currentSession?.id || this.page !== 'game') return;
+                        const sessionID = this.currentSession.id;
+                        this.chatStatusPollTimer = setTimeout(async () => {
+                            this.chatStatusPollTimer = null;
+                            if (!this.currentSession?.id || this.currentSession.id !== sessionID || this.page !== 'game' || this.activeStreamID) return;
+                            const status = await this.refreshChatStatus(true);
+                            if (!this.currentSession?.id || this.currentSession.id !== sessionID || this.page !== 'game') return;
+                            await this.refreshCurrentMessages(true);
+                            if (status && (status.processing || (status.waiting_for_players && status.submitted))) {
+                                this.pollChatStatus();
+                                return;
+                            }
+                            if (!status && (this.streaming || this.waitingForPlayers || this.connectionRecovering)) {
+                                this.pollChatStatus();
+                                return;
+                            }
+                            await this.refreshCurrentSession(true);
+                        }, this.refreshIntervals.waitingPoll);
+                    },
+
+                    stopChatStatusPolling() {
+                        if (!this.chatStatusPollTimer) return;
+                        clearTimeout(this.chatStatusPollTimer);
+                        this.chatStatusPollTimer = null;
                     },
 
                     _assistantContent(writerText, narrationText) {
@@ -356,23 +460,6 @@ window.COC.game = {
                         }
                     },
 
-                    async pollForKPResponse(since) {
-                        if (!this.waitingForPlayers) return;
-                        try {
-                            const msgs = this.normalizeMessages((await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []);
-                            const newKP = msgs.find(m => m.role === 'assistant' && new Date(m.created_at) > since);
-                            if (newKP) {
-                                this.waitingForPlayers = false;
-                                this.waitingSince = null;
-                                this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
-                                await this.refreshCurrentSession(true);
-                                await this.refreshCurrentMessages(true);
-                                return;
-                            }
-                        } catch (_) { }
-                        setTimeout(() => this.pollForKPResponse(since), this.refreshIntervals.waitingPoll);
-                    },
-
                     scrollChat() {
                         const el = document.getElementById('chatBox');
                         if (!el) return;
@@ -456,6 +543,7 @@ window.COC.game = {
                         this.sessionRefreshTimer = setInterval(() => {
                             if (!this.currentSession?.id || this.page !== 'game') return;
                             this.refreshCurrentSession(true).catch(() => { });
+                            this.refreshChatStatus(true).catch(() => { });
                             if (!this.streaming && !this.waitingForPlayers) {
                                 this.refreshCurrentMessages(true).catch(() => { });
                             }

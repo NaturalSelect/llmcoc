@@ -60,6 +60,8 @@ window.COC.core = function() {
                     sessionRefreshTimer: null,
                     refreshingSession: false,
                     refreshingMessages: false,
+                    refreshingChatStatus: false,
+                    chatStatusPollTimer: null,
                     waitingSince: null,
 
                     // NOTE: SSE流式状态
@@ -189,6 +191,7 @@ window.COC.core = function() {
 
                     logout() {
                         this.stopGameAutoRefresh();
+                        this.stopChatStatusPolling();
                         this.token = ''; localStorage.removeItem('coc_token');
                         this.user = null; this.page = 'auth';
                     },
@@ -203,6 +206,7 @@ window.COC.core = function() {
                     goTo(p) {
                         if (this.page === 'game') {
                             this.stopGameAutoRefresh();
+                            this.stopChatStatusPolling();
                             this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.imageBuffer = []; this.progressText = '';
                             this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
                             this.waitingSince = null;
@@ -227,19 +231,24 @@ window.COC.core = function() {
                     },
 
                     async goToSession(id) {
-                        this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.progressText = '';
+                        this.stopChatStatusPolling();
+                        this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.imageBuffer = []; this.progressText = '';
                         this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
                         this.waitingSince = null;
                         this.connectionRecovering = false;
                         try {
-                            const [session, msgs] = await Promise.all([
+                            const [session, msgs, chatStatus] = await Promise.all([
                                 this.api('GET', '/api/sessions/' + id),
                                 this.api('GET', '/api/sessions/' + id + '/messages'),
+                                this.api('GET', '/api/sessions/' + id + '/chat-status'),
                             ]);
                             this.currentSession = session;
                             this.messages = this.normalizeMessages(msgs || []);
                             this.page = 'game';
                             this.startGameAutoRefresh();
+                            if (this.applyChatStatus(chatStatus)) {
+                                this.pollChatStatus();
+                            }
                             this.$nextTick(() => this.scrollChat());
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },

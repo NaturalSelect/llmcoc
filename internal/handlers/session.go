@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -499,6 +500,11 @@ func GetMessages(c *gin.Context) {
 }
 
 var sessionMutex = sync.Map{}
+var sessionProcessing = sync.Map{}
+
+type sessionProcessingState struct {
+	StartedAt time.Time
+}
 
 func getSessionLock(sessionID uint) *sync.Mutex {
 	val, _ := sessionMutex.LoadOrStore(sessionID, &sync.Mutex{})
@@ -507,6 +513,25 @@ func getSessionLock(sessionID uint) *sync.Mutex {
 
 func removeSessionLock(sessionID uint) {
 	sessionMutex.Delete(sessionID)
+	sessionProcessing.Delete(sessionID)
+}
+
+func beginSessionProcessing(sessionID uint) bool {
+	_, loaded := sessionProcessing.LoadOrStore(sessionID, sessionProcessingState{StartedAt: time.Now().UTC()})
+	return !loaded
+}
+
+func finishSessionProcessing(sessionID uint) {
+	sessionProcessing.Delete(sessionID)
+}
+
+func getSessionProcessing(sessionID uint) (sessionProcessingState, bool) {
+	value, ok := sessionProcessing.Load(sessionID)
+	if !ok {
+		return sessionProcessingState{}, false
+	}
+	state, ok := value.(sessionProcessingState)
+	return state, ok
 }
 
 func activeTurnPlayerIDs(players []models.SessionPlayer) map[uint]bool {
@@ -659,6 +684,94 @@ func sendWaitingSSE(c *gin.Context, payload waitingPayload) {
 	c.Writer.Flush()
 }
 
+type chatStatusResponse struct {
+	Phase             string         `json:"phase"`
+	Processing        bool           `json:"processing"`
+	WaitingForPlayers bool           `json:"waiting_for_players"`
+	Submitted         bool           `json:"submitted"`
+	StartedAt         *time.Time     `json:"started_at"`
+	SubmittedAt       *time.Time     `json:"submitted_at"`
+	Waiting           waitingPayload `json:"waiting"`
+}
+
+func setChatSSEHeaders(c *gin.Context) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+}
+
+// GetChatStatus 返回当前用户可恢复的聊天状态。
+func (h *SessionHandlers) GetChatStatus(c *gin.Context) {
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID := c.GetUint("user_id")
+
+	lock := getSessionLock(uint(sessionID))
+	lock.Lock()
+	defer lock.Unlock()
+
+	var session models.GameSession
+	if err := models.DB.
+		Preload("Players.User").
+		Preload("Players.CharacterCard").
+		First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+
+	processingState, processing := getSessionProcessing(session.ID)
+	activePlayerIDs := activeTurnPlayerIDs(session.Players)
+	actionCutoff, hasActionCutoff := lastKPReplyTime(session.ID)
+	wPayload, err := buildWaitingSSEPayload(models.DB, session, activePlayerIDs, actionCutoff, hasActionCutoff)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询本轮状态失败"})
+		return
+	}
+
+	var submittedAction models.SessionTurnAction
+	submitted := false
+	if activePlayerIDs[userID] {
+		query := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID)
+		if hasActionCutoff {
+			query = query.Where("created_at > ?", actionCutoff)
+		}
+		if err := query.Order("created_at DESC, id DESC").First(&submittedAction).Error; err == nil {
+			submitted = true
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询行动提交状态失败"})
+			return
+		}
+	}
+
+	submittedCount := wPayload.Total - wPayload.Pending
+	waitingForPlayers := session.Status == models.SessionStatusPlaying && len(session.Players) > 1 && len(activePlayerIDs) > 1 && submittedCount > 0 && wPayload.Pending > 0
+	phase := "idle"
+	if waitingForPlayers {
+		phase = "waiting"
+	}
+	var startedAt *time.Time
+	if processing {
+		phase = "processing"
+		started := processingState.StartedAt
+		startedAt = &started
+	}
+	var submittedAt *time.Time
+	if submitted {
+		at := submittedAction.CreatedAt
+		submittedAt = &at
+	}
+
+	c.JSON(http.StatusOK, chatStatusResponse{
+		Phase:             phase,
+		Processing:        processing,
+		WaitingForPlayers: waitingForPlayers,
+		Submitted:         submitted,
+		StartedAt:         startedAt,
+		SubmittedAt:       submittedAt,
+		Waiting:           wPayload,
+	})
+}
+
 // ChatStream handles SSE streaming for game chat using the multi-agent pipeline.
 //
 // NOTE: This is the core gameplay loop endpoint. It handles receiving player actions,
@@ -727,6 +840,10 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息过长(最多2000字)"})
 		return
 	}
+	if _, processing := getSessionProcessing(uint(sessionID)); processing {
+		c.JSON(http.StatusConflict, gin.H{"error": "当前房间正在处理上一条消息，请稍候"})
+		return
+	}
 
 	lock := getSessionLock(uint(sessionID))
 	lock.Lock()
@@ -745,15 +862,13 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
 	}
+	if _, processing := getSessionProcessing(session.ID); processing {
+		c.JSON(http.StatusConflict, gin.H{"error": "当前房间正在处理上一条消息，请稍候"})
+		return
+	}
 
 	log.Printf("[chat] session=%d user=%q content_len=%d round=%d",
 		sessionID, username, len([]rune(content)), session.TurnRound)
-
-	// Set SSE headers before any response path (including the "waiting" path).
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
 
 	// ── Multi-player turn-collection ────────────────────────────────────────
 	playerCount := len(session.Players)
@@ -777,6 +892,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	if playerCount > 1 {
 		if activePlayerCount > 0 && (!isTrackedPlayer || !isActiveTurnPlayer) {
 			log.Printf("[chat] session=%d user=%q rejected dead/non-player input while active players remain", sessionID, username)
+			setChatSSEHeaders(c)
 			c.SSEvent("error", "当前仍有存活调查员，只有非死亡玩家可以提交本轮行动")
 			c.Writer.Flush()
 			c.SSEvent("done", "")
@@ -785,6 +901,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		}
 		if activePlayerCount == 0 && !isTrackedPlayer {
 			log.Printf("[chat] session=%d user=%q rejected non-player input after party wipe", sessionID, username)
+			setChatSSEHeaders(c)
 			c.SSEvent("error", "所有调查员均已死亡时，只有房间内玩家可以推进剧情")
 			c.Writer.Flush()
 			c.SSEvent("done", "")
@@ -798,29 +915,30 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		// race where two simultaneous last-submitters both try to run the agent.
 		var isLastToSubmit bool
 		err := models.DB.Transaction(func(tx *gorm.DB) error {
-			// Same-round resubmission should overwrite the player's pending action,
-			// so only the latest action is persisted with the KP reply.
 			var existing models.SessionTurnAction
 			query := tx.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID)
 			if hasActionCutoff {
 				query = query.Where("created_at > ?", actionCutoff)
 			}
 			err := query.First(&existing).Error
-			if err != nil {
-				tx.Create(&models.SessionTurnAction{
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if err := tx.Create(&models.SessionTurnAction{
 					SessionID:     session.ID,
 					Round:         session.TurnRound,
 					UserID:        userID,
 					Username:      playerDisplayName,
 					ActionSummary: content,
-				})
-			} else {
-				// Update so the latest action content is used if the player resubmits
-				// before the round advances (e.g. agent returned without calling write).
-				tx.Model(&existing).Updates(map[string]any{
-					"username":       playerDisplayName,
-					"action_summary": content,
-				})
+				}).Error; err != nil {
+					return err
+				}
+			} else if err := tx.Model(&existing).Updates(map[string]any{
+				"username":       playerDisplayName,
+				"action_summary": content,
+			}).Error; err != nil {
+				return err
 			}
 			submitted := countSubmittedTurnPlayers(tx, session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
 			isLastToSubmit = submitted >= int64(activePlayerCount)
@@ -828,10 +946,12 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		})
 		if err != nil {
 			log.Printf("[chat] session=%d user=%q transaction error: %v", sessionID, username, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
 			return
 		}
 
 		if !isLastToSubmit {
+			setChatSSEHeaders(c)
 			// NOTE: 构建含已提交/待提交姓名的等待载荷，查询失败时降级为计数格式
 			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, activePlayerIDs, actionCutoff, hasActionCutoff)
 			if wErr != nil {
@@ -855,6 +975,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		// Last to submit: load exactly one latest action per active actor for the KP prompt.
 		turnActions = loadLatestTurnActions(session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
 		if len(turnActions) < activePlayerCount {
+			setChatSSEHeaders(c)
 			// NOTE: 构建含已提交/待提交姓名的等待载荷，查询失败时降级为计数格式
 			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, activePlayerIDs, actionCutoff, hasActionCutoff)
 			if wErr != nil {
@@ -884,23 +1005,36 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	} else {
 		// Single-player or creator/spectator: keep only the latest action for this round.
 		var existing models.SessionTurnAction
-		err := models.DB.Where("session_id = ? AND round = ? AND user_id = ?",
-			session.ID, session.TurnRound, userID).First(&existing).Error
-		if err != nil {
-			models.DB.Create(&models.SessionTurnAction{
+		query := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID)
+		if hasActionCutoff {
+			query = query.Where("created_at > ?", actionCutoff)
+		}
+		err := query.First(&existing).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = models.DB.Create(&models.SessionTurnAction{
 				SessionID:     session.ID,
 				Round:         session.TurnRound,
 				UserID:        userID,
 				Username:      playerDisplayName,
 				ActionSummary: content,
-			})
+			}).Error
 		} else {
-			models.DB.Model(&existing).Updates(map[string]any{
+			err = models.DB.Model(&existing).Updates(map[string]any{
 				"username":       playerDisplayName,
 				"action_summary": content,
-			})
+			}).Error
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
+			return
 		}
 	}
+
+	setChatSSEHeaders(c)
 
 	// ── Load recent history for agent context ─────────────────────────────────
 	var recentMsgs []models.Message
@@ -921,6 +1055,23 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		UserInputAdmin: user.Role == models.RoleAdmin,
 		PendingActions: pendingActions,
 	}
+	if !beginSessionProcessing(session.ID) {
+		c.SSEvent("error", "当前房间正在处理上一条消息，请稍候")
+		c.Writer.Flush()
+		c.SSEvent("done", "")
+		c.Writer.Flush()
+		return
+	}
+	processingOwned := true
+	defer func() {
+		if processingOwned {
+			finishSessionProcessing(session.ID)
+		}
+	}()
+
+	// NOTE: 行动收集完成后立即释放短临界区；长耗时任务由 processing 状态防止重复进入。
+	lock.Unlock()
+	lockReleased = true
 
 	// ── Run agent pipeline ────────────────────────────────────────────────────
 	log.Printf("[chat] session=%d user=%q pipeline start round=%d", sessionID, username, session.TurnRound)
@@ -1000,12 +1151,15 @@ loop:
 				if err != nil {
 					log.Printf("[chat] session=%d user=%q save after disconnect error: %v", sessionID, username, err)
 				} else if assistantMsg != nil {
-					// NOTE: 消息已保存，后续 painter/writer 为后台 goroutine 不需要 lock，提前释放。
-					lock.Unlock()
-					lockReleased = true
-					h.startWriterJob(assistantMsg.ID, gctx, res.output, nil)
+					jobClientDone := make(chan struct{})
+					writerCh := h.startWriterJob(assistantMsg.ID, gctx, res.output, jobClientDone)
+					var painterCh <-chan painterJobResult
 					if len(res.output.ImagePrompts) > 0 {
-						h.startPainterJob(assistantMsg.ID, gctx, res.output.ImagePrompts[0], nil)
+						painterCh = h.startPainterJob(assistantMsg.ID, gctx, res.output.ImagePrompts[0], jobClientDone)
+					}
+					if writerCh != nil || painterCh != nil {
+						processingOwned = false
+						finishSessionProcessingAfterJobs(session.ID, writerCh, painterCh)
 					}
 				}
 			}
@@ -1035,7 +1189,7 @@ loop:
 	}
 	sendProgress("KP主流程已保存")
 
-	// KP是游戏主流程,先推给前端并解除输入锁。
+	// KP主流程先推给前端；输入保持锁定到 Writer/Painter 全部结束。
 	if output.KPReply != "" {
 		sseChunk("narration", output.KPReply)
 	}
@@ -1050,11 +1204,6 @@ loop:
 		c.SSEvent("kp_done", gin.H{})
 	}
 	c.Writer.Flush()
-
-	// NOTE: kp_done 已发送，前端已解锁输入。后续 painter/writer 为后台 goroutine，
-	// 不需要 session lock 保护（消息行级乐观锁已保护并发更新），立即释放 lock。
-	lock.Unlock()
-	lockReleased = true
 
 	var writerCh <-chan writerJobResult
 	if assistantMsg != nil {
@@ -1124,6 +1273,8 @@ loop:
 				}
 				painterCh = nil
 			case <-c.Request.Context().Done():
+				processingOwned = false
+				finishSessionProcessingAfterJobs(session.ID, writerCh, painterCh)
 				return
 			}
 		}
@@ -1132,6 +1283,8 @@ loop:
 	fullReply := buildAssistantContent(streamedWriter, output.KPReply)
 	log.Printf("[chat] session=%d user=%q done tokens=%d elapsed=%.0fms",
 		sessionID, username, len([]rune(fullReply)), float64(time.Since(pipelineStart).Milliseconds()))
+	finishSessionProcessing(session.ID)
+	processingOwned = false
 	c.SSEvent("done", "")
 	c.Writer.Flush()
 }
@@ -1146,6 +1299,24 @@ type writerJobResult struct {
 type painterJobResult struct {
 	dataURL string
 	err     error
+}
+
+func finishSessionProcessingAfterJobs(sessionID uint, writerCh <-chan writerJobResult, painterCh <-chan painterJobResult) {
+	go func() {
+		for writerCh != nil || painterCh != nil {
+			select {
+			case _, ok := <-writerCh:
+				if !ok {
+					writerCh = nil
+				}
+			case _, ok := <-painterCh:
+				if !ok {
+					painterCh = nil
+				}
+			}
+		}
+		finishSessionProcessing(sessionID)
+	}()
 }
 
 const writerPendingTag = "<writer_pending>true</writer_pending>"

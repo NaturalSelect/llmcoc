@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,6 +28,8 @@ import (
 
 func initTestDB(t *testing.T) {
 	t.Helper()
+	sessionMutex = sync.Map{}
+	sessionProcessing = sync.Map{}
 	// 每个测试使用独立内存库,并限制单连接避免SQLite多连接看不到schema。
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
@@ -141,8 +144,77 @@ func makeTestRouter(h *SessionHandlers, userID uint, username string) *gin.Engin
 		c.Set("username", username)
 		c.Next()
 	})
+	r.GET("/sessions/:id/chat-status", h.GetChatStatus)
 	r.POST("/sessions/:id/chat", h.ChatStream)
 	return r
+}
+
+type blockingRunner struct {
+	started chan struct{}
+	release chan struct{}
+	output  agent.RunOutput
+}
+
+type blockingWriterRunner struct {
+	writerStarted chan struct{}
+	writerRelease chan struct{}
+}
+
+func (*blockingWriterRunner) Run(context.Context, agent.GameContext) (agent.RunOutput, error) {
+	return agent.RunOutput{
+		KPReply:         "你听见门后传来脚步声。",
+		WriterDirection: "描述门后的压迫感",
+	}, nil
+}
+
+func (*blockingWriterRunner) RunWriter(context.Context, agent.GameContext, string) (string, error) {
+	return "", nil
+}
+
+func (r *blockingWriterRunner) RunWriterStream(_ context.Context, _ agent.GameContext, _ string, onToken func(string)) (string, error) {
+	select {
+	case <-r.writerStarted:
+	default:
+		close(r.writerStarted)
+	}
+	<-r.writerRelease
+	onToken("门后的呼吸声越来越近。")
+	return "门后的呼吸声越来越近。", nil
+}
+
+func (*blockingWriterRunner) RunPainter(context.Context, agent.GameContext, agent.ImagePromptRequest) (string, error) {
+	return "", nil
+}
+
+func (r *blockingRunner) Run(context.Context, agent.GameContext) (agent.RunOutput, error) {
+	select {
+	case <-r.started:
+	default:
+		close(r.started)
+	}
+	<-r.release
+	return r.output, nil
+}
+
+func (*blockingRunner) RunWriter(context.Context, agent.GameContext, string) (string, error) {
+	return "", nil
+}
+
+func (*blockingRunner) RunWriterStream(context.Context, agent.GameContext, string, func(string)) (string, error) {
+	return "", nil
+}
+
+func (*blockingRunner) RunPainter(context.Context, agent.GameContext, agent.ImagePromptRequest) (string, error) {
+	return "", nil
+}
+
+func decodeChatStatus(t *testing.T, body string) chatStatusResponse {
+	t.Helper()
+	var status chatStatusResponse
+	if err := json.Unmarshal([]byte(body), &status); err != nil {
+		t.Fatalf("decode chat status: %v\nbody: %s", err, body)
+	}
+	return status
 }
 
 type parsedSSEEvent struct {
@@ -314,6 +386,146 @@ func TestChatStream_AgentError(t *testing.T) {
 	}
 	if !strings.Contains(events["error"][0], "LLM timeout") {
 		t.Errorf("error event data want 'LLM timeout', got %q", events["error"][0])
+	}
+}
+
+func TestChatStream_RejectsSecondRequestWhileProcessing(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	runner := &blockingRunner{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		output:  agent.RunOutput{WriterText: "处理完成"},
+	}
+	r := makeTestRouter(NewSessionHandlers(runner), userID, "tester")
+
+	firstDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "第一条行动"))
+		firstDone <- w
+	}()
+
+	select {
+	case <-runner.started:
+	case <-time.After(time.Second):
+		t.Fatal("first request did not enter runner")
+	}
+
+	second := httptest.NewRecorder()
+	r.ServeHTTP(second, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "重复行动"))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second request status = %d, want 409; body: %s", second.Code, second.Body.String())
+	}
+
+	close(runner.release)
+	select {
+	case first := <-firstDone:
+		if first.Code != http.StatusOK {
+			t.Fatalf("first request status = %d", first.Code)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first request did not finish")
+	}
+
+	var userMessageCount int64
+	models.DB.Model(&models.Message{}).
+		Where("session_id = ? AND role = ?", sessionID, models.MessageRoleUser).
+		Count(&userMessageCount)
+	if userMessageCount != 1 {
+		t.Fatalf("user message count = %d, want 1", userMessageCount)
+	}
+}
+
+func TestGetChatStatus_SinglePlayerProcessingRecoversAfterRefresh(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	runner := &blockingRunner{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		output:  agent.RunOutput{WriterText: "处理完成"},
+	}
+	r := makeTestRouter(NewSessionHandlers(runner), userID, "tester")
+
+	requestDone := make(chan struct{})
+	go func() {
+		defer close(requestDone)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "调查门锁"))
+	}()
+	select {
+	case <-runner.started:
+	case <-time.After(time.Second):
+		t.Fatal("request did not enter runner")
+	}
+
+	statusRecorder := httptest.NewRecorder()
+	r.ServeHTTP(statusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
+	if statusRecorder.Code != http.StatusOK {
+		t.Fatalf("chat status code = %d", statusRecorder.Code)
+	}
+	status := decodeChatStatus(t, statusRecorder.Body.String())
+	if !status.Processing || status.Phase != "processing" || !status.Submitted {
+		t.Fatalf("unexpected processing status: %+v", status)
+	}
+	if status.StartedAt == nil || status.SubmittedAt == nil {
+		t.Fatalf("processing timestamps missing: %+v", status)
+	}
+
+	close(runner.release)
+	select {
+	case <-requestDone:
+	case <-time.After(time.Second):
+		t.Fatal("request did not finish")
+	}
+
+	idleRecorder := httptest.NewRecorder()
+	r.ServeHTTP(idleRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
+	idle := decodeChatStatus(t, idleRecorder.Body.String())
+	if idle.Processing || idle.Phase != "idle" {
+		t.Fatalf("status should return idle after completion: %+v", idle)
+	}
+}
+
+func TestChatStream_RemainsBusyUntilWriterFinishes(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	runner := &blockingWriterRunner{
+		writerStarted: make(chan struct{}),
+		writerRelease: make(chan struct{}),
+	}
+	r := makeTestRouter(NewSessionHandlers(runner), userID, "tester")
+
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我推开门"))
+	}()
+	select {
+	case <-runner.writerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("writer did not start")
+	}
+
+	statusRecorder := httptest.NewRecorder()
+	r.ServeHTTP(statusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
+	status := decodeChatStatus(t, statusRecorder.Body.String())
+	if !status.Processing || status.Phase != "processing" {
+		t.Fatalf("writer phase should remain processing: %+v", status)
+	}
+
+	second := httptest.NewRecorder()
+	r.ServeHTTP(second, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我继续前进"))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("request during writer status = %d, want 409", second.Code)
+	}
+
+	close(runner.writerRelease)
+	select {
+	case <-firstDone:
+	case <-time.After(time.Second):
+		t.Fatal("request did not finish after writer release")
 	}
 }
 
@@ -770,6 +982,93 @@ func TestChatStream_WaitingPayload_Fields(t *testing.T) {
 	}
 	if len(payload.PendingNames) != 1 || payload.PendingNames[0] != "鲍勃" {
 		t.Errorf("pending_names = %v, want [\"鲍勃\"]", payload.PendingNames)
+	}
+}
+
+func TestGetChatStatus_MultiplayerWaitingRecoversSubmittedPlayer(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+
+	ctrl := gomock.NewController(t)
+	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
+	user1Router := makeTestRouter(h, user1ID, "mp_user1")
+	w := httptest.NewRecorder()
+	user1Router.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我查探房间"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("first submit status = %d", w.Code)
+	}
+
+	user1StatusRecorder := httptest.NewRecorder()
+	user1Router.ServeHTTP(user1StatusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
+	user1Status := decodeChatStatus(t, user1StatusRecorder.Body.String())
+	if user1Status.Phase != "waiting" || !user1Status.WaitingForPlayers || !user1Status.Submitted || user1Status.Processing {
+		t.Fatalf("unexpected submitted player status: %+v", user1Status)
+	}
+	if user1Status.Waiting.Pending != 1 || user1Status.Waiting.Total != 2 {
+		t.Fatalf("unexpected waiting counts: %+v", user1Status.Waiting)
+	}
+
+	user2Router := makeTestRouter(h, user2ID, "mp_user2")
+	user2StatusRecorder := httptest.NewRecorder()
+	user2Router.ServeHTTP(user2StatusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
+	user2Status := decodeChatStatus(t, user2StatusRecorder.Body.String())
+	if user2Status.Phase != "waiting" || user2Status.Submitted || !user2Status.WaitingForPlayers {
+		t.Fatalf("unexpected pending player status: %+v", user2Status)
+	}
+}
+
+func TestGetChatStatus_MultiplayerProcessingAppliesToAllPlayers(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	runner := &blockingRunner{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		output:  agent.RunOutput{WriterText: "本轮完成"},
+	}
+	h := NewSessionHandlers(runner)
+	user1Router := makeTestRouter(h, user1ID, "mp_user1")
+	user2Router := makeTestRouter(h, user2ID, "mp_user2")
+
+	first := httptest.NewRecorder()
+	user1Router.ServeHTTP(first, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我观察门口"))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first submit status = %d", first.Code)
+	}
+
+	secondDone := make(chan struct{})
+	go func() {
+		defer close(secondDone)
+		w := httptest.NewRecorder()
+		user2Router.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我检查窗户"))
+	}()
+	select {
+	case <-runner.started:
+	case <-time.After(time.Second):
+		t.Fatal("multiplayer request did not enter runner")
+	}
+
+	for _, tc := range []struct {
+		name   string
+		router *gin.Engine
+	}{
+		{name: "first player", router: user1Router},
+		{name: "second player", router: user2Router},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			statusRecorder := httptest.NewRecorder()
+			tc.router.ServeHTTP(statusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
+			status := decodeChatStatus(t, statusRecorder.Body.String())
+			if !status.Processing || status.Phase != "processing" || status.WaitingForPlayers {
+				t.Fatalf("unexpected multiplayer processing status: %+v", status)
+			}
+		})
+	}
+
+	close(runner.release)
+	select {
+	case <-secondDone:
+	case <-time.After(time.Second):
+		t.Fatal("multiplayer request did not finish")
 	}
 }
 

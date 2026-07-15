@@ -27,6 +27,7 @@ func sessionCRUDRouter(userID uint, username, role string) *gin.Engine {
 	r.POST("/sessions/:id/start", auth, StartSession)
 	r.POST("/sessions/:id/end", auth, EndSession)
 	r.GET("/sessions/:id/messages", auth, GetMessages)
+	r.GET("/sessions/:id/chat-status", auth, NewSessionHandlers(nil).GetChatStatus)
 	return r
 }
 
