@@ -157,6 +157,14 @@ func RandomSalt() string {
 	return string(b)
 }
 
+// scenarioGenEvent 是模组生成流水线推送给前端的 SSE 事件。
+type scenarioGenEvent struct {
+	name string
+	data any
+}
+
+// GenerateScenarioByAgents 以 SSE 流式方式运行 AI 模组生成流水线。
+// 生成在服务端后台完整执行并落库；即使客户端中途断开连接，结果仍会写入模组列表。
 func GenerateScenarioByAgents(c *gin.Context) {
 	var req GenerateScenarioReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -164,8 +172,19 @@ func GenerateScenarioByAgents(c *gin.Context) {
 		return
 	}
 
+	setChatSSEHeaders(c)
+
+	events := make(chan scenarioGenEvent, 128)
 	go func() {
-		gen, err := agent.RunScripterScenarioTeam(context.Background(), agent.ScenarioCreationRequest{
+		defer close(events)
+		// NOTE: 进度回调在生成 goroutine 内同步发送；handler 侧会持续排空 channel
+		// 直到其关闭（客户端断开也继续排空），因此此处阻塞发送不会死锁。
+		progress := func(stage, status, detail string) {
+			events <- scenarioGenEvent{name: "progress", data: gin.H{"stage": stage, "status": status, "detail": detail}}
+		}
+		progress("queued", "start", "请求已受理，等待生成槽位（全局同时仅运行一路生成任务）")
+
+		gen, err := agent.RunScripterScenarioTeamWithProgress(context.Background(), agent.ScenarioCreationRequest{
 			Name:         req.Name,
 			Theme:        req.Theme,
 			Era:          req.Era,
@@ -175,9 +194,10 @@ func GenerateScenarioByAgents(c *gin.Context) {
 			MinPlayers:   req.MinPlayers,
 			MaxPlayers:   req.MaxPlayers,
 			Salt:         RandomSalt(),
-		})
+		}, progress)
 		if err != nil {
 			log.Printf("[agent] scenario generation failed: %v", err)
+			events <- scenarioGenEvent{name: "error", data: "模组生成失败: " + err.Error()}
 			return
 		}
 
@@ -209,6 +229,7 @@ func GenerateScenarioByAgents(c *gin.Context) {
 
 		if err := models.DB.Create(&scenario).Error; err != nil {
 			log.Printf("[agent] failed to save generated scenario to DB: %v", err)
+			events <- scenarioGenEvent{name: "error", data: "模组入库失败，请联系管理员查看服务端日志"}
 			return
 		}
 
@@ -223,9 +244,27 @@ func GenerateScenarioByAgents(c *gin.Context) {
 		if err := models.DB.Create(&generationLog).Error; err != nil {
 			log.Printf("[agent] failed to save scenario generation log scenario_id=%d: %v", scenario.ID, err)
 		}
+
+		events <- scenarioGenEvent{name: "done", data: gin.H{"scenario_id": scenario.ID, "name": scenario.Name}}
 	}()
 
-	c.JSON(http.StatusCreated, gin.H{"message": "模组生成中, 请稍后查看列表", "name": req.Name})
+	// NOTE: 客户端断开后继续排空事件通道直到生成结束，保证后台生成与落库完整执行。
+	disconnected := false
+	for evt := range events {
+		if !disconnected {
+			select {
+			case <-c.Request.Context().Done():
+				disconnected = true
+				log.Printf("[agent] scenario generation client disconnected, continuing in background")
+			default:
+			}
+		}
+		if disconnected {
+			continue
+		}
+		c.SSEvent(evt.name, evt.data)
+		c.Writer.Flush()
+	}
 }
 
 // UploadScenario imports a scenario JSON file into DB.

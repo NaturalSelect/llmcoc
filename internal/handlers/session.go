@@ -494,7 +494,7 @@ func GetMessages(c *gin.Context) {
 
 	var messages []models.Message
 	models.DB.Where("session_id = ? AND (role != ? OR content LIKE ?)", sessionID, models.MessageRoleSystem, "管理员「%」复活了房间，游戏继续。").
-		Order("created_at ASC").
+		Order("created_at ASC, id ASC").
 		Find(&messages)
 	c.JSON(http.StatusOK, newMessageResponses(messages))
 }

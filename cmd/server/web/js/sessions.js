@@ -111,7 +111,7 @@ window.COC.sessions = {
                             await this.api('POST', '/api/sessions/' + this.currentSession.id + '/start');
                             await this.refreshCurrentSession(true);
                             this.messages = this.normalizeMessages((await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []);
-                            this.$nextTick(() => this.scrollChat());
+                            this.$nextTick(() => this.scrollChat(true));
                             this.showToast('游戏已开始！');
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
@@ -142,7 +142,7 @@ window.COC.sessions = {
                             if (this.currentSession?.id === session.id) {
                                 await this.refreshCurrentSession(true);
                                 this.messages = this.normalizeMessages((await this.api('GET', '/api/sessions/' + session.id + '/messages')) || []);
-                                this.$nextTick(() => this.scrollChat());
+                                this.$nextTick(() => this.scrollChat(true));
                             }
                             this.showToast(r.message || '房间已复活');
                         } catch (e) { this.showToast(e.message, 'error'); }

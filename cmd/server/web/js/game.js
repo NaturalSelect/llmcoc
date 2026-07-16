@@ -33,10 +33,13 @@ window.COC.game = {
                             id: Date.now(), role: 'user',
                             username: this.currentPlayerDisplayName(), content,
                             created_at: submittedAt.toISOString(),
+                            // NOTE: 乐观消息标记：临时 id 与服务端自增 id 永不相同，
+                            // 刷新时按 user_id+内容匹配替换，未确认前保留在列表末尾。
+                            _optimistic: true,
                             _new: true,
                         };
                         this.messages.push(optimisticMessage);
-                        this.$nextTick(() => this.scrollChat());
+                        this.$nextTick(() => this.scrollChat(true));
 
                         const formData = new FormData();
                         formData.append('content', content);
@@ -424,7 +427,7 @@ window.COC.game = {
                         this.messages.splice(idx, 1, { ...msg, images });
                     },
 
-                    async _syncTailFromDB(anchor = null) {
+                    async _syncTailFromDB(anchor = null, retry = 0) {
                         if (!this.currentSession?.id) return;
                         if (anchor === null || anchor === undefined) {
                             if (this.preSendMessageCount < 0) return;
@@ -434,7 +437,14 @@ window.COC.game = {
                             this.preSendMessageCount = -1;
                         }
                         // 复用刷新锁,避免常规轮询在这里做尾部替换时同时追加消息。
-                        if (this.refreshingMessages) return;
+                        // NOTE: 锁被占用时延迟重试而非直接放弃——此前直接 return 会导致
+                        // 尾部顺序修正丢失（玩家消息残留在 KP 回复之后）。
+                        if (this.refreshingMessages) {
+                            if (retry < 5) {
+                                setTimeout(() => this._syncTailFromDB(anchor, retry + 1), 300);
+                            }
+                            return;
+                        }
                         this.refreshingMessages = true;
                         try {
                             const msgs = this.normalizeMessages(
@@ -460,12 +470,14 @@ window.COC.game = {
                         }
                     },
 
-                    scrollChat() {
+                    // NOTE: force=true 时无条件滚到底（发送消息、进入房间等场景）；
+                    // 否则仅在已贴近底部时跟随滚动，避免打断用户翻阅历史。
+                    scrollChat(force = false) {
                         const el = document.getElementById('chatBox');
                         if (!el) return;
                         const threshold = 120;
                         const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-                        if (atBottom) el.scrollTop = el.scrollHeight;
+                        if (force || atBottom) el.scrollTop = el.scrollHeight;
                     },
 
                     async refreshCurrentSession(silent = true) {
@@ -480,6 +492,10 @@ window.COC.game = {
                         }
                     },
 
+                    // NOTE: 消息刷新采用整体 reconcile：以服务端返回顺序为准重建列表，
+                    // 合并本地流式状态；乐观消息（临时 id）按 user_id+内容匹配服务端消息，
+                    // 已确认的移除、未确认的保留在末尾。修复此前"未知 id 一律追加到末尾"
+                    // 导致玩家消息被排到 KP 回复之后的问题。
                     async refreshCurrentMessages(silent = true) {
                         if (!this.currentSession?.id || this.refreshingMessages) return;
                         this.refreshingMessages = true;
@@ -488,47 +504,69 @@ window.COC.game = {
                                 (await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []
                             );
 
-                            const existingByID = new Map(this.messages.map((m, idx) => [String(m.id), idx]));
+                            const localByID = new Map(this.messages.map(m => [String(m.id), m]));
                             const newMsgs = [];
                             let changed = false;
 
-                            for (const msg of msgs) {
-                                const idx = existingByID.get(String(msg.id));
-                                if (idx === undefined) {
-                                    newMsgs.push({ ...msg, _new: true });
-                                    continue;
-                                }
-                                const old = this.messages[idx];
-                                const merged = this._mergeStreamingMessage(old, msg);
-                                if (
-                                    old.content !== merged.content ||
-                                    old.writer_text !== merged.writer_text ||
-                                    old.narration_text !== merged.narration_text ||
-                                    !this.sameImages(old.images, merged.images) ||
-                                    old._writer_streaming !== merged._writer_streaming
-                                ) {
-                                    this.messages.splice(idx, 1, {
-                                        ...old,
-                                        ...merged,
-                                        _new: old._new,
-                                        response_options: merged.response_options,
-                                    });
+                            const merged = msgs.map(msg => {
+                                const local = localByID.get(String(msg.id));
+                                if (!local) {
                                     changed = true;
+                                    const fresh = { ...msg, _new: true };
+                                    newMsgs.push(fresh);
+                                    return fresh;
+                                }
+                                const m = this._mergeStreamingMessage(local, msg);
+                                if (
+                                    local.content !== m.content ||
+                                    local.writer_text !== m.writer_text ||
+                                    local.narration_text !== m.narration_text ||
+                                    !this.sameImages(local.images, m.images) ||
+                                    local._writer_streaming !== m._writer_streaming
+                                ) {
+                                    changed = true;
+                                }
+                                return { ...local, ...m, response_options: m.response_options };
+                            });
+
+                            // 顺序兜底：本地非乐观消息的顺序必须与服务端一致。
+                            const localRealIDs = this.messages.filter(m => !m._optimistic).map(m => String(m.id));
+                            if (!changed && (localRealIDs.length !== merged.length ||
+                                localRealIDs.some((id, i) => id !== String(merged[i].id)))) {
+                                changed = true;
+                            }
+
+                            // 乐观消息：服务端已落库（同用户、同内容）的确认移除，未确认的保留在末尾。
+                            const myUserID = this.user?.id;
+                            const pending = [];
+                            let optimisticChanged = false;
+                            for (const m of this.messages) {
+                                if (!m || !m._optimistic) continue;
+                                const confirmed = merged.some(dm =>
+                                    dm.role === 'user' &&
+                                    dm.user_id && myUserID && Number(dm.user_id) === Number(myUserID) &&
+                                    String(dm.content).trim() === String(m.content).trim()
+                                );
+                                if (confirmed) {
+                                    optimisticChanged = true;
+                                } else {
+                                    pending.push(m);
                                 }
                             }
 
-                            if (newMsgs.length > 0) {
-                                this.messages.push(...newMsgs);
-                                if (this.waitingForPlayers && this.waitingSince) {
-                                    const gotKP = newMsgs.some(m => m.role === 'assistant' && new Date(m.created_at) > this.waitingSince);
-                                    if (gotKP) {
-                                        this.waitingForPlayers = false;
-                                        this.waitingSince = null;
-                                        this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
-                                    }
+                            if (changed || optimisticChanged) {
+                                this.messages = [...merged, ...pending];
+                            }
+
+                            if (newMsgs.length > 0 && this.waitingForPlayers && this.waitingSince) {
+                                const gotKP = newMsgs.some(m => m.role === 'assistant' && new Date(m.created_at) > this.waitingSince);
+                                if (gotKP) {
+                                    this.waitingForPlayers = false;
+                                    this.waitingSince = null;
+                                    this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
                                 }
                             }
-                            if (changed || newMsgs.length > 0) {
+                            if (changed || optimisticChanged) {
                                 this.$nextTick(() => this.scrollChat());
                             }
                         } catch (e) {

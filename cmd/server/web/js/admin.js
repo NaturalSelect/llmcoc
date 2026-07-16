@@ -421,6 +421,8 @@ window.COC.admin = {
                         this.loading = false;
                     },
 
+                    // NOTE: AI 模组生成已改为 SSE 流式请求：后端实时推送阶段进度与 LLM 交互摘要，
+                    // 客户端断开不影响后台生成与入库。
                     async generateScenarioByAgents() {
                         const minPlayers = Number(this.scenarioGenForm.min_players || 1);
                         const maxPlayers = Number(this.scenarioGenForm.max_players || 4);
@@ -428,22 +430,113 @@ window.COC.admin = {
                             this.showToast('最大玩家数不能小于最小玩家数', 'error');
                             return;
                         }
-                        this.loading = true;
-                        try {
-                            await this.api('POST', '/api/scenarios/generate', {
-                                name: this.scenarioGenForm.name || '',
-                                theme: this.scenarioGenForm.theme || '',
-                                era: this.scenarioGenForm.era || '',
-                                brief: this.scenarioGenForm.brief || '',
-                                target_length: this.scenarioGenForm.target_length || 'short',
-                                min_players: minPlayers,
-                                max_players: maxPlayers,
-                                difficulty: this.scenarioGenForm.difficulty || 'normal',
+                        if (this.scenarioGenRunning) return;
+
+                        this.scenarioGenRunning = true;
+                        this.scenarioGenLogs = [];
+                        const pushLog = (line) => {
+                            const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+                            this.scenarioGenLogs.push('[' + time + '] ' + line);
+                            this.$nextTick(() => {
+                                const el = document.getElementById('scenarioGenLogBox');
+                                if (el) el.scrollTop = el.scrollHeight;
                             });
-                            this.showToast('AI 模组生成并入库成功');
-                            await Promise.all([this.loadScenarios(), this.loadAdminScenarios(1)]);
-                        } catch (e) { this.showToast(e.message, 'error'); }
-                        this.loading = false;
+                        };
+                        pushLog('已提交生成请求，等待服务器响应…');
+
+                        try {
+                            const resp = await fetch('/api/scenarios/generate', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': 'Bearer ' + this.token,
+                                },
+                                body: JSON.stringify({
+                                    name: this.scenarioGenForm.name || '',
+                                    theme: this.scenarioGenForm.theme || '',
+                                    era: this.scenarioGenForm.era || '',
+                                    brief: this.scenarioGenForm.brief || '',
+                                    target_length: this.scenarioGenForm.target_length || 'short',
+                                    min_players: minPlayers,
+                                    max_players: maxPlayers,
+                                    difficulty: this.scenarioGenForm.difficulty || 'normal',
+                                }),
+                            });
+
+                            if (!resp.ok) {
+                                const err = await resp.json().catch(() => ({ error: '请求失败' }));
+                                throw new Error(err.error || ('HTTP ' + resp.status));
+                            }
+
+                            const reader = resp.body.getReader();
+                            const decoder = new TextDecoder();
+                            let buf = '';
+                            let currentEvent = '';
+                            let doneInfo = null;
+                            let errorMsg = '';
+
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+
+                                buf += decoder.decode(value, { stream: true });
+                                const lines = buf.split('\n');
+                                buf = lines.pop();
+
+                                for (const rawLine of lines) {
+                                    const line = rawLine.replace(/\r$/, '');
+                                    if (line.startsWith('event:')) {
+                                        currentEvent = line.slice(6).trim();
+                                    } else if (line.startsWith('data:')) {
+                                        const data = line.slice(5).replace(/^ /, '');
+                                        switch (currentEvent) {
+                                            case 'progress':
+                                                try {
+                                                    const info = JSON.parse(data);
+                                                    pushLog(this.scenarioGenProgressLine(info));
+                                                } catch (_) {
+                                                    pushLog(data);
+                                                }
+                                                break;
+                                            case 'done':
+                                                try { doneInfo = JSON.parse(data); } catch (_) { doneInfo = {}; }
+                                                break;
+                                            case 'error':
+                                                errorMsg = data || '生成失败';
+                                                break;
+                                        }
+                                    } else if (line === '') {
+                                        currentEvent = '';
+                                    }
+                                }
+                            }
+
+                            if (errorMsg) {
+                                pushLog('❌ ' + errorMsg);
+                                this.showToast(errorMsg, 'error');
+                            } else if (doneInfo) {
+                                pushLog('✅ 生成完成：《' + (doneInfo.name || '未命名') + '》，已入库');
+                                this.showToast('AI 模组生成并入库成功');
+                                await Promise.all([this.loadScenarios(), this.loadAdminScenarios(1)]);
+                            } else {
+                                // NOTE: 流在未收到 done/error 时断开：后台仍在生成，提示稍后刷新列表。
+                                pushLog('⚠️ 连接中断，生成仍在后台继续，稍后请刷新模组列表');
+                                this.showToast('连接中断，生成仍在后台继续', 'error');
+                            }
+                        } catch (e) {
+                            pushLog('❌ ' + (e.message || '生成失败'));
+                            this.showToast(e.message, 'error');
+                        }
+                        this.scenarioGenRunning = false;
+                    },
+
+                    // NOTE: 把后端 progress 事件格式化为日志行；exchange 事件展示 LLM 交互摘要。
+                    scenarioGenProgressLine(info) {
+                        if (!info || typeof info !== 'object') return String(info || '');
+                        if (info.stage === 'exchange') {
+                            return '· LLM 交互 [' + (info.status || '') + '] ' + (info.detail || '');
+                        }
+                        return info.detail || (info.stage + ' ' + (info.status || ''));
                     },
 
                     viewScenario(s) { this.viewingScenario = s; this.modal = 'scenarioDetail'; },

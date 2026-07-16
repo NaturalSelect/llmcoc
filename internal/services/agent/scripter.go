@@ -148,7 +148,15 @@ var scripterRunMu sync.Mutex
 // Entry point
 // ---------------------------------------------------------------------------
 
+// ScripterProgressFunc 接收生成流水线的阶段进度事件（stage 为阶段标识，status 为
+// start/done/error 等状态，detail 为面向管理员的中文描述），用于 SSE 实时推送。
+type ScripterProgressFunc func(stage, status, detail string)
+
 func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (ScenarioCreationOutput, error) {
+	return RunScripterScenarioTeamWithProgress(ctx, req, nil)
+}
+
+func RunScripterScenarioTeamWithProgress(ctx context.Context, req ScenarioCreationRequest, progress ScripterProgressFunc) (ScenarioCreationOutput, error) {
 	scripterRunMu.Lock()
 	defer scripterRunMu.Unlock()
 
@@ -156,6 +164,7 @@ func RunScripterScenarioTeam(ctx context.Context, req ScenarioCreationRequest) (
 	if err != nil {
 		return ScenarioCreationOutput{}, err
 	}
+	room.progressFn = progress
 	scripterCounterMu.Lock()
 	sessionID := fmt.Sprintf("%v", scriptSessionId-int64(scripterCounter))
 	scripterCounter++
@@ -188,6 +197,15 @@ type scripterRoom struct {
 	titleSamples    []string
 	mythosBlacklist []string
 	generationLog   *scripterGenerationLog
+	progressFn      ScripterProgressFunc
+}
+
+// emitProgress 向订阅者（SSE）推送阶段进度；未订阅时为空操作。
+func (r *scripterRoom) emitProgress(stage, status, detail string) {
+	if r == nil || r.progressFn == nil {
+		return
+	}
+	r.progressFn(stage, status, detail)
 }
 
 func (r *scripterRoom) architectModelName() string {
@@ -316,18 +334,24 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	log.Printf("[scripter] session=%s single-shot generation start req=%s", sessionID, reqJSON)
 
 	log.Printf("[scripter] session=%s stage=constraints start", sessionID)
+	r.emitProgress("constraints", "start", "阶段 1/5：构建地理与多样性约束…")
 	constraints := r.buildConstraints(ctx)
 	log.Printf("[scripter] session=%s stage=constraints done geography=%q", sessionID, strings.Join(constraints.GeographyFlavor, " → "))
+	r.emitProgress("constraints", "done", "约束就绪："+strings.Join(constraints.GeographyFlavor, " → "))
 	logScripterArtifact("Constraints", sessionID, constraints)
 
 	log.Printf("[scripter] session=%s stage=oneshot start", sessionID)
+	r.emitProgress("oneshot", "start", "阶段 2/5：Architect 生成模组正文（多轮工具调用，耗时较长）…")
 	draft, _, rewardConcept, skeleton, err := generateOneshotDraft(ctx, r, constraints)
 	if err != nil {
 		log.Printf("[scripter] session=%s stage=oneshot error=%v", sessionID, err)
+		r.emitProgress("oneshot", "error", "正文生成失败："+err.Error())
 		return ScenarioCreationOutput{}, fmt.Errorf("单步生成失败: %w", err)
 	}
 	log.Printf("[scripter] session=%s stage=oneshot done name=%q scenes=%d npcs=%d clues=%d",
 		sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+	r.emitProgress("oneshot", "done", fmt.Sprintf("正文草稿完成：《%s》，场景 %d 个、NPC %d 个、线索 %d 条",
+		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues)))
 
 	applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
 
@@ -339,9 +363,11 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 			break
 		}
 		log.Printf("[scripter] session=%s stage=repair round=%d issues=%d %v", sessionID, round, len(issues), issues)
+		r.emitProgress("repair", "start", fmt.Sprintf("结构修复第 %d 轮：发现 %d 个结构问题", round, len(issues)))
 		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, issues)
 		if repairErr != nil {
 			log.Printf("[scripter] session=%s stage=repair round=%d failed: %v", sessionID, round, repairErr)
+			r.emitProgress("repair", "error", fmt.Sprintf("结构修复第 %d 轮失败（保留当前草稿）", round))
 			break
 		}
 		draft = repaired
@@ -349,66 +375,82 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		iterations++
 		log.Printf("[scripter] session=%s stage=repair round=%d done name=%q scenes=%d npcs=%d clues=%d",
 			sessionID, round, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+		r.emitProgress("repair", "done", fmt.Sprintf("结构修复第 %d 轮完成", round))
 	}
 
 	// 人写化审查：QA 审 AI 腔与写作质感，问题清单走一轮修复；失败不阻塞生成
 	log.Printf("[scripter] session=%s stage=qa_humanize start", sessionID)
+	r.emitProgress("qa_humanize", "start", "阶段 3/5：QA 人写化审查…")
 	if qaIssues := runOneshotQAReview(ctx, r, &draft, constraints); len(qaIssues) > 0 {
 		log.Printf("[scripter] session=%s stage=qa_humanize issues=%d %v", sessionID, len(qaIssues), qaIssues)
+		r.emitProgress("qa_humanize", "start", fmt.Sprintf("人写化审查发现 %d 个问题，执行修复", len(qaIssues)))
 		logScripterArtifact("QA Humanize Issues", sessionID, qaIssues)
 		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, qaIssues)
 		if repairErr != nil {
 			log.Printf("[scripter] session=%s stage=qa_humanize repair failed: %v (keeping draft)", sessionID, repairErr)
+			r.emitProgress("qa_humanize", "error", "人写化修复失败（保留当前草稿）")
 		} else {
 			draft = repaired
 			applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
 			iterations++
 			log.Printf("[scripter] session=%s stage=qa_humanize done name=%q scenes=%d npcs=%d clues=%d",
 				sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+			r.emitProgress("qa_humanize", "done", "人写化修复完成")
 		}
 	} else {
 		log.Printf("[scripter] session=%s stage=qa_humanize no issues", sessionID)
+		r.emitProgress("qa_humanize", "done", "人写化审查通过")
 	}
 
 	// 逻辑审查：QA agent 审因果可达性与神话一致性，问题清单走一轮修复；失败不阻塞生成
 	log.Printf("[scripter] session=%s stage=logic_review start", sessionID)
+	r.emitProgress("logic_review", "start", "阶段 4/5：逻辑一致性审查…")
 	if logicIssues := runLogicReview(ctx, r, &draft, skeleton); len(logicIssues) > 0 {
 		log.Printf("[scripter] session=%s stage=logic_review issues=%d %v", sessionID, len(logicIssues), logicIssues)
+		r.emitProgress("logic_review", "start", fmt.Sprintf("逻辑审查发现 %d 个问题，执行修复", len(logicIssues)))
 		logScripterArtifact("Logic Review Issues", sessionID, logicIssues)
 		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, logicIssues)
 		if repairErr != nil {
 			log.Printf("[scripter] session=%s stage=logic_review repair failed: %v (keeping draft)", sessionID, repairErr)
+			r.emitProgress("logic_review", "error", "逻辑修复失败（保留当前草稿）")
 		} else {
 			draft = repaired
 			applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
 			iterations++
 			log.Printf("[scripter] session=%s stage=logic_review done name=%q scenes=%d npcs=%d clues=%d",
 				sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+			r.emitProgress("logic_review", "done", "逻辑修复完成")
 		}
 	} else {
 		log.Printf("[scripter] session=%s stage=logic_review no issues", sessionID)
+		r.emitProgress("logic_review", "done", "逻辑审查通过")
 	}
 
 	// Reward agent (isolated context, optional)
 	if strings.TrimSpace(rewardConcept) != "" {
 		log.Printf("[scripter] session=%s stage=reward_agent start concept=%q anchor=%q",
 			sessionID, truncateRunes(rewardConcept, 200), truncateRunes(draft.Content.MythosAnchor, 200))
+		r.emitProgress("reward_agent", "start", "阶段 5/5：奖励物品设计…")
 		rwd, rewardErr := runRewardAgent(ctx, r, rewardConcept, draft.Content.MythosAnchor)
 		if rewardErr != nil {
 			log.Printf("[scripter] session=%s stage=reward_agent error=%v (continuing without reward)", sessionID, rewardErr)
+			r.emitProgress("reward_agent", "error", "奖励设计失败（跳过，不影响模组）")
 		} else if rwd != nil {
 			draft.Content.Reward = rwd
 			log.Printf("[scripter] session=%s stage=reward_agent done name=%q type=%q", sessionID, rwd.Name, rwd.Type)
+			r.emitProgress("reward_agent", "done", fmt.Sprintf("奖励设计完成：%s", rwd.Name))
 		}
 	}
 
 	beforeIssues := validateDraftCompatibility(draft)
 	log.Printf("[scripter] session=%s normalization start pre_issues=%d", sessionID, len(beforeIssues))
+	r.emitProgress("normalize", "start", "规范化与收尾…")
 	normalizeOneshotDraft(&draft, r.req, r.architectModelName(), constraints, sessionID)
 	applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
 	log.Printf("[scripter] session=%s normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d partial_wins=%d",
 		sessionID, draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Content.GameStartSlot,
 		len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), len(draft.Content.PartialWins))
+	r.emitProgress("normalize", "done", fmt.Sprintf("规范化完成：《%s》，准备入库", draft.Name))
 
 	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
 		log.Printf("[scripter] session=%s draft issues after normalization: %v", sessionID, issues)

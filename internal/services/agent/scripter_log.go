@@ -103,4 +103,10 @@ func recordScripterLLMExchange(ctx context.Context, room *scripterRoom, stage st
 	if logbook != nil {
 		logbook.appendExchange(stage, messages, response)
 	}
+	// NOTE: 同步推送 LLM 交互进度（stage 作为状态、响应摘要作为 detail），
+	// 便于前端在长时间生成过程中看到实时活动。
+	if room != nil && room.progressFn != nil {
+		snippet := strings.Join(strings.Fields(strings.TrimSpace(response)), " ")
+		room.progressFn("exchange", stage, truncateRunes(snippet, 120))
+	}
 }

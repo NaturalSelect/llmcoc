@@ -119,6 +119,9 @@ window.COC.core = function() {
                     scenarioGenerationLog: null,
                     scenarioGenerationLogLoading: false,
                     scenarioGenForm: { name: '', theme: '', era: '', brief: '', target_length: 'short', min_players: 1, max_players: 4, difficulty: 'normal' },
+                    // NOTE: AI 模组生成的 SSE 流式状态：running 表示流式请求进行中，logs 为实时进度日志
+                    scenarioGenRunning: false,
+                    scenarioGenLogs: [],
                     rechargeForm: { user_id: '', amount: 100, note: '' },
                     providerForm: { name: '', provider: 'openai', base_url: '', api_key: '', is_active: true },
                     editingProvider: null,
@@ -249,7 +252,7 @@ window.COC.core = function() {
                             if (this.applyChatStatus(chatStatus)) {
                                 this.pollChatStatus();
                             }
-                            this.$nextTick(() => this.scrollChat());
+                            this.$nextTick(() => this.scrollChat(true));
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 
