@@ -19,7 +19,7 @@ window.COC.admin = {
                         this.cacheEntryLoading = false;
                     },
                     async clearCache() {
-                        if (!confirm('确认清空所有规则缓存？统计计数也将重置。')) return;
+                        if (!await this.confirmDialog('确认清空所有规则缓存？统计计数也将重置。', { danger: true, confirmText: '清空' })) return;
                         try {
                             await this.api('DELETE', '/api/admin/cache');
                             this.closeCacheEntry();
@@ -59,7 +59,7 @@ window.COC.admin = {
                         await this.setCacheKeyPage(this.cacheKeyPage + 1);
                     },
                     async deleteCacheEntry(key) {
-                        if (!confirm('确认删除缓存条目：' + key + '？')) return;
+                        if (!await this.confirmDialog('确认删除缓存条目：' + key + '？', { danger: true, confirmText: '删除' })) return;
                         try {
                             await this.api('DELETE', '/api/admin/cache/entry?key=' + encodeURIComponent(key));
                             if (this.selectedCacheEntry?.key === key) this.closeCacheEntry();
@@ -111,7 +111,7 @@ window.COC.admin = {
                     },
                     async loadAdminShopItems() { this.adminShopItems = (await this.api('GET', '/api/shop/items')) || []; },
                     async deleteScenario(id) {
-                        if (!confirm('确认删除该模组？此操作不可逆。')) return;
+                        if (!await this.confirmDialog('确认删除该模组？此操作不可逆。', { danger: true, confirmText: '删除' })) return;
                         try {
                             await this.api('DELETE', '/api/scenarios/' + id);
                             this.showToast('模组已删除');
@@ -177,7 +177,7 @@ window.COC.admin = {
 
                     async toggleAdmin(u) {
                         const newRole = u.role === 'admin' ? 'user' : 'admin';
-                        if (!confirm(`将 ${u.username} 设为 ${newRole}？`)) return;
+                        if (!await this.confirmDialog(`将 ${u.username} 设为 ${newRole}？`)) return;
                         try {
                             await this.api('PUT', '/api/admin/users/' + u.id + '/role', { role: newRole });
                             u.role = newRole; this.showToast('角色已更新');
@@ -186,14 +186,14 @@ window.COC.admin = {
 
                     async toggleBan(u) {
                         if (u.is_banned) {
-                            if (!confirm(`解封 ${u.username}？`)) return;
+                            if (!await this.confirmDialog(`解封 ${u.username}？`, { confirmText: '解封' })) return;
                             try {
                                 await this.api('PUT', '/api/admin/users/' + u.id + '/unban');
                                 u.is_banned = false; u.ban_reason = '';
                                 this.showToast('已解封');
                             } catch (e) { this.showToast(e.message, 'error'); }
                         } else {
-                            const reason = prompt(`封号原因（可留空）：`);
+                            const reason = await this.confirmDialog(`封号 ${u.username}？`, { withInput: true, inputPlaceholder: '封号原因（可留空）', danger: true, confirmText: '封号' });
                             if (reason === null) return;
                             try {
                                 await this.api('PUT', '/api/admin/users/' + u.id + '/ban', { reason });
@@ -230,7 +230,7 @@ window.COC.admin = {
                     },
 
                     async deleteProvider(id) {
-                        if (!confirm('确认删除此提供商？')) return;
+                        if (!await this.confirmDialog('确认删除此提供商？', { danger: true, confirmText: '删除' })) return;
                         try {
                             await this.api('DELETE', '/api/admin/config/providers/' + id);
                             this.showToast('已删除'); await this.loadAdminProviders();
@@ -298,7 +298,7 @@ window.COC.admin = {
 
                     async adminDeleteShopItem(item) {
                         if (!item?.id) return;
-                        if (!confirm('确认删除商品“' + item.name + '”？删除后将从商城下架。')) return;
+                        if (!await this.confirmDialog('确认删除商品“' + item.name + '”？删除后将从商城下架。', { danger: true, confirmText: '删除' })) return;
                         try {
                             await this.api('DELETE', '/api/admin/shop/items/' + item.id);
                             this.showToast('商品已删除');
@@ -365,7 +365,7 @@ window.COC.admin = {
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
                     async deleteInviteCode(id) {
-                        if (!confirm('确认删除该邀请码？')) return;
+                        if (!await this.confirmDialog('确认删除该邀请码？', { danger: true, confirmText: '删除' })) return;
                         try {
                             await this.api('DELETE', '/api/admin/invite-codes/' + id);
                             this.showToast('已删除');

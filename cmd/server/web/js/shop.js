@@ -2,12 +2,15 @@
 window.COC = window.COC || {};
 window.COC.shop = {
                     async loadShop() {
-                        const [items, txns] = await Promise.all([
-                            this.api('GET', '/api/shop/items'),
-                            this.api('GET', '/api/shop/transactions'),
-                        ]);
-                        this.shopItems = items || [];
-                        this.transactions = txns || [];
+                        this.shopLoading = true;
+                        try {
+                            const [items, txns] = await Promise.all([
+                                this.api('GET', '/api/shop/items'),
+                                this.api('GET', '/api/shop/transactions'),
+                            ]);
+                            this.shopItems = items || [];
+                            this.transactions = txns || [];
+                        } finally { this.shopLoading = false; }
                     },
                     // ═══════════════════════════════════════════════════════
                     // Shop
@@ -33,9 +36,9 @@ window.COC.shop = {
                                 this.showToast('所选人物卡并非死亡状态，无法使用复活卷轴', 'error');
                                 return;
                             }
-                            if (!confirm(`确认花费 ${item.price} 金币复活「${target.name}」？\n复活后HP为最大值的一半，随机失去一半装备，遗忘一半法术。`)) return;
+                            if (!await this.confirmDialog(`确认花费 ${item.price} 金币复活「${target.name}」？\n复活后HP为最大值的一半，随机失去一半装备，遗忘一半法术。`, { confirmText: '复活' })) return;
                         } else {
-                            if (!confirm(`确认花费 ${item.price} 金币购买「${item.name}」？`)) return;
+                            if (!await this.confirmDialog(`确认花费 ${item.price} 金币购买「${item.name}」？`, { confirmText: '购买' })) return;
                             if (this.isInventoryItem(item.item_type) && !this.shopTargetCharacterId) {
                                 this.showToast('请先选择目标人物卡', 'error');
                                 return;

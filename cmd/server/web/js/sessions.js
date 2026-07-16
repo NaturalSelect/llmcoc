@@ -10,7 +10,11 @@ window.COC.sessions = {
                             (c.stats?.hp ?? 0) > 0
                         );
                     },
-                    async loadSessions() { this.sessions = (await this.api('GET', '/api/sessions')) || []; },
+                    async loadSessions() {
+                        this.sessionsLoading = true;
+                        try { this.sessions = (await this.api('GET', '/api/sessions')) || []; }
+                        finally { this.sessionsLoading = false; }
+                    },
                     async loadMyHistory() { this.myHistory = (await this.api('GET', '/api/sessions/my-history')) || []; },
                     async loadMyFavorites() { this.myFavorites = (await this.api('GET', '/api/sessions/my-favorites')) || []; },
                     async toggleFavorite(sessionId) {
@@ -82,7 +86,7 @@ window.COC.sessions = {
 
                     async leaveSession(session) {
                         if (!session?.id) return;
-                        if (!confirm('确认退出该房间？')) return;
+                        if (!await this.confirmDialog('确认退出该房间？', { danger: true, confirmText: '退出' })) return;
                         this.leavingSession = true;
                         try {
                             const r = await this.api('POST', '/api/sessions/' + session.id + '/leave');
@@ -122,7 +126,7 @@ window.COC.sessions = {
                         const msg = playerCount > 1
                             ? `确认结束游戏？${playerCount}名玩家每人将消耗${costPerPlayer}金币（共${costPerPlayer * playerCount}金币），系统将进行成长评估。`
                             : `确认结束游戏？将消耗${costPerPlayer}金币，系统将进行成长评估。`;
-                        if (!confirm(msg)) return;
+                        if (!await this.confirmDialog(msg, { confirmText: '结束游戏' })) return;
                         this.endingSession = true;
                         try {
                             const r = await this.api('POST', '/api/sessions/' + this.currentSession.id + '/end');
@@ -134,7 +138,7 @@ window.COC.sessions = {
 
                     async reviveSession(session) {
                         if (!session?.id) return;
-                        if (!confirm(`确认复活房间「${session.name || session.id}」？`)) return;
+                        if (!await this.confirmDialog(`确认复活房间「${session.name || session.id}」？`, { confirmText: '复活' })) return;
                         this.revivingSession = true;
                         try {
                             const r = await this.api('POST', '/api/sessions/' + session.id + '/revive');

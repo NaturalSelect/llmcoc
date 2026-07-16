@@ -1,7 +1,11 @@
 // LLM-COC Dashboard — Character management
 window.COC = window.COC || {};
 window.COC.dashboard = {
-                    async loadCharacters() { this.characters = (await this.api('GET', '/api/characters')) || []; },
+                    async loadCharacters() {
+                        this.dashboardLoading = true;
+                        try { this.characters = (await this.api('GET', '/api/characters')) || []; }
+                        finally { this.dashboardLoading = false; }
+                    },
                     async loadDeadCharacters() { this.deadCharacters = (await this.api('GET', '/api/characters/dead')) || []; },
                     // ══════════════════════════════════════════════════════════════════════
                     // Characters
@@ -155,7 +159,7 @@ window.COC.dashboard = {
                     },
 
                     async deleteChar(id) {
-                        if (!confirm('确认删除此人物卡？')) return;
+                        if (!await this.confirmDialog('确认删除此人物卡？', { danger: true, confirmText: '删除' })) return;
                         try {
                             await this.api('DELETE', '/api/characters/' + id);
                             this.characters = this.characters.filter(c => c.id !== id);
@@ -165,7 +169,7 @@ window.COC.dashboard = {
                     },
 
                     async deleteDeadCharacter(char) {
-                        if (!confirm(`确认彻底删除「${char.name}」？此操作不可撤销，角色将永久消逝。`)) return;
+                        if (!await this.confirmDialog(`确认彻底删除「${char.name}」？此操作不可撤销，角色将永久消逝。`, { danger: true, confirmText: '彻底删除' })) return;
                         try {
                             await this.api('DELETE', '/api/characters/' + char.id + '/dead');
                             this.deadCharacters = this.deadCharacters.filter(c => c.id !== char.id);
@@ -174,7 +178,7 @@ window.COC.dashboard = {
                     },
 
                     async reviveCharacter(char) {
-                        if (!confirm(`确认花费 ${this.shopCosts?.revive_base_cost ?? 2000} 金币复活「${char.name}」？\n复活后HP为最大值的一半，随机失去一半装备，遗忘一半法术。`)) return;
+                        if (!await this.confirmDialog(`确认花费 ${this.shopCosts?.revive_base_cost ?? 2000} 金币复活「${char.name}」？\n复活后HP为最大值的一半，随机失去一半装备，遗忘一半法术。`, { confirmText: '复活' })) return;
                         this.reviving = true;
                         try {
                             const r = await this.api('POST', '/api/characters/' + char.id + '/revive');
@@ -188,7 +192,7 @@ window.COC.dashboard = {
 
                     async regenAppearance() {
                         if (!this.editChar) return;
-                        if (!confirm(`确认花费 ${this.shopCosts?.regenerate_appearance_cost ?? 100} 金币为「${this.editChar.name}」重新生成外貌？`)) return;
+                        if (!await this.confirmDialog(`确认花费 ${this.shopCosts?.regenerate_appearance_cost ?? 100} 金币为「${this.editChar.name}」重新生成外貌？`, { confirmText: '重新生成' })) return;
                         this.regenningAppearance = true;
                         try {
                             const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-appearance');
@@ -202,7 +206,7 @@ window.COC.dashboard = {
 
                     async regenBackstory() {
                         if (!this.editChar) return;
-                        if (!confirm(`确认花费 ${this.shopCosts?.regenerate_backstory_cost ?? 100} 金币为「${this.editChar.name}」重新生成个人经历？`)) return;
+                        if (!await this.confirmDialog(`确认花费 ${this.shopCosts?.regenerate_backstory_cost ?? 100} 金币为「${this.editChar.name}」重新生成个人经历？`, { confirmText: '重新生成' })) return;
                         this.regenningBackstory = true;
                         try {
                             const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-backstory');
@@ -216,7 +220,7 @@ window.COC.dashboard = {
 
                     async regenTraits() {
                         if (!this.editChar) return;
-                        if (!confirm(`确认花费 ${this.shopCosts?.regenerate_traits_cost ?? 100} 金币为「${this.editChar.name}」重新生成性格特征？`)) return;
+                        if (!await this.confirmDialog(`确认花费 ${this.shopCosts?.regenerate_traits_cost ?? 100} 金币为「${this.editChar.name}」重新生成性格特征？`, { confirmText: '重新生成' })) return;
                         this.regenningTraits = true;
                         try {
                             const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-traits');
@@ -257,7 +261,7 @@ window.COC.dashboard = {
 
                     async removeSocialRelation(name) {
                         if (!this.editChar?.id || !name) return;
-                        if (!confirm('确定要删除与「' + name + '」的社会关系吗？此操作不可撤销。')) return;
+                        if (!await this.confirmDialog('确定要删除与「' + name + '」的社会关系吗？此操作不可撤销。', { danger: true, confirmText: '删除' })) return;
                         try {
                             const updated = await this.api('DELETE', '/api/characters/' + this.editChar.id + '/social-relations/' + encodeURIComponent(name));
                             this.syncCharacter(updated);
@@ -267,7 +271,7 @@ window.COC.dashboard = {
 
                     async removeAsset(name) {
                         if (!this.editChar?.id || !name) return;
-                        if (!confirm('确定要删除资产「' + name + '」吗？此操作不可撤销。')) return;
+                        if (!await this.confirmDialog('确定要删除资产「' + name + '」吗？此操作不可撤销。', { danger: true, confirmText: '删除' })) return;
                         try {
                             const updated = await this.api('DELETE', '/api/characters/' + this.editChar.id + '/assets/' + encodeURIComponent(name));
                             this.syncCharacter(updated);

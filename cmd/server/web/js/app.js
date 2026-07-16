@@ -27,6 +27,10 @@ window.COC.core = function() {
                     scenarioList: [],
                     shopItems: [],
                     transactions: [],
+                    // NOTE: 列表首屏加载态，用于骨架屏显示
+                    dashboardLoading: false,
+                    sessionsLoading: false,
+                    shopLoading: false,
                     // NOTE: 商城费率配置，由 loadShopCosts 从后端加载
                     shopCosts: {},
 
@@ -144,6 +148,9 @@ window.COC.core = function() {
 
                     // ── Toast ─────────────────────────────────────────────────────────────
                     toast: { show: false, message: '', type: 'success' },
+
+                    // ── Confirm dialog（自定义确认框，替代原生 confirm/prompt） ───────────
+                    confirmState: { message: '', confirmText: '确认', danger: false, withInput: false, inputValue: '', inputPlaceholder: '', resolve: null },
 
                     // ══════════════════════════════════════════════════════════════════════
                     // Init
@@ -279,6 +286,29 @@ window.COC.core = function() {
                     showToast(msg, type = 'success') {
                         this.toast = { show: true, message: msg, type };
                         setTimeout(() => { this.toast.show = false; }, 3500);
+                    },
+                    // NOTE: Promise 化确认框；danger 为 true 时确认按钮显示红色（破坏性操作）；
+                    // withInput 时行为等同 prompt：确认返回输入字符串，取消返回 null
+                    confirmDialog(message, opts = {}) {
+                        return new Promise((resolve) => {
+                            this.confirmState = {
+                                message,
+                                confirmText: opts.confirmText || '确认',
+                                danger: !!opts.danger,
+                                withInput: !!opts.withInput,
+                                inputValue: '',
+                                inputPlaceholder: opts.inputPlaceholder || '',
+                                resolve,
+                            };
+                            this.modal = 'confirm';
+                        });
+                    },
+                    resolveConfirm(ok) {
+                        const st = this.confirmState;
+                        const r = st?.resolve;
+                        this.modal = null;
+                        this.confirmState = { message: '', confirmText: '确认', danger: false, withInput: false, inputValue: '', inputPlaceholder: '', resolve: null };
+                        if (r) r(ok ? (st.withInput ? st.inputValue : true) : (st.withInput ? null : false));
                     },
                     async api(method, path, body) {
                         const opts = {

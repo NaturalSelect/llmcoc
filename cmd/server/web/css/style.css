@@ -1,581 +1,803 @@
-        [x-cloak] {
-            display: none !important;
-        }
-
-        body {
-            font-family: 'Georgia', serif;
-            background: #080706;
-            color: #d0bfa0;
-            height: 100vh;
-            height: 100dvh;
-            /* 移动端动态视口高度，避免地址栏遮挡 */
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        main {
-            flex: 1;
-            overflow-y: auto;
-            position: relative;
-            min-height: 0;
-            /* 确保 flex 子元素可以正确收缩 */
-        }
-
-        /* ── Scrollbar ─────────────────────────────────────── */
-        ::-webkit-scrollbar {
-            width: 5px;
-            height: 5px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #100e0c;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #2a2318;
-            border-radius: 3px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #3d3228;
-        }
-
-        /* ── Cards & surfaces ──────────────────────────────── */
-        .card {
-            background: #131110;
-            border: 1px solid #252018;
-        }
-
-        .card-hover:hover {
-            border-color: #4a3a25;
-            transition: border-color 0.15s;
-        }
-
-        /* ── Buttons ───────────────────────────────────────── */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0.375rem 0.875rem;
-            border-radius: 3px;
-            font-family: system-ui, sans-serif;
-            font-size: 0.8125rem;
-            cursor: pointer;
-            transition: all 0.15s;
-            white-space: nowrap;
-        }
-
-        .btn:disabled {
-            opacity: 0.35;
-            cursor: not-allowed;
-            pointer-events: none;
-        }
-
-        .btn-amber {
-            background: #4a3318;
-            border: 1px solid #6a4d28;
-            color: #e0c888;
-        }
-
-        .btn-amber:hover {
-            background: #5d4220;
-            border-color: #8a6840;
-        }
-
-        .btn-red {
-            background: #4a1a1a;
-            border: 1px solid #7a3030;
-            color: #f0a0a0;
-        }
-
-        .btn-red:hover {
-            background: #5e2020;
-            border-color: #9a4040;
-        }
-
-        .btn-ghost {
-            background: transparent;
-            border: 1px solid #252018;
-            color: #7a6a50;
-        }
-
-        .btn-ghost:hover {
-            border-color: #4a3a25;
-            color: #d0bfa0;
-        }
-
-        .btn-green {
-            background: #1a3d1a;
-            border: 1px solid #2d6030;
-            color: #88d088;
-        }
-
-        .btn-green:hover {
-            background: #204d20;
-        }
-
-        /* ── Inputs ────────────────────────────────────────── */
-        .inp {
-            background: #0c0b09;
-            border: 1px solid #252018;
-            color: #d0bfa0;
-            padding: 0.375rem 0.625rem;
-            border-radius: 3px;
-            font-family: system-ui, sans-serif;
-            font-size: 0.8125rem;
-            width: 100%;
-        }
-
-        .inp:focus {
-            outline: none;
-            border-color: #6a4d28;
-        }
-
-        .inp::placeholder {
-            color: #3d3228;
-        }
-
-        select.inp option {
-            background: #1a1814;
-        }
-
-        /* ── Nav ───────────────────────────────────────────── */
-        .nav-link {
-            font-family: system-ui, sans-serif;
-            font-size: 0.8125rem;
-            color: #7a6a50;
-            padding: 0.25rem 0.625rem;
-            border-radius: 3px;
-            cursor: pointer;
-            transition: all 0.15s;
-        }
-
-        .nav-link:hover {
-            color: #d0bfa0;
-        }
-
-        .nav-link.active {
-            color: #d0bfa0;
-            background: #1e1a14;
-            border: 1px solid #252018;
-        }
-
-        /* ── Chat messages ─────────────────────────────────── */
-        .msg {
-            border-radius: 3px;
-            padding: 0.625rem 0.875rem;
-            user-select: text;
-            -webkit-user-select: text;
-        }
-
-        .msg-kp {
-            border-left: 3px solid #7a1515;
-            background: #110d0d;
-        }
-
-        .msg-user {
-            border-left: 3px solid #1a4d1a;
-            background: #0d110d;
-        }
-
-        .msg-sys {
-            border-left: 3px solid #1a2d4a;
-            background: #0d0d14;
-            opacity: 0.75;
-        }
-
-        /* 白字叙事描述 */
-        .narrative {
-            font-family: 'Georgia', serif;
-            line-height: 1.85;
-            font-size: 0.9375rem;
-            color: #eee8dc;
-            white-space: pre-wrap;
-            user-select: text;
-            -webkit-user-select: text;
-        }
-
-        /* KP主流程回复 */
-        .narration {
-            font-family: system-ui, sans-serif;
-            font-size: 0.825rem;
-            color: #c09060;
-            font-style: italic;
-            white-space: pre-wrap;
-            user-select: text;
-            -webkit-user-select: text;
-        }
-
-        /* KP之后的白字描述分隔 */
-        .narration-sep,
-        .narrative-after-kp {
-            border-top: 1px solid #3a1a1a;
-            margin-top: 0.625rem;
-            padding-top: 0.625rem;
-        }
-
-        .response-suggestions {
-            margin-bottom: 0.625rem;
-            font-family: system-ui, sans-serif;
-        }
-
-        .response-suggestions-head {
-            margin-bottom: 0.375rem;
-            color: #a98555;
-            font-size: 0.75rem;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .response-suggestions-head .toggle-arrow {
-            font-size: 0.625rem;
-            margin-right: 0.25rem;
-        }
-
-        .response-suggestions-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.375rem;
-        }
-
-        .response-suggestion {
-            max-width: 100%;
-            border: 1px solid #3a2a18;
-            background: #0f0c09;
-            color: #d8c39a;
-            padding: 0.3125rem 0.5rem;
-            border-radius: 3px;
-            font-size: 0.8125rem;
-            line-height: 1.45;
-            text-align: left;
-            cursor: pointer;
-        }
-
-        .response-suggestion:hover {
-            border-color: #76552b;
-            background: #1c130b;
-            color: #f0d79f;
-        }
-
-        /* Player action */
-        .action {
-            font-size: 0.875rem;
-            line-height: 1.6;
-            white-space: pre-wrap;
-        }
-
-        /* ── Streaming cursor ──────────────────────────────── */
-        @keyframes blink {
-            50% {
-                opacity: 0;
-            }
-        }
-
-        .cursor::after {
-            content: '\25AE';
-            color: #9b1c1c;
-            animation: blink 0.8s step-end infinite;
-        }
-
-        /* ── Thinking dots ─────────────────────────────────── */
-        @keyframes dot-bounce {
-
-            0%,
-            80%,
-            100% {
-                transform: translateY(0);
-                opacity: 0.3;
-            }
-
-            40% {
-                transform: translateY(-4px);
-                opacity: 1;
-            }
-        }
-
-        .dot {
-            display: inline-block;
-            width: 5px;
-            height: 5px;
-            border-radius: 50%;
-            background: #9b1c1c;
-        }
-
-        .dot:nth-child(1) {
-            animation: dot-bounce 1.2s 0s infinite;
-        }
-
-        .dot:nth-child(2) {
-            animation: dot-bounce 1.2s 0.2s infinite;
-        }
-
-        .dot:nth-child(3) {
-            animation: dot-bounce 1.2s 0.4s infinite;
-        }
-
-        /* ── Stat badges ───────────────────────────────────── */
-        .stat-badge {
-            background: #1a1714;
-            border: 1px solid #252018;
-            font-family: monospace;
-            font-size: 0.7rem;
-            padding: 3px 6px;
-            border-radius: 2px;
-            text-align: center;
-        }
-
-        /* ── Resource bars ─────────────────────────────────── */
-        .bar-track {
-            background: #1a1714;
-            height: 4px;
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .bar-hp {
-            background: linear-gradient(to right, #8b1a1a, #2d7a2d);
-            height: 100%;
-            border-radius: 2px;
-        }
-
-        .bar-san {
-            background: linear-gradient(to right, #8b1a1a, #b8820a, #2d7a2d);
-            height: 100%;
-            border-radius: 2px;
-        }
-
-        .bar-mp {
-            background: linear-gradient(to right, #1a1a8b, #2d4a8b);
-            height: 100%;
-            border-radius: 2px;
-        }
-
-        /* ── Modal ─────────────────────────────────────────── */
-        .backdrop {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.85);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 50;
-            padding: 1rem;
-        }
-
-        .modal {
-            background: #131110;
-            border: 1px solid #2a2318;
-            border-radius: 4px;
-            width: 100%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        /* ── Misc ──────────────────────────────────────────── */
-        @keyframes fadeUp {
-            from {
-                opacity: 0;
-                transform: translateY(5px);
-            }
-
-            to {
-                opacity: 1;
-                transform: none;
-            }
-        }
-
-        .fade-up {
-            animation: fadeUp 0.2s ease-out;
-        }
-
-        .tab {
-            font-family: system-ui, sans-serif;
-            font-size: 0.8125rem;
-            color: #7a6a50;
-            padding: 0.5rem 1rem;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.15s;
-        }
-
-        .tab:hover {
-            color: #d0bfa0;
-        }
-
-        .tab.active {
-            color: #d0bfa0;
-            border-bottom-color: #c4972c;
-        }
-
-        .badge {
-            font-family: monospace;
-            font-size: 0.68rem;
-            padding: 1px 6px;
-            border-radius: 2px;
-        }
-
-        .badge-lobby {
-            background: #0d2d0d;
-            color: #4a9a4a;
-            border: 1px solid #1d4a1d;
-        }
-
-        .badge-playing {
-            background: #2d1a0d;
-            color: #c47a30;
-            border: 1px solid #4a2d0d;
-        }
-
-        .badge-ended {
-            background: #1a1a1a;
-            color: #5a5a5a;
-            border: 1px solid #2a2a2a;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: #0a0908;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #2a2318;
-            border-radius: 2px;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #3d3228;
-        }
-
-        /* ── Draggable Panel (mobile floating buttons) ── */
-        .drag-panel {
-            right: 16px;
-            bottom: 24px;
-            touch-action: none;
-            user-select: none;
-            -webkit-user-select: none;
-        }
-
-        .drag-panel.dragging {
-            opacity: 0.92;
-            z-index: 60;
-        }
-
-        .drag-panel.drag-idle {
-            transition: all 0.3s ease-out;
-        }
-
-        .drag-btn {
-            pointer-events: auto;
-        }
-
-        /* ── Toast ──────────────────────────────────────────── */
-        .toast-container {
-            position: fixed;
-            top: 24px;
-            right: 24px;
-            z-index: 100;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            pointer-events: none;
-        }
-
-        .toast {
-            font-family: system-ui, sans-serif;
-            font-size: 0.8125rem;
-            padding: 0.625rem 1rem;
-            border-radius: 3px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-            pointer-events: auto;
-            max-width: 360px;
-            word-break: break-word;
-            animation: toastIn 0.25s ease-out;
-        }
-
-        .toast-success {
-            background: #0d2d0d;
-            border: 1px solid #1d4a1d;
-            color: #7acc7a;
-        }
-
-        .toast-error {
-            background: #2d0d0d;
-            border: 1px solid #4a1d1d;
-            color: #e07070;
-        }
-
-        @keyframes toastIn {
-            from { opacity: 0; transform: translateY(-8px); }
-            to { opacity: 1; transform: none; }
-        }
-
-        /* Desktop: non-draggable, keep fixed position */
-        @media (min-width: 768px) {
-            .drag-panel {
-                right: 16px !important;
-                bottom: 24px !important;
-            }
-        }
-
-        /* ── Game header more-menu items (mobile) ── */
-        .game-menu-item {
-            display: block;
-            width: 100%;
-            padding: 0.5rem 0.875rem;
-            text-align: left;
-            font-family: system-ui, sans-serif;
-            font-size: 0.8125rem;
-            color: #d0bfa0;
-            white-space: nowrap;
-            cursor: pointer;
-            transition: background 0.15s;
-        }
-
-        .game-menu-item:hover {
-            background: #252018;
-            color: #f0e8d0;
-        }
-
-        .game-menu-item:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-            pointer-events: none;
-        }
-
-        /* ── Waiting status badges ── */
-        .waiting-badge {
-            font-family: system-ui, sans-serif;
-            font-size: 0.67rem;
-            padding: 1px 6px;
-            border-radius: 2px;
-            white-space: nowrap;
-        }
-
-        .waiting-badge-submitted {
-            background: #0d2d0d;
-            color: #4a9a4a;
-            border: 1px solid #1d4a1d;
-        }
-
-        .waiting-badge-pending {
-            background: #2d1a0d;
-            color: #c47a30;
-            border: 1px solid #4a2d0d;
-        }
-
-        /* NOTE: 游戏输入区 placeholder 局部样式，不影响全站 .inp */
-        .game-chat-input::placeholder {
-            color: #4a4030;
-            font-size: 0.75rem;
-        }
-
-        /* NOTE: 320-375px 超窄屏幕下输入区最小可点击高度保障 */
-        @media (max-width: 375px) {
-            .game-chat-input {
-                font-size: 0.875rem;
-            }
-        }
+/* ════════════════════════════════════════════════════════════
+   COC 跑团平台 · 全局样式
+   设计令牌（:root 变量）→ 基础 → 组件 → 动画 → 响应式
+   修改颜色/字体/圆角请只动 :root 变量，勿在组件内硬编码
+   ════════════════════════════════════════════════════════════ */
+
+:root {
+    /* ── 背景层级（由深到浅） ── */
+    --bg-base: #080706;
+    /* 页面底色 */
+    --bg-deep: #100e0c;
+    /* 滚动条轨道等凹陷区 */
+    --bg-sunken: #0c0b09;
+    /* 输入框 */
+    --bg-surface: #131110;
+    /* 卡片 / 弹窗 */
+    --bg-raised: #1a1714;
+    /* 徽章 / 进度条轨道 */
+    --bg-hover: #1e1a14;
+    /* 导航激活等悬浮面 */
+
+    /* ── 边框 ── */
+    --border: #252018;
+    --border-strong: #2a2318;
+    --border-hover: #4a3a25;
+
+    /* ── 文字层级 ── */
+    --text: #d0bfa0;
+    --text-bright: #eee8dc;
+    --text-dim: #7a6a50;
+    --text-faint: #3d3228;
+
+    /* ── 琥珀（主色） ── */
+    --amber-bg: #4a3318;
+    --amber-bg-hover: #5d4220;
+    --amber-border: #6a4d28;
+    --amber-border-hover: #8a6840;
+    --amber-text: #e0c888;
+    --amber-accent: #c4972c;
+
+    /* ── 暗红（危险 / KP） ── */
+    --red-bg: #4a1a1a;
+    --red-bg-hover: #5e2020;
+    --red-border: #7a3030;
+    --red-border-hover: #9a4040;
+    --red-text: #f0a0a0;
+    --red-deep: #7a1515;
+    --red-cursor: #9b1c1c;
+
+    /* ── 暗绿（成功 / 玩家） ── */
+    --green-bg: #0d2d0d;
+    --green-bg-strong: #1a3d1a;
+    --green-bg-hover: #204d20;
+    --green-border: #1d4a1d;
+    --green-border-strong: #2d6030;
+    --green-text: #4a9a4a;
+    --green-text-bright: #88d088;
+
+    /* ── 暗蓝（系统消息） ── */
+    --blue-border: #1a2d4a;
+    --blue-bg: #0d0d14;
+
+    /* ── 语义场景色（凹陷面板 / 琥珀标签 / 错误框 / 聊天区） ── */
+    --bg-inset: #0e0d0b;
+    --border-inset: #1e1c17;
+    --chip-bg: #1a1408;
+    --chip-border: #2a1f0a;
+    --chip-text: #a16207;
+    --alert-error-bg: #2d0d0d;
+    --alert-error-border: #4a1d1d;
+    --alert-error-text: #e07070;
+    --bg-chat: #0a0908;
+
+    /* ── 字体 ── */
+    --font-serif: 'Georgia', 'Songti SC', 'SimSun', serif;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+
+    /* ── 圆角 ── */
+    --radius-sm: 2px;
+    --radius: 3px;
+    --radius-lg: 6px;
+
+    /* ── 阴影 ── */
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
+    --shadow-modal: 0 12px 40px rgba(0, 0, 0, 0.75);
+    --shadow-toast: 0 4px 12px rgba(0, 0, 0, 0.6);
+
+    /* ── 过渡 ── */
+    --ease: 0.15s ease;
+}
+
+/* ── Base ────────────────────────────────────────────────── */
+[x-cloak] {
+    display: none !important;
+}
+
+body {
+    font-family: var(--font-serif);
+    /* 深色底上叠一层极淡的琥珀色径向光晕，避免纯色平铺的呆板 */
+    background:
+        radial-gradient(1200px 700px at 75% -10%, rgba(74, 51, 24, 0.14), transparent 60%),
+        radial-gradient(900px 600px at -10% 110%, rgba(122, 21, 21, 0.07), transparent 55%),
+        var(--bg-base);
+    background-attachment: fixed;
+    color: var(--text);
+    height: 100vh;
+    height: 100dvh;
+    /* 移动端动态视口高度，避免地址栏遮挡 */
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+    overflow-y: auto;
+    position: relative;
+    min-height: 0;
+    /* 确保 flex 子元素可以正确收缩 */
+}
+
+::selection {
+    background: rgba(196, 151, 44, 0.28);
+    color: var(--text-bright);
+}
+
+/* ── 字体工具类（替代内联 style="font-family:…"） ────────── */
+.font-ui {
+    font-family: var(--font-ui);
+}
+
+.font-serif {
+    font-family: var(--font-serif);
+}
+
+.font-mono {
+    font-family: var(--font-mono);
+}
+
+/* ── 语义工具类（替代重复的内联样式组合） ────────────────── */
+/* 凹陷内容面板（模组详情区块、管理列表行） */
+.panel-inset {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-inset);
+}
+
+/* 琥珀小标签（tag / 属性 / ID 徽章） */
+.chip {
+    background: var(--chip-bg);
+    border: 1px solid var(--chip-border);
+    color: var(--chip-text);
+}
+
+/* 暗色小徽章（难度 / 类型） */
+.tag-dim {
+    background: #1e1c17;
+    color: #92400e;
+}
+
+/* 错误提示框 */
+.alert-error {
+    background: var(--alert-error-bg);
+    border: 1px solid var(--alert-error-border);
+    color: var(--alert-error-text);
+}
+
+.text-dim {
+    color: var(--text-dim);
+}
+
+/* 边框 / 底色快捷类，替代 border-[#252018] 等硬编码任意值 */
+.border-base {
+    border-color: var(--border);
+}
+
+.border-inset {
+    border-color: var(--border-inset);
+}
+
+.bg-chat {
+    background: var(--bg-chat);
+}
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-deep);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: var(--radius);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint);
+}
+
+/* ── Cards & surfaces ────────────────────────────────────── */
+.card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-card);
+}
+
+.card-hover {
+    transition: border-color var(--ease), box-shadow var(--ease);
+}
+
+.card-hover:hover {
+    border-color: var(--border-hover);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem 0.875rem;
+    border-radius: var(--radius);
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: all var(--ease);
+    white-space: nowrap;
+}
+
+.btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.btn:focus-visible {
+    outline: 1px solid var(--amber-border);
+    outline-offset: 1px;
+}
+
+.btn-amber {
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    color: var(--amber-text);
+}
+
+.btn-amber:hover {
+    background: var(--amber-bg-hover);
+    border-color: var(--amber-border-hover);
+}
+
+.btn-red {
+    background: var(--red-bg);
+    border: 1px solid var(--red-border);
+    color: var(--red-text);
+}
+
+.btn-red:hover {
+    background: var(--red-bg-hover);
+    border-color: var(--red-border-hover);
+}
+
+.btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+}
+
+.btn-ghost:hover {
+    border-color: var(--border-hover);
+    color: var(--text);
+}
+
+.btn-green {
+    background: var(--green-bg-strong);
+    border: 1px solid var(--green-border-strong);
+    color: var(--green-text-bright);
+}
+
+.btn-green:hover {
+    background: var(--green-bg-hover);
+}
+
+/* ── Inputs ──────────────────────────────────────────────── */
+.inp {
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.375rem 0.625rem;
+    border-radius: var(--radius);
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    width: 100%;
+    transition: border-color var(--ease), box-shadow var(--ease);
+}
+
+.inp:focus {
+    outline: none;
+    border-color: var(--amber-border);
+    box-shadow: 0 0 0 2px rgba(106, 77, 40, 0.25);
+}
+
+.inp::placeholder {
+    color: var(--text-faint);
+}
+
+select.inp option {
+    background: var(--bg-raised);
+}
+
+/* ── Nav ─────────────────────────────────────────────────── */
+.nav-link {
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    color: var(--text-dim);
+    padding: 0.25rem 0.625rem;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all var(--ease);
+    white-space: nowrap;
+}
+
+.nav-link:hover {
+    color: var(--text);
+}
+
+.nav-link.active {
+    color: var(--text);
+    background: var(--bg-hover);
+    border-color: var(--border);
+}
+
+/* 窄屏顶栏：横向滚动条隐藏，保持可滑动 */
+.nav-scroll {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.nav-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+/* ── Chat messages ───────────────────────────────────────── */
+.msg {
+    border-radius: var(--radius);
+    padding: 0.625rem 0.875rem;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.msg-kp {
+    border-left: 3px solid var(--red-deep);
+    background: #110d0d;
+}
+
+.msg-user {
+    border-left: 3px solid #1a4d1a;
+    background: #0d110d;
+}
+
+.msg-sys {
+    border-left: 3px solid var(--blue-border);
+    background: var(--blue-bg);
+    opacity: 0.75;
+}
+
+/* 白字叙事描述 */
+.narrative {
+    font-family: var(--font-serif);
+    line-height: 1.85;
+    font-size: 0.9375rem;
+    color: var(--text-bright);
+    white-space: pre-wrap;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+/* KP主流程回复 */
+.narration {
+    font-family: var(--font-ui);
+    font-size: 0.825rem;
+    color: #c09060;
+    font-style: italic;
+    white-space: pre-wrap;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+/* KP之后的白字描述分隔 */
+.narration-sep,
+.narrative-after-kp {
+    border-top: 1px solid #3a1a1a;
+    margin-top: 0.625rem;
+    padding-top: 0.625rem;
+}
+
+.response-suggestions {
+    margin-bottom: 0.625rem;
+    font-family: var(--font-ui);
+}
+
+.response-suggestions-head {
+    margin-bottom: 0.375rem;
+    color: #a98555;
+    font-size: 0.75rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.response-suggestions-head .toggle-arrow {
+    font-size: 0.625rem;
+    margin-right: 0.25rem;
+}
+
+.response-suggestions-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+.response-suggestion {
+    max-width: 100%;
+    border: 1px solid #3a2a18;
+    background: #0f0c09;
+    color: #d8c39a;
+    padding: 0.3125rem 0.5rem;
+    border-radius: var(--radius);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    text-align: left;
+    cursor: pointer;
+    transition: all var(--ease);
+}
+
+.response-suggestion:hover {
+    border-color: #76552b;
+    background: #1c130b;
+    color: #f0d79f;
+}
+
+/* Player action */
+.action {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+/* ── Streaming cursor ────────────────────────────────────── */
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}
+
+.cursor::after {
+    content: '\25AE';
+    color: var(--red-cursor);
+    animation: blink 0.8s step-end infinite;
+}
+
+/* ── Thinking dots ───────────────────────────────────────── */
+@keyframes dot-bounce {
+
+    0%,
+    80%,
+    100% {
+        transform: translateY(0);
+        opacity: 0.3;
+    }
+
+    40% {
+        transform: translateY(-4px);
+        opacity: 1;
+    }
+}
+
+.dot {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--red-cursor);
+}
+
+.dot:nth-child(1) {
+    animation: dot-bounce 1.2s 0s infinite;
+}
+
+.dot:nth-child(2) {
+    animation: dot-bounce 1.2s 0.2s infinite;
+}
+
+.dot:nth-child(3) {
+    animation: dot-bounce 1.2s 0.4s infinite;
+}
+
+/* ── Stat badges ─────────────────────────────────────────── */
+.stat-badge {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    padding: 3px 6px;
+    border-radius: var(--radius-sm);
+    text-align: center;
+}
+
+/* ── Resource bars ───────────────────────────────────────── */
+.bar-track {
+    background: var(--bg-raised);
+    height: 4px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.bar-hp {
+    background: linear-gradient(to right, #8b1a1a, #2d7a2d);
+    height: 100%;
+    border-radius: var(--radius-sm);
+}
+
+.bar-san {
+    background: linear-gradient(to right, #8b1a1a, #b8820a, #2d7a2d);
+    height: 100%;
+    border-radius: var(--radius-sm);
+}
+
+.bar-mp {
+    background: linear-gradient(to right, #1a1a8b, #2d4a8b);
+    height: 100%;
+    border-radius: var(--radius-sm);
+}
+
+/* ── Modal ───────────────────────────────────────────────── */
+.backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 1rem;
+}
+
+.modal {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-modal);
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: fadeUp 0.18s ease-out;
+}
+
+/* ── Misc ────────────────────────────────────────────────── */
+@keyframes fadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.fade-up {
+    animation: fadeUp 0.2s ease-out;
+}
+
+.tab {
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    color: var(--text-dim);
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all var(--ease);
+    white-space: nowrap;
+}
+
+.tab:hover {
+    color: var(--text);
+}
+
+.tab.active {
+    color: var(--text);
+    border-bottom-color: var(--amber-accent);
+}
+
+.badge {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+}
+
+.badge-lobby {
+    background: var(--green-bg);
+    color: var(--green-text);
+    border: 1px solid var(--green-border);
+}
+
+.badge-playing {
+    background: #2d1a0d;
+    color: #c47a30;
+    border: 1px solid #4a2d0d;
+}
+
+.badge-ended {
+    background: #1a1a1a;
+    color: #5a5a5a;
+    border: 1px solid #2a2a2a;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: #0a0908;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: var(--radius-sm);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint);
+}
+
+/* ── Draggable Panel (mobile floating buttons) ───────────── */
+.drag-panel {
+    right: 16px;
+    bottom: 24px;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.drag-panel.dragging {
+    opacity: 0.92;
+    z-index: 60;
+}
+
+.drag-panel.drag-idle {
+    transition: all 0.3s ease-out;
+}
+
+.drag-btn {
+    pointer-events: auto;
+}
+
+/* ── Toast ───────────────────────────────────────────────── */
+.toast-container {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast {
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    padding: 0.625rem 1rem;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-toast);
+    pointer-events: auto;
+    max-width: 360px;
+    word-break: break-word;
+    animation: toastIn 0.25s ease-out;
+}
+
+.toast-success {
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
+    color: #7acc7a;
+}
+
+.toast-error {
+    background: #2d0d0d;
+    border: 1px solid #4a1d1d;
+    color: #e07070;
+}
+
+@keyframes toastIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* ── Skeleton（列表加载占位） ────────────────────────────── */
+@keyframes shimmer {
+    from {
+        background-position: 200% 0;
+    }
+
+    to {
+        background-position: -200% 0;
+    }
+}
+
+.skeleton {
+    border-radius: var(--radius);
+    background: linear-gradient(90deg,
+            var(--bg-raised) 25%,
+            var(--bg-hover) 50%,
+            var(--bg-raised) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+}
+
+/* ── Game header more-menu items (mobile) ────────────────── */
+.game-menu-item {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.875rem;
+    text-align: left;
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    color: var(--text);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background var(--ease);
+}
+
+.game-menu-item:hover {
+    background: var(--border);
+    color: var(--text-bright);
+}
+
+.game-menu-item:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* ── Waiting status badges ───────────────────────────────── */
+.waiting-badge {
+    font-family: var(--font-ui);
+    font-size: 0.67rem;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+}
+
+.waiting-badge-submitted {
+    background: var(--green-bg);
+    color: var(--green-text);
+    border: 1px solid var(--green-border);
+}
+
+.waiting-badge-pending {
+    background: #2d1a0d;
+    color: #c47a30;
+    border: 1px solid #4a2d0d;
+}
+
+/* NOTE: 游戏输入区 placeholder 局部样式，不影响全站 .inp */
+.game-chat-input::placeholder {
+    color: #4a4030;
+    font-size: 0.75rem;
+}
+
+/* ── 响应式 ──────────────────────────────────────────────── */
+/* Desktop: non-draggable, keep fixed position */
+@media (min-width: 768px) {
+    .drag-panel {
+        right: 16px !important;
+        bottom: 24px !important;
+    }
+}
+
+/* NOTE: 320-375px 超窄屏幕下输入区最小可点击高度保障 */
+@media (max-width: 375px) {
+    .game-chat-input {
+        font-size: 0.875rem;
+    }
+}

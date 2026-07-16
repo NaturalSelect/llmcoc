@@ -1,6 +1,6 @@
             <h2 class="text-xl font-bold text-red-400 mb-4">管理后台</h2>
 
-            <div class="flex gap-0 mb-5 border-b" style="border-color:#252018">
+            <div class="flex gap-0 mb-5 border-b border-base">
                 <template
                     x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'settings',label:'系统设置'},{id:'cache',label:'规则缓存'}]"
                     :key="t.id">
@@ -13,7 +13,7 @@
             <!-- Users -->
             <div x-show="adminTab==='users'" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <div class="card rounded p-5">
-                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">充值金币</h3>
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm font-ui">充值金币</h3>
                     <div class="space-y-2.5">
                         <input x-model.number="rechargeForm.user_id" type="number" placeholder="用户 ID"
                             class="inp" />
@@ -24,21 +24,19 @@
                 </div>
                 <div class="card rounded p-5">
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">用户列表</h3>
-                        <button @click="loadAdminUsers()" class="text-xs text-amber-800 hover:text-amber-500"
-                            style="font-family:system-ui">刷新</button>
+                        <h3 class="font-bold text-amber-300 text-sm font-ui">用户列表</h3>
+                        <button @click="loadAdminUsers()" class="text-xs text-amber-800 hover:text-amber-500 font-ui">刷新</button>
                     </div>
                     <div class="space-y-2 max-h-80 overflow-y-auto">
                         <template x-for="u in adminUsers" :key="u.id">
-                            <div class="flex items-center justify-between text-xs border-b pb-2"
-                                style="border-color:#252018;font-family:system-ui">
+                            <div class="flex items-center justify-between text-xs border-b pb-2 border-base font-ui">
                                 <div class="min-w-0 flex-1">
                                     <span class="text-amber-300 font-bold">#<span x-text="u.id"></span> <span
                                             x-text="u.username"></span></span>
                                     <span class="text-amber-800 ml-1.5 truncate" x-text="u.email"></span>
                                 </div>
                                 <div class="flex items-center gap-2 shrink-0 ml-2">
-                                    <span class="text-amber-700" style="font-family:monospace">💰<span
+                                    <span class="text-amber-700 font-mono">💰<span
                                             x-text="u.coins"></span></span>
                                     <span class="badge"
                                         :class="u.role==='admin'?'bg-red-950/50 text-red-400 border border-red-900/30':'bg-amber-950/30 text-amber-700 border border-amber-900/20'"
@@ -53,8 +51,7 @@
                                 </div>
                             </div>
                         </template>
-                        <p x-show="adminUsers.length===0" class="text-amber-900 text-center py-4"
-                            style="font-family:system-ui">暂无用户</p>
+                        <p x-show="adminUsers.length===0" class="text-amber-900 text-center py-4 font-ui">暂无用户</p>
                     </div>
                 </div>
             </div>
@@ -62,7 +59,7 @@
             <!-- LLM Providers -->
             <div x-show="adminTab==='providers'" class="space-y-4">
                 <div class="flex justify-between items-center">
-                    <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">LLM 提供商</h3>
+                    <h3 class="font-bold text-amber-300 text-sm font-ui">LLM 提供商</h3>
                     <button @click="openCreateProvider()" class="btn btn-amber">+ 新建提供商</button>
                 </div>
                 <div class="space-y-2.5">
@@ -76,10 +73,8 @@
                                     <span x-show="!p.is_active"
                                         class="badge bg-red-950/30 text-red-500 border border-red-900/20">已停用</span>
                                 </div>
-                                <p class="text-xs text-amber-800 truncate" style="font-family:system-ui"
-                                    x-text="p.base_url || '（OpenAI 默认端点）'"></p>
-                                <p class="text-xs mt-0.5" style="font-family:system-ui"
-                                    :class="p.api_key_set ? 'text-green-700' : 'text-red-600'"
+                                <p class="text-xs text-amber-800 truncate font-ui" x-text="p.base_url || '（OpenAI 默认端点）'"></p>
+                                <p class="text-xs mt-0.5 font-ui" :class="p.api_key_set ? 'text-green-700' : 'text-red-600'"
                                     x-text="p.api_key_set ? '✓ API Key 已配置' : '✗ 未配置 API Key'"></p>
                             </div>
                             <div class="flex gap-1.5 shrink-0">
@@ -88,8 +83,7 @@
                             </div>
                         </div>
                     </template>
-                    <p x-show="adminProviders.length===0" class="text-amber-900 text-sm"
-                        style="font-family:system-ui">
+                    <p x-show="adminProviders.length===0" class="text-amber-900 text-sm font-ui">
                         暂无提供商，请创建。</p>
                 </div>
             </div>
@@ -97,25 +91,22 @@
             <!-- Agents -->
             <div x-show="adminTab==='agents'" class="space-y-3">
                 <div class="flex justify-between items-center">
-                    <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">Agent 配置</h3>
-                    <button @click="loadAdminAgents()" class="text-xs text-amber-800 hover:text-amber-500"
-                        style="font-family:system-ui">刷新</button>
+                    <h3 class="font-bold text-amber-300 text-sm font-ui">Agent 配置</h3>
+                    <button @click="loadAdminAgents()" class="text-xs text-amber-800 hover:text-amber-500 font-ui">刷新</button>
                 </div>
-                <p class="text-xs text-amber-800" style="font-family:system-ui">留空的系统提示词将使用内置默认提示词。</p>
+                <p class="text-xs text-amber-800 font-ui">留空的系统提示词将使用内置默认提示词。</p>
                 <div class="space-y-3">
                     <template x-for="ag in adminAgents" :key="ag.id">
                         <div class="card rounded p-4">
                             <div class="flex items-center gap-2 mb-3 flex-wrap">
                                 <span class="font-bold text-amber-200 text-sm" x-text="agentLabel(ag.role)"></span>
-                                <span class="text-xs text-amber-800" style="font-family:system-ui"
-                                    x-text="agentDesc(ag.role)"></span>
+                                <span class="text-xs text-amber-800 font-ui" x-text="agentDesc(ag.role)"></span>
                                 <span x-show="!ag.is_active"
                                     class="badge bg-red-950/30 text-red-500 border border-red-900/20 ml-auto">已停用</span>
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-2.5">
                                 <div>
-                                    <label class="text-xs text-amber-800 mb-1 block"
-                                        style="font-family:system-ui">提供商</label>
+                                    <label class="text-xs text-amber-800 mb-1 block font-ui">提供商</label>
                                     <select x-model="ag.provider_config_id" class="inp">
                                         <option value="">使用全局配置</option>
                                         <template x-for="p in adminProviders" :key="p.id">
@@ -124,42 +115,36 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="text-xs text-amber-800 mb-1 block"
-                                        style="font-family:system-ui">模型名称</label>
+                                    <label class="text-xs text-amber-800 mb-1 block font-ui">模型名称</label>
                                     <input x-model="ag.model_name" placeholder="如 gpt-4o" class="inp" />
                                 </div>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div>
-                                        <label class="text-xs text-amber-800 mb-1 block"
-                                            style="font-family:system-ui">MaxTokens</label>
+                                        <label class="text-xs text-amber-800 mb-1 block font-ui">MaxTokens</label>
                                         <input x-model.number="ag.max_tokens" type="number" class="inp" />
                                     </div>
                                     <div>
-                                        <label class="text-xs text-amber-800 mb-1 block"
-                                            style="font-family:system-ui">Temp</label>
+                                        <label class="text-xs text-amber-800 mb-1 block font-ui">Temp</label>
                                         <input x-model.number="ag.temperature" type="number" step="0.1" min="0"
                                             max="2" class="inp" :disabled="ag.disable_temperature"
                                             :class="ag.disable_temperature ? 'opacity-40 cursor-not-allowed' : ''" />
                                     </div>
                                 </div>
-                                <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer mb-2.5"
-                                    style="font-family:system-ui">
+                                <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer mb-2.5 font-ui">
                                     <input type="checkbox" x-model="ag.disable_temperature"
                                         class="accent-amber-600" />
                                     <span>关闭 Temperature（不支持温度参数的模型，如 o1/o3）</span>
                                 </label>
                             </div>
                             <div class="mb-2.5">
-                                <label class="text-xs text-amber-800 mb-1 block"
-                                    style="font-family:system-ui">System
+                                <label class="text-xs text-amber-800 mb-1 block font-ui">System
                                     Prompt（留空使用默认）</label>
                                 <textarea x-model="ag.system_prompt" rows="3"
                                     :placeholder="agentDefaultHint(ag.role)"
                                     class="inp resize-none font-mono text-xs"></textarea>
                             </div>
                             <div class="mb-2.5">
-                                <label class="text-xs text-amber-800 mb-1 block"
-                                    style="font-family:system-ui">推理强度</label>
+                                <label class="text-xs text-amber-800 mb-1 block font-ui">推理强度</label>
                                 <select x-model="ag.thinking_level" class="inp">
                                     <option value="">默认（high）</option>
                                     <option value="none">关闭</option>
@@ -170,8 +155,7 @@
                                 </select>
                             </div>
                             <div class="flex items-center gap-3">
-                                <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer"
-                                    style="font-family:system-ui">
+                                <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer font-ui">
                                     <input type="checkbox" x-model="ag.is_active" class="accent-amber-600" /> 启用
                                 </label>
                                 <button @click="pingAgentModel(ag)"
@@ -182,7 +166,7 @@
                             </div>
                         </div>
                     </template>
-                    <p x-show="adminAgents.length===0" class="text-amber-900 text-sm" style="font-family:system-ui">
+                    <p x-show="adminAgents.length===0" class="text-amber-900 text-sm font-ui">
                         加载中…
                     </p>
                 </div>
@@ -195,15 +179,15 @@
                 <div class="card rounded p-5 lg:col-span-2">
                     <div class="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
                         <div>
-                            <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">已有模组</h3>
-                            <p class="text-xs text-amber-800 mt-1" style="font-family:system-ui">
+                            <h3 class="font-bold text-amber-300 text-sm font-ui">已有模组</h3>
+                            <p class="text-xs text-amber-800 mt-1 font-ui">
                                 共 <span x-text="adminScenarioTotal"></span> 个 · 第
                                 <span x-text="adminScenarioPage"></span> /
                                 <span x-text="adminScenarioTotalPages"></span> 页
                             </p>
                         </div>
                         <div class="flex items-center gap-2 flex-wrap">
-                            <label class="text-xs text-amber-800" style="font-family:system-ui">每页</label>
+                            <label class="text-xs text-amber-800 font-ui">每页</label>
                             <select x-model.number="adminScenarioPageSize" @change="changeAdminScenarioPageSize()"
                                 class="inp text-xs py-1 w-20">
                                 <option :value="10">10</option>
@@ -219,17 +203,13 @@
                                 class="btn btn-ghost text-xs">刷新</button>
                         </div>
                     </div>
-                    <div x-show="adminScenarios.length === 0" class="text-amber-900 text-xs"
-                        style="font-family:system-ui">暂无模组</div>
+                    <div x-show="adminScenarios.length === 0" class="text-amber-900 text-xs font-ui">暂无模组</div>
                     <div class="space-y-2">
                         <template x-for="s in adminScenarios" :key="s.id">
-                            <div class="flex items-center gap-3 p-2 rounded"
-                                style="background:#0e0d0b;border:1px solid #1e1c17">
+                            <div class="flex items-center gap-3 p-2 rounded panel-inset">
                                 <div class="flex-1 min-w-0">
-                                    <p class="text-sm text-amber-200 truncate" style="font-family:system-ui"
-                                        x-text="s.name"></p>
-                                    <p class="text-[11px] text-amber-900 mt-0.5" style="font-family:system-ui"
-                                        x-text="(s.difficulty||'normal') + ' · ' + (s.min_players||1) + '-' + (s.max_players||4) + '人' + (s.author ? ' · ' + s.author : '')">
+                                    <p class="text-sm text-amber-200 truncate font-ui" x-text="s.name"></p>
+                                    <p class="text-[11px] text-amber-900 mt-0.5 font-ui" x-text="(s.difficulty||'normal') + ' · ' + (s.min_players||1) + '-' + (s.max_players||4) + '人' + (s.author ? ' · ' + s.author : '')">
                                     </p>
                                 </div>
                                 <button @click="viewScenario(s)" class="btn btn-ghost text-xs shrink-0">查看</button>
@@ -243,16 +223,16 @@
                 </div>
 
                 <div class="card rounded p-5">
-                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">下载模组模板</h3>
-                    <p class="text-xs text-amber-800 mb-3" style="font-family:system-ui">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm font-ui">下载模组模板</h3>
+                    <p class="text-xs text-amber-800 mb-3 font-ui">
                         下载标准 JSON 模板，填写后可用于导入模组。
                     </p>
                     <button @click="downloadScenarioTemplate()" class="btn btn-amber">下载模板</button>
                 </div>
 
                 <div class="card rounded p-5">
-                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">上传模组 JSON</h3>
-                    <p class="text-xs text-amber-800 mb-2" style="font-family:system-ui">支持单个 JSON 文件上传。</p>
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm font-ui">上传模组 JSON</h3>
+                    <p class="text-xs text-amber-800 mb-2 font-ui">支持单个 JSON 文件上传。</p>
                     <input type="file" accept="application/json,.json" @change="onScenarioFilePicked($event)"
                         class="inp mb-3" />
                     <button @click="uploadScenarioFile()" class="btn btn-amber"
@@ -263,78 +243,71 @@
                 </div>
 
                 <div class="card rounded p-5 lg:col-span-2">
-                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">AI 生成模组</h3>
-                    <p class="text-xs text-amber-800 mb-3" style="font-family:system-ui">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm font-ui">AI 生成模组</h3>
+                    <p class="text-xs text-amber-800 mb-3 font-ui">
                         流水线：约束构建 → 正文生成（多轮工具调用）→ 自动修复 → QA/逻辑审查 → 奖励设计。生成过程流式显示，耗时数分钟；中途关闭页面不影响后台生成与入库。
                     </p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                         <div>
-                            <label class="block text-xs text-amber-700 mb-1"
-                                style="font-family:system-ui">模组名称（可选）</label>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">模组名称（可选）</label>
                             <input x-model="scenarioGenForm.name" type="text" placeholder="留空由AI命名" class="inp" />
-                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">留空则AI自动命名。</p>
+                            <p class="text-[11px] text-amber-900 mt-1 font-ui">留空则AI自动命名。</p>
                         </div>
                         <div>
-                            <label class="block text-xs text-amber-700 mb-1" style="font-family:system-ui">主题 /
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">主题 /
                                 风格</label>
                             <input x-model="scenarioGenForm.theme" type="text" placeholder="例如：海洋、都市传说、古埃及"
                                 class="inp" />
-                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">引导AI的神话题材与氛围。
+                            <p class="text-[11px] text-amber-900 mt-1 font-ui">引导AI的神话题材与氛围。
                             </p>
                         </div>
                         <div>
-                            <label class="block text-xs text-amber-700 mb-1"
-                                style="font-family:system-ui">时代背景</label>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">时代背景</label>
                             <input x-model="scenarioGenForm.era" type="text" placeholder="例如：1920s 波士顿、现代东京"
                                 class="inp" />
-                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">年代地点，影响NPC和道具。
+                            <p class="text-[11px] text-amber-900 mt-1 font-ui">年代地点，影响NPC和道具。
                             </p>
                         </div>
                         <div>
-                            <label class="block text-xs text-amber-700 mb-1"
-                                style="font-family:system-ui">篇幅</label>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">篇幅</label>
                             <select x-model="scenarioGenForm.target_length" class="inp">
                                 <option value="short">短篇（1-2小时）</option>
                                 <option value="medium">中篇（3-4小时）</option>
                                 <option value="long">长篇（5小时以上）</option>
                             </select>
-                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">影响场景数量和线索密度。
+                            <p class="text-[11px] text-amber-900 mt-1 font-ui">影响场景数量和线索密度。
                             </p>
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="block text-xs text-amber-700 mb-1"
-                            style="font-family:system-ui">创意简报（可选）</label>
+                        <label class="block text-xs text-amber-700 mb-1 font-ui">创意简报（可选）</label>
                         <textarea x-model="scenarioGenForm.brief" rows="2"
                             placeholder="例如：调查员受雇寻找失踪的渔夫，背后隐藏着古老渔村的祭祀秘密…" class="inp resize-none"></textarea>
-                        <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">一两句话描述核心剧情或特殊要求。
+                        <p class="text-[11px] text-amber-900 mt-1 font-ui">一两句话描述核心剧情或特殊要求。
                         </p>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
                         <div>
-                            <label class="block text-xs text-amber-700 mb-1"
-                                style="font-family:system-ui">最小玩家数</label>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">最小玩家数</label>
                             <input x-model.number="scenarioGenForm.min_players" type="number" min="1"
                                 placeholder="例如：1" class="inp" />
-                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">建议能开团的最低人数。</p>
+                            <p class="text-[11px] text-amber-900 mt-1 font-ui">建议能开团的最低人数。</p>
                         </div>
                         <div>
-                            <label class="block text-xs text-amber-700 mb-1"
-                                style="font-family:system-ui">最大玩家数</label>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">最大玩家数</label>
                             <input x-model.number="scenarioGenForm.max_players" type="number" min="1"
                                 placeholder="例如：4" class="inp" />
-                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">建议不影响节奏的上限人数。
+                            <p class="text-[11px] text-amber-900 mt-1 font-ui">建议不影响节奏的上限人数。
                             </p>
                         </div>
                         <div>
-                            <label class="block text-xs text-amber-700 mb-1"
-                                style="font-family:system-ui">难度等级</label>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">难度等级</label>
                             <select x-model="scenarioGenForm.difficulty" class="inp">
                                 <option value="easy">easy（入门，容错高）</option>
                                 <option value="normal">normal（标准）</option>
                                 <option value="hard">hard（高压，高风险）</option>
                             </select>
-                            <p class="text-[11px] text-amber-900 mt-1" style="font-family:system-ui">
+                            <p class="text-[11px] text-amber-900 mt-1 font-ui">
                                 影响线索密度、危机强度与生存压力。
                             </p>
                         </div>
@@ -345,19 +318,17 @@
                     </button>
                     <div x-show="scenarioGenRunning || scenarioGenLogs.length" class="mt-3">
                         <div class="flex items-center gap-2 mb-1">
-                            <span class="text-xs text-amber-700" style="font-family:system-ui">生成进度</span>
-                            <span x-show="scenarioGenRunning" class="text-[11px] text-amber-500 animate-pulse"
-                                style="font-family:system-ui">● 实时流式输出中</span>
+                            <span class="text-xs text-amber-700 font-ui">生成进度</span>
+                            <span x-show="scenarioGenRunning" class="text-[11px] text-amber-500 animate-pulse font-ui">● 实时流式输出中</span>
                         </div>
-                        <div id="scenarioGenLogBox" class="rounded bg-black/40 border border-amber-900/40 p-3 text-[11px] leading-relaxed text-amber-200/90 whitespace-pre-wrap break-all"
-                            style="font-family:ui-monospace,monospace; max-height: 260px; overflow-y: auto;">
+                        <div id="scenarioGenLogBox" class="rounded bg-black/40 border border-amber-900/40 p-3 text-[11px] leading-relaxed text-amber-200/90 whitespace-pre-wrap break-all font-mono"
+                            style="max-height: 260px; overflow-y: auto">
                             <template x-for="(line, idx) in scenarioGenLogs" :key="idx">
                                 <div x-text="line"></div>
                             </template>
                         </div>
                         <button x-show="!scenarioGenRunning && scenarioGenLogs.length"
-                            @click="scenarioGenLogs = []" class="text-[11px] text-amber-700 hover:text-amber-500 mt-1 underline"
-                            style="font-family:system-ui">清空日志</button>
+                            @click="scenarioGenLogs = []" class="text-[11px] text-amber-700 hover:text-amber-500 mt-1 underline font-ui">清空日志</button>
                     </div>
                 </div>
             </div>
@@ -365,7 +336,7 @@
             <!-- Shop management -->
             <div x-show="adminTab==='shop'" class="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-5">
                 <div class="card rounded p-5">
-                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">创建商品</h3>
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm font-ui">创建商品</h3>
                     <div class="space-y-2.5">
                         <input x-model="newShopItem.name" placeholder="商品名称 *" class="inp" />
                         <textarea x-model="newShopItem.description" placeholder="商品描述" rows="2"
@@ -389,35 +360,28 @@
                 <div class="card rounded p-5 min-w-0">
                     <div class="flex justify-between items-center mb-4 gap-3">
                         <div>
-                            <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">已上架商品</h3>
-                            <p class="text-xs text-amber-800 mt-1" style="font-family:system-ui">
+                            <h3 class="font-bold text-amber-300 text-sm font-ui">已上架商品</h3>
+                            <p class="text-xs text-amber-800 mt-1 font-ui">
                                 删除后会从商城下架，历史购买记录会保留。
                             </p>
                         </div>
                         <button @click="loadAdminShopItems()"
-                            class="text-xs text-amber-800 hover:text-amber-500 shrink-0"
-                            style="font-family:system-ui">刷新</button>
+                            class="text-xs text-amber-800 hover:text-amber-500 shrink-0 font-ui">刷新</button>
                     </div>
 
-                    <div x-show="adminShopItems.length === 0" class="text-amber-900 text-xs py-8 text-center"
-                        style="font-family:system-ui">暂无已上架商品</div>
+                    <div x-show="adminShopItems.length === 0" class="text-amber-900 text-xs py-8 text-center font-ui">暂无已上架商品</div>
 
                     <div x-show="adminShopItems.length > 0" class="space-y-2 max-h-[30rem] overflow-y-auto pr-1">
                         <template x-for="item in adminShopItems" :key="item.id">
                             <div class="card rounded p-3 flex items-start justify-between gap-3">
                                 <div class="min-w-0 flex-1">
                                     <div class="flex flex-wrap items-center gap-2 mb-1">
-                                        <span class="text-sm font-bold text-amber-200" style="font-family:system-ui"
-                                            x-text="item.name"></span>
-                                        <span class="text-[10px] px-1.5 py-0.5 rounded"
-                                            style="background:#1e1c17;color:#92400e;font-family:system-ui"
-                                            x-text="item.item_type"></span>
-                                        <span class="text-[10px] text-amber-700" style="font-family:system-ui"
-                                            x-text="'ID ' + item.id"></span>
+                                        <span class="text-sm font-bold text-amber-200 font-ui" x-text="item.name"></span>
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded tag-dim font-ui" x-text="item.item_type"></span>
+                                        <span class="text-[10px] text-amber-700 font-ui" x-text="'ID ' + item.id"></span>
                                     </div>
-                                    <p x-show="item.description" class="text-xs text-amber-700 break-words"
-                                        style="font-family:system-ui" x-text="item.description"></p>
-                                    <div class="flex flex-wrap gap-3 mt-2 text-xs" style="font-family:system-ui">
+                                    <p x-show="item.description" class="text-xs text-amber-700 break-words font-ui" x-text="item.description"></p>
+                                    <div class="flex flex-wrap gap-3 mt-2 text-xs font-ui">
                                         <span class="text-amber-500" x-text="'价格: ' + item.price + ' 金币'"></span>
                                         <span class="text-amber-800" x-text="'效果值: ' + item.value"></span>
                                     </div>
@@ -434,47 +398,43 @@
             <div x-show="adminTab==='cache'" class="space-y-5">
                 <div class="card rounded p-5 max-w-xl">
                     <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">规则缓存统计</h3>
+                        <h3 class="font-bold text-amber-300 text-sm font-ui">规则缓存统计</h3>
                         <div class="flex gap-2">
                             <button @click="loadCacheStats()" class="btn btn-ghost text-xs">刷新</button>
                             <button @click="clearCache()" class="btn btn-red text-xs">清空缓存</button>
                         </div>
                     </div>
-                    <div x-show="!cacheStats" class="text-amber-900 text-sm" style="font-family:system-ui">加载中…
+                    <div x-show="!cacheStats" class="text-amber-900 text-sm font-ui">加载中…
                     </div>
                     <div x-show="cacheStats" class="space-y-3">
                         <!-- Hit / miss counters -->
                         <div class="grid grid-cols-3 gap-3">
                             <div class="rounded p-3 text-center"
-                                style="background:#0d1a0d;border:1px solid #1a3d1a">
-                                <div class="text-2xl font-bold text-green-400" style="font-family:system-ui"
-                                    x-text="cacheStats?.full_hits ?? 0"></div>
-                                <div class="text-xs mt-1" style="font-family:system-ui;color:#6a9a6a">完全命中</div>
-                                <div class="text-xs mt-0.5" style="font-family:system-ui;color:#3a6a3a">
+                                style="background:#0d1a0d; border:1px solid #1a3d1a">
+                                <div class="text-2xl font-bold text-green-400 font-ui" x-text="cacheStats?.full_hits ?? 0"></div>
+                                <div class="text-xs mt-1 font-ui" style="color:#6a9a6a">完全命中</div>
+                                <div class="text-xs mt-0.5 font-ui" style="color:#3a6a3a">
                                     LLM没搜索规则书</div>
                             </div>
                             <div class="rounded p-3 text-center"
-                                style="background:#1a1a0d;border:1px solid #3d3d1a">
-                                <div class="text-2xl font-bold text-yellow-400" style="font-family:system-ui"
-                                    x-text="cacheStats?.partial_hits ?? 0"></div>
-                                <div class="text-xs mt-1" style="font-family:system-ui;color:#9a9a6a">部分命中</div>
-                                <div class="text-xs mt-0.5" style="font-family:system-ui;color:#6a6a3a">缓存有结果但仍搜了规则书
+                                style="background:#1a1a0d; border:1px solid #3d3d1a">
+                                <div class="text-2xl font-bold text-yellow-400 font-ui" x-text="cacheStats?.partial_hits ?? 0"></div>
+                                <div class="text-xs mt-1 font-ui" style="color:#9a9a6a">部分命中</div>
+                                <div class="text-xs mt-0.5 font-ui" style="color:#6a6a3a">缓存有结果但仍搜了规则书
                                 </div>
                             </div>
                             <div class="rounded p-3 text-center"
-                                style="background:#1a0d0d;border:1px solid #3d1a1a">
-                                <div class="text-2xl font-bold text-red-400" style="font-family:system-ui"
-                                    x-text="cacheStats?.misses ?? 0"></div>
-                                <div class="text-xs mt-1" style="font-family:system-ui;color:#9a6a6a">未命中</div>
-                                <div class="text-xs mt-0.5" style="font-family:system-ui;color:#6a3a3a">
+                                style="background:#1a0d0d; border:1px solid #3d1a1a">
+                                <div class="text-2xl font-bold text-red-400 font-ui" x-text="cacheStats?.misses ?? 0"></div>
+                                <div class="text-xs mt-1 font-ui" style="color:#9a6a6a">未命中</div>
+                                <div class="text-xs mt-0.5 font-ui" style="color:#6a3a3a">
                                     search_cache无结果，完全依赖规则书
                                 </div>
                             </div>
                         </div>
                         <!-- Hit rate bar -->
                         <div x-show="(cacheStats?.full_hits + cacheStats?.partial_hits + cacheStats?.misses) > 0">
-                            <div class="flex justify-between text-xs mb-1"
-                                style="font-family:system-ui;color:#7a6a50">
+                            <div class="flex justify-between text-xs mb-1 font-ui text-dim">
                                 <span>命中率</span>
                                 <span
                                     x-text="cacheStats ? (((cacheStats.full_hits + cacheStats.partial_hits) / (cacheStats.full_hits + cacheStats.partial_hits + cacheStats.misses)) * 100).toFixed(1) + '%' : '-'"></span>
@@ -487,13 +447,11 @@
                             </div>
                         </div>
                         <!-- Capacity -->
-                        <div class="mt-2 pt-3" style="border-top:1px solid #252018">
-                            <div class="flex justify-between text-xs mb-1"
-                                style="font-family:system-ui;color:#7a6a50">
+                        <div class="mt-2 pt-3 border-t border-base">
+                            <div class="flex justify-between text-xs mb-1 font-ui text-dim">
                                 <span>条目数 / 容量使用</span>
-                                <span
-                                    x-text="cacheStats ? cacheStats.entries + ' 条 · ' + (cacheStats.used_bytes / 1048576).toFixed(1) + ' MB / ' + (cacheStats.max_bytes / 1073741824).toFixed(0) + ' GB' : '-'"
-                                    style="font-family:system-ui"></span>
+                                <span class="font-ui"
+                                    x-text="cacheStats ? cacheStats.entries + ' 条 · ' + (cacheStats.used_bytes / 1048576).toFixed(1) + ' MB / ' + (cacheStats.max_bytes / 1073741824).toFixed(0) + ' GB' : '-'"></span>
                             </div>
                             <div class="w-full rounded-full h-1.5" style="background:#1a1814">
                                 <div class="h-1.5 rounded-full" style="background:#4a3318"
@@ -506,14 +464,14 @@
                 <!-- Cache key list & single-entry delete -->
                 <div class="card rounded p-5 max-w-4xl">
                     <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">缓存条目列表</h3>
+                        <h3 class="font-bold text-amber-300 text-sm font-ui">缓存条目列表</h3>
                         <button @click="loadCacheKeys()" class="btn btn-ghost text-xs">刷新</button>
                     </div>
-                    <div x-show="cacheKeyTotal === 0" class="text-amber-900 text-sm" style="font-family:system-ui">暂无缓存条目</div>
+                    <div x-show="cacheKeyTotal === 0" class="text-amber-900 text-sm font-ui">暂无缓存条目</div>
                     <div x-show="cacheKeyTotal > 0" class="space-y-1">
                         <template x-for="key in cacheKeys" :key="key">
-                            <div class="flex items-center justify-between rounded px-3 py-1.5" style="background:#141210;border:1px solid #252018">
-                                <span class="text-xs truncate mr-2 min-w-0 flex-1" style="font-family:system-ui;color:#b0a080" x-text="key"></span>
+                            <div class="flex items-center justify-between rounded px-3 py-1.5" style="background:#141210; border:1px solid #252018">
+                                <span class="text-xs truncate mr-2 min-w-0 flex-1 font-ui" style="color:#b0a080" x-text="key"></span>
                                 <div class="flex gap-1 flex-shrink-0">
                                     <button @click="viewCacheEntry(key)" class="btn btn-ghost text-xs" style="padding:2px 8px">查看</button>
                                     <button @click="deleteCacheEntry(key)" class="btn btn-red text-xs" style="padding:2px 8px">删除</button>
@@ -521,9 +479,8 @@
                             </div>
                         </template>
                         <!-- Pagination -->
-                        <div class="flex items-center justify-between mt-3 pt-3" style="border-top:1px solid #252018">
-                            <span class="text-xs" style="font-family:system-ui;color:#7a6a50"
-                                x-text="cacheKeyTotal + ' 条 · 第 ' + cacheKeyPage + '/' + cacheKeyTotalPages + ' 页'"></span>
+                        <div class="flex items-center justify-between mt-3 pt-3 border-t border-base">
+                            <span class="text-xs font-ui text-dim" x-text="cacheKeyTotal + ' 条 · 第 ' + cacheKeyPage + '/' + cacheKeyTotalPages + ' 页'"></span>
                             <div class="flex gap-1">
                                 <button @click="prevCacheKeyPage()" class="btn btn-ghost text-xs"
                                     :disabled="cacheKeyPage <= 1"
@@ -538,26 +495,24 @@
                 <div x-show="cacheEntryLoading || selectedCacheEntry" class="card rounded p-5 max-w-4xl">
                     <div class="flex items-start justify-between gap-4 mb-3">
                         <div>
-                            <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">缓存条目详情</h3>
-                            <p x-show="selectedCacheEntry?.size !== undefined" class="text-xs text-amber-800 mt-1"
-                                style="font-family:system-ui"
-                                x-text="'大小：' + (selectedCacheEntry?.size ?? 0) + ' 字节'"></p>
+                            <h3 class="font-bold text-amber-300 text-sm font-ui">缓存条目详情</h3>
+                            <p x-show="selectedCacheEntry?.size !== undefined" class="text-xs text-amber-800 mt-1 font-ui" x-text="'大小：' + (selectedCacheEntry?.size ?? 0) + ' 字节'"></p>
                         </div>
                         <button @click="closeCacheEntry()" class="text-amber-800 hover:text-amber-400 text-xl leading-none shrink-0">✕</button>
                     </div>
-                    <div x-show="cacheEntryLoading" class="text-amber-900 text-sm" style="font-family:system-ui">详情加载中…</div>
+                    <div x-show="cacheEntryLoading" class="text-amber-900 text-sm font-ui">详情加载中…</div>
                     <template x-if="!cacheEntryLoading && selectedCacheEntry">
                         <div class="space-y-3">
                             <div>
-                                <div class="text-[10px] font-bold text-amber-700 mb-1 uppercase tracking-wider" style="font-family:system-ui">KEY</div>
-                                <pre class="text-xs text-amber-200 rounded p-2 overflow-x-auto"
-                                    style="background:#0a0908;border:1px solid #1e1c17;font-family:monospace;line-height:1.5;white-space:pre-wrap"
+                                <div class="text-[10px] font-bold text-amber-700 mb-1 uppercase tracking-wider font-ui">KEY</div>
+                                <pre class="text-xs text-amber-200 rounded p-2 overflow-x-auto bg-chat border-inset font-mono"
+                                    style="line-height:1.5; white-space:pre-wrap"
                                     x-text="selectedCacheEntry?.key || ''"></pre>
                             </div>
                             <div>
-                                <div class="text-[10px] font-bold text-amber-700 mb-1 uppercase tracking-wider" style="font-family:system-ui">VALUE / 规则裁定文本</div>
-                                <pre class="text-xs text-amber-100 rounded p-3 overflow-x-auto"
-                                    style="background:#0a0908;border:1px solid #1e1c17;font-family:monospace;line-height:1.6;white-space:pre-wrap;max-height:60vh"
+                                <div class="text-[10px] font-bold text-amber-700 mb-1 uppercase tracking-wider font-ui">VALUE / 规则裁定文本</div>
+                                <pre class="text-xs text-amber-100 rounded p-3 overflow-x-auto bg-chat border-inset font-mono"
+                                    style="line-height:1.6; white-space:pre-wrap; max-height:60vh"
                                     x-text="selectedCacheEntry?.value || ''"></pre>
                             </div>
                         </div>
@@ -569,9 +524,9 @@
             <div x-show="adminTab==='settings'" class="space-y-5">
                 <!-- Toggle: require invite code -->
                 <div class="card rounded p-5 max-w-md">
-                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">站点设置</h3>
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm font-ui">站点设置</h3>
                     <div class="flex items-center justify-between">
-                        <span class="text-sm" style="font-family:system-ui">注册需要邀请码</span>
+                        <span class="text-sm font-ui">注册需要邀请码</span>
                         <button @click="toggleInviteCodeSetting()"
                             class="w-12 h-6 rounded-full relative transition-colors"
                             :class="siteSettings.require_invite_code ? 'bg-amber-700' : 'bg-gray-700'">
@@ -584,10 +539,10 @@
 
                 <!-- Coin cost settings -->
                 <div class="card rounded p-5 max-w-md">
-                    <h3 class="font-bold text-amber-300 mb-4 text-sm" style="font-family:system-ui">金币与初始配置</h3>
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm font-ui">金币与初始配置</h3>
                     <div class="space-y-3">
                         <div class="flex items-center justify-between gap-3">
-                            <label class="text-sm shrink-0" style="font-family:system-ui">初始金币（新用户注册）</label>
+                            <label class="text-sm shrink-0 font-ui">初始金币（新用户注册）</label>
                             <div class="flex items-center gap-2">
                                 <input x-model.number="siteSettings.initial_coins" type="number" min="0"
                                     class="inp w-24 text-right text-xs" />
@@ -596,7 +551,7 @@
                             </div>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <label class="text-sm shrink-0" style="font-family:system-ui">初始卡槽数（新用户注册）</label>
+                            <label class="text-sm shrink-0 font-ui">初始卡槽数（新用户注册）</label>
                             <div class="flex items-center gap-2">
                                 <input x-model.number="siteSettings.initial_card_slots" type="number" min="0"
                                     class="inp w-24 text-right text-xs" />
@@ -605,7 +560,7 @@
                             </div>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <label class="text-sm shrink-0" style="font-family:system-ui">重造外貌费用</label>
+                            <label class="text-sm shrink-0 font-ui">重造外貌费用</label>
                             <div class="flex items-center gap-2">
                                 <input x-model.number="siteSettings.regenerate_appearance_cost" type="number" min="0"
                                     class="inp w-24 text-right text-xs" />
@@ -614,7 +569,7 @@
                             </div>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <label class="text-sm shrink-0" style="font-family:system-ui">重造背景故事费用</label>
+                            <label class="text-sm shrink-0 font-ui">重造背景故事费用</label>
                             <div class="flex items-center gap-2">
                                 <input x-model.number="siteSettings.regenerate_backstory_cost" type="number" min="0"
                                     class="inp w-24 text-right text-xs" />
@@ -623,7 +578,7 @@
                             </div>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <label class="text-sm shrink-0" style="font-family:system-ui">重造性格特征费用</label>
+                            <label class="text-sm shrink-0 font-ui">重造性格特征费用</label>
                             <div class="flex items-center gap-2">
                                 <input x-model.number="siteSettings.regenerate_traits_cost" type="number" min="0"
                                     class="inp w-24 text-right text-xs" />
@@ -632,7 +587,7 @@
                             </div>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <label class="text-sm shrink-0" style="font-family:system-ui">复活基础费用</label>
+                            <label class="text-sm shrink-0 font-ui">复活基础费用</label>
                             <div class="flex items-center gap-2">
                                 <input x-model.number="siteSettings.revive_base_cost" type="number" min="0"
                                     class="inp w-24 text-right text-xs" />
@@ -641,7 +596,7 @@
                             </div>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <label class="text-sm shrink-0" style="font-family:system-ui">角色草稿最大数量</label>
+                            <label class="text-sm shrink-0 font-ui">角色草稿最大数量</label>
                             <div class="flex items-center gap-2">
                                 <input x-model.number="siteSettings.max_character_drafts" type="number" min="1"
                                     class="inp w-24 text-right text-xs" />
@@ -650,7 +605,7 @@
                             </div>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <label class="text-sm shrink-0" style="font-family:system-ui">结束游戏费用（每人）</label>
+                            <label class="text-sm shrink-0 font-ui">结束游戏费用（每人）</label>
                             <div class="flex items-center gap-2">
                                 <input x-model.number="siteSettings.end_session_cost" type="number" min="0"
                                     class="inp w-24 text-right text-xs" />
@@ -658,8 +613,7 @@
                                     class="btn btn-amber text-xs shrink-0">保存</button>
                             </div>
                         </div>
-                        <div class="flex items-center justify-between text-xs"
-                            style="font-family:system-ui">
+                        <div class="flex items-center justify-between text-xs font-ui">
                             <span class="text-amber-700">Writer 历史缓存上限（字符数）</span>
                             <div class="flex items-center gap-2">
                                 <input x-model.number="siteSettings.writer_history_max_runes" type="number" min="1000"
@@ -672,41 +626,37 @@
                 </div>
                 <!-- Balance rules -->
                 <div class="card rounded p-5 max-w-2xl">
-                    <h3 class="font-bold text-amber-300 mb-3 text-sm" style="font-family:system-ui">平衡调整规则</h3>
-                    <p class="text-xs text-amber-800 mb-3" style="font-family:system-ui">
+                    <h3 class="font-bold text-amber-300 mb-3 text-sm font-ui">平衡调整规则</h3>
+                    <p class="text-xs text-amber-800 mb-3 font-ui">
                         这是站点全局规则，会注入 Lawyer，作为 Lawyer/KP 裁定参考，不是执行层硬拦截；
                         留空表示不设置额外平衡规则；下次 Lawyer 调用将读取最新规则。
                     </p>
                     <textarea x-model="siteSettings.balance_rules"
                         rows="6"
-                        class="inp w-full text-xs resize-y"
-                        style="font-family:monospace;min-height:100px"
+                        class="inp w-full text-xs resize-y font-mono"
+                        style="min-height:100px"
                         placeholder="留空表示不设置额外平衡规则..."></textarea>
                     <div class="flex items-center justify-between mt-2">
-                        <span class="text-xs text-amber-800" style="font-family:system-ui"
-                            x-text="([...(siteSettings.balance_rules || '')].length) + '/2000'"></span>
+                        <span class="text-xs text-amber-800 font-ui" x-text="([...(siteSettings.balance_rules || '')].length) + '/2000'"></span>
                         <button @click="updateBalanceRules()" class="btn btn-amber text-xs">保存</button>
                     </div>
                 </div>
 
                 <div class="card rounded p-5">
                     <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-bold text-amber-300 text-sm" style="font-family:system-ui">邀请码管理</h3>
+                        <h3 class="font-bold text-amber-300 text-sm font-ui">邀请码管理</h3>
                         <div class="flex items-center gap-2">
                             <input x-model.number="inviteCodeCount" type="number" min="1" max="100"
                                 class="inp w-20 text-center text-xs" placeholder="数量" />
                             <button @click="generateInviteCodes()" class="btn btn-amber text-xs">批量生成</button>
-                            <button @click="loadInviteCodes()" class="text-xs text-amber-800 hover:text-amber-500"
-                                style="font-family:system-ui">刷新</button>
+                            <button @click="loadInviteCodes()" class="text-xs text-amber-800 hover:text-amber-500 font-ui">刷新</button>
                         </div>
                     </div>
-                    <div x-show="inviteCodes.length === 0" class="text-amber-900 text-xs"
-                        style="font-family:system-ui">
+                    <div x-show="inviteCodes.length === 0" class="text-amber-900 text-xs font-ui">
                         暂无邀请码</div>
                     <div class="space-y-2 max-h-96 overflow-y-auto">
                         <template x-for="ic in inviteCodes" :key="ic.id">
-                            <div class="flex items-center justify-between text-xs border-b pb-2"
-                                style="border-color:#252018;font-family:system-ui">
+                            <div class="flex items-center justify-between text-xs border-b pb-2 border-base font-ui">
                                 <div class="flex items-center gap-3">
                                     <code class="text-amber-200 font-mono tracking-wider" x-text="ic.code"></code>
                                     <span x-show="!ic.used_by" class="text-green-500">未使用</span>
