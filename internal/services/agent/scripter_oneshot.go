@@ -104,7 +104,7 @@ var oneshotExample = marshalExample(oneshotResultExample)
 
 // humanWritingRules 是人写化写作标准；architect 生成与 QA 审查共用同一份，避免双方标准漂移。
 const humanWritingRules = `- 具体性：散文要落在具体名词上——人名、地名、年份、器物、气味、价钱、路名；不堆叠"神秘的/诡异的/不祥的"等抽象形容词
-- 禁止编号与模板腔：description/setting/intro中不得出现①②③、1.2.3.、"首先/其次/最后"式结构或列表排版；开场行动选项用自然叙述带出
+- 禁止编号与模板腔：description/setting/intro中不得出现①②③、1.2.3.、"首先/其次/最后"式结构或列表排版
 - 句式错落：长短句交替；不连续使用三个以上结构雷同的句子；不写成对仗排比
 - 标题像人起的：不用"低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒"等滥用词；优先取材于剧本内的具体名词（地名、物件、日期、一句当地人的话）
 - NPC人味：每个重要NPC给一个标志性小细节（口头禅、习惯动作、随身物件、外貌特征选其一）；NPC之间至少存在两条现实关系（亲属/雇佣/债务/旧怨/邻里）；可以保留一个与主线无关的纯地方色彩NPC
@@ -255,8 +255,8 @@ SAN要求：
 ✓ setting文本中嵌入了与时代、地点及剧情氛围一致的具体年月日（如"1923年10月15日"，非仅写年份或时刻）？
 ✓ 恐怖与真相只存在于system_prompt(KP独有)、scenes、clues、mythos_anchor中，绝不出现在description/setting/intro？
 ✓ setting只描述表层日常视角，未泄露核心真相，也未提前渲染恐怖气氛？
-✓ intro包含至少3个立即可执行的具体行动，且以平静日常语气给出，不预告危险？
-✓ intro是否用一两句话清楚交代调查员到场的基本理由/表层任务/受邀事由，让玩家明确当前目标（不涉及真相、不渲染恐怖）？
+✓ intro只交代到场情境与受邀事由，不列出、不推荐、不暗示任何具体行动或下一步（行动入口留给玩家自行探索，不写进intro）？
+✓ intro是否用一两句话清楚交代调查员到场的基本理由/表层任务/受邀事由，让玩家知道自己为何在此（不涉及真相、不渲染恐怖）？
 ✓ description/setting/intro无编号列表、无"首先/其次"式排比、无模板腔，符合<prose_voice>声线？
 ✓ 标题与散文落在具体名词上；标题不含"低语/深渊/阴影"等滥用词？
 ✓ 每个重要NPC有标志性小细节，并嵌入NPC关系网？
@@ -278,7 +278,7 @@ SAN要求：
 ✓ 最终体验重点是”调查员亲手揭开可怕真相”，而不是”被剧情推着走”或”靠战斗通关”？
 
 其他硬性要求：
-- description(简介)、setting(背景)、intro(开场)必须是「冷开场」：以平静、日常、生活化的语气呈现一个看似普通的表层情境，只交代时代、地点、调查员为何到场和最初可做的事；读者和玩家从这三处看不出剧情走向、案件性质、幕后真相或神话存在，也读不到任何恐怖、惊悚、诡异、压抑、不祥的氛围。恐怖是玩家在调查中逐步自行发现的，不能在开场剧透或提前渲染。setting须在文本中嵌入具体的开局年月日（如"1923年10月15日"，模型按剧本自行选择合理日期，不得固定套用示例日期）；game_start_slot保留表示时刻的语义（0-47，每槽30分钟），与日期无关，不得混淆。
+- description(简介)、setting(背景)、intro(开场)必须是「冷开场」：以平静、日常、生活化的语气呈现一个看似普通的表层情境，只交代时代、地点、调查员为何到场；读者和玩家从这三处看不出剧情走向、案件性质、幕后真相或神话存在，也读不到任何恐怖、惊悚、诡异、压抑、不祥的氛围。恐怖是玩家在调查中逐步自行发现的，不能在开场剧透或提前渲染。setting须在文本中嵌入具体的开局年月日（如"1923年10月15日"，模型按剧本自行选择合理日期，不得固定套用示例日期）；game_start_slot保留表示时刻的语义（0-47，每槽30分钟），与日期无关，不得混淆。
 - 恐怖内核、真相、神话本质只能写进system_prompt(KP独有)、scenes、clues、mythos_anchor；严禁泄露到description/setting/intro。
 - 避免政治话题
 - 以克苏鲁宇宙恐惧为基调（渺小感、理智侵蚀、不可知深渊）
@@ -315,7 +315,7 @@ submit.draft 必须包含以下字段：
     "tone_tags": ["必须等于diversity_constraints.tone_tags中的标签"],
     "horror_mode": "必须等于diversity_constraints.horror_mode（神话力量介入人类世界的主要机制）",
     "invest_focus": "必须等于diversity_constraints.invest_focus",
-    "intro": "入场位置（日常、平静语气）+ 最基本的到场目的性描述（一两句话交代调查员为何在此、当前表层任务或受邀事由，让玩家明确当前目标；不涉及真相、不渲染恐怖）+ 至少3个立即可执行的具体行动；用自然叙述带出行动选项，禁止①②③等编号列表；不预告危险、不渲染恐怖、不暗示真相",
+    "intro": "入场位置（日常、平静语气）+ 最基本的到场目的性描述（一两句话交代调查员为何在此、当前表层任务或受邀事由；不涉及真相、不渲染恐怖）；不列出、不推荐、不暗示任何具体行动或下一步，行动入口留给玩家自行探索；禁止①②③等编号列表；不预告危险、不渲染恐怖、不暗示真相",
     "game_start_slot": 16,
     "map_description": "文字地图；体现可回访、可交叉验证的调查网络",
     "mythos_anchor": "translate_anchor确认的COC7元素全称",
@@ -1167,7 +1167,7 @@ func logicReviewSystemPrompt() string {
 5. 神话锚点必要性：mythos_anchor/cosmic_law是否是event_chain中至少一个环节的必要条件（去掉它事件链断裂）？
 6. 洛氏恐怖强度：剧本是否体现了认知冲击、尺度错位、不可逆代价中的至少两项？而非仅靠血腥或惊吓桥段？
 7. 胜负条件因果：win_condition/lose_condition是否从event_chain的不同终止状态逻辑推出？
-8. Intro目的性：intro是否清楚交代了调查员到场的基本理由/表层任务目标，让玩家明确当前该做什么（而不只是罗列行动、缺少来由交代）？
+8. Intro目的性：intro是否清楚交代了调查员到场的基本理由/表层任务，让玩家知道自己为何在此，且不列出、不推荐任何具体行动或下一步（行动留给玩家自行探索）？
 </checklist>
 <output>只输出JSON对象：{"issues":["问题1","问题2"]}；每条问题指明具体字段和可操作的修改方向；按严重程度排序，最多8条；没有问题输出{"issues":[]}。</output>`
 }
@@ -1312,7 +1312,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		log.Printf("[scripter:normalize] session=%s filled setting", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.Intro) == "" {
-		draft.Content.Intro = "你们抵达此地。可以先四处走走熟悉环境，与在场的人搭上几句话，或者安顿下来处理手头的事。"
+		draft.Content.Intro = "你们按各自的缘由抵达此地，眼前一切安静而寻常。"
 		log.Printf("[scripter:normalize] session=%s filled intro", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.MapDescription) == "" {
