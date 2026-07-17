@@ -286,7 +286,7 @@
                         <p class="text-[11px] text-amber-900 mt-1 font-ui">一两句话描述核心剧情或特殊要求。
                         </p>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
                         <div>
                             <label class="block text-xs text-amber-700 mb-1 font-ui">最小玩家数</label>
                             <input x-model.number="scenarioGenForm.min_players" type="number" min="1"
@@ -311,10 +311,20 @@
                                 影响线索密度、危机强度与生存压力。
                             </p>
                         </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">生成数量</label>
+                            <input x-model.number="scenarioGenForm.count" type="number" min="1" max="10"
+                                placeholder="1" class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1 font-ui">批量生成多个模组（1-10），复用同一套参数，后台按顺序逐个生成。
+                            </p>
+                        </div>
                     </div>
                     <button @click="generateScenarioByAgents()" class="btn btn-amber" :disabled="scenarioGenRunning || loading">
-                        <span x-show="!scenarioGenRunning">生成并入库</span>
-                        <span x-show="scenarioGenRunning">生成中…</span>
+                        <span x-show="!scenarioGenRunning" x-text="(scenarioGenForm.count > 1 ? ('批量生成 ' + scenarioGenForm.count + ' 个并入库') : '生成并入库')"></span>
+                        <span x-show="scenarioGenRunning">
+                            <span x-show="!scenarioGenBatchStatus || scenarioGenBatchStatus.total <= 1">生成中…</span>
+                            <span x-show="scenarioGenBatchStatus && scenarioGenBatchStatus.total > 1" x-text="'生成中…（第 ' + scenarioGenBatchStatus.current + '/' + scenarioGenBatchStatus.total + ' 个）'"></span>
+                        </span>
                     </button>
                     <div x-show="scenarioGenRunning || scenarioGenLogs.length" class="mt-3">
                         <div class="flex items-center gap-2 mb-1">

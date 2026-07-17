@@ -422,7 +422,8 @@ window.COC.admin = {
                     },
 
                     // NOTE: AI 模组生成已改为 SSE 流式请求：后端实时推送阶段进度与 LLM 交互摘要，
-                    // 客户端断开不影响后台生成与入库。
+                    // 客户端断开不影响后台生成与入库。支持 count>1 批量生成，后端串行跑完每个子任务
+                    // 并通过 batch_progress/batch_done 事件承载整体进度与汇总结果。
                     async generateScenarioByAgents() {
                         const minPlayers = Number(this.scenarioGenForm.min_players || 1);
                         const maxPlayers = Number(this.scenarioGenForm.max_players || 4);
@@ -430,10 +431,12 @@ window.COC.admin = {
                             this.showToast('最大玩家数不能小于最小玩家数', 'error');
                             return;
                         }
+                        const count = Number(this.scenarioGenForm.count || 1);
                         if (this.scenarioGenRunning) return;
 
                         this.scenarioGenRunning = true;
                         this.scenarioGenLogs = [];
+                        this.scenarioGenBatchStatus = null;
                         const pushLog = (line) => {
                             const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
                             this.scenarioGenLogs.push('[' + time + '] ' + line);
@@ -460,6 +463,7 @@ window.COC.admin = {
                                     min_players: minPlayers,
                                     max_players: maxPlayers,
                                     difficulty: this.scenarioGenForm.difficulty || 'normal',
+                                    count: count,
                                 }),
                             });
 
@@ -472,8 +476,7 @@ window.COC.admin = {
                             const decoder = new TextDecoder();
                             let buf = '';
                             let currentEvent = '';
-                            let doneInfo = null;
-                            let errorMsg = '';
+                            let batchDone = null;
 
                             while (true) {
                                 const { done, value } = await reader.read();
@@ -498,11 +501,33 @@ window.COC.admin = {
                                                     pushLog(data);
                                                 }
                                                 break;
+                                            case 'batch_progress':
+                                                try {
+                                                    const info = JSON.parse(data);
+                                                    this.scenarioGenBatchStatus = Object.assign(
+                                                        { current: 0, total: 0, results: [] },
+                                                        this.scenarioGenBatchStatus,
+                                                        { current: info.current, total: info.total }
+                                                    );
+                                                    pushLog('📦 开始生成第 ' + info.current + '/' + info.total + ' 个模组…');
+                                                } catch (_) { /* ignore malformed batch_progress */ }
+                                                break;
                                             case 'done':
-                                                try { doneInfo = JSON.parse(data); } catch (_) { doneInfo = {}; }
+                                                try {
+                                                    const info = JSON.parse(data);
+                                                    pushLog('✅ 第 ' + (info.index || 1) + ' 个生成完成：《' + (info.name || '未命名') + '》，已入库');
+                                                } catch (_) { /* ignore malformed done payload */ }
                                                 break;
                                             case 'error':
-                                                errorMsg = data || '生成失败';
+                                                try {
+                                                    const info = JSON.parse(data);
+                                                    pushLog('❌ 第 ' + (info.index || 1) + ' 个生成失败：' + (info.message || '生成失败'));
+                                                } catch (_) {
+                                                    pushLog('❌ ' + (data || '生成失败'));
+                                                }
+                                                break;
+                                            case 'batch_done':
+                                                try { batchDone = JSON.parse(data); } catch (_) { batchDone = null; }
                                                 break;
                                         }
                                     } else if (line === '') {
@@ -511,15 +536,25 @@ window.COC.admin = {
                                 }
                             }
 
-                            if (errorMsg) {
-                                pushLog('❌ ' + errorMsg);
-                                this.showToast(errorMsg, 'error');
-                            } else if (doneInfo) {
-                                pushLog('✅ 生成完成：《' + (doneInfo.name || '未命名') + '》，已入库');
-                                this.showToast('AI 模组生成并入库成功');
-                                await Promise.all([this.loadScenarios(), this.loadAdminScenarios(1)]);
+                            if (batchDone) {
+                                this.scenarioGenBatchStatus = batchDone;
+                                if (batchDone.total > 1) {
+                                    pushLog('🏁 批量生成完成：成功 ' + batchDone.succeeded + ' 个，失败 ' + batchDone.failed + ' 个');
+                                    if (batchDone.failed > 0) {
+                                        this.showToast('批量生成完成：成功 ' + batchDone.succeeded + ' 个，失败 ' + batchDone.failed + ' 个', 'error');
+                                    } else {
+                                        this.showToast('批量生成完成：成功 ' + batchDone.succeeded + ' 个');
+                                    }
+                                } else if (batchDone.succeeded > 0) {
+                                    this.showToast('AI 模组生成并入库成功');
+                                } else {
+                                    this.showToast((batchDone.results && batchDone.results[0] && batchDone.results[0].error) || '生成失败', 'error');
+                                }
+                                if (batchDone.succeeded > 0) {
+                                    await Promise.all([this.loadScenarios(), this.loadAdminScenarios(1)]);
+                                }
                             } else {
-                                // NOTE: 流在未收到 done/error 时断开：后台仍在生成，提示稍后刷新列表。
+                                // NOTE: 流在未收到 batch_done 时断开：后台仍在生成，提示稍后刷新列表。
                                 pushLog('⚠️ 连接中断，生成仍在后台继续，稍后请刷新模组列表');
                                 this.showToast('连接中断，生成仍在后台继续', 'error');
                             }

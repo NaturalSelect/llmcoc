@@ -96,6 +96,19 @@ type GenerateScenarioReq struct {
 	Difficulty   string `json:"difficulty"`
 	MinPlayers   int    `json:"min_players"`
 	MaxPlayers   int    `json:"max_players"`
+	// Count 为批量生成数量，留空或 <=1 视为单个生成，上限 maxScenarioGenCount。
+	Count int `json:"count"`
+}
+
+// maxScenarioGenCount 是单次批量生成的数量上限；生成受全局串行锁限制，数量过大会导致单次请求长时间占用生成槽位。
+const maxScenarioGenCount = 10
+
+// scenarioBatchResult 记录批量生成中单个子任务的结果，用于 batch_done 汇总事件。
+type scenarioBatchResult struct {
+	Index      int    `json:"index"`
+	ScenarioID uint   `json:"scenario_id,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 type importScenarioFile struct {
@@ -163,12 +176,21 @@ type scenarioGenEvent struct {
 	data any
 }
 
-// GenerateScenarioByAgents 以 SSE 流式方式运行 AI 模组生成流水线。
+// GenerateScenarioByAgents 以 SSE 流式方式运行 AI 模组生成流水线，支持通过 count 批量生成。
 // 生成在服务端后台完整执行并落库；即使客户端中途断开连接，结果仍会写入模组列表。
 func GenerateScenarioByAgents(c *gin.Context) {
 	var req GenerateScenarioReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	count := req.Count
+	if count <= 0 {
+		count = 1
+	}
+	if count > maxScenarioGenCount {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("生成数量不能超过 %d", maxScenarioGenCount)})
 		return
 	}
 
@@ -182,70 +204,102 @@ func GenerateScenarioByAgents(c *gin.Context) {
 		progress := func(stage, status, detail string) {
 			events <- scenarioGenEvent{name: "progress", data: gin.H{"stage": stage, "status": status, "detail": detail}}
 		}
-		progress("queued", "start", "请求已受理，等待生成槽位（全局同时仅运行一路生成任务）")
 
-		gen, err := agent.RunScripterScenarioTeamWithProgress(context.Background(), agent.ScenarioCreationRequest{
-			Name:         req.Name,
-			Theme:        req.Theme,
-			Era:          req.Era,
-			Brief:        req.Brief,
-			TargetLength: req.TargetLength,
-			Difficulty:   req.Difficulty,
-			MinPlayers:   req.MinPlayers,
-			MaxPlayers:   req.MaxPlayers,
-			Salt:         RandomSalt(),
-		}, progress)
-		if err != nil {
-			log.Printf("[agent] scenario generation failed: %v", err)
-			events <- scenarioGenEvent{name: "error", data: "模组生成失败: " + err.Error()}
-			return
+		results := make([]scenarioBatchResult, 0, count)
+		for i := 0; i < count; i++ {
+			index := i + 1
+			events <- scenarioGenEvent{name: "batch_progress", data: gin.H{"current": index, "total": count}}
+			progress("queued", "start", "请求已受理，等待生成槽位（全局同时仅运行一路生成任务）")
+
+			name := req.Name
+			if name != "" && index > 1 {
+				name = fmt.Sprintf("%s-%d", name, index)
+			}
+
+			gen, err := agent.RunScripterScenarioTeamWithProgress(context.Background(), agent.ScenarioCreationRequest{
+				Name:         name,
+				Theme:        req.Theme,
+				Era:          req.Era,
+				Brief:        req.Brief,
+				TargetLength: req.TargetLength,
+				Difficulty:   req.Difficulty,
+				MinPlayers:   req.MinPlayers,
+				MaxPlayers:   req.MaxPlayers,
+				Salt:         RandomSalt(),
+			}, progress)
+			if err != nil {
+				log.Printf("[agent] scenario generation failed (index=%d/%d): %v", index, count, err)
+				msg := "模组生成失败: " + err.Error()
+				events <- scenarioGenEvent{name: "error", data: gin.H{"index": index, "message": msg}}
+				results = append(results, scenarioBatchResult{Index: index, Error: msg})
+				continue
+			}
+
+			if gen.Draft.Name == "" {
+				gen.Draft.Name = "AI模组-" + time.Now().Format("20060102150405")
+				if index > 1 {
+					gen.Draft.Name = fmt.Sprintf("%s-%d", gen.Draft.Name, index)
+				}
+			}
+
+			scenario := models.Scenario{
+				Name:        gen.Draft.Name,
+				Description: gen.Draft.Description,
+				Author:      gen.Draft.Author,
+				Tags:        gen.Draft.Tags,
+				MinPlayers:  gen.Draft.MinPlayers,
+				MaxPlayers:  gen.Draft.MaxPlayers,
+				Difficulty:  gen.Draft.Difficulty,
+				Content:     models.JSONField[models.ScenarioContent]{Data: gen.Draft.Content},
+				IsActive:    true,
+			}
+
+			if scenario.MinPlayers == 0 {
+				scenario.MinPlayers = 1
+			}
+			if scenario.MaxPlayers == 0 {
+				scenario.MaxPlayers = 4
+			}
+			if scenario.Difficulty == "" {
+				scenario.Difficulty = "normal"
+			}
+
+			if err := models.DB.Create(&scenario).Error; err != nil {
+				log.Printf("[agent] failed to save generated scenario to DB: %v", err)
+				msg := "模组入库失败，请联系管理员查看服务端日志"
+				events <- scenarioGenEvent{name: "error", data: gin.H{"index": index, "message": msg}}
+				results = append(results, scenarioBatchResult{Index: index, Error: msg})
+				continue
+			}
+
+			generationLog := models.ScenarioGenerationLog{
+				ScenarioID:   scenario.ID,
+				ScenarioName: scenario.Name,
+				LogText:      strings.TrimSpace(gen.GenerationLog),
+			}
+			if generationLog.LogText == "" {
+				generationLog.LogText = "本次 AI 生成未捕获到 LLM 对话记录。"
+			}
+			if err := models.DB.Create(&generationLog).Error; err != nil {
+				log.Printf("[agent] failed to save scenario generation log scenario_id=%d: %v", scenario.ID, err)
+			}
+
+			events <- scenarioGenEvent{name: "done", data: gin.H{"index": index, "scenario_id": scenario.ID, "name": scenario.Name}}
+			results = append(results, scenarioBatchResult{Index: index, ScenarioID: scenario.ID, Name: scenario.Name})
 		}
 
-		if gen.Draft.Name == "" {
-			gen.Draft.Name = "AI模组-" + time.Now().Format("20060102150405")
+		succeeded := 0
+		for _, r := range results {
+			if r.Error == "" {
+				succeeded++
+			}
 		}
-
-		scenario := models.Scenario{
-			Name:        gen.Draft.Name,
-			Description: gen.Draft.Description,
-			Author:      gen.Draft.Author,
-			Tags:        gen.Draft.Tags,
-			MinPlayers:  gen.Draft.MinPlayers,
-			MaxPlayers:  gen.Draft.MaxPlayers,
-			Difficulty:  gen.Draft.Difficulty,
-			Content:     models.JSONField[models.ScenarioContent]{Data: gen.Draft.Content},
-			IsActive:    true,
-		}
-
-		if scenario.MinPlayers == 0 {
-			scenario.MinPlayers = 1
-		}
-		if scenario.MaxPlayers == 0 {
-			scenario.MaxPlayers = 4
-		}
-		if scenario.Difficulty == "" {
-			scenario.Difficulty = "normal"
-		}
-
-		if err := models.DB.Create(&scenario).Error; err != nil {
-			log.Printf("[agent] failed to save generated scenario to DB: %v", err)
-			events <- scenarioGenEvent{name: "error", data: "模组入库失败，请联系管理员查看服务端日志"}
-			return
-		}
-
-		generationLog := models.ScenarioGenerationLog{
-			ScenarioID:   scenario.ID,
-			ScenarioName: scenario.Name,
-			LogText:      strings.TrimSpace(gen.GenerationLog),
-		}
-		if generationLog.LogText == "" {
-			generationLog.LogText = "本次 AI 生成未捕获到 LLM 对话记录。"
-		}
-		if err := models.DB.Create(&generationLog).Error; err != nil {
-			log.Printf("[agent] failed to save scenario generation log scenario_id=%d: %v", scenario.ID, err)
-		}
-
-		events <- scenarioGenEvent{name: "done", data: gin.H{"scenario_id": scenario.ID, "name": scenario.Name}}
+		events <- scenarioGenEvent{name: "batch_done", data: gin.H{
+			"total":     count,
+			"succeeded": succeeded,
+			"failed":    count - succeeded,
+			"results":   results,
+		}}
 	}()
 
 	// NOTE: 客户端断开后继续排空事件通道直到生成结束，保证后台生成与落库完整执行。

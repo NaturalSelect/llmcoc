@@ -122,10 +122,12 @@ window.COC.core = function() {
                     viewingScenario: null,
                     scenarioGenerationLog: null,
                     scenarioGenerationLogLoading: false,
-                    scenarioGenForm: { name: '', theme: '', era: '', brief: '', target_length: 'short', min_players: 1, max_players: 4, difficulty: 'normal' },
-                    // NOTE: AI 模组生成的 SSE 流式状态：running 表示流式请求进行中，logs 为实时进度日志
+                    scenarioGenForm: { name: '', theme: '', era: '', brief: '', target_length: 'short', min_players: 1, max_players: 4, difficulty: 'normal', count: 1 },
+                    // NOTE: AI 模组生成的 SSE 流式状态：running 表示流式请求进行中，logs 为实时进度日志，
+                    // batchStatus 记录批量生成的整体进度与每个子任务结果（current/total/succeeded/failed/results）
                     scenarioGenRunning: false,
                     scenarioGenLogs: [],
+                    scenarioGenBatchStatus: null,
                     rechargeForm: { user_id: '', amount: 100, note: '' },
                     providerForm: { name: '', provider: 'openai', base_url: '', api_key: '', is_active: true },
                     editingProvider: null,
