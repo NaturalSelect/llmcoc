@@ -48,6 +48,8 @@
                                     <button @click="toggleBan(u)"
                                         :class="u.is_banned ? 'text-green-700 hover:text-green-400' : 'text-red-900 hover:text-red-500'"
                                         class="transition" x-text="u.is_banned ? '解封' : '封号'"></button>
+                                    <button @click="openAdminInventory(u)"
+                                        class="text-amber-800 hover:text-amber-500 transition">背包</button>
                                 </div>
                             </div>
                         </template>

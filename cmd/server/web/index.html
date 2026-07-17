@@ -1715,6 +1715,51 @@
             </div>
         </div>
 
+        <!-- Admin: add inventory item to a specified player's character card -->
+        <div x-show="modal === 'adminInventory'" class="backdrop" @click.self="modal=null">
+            <div class="modal max-w-md p-6">
+                <div class="flex justify-between items-center mb-5">
+                    <h2 class="text-lg font-bold text-amber-100">
+                        为 <span class="text-amber-300" x-text="adminInventoryTarget?.username || ''"></span> 的角色卡添加物品
+                    </h2>
+                    <button @click="modal=null"
+                        class="text-amber-800 hover:text-amber-400 text-xl leading-none">✕</button>
+                </div>
+                <div class="space-y-3">
+                    <div x-show="adminInventoryLoading && !adminInventoryCards.length" class="text-xs text-amber-800 font-ui">加载角色卡中…</div>
+                    <p x-show="!adminInventoryLoading && !adminInventoryCards.length" class="text-xs text-amber-800 font-ui">该用户暂无角色卡。</p>
+                    <div x-show="adminInventoryCards.length">
+                        <label class="block text-xs text-amber-700 mb-1 font-ui">选择角色卡</label>
+                        <select class="inp" @change="selectAdminInventoryCard(adminInventoryCards.find(c => c.id === Number($event.target.value)) || null)">
+                            <option value="">— 请选择 —</option>
+                            <template x-for="c in adminInventoryCards" :key="c.id">
+                                <option :value="c.id" x-text="c.name + (c.occupation ? '（' + c.occupation + '）' : '')"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div x-show="adminInventorySelectedCard">
+                        <label class="block text-xs text-amber-700 mb-1 font-ui">当前背包</label>
+                        <div x-show="(adminInventorySelectedCard?.inventory||[]).length" class="flex flex-wrap gap-1.5">
+                            <template x-for="(item, idx) in (adminInventorySelectedCard?.inventory||[])" :key="idx">
+                                <span class="inline-flex items-center text-xs bg-amber-950/20 text-amber-300 px-2 py-1 rounded font-ui" x-text="item"></span>
+                            </template>
+                        </div>
+                        <p x-show="!(adminInventorySelectedCard?.inventory||[]).length" class="text-xs text-amber-800 font-ui">—（空）</p>
+                    </div>
+                    <div x-show="adminInventorySelectedCard">
+                        <label class="block text-xs text-amber-700 mb-1 font-ui">新增物品</label>
+                        <input x-model="adminInventoryInput" @keydown.enter="submitAdminInventoryItem()"
+                            placeholder="例如：绷带(x3) 或 左轮手枪(.38, x1)" class="inp" />
+                        <p class="text-[11px] text-amber-900 mt-1 font-ui">可按「名称(描述, x数量)」约定填写；整串会作为一件物品写入背包。</p>
+                    </div>
+                    <div class="flex gap-2 pt-1">
+                        <button @click="modal=null" class="btn btn-ghost flex-1">关闭</button>
+                        <button @click="submitAdminInventoryItem()" :disabled="adminInventoryLoading || !adminInventorySelectedCard" class="btn btn-amber flex-1">添加物品</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Confirm dialog modal（替代原生 confirm） -->
         <div x-show="modal === 'confirm'" class="backdrop" style="z-index:60" @click.self="resolveConfirm(false)">
             <div class="modal max-w-sm p-6" @keydown.enter.window="resolveConfirm(true)" @keydown.escape.window="resolveConfirm(false)">

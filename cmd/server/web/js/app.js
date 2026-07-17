@@ -102,6 +102,12 @@ window.COC.core = function() {
                     adminHTML: '',
                     adminLoaded: false,
                     adminUsers: [],
+                    // 管理员为指定玩家角色卡添加物品的弹窗状态
+                    adminInventoryTarget: null,       // { user_id, username } — 当前操作的目标用户
+                    adminInventoryCards: [],          // 目标用户的角色卡列表
+                    adminInventorySelectedCard: null, // 选中的角色卡对象（含 inventory）
+                    adminInventoryInput: '',          // 物品输入框内容
+                    adminInventoryLoading: false,     // 加载/提交中状态
                     adminProviders: [],
                     adminAgents: [],
                     adminScenarios: [],

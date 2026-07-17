@@ -545,6 +545,9 @@ func AddCharacterInventoryItem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存物品栏失败"})
 		return
 	}
+	if card.UserID != userID {
+		log.Printf("[admin] add_inventory admin_id=%d target_user=%d card_id=%d item=%q", userID, card.UserID, card.ID, item)
+	}
 	c.JSON(http.StatusOK, card)
 }
 

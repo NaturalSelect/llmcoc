@@ -203,6 +203,50 @@ window.COC.admin = {
                         }
                     },
 
+                    // 打开"为指定玩家角色卡添加物品"弹窗，并加载该用户的角色卡列表。
+                    async openAdminInventory(u) {
+                        this.adminInventoryTarget = { user_id: u.id, username: u.username };
+                        this.adminInventoryCards = [];
+                        this.adminInventorySelectedCard = null;
+                        this.adminInventoryInput = '';
+                        this.modal = 'adminInventory';
+                        await this.loadAdminUserCards(u.id);
+                    },
+
+                    async loadAdminUserCards(userId) {
+                        this.adminInventoryLoading = true;
+                        try {
+                            this.adminInventoryCards = (await this.api('GET', '/api/admin/users/' + userId + '/characters')) || [];
+                        } catch (e) {
+                            this.showToast(e.message, 'error');
+                            this.adminInventoryCards = [];
+                        }
+                        this.adminInventoryLoading = false;
+                    },
+
+                    selectAdminInventoryCard(card) {
+                        this.adminInventorySelectedCard = card;
+                        this.adminInventoryInput = '';
+                    },
+
+                    async submitAdminInventoryItem() {
+                        const card = this.adminInventorySelectedCard;
+                        if (!card) { this.showToast('请先选择角色卡', 'error'); return; }
+                        const item = (this.adminInventoryInput || '').trim();
+                        if (!item) { this.showToast('物品名不能为空', 'error'); return; }
+                        this.adminInventoryLoading = true;
+                        try {
+                            const updated = await this.api('POST', '/api/characters/' + card.id + '/inventory', { item });
+                            // 用返回的最新卡片数据替换选中卡与列表中的对应项，刷新背包预览
+                            this.adminInventorySelectedCard = updated;
+                            const idx = this.adminInventoryCards.findIndex(c => c.id === updated.id);
+                            if (idx >= 0) this.adminInventoryCards[idx] = updated;
+                            this.adminInventoryInput = '';
+                            this.showToast('物品已添加');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                        this.adminInventoryLoading = false;
+                    },
+
                     openCreateProvider() {
                         this.editingProvider = null;
                         this.providerForm = { name: '', provider: 'openai', base_url: '', api_key: '', is_active: true };

@@ -145,6 +145,26 @@ func AdminListUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
+// AdminListUserCharacters 返回指定用户名下所有仍激活的角色卡，供管理员在后台选卡后操作（如添加物品）。
+func AdminListUserCharacters(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var user models.User
+	if err := models.DB.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	var cards []models.CharacterCard
+	models.DB.Where("user_id = ? AND is_active = ?", id, true).
+		Order("created_at DESC").
+		Find(&cards)
+	for i := range cards {
+		hotFixChar(&cards[i])
+	}
+	c.JSON(http.StatusOK, cards)
+}
+
 // NOTE: AdminRechargeCoins handles POST /admin/recharge.
 // Allows administrators to add coins to a user's account manually.
 func AdminRechargeCoins(c *gin.Context) {

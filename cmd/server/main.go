@@ -244,6 +244,7 @@ func main() {
 	admin := api.Group("/admin", middleware.AuthRequired(), middleware.AdminRequired())
 	{
 		admin.GET("/users", handlers.AdminListUsers)
+		admin.GET("/users/:id/characters", handlers.AdminListUserCharacters)
 		admin.GET("/scenarios", handlers.AdminListScenarios)
 		admin.GET("/scenarios/:id/generation-log", handlers.AdminGetScenarioGenerationLog)
 		admin.POST("/recharge", handlers.AdminRechargeCoins)
