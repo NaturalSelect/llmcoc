@@ -173,7 +173,7 @@ window.COC.core = function() {
                         if (this.token) {
                             try {
                                 await this.loadMe();
-                                await Promise.all([this.loadCharacters(), this.loadDeadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
+                                await Promise.all([this.loadCharacters(), this.loadDeadCharacters(), this.loadSessions()]);
                                 this.goTo('dashboard');
                             } catch {
                                 this.token = '';
@@ -190,7 +190,7 @@ window.COC.core = function() {
                         try {
                             const r = await this.api('POST', '/api/auth/login', this.loginForm);
                             this.setToken(r.token); this.user = r.user;
-                            await Promise.all([this.loadCharacters(), this.loadDeadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
+                            await Promise.all([this.loadCharacters(), this.loadDeadCharacters(), this.loadSessions()]);
                             this.goTo('dashboard');
                         } catch (e) { this.authError = e.message; }
                         this.loading = false;
@@ -201,7 +201,7 @@ window.COC.core = function() {
                         try {
                             const r = await this.api('POST', '/api/auth/register', this.regForm);
                             this.setToken(r.token); this.user = r.user;
-                            await Promise.all([this.loadCharacters(), this.loadDeadCharacters(), this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
+                            await Promise.all([this.loadCharacters(), this.loadDeadCharacters(), this.loadSessions()]);
                             this.goTo('dashboard');
                         } catch (e) { this.authError = e.message; }
                         this.loading = false;
@@ -233,7 +233,6 @@ window.COC.core = function() {
                         this.page = p;
                         if (p === 'sessions') {
                             this.loadSessions().catch(e => this.showToast(e.message, 'error'));
-                            this.loadMyHistory().catch(e => this.showToast(e.message, 'error'));
                         }
                         if (p === 'shop') this.loadShop().catch(e => this.showToast(e.message, 'error'));
                         if (p === 'admin') {

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/config"
 	"github.com/llmcoc/server/internal/handlers"
@@ -157,6 +158,15 @@ func main() {
 		AllowCredentials: false,
 	}))
 
+	// Gzip 压缩前端静态资源与常规 API 响应。
+	// NOTE: 必须排除 SSE 流式接口（聊天、模组生成），否则 gzip 缓冲会破坏逐段推流。
+	// gin-contrib/gzip 本身也会在请求 Accept 含 text/event-stream 时跳过，但前端 fetch 未显式带该头，
+	// 故这里用路径正则显式排除，双保险。
+	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPathsRegexs([]string{
+		`^/api/sessions/[^/]+/chat$`,
+		`^/api/scenarios/generate$`,
+	})))
+
 	// ─── API routes ───────────────────────────────────────────────────────────
 	api := r.Group("/api")
 	api.GET("/images/:hash", handlers.ServeImage)
@@ -287,6 +297,8 @@ func main() {
 		// Serve index.html for SPA routes, static files otherwise
 		path := c.Request.URL.Path
 		if path == "/" || path == "" {
+			// index.html 是 SPA 入口，禁止长缓存，避免用户长期停留在旧版本
+			c.Header("Cache-Control", "no-cache")
 			data, _ := fs.ReadFile(sub, "index.html")
 			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 			return
@@ -295,11 +307,14 @@ func main() {
 		file, err := sub.Open(path[1:]) // strip leading /
 		if err != nil {
 			// SPA fallback
+			c.Header("Cache-Control", "no-cache")
 			data, _ := fs.ReadFile(sub, "index.html")
 			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 			return
 		}
 		file.Close()
+		// 静态资源（JS/CSS 等）短期缓存，减少更新后用户看到旧版本的时间窗口
+		c.Header("Cache-Control", "public, max-age=3600")
 		c.FileFromFS(path[1:], http.FS(sub))
 	})
 

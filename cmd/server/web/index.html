@@ -5,8 +5,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LLM-COC</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- NOTE: Tailwind/Alpine 原为外部 CDN，部分网络环境下访问缓慢（jsdelivr.net、cdn.tailwindcss.com 实测数秒），
+         改为本地内嵌（见 ./js/vendor/），版本与来源见各文件头注释 -->
+    <script src="./js/vendor/tailwind-play-3.4.17.js"></script>
     <link rel="stylesheet" href="./css/style.css" />
 </head>
 
@@ -1781,18 +1782,16 @@
         <div class="toast-container" x-show="toast.show" x-transition>
             <div class="toast" :class="'toast-' + toast.type" x-text="toast.message"></div>
         </div>
-        <script src="./js/app.js"></script>
-        <script src="./js/dashboard.js"></script>
-        <script src="./js/sessions.js"></script>
-        <script src="./js/game.js"></script>
-        <script src="./js/shop.js"></script>
-        <script src="./js/admin.js"></script>
-        <script>
-            function app() {
-                var core = COC.core();
-                return Object.assign(core, COC.dashboard, COC.sessions, COC.game, COC.shop, COC.admin);
-            }
-        </script>
+        <!-- NOTE: 以下均使用 defer，按文档顺序依次执行；Alpine 必须放在最后，
+             确保 COC.* 和 app() 就绪后才会被 Alpine 求值（x-data="app()"） -->
+        <script defer src="./js/app.js"></script>
+        <script defer src="./js/dashboard.js"></script>
+        <script defer src="./js/sessions.js"></script>
+        <script defer src="./js/game.js"></script>
+        <script defer src="./js/shop.js"></script>
+        <script defer src="./js/admin.js"></script>
+        <script defer src="./js/init.js"></script>
+        <script defer src="./js/vendor/alpine-3.15.12.min.js"></script>
 
 </body>
 
