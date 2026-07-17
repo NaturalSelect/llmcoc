@@ -53,7 +53,7 @@ var oneshotResultExample = OneshotResult{
 	Name:          "示例模组",
 	Description:   "一座宁静小镇的老图书馆正在整理一批新到的捐赠藏书，馆方邀请你们前来协助编目。一次寻常的委托，一段关于旧书与小镇的日子就此开始。",
 	Author:        "agent-team",
-	Tags:          "sandbox,coc",
+	Tags:          "食尸鬼,身后遗物,墓地图书馆",
 	MinPlayers:    1,
 	MaxPlayers:    4,
 	Difficulty:    "normal",
@@ -305,7 +305,7 @@ submit.draft 必须包含以下字段：
   "name": "剧本名称：取材于剧本内具体名词（地名/物件/日期/一句当地话），像人类作者起的名字；不用滥用恐怖词",
   "description": "剧本简介：中性、不剧透的吸引性简介；读者从中看不出剧情、真相、案件或恐怖走向，也不带惊悚氛围",
   "author": "agent-team",
-  "tags": "sandbox,coc",
+  "tags": "2-3个逗号分隔的标签，须具体指向本剧本独有的核心叙事装置/桥段（如「食尸鬼夺书」「墓地图书馆」），不用抽象风格词（如恐怖/悬疑/克苏鲁/sandbox/coc）；不得与<recent_scenario_tags_blacklist>中的标签重复",
   "min_players": 1,
   "max_players": 4,
   "difficulty": "normal",
@@ -982,6 +982,10 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 </recently_used_mythos_anchors>
 <recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
 <scenario_title_blacklist>%s</scenario_title_blacklist>
+<recent_scenario_tags_blacklist>
+%s
+</recent_scenario_tags_blacklist>
+以上为近期模组已用过的核心叙事标签：本次submit.draft.tags不得与其重复，须另选能体现本剧本独有桥段的具体标签。
 <length_spec>
 %s
 </length_spec>
@@ -995,6 +999,7 @@ func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints S
 		formatMythosBlacklist(room.mythosBlacklist),
 		formatNPCNameBlacklist(room.npcBlacklist),
 		formatScenarioTitleBlacklist(room.titleSamples),
+		formatScenarioTagsBlacklist(room.tagsBlacklist),
 		lengthSpec(room.req.TargetLength)+"\n线索会被直接展示给玩家, 但类型前缀(真实/隐藏/误导)会被隐藏；因此[误导]线索在表面上必须与[真实]线索无法区分——它必须是真实可验证的观察，误导力来自支持错误结论，而非靠编造或怪异感蒙混。",
 		difficultySpec(room.req.Difficulty),
 	)
@@ -1033,14 +1038,18 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 %s
 %s
 <previous_draft>%s</previous_draft>
+<recent_scenario_tags_blacklist>
+%s
+</recent_scenario_tags_blacklist>
 <must_fix>
 %s
 </must_fix>
-请修复上述问题并重新调用translate_anchor验证神话元素，然后通过submit提交修复后的完整剧本JSON。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags。修复阶段无需重新submit_skeleton，可直接submit。`,
+请修复上述问题并重新调用translate_anchor验证神话元素，然后通过submit提交修复后的完整剧本JSON。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。修复阶段无需重新submit_skeleton，可直接submit。`,
 		string(reqJSON), string(constraintsJSON),
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints),
 		string(prevJSON),
+		formatScenarioTagsBlacklist(room.tagsBlacklist),
 		strings.Join(issues, "\n"),
 	)
 

@@ -196,6 +196,7 @@ type scripterRoom struct {
 	npcBlacklist    []string
 	titleSamples    []string
 	mythosBlacklist []string
+	tagsBlacklist   []string
 	generationLog   *scripterGenerationLog
 	progressFn      ScripterProgressFunc
 }
@@ -309,8 +310,9 @@ func (r *scripterRoom) prepareContext() {
 	r.npcBlacklist = loadRecentNPCNameBlacklist(200, r.sessionID)
 	r.titleSamples = loadScenarioTitleSamples(80, r.sessionID)
 	r.mythosBlacklist = loadRecentMythosAnchors(100, r.sessionID)
-	log.Printf("[scripter] session=%s context prepared npc_blacklist=%d title_samples=%d mythos_blacklist=%d",
-		r.sessionID, len(r.npcBlacklist), len(r.titleSamples), len(r.mythosBlacklist))
+	r.tagsBlacklist = loadRecentScenarioTags(60, r.sessionID)
+	log.Printf("[scripter] session=%s context prepared npc_blacklist=%d title_samples=%d mythos_blacklist=%d tags_blacklist=%d",
+		r.sessionID, len(r.npcBlacklist), len(r.titleSamples), len(r.mythosBlacklist), len(r.tagsBlacklist))
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +361,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	iterations := 1
 	for round := 1; round <= 2; round++ {
 		issues := validateDraftCompatibility(draft)
+		issues = append(issues, checkScenarioTagsOverlap(draft.Tags, r.tagsBlacklist)...)
 		if len(issues) == 0 {
 			break
 		}
@@ -637,7 +640,7 @@ func fallbackGeographyFlavor(req ScenarioCreationRequest) []string {
 
 // buildDiversityCandidates 返回剔除近N条已用组合后的候选围池；DB为空时返回全笛卡尔积。
 func buildDiversityCandidates(req ScenarioCreationRequest, sessionID string) []diversityCombo {
-	recent := loadRecentDiversityCombos(30, sessionID)
+	recent := loadRecentDiversityCombos(5, sessionID)
 	recentSet := map[string]bool{}
 	for _, combo := range recent {
 		key := diversityComboKey(combo.HorrorMode, combo.InvestFocus)
@@ -1060,6 +1063,24 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	}
 	if trimmed := strings.TrimSpace(content.SystemPrompt); trimmed != "" && !strings.Contains(trimmed, "真相") && !strings.Contains(trimmed, "内部") {
 		issues = append(issues, "content.system_prompt 未体现KP独有的内部真相，建议明确写出「内部真相」或类似表述")
+	}
+	return issues
+}
+
+// checkScenarioTagsOverlap 检查草稿标签是否与近期模组标签重复；命中视为结构问题，走既有修复循环。
+func checkScenarioTagsOverlap(draftTags string, blacklist []string) []string {
+	if len(blacklist) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(blacklist))
+	for _, tag := range blacklist {
+		seen[tag] = true
+	}
+	var issues []string
+	for _, tag := range splitScenarioTags(draftTags) {
+		if seen[tag] {
+			issues = append(issues, fmt.Sprintf("tags 中的「%s」与近期模组标签重复，请更换为更能体现本剧本独特叙事装置的具体标签", tag))
+		}
 	}
 	return issues
 }
@@ -1626,6 +1647,55 @@ func loadRecentMythosAnchors(limit int, sessionIDs ...string) []string {
 	return anchors
 }
 
+// loadRecentScenarioTags 收集近期模组的 Scenario.Tags 中的独立标签，用于叙事桥段级去重。
+func loadRecentScenarioTags(limit int, sessionIDs ...string) []string {
+	sessionID := ""
+	if len(sessionIDs) > 0 {
+		sessionID = sessionIDs[0]
+	}
+	if limit <= 0 || models.DB == nil {
+		return nil
+	}
+	var scenarios []models.Scenario
+	if err := models.DB.Order("created_at DESC").Limit(limit * 2).Find(&scenarios).Error; err != nil {
+		log.Printf("[scripter] session=%s load recent scenario tags failed: %v", sessionID, err)
+		return nil
+	}
+	seen := map[string]bool{}
+	tags := make([]string, 0, limit)
+	for i := range scenarios {
+		if err := scenarios[i].DecodeData(); err != nil {
+			continue
+		}
+		for _, tag := range splitScenarioTags(scenarios[i].Tags) {
+			if seen[tag] {
+				continue
+			}
+			seen[tag] = true
+			tags = append(tags, tag)
+			if len(tags) >= limit {
+				return tags
+			}
+		}
+	}
+	return tags
+}
+
+// splitScenarioTags 将逗号（含中文顿号/分号变体）分隔的标签字符串拆成独立标签。
+func splitScenarioTags(raw string) []string {
+	raw = strings.NewReplacer("，", ",", "、", ",", ";", ",", "；", ",").Replace(raw)
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // Format helpers
 // ---------------------------------------------------------------------------
@@ -1649,6 +1719,13 @@ func formatScenarioTitleBlacklist(names []string) string {
 		return "(无)"
 	}
 	return "- " + strings.Join(names, "\n- ")
+}
+
+func formatScenarioTagsBlacklist(tags []string) string {
+	if len(tags) == 0 {
+		return "(无)"
+	}
+	return "- " + strings.Join(tags, "\n- ")
 }
 
 func normalizeScenarioTitle(name string) string {
