@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/llmcoc/server/internal/config"
 	"gorm.io/driver/sqlite"
@@ -24,7 +25,14 @@ func InitDB() error {
 
 	var err error
 	DB, err = gorm.Open(sqlite.Open(dbPath+"?_journal_mode=WAL&_foreign_keys=on"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Warn),
+		// NOTE: 关闭 record not found 的日志噪音，轮询类接口（如 GetChatStatus）
+		// 用 First() 查询"是否已提交"是正常业务分支，不是需要告警的错误。
+		Logger: logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  true,
+		}),
 	})
 	if err != nil {
 		return err
