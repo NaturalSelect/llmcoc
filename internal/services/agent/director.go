@@ -650,7 +650,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 				userType = "admin"
 			}
 			isDebug := false
-			if userType == "debug" {
+			if userType == "admin" {
 				isDebug = true
 			}
 			userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s </%s>\n", tag, userType, a.PlayerName, isDebug, a.Content, tag))
