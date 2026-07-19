@@ -1242,7 +1242,71 @@ func enforceNPCBlacklist(draft *ScenarioDraft, npcBlacklist []string, sessionID 
 		newName := uniqueNPCReplacementName(name, i+1, blacklist, used)
 		draft.Content.NPCs[i].Name = newName
 		used[npcBlacklistKey(newName)] = true
+		renameNPCReferences(&draft.Content, name, newName)
 		log.Printf("[scripter:guardrails] session=%s npc name blacklisted from=%q to=%q", sessionID, name, newName)
+	}
+}
+
+// renameNPCReferences 把 NPC 改名后，同步替换草稿其余文本字段中对旧姓名的引用
+// （场景/线索/结局/手卡/时间线/守秘人附录/导入身份/机制/系统提示/奖励等），
+// 避免仅重命名 NPC 实体导致其余文本仍指向已不存在的旧姓名。
+func renameNPCReferences(content *models.ScenarioContent, oldName, newName string) {
+	if oldName == "" || oldName == newName {
+		return
+	}
+	replace := func(s string) string { return strings.ReplaceAll(s, oldName, newName) }
+
+	content.SystemPrompt = replace(content.SystemPrompt)
+	content.Setting = replace(content.Setting)
+	content.Intro = replace(content.Intro)
+	content.MapDescription = replace(content.MapDescription)
+	content.MythosCore = replace(content.MythosCore)
+
+	for i := range content.Scenes {
+		content.Scenes[i].Description = replace(content.Scenes[i].Description)
+	}
+	for i := range content.NPCs {
+		content.NPCs[i].Description = replace(content.NPCs[i].Description)
+		content.NPCs[i].Attitude = replace(content.NPCs[i].Attitude)
+	}
+	for i := range content.Clues {
+		content.Clues[i].Summary = replace(content.Clues[i].Summary)
+		content.Clues[i].Source = replace(content.Clues[i].Source)
+		content.Clues[i].OnSuccess = replace(content.Clues[i].OnSuccess)
+		content.Clues[i].OnFailure = replace(content.Clues[i].OnFailure)
+	}
+	for i := range content.Endings {
+		content.Endings[i].Trigger = replace(content.Endings[i].Trigger)
+		content.Endings[i].Description = replace(content.Endings[i].Description)
+	}
+	for i := range content.Handouts {
+		content.Handouts[i].Title = replace(content.Handouts[i].Title)
+		content.Handouts[i].Content = replace(content.Handouts[i].Content)
+	}
+	for i := range content.Timeline {
+		content.Timeline[i].Event = replace(content.Timeline[i].Event)
+	}
+	if content.KeeperAppendix != nil {
+		ka := content.KeeperAppendix
+		ka.DifficultyDown = replace(ka.DifficultyDown)
+		ka.DifficultyUp = replace(ka.DifficultyUp)
+		ka.SoloAdvice = replace(ka.SoloAdvice)
+		ka.GroupAdvice = replace(ka.GroupAdvice)
+		ka.HorrorTips = replace(ka.HorrorTips)
+		ka.ThemeGuidance = replace(ka.ThemeGuidance)
+	}
+	for i := range content.EntryIdentities {
+		content.EntryIdentities[i].RecommendClues = replace(content.EntryIdentities[i].RecommendClues)
+	}
+	for i := range content.Mechanics {
+		content.Mechanics[i].Description = replace(content.Mechanics[i].Description)
+		for j := range content.Mechanics[i].Stages {
+			content.Mechanics[i].Stages[j].Effect = replace(content.Mechanics[i].Stages[j].Effect)
+			content.Mechanics[i].Stages[j].Trigger = replace(content.Mechanics[i].Stages[j].Trigger)
+		}
+	}
+	if content.Reward != nil {
+		content.Reward.Description = replace(content.Reward.Description)
 	}
 }
 

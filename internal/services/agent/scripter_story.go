@@ -175,6 +175,7 @@ SAN要求：
   {"action":"translate_anchor","concept":"概念描述（如「死者被古老力量束缚继续行动」）","reason":"这个概念在剧本中承担什么角色"}
 - submit_story：提交完整故事文档；只有在translate_anchor确认元素后才调用；必须单独一轮输出
   {"action":"submit_story","story_document":"完整故事文档正文（纯文本自然语言，可用小标题分段，不要输出JSON、代码块或字段名）","mythos_anchor":"translate_anchor确认的COC7元素全称","reward_concept":"通关奖励叙事概念（若无则留空字符串）"}
+  严禁用draft/content/scenes/clues/endings/npcs/mechanics等嵌套字段代替story_document——story_document只能是一个字符串，不是JSON对象；地点、NPC、线索、结局等所有设计内容都必须写成story_document这一个字符串内的自然语言段落，结构化交由后续编译器负责。
 </tools>`
 }
 
@@ -202,7 +203,13 @@ var storyArchitectToolCallExample = marshalExample([]storyArchitectToolCall{
 func validateStoryDocument(story StoryOutput) []string {
 	var issues []string
 	if length := len([]rune(strings.TrimSpace(story.Document))); length < 500 {
-		issues = append(issues, fmt.Sprintf("story_document 过短（当前%d字），需完整覆盖表层情境/KP内部真相/地点/NPC/线索/时间线/结局各部分", length))
+		msg := fmt.Sprintf("story_document 过短（当前%d字），需完整覆盖表层情境/KP内部真相/地点/NPC/线索/时间线/结局各部分", length)
+		if length == 0 {
+			// NOTE: 0字通常意味着模型把内容写进了draft/content等嵌套字段而不是story_document本身，
+			// 这些字段会被静默丢弃；直接点破该失败模式，避免下一轮重复同样的错误。
+			msg += "；如果你把故事内容写进了draft/content/clues等嵌套字段，这是错误用法——submit_story只有story_document/mythos_anchor/reward_concept三个顶层字段，story_document必须是完整故事正文本身（纯文本字符串），不能是JSON对象"
+		}
+		issues = append(issues, msg)
 	}
 	if strings.TrimSpace(story.MythosAnchor) == "" {
 		issues = append(issues, "mythos_anchor 为空，须填入translate_anchor确认的COC7元素全称")

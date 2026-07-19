@@ -1183,9 +1183,10 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	if len(draft.Content.Clues) == 0 {
 		draft.Content.Clues = []models.ClueData{
 			{Summary: "公开异常(调查入口): 一个无法普通解释的局势已经开始", Nature: "真实", Source: "到达现场并主动询问或检查"},
+			{Summary: "佐证细节(深入调查): 与公开异常相互印证的独立事实，须两条线索合并才能确认事态走向", Nature: "真实", Source: "深入调查或与相关人员交流"},
 			{Summary: "表象线索(初步调查): 支持错误推断的表象证据；表面合理但只能解释一部分", Nature: "误导", Source: "初步调查"},
 		}
-		log.Printf("[scripter:normalize] session=%s generated default clues count=2", sessionID)
+		log.Printf("[scripter:normalize] session=%s generated default clues count=3", sessionID)
 	}
 	for i := range draft.Content.Clues {
 		draft.Content.Clues[i].Summary = strings.TrimSpace(draft.Content.Clues[i].Summary)
@@ -1193,14 +1194,18 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			draft.Content.Clues[i].Nature = "真实"
 		}
 	}
-	// 提取标注"神话本质"的隐藏线索 → MythosCore
+	// 提取标注"神话本质"的[隐藏]线索 → MythosCore；判定条件须与 hasMythosEssenceClue
+	// （scripter.go）保持一致——必须同时满足 nature=隐藏 且 summary 含"神话本质"，
+	// 否则可能误删恰好提到该字样的[真实]/[误导]线索，拉低真实线索计数。
 	var filteredClues []models.ClueData
 	for _, clue := range draft.Content.Clues {
-		if strings.Contains(clue.Summary, "神话本质") {
+		if strings.TrimSpace(clue.Nature) == "隐藏" && strings.Contains(clue.Summary, "神话本质") {
 			if strings.TrimSpace(draft.Content.MythosCore) == "" {
 				draft.Content.MythosCore = clue.Summary
-				log.Printf("[scripter:normalize] session=%s extracted mythos_core=%q", sessionID, truncateRunes(clue.Summary, 200))
+			} else {
+				draft.Content.MythosCore += "；" + clue.Summary
 			}
+			log.Printf("[scripter:normalize] session=%s extracted mythos_core=%q", sessionID, truncateRunes(clue.Summary, 200))
 		} else {
 			filteredClues = append(filteredClues, clue)
 		}
