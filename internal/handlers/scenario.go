@@ -103,19 +103,12 @@ type GenerateScenarioReq struct {
 // maxScenarioGenCount 是单次批量生成的数量上限；生成受全局串行锁限制，数量过大会导致单次请求长时间占用生成槽位。
 const maxScenarioGenCount = 10
 
-// CompileStoryReq 是管理员上传故事直接编译为模组的请求：管理员提供故事全文与神话锚点，
-// 跳过 Story Architect 生成阶段，模型只做 ETL（编译为结构化数据）。
+// CompileStoryReq 是管理员上传故事直接编译为模组的请求：管理员只提供故事全文（及可选名称），
+// 跳过 Story Architect 生成阶段，神话锚点与奖励概念由 anchor_extract 阶段从文档内容自动识别，
+// 模型只做 ETL（编译为结构化数据）。
 type CompileStoryReq struct {
 	StoryDocument string `json:"story_document" binding:"required"`
-	MythosAnchor  string `json:"mythos_anchor" binding:"required"`
-	RewardConcept string `json:"reward_concept"`
 	Name          string `json:"name"`
-	Theme         string `json:"theme"`
-	Era           string `json:"era"`
-	Difficulty    string `json:"difficulty"`
-	MinPlayers    int    `json:"min_players"`
-	MaxPlayers    int    `json:"max_players"`
-	TargetLength  string `json:"target_length"`
 }
 
 // scenarioBatchResult 记录批量生成中单个子任务的结果，用于 batch_done 汇总事件。
@@ -356,15 +349,7 @@ func CompileStoryByUpload(c *gin.Context) {
 
 		gen, err := agent.RunCompileStoryWithProgress(context.Background(), agent.CompileStoryRequest{
 			StoryDocument: req.StoryDocument,
-			MythosAnchor:  req.MythosAnchor,
-			RewardConcept: req.RewardConcept,
 			Name:          req.Name,
-			Theme:         req.Theme,
-			Era:           req.Era,
-			Difficulty:    req.Difficulty,
-			MinPlayers:    req.MinPlayers,
-			MaxPlayers:    req.MaxPlayers,
-			TargetLength:  req.TargetLength,
 		}, progress)
 		if err != nil {
 			log.Printf("[agent] compile-story-upload failed: %v", err)

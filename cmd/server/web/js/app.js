@@ -134,9 +134,9 @@ window.COC.core = function() {
                     scenarioGenRunning: false,
                     scenarioGenLogs: [],
                     scenarioGenBatchStatus: null,
-                    // NOTE: 上传故事编译：管理员提供故事全文+神话锚点，跳过 AI 故事生成阶段，
-                    // 模型只做编译（ETL），流程与状态字段和 AI 生成保持同构但互不干扰。
-                    compileStoryForm: { story_document: '', mythos_anchor: '', reward_concept: '', name: '', theme: '', era: '', target_length: 'short', min_players: 1, max_players: 4, difficulty: 'normal' },
+                    // NOTE: 上传故事编译：管理员只上传故事文档文件，跳过 AI 故事生成阶段，
+                    // 神话锚点与奖励概念由后端 anchor_extract 阶段自动从文档内容识别。
+                    compileStoryForm: { name: '' },
                     compileStoryRunning: false,
                     compileStoryLogs: [],
                     rechargeForm: { user_id: '', amount: 100, note: '' },

@@ -620,24 +620,37 @@ window.COC.admin = {
                         return info.detail || (info.stage + ' ' + (info.status || ''));
                     },
 
-                    // NOTE: 上传故事编译为 SSE 流式请求：跳过 AI 故事生成阶段，只让模型做编译
-                    // （compile→repair→logic_review→reward_agent→normalize），不支持批量。
+                    // NOTE: 上传故事编译为 SSE 流式请求：跳过 AI 故事生成阶段，只让模型做
+                    // 锚点提取（anchor_extract）+ 编译（compile→repair→logic_review→reward_agent→normalize），
+                    // 不支持批量。神话锚点与奖励概念均由后端从文档内容自动识别，前端只负责上传文件。
                     async compileStoryUpload() {
-                        if (!this.compileStoryForm.story_document?.trim()) {
-                            this.showToast('请填写故事全文', 'error');
+                        const file = this.$refs.compileStoryFile?.files?.[0];
+                        if (!file) {
+                            this.showToast('请选择一个 .md 文件', 'error');
                             return;
                         }
-                        if (!this.compileStoryForm.mythos_anchor?.trim()) {
-                            this.showToast('请填写神话锚点', 'error');
+                        const validExt = /\.(md|markdown|txt)$/i.test(file.name);
+                        if (!validExt) {
+                            this.showToast('仅支持 .md / .markdown / .txt 格式', 'error');
                             return;
                         }
-                        const minPlayers = Number(this.compileStoryForm.min_players || 1);
-                        const maxPlayers = Number(this.compileStoryForm.max_players || 4);
-                        if (maxPlayers < minPlayers) {
-                            this.showToast('最大玩家数不能小于最小玩家数', 'error');
+                        if (file.size > 512 * 1024) {
+                            this.showToast('文件过大（最大 500KB）', 'error');
                             return;
                         }
                         if (this.compileStoryRunning) return;
+
+                        let storyDocument;
+                        try {
+                            storyDocument = await file.text();
+                        } catch (e) {
+                            this.showToast('文件读取失败，请检查文件是否有效', 'error');
+                            return;
+                        }
+                        if (!storyDocument.trim()) {
+                            this.showToast('文件内容为空', 'error');
+                            return;
+                        }
 
                         this.compileStoryRunning = true;
                         this.compileStoryLogs = [];
@@ -659,16 +672,8 @@ window.COC.admin = {
                                     'Authorization': 'Bearer ' + this.token,
                                 },
                                 body: JSON.stringify({
-                                    story_document: this.compileStoryForm.story_document,
-                                    mythos_anchor: this.compileStoryForm.mythos_anchor,
-                                    reward_concept: this.compileStoryForm.reward_concept || '',
+                                    story_document: storyDocument,
                                     name: this.compileStoryForm.name || '',
-                                    theme: this.compileStoryForm.theme || '',
-                                    era: this.compileStoryForm.era || '',
-                                    target_length: this.compileStoryForm.target_length || 'short',
-                                    min_players: minPlayers,
-                                    max_players: maxPlayers,
-                                    difficulty: this.compileStoryForm.difficulty || 'normal',
                                 }),
                             });
 

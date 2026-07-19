@@ -148,23 +148,7 @@ func TestCompileStoryByUpload_MissingStoryDocument(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, jsonReq("POST", "/scenarios/compile-story", map[string]any{
-		"mythos_anchor": "食尸鬼（Ghoul）",
-	}))
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("want 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-// TestCompileStoryByUpload_MissingMythosAnchor 验证神话锚点缺失时直接返回 400。
-func TestCompileStoryByUpload_MissingMythosAnchor(t *testing.T) {
-	initTestDB(t)
-	uid := seedUser(t, "admin", "admin", 0, 3)
-	r := scenarioRouter(uid, true)
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq("POST", "/scenarios/compile-story", map[string]any{
-		"story_document": "故事文档正文",
+		"name": "测试模组",
 	}))
 
 	if w.Code != http.StatusBadRequest {
