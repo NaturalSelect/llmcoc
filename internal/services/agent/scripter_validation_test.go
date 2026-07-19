@@ -56,9 +56,13 @@ func TestValidateDraftCompatibility_SettingDate(t *testing.T) {
 				NPCs: []models.NPCData{
 					{Name: "NPC甲", Description: "某人", Attitude: "友好"},
 				},
-				Clues:         []string{"[真实]线索一：内容。"},
-				WinCondition:  "如果完成，则成功。",
-				LoseCondition: "如果失败，则结束。",
+				Clues: []models.ClueData{
+					{Summary: "线索一：内容。", Nature: "真实"},
+				},
+				Endings: []models.EndingData{
+					{Name: "胜利", Trigger: "如果完成，则成功。"},
+					{Name: "失败", Trigger: "如果失败，则结束。", IsFailure: true},
+				},
 			},
 		}
 	}

@@ -1367,39 +1367,86 @@
                     </div>
                 </template>
 
-                <!-- 结局条件 -->
-                <template
-                    x-if="viewingScenario?.content?.win_condition || viewingScenario?.content?.lose_condition || viewingScenario?.content?.partial_wins?.length">
-                    <div class="mb-4 grid gap-2">
-                        <template x-if="viewingScenario?.content?.win_condition">
-                            <div class="p-2.5 rounded panel-inset">
-                                <div class="text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider font-ui">胜利条件</div>
-                                <p class="text-xs text-amber-200 font-ui" style="line-height:1.6"
-                                    x-text="viewingScenario.content.win_condition"></p>
-                            </div>
-                        </template>
-                        <template x-if="viewingScenario?.content?.lose_condition">
-                            <div class="p-2.5 rounded" style="background:#0e0d0b; border:1px solid #241714">
-                                <div class="text-[10px] font-bold text-red-700 mb-1 uppercase tracking-wider font-ui">失败条件</div>
-                                <p class="text-xs text-amber-200 font-ui" style="line-height:1.6"
-                                    x-text="viewingScenario.content.lose_condition"></p>
-                            </div>
-                        </template>
-                        <template x-if="viewingScenario?.content?.partial_wins?.length">
-                            <div class="p-2.5 rounded panel-inset">
-                                <div class="text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider font-ui">部分胜利</div>
-                                <div class="space-y-1">
-                                    <template x-for="(partialWin, pwi) in viewingScenario.content.partial_wins"
-                                        :key="pwi">
-                                        <div class="flex gap-2 items-start text-xs text-amber-200 font-ui"
-                                            style="line-height:1.6">
-                                            <span class="text-amber-800 shrink-0" x-text="(pwi+1) + '.'"></span>
-                                            <span x-text="partialWin"></span>
-                                        </div>
+                <!-- 开局手卡 -->
+                <template x-if="viewingScenario?.content?.handouts?.length">
+                    <div class="mb-4">
+                        <div class="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1.5 font-ui">
+                            <span class="text-amber-900">▍</span>开局手卡
+                            <span class="text-[10px] text-amber-800 font-normal"
+                                x-text="'共 ' + viewingScenario.content.handouts.length + ' 份'"></span>
+                        </div>
+                        <div class="space-y-2">
+                            <template x-for="(ho, hi) in viewingScenario.content.handouts" :key="hi">
+                                <div class="p-2.5 rounded" style="background:#120f0a; border:1px solid #3a2a0b">
+                                    <div class="flex items-center justify-between gap-2 mb-1">
+                                        <div class="text-xs font-bold text-amber-300 font-ui" x-text="ho.title"></div>
+                                        <template x-if="ho.timing">
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0 chip font-ui" x-text="ho.timing"></span>
+                                        </template>
+                                    </div>
+                                    <p class="text-xs text-amber-200 font-ui"
+                                        style="line-height:1.6; white-space:pre-wrap; font-style:italic"
+                                        x-text="ho.content"></p>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- 时间线 -->
+                <template x-if="viewingScenario?.content?.timeline?.length">
+                    <div class="mb-4">
+                        <div class="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1.5 font-ui">
+                            <span class="text-amber-900">▍</span>时间线
+                        </div>
+                        <div class="space-y-1.5">
+                            <template x-for="(tl, ti) in viewingScenario.content.timeline" :key="ti">
+                                <div class="flex gap-2 items-start rounded p-2 panel-inset">
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0 chip font-ui" x-text="tl.time"></span>
+                                    <span class="text-[11px] text-amber-200 flex-1 font-ui" style="line-height:1.5" x-text="tl.event"></span>
+                                    <template x-if="tl.phase">
+                                        <span class="text-[10px] text-amber-800 shrink-0 font-ui"
+                                            x-text="tl.phase === 'past' ? '过去线' : '当天推进'"></span>
                                     </template>
                                 </div>
-                            </div>
-                        </template>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- 结局 -->
+                <template x-if="viewingScenario?.content?.endings?.length">
+                    <div class="mb-4">
+                        <div class="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1.5 font-ui">
+                            <span class="text-amber-900">▍</span>结局
+                            <span class="text-[10px] text-amber-800 font-normal"
+                                x-text="'共 ' + viewingScenario.content.endings.length + ' 个'"></span>
+                        </div>
+                        <div class="space-y-2">
+                            <template x-for="(ed, ei) in viewingScenario.content.endings" :key="ei">
+                                <div class="p-2.5 rounded"
+                                    :style="ed.is_failure ? 'background:#0e0d0b; border:1px solid #241714' : ''"
+                                    :class="!ed.is_failure ? 'panel-inset' : ''">
+                                    <div class="flex items-center justify-between gap-2 mb-1">
+                                        <div class="text-xs font-bold font-ui"
+                                            :class="ed.is_failure ? 'text-red-700' : 'text-amber-300'"
+                                            x-text="ed.name"></div>
+                                        <template x-if="ed.san_reward">
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0 chip font-ui"
+                                                x-text="'SAN: ' + ed.san_reward"></span>
+                                        </template>
+                                    </div>
+                                    <template x-if="ed.trigger">
+                                        <p class="text-xs text-amber-200 font-ui" style="line-height:1.6"
+                                            x-text="ed.trigger"></p>
+                                    </template>
+                                    <template x-if="ed.description">
+                                        <p class="text-[11px] text-amber-700 mt-1 font-ui" style="line-height:1.5"
+                                            x-text="ed.description"></p>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
                     </div>
                 </template>
 
@@ -1554,11 +1601,140 @@
                         </div>
                         <div class="space-y-1.5">
                             <template x-for="(cl, i) in viewingScenario.content.clues" :key="i">
-                                <div class="flex gap-2 items-start rounded p-2 panel-inset">
-                                    <span class="text-[10px] font-bold shrink-0 mt-0.5 font-ui"
-                                        style="color:#44320a" x-text="i+1"></span>
-                                    <span class="text-[11px] text-amber-600 font-ui"
-                                        style="line-height:1.5" x-text="cl"></span>
+                                <div class="rounded p-2 panel-inset">
+                                    <div class="flex gap-2 items-start">
+                                        <span class="text-[10px] font-bold shrink-0 mt-0.5 font-ui"
+                                            style="color:#44320a" x-text="i+1"></span>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                                <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                                                    :style="{'background': cl.nature==='隐藏'?'#1f0a0a': cl.nature==='误导'?'#1a1408':'#0a1a0a',
+                                                             'border': '1px solid ' + (cl.nature==='隐藏'?'#3d1515': cl.nature==='误导'?'#2d2410':'#153d15'),
+                                                             'color': cl.nature==='隐藏'?'#dc2626': cl.nature==='误导'?'#a16207':'#16a34a',
+                                                             'font-family':'system-ui'}" x-text="cl.nature || '真实'"></span>
+                                                <template x-if="cl.source">
+                                                    <span class="text-[10px] text-amber-800 font-ui" x-text="cl.source"></span>
+                                                </template>
+                                                <template x-if="cl.skill_check">
+                                                    <span class="text-[10px] px-1.5 py-0.5 rounded chip font-ui"
+                                                        x-text="'检定: ' + cl.skill_check"></span>
+                                                </template>
+                                            </div>
+                                            <div class="text-[11px] text-amber-200 font-ui" style="line-height:1.5"
+                                                x-text="cl.summary"></div>
+                                            <template x-if="cl.on_success">
+                                                <div class="text-[11px] text-amber-700 mt-0.5 font-ui" style="line-height:1.5">
+                                                    <span class="text-amber-800">成功：</span><span x-text="cl.on_success"></span>
+                                                </div>
+                                            </template>
+                                            <template x-if="cl.on_failure">
+                                                <div class="text-[11px] text-amber-700 mt-0.5 font-ui" style="line-height:1.5">
+                                                    <span class="text-amber-800">失败推进：</span><span x-text="cl.on_failure"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- 导入身份 -->
+                <template x-if="viewingScenario?.content?.entry_identities?.length">
+                    <div class="mb-4">
+                        <div class="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1.5 font-ui">
+                            <span class="text-amber-900">▍</span>导入身份
+                        </div>
+                        <div class="space-y-1.5">
+                            <template x-for="(ei, eii) in viewingScenario.content.entry_identities" :key="eii">
+                                <div class="rounded p-2 panel-inset">
+                                    <div class="text-xs font-bold text-amber-300 font-ui" x-text="ei.profession"></div>
+                                    <div class="text-[11px] text-amber-700 mt-0.5 font-ui" style="line-height:1.5">
+                                        <span class="text-amber-800">初始资源：</span><span x-text="ei.init_resource"></span>
+                                    </div>
+                                    <template x-if="ei.init_limit">
+                                        <div class="text-[11px] text-amber-700 mt-0.5 font-ui" style="line-height:1.5">
+                                            <span class="text-amber-800">限制：</span><span x-text="ei.init_limit"></span>
+                                        </div>
+                                    </template>
+                                    <template x-if="ei.recommend_clues">
+                                        <div class="text-[11px] text-amber-700 mt-0.5 font-ui" style="line-height:1.5">
+                                            <span class="text-amber-800">推荐线索：</span><span x-text="ei.recommend_clues"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- 守秘人附录 -->
+                <template x-if="viewingScenario?.content?.keeper_appendix">
+                    <div class="mb-4 p-3 rounded panel-inset">
+                        <div class="text-[10px] font-bold text-amber-600 mb-1.5 uppercase tracking-wider font-ui">守秘人附录</div>
+                        <div class="space-y-1">
+                            <template x-if="viewingScenario.content.keeper_appendix.difficulty_down">
+                                <div class="text-[11px] text-amber-700 font-ui" style="line-height:1.5">
+                                    <span class="text-amber-800">降低难度：</span><span x-text="viewingScenario.content.keeper_appendix.difficulty_down"></span>
+                                </div>
+                            </template>
+                            <template x-if="viewingScenario.content.keeper_appendix.difficulty_up">
+                                <div class="text-[11px] text-amber-700 font-ui" style="line-height:1.5">
+                                    <span class="text-amber-800">提高难度：</span><span x-text="viewingScenario.content.keeper_appendix.difficulty_up"></span>
+                                </div>
+                            </template>
+                            <template x-if="viewingScenario.content.keeper_appendix.solo_advice">
+                                <div class="text-[11px] text-amber-700 font-ui" style="line-height:1.5">
+                                    <span class="text-amber-800">单人团：</span><span x-text="viewingScenario.content.keeper_appendix.solo_advice"></span>
+                                </div>
+                            </template>
+                            <template x-if="viewingScenario.content.keeper_appendix.group_advice">
+                                <div class="text-[11px] text-amber-700 font-ui" style="line-height:1.5">
+                                    <span class="text-amber-800">多人团：</span><span x-text="viewingScenario.content.keeper_appendix.group_advice"></span>
+                                </div>
+                            </template>
+                            <template x-if="viewingScenario.content.keeper_appendix.horror_tips">
+                                <div class="text-[11px] text-amber-700 font-ui" style="line-height:1.5">
+                                    <span class="text-amber-800">恐怖呈现：</span><span x-text="viewingScenario.content.keeper_appendix.horror_tips"></span>
+                                </div>
+                            </template>
+                            <template x-if="viewingScenario.content.keeper_appendix.theme_guidance">
+                                <div class="text-[11px] text-amber-700 font-ui" style="line-height:1.5">
+                                    <span class="text-amber-800">主题把握：</span><span x-text="viewingScenario.content.keeper_appendix.theme_guidance"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- 量化机制 -->
+                <template x-if="viewingScenario?.content?.mechanics?.length">
+                    <div class="mb-4">
+                        <div class="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1.5 font-ui">
+                            <span class="text-amber-900">▍</span>量化机制
+                            <span class="text-[10px] text-amber-800 font-normal">（KP参考，不做自动结算）</span>
+                        </div>
+                        <div class="space-y-2">
+                            <template x-for="(mc, mi) in viewingScenario.content.mechanics" :key="mi">
+                                <div class="rounded p-2.5 panel-inset">
+                                    <div class="flex items-center gap-1.5 mb-1">
+                                        <div class="text-xs font-bold text-amber-300 font-ui" x-text="mc.name"></div>
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded chip font-ui" x-text="mc.type"></span>
+                                    </div>
+                                    <template x-if="mc.description">
+                                        <p class="text-[11px] text-amber-700 font-ui" style="line-height:1.5" x-text="mc.description"></p>
+                                    </template>
+                                    <template x-if="mc.stages?.length">
+                                        <div class="mt-1.5 space-y-1">
+                                            <template x-for="(st, sti) in mc.stages" :key="sti">
+                                                <div class="text-[11px] text-amber-600 font-ui" style="line-height:1.5">
+                                                    <span class="text-amber-800" x-text="st.label + '：'"></span><span
+                                                        x-text="[st.trigger, st.effect].filter(Boolean).join(' → ')"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
                                 </div>
                             </template>
                         </div>

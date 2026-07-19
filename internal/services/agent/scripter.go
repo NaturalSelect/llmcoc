@@ -504,9 +504,9 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 	r.emitProgress("normalize", "start", "规范化与收尾…")
 	normalizeOneshotDraft(&draft, r.req, r.architectModelName(), constraints, sessionID)
 	applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
-	log.Printf("[scripter] session=%s normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d partial_wins=%d",
+	log.Printf("[scripter] session=%s normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d endings=%d",
 		sessionID, draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Content.GameStartSlot,
-		len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), len(draft.Content.PartialWins))
+		len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), len(draft.Content.Endings))
 	r.emitProgress("normalize", "done", fmt.Sprintf("规范化完成：《%s》，准备入库", draft.Name))
 
 	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
@@ -1084,17 +1084,22 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	if len(content.Clues) == 0 {
 		issues = append(issues, "content.clues 为空")
 	}
+	validNature := map[string]bool{"真实": true, "隐藏": true, "误导": true}
 	for i, clue := range content.Clues {
-		clue = strings.TrimSpace(clue)
-		if !(strings.HasPrefix(clue, "[真实]") || strings.HasPrefix(clue, "[隐藏]") || strings.HasPrefix(clue, "[误导]")) {
-			issues = append(issues, fmt.Sprintf("content.clues[%d] 缺少[真实]/[隐藏]/[误导]前缀", i))
+		if strings.TrimSpace(clue.Summary) == "" {
+			issues = append(issues, fmt.Sprintf("content.clues[%d] 缺少 summary", i))
+		}
+		if !validNature[strings.TrimSpace(clue.Nature)] {
+			issues = append(issues, fmt.Sprintf("content.clues[%d] 的 nature 必须是 真实/隐藏/误导 之一", i))
 		}
 	}
-	if strings.TrimSpace(content.WinCondition) == "" {
-		issues = append(issues, "content.win_condition 为空")
+	if len(content.Endings) == 0 {
+		issues = append(issues, "content.endings 为空，至少需要一个命名结局")
 	}
-	if strings.TrimSpace(content.LoseCondition) == "" {
-		issues = append(issues, "content.lose_condition 为空")
+	for i, ending := range content.Endings {
+		if strings.TrimSpace(ending.Name) == "" || strings.TrimSpace(ending.Trigger) == "" {
+			issues = append(issues, fmt.Sprintf("content.endings[%d] 缺少 name 或 trigger", i))
+		}
 	}
 	if strings.TrimSpace(content.MythosAnchor) == "" {
 		issues = append(issues, "content.mythos_anchor 为空；神话锚点必须明确写出，作为宇宙法则的具体载体")
@@ -1104,7 +1109,7 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	}
 	realClueCount := 0
 	for _, clue := range content.Clues {
-		if strings.HasPrefix(strings.TrimSpace(clue), "[真实]") {
+		if strings.TrimSpace(clue.Nature) == "真实" {
 			realClueCount++
 		}
 	}
@@ -1145,8 +1150,7 @@ func hasMythosEssenceClue(content models.ScenarioContent) bool {
 		return true
 	}
 	for _, clue := range content.Clues {
-		clue = strings.TrimSpace(clue)
-		if strings.HasPrefix(clue, "[隐藏]") && strings.Contains(clue, "神话本质") {
+		if strings.TrimSpace(clue.Nature) == "隐藏" && strings.Contains(clue.Summary, "神话本质") {
 			return true
 		}
 	}
@@ -1292,11 +1296,11 @@ func difficultySpec(difficulty string) string {
 func lengthSpec(targetLength string) string {
 	switch strings.ToLower(strings.TrimSpace(targetLength)) {
 	case "long", "剧本时间长度: 1week-1month":
-		return "- locations/scenes: 6-8个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 10-12条自包含事实线索，必须带[真实]/[隐藏]/[误导]前缀\n- NPC数量: 7-10个，来自派系且有独立议程"
+		return "- locations/scenes: 6-8个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 10-12条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 7-10个，来自派系且有独立议程\n- endings: 4-8个命名结局，每个含 trigger 和 san_reward\n- handouts: 1-4份开局手卡；timeline: 5-12个事件节点；keeper_appendix 与 entry_identities(2-5个) 尽量齐备；如有可量化的追踪机制可提供 mechanics"
 	case "medium", "剧本时间长度: 3-7d":
-		return "- locations/scenes: 4-6个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 7-10条自包含事实线索，必须带[真实]/[隐藏]/[误导]前缀\n- NPC数量: 4-7个，来自派系且有独立议程"
+		return "- locations/scenes: 4-6个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 7-10条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 4-7个，来自派系且有独立议程\n- endings: 3-5个命名结局，每个含 trigger 和 san_reward\n- handouts: 1-2份开局手卡；timeline: 3-6个事件节点；keeper_appendix/entry_identities/mechanics 按素材需要提供，可省略"
 	default:
-		return "- locations/scenes: 3-4个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 5-7条自包含事实线索，必须带[真实]/[隐藏]/[误导]前缀\n- NPC数量: 2-4个，来自派系且有独立议程"
+		return "- locations/scenes: 3-4个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 5-7条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 2-4个，来自派系且有独立议程\n- endings: 至少2个命名结局，每个含 trigger 和 san_reward\n- handouts/timeline/keeper_appendix/entry_identities/mechanics: 均为可选，篇幅有限时可省略"
 	}
 }
 
@@ -1791,30 +1795,6 @@ func normalizeNPCName(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.Trim(name, " `\"'，。；;：:（）()【】[]")
 	return strings.TrimSpace(name)
-}
-
-func normalizeClueString(clue string) string {
-	clue = strings.TrimSpace(clue)
-	if clue == "" {
-		return "[真实]未命名线索(现场): 存在一个可由调查员主动确认的事实；获取方式：主动调查。"
-	}
-	if strings.HasPrefix(clue, "[真实]") || strings.HasPrefix(clue, "[隐藏]") || strings.HasPrefix(clue, "[误导]") {
-		return clue
-	}
-	return "[真实]" + clue
-}
-
-func cluePrefixForLayer(layer string) string {
-	switch strings.ToLower(strings.TrimSpace(layer)) {
-	case "appearance", "surface", "real", "true":
-		return "[真实]"
-	case "deep", "distorted", "distorted_deep", "hidden", "hide":
-		return "[隐藏]"
-	case "false", "misdirection", "misleading", "red_herring":
-		return "[误导]"
-	default:
-		return "[真实]"
-	}
 }
 
 // ---------------------------------------------------------------------------

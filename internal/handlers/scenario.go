@@ -527,8 +527,14 @@ func DownloadScenarioTemplate(c *gin.Context) {
 				Attitude:    "谨慎",
 				Stats:       map[string]int{"STR": 50, "CON": 50},
 			}},
-			Clues:        []string{"线索1", "线索2"},
-			WinCondition: "达成关键目标并安全撤离",
+			Clues: []models.ClueData{
+				{Summary: "可公开观察到的异常", Nature: "真实", Source: "抵达现场", SkillCheck: "侦查", OnSuccess: "确认异常真实存在", OnFailure: "延迟发现，但可从NPC处补线"},
+				{Summary: "支持错误推断的表象证据", Nature: "误导", Source: "初步走访"},
+			},
+			Endings: []models.EndingData{
+				{Name: "回归寂静", Trigger: "达成关键目标并安全撤离", Description: "威胁被封堵，城市恢复平静", SANReward: "恢复1d6"},
+				{Name: "灾难降临", Trigger: "关键节点被触发且无人阻止", IsFailure: true, SANReward: "损失1d10"},
+			},
 		},
 	}
 

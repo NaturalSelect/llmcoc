@@ -152,14 +152,41 @@ func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey str
 	return chatReq
 }
 
+// streamToString 发起流式请求并把所有 delta 拼接为完整文本，用于以流式请求模拟非流式返回。
+// NOTE: 部分网关/反向代理对长耗时的非流式请求（尤其是 reasoning_effort=high 的模型）会因
+// 响应体迟迟无字节而触发空闲超时；流式请求持续有字节到达，可以规避这类超时，因此
+// Chat/JsonChat 内部统一改走流式请求，聚合后再以完整字符串返回，对外行为不变。
+func (p *openAIProvider) streamToString(ctx context.Context, chatReq openai.ChatCompletionRequest) (content string, reasoning string, err error) {
+	stream, err := p.client.CreateChatCompletionStream(ctx, chatReq)
+	if err != nil {
+		return "", "", err
+	}
+	defer stream.Close()
+
+	var contentSB, reasoningSB strings.Builder
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return contentSB.String(), reasoningSB.String(), nil
+		}
+		if err != nil {
+			return "", "", err
+		}
+		for _, choice := range resp.Choices {
+			contentSB.WriteString(choice.Delta.Content)
+			reasoningSB.WriteString(choice.Delta.ReasoningContent)
+		}
+	}
+}
+
 func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, json bool) (string, error) {
 	start := time.Now()
 	chatReq := p.chatCompletionRequest(ctx, cacheKey, messages, json)
-	var resp openai.ChatCompletionResponse
+	var result, reasoning string
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		start := time.Now()
-		resp, err = p.client.CreateChatCompletion(ctx, chatReq)
+		result, reasoning, err = p.streamToString(ctx, chatReq)
 		log.Printf("Chat model %v using %v\n", p.model, time.Since(start))
 		if err == nil || !isRetryableError(err) {
 			break
@@ -174,12 +201,7 @@ func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []C
 	if err != nil {
 		return "", fmt.Errorf("LLM chat error: %w", err)
 	}
-	if len(resp.Choices) == 0 {
-		return "", errors.New("LLM returned no choices")
-	}
-	result := resp.Choices[0].Message.Content
 	// NOTE: 提取reasoning_content用于审计日志
-	reasoning := resp.Choices[0].Message.ReasoningContent
 	if reasoning != "" {
 		log.Printf("[llm-reasoning] session=%s model=%s len=%d",
 			sessionIDFromContext(ctx), p.model, len([]rune(reasoning)))

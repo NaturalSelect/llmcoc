@@ -175,23 +175,94 @@ type ScenarioReward struct {
 
 // NOTE: ScenarioContent defines the narrative and structural elements of a playable scenario.
 type ScenarioContent struct {
-	SystemPrompt   string          `json:"system_prompt"`
-	Setting        string          `json:"setting"`
-	ToneTags       []string        `json:"tone_tags"`
-	HorrorMode     string          `json:"horror_mode"`
-	InvestFocus    string          `json:"invest_focus"`
-	Intro          string          `json:"intro"`
-	GameStartSlot  int             `json:"game_start_slot"` // 开局时间槽位(0-47),每槽30分钟
-	MapDescription string          `json:"map_description"` // 文字描述的场景地图,供KP感知空间关系
-	Scenes         []SceneData     `json:"scenes"`
-	NPCs           []NPCData       `json:"npcs"`
-	Clues          []string        `json:"clues"`
-	WinCondition   string          `json:"win_condition"`
-	LoseCondition  string          `json:"lose_condition"` // 失败条件
-	PartialWins    []string        `json:"partial_wins"`   // 部分胜利情景列表
-	Reward         *ScenarioReward `json:"reward"`         // 通关奖励（典籍/神话物品），完成win_condition时给予
-	MythosAnchor   string          `json:"mythos_anchor"`  // Stage2确认的神话锚点，用于多样性去重
-	MythosCore     string          `json:"mythos_core"`    // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
+	SystemPrompt    string          `json:"system_prompt"`
+	Setting         string          `json:"setting"`
+	ToneTags        []string        `json:"tone_tags"`
+	HorrorMode      string          `json:"horror_mode"`
+	InvestFocus     string          `json:"invest_focus"`
+	Intro           string          `json:"intro"`
+	GameStartSlot   int             `json:"game_start_slot"`            // 开局时间槽位(0-47),每槽30分钟
+	MapDescription  string          `json:"map_description"`            // 文字描述的场景地图,供KP感知空间关系
+	Scenes          []SceneData     `json:"scenes"`                     //
+	NPCs            []NPCData       `json:"npcs"`                       //
+	Clues           []ClueData      `json:"clues"`                      // 结构化线索（来源/推荐检定/成功/失败推进/性质）
+	Endings         []EndingData    `json:"endings"`                    // 命名多结局（触发条件+SAN恢复），替代旧的win/lose/partial
+	Reward          *ScenarioReward `json:"reward"`                     // 通关奖励（典籍/神话物品），达成非失败结局时给予
+	Handouts        []HandoutData   `json:"handouts,omitempty"`         // 开局手卡，可直接朗读给玩家
+	Timeline        []TimelineEvent `json:"timeline,omitempty"`         // 时间线（过去线痕迹+当天推进）
+	KeeperAppendix  *KeeperAppendix `json:"keeper_appendix,omitempty"`  // 守秘人附录（难度调节/单双人团/恐怖呈现）
+	EntryIdentities []EntryIdentity `json:"entry_identities,omitempty"` // 导入身份表（不同职业入场方式）
+	Mechanics       []MechanicData  `json:"mechanics,omitempty"`        // 量化核心机制标记（计数器/时钟），仅作KP参考
+	MythosAnchor    string          `json:"mythos_anchor"`              // Stage2确认的神话锚点，用于多样性去重
+	MythosCore      string          `json:"mythos_core"`                // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
+}
+
+// NOTE: ClueData 是结构化线索。旧版本 clues 为 []string（形如"[真实]xxx"），现拆成独立字段
+// 便于前端表格化展示与KP裁定；旧数据由 ScenarioContent.UnmarshalJSON 兼容转换。
+type ClueData struct {
+	Summary    string `json:"summary"`               // 线索内容
+	Source     string `json:"source,omitempty"`      // 来源地点或对象
+	SkillCheck string `json:"skill_check,omitempty"` // 推荐检定技能
+	OnSuccess  string `json:"on_success,omitempty"`  // 成功获得的信息或效果
+	OnFailure  string `json:"on_failure,omitempty"`  // 失败时的推进（不卡关设计）
+	Nature     string `json:"nature"`                // 真实 | 隐藏 | 误导
+}
+
+// NOTE: EndingData 是命名结局，替代旧的 win/lose/partial 三字段，支持任意数量的分支结局。
+type EndingData struct {
+	Name        string `json:"name"`                  // 结局名称
+	Trigger     string `json:"trigger"`               // 触发条件
+	Description string `json:"description,omitempty"` // 结局叙事描述
+	SANReward   string `json:"san_reward,omitempty"`  // SAN 恢复/损失，如"恢复1d6"
+	IsFailure   bool   `json:"is_failure,omitempty"`  // 是否为失败/灾难结局
+}
+
+// NOTE: HandoutData 是开局手卡，KP 可直接朗读给玩家的内容。
+type HandoutData struct {
+	Title   string `json:"title"`            // 手卡标题
+	Content string `json:"content"`          // 可直接朗读的正文
+	Timing  string `json:"timing,omitempty"` // 发放时机
+}
+
+// NOTE: TimelineEvent 是时间线上的单个事件节点。
+type TimelineEvent struct {
+	Time  string `json:"time"`            // 时间标记
+	Event string `json:"event"`           // 事件描述
+	Phase string `json:"phase,omitempty"` // past（过去线）| current（当天推进）
+}
+
+// NOTE: KeeperAppendix 是守秘人运营附录，指导难度调节与团型适配。
+type KeeperAppendix struct {
+	DifficultyDown string `json:"difficulty_down,omitempty"` // 降低难度建议
+	DifficultyUp   string `json:"difficulty_up,omitempty"`   // 提高难度建议
+	SoloAdvice     string `json:"solo_advice,omitempty"`     // 单人团建议
+	GroupAdvice    string `json:"group_advice,omitempty"`    // 多人团建议
+	HorrorTips     string `json:"horror_tips,omitempty"`     // 恐怖呈现建议
+	ThemeGuidance  string `json:"theme_guidance,omitempty"`  // 主题把握提示
+}
+
+// NOTE: EntryIdentity 是导入身份，描述不同职业调查员的入场方式。
+type EntryIdentity struct {
+	Profession     string `json:"profession"`                // 职业名
+	InitResource   string `json:"init_resource"`             // 初始资源
+	InitLimit      string `json:"init_limit,omitempty"`      // 初始限制
+	RecommendClues string `json:"recommend_clues,omitempty"` // 推荐开局线索
+}
+
+// NOTE: MechanicData 是量化核心机制标记（如"三重承认"计数、反派"行动时钟"），
+// 仅作为KP参考信息注入跑团提示词，不做自动推进的硬编码逻辑。
+type MechanicData struct {
+	Name        string          `json:"name"`             // 机制名
+	Type        string          `json:"type"`             // counter | clock | tracker
+	Description string          `json:"description"`      // 机制说明
+	Stages      []MechanicStage `json:"stages,omitempty"` // 阶段/状态列表
+}
+
+// NOTE: MechanicStage 是量化机制的单个阶段。
+type MechanicStage struct {
+	Label   string `json:"label"`             // 阶段标签
+	Effect  string `json:"effect,omitempty"`  // 该阶段效果
+	Trigger string `json:"trigger,omitempty"` // 推进/触发条件
 }
 
 // NOTE: SceneData describes a specific location or event in a scenario.

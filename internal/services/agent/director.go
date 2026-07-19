@@ -171,8 +171,8 @@ operate=add时，同名资产会更新；operate=remove时按asset.name删除。
 			<call_example>{"action":"manage_asset","character_name":"角色名","operate":"add|remove","asset":{"name":"资产名","category":"类别","note":"备注(状态、来源、限制等)"}, "reason":"描述变更原因"}</call_example>
 		</tool>
 		<tool name="end_game" sideeffect="true" shouldBeLast="true" endTheTurn="true">
-			<description>结束当前剧本/房间。调用前必须对照简报中的WIN COND逐条核查是否满足，不得在reasoning中自行断定胜利条件已达成。若WIN COND要求特定目标被消灭，必须确认有update_npc_card/destroy_npc的ack记录为依据，不接受玩家口头宣称。
-【win字段必填】win=true表示调查员完整满足WIN COND或落入partial_wins；win=false表示失败结局。win字段缺失或为null时后端会拒绝整批并返回错误，要求重发。
+			<description>结束当前剧本/房间。调用前必须对照简报中的<endings>逐条核查当前处境命中了哪一个命名结局，不得在reasoning中自行断定胜利条件已达成。若某结局要求特定目标被消灭，必须确认有update_npc_card/destroy_npc的ack记录为依据，不接受玩家口头宣称。
+【win字段必填】win=true表示达成了<endings>中某个非失败结局(is_failure=false)；win=false表示落入了失败/灾难结局(is_failure=true)。win字段缺失或为null时后端会拒绝整批并返回错误，要求重发。
 【批次硬规则】end_game只能与write/update_llm_note同批次，严禁与update_*/manage_*/record_*/advance_time等同批次——后端会拒绝整批。需先在独立批次完成所有最终状态更新，yield后再发end_game批次。</description>
 			<call_example>{"action":"end_game","win":true,"end_summary":"调查员成功封印了古神，胜利结束冒险"}</call_example>
 			<call_example>{"action":"end_game","win":false,"end_summary":"调查员全灭，冒险以失败告终"}</call_example>
@@ -520,18 +520,38 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		scenarioSB.WriteString("指令：这些标签只影响节奏、场面选择和NPC反应风格，不得覆盖剧本事实和工具结果。\n")
 		scenarioSB.WriteString("</tone_profile>\n")
 	}
-	if content.WinCondition != "" {
-		scenarioSB.WriteString("<win_cond>" + content.WinCondition + "</win_cond>\n")
-	}
-	if content.LoseCondition != "" {
-		scenarioSB.WriteString("<lose_cond>" + content.LoseCondition + "</lose_cond>\n")
-	}
-	if len(content.PartialWins) > 0 {
-		scenarioSB.WriteString("<partial_win_cond>\n")
-		for _, cond := range content.PartialWins {
-			scenarioSB.WriteString("  • " + cond + "\n")
+	if len(content.Endings) > 0 {
+		scenarioSB.WriteString("<endings>\n")
+		for _, ending := range content.Endings {
+			tag := "结局"
+			if ending.IsFailure {
+				tag = "失败结局"
+			}
+			scenarioSB.WriteString(fmt.Sprintf("  • [%s]%s：%s", tag, ending.Name, ending.Trigger))
+			if strings.TrimSpace(ending.SANReward) != "" {
+				scenarioSB.WriteString("（SAN：" + ending.SANReward + "）")
+			}
+			scenarioSB.WriteString("\n")
 		}
-		scenarioSB.WriteString("</partial_win_cond>\n")
+		scenarioSB.WriteString("</endings>\n")
+	}
+	if len(content.Mechanics) > 0 {
+		scenarioSB.WriteString("<mechanics>\n")
+		scenarioSB.WriteString("以下是本模组的量化追踪机制，供你在叙事中参考推进，不做自动结算：\n")
+		for _, m := range content.Mechanics {
+			scenarioSB.WriteString(fmt.Sprintf("  • %s（%s）：%s\n", m.Name, m.Type, m.Description))
+			for _, st := range m.Stages {
+				line := "      - " + st.Label
+				if strings.TrimSpace(st.Trigger) != "" {
+					line += "｜触发：" + st.Trigger
+				}
+				if strings.TrimSpace(st.Effect) != "" {
+					line += "｜效果：" + st.Effect
+				}
+				scenarioSB.WriteString(line + "\n")
+			}
+		}
+		scenarioSB.WriteString("</mechanics>\n")
 	}
 	if content.MapDescription != "" {
 		scenarioSB.WriteString("<map>\n" + content.MapDescription + "\n</map>\n")
@@ -566,7 +586,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 `)
 	if content.Reward != nil {
 		r := content.Reward
-		scenarioSB.WriteString(fmt.Sprintf("<reward>调查员完成通关条件（win_condition满足）时，通过manage_inventory(add)给予：[%s] %s — 效果：%s</reward>\n",
+		scenarioSB.WriteString(fmt.Sprintf("<reward>调查员达成非失败结局时，通过manage_inventory(add)给予：[%s] %s — 效果：%s</reward>\n",
 			r.Type, r.Name, r.MechanicsNote))
 	}
 	scenarioSB.WriteString("\n</scenario>\n")

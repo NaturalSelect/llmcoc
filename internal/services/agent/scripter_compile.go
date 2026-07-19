@@ -30,11 +30,16 @@ func compilerSystemPrompt() string {
 - content.mythos_anchor：必须逐字等于<mythos_anchor>输入
 - content.scenes：从故事文档的地点部分逐个提取；每个scene.id为snake_case英文标识；description须完整保留可见信息/可发现信息/杠杆/风险/出口/感官细节；triggers默认["available_from_start"]，仅当故事文档明确写出解锁条件时才使用条件触发
 - content.npcs：从故事文档的NPC部分逐个提取；description须完整保留公开身份/议程/秘密/标志性细节/关系网；stats按COC7规则书惯例给出合理属性值（含SAN、HP、MP）；attitude取自故事文档写明的初始态度
-- content.clues：从故事文档的线索部分逐条提取为自包含字符串，以[真实]/[隐藏]/[误导]开头并在括号中标注来源地点或NPC；保留线索设计中的来源事实/支持命题/组合关系等关键信息；至少一条[隐藏]线索须包含"神话本质"字样并与mythos_anchor强绑定
-- content.win_condition / content.lose_condition / content.partial_wins：取自故事文档的结局部分，保持"如果[条件]，则[处境变化]"的条件句结构
+- content.clues：从故事文档的线索部分逐条提取为结构化对象{summary,source,skill_check,on_success,on_failure,nature}；nature必须是"真实"/"隐藏"/"误导"之一；summary保留来源事实/支持命题等关键信息；skill_check/on_success/on_failure按故事文档写明的检定与推进逐条对应，文档未写明时可留空；至少一条nature="隐藏"的线索须包含"神话本质"字样并与mythos_anchor强绑定
+- content.endings：从故事文档的结局部分逐个提取为{name,trigger,description,san_reward,is_failure}；trigger保持"如果[条件]，则[处境变化]"的条件句结构；san_reward取自文档写明的SAN恢复/损失（如"恢复1d6"），文档未写明时按结局性质给出合理数值；is_failure标记灾难/失败向结局；故事文档中每一个独立结局都要对应一个ending，不得合并或省略
 - content.system_prompt：包含KP独有的内部真相（复述故事文档的核心真相与mythos_anchor在事件因果中的必要性）以及时间推进/信息分层/不主动引导三项KP协议
 - content.game_start_slot：从故事文档嵌入的具体时刻推算（0-47，每槽30分钟）；文档未写明具体时刻时取16
 - content.map_description：根据故事文档的地点关系概括为文字地图，体现可回访、可交叉验证的调查网络
+- content.handouts：若故事文档包含可直接朗读给玩家的手卡/信件/剪报等原文材料，逐条提取为{title,content,timing}；文档未提供此类材料则content.handouts留空数组，不得虚构
+- content.timeline：若故事文档写明了过去线痕迹或当天推进的时间节点，逐条提取为{time,event,phase:past|current}；文档未写明明确时间线则留空数组
+- content.keeper_appendix：若故事文档包含难度调节、单双人团建议或恐怖呈现提示，提取为{difficulty_down,difficulty_up,solo_advice,group_advice,horror_tips,theme_guidance}；文档未提供则整体省略（null）
+- content.entry_identities：若故事文档为不同职业调查员写明了差异化的入场方式，逐条提取为{profession,init_resource,init_limit,recommend_clues}；文档未区分职业入场则留空数组
+- content.mechanics：若故事文档描述了可量化追踪的机制（如计数器、行动时钟），提取为{name,type:counter|clock|tracker,description,stages:[{label,effect,trigger}]}；这些机制仅供KP参考，不做自动结算；文档未设计此类机制则留空数组
 - reward_concept：逐字取自<reward_concept>输入，不改写、不留空（输入为空则留空字符串）
 
 【硬性约束】
@@ -42,7 +47,7 @@ func compilerSystemPrompt() string {
 - 不得改变故事文档已确定的真相、神话锚点、误导线索的四要素设计或结局条件
 - [隐藏]神话本质说明中出现的法术名/物品名/怪物名/材质名必须与<mythos_anchor>及故事文档一致，不得新造规则书中不存在的元素
 - description/content.setting/content.intro必须保持故事文档表层情境的冷开场语气：中性日常，不剧透真相、不渲染恐怖、不出现惊悚诡异词汇
-- content.clues中的[真实]线索至少2条且互相独立可组合；不得只编译出单一线索链
+- content.clues中nature="真实"的线索至少2条且互相独立可组合；不得只编译出单一线索链
 - 至少一位NPC的description须写明"秘密"或"保留"信息
 </task>
 <response_format>json_object</response_format>

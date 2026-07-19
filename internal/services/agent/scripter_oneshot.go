@@ -83,15 +83,68 @@ var oneshotResultExample = OneshotResult{
 				Stats:       map[string]int{"STR": 55, "CON": 60, "SIZ": 65, "DEX": 50, "APP": 40, "INT": 55, "POW": 50, "EDU": 55, "SAN": 50, "HP": 12, "MP": 10},
 			},
 		},
-		Clues: []string{
-			"[真实]失窃书目的共同点(书架区): 被取走的每一本都出自同一位捐赠者Douglas的旧藏；获取方式：核对编目卡与捐赠登记。单凭此条只能锁定「目标是Douglas旧物」，无法解释谁在取、为何取。",
-			"[真实]窗台上的泥土(档案室): 窃贼留下的泥土矿物成分与镇北墓地一致，而非街道或花园的土；获取方式：检查窗台并做成分比对。与「失窃书目共同点」组合，可推翻活人盗贼说、指向墓地方向。",
-			"[隐藏]神话本质(墓地): 取书者是食尸鬼（Ghoul）——死者变形后的存在，保留生前记忆与执念；SAN检定1/1d6。真正的理智代价不来自它的外形，而来自承认「死亡并非终点、逝者仍以非人方式延续」这一认知本身；具体属性按规则书裁定。",
-			"[误导]守墓人的判断(大厅): 守墓人亲眼见过夜里翻墙的佝偻身影，动作迟缓、指甲缝里全是泥，他据此坚称是某个惯偷活人趁夜盗墓——这些体征全部属实，真相揭晓后仍成立，只是掩盖了入侵者本非活人；调查员一旦否定「活人盗贼」，反而会去比对泥土来源与墓地痕迹，被推向真正的方向。",
+		Clues: []models.ClueData{
+			{
+				Summary:    "被取走的每一本都出自同一位捐赠者Douglas的旧藏",
+				Source:     "书架区，核对编目卡与捐赠登记",
+				SkillCheck: "图书馆使用",
+				OnSuccess:  "锁定「目标是Douglas旧物」，但无法解释谁在取、为何取",
+				OnFailure:  "馆员闲聊中主动提起捐赠者名字，调查员仍能获知这一事实",
+				Nature:     "真实",
+			},
+			{
+				Summary:    "窗台上的泥土矿物成分与镇北墓地一致，而非街道或花园的土",
+				Source:     "档案室，检查窗台并做成分比对",
+				SkillCheck: "侦查",
+				OnSuccess:  "与「失窃书目的共同点」组合，可推翻活人盗贼说，指向墓地方向",
+				OnFailure:  "守墓人闲聊中提到墓地土质特殊，调查员仍可获得同等信息",
+				Nature:     "真实",
+			},
+			{
+				Summary:    "取书者是食尸鬼（Ghoul）——死者变形后的存在，保留生前记忆与执念；SAN检定1/1d6",
+				Source:     "墓地",
+				SkillCheck: "克苏鲁神话",
+				OnSuccess:  "真正的理智代价不来自它的外形，而来自承认「死亡并非终点、逝者仍以非人方式延续」这一认知本身；具体属性按规则书裁定",
+				Nature:     "隐藏",
+			},
+			{
+				Summary:   "守墓人亲眼见过夜里翻墙的佝偻身影，动作迟缓、指甲缝里全是泥，据此坚称是某个惯偷活人趁夜盗墓",
+				Source:    "大厅，守墓人Henrik",
+				OnSuccess: "这些体征全部属实，真相揭晓后仍成立；调查员一旦否定「活人盗贼」，反而会去比对泥土来源与墓地痕迹，被推向真正的方向",
+				Nature:    "误导",
+			},
 		},
-		WinCondition:  "如果调查员让Douglas重获藏书，则他退隐墓地，书籍谜团以悲哀收场。",
-		LoseCondition: "如果图书馆永久关闭，则Douglas转向其他途径，某个新目标成为下一个遭遇者。",
-		PartialWins:   []string{"如果阻止了入侵但未弄清身份，则图书馆恢复秩序，但Douglas的执念继续。"},
+		Endings: []models.EndingData{
+			{
+				Name:        "书归其主",
+				Trigger:     "如果调查员让Douglas重获藏书，则他退隐墓地",
+				Description: "书籍谜团以悲哀收场，图书馆恢复平静",
+				SANReward:   "恢复1d4",
+			},
+			{
+				Name:        "永久关闭",
+				Trigger:     "如果图书馆永久关闭，则Douglas转向其他途径",
+				Description: "某个新目标成为下一个遭遇者，威胁并未真正解除",
+				SANReward:   "损失1d6",
+				IsFailure:   true,
+			},
+		},
+		Handouts: []models.HandoutData{
+			{
+				Title:   "捐赠登记簿摘抄",
+				Content: "9月1日，Margaret Doyle代已故Douglas Whitfield捐出藏书47册，注明「按其遗愿，供图书馆自由处置」。",
+				Timing:  "调查员查阅捐赠登记时",
+			},
+		},
+		Timeline: []models.TimelineEvent{
+			{Time: "六周前", Event: "Douglas Whitfield病逝，侄女Margaret按遗愿将藏书捐赠图书馆", Phase: "past"},
+			{Time: "开局当晚", Event: "若无人阻止，取书者将在闭馆后潜入书架区，带走下一批目标书籍", Phase: "current"},
+		},
+		KeeperAppendix: &models.KeeperAppendix{
+			DifficultyDown: "让守墓人主动提供泥土线索，缩短调查员定位墓地的时间",
+			DifficultyUp:   "取书者提前带走部分证据，迫使调查员更依赖NPC口述重建事实",
+			SoloAdvice:     "单人团可让守墓人承担更多主动提示功能",
+		},
 	},
 }
 
@@ -205,14 +258,14 @@ func oneshotSystemPrompt() string {
 	- [隐藏]的神话本质说明只能引用 translate_anchor 已确认的规则书元素（神格/怪物/法术/典籍/物品），禁止自创规则书中不存在的法术名、物品名、材质名或机制名
 	- 神话本质的因果链条必须逻辑自洽：前因→触发条件→可观察后果，每一步都必须在剧本设定的世界观中成立，不能为了”看起来恐怖”而堆砌不通顺的伪科学解释
 
-线索内部设计要求（architect内部推理用，不改变输出格式——最终clues仍为字符串数组）：
-设计每条线索时必须在内部明确以下五项，并将核心信息自然融入线索描述文本：
-1. 来源事实：这条线索基于什么可观察/可验证的物理事实
-2. 支持命题：这条线索支持哪个推理命题（真相命题或误导命题）
-3. 不能单独证明：仅凭此线索不能得出什么结论（防止单线索通关）
-4. 组合关系：需要与哪条/哪几条线索组合才能推进
+线索内部设计要求（architect内部推理用）：
+设计每条线索时必须在内部明确以下五项，并将结果落进结构化字段：
+1. 来源事实：这条线索基于什么可观察/可验证的物理事实 → summary + source
+2. 支持命题：这条线索支持哪个推理命题（真相命题或误导命题）→ 体现在summary的表述方向
+3. 不能单独证明：仅凭此线索不能得出什么结论（防止单线索通关）→ 写进on_success/on_failure的推进限度
+4. 组合关系：需要与哪条/哪几条线索组合才能推进 → 可在on_success中点出需要配合的另一条线索
 5. 位于推理链的哪一步：对应骨架 reasoning_chain 的第几步
-输出格式不变：每条线索仍为一个自包含字符串，以[真实]/[隐藏]/[误导]开头，并在括号中标注来源地点/NPC；正文应包含足够信息让KP判断何时、在何条件下提供此线索。每条线索至少对应 reasoning_chain 中的一步；[误导]线索必须支持一个与 reasoning_chain 冲突但表面合理的替代命题。
+输出格式：每条线索是一个结构化对象 {summary, source, skill_check, on_success, on_failure, nature}；nature 必须是"真实"/"隐藏"/"误导"之一（不再用方括号前缀）；on_failure 写明检定失败时如何不卡关地获得同等或替代信息。每条线索至少对应 reasoning_chain 中的一步；nature=误导 的线索必须支持一个与 reasoning_chain 冲突但表面合理的替代命题。
 
 内部自查③：
 ✓ 是否存在至少两条不同来源的推进路径，而不是把唯一关键线索锁在单一检定里？
@@ -232,7 +285,7 @@ NPC应承担叙事功能，而不是填表：
 - 必须存在“现在线”推进：无人干预时，局势会继续恶化、转移或完成某种仪式/行动
 - current_state：无人干预时正在做的具体行动（非"等待调查员"）
 - intervention_pivot：调查员可执行的具体动作（非"可以干预"空话）
-- ending_signals → win/lose/partial_wins：条件句结构
+- ending_signals → endings：至少2个命名结局(name/trigger/description/san_reward/is_failure)，trigger使用条件句结构，胜利与失败结局都要给出san_reward
 
 SAN要求：
 - 恐怖暴露应渐进升级：先是诡异与不协调，再到尸体/仪式，再到直视神话本质
@@ -260,14 +313,14 @@ SAN要求：
 ✓ 标题与散文落在具体名词上；标题不含"低语/深渊/阴影"等滥用词？
 ✓ 每个重要NPC有标志性小细节，并嵌入NPC关系网？
 ✓ scenes体现调查网络、场景功能与五感氛围，而不是空泛地点介绍？
-✓ clues每条以[真实]/[隐藏]/[误导]开头；至少一条[隐藏]神话本质涵盖mythos_anchor？
+✓ 每条clue的nature字段是"真实"/"隐藏"/"误导"之一；至少一条nature="隐藏"的线索涵盖神话本质并关联mythos_anchor？
 ✓ [隐藏]神话本质说明中引用的所有法术名、物品名、怪物名、材质名均来自规则书（通过 translate_anchor 已确认），无自创元素？
 ✓ [隐藏]神话本质的因果链条逻辑自洽，每一步在剧本世界观中成立，无不通顺的伪科学拼凑？
 ✓ 每条[误导]线索是否同时满足：①是调查员可亲见亲验的真实观察（非编造、非怪异堆砌）②有sincere承载者给出世俗化错误解释 ③真相揭晓后假象仍真实、错误解释仍部分成立 ④推翻该解释会把调查导向而非堵死主线？
 ✓ 是否至少存在两个事件（主线 + 红鲱鱼），各自有完整线索链，且红鲱鱼排除后主线仍可推进？
 ✓ 关键推进信息是否具备多入口，而不是依赖单一检定成功？
 ✓ system_prompt含三项KP协议（时间推进/信息分层/不主动引导）+ 核心真相注入？
-✓ win/lose_condition使用条件句，不是二元裁定？
+✓ 每个ending的trigger是否使用条件句（而非二元裁定），且都填写了san_reward？
 ✓ 所有NPC stats含SAN字段？
 ✓ 神话存在的规则/能力是否是事件链中至少一个关键转折的必要条件（去掉它事件链断裂）？
 ✓ 最终体验重点是”调查员亲手揭开可怕真相”，而不是”被剧情推着走”或”靠战斗通关”？
@@ -314,10 +367,21 @@ submit.draft 必须包含以下字段：
     "mythos_anchor": "translate_anchor确认的COC7元素全称",
     "scenes": [{"id":"...","name":"...","description":"可见/可发现/杠杆/风险/出口/感官细节；体现安全区/危险区/神话逼近区中的至少一种功能","triggers":["available_from_start"]}],
     "npcs": [{"name":"...","description":"公开身份/议程/秘密或保留理由","attitude":"...","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"SAN":50,"HP":10,"MP":10}}],
-    "clues": ["[真实]来自地点A的推进线索：...", "[真实]来自NPC或文件的平行推进线索：...", "[隐藏]神话本质(...): ...", "[误导]表面假象(地点): 具体可观察异常；承载者及其sincere的错误解释——真相揭晓后此假象仍真实、错误解释仍部分成立，只是掩盖了核心；排除该解释会把调查导向真正方向。"],
-    "win_condition": "如果[条件]，则[处境变化]，[什么不可挽回地改变]",
-    "lose_condition": "如果[条件]，则[局势进入新稳定态]，[什么不可挽回地改变]",
-    "partial_wins": ["如果[条件]，则[部分结局]"]
+    "clues": [
+      {"summary":"来自地点A的推进线索（自包含事实）","source":"地点/NPC/文件","skill_check":"推荐检定技能，可留空","on_success":"检定成功获得的信息或效果","on_failure":"检定失败时如何不卡关地获得同等或替代信息","nature":"真实"},
+      {"summary":"来自NPC或文件的平行推进线索","source":"...","nature":"真实"},
+      {"summary":"神话本质说明，只引用translate_anchor已确认的规则书元素","source":"...","nature":"隐藏"},
+      {"summary":"表面假象：具体可观察异常；承载者及其sincere的错误解释——真相揭晓后此假象仍真实、错误解释仍部分成立，只是掩盖了核心；排除该解释会把调查导向真正方向","source":"...","nature":"误导"}
+    ],
+    "endings": [
+      {"name":"结局名(取材于剧本具体名词)","trigger":"如果[条件]，则[处境变化]，[什么不可挽回地改变]","description":"结局叙事(可选)","san_reward":"如\"恢复1d6\"","is_failure":false},
+      {"name":"...","trigger":"如果[条件]，则[局势进入新稳定态]，[什么不可挽回地改变]","san_reward":"如\"损失1d6\"","is_failure":true}
+    ],
+    "handouts": [{"title":"手卡标题(可选字段，无合适手卡可整体省略)","content":"可直接朗读给玩家的正文","timing":"发放时机"}],
+    "timeline": [{"time":"六周前","event":"过去线痕迹事件(可选字段，无必要可整体省略)","phase":"past"},{"time":"开局当晚","event":"无人干预时的当前推进","phase":"current"}],
+    "keeper_appendix": {"difficulty_down":"降低难度建议(可选整体省略)","difficulty_up":"提高难度建议","solo_advice":"单人团建议","group_advice":"多人团建议"},
+    "entry_identities": [{"profession":"职业名(可选整体省略)","init_resource":"初始资源","recommend_clues":"推荐开局线索"}],
+    "mechanics": [{"name":"机制名(可选整体省略，仅供KP参考不做自动结算)","type":"counter|clock|tracker","description":"机制说明","stages":[{"label":"阶段标签","effect":"该阶段效果","trigger":"推进条件"}]}]
   }
 }
 </draft_schema>`
@@ -364,11 +428,11 @@ type oneshotArchitectToolCall struct {
 // strongly-typed draft.
 type storyArchitectToolCall struct {
 	Action        ToolCallType `json:"action"`
-	Concept       string       `json:"concept"`         // translate_anchor
-	Reason        string       `json:"reason"`          // translate_anchor
-	StoryDocument string       `json:"story_document"`  // submit_story
-	MythosAnchor  string       `json:"mythos_anchor"`   // submit_story
-	RewardConcept string       `json:"reward_concept"`  // submit_story
+	Concept       string       `json:"concept"`        // translate_anchor
+	Reason        string       `json:"reason"`         // translate_anchor
+	StoryDocument string       `json:"story_document"` // submit_story
+	MythosAnchor  string       `json:"mythos_anchor"`  // submit_story
+	RewardConcept string       `json:"reward_concept"` // submit_story
 }
 
 // ---------------------------------------------------------------------------
@@ -889,13 +953,13 @@ func logicReviewSystemPrompt() string {
 	return `<role>剧本逻辑审查员</role>
 <task>以<story_document>为唯一真相源，审查编译后COC剧本结构化数据的事实忠实度、因果逻辑与推理可达性。不审文风、不审用词。</task>
 <checklist>
-1. 事实忠实度：scenes/npcs/clues/win_condition/lose_condition中的人名、地名、因果关系、结局条件是否与<story_document>逐一对应，编译时有没有新增、删减或篡改任何事实？
+1. 事实忠实度：scenes/npcs/clues/endings中的人名、地名、因果关系、结局条件是否与<story_document>逐一对应，编译时有没有新增、删减或篡改任何事实？
 2. 异常→线索→结论 可达性：从故事文本描述的当前异常出发，沿clues是否能到达故事文本的核心真相？是否存在至少两条独立路径？
 3. NPC知情边界：每个NPC知道什么、不知道什么是否与故事文本一致？NPC不应知道超出其在故事中接触范围的信息
-4. 误导排除后仍可推进：去掉所有[误导]线索后，仅靠[真实]+[隐藏]是否仍能推导到故事文本描述的真相？
+4. 误导排除后仍可推进：去掉所有nature="误导"的线索后，仅靠nature="真实"/"隐藏"的线索是否仍能推导到故事文本描述的真相？
 5. 神话锚点必要性：mythos_anchor是否是故事文本因果链中至少一个环节的必要条件（去掉它事件链断裂）？
 6. 洛氏恐怖强度：剧本是否体现了认知冲击、尺度错位、不可逆代价中的至少两项？而非仅靠血腥或惊吓桥段？
-7. 胜负条件因果：win_condition/lose_condition是否与故事文本描述的结局条件一致，且从不同终止状态逻辑推出？
+7. 结局条件因果：每个ending的trigger是否与故事文本描述的对应结局条件一致，且从不同终止状态逻辑推出？
 8. Intro目的性：intro是否清楚交代了调查员到场的基本理由/表层任务，让玩家知道自己为何在此，且不列出、不推荐任何具体行动或下一步（行动留给玩家自行探索）？
 </checklist>
 <output>只输出JSON对象：{"issues":["问题1","问题2"]}；每条问题指明具体字段和可操作的修改方向；按严重程度排序，最多8条；没有问题输出{"issues":[]}。</output>`
@@ -913,16 +977,14 @@ func buildLogicReviewPayload(draft *ScenarioDraft) map[string]any {
 		npcs = append(npcs, map[string]string{"name": n.Name, "description": n.Description, "attitude": n.Attitude})
 	}
 	return map[string]any{
-		"name":           draft.Name,
-		"system_prompt":  draft.Content.SystemPrompt,
-		"mythos_anchor":  draft.Content.MythosAnchor,
-		"mythos_core":    draft.Content.MythosCore,
-		"scenes":         scenes,
-		"npcs":           npcs,
-		"clues":          draft.Content.Clues,
-		"win_condition":  draft.Content.WinCondition,
-		"lose_condition": draft.Content.LoseCondition,
-		"partial_wins":   draft.Content.PartialWins,
+		"name":          draft.Name,
+		"system_prompt": draft.Content.SystemPrompt,
+		"mythos_anchor": draft.Content.MythosAnchor,
+		"mythos_core":   draft.Content.MythosCore,
+		"scenes":        scenes,
+		"npcs":          npcs,
+		"clues":         draft.Content.Clues,
+		"endings":       draft.Content.Endings,
 	}
 }
 
@@ -1119,28 +1181,25 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		}
 	}
 	if len(draft.Content.Clues) == 0 {
-		draft.Content.Clues = []string{
-			"[真实]公开异常(调查入口): 一个无法普通解释的局势已经开始；获取方式：到达现场并主动询问或检查。",
-			"[误导]表象线索(初步调查): 支持错误推断的表象证据；表面合理但只能解释一部分。",
+		draft.Content.Clues = []models.ClueData{
+			{Summary: "公开异常(调查入口): 一个无法普通解释的局势已经开始", Nature: "真实", Source: "到达现场并主动询问或检查"},
+			{Summary: "表象线索(初步调查): 支持错误推断的表象证据；表面合理但只能解释一部分", Nature: "误导", Source: "初步调查"},
 		}
 		log.Printf("[scripter:normalize] session=%s generated default clues count=2", sessionID)
 	}
-	for i, clue := range draft.Content.Clues {
-		draft.Content.Clues[i] = normalizeClueString(clue)
+	for i := range draft.Content.Clues {
+		draft.Content.Clues[i].Summary = strings.TrimSpace(draft.Content.Clues[i].Summary)
+		if strings.TrimSpace(draft.Content.Clues[i].Nature) == "" {
+			draft.Content.Clues[i].Nature = "真实"
+		}
 	}
-	// Extract [隐藏]神话本质 → MythosCore
-	var filteredClues []string
+	// 提取标注"神话本质"的隐藏线索 → MythosCore
+	var filteredClues []models.ClueData
 	for _, clue := range draft.Content.Clues {
-		if strings.Contains(clue, "神话本质") {
+		if strings.Contains(clue.Summary, "神话本质") {
 			if strings.TrimSpace(draft.Content.MythosCore) == "" {
-				text := clue
-				if strings.HasPrefix(text, "[") {
-					if end := strings.Index(text, "]"); end != -1 {
-						text = strings.TrimSpace(text[end+1:])
-					}
-				}
-				draft.Content.MythosCore = text
-				log.Printf("[scripter:normalize] session=%s extracted mythos_core=%q", sessionID, truncateRunes(text, 200))
+				draft.Content.MythosCore = clue.Summary
+				log.Printf("[scripter:normalize] session=%s extracted mythos_core=%q", sessionID, truncateRunes(clue.Summary, 200))
 			}
 		} else {
 			filteredClues = append(filteredClues, clue)
@@ -1151,16 +1210,11 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		draft.Content.MythosCore = fmt.Sprintf("神话本质(核心发现): %s；到达终止节点并触发揭示后承担理智代价。", draft.Content.MythosAnchor)
 		log.Printf("[scripter:normalize] session=%s synthesized mythos_core from anchor", sessionID)
 	}
-	if strings.TrimSpace(draft.Content.WinCondition) == "" {
-		draft.Content.WinCondition = "如果调查员让关键事实公开并改变至少一个派系时间线，则局势以较低代价固化，但神话锚点的余波仍保留。"
-		log.Printf("[scripter:normalize] session=%s filled win_condition", sessionID)
-	}
-	if strings.TrimSpace(draft.Content.LoseCondition) == "" {
-		draft.Content.LoseCondition = "如果关键时间线终点到达且调查员没有改变任何派系行动，则局势进入新的稳定态，某人或某地不可挽回地改变。"
-		log.Printf("[scripter:normalize] session=%s filled lose_condition", sessionID)
-	}
-	if len(draft.Content.PartialWins) == 0 {
-		draft.Content.PartialWins = []string{"如果调查员保护了个人或证据，但没有改变所有派系时间线，则余波继续存在。"}
-		log.Printf("[scripter:normalize] session=%s filled partial_wins", sessionID)
+	if len(draft.Content.Endings) == 0 {
+		draft.Content.Endings = []models.EndingData{
+			{Name: "余波固化", Trigger: "调查员让关键事实公开并改变至少一个派系时间线", Description: "局势以较低代价固化，但神话锚点的余波仍保留。", SANReward: "恢复1d6"},
+			{Name: "新的稳定态", Trigger: "关键时间线终点到达且调查员没有改变任何派系行动", Description: "局势进入新的稳定态，某人或某地不可挽回地改变。", IsFailure: true, SANReward: "损失1d10"},
+		}
+		log.Printf("[scripter:normalize] session=%s filled default endings count=2", sessionID)
 	}
 }

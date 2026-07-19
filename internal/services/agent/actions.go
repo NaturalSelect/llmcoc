@@ -457,7 +457,20 @@ func (queryCluesAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	if len(clues) > 0 {
 		var sb strings.Builder
 		for i, c := range clues {
-			sb.WriteString(fmt.Sprintf("[Idx: %d] %s\n", i, c))
+			sb.WriteString(fmt.Sprintf("[Idx: %d] [%s] %s", i, c.Nature, c.Summary))
+			if strings.TrimSpace(c.Source) != "" {
+				sb.WriteString("（来源：" + c.Source + "）")
+			}
+			if strings.TrimSpace(c.SkillCheck) != "" {
+				sb.WriteString("｜检定：" + c.SkillCheck)
+			}
+			if strings.TrimSpace(c.OnSuccess) != "" {
+				sb.WriteString("｜成功：" + c.OnSuccess)
+			}
+			if strings.TrimSpace(c.OnFailure) != "" {
+				sb.WriteString("｜失败推进：" + c.OnFailure)
+			}
+			sb.WriteString("\n")
 		}
 		clueResult = sb.String()
 	}
