@@ -343,6 +343,94 @@
                             @click="scenarioGenLogs = []" class="text-[11px] text-amber-700 hover:text-amber-500 mt-1 underline font-ui">清空日志</button>
                     </div>
                 </div>
+
+                <div class="card rounded p-5 lg:col-span-2">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm font-ui">上传故事编译模组</h3>
+                    <p class="text-xs text-amber-800 mb-3 font-ui">
+                        管理员自行提供故事全文与神话锚点，跳过 AI 故事创作阶段，模型只做编译（结构化提取）。流水线：编译 → 自动修复 → 逻辑审查 → 奖励设计（可选）→ 规范化。生成过程流式显示；中途关闭页面不影响后台生成与入库。
+                    </p>
+                    <div class="mb-3">
+                        <label class="block text-xs text-amber-700 mb-1 font-ui">故事全文</label>
+                        <textarea x-model="compileStoryForm.story_document" rows="8"
+                            placeholder="粘贴完整故事文本…" class="inp resize-none font-mono text-xs"></textarea>
+                        <p class="text-[11px] text-amber-900 mt-1 font-ui">编译质量取决于故事文本的完整度：场景、NPC、线索交代越清晰，编译结果越准确。</p>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">神话锚点</label>
+                            <input x-model="compileStoryForm.mythos_anchor" type="text" placeholder="例如：食尸鬼 Ghoul"
+                                class="inp" />
+                            <p class="text-[11px] text-amber-900 mt-1 font-ui">编译后会强制写回此锚点，防止模型篡改。</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">模组名称（可选）</label>
+                            <input x-model="compileStoryForm.name" type="text" placeholder="留空由系统命名" class="inp" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="block text-xs text-amber-700 mb-1 font-ui">奖励物品概念（可选）</label>
+                        <textarea x-model="compileStoryForm.reward_concept" rows="2"
+                            placeholder="留空则不生成奖励物品" class="inp resize-none"></textarea>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">主题 / 风格</label>
+                            <input x-model="compileStoryForm.theme" type="text" placeholder="例如：海洋、都市传说、古埃及"
+                                class="inp" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">时代背景</label>
+                            <input x-model="compileStoryForm.era" type="text" placeholder="例如：1920s 波士顿、现代东京"
+                                class="inp" />
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">篇幅</label>
+                            <select x-model="compileStoryForm.target_length" class="inp">
+                                <option value="short">短篇（1-2小时）</option>
+                                <option value="medium">中篇（3-4小时）</option>
+                                <option value="long">长篇（5小时以上）</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">最小玩家数</label>
+                            <input x-model.number="compileStoryForm.min_players" type="number" min="1"
+                                placeholder="例如：1" class="inp" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">最大玩家数</label>
+                            <input x-model.number="compileStoryForm.max_players" type="number" min="1"
+                                placeholder="例如：4" class="inp" />
+                        </div>
+                        <div>
+                            <label class="block text-xs text-amber-700 mb-1 font-ui">难度等级</label>
+                            <select x-model="compileStoryForm.difficulty" class="inp">
+                                <option value="easy">easy（入门，容错高）</option>
+                                <option value="normal">normal（标准）</option>
+                                <option value="hard">hard（高压，高风险）</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button @click="compileStoryUpload()" class="btn btn-amber" :disabled="compileStoryRunning">
+                        <span x-show="!compileStoryRunning">开始编译</span>
+                        <span x-show="compileStoryRunning">编译中…</span>
+                    </button>
+                    <div x-show="compileStoryRunning || compileStoryLogs.length" class="mt-3">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-xs text-amber-700 font-ui">编译进度</span>
+                            <span x-show="compileStoryRunning" class="text-[11px] text-amber-500 animate-pulse font-ui">● 实时流式输出中</span>
+                        </div>
+                        <div id="compileStoryLogBox" class="rounded bg-black/40 border border-amber-900/40 p-3 text-[11px] leading-relaxed text-amber-200/90 whitespace-pre-wrap break-all font-mono"
+                            style="max-height: 260px; overflow-y: auto">
+                            <template x-for="(line, idx) in compileStoryLogs" :key="idx">
+                                <div x-text="line"></div>
+                            </template>
+                        </div>
+                        <button x-show="!compileStoryRunning && compileStoryLogs.length"
+                            @click="compileStoryLogs = []" class="text-[11px] text-amber-700 hover:text-amber-500 mt-1 underline font-ui">清空日志</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Shop management -->

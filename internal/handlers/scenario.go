@@ -103,6 +103,21 @@ type GenerateScenarioReq struct {
 // maxScenarioGenCount 是单次批量生成的数量上限；生成受全局串行锁限制，数量过大会导致单次请求长时间占用生成槽位。
 const maxScenarioGenCount = 10
 
+// CompileStoryReq 是管理员上传故事直接编译为模组的请求：管理员提供故事全文与神话锚点，
+// 跳过 Story Architect 生成阶段，模型只做 ETL（编译为结构化数据）。
+type CompileStoryReq struct {
+	StoryDocument string `json:"story_document" binding:"required"`
+	MythosAnchor  string `json:"mythos_anchor" binding:"required"`
+	RewardConcept string `json:"reward_concept"`
+	Name          string `json:"name"`
+	Theme         string `json:"theme"`
+	Era           string `json:"era"`
+	Difficulty    string `json:"difficulty"`
+	MinPlayers    int    `json:"min_players"`
+	MaxPlayers    int    `json:"max_players"`
+	TargetLength  string `json:"target_length"`
+}
+
 // scenarioBatchResult 记录批量生成中单个子任务的结果，用于 batch_done 汇总事件。
 type scenarioBatchResult struct {
 	Index      int    `json:"index"`
@@ -310,6 +325,108 @@ func GenerateScenarioByAgents(c *gin.Context) {
 			case <-c.Request.Context().Done():
 				disconnected = true
 				log.Printf("[agent] scenario generation client disconnected, continuing in background")
+			default:
+			}
+		}
+		if disconnected {
+			continue
+		}
+		c.SSEvent(evt.name, evt.data)
+		c.Writer.Flush()
+	}
+}
+
+// CompileStoryByUpload 以 SSE 流式方式将管理员上传的故事文档直接编译为结构化模组，
+// 跳过 Story Architect 生成阶段（模型只做 ETL）。不支持批量：一次请求编译一篇故事。
+func CompileStoryByUpload(c *gin.Context) {
+	var req CompileStoryReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	setChatSSEHeaders(c)
+
+	events := make(chan scenarioGenEvent, 128)
+	go func() {
+		defer close(events)
+		progress := func(stage, status, detail string) {
+			events <- scenarioGenEvent{name: "progress", data: gin.H{"stage": stage, "status": status, "detail": detail}}
+		}
+
+		gen, err := agent.RunCompileStoryWithProgress(context.Background(), agent.CompileStoryRequest{
+			StoryDocument: req.StoryDocument,
+			MythosAnchor:  req.MythosAnchor,
+			RewardConcept: req.RewardConcept,
+			Name:          req.Name,
+			Theme:         req.Theme,
+			Era:           req.Era,
+			Difficulty:    req.Difficulty,
+			MinPlayers:    req.MinPlayers,
+			MaxPlayers:    req.MaxPlayers,
+			TargetLength:  req.TargetLength,
+		}, progress)
+		if err != nil {
+			log.Printf("[agent] compile-story-upload failed: %v", err)
+			msg := "模组编译失败: " + err.Error()
+			events <- scenarioGenEvent{name: "error", data: gin.H{"index": 1, "message": msg}}
+			return
+		}
+
+		if gen.Draft.Name == "" {
+			gen.Draft.Name = "上传故事-" + time.Now().Format("20060102150405")
+		}
+
+		scenario := models.Scenario{
+			Name:        gen.Draft.Name,
+			Description: gen.Draft.Description,
+			Author:      gen.Draft.Author,
+			Tags:        gen.Draft.Tags,
+			MinPlayers:  gen.Draft.MinPlayers,
+			MaxPlayers:  gen.Draft.MaxPlayers,
+			Difficulty:  gen.Draft.Difficulty,
+			Content:     models.JSONField[models.ScenarioContent]{Data: gen.Draft.Content},
+			IsActive:    true,
+		}
+		if scenario.MinPlayers == 0 {
+			scenario.MinPlayers = 1
+		}
+		if scenario.MaxPlayers == 0 {
+			scenario.MaxPlayers = 4
+		}
+		if scenario.Difficulty == "" {
+			scenario.Difficulty = "normal"
+		}
+
+		if err := models.DB.Create(&scenario).Error; err != nil {
+			log.Printf("[agent] failed to save compiled scenario to DB: %v", err)
+			msg := "模组入库失败，请联系管理员查看服务端日志"
+			events <- scenarioGenEvent{name: "error", data: gin.H{"index": 1, "message": msg}}
+			return
+		}
+
+		generationLog := models.ScenarioGenerationLog{
+			ScenarioID:   scenario.ID,
+			ScenarioName: scenario.Name,
+			LogText:      strings.TrimSpace(gen.GenerationLog),
+		}
+		if generationLog.LogText == "" {
+			generationLog.LogText = "本次编译未捕获到 LLM 对话记录。"
+		}
+		if err := models.DB.Create(&generationLog).Error; err != nil {
+			log.Printf("[agent] failed to save scenario generation log scenario_id=%d: %v", scenario.ID, err)
+		}
+
+		events <- scenarioGenEvent{name: "done", data: gin.H{"index": 1, "scenario_id": scenario.ID, "name": scenario.Name}}
+	}()
+
+	disconnected := false
+	for evt := range events {
+		if !disconnected {
+			select {
+			case <-c.Request.Context().Done():
+				disconnected = true
+				log.Printf("[agent] compile-story-upload client disconnected, continuing in background")
 			default:
 			}
 		}

@@ -1,5 +1,7 @@
 // NOTE: Scenario generation pipeline for sandbox-style COC situation briefs.
-// Single-shot generation: one architect call produces the complete ScenarioDraft.
+// Two-stage generation: story architect writes a free-text StoryOutput
+// (scripter_story.go), then the compiler stage (scripter_compile.go)
+// converts it into the structured ScenarioDraft.
 package agent
 
 import (
@@ -190,7 +192,9 @@ type scripterRoom struct {
 	qa        agentHandle
 	lawyer    agentHandle
 	// NOTE: translator 是独立的发散联想/资料转译 Agent，不复用 lawyer 的 provider/model。
-	translator      agentHandle
+	translator agentHandle
+	// NOTE: compiler 负责把故事文本忠实编译为结构化ScenarioContent；未配置时 fallback 到 architect。
+	compiler        agentHandle
 	sessionID       string
 	req             ScenarioCreationRequest
 	npcBlacklist    []string
@@ -257,8 +261,10 @@ func newScripterRoom(req ScenarioCreationRequest) (*scripterRoom, error) {
 	if err != nil {
 		return nil, fmt.Errorf("translator agent 加载失败: %w", err)
 	}
+	// NOTE: compiler 未配置或被禁用时不阻断房间创建，compileStoryToModule 会 fallback 到 architect。
+	compiler, _ := loadSingleAgent(models.AgentRoleCompiler)
 	return &scripterRoom{
-		architect: architect, qa: qa, lawyer: lawyer, translator: translator,
+		architect: architect, qa: qa, lawyer: lawyer, translator: translator, compiler: compiler,
 		req: normalizeScenarioCreationRequest(req),
 	}, nil
 }
@@ -316,7 +322,7 @@ func (r *scripterRoom) prepareContext() {
 }
 
 // ---------------------------------------------------------------------------
-// Run — single-shot pipeline
+// Run — story-to-compile pipeline
 // ---------------------------------------------------------------------------
 
 func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) {
@@ -333,32 +339,104 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		return ScenarioCreationOutput{}, ctx.Err()
 	}
 	reqJSON, _ := json.Marshal(r.req)
-	log.Printf("[scripter] session=%s single-shot generation start req=%s", sessionID, reqJSON)
+	log.Printf("[scripter] session=%s story-to-compile generation start req=%s", sessionID, reqJSON)
 
 	log.Printf("[scripter] session=%s stage=constraints start", sessionID)
-	r.emitProgress("constraints", "start", "阶段 1/5：构建地理与多样性约束…")
+	r.emitProgress("constraints", "start", "阶段 1/6：构建地理与多样性约束…")
 	constraints := r.buildConstraints(ctx)
 	log.Printf("[scripter] session=%s stage=constraints done geography=%q", sessionID, strings.Join(constraints.GeographyFlavor, " → "))
 	r.emitProgress("constraints", "done", "约束就绪："+strings.Join(constraints.GeographyFlavor, " → "))
 	logScripterArtifact("Constraints", sessionID, constraints)
 
-	log.Printf("[scripter] session=%s stage=oneshot start", sessionID)
-	r.emitProgress("oneshot", "start", "阶段 2/5：Architect 生成模组正文（多轮工具调用，耗时较长）…")
-	draft, _, rewardConcept, skeleton, err := generateOneshotDraft(ctx, r, constraints)
+	log.Printf("[scripter] session=%s stage=story start", sessionID)
+	r.emitProgress("story", "start", "阶段 2/6：Story Architect 创作故事文档（多轮工具调用，耗时较长）…")
+	story, err := generateStoryDocument(ctx, r, constraints)
 	if err != nil {
-		log.Printf("[scripter] session=%s stage=oneshot error=%v", sessionID, err)
-		r.emitProgress("oneshot", "error", "正文生成失败："+err.Error())
-		return ScenarioCreationOutput{}, fmt.Errorf("单步生成失败: %w", err)
+		log.Printf("[scripter] session=%s stage=story error=%v", sessionID, err)
+		r.emitProgress("story", "error", "故事文档生成失败："+err.Error())
+		return ScenarioCreationOutput{}, fmt.Errorf("故事文档生成失败: %w", err)
 	}
-	log.Printf("[scripter] session=%s stage=oneshot done name=%q scenes=%d npcs=%d clues=%d",
+	log.Printf("[scripter] session=%s stage=story done doc_len=%d anchor=%q",
+		sessionID, len([]rune(story.Document)), truncateRunes(story.MythosAnchor, 80))
+	r.emitProgress("story", "done", fmt.Sprintf("故事文档完成：%d字，神话锚点：%s", len([]rune(story.Document)), truncateRunes(story.MythosAnchor, 40)))
+
+	iterations := 1
+
+	// 故事文档结构校验修复：最多2轮
+	for round := 1; round <= 2; round++ {
+		issues := validateStoryDocument(story)
+		if len(issues) == 0 {
+			break
+		}
+		log.Printf("[scripter] session=%s stage=story_repair round=%d issues=%d %v", sessionID, round, len(issues), issues)
+		r.emitProgress("story_repair", "start", fmt.Sprintf("故事文档结构修复第 %d 轮：发现 %d 个问题", round, len(issues)))
+		repaired, repairErr := repairStoryDocument(ctx, r, constraints, story, issues)
+		if repairErr != nil {
+			log.Printf("[scripter] session=%s stage=story_repair round=%d failed: %v", sessionID, round, repairErr)
+			r.emitProgress("story_repair", "error", fmt.Sprintf("故事文档修复第 %d 轮失败（保留当前文档）", round))
+			break
+		}
+		story = repaired
+		iterations++
+		log.Printf("[scripter] session=%s stage=story_repair round=%d done doc_len=%d", sessionID, round, len([]rune(story.Document)))
+		r.emitProgress("story_repair", "done", fmt.Sprintf("故事文档结构修复第 %d 轮完成", round))
+	}
+
+	// 人写化审查：QA 审 AI 腔与写作质感，问题清单走一轮故事文档修复；失败不阻塞生成
+	log.Printf("[scripter] session=%s stage=qa_humanize start", sessionID)
+	r.emitProgress("qa_humanize", "start", "阶段 3/6：QA 人写化审查…")
+	if qaIssues := runStoryQAReview(ctx, r, story.Document, constraints); len(qaIssues) > 0 {
+		log.Printf("[scripter] session=%s stage=qa_humanize issues=%d %v", sessionID, len(qaIssues), qaIssues)
+		r.emitProgress("qa_humanize", "start", fmt.Sprintf("人写化审查发现 %d 个问题，执行修复", len(qaIssues)))
+		logScripterArtifact("QA Humanize Issues", sessionID, qaIssues)
+		repaired, repairErr := repairStoryDocument(ctx, r, constraints, story, qaIssues)
+		if repairErr != nil {
+			log.Printf("[scripter] session=%s stage=qa_humanize repair failed: %v (keeping story)", sessionID, repairErr)
+			r.emitProgress("qa_humanize", "error", "人写化修复失败（保留当前故事文档）")
+		} else {
+			story = repaired
+			iterations++
+			log.Printf("[scripter] session=%s stage=qa_humanize done doc_len=%d", sessionID, len([]rune(story.Document)))
+			r.emitProgress("qa_humanize", "done", "人写化修复完成")
+		}
+	} else {
+		log.Printf("[scripter] session=%s stage=qa_humanize no issues", sessionID)
+		r.emitProgress("qa_humanize", "done", "人写化审查通过")
+	}
+
+	draft, compileIters, err := r.compileAndFinalize(ctx, story, constraints)
+	if err != nil {
+		return ScenarioCreationOutput{}, err
+	}
+	iterations += compileIters
+	logScripterArtifact("Final ScenarioDraft", sessionID, draft)
+
+	return ScenarioCreationOutput{Draft: draft, IronyCore: &IronyCore{}, Iterations: iterations, GenerationLog: r.generationLogText()}, nil
+}
+
+// compileAndFinalize 从已有故事文档出发执行 compile→repair→logic_review→reward_agent→normalize，
+// 供完整 AI 生成流水线（Run）和管理员上传故事直接编译（RunCompileStoryWithProgress）两条路径共用。
+// 返回编译产出的草稿与本阶段内的修复轮次数；error 非空时上层应直接返回失败。
+func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput, constraints ScripterConstraints) (ScenarioDraft, int, error) {
+	sessionID := r.sessionID
+	iterations := 0
+
+	log.Printf("[scripter] session=%s stage=compile start", sessionID)
+	r.emitProgress("compile", "start", "Compiler 编译结构化数据…")
+	draft, err := compileStoryToModule(ctx, r, story, constraints)
+	if err != nil {
+		log.Printf("[scripter] session=%s stage=compile error=%v", sessionID, err)
+		r.emitProgress("compile", "error", "编译失败："+err.Error())
+		return ScenarioDraft{}, iterations, fmt.Errorf("编译失败: %w", err)
+	}
+	log.Printf("[scripter] session=%s stage=compile done name=%q scenes=%d npcs=%d clues=%d",
 		sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
-	r.emitProgress("oneshot", "done", fmt.Sprintf("正文草稿完成：《%s》，场景 %d 个、NPC %d 个、线索 %d 条",
+	r.emitProgress("compile", "done", fmt.Sprintf("编译完成：《%s》，场景 %d 个、NPC %d 个、线索 %d 条",
 		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues)))
 
 	applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
 
 	// Repair loop: up to 2 rounds for structural issues
-	iterations := 1
 	for round := 1; round <= 2; round++ {
 		issues := validateDraftCompatibility(draft)
 		issues = append(issues, checkScenarioTagsOverlap(draft.Tags, r.tagsBlacklist)...)
@@ -381,34 +459,10 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		r.emitProgress("repair", "done", fmt.Sprintf("结构修复第 %d 轮完成", round))
 	}
 
-	// 人写化审查：QA 审 AI 腔与写作质感，问题清单走一轮修复；失败不阻塞生成
-	log.Printf("[scripter] session=%s stage=qa_humanize start", sessionID)
-	r.emitProgress("qa_humanize", "start", "阶段 3/5：QA 人写化审查…")
-	if qaIssues := runOneshotQAReview(ctx, r, &draft, constraints); len(qaIssues) > 0 {
-		log.Printf("[scripter] session=%s stage=qa_humanize issues=%d %v", sessionID, len(qaIssues), qaIssues)
-		r.emitProgress("qa_humanize", "start", fmt.Sprintf("人写化审查发现 %d 个问题，执行修复", len(qaIssues)))
-		logScripterArtifact("QA Humanize Issues", sessionID, qaIssues)
-		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, qaIssues)
-		if repairErr != nil {
-			log.Printf("[scripter] session=%s stage=qa_humanize repair failed: %v (keeping draft)", sessionID, repairErr)
-			r.emitProgress("qa_humanize", "error", "人写化修复失败（保留当前草稿）")
-		} else {
-			draft = repaired
-			applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
-			iterations++
-			log.Printf("[scripter] session=%s stage=qa_humanize done name=%q scenes=%d npcs=%d clues=%d",
-				sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
-			r.emitProgress("qa_humanize", "done", "人写化修复完成")
-		}
-	} else {
-		log.Printf("[scripter] session=%s stage=qa_humanize no issues", sessionID)
-		r.emitProgress("qa_humanize", "done", "人写化审查通过")
-	}
-
-	// 逻辑审查：QA agent 审因果可达性与神话一致性，问题清单走一轮修复；失败不阻塞生成
+	// 逻辑审查：QA agent 以故事文档为真相源审因果可达性与编译忠实度，问题清单走一轮修复；失败不阻塞生成
 	log.Printf("[scripter] session=%s stage=logic_review start", sessionID)
-	r.emitProgress("logic_review", "start", "阶段 4/5：逻辑一致性审查…")
-	if logicIssues := runLogicReview(ctx, r, &draft, skeleton); len(logicIssues) > 0 {
+	r.emitProgress("logic_review", "start", "逻辑一致性审查…")
+	if logicIssues := runLogicReview(ctx, r, &draft, story.Document); len(logicIssues) > 0 {
 		log.Printf("[scripter] session=%s stage=logic_review issues=%d %v", sessionID, len(logicIssues), logicIssues)
 		r.emitProgress("logic_review", "start", fmt.Sprintf("逻辑审查发现 %d 个问题，执行修复", len(logicIssues)))
 		logScripterArtifact("Logic Review Issues", sessionID, logicIssues)
@@ -430,11 +484,11 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	}
 
 	// Reward agent (isolated context, optional)
-	if strings.TrimSpace(rewardConcept) != "" {
+	if strings.TrimSpace(story.RewardConcept) != "" {
 		log.Printf("[scripter] session=%s stage=reward_agent start concept=%q anchor=%q",
-			sessionID, truncateRunes(rewardConcept, 200), truncateRunes(draft.Content.MythosAnchor, 200))
-		r.emitProgress("reward_agent", "start", "阶段 5/5：奖励物品设计…")
-		rwd, rewardErr := runRewardAgent(ctx, r, rewardConcept, draft.Content.MythosAnchor)
+			sessionID, truncateRunes(story.RewardConcept, 200), truncateRunes(draft.Content.MythosAnchor, 200))
+		r.emitProgress("reward_agent", "start", "奖励物品设计…")
+		rwd, rewardErr := runRewardAgent(ctx, r, story.RewardConcept, draft.Content.MythosAnchor)
 		if rewardErr != nil {
 			log.Printf("[scripter] session=%s stage=reward_agent error=%v (continuing without reward)", sessionID, rewardErr)
 			r.emitProgress("reward_agent", "error", "奖励设计失败（跳过，不影响模组）")
@@ -458,9 +512,8 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
 		log.Printf("[scripter] session=%s draft issues after normalization: %v", sessionID, issues)
 	}
-	logScripterArtifact("Final ScenarioDraft", sessionID, draft)
 
-	return ScenarioCreationOutput{Draft: draft, IronyCore: &IronyCore{}, Iterations: iterations, GenerationLog: r.generationLogText()}, nil
+	return draft, iterations, nil
 }
 
 // ---------------------------------------------------------------------------

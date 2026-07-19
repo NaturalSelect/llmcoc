@@ -165,6 +165,7 @@ func main() {
 	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPathsRegexs([]string{
 		`^/api/sessions/[^/]+/chat$`,
 		`^/api/scenarios/generate$`,
+		`^/api/scenarios/compile-story$`,
 	})))
 
 	// ─── API routes ───────────────────────────────────────────────────────────
@@ -215,6 +216,7 @@ func main() {
 		scenarios.GET("/template", handlers.DownloadScenarioTemplate)
 		scenarios.POST("", middleware.AdminRequired(), handlers.CreateScenario)
 		scenarios.POST("/generate", middleware.AdminRequired(), handlers.GenerateScenarioByAgents)
+		scenarios.POST("/compile-story", middleware.AdminRequired(), handlers.CompileStoryByUpload)
 		scenarios.POST("/upload", middleware.AdminRequired(), handlers.UploadScenario)
 		scenarios.DELETE("/:id", middleware.AdminRequired(), handlers.DeleteScenario)
 	}

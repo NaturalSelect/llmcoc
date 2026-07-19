@@ -168,7 +168,7 @@ func AdminUpdateAgent(c *gin.Context) {
 	log.Printf("[admin_config] update_agent role=%s", role)
 	validRoles := map[string]bool{
 		"director": true, "writer": true, "lawyer": true, "npc": true, "evaluator": true, "growth": true,
-		"scripter": true, "architect": true, "lore_researcher": true, "encounter_designer": true, "qa_guard": true,
+		"scripter": true, "architect": true, "compiler": true, "lore_researcher": true, "encounter_designer": true, "qa_guard": true,
 		"parser": true, "painter": true,
 		// NOTE: translator 是独立的资料转译 Agent，允许管理员配置其 provider/model。
 		"translator": true,

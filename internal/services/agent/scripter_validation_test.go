@@ -113,3 +113,53 @@ func TestOneshotResultExampleSettingHasDate(t *testing.T) {
 		t.Errorf("oneshotResultExample.Content.Setting 缺少具体年月日，setting=%q", oneshotResultExample.Content.Setting)
 	}
 }
+
+// TestValidateStoryDocument 验证 validateStoryDocument 对故事文档长度与 mythos_anchor 的校验。
+func TestValidateStoryDocument(t *testing.T) {
+	longDoc := strings.Repeat("这是故事文档的正文内容，包含表层情境、真相与线索设计。", 30) // 远超500 runes
+
+	cases := []struct {
+		name       string
+		story      StoryOutput
+		wantIssues int
+	}{
+		{"正常文档", StoryOutput{Document: longDoc, MythosAnchor: "食尸鬼（Ghoul）"}, 0},
+		{"文档过短", StoryOutput{Document: "太短了", MythosAnchor: "食尸鬼（Ghoul）"}, 1},
+		{"anchor为空", StoryOutput{Document: longDoc, MythosAnchor: ""}, 1},
+		{"两者都不满足", StoryOutput{Document: "太短了", MythosAnchor: ""}, 2},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			issues := validateStoryDocument(c.story)
+			if len(issues) != c.wantIssues {
+				t.Errorf("validateStoryDocument() issues = %v (len=%d), want len=%d", issues, len(issues), c.wantIssues)
+			}
+		})
+	}
+}
+
+// TestStorySoloActionMixed 验证 submit_story 必须独占一轮的判断逻辑。
+func TestStorySoloActionMixed(t *testing.T) {
+	cases := []struct {
+		name  string
+		calls []storyArchitectToolCall
+		want  bool
+	}{
+		{"仅submit_story一条", []storyArchitectToolCall{{Action: toolStorySubmit}}, false},
+		{"submit_story与translate_anchor混排", []storyArchitectToolCall{
+			{Action: toolStorySubmit}, {Action: toolOneshotTranslateAnchor},
+		}, true},
+		{"多条translate_anchor无submit", []storyArchitectToolCall{
+			{Action: toolOneshotTranslateAnchor}, {Action: toolOneshotTranslateAnchor},
+		}, false},
+		{"空数组", nil, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := storySoloActionMixed(c.calls)
+			if got != c.want {
+				t.Errorf("storySoloActionMixed(%v) = %v, want %v", c.calls, got, c.want)
+			}
+		})
+	}
+}

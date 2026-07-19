@@ -139,6 +139,8 @@ window.COC.admin = {
                             parser: { max_tokens: 4000, temperature: 0.1 },
                             // NOTE: translator 负责发散联想、世界知识和资料转译，建议配置世界知识丰富、发散能力较好的模型。
                             translator: { max_tokens: 2000, temperature: 0.7 },
+                            // NOTE: compiler 负责把故事文本编译为结构化模组JSON，低温度减少擅自发挥。
+                            compiler: { max_tokens: 4000, temperature: 0.15 },
                         };
                         const expectedRoles = Object.keys(roleDefaults).filter(r => r !== 'scripter');
                         const byRole = new Map(agents.filter(a => a.role !== 'scripter').map(a => [a.role, a]));
@@ -618,6 +620,124 @@ window.COC.admin = {
                         return info.detail || (info.stage + ' ' + (info.status || ''));
                     },
 
+                    // NOTE: 上传故事编译为 SSE 流式请求：跳过 AI 故事生成阶段，只让模型做编译
+                    // （compile→repair→logic_review→reward_agent→normalize），不支持批量。
+                    async compileStoryUpload() {
+                        if (!this.compileStoryForm.story_document?.trim()) {
+                            this.showToast('请填写故事全文', 'error');
+                            return;
+                        }
+                        if (!this.compileStoryForm.mythos_anchor?.trim()) {
+                            this.showToast('请填写神话锚点', 'error');
+                            return;
+                        }
+                        const minPlayers = Number(this.compileStoryForm.min_players || 1);
+                        const maxPlayers = Number(this.compileStoryForm.max_players || 4);
+                        if (maxPlayers < minPlayers) {
+                            this.showToast('最大玩家数不能小于最小玩家数', 'error');
+                            return;
+                        }
+                        if (this.compileStoryRunning) return;
+
+                        this.compileStoryRunning = true;
+                        this.compileStoryLogs = [];
+                        const pushLog = (line) => {
+                            const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+                            this.compileStoryLogs.push('[' + time + '] ' + line);
+                            this.$nextTick(() => {
+                                const el = document.getElementById('compileStoryLogBox');
+                                if (el) el.scrollTop = el.scrollHeight;
+                            });
+                        };
+                        pushLog('已提交编译请求，等待服务器响应…');
+
+                        try {
+                            const resp = await fetch('/api/scenarios/compile-story', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': 'Bearer ' + this.token,
+                                },
+                                body: JSON.stringify({
+                                    story_document: this.compileStoryForm.story_document,
+                                    mythos_anchor: this.compileStoryForm.mythos_anchor,
+                                    reward_concept: this.compileStoryForm.reward_concept || '',
+                                    name: this.compileStoryForm.name || '',
+                                    theme: this.compileStoryForm.theme || '',
+                                    era: this.compileStoryForm.era || '',
+                                    target_length: this.compileStoryForm.target_length || 'short',
+                                    min_players: minPlayers,
+                                    max_players: maxPlayers,
+                                    difficulty: this.compileStoryForm.difficulty || 'normal',
+                                }),
+                            });
+
+                            if (!resp.ok) {
+                                const err = await resp.json().catch(() => ({ error: '请求失败' }));
+                                throw new Error(err.error || ('HTTP ' + resp.status));
+                            }
+
+                            const reader = resp.body.getReader();
+                            const decoder = new TextDecoder();
+                            let buf = '';
+                            let currentEvent = '';
+                            let doneInfo = null;
+                            let errorInfo = null;
+
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+
+                                buf += decoder.decode(value, { stream: true });
+                                const lines = buf.split('\n');
+                                buf = lines.pop();
+
+                                for (const rawLine of lines) {
+                                    const line = rawLine.replace(/\r$/, '');
+                                    if (line.startsWith('event:')) {
+                                        currentEvent = line.slice(6).trim();
+                                    } else if (line.startsWith('data:')) {
+                                        const data = line.slice(5).replace(/^ /, '');
+                                        switch (currentEvent) {
+                                            case 'progress':
+                                                try {
+                                                    const info = JSON.parse(data);
+                                                    pushLog(this.scenarioGenProgressLine(info));
+                                                } catch (_) {
+                                                    pushLog(data);
+                                                }
+                                                break;
+                                            case 'done':
+                                                try { doneInfo = JSON.parse(data); } catch (_) { doneInfo = null; }
+                                                break;
+                                            case 'error':
+                                                try { errorInfo = JSON.parse(data); } catch (_) { errorInfo = { message: data || '编译失败' }; }
+                                                break;
+                                        }
+                                    } else if (line === '') {
+                                        currentEvent = '';
+                                    }
+                                }
+                            }
+
+                            if (doneInfo) {
+                                pushLog('✅ 编译完成：《' + (doneInfo.name || '未命名') + '》，已入库');
+                                this.showToast('故事编译并入库成功');
+                                await Promise.all([this.loadScenarios(), this.loadAdminScenarios(1)]);
+                            } else if (errorInfo) {
+                                pushLog('❌ ' + (errorInfo.message || '编译失败'));
+                                this.showToast(errorInfo.message || '编译失败', 'error');
+                            } else {
+                                pushLog('⚠️ 连接中断，编译仍在后台继续，稍后请刷新模组列表');
+                                this.showToast('连接中断，编译仍在后台继续', 'error');
+                            }
+                        } catch (e) {
+                            pushLog('❌ ' + (e.message || '编译失败'));
+                            this.showToast(e.message, 'error');
+                        }
+                        this.compileStoryRunning = false;
+                    },
+
                     viewScenario(s) { this.viewingScenario = s; this.modal = 'scenarioDetail'; },
                     async viewScenarioGenerationLog(s) {
                         if (!s?.id) return;
@@ -648,6 +768,8 @@ window.COC.admin = {
                             parser: '🔧 Parser',
                             // NOTE: translator — 翻译/资料转译
                             translator: '🌐 Translator',
+                            // NOTE: compiler — 故事转模组编译
+                            compiler: '🛠️ Compiler',
                         }[role] || role;
                     },
                     agentDesc(role) {
@@ -664,6 +786,8 @@ window.COC.admin = {
                             parser: 'JSON修复 — 低温度结构化输出，修复其他Agent的JSON格式错误',
                             // NOTE: translator — 翻译/资料转译；负责发散联想、世界知识和COC元素转译
                             translator: '翻译/资料转译 — 发散联想与COC元素转译；建议配置世界知识丰富、发散能力较好的模型',
+                            // NOTE: compiler — 只做故事文本到结构化JSON的忠实转换，无权改写剧情事实
+                            compiler: '模组编译 — 将故事文本忠实编译为结构化模组JSON；建议配置低温度模型',
                         }[role] || '';
                     },
                     agentDefaultHint(role) {
@@ -680,6 +804,8 @@ window.COC.admin = {
                             parser: '留空使用内置 Parser 提示词（JSON格式修复）',
                             // NOTE: translator 留空使用内置 Translator 提示词（翻译/资料转译）
                             translator: '留空使用内置 Translator 提示词（翻译/资料转译）；建议配置世界知识丰富的模型',
+                            // NOTE: compiler 留空使用内置 Compiler 提示词（故事转模组编译）
+                            compiler: '留空使用内置 Compiler 提示词（故事转模组编译）；建议配置低温度模型',
                         }[role] || '留空使用默认';
                     },
 

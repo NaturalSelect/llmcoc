@@ -1,11 +1,11 @@
-// scripter_oneshot.go — Single-shot scenario generation with translate_anchor validation.
+// scripter_oneshot.go — OneshotResult type, translator sub-agent, blacklist
+// helpers, and the repair/logic-review machinery shared by the story→compile
+// pipeline (see scripter_story.go / scripter_compile.go for the two
+// generation stages themselves).
 //
-// The architect runs in a tool-call loop:
-//  1. translate_anchor (one or more times) — validates CoC element via rulebook
-//  2. submit — carries the complete oneshotResult JSON
-//
-// This preserves real-time rulebook validation while eliminating separate
-// IronyCore / MisdirectionFabric / InvestigationGraph stages.
+// runOneshotArchitectLoop remains here because repairOneshotDraft reuses it
+// to patch an already-compiled ScenarioDraft (translate_anchor + submit),
+// independent of the story stage's own tool loop (runStoryArchitectLoop).
 package agent
 
 import (
@@ -98,6 +98,16 @@ var oneshotResultExample = OneshotResult{
 // oneshotExample is the JSON schema example used for parsing/repair prompts.
 var oneshotExample = marshalExample(oneshotResultExample)
 
+// StoryOutput is the story architect's final submission: a free-text story
+// document plus the confirmed mythos anchor and optional reward concept.
+// It carries no strongly-typed scene/NPC/clue structure — the compiler stage
+// is responsible for extracting structure from Document.
+type StoryOutput struct {
+	Document      string `json:"story_document"`
+	MythosAnchor  string `json:"mythos_anchor"`
+	RewardConcept string `json:"reward_concept"`
+}
+
 // ---------------------------------------------------------------------------
 // System prompt
 // ---------------------------------------------------------------------------
@@ -165,17 +175,6 @@ func oneshotSystemPrompt() string {
 - 必须先调用 translate_anchor 获得规则书裁定，再调用 submit
 - 若首选元素在禁用列表中，继续 translate_anchor 寻找替代
 - mythos_anchor 应优先支持调查、异化、理智侵蚀和氛围恐怖，而不是鼓励直接战斗解决问题
-
-【步骤②补充：提交神话真相骨架（submit_skeleton）】
-在 translate_anchor 确认神话元素后、正式 submit 完整剧本之前，必须先通过 submit_skeleton 提交一份轻量真相骨架，供系统做确定性校验：
-- cosmic_law：本剧本锚定的宇宙公理及其具体化，必须体现<cosmic_horror_axioms>关键词之一（无目的/认知/不可逆/规则/尺度/投影）
-- historical_cause：历史前因——为什么此地此时出现异常
-- event_chain：3-6步关键事件链，从前因到当前异常的因果序列
-- current_anomaly：调查员到场时可观察到的异常
-- irreversible_cost：揭开真相后什么永久改变（不可逆代价/认知冲击）
-- core_proposition：调查核心命题（调查员试图回答的根本问题）
-- reasoning_chain：从可观察事实→中间推论→核心结论的推理链，每步用"→"或"因为/所以/依据/推出"标注推理关系，至少3步
-系统校验通过会返回 SYSTEM CONFIRM 并回显骨架；只有在此之后才能 submit。校验失败会返回 SYSTEM REJECT 及具体原因，需修正后重新 submit_skeleton。submit_skeleton 必须单独一轮输出。之后设计完整剧本时，scenes/npcs/clues/win/lose 必须都由这份骨架的因果基础推出。
 
 【步骤③：线索网络、误导与场景设计】
 把剧情设计成线索矩阵，而不是单一路径。
@@ -271,10 +270,6 @@ SAN要求：
 ✓ win/lose_condition使用条件句，不是二元裁定？
 ✓ 所有NPC stats含SAN字段？
 ✓ 神话存在的规则/能力是否是事件链中至少一个关键转折的必要条件（去掉它事件链断裂）？
-✓ 每个scene是否承载了骨架 event_chain 中至少一个事件的调查入口或后果展示？
-✓ 每个关键NPC是否在骨架 event_chain 中有明确角色（参与者/受害者/知情者/阻碍者）？
-✓ win_condition是否对应骨架中"推理链被完成"的情境，lose_condition是否对应"不可逆代价完全兑现"的情境？
-✓ mythos_anchor是否是骨架 cosmic_law 的具体载体（不是另一个无关元素）？
 ✓ 最终体验重点是”调查员亲手揭开可怕真相”，而不是”被剧情推着走”或”靠战斗通关”？
 
 其他硬性要求：
@@ -292,9 +287,7 @@ SAN要求：
 <tools>
 - translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
   {"action":"translate_anchor","concept":"概念描述（如「死者被古老力量束缚继续行动」）","reason":"这个概念在剧本中承担什么角色"}
-- submit_skeleton：提交神话真相骨架，供系统确定性校验；必须在translate_anchor确认元素后、submit之前调用；必须单独一轮输出
-  {"action":"submit_skeleton","skeleton":{"cosmic_law":"锚定的宇宙公理及具体化（须含无目的/认知/不可逆/规则/尺度/投影之一）","historical_cause":"历史前因","event_chain":["前因事件","触发事件","当前异常事件"],"current_anomaly":"到场可观察异常","irreversible_cost":"揭真相后的不可逆代价","core_proposition":"调查核心命题","reasoning_chain":["可观察事实→中间推论","因为...所以...","依据...推出核心结论"]}}
-- submit：提交完整剧本；只有在translate_anchor确认元素且submit_skeleton获系统确认后才调用；必须单独一轮输出
+- submit：提交完整剧本；只有在translate_anchor确认元素后才调用；必须单独一轮输出
   {"action":"submit","draft":{...完整oneshotResult JSON对象...}}
 </tools>
 <draft_schema>
@@ -330,32 +323,13 @@ submit.draft 必须包含以下字段：
 </draft_schema>`
 }
 
-// mythosSkeletonExample 展示一份合格骨架，供 submit_skeleton 的 schema/repair 参考。
-var mythosSkeletonExample = mythosSkeleton{
-	CosmicLaw:        "认知天花板：食尸鬼遵循「以死者血肉延续记忆」的规则，人类无法完全理解这种存在方式，逼近真相者承受不可逆的认知冲击",
-	HistoricalCause:  "一场瘟疫后，镇北墓地下的食尸鬼群落开始接纳新亡者",
-	EventChain:       []string{"藏书家Douglas生前偶然目睹墓地异动并写进手稿", "Douglas死后被食尸鬼接纳，手稿随遗物流入图书馆捐赠藏书", "Douglas潜回图书馆逐本取回自己的旧藏"},
-	CurrentAnomaly:   "图书馆新到藏书接连失窃，现场留有带泥土的痕迹",
-	IrreversibleCost: "确认Douglas已非人类的调查员，将永久失去对「死亡即终结」的确信",
-	CoreProposition:  "是谁在取走这些书，他与镇北墓地有什么关系",
-	ReasoningChain: []string{
-		"失窃书目都来自同一捐赠者Douglas → 窃贼针对的是Douglas的旧物",
-		"因为窗台泥土成分与镇北墓地一致，所以窃贼来自墓地方向而非街市",
-		"依据Douglas的死亡记录与墓地食尸鬼传闻吻合，推出取书者正是变形后的Douglas本人",
-	},
-}
-
-// oneshotArchitectToolCallExample shows all three tool variants so the repair LLM
-// sees the full shape of translate_anchor, submit_skeleton AND submit.
+// oneshotArchitectToolCallExample shows both tool variants so the repair LLM
+// sees the full shape of translate_anchor AND submit.
 var oneshotArchitectToolCallExample = marshalExample([]oneshotArchitectToolCall{
 	{
 		Action:  toolOneshotTranslateAnchor,
 		Concept: "死者被古老力量束缚继续行动",
 		Reason:  "作为本剧本mythos_anchor的核心概念",
-	},
-	{
-		Action:   toolOneshotSubmitSkeleton,
-		Skeleton: &mythosSkeletonExample,
 	},
 	{
 		Action: toolOneshotSubmit,
@@ -369,128 +343,56 @@ var oneshotArchitectToolCallExample = marshalExample([]oneshotArchitectToolCall{
 
 const (
 	toolOneshotTranslateAnchor ToolCallType = "translate_anchor"
-	toolOneshotSubmitSkeleton  ToolCallType = "submit_skeleton"
 	toolOneshotSubmit          ToolCallType = "submit"
+	toolStorySubmit            ToolCallType = "submit_story"
 
 	// Shared translator tool call types (used by scripter_reward.go as well).
 	toolTranslatorAskLawyer ToolCallType = "ask_lawyer"
 	toolTranslatorRespond   ToolCallType = "respond"
 )
 
-// mythosSkeleton 是 architect 在提交完整剧本前必须先提交并获系统确认的轻量真相骨架。
-// 它把宇宙公理、历史前因、事件链、推理链固定下来，作为整份剧本因果一致性的地基。
-type mythosSkeleton struct {
-	CosmicLaw        string   `json:"cosmic_law"`        // 本剧本锚定的宇宙公理及其具体化
-	HistoricalCause  string   `json:"historical_cause"`  // 历史前因：为什么此地此时出现异常
-	EventChain       []string `json:"event_chain"`       // 关键事件链：3-6步因果序列
-	CurrentAnomaly   string   `json:"current_anomaly"`   // 当前可观察异常
-	IrreversibleCost string   `json:"irreversible_cost"` // 不可逆代价/认知冲击
-	CoreProposition  string   `json:"core_proposition"`  // 调查核心命题
-	ReasoningChain   []string `json:"reasoning_chain"`   // 从可观察事实→中间推论→核心结论的推理链
-}
-
 type oneshotArchitectToolCall struct {
-	Action   ToolCallType    `json:"action"`
-	Concept  string          `json:"concept"`  // translate_anchor
-	Reason   string          `json:"reason"`   // translate_anchor
-	Skeleton *mythosSkeleton `json:"skeleton"` // submit_skeleton
-	Draft    *OneshotResult  `json:"draft"`    // submit
+	Action  ToolCallType   `json:"action"`
+	Concept string         `json:"concept"` // translate_anchor
+	Reason  string         `json:"reason"`  // translate_anchor
+	Draft   *OneshotResult `json:"draft"`   // submit
 }
 
-// ---------------------------------------------------------------------------
-// Skeleton validation — deterministic checks, no LLM call.
-// ---------------------------------------------------------------------------
-
-// cosmicAxiomKeywords 是 <cosmic_horror_axioms> 六条公理的关键词，用于弱校验 cosmic_law 是否
-// 明确锚定其中至少一条，而不是空泛的"很恐怖"描述。
-var cosmicAxiomKeywords = []string{"无目的", "认知", "不可逆", "规则", "尺度", "投影"}
-
-// reasoningConnectorMarkers 是推理链每步应具备的连接词/符号，用于轻量判断该步是否体现了
-// "事实→推论"或"因为...所以..."式的推理关系，而不是一句孤立描述。
-var reasoningConnectorMarkers = []string{"→", "->", "因为", "所以", "依据", "推出", "得出", "表明", "证明", "因此"}
-
-// validateMythosSkeleton 对 architect 提交的骨架做确定性结构校验（不调用LLM）。
-func validateMythosSkeleton(s *mythosSkeleton) []string {
-	if s == nil {
-		return []string{"skeleton 为空"}
-	}
-	var issues []string
-	if strings.TrimSpace(s.CosmicLaw) == "" {
-		issues = append(issues, "cosmic_law 为空")
-	} else if !cosmicLawReferencesAxiom(s.CosmicLaw) {
-		issues = append(issues, "cosmic_law 需明确锚定<cosmic_horror_axioms>之一（体现无目的/认知/不可逆/规则/尺度/投影中至少一个关键词）")
-	}
-	if strings.TrimSpace(s.HistoricalCause) == "" {
-		issues = append(issues, "historical_cause 为空")
-	}
-	if strings.TrimSpace(s.CurrentAnomaly) == "" {
-		issues = append(issues, "current_anomaly 为空")
-	}
-	if strings.TrimSpace(s.IrreversibleCost) == "" {
-		issues = append(issues, "irreversible_cost 为空")
-	}
-	if strings.TrimSpace(s.CoreProposition) == "" {
-		issues = append(issues, "core_proposition 为空")
-	}
-	eventSteps := nonEmptyStrings(s.EventChain...)
-	if len(eventSteps) < 3 {
-		issues = append(issues, fmt.Sprintf("event_chain 至少需要3步因果事件，当前%d步", len(eventSteps)))
-	}
-	reasoningSteps := nonEmptyStrings(s.ReasoningChain...)
-	if len(reasoningSteps) < 3 {
-		issues = append(issues, fmt.Sprintf("reasoning_chain 至少需要3步推理，当前%d步", len(reasoningSteps)))
-	}
-	for i, step := range reasoningSteps {
-		if !hasReasoningConnector(step) {
-			issues = append(issues, fmt.Sprintf("reasoning_chain[%d] 缺少推理连接词（需含→或因为/所以/依据/推出等），无法体现事实到结论的推理关系", i))
-		}
-	}
-	return issues
-}
-
-func cosmicLawReferencesAxiom(s string) bool {
-	for _, kw := range cosmicAxiomKeywords {
-		if strings.Contains(s, kw) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasReasoningConnector(s string) bool {
-	for _, marker := range reasoningConnectorMarkers {
-		if strings.Contains(s, marker) {
-			return true
-		}
-	}
-	return false
+// storyArchitectToolCall is the story architect's tool-call payload:
+// translate_anchor (shared semantics with oneshotArchitectToolCall) plus
+// submit_story, which carries the free-text story document instead of a
+// strongly-typed draft.
+type storyArchitectToolCall struct {
+	Action        ToolCallType `json:"action"`
+	Concept       string       `json:"concept"`         // translate_anchor
+	Reason        string       `json:"reason"`          // translate_anchor
+	StoryDocument string       `json:"story_document"`  // submit_story
+	MythosAnchor  string       `json:"mythos_anchor"`   // submit_story
+	RewardConcept string       `json:"reward_concept"`  // submit_story
 }
 
 // ---------------------------------------------------------------------------
 // Architect loop
 // ---------------------------------------------------------------------------
 
-// runOneshotArchitectLoop 驱动 architect 工具循环。requireSkeleton=true 时（首轮生成），
-// submit 必须在 submit_skeleton 获系统确认后才被接受，确认的骨架随返回值一并交出，供后续
-// 逻辑审查使用；requireSkeleton=false 时（修复），沿用旧行为，submit 无需骨架。
-func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string, requireSkeleton bool) (OneshotResult, *mythosSkeleton, []llm.ChatMessage, error) {
+// runOneshotArchitectLoop 驱动 architect 工具循环：translate_anchor（可多次）+ submit（独占一轮）。
+// 目前仅由 repairOneshotDraft 复用，用于在已编译草案上做 translate_anchor 校验 + 结构修复。
+func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (OneshotResult, []llm.ChatMessage, error) {
 	if room.architect.provider == nil {
-		return OneshotResult{}, nil, msgs, fmt.Errorf("architect provider unavailable")
+		return OneshotResult{}, msgs, fmt.Errorf("architect provider unavailable")
 	}
 	sessionID := scripterSessionID(ctx, room)
 	stageName = firstNonEmpty(stageName, "oneshot_architect")
 	const maxRounds = 30
-	skeletonConfirmed := false
-	var confirmedSkeleton *mythosSkeleton
 	for round := 1; round <= maxRounds; round++ {
 		if ctx.Err() != nil {
-			return OneshotResult{}, nil, msgs, ctx.Err()
+			return OneshotResult{}, msgs, ctx.Err()
 		}
 		logStagePrompt(fmt.Sprintf("%s_round_%d", stageName, round), sessionID, msgs)
 		callMessages := append([]llm.ChatMessage(nil), msgs...)
 		raw, err := room.architect.provider.Chat(ctx, room.sessionID+":"+string(models.AgentRoleArchitect), msgs)
 		if err != nil {
-			return OneshotResult{}, nil, msgs, err
+			return OneshotResult{}, msgs, err
 		}
 		recordScripterLLMExchange(ctx, room, fmt.Sprintf("%s_round_%d", stageName, round), callMessages, raw)
 		log.Printf("[scripter:oneshot_loop] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
@@ -506,108 +408,57 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 			continue
 		}
 
-		// submit / submit_skeleton must each be alone in their round.
+		// submit must be alone in its round.
 		if oneshotSoloActionMixed(calls) {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 1. 你输出的JSON不合法; 2. submit和submit_skeleton都必须单独一轮输出，不能与translate_anchor或彼此混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；提交骨架时只输出一个submit_skeleton；提交剧本时只输出一个submit。"})
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 1. 你输出的JSON不合法; 2. submit必须单独一轮输出，不能与translate_anchor混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；提交剧本时只输出一个submit。"})
 			continue
 		}
 
 		invalid := false
 		var submitDraft *OneshotResult
-		var confirmMsg string
 		var toolResults []string
 		for _, call := range calls {
 			switch call.Action {
 			case toolOneshotTranslateAnchor:
 				toolResults = append(toolResults, executeOneshotTranslateAnchor(ctx, room, call))
-			case toolOneshotSubmitSkeleton:
-				if call.Skeleton == nil {
-					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit_skeleton的skeleton字段不能为空。"})
-					invalid = true
-					break
-				}
-				if skIssues := validateMythosSkeleton(call.Skeleton); len(skIssues) > 0 {
-					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
-						"SYSTEM REJECT: 骨架校验失败: %s。请修复后重新submit_skeleton。", strings.Join(skIssues, "；"))})
-					invalid = true
-					break
-				}
-				skeletonConfirmed = true
-				confirmedSkeleton = call.Skeleton
-				skeletonJSON, _ := json.Marshal(call.Skeleton)
-				confirmMsg = fmt.Sprintf(`SYSTEM CONFIRM: 骨架已确认。请严格基于以下骨架设计完整剧本并通过submit单独一轮提交。
-<confirmed_skeleton>%s</confirmed_skeleton>
-设计线索时，每条必须对应reasoning_chain中的至少一步；[误导]线索必须支持一个与reasoning_chain冲突但表面合理的替代命题。scenes/npcs/clues/win_condition/lose_condition必须都由该骨架的因果基础推出。`, string(skeletonJSON))
-				log.Printf("[scripter:oneshot_loop] session=%s skeleton confirmed event_chain=%d reasoning_chain=%d", sessionID, len(call.Skeleton.EventChain), len(call.Skeleton.ReasoningChain))
 			case toolOneshotSubmit:
 				if call.Draft == nil {
 					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit的draft字段不能为空。"})
-					invalid = true
-				} else if requireSkeleton && !skeletonConfirmed {
-					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须先通过submit_skeleton提交真相骨架并获系统确认后才能submit。"})
 					invalid = true
 				} else {
 					submitDraft = call.Draft
 				}
 			default:
 				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
-					"SYSTEM REJECT: 此阶段只允许translate_anchor/submit_skeleton/submit，不允许%s。", call.Action)})
+					"SYSTEM REJECT: 此阶段只允许translate_anchor/submit，不允许%s。", call.Action)})
 				invalid = true
 			}
 		}
 		if invalid {
 			continue
 		}
-		if confirmMsg != "" {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: confirmMsg})
-			continue
-		}
 		if len(toolResults) > 0 {
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
 		}
 		if submitDraft != nil {
-			warnOneshotSkeletonConsistency(sessionID, submitDraft, confirmedSkeleton)
-			return *submitDraft, confirmedSkeleton, msgs, nil
+			return *submitDraft, msgs, nil
 		}
 		if len(toolResults) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须调用translate_anchor获取规则书裁定，或提交submit_skeleton，或在骨架获确认后调用submit提交剧本。"})
+			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须调用translate_anchor获取规则书裁定，或提交submit提交剧本。"})
 		}
 	}
-	return OneshotResult{}, nil, msgs, fmt.Errorf("oneshot architect 未在%d轮内提交结果", maxRounds)
+	return OneshotResult{}, msgs, fmt.Errorf("oneshot architect 未在%d轮内提交结果", maxRounds)
 }
 
-// oneshotSoloActionMixed 判断 submit / submit_skeleton 这类"必须独占一轮"的动作是否与其他动作混排。
+// oneshotSoloActionMixed 判断 submit 这类"必须独占一轮"的动作是否与其他动作混排。
 func oneshotSoloActionMixed(calls []oneshotArchitectToolCall) bool {
 	solo := 0
 	for _, c := range calls {
-		if c.Action == toolOneshotSubmit || c.Action == toolOneshotSubmitSkeleton {
+		if c.Action == toolOneshotSubmit {
 			solo++
 		}
 	}
 	return solo > 0 && len(calls) != 1
-}
-
-// warnOneshotSkeletonConsistency 对提交草案与骨架做弱一致性检查，仅记录警告，不拒绝提交。
-func warnOneshotSkeletonConsistency(sessionID string, result *OneshotResult, skeleton *mythosSkeleton) {
-	if result == nil || skeleton == nil {
-		return
-	}
-	if strings.TrimSpace(result.Content.MythosAnchor) == "" {
-		log.Printf("[scripter:oneshot_loop] session=%s WARN 提交草案 mythos_anchor 为空，与骨架不一致", sessionID)
-	}
-	sp := result.Content.SystemPrompt
-	if strings.TrimSpace(sp) != "" {
-		matched := false
-		for _, kw := range cosmicAxiomKeywords {
-			if strings.Contains(skeleton.CosmicLaw, kw) && strings.Contains(sp, kw) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			log.Printf("[scripter:oneshot_loop] session=%s WARN system_prompt 未体现骨架 cosmic_law 的宇宙公理关键词（弱校验）", sessionID)
-		}
-	}
 }
 
 func parseOneshotArchitectToolCalls(ctx context.Context, raw string) ([]oneshotArchitectToolCall, error) {
@@ -964,67 +815,9 @@ func diversityConstraintsBlock(constraints ScripterConstraints) string {
 }
 
 // ---------------------------------------------------------------------------
-// Top-level generation functions
+// Repair — patches an already-compiled ScenarioDraft against issue lists
+// raised by validateDraftCompatibility / runStoryQAReview / runLogicReview.
 // ---------------------------------------------------------------------------
-
-func generateOneshotDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (ScenarioDraft, IronyCore, string, *mythosSkeleton, error) {
-	sessionID := scripterSessionID(ctx, room)
-	reqJSON, _ := json.Marshal(room.req)
-	constraintsJSON, _ := json.Marshal(constraints)
-
-	userMsg := fmt.Sprintf(
-		`<request_json>%s</request_json>
-<constraints>%s</constraints>
-%s
-%s
-<recently_used_mythos_anchors>
-%s
-</recently_used_mythos_anchors>
-<recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
-<scenario_title_blacklist>%s</scenario_title_blacklist>
-<recent_scenario_tags_blacklist>
-%s
-</recent_scenario_tags_blacklist>
-以上为近期模组已用过的核心叙事标签：本次submit.draft.tags不得与其重复，须另选能体现本剧本独有桥段的具体标签。
-<length_spec>
-%s
-</length_spec>
-<difficulty_spec>
-%s
-</difficulty_spec>
-请设计并生成完整的COC7剧本。`,
-		string(reqJSON), string(constraintsJSON),
-		diversityConstraintsBlock(constraints),
-		proseVoiceBlock(constraints),
-		formatMythosBlacklist(room.mythosBlacklist),
-		formatNPCNameBlacklist(room.npcBlacklist),
-		formatScenarioTitleBlacklist(room.titleSamples),
-		formatScenarioTagsBlacklist(room.tagsBlacklist),
-		lengthSpec(room.req.TargetLength)+"\n线索会被直接展示给玩家, 但类型前缀(真实/隐藏/误导)会被隐藏；因此[误导]线索在表面上必须与[真实]线索无法区分——它必须是真实可验证的观察，误导力来自支持错误结论，而非靠编造或怪异感蒙混。",
-		difficultySpec(room.req.Difficulty),
-	)
-
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.architect.systemPrompt(oneshotSystemPrompt())},
-		{Role: "user", Content: userMsg},
-	}
-	logStagePrompt("oneshot", sessionID, msgs)
-
-	result, skeleton, _, err := runOneshotArchitectLoop(ctx, room, msgs, "oneshot_architect", true)
-	if err != nil {
-		return ScenarioDraft{}, IronyCore{}, "", nil, err
-	}
-
-	log.Printf("[scripter:oneshot] session=%s done anchor=%q scenes=%d npcs=%d clues=%d",
-		sessionID, truncateRunes(result.Content.MythosAnchor, 80),
-		len(result.Content.Scenes), len(result.Content.NPCs), len(result.Content.Clues))
-	logScripterArtifact("Oneshot Result", sessionID, result)
-	if skeleton != nil {
-		logScripterArtifact("Mythos Skeleton", sessionID, skeleton)
-	}
-
-	return result.toScenarioDraft(), IronyCore{}, strings.TrimSpace(result.RewardConcept), skeleton, nil
-}
 
 func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, previous *ScenarioDraft, issues []string) (ScenarioDraft, error) {
 	sessionID := scripterSessionID(ctx, room)
@@ -1044,7 +837,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 <must_fix>
 %s
 </must_fix>
-请修复上述问题并重新调用translate_anchor验证神话元素，然后通过submit提交修复后的完整剧本JSON。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。修复阶段无需重新submit_skeleton，可直接submit。`,
+请修复上述问题并重新调用translate_anchor验证神话元素，然后通过submit提交修复后的完整剧本JSON。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
 		string(reqJSON), string(constraintsJSON),
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints),
@@ -1059,7 +852,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 	}
 	logStagePrompt("oneshot_repair", sessionID, msgs)
 
-	result, _, _, err := runOneshotArchitectLoop(ctx, room, msgs, "oneshot_repair_architect", false)
+	result, _, err := runOneshotArchitectLoop(ctx, room, msgs, "oneshot_repair_architect")
 	if err != nil {
 		return ScenarioDraft{}, fmt.Errorf("oneshot repair failed: %w", err)
 	}
@@ -1071,7 +864,8 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 }
 
 // ---------------------------------------------------------------------------
-// QA humanization review — 用闲置的 QA agent 审查 AI 腔，问题清单喂给修复循环
+// Shared review issue-list schema — used by runStoryQAReview (scripter_story.go)
+// and runLogicReview below.
 // ---------------------------------------------------------------------------
 
 type qaReviewResult struct {
@@ -1085,97 +879,23 @@ var qaReviewSchemaExample = marshalExample(qaReviewResult{
 	},
 })
 
-// qaReviewSystemPrompt 与 architect 共用 humanWritingRules，保证审查标准一致。
-func qaReviewSystemPrompt() string {
-	return `<role>剧本人写化审查员</role>
-<task>审查AI生成的COC剧本文本是否带有"AI腔"，输出必须整改的问题清单。只审文字质感与人味，不审剧情设计、规则正确性或结构完整性。</task>
-<standards>
-` + humanWritingRules + `
-</standards>
-<scope>
-- 编号/模板腔禁令只适用于name/description/setting/intro（玩家可见散文）
-- scenes.description与npcs.description是KP用的结构化数据，保留"可见/可发现/杠杆/公开身份/议程/秘密"等要素标签是正常的，不要因此报问题；但要素内容若空泛套话（如"异常的气味""神秘的声音"）应报问题
-- description/setting/intro必须保持日常、平静、无恐怖氛围、不剧透真相；若违反必须报告（这是硬约束）
-- <prose_voice>是本剧本的作者声线，仅当散文明显是说明文/设计文档腔时才报问题，不苛求声线完美贴合
-</scope>
-<output>只输出JSON对象：{"issues":["问题1","问题2"]}；每条问题指明字段或对象名并给出可执行的修改方向；按严重程度排序，最多8条；没有问题输出{"issues":[]}。</output>`
-}
-
-// buildQAReviewPayload 只送审文字质感相关字段，剔除stats等噪音，控制token开销。
-func buildQAReviewPayload(draft *ScenarioDraft) map[string]any {
-	scenes := make([]map[string]string, 0, len(draft.Content.Scenes))
-	for _, s := range draft.Content.Scenes {
-		scenes = append(scenes, map[string]string{"name": s.Name, "description": s.Description})
-	}
-	npcs := make([]map[string]string, 0, len(draft.Content.NPCs))
-	for _, n := range draft.Content.NPCs {
-		npcs = append(npcs, map[string]string{"name": n.Name, "description": n.Description, "attitude": n.Attitude})
-	}
-	return map[string]any{
-		"name":        draft.Name,
-		"description": draft.Description,
-		"setting":     draft.Content.Setting,
-		"intro":       draft.Content.Intro,
-		"scenes":      scenes,
-		"npcs":        npcs,
-		"clues":       draft.Content.Clues,
-	}
-}
-
-// runOneshotQAReview 返回人写化整改清单；审查不可用或失败时返回nil（非致命，跳过即可）。
-func runOneshotQAReview(ctx context.Context, room *scripterRoom, draft *ScenarioDraft, constraints ScripterConstraints) []string {
-	if room == nil || room.qa.provider == nil || draft == nil {
-		return nil
-	}
-	sessionID := scripterSessionID(ctx, room)
-	payloadJSON, err := json.Marshal(buildQAReviewPayload(draft))
-	if err != nil {
-		log.Printf("[scripter:qa_humanize] session=%s marshal payload failed: %v", sessionID, err)
-		return nil
-	}
-	userMsg := fmt.Sprintf(`%s
-<draft_for_review>%s</draft_for_review>
-请按standards审查以上剧本文本，输出问题清单JSON。`,
-		proseVoiceBlock(constraints), string(payloadJSON))
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.qa.systemPrompt(qaReviewSystemPrompt())},
-		{Role: "user", Content: userMsg},
-	}
-	logStagePrompt("qa_humanize", sessionID, msgs)
-	var result qaReviewResult
-	if err := chatAndParseJSON(ctx, room.qa, msgs, &result, qaReviewSchemaExample, "qa_humanize"); err != nil {
-		log.Printf("[scripter:qa_humanize] session=%s review failed: %v (skipping)", sessionID, err)
-		return nil
-	}
-	issues := make([]string, 0, len(result.Issues))
-	for _, issue := range result.Issues {
-		if issue = strings.TrimSpace(issue); issue != "" {
-			issues = append(issues, "[人写化] "+issue)
-		}
-	}
-	if len(issues) > 8 {
-		issues = issues[:8]
-	}
-	return issues
-}
-
 // ---------------------------------------------------------------------------
 // Logic review — 用闲置的 QA agent 审查因果逻辑与神话一致性，问题清单喂给修复循环。
-// 与 runOneshotQAReview 平行但职责不同：这里只审逻辑可达性，不审文风。
+// 与 runStoryQAReview 平行但职责不同：这里只审逻辑可达性与编译忠实度，不审文风。
 // ---------------------------------------------------------------------------
 
 // logicReviewSystemPrompt 定义逻辑审查员的检查清单：因果可达性、推理路径、神话锚点必要性。
 func logicReviewSystemPrompt() string {
 	return `<role>剧本逻辑审查员</role>
-<task>审查COC剧本的因果逻辑、推理可达性和神话一致性。不审文风、不审用词。</task>
+<task>以<story_document>为唯一真相源，审查编译后COC剧本结构化数据的事实忠实度、因果逻辑与推理可达性。不审文风、不审用词。</task>
 <checklist>
-1. 真相→时间线→异常 可达性：骨架event_chain的每一步是否在scenes/system_prompt中有对应呈现？
-2. 异常→线索→结论 可达性：从current_anomaly出发，沿clues是否能到达core_proposition？是否存在至少两条独立路径？
-3. NPC知情边界：每个NPC知道什么、不知道什么是否一致？NPC不应知道超出其接触范围的信息
-4. 误导排除后仍可推进：去掉所有[误导]线索后，仅靠[真实]+[隐藏]是否仍能推导到真相？
-5. 神话锚点必要性：mythos_anchor/cosmic_law是否是event_chain中至少一个环节的必要条件（去掉它事件链断裂）？
+1. 事实忠实度：scenes/npcs/clues/win_condition/lose_condition中的人名、地名、因果关系、结局条件是否与<story_document>逐一对应，编译时有没有新增、删减或篡改任何事实？
+2. 异常→线索→结论 可达性：从故事文本描述的当前异常出发，沿clues是否能到达故事文本的核心真相？是否存在至少两条独立路径？
+3. NPC知情边界：每个NPC知道什么、不知道什么是否与故事文本一致？NPC不应知道超出其在故事中接触范围的信息
+4. 误导排除后仍可推进：去掉所有[误导]线索后，仅靠[真实]+[隐藏]是否仍能推导到故事文本描述的真相？
+5. 神话锚点必要性：mythos_anchor是否是故事文本因果链中至少一个环节的必要条件（去掉它事件链断裂）？
 6. 洛氏恐怖强度：剧本是否体现了认知冲击、尺度错位、不可逆代价中的至少两项？而非仅靠血腥或惊吓桥段？
-7. 胜负条件因果：win_condition/lose_condition是否从event_chain的不同终止状态逻辑推出？
+7. 胜负条件因果：win_condition/lose_condition是否与故事文本描述的结局条件一致，且从不同终止状态逻辑推出？
 8. Intro目的性：intro是否清楚交代了调查员到场的基本理由/表层任务，让玩家知道自己为何在此，且不列出、不推荐任何具体行动或下一步（行动留给玩家自行探索）？
 </checklist>
 <output>只输出JSON对象：{"issues":["问题1","问题2"]}；每条问题指明具体字段和可操作的修改方向；按严重程度排序，最多8条；没有问题输出{"issues":[]}。</output>`
@@ -1206,9 +926,10 @@ func buildLogicReviewPayload(draft *ScenarioDraft) map[string]any {
 	}
 }
 
-// runLogicReview 返回因果逻辑整改清单；skeleton为nil或审查不可用/失败时返回nil（非致命，跳过即可）。
-func runLogicReview(ctx context.Context, room *scripterRoom, draft *ScenarioDraft, skeleton *mythosSkeleton) []string {
-	if room == nil || room.qa.provider == nil || draft == nil || skeleton == nil {
+// runLogicReview 以 storyDoc 为真相源，返回因果逻辑与编译忠实度整改清单；storyDoc为空或
+// 审查不可用/失败时返回nil（非致命，跳过即可）。
+func runLogicReview(ctx context.Context, room *scripterRoom, draft *ScenarioDraft, storyDoc string) []string {
+	if room == nil || room.qa.provider == nil || draft == nil || strings.TrimSpace(storyDoc) == "" {
 		return nil
 	}
 	sessionID := scripterSessionID(ctx, room)
@@ -1217,15 +938,10 @@ func runLogicReview(ctx context.Context, room *scripterRoom, draft *ScenarioDraf
 		log.Printf("[scripter:logic_review] session=%s marshal payload failed: %v", sessionID, err)
 		return nil
 	}
-	skeletonJSON, err := json.Marshal(skeleton)
-	if err != nil {
-		log.Printf("[scripter:logic_review] session=%s marshal skeleton failed: %v", sessionID, err)
-		return nil
-	}
-	userMsg := fmt.Sprintf(`<confirmed_skeleton>%s</confirmed_skeleton>
+	userMsg := fmt.Sprintf(`<story_document>%s</story_document>
 <draft_for_review>%s</draft_for_review>
-请按checklist审查以上剧本的因果逻辑、推理可达性与神话一致性，输出问题清单JSON。`,
-		string(skeletonJSON), string(payloadJSON))
+请按checklist审查以上剧本的因果逻辑、推理可达性与对故事文本的忠实度，输出问题清单JSON。`,
+		storyDoc, string(payloadJSON))
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.qa.systemPrompt(logicReviewSystemPrompt())},
 		{Role: "user", Content: userMsg},
