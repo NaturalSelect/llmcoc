@@ -24,5 +24,6 @@ func ServeImage(c *gin.Context) {
 
 	c.Header("Cache-Control", "public, max-age=31536000, immutable")
 	c.Header("Content-Type", stored.MIME)
+	c.Header("ETag", `"`+stored.Hash+`"`)
 	http.ServeContent(c.Writer, c.Request, stored.Hash, stored.Info.ModTime(), file)
 }

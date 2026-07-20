@@ -112,6 +112,7 @@ func (s Store) SaveDataURL(dataURL string) (Ref, error) {
 	if err != nil {
 		return Ref{}, err
 	}
+	bytes, mime, ext, _ = CompressImage(bytes, mime)
 	sum := sha256.Sum256(bytes)
 	hash := hex.EncodeToString(sum[:])
 	path := s.pathFor(hash, ext)
