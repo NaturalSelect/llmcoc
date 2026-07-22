@@ -32,7 +32,7 @@ func compilerSystemPrompt() string {
 - content.npcs：从故事文档的NPC部分逐个提取；description须完整保留公开身份/议程/秘密/标志性细节/关系网；stats按COC7规则书惯例给出合理属性值（含SAN、HP、MP）；attitude取自故事文档写明的初始态度
 - content.clues：从故事文档的线索部分逐条提取为结构化对象{summary,source,skill_check,on_success,on_failure,nature}；nature必须是"真实"/"隐藏"/"误导"之一；summary保留来源事实/支持命题等关键信息；skill_check/on_success/on_failure按故事文档写明的检定与推进逐条对应，文档未写明时可留空；至少一条nature="隐藏"的线索须包含"神话本质"字样并与mythos_anchor强绑定
 - content.endings：从故事文档的结局部分逐个提取为{name,trigger,description,san_reward,is_failure}；trigger保持"如果[条件]，则[处境变化]"的条件句结构；san_reward取自文档写明的SAN恢复/损失（如"恢复1d6"），文档未写明时按结局性质给出合理数值；is_failure标记灾难/失败向结局；故事文档中每一个独立结局都要对应一个ending，不得合并或省略
-- content.system_prompt：包含KP独有的内部真相（复述故事文档的核心真相与mythos_anchor在事件因果中的必要性）以及时间推进/信息分层/不主动引导三项KP协议
+- content.system_prompt：包含KP独有的内部真相（复述故事文档的核心真相与mythos_anchor对故事的必要性，即为何不可替换）以及时间推进/信息分层/不主动引导三项KP协议
 - content.game_start_slot：从故事文档嵌入的具体时刻推算（0-47，每槽30分钟）；文档未写明具体时刻时取16
 - content.map_description：根据故事文档的地点关系概括为文字地图，体现可回访、可交叉验证的调查网络
 - content.handouts：若故事文档包含可直接朗读给玩家的手卡/信件/剪报等原文材料，逐条提取为{title,content,timing}；文档未提供此类材料则content.handouts留空数组，不得虚构
