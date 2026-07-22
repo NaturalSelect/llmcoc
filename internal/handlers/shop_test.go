@@ -33,10 +33,34 @@ func TestListShopItems(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
+	var resp PaginatedResponse[models.ShopItem]
 	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 2 {
-		t.Errorf("want 2 items, got %d", len(resp))
+	if len(resp.Items) != 2 {
+		t.Errorf("want 2 items, got %d", len(resp.Items))
+	}
+}
+
+func TestListShopItems_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	for i := 0; i < 25; i++ {
+		seedShopItem(t, fmt.Sprintf("商品%d", i), i+1, models.ItemTypeCoins, 10)
+	}
+	uid := seedUser(t, "buyer", "user", 0, 3)
+
+	r := shopRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/shop/items?page=2&page_size=20", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.ShopItem]
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
 	}
 }
 
@@ -54,10 +78,10 @@ func TestListShopItems_InactiveHidden(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
+	var resp PaginatedResponse[models.ShopItem]
 	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 0 {
-		t.Errorf("inactive item must not appear, got %d items", len(resp))
+	if len(resp.Items) != 0 {
+		t.Errorf("inactive item must not appear, got %d items", len(resp.Items))
 	}
 }
 
@@ -147,10 +171,10 @@ func TestGetMyTransactions_Empty(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
+	var resp PaginatedResponse[models.Transaction]
 	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 0 {
-		t.Errorf("want empty, got %d", len(resp))
+	if len(resp.Items) != 0 {
+		t.Errorf("want empty, got %d", len(resp.Items))
 	}
 }
 
@@ -173,10 +197,38 @@ func TestGetMyTransactions_AfterPurchase(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var txs []any
-	json.NewDecoder(w.Body).Decode(&txs)
-	if len(txs) != 1 {
-		t.Errorf("want 1 transaction, got %d", len(txs))
+	var resp PaginatedResponse[models.Transaction]
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) != 1 {
+		t.Errorf("want 1 transaction, got %d", len(resp.Items))
 	}
-	_ = fmt.Sprintf("item_id=%d", iid) // prevent unused import
+}
+
+func TestGetMyTransactions_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	iid := seedShopItem(t, "金币包", 1, models.ItemTypeCoins, 10)
+	uid := seedUser(t, "buyer", "user", 1000, 3)
+
+	r := shopRouter(uid)
+	for i := 0; i < 25; i++ {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, jsonReq("POST", "/shop/purchase", map[string]any{"item_id": iid}))
+		if w.Code != http.StatusOK {
+			t.Fatalf("purchase %d failed: %d %s", i, w.Code, w.Body.String())
+		}
+	}
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/shop/transactions?page=2&page_size=20", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.Transaction]
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
+	}
 }

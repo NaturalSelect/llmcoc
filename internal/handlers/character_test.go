@@ -16,6 +16,7 @@ func charRouter(userID uint) *gin.Engine {
 	r := gin.New()
 	auth := withAuth(userID, "tester", "user")
 	r.GET("/characters", auth, ListCharacters)
+	r.GET("/characters/dead", auth, ListDeadCharacters)
 	r.POST("/characters", auth, CreateCharacter)
 	r.GET("/characters/:id", auth, GetCharacter)
 	r.PUT("/characters/:id", auth, UpdateCharacter)
@@ -37,10 +38,10 @@ func TestListCharacters_Empty(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
+	var resp PaginatedResponse[models.CharacterCard]
 	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 0 {
-		t.Errorf("want empty list, got %d", len(resp))
+	if len(resp.Items) != 0 {
+		t.Errorf("want empty list, got %d", len(resp.Items))
 	}
 }
 
@@ -58,10 +59,64 @@ func TestListCharacters_OnlyOwn(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
+	var resp PaginatedResponse[models.CharacterCard]
 	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 1 {
-		t.Errorf("want 1 card (own only), got %d", len(resp))
+	if len(resp.Items) != 1 {
+		t.Errorf("want 1 card (own only), got %d", len(resp.Items))
+	}
+}
+
+func TestListCharacters_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	for i := 0; i < 25; i++ {
+		seedCard(t, uid, fmt.Sprintf("Card %d", i))
+	}
+
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/characters?page=2&page_size=20", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.CharacterCard]
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
+	}
+}
+
+// ── ListDeadCharacters ────────────────────────────────────────────────────────
+
+func TestListDeadCharacters_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	for i := 0; i < 25; i++ {
+		cid := seedCard(t, uid, fmt.Sprintf("Dead %d", i))
+		// GORM 对 default:true 字段跳过零值(false)写入，需用 Exec 直接置为死亡状态。
+		if err := models.DB.Exec("UPDATE character_cards SET is_active = false WHERE id = ?", cid).Error; err != nil {
+			t.Fatalf("mark dead: %v", err)
+		}
+	}
+
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/characters/dead?page=2&page_size=20", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.CharacterCard]
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
 	}
 }
 

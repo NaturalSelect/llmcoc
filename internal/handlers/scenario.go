@@ -19,12 +19,31 @@ import (
 	"github.com/llmcoc/server/internal/services/agent"
 )
 
+type ScenarioListResponse = PaginatedResponse[models.Scenario]
+
 func ListScenarios(c *gin.Context) {
-	var scenarios []models.Scenario
-	models.DB.Where("is_active = ?", true).
-		Order("created_at DESC").
-		Find(&scenarios)
-	c.JSON(http.StatusOK, scenarios)
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
+
+	var total int64
+	if err := models.DB.Model(&models.Scenario{}).Where("is_active = ?", true).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询剧本总数失败"})
+		return
+	}
+
+	scenarios := make([]models.Scenario, 0)
+	if err := models.DB.Where("is_active = ?", true).
+		Order("created_at DESC, id DESC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&scenarios).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询剧本列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newPaginatedResponse(scenarios, page, pageSize, total))
 }
 
 func GetScenario(c *gin.Context) {

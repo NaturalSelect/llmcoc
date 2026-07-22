@@ -38,9 +38,30 @@ func GetShopCosts(c *gin.Context) {
 }
 
 func ListShopItems(c *gin.Context) {
-	var items []models.ShopItem
-	models.DB.Where("is_active = ?", true).Order("price ASC").Find(&items)
-	c.JSON(http.StatusOK, items)
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
+
+	var total int64
+	if err := models.DB.Model(&models.ShopItem{}).
+		Where("is_active = ?", true).
+		Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询商品总数失败"})
+		return
+	}
+
+	items := make([]models.ShopItem, 0)
+	if err := models.DB.Where("is_active = ?", true).
+		Order("price ASC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询商品列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newPaginatedResponse(items, page, pageSize, total))
 }
 
 func PurchaseItem(c *gin.Context) {
@@ -178,12 +199,30 @@ func PurchaseItem(c *gin.Context) {
 }
 
 func GetMyTransactions(c *gin.Context) {
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
 	userID := c.GetUint("user_id")
-	var transactions []models.Transaction
-	models.DB.Where("user_id = ?", userID).
+
+	var total int64
+	if err := models.DB.Model(&models.Transaction{}).
+		Where("user_id = ?", userID).
+		Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询交易记录总数失败"})
+		return
+	}
+
+	transactions := make([]models.Transaction, 0)
+	if err := models.DB.Where("user_id = ?", userID).
 		Preload("ShopItem").
 		Order("created_at DESC").
-		Limit(50).
-		Find(&transactions)
-	c.JSON(http.StatusOK, transactions)
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&transactions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询交易记录失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newPaginatedResponse(transactions, page, pageSize, total))
 }

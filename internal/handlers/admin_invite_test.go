@@ -19,6 +19,76 @@ func adminSettingsRouter() *gin.Engine {
 	return r
 }
 
+func adminInviteRouter() *gin.Engine {
+	r := gin.New()
+	adm := r.Group("/admin", withAuth(1, "admin", "admin"))
+	adm.GET("/invite-codes", AdminListInviteCodes)
+	return r
+}
+
+func TestAdminListInviteCodes_Empty(t *testing.T) {
+	initTestDB(t)
+	r := adminInviteRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/invite-codes", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.InviteCode]
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 0 {
+		t.Errorf("want empty, got %d", len(resp.Items))
+	}
+}
+
+func TestAdminListInviteCodes_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	adminID := seedUser(t, "admin", "admin", 0, 3)
+	for i := 0; i < 25; i++ {
+		code, err := generateInviteCode()
+		if err != nil {
+			t.Fatalf("generateInviteCode: %v", err)
+		}
+		if err := models.DB.Create(&models.InviteCode{Code: code, CreatedBy: adminID}).Error; err != nil {
+			t.Fatalf("create invite code: %v", err)
+		}
+	}
+	r := adminInviteRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/invite-codes?page=2&page_size=20", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.InviteCode]
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
+	}
+}
+
+func TestAdminListInviteCodes_InvalidPagination(t *testing.T) {
+	initTestDB(t)
+	r := adminInviteRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/invite-codes?page=0", nil))
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("want 400, got %d", w.Code)
+	}
+}
+
 // TestAdminUpdateBalanceRules_2000Succeeds verifies that exactly 2000 runes is accepted.
 func TestAdminUpdateBalanceRules_2000Succeeds(t *testing.T) {
 	initTestDB(t)

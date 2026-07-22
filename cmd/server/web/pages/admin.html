@@ -23,11 +23,32 @@
                     </div>
                 </div>
                 <div class="card rounded p-5">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="font-bold text-amber-300 text-sm font-ui">用户列表</h3>
-                        <button @click="loadAdminUsers()" class="text-xs text-amber-800 hover:text-amber-500 font-ui">刷新</button>
+                    <div class="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h3 class="font-bold text-amber-300 text-sm font-ui">用户列表</h3>
+                            <p class="text-xs text-amber-800 mt-1 font-ui">
+                                共 <span x-text="adminUserTotal"></span> 个 · 第
+                                <span x-text="adminUserPage"></span> /
+                                <span x-text="adminUserTotalPages"></span> 页
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <label class="text-xs text-amber-800 font-ui">每页</label>
+                            <select x-model.number="adminUserPageSize" @change="changeAdminUserPageSize()"
+                                class="inp text-xs py-1 w-20">
+                                <option :value="10">10</option>
+                                <option :value="20">20</option>
+                                <option :value="50">50</option>
+                            </select>
+                            <button @click="prevAdminUserPage()" :disabled="adminUserPage <= 1"
+                                class="btn btn-ghost text-xs">上一页</button>
+                            <button @click="nextAdminUserPage()" :disabled="adminUserPage >= adminUserTotalPages"
+                                class="btn btn-ghost text-xs">下一页</button>
+                            <button @click="loadAdminUsers(adminUserPage)"
+                                class="btn btn-ghost text-xs">刷新</button>
+                        </div>
                     </div>
-                    <div class="space-y-2 max-h-80 overflow-y-auto">
+                    <div class="space-y-2">
                         <template x-for="u in adminUsers" :key="u.id">
                             <div class="flex items-center justify-between text-xs border-b pb-2 border-base font-ui">
                                 <div class="min-w-0 flex-1">
@@ -410,10 +431,18 @@
                             <h3 class="font-bold text-amber-300 text-sm font-ui">已上架商品</h3>
                             <p class="text-xs text-amber-800 mt-1 font-ui">
                                 删除后会从商城下架，历史购买记录会保留。
+                                共 <span x-text="adminShopItemTotal"></span> 个 · 第
+                                <span x-text="adminShopItemPage"></span> / <span x-text="adminShopItemTotalPages"></span> 页
                             </p>
                         </div>
-                        <button @click="loadAdminShopItems()"
-                            class="text-xs text-amber-800 hover:text-amber-500 shrink-0 font-ui">刷新</button>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button @click="prevAdminShopItemPage()" :disabled="adminShopItemPage <= 1"
+                                class="btn btn-ghost text-xs">上一页</button>
+                            <button @click="nextAdminShopItemPage()" :disabled="adminShopItemPage >= adminShopItemTotalPages"
+                                class="btn btn-ghost text-xs">下一页</button>
+                            <button @click="loadAdminShopItems(adminShopItemPage)"
+                                class="text-xs text-amber-800 hover:text-amber-500 font-ui">刷新</button>
+                        </div>
                     </div>
 
                     <div x-show="adminShopItems.length === 0" class="text-amber-900 text-xs py-8 text-center font-ui">暂无已上架商品</div>
@@ -690,18 +719,30 @@
                 </div>
 
                 <div class="card rounded p-5">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-bold text-amber-300 text-sm font-ui">邀请码管理</h3>
-                        <div class="flex items-center gap-2">
+                    <div class="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h3 class="font-bold text-amber-300 text-sm font-ui">邀请码管理</h3>
+                            <p class="text-xs text-amber-800 mt-1 font-ui">
+                                共 <span x-text="inviteCodeTotal"></span> 个 · 第
+                                <span x-text="inviteCodePage"></span> /
+                                <span x-text="inviteCodeTotalPages"></span> 页
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
                             <input x-model.number="inviteCodeCount" type="number" min="1" max="100"
                                 class="inp w-20 text-center text-xs" placeholder="数量" />
                             <button @click="generateInviteCodes()" class="btn btn-amber text-xs">批量生成</button>
-                            <button @click="loadInviteCodes()" class="text-xs text-amber-800 hover:text-amber-500 font-ui">刷新</button>
+                            <button @click="prevInviteCodePage()" :disabled="inviteCodePage <= 1"
+                                class="btn btn-ghost text-xs">上一页</button>
+                            <button @click="nextInviteCodePage()" :disabled="inviteCodePage >= inviteCodeTotalPages"
+                                class="btn btn-ghost text-xs">下一页</button>
+                            <button @click="loadInviteCodes(inviteCodePage)"
+                                class="text-xs text-amber-800 hover:text-amber-500 font-ui">刷新</button>
                         </div>
                     </div>
                     <div x-show="inviteCodes.length === 0" class="text-amber-900 text-xs font-ui">
                         暂无邀请码</div>
-                    <div class="space-y-2 max-h-96 overflow-y-auto">
+                    <div class="space-y-2">
                         <template x-for="ic in inviteCodes" :key="ic.id">
                             <div class="flex items-center justify-between text-xs border-b pb-2 border-base font-ui">
                                 <div class="flex items-center gap-3">

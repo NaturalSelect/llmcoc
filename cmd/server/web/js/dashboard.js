@@ -3,10 +3,17 @@ window.COC = window.COC || {};
 window.COC.dashboard = {
                     async loadCharacters() {
                         this.dashboardLoading = true;
-                        try { this.characters = (await this.api('GET', '/api/characters')) || []; }
-                        finally { this.dashboardLoading = false; }
+                        try {
+                            this.characters = await this.fetchAllPages('/api/characters', {
+                                onProgress: items => { this.characters = items; },
+                            });
+                        } finally { this.dashboardLoading = false; }
                     },
-                    async loadDeadCharacters() { this.deadCharacters = (await this.api('GET', '/api/characters/dead')) || []; },
+                    async loadDeadCharacters() {
+                        this.deadCharacters = await this.fetchAllPages('/api/characters/dead', {
+                            onProgress: items => { this.deadCharacters = items; },
+                        });
+                    },
                     // ══════════════════════════════════════════════════════════════════════
                     // Characters
                     // ══════════════════════════════════════════════════════════════════════

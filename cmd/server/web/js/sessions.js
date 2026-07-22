@@ -10,19 +10,69 @@ window.COC.sessions = {
                             (c.stats?.hp ?? 0) > 0
                         );
                     },
-                    async loadSessions() {
+                    async loadSessions(page) {
+                        const nextPage = Math.max(1, Number(page || this.sessionPage || 1));
+                        const pageSize = Math.max(1, Number(this.sessionPageSize || 20));
                         this.sessionsLoading = true;
-                        try { this.sessions = (await this.api('GET', '/api/sessions')) || []; }
-                        finally { this.sessionsLoading = false; }
+                        try {
+                            const resp = await this.api('GET', `/api/sessions?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+                            this.sessions = resp?.items || [];
+                            this.sessionPage = Math.max(1, Number(resp?.page || nextPage));
+                            this.sessionPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                            this.sessionTotal = Math.max(0, Number(resp?.total || 0));
+                            this.sessionTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                        } finally { this.sessionsLoading = false; }
                     },
-                    async loadMyHistory() { this.myHistory = (await this.api('GET', '/api/sessions/my-history')) || []; },
-                    async loadMyFavorites() { this.myFavorites = (await this.api('GET', '/api/sessions/my-favorites')) || []; },
+                    async prevSessionPage() {
+                        if (this.sessionPage <= 1) return;
+                        await this.loadSessions(this.sessionPage - 1);
+                    },
+                    async nextSessionPage() {
+                        if (this.sessionPage >= this.sessionTotalPages) return;
+                        await this.loadSessions(this.sessionPage + 1);
+                    },
+                    async loadMyHistory(page) {
+                        const nextPage = Math.max(1, Number(page || this.myHistoryPage || 1));
+                        const pageSize = Math.max(1, Number(this.myHistoryPageSize || 20));
+                        const resp = await this.api('GET', `/api/sessions/my-history?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+                        this.myHistory = resp?.items || [];
+                        this.myHistoryPage = Math.max(1, Number(resp?.page || nextPage));
+                        this.myHistoryPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                        this.myHistoryTotal = Math.max(0, Number(resp?.total || 0));
+                        this.myHistoryTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                    },
+                    async prevMyHistoryPage() {
+                        if (this.myHistoryPage <= 1) return;
+                        await this.loadMyHistory(this.myHistoryPage - 1);
+                    },
+                    async nextMyHistoryPage() {
+                        if (this.myHistoryPage >= this.myHistoryTotalPages) return;
+                        await this.loadMyHistory(this.myHistoryPage + 1);
+                    },
+                    async loadMyFavorites(page) {
+                        const nextPage = Math.max(1, Number(page || this.myFavoritesPage || 1));
+                        const pageSize = Math.max(1, Number(this.myFavoritesPageSize || 20));
+                        const resp = await this.api('GET', `/api/sessions/my-favorites?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+                        this.myFavorites = resp?.items || [];
+                        this.myFavoritesPage = Math.max(1, Number(resp?.page || nextPage));
+                        this.myFavoritesPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                        this.myFavoritesTotal = Math.max(0, Number(resp?.total || 0));
+                        this.myFavoritesTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                    },
+                    async prevMyFavoritesPage() {
+                        if (this.myFavoritesPage <= 1) return;
+                        await this.loadMyFavorites(this.myFavoritesPage - 1);
+                    },
+                    async nextMyFavoritesPage() {
+                        if (this.myFavoritesPage >= this.myFavoritesTotalPages) return;
+                        await this.loadMyFavorites(this.myFavoritesPage + 1);
+                    },
                     async toggleFavorite(sessionId) {
                         try {
                             await this.api('POST', '/api/sessions/' + sessionId + '/favorite');
                             this.showToast('已收藏');
                             // 重新加载收藏列表
-                            await this.loadMyFavorites();
+                            await this.loadMyFavorites(1);
                         } catch (e) {
                             this.showToast(e.message, 'error');
                         }
@@ -31,28 +81,53 @@ window.COC.sessions = {
                         try {
                             await this.api('DELETE', '/api/sessions/' + sessionId + '/favorite');
                             this.showToast('已取消收藏');
-                            // 重新加载收藏列表
-                            await this.loadMyFavorites();
+                            // 重新加载收藏列表；若当前页因删除清空则回退一页
+                            const nextPage = this.myFavorites.length === 1 && this.myFavoritesPage > 1
+                                ? this.myFavoritesPage - 1
+                                : this.myFavoritesPage;
+                            await this.loadMyFavorites(nextPage);
                         } catch (e) {
                             this.showToast(e.message, 'error');
                         }
                     },
-                    async loadScenarios() { this.scenarioList = (await this.api('GET', '/api/scenarios')) || []; },
+                    async loadScenarios(page) {
+                        const nextPage = Math.max(1, Number(page || this.scenarioPage || 1));
+                        const pageSize = Math.max(1, Number(this.scenarioPageSize || 20));
+                        const resp = await this.api('GET', `/api/scenarios?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+                        this.scenarioList = resp?.items || [];
+                        this.scenarioPage = Math.max(1, Number(resp?.page || nextPage));
+                        this.scenarioPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                        this.scenarioTotal = Math.max(0, Number(resp?.total || 0));
+                        this.scenarioTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                    },
+                    async prevScenarioPage() {
+                        if (this.scenarioPage <= 1) return;
+                        await this.loadScenarios(this.scenarioPage - 1);
+                    },
+                    async nextScenarioPage() {
+                        if (this.scenarioPage >= this.scenarioTotalPages) return;
+                        await this.loadScenarios(this.scenarioPage + 1);
+                    },
+                    selectScenario(s) {
+                        this.selectedScenario = s;
+                        this.sessionForm.scenario_id = s.id;
+                        if (!this.sessionForm.name) this.sessionForm.name = s.name;
+                    },
                     // ══════════════════════════════════════════════════════════════════════
                     // Sessions
                     // ══════════════════════════════════════════════════════════════════════
                     async openCreateSession() {
-                        await this.loadScenarios();
+                        this.selectedScenario = null;
                         this.sessionForm = { name: '', scenario_id: '', max_players: 4, password: '' };
                         this.modal = 'createSession';
+                        await this.loadScenarios(1);
                     },
 
                     async createSession() {
                         if (!this.sessionForm.scenario_id) return;
-                        // NOTE: 默认用剧本名作为房间名
+                        // NOTE: 默认用剧本名作为房间名（选中项来自 selectedScenario 缓存，翻页后依然可用）
                         if (!this.sessionForm.name) {
-                            const sc = this.scenarioList.find(s => s.id === this.sessionForm.scenario_id);
-                            this.sessionForm.name = sc?.name || '';
+                            this.sessionForm.name = this.selectedScenario?.name || '';
                         }
                         if (!this.sessionForm.name) return;
                         this.loading = true;

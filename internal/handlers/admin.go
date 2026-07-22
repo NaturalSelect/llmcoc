@@ -20,13 +20,7 @@ const (
 	adminScenarioMaxPageSize     = 100
 )
 
-type AdminScenarioListResponse struct {
-	Items      []models.Scenario `json:"items"`
-	Page       int               `json:"page"`
-	PageSize   int               `json:"page_size"`
-	Total      int64             `json:"total"`
-	TotalPages int               `json:"total_pages"`
-}
+type AdminScenarioListResponse = PaginatedResponse[models.Scenario]
 
 type AdminScenarioGenerationLogResponse struct {
 	ScenarioID   uint      `json:"scenario_id"`
@@ -77,11 +71,6 @@ func AdminListScenarios(c *gin.Context) {
 		return
 	}
 
-	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
-	if totalPages < 1 {
-		totalPages = 1
-	}
-
 	scenarios := make([]models.Scenario, 0)
 	if err := models.DB.Where("is_active = ?", true).
 		Order("created_at DESC, id DESC").
@@ -92,13 +81,7 @@ func AdminListScenarios(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, AdminScenarioListResponse{
-		Items:      scenarios,
-		Page:       page,
-		PageSize:   pageSize,
-		Total:      total,
-		TotalPages: totalPages,
-	})
+	c.JSON(http.StatusOK, newPaginatedResponse(scenarios, page, pageSize, total))
 }
 
 func AdminGetScenarioGenerationLog(c *gin.Context) {
@@ -140,9 +123,27 @@ func AdminGetScenarioGenerationLog(c *gin.Context) {
 }
 
 func AdminListUsers(c *gin.Context) {
-	var users []models.User
-	models.DB.Order("created_at DESC").Find(&users)
-	c.JSON(http.StatusOK, users)
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
+
+	var total int64
+	if err := models.DB.Model(&models.User{}).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询用户总数失败"})
+		return
+	}
+
+	users := make([]models.User, 0)
+	if err := models.DB.Order("created_at DESC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询用户列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newPaginatedResponse(users, page, pageSize, total))
 }
 
 // AdminListUserCharacters 返回指定用户名下所有仍激活的角色卡，供管理员在后台选卡后操作（如添加物品）。
@@ -155,14 +156,32 @@ func AdminListUserCharacters(c *gin.Context) {
 		return
 	}
 
-	var cards []models.CharacterCard
-	models.DB.Where("user_id = ? AND is_active = ?", id, true).
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
+
+	var total int64
+	if err := models.DB.Model(&models.CharacterCard{}).
+		Where("user_id = ? AND is_active = ?", id, true).
+		Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询角色卡总数失败"})
+		return
+	}
+
+	cards := make([]models.CharacterCard, 0)
+	if err := models.DB.Where("user_id = ? AND is_active = ?", id, true).
 		Order("created_at DESC").
-		Find(&cards)
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&cards).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询角色卡列表失败"})
+		return
+	}
 	for i := range cards {
 		hotFixChar(&cards[i])
 	}
-	c.JSON(http.StatusOK, cards)
+	c.JSON(http.StatusOK, newPaginatedResponse(cards, page, pageSize, total))
 }
 
 // NOTE: AdminRechargeCoins handles POST /admin/recharge.
@@ -238,9 +257,28 @@ func AdminSetRole(c *gin.Context) {
 }
 
 func AdminGetRechargeHistory(c *gin.Context) {
-	var records []models.CoinRecharge
-	models.DB.Preload("User").Preload("Admin").Order("created_at DESC").Limit(100).Find(&records)
-	c.JSON(http.StatusOK, records)
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
+
+	var total int64
+	if err := models.DB.Model(&models.CoinRecharge{}).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询充值记录总数失败"})
+		return
+	}
+
+	records := make([]models.CoinRecharge, 0)
+	if err := models.DB.Preload("User").Preload("Admin").
+		Order("created_at DESC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&records).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询充值记录失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newPaginatedResponse(records, page, pageSize, total))
 }
 
 func AdminCreateShopItem(c *gin.Context) {

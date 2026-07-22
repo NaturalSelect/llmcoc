@@ -84,11 +84,30 @@ func adminUpdateBalanceRules(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"key": "balance_rules", "value": trimmed})
 }
 
-// AdminListInviteCodes returns all invite codes with creator/user info.
+// AdminListInviteCodes returns invite codes with creator/user info, paginated.
 func AdminListInviteCodes(c *gin.Context) {
-	var codes []models.InviteCode
-	models.DB.Preload("Creator").Preload("UsedUser").Order("created_at DESC").Find(&codes)
-	c.JSON(http.StatusOK, codes)
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
+
+	var total int64
+	if err := models.DB.Model(&models.InviteCode{}).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询邀请码总数失败"})
+		return
+	}
+
+	codes := make([]models.InviteCode, 0)
+	if err := models.DB.Preload("Creator").Preload("UsedUser").
+		Order("created_at DESC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&codes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询邀请码列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newPaginatedResponse(codes, page, pageSize, total))
 }
 
 // AdminCreateInviteCodes generates N invite codes.

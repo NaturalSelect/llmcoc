@@ -50,6 +50,7 @@ func initTestDB(t *testing.T) {
 		&models.ScenarioGenerationLog{},
 		&models.GameSession{},
 		&models.SessionPlayer{},
+		&models.SessionFavorite{},
 		&models.SessionNPC{},
 		&models.SessionTurnAction{},
 		&models.Message{},

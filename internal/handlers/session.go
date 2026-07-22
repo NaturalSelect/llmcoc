@@ -81,23 +81,56 @@ func newMessageResponses(messages []models.Message) []messageResponse {
 }
 
 func ListSessions(c *gin.Context) {
-	var sessions []models.GameSession
-	models.DB.
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
+
+	var total int64
+	if err := models.DB.Model(&models.GameSession{}).
+		Where("status IN ?", []string{"lobby", "playing"}).
+		Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询活跃房间总数失败"})
+		return
+	}
+
+	sessions := make([]models.GameSession, 0)
+	if err := models.DB.
 		Preload("Scenario").
 		Preload("Creator").
 		Preload("Players.User").
 		Preload("Players.CharacterCard").
 		Where("status IN ?", []string{"lobby", "playing"}).
 		Order("created_at DESC").
-		Find(&sessions)
-	c.JSON(http.StatusOK, sessions)
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&sessions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询活跃房间列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 
-// ListMyHistorySessions returns the last 20 ended sessions the current user participated in.
+// ListMyHistorySessions returns the ended sessions the current user participated in, paginated.
 func ListMyHistorySessions(c *gin.Context) {
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
 	userID := c.GetUint("user_id")
-	var sessions []models.GameSession
-	models.DB.
+
+	var total int64
+	if err := models.DB.Model(&models.GameSession{}).
+		Joins("JOIN session_players ON session_players.session_id = game_sessions.id").
+		Where("session_players.user_id = ? AND game_sessions.status = ?", userID, models.SessionStatusEnded).
+		Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询历史房间总数失败"})
+		return
+	}
+
+	sessions := make([]models.GameSession, 0)
+	if err := models.DB.
 		Preload("Scenario").
 		Preload("Creator").
 		Preload("Players.User").
@@ -105,9 +138,14 @@ func ListMyHistorySessions(c *gin.Context) {
 		Joins("JOIN session_players ON session_players.session_id = game_sessions.id").
 		Where("session_players.user_id = ? AND game_sessions.status = ?", userID, models.SessionStatusEnded).
 		Order("game_sessions.updated_at DESC").
-		Limit(20).
-		Find(&sessions)
-	c.JSON(http.StatusOK, sessions)
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&sessions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询历史房间列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 
 func GetSession(c *gin.Context) {
@@ -1856,11 +1894,25 @@ func EndSession(c *gin.Context) {
 	})
 }
 
-// ListMyFavoriteSessions returns the user's favorite sessions
+// ListMyFavoriteSessions returns the user's favorite sessions, paginated.
 func ListMyFavoriteSessions(c *gin.Context) {
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
 	userID := c.GetUint("user_id")
-	var sessions []models.GameSession
-	models.DB.
+
+	var total int64
+	if err := models.DB.Model(&models.GameSession{}).
+		Joins("JOIN session_favorites ON session_favorites.session_id = game_sessions.id").
+		Where("session_favorites.user_id = ? AND game_sessions.status = ?", userID, models.SessionStatusEnded).
+		Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询收藏房间总数失败"})
+		return
+	}
+
+	sessions := make([]models.GameSession, 0)
+	if err := models.DB.
 		Joins("JOIN session_favorites ON session_favorites.session_id = game_sessions.id").
 		Preload("Scenario").
 		Preload("Creator").
@@ -1868,8 +1920,14 @@ func ListMyFavoriteSessions(c *gin.Context) {
 		Preload("Players.CharacterCard").
 		Where("session_favorites.user_id = ? AND game_sessions.status = ?", userID, models.SessionStatusEnded).
 		Order("session_favorites.created_at DESC").
-		Find(&sessions)
-	c.JSON(http.StatusOK, sessions)
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&sessions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询收藏房间列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 
 // FavoriteSession adds a session to the current user's favorites

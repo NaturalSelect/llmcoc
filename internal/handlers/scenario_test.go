@@ -36,10 +36,18 @@ func TestListScenarios_Empty(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
-	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 0 {
-		t.Errorf("want empty, got %d", len(resp))
+	var resp ScenarioListResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 0 {
+		t.Errorf("want empty, got %d", len(resp.Items))
+	}
+	if resp.Total != 0 {
+		t.Errorf("total = %d, want 0", resp.Total)
+	}
+	if resp.Page != 1 || resp.PageSize != 20 || resp.TotalPages != 1 {
+		t.Errorf("pagination = page %d size %d totalPages %d, want 1/20/1", resp.Page, resp.PageSize, resp.TotalPages)
 	}
 }
 
@@ -59,10 +67,44 @@ func TestListScenarios_Active(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
-	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 1 {
-		t.Errorf("want 1 active scenario, got %d", len(resp))
+	var resp ScenarioListResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Errorf("want 1 active scenario, got %d", len(resp.Items))
+	}
+	if resp.Total != 1 {
+		t.Errorf("total = %d, want 1", resp.Total)
+	}
+}
+
+func TestListScenarios_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	for i := 1; i <= 25; i++ {
+		seedScenario(t, fmt.Sprintf("Scenario %02d", i))
+	}
+	uid := seedUser(t, "u", "user", 0, 3)
+	r := scenarioRouter(uid, false)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/scenarios?page=2&page_size=20", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp ScenarioListResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 {
+		t.Errorf("total = %d, want 25", resp.Total)
+	}
+	if resp.Page != 2 || resp.PageSize != 20 || resp.TotalPages != 2 {
+		t.Errorf("pagination = page %d size %d totalPages %d, want 2/20/2", resp.Page, resp.PageSize, resp.TotalPages)
 	}
 }
 

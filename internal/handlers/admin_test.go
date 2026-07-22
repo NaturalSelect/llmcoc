@@ -24,6 +24,7 @@ func adminRouter() *gin.Engine {
 	admin.POST("/recharge", AdminRechargeCoins)
 	admin.PUT("/users/:id/role", AdminSetRole)
 	admin.GET("/recharge/history", AdminGetRechargeHistory)
+	admin.GET("/users/:id/characters", AdminListUserCharacters)
 	admin.POST("/shop/items", AdminCreateShopItem)
 	admin.DELETE("/shop/items/:id", AdminDeleteShopItem)
 	admin.GET("/cache/entry", AdminGetCacheEntry)
@@ -40,10 +41,15 @@ func TestAdminListUsers_Empty(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
-	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 0 {
-		t.Errorf("want empty list, got %d items", len(resp))
+	var resp PaginatedResponse[models.User]
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 0 {
+		t.Errorf("want empty list, got %d items", len(resp.Items))
+	}
+	if resp.Total != 0 {
+		t.Errorf("total = %d, want 0", resp.Total)
 	}
 }
 
@@ -59,10 +65,40 @@ func TestAdminListUsers_HasUsers(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
-	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 2 {
-		t.Errorf("want 2 users, got %d", len(resp))
+	var resp PaginatedResponse[models.User]
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 2 {
+		t.Errorf("want 2 users, got %d", len(resp.Items))
+	}
+	if resp.Total != 2 {
+		t.Errorf("total = %d, want 2", resp.Total)
+	}
+}
+
+func TestAdminListUsers_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	for i := 1; i <= 25; i++ {
+		seedUser(t, fmt.Sprintf("user%02d", i), "user", 0, 3)
+	}
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/users?page=2&page_size=20", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.User]
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
 	}
 }
 
@@ -433,6 +469,68 @@ func TestAdminGetRechargeHistory(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.CoinRecharge]
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 0 {
+		t.Errorf("want empty, got %d", len(resp.Items))
+	}
+}
+
+func TestAdminGetRechargeHistory_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	adminID := seedUser(t, "admin", "admin", 0, 3)
+	userID := seedUser(t, "u", "user", 0, 3)
+	for i := 0; i < 25; i++ {
+		if err := models.DB.Create(&models.CoinRecharge{UserID: userID, Amount: 100, AdminID: adminID}).Error; err != nil {
+			t.Fatalf("create recharge: %v", err)
+		}
+	}
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/admin/recharge/history?page=2&page_size=20", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.CoinRecharge]
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
+	}
+}
+
+func TestAdminListUserCharacters_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	for i := 0; i < 25; i++ {
+		seedCard(t, uid, fmt.Sprintf("Card %d", i))
+	}
+
+	r := adminRouter()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/admin/users/%d/characters?page=2&page_size=20", uid), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.CharacterCard]
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
 	}
 }
 

@@ -1,7 +1,42 @@
 // LLM-COC Admin — User/provider/agent/scenario management
 window.COC = window.COC || {};
 window.COC.admin = {
-                    async loadAdminUsers() { this.adminUsers = (await this.api('GET', '/api/admin/users')) || []; },
+                    async loadAdminUsers(page) {
+                        const nextPage = Math.max(1, Number(page || this.adminUserPage || 1));
+                        const pageSize = Math.max(1, Number(this.adminUserPageSize || 20));
+                        const resp = await this.api('GET', `/api/admin/users?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+
+                        if (Array.isArray(resp)) {
+                            this.adminUsers = resp;
+                            this.adminUserPage = nextPage;
+                            this.adminUserPageSize = pageSize;
+                            this.adminUserTotal = resp.length;
+                            this.adminUserTotalPages = 1;
+                            return;
+                        }
+
+                        this.adminUsers = resp?.items || [];
+                        this.adminUserPage = Math.max(1, Number(resp?.page || nextPage));
+                        this.adminUserPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                        this.adminUserTotal = Math.max(0, Number(resp?.total || 0));
+                        this.adminUserTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                    },
+                    async setAdminUserPage(page) {
+                        const totalPages = Math.max(1, Number(this.adminUserTotalPages || 1));
+                        const nextPage = Math.min(Math.max(1, Number(page || 1)), totalPages);
+                        await this.loadAdminUsers(nextPage);
+                    },
+                    async prevAdminUserPage() {
+                        await this.setAdminUserPage(this.adminUserPage - 1);
+                    },
+                    async nextAdminUserPage() {
+                        await this.setAdminUserPage(this.adminUserPage + 1);
+                    },
+                    async changeAdminUserPageSize() {
+                        const pageSize = Number(this.adminUserPageSize || 20);
+                        this.adminUserPageSize = [10, 20, 50].includes(pageSize) ? pageSize : 20;
+                        await this.loadAdminUsers(1);
+                    },
                     async loadCacheStats() { this.cacheStats = await this.api('GET', '/api/admin/cache/stats'); },
                     async viewCacheEntry(key) {
                         this.cacheEntryLoading = true;
@@ -109,7 +144,37 @@ window.COC.admin = {
                         this.adminScenarioPageSize = [10, 20, 50].includes(pageSize) ? pageSize : 20;
                         await this.loadAdminScenarios(1);
                     },
-                    async loadAdminShopItems() { this.adminShopItems = (await this.api('GET', '/api/shop/items')) || []; },
+                    async loadAdminShopItems(page) {
+                        const nextPage = Math.max(1, Number(page || this.adminShopItemPage || 1));
+                        const pageSize = Math.max(1, Number(this.adminShopItemPageSize || 20));
+                        const resp = await this.api('GET', `/api/shop/items?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+
+                        if (Array.isArray(resp)) {
+                            this.adminShopItems = resp;
+                            this.adminShopItemPage = nextPage;
+                            this.adminShopItemPageSize = pageSize;
+                            this.adminShopItemTotal = resp.length;
+                            this.adminShopItemTotalPages = 1;
+                            return;
+                        }
+
+                        this.adminShopItems = resp?.items || [];
+                        this.adminShopItemPage = Math.max(1, Number(resp?.page || nextPage));
+                        this.adminShopItemPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                        this.adminShopItemTotal = Math.max(0, Number(resp?.total || 0));
+                        this.adminShopItemTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                    },
+                    async setAdminShopItemPage(page) {
+                        const totalPages = Math.max(1, Number(this.adminShopItemTotalPages || 1));
+                        const nextPage = Math.min(Math.max(1, Number(page || 1)), totalPages);
+                        await this.loadAdminShopItems(nextPage);
+                    },
+                    async prevAdminShopItemPage() {
+                        await this.setAdminShopItemPage(this.adminShopItemPage - 1);
+                    },
+                    async nextAdminShopItemPage() {
+                        await this.setAdminShopItemPage(this.adminShopItemPage + 1);
+                    },
                     async deleteScenario(id) {
                         if (!await this.confirmDialog('确认删除该模组？此操作不可逆。', { danger: true, confirmText: '删除' })) return;
                         try {
@@ -218,7 +283,9 @@ window.COC.admin = {
                     async loadAdminUserCards(userId) {
                         this.adminInventoryLoading = true;
                         try {
-                            this.adminInventoryCards = (await this.api('GET', '/api/admin/users/' + userId + '/characters')) || [];
+                            this.adminInventoryCards = await this.fetchAllPages(`/api/admin/users/${userId}/characters`, {
+                                onProgress: items => { this.adminInventoryCards = items; },
+                            });
                         } catch (e) {
                             this.showToast(e.message, 'error');
                             this.adminInventoryCards = [];
@@ -337,8 +404,8 @@ window.COC.admin = {
                             await this.api('POST', '/api/admin/shop/items', this.newShopItem);
                             this.showToast('商品已创建');
                             this.newShopItem = { name: '', description: '', item_type: 'card_slot', price: 0, value: 1, is_active: true };
-                            await this.loadAdminShopItems();
-                            this.shopItems = this.adminShopItems.slice();
+                            await this.loadAdminShopItems(1);
+                            await this.loadShopItems(this.shopItemPage || 1);
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 
@@ -348,8 +415,11 @@ window.COC.admin = {
                         try {
                             await this.api('DELETE', '/api/admin/shop/items/' + item.id);
                             this.showToast('商品已删除');
-                            await this.loadAdminShopItems();
-                            this.shopItems = this.adminShopItems.slice();
+                            const nextPage = this.adminShopItems.length === 1 && this.adminShopItemPage > 1
+                                ? this.adminShopItemPage - 1
+                                : this.adminShopItemPage;
+                            await this.loadAdminShopItems(nextPage);
+                            await this.loadShopItems(this.shopItemPage || 1);
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 
@@ -400,14 +470,42 @@ window.COC.admin = {
                             this.showToast('设置已更新');
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
-                    async loadInviteCodes() {
-                        this.inviteCodes = (await this.api('GET', '/api/admin/invite-codes')) || [];
+                    async loadInviteCodes(page) {
+                        const nextPage = Math.max(1, Number(page || this.inviteCodePage || 1));
+                        const pageSize = Math.max(1, Number(this.inviteCodePageSize || 20));
+                        const resp = await this.api('GET', `/api/admin/invite-codes?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+
+                        if (Array.isArray(resp)) {
+                            this.inviteCodes = resp;
+                            this.inviteCodePage = nextPage;
+                            this.inviteCodePageSize = pageSize;
+                            this.inviteCodeTotal = resp.length;
+                            this.inviteCodeTotalPages = 1;
+                            return;
+                        }
+
+                        this.inviteCodes = resp?.items || [];
+                        this.inviteCodePage = Math.max(1, Number(resp?.page || nextPage));
+                        this.inviteCodePageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                        this.inviteCodeTotal = Math.max(0, Number(resp?.total || 0));
+                        this.inviteCodeTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                    },
+                    async setInviteCodePage(page) {
+                        const totalPages = Math.max(1, Number(this.inviteCodeTotalPages || 1));
+                        const nextPage = Math.min(Math.max(1, Number(page || 1)), totalPages);
+                        await this.loadInviteCodes(nextPage);
+                    },
+                    async prevInviteCodePage() {
+                        await this.setInviteCodePage(this.inviteCodePage - 1);
+                    },
+                    async nextInviteCodePage() {
+                        await this.setInviteCodePage(this.inviteCodePage + 1);
                     },
                     async generateInviteCodes() {
                         try {
                             await this.api('POST', '/api/admin/invite-codes', { count: this.inviteCodeCount || 5 });
                             this.showToast('邀请码已生成');
-                            await this.loadInviteCodes();
+                            await this.loadInviteCodes(1);
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
                     async deleteInviteCode(id) {
@@ -415,7 +513,10 @@ window.COC.admin = {
                         try {
                             await this.api('DELETE', '/api/admin/invite-codes/' + id);
                             this.showToast('已删除');
-                            await this.loadInviteCodes();
+                            const nextPage = this.inviteCodes.length === 1 && this.inviteCodePage > 1
+                                ? this.inviteCodePage - 1
+                                : this.inviteCodePage;
+                            await this.loadInviteCodes(nextPage);
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 

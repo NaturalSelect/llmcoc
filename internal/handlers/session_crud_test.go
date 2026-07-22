@@ -20,6 +20,8 @@ func sessionCRUDRouter(userID uint, username, role string) *gin.Engine {
 	r := gin.New()
 	auth := withAuth(userID, username, role)
 	r.GET("/sessions", auth, ListSessions)
+	r.GET("/sessions/my-history", auth, ListMyHistorySessions)
+	r.GET("/sessions/my-favorites", auth, ListMyFavoriteSessions)
 	r.GET("/sessions/:id", auth, GetSession)
 	r.POST("/sessions", auth, CreateSession)
 	r.POST("/sessions/:id/join", auth, JoinSession)
@@ -44,10 +46,10 @@ func TestListSessions_Empty(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
+	var resp PaginatedResponse[models.GameSession]
 	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 0 {
-		t.Errorf("want empty, got %d", len(resp))
+	if len(resp.Items) != 0 {
+		t.Errorf("want empty, got %d", len(resp.Items))
 	}
 }
 
@@ -77,10 +79,103 @@ func TestListSessions_OnlyActiveStatuses(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
-	var resp []any
+	var resp PaginatedResponse[models.GameSession]
 	json.NewDecoder(w.Body).Decode(&resp)
-	if len(resp) != 2 {
-		t.Errorf("want 2 (lobby+playing), got %d", len(resp))
+	if len(resp.Items) != 2 {
+		t.Errorf("want 2 (lobby+playing), got %d", len(resp.Items))
+	}
+}
+
+func TestListSessions_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	sid := seedScenario(t, "S")
+	for i := 0; i < 25; i++ {
+		models.DB.Create(&models.GameSession{
+			Name: fmt.Sprintf("Room %d", i), ScenarioID: sid,
+			Status: models.SessionStatusLobby, MaxPlayers: 4, CreatedBy: uid,
+		})
+	}
+
+	r := sessionCRUDRouter(uid, "u", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/sessions?page=2&page_size=20", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.GameSession]
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
+	}
+}
+
+// ── ListMyHistorySessions ────────────────────────────────────────────────────
+
+func TestListMyHistorySessions_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	sid := seedScenario(t, "S")
+	cardID := seedCard(t, uid, "Card")
+	for i := 0; i < 25; i++ {
+		session := models.GameSession{
+			Name: fmt.Sprintf("Room %d", i), ScenarioID: sid,
+			Status: models.SessionStatusEnded, MaxPlayers: 4, CreatedBy: uid,
+		}
+		models.DB.Create(&session)
+		models.DB.Create(&models.SessionPlayer{SessionID: session.ID, UserID: uid, CharacterCardID: cardID})
+	}
+
+	r := sessionCRUDRouter(uid, "u", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/sessions/my-history?page=2&page_size=20", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.GameSession]
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
+	}
+}
+
+// ── ListMyFavoriteSessions ───────────────────────────────────────────────────
+
+func TestListMyFavoriteSessions_PaginatesSecondPage(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	sid := seedScenario(t, "S")
+	for i := 0; i < 25; i++ {
+		session := models.GameSession{
+			Name: fmt.Sprintf("Room %d", i), ScenarioID: sid,
+			Status: models.SessionStatusEnded, MaxPlayers: 4, CreatedBy: uid,
+		}
+		models.DB.Create(&session)
+		models.DB.Create(&models.SessionFavorite{SessionID: session.ID, UserID: uid})
+	}
+
+	r := sessionCRUDRouter(uid, "u", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/sessions/my-favorites?page=2&page_size=20", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp PaginatedResponse[models.GameSession]
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) != 5 {
+		t.Errorf("want 5 items, got %d", len(resp.Items))
+	}
+	if resp.Total != 25 || resp.TotalPages != 2 {
+		t.Errorf("total=%d totalPages=%d, want 25/2", resp.Total, resp.TotalPages)
 	}
 }
 

@@ -21,12 +21,37 @@ window.COC.core = function() {
                     // ── Data ──────────────────────────────────────────────────────────────
                     characters: [],
                     sessions: [],
+                    sessionPage: 1,
+                    sessionPageSize: 20,
+                    sessionTotal: 0,
+                    sessionTotalPages: 1,
                     myHistory: [],
+                    myHistoryPage: 1,
+                    myHistoryPageSize: 20,
+                    myHistoryTotal: 0,
+                    myHistoryTotalPages: 1,
                     myFavorites: [],
+                    myFavoritesPage: 1,
+                    myFavoritesPageSize: 20,
+                    myFavoritesTotal: 0,
+                    myFavoritesTotalPages: 1,
                     sessionsTab: 'lobby',
                     scenarioList: [],
+                    scenarioPage: 1,
+                    scenarioPageSize: 20,
+                    scenarioTotal: 0,
+                    scenarioTotalPages: 1,
+                    selectedScenario: null,
                     shopItems: [],
+                    shopItemPage: 1,
+                    shopItemPageSize: 20,
+                    shopItemTotal: 0,
+                    shopItemTotalPages: 1,
                     transactions: [],
+                    transactionPage: 1,
+                    transactionPageSize: 20,
+                    transactionTotal: 0,
+                    transactionTotalPages: 1,
                     // NOTE: 列表首屏加载态，用于骨架屏显示
                     dashboardLoading: false,
                     sessionsLoading: false,
@@ -102,6 +127,10 @@ window.COC.core = function() {
                     adminHTML: '',
                     adminLoaded: false,
                     adminUsers: [],
+                    adminUserPage: 1,
+                    adminUserPageSize: 20,
+                    adminUserTotal: 0,
+                    adminUserTotalPages: 1,
                     // 管理员为指定玩家角色卡添加物品的弹窗状态
                     adminInventoryTarget: null,       // { user_id, username } — 当前操作的目标用户
                     adminInventoryCards: [],          // 目标用户的角色卡列表
@@ -116,6 +145,10 @@ window.COC.core = function() {
                     adminScenarioTotal: 0,
                     adminScenarioTotalPages: 1,
                     adminShopItems: [],
+                    adminShopItemPage: 1,
+                    adminShopItemPageSize: 20,
+                    adminShopItemTotal: 0,
+                    adminShopItemTotalPages: 1,
                     cacheStats: null,
                     cacheKeys: [],
                     cacheKeyPage: 1,
@@ -157,6 +190,10 @@ window.COC.core = function() {
                         balance_rules: '',
                     },
                     inviteCodes: [],
+                    inviteCodePage: 1,
+                    inviteCodePageSize: 20,
+                    inviteCodeTotal: 0,
+                    inviteCodeTotalPages: 1,
                     inviteCodeCount: 5,
 
                     // ── Toast ─────────────────────────────────────────────────────────────
@@ -338,6 +375,24 @@ window.COC.core = function() {
                             throw new Error((data.error || `HTTP ${resp.status}`) + details);
                         }
                         return data;
+                    },
+                    // NOTE: 渐进式拉取某个分页接口的全部数据。
+                    // 用于下拉选卡等必须拿到完整数据集的场景（如人物卡列表被加入房间/商城复活/管理员加物品等多处直接复用），
+                    // 不能只拉一页；每页之间加短间隔避免连续请求压垮后端。onProgress 可用于边拉边刷新界面。
+                    async fetchAllPages(path, { pageSize = 100, delayMs = 120, onProgress } = {}) {
+                        const sep = path.includes('?') ? '&' : '?';
+                        let page = 1;
+                        let all = [];
+                        while (true) {
+                            const resp = await this.api('GET', `${path}${sep}page=${page}&page_size=${pageSize}`);
+                            all = all.concat(resp?.items || []);
+                            if (onProgress) onProgress(all.slice());
+                            const totalPages = Math.max(1, Number(resp?.total_pages || 1));
+                            if (page >= totalPages) break;
+                            page += 1;
+                            await new Promise(r => setTimeout(r, delayMs));
+                        }
+                        return all;
                     },
     };
 };

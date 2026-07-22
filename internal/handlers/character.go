@@ -49,15 +49,33 @@ type GenerateCharacterReq struct {
 }
 
 func ListCharacters(c *gin.Context) {
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
 	userID := c.GetUint("user_id")
-	var cards []models.CharacterCard
-	models.DB.Where("user_id = ? AND is_active = ?", userID, true).
+
+	var total int64
+	if err := models.DB.Model(&models.CharacterCard{}).
+		Where("user_id = ? AND is_active = ?", userID, true).
+		Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询人物卡总数失败"})
+		return
+	}
+
+	cards := make([]models.CharacterCard, 0)
+	if err := models.DB.Where("user_id = ? AND is_active = ?", userID, true).
 		Order("created_at DESC").
-		Find(&cards)
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&cards).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询人物卡列表失败"})
+		return
+	}
 	for i := range cards {
 		hotFixChar(&cards[i])
 	}
-	c.JSON(http.StatusOK, cards)
+	c.JSON(http.StatusOK, newPaginatedResponse(cards, page, pageSize, total))
 }
 
 func hotFixChar(card *models.CharacterCard) {
@@ -981,14 +999,32 @@ func reviveCostFor(reviveCount int) int {
 	return (reviveCount + 1) * siteSettingInt("revive_base_cost", 2000)
 }
 
-// ListDeadCharacters returns dead (is_active=false, is_deleted=false) character cards belonging to the user.
+// ListDeadCharacters returns dead (is_active=false, is_deleted=false) character cards belonging to the user, paginated.
 func ListDeadCharacters(c *gin.Context) {
+	page, pageSize, ok := parseAdminPagination(c)
+	if !ok {
+		return
+	}
 	userID := c.GetUint("user_id")
-	var cards []models.CharacterCard
-	models.DB.Where("user_id = ? AND is_active = ? AND is_deleted = ?", userID, false, false).
+
+	var total int64
+	if err := models.DB.Model(&models.CharacterCard{}).
+		Where("user_id = ? AND is_active = ? AND is_deleted = ?", userID, false, false).
+		Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询阵亡人物卡总数失败"})
+		return
+	}
+
+	cards := make([]models.CharacterCard, 0)
+	if err := models.DB.Where("user_id = ? AND is_active = ? AND is_deleted = ?", userID, false, false).
 		Order("updated_at DESC").
-		Find(&cards)
-	c.JSON(http.StatusOK, cards)
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&cards).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询阵亡人物卡列表失败"})
+		return
+	}
+	c.JSON(http.StatusOK, newPaginatedResponse(cards, page, pageSize, total))
 }
 
 // ReviveCharacter spends coins (escalating by 2000 each use) to revive a dead (is_active=false) character card.

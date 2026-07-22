@@ -4,13 +4,44 @@ window.COC.shop = {
                     async loadShop() {
                         this.shopLoading = true;
                         try {
-                            const [items, txns] = await Promise.all([
-                                this.api('GET', '/api/shop/items'),
-                                this.api('GET', '/api/shop/transactions'),
-                            ]);
-                            this.shopItems = items || [];
-                            this.transactions = txns || [];
+                            await Promise.all([this.loadShopItems(1), this.loadTransactions(1)]);
                         } finally { this.shopLoading = false; }
+                    },
+                    async loadShopItems(page) {
+                        const nextPage = Math.max(1, Number(page || this.shopItemPage || 1));
+                        const pageSize = Math.max(1, Number(this.shopItemPageSize || 20));
+                        const resp = await this.api('GET', `/api/shop/items?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+                        this.shopItems = resp?.items || [];
+                        this.shopItemPage = Math.max(1, Number(resp?.page || nextPage));
+                        this.shopItemPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                        this.shopItemTotal = Math.max(0, Number(resp?.total || 0));
+                        this.shopItemTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                    },
+                    async prevShopItemPage() {
+                        if (this.shopItemPage <= 1) return;
+                        await this.loadShopItems(this.shopItemPage - 1);
+                    },
+                    async nextShopItemPage() {
+                        if (this.shopItemPage >= this.shopItemTotalPages) return;
+                        await this.loadShopItems(this.shopItemPage + 1);
+                    },
+                    async loadTransactions(page) {
+                        const nextPage = Math.max(1, Number(page || this.transactionPage || 1));
+                        const pageSize = Math.max(1, Number(this.transactionPageSize || 20));
+                        const resp = await this.api('GET', `/api/shop/transactions?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+                        this.transactions = resp?.items || [];
+                        this.transactionPage = Math.max(1, Number(resp?.page || nextPage));
+                        this.transactionPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                        this.transactionTotal = Math.max(0, Number(resp?.total || 0));
+                        this.transactionTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                    },
+                    async prevTransactionPage() {
+                        if (this.transactionPage <= 1) return;
+                        await this.loadTransactions(this.transactionPage - 1);
+                    },
+                    async nextTransactionPage() {
+                        if (this.transactionPage >= this.transactionTotalPages) return;
+                        await this.loadTransactions(this.transactionPage + 1);
                     },
                     // ═══════════════════════════════════════════════════════
                     // Shop
@@ -53,7 +84,7 @@ window.COC.shop = {
                             const r = await this.api('POST', '/api/shop/purchase', body);
                             if (this.user) { this.user.coins = r.coins; this.user.card_slots = r.card_slots; }
                             if (r.character_card) this.syncCharacter(r.character_card);
-                            this.transactions.unshift({ id: Date.now(), shop_item: item, coins_spent: item.price, created_at: new Date().toISOString() });
+                            await this.loadTransactions(1);
                             if (this.isReviveItem(item.item_type)) {
                                 this.showToast('复活成功！调查员已苏醒，但部分记忆与装备已消散……');
                             } else {
