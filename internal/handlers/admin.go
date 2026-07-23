@@ -23,12 +23,14 @@ const (
 type AdminScenarioListResponse = PaginatedResponse[models.Scenario]
 
 type AdminScenarioGenerationLogResponse struct {
-	ScenarioID   uint      `json:"scenario_id"`
-	ScenarioName string    `json:"scenario_name"`
-	HasLog       bool      `json:"has_log"`
-	LogText      string    `json:"log_text"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ScenarioID    uint      `json:"scenario_id"`
+	ScenarioName  string    `json:"scenario_name"`
+	HasLog        bool      `json:"has_log"`
+	LogText       string    `json:"log_text"`
+	HasStory      bool      `json:"has_story"`
+	StoryDocument string    `json:"story_document"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 func parseAdminPagination(c *gin.Context) (int, int, bool) {
@@ -113,12 +115,14 @@ func AdminGetScenarioGenerationLog(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, AdminScenarioGenerationLogResponse{
-		ScenarioID:   scenario.ID,
-		ScenarioName: generationLog.ScenarioName,
-		HasLog:       strings.TrimSpace(generationLog.LogText) != "",
-		LogText:      generationLog.LogText,
-		CreatedAt:    generationLog.CreatedAt,
-		UpdatedAt:    generationLog.UpdatedAt,
+		ScenarioID:    scenario.ID,
+		ScenarioName:  generationLog.ScenarioName,
+		HasLog:        strings.TrimSpace(generationLog.LogText) != "",
+		LogText:       generationLog.LogText,
+		HasStory:      strings.TrimSpace(generationLog.StoryDocument) != "",
+		StoryDocument: generationLog.StoryDocument,
+		CreatedAt:     generationLog.CreatedAt,
+		UpdatedAt:     generationLog.UpdatedAt,
 	})
 }
 

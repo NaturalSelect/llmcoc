@@ -1822,14 +1822,35 @@
                         class="text-amber-800 hover:text-amber-400 text-xl leading-none shrink-0">✕</button>
                 </div>
                 <div x-show="scenarioGenerationLogLoading" class="text-amber-900 text-sm py-8 text-center font-ui">加载中…</div>
-                <div x-show="!scenarioGenerationLogLoading && !scenarioGenerationLog?.has_log"
-                    class="rounded p-4 text-sm text-amber-800 panel-inset font-ui">
-                    该模组没有 AI 生成对话记录，可能是手动创建或上传导入的模组。
-                </div>
-                <template x-if="!scenarioGenerationLogLoading && scenarioGenerationLog?.has_log">
-                    <pre class="text-[11px] text-amber-200 rounded p-3 overflow-x-auto bg-chat border-inset font-mono"
-                        style="line-height:1.55; white-space:pre-wrap; max-height:65vh"
-                        x-text="scenarioGenerationLog?.log_text || ''"></pre>
+                <template x-if="!scenarioGenerationLogLoading">
+                    <div>
+                        <div class="flex gap-1 border-b border-amber-900/40 mb-4">
+                            <button @click="generationLogTab='story'" class="tab" :class="generationLogTab==='story'?'active':''">故事原文</button>
+                            <button @click="generationLogTab='dialog'" class="tab" :class="generationLogTab==='dialog'?'active':''">LLM对话日志</button>
+                        </div>
+                        <div x-show="generationLogTab==='story'">
+                            <div x-show="!scenarioGenerationLog?.has_story"
+                                class="rounded p-4 text-sm text-amber-800 panel-inset font-ui">
+                                该模组没有保存故事原文，可能是改动前生成的旧模组。
+                            </div>
+                            <template x-if="scenarioGenerationLog?.has_story">
+                                <pre class="text-[11px] text-amber-200 rounded p-3 overflow-x-auto bg-chat border-inset font-mono"
+                                    style="line-height:1.55; white-space:pre-wrap; max-height:65vh"
+                                    x-text="scenarioGenerationLog?.story_document || ''"></pre>
+                            </template>
+                        </div>
+                        <div x-show="generationLogTab==='dialog'">
+                            <div x-show="!scenarioGenerationLog?.has_log"
+                                class="rounded p-4 text-sm text-amber-800 panel-inset font-ui">
+                                该模组没有 AI 生成对话记录，可能是手动创建或上传导入的模组。
+                            </div>
+                            <template x-if="scenarioGenerationLog?.has_log">
+                                <pre class="text-[11px] text-amber-200 rounded p-3 overflow-x-auto bg-chat border-inset font-mono"
+                                    style="line-height:1.55; white-space:pre-wrap; max-height:65vh"
+                                    x-text="scenarioGenerationLog?.log_text || ''"></pre>
+                            </template>
+                        </div>
+                    </div>
                 </template>
                 <div class="flex justify-end mt-4">
                     <button @click="modal=null" class="btn btn-ghost">关闭</button>

@@ -300,9 +300,10 @@ func GenerateScenarioByAgents(c *gin.Context) {
 			}
 
 			generationLog := models.ScenarioGenerationLog{
-				ScenarioID:   scenario.ID,
-				ScenarioName: scenario.Name,
-				LogText:      strings.TrimSpace(gen.GenerationLog),
+				ScenarioID:    scenario.ID,
+				ScenarioName:  scenario.Name,
+				LogText:       strings.TrimSpace(gen.GenerationLog),
+				StoryDocument: strings.TrimSpace(gen.StoryDocument),
 			}
 			if generationLog.LogText == "" {
 				generationLog.LogText = "本次 AI 生成未捕获到 LLM 对话记录。"
@@ -410,9 +411,10 @@ func CompileStoryByUpload(c *gin.Context) {
 		}
 
 		generationLog := models.ScenarioGenerationLog{
-			ScenarioID:   scenario.ID,
-			ScenarioName: scenario.Name,
-			LogText:      strings.TrimSpace(gen.GenerationLog),
+			ScenarioID:    scenario.ID,
+			ScenarioName:  scenario.Name,
+			LogText:       strings.TrimSpace(gen.GenerationLog),
+			StoryDocument: strings.TrimSpace(gen.StoryDocument),
 		}
 		if generationLog.LogText == "" {
 			generationLog.LogText = "本次编译未捕获到 LLM 对话记录。"

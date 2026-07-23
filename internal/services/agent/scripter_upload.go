@@ -81,6 +81,7 @@ func RunCompileStoryWithProgress(ctx context.Context, req CompileStoryRequest, p
 		IronyCore:     &IronyCore{},
 		Iterations:    iterations,
 		GenerationLog: room.generationLogText(),
+		StoryDocument: story.Document,
 	}, nil
 }
 

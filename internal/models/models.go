@@ -305,13 +305,14 @@ type Scenario struct {
 }
 
 type ScenarioGenerationLog struct {
-	ID           uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	ScenarioID   uint      `gorm:"not null;index" json:"scenario_id"`
-	ScenarioName string    `gorm:"not null;size:200;index" json:"scenario_name"`
-	LogText      string    `gorm:"type:text;not null" json:"log_text"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	Scenario     Scenario  `gorm:"foreignKey:ScenarioID" json:"-"`
+	ID            uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ScenarioID    uint      `gorm:"not null;index" json:"scenario_id"`
+	ScenarioName  string    `gorm:"not null;size:200;index" json:"scenario_name"`
+	LogText       string    `gorm:"type:text;not null" json:"log_text"`
+	StoryDocument string    `gorm:"type:text" json:"story_document"` // Story Architect 提交的原始故事文档全文，供后台审查创作质量
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	Scenario      Scenario  `gorm:"foreignKey:ScenarioID" json:"-"`
 }
 
 type SessionStatus string

@@ -847,8 +847,9 @@ window.COC.admin = {
                     viewScenario(s) { this.viewingScenario = s; this.modal = 'scenarioDetail'; },
                     async viewScenarioGenerationLog(s) {
                         if (!s?.id) return;
-                        this.scenarioGenerationLog = { scenario_id: s.id, scenario_name: s.name || '', has_log: false, log_text: '' };
+                        this.scenarioGenerationLog = { scenario_id: s.id, scenario_name: s.name || '', has_log: false, log_text: '', has_story: false, story_document: '' };
                         this.scenarioGenerationLogLoading = true;
+                        this.generationLogTab = 'story';
                         this.modal = 'scenarioGenerationLog';
                         try {
                             const resp = await this.api('GET', '/api/admin/scenarios/' + s.id + '/generation-log');

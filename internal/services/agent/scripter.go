@@ -41,6 +41,7 @@ type ScenarioCreationOutput struct {
 	IronyCore     *IronyCore    `json:"irony_core"`
 	Iterations    int           `json:"iterations"`
 	GenerationLog string        `json:"generation_log"`
+	StoryDocument string        `json:"story_document"` // Story Architect 提交的原始故事文档全文
 }
 
 type ScenarioDraft struct {
@@ -411,7 +412,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	iterations += compileIters
 	logScripterArtifact("Final ScenarioDraft", sessionID, draft)
 
-	return ScenarioCreationOutput{Draft: draft, IronyCore: &IronyCore{}, Iterations: iterations, GenerationLog: r.generationLogText()}, nil
+	return ScenarioCreationOutput{Draft: draft, IronyCore: &IronyCore{}, Iterations: iterations, GenerationLog: r.generationLogText(), StoryDocument: story.Document}, nil
 }
 
 // compileAndFinalize 从已有故事文档出发执行 compile→repair→logic_review→reward_agent→normalize，
