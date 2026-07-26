@@ -59,10 +59,8 @@ func TestExtractAnchorFromDocument_Success(t *testing.T) {
 		},
 	}
 	lawyerFake := &sequentialFakeProvider{
-		callerName: "lawyer",
-		responses: []string{
-			`[{"action":"response","ruling":"食尸鬼（Ghoul）：COC7规则书已收录，死者变形后保留人类记忆继续行动。"}]`,
-		},
+		callerName:    "lawyer",
+		toolResponses: lawyerDirectResponseToolResponses("食尸鬼（Ghoul）：COC7规则书已收录，死者变形后保留人类记忆继续行动。"),
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-extract-1",

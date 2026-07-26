@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -43,39 +44,31 @@ func initTranslatorTestDB(t *testing.T) {
 	})
 }
 
-// NOTE: sequentialFakeProvider 同时支持旧 Chat 协议（如 lawyer，仍用文本JSON）和
-// 原生工具调用 ChatWithTools（如 translator/reward_agent/architect/qa）两条路径，
-// 各自独立按序返回预设响应，并记录调用的 cacheKey，用于路由隔离验证。
-// 满足 llm.Provider 接口，禁止真实网络。
+// NOTE: sequentialFakeProvider 支持原生工具调用 ChatWithTools（translator/reward_agent/
+// architect/qa/lawyer 现已统一走此协议），按序返回预设响应，并记录调用的 cacheKey，
+// 用于路由隔离验证。满足 llm.Provider 接口，禁止真实网络。Chat/JsonChat/ChatStream
+// 不参与业务路径，仅为满足接口而提供的桩实现。
 type sequentialFakeProvider struct {
 	mu sync.Mutex
-
-	// Chat 路径的预设响应序列（如 lawyer）。
-	responses []string
-	callIdx   int
 
 	// ChatWithTools 路径的预设响应序列（原生工具调用）。
 	toolResponses []llm.ToolChatResult
 	toolCallIdx   int
 
-	// NOTE: recordedKeys 记录 Chat 和 ChatWithTools 两条路径合并后的 cacheKey 调用顺序，
-	// 用于路由隔离验证。
+	// NOTE: recordedKeys 记录 ChatWithTools 调用的 cacheKey 顺序，用于路由隔离验证。
 	recordedKeys []string
+	// NOTE: recordedTools 记录每次 ChatWithTools 调用时传入的工具定义列表（按调用顺序），
+	// 用于验证按轮次变化的工具集限制（如 lawyer 第1轮只暴露 search_cache）。
+	recordedTools [][]llm.ToolDefinition
+	// NOTE: recordedMessages 记录每次 ChatWithTools 调用时传入的完整消息历史（按调用顺序），
+	// 用于验证工具调用回执（tool 消息）内容，如 SYSTEM REJECT 提示是否正确回传。
+	recordedMessages [][]llm.ChatMessage
 	// NOTE: callerName 标识此 fake 代表哪个角色，仅用于错误提示。
 	callerName string
 }
 
-func (p *sequentialFakeProvider) Chat(_ context.Context, cacheKey string, _ []llm.ChatMessage) (string, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.recordedKeys = append(p.recordedKeys, cacheKey)
-	if p.callIdx >= len(p.responses) {
-		// NOTE: 返回 response 防止死循环；测试验证 callIdx 是否在预期轮数内
-		return `[{"action":"response","ruling":"fallback"}]`, nil
-	}
-	resp := p.responses[p.callIdx]
-	p.callIdx++
-	return resp, nil
+func (p *sequentialFakeProvider) Chat(_ context.Context, _ string, _ []llm.ChatMessage) (string, error) {
+	return "", nil
 }
 
 func (p *sequentialFakeProvider) ChatStream(_ context.Context, _ string, _ []llm.ChatMessage) (<-chan string, <-chan error, error) {
@@ -86,10 +79,12 @@ func (p *sequentialFakeProvider) JsonChat(_ context.Context, _ string, _ []llm.C
 	return "{}", nil
 }
 
-func (p *sequentialFakeProvider) ChatWithTools(_ context.Context, cacheKey string, _ []llm.ChatMessage, _ []llm.ToolDefinition) (llm.ToolChatResult, error) {
+func (p *sequentialFakeProvider) ChatWithTools(_ context.Context, cacheKey string, msgs []llm.ChatMessage, tools []llm.ToolDefinition) (llm.ToolChatResult, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.recordedKeys = append(p.recordedKeys, cacheKey)
+	p.recordedTools = append(p.recordedTools, tools)
+	p.recordedMessages = append(p.recordedMessages, append([]llm.ChatMessage(nil), msgs...))
 	if p.toolCallIdx >= len(p.toolResponses) {
 		// NOTE: 序列耗尽时返回空工具调用，触发驱动器"连续空轮"快速失败，避免死循环拖满maxRounds。
 		return llm.ToolChatResult{}, nil
@@ -106,6 +101,17 @@ var _ llm.Provider = (*sequentialFakeProvider)(nil)
 // JSON 参数字符串。
 func fakeToolCall(id, name, argsJSON string) llm.ToolCall {
 	return llm.ToolCall{ID: id, Name: name, Arguments: argsJSON}
+}
+
+// lawyerDirectResponseToolResponses 构造 lawyer 最简两轮工具响应序列：
+// 第1轮（受 firstRoundTools 限制，只能 search_cache）→ 第2轮直接 response 给出裁定。
+// 供只关心"lawyer provider 被调用且返回裁定"、不关心裁定内容细节的路由测试复用。
+func lawyerDirectResponseToolResponses(ruling string) []llm.ToolChatResult {
+	respondArgs, _ := json.Marshal(map[string]string{"ruling": ruling})
+	return []llm.ToolChatResult{
+		{ToolCalls: []llm.ToolCall{fakeToolCall("lc_1", toolNameSearchCache, `{"keyword":"#测试"}`)}},
+		{ToolCalls: []llm.ToolCall{fakeToolCall("lc_2", toolNameLawyerResponse, string(respondArgs))}},
+	}
 }
 
 // NOTE: makeTranslatorRoom 构造一个只带 translator 和 lawyer 的 scripterRoom，
@@ -143,11 +149,8 @@ func TestTranslatorProviderIsolation(t *testing.T) {
 	}
 
 	lawyerProv := &sequentialFakeProvider{
-		callerName: "lawyer",
-		// NOTE: lawyer 直接返回 response，避免触发 grep/search_cache 等 IO 操作。
-		responses: []string{
-			`[{"action":"response","ruling":"食尸鬼（Ghoul）：COC7规则书已收录，死者变形后保留人类记忆继续行动。"}]`,
-		},
+		callerName:    "lawyer",
+		toolResponses: lawyerDirectResponseToolResponses("食尸鬼（Ghoul）：COC7规则书已收录，死者变形后保留人类记忆继续行动。"),
 	}
 
 	room := makeTranslatorRoom(translatorProv, lawyerProv, "test-session-translator-1")
@@ -217,10 +220,8 @@ func TestTranslatorAskLawyerUsesLawyerProvider(t *testing.T) {
 
 	translatorProv := &sequentialFakeProvider{callerName: "translator"}
 	lawyerProv := &sequentialFakeProvider{
-		callerName: "lawyer",
-		responses: []string{
-			`[{"action":"response","ruling":"规则书已查阅：食尸鬼已收录"}]`,
-		},
+		callerName:    "lawyer",
+		toolResponses: lawyerDirectResponseToolResponses("规则书已查阅：食尸鬼已收录"),
 	}
 	room := makeTranslatorRoom(translatorProv, lawyerProv, "test-session-translator-3")
 

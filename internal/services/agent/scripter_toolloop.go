@@ -7,6 +7,10 @@
 // tool 消息、连续空 tool_calls 快速失败、轮数耗尽报错。业务判定（参数解码、
 // 字段校验、前置状态如"respond前必须先ask_lawyer"）由各调用方通过 dispatch
 // 闭包提供，终止工具成功后的结构化结果由调用方通过闭包捕获的变量取回。
+//
+// runToolLoop 核心已扩展支持按轮次变化的工具集（firstRoundTools）和自定义分组
+// 互斥策略（batchPolicy），供 Lawyer（lawyer.go）复用；runScripterToolLoop 是
+// 面向 Scripter 现有调用点的兼容包装，参数与行为保持逐字不变。
 package agent
 
 import (
@@ -42,15 +46,48 @@ type toolOutcome struct {
 // scripterToolDispatch 处理一次工具调用；call.Name 保证已在 tools 列表中。
 type scripterToolDispatch func(ctx context.Context, call llm.ToolCall) toolOutcome
 
+// toolBatchPolicy 校验一轮工具调用是否违反独占/分组约束；返回非空字符串表示整批
+// 拒绝，内容作为本轮每个 tool_call_id 的统一回执；返回空字符串表示本轮合法，继续
+// 正常分发。
+type toolBatchPolicy func(calls []llm.ToolCall) string
+
 // maxConsecutiveEmptyRounds 是连续多少轮模型未返回任何工具调用后判定端点不支持/
 // 不配合 function calling 并快速失败；避免在不兼容端点上跑满 maxRounds 才报错。
 const maxConsecutiveEmptyRounds = 3
+
+// toolLoopOptions 是 runToolLoop 的完整参数集合。runScripterToolLoop 是它面向
+// Scripter 现有调用点的兼容包装，只暴露下面几个必填字段；后四个可选字段零值时
+// 沿用与迁移前 Scripter 逐字一致的行为，供 Lawyer 等其他 agent 定制。
+type toolLoopOptions struct {
+	room      *scripterRoom
+	handle    agentHandle
+	stage     string
+	msgs      []llm.ChatMessage
+	tools     []scripterTool
+	maxRounds int
+	dispatch  scripterToolDispatch
+
+	// firstRoundTools 非空时，仅第1轮把可用工具集限制为这个列表（强制模型第一轮
+	// 只能调用其中的工具），第2轮起恢复使用 tools。为空则每轮都使用 tools。
+	firstRoundTools []scripterTool
+	// batchPolicy 为 nil 时使用默认策略：由 tools 中 solo=true 的工具构成
+	// soloNames，调用 soloMixed/soloNamesIn 判定"独占工具与任意其他调用混批"。
+	batchPolicy toolBatchPolicy
+	// cacheKeyOverride 非空时替代 handle.cacheKey(sessionID) 作为 prompt cache key。
+	cacheKeyOverride string
+	// afterRound 非 nil 时，在每轮工具分发完成后（跳过空 tool_calls 轮与整批拒绝轮）
+	// 调用一次，供调用方在闭包中记录逐轮统计。
+	afterRound func()
+}
 
 // runScripterToolLoop 驱动一次原生工具调用的多轮循环。
 //
 // room 允许为 nil：nil 时 recordScripterLLMExchange 不会经由 room.generationLog/
 // room.progressFn 记录，只落到 ctx 携带的生成日志（与迁移前 chatAndParseJSON 对
 // compile/qa_humanize/logic_review 恒传 nil room 的行为一致）。
+//
+// 本函数是 runToolLoop 的兼容包装，参数与行为保持逐字不变；按轮次变化的工具集、
+// 非二元的分组互斥策略等能力见 runToolLoop 与 toolLoopOptions。
 func runScripterToolLoop(
 	ctx context.Context,
 	room *scripterRoom,
@@ -61,36 +98,92 @@ func runScripterToolLoop(
 	maxRounds int,
 	dispatch scripterToolDispatch,
 ) error {
-	if handle.provider == nil {
-		return fmt.Errorf("%s provider unavailable", stage)
-	}
-	sessionID := scripterSessionID(ctx, room)
+	return runToolLoop(ctx, toolLoopOptions{
+		room:      room,
+		handle:    handle,
+		stage:     stage,
+		msgs:      msgs,
+		tools:     tools,
+		maxRounds: maxRounds,
+		dispatch:  dispatch,
+	})
+}
 
-	toolDefs := make([]llm.ToolDefinition, len(tools))
-	validNames := make(map[string]bool, len(tools))
-	soloNames := make(map[string]bool)
+// buildToolState 把工具定义列表展开为 ChatWithTools 需要的 []ToolDefinition，
+// 以及供本轮校验使用的"合法工具名"和"独占工具名"集合。
+func buildToolState(tools []scripterTool) (defs []llm.ToolDefinition, validNames, soloNames map[string]bool) {
+	defs = make([]llm.ToolDefinition, len(tools))
+	validNames = make(map[string]bool, len(tools))
+	soloNames = make(map[string]bool)
 	for i, t := range tools {
-		toolDefs[i] = t.def
+		defs[i] = t.def
 		validNames[t.def.Name] = true
 		if t.solo {
 			soloNames[t.def.Name] = true
 		}
 	}
+	return defs, validNames, soloNames
+}
+
+// defaultBatchPolicy 用 soloNames 构造默认的独占互斥策略：某个 solo 工具与本轮
+// 任意其他调用（含另一个 solo 工具）同时出现即整批拒绝。
+func defaultBatchPolicy(soloNames map[string]bool) toolBatchPolicy {
+	return func(calls []llm.ToolCall) string {
+		if !soloMixed(calls, soloNames) {
+			return ""
+		}
+		names := soloNamesIn(calls, soloNames)
+		return fmt.Sprintf(
+			"SYSTEM REJECT: %s 必须单独一轮调用，不能与其他工具调用混在同一轮响应中。若还需调用其他工具，本轮先不要包含%s；确认无需再调用其他工具后，下一轮再单独调用%s。",
+			strings.Join(names, "/"), strings.Join(names, "/"), strings.Join(names, "/"))
+	}
+}
+
+// runToolLoop 驱动一次原生工具调用的多轮循环，是 Scripter（经 runScripterToolLoop
+// 兼容包装）与 Lawyer 等 agent 共用的核心实现。
+func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
+	handle := opts.handle
+	stage := opts.stage
+	msgs := opts.msgs
+	if handle.provider == nil {
+		return fmt.Errorf("%s provider unavailable", stage)
+	}
+	sessionID := scripterSessionID(ctx, opts.room)
+
+	defToolDefs, defValidNames, defSoloNames := buildToolState(opts.tools)
+	firstToolDefs, firstValidNames, firstSoloNames := defToolDefs, defValidNames, defSoloNames
+	if len(opts.firstRoundTools) > 0 {
+		firstToolDefs, firstValidNames, firstSoloNames = buildToolState(opts.firstRoundTools)
+	}
+
+	cacheKey := opts.cacheKeyOverride
+	if cacheKey == "" {
+		cacheKey = handle.cacheKey(sessionID)
+	}
 
 	emptyRounds := 0
-	for round := 1; round <= maxRounds; round++ {
+	for round := 1; round <= opts.maxRounds; round++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		toolDefs, validNames, soloNames := defToolDefs, defValidNames, defSoloNames
+		if round == 1 && len(opts.firstRoundTools) > 0 {
+			toolDefs, validNames, soloNames = firstToolDefs, firstValidNames, firstSoloNames
+		}
+		policy := opts.batchPolicy
+		if policy == nil {
+			policy = defaultBatchPolicy(soloNames)
+		}
+
 		roundStage := fmt.Sprintf("%s_round_%d", stage, round)
 		logStagePrompt(roundStage, sessionID, msgs)
 		callMessages := append([]llm.ChatMessage(nil), msgs...)
 
-		result, err := handle.provider.ChatWithTools(ctx, handle.cacheKey(sessionID), msgs, toolDefs)
+		result, err := handle.provider.ChatWithTools(ctx, cacheKey, msgs, toolDefs)
 		if err != nil {
 			return err
 		}
-		recordScripterLLMExchange(ctx, room, roundStage, callMessages, renderToolChatResultForLog(result))
+		recordScripterLLMExchange(ctx, opts.room, roundStage, callMessages, renderToolChatResultForLog(result))
 		log.Printf("[scripter:%s] session=%s round=%d tool_calls=%d content_len=%d",
 			stage, sessionID, round, len(result.ToolCalls), len([]rune(result.Content)))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls})
@@ -110,12 +203,9 @@ func runScripterToolLoop(
 		}
 		emptyRounds = 0
 
-		// 独占一轮的工具与其他任意调用混批：整批拒绝，每个 tool_call_id 都要有回执。
-		if soloMixed(result.ToolCalls, soloNames) {
-			names := soloNamesIn(result.ToolCalls, soloNames)
-			rejectMsg := fmt.Sprintf(
-				"SYSTEM REJECT: %s 必须单独一轮调用，不能与其他工具调用混在同一轮响应中。若还需调用其他工具，本轮先不要包含%s；确认无需再调用其他工具后，下一轮再单独调用%s。",
-				strings.Join(names, "/"), strings.Join(names, "/"), strings.Join(names, "/"))
+		// 独占一轮的工具（或自定义分组策略判定违规的调用）与其他调用混批：
+		// 整批拒绝，每个 tool_call_id 都要有回执。
+		if rejectMsg := policy(result.ToolCalls); rejectMsg != "" {
 			for _, call := range result.ToolCalls {
 				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: rejectMsg})
 			}
@@ -131,7 +221,7 @@ func runScripterToolLoop(
 				})
 				continue
 			}
-			outcome := dispatch(ctx, call)
+			outcome := opts.dispatch(ctx, call)
 			content := outcome.result
 			if outcome.reject != "" {
 				content = outcome.reject
@@ -141,11 +231,14 @@ func runScripterToolLoop(
 				done = true
 			}
 		}
+		if opts.afterRound != nil {
+			opts.afterRound()
+		}
 		if done {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s 未在%d轮内完成", stage, maxRounds)
+	return fmt.Errorf("%s 未在%d轮内完成", stage, opts.maxRounds)
 }
 
 // soloMixed 判断本轮响应中是否有 solo 工具与其他调用（含另一个 solo 工具）混批。

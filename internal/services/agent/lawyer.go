@@ -66,23 +66,20 @@ func SaveLawyerCache(hashes LawyerCacheHashes) {
 }
 
 // lawyerSystemPromptBase 是 Lawyer 系统提示的不可配置前半段（工具说明 + 执行规则主体）。
-// 平衡调整规则段（管理员可配置）和最终 JSON-only 强约束由 BuildLawyerPrompt 拼接。
+// 平衡调整规则段（管理员可配置）和最终强约束尾部由 BuildLawyerPrompt / lawyerSystemPromptTail 拼接。
 var lawyerSystemPromptBase = `你是COC TRPG(克苏鲁的呼唤7版)规则专家,通过调用工具来回答规则问题。
-每次输出必须是一个JSON数组,包含按顺序执行的工具调用列表。
 
 【规则书目录】
 ` + rulebook.RulebookDir + `
 
 【可用工具】
 1. search_cache — 在缓存中搜索与当前问题相关的已有裁定(返回最多3条最相关结果,含完整裁定内容)
-	[{"action":"search_cache","keyword":"#标签1 #标签2"}]
 	- keyword 必须是以 # 开头的标签，多个标签用空格分隔，例如 "#手枪 #伤害" 或 "#典籍 #SAN损失"
 	- 标签应精准反映问题的核心主题，不得使用自然语言句子
-	- 若返回结果与当前问题高度相关,可直接引用其裁定并输出 response,无需再搜索资料
+	- 若返回结果与当前问题高度相关,可直接引用其裁定并调用 response,无需再搜索资料
 	- 若无相关结果,再进行grep等搜索
 
 2. grep — 在规则书 COC_kp.md 中搜索关键词或Go正则表达式,返回匹配行及其上下文原文
-	[{"action":"grep","keyword":"关键词或Go正则表达式(例如: 理智.*检定)"}]
 	- 普通规则、典籍、系统机制优先使用此工具、但内容可能在别的文件中出现
 	- 普通关键词可直接填写；正则元字符按Go regexp语义使用，必要时转义
 	- 如需搜索多个备选词,请使用正则 | 写法,不要用空格分隔
@@ -90,44 +87,37 @@ var lawyerSystemPromptBase = `你是COC TRPG(克苏鲁的呼唤7版)规则专家
 	- 搜索结果仅用于本轮分析，不会被缓存
 
 3. read_lines — 直接读取规则书 COC_kp.md 的特定行号范围
-	[{"action":"read_lines","start":100,"end":120}]
 	- 仅当 grep 已定位相关内容但需要完整上下文时使用
 	- 结果仅用于本轮分析
 
 4. grep_spell — 在法术图鉴 COC_spell.md 中搜索关键词或Go正则表达式
-	[{"action":"grep_spell","keyword":"法术名、关键词或Go正则表达式"}]
 	- 具体法术词条、法术细节、法术MP/SAN消耗优先使用此工具、但内容可能在别的文件中出现
 	- 普通关键词可直接填写；正则无效时按字面量关键词回退搜索
 	- 如需搜索多个备选词,请使用正则 | 写法,不要用空格分隔
 	- 搜索结果仅用于本轮分析
 
 5. read_spell_lines — 直接读取法术图鉴 COC_spell.md 的特定行号范围
-	[{"action":"read_spell_lines","start":100,"end":120}]
 	- 仅当 grep_spell 已定位相关内容但需要完整法术词条时使用
 	- 结果仅用于本轮分析
 
 6. grep_monster — 在怪物图鉴 COC_monster.md 中搜索关键词或Go正则表达式
-	[{"action":"grep_monster","keyword":"怪物/神格/生物名、关键词或Go正则表达式"}]
 	- 具体怪物、神格、生物属性优先使用此工具、但内容可能在别的文件中出现
 	- 普通关键词可直接填写；正则无效时按字面量关键词回退搜索
 	- 如需搜索多个备选词,请使用正则 | 写法,不要用空格分隔
 	- 搜索结果仅用于本轮分析
 
 7. read_monster_lines — 直接读取怪物图鉴 COC_monster.md 的特定行号范围
-	[{"action":"read_monster_lines","start":100,"end":120}]
 	- 仅当 grep_monster 已定位相关内容但需要完整怪物/神格/生物词条时使用
 	- 结果仅用于本轮分析
 
 8. save_cache — 将本次裁定保存到缓存，供后续查询复用
-	[{"action":"save_cache","cache_key":"#标签1 #标签2 #标签3","ruling":"规则裁定内容"}]
 	- cache_key 必填，格式为以 # 开头的标签集合，多个标签空格分隔，例如 "#手枪 #伤害 #武器" 或 "#典籍 #不可名状之书 #SAN损失 #法术列表"
 	- 标签应覆盖主题、具体对象、涉及属性，保证下次 search_cache 能精准命中
-	- 仅在需要缓存裁定时调用，可与 response 在同一轮输出
+	- 仅在需要缓存裁定时调用，可与 response 在同一轮调用
 
 9. response — 给出最终规则裁定,结束本次查询
-   [{"action":"response","ruling":"规则裁定内容(简短只包含必要信息)"}]
-   - 直接引用关键规则数值和判定条件
-   - 若原文未覆盖该问题,明确说明"规则书未明确规定"
+	- 直接引用关键规则数值和判定条件
+	- 若原文未覆盖该问题,明确说明"规则书未明确规定"
 
 【执行规则】
 - 禁止篡改规则书内容，缓存的裁定必须忠实引用原文细节，不得凭记忆总结或改写
@@ -138,35 +128,32 @@ var lawyerSystemPromptBase = `你是COC TRPG(克苏鲁的呼唤7版)规则专家
 - 时空类法术(时空窗，时空门等穿越时空的法术)可能会引起廷达罗斯猎犬的注意(需投掷幸运)，提醒KP这一点
 - 召唤类法术需要查询神话生物的属性和特性, 你可以提前帮KP查询好这些信息, 同时提醒KP查看
 - 你必须逐步推理和思考, 通过工具调用来收集信息, 而不是直接凭记忆就给出结论, 你的回复不要修改原文内容, 也不要试图总结或概括原文, 只需直接引用原文中的具体数值和细节来回答问题
-- **第一轮必须且只能调用 search_cache**，不得跳过，不得在第一轮输出任何其他工具或response
+- **第一轮必须且只能调用 search_cache**，不得跳过，不得在第一轮调用任何其他工具或response
 - 你可以通过 save_cache 来缓存你的搜集到的信息，供后续查询复用，这个工具可以被调用多次
-- 若 search_cache 返回了高度相关的缓存且你认为有足够的信息能够回答当前问题，直接引用并输出 response，不再进行任何搜索
+- 若 search_cache 返回了高度相关的缓存且你认为有足够的信息能够回答当前问题，直接引用并调用 response，不再进行任何搜索
 - 只有缓存未命中时，才允许进行 grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines 等搜索
 - 普通规则、典籍、系统机制优先用 grep/read_lines；具体法术词条、法术细节优先用 grep_spell/read_spell_lines；具体怪物、神格、生物属性优先用 grep_monster/read_monster_lines
-- 禁止在没有调用 search_cache 或资料检索工具的情况下就进行response
+- 禁止在没有调用 search_cache 或资料检索工具的情况下就调用response
 - 谨慎判断意图，不要乱搜索，关键词不要乱给, 仔细检查每一个grep结果，确保你能拿到足够多的信息来回答问题, 不要乱猜
-- **输出 response 前的强制自检**（每次必须逐项确认，全部为"是"才可输出 response）：
+- **调用 response 前的强制自检**（每次必须逐项确认，全部为"是"才可调用 response）：
   1. 我是否已从规则资料原文中看到了回答所需的 **具体数值**（伤害骰、SAN损失范围、技能阈值、法术MP消耗等）？——仅"大致了解"或"只看到名称"不算"是"。
   2. 若问题涉及典籍/法术/怪物/神格：我是否已读取到该词条的 **完整内容**（包括SAN损失数值、克苏鲁神话加成值、可习得法术列表、属性、伤害、护甲等）？——仅找到名称不算"是"，必须继续读取对应行号范围。
-  3. 我是否已确认拓展规则和额外规则（如使用道具、学习典籍等）不适用于当前问题，或者已正确应用了这些规则？——如果不确定或有任何可能适用的拓展/额外规则，必须继续搜索，**绝对禁止**在不清楚是否适用的情况下输出 response。
-  4. 若有任何一项为"否"，必须继续搜索，**绝对禁止**在数值缺失的情况下输出 response。
-- 若情境无规则疑问,直接输出 [{"action":"response","ruling":"无需特殊规则裁定。"}]
-- 每轮只包含 search_cache/grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines 调用(可多个),或只包含 response（可附带一个 save_cache）,不与其他搜索工具混用`
+  3. 我是否已确认拓展规则和额外规则（如使用道具、学习典籍等）不适用于当前问题，或者已正确应用了这些规则？——如果不确定或有任何可能适用的拓展/额外规则，必须继续搜索，**绝对禁止**在不清楚是否适用的情况下调用 response。
+  4. 若有任何一项为"否"，必须继续搜索，**绝对禁止**在数值缺失的情况下调用 response。
+- 若情境无规则疑问,直接调用 response，ruling 填"无需特殊规则裁定。"
+- 同一轮可以并列调用多个检索工具（search_cache/grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines）；response 只能与 save_cache 同轮调用，不得与任何检索工具同轮调用`
 
-// lawyerSystemPromptTail 是 Lawyer 系统提示的强约束尾部（JSON-only 输出要求），
+// lawyerSystemPromptTail 是 Lawyer 系统提示的强约束尾部（工具调用强约束），
 // 永远作为最后一段追加，确保其优先级高于任何可配置内容。
 const lawyerSystemPromptTail = `
-- 仅输出JSON数组, 不加任何说明文字, 你只能输出JSON数组
-- YOUR OUTPUT MUST BE A VALID JSON ARRAY THAT CAN BE PARSED WITHOUT ERRORS. DO NOT OUTPUT ANY MARKDOWN OR OTHER FORMATTING, ONLY THE JSON ARRAY. THE FINAL RESULT MUST BE PROVIDED THROUGH THE "response" ACTION, AND YOU SHOULD NOT PROVIDE ANY CONCLUSIONS OR ANSWERS WITHOUT USING THE SPECIFIED TOOL CALLS.
+- 你必须且只能通过工具调用来获取信息和给出结论，禁止在任何文本正文中直接给出规则裁定或结论
+- 最终裁定必须且只能通过 response 工具调用给出，不得以任何其他方式提供结论或答案
+- 你的第一轮调用必须且只能是 search_cache，keyword 填以#开头的标签（如"#手枪 #伤害"或"#典籍 #SAN损失"），这是强制要求，不得跳过
 
 <rule>
-- You should only output the JSON array, without any additional text or explanation.
-- You are limited to OUTPUT JSON format, and you must strictly follow the specified format for tool calls. 
-- Do not include any text outside of the JSON array. If you need to provide explanations or reasoning, include them as part of the "ruling" field in the response action.
-- Remember, your output must be a valid JSON array that can be parsed without errors.
-- You cannot output any MARKDOWN or other formatting(expect JSON).
-- The final result must be provided through the "response" action, and you should not provide any conclusions or answers without using the specified tool calls.
-- YOUR VERY FIRST OUTPUT MUST BE [{"action":"search_cache","keyword":"#tag1 #tag2"}] AND NOTHING ELSE. Fill keyword with #-prefixed tags derived from the question's core topics (e.g. "#手枪 #伤害" or "#典籍 #SAN损失"). This is mandatory and cannot be skipped under any circumstance.
+- You must gather information and give conclusions ONLY through tool calls; never state a ruling or conclusion as plain text.
+- The final ruling MUST be provided ONLY through the "response" tool call.
+- Your very first tool call MUST be search_cache, with keyword filled as #-prefixed tags derived from the question's core topics (e.g. "#手枪 #伤害" or "#典籍 #SAN损失"). This is mandatory and cannot be skipped under any circumstance.
 </rule>`
 
 // BuildLawyerPrompt 将管理员配置的平衡规则构造为注入 Lawyer 用户消息的段落并返回。
@@ -181,41 +168,176 @@ func BuildLawyerPrompt(balanceRules string) string {
 		"\n</kp_balance_rules>\n"
 }
 
-// lawyerCall is one item in the Lawyer's tool-call output sequence.
-type lawyerCall struct {
-	Action   string `json:"action"`
-	Keyword  string `json:"keyword"`   // grep / search_cache
-	Constant string `json:"constant"`  // read_rulebook_const
-	Start    int    `json:"start"`     // read_lines
-	End      int    `json:"end"`       // read_lines
-	CacheKey string `json:"cache_key"` // save_cache / response: agent-chosen cache key
-	Ruling   string `json:"ruling"`    // save_cache / response
+// ---------------------------------------------------------------------------
+// Lawyer 原生工具定义
+// ---------------------------------------------------------------------------
+
+const (
+	toolNameSearchCache      = "search_cache"
+	toolNameGrep             = "grep"
+	toolNameReadLines        = "read_lines"
+	toolNameGrepSpell        = "grep_spell"
+	toolNameReadSpellLines   = "read_spell_lines"
+	toolNameGrepMonster      = "grep_monster"
+	toolNameReadMonsterLines = "read_monster_lines"
+	toolNameSaveCache        = "save_cache"
+	toolNameLawyerResponse   = "response"
+)
+
+// lawyerKeywordArgs 是 search_cache/grep/grep_spell/grep_monster 共用的参数。
+type lawyerKeywordArgs struct {
+	Keyword string `json:"keyword"`
 }
 
-var lawyerCallExample = func() string {
-	data := []lawyerCall{
-		{Action: "search_cache", Keyword: "#手枪 #伤害"},
-		{Action: "grep", Keyword: "手枪伤害"},
-		{Action: "read_lines", Start: 100, End: 120},
-		{Action: "save_cache", CacheKey: "#手枪 #伤害 #武器", Ruling: "手枪的伤害是1D10，暴击是2D10。"},
-		{Action: "response", Ruling: "手枪的伤害是1D10，暴击是2D10。"},
-		{Action: "read_spell_lines", Start: 50, End: 70},
-		{Action: "grep_spell", Keyword: "火焰喷吐"},
-		{Action: "grep_monster", Keyword: "克苏鲁神话生物"},
-		{Action: "read_monster_lines", Start: 200, End: 220},
-	}
-	exampleBytes, _ := json.Marshal(data)
-	return string(exampleBytes)
-}()
+// lawyerLineRangeArgs 是 read_lines/read_spell_lines/read_monster_lines 共用的参数。
+type lawyerLineRangeArgs struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+}
 
-// runLawyer is an autonomous rule consultant that mirrors the Director's tool-call loop.
+// lawyerSaveCacheArgs 是 save_cache 的参数。
+type lawyerSaveCacheArgs struct {
+	CacheKey string `json:"cache_key"`
+	Ruling   string `json:"ruling"`
+}
+
+// lawyerResponseArgs 是 response 的参数。
+type lawyerResponseArgs struct {
+	Ruling string `json:"ruling"`
+}
+
+// lawyerSearchCacheDescription 是 search_cache 工具的描述，第1轮限制工具集和
+// 全量工具集共用同一份文案。
+const lawyerSearchCacheDescription = "在缓存中搜索与当前问题相关的已有裁定(返回最多3条最相关结果,含完整裁定内容)；keyword必须是以#开头的标签，多个标签用空格分隔，例如\"#手枪 #伤害\"或\"#典籍 #SAN损失\"，标签应精准反映问题的核心主题，不得使用自然语言句子。若返回结果与当前问题高度相关,可直接引用其裁定并调用response,无需再检索资料；若无相关结果,再使用grep等检索工具。"
+
+// lawyerKeywordTool 构造 search_cache/grep/grep_spell/grep_monster 这类
+// "仅需一个 keyword 参数" 的工具定义。
+func lawyerKeywordTool(name, description string) scripterTool {
+	return scripterTool{
+		solo: false,
+		def: llm.ToolDefinition{
+			Name:        name,
+			Description: description,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"keyword": {"type": "string", "description": "搜索关键词或Go正则表达式"}
+				},
+				"required": ["keyword"]
+			}`),
+		},
+	}
+}
+
+// lawyerLineRangeTool 构造 read_lines/read_spell_lines/read_monster_lines 这类
+// "读取指定行号范围" 的工具定义。
+func lawyerLineRangeTool(name, description string) scripterTool {
+	return scripterTool{
+		solo: false,
+		def: llm.ToolDefinition{
+			Name:        name,
+			Description: description,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"start": {"type": "integer", "minimum": 1, "description": "起始行号"},
+					"end": {"type": "integer", "minimum": 1, "description": "结束行号"}
+				},
+				"required": ["start", "end"]
+			}`),
+		},
+	}
+}
+
+func lawyerSaveCacheTool() scripterTool {
+	return scripterTool{
+		solo: false,
+		def: llm.ToolDefinition{
+			Name:        toolNameSaveCache,
+			Description: "将本次裁定保存到缓存，供后续查询复用；cache_key为以#开头的标签集合，多个标签空格分隔，需覆盖主题、具体对象、涉及属性；可与 response 同轮调用",
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"cache_key": {"type": "string", "description": "以#开头的标签集合，多个标签空格分隔，例如 #手枪 #伤害 #武器"},
+					"ruling": {"type": "string", "description": "规则裁定内容"}
+				},
+				"required": ["cache_key", "ruling"]
+			}`),
+		},
+	}
+}
+
+func lawyerResponseTool() scripterTool {
+	return scripterTool{
+		solo: false,
+		def: llm.ToolDefinition{
+			Name:        toolNameLawyerResponse,
+			Description: "给出最终规则裁定，结束本次查询；直接引用关键规则数值和判定条件，若原文未覆盖该问题需明确说明\"规则书未明确规定\"",
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"ruling": {"type": "string", "description": "规则裁定内容（简短只包含必要信息）"}
+				},
+				"required": ["ruling"]
+			}`),
+		},
+	}
+}
+
+// lawyerFirstRoundTools 是第1轮唯一允许调用的工具集：强制模型第一轮只能
+// search_cache，取代纯 prompt 约定。
+func lawyerFirstRoundTools() []scripterTool {
+	return []scripterTool{lawyerKeywordTool(toolNameSearchCache, lawyerSearchCacheDescription)}
+}
+
+// lawyerAllTools 是第2轮起开放的全部9个工具。
+func lawyerAllTools() []scripterTool {
+	return []scripterTool{
+		lawyerKeywordTool(toolNameSearchCache, lawyerSearchCacheDescription),
+		lawyerKeywordTool(toolNameGrep, "在规则书 COC_kp.md 中搜索关键词或Go正则表达式,返回匹配行及其上下文原文。普通规则、典籍、系统机制优先使用此工具、但内容可能在别的文件中出现。如需搜索多个备选词,请使用正则 | 写法,不要用空格分隔；若提供的正则表达式无效,会按字面量关键词回退搜索；搜索结果仅用于本轮分析，不会被缓存。"),
+		lawyerKeywordTool(toolNameGrepSpell, "在法术图鉴 COC_spell.md 中搜索关键词或Go正则表达式。具体法术词条、法术细节、法术MP/SAN消耗优先使用此工具、但内容可能在别的文件中出现。如需搜索多个备选词,请使用正则 | 写法；正则无效时按字面量关键词回退搜索；搜索结果仅用于本轮分析。"),
+		lawyerKeywordTool(toolNameGrepMonster, "在怪物图鉴 COC_monster.md 中搜索关键词或Go正则表达式。具体怪物、神格、生物属性优先使用此工具、但内容可能在别的文件中出现。如需搜索多个备选词,请使用正则 | 写法；正则无效时按字面量关键词回退搜索；搜索结果仅用于本轮分析。"),
+		lawyerLineRangeTool(toolNameReadLines, "直接读取规则书 COC_kp.md 的特定行号范围；仅当 grep 已定位相关内容但需要完整上下文时使用；结果仅用于本轮分析。"),
+		lawyerLineRangeTool(toolNameReadSpellLines, "直接读取法术图鉴 COC_spell.md 的特定行号范围；仅当 grep_spell 已定位相关内容但需要完整法术词条时使用；结果仅用于本轮分析。"),
+		lawyerLineRangeTool(toolNameReadMonsterLines, "直接读取怪物图鉴 COC_monster.md 的特定行号范围；仅当 grep_monster 已定位相关内容但需要完整怪物/神格/生物词条时使用；结果仅用于本轮分析。"),
+		lawyerSaveCacheTool(),
+		lawyerResponseTool(),
+	}
+}
+
+// lawyerOutputToolNames 是"输出组"工具名集合：response 只能与 save_cache 同轮，
+// 不能与任何检索工具同轮，由 lawyerBatchPolicy 判定。
+var lawyerOutputToolNames = map[string]bool{
+	toolNameLawyerResponse: true,
+	toolNameSaveCache:      true,
+}
+
+// lawyerBatchPolicy 实现"response/save_cache 为一组、7个检索工具为另一组，
+// 组内可任意组合、组间不可混批"的分组互斥策略。
+func lawyerBatchPolicy(calls []llm.ToolCall) string {
+	hasOutput := false
+	hasRetrieval := false
+	for _, c := range calls {
+		if lawyerOutputToolNames[c.Name] {
+			hasOutput = true
+		} else {
+			hasRetrieval = true
+		}
+	}
+	if hasOutput && hasRetrieval {
+		return "SYSTEM REJECT: response/save_cache 不能与检索类工具（search_cache/grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines）在同一轮混用。请本轮只调用检索工具收集信息，或只调用 response（可附带一个 save_cache）给出最终裁定。"
+	}
+	return ""
+}
+
+// runLawyer is an autonomous rule consultant driven by native tool calling
+// (via runToolLoop): the model calls search_cache/grep/read_lines/grep_spell/
+// read_spell_lines/grep_monster/read_monster_lines to gather evidence, then
+// calls response (optionally alongside save_cache) to give the final ruling.
 //
-// Each iteration the model outputs a JSON array of lawyerCalls:
-//   - [grep, grep, …] → execute grep searches, feed results back as user message, loop
-//   - [response]       → return ruling
-//
-// The conversation grows naturally (system → user → assistant → user → …) so the model
-// always sees its own prior decisions alongside the search evidence.
+// 第1轮的可用工具被限制为只有 search_cache（lawyerFirstRoundTools），第2轮起
+// 开放全部9个工具（lawyerAllTools）；response 与检索工具的分组互斥由
+// lawyerBatchPolicy 强制。
 func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerResult {
 	if situation == "" {
 		return nil
@@ -230,6 +352,8 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 	searchedRulebook := false
 	// Track whether search_cache returned at least one result.
 	cacheSearchHadResults := false
+	// 由 response 工具的 dispatch 分支写入，循环成功结束后作为最终裁定返回。
+	var rulingText string
 
 	debugf("Lawyer", "question=%s", situation)
 
@@ -243,10 +367,8 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 		userSB.WriteString(section)
 	}
 	userSB.WriteString("<instruction>\n")
-	userSB.WriteString("请根据上述规则书目录和工具说明, 给出JSON数组格式的工具调用列表, 收集信息完成后通过response调用返回。\n")
-	userSB.WriteString("仅输出JSON数组, 不要添加任何解释或说明文字。\n")
-	userSB.WriteString("**你的第一轮输出必须且只能是 [{\"action\":\"search_cache\",\"keyword\":\"#tag1 #tag2\"}]（用#开头的标签，如\"#手枪 #伤害\"），不得包含其他任何工具调用。**\n")
-	userSB.WriteString("你只能输出一个JSON数组, 且必须是有效的JSON格式, 不加任何解释。\n")
+	userSB.WriteString("请通过工具调用逐步收集信息，完成后调用 response 给出规则裁定。\n")
+	userSB.WriteString("你的第一轮只能调用 search_cache，keyword 用#开头的标签（如\"#手枪 #伤害\"）。\n")
 	userSB.WriteString("</instruction>\n")
 
 	msgs := []llm.ChatMessage{
@@ -254,83 +376,104 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 		{Role: "user", Content: userSB.String()},
 	}
 
-	const maxIter = 30
-	for iter := 0; iter < maxIter; iter++ {
-		if ctx.Err() != nil {
-			return nil
-		}
-
-		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		raw, err := h.provider.Chat(ctx, cacheKey, msgs)
-		if err != nil {
-			log.Printf("[lawyer] iter %d LLM error: %v", iter, err)
-			return nil
-		}
-		recordScripterLLMExchange(ctx, nil, fmt.Sprintf("lawyer_round_%d", iter+1), callMessages, raw)
-		mark := ""
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-		var calls []lawyerCall
-		if err := json.Unmarshal([]byte(raw), &calls); err != nil {
-			log.Printf("[lawyer] iter %d JSON parse error: %v; raw response: %s", iter, err, raw)
-			for i := 0; i < 30; i++ {
-				raw, err = RepairJSON(ctx, raw, err, `[{"action":"response","ruling":"规则书未明确规定"}]`)
-				if err == nil {
-					err = json.Unmarshal([]byte(raw), &calls)
-					if err == nil {
-						break
-					}
+	dispatch := func(_ context.Context, call llm.ToolCall) toolOutcome {
+		switch call.Name {
+		case toolNameSearchCache:
+			var args lawyerKeywordArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: search_cache 参数不是合法JSON：%v", err)}
+			}
+			query := strings.TrimSpace(args.Keyword)
+			debugf("Lawyer", "search_cache query=%q", query)
+			matches := lawyerCache.Search(query, 3)
+			var sb strings.Builder
+			if len(matches) == 0 {
+				sb.WriteString("[搜索缓存] 未找到相关缓存裁定。\n\n")
+			} else {
+				cacheSearchHadResults = true
+				sb.WriteString(fmt.Sprintf("[搜索缓存] 找到 %d 条相关裁定：\n", len(matches)))
+				for i, m := range matches {
+					sb.WriteString(fmt.Sprintf("%d. 问题：%s\n   裁定：%s\n", i+1, m.Key, m.Ruling))
 				}
-				log.Printf("[lawyer] iter %d JSON parse error: %v; attempt %d to repair with parser", iter, err, i+1)
+				sb.WriteString("\n")
 			}
-			if err != nil {
-				log.Printf("[lawyer] iter %d failed to parse calls after repair attempts: %v", iter, err)
-				return nil
-			}
-			mark = "YOUR OUTPUT FORMAT IS INCORRECT, PLEASE STRICTLY FOLLOW THE RULES AND ONLY OUTPUT THE JSON ARRAY WITHOUT ANY EXPLANATION OR MARKDOWN. THE RESULT OF THIS CALL IS GIVEN BELOW, PLEASE CHECK CAREFULLY AND ADJUST YOUR OUTPUT TO MATCH THE REQUIRED FORMAT."
-		} else {
-			mark = ""
-		}
-		if mark != "" {
-			msgs[len(msgs)-1].Content = mark + "\n" + msgs[len(msgs)-1].Content
-		}
-		if len(calls) == 0 {
-			log.Printf("[lawyer] iter %d returned empty call list, retrying", iter)
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "你必须输出一个非空的JSON数组, 且数组中每个元素必须是合法的工具调用对象。"})
-			continue
-		}
-		isEmpty := true
-		for _, c := range calls {
-			if c.Action != "" {
-				isEmpty = false
-				break
-			}
-		}
-		if isEmpty {
-			log.Printf("[lawyer] iter %d returned call list with empty actions, retrying", iter)
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "你必须输出一个非空的JSON数组, 且数组中每个元素的action字段不能为空。"})
-			continue
-		}
+			return toolOutcome{result: sb.String()}
 
-		// ── save_cache + response: handle output actions ────────────────────
-		var rulingText string
-		var hasResponse bool
-		for _, c := range calls {
-			if c.Action == "save_cache" {
-				cacheKey := strings.TrimSpace(c.CacheKey)
-				ruleText := strings.TrimSpace(c.Ruling)
-				if cacheKey != "" && ruleText != "" {
-					lawyerCache.Set(cacheKey, ruleText)
-					debugf("Lawyer", "save_cache key=%s ruling=%s", cacheKey, ruleText)
-				}
+		case toolNameGrep, toolNameGrepSpell, toolNameGrepMonster:
+			var args lawyerKeywordArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: %s 参数不是合法JSON：%v", call.Name, err)}
 			}
-			if c.Action == "response" && c.Ruling != "" {
-				rulingText = strings.TrimSpace(c.Ruling)
-				hasResponse = true
-				debugf("Lawyer", "iter=%d response ruling=%s", iter+1, rulingText)
+			var sb strings.Builder
+			var ok bool
+			switch call.Name {
+			case toolNameGrep:
+				ok = appendGrepResults(&sb, "grep", args.Keyword, "规则书", rulebook.GrepRuleBook)
+			case toolNameGrepSpell:
+				ok = appendGrepResults(&sb, "grep_spell", args.Keyword, "法术图鉴", rulebook.GrepSpellBook)
+			case toolNameGrepMonster:
+				ok = appendGrepResults(&sb, "grep_monster", args.Keyword, "怪物图鉴", rulebook.GrepMonsterBook)
 			}
+			if !ok {
+				return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: %s 的 keyword 不能为空。", call.Name)}
+			}
+			searchedRulebook = true
+			return toolOutcome{result: sb.String()}
+
+		case toolNameReadLines, toolNameReadSpellLines, toolNameReadMonsterLines:
+			var args lawyerLineRangeArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: %s 参数不是合法JSON：%v", call.Name, err)}
+			}
+			var sb strings.Builder
+			var ok bool
+			switch call.Name {
+			case toolNameReadLines:
+				ok = appendLineResults(&sb, "read_lines", args.Start, args.End, rulebook.GetContentByLineNum)
+			case toolNameReadSpellLines:
+				ok = appendLineResults(&sb, "read_spell_lines", args.Start, args.End, rulebook.GetSpellContentByLineNum)
+			case toolNameReadMonsterLines:
+				ok = appendLineResults(&sb, "read_monster_lines", args.Start, args.End, rulebook.GetMonsterContentByLineNum)
+			}
+			if !ok {
+				return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: %s 的 start/end 必须为正整数。", call.Name)}
+			}
+			searchedRulebook = true
+			return toolOutcome{result: sb.String()}
+
+		case toolNameSaveCache:
+			var args lawyerSaveCacheArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: save_cache 参数不是合法JSON：%v", err)}
+			}
+			key := strings.TrimSpace(args.CacheKey)
+			ruling := strings.TrimSpace(args.Ruling)
+			if key == "" || ruling == "" {
+				return toolOutcome{reject: "SYSTEM REJECT: save_cache 的 cache_key 和 ruling 都不能为空。"}
+			}
+			lawyerCache.Set(key, ruling)
+			debugf("Lawyer", "save_cache key=%s ruling=%s", key, ruling)
+			return toolOutcome{result: "[缓存] 裁定已保存到缓存。"}
+
+		case toolNameLawyerResponse:
+			var args lawyerResponseArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: response 参数不是合法JSON：%v", err)}
+			}
+			ruling := strings.TrimSpace(args.Ruling)
+			if ruling == "" {
+				return toolOutcome{reject: "SYSTEM REJECT: response 的 ruling 不能为空。"}
+			}
+			rulingText = ruling
+			debugf("Lawyer", "response ruling=%s", ruling)
+			return toolOutcome{result: ruling, done: true}
 		}
-		// NOTE: 统计记录应在每次循环迭代末尾执行一次，
-		// 不依赖于 save_cache 是否出现。
+		return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 未知工具 %q，此阶段不允许调用。", call.Name)}
+	}
+
+	// NOTE: 统计记录每轮工具分发结束后执行一次，与迁移前"每次循环迭代末尾无条件
+	// 记录一次"的逐轮记录时机保持一致（不依赖 save_cache/response 是否出现）。
+	afterRound := func() {
 		if searchedRulebook && cacheSearchHadResults {
 			lawyerCache.RecordPartialHit()
 		} else if searchedRulebook && !cacheSearchHadResults {
@@ -338,73 +481,26 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 		} else if !searchedRulebook && cacheSearchHadResults {
 			lawyerCache.RecordFullHit()
 		}
-		if hasResponse {
-			return []LawyerResult{{
-				Query:    situation,
-				RuleText: rulingText,
-			}}
-		}
-
-		// ── execute tool calls and feed results back ────────────────────────
-		var resultSB strings.Builder
-		for _, c := range calls {
-			switch c.Action {
-			case "search_cache":
-				query := strings.TrimSpace(c.Keyword)
-				debugf("Lawyer", "iter=%d search_cache query=%q", iter+1, query)
-				matches := lawyerCache.Search(query, 3)
-				if len(matches) == 0 {
-					resultSB.WriteString("[搜索缓存] 未找到相关缓存裁定。\n\n")
-				} else {
-					cacheSearchHadResults = true
-					resultSB.WriteString(fmt.Sprintf("[搜索缓存] 找到 %d 条相关裁定：\n", len(matches)))
-					for i, m := range matches {
-						resultSB.WriteString(fmt.Sprintf("%d. 问题：%s\n   裁定：%s\n", i+1, m.Key, m.Ruling))
-					}
-					resultSB.WriteString("\n")
-				}
-
-			case "grep":
-				if appendGrepResults(&resultSB, "grep", c.Keyword, "规则书", rulebook.GrepRuleBook) {
-					searchedRulebook = true
-				}
-			case "grep_spell":
-				if appendGrepResults(&resultSB, "grep_spell", c.Keyword, "法术图鉴", rulebook.GrepSpellBook) {
-					searchedRulebook = true
-				}
-			case "grep_monster":
-				if appendGrepResults(&resultSB, "grep_monster", c.Keyword, "怪物图鉴", rulebook.GrepMonsterBook) {
-					searchedRulebook = true
-				}
-			case "read_lines":
-				if appendLineResults(&resultSB, "read_lines", c.Start, c.End, rulebook.GetContentByLineNum) {
-					searchedRulebook = true
-				}
-			case "read_spell_lines":
-				if appendLineResults(&resultSB, "read_spell_lines", c.Start, c.End, rulebook.GetSpellContentByLineNum) {
-					searchedRulebook = true
-				}
-			case "read_monster_lines":
-				if appendLineResults(&resultSB, "read_monster_lines", c.Start, c.End, rulebook.GetMonsterContentByLineNum) {
-					searchedRulebook = true
-				}
-			case "save_cache":
-				// Already handled above; acknowledge so the loop can continue.
-				resultSB.WriteString("[缓存] 裁定已保存到缓存。\n")
-			}
-		}
-		if resultSB.Len() == 0 {
-			// No valid search calls and no response — give up.
-			return nil
-		}
-		msgs = append(msgs, llm.ChatMessage{
-			Role:    "user",
-			Content: "搜索结果如下,请据此给出规则裁定:\n\n" + resultSB.String(),
-		})
 	}
 
-	log.Printf("[lawyer] max iterations reached without response")
-	return nil
+	const lawyerMaxRounds = 30
+	err := runToolLoop(ctx, toolLoopOptions{
+		handle:           h,
+		stage:            "lawyer",
+		msgs:             msgs,
+		tools:            lawyerAllTools(),
+		firstRoundTools:  lawyerFirstRoundTools(),
+		maxRounds:        lawyerMaxRounds,
+		dispatch:         dispatch,
+		batchPolicy:      lawyerBatchPolicy,
+		cacheKeyOverride: cacheKey,
+		afterRound:       afterRound,
+	})
+	if err != nil {
+		log.Printf("[lawyer] %v", err)
+		return nil
+	}
+	return []LawyerResult{{Query: situation, RuleText: rulingText}}
 }
 
 func appendGrepResults(resultSB *strings.Builder, action, keyword, sourceName string, grep func(string) []rulebook.GrepResult) bool {
