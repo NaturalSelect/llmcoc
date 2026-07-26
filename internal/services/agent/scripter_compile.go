@@ -1,12 +1,13 @@
 // scripter_compile.go — Compiler stage: takes the story architect's free-text
 // StoryOutput (scripter_story.go) and compiles it into a structured
 // ScenarioDraft (OneshotResult shape), without inventing new facts. Runs as a
-// single LLM call (no tool loop); structural/logic issues found afterwards
-// are still patched by the existing repairOneshotDraft loop.
+// single-tool loop (submit_compiled_scenario); structural/logic issues found
+// afterwards are still patched by the existing repairOneshotDraft loop.
 package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -50,13 +51,31 @@ func compilerSystemPrompt() string {
 - content.clues中nature="真实"的线索至少2条且互相独立可组合；不得只编译出单一线索链
 - 至少一位NPC的description须写明"秘密"或"保留"信息
 </task>
-<response_format>json_object</response_format>
-<output>只输出一个合法JSON对象，字段结构严格匹配<schema_example>；不要Markdown、标题、解释或代码围栏。</output>`
+<tools>
+- submit_compiled_scenario：提交编译后的完整结构化剧本JSON；字段结构严格匹配<schema_example>；只调用一次
+</tools>`
+}
+
+// submitCompiledScenarioTool 是 compile 阶段唯一的提交工具（solo，独占一轮）。
+func submitCompiledScenarioTool() scripterTool {
+	return scripterTool{
+		solo: true,
+		def: llm.ToolDefinition{
+			Name:        toolNameSubmitCompiled,
+			Description: "提交编译后的完整结构化剧本JSON；字段结构严格匹配schema_example",
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"draft": {"type": "object", "description": "完整oneshotResult JSON对象，字段结构见schema_example"}
+				},
+				"required": ["draft"]
+			}`),
+		},
+	}
 }
 
 // compileStoryToModule 把故事 architect 的自由文本 StoryOutput 编译为结构化 ScenarioDraft。
-// compiler 未配置时 fallback 到 architect provider；编译只做一次LLM调用（非工具循环），
-// 解析失败会经由 chatAndParseJSON 复用既有的 JSON 修复链。
+// compiler 未配置时 fallback 到 architect provider；编译走单工具（submit_compiled_scenario）循环。
 func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOutput, constraints ScripterConstraints) (ScenarioDraft, error) {
 	compiler := room.compiler
 	if compiler.provider == nil {
@@ -89,14 +108,32 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 		{Role: "system", Content: compiler.systemPrompt(compilerSystemPrompt())},
 		{Role: "user", Content: userMsg},
 	}
-	logStagePrompt("compile", sessionID, msgs)
 
-	var result OneshotResult
-	if err := chatAndParseJSON(ctx, compiler, msgs, &result, oneshotExample, "compile"); err != nil {
+	tools := []scripterTool{submitCompiledScenarioTool()}
+	var submitted *OneshotResult
+	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
+		if call.Name != toolNameSubmitCompiled {
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许submit_compiled_scenario，不允许%s。", call.Name)}
+		}
+		var args struct {
+			Draft *OneshotResult `json:"draft"`
+		}
+		if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario参数不是合法JSON，请重新调用。"}
+		}
+		if args.Draft == nil {
+			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario的draft字段不能为空。"}
+		}
+		submitted = args.Draft
+		return toolOutcome{result: "已收到，编译结果已提交。", done: true}
+	}
+
+	const maxRounds = 4
+	if err := runScripterToolLoop(ctx, nil, compiler, "compile", msgs, tools, maxRounds, dispatch); err != nil {
 		return ScenarioDraft{}, fmt.Errorf("compile failed: %w", err)
 	}
 
-	draft := result.toScenarioDraft()
+	draft := submitted.toScenarioDraft()
 	// NOTE: mythos_anchor 已由 story 阶段 translate_anchor 确认，编译阶段强制覆盖，防止LLM篡改。
 	draft.Content.MythosAnchor = story.MythosAnchor
 	log.Printf("[scripter:compile] session=%s done name=%q scenes=%d npcs=%d clues=%d",

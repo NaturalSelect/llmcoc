@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/llm"
 )
 
 // TestCompilerSystemPromptContainsKey 验证编译器 system prompt 明确声明"只做格式转换、不改写事实"。
@@ -35,7 +36,9 @@ func compileTestStory() StoryOutput {
 func TestCompilerFallbackToArchitect(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName: "architect",
-		responses:  []string{oneshotExample},
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, `{"draft":`+oneshotExample+`}`)}},
+		},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-compile-1",
@@ -75,7 +78,9 @@ func TestCompilerMythosAnchorOverride(t *testing.T) {
 	tampered.Content.MythosAnchor = "被篡改的神话锚点"
 	fake := &sequentialFakeProvider{
 		callerName: "compiler",
-		responses:  []string{marshalExample(tampered)},
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, `{"draft":`+marshalExample(tampered)+`}`)}},
+		},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-compile-2",

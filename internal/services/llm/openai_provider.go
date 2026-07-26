@@ -60,7 +60,52 @@ func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature
 func (p *openAIProvider) toOpenAIMessages(msgs []ChatMessage) []openai.ChatCompletionMessage {
 	out := make([]openai.ChatCompletionMessage, len(msgs))
 	for i, m := range msgs {
-		out[i] = openai.ChatCompletionMessage{Role: m.Role, Content: m.Content}
+		out[i] = openai.ChatCompletionMessage{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCallID: m.ToolCallID,
+			ToolCalls:  toOpenAIToolCalls(m.ToolCalls),
+		}
+	}
+	return out
+}
+
+func toOpenAITools(tools []ToolDefinition) []openai.Tool {
+	if len(tools) == 0 {
+		return nil
+	}
+	out := make([]openai.Tool, len(tools))
+	for i, t := range tools {
+		var params any
+		if len(t.Parameters) > 0 {
+			params = t.Parameters
+		}
+		out[i] = openai.Tool{
+			Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  params,
+			},
+		}
+	}
+	return out
+}
+
+func toOpenAIToolCalls(calls []ToolCall) []openai.ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]openai.ToolCall, len(calls))
+	for i, c := range calls {
+		out[i] = openai.ToolCall{
+			ID:   c.ID,
+			Type: openai.ToolTypeFunction,
+			Function: openai.FunctionCall{
+				Name:      c.Name,
+				Arguments: c.Arguments,
+			},
+		}
 	}
 	return out
 }
@@ -111,7 +156,7 @@ func isRetryableError(err error) bool {
 	return false
 }
 
-func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey string, messages []ChatMessage, json bool) openai.ChatCompletionRequest {
+func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey string, messages []ChatMessage, json bool, tools []ToolDefinition) openai.ChatCompletionRequest {
 	chatReq := openai.ChatCompletionRequest{
 		Model:               p.model,
 		Messages:            p.toOpenAIMessages(messages),
@@ -122,7 +167,11 @@ func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey str
 	if !p.disableTemperature {
 		chatReq.Temperature = p.temperature
 	}
-	if json {
+	if len(tools) > 0 {
+		// NOTE: tools 与 json_object 的 response_format 互斥——部分兼容端点同时收到两者会报错，
+		// 原生 function calling 场景下模型应通过工具参数返回结构化数据，而非纯文本 JSON。
+		chatReq.Tools = toOpenAITools(tools)
+	} else if json {
 		chatReq.ResponseFormat = &openai.ChatCompletionResponseFormat{Type: "json_object"}
 	}
 	sessionID := sessionIDFromContext(ctx)
@@ -156,37 +205,40 @@ func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey str
 // NOTE: 部分网关/反向代理对长耗时的非流式请求（尤其是 reasoning_effort=high 的模型）会因
 // 响应体迟迟无字节而触发空闲超时；流式请求持续有字节到达，可以规避这类超时，因此
 // Chat/JsonChat 内部统一改走流式请求，聚合后再以完整字符串返回，对外行为不变。
-func (p *openAIProvider) streamToString(ctx context.Context, chatReq openai.ChatCompletionRequest) (content string, reasoning string, err error) {
+func (p *openAIProvider) streamToString(ctx context.Context, chatReq openai.ChatCompletionRequest) (content string, reasoning string, toolCalls []ToolCall, err error) {
 	stream, err := p.client.CreateChatCompletionStream(ctx, chatReq)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	defer stream.Close()
 
 	var contentSB, reasoningSB strings.Builder
+	agg := newToolCallAggregator()
 	for {
 		resp, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
-			return contentSB.String(), reasoningSB.String(), nil
+			return contentSB.String(), reasoningSB.String(), agg.finish(), nil
 		}
 		if err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 		for _, choice := range resp.Choices {
 			contentSB.WriteString(choice.Delta.Content)
 			reasoningSB.WriteString(choice.Delta.ReasoningContent)
+			agg.add(choice.Delta.ToolCalls)
 		}
 	}
 }
 
-func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, json bool) (string, error) {
+func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, json bool, tools []ToolDefinition) (string, []ToolCall, error) {
 	start := time.Now()
-	chatReq := p.chatCompletionRequest(ctx, cacheKey, messages, json)
+	chatReq := p.chatCompletionRequest(ctx, cacheKey, messages, json, tools)
 	var result, reasoning string
+	var toolCalls []ToolCall
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		start := time.Now()
-		result, reasoning, err = p.streamToString(ctx, chatReq)
+		result, reasoning, toolCalls, err = p.streamToString(ctx, chatReq)
 		log.Printf("Chat model %v using %v\n", p.model, time.Since(start))
 		if err == nil || !isRetryableError(err) {
 			break
@@ -194,12 +246,12 @@ func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []C
 		log.Printf("[llm] Chat attempt %d/%d failed (5xx), retrying in 8s: %v", attempt+1, maxRetries, err)
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return "", nil, ctx.Err()
 		case <-time.After(8 * time.Second):
 		}
 	}
 	if err != nil {
-		return "", fmt.Errorf("LLM chat error: %w", err)
+		return "", nil, fmt.Errorf("LLM chat error: %w", err)
 	}
 	// NOTE: 提取reasoning_content用于审计日志
 	if reasoning != "" {
@@ -214,12 +266,12 @@ func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []C
 		log.Printf("[llm] Chat done model=%s elapsed=%.0fms response_len=%d",
 			p.model, float64(elapsed.Microseconds())/1000, len([]rune(result)))
 	}
-	return result, nil
+	return result, toolCalls, nil
 }
 
 func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messages []ChatMessage) (<-chan string, <-chan error, error) {
 	start := time.Now()
-	chatReq := p.chatCompletionRequest(ctx, cacheKey, messages, false)
+	chatReq := p.chatCompletionRequest(ctx, cacheKey, messages, false, nil)
 	var stream *openai.ChatCompletionStream
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
@@ -286,7 +338,7 @@ func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messag
 
 func (p *openAIProvider) Chat(ctx context.Context, cacheKey string, messages []ChatMessage) (msg string, err error) {
 	for i := 0; i < 3; i++ {
-		msg, err = p.chat(ctx, cacheKey, messages, false)
+		msg, _, err = p.chat(ctx, cacheKey, messages, false, nil)
 		if err != nil {
 			log.Printf("[llm] Chat error: %v", err)
 			continue
@@ -349,7 +401,7 @@ var (
 
 func (p *openAIProvider) JsonChat(ctx context.Context, cacheKey string, messages []ChatMessage) (string, error) {
 	for i := 0; i < 3; i++ {
-		msg, err := p.chat(ctx, cacheKey, messages, true)
+		msg, _, err := p.chat(ctx, cacheKey, messages, true, nil)
 		if err != nil {
 			log.Printf("[llm] JsonChat error: %v", err)
 			continue
@@ -360,4 +412,29 @@ func (p *openAIProvider) JsonChat(ctx context.Context, cacheKey string, messages
 		return msg, nil
 	}
 	return "", ErrEmptyLLMResponse
+}
+
+// ChatWithTools 发起一次支持原生 tool calling 的对话；tools 非空时作为 function calling
+// 候选传给模型。与 Chat/JsonChat 不同，本方法把"模型选择不调用任何工具、也不返回文本"
+// 视为一次可重试的空响应，而不是静默吞掉最终错误——调用方（Scripter 工具循环）需要据此
+// 区分"服务调用失败"和"模型确实什么都没返回"。
+func (p *openAIProvider) ChatWithTools(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition) (ToolChatResult, error) {
+	var lastErr error
+	for i := 0; i < 3; i++ {
+		content, toolCalls, err := p.chat(ctx, cacheKey, messages, false, tools)
+		if err != nil {
+			log.Printf("[llm] ChatWithTools error: %v", err)
+			lastErr = err
+			continue
+		}
+		if content == "" && len(toolCalls) == 0 {
+			lastErr = nil
+			continue
+		}
+		return ToolChatResult{Content: content, ToolCalls: toolCalls}, nil
+	}
+	if lastErr != nil {
+		return ToolChatResult{}, fmt.Errorf("LLM chat with tools error: %w", lastErr)
+	}
+	return ToolChatResult{}, ErrEmptyLLMResponse
 }

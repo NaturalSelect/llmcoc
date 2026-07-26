@@ -16,7 +16,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
@@ -169,32 +168,12 @@ SAN要求：
 - 神话本质说明严禁自创规则书中不存在的元素：不得编造法术名（如"季节之怒"）、物品名（如"衰变砂"）、材质名、怪物名或原创机制；所有神话元素必须来自 translate_anchor 确认的规则书内容，或由 lawyer 裁定支持
 - 神话本质必须直接来源规则书：说明只能复述或直接对应 translate_anchor 已确认的规则书元素本身写明的设定与效果，禁止在此基础上自行推导新的因果解释或编造伪科学解释链（如"折射共振频率→夺走寿命→肉体沙化"这类无规则书依据的拼凑）
 </task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
 - translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
-  {"action":"translate_anchor","concept":"概念描述（如「死者被古老力量束缚继续行动」）","reason":"这个概念在剧本中承担什么角色"}
-- submit_story：提交完整故事文档；只有在translate_anchor确认元素后才调用；必须单独一轮输出
-  {"action":"submit_story","story_document":"完整故事文档正文（纯文本自然语言，可用小标题分段，不要输出JSON、代码块或字段名）","mythos_anchor":"translate_anchor确认的COC7元素全称","reward_concept":"通关奖励叙事概念（若无则留空字符串）"}
-  严禁用draft/content/scenes/clues/endings/npcs/mechanics等嵌套字段代替story_document——story_document只能是一个字符串，不是JSON对象；地点、NPC、线索、结局等所有设计内容都必须写成story_document这一个字符串内的自然语言段落，结构化交由后续编译器负责。
+- submit_story：提交完整故事文档；只有在translate_anchor确认元素后才调用；必须单独一轮调用。
+  story_document字段严禁用draft/content/scenes/clues/endings/npcs/mechanics等嵌套字段代替——story_document只能是一个字符串，不是JSON对象；地点、NPC、线索、结局等所有设计内容都必须写成story_document这一个字符串内的自然语言段落，结构化交由后续编译器负责。
 </tools>`
 }
-
-// storyArchitectToolCallExample shows both tool variants so the repair LLM
-// sees the full shape of translate_anchor AND submit_story.
-var storyArchitectToolCallExample = marshalExample([]storyArchitectToolCall{
-	{
-		Action:  toolOneshotTranslateAnchor,
-		Concept: "死者被古老力量束缚继续行动",
-		Reason:  "作为本剧本mythos_anchor的核心概念",
-	},
-	{
-		Action:        toolStorySubmit,
-		StoryDocument: "标题：《失窃的旧藏》\n\n【表层情境】1924年9月3日，你们受镇图书馆之邀协助整理新到的捐赠藏书……（此处应为完整故事文档全文，远长于本示例，须覆盖表层情境/KP内部真相/地点/NPC/线索/时间线/结局各部分）",
-		MythosAnchor:  "食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。",
-		RewardConcept: "与食尸鬼有关的古籍手稿",
-	},
-})
 
 // ---------------------------------------------------------------------------
 // Story validation — deterministic checks, no LLM call.
@@ -223,111 +202,70 @@ func validateStoryDocument(story StoryOutput) []string {
 // ---------------------------------------------------------------------------
 
 // runStoryArchitectLoop 驱动故事 architect 工具循环：translate_anchor（可多次）+ submit_story（独占一轮）。
-func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (StoryOutput, []llm.ChatMessage, error) {
-	if room.architect.provider == nil {
-		return StoryOutput{}, msgs, fmt.Errorf("architect provider unavailable")
-	}
-	sessionID := scripterSessionID(ctx, room)
+func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (StoryOutput, error) {
 	stageName = firstNonEmpty(stageName, "story_architect")
-	const maxRounds = 30
-	for round := 1; round <= maxRounds; round++ {
-		if ctx.Err() != nil {
-			return StoryOutput{}, msgs, ctx.Err()
-		}
-		logStagePrompt(fmt.Sprintf("%s_round_%d", stageName, round), sessionID, msgs)
-		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		raw, err := room.architect.provider.Chat(ctx, room.sessionID+":"+string(models.AgentRoleArchitect), msgs)
-		if err != nil {
-			return StoryOutput{}, msgs, err
-		}
-		recordScripterLLMExchange(ctx, room, fmt.Sprintf("%s_round_%d", stageName, round), callMessages, raw)
-		log.Printf("[scripter:story_loop] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
-		calls, parseErr := parseStoryArchitectToolCalls(ctx, raw)
-		if parseErr != nil {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
-			continue
-		}
-		if len(calls) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
-			continue
-		}
-		if storySoloActionMixed(calls) {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit_story必须单独一轮输出，不能与translate_anchor混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；提交故事时只输出一个submit_story。"})
-			continue
-		}
+	tools := []scripterTool{
+		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次"),
+		{
+			solo: true,
+			def: llm.ToolDefinition{
+				Name:        toolNameSubmitStory,
+				Description: "提交完整故事文档；只有在translate_anchor确认元素后才调用；必须单独一轮调用",
+				Parameters: jsonSchemaObject(`{
+					"type": "object",
+					"properties": {
+						"story_document": {"type": "string", "description": "完整故事文档正文（纯文本自然语言，可用小标题分段，不要输出JSON、代码块或字段名）；地点/NPC/线索/结局等所有设计内容都必须写成这一个字符串内的自然语言段落"},
+						"mythos_anchor": {"type": "string", "description": "translate_anchor确认的COC7元素全称"},
+						"reward_concept": {"type": "string", "description": "通关奖励叙事概念（若无则留空字符串）"}
+					},
+					"required": ["story_document", "mythos_anchor", "reward_concept"]
+				}`),
+			},
+		},
+	}
 
-		invalid := false
-		var submitted *StoryOutput
-		var toolResults []string
-		for _, call := range calls {
-			switch call.Action {
-			case toolOneshotTranslateAnchor:
-				toolResults = append(toolResults, executeOneshotTranslateAnchor(ctx, room, oneshotArchitectToolCall{Concept: call.Concept, Reason: call.Reason}))
-			case toolStorySubmit:
-				story := StoryOutput{
-					Document:      call.StoryDocument,
-					MythosAnchor:  call.MythosAnchor,
-					RewardConcept: call.RewardConcept,
-				}
-				if issues := validateStoryDocument(story); len(issues) > 0 {
-					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
-						"SYSTEM REJECT: 故事文档校验失败: %s。请修复后重新submit_story。", strings.Join(issues, "；"))})
-					invalid = true
-					break
-				}
-				submitted = &story
-			default:
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
-					"SYSTEM REJECT: 此阶段只允许translate_anchor/submit_story，不允许%s。", call.Action)})
-				invalid = true
+	sessionID := scripterSessionID(ctx, room)
+	var submitted *StoryOutput
+	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
+		switch call.Name {
+		case toolNameTranslateAnchor:
+			var args translateAnchorArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
-		}
-		if invalid {
-			continue
-		}
-		if len(toolResults) > 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
-		}
-		if submitted != nil {
-			log.Printf("[scripter:story_loop] session=%s submitted doc_len=%d anchor=%q", sessionID, len([]rune(submitted.Document)), truncateRunes(submitted.MythosAnchor, 80))
-			return *submitted, msgs, nil
-		}
-		if len(toolResults) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须调用translate_anchor获取规则书裁定，或提交submit_story提交故事文档。"})
+			return toolOutcome{result: executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)}
+		case toolNameSubmitStory:
+			var args struct {
+				StoryDocument string `json:"story_document"`
+				MythosAnchor  string `json:"mythos_anchor"`
+				RewardConcept string `json:"reward_concept"`
+			}
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: submit_story参数不是合法JSON，请重新调用。"}
+			}
+			story := StoryOutput{
+				Document:      args.StoryDocument,
+				MythosAnchor:  args.MythosAnchor,
+				RewardConcept: args.RewardConcept,
+			}
+			if issues := validateStoryDocument(story); len(issues) > 0 {
+				return toolOutcome{reject: fmt.Sprintf(
+					"SYSTEM REJECT: 故事文档校验失败: %s。请修复后重新submit_story。", strings.Join(issues, "；"))}
+			}
+			submitted = &story
+			log.Printf("[scripter:story_loop] session=%s submitted doc_len=%d anchor=%q", sessionID, len([]rune(story.Document)), truncateRunes(story.MythosAnchor, 80))
+			return toolOutcome{result: "已收到，故事文档已提交。", done: true}
+		default:
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/submit_story，不允许%s。", call.Name)}
 		}
 	}
-	return StoryOutput{}, msgs, fmt.Errorf("story architect 未在%d轮内提交结果", maxRounds)
-}
 
-// storySoloActionMixed 判断 submit_story 是否与其他动作混排（submit_story必须独占一轮）。
-func storySoloActionMixed(calls []storyArchitectToolCall) bool {
-	solo := 0
-	for _, c := range calls {
-		if c.Action == toolStorySubmit {
-			solo++
-		}
+	const maxRounds = 30
+	if err := runScripterToolLoop(ctx, room, room.architect, stageName, msgs, tools, maxRounds, dispatch); err != nil {
+		return StoryOutput{}, err
 	}
-	return solo > 0 && len(calls) != 1
-}
-
-func parseStoryArchitectToolCalls(ctx context.Context, raw string) ([]storyArchitectToolCall, error) {
-	stripped := raw
-	var calls []storyArchitectToolCall
-	err := json.Unmarshal([]byte(stripped), &calls)
-	if err == nil {
-		return calls, nil
-	}
-	fixed, repairErr := RepairJSON(ctx, stripped, err, storyArchitectToolCallExample)
-	if repairErr != nil {
-		return nil, repairErr
-	}
-	fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
-	if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
-		return nil, err2
-	}
-	return calls, nil
+	return *submitted, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -377,7 +315,7 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 	}
 	logStagePrompt("story", sessionID, msgs)
 
-	result, _, err := runStoryArchitectLoop(ctx, room, msgs, "story_architect")
+	result, err := runStoryArchitectLoop(ctx, room, msgs, "story_architect")
 	if err != nil {
 		return StoryOutput{}, err
 	}
@@ -419,7 +357,7 @@ func repairStoryDocument(ctx context.Context, room *scripterRoom, constraints Sc
 	}
 	logStagePrompt("story_repair", sessionID, msgs)
 
-	result, _, err := runStoryArchitectLoop(ctx, room, msgs, "story_repair_architect")
+	result, err := runStoryArchitectLoop(ctx, room, msgs, "story_repair_architect")
 	if err != nil {
 		return StoryOutput{}, fmt.Errorf("story repair failed: %w", err)
 	}
@@ -449,8 +387,7 @@ func storyQAReviewSystemPrompt() string {
 - KP内部真相、地点、NPC、线索等结构化内容段落可以保留"可见/可发现/杠杆/公开身份/议程/秘密"等要素标签，不要因此报问题；但要素内容若空泛套话（如"异常的气味""神秘的声音"）应报问题
 - 表层情境部分必须保持日常、平静、无恐怖氛围、不剧透真相；若违反必须报告（这是硬约束）
 - <prose_voice>是本剧本的作者声线，仅当散文明显是说明文/设计文档腔时才报问题，不苛求声线完美贴合
-</scope>
-<output>只输出JSON对象：{"issues":["问题1","问题2"]}；每条问题指明具体段落并给出可执行的修改方向；按严重程度排序，最多8条；没有问题输出{"issues":[]}。</output>`
+</scope>`
 }
 
 // runStoryQAReview 返回人写化整改清单；storyDoc为空或审查不可用/失败时返回nil（非致命，跳过即可）。
@@ -461,20 +398,20 @@ func runStoryQAReview(ctx context.Context, room *scripterRoom, storyDoc string, 
 	sessionID := scripterSessionID(ctx, room)
 	userMsg := fmt.Sprintf(`%s
 <story_document>%s</story_document>
-请按standards审查以上故事文档，输出问题清单JSON。`,
+请按standards审查以上故事文档，通过report_issues工具提交问题清单。`,
 		proseVoiceBlock(constraints), storyDoc)
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.qa.systemPrompt(storyQAReviewSystemPrompt())},
 		{Role: "user", Content: userMsg},
 	}
-	logStagePrompt("qa_humanize", sessionID, msgs)
-	var result qaReviewResult
-	if err := chatAndParseJSON(ctx, room.qa, msgs, &result, qaReviewSchemaExample, "qa_humanize"); err != nil {
+	result, err := runReportIssuesTool(ctx, room.qa, "qa_humanize", msgs,
+		"提交本次审查发现的问题清单；没有问题时提交空数组")
+	if err != nil {
 		log.Printf("[scripter:qa_humanize] session=%s review failed: %v (skipping)", sessionID, err)
 		return nil
 	}
-	issues := make([]string, 0, len(result.Issues))
-	for _, issue := range result.Issues {
+	issues := make([]string, 0, len(result))
+	for _, issue := range result {
 		if issue = strings.TrimSpace(issue); issue != "" {
 			issues = append(issues, "[人写化] "+issue)
 		}

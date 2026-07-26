@@ -335,13 +335,9 @@ SAN要求：
 - 神话本质说明严禁自创规则书中不存在的元素：不得编造法术名（如"季节之怒"）、物品名（如"衰变砂"）、材质名、怪物名或原创机制；所有神话元素必须来自 translate_anchor 确认的规则书内容，或由 lawyer 裁定支持
 - 神话本质必须直接来源规则书：说明只能复述或直接对应 translate_anchor 已确认的规则书元素本身写明的设定与效果，禁止在此基础上自行推导新的因果解释或编造伪科学解释链（如"折射共振频率→夺走寿命→肉体沙化"这类无规则书依据的拼凑）
 </task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
 - translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
-  {"action":"translate_anchor","concept":"概念描述（如「死者被古老力量束缚继续行动」）","reason":"这个概念在剧本中承担什么角色"}
-- submit：提交完整剧本；只有在translate_anchor确认元素后才调用；必须单独一轮输出
-  {"action":"submit","draft":{...完整oneshotResult JSON对象...}}
+- submit：提交完整剧本；只有在translate_anchor确认元素后才调用；必须单独一轮调用，draft字段为完整oneshotResult JSON对象
 </tools>
 <draft_schema>
 submit.draft 必须包含以下字段：
@@ -387,173 +383,79 @@ submit.draft 必须包含以下字段：
 </draft_schema>`
 }
 
-// oneshotArchitectToolCallExample shows both tool variants so the repair LLM
-// sees the full shape of translate_anchor AND submit.
-var oneshotArchitectToolCallExample = marshalExample([]oneshotArchitectToolCall{
-	{
-		Action:  toolOneshotTranslateAnchor,
-		Concept: "死者被古老力量束缚继续行动",
-		Reason:  "作为本剧本mythos_anchor的核心概念",
-	},
-	{
-		Action: toolOneshotSubmit,
-		Draft:  &oneshotResultExample,
-	},
-})
-
-// ---------------------------------------------------------------------------
-// Tool types
-// ---------------------------------------------------------------------------
-
-const (
-	toolOneshotTranslateAnchor ToolCallType = "translate_anchor"
-	toolOneshotSubmit          ToolCallType = "submit"
-	toolStorySubmit            ToolCallType = "submit_story"
-
-	// Shared translator tool call types (used by scripter_reward.go as well).
-	toolTranslatorAskLawyer ToolCallType = "ask_lawyer"
-	toolTranslatorRespond   ToolCallType = "respond"
-)
-
-type oneshotArchitectToolCall struct {
-	Action  ToolCallType   `json:"action"`
-	Concept string         `json:"concept"` // translate_anchor
-	Reason  string         `json:"reason"`  // translate_anchor
-	Draft   *OneshotResult `json:"draft"`   // submit
-}
-
-// storyArchitectToolCall is the story architect's tool-call payload:
-// translate_anchor (shared semantics with oneshotArchitectToolCall) plus
-// submit_story, which carries the free-text story document instead of a
-// strongly-typed draft.
-type storyArchitectToolCall struct {
-	Action        ToolCallType `json:"action"`
-	Concept       string       `json:"concept"`        // translate_anchor
-	Reason        string       `json:"reason"`         // translate_anchor
-	StoryDocument string       `json:"story_document"` // submit_story
-	MythosAnchor  string       `json:"mythos_anchor"`  // submit_story
-	RewardConcept string       `json:"reward_concept"` // submit_story
-}
-
 // ---------------------------------------------------------------------------
 // Architect loop
 // ---------------------------------------------------------------------------
 
 // runOneshotArchitectLoop 驱动 architect 工具循环：translate_anchor（可多次）+ submit（独占一轮）。
 // 目前仅由 repairOneshotDraft 复用，用于在已编译草案上做 translate_anchor 校验 + 结构修复。
-func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (OneshotResult, []llm.ChatMessage, error) {
-	if room.architect.provider == nil {
-		return OneshotResult{}, msgs, fmt.Errorf("architect provider unavailable")
-	}
-	sessionID := scripterSessionID(ctx, room)
+func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (OneshotResult, error) {
 	stageName = firstNonEmpty(stageName, "oneshot_architect")
-	const maxRounds = 30
-	for round := 1; round <= maxRounds; round++ {
-		if ctx.Err() != nil {
-			return OneshotResult{}, msgs, ctx.Err()
-		}
-		logStagePrompt(fmt.Sprintf("%s_round_%d", stageName, round), sessionID, msgs)
-		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		raw, err := room.architect.provider.Chat(ctx, room.sessionID+":"+string(models.AgentRoleArchitect), msgs)
-		if err != nil {
-			return OneshotResult{}, msgs, err
-		}
-		recordScripterLLMExchange(ctx, room, fmt.Sprintf("%s_round_%d", stageName, round), callMessages, raw)
-		log.Printf("[scripter:oneshot_loop] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 
-		calls, parseErr := parseOneshotArchitectToolCalls(ctx, raw)
-		if parseErr != nil {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
-			continue
-		}
-		if len(calls) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
-			continue
-		}
+	tools := []scripterTool{
+		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次"),
+		{
+			solo: true,
+			def: llm.ToolDefinition{
+				Name:        toolNameSubmit,
+				Description: "提交完整剧本；只有在translate_anchor确认元素后才调用；必须单独一轮调用",
+				Parameters: jsonSchemaObject(`{
+					"type": "object",
+					"properties": {
+						"draft": {"type": "object", "description": "完整oneshotResult JSON对象，字段结构见draft_schema"}
+					},
+					"required": ["draft"]
+				}`),
+			},
+		},
+	}
 
-		// submit must be alone in its round.
-		if oneshotSoloActionMixed(calls) {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 1. 你输出的JSON不合法; 2. submit必须单独一轮输出，不能与translate_anchor混在同一个JSON数组中。若还需翻译，本轮只输出translate_anchor；提交剧本时只输出一个submit。"})
-			continue
-		}
-
-		invalid := false
-		var submitDraft *OneshotResult
-		var toolResults []string
-		for _, call := range calls {
-			switch call.Action {
-			case toolOneshotTranslateAnchor:
-				toolResults = append(toolResults, executeOneshotTranslateAnchor(ctx, room, call))
-			case toolOneshotSubmit:
-				if call.Draft == nil {
-					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: submit的draft字段不能为空。"})
-					invalid = true
-				} else {
-					submitDraft = call.Draft
-				}
-			default:
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
-					"SYSTEM REJECT: 此阶段只允许translate_anchor/submit，不允许%s。", call.Action)})
-				invalid = true
+	var submitted *OneshotResult
+	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
+		switch call.Name {
+		case toolNameTranslateAnchor:
+			var args translateAnchorArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
-		}
-		if invalid {
-			continue
-		}
-		if len(toolResults) > 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
-		}
-		if submitDraft != nil {
-			return *submitDraft, msgs, nil
-		}
-		if len(toolResults) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须调用translate_anchor获取规则书裁定，或提交submit提交剧本。"})
+			return toolOutcome{result: executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)}
+		case toolNameSubmit:
+			var args struct {
+				Draft *OneshotResult `json:"draft"`
+			}
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: submit参数不是合法JSON，请重新调用。"}
+			}
+			if args.Draft == nil {
+				return toolOutcome{reject: "SYSTEM REJECT: submit的draft字段不能为空。"}
+			}
+			submitted = args.Draft
+			return toolOutcome{result: "已收到，剧本已提交。", done: true}
+		default:
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/submit，不允许%s。", call.Name)}
 		}
 	}
-	return OneshotResult{}, msgs, fmt.Errorf("oneshot architect 未在%d轮内提交结果", maxRounds)
-}
 
-// oneshotSoloActionMixed 判断 submit 这类"必须独占一轮"的动作是否与其他动作混排。
-func oneshotSoloActionMixed(calls []oneshotArchitectToolCall) bool {
-	solo := 0
-	for _, c := range calls {
-		if c.Action == toolOneshotSubmit {
-			solo++
-		}
+	const maxRounds = 30
+	if err := runScripterToolLoop(ctx, room, room.architect, stageName, msgs, tools, maxRounds, dispatch); err != nil {
+		return OneshotResult{}, err
 	}
-	return solo > 0 && len(calls) != 1
-}
-
-func parseOneshotArchitectToolCalls(ctx context.Context, raw string) ([]oneshotArchitectToolCall, error) {
-	stripped := raw
-	var calls []oneshotArchitectToolCall
-	err := json.Unmarshal([]byte(stripped), &calls)
-	if err == nil {
-		return calls, nil
-	}
-	fixed, repairErr := RepairJSON(ctx, stripped, err, oneshotArchitectToolCallExample)
-	if repairErr != nil {
-		return nil, repairErr
-	}
-	fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
-	if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
-		return nil, err2
-	}
-	return calls, nil
+	return *submitted, nil
 }
 
 // ---------------------------------------------------------------------------
 // translate_anchor execution — calls translator sub-agent
 // ---------------------------------------------------------------------------
 
-func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, call oneshotArchitectToolCall) string {
+// executeOneshotTranslateAnchor 由 oneshot architect repair 和 story architect
+// 两个循环共用；concept/reason 直接来自各自 translate_anchor 工具调用的解码参数。
+func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, concept, reason string) string {
 	sessionID := scripterSessionID(ctx, room)
-	concept := strings.TrimSpace(call.Concept)
+	concept = strings.TrimSpace(concept)
 	if concept == "" {
 		return `<translate_anchor_result error="concept字段为空，无法翻译"/>`
 	}
-	reason := strings.TrimSpace(call.Reason)
+	reason = strings.TrimSpace(reason)
 	log.Printf("[scripter:oneshot_translate_anchor] session=%s concept=%q reason=%q", sessionID, truncateRunes(concept, 200), truncateRunes(reason, 200))
 	result, err := runOneshotTranslatorAgent(ctx, room, concept, reason)
 	if err != nil {
@@ -604,21 +506,7 @@ func isTranslateAnchorFound(result string) bool {
 // ---------------------------------------------------------------------------
 
 const oneshotTranslatorSystemPrompt = `<role>COC7规则书概念翻译专家</role>
-<task>收到一个创意概念，将它翻译为COC7规则书中最匹配、可在剧本中使用的具体元素（实体/典籍/法术/诅咒物品/机制）。通过 ask_lawyer 向规则书专家提问，依据裁定综合，最后用 respond 返回翻译结论。</task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
-<tools>
-- ask_lawyer：向COC7规则书专家提出一个具体规则书问题；可多次调用
-  {"action":"ask_lawyer","question":"具体规则书问题"}
-- respond：返回最终翻译结论并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮输出
-  {"action":"respond","result":"结构化翻译结论"}
-</tools>
-<batch_rules>
-- 每轮只能是以下两种批次之一：
-  A. 查询批次：可包含一个或多个 ask_lawyer；不得包含 respond。
-  B. 最终批次：只能包含一个 respond；不得包含 ask_lawyer 或任何其他action。
-- 绝对禁止把 respond 和 ask_lawyer 放在同一个JSON数组中。
-</batch_rules>
+<task>收到一个创意概念，将它翻译为COC7规则书中最匹配、可在剧本中使用的具体元素（实体/典籍/法术/诅咒物品/机制）。通过 ask_lawyer 工具向规则书专家提问，依据裁定综合，最后用 respond 工具返回翻译结论。</task>
 <result_requirements>
 respond.result 必须包含：
 1. status：found / no_result / uncertain
@@ -643,23 +531,22 @@ respond.result 必须包含：
 - 但推理链条的每一步都必须在规则书中有明确依据，不能凭常识或记忆自创。
 </rules>`
 
-// oneshotTranslatorToolCallExample shows both tool variants so the repair LLM
-// sees the full shape of ask_lawyer (with question) AND respond (with result).
-var oneshotTranslatorToolCallExample = marshalExample([]oneshotTranslatorToolCall{
-	{
-		Action:   toolTranslatorAskLawyer,
-		Question: "COC7规则书中哪个神话生物或机制最接近死者被古老力量束缚继续行动？请给出正式名称、出处和核心机制。",
-	},
-	{
-		Action: toolTranslatorRespond,
-		Result: `{"status":"found","selected_anchor":"食尸鬼（Ghoul）","rulebook_basis":"COC7规则书已收录，死者变形后保留人类记忆继续行动","usable_interpretation":"食尸鬼作为死者变形后的存在，可承载死者被古老力量束缚继续行动的概念","must_avoid":"不得自创规则书未记载的属性或能力数值","fallback":"无","blacklist_check":"selected_anchor不在最近使用元素禁用列表中"}`,
-	},
-})
-
-type oneshotTranslatorToolCall struct {
-	Action   ToolCallType `json:"action"`
-	Question string       `json:"question,omitempty"`
-	Result   string       `json:"result,omitempty"`
+// oneshotTranslatorRespondTool 是 translator 的 respond 工具定义（solo，终止本轮循环）。
+func oneshotTranslatorRespondTool() scripterTool {
+	return scripterTool{
+		solo: true,
+		def: llm.ToolDefinition{
+			Name:        toolNameRespond,
+			Description: "返回最终翻译结论并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮调用",
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"result": {"type": "string", "description": "结构化翻译结论文本，需包含status/selected_anchor/rulebook_basis/usable_interpretation/must_avoid/fallback/blacklist_check"}
+				},
+				"required": ["result"]
+			}`),
+		},
+	}
 }
 
 func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept string, reason string) (string, error) {
@@ -667,7 +554,6 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 	if room.translator.provider == nil {
 		return "", fmt.Errorf("translator provider unavailable")
 	}
-	sessionID := scripterSessionID(ctx, room)
 	requestJSON, _ := json.Marshal(struct {
 		Concept string `json:"concept"`
 		Reason  string `json:"reason"`
@@ -683,113 +569,57 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 			string(requestJSON), formatMythosBlacklist(room.mythosBlacklist))},
 	}
 
-	const maxRounds = 16
+	tools := []scripterTool{
+		askLawyerTool("向COC7规则书专家提出一个具体规则书问题；可多次调用"),
+		oneshotTranslatorRespondTool(),
+	}
+
 	askedLawyer := false
-	for round := 1; round <= maxRounds; round++ {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		logStagePrompt(fmt.Sprintf("oneshot_translator_round_%d", round), sessionID, msgs)
-		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		// NOTE: Chat 走 translator provider，session key 包含 AgentRoleTranslator，与 lawyer 完全隔离。
-		raw, err := room.translator.provider.Chat(ctx, room.sessionID+":"+string(models.AgentRoleTranslator), msgs)
-		if err != nil {
-			return "", err
-		}
-		recordScripterLLMExchange(ctx, room, fmt.Sprintf("oneshot_translator_round_%d", round), callMessages, raw)
-		log.Printf("[scripter:oneshot_translator] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-
-		calls, parseErr := parseOneshotTranslatorToolCalls(ctx, raw)
-		if parseErr != nil {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
-			continue
-		}
-		if len(calls) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
-			continue
-		}
-		if oneshotTranslatorRespondMixed(calls) {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond必须单独一轮输出，不能和ask_lawyer或任何其他action混在同一个JSON数组中。"})
-			continue
-		}
-
-		invalid := false
-		var response string
-		var toolResults []string
-		for _, call := range calls {
-			switch call.Action {
-			case toolTranslatorAskLawyer:
-				askedLawyer = true
-				// NOTE: ask_lawyer 仍然走 room.lawyer，与 translator Chat 路由严格隔离。
-				toolResults = append(toolResults, oneshotTranslatorAskLawyer(ctx, room, call))
-			case toolTranslatorRespond:
-				if !askedLawyer {
-					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond前必须至少调用一次ask_lawyer。"})
-					invalid = true
-				} else if strings.TrimSpace(call.Result) == "" {
-					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond的result字段不能为空。"})
-					invalid = true
-				} else {
-					response = call.Result
-				}
-			default:
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
-					"SYSTEM REJECT: translator只允许ask_lawyer/respond，不允许%s。", call.Action)})
-				invalid = true
+	var response string
+	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
+		switch call.Name {
+		case toolNameAskLawyer:
+			var args askLawyerArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: ask_lawyer参数不是合法JSON，请重新调用。"}
 			}
-		}
-		if invalid {
-			continue
-		}
-		if len(toolResults) > 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
-			continue
-		}
-		if response != "" {
-			if anchor := oneshotFindForbiddenAnchor(response, room.mythosBlacklist); anchor != "" {
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
-					"SYSTEM REJECT: selected_anchor命中了最近使用元素禁用列表：%s。必须继续ask_lawyer寻找替代候选，或返回uncertain/no_result并给出非禁用fallback。", anchor)})
-				continue
+			askedLawyer = true
+			// NOTE: ask_lawyer 仍然走 room.lawyer，与 translator Chat 路由严格隔离。
+			return toolOutcome{result: oneshotTranslatorAskLawyer(ctx, room, args.Question)}
+		case toolNameRespond:
+			if !askedLawyer {
+				return toolOutcome{reject: "SYSTEM REJECT: respond前必须至少调用一次ask_lawyer。"}
 			}
-			return response, nil
+			var args struct {
+				Result string `json:"result"`
+			}
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: respond参数不是合法JSON，请重新调用。"}
+			}
+			if strings.TrimSpace(args.Result) == "" {
+				return toolOutcome{reject: "SYSTEM REJECT: respond的result字段不能为空。"}
+			}
+			if anchor := oneshotFindForbiddenAnchor(args.Result, room.mythosBlacklist); anchor != "" {
+				return toolOutcome{reject: fmt.Sprintf(
+					"SYSTEM REJECT: selected_anchor命中了最近使用元素禁用列表：%s。必须继续ask_lawyer寻找替代候选，或返回uncertain/no_result并给出非禁用fallback。", anchor)}
+			}
+			response = args.Result
+			return toolOutcome{result: "已收到，翻译结论已提交。", done: true}
+		default:
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: translator只允许ask_lawyer/respond，不允许%s。", call.Name)}
 		}
-		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须调用ask_lawyer获取规则书裁定，或在已有裁定基础上调用respond返回结论。"})
 	}
-	return "", fmt.Errorf("translator未在%d轮内返回respond", maxRounds)
+
+	const maxRounds = 16
+	if err := runScripterToolLoop(ctx, room, room.translator, "oneshot_translator", msgs, tools, maxRounds, dispatch); err != nil {
+		return "", err
+	}
+	return response, nil
 }
 
-func oneshotTranslatorRespondMixed(calls []oneshotTranslatorToolCall) bool {
-	n := 0
-	for _, c := range calls {
-		if c.Action == toolTranslatorRespond {
-			n++
-		}
-	}
-	return n > 0 && len(calls) != 1
-}
-
-func parseOneshotTranslatorToolCalls(ctx context.Context, raw string) ([]oneshotTranslatorToolCall, error) {
-	stripped := raw
-	var calls []oneshotTranslatorToolCall
-	err := json.Unmarshal([]byte(stripped), &calls)
-	if err == nil {
-		return calls, nil
-	}
-	fixed, repairErr := RepairJSON(ctx, stripped, err, oneshotTranslatorToolCallExample)
-	if repairErr != nil {
-		return nil, repairErr
-	}
-	fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
-	if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
-		return nil, err2
-	}
-	return calls, nil
-}
-
-func oneshotTranslatorAskLawyer(ctx context.Context, room *scripterRoom, call oneshotTranslatorToolCall) string {
+func oneshotTranslatorAskLawyer(ctx context.Context, room *scripterRoom, question string) string {
 	sessionID := scripterSessionID(ctx, room)
-	question := strings.TrimSpace(call.Question)
+	question = strings.TrimSpace(question)
 	if question == "" {
 		return `<ask_lawyer_result error="question字段为空，无法查询规则书"/>`
 	}
@@ -916,7 +746,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 	}
 	logStagePrompt("oneshot_repair", sessionID, msgs)
 
-	result, _, err := runOneshotArchitectLoop(ctx, room, msgs, "oneshot_repair_architect")
+	result, err := runOneshotArchitectLoop(ctx, room, msgs, "oneshot_repair_architect")
 	if err != nil {
 		return ScenarioDraft{}, fmt.Errorf("oneshot repair failed: %w", err)
 	}
@@ -936,12 +766,51 @@ type qaReviewResult struct {
 	Issues []string `json:"issues"`
 }
 
-var qaReviewSchemaExample = marshalExample(qaReviewResult{
-	Issues: []string{
-		"intro使用了①②③编号列表，应改为自然叙述",
-		"NPC 陈默 缺少标志性小细节，可补一个习惯动作",
-	},
-})
+// reportIssuesTool 是 qa_humanize / logic_review 共用的 report_issues 工具定义（solo，独占一轮）。
+func reportIssuesTool(description string) scripterTool {
+	return scripterTool{
+		solo: true,
+		def: llm.ToolDefinition{
+			Name:        toolNameReportIssues,
+			Description: description,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"issues": {
+						"type": "array",
+						"items": {"type": "string"},
+						"description": "问题清单，每条指明具体字段/段落及可执行的修改方向；按严重程度排序，最多8条；没有问题则给空数组"
+					}
+				},
+				"required": ["issues"]
+			}`),
+		},
+	}
+}
+
+// runReportIssuesTool 跑一次单工具（report_issues）循环并返回issues；room固定传nil，
+// 保持与迁移前chatAndParseJSON对qa_humanize/logic_review恒传nil room一致（不发SSE exchange，
+// 只落到ctx携带的生成日志）。
+func runReportIssuesTool(ctx context.Context, handle agentHandle, stage string, msgs []llm.ChatMessage, description string) ([]string, error) {
+	tools := []scripterTool{reportIssuesTool(description)}
+	var issues []string
+	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
+		if call.Name != toolNameReportIssues {
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许report_issues，不允许%s。", call.Name)}
+		}
+		var args qaReviewResult
+		if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+			return toolOutcome{reject: "SYSTEM REJECT: report_issues参数不是合法JSON，请重新调用。"}
+		}
+		issues = args.Issues
+		return toolOutcome{result: "已收到问题清单。", done: true}
+	}
+	const maxRounds = 4
+	if err := runScripterToolLoop(ctx, nil, handle, stage, msgs, tools, maxRounds, dispatch); err != nil {
+		return nil, err
+	}
+	return issues, nil
+}
 
 // ---------------------------------------------------------------------------
 // Logic review — 用闲置的 QA agent 审查因果逻辑与神话一致性，问题清单喂给修复循环。
@@ -961,8 +830,7 @@ func logicReviewSystemPrompt() string {
 6. 洛氏恐怖强度：剧本是否体现了认知冲击、尺度错位、不可逆代价中的至少两项？而非仅靠血腥或惊吓桥段？
 7. 结局条件因果：每个ending的trigger是否与故事文本描述的对应结局条件一致，且从不同终止状态逻辑推出？
 8. Intro目的性：intro是否清楚交代了调查员到场的基本理由/表层任务，让玩家知道自己为何在此，且不列出、不推荐任何具体行动或下一步（行动留给玩家自行探索）？
-</checklist>
-<output>只输出JSON对象：{"issues":["问题1","问题2"]}；每条问题指明具体字段和可操作的修改方向；按严重程度排序，最多8条；没有问题输出{"issues":[]}。</output>`
+</checklist>`
 }
 
 // buildLogicReviewPayload 送审因果逻辑相关字段：比人写化审查多送system_prompt/mythos/win-lose，
@@ -1002,20 +870,20 @@ func runLogicReview(ctx context.Context, room *scripterRoom, draft *ScenarioDraf
 	}
 	userMsg := fmt.Sprintf(`<story_document>%s</story_document>
 <draft_for_review>%s</draft_for_review>
-请按checklist审查以上剧本的因果逻辑、推理可达性与对故事文本的忠实度，输出问题清单JSON。`,
+请按checklist审查以上剧本的因果逻辑、推理可达性与对故事文本的忠实度，通过report_issues工具提交问题清单。`,
 		storyDoc, string(payloadJSON))
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.qa.systemPrompt(logicReviewSystemPrompt())},
 		{Role: "user", Content: userMsg},
 	}
-	logStagePrompt("logic_review", sessionID, msgs)
-	var result qaReviewResult
-	if err := chatAndParseJSON(ctx, room.qa, msgs, &result, qaReviewSchemaExample, "logic_review"); err != nil {
+	result, err := runReportIssuesTool(ctx, room.qa, "logic_review", msgs,
+		"提交本次审查发现的问题清单；没有问题时提交空数组")
+	if err != nil {
 		log.Printf("[scripter:logic_review] session=%s review failed: %v (skipping)", sessionID, err)
 		return nil
 	}
-	issues := make([]string, 0, len(result.Issues))
-	for _, issue := range result.Issues {
+	issues := make([]string, 0, len(result))
+	for _, issue := range result {
 		if issue = strings.TrimSpace(issue); issue != "" {
 			issues = append(issues, "[逻辑] "+issue)
 		}

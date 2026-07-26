@@ -17,22 +17,7 @@ import (
 )
 
 const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
-<task>收到本剧本的通关奖励概念（Stage2 Architect提供的叙事描述）和已确认的mythos_anchor。通过ask_lawyer向规则书专家查询确认机械数据（tome的阅读SAN代价和学习收益，或artifact的激活条件和代价），然后通过respond返回一个完整的ScenarioReward。通关奖励在调查员达成非失败结局后自动给予，无需技能检定。</task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
-<tools>
-- ask_lawyer：向COC7规则书专家提出一个具体规则书问题；确认候选物品是否在规则书中存在、出处、阅读SAN代价、学习收益或激活条件；可多次调用
-  {"action":"ask_lawyer","question":"具体规则书问题"}
-- respond：返回完整通关奖励并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮输出。奖励必须有规则书的证据支持。奖励可以是一个神话物品（artifact）或者一个神话典籍（tome），以及来自其他法师的笔记(tome),其中记载的法术必须直接来自规则书,不能自定义或基于规则书数据改编。
-  {"action":"respond","reward":{"name":"COC7正式名称或场景专属名称","type":"tome|artifact","description":"外观特征及与mythos_anchor和剧本主题的叙事关联","mechanics_note":"tome: 阅读代价≥1d4 SAN（来自规则书裁定）+ 具体学习收益（克苏鲁神话技能+N 或 可学法术名称）；artifact: 激活条件 + 代价/副作用"}}
-</tools>
-<batch_rules>
-- 每轮只能是以下两种批次之一：
-  A. 查询批次：可包含一个或多个 ask_lawyer；不得包含 respond。
-  B. 最终批次：只能包含一个 respond；不得包含 ask_lawyer 或任何其他action。
-- 绝对禁止把 respond 和 ask_lawyer 放在同一个JSON数组中。错误示例：[ask_lawyer, respond]。
-- 如果还需要向规则书专家提问，本轮只输出查询批次，等待工具结果后下一轮再单独输出 respond。
-</batch_rules>
+<task>收到本剧本的通关奖励概念（Stage2 Architect提供的叙事描述）和已确认的mythos_anchor。通过ask_lawyer工具向规则书专家查询确认机械数据（tome的阅读SAN代价和学习收益，或artifact的激活条件和代价），然后通过respond工具返回一个完整的ScenarioReward。通关奖励在调查员达成非失败结局后自动给予，无需技能检定。</task>
 <design_rules>
 - 第一轮必须至少调用一次ask_lawyer；不得凭常识或记忆直接respond。
 - type=tome：mechanics_note必须包含具体阅读SAN代价（≥1d4，来自规则书裁定，非猜测）和学习收益（克苏鲁神话技能+N 或 可学法术名称）。
@@ -43,31 +28,6 @@ const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
 - 仔细思考，考虑设计一个有趣的奖励，避免过于平庸或过于强力的奖励；如果概念本身很弱，考虑在respond中设计一个更有趣的奖励来替代概念，但必须有规则书裁定作为支持。奖励设计要兼顾叙事和机制，避免纯叙事或纯数值提升。
 </design_rules>`
 
-// rewardAgentToolCallExample shows both tool variants so the repair LLM sees
-// the full shape of ask_lawyer (with question) AND respond (with a complete reward).
-var rewardAgentToolCallExample = marshalExample([]rewardAgentCall{
-	{
-		Action:   toolTranslatorAskLawyer,
-		Question: "COC7规则书中与食尸鬼相关的典籍有哪些？阅读SAN代价和学习收益各是什么？",
-	},
-	{
-		Action: toolTranslatorRespond,
-		Reward: &rewardAgentReward{
-			Name:          "食尸鬼的私语残页",
-			Type:          "tome",
-			Description:   "一束被泥土与字迹浸透的残页，与墓地深处的食尸鬼群落相关；气味与剧本中图书馆失窃书的泥土气息呼应。",
-			MechanicsNote: "阅读SAN代价1d4（来自规则书裁定）；学习收益：克苏鲁神话技能+1，可学法术「接触食尸鬼」。",
-		},
-	},
-})
-
-// rewardAgentCall is a tool call in the reward agent's dispatch loop.
-type rewardAgentCall struct {
-	Action   ToolCallType       `json:"action"`
-	Question string             `json:"question,omitempty"` // ask_lawyer
-	Reward   *rewardAgentReward `json:"reward,omitempty"`   // respond
-}
-
 // rewardAgentReward is the structured reward returned by respond.
 // No find_condition — completion rewards are given when a non-failure ending is reached.
 type rewardAgentReward struct {
@@ -75,6 +35,35 @@ type rewardAgentReward struct {
 	Type          string `json:"type"`
 	Description   string `json:"description"`
 	MechanicsNote string `json:"mechanics_note"`
+}
+
+// rewardAgentRespondTool 是 reward_agent 的 respond 工具定义（solo，终止本轮循环）。
+func rewardAgentRespondTool() scripterTool {
+	return scripterTool{
+		solo: true,
+		def: llm.ToolDefinition{
+			Name: toolNameRespond,
+			Description: "返回完整通关奖励并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮调用。" +
+				"奖励必须有规则书的证据支持。奖励可以是一个神话物品（artifact）或者一个神话典籍（tome），" +
+				"以及来自其他法师的笔记(tome)，其中记载的法术必须直接来自规则书，不能自定义或基于规则书数据改编。",
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"reward": {
+						"type": "object",
+						"properties": {
+							"name": {"type": "string", "description": "COC7正式名称或场景专属名称"},
+							"type": {"type": "string", "enum": ["tome", "artifact"]},
+							"description": {"type": "string", "description": "外观特征及与mythos_anchor和剧本主题的叙事关联"},
+							"mechanics_note": {"type": "string", "description": "tome: 阅读代价≥1d4 SAN（来自规则书裁定）+ 具体学习收益（克苏鲁神话技能+N 或 可学法术名称）；artifact: 激活条件 + 代价/副作用"}
+						},
+						"required": ["name", "type", "description", "mechanics_note"]
+					}
+				},
+				"required": ["reward"]
+			}`),
+		},
+	}
 }
 
 // runRewardAgent runs the reward agent in an isolated context.
@@ -85,7 +74,6 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 	if concept == "" {
 		return nil, nil
 	}
-	sessionID := scripterSessionID(ctx, room)
 	provider := room.architect
 	if provider.provider == nil {
 		provider = room.lawyer
@@ -105,110 +93,55 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 		{Role: "user", Content: fmt.Sprintf(`<reward_request>%s</reward_request>`, string(requestJSON))},
 	}
 
-	const maxRounds = 16
+	tools := []scripterTool{
+		askLawyerTool("向COC7规则书专家提出一个具体规则书问题；确认候选物品是否在规则书中存在、出处、阅读SAN代价、学习收益或激活条件；可多次调用"),
+		rewardAgentRespondTool(),
+	}
+
 	askedLawyer := false
-	for round := 1; round <= maxRounds; round++ {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		logStagePrompt(fmt.Sprintf("reward_agent_round_%d", round), sessionID, msgs)
-		callMessages := append([]llm.ChatMessage(nil), msgs...)
-		raw, err := provider.provider.Chat(ctx, provider.cacheKey(sessionIDFromContextValue(ctx)), msgs)
-		if err != nil {
-			return nil, err
-		}
-		recordScripterLLMExchange(ctx, room, fmt.Sprintf("reward_agent_round_%d", round), callMessages, raw)
-		log.Printf("[scripter:reward_agent] session=%s round=%d raw_len=%d raw=%s", sessionID, round, len(raw), truncateRunes(raw, scripterRawLogLimit))
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-
-		calls, parseErr := parseRewardAgentToolCalls(ctx, raw)
-		if parseErr != nil {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: JSON解析失败，必须重新输出合法JSON数组。"})
-			continue
-		}
-		if len(calls) == 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
-			continue
-		}
-
-		if rewardRespondMixed(calls) {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond必须单独一轮输出，不能和ask_lawyer或任何其他action混在同一个JSON数组中。若还需查询，本轮只输出ask_lawyer；若已有足够信息，下一轮只输出一个respond。"})
-			continue
-		}
-
-		invalid := false
-		var result *rewardAgentReward
-		var toolResults []string
-		for _, call := range calls {
-			switch call.Action {
-			case toolTranslatorAskLawyer: // "ask_lawyer"
-				askedLawyer = true
-				toolResults = append(toolResults, rewardAgentAskLawyer(ctx, room, call.Question))
-			case toolTranslatorRespond: // "respond"
-				if !askedLawyer {
-					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond前必须至少调用一次ask_lawyer。"})
-					invalid = true
-				} else if call.Reward == nil {
-					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond的reward字段不能为空。"})
-					invalid = true
-				} else if strings.TrimSpace(call.Reward.Name) == "" || strings.TrimSpace(call.Reward.MechanicsNote) == "" {
-					msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: respond.reward的name和mechanics_note不能为空。"})
-					invalid = true
-				} else {
-					result = call.Reward
-				}
-			default:
-				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fmt.Sprintf(
-					"SYSTEM REJECT: reward_agent只允许ask_lawyer/respond，不允许%s。", call.Action)})
-				invalid = true
+	var result *rewardAgentReward
+	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
+		switch call.Name {
+		case toolNameAskLawyer:
+			var args askLawyerArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: ask_lawyer参数不是合法JSON，请重新调用。"}
 			}
+			askedLawyer = true
+			return toolOutcome{result: rewardAgentAskLawyer(ctx, room, args.Question)}
+		case toolNameRespond:
+			if !askedLawyer {
+				return toolOutcome{reject: "SYSTEM REJECT: respond前必须至少调用一次ask_lawyer。"}
+			}
+			var args struct {
+				Reward *rewardAgentReward `json:"reward"`
+			}
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: respond参数不是合法JSON，请重新调用。"}
+			}
+			if args.Reward == nil {
+				return toolOutcome{reject: "SYSTEM REJECT: respond的reward字段不能为空。"}
+			}
+			if strings.TrimSpace(args.Reward.Name) == "" || strings.TrimSpace(args.Reward.MechanicsNote) == "" {
+				return toolOutcome{reject: "SYSTEM REJECT: respond.reward的name和mechanics_note不能为空。"}
+			}
+			result = args.Reward
+			return toolOutcome{result: "已收到，奖励已提交。", done: true}
+		default:
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: reward_agent只允许ask_lawyer/respond，不允许%s。", call.Name)}
 		}
-		if invalid {
-			continue
-		}
-		if len(toolResults) > 0 {
-			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: strings.Join(toolResults, "\n")})
-			continue
-		}
-		if result != nil {
-			return &models.ScenarioReward{
-				Name:          result.Name,
-				Type:          result.Type,
-				Description:   result.Description,
-				MechanicsNote: result.MechanicsNote,
-			}, nil
-		}
-		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须调用ask_lawyer获取规则书裁定，或在已有裁定基础上调用respond返回通关奖励。"})
 	}
-	return nil, fmt.Errorf("reward agent未在%d轮内返回respond", maxRounds)
-}
 
-func rewardRespondMixed(calls []rewardAgentCall) bool {
-	respondCount := 0
-	for _, call := range calls {
-		if call.Action == toolTranslatorRespond {
-			respondCount++
-		}
+	const maxRounds = 16
+	if err := runScripterToolLoop(ctx, room, provider, "reward_agent", msgs, tools, maxRounds, dispatch); err != nil {
+		return nil, err
 	}
-	return respondCount > 0 && len(calls) != 1
-}
-
-func parseRewardAgentToolCalls(ctx context.Context, raw string) ([]rewardAgentCall, error) {
-	stripped := strings.TrimSpace(llm.StripCodeFence(llm.JsonArryProtect(raw)))
-	var calls []rewardAgentCall
-	err := json.Unmarshal([]byte(stripped), &calls)
-	if err == nil {
-		return calls, nil
-	}
-	fixed, repairErr := RepairJSON(ctx, stripped, err, rewardAgentToolCallExample)
-	if repairErr != nil {
-		return nil, repairErr
-	}
-	fixed = strings.TrimSpace(llm.JsonArryProtect(fixed))
-	if err2 := json.Unmarshal([]byte(fixed), &calls); err2 != nil {
-		return nil, err2
-	}
-	return calls, nil
+	return &models.ScenarioReward{
+		Name:          result.Name,
+		Type:          result.Type,
+		Description:   result.Description,
+		MechanicsNote: result.MechanicsNote,
+	}, nil
 }
 
 func rewardAgentAskLawyer(ctx context.Context, room *scripterRoom, question string) string {

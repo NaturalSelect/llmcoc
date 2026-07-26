@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/llm"
 )
 
 // TestSettingHasDate 验证 settingHasDate 能正确识别嵌入的具体年月日。
@@ -142,27 +143,30 @@ func TestValidateStoryDocument(t *testing.T) {
 	}
 }
 
-// TestStorySoloActionMixed 验证 submit_story 必须独占一轮的判断逻辑。
-func TestStorySoloActionMixed(t *testing.T) {
+// TestSoloMixed 验证共享驱动器 soloMixed 对"独占一轮"工具（如 submit_story）与其他
+// 工具调用混排的判断逻辑（原 storySoloActionMixed 已被 runScripterToolLoop 内的
+// soloMixed 取代，测试改为直接覆盖该共享函数）。
+func TestSoloMixed(t *testing.T) {
+	soloNames := map[string]bool{toolNameSubmitStory: true}
 	cases := []struct {
 		name  string
-		calls []storyArchitectToolCall
+		calls []llm.ToolCall
 		want  bool
 	}{
-		{"仅submit_story一条", []storyArchitectToolCall{{Action: toolStorySubmit}}, false},
-		{"submit_story与translate_anchor混排", []storyArchitectToolCall{
-			{Action: toolStorySubmit}, {Action: toolOneshotTranslateAnchor},
+		{"仅submit_story一条", []llm.ToolCall{{Name: toolNameSubmitStory}}, false},
+		{"submit_story与translate_anchor混排", []llm.ToolCall{
+			{Name: toolNameSubmitStory}, {Name: toolNameTranslateAnchor},
 		}, true},
-		{"多条translate_anchor无submit", []storyArchitectToolCall{
-			{Action: toolOneshotTranslateAnchor}, {Action: toolOneshotTranslateAnchor},
+		{"多条translate_anchor无submit", []llm.ToolCall{
+			{Name: toolNameTranslateAnchor}, {Name: toolNameTranslateAnchor},
 		}, false},
 		{"空数组", nil, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := storySoloActionMixed(c.calls)
+			got := soloMixed(c.calls, soloNames)
 			if got != c.want {
-				t.Errorf("storySoloActionMixed(%v) = %v, want %v", c.calls, got, c.want)
+				t.Errorf("soloMixed(%v) = %v, want %v", c.calls, got, c.want)
 			}
 		})
 	}

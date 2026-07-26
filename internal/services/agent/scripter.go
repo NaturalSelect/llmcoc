@@ -1366,49 +1366,6 @@ func lengthSpec(targetLength string) string {
 // JSON repair helpers
 // ---------------------------------------------------------------------------
 
-func chatAndParseJSON[T any](ctx context.Context, generator agentHandle, msgs []llm.ChatMessage, out *T, schemaExample string, tag string) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if generator.provider == nil {
-		return fmt.Errorf("%s generator provider unavailable", tag)
-	}
-	sessionID := sessionIDFromContextValue(ctx)
-	log.Printf("[scripter:%s] session=%s chat start messages=%d", tag, sessionID, len(msgs))
-	callMessages := append([]llm.ChatMessage(nil), msgs...)
-	raw, err := generator.provider.Chat(ctx, generator.cacheKey(sessionIDFromContextValue(ctx)), msgs)
-	if err != nil {
-		log.Printf("[scripter:%s] session=%s chat error=%v", tag, sessionID, err)
-		return err
-	}
-	recordScripterLLMExchange(ctx, nil, tag, callMessages, raw)
-	log.Printf("[scripter:%s] session=%s raw len=%d body=%s", tag, sessionID, len(raw), truncateRunes(raw, scripterRawLogLimit))
-	parseErr := parseJSONObject(raw, out)
-	if parseErr == nil {
-		log.Printf("[scripter:%s] session=%s parse ok without repair", tag, sessionID)
-		logParsedJSON(tag, sessionID, out)
-		return nil
-	}
-	log.Printf("[scripter:%s] session=%s JSON parse failed: %v raw=%s", tag, sessionID, parseErr, truncateRunes(raw, scripterRawLogLimit))
-	fixed, repairErr := RepairJSON(ctx, raw, parseErr, schemaExample)
-	if repairErr != nil {
-		return fmt.Errorf("%s JSON 修复失败: %w (原始错误: %v)", tag, repairErr, parseErr)
-	}
-	if err := parseJSONObject(fixed, out); err == nil {
-		return nil
-	} else {
-		log.Printf("[%s] session=%s parser output schema mismatch, retry parser: %v", tag, sessionID, err)
-		repairedAgain, repairErr2 := RepairJSON(ctx, fixed, err, schemaExample)
-		if repairErr2 != nil {
-			return fmt.Errorf("修复后的 %s JSON 结构仍不匹配,二次修复失败: %w", tag, repairErr2)
-		}
-		if err2 := parseJSONObject(repairedAgain, out); err2 != nil {
-			return fmt.Errorf("二次修复后的 %s JSON 仍无法解析: %w", tag, err2)
-		}
-	}
-	return nil
-}
-
 // RepairJSON is exported for use by other subsystems.
 func RepairJSON(ctx context.Context, rawJSON string, parseErr error, schemaExample string) (string, error) {
 	findFirst := strings.Index(rawJSON, "```")
@@ -1525,127 +1482,6 @@ func marshalExample(v any) string {
 		panic(fmt.Sprintf("marshalExample: %v", err))
 	}
 	return string(data)
-}
-
-func parseJSONObject[T any](raw string, out *T) error {
-	stripped := llm.StripCodeFence(strings.TrimSpace(raw))
-	if err := json.Unmarshal([]byte(stripped), out); err == nil {
-		return nil
-	}
-	s := strings.Index(stripped, "{")
-	e := strings.LastIndex(stripped, "}")
-	if s >= 0 && e > s {
-		if err := json.Unmarshal([]byte(stripped[s:e+1]), out); err == nil {
-			return nil
-		}
-	}
-	return fmt.Errorf("JSON 解析失败: %s", truncateRunes(stripped, 200))
-}
-
-// ---------------------------------------------------------------------------
-// Legacy tool-call types kept for other package code (orchestrator etc.)
-// ---------------------------------------------------------------------------
-
-type scripterToolCall struct {
-	Action     string         `json:"action"`
-	Question   string         `json:"question,omitempty"`
-	Constant   string         `json:"constant,omitempty"`
-	Reason     string         `json:"reason,omitempty"`
-	Background *FogBackground `json:"background,omitempty"`
-	Draft      *ScenarioDraft `json:"draft,omitempty"`
-}
-
-type FogBackground struct {
-	TimeAndPlace       string   `json:"time_and_place"`
-	InvestigatorHook   string   `json:"investigator_hook"`
-	DailyBeauty        string   `json:"daily_beauty"`
-	UnsettlingDetail   string   `json:"unsettling_detail"`
-	PublicProblem      string   `json:"public_problem"`
-	BriefPreserved     string   `json:"brief_preserved"`
-	AntiTropeExecution []string `json:"anti_trope_execution"`
-}
-
-func validateScripterResponsePayload(call scripterToolCall, expected string) error {
-	if strings.TrimSpace(call.Reason) == "" {
-		return fmt.Errorf("response必须包含非空reason")
-	}
-	payloads := 0
-	if call.Background != nil {
-		payloads++
-	}
-	if call.Draft != nil {
-		payloads++
-	}
-	if payloads != 1 {
-		return fmt.Errorf("response必须且只能包含一个payload, got=%d", payloads)
-	}
-	switch expected {
-	case "background":
-		if call.Background == nil {
-			return fmt.Errorf("expected background")
-		}
-	case "draft":
-		if call.Draft == nil {
-			return fmt.Errorf("expected draft")
-		}
-	default:
-		return fmt.Errorf("unknown expected payload %q", expected)
-	}
-	return nil
-}
-
-func parseScripterToolCalls(ctx context.Context, raw string, schemaExample string) ([]scripterToolCall, error) {
-	stripped := raw
-	var calls []scripterToolCall
-	if err := json.Unmarshal([]byte(stripped), &calls); err == nil {
-		return calls, nil
-	} else {
-		parseErr := err
-		if s := strings.Index(stripped, "["); s >= 0 {
-			if e := strings.LastIndex(stripped, "]"); e > s {
-				candidate := stripped[s : e+1]
-				if err := json.Unmarshal([]byte(candidate), &calls); err == nil {
-					return calls, nil
-				} else {
-					parseErr = err
-				}
-			}
-		}
-		fixed, repairErr := RepairJSON(ctx, stripped, parseErr, schemaExample)
-		if repairErr != nil {
-			return nil, repairErr
-		}
-		if err := json.Unmarshal([]byte(strings.TrimSpace(fixed)), &calls); err != nil {
-			return nil, fmt.Errorf("修复后仍不是scripter tool-call数组: %w", err)
-		}
-		return calls, nil
-	}
-}
-
-func scripterSchemaExample(expected string) string {
-	switch expected {
-	case "background":
-		return marshalExample([]scripterToolCall{{
-			Action: "response",
-			Reason: "这个公开背景保留了用户brief并给出调查入口。",
-			Background: &FogBackground{
-				TimeAndPlace:     "时代与地点",
-				InvestigatorHook: "调查入口",
-			},
-		}})
-	case "draft":
-		draft := oneshotResultExample.toScenarioDraft()
-		return marshalExample([]scripterToolCall{{
-			Action: "response",
-			Reason: "最终草案兼容ScenarioContent并保持剧本语义。",
-			Draft:  &draft,
-		}})
-	default:
-		return marshalExample([]scripterToolCall{{
-			Action: "response",
-			Reason: "解释为什么这样响应。",
-		}})
-	}
 }
 
 // grepRulebook searches the rulebook for exact keyword matches.
@@ -1873,15 +1709,6 @@ func logStagePrompt(tag string, sessionID string, msgs []llm.ChatMessage) {
 	for i, msg := range msgs {
 		log.Printf("[scripter:%s] session=%s prompt[%d] role=%s len=%d body=%s", tag, sessionID, i, msg.Role, len(msg.Content), truncateRunes(msg.Content, scripterPromptLogLimit))
 	}
-}
-
-func logParsedJSON(tag string, sessionID string, value any) {
-	bs, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		log.Printf("[scripter:%s] session=%s parsed JSON marshal failed: %v", tag, sessionID, err)
-		return
-	}
-	log.Printf("[scripter:%s] session=%s parsed JSON len=%d body=%s", tag, sessionID, len(bs), truncateRunes(string(bs), scripterRawLogLimit))
 }
 
 // ---------------------------------------------------------------------------

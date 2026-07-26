@@ -43,13 +43,23 @@ func initTranslatorTestDB(t *testing.T) {
 	})
 }
 
-// NOTE: sequentialFakeProvider 按序返回预设响应，并记录每次 Chat 调用的 cacheKey。
+// NOTE: sequentialFakeProvider 同时支持旧 Chat 协议（如 lawyer，仍用文本JSON）和
+// 原生工具调用 ChatWithTools（如 translator/reward_agent/architect/qa）两条路径，
+// 各自独立按序返回预设响应，并记录调用的 cacheKey，用于路由隔离验证。
 // 满足 llm.Provider 接口，禁止真实网络。
 type sequentialFakeProvider struct {
-	mu        sync.Mutex
+	mu sync.Mutex
+
+	// Chat 路径的预设响应序列（如 lawyer）。
 	responses []string
 	callIdx   int
-	// NOTE: recordedKeys 记录每次 Chat 的 cacheKey，用于路由隔离验证。
+
+	// ChatWithTools 路径的预设响应序列（原生工具调用）。
+	toolResponses []llm.ToolChatResult
+	toolCallIdx   int
+
+	// NOTE: recordedKeys 记录 Chat 和 ChatWithTools 两条路径合并后的 cacheKey 调用顺序，
+	// 用于路由隔离验证。
 	recordedKeys []string
 	// NOTE: callerName 标识此 fake 代表哪个角色，仅用于错误提示。
 	callerName string
@@ -60,8 +70,8 @@ func (p *sequentialFakeProvider) Chat(_ context.Context, cacheKey string, _ []ll
 	defer p.mu.Unlock()
 	p.recordedKeys = append(p.recordedKeys, cacheKey)
 	if p.callIdx >= len(p.responses) {
-		// NOTE: 返回 respond 防止死循环；测试 验证 callIdx 是否在预期轮数内
-		return `[{"action":"respond","result":"{\"status\":\"found\",\"selected_anchor\":\"fallback\",\"rulebook_basis\":\"test\",\"usable_interpretation\":\"test\",\"must_avoid\":\"none\",\"fallback\":\"none\",\"blacklist_check\":\"ok\"}"}]`, nil
+		// NOTE: 返回 response 防止死循环；测试验证 callIdx 是否在预期轮数内
+		return `[{"action":"response","ruling":"fallback"}]`, nil
 	}
 	resp := p.responses[p.callIdx]
 	p.callIdx++
@@ -76,8 +86,27 @@ func (p *sequentialFakeProvider) JsonChat(_ context.Context, _ string, _ []llm.C
 	return "{}", nil
 }
 
+func (p *sequentialFakeProvider) ChatWithTools(_ context.Context, cacheKey string, _ []llm.ChatMessage, _ []llm.ToolDefinition) (llm.ToolChatResult, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.recordedKeys = append(p.recordedKeys, cacheKey)
+	if p.toolCallIdx >= len(p.toolResponses) {
+		// NOTE: 序列耗尽时返回空工具调用，触发驱动器"连续空轮"快速失败，避免死循环拖满maxRounds。
+		return llm.ToolChatResult{}, nil
+	}
+	resp := p.toolResponses[p.toolCallIdx]
+	p.toolCallIdx++
+	return resp, nil
+}
+
 // NOTE: 编译期确认 sequentialFakeProvider 满足 llm.Provider 接口。
 var _ llm.Provider = (*sequentialFakeProvider)(nil)
+
+// fakeToolCall 是测试里快速构造 llm.ToolCall 的辅助函数；argsJSON 是原生工具调用的
+// JSON 参数字符串。
+func fakeToolCall(id, name, argsJSON string) llm.ToolCall {
+	return llm.ToolCall{ID: id, Name: name, Arguments: argsJSON}
+}
 
 // NOTE: makeTranslatorRoom 构造一个只带 translator 和 lawyer 的 scripterRoom，
 // 供 runOneshotTranslatorAgent 测试使用；architect/qa 字段留零值。
@@ -107,9 +136,9 @@ func TestTranslatorProviderIsolation(t *testing.T) {
 	translatorProv := &sequentialFakeProvider{
 		callerName: "translator",
 		// NOTE: Round 1 → translator 先 ask_lawyer；Round 2 → translator respond
-		responses: []string{
-			`[{"action":"ask_lawyer","question":"食尸鬼在COC7规则书中是否已收录？"}]`,
-			`[{"action":"respond","result":"{\"status\":\"found\",\"selected_anchor\":\"食尸鬼（Ghoul）\",\"rulebook_basis\":\"COC7规则书已收录\",\"usable_interpretation\":\"死者变形后保留记忆继续行动\",\"must_avoid\":\"不得自创属性\",\"fallback\":\"无\",\"blacklist_check\":\"未命中\"}"}]`,
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameAskLawyer, `{"question":"食尸鬼在COC7规则书中是否已收录？"}`)}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameRespond, `{"result":"{\"status\":\"found\",\"selected_anchor\":\"食尸鬼（Ghoul）\",\"rulebook_basis\":\"COC7规则书已收录\",\"usable_interpretation\":\"死者变形后保留记忆继续行动\",\"must_avoid\":\"不得自创属性\",\"fallback\":\"无\",\"blacklist_check\":\"未命中\"}"}`)}},
 		},
 	}
 
@@ -195,11 +224,7 @@ func TestTranslatorAskLawyerUsesLawyerProvider(t *testing.T) {
 	}
 	room := makeTranslatorRoom(translatorProv, lawyerProv, "test-session-translator-3")
 
-	call := oneshotTranslatorToolCall{
-		Action:   toolTranslatorAskLawyer,
-		Question: "食尸鬼是否在COC7规则书中有正式数值？",
-	}
-	result := oneshotTranslatorAskLawyer(context.Background(), room, call)
+	result := oneshotTranslatorAskLawyer(context.Background(), room, "食尸鬼是否在COC7规则书中有正式数值？")
 
 	// NOTE: 结果应包含 ask_lawyer_result 标签
 	if !strings.Contains(result, "ask_lawyer_result") {

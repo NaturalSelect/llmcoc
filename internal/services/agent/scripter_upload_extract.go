@@ -27,13 +27,9 @@ func extractAnchorSystemPrompt() string {
 
 完成识别后调用 submit_story 提交：story_document 字段必须逐字复制原文档全文（一个字都不能改），mythos_anchor 为 translate_anchor 确认的规则书元素全称，reward_concept 按上述规则填写。
 </task>
-<response_format>json_array</response_format>
-<output>每轮只输出合法JSON数组，不要Markdown、标题、解释或代码围栏。</output>
 <tools>
 - translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
-  {"action":"translate_anchor","concept":"概念描述（从文档中识别到的神话元素）","reason":"该元素在文档中承担什么角色"}
-- submit_story：提交识别结果；只有在translate_anchor确认元素后才调用；必须单独一轮输出
-  {"action":"submit_story","story_document":"逐字复制的原文档全文，不得有任何改动","mythos_anchor":"translate_anchor确认的COC7元素全称","reward_concept":"文档中写明的通关奖励概念（若文档未提及则留空字符串）"}
+- submit_story：提交识别结果；只有在translate_anchor确认元素后才调用；必须单独一轮调用。story_document字段必须逐字复制原文档全文，不得有任何改动。
 </tools>`
 }
 
@@ -45,7 +41,7 @@ func extractAnchorFromDocument(ctx context.Context, room *scripterRoom, document
 		{Role: "system", Content: room.architect.systemPrompt(extractAnchorSystemPrompt())},
 		{Role: "user", Content: fmt.Sprintf("<story_document>\n%s\n</story_document>\n\n请阅读以上故事文档，识别核心神话元素并通过translate_anchor校验，同时按规则提炼通关奖励概念，然后提交submit_story。", document)},
 	}
-	result, _, err := runStoryArchitectLoop(ctx, room, msgs, "anchor_extract")
+	result, err := runStoryArchitectLoop(ctx, room, msgs, "anchor_extract")
 	if err != nil {
 		return StoryOutput{}, fmt.Errorf("自动锚点提取失败：%w", err)
 	}

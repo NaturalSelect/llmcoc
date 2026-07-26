@@ -3,6 +3,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,31 @@ import (
 type ChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// ToolCalls 在 Role=="assistant" 时携带模型请求的原生工具调用（function calling）。
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	// ToolCallID 在 Role=="tool" 时标识该消息是对哪一次工具调用的响应结果。
+	ToolCallID string `json:"tool_call_id,omitempty"`
+}
+
+// ToolDefinition 描述一个可被模型原生调用的函数工具（function calling schema）。
+type ToolDefinition struct {
+	Name        string
+	Description string
+	Parameters  json.RawMessage // JSON Schema；nil 表示无参数
+}
+
+// ToolCall 是模型在一次响应中请求的一次原生工具调用。
+type ToolCall struct {
+	ID        string
+	Name      string
+	Arguments string // 原始 JSON 文本，由调用方按工具自身的参数结构反序列化
+}
+
+// ToolChatResult 是一次原生工具调用对话的返回。Content 为模型的文本部分（可能为空）；
+// ToolCalls 为模型请求调用的工具列表（可能为空，表示模型选择直接文本回复而非调用工具）。
+type ToolChatResult struct {
+	Content   string
+	ToolCalls []ToolCall
 }
 
 // Provider defines the interface for interacting with various LLM backends.
@@ -22,6 +48,9 @@ type Provider interface {
 	Chat(ctx context.Context, cacheKey string, messages []ChatMessage) (string, error)
 	ChatStream(ctx context.Context, cacheKey string, messages []ChatMessage) (<-chan string, <-chan error, error)
 	JsonChat(ctx context.Context, cacheKey string, messages []ChatMessage) (string, error)
+	// ChatWithTools 发起一次支持原生 tool calling 的对话；tools 非空时作为 function calling
+	// 候选传给模型，模型可选择直接回复文本，或请求调用其中若干工具（通过 ToolChatResult.ToolCalls 返回）。
+	ChatWithTools(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition) (ToolChatResult, error)
 }
 
 type ImageGenerator interface {

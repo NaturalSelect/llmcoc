@@ -334,6 +334,10 @@ func (p *fakeImageProvider) JsonChat(ctx context.Context, cacheKey string, messa
 	return "{}", nil
 }
 
+func (p *fakeImageProvider) ChatWithTools(ctx context.Context, cacheKey string, messages []llm.ChatMessage, tools []llm.ToolDefinition) (llm.ToolChatResult, error) {
+	return llm.ToolChatResult{}, nil
+}
+
 func (p *fakeImageProvider) GenerateImage(ctx context.Context, prompt string, size string) (string, string, error) {
 	p.called = true
 	p.prompt = prompt

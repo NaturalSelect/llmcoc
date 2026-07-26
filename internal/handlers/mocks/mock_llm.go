@@ -72,6 +72,21 @@ func (mr *MockProviderMockRecorder) ChatStream(ctx, cacheKey, messages any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChatStream", reflect.TypeOf((*MockProvider)(nil).ChatStream), ctx, cacheKey, messages)
 }
 
+// ChatWithTools mocks base method.
+func (m *MockProvider) ChatWithTools(ctx context.Context, cacheKey string, messages []llm.ChatMessage, tools []llm.ToolDefinition) (llm.ToolChatResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ChatWithTools", ctx, cacheKey, messages, tools)
+	ret0, _ := ret[0].(llm.ToolChatResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ChatWithTools indicates an expected call of ChatWithTools.
+func (mr *MockProviderMockRecorder) ChatWithTools(ctx, cacheKey, messages, tools any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChatWithTools", reflect.TypeOf((*MockProvider)(nil).ChatWithTools), ctx, cacheKey, messages, tools)
+}
+
 // JsonChat mocks base method.
 func (m *MockProvider) JsonChat(ctx context.Context, cacheKey string, messages []llm.ChatMessage) (string, error) {
 	m.ctrl.T.Helper()

@@ -64,11 +64,49 @@ func (l *scripterGenerationLog) appendExchange(stage string, messages []llm.Chat
 	l.sb.WriteString("\n发送给 LLM 的消息:\n")
 	for i, msg := range messages {
 		role := firstNonEmpty(msg.Role, "unknown")
-		l.sb.WriteString(fmt.Sprintf("\n--- message %d / role=%s ---\n", i+1, role))
+		header := fmt.Sprintf("\n--- message %d / role=%s", i+1, role)
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			header += fmt.Sprintf(" / tool_call_id=%s", msg.ToolCallID)
+		}
+		header += " ---\n"
+		l.sb.WriteString(header)
 		l.writeTextBlock(msg.Content)
+		if len(msg.ToolCalls) > 0 {
+			l.sb.WriteString("工具调用:\n")
+			l.sb.WriteString(renderToolCallsLines(msg.ToolCalls))
+		}
 	}
 	l.sb.WriteString("\n--- assistant response ---\n")
 	l.writeTextBlock(response)
+}
+
+// renderToolCallsLines 把一组原生工具调用渲染成 "name(argumentsJSON)" 形式，一行一个，
+// 供生成日志（appendExchange）与 SSE exchange 摘要共用。
+func renderToolCallsLines(calls []llm.ToolCall) string {
+	var sb strings.Builder
+	for _, c := range calls {
+		args := strings.TrimSpace(c.Arguments)
+		if args == "" {
+			args = "{}"
+		}
+		sb.WriteString(fmt.Sprintf("  - %s(%s)\n", firstNonEmpty(c.Name, "?"), args))
+	}
+	return sb.String()
+}
+
+// renderToolChatResultForLog 把一次 ChatWithTools 返回渲染成可读文本，作为
+// recordScripterLLMExchange 的 response 参数（生成日志正文与 SSE exchange 摘要共用同一份文本）。
+func renderToolChatResultForLog(result llm.ToolChatResult) string {
+	var sb strings.Builder
+	if content := strings.TrimSpace(result.Content); content != "" {
+		sb.WriteString(content)
+		sb.WriteString("\n")
+	}
+	if len(result.ToolCalls) > 0 {
+		sb.WriteString("工具调用:\n")
+		sb.WriteString(renderToolCallsLines(result.ToolCalls))
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 func (l *scripterGenerationLog) writeTextBlock(text string) {

@@ -7,10 +7,12 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/llm"
 )
 
 // TestRunCompileStoryWithProgress_MissingDocument 验证故事文档为空时直接返回错误，
@@ -29,27 +31,31 @@ func TestExtractAnchorFromDocument_Success(t *testing.T) {
 	initTranslatorTestDB(t)
 	document := compileTestStory().Document
 
+	translateArgs, _ := json.Marshal(map[string]string{
+		"concept": "死者被古老力量束缚继续行动",
+		"reason":  "识别文档核心神话元素",
+	})
+	submitStoryArgs, _ := json.Marshal(map[string]string{
+		"story_document": document,
+		"mythos_anchor":  "食尸鬼（Ghoul）",
+		"reward_concept": "与食尸鬼有关的古籍手稿",
+	})
 	architectFake := &sequentialFakeProvider{
 		callerName: "architect",
-		responses: []string{
-			marshalExample([]storyArchitectToolCall{{
-				Action:  toolOneshotTranslateAnchor,
-				Concept: "死者被古老力量束缚继续行动",
-				Reason:  "识别文档核心神话元素",
-			}}),
-			marshalExample([]storyArchitectToolCall{{
-				Action:        toolStorySubmit,
-				StoryDocument: document,
-				MythosAnchor:  "食尸鬼（Ghoul）",
-				RewardConcept: "与食尸鬼有关的古籍手稿",
-			}}),
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameTranslateAnchor, string(translateArgs))}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameSubmitStory, string(submitStoryArgs))}},
 		},
 	}
+	askArgs, _ := json.Marshal(map[string]string{"question": "食尸鬼在COC7规则书中是否已收录？"})
+	respondArgs, _ := json.Marshal(map[string]string{
+		"result": `{"status":"found","selected_anchor":"食尸鬼（Ghoul）","rulebook_basis":"COC7规则书已收录","usable_interpretation":"死者变形后保留记忆继续行动","must_avoid":"不得自创属性","fallback":"无","blacklist_check":"未命中"}`,
+	})
 	translatorFake := &sequentialFakeProvider{
 		callerName: "translator",
-		responses: []string{
-			`[{"action":"ask_lawyer","question":"食尸鬼在COC7规则书中是否已收录？"}]`,
-			`[{"action":"respond","result":"{\"status\":\"found\",\"selected_anchor\":\"食尸鬼（Ghoul）\",\"rulebook_basis\":\"COC7规则书已收录\",\"usable_interpretation\":\"死者变形后保留记忆继续行动\",\"must_avoid\":\"不得自创属性\",\"fallback\":\"无\",\"blacklist_check\":\"未命中\"}"}]`,
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameAskLawyer, string(askArgs))}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameRespond, string(respondArgs))}},
 		},
 	}
 	lawyerFake := &sequentialFakeProvider{
@@ -92,7 +98,7 @@ func TestExtractAnchorFromDocument_Success(t *testing.T) {
 // TestExtractAnchorFromDocument_Failure 验证 architect 始终不提交 submit_story
 // （工具循环轮数耗尽）时，extractAnchorFromDocument 返回错误。
 func TestExtractAnchorFromDocument_Failure(t *testing.T) {
-	architectFake := &sequentialFakeProvider{callerName: "architect"} // 无预设响应，恒回退为非法action，永不submit_story
+	architectFake := &sequentialFakeProvider{callerName: "architect"} // 无预设响应，ChatWithTools恒返回空tool_calls，触发连续空轮快速失败，永不submit_story
 	room := &scripterRoom{
 		sessionID: "test-session-extract-2",
 		architect: agentHandle{
@@ -112,7 +118,9 @@ func TestExtractAnchorFromDocument_Failure(t *testing.T) {
 func TestCompileAndFinalize_Success(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName: "compiler",
-		responses:  []string{oneshotExample},
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, `{"draft":`+oneshotExample+`}`)}},
+		},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-upload-1",
@@ -160,7 +168,9 @@ func TestCompileAndFinalize_Success(t *testing.T) {
 func TestCompileAndFinalize_RewardSkipped(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName: "compiler",
-		responses:  []string{oneshotExample},
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, `{"draft":`+oneshotExample+`}`)}},
+		},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-upload-2",
