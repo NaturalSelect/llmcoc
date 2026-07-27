@@ -10,7 +10,6 @@ import (
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
-	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 // ActionContext 是各工具执行器共享的上下文。
@@ -29,7 +28,6 @@ type ActionContext struct {
 	PendingWrite       *string
 	PendingImages      *[]ImagePromptRequest
 	WroteNarrative     *bool
-	Interrupt          *bool
 	DiceMsg            *string
 }
 
@@ -44,7 +42,6 @@ type Action interface {
 var noSideEffectActions = map[ToolCallType]bool{
 	ToolRollDice:           true,
 	ToolCheckRule:          true,
-	ToolReadRulebookConst:  true,
 	ToolQueryClues:         true,
 	ToolQueryCharacter:     true,
 	ToolQueryNPCCard:       true,
@@ -67,7 +64,6 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolUpdateNPCLocation: true,
 	ToolUpdateArmor:       true,
 	ToolReport:            true,
-	ToolYield:             true,
 	ToolUpdateCharacters:  true,
 	ToolManageInventory:   true,
 	ToolRecordMonster:     true,
@@ -85,7 +81,6 @@ var responseCompatibleActions = map[ToolCallType]bool{
 // 未列出的动作不会产生结果。
 var actionRegistry = map[ToolCallType]Action{
 	ToolCheckRule:          checkRuleAction{},
-	ToolReadRulebookConst:  readRulebookConstAction{},
 	ToolRollDice:           rollDiceAction{},
 	ToolActNPC:             actNPCAction{},
 	ToolCreateNPC:          createNPCAction{},
@@ -96,7 +91,6 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolManageSpell:        manageSpellAction{},
 	ToolManageRelation:     manageRelationAction{},
 	ToolManageAsset:        manageAssetAction{},
-	ToolYield:              yieldAction{},
 	ToolEndGame:            endGameAction{},
 	ToolManageMadness:      manageMadnessAction{},
 	ToolQueryClues:         queryCluesAction{},
@@ -128,14 +122,6 @@ func (checkRuleAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	doneL()
 	debugf("tool", "session=%d check_rule result=%s", actx.Sid, formatLawyerResults(results))
 	return []ToolResult{{Action: ToolCheckRule, Result: formatLawyerResults(results)}}
-}
-
-type readRulebookConstAction struct{}
-
-func (readRulebookConstAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	debugf("tool", "session=%d read_rulebook_const constant=%q", actx.Sid, call.Constant)
-	result := rulebook.ReadConstant(call.Constant)
-	return []ToolResult{{Action: ToolReadRulebookConst, Result: result}}
 }
 
 // ── Dice action ───────────────────────────────────────────────────────────────
@@ -186,7 +172,6 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	action, npcErr := actNPC(actx.Ctx, actx.Handles[models.AgentRoleNPC], *actx.GCtx, call.NPCName, question, *actx.TempNPCs)
 	doneNPC()
-	*actx.Interrupt = true
 	if npcErr != nil {
 		log.Printf("[agent] act_npc %q error: %v", call.NPCName, npcErr)
 		return []ToolResult{{Action: ToolActNPC, Result: fmt.Sprintf("NPC行动生成失败: %v", npcErr)}}
@@ -561,14 +546,6 @@ func normalizeResponseOptionsPayload(call ToolCall) (responseOptionsPayload, boo
 	return responseOptionsPayload{
 		Options: options,
 	}, true
-}
-
-type yieldAction struct{}
-
-func (yieldAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	debugf("tool", "session=%d KP yields control, remaining calls deferred to next round", actx.Sid)
-	*actx.Interrupt = true
-	return nil
 }
 
 // ── Time action ───────────────────────────────────────────────────────────────

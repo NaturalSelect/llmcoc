@@ -51,6 +51,11 @@ type scripterToolDispatch func(ctx context.Context, call llm.ToolCall) toolOutco
 // 正常分发。
 type toolBatchPolicy func(calls []llm.ToolCall) string
 
+// toolBatchDispatch 批量处理一轮全部合法工具调用（已剔除未知工具名），下标与入参
+// calls 一一对应；用于需要保留批内并发（如同轮多个独立查询）的调用方。返回切片
+// 长度必须等于入参长度，否则驱动器会为缺失位置补一条统一拒绝回执。
+type toolBatchDispatch func(ctx context.Context, calls []llm.ToolCall) []toolOutcome
+
 // maxConsecutiveEmptyRounds 是连续多少轮模型未返回任何工具调用后判定端点不支持/
 // 不配合 function calling 并快速失败；避免在不兼容端点上跑满 maxRounds 才报错。
 const maxConsecutiveEmptyRounds = 3
@@ -78,6 +83,17 @@ type toolLoopOptions struct {
 	// afterRound 非 nil 时，在每轮工具分发完成后（跳过空 tool_calls 轮与整批拒绝轮）
 	// 调用一次，供调用方在闭包中记录逐轮统计。
 	afterRound func()
+
+	// batchDispatch 非 nil 时，本轮全部合法工具调用整批交给它处理（保留调用方自定义
+	// 的批内并发），驱动器按原始 tool_call 顺序把结果散回；为 nil 时使用现有的
+	// dispatch 串行分支，逐字不变。
+	batchDispatch toolBatchDispatch
+	// beforeRound 非 nil 时，在每轮 ctx.Err() 检查之后、ChatWithTools 调用之前触发，
+	// round 从 1 开始计数。
+	beforeRound func(round int)
+	// onToolCalls 非 nil 时，在拿到本轮非空 tool_calls（assistant 消息已写入 msgs）、
+	// batchPolicy 判定之前触发，供调用方发出"计划执行哪些工具"一类的进度提示。
+	onToolCalls func(calls []llm.ToolCall)
 }
 
 // runScripterToolLoop 驱动一次原生工具调用的多轮循环。
@@ -166,6 +182,9 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if opts.beforeRound != nil {
+			opts.beforeRound(round)
+		}
 		toolDefs, validNames, soloNames := defToolDefs, defValidNames, defSoloNames
 		if round == 1 && len(opts.firstRoundTools) > 0 {
 			toolDefs, validNames, soloNames = firstToolDefs, firstValidNames, firstSoloNames
@@ -203,6 +222,10 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 		}
 		emptyRounds = 0
 
+		if opts.onToolCalls != nil {
+			opts.onToolCalls(result.ToolCalls)
+		}
+
 		// 独占一轮的工具（或自定义分组策略判定违规的调用）与其他调用混批：
 		// 整批拒绝，每个 tool_call_id 都要有回执。
 		if rejectMsg := policy(result.ToolCalls); rejectMsg != "" {
@@ -213,22 +236,59 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 		}
 
 		done := false
-		for _, call := range result.ToolCalls {
-			if !validNames[call.Name] {
-				msgs = append(msgs, llm.ChatMessage{
-					Role: "tool", ToolCallID: call.ID,
-					Content: fmt.Sprintf("SYSTEM REJECT: 未知工具 %q，此阶段不允许调用。", call.Name),
-				})
-				continue
+		if opts.batchDispatch != nil {
+			// 按索引分流：未知工具名直接产出 reject outcome（文案与串行分支逐字相同），
+			// 合法调用收集为子切片整批交给 batchDispatch，再按原索引把结果散回。
+			outcomes := make([]toolOutcome, len(result.ToolCalls))
+			var validIdx []int
+			var validCalls []llm.ToolCall
+			for i, call := range result.ToolCalls {
+				if !validNames[call.Name] {
+					outcomes[i] = toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 未知工具 %q，此阶段不允许调用。", call.Name)}
+					continue
+				}
+				validIdx = append(validIdx, i)
+				validCalls = append(validCalls, call)
 			}
-			outcome := opts.dispatch(ctx, call)
-			content := outcome.result
-			if outcome.reject != "" {
-				content = outcome.reject
+			if len(validCalls) > 0 {
+				batchOutcomes := opts.batchDispatch(ctx, validCalls)
+				for j, idx := range validIdx {
+					if j < len(batchOutcomes) {
+						outcomes[idx] = batchOutcomes[j]
+					} else {
+						outcomes[idx] = toolOutcome{reject: "SYSTEM REJECT: 工具执行未返回结果，请重试。"}
+					}
+				}
 			}
-			msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: content})
-			if outcome.reject == "" && outcome.done {
-				done = true
+			for i, call := range result.ToolCalls {
+				outcome := outcomes[i]
+				content := outcome.result
+				if outcome.reject != "" {
+					content = outcome.reject
+				}
+				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: content})
+				if outcome.reject == "" && outcome.done {
+					done = true
+				}
+			}
+		} else {
+			for _, call := range result.ToolCalls {
+				if !validNames[call.Name] {
+					msgs = append(msgs, llm.ChatMessage{
+						Role: "tool", ToolCallID: call.ID,
+						Content: fmt.Sprintf("SYSTEM REJECT: 未知工具 %q，此阶段不允许调用。", call.Name),
+					})
+					continue
+				}
+				outcome := opts.dispatch(ctx, call)
+				content := outcome.result
+				if outcome.reject != "" {
+					content = outcome.reject
+				}
+				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: content})
+				if outcome.reject == "" && outcome.done {
+					done = true
+				}
 			}
 		}
 		if opts.afterRound != nil {

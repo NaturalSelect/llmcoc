@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -993,21 +992,6 @@ var Spells = func() []string {
 	return spells
 }()
 
-// AvailableConstantKeys returns names that can be used by agent tool calls.
-func AvailableConstantKeys() []string {
-	return []string{
-		"rulebook_dir",
-		"rulebook_detail_dir",
-		"aliens",
-		"books",
-		"great_old_ones_and_gods",
-		"monsters",
-		"mythos_creatures",
-		"spells",
-		"skills",
-	}
-}
-
 var AllSkills = []string{
 	"会计", "人类学", "估价", "考古学", "魅惑", "攀爬", "计算机使用", "信用评级",
 	"乔装", "驾驶(汽车)", "电气维修", "电子学", "话术", "急救", "历史", "恐吓",
@@ -1016,71 +1000,6 @@ var AllSkills = []string{
 	"说服", "药学", "摄影", "物理学", "精神分析",
 	"心理学", "骑术", "科学(地质学)", "潜行", "游泳",
 	"投掷", "追踪", "驾驶(船)", "侦查", "斗殴", "闪避", "手枪", "步枪/霰弹枪", "冲锋枪",
-}
-
-// ReadConstant returns the requested rulebook constant in plain text.
-func ReadConstant(name string) string {
-	key := normalizeConstKey(name)
-
-	switch key {
-	case "rulebook_dir":
-		return strings.TrimSpace(RulebookDir)
-	case "rulebook_detail_dir":
-		return strings.TrimSpace(RulebookDetailDir)
-	case "aliens":
-		return formatList("aliens", Aliens)
-	case "books":
-		return formatList("books", Books)
-	case "great_old_ones_and_gods":
-		return formatList("great_old_ones_and_gods", GreadOldOnesAndGods)
-	case "monsters":
-		return formatList("monsters", Monsters)
-	case "mythos_creatures":
-		return formatList("mythos_creatures", MythosCreatures)
-	case "spells":
-		return formatList("spells", Spells)
-	case "skills":
-		return formatList("skills", AllSkills)
-	default:
-		return "unknown constant: " + name + "\navailable: " + strings.Join(AvailableConstantKeys(), ", ")
-	}
-}
-
-func normalizeConstKey(name string) string {
-	key := strings.ToLower(strings.TrimSpace(name))
-	repl := strings.NewReplacer("-", "_", " ", "_", ".", "_", "/", "_")
-	key = repl.Replace(key)
-
-	switch key {
-	case "rulebookdir":
-		return "rulebook_dir"
-	case "rulebookdetaildir", "rulebook_detaildir":
-		return "rulebook_detail_dir"
-	case "greadoldonesandgods", "gread_old_ones_and_gods", "greatoldonesandgods":
-		return "great_old_ones_and_gods"
-	case "mythoscreatures":
-		return "mythos_creatures"
-	default:
-		return key
-	}
-}
-
-func formatList(name string, items []string) string {
-	if len(items) == 0 {
-		return name + "\n(total=0)"
-	}
-	var sb strings.Builder
-	sb.WriteString(name)
-	sb.WriteString("\n")
-	sb.WriteString("(total=")
-	sb.WriteString(strconv.Itoa(len(items)))
-	sb.WriteString(")\n")
-	for i := 0; i < len(items); i++ {
-		sb.WriteString("- ")
-		sb.WriteString(items[i])
-		sb.WriteString("\n")
-	}
-	return strings.TrimSpace(sb.String())
 }
 
 // GlobalHash is the SHA-256 hash of the loaded rulebook file.

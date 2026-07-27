@@ -3,7 +3,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"regexp"
@@ -224,284 +223,73 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	diceMsg := ""
 	imageGeneratedThisTurn := false
 
-	// warnning := "YOU DONOT FOLLOW THE RULES, THIS ABUSE IS RECORDED BY MONITOR SYSTEM.\n"
-	for iter := 0; iter < MaxKpRound; iter++ {
-		if ctx.Err() != nil {
-			return RunOutput{}, ctx.Err()
-		}
+	st := directorDispatchState{
+		sid:                 sid,
+		gctx:                &gctx,
+		handles:             handles,
+		tempNPCs:            &tempNPCs,
+		timeAdvancedInTurn:  &timeAdvancedInTurn,
+		switchRole:          &switchRole,
+		kpNarration:         &kpNarration,
+		pendingWrite:        &pendingWrite,
+		pendingImages:       &pendingImages,
+		wroteNarrative:      &wroteNarrative,
+		diceMsg:             &diceMsg,
+		needsWriterFallback: &needsWriterFallback,
+		emitProgress:        emitProgress,
+	}
 
-		debugf("KP", "session=%d iter=%d/%d — calling LLM", sid, iter+1, MaxKpRound)
-		emitProgress(progressKPIteration(iter, MaxKpRound))
+	// round 记录 runToolLoop 最后处理到的轮次(1-indexed)，用于失败时判断是否已经
+	// 取得过任何进展(等价于旧协议 iter==0 时才把错误当作硬失败的规则)。
+	round := 0
+	err = runToolLoop(ctx, toolLoopOptions{
+		handle:        handles[models.AgentRoleDirector],
+		stage:         "director",
+		msgs:          kpMsgs,
+		tools:         directorTools(),
+		maxRounds:     MaxKpRound,
+		batchPolicy:   directorBatchPolicy(&imageGeneratedThisTurn, emitProgress),
+		batchDispatch: directorBatchDispatch(st),
+		beforeRound: func(r int) {
+			round = r
+			debugf("KP", "session=%d round=%d/%d — calling LLM", sid, r, MaxKpRound)
+			emitProgress(progressKPIteration(r-1, MaxKpRound))
+		},
+		onToolCalls: func(calls []llm.ToolCall) {
+			debugf("KP", "session=%d round=%d → %d tool call(s): %s", sid, round, len(calls), formatNativeCallNames(calls))
+			emitProgress(progressPlannedCalls(calls))
+		},
+	})
 
-		doneKP := timedDebug("KP", "session=%d iter=%d Chat", sid, iter+1)
-		// 请求一次JSON
-		calls, rawResp, _, err := runKP(ctx, handles[models.AgentRoleDirector], kpMsgs)
-		doneKP()
-		if err != nil {
-			log.Printf("[agent] KP iter %d error: %v", iter+1, err)
-			if iter == 0 {
-				return RunOutput{}, fmt.Errorf("KP agent failed: %w", err)
-			}
-			break
+	if err != nil {
+		if round <= 1 {
+			return RunOutput{}, fmt.Errorf("KP agent failed: %w", err)
 		}
-
-		debugf("KP", "session=%d iter=%d → %d tool call(s): %s",
-			sid, iter+1, len(calls), formatCallNames(calls))
-		debugf("KP", "session=%d iter=%d raw_resp=%s",
-			sid, iter+1, rawResp)
-		if len(calls) == 0 {
-			debugf("KP", "session=%d iter=%d no calls, skipping rest of loop", sid, iter+1)
-			continue
-		}
-		emitProgress(progressPlannedCalls(calls))
-
-		// LLM 的结果加回去
-		kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "assistant", Content: rawResp})
-
-		var toolResults []ToolResult
-		hasEnd := false
-		interrupt := false
-
-		actx := ActionContext{
-			Ctx:                ctx,
-			GCtx:               &gctx,
-			Sid:                sid,
-			Handles:            handles,
-			TempNPCs:           &tempNPCs,
-			HasEnd:             &hasEnd,
-			TimeAdvancedInTurn: &timeAdvancedInTurn,
-			SwitchRole:         &switchRole,
-			KPNarration:        &kpNarration,
-			Interrupt:          &interrupt,
-			PendingWrite:       &pendingWrite,
-			PendingImages:      &pendingImages,
-			WroteNarrative:     &wroteNarrative,
-			DiceMsg:            &diceMsg,
-		}
-
-		switchInThisBatch := false
-
-		// Guard against the KP including a response/end_game in the same batch as
-		// any tool that returns results the KP needs to see first.
-		// Only responseCompatibleActions may share a batch with response.
-		// If violated, reject the ENTIRE batch and force the KP to retry.
-		hasResponse := false
-		respStr := ""
-		hasNonCompatible := false
-		for _, call := range calls {
-			if call.Action == ToolResponse || call.Action == ToolEndGame {
-				hasResponse = true
-				respStr = call.Reply
-				if respStr == "" {
-					respStr = call.EndSummary
-				}
-			}
-			if !responseCompatibleActions[call.Action] {
-				hasNonCompatible = true
-			}
-		}
-		if hasResponse && hasNonCompatible {
-			debugf("KP", "session=%d iter=%d rejecting entire batch: response mixed with result-producing tools", sid, iter+1)
-			emitProgress("KP正在修正工具调用顺序")
-			kpMsgs = append(kpMsgs, llm.ChatMessage{
-				Role:    "user",
-				Content: "<error>SYSTEM REJECT: your entire batch was rejected. response/end_game may only share a batch with write/generate_image/hint/update_llm_note. Split into two batches: first call the result-producing tools, then after reading the results call response separately.</error>",
-			})
-			continue
-		}
-		if hasResponse && respStr == "" {
-			debugf("KP", "session=%d iter=%d rejecting entire batch: empty response", sid, iter+1)
-			emitProgress("KP正在补全主流程回复")
-			kpMsgs = append(kpMsgs, llm.ChatMessage{
-				Role:    "user",
-				Content: "<error>SYSTEM REJECT: empty response</error>",
-			})
-			continue
-		}
-		generateImageCalls := 0
-		for _, call := range calls {
-			if call.Action == ToolGenerateImage {
-				generateImageCalls++
-			}
-		}
-		if generateImageCalls > 1 || (generateImageCalls > 0 && imageGeneratedThisTurn) {
-			debugf("KP", "session=%d iter=%d rejecting batch: generate_image over limit", sid, iter+1)
-			emitProgress("KP正在减少重复画图调用")
-			kpMsgs = append(kpMsgs, llm.ChatMessage{
-				Role:    "user",
-				Content: "<error>SYSTEM REJECT: generate_image may be called at most once per turn. Keep only the single most necessary visual moment.</error>",
-			})
-			continue
-		}
-
-		if generateImageCalls > 0 {
-			imageGeneratedThisTurn = true
-		}
-
-		// When a batch has multiple check_rule calls, run them concurrently since
-		// each is an independent LLM query with no shared mutable state.
-		// act_npc calls targeting different NPCs also run concurrently (each NPC
-		// has its own independent memory; same-NPC calls remain sequential).
-		// All other tools remain sequential.
-		nCheckRule := 0
-		npcNames := map[string]int{}
-		for _, call := range calls {
-			if call.Action == ToolCheckRule {
-				nCheckRule++
-			}
-			if call.Action == ToolActNPC {
-				npcNames[call.NPCName]++
-			}
-		}
-		useParallel := nCheckRule > 1 || len(npcNames) > 1
-		if useParallel {
-			debugf("KP", "session=%d iter=%d parallel batch: %d check_rule, %d distinct npcs", sid, iter+1, nCheckRule, len(npcNames))
-			emitProgress(progressExecutingCalls(calls))
-			for _, call := range calls {
-				if visibleActionNeedsWriter(call.Action) {
-					needsWriterFallback = true
-					break
-				}
-			}
-			toolResults = executeParallelBatch(calls, actx)
-		} else {
-			for _, call := range calls {
-				if ctx.Err() != nil {
-					return RunOutput{}, ctx.Err()
-				}
-				if interrupt {
+		// 已经取得过至少一轮进展(如已读到工具结果)，与旧协议一致地优雅降级：
+		// 不整体报错，改用目前已经积累的叙事/白字方向继续走完本回合。
+		log.Printf("[agent] KP round %d error: %v", round, err)
+	} else {
+		if !timeAdvancedInTurn {
+			for i := range gctx.Session.Players {
+				card := &gctx.Session.Players[i].CharacterCard
+				if card.MadnessState == "none" || card.MadnessState == "" {
 					continue
 				}
-
-				if switchRole {
-					// 如果发生了切换跳过本批次其他调用,期望KP在下一轮使用 write/response 工具交出控制权。
-					if switchInThisBatch || (call.Action != ToolWrite && call.Action != ToolResponse && call.Action != ToolEndGame && call.Action != ToolHint) {
-						debugf("tool", "session=%d iter=%d switching KP role to Player for next calls", sid, iter+1)
-						toolResults = append(toolResults, ToolResult{
-							Action: call.Action,
-							Result: "Interrupted: KP has switched control to Player, skipping this tool call. Please use write or response in next message to proceed.",
-						})
-						continue
-					}
+				card.MadnessDuration -= 1
+				if card.MadnessDuration <= 0 {
+					card.MadnessState = "none"
+					card.MadnessSymptom = ""
+					card.MadnessDuration = 0
+					debugf("madness", "session=%d char=%s madness ended", sid, card.Name)
 				}
-
-				prevSwitch := switchRole
-				if handler, ok := actionRegistry[call.Action]; ok {
-					emitProgress(progressExecutingCall(call))
-					results := handler.Execute(call, actx)
-					if visibleActionNeedsWriter(call.Action) {
-						needsWriterFallback = true
-					}
-					if len(results) > 0 {
-						toolResults = append(toolResults, results...)
-					}
-				}
-				if !switchInThisBatch && switchRole && !prevSwitch {
-					switchInThisBatch = true
-				}
+				models.DB.Save(card)
+				break
+			}
+			if checkTurnReadyForPlayers(gctx, turnPlayerIDs) {
+				clearTurnActions(gctx)
 			}
 		}
-
-		if hasEnd {
-			if !timeAdvancedInTurn {
-				for i := range gctx.Session.Players {
-					card := &gctx.Session.Players[i].CharacterCard
-					if card.MadnessState == "none" || card.MadnessState == "" {
-						continue
-					}
-					card.MadnessDuration -= 1
-					if card.MadnessDuration <= 0 {
-						card.MadnessState = "none"
-						card.MadnessSymptom = ""
-						card.MadnessDuration = 0
-						debugf("madness", "session=%d char=%s madness ended", sid, card.Name)
-					}
-					models.DB.Save(card)
-					break
-				}
-				if checkTurnReadyForPlayers(gctx, turnPlayerIDs) {
-					// if wroteNarrative {
-					// 	// Real game turn: narrative was written, advance the clock.
-					// 	advanceTurnRound(&gctx)
-					// } else {
-					// 	// Pure OOC consultation (KP-QUERY): no in-game action happened,
-					// 	// so TurnRound stays the same. But we must still clear
-					// 	// SessionTurnAction records so the next submission doesn't
-					// 	// immediately look like "all players already submitted".
-					// 	clearTurnActions(gctx)
-					// }
-					clearTurnActions(gctx)
-				}
-			}
-			writerDirection := strings.TrimSpace(pendingWrite)
-			if writerDirection == "" && needsWriterFallback {
-				writerDirection = fallbackWriterDirection(kpNarration)
-			}
-			debugf("run", "session=%d completed iter=%d writer_direction_len=%d narration_len=%d",
-				sid, iter+1, len([]rune(writerDirection)), len([]rune(kpNarration)))
-			emitProgress("KP主流程裁定完成")
-			// 将骰子结果和当前时间注入到玩家可见的回复中
-			if diceMsg != "" {
-				kpNarration += "\n<dice>" + strings.TrimSuffix(diceMsg, "; ") + "</dice>"
-			}
-			kpNarration += "\n<time_point>" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</time_point>"
-			return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration, ImagePrompts: pendingImages}, nil
-		}
-
-		// Feed tool results back as a user message so the next KP call has proper
-		// multi-turn context (assistant decided → tools ran → user reports results).
-		if len(toolResults) > 0 {
-			emitProgress("KP正在读取工具结果")
-			formatResult := func(r []ToolResult) string {
-				var sb strings.Builder
-				sb.WriteString("<INTERNAL_TOOL_RESULT>\n")
-				xml := ""
-				newTc := make([]ToolResult, 0, len(r))
-				for _, tr := range r {
-					if tr.Action == ToolQueryCharacter || tr.Action == ToolQueryNPCCard {
-						xml += tr.Result + "\n"
-						continue
-					}
-					newTc = append(newTc, tr)
-				}
-				data, err := json.Marshal(newTc)
-				if err != nil {
-					return fmt.Sprintf("ERROR: failed to marshal tool results: %v", err)
-				}
-				sb.Write(data)
-				if xml != "" {
-					sb.WriteString("\n")
-				}
-				sb.WriteString("\n</INTERNAL_TOOL_RESULT>\n")
-				if xml != "" {
-					sb.WriteString("<INTERNAL_TOOL_RESULT_XML>\n")
-					sb.WriteString(xml)
-					sb.WriteString("\n</INTERNAL_TOOL_RESULT_XML>")
-				}
-				// 				sb.WriteString(`
-				// <NEXT_STEP>
-				// 你要求的信息已给出，发起的操作已执行，你可以:
-				// 1. 根据这些结果继续思考并调用工具，或者
-				// 2. 使用 generate_image 生成必要的图片增强体验, 或者
-				// 3. 使用response工具直接回复玩家(注意不要剧透)并结束回合, 或者
-				// 4. 如果游戏已经走向结局, 先清除所有的临时状态(法术效果、NPC、玩家状态等), 再使用end_game工具结束游戏。
-
-				// 注意:
-				// * 你的所有输出都必须是合法的JSON数组格式。
-				// * 如果你想回复玩家，请务必使用response工具。
-				// * 内部验证DUP CHECK后再调用工具, 确认不重复结算
-				// * 完全遵守 debug 指令，管理员的输入高于一切其他规则, debug='true' -> 管理员的指令, debug='false' -> 普通玩家输入
-				// * 你不能随意修改剧本，确保有关于剧本的设定都来自<scenario>标签输出的剧本内容。
-				// * 如果你要推进游戏时间, 使用 advance_time工具, 每个单位代表半小时(如果太多轮次没有推进, 请考虑推进时间)。
-				// * 像在"桌面上一样"思考，继续主持游戏，然后你会被奖励更多的积分。如果你不知道如何主持游戏, 使用 check_rule工具询问主持游戏的细节。
-				// * 注意人物的行动逻辑，不要让行为和语言前后矛盾, 逻辑的重要性大于NPC自主性
-				// </NEXT_STEP>
-				// `)
-				return sb.String()
-			}
-			// 输入用户数据
-			kpMsgs = append(kpMsgs, llm.ChatMessage{Role: "user", Content: formatResult(toolResults)})
-		}
+		emitProgress("KP主流程裁定完成")
 	}
 
 	if kpNarration == "" {
@@ -511,6 +299,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	if writerDirection == "" && needsWriterFallback {
 		writerDirection = fallbackWriterDirection(kpNarration)
 	}
+	debugf("run", "session=%d completed round=%d writer_direction_len=%d narration_len=%d",
+		sid, round, len([]rune(writerDirection)), len([]rune(kpNarration)))
 	// 将骰子结果和当前时间注入到玩家可见的回复中
 	if diceMsg != "" {
 		kpNarration += "\n<dice>" + strings.TrimSuffix(diceMsg, "; ") + "</dice>"
@@ -562,7 +352,7 @@ func progressKPIteration(iter, _ int) string {
 	return "KP正在继续处理工具结果"
 }
 
-func progressPlannedCalls(calls []ToolCall) string {
+func progressPlannedCalls(calls []llm.ToolCall) string {
 	labels := compactProgressLabels(calls)
 	if len(labels) == 0 {
 		return "KP正在整理下一步"
@@ -570,7 +360,7 @@ func progressPlannedCalls(calls []ToolCall) string {
 	return "KP计划：" + strings.Join(labels, "、")
 }
 
-func progressExecutingCalls(calls []ToolCall) string {
+func progressExecutingCalls(calls []llm.ToolCall) string {
 	labels := compactProgressLabels(calls)
 	if len(labels) == 0 {
 		return "系统正在执行工具"
@@ -578,15 +368,15 @@ func progressExecutingCalls(calls []ToolCall) string {
 	return "系统正在并行处理：" + strings.Join(labels, "、")
 }
 
-func progressExecutingCall(call ToolCall) string {
-	return "系统正在" + progressToolLabel(call.Action)
+func progressExecutingCall(call llm.ToolCall) string {
+	return "系统正在" + progressToolLabel(ToolCallType(call.Name))
 }
 
-func compactProgressLabels(calls []ToolCall) []string {
+func compactProgressLabels(calls []llm.ToolCall) []string {
 	seen := map[string]bool{}
 	labels := make([]string, 0, len(calls))
 	for _, call := range calls {
-		label := progressToolLabel(call.Action)
+		label := progressToolLabel(ToolCallType(call.Name))
 		if label == "" || seen[label] {
 			continue
 		}
@@ -601,7 +391,7 @@ func compactProgressLabels(calls []ToolCall) []string {
 
 func progressToolLabel(action ToolCallType) string {
 	switch action {
-	case ToolCheckRule, ToolReadRulebookConst:
+	case ToolCheckRule:
 		return "查询规则"
 	case ToolRollDice:
 		return "掷骰检定"
@@ -631,8 +421,6 @@ func progressToolLabel(action ToolCallType) string {
 		return "结算结局"
 	case ToolUpdateLLMNote, ToolUpdateNPCLLMNote, ToolHint:
 		return "记录局势备注"
-	case ToolYield:
-		return "等待下一步输入"
 	case ToolReport:
 		return "记录异常报告"
 	default:
@@ -640,127 +428,13 @@ func progressToolLabel(action ToolCallType) string {
 	}
 }
 
-// executeParallelBatch runs check_rule calls and act_npc calls targeting distinct
-// NPCs concurrently; act_npc calls for the same NPC run sequentially to preserve
-// that NPC's memory order. All other tools run sequentially in original order.
-// Result order matches the original call order.
-func executeParallelBatch(calls []ToolCall, actx ActionContext) []ToolResult {
-	type slotResult struct {
-		idx     int
-		results []ToolResult
-	}
-	resultSlots := make([][]ToolResult, len(calls))
-	ch := make(chan slotResult, len(calls))
-	var wg sync.WaitGroup
-
-	// Group act_npc indices by NPC name to detect which names have >1 call.
-	npcCallOrder := map[string][]int{} // npc_name → ordered list of call indices
+// formatNativeCallNames 把一轮原生 tool_calls 的工具名拼成日志友好的字符串。
+func formatNativeCallNames(calls []llm.ToolCall) string {
+	names := make([]string, len(calls))
 	for i, call := range calls {
-		if call.Action == ToolActNPC {
-			npcCallOrder[call.NPCName] = append(npcCallOrder[call.NPCName], i)
-		}
+		names[i] = call.Name
 	}
-
-	// Track which indices will be handled asynchronously.
-	asyncIdx := map[int]bool{}
-
-	// Launch one goroutine per distinct NPC name; calls for the same NPC run
-	// sequentially inside that goroutine to preserve memory order.
-	for npcName, indices := range npcCallOrder {
-		_ = npcName
-		wg.Add(1)
-		go func(idxList []int) {
-			defer wg.Done()
-			for _, idx := range idxList {
-				var results []ToolResult
-				if handler, ok := actionRegistry[calls[idx].Action]; ok {
-					results = handler.Execute(calls[idx], actx)
-				}
-				ch <- slotResult{idx: idx, results: results}
-			}
-		}(indices)
-		for _, idx := range indices {
-			asyncIdx[idx] = true
-		}
-	}
-
-	// check_rule calls run concurrently (independent reads).
-	for i, call := range calls {
-		if call.Action == ToolCheckRule {
-			asyncIdx[i] = true
-			wg.Add(1)
-			go func(idx int, c ToolCall) {
-				defer wg.Done()
-				if handler, ok := actionRegistry[c.Action]; ok {
-					ch <- slotResult{idx: idx, results: handler.Execute(c, actx)}
-				}
-			}(i, call)
-		}
-	}
-
-	// Sequential pass for everything else.
-	for i, call := range calls {
-		if asyncIdx[i] {
-			continue
-		}
-		if handler, ok := actionRegistry[call.Action]; ok {
-			resultSlots[i] = handler.Execute(call, actx)
-		}
-	}
-
-	wg.Wait()
-	close(ch)
-	for r := range ch {
-		resultSlots[r.idx] = r.results
-	}
-
-	var out []ToolResult
-	for _, r := range resultSlots {
-		out = append(out, r...)
-	}
-	return out
-}
-
-// executeParallelCheckRule runs all check_rule calls in the batch concurrently
-// while executing every other call sequentially in original order.
-// Result order matches the original call order.
-func executeParallelCheckRule(calls []ToolCall, actx ActionContext) []ToolResult {
-	type slotResult struct {
-		idx     int
-		results []ToolResult
-	}
-	resultSlots := make([][]ToolResult, len(calls))
-	ch := make(chan slotResult, len(calls))
-	var wg sync.WaitGroup
-
-	for i, call := range calls {
-		if call.Action == ToolCheckRule {
-			wg.Add(1)
-			go func(idx int, c ToolCall) {
-				defer wg.Done()
-				if handler, ok := actionRegistry[c.Action]; ok {
-					ch <- slotResult{idx: idx, results: handler.Execute(c, actx)}
-				}
-			}(i, call)
-		} else {
-			// Non-check_rule tools run sequentially.
-			if handler, ok := actionRegistry[call.Action]; ok {
-				resultSlots[i] = handler.Execute(call, actx)
-			}
-		}
-	}
-
-	wg.Wait()
-	close(ch)
-	for r := range ch {
-		resultSlots[r.idx] = r.results
-	}
-
-	var out []ToolResult
-	for _, r := range resultSlots {
-		out = append(out, r...)
-	}
-	return out
+	return strings.Join(names, ",")
 }
 
 // saveWriterHistory persists the Writer's conversation history to the session
@@ -1146,15 +820,6 @@ func advanceTurnRound(gctx *GameContext) {
 func clearTurnActions(gctx GameContext) {
 	models.DB.Where("session_id = ? AND round = ?", gctx.Session.ID, gctx.Session.TurnRound).Delete(&models.SessionTurnAction{})
 	log.Printf("[agent] session %d cleared turn actions (round %d, no time advance)", gctx.Session.ID, gctx.Session.TurnRound)
-}
-
-// formatCallNames returns a comma-joined list of action names for debug logging.
-func formatCallNames(calls []ToolCall) string {
-	names := make([]string, 0, len(calls))
-	for _, c := range calls {
-		names = append(names, string(c.Action))
-	}
-	return strings.Join(names, ", ")
 }
 
 // formatGameTime converts an absolute round number to a human-readable game time string.

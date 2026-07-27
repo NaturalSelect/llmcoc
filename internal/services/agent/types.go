@@ -33,7 +33,6 @@ type ToolCallType string
 
 const (
 	ToolCheckRule          ToolCallType = "check_rule"          // 查阅规则书
-	ToolReadRulebookConst  ToolCallType = "read_rulebook_const" // 读取规则书常量目录/列表
 	ToolRollDice           ToolCallType = "roll_dice"           // 骰子检定
 	ToolCreateNPC          ToolCallType = "create_npc"          // 创建临时NPC
 	ToolDestroyNPC         ToolCallType = "destroy_npc"         // 销毁临时NPC
@@ -61,7 +60,6 @@ const (
 	ToolGenerateImage      ToolCallType = "generate_image"      // NOTE: 生成即时场景图片
 	ToolDescribeCharacters ToolCallType = "describe_characters" // NOTE: 获取调查员可见外貌描写
 	ToolResponse           ToolCallType = "response"            // 结束本轮并给出回复
-	ToolYield              ToolCallType = "yield"               // 本回合中途暂停,等待玩家输入后继续执行剩余工具调用
 	ToolReport             ToolCallType = "report"              // 向管理系统自首
 )
 
@@ -69,7 +67,6 @@ const (
 type ToolCall struct {
 	Action        ToolCallType           `json:"action"`
 	Question      string                 `json:"question"`       // check_rule: 规则问题的语义描述
-	Constant      string                 `json:"constant"`       // read_rulebook_const: 常量名
 	Dice          *DiceCheck             `json:"dice"`           // roll_dice: 骰子检定请求
 	CharCard      *NPCCard               `json:"char_card"`      // create_npc: NPC角色卡
 	NPCName       string                 `json:"npc_name"`       // npc_act: NPC名称
@@ -103,9 +100,9 @@ type ToolCall struct {
 	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(可选)
 	// NOTE: Win 使用指针以区分 false（失败）与缺失/null（未填写）。
 	// Director 必须显式填写 true 或 false；缺失时 endGameAction.Execute 拒绝并返回错误。
-	Win           *bool                  `json:"win"`            // end_game: 是否胜利(必填,true=胜/false=败)
-	Reason        string                 `json:"reason"`         // reasoning: KP本轮推理过程
-	Context       string                 `json:"context"`        // response: 剧本推进到此处的完整上下文
+	Win     *bool  `json:"win"`     // end_game: 是否胜利(必填,true=胜/false=败)
+	Reason  string `json:"reason"`  // reasoning: KP本轮推理过程
+	Context string `json:"context"` // response: 剧本推进到此处的完整上下文
 
 	// ── Combat fields ─────────────────────────────────────────────────────────
 	CombatParticipants []CombatParticipantInput `json:"combat_participants"` // start_combat: 参与者列表
