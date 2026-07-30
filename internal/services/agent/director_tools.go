@@ -413,7 +413,7 @@ func generateImageTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolGenerateImage),
-			Description: `为当前场景生成一张配图。image_prompt 需是完整的画面描述(人物外貌、场景、氛围等)，若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词。
+			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC或怪物首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略。image_prompt 需是完整的画面描述(人物外貌、场景、氛围等)，若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词。
 【批次规则】generate_image可以与write/response同批次；返回结果只表示图片生成已排队，KP不需要也不能读取图片内容。
 调用示例：{"image_prompt":"完整的画面描述,包含人物外貌、场景、氛围等"}`,
 			Parameters: jsonSchemaObject(`{
