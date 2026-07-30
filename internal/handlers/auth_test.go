@@ -81,6 +81,37 @@ func TestRegister_InvalidBody(t *testing.T) {
 	}
 }
 
+func TestRegister_InvalidBody_SpecificMessages(t *testing.T) {
+	initTestDB(t)
+	r := authRouter()
+
+	cases := []struct {
+		name string
+		body map[string]any
+		want string
+	}{
+		{"用户名太短", map[string]any{"username": "ab", "email": "a@test.com", "password": "secret123"}, "用户名至少需要3个字符"},
+		{"邮箱格式不对", map[string]any{"username": "alice", "email": "not-an-email", "password": "secret123"}, "邮箱格式不正确"},
+		{"密码太短", map[string]any{"username": "alice", "email": "a@test.com", "password": "ab"}, "密码至少需要6位"},
+		{"全部为空", map[string]any{"username": "", "email": "", "password": ""}, "请填写完整的注册信息"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, jsonReq("POST", "/auth/register", tc.body))
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+			}
+			var resp map[string]any
+			json.NewDecoder(w.Body).Decode(&resp)
+			if resp["error"] != tc.want {
+				t.Errorf("error = %v, want %v", resp["error"], tc.want)
+			}
+		})
+	}
+}
+
 func TestLogin_Success(t *testing.T) {
 	initTestDB(t)
 
