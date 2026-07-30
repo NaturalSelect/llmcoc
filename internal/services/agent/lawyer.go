@@ -385,7 +385,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 			}
 			query := strings.TrimSpace(args.Keyword)
 			debugf("Lawyer", "search_cache query=%q", query)
-			matches := lawyerCache.Search(query, 3)
+			matches := lawyerCache.Search(query, 10)
 			var sb strings.Builder
 			if len(matches) == 0 {
 				sb.WriteString("[搜索缓存] 未找到相关缓存裁定。\n\n")
