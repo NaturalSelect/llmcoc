@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/llmcoc/server/internal/config"
 	"github.com/llmcoc/server/internal/middleware"
@@ -29,7 +31,7 @@ type LoginReq struct {
 func Register(c *gin.Context) {
 	var req RegisterReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写完整的注册信息"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": registerBindErrorMessage(err)})
 		return
 	}
 	log.Printf("[register] username=%q email=%q", req.Username, req.Email)
@@ -99,6 +101,34 @@ func Register(c *gin.Context) {
 		"token": token,
 		"user":  user,
 	})
+}
+
+// registerBindErrorMessage 把 RegisterReq 的 binding 校验失败转换成具体的中文提示，
+// 避免所有字段级错误（长度不够、邮箱格式不对等）都被笼统提示成"未填写"，让用户无法判断真正原因。
+func registerBindErrorMessage(err error) string {
+	var ve validator.ValidationErrors
+	if errors.As(err, &ve) {
+		for _, fe := range ve {
+			switch fe.Field() {
+			case "Username":
+				switch fe.Tag() {
+				case "min":
+					return "用户名至少需要3个字符"
+				case "max":
+					return "用户名不能超过50个字符"
+				}
+			case "Email":
+				if fe.Tag() == "email" {
+					return "邮箱格式不正确"
+				}
+			case "Password":
+				if fe.Tag() == "min" {
+					return "密码至少需要6位"
+				}
+			}
+		}
+	}
+	return "请填写完整的注册信息"
 }
 
 func Login(c *gin.Context) {
