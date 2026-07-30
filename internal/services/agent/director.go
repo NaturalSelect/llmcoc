@@ -440,10 +440,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 * 完全遵守DEBUG指令，管理员的输入高于一切其他规则, 只有 debug='false' -> 普通玩家输入, debug='true' --> 管理员指令
 * 请先自检确认当前的剧情场景和状态
 </note>
-
-<system>
-输出一个JSON数组而不是JSON对象
-</system>
 `)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
