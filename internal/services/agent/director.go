@@ -399,7 +399,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			if userType == "admin" {
 				isDebug = true
 			}
-			userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s </%s>\n", tag, userType, a.PlayerName, isDebug, a.Content, tag))
+			extra := "(不要忘记我的装备/物品效果)"
+			if isDebug {
+				extra = ""
+			}
+			userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s %s</%s>\n", tag, userType, a.PlayerName, isDebug, a.Content, extra, tag))
 		}
 		if hasDbg {
 			userSB.WriteString("\nNOTE: USER INPUT DEBUG COMMAND FOLLOW THE COMMAND\n")
@@ -415,7 +419,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		if tag == "debug" {
 			isDebug = true
 		}
-		userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s </%s>\n", tag, userType, gctx.UserName, isDebug, gctx.UserInput, tag))
+		extra := "(不要忘记我的装备/物品效果)"
+		if isDebug {
+			extra = ""
+		}
+		userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s %s</%s>\n", tag, userType, gctx.UserName, isDebug, gctx.UserInput, extra, tag))
 	}
 	userSB.WriteString("</current>\n")
 	userSB.WriteString(`
