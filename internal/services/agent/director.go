@@ -399,7 +399,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			if userType == "admin" {
 				isDebug = true
 			}
-			extra := "(不要忘记我的装备/物品效果)"
+			extra := "(不要忘记装备/物品效果)"
 			if isDebug {
 				extra = ""
 			}
@@ -419,7 +419,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		if tag == "debug" {
 			isDebug = true
 		}
-		extra := "(不要忘记我的装备/物品效果)"
+		extra := "(不要忘记装备/物品效果)"
 		if isDebug {
 			extra = ""
 		}
