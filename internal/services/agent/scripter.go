@@ -191,12 +191,14 @@ type scripterRoom struct {
 	compiler        agentHandle
 	sessionID       string
 	req             ScenarioCreationRequest
-	npcBlacklist    []string
 	titleSamples    []string
 	mythosBlacklist []string
 	tagsBlacklist   []string
-	generationLog   *scripterGenerationLog
-	progressFn      ScripterProgressFunc
+	// usedNPCNames 记录本次生成任务中已通过 generate_npc_name 工具发放的姓名（小写归一化后的 key），
+	// 用于避免同一份剧本内 NPC 重名；仅在内存中存在，不落库，不跨生成任务共享。
+	usedNPCNames  map[string]bool
+	generationLog *scripterGenerationLog
+	progressFn    ScripterProgressFunc
 }
 
 // emitProgress 向订阅者（SSE）推送阶段进度；未订阅时为空操作。
@@ -307,12 +309,12 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 }
 
 func (r *scripterRoom) prepareContext() {
-	r.npcBlacklist = loadRecentNPCNameBlacklist(200, r.sessionID)
 	r.titleSamples = loadScenarioTitleSamples(80, r.sessionID)
 	r.mythosBlacklist = loadRecentMythosAnchors(100, r.sessionID)
 	r.tagsBlacklist = loadRecentScenarioTags(60, r.sessionID)
-	log.Printf("[scripter] session=%s context prepared npc_blacklist=%d title_samples=%d mythos_blacklist=%d tags_blacklist=%d",
-		r.sessionID, len(r.npcBlacklist), len(r.titleSamples), len(r.mythosBlacklist), len(r.tagsBlacklist))
+	r.usedNPCNames = make(map[string]bool)
+	log.Printf("[scripter] session=%s context prepared title_samples=%d mythos_blacklist=%d tags_blacklist=%d",
+		r.sessionID, len(r.titleSamples), len(r.mythosBlacklist), len(r.tagsBlacklist))
 }
 
 // ---------------------------------------------------------------------------
@@ -428,7 +430,7 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 	r.emitProgress("compile", "done", fmt.Sprintf("编译完成：《%s》，场景 %d 个、NPC %d 个、线索 %d 条",
 		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues)))
 
-	applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
+	applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
 
 	// Repair loop: up to 2 rounds for structural issues
 	for round := 1; round <= 2; round++ {
@@ -446,7 +448,7 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 			break
 		}
 		draft = repaired
-		applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
+		applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
 		iterations++
 		log.Printf("[scripter] session=%s stage=repair round=%d done name=%q scenes=%d npcs=%d clues=%d",
 			sessionID, round, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
@@ -466,7 +468,7 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 			r.emitProgress("logic_review", "error", "逻辑修复失败（保留当前草稿）")
 		} else {
 			draft = repaired
-			applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
+			applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
 			iterations++
 			log.Printf("[scripter] session=%s stage=logic_review done name=%q scenes=%d npcs=%d clues=%d",
 				sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
@@ -496,8 +498,8 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 	beforeIssues := validateDraftCompatibility(draft)
 	log.Printf("[scripter] session=%s normalization start pre_issues=%d", sessionID, len(beforeIssues))
 	r.emitProgress("normalize", "start", "规范化与收尾…")
-	normalizeOneshotDraft(&draft, r.req, r.architectModelName(), constraints, sessionID)
-	applyGuardrailsWithNPCBlacklist(&draft, r.req, r.architectModelName(), sessionID, r.npcBlacklist)
+	normalizeOneshotDraft(&draft, r.req, r.architectModelName(), constraints, r.usedNPCNames, sessionID)
+	applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
 	log.Printf("[scripter] session=%s normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d endings=%d",
 		sessionID, draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Content.GameStartSlot,
 		len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), len(draft.Content.Endings))
@@ -1171,14 +1173,6 @@ func applyGuardrails(draft *ScenarioDraft, req ScenarioCreationRequest, author s
 	applyGuardrailsBase(draft, req, author, sessionID)
 }
 
-func applyGuardrailsWithNPCBlacklist(draft *ScenarioDraft, req ScenarioCreationRequest, author string, sessionID string, npcBlacklist []string) {
-	if draft == nil {
-		return
-	}
-	applyGuardrailsBase(draft, req, author, sessionID)
-	enforceNPCBlacklist(draft, npcBlacklist, sessionID)
-}
-
 func applyGuardrailsBase(draft *ScenarioDraft, req ScenarioCreationRequest, author string, sessionID string) {
 	author = strings.TrimSpace(author)
 	if author == "" {
@@ -1206,134 +1200,6 @@ func applyGuardrailsBase(draft *ScenarioDraft, req ScenarioCreationRequest, auth
 	if draft.Author != author {
 		draft.Author = author
 	}
-}
-
-func enforceNPCBlacklist(draft *ScenarioDraft, npcBlacklist []string, sessionID string) {
-	if draft == nil || len(npcBlacklist) == 0 {
-		return
-	}
-	blacklist := map[string]bool{}
-	for _, name := range npcBlacklist {
-		key := npcBlacklistKey(name)
-		if key != "" {
-			blacklist[key] = true
-		}
-	}
-	if len(blacklist) == 0 {
-		return
-	}
-	used := map[string]bool{}
-	for i := range draft.Content.NPCs {
-		name := strings.TrimSpace(draft.Content.NPCs[i].Name)
-		if name == "" {
-			continue
-		}
-		key := npcBlacklistKey(name)
-		if !blacklist[key] {
-			used[key] = true
-			continue
-		}
-		newName := uniqueNPCReplacementName(name, i+1, blacklist, used)
-		draft.Content.NPCs[i].Name = newName
-		used[npcBlacklistKey(newName)] = true
-		renameNPCReferences(&draft.Content, name, newName)
-		log.Printf("[scripter:guardrails] session=%s npc name blacklisted from=%q to=%q", sessionID, name, newName)
-	}
-}
-
-// renameNPCReferences 把 NPC 改名后，同步替换草稿其余文本字段中对旧姓名的引用
-// （场景/线索/结局/手卡/时间线/守秘人附录/导入身份/机制/系统提示/奖励等），
-// 避免仅重命名 NPC 实体导致其余文本仍指向已不存在的旧姓名。
-func renameNPCReferences(content *models.ScenarioContent, oldName, newName string) {
-	if oldName == "" || oldName == newName {
-		return
-	}
-	replace := func(s string) string { return strings.ReplaceAll(s, oldName, newName) }
-
-	content.SystemPrompt = replace(content.SystemPrompt)
-	content.Setting = replace(content.Setting)
-	content.Intro = replace(content.Intro)
-	content.MapDescription = replace(content.MapDescription)
-	content.MythosCore = replace(content.MythosCore)
-
-	for i := range content.Scenes {
-		content.Scenes[i].Description = replace(content.Scenes[i].Description)
-	}
-	for i := range content.NPCs {
-		content.NPCs[i].Description = replace(content.NPCs[i].Description)
-		content.NPCs[i].Attitude = replace(content.NPCs[i].Attitude)
-	}
-	for i := range content.Clues {
-		content.Clues[i].Summary = replace(content.Clues[i].Summary)
-		content.Clues[i].Source = replace(content.Clues[i].Source)
-		content.Clues[i].OnSuccess = replace(content.Clues[i].OnSuccess)
-		content.Clues[i].OnFailure = replace(content.Clues[i].OnFailure)
-	}
-	for i := range content.Endings {
-		content.Endings[i].Trigger = replace(content.Endings[i].Trigger)
-		content.Endings[i].Description = replace(content.Endings[i].Description)
-	}
-	for i := range content.Handouts {
-		content.Handouts[i].Title = replace(content.Handouts[i].Title)
-		content.Handouts[i].Content = replace(content.Handouts[i].Content)
-	}
-	for i := range content.Timeline {
-		content.Timeline[i].Event = replace(content.Timeline[i].Event)
-	}
-	if content.KeeperAppendix != nil {
-		ka := content.KeeperAppendix
-		ka.DifficultyDown = replace(ka.DifficultyDown)
-		ka.DifficultyUp = replace(ka.DifficultyUp)
-		ka.SoloAdvice = replace(ka.SoloAdvice)
-		ka.GroupAdvice = replace(ka.GroupAdvice)
-		ka.HorrorTips = replace(ka.HorrorTips)
-		ka.ThemeGuidance = replace(ka.ThemeGuidance)
-	}
-	for i := range content.EntryIdentities {
-		content.EntryIdentities[i].RecommendClues = replace(content.EntryIdentities[i].RecommendClues)
-	}
-	for i := range content.Mechanics {
-		content.Mechanics[i].Description = replace(content.Mechanics[i].Description)
-		for j := range content.Mechanics[i].Stages {
-			content.Mechanics[i].Stages[j].Effect = replace(content.Mechanics[i].Stages[j].Effect)
-			content.Mechanics[i].Stages[j].Trigger = replace(content.Mechanics[i].Stages[j].Trigger)
-		}
-	}
-	if content.Reward != nil {
-		content.Reward.Description = replace(content.Reward.Description)
-	}
-}
-
-func uniqueNPCReplacementName(original string, index int, blacklist map[string]bool, used map[string]bool) string {
-	base := strings.TrimSpace(original)
-	if base == "" {
-		base = fmt.Sprintf("替身NPC%d", index)
-	}
-	candidates := []string{
-		fmt.Sprintf("%s·异名", base),
-		fmt.Sprintf("%s·线人", base),
-		fmt.Sprintf("%s·替身", base),
-		fmt.Sprintf("替身NPC%d", index),
-	}
-	for _, candidate := range candidates {
-		candidate = strings.TrimSpace(candidate)
-		key := npcBlacklistKey(candidate)
-		if candidate != "" && key != "" && !blacklist[key] && !used[key] {
-			return candidate
-		}
-	}
-	for i := 1; i <= 99; i++ {
-		candidate := fmt.Sprintf("替身NPC%d_%d", index, i)
-		key := npcBlacklistKey(candidate)
-		if !blacklist[key] && !used[key] {
-			return candidate
-		}
-	}
-	return fmt.Sprintf("替身NPC%d", index)
-}
-
-func npcBlacklistKey(name string) string {
-	return strings.ToLower(normalizeNPCName(name))
 }
 
 // ---------------------------------------------------------------------------
@@ -1506,40 +1372,6 @@ func grepRulebook(keyword string) string {
 // DB helpers
 // ---------------------------------------------------------------------------
 
-func loadRecentNPCNameBlacklist(limit int, sessionIDs ...string) []string {
-	sessionID := ""
-	if len(sessionIDs) > 0 {
-		sessionID = sessionIDs[0]
-	}
-	if limit <= 0 || models.DB == nil {
-		return nil
-	}
-	var scenarios []models.Scenario
-	if err := models.DB.Order("created_at DESC").Limit(limit * 3).Find(&scenarios).Error; err != nil {
-		log.Printf("[scripter] session=%s load recent npc blacklist failed: %v", sessionID, err)
-		return nil
-	}
-	seen := map[string]bool{}
-	names := make([]string, 0, limit)
-	for i := range scenarios {
-		if err := scenarios[i].DecodeData(); err != nil {
-			continue
-		}
-		for _, npc := range scenarios[i].Content.Data.NPCs {
-			name := normalizeNPCName(npc.Name)
-			if name == "" || seen[name] {
-				continue
-			}
-			seen[name] = true
-			names = append(names, name)
-			if len(names) >= limit {
-				return names
-			}
-		}
-	}
-	return names
-}
-
 func loadScenarioTitleSamples(sampleSize int, sessionIDs ...string) []string {
 	sessionID := ""
 	if len(sessionIDs) > 0 {
@@ -1658,13 +1490,6 @@ func formatMythosBlacklist(anchors []string) string {
 	return "- " + strings.Join(anchors, "\n- ")
 }
 
-func formatNPCNameBlacklist(names []string) string {
-	if len(names) == 0 {
-		return "(无)"
-	}
-	return "- " + strings.Join(names, "\n- ")
-}
-
 func formatScenarioTitleBlacklist(names []string) string {
 	if len(names) == 0 {
 		return "(无)"
@@ -1682,12 +1507,6 @@ func formatScenarioTagsBlacklist(tags []string) string {
 func normalizeScenarioTitle(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.Trim(name, " `\"'，。；;：:（）()【】[]《》")
-	return strings.TrimSpace(name)
-}
-
-func normalizeNPCName(name string) string {
-	name = strings.TrimSpace(name)
-	name = strings.Trim(name, " `\"'，。；;：:（）()【】[]")
 	return strings.TrimSpace(name)
 }
 

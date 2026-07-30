@@ -396,6 +396,7 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 
 	tools := []scripterTool{
 		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次"),
+		generateNPCNameTool(),
 		{
 			solo: true,
 			def: llm.ToolDefinition{
@@ -421,6 +422,8 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
 			return toolOutcome{result: executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)}
+		case toolNameGenerateNPCName:
+			return dispatchGenerateNPCName(ctx, room, call)
 		case toolNameSubmit:
 			var args struct {
 				Draft *OneshotResult `json:"draft"`
@@ -434,7 +437,7 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 			submitted = args.Draft
 			return toolOutcome{result: "已收到，剧本已提交。", done: true}
 		default:
-			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/submit，不允许%s。", call.Name)}
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/generate_npc_name/submit，不允许%s。", call.Name)}
 		}
 	}
 
@@ -901,7 +904,7 @@ func runLogicReview(ctx context.Context, room *scripterRoom, draft *ScenarioDraf
 // Normalization
 // ---------------------------------------------------------------------------
 
-func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, author string, constraints ScripterConstraints, sessionIDs ...string) {
+func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, author string, constraints ScripterConstraints, usedNPCNames map[string]bool, sessionIDs ...string) {
 	if draft == nil {
 		return
 	}
@@ -1033,8 +1036,13 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		}
 	}
 	if len(draft.Content.NPCs) == 0 {
+		name := "关键NPC"
+		if picked, err := pickRandomNPCName("western", "male", usedNPCNames); err == nil {
+			name = picked
+			markNPCNamesUsed(usedNPCNames, picked)
+		}
 		draft.Content.NPCs = []models.NPCData{{
-			Name:        "关键NPC",
+			Name:        name,
 			Description: "公开身份：地方相关人员。真实议程：自保并观察局势。秘密：掌握部分真相但不会主动全盘托出。",
 			Attitude:    "谨慎防备",
 		}}
@@ -1042,7 +1050,12 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	}
 	for i := range draft.Content.NPCs {
 		if strings.TrimSpace(draft.Content.NPCs[i].Name) == "" {
-			draft.Content.NPCs[i].Name = fmt.Sprintf("关键NPC%d", i+1)
+			name := fmt.Sprintf("关键NPC%d", i+1)
+			if picked, err := pickRandomNPCName("western", "male", usedNPCNames); err == nil {
+				name = picked
+				markNPCNamesUsed(usedNPCNames, picked)
+			}
+			draft.Content.NPCs[i].Name = name
 		}
 		if strings.TrimSpace(draft.Content.NPCs[i].Description) == "" {
 			draft.Content.NPCs[i].Description = "公开身份、所属派系、真实议程、秘密和可被调查员影响的杠杆。"

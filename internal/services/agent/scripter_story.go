@@ -107,6 +107,7 @@ func storySystemPrompt() string {
 
 【步骤④：NPC、时间线、SAN与结局推进】
 NPC应承担叙事功能，而不是填表；人物要丰满，禁止工具人：
+- 需要为NPC命名时必须调用generate_npc_name工具获取随机姓名（指定culture和gender），不要自行编造姓名
 - 至少考虑知情者、阻碍者、牺牲品/示警者中的若干角色
 - 每个重要NPC必须有明确动机驱动其行为，动机须归入以下至少一类：世俗动机（金钱、权力、爱恨情仇、生存、家族/职业利益等现实诉求）、信仰动机（教义、仪式、对神话的皈依、恐惧或献祭执念）、疯狂动机（心智已被侵蚀，行为逻辑不再遵循常人利害，只服从其扭曲认知）；动机要具体到能解释该NPC在关键场景中会做出的具体选择，不能是"想要真相"这类空洞标签
 - 每个重要NPC要有公开身份、议程、秘密或保留信息的理由；议程应是该动机在当前剧情节点下的具体行动化
@@ -172,6 +173,7 @@ SAN要求：
 </task>
 <tools>
 - translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
+- generate_npc_name：需要给NPC命名时必须调用本工具从预置姓名池随机取名（指定culture和gender），不要自行编造姓名
 - submit_story：提交完整故事文档；只有在translate_anchor确认元素后才调用；必须单独一轮调用。
   story_document字段严禁用draft/content/scenes/clues/endings/npcs/mechanics等嵌套字段代替——story_document只能是一个字符串，不是JSON对象；地点、NPC、线索、结局等所有设计内容都必须写成story_document这一个字符串内的自然语言段落，结构化交由后续编译器负责。
 </tools>`
@@ -209,6 +211,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 
 	tools := []scripterTool{
 		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次"),
+		generateNPCNameTool(),
 		{
 			solo: true,
 			def: llm.ToolDefinition{
@@ -237,6 +240,8 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
 			return toolOutcome{result: executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)}
+		case toolNameGenerateNPCName:
+			return dispatchGenerateNPCName(ctx, room, call)
 		case toolNameSubmitStory:
 			var args struct {
 				StoryDocument string `json:"story_document"`
@@ -259,7 +264,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 			log.Printf("[scripter:story_loop] session=%s submitted doc_len=%d anchor=%q", sessionID, len([]rune(story.Document)), truncateRunes(story.MythosAnchor, 80))
 			return toolOutcome{result: "已收到，故事文档已提交。", done: true}
 		default:
-			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/submit_story，不允许%s。", call.Name)}
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/generate_npc_name/submit_story，不允许%s。", call.Name)}
 		}
 	}
 
@@ -287,7 +292,6 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 <recently_used_mythos_anchors>
 %s
 </recently_used_mythos_anchors>
-<recent_npc_name_blacklist>%s</recent_npc_name_blacklist>
 <scenario_title_blacklist>%s</scenario_title_blacklist>
 <recent_scenario_tags_blacklist>
 %s
@@ -304,7 +308,6 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints),
 		formatMythosBlacklist(room.mythosBlacklist),
-		formatNPCNameBlacklist(room.npcBlacklist),
 		formatScenarioTitleBlacklist(room.titleSamples),
 		formatScenarioTagsBlacklist(room.tagsBlacklist),
 		lengthSpec(room.req.TargetLength)+"\n线索最终会直接展示给玩家，但真实/隐藏/误导的性质标注会被隐藏；因此误导性线索在表面上必须与真实线索无法区分——它必须是真实可验证的观察，误导力来自支持错误结论，而非靠编造或怪异感蒙混。",

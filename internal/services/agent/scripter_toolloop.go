@@ -343,6 +343,7 @@ const (
 	toolNameSubmit          = "submit"
 	toolNameReportIssues    = "report_issues"
 	toolNameSubmitCompiled  = "submit_compiled_scenario"
+	toolNameGenerateNPCName = "generate_npc_name"
 )
 
 // askLawyerTool 是 translator / reward_agent 共用的 ask_lawyer 工具定义。
@@ -392,4 +393,38 @@ type askLawyerArgs struct {
 type translateAnchorArgs struct {
 	Concept string `json:"concept"`
 	Reason  string `json:"reason"`
+}
+
+// generateNPCNameTool 是 story architect / oneshot architect repair 共用的
+// generate_npc_name 工具定义：从确定性姓名池中随机抽取姓名，避免 AI 自行编造。
+// 具体的参数解析与执行逻辑见 scripter_names.go 的 dispatchGenerateNPCName。
+func generateNPCNameTool() scripterTool {
+	return scripterTool{
+		solo: false,
+		def: llm.ToolDefinition{
+			Name: toolNameGenerateNPCName,
+			Description: `从预置姓名池中随机生成符合指定文化背景与性别的NPC姓名，避免自行编造。可一次生成多个候选（count，默认1，最多5）供挑选。
+调用示例：{"culture":"western","gender":"male"}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"culture": {
+						"type": "string",
+						"enum": ["western", "chinese", "japanese"],
+						"description": "姓名的文化背景：western=英美/欧洲，chinese=中文，japanese=日本"
+					},
+					"gender": {
+						"type": "string",
+						"enum": ["male", "female"],
+						"description": "性别"
+					},
+					"count": {
+						"type": "integer",
+						"description": "一次生成几个候选姓名，默认1，最多5"
+					}
+				},
+				"required": ["culture", "gender"]
+			}`),
+		},
+	}
 }

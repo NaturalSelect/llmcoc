@@ -3,6 +3,7 @@ module github.com/llmcoc/server
 go 1.23.0
 
 require (
+	github.com/brianvoe/gofakeit/v7 v7.15.0
 	github.com/gin-contrib/cors v1.7.2
 	github.com/gin-contrib/gzip v1.1.0
 	github.com/gin-gonic/gin v1.10.0
