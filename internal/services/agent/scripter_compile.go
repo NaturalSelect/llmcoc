@@ -119,7 +119,7 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 			Draft *OneshotResult `json:"draft"`
 		}
 		if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario参数不是合法JSON，请重新调用。"}
+			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario参数不是合法JSON，请重新调用。 err: " + err.Error()}
 		}
 		if args.Draft == nil {
 			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario的draft字段不能为空。"}
@@ -128,7 +128,7 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 		return toolOutcome{result: "已收到，编译结果已提交。", done: true}
 	}
 
-	const maxRounds = 4
+	const maxRounds = 20
 	if err := runScripterToolLoop(ctx, nil, compiler, "compile", msgs, tools, maxRounds, dispatch); err != nil {
 		return ScenarioDraft{}, fmt.Errorf("compile failed: %w", err)
 	}
