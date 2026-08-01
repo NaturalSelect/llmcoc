@@ -58,8 +58,8 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolWrite:             true,
 	ToolHint:              true,
 	ToolGenerateImage:     true,
-	ToolUpdateLLMNote:     true,
-	ToolUpdateNPCLLMNote:  true,
+	ToolUpdateSessionMemory:    true,
+	ToolUpdateNPCSessionMemory: true,
 	ToolUpdateLocation:    true,
 	ToolUpdateNPCLocation: true,
 	ToolUpdateArmor:       true,
@@ -100,8 +100,8 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolUpdateNPCCard:      updateNPCCardAction{},
 	ToolWrite:              writeAction{},
 	ToolAdvanceTime:        advanceTimeAction{},
-	ToolUpdateLLMNote:      updateLLMNoteAction{},
-	ToolUpdateNPCLLMNote:   updateNPCLLMNoteAction{},
+	ToolUpdateSessionMemory:    updateSessionMemoryAction{},
+	ToolUpdateNPCSessionMemory: updateNPCSessionMemoryAction{},
 	ToolUpdateLocation:     updateLocationAction{},
 	ToolUpdateNPCLocation:  updateNPCLocationAction{},
 	ToolUpdateArmor:        updateArmorAction{},
@@ -285,34 +285,34 @@ func (manageAssetAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 	return []ToolResult{{Action: ToolManageAsset, Result: result}}
 }
 
-type updateLLMNoteAction struct{}
+type updateSessionMemoryAction struct{}
 
-func (updateLLMNoteAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+func (updateSessionMemoryAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	who := call.CharacterName
-	debugf("tool", "session=%d update_llm_note char=%q note=%q", actx.Sid, who, call.LLMNote)
+	debugf("tool", "session=%d update_session_memory char=%q memory=%q", actx.Sid, who, call.SessionMemory)
 	for i := range actx.GCtx.Session.Players {
 		if actx.GCtx.Session.Players[i].CharacterCard.Name == who {
-			actx.GCtx.Session.Players[i].LLMNote = call.LLMNote
+			actx.GCtx.Session.Players[i].SessionMemory = call.SessionMemory
 			models.DB.Save(&actx.GCtx.Session.Players[i])
-			return []ToolResult{{Action: ToolUpdateLLMNote, Result: fmt.Sprintf("已记录 %s 的状态(Session级备忘)", who)}}
+			return []ToolResult{{Action: ToolUpdateSessionMemory, Result: fmt.Sprintf("已记录 %s 的会话记忆", who)}}
 		}
 	}
-	return []ToolResult{{Action: ToolUpdateLLMNote, Result: fmt.Sprintf("找不到名为 %s 的调查员", who)}}
+	return []ToolResult{{Action: ToolUpdateSessionMemory, Result: fmt.Sprintf("找不到名为 %s 的调查员", who)}}
 }
 
-type updateNPCLLMNoteAction struct{}
+type updateNPCSessionMemoryAction struct{}
 
-func (updateNPCLLMNoteAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+func (updateNPCSessionMemoryAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	who := call.NPCName
-	debugf("tool", "session=%d update_npc_llm_note npc=%q note=%q", actx.Sid, who, call.LLMNote)
+	debugf("tool", "session=%d update_npc_session_memory npc=%q memory=%q", actx.Sid, who, call.SessionMemory)
 	for i := range *actx.TempNPCs {
 		if (*actx.TempNPCs)[i].Name == who {
-			(*actx.TempNPCs)[i].LLMNote = call.LLMNote
+			(*actx.TempNPCs)[i].SessionMemory = call.SessionMemory
 			models.DB.Save(&(*actx.TempNPCs)[i])
-			return []ToolResult{{Action: ToolUpdateNPCLLMNote, Result: fmt.Sprintf("已记录 %s 的状态(Session级备忘)", who)}}
+			return []ToolResult{{Action: ToolUpdateNPCSessionMemory, Result: fmt.Sprintf("已记录 %s 的会话记忆", who)}}
 		}
 	}
-	return []ToolResult{{Action: ToolUpdateNPCLLMNote, Result: fmt.Sprintf("找不到名为 %s 的NPC", who)}}
+	return []ToolResult{{Action: ToolUpdateNPCSessionMemory, Result: fmt.Sprintf("找不到名为 %s 的NPC", who)}}
 }
 
 type updateLocationAction struct{}

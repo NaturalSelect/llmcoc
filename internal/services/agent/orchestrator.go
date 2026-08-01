@@ -419,7 +419,7 @@ func progressToolLabel(action ToolCallType) string {
 		return "生成KP主回复"
 	case ToolEndGame:
 		return "结算结局"
-	case ToolUpdateLLMNote, ToolUpdateNPCLLMNote, ToolHint:
+	case ToolUpdateSessionMemory, ToolUpdateNPCSessionMemory, ToolHint:
 		return "记录局势备注"
 	case ToolReport:
 		return "记录异常报告"
@@ -1011,8 +1011,8 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			}
 			sb.WriteString("</assets>")
 		}
-		if p.LLMNote != "" {
-			sb.WriteString(fmt.Sprintf("<note>%s</note>", xmlEscape(p.LLMNote)))
+		if p.SessionMemory != "" {
+			sb.WriteString(fmt.Sprintf("<memory>%s</memory>", xmlEscape(p.SessionMemory)))
 		}
 		if card.MadnessState != "" && card.MadnessState != "none" {
 			sb.WriteString(fmt.Sprintf(`<mad state=%q symptom=%q/>`, card.MadnessState, card.MadnessSymptom))
@@ -1123,7 +1123,7 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 		writeCompactText(&sb, "goal", strings.TrimSpace(npc.Goal))
 		writeCompactText(&sb, "secret", strings.TrimSpace(npc.Secret))
 		writeCompactText(&sb, "risk", strings.TrimSpace(npc.RiskPref))
-		writeCompactText(&sb, "note", npc.LLMNote)
+		writeCompactText(&sb, "memory", npc.SessionMemory)
 		writeCompactMap(&sb, "stats", npc.Stats.Data)
 		writeCompactMap(&sb, "skills", npc.Skills.Data)
 		writeCompactList(&sb, "spells", npc.Spells.Data)
@@ -1169,7 +1169,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		return ""
 	}
 	hasNotHuman := false
-	hasSessionNote := false
+	hasSessionMemory := false
 	s := "【调查员概况(完整人物卡请用 query_character 获取)】\n所有角色均已成年"
 	for _, p := range players {
 		card := p.CharacterCard
@@ -1191,9 +1191,9 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		line += fmt.Sprintf("【POW:%d】", card.Stats.Data.POW)
 		line += fmt.Sprintf("【APP:%d】", card.Stats.Data.APP)
 		line += fmt.Sprintf("【MOV:%d】", card.Stats.Data.MOV)
-		if strings.TrimSpace(p.LLMNote) != "" {
+		if strings.TrimSpace(p.SessionMemory) != "" {
 			line += "【有Session级特殊状态:需query_character查看】"
-			hasSessionNote = true
+			hasSessionMemory = true
 		}
 		switch card.MadnessState {
 		case "temporary":
@@ -1217,8 +1217,8 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		s += line
 		s += "</character>"
 	}
-	if hasSessionNote {
-		s += "\n<attention>有调查员存在Session级特殊状态。若本轮行动涉及该调查员的能力、限制、感知、身份、身体/精神异常或状态变化,先调用 query_character 查看完整人物卡中的 llm_note,不要仅凭概况处理。</attention>\n"
+	if hasSessionMemory {
+		s += "\n<attention>有调查员存在Session级特殊状态。若本轮行动涉及该调查员的能力、限制、感知、身份、身体/精神异常或状态变化,先调用 query_character 查看完整人物卡中的 session_memory,不要仅凭概况处理。</attention>\n"
 	}
 	if hasNotHuman {
 		s += "\n\n"

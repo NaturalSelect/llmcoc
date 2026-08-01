@@ -54,7 +54,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, emitProgress func(string)
 		}
 		if hasResponse && hasNonCompatible {
 			emitProgress("KP正在修正工具调用顺序")
-			return "SYSTEM REJECT: your entire batch was rejected. response/end_game may only share a batch with write/generate_image/hint/update_llm_note. Split into two rounds: first call the result-producing tools, then after reading the results call response separately."
+			return "SYSTEM REJECT: your entire batch was rejected. response/end_game may only share a batch with write/generate_image/hint/update_session_memory. Split into two rounds: first call the result-producing tools, then after reading the results call response separately."
 		}
 		if hasResponse && respStr == "" {
 			emitProgress("KP正在补全主流程回复")

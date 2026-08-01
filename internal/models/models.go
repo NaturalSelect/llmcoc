@@ -368,7 +368,7 @@ type SessionNPC struct {
 	Secret             string                    `gorm:"type:text" json:"secret"`
 	RiskPref           string                    `gorm:"size:50" json:"risk_preference"`
 	Location           string                    `gorm:"size:200" json:"location"`
-	LLMNote            string                    `gorm:"type:text" json:"llm_note"`
+	SessionMemory      string                    `gorm:"column:llm_note;type:text" json:"session_memory"` // 会话记忆：KP需跨轮记住的隐藏动机/秘密进展等，非玩家可见
 	Stats              JSONField[map[string]int] `gorm:"type:text" json:"stats"`
 	Skills             JSONField[map[string]int] `gorm:"type:text" json:"skills"`
 	Spells             JSONField[[]string]       `gorm:"type:text" json:"spells"`
@@ -418,7 +418,7 @@ type SessionPlayer struct {
 	UserID          uint          `gorm:"not null" json:"user_id"`
 	CharacterCardID uint          `gorm:"not null" json:"character_card_id"`
 	JoinedAt        time.Time     `json:"joined_at"`
-	LLMNote         string        `gorm:"type:text" json:"llm_note"`
+	SessionMemory   string        `gorm:"column:llm_note;type:text" json:"session_memory"` // 会话记忆：KP需跨轮记住的隐藏动机/秘密进展等，非玩家可见
 	Location        string        `gorm:"size:200" json:"location"` // 当前所在地点，由 update_location 工具维护
 	Armor           int           `gorm:"default:0" json:"armor"`   // 当前护甲值，由 update_armor 工具维护
 	User            User          `gorm:"foreignKey:UserID" json:"user"`

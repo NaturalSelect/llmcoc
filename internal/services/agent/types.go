@@ -51,8 +51,8 @@ const (
 	ToolQueryCharacter     ToolCallType = "query_character"     // 查询调查员完整人物卡
 	ToolQueryNPCCard       ToolCallType = "query_npc_card"      // 查询NPC完整角色卡
 	ToolUpdateNPCCard      ToolCallType = "update_npc_card"     // 更新NPC角色卡状态
-	ToolUpdateLLMNote      ToolCallType = "update_llm_note"     // 更新Session级玩家LLMNote记录
-	ToolUpdateNPCLLMNote   ToolCallType = "update_npc_llm_note" // 更新Session级NPC LLMNote记录
+	ToolUpdateSessionMemory    ToolCallType = "update_session_memory"     // 更新调查员的会话记忆
+	ToolUpdateNPCSessionMemory ToolCallType = "update_npc_session_memory" // 更新NPC的会话记忆
 	ToolUpdateLocation     ToolCallType = "update_location"     // 更新调查员当前位置
 	ToolUpdateNPCLocation  ToolCallType = "update_npc_location" // 更新NPC当前位置
 	ToolUpdateArmor        ToolCallType = "update_armor"        // 更新调查员护甲值
@@ -89,7 +89,7 @@ type ToolCall struct {
 	TimeRounds    int                    `json:"time_rounds"`    // advance_time: 推进的回合数
 	TimeReason    string                 `json:"time_reason"`    // advance_time: 原因(如"睡觉"/"吃饭")
 	Keyword       string                 `json:"keyword"`        // query_clues: 已废弃(保留仅为兼容旧输出)
-	LLMNote       string                 `json:"llm_note"`       // update_llm_note: 玩家LLMNote内容
+	SessionMemory string                 `json:"session_memory"` // update_session_memory: 会话记忆内容(整体覆盖,非追加)
 	NewLocation   string                 `json:"new_location"`   // update_location/update_npc_location: 新位置名称
 	ArmorValue    int                    `json:"armor_value"`    // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint"`           // hit: KP当前场景高密度提示

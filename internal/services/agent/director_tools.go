@@ -47,11 +47,11 @@ func directorTools() []scripterTool {
 		queryNPCCardTool(),
 		updateNPCCardTool(),
 		responseTool(),
-		updateLLMNoteTool(),
+		updateSessionMemoryTool(),
 		updateLocationTool(),
 		updateNPCLocationTool(),
 		updateArmorTool(),
-		updateNPCLLMNoteTool(),
+		updateNPCSessionMemoryTool(),
 		hintTool(),
 		reportTool(),
 	}
@@ -168,7 +168,7 @@ func actNPCTool() scripterTool {
 【玩家秘密】 先思考什么是NPC能够得到的信息, 不要将玩家的秘密透漏给NPC， 例如：玩家可能是伪装成人类的吸血鬼，但NPC不应该立刻知道这一点。
 【社交掷骰顺序】当玩家对NPC使用任何技能（魅惑/说服/话术/恐吓/威吓/心理学/侦查/图书馆/快速交谈等）时，强制顺序：先调用roll_dice；读取骰子结果后，在下一轮的question中明确写明成功/失败/大成功/大失败及roll值，再调用act_npc。Hard errors：(1)roll_dice与act_npc同轮；(2)act_npc时question中未提及骰子结果。
 【NPC主动技能检定顺序】当NPC需要主动使用任何技能（说服、侦查、闪避、反击、施法等），无论是NPC主动发起还是对玩家行动的反应，强制顺序：先调用query_npc_card确认该NPC的真实技能值/已掌握法术(不得凭记忆假设)；下一轮调用roll_dice(character=NPC名,what=技能名)掷骰；读取骰子结果后，自行比较骰值与技能值判定成功/失败/大成功/大失败，再调用act_npc，在kp_directive中写明已裁定的结果(例如"说服检定成功(roll=32 vs 65)，据此反应")，让NPC基于已确定的机械结果角色扮演，而不是自己编造结果。需要检定时，act_npc不得在roll_dice之前调用。NPC施法成功后，须调用update_npc_card扣减该NPC的MP消耗，再叙述法术效果。
-【批次硬规则】act_npc返回结果必须先读到才能写叙事/回复：严禁在同一轮调用中混入write、response、end_game、update_npc_llm_note或任何副作用工具。正确模式：本轮[act_npc(...), act_npc(...)]；读取NPC结果的下一轮再[write, response]或状态更新。
+【批次硬规则】act_npc返回结果必须先读到才能写叙事/回复：严禁在同一轮调用中混入write、response、end_game、update_npc_session_memory或任何副作用工具。正确模式：本轮[act_npc(...), act_npc(...)]；读取NPC结果的下一轮再[write, response]或状态更新。
 【后续硬规则】读取act_npc结果后，write/response只能呈现NPC已返回的可见动作、台词、环境反应和可选的"等待玩家回应"停顿；严禁替玩家回答、同意、拒绝、沉默、点头、接受物品/任务、跟随、离开、攻击、施法、搜索、做心理反应或任何后续行动。若NPC提出问题、邀请、交易、命令、威胁、要求选择或等待调查员表态，本轮必须停在这里，response只提示"等玩家回应/决定"，不得推进到玩家的假定回复之后。
 【kp_directive】用于向NPC传递KP的剧情指令和行为约束（但你必须有适当原因才能使用这个参数： 1. 剧情设定; 2. 骰子等机械原因），例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。
 	- kp_directive不好的用法："食尸鬼是纯粹的野兽，入侵者打扰了它的巢穴。它会把任何靠近的生物视为食物或威胁。可以根据骰子或直觉选择：如果它判断入侵者只是单独一个（实际上入口有三人一狗一被绑者），它可能会直接攻击；但考虑到有多个生物，它也可能先潜伏观察。请给出合理的反应。"
@@ -340,7 +340,7 @@ func endGameTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolEndGame),
 			Description: `结束本次冒险(整个游戏会话，不可撤回，而非仅结束本轮)。只有当<endings>中至少一个结局的Trigger已经确认满足时才能调用；未满足时调用是硬错误。win 必须明确给出 true(触发[结局]/胜利)或 false(触发[失败结局]/团灭等)，end_summary 必须写明具体触发了哪个结局、其Trigger条件是如何被满足的。
-【批次硬规则】end_game只能与write/update_llm_note同批次，严禁与update_*/manage_*/record_*/advance_time等同批次——后端会拒绝整批。需先在独立的一轮完成所有最终状态更新，下一轮再发end_game。
+【批次硬规则】end_game只能与write/update_session_memory同批次，严禁与update_*/manage_*/record_*/advance_time等同批次——后端会拒绝整批。需先在独立的一轮完成所有最终状态更新，下一轮再发end_game。
 调用示例：{"win":true,"end_summary":"触发结局[封印成功]：调查员完成封印仪式，邪神无法降临，胜利结束冒险"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
@@ -534,19 +534,19 @@ func responseTool() scripterTool {
 	}
 }
 
-func updateLLMNoteTool() scripterTool {
+func updateSessionMemoryTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
-			Name: string(ToolUpdateLLMNote),
-			Description: `更新调查员的 KP 内部笔记(仅供 KP 自己参考，玩家不可见)，用于记录该角色的隐藏动机、秘密进展等需要跨轮记忆的信息。
-调用示例：{"character_name":"角色名","llm_note":"笔记内容"}`,
+			Name: string(ToolUpdateSessionMemory),
+			Description: `更新调查员的会话记忆(session_memory，仅供KP自己参考，玩家不可见)，用于记住该角色的隐藏动机、秘密进展、已触发的伏笔等需要跨轮保持注意力的信息。session_memory是整段覆盖而非追加：每次调用都要写入完整的最新记忆全文，遗漏的内容会被永久覆盖丢失。
+调用示例：{"character_name":"角色名","session_memory":"记忆内容"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"character_name": {"type": "string", "description": "角色名"},
-					"llm_note": {"type": "string", "description": "KP内部笔记内容"}
+					"session_memory": {"type": "string", "description": "完整的会话记忆全文(覆盖写入)"}
 				},
-				"required": ["character_name", "llm_note"]
+				"required": ["character_name", "session_memory"]
 			}`),
 		},
 	}
@@ -606,19 +606,19 @@ func updateArmorTool() scripterTool {
 	}
 }
 
-func updateNPCLLMNoteTool() scripterTool {
+func updateNPCSessionMemoryTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
-			Name: string(ToolUpdateNPCLLMNote),
-			Description: `更新NPC的 KP 内部笔记(仅供 KP 自己参考，玩家不可见)，用于记录该NPC的隐藏动机、秘密进展等需要跨轮记忆的信息。
-调用示例：{"npc_name":"NPC名","llm_note":"笔记内容"}`,
+			Name: string(ToolUpdateNPCSessionMemory),
+			Description: `更新NPC的会话记忆(session_memory，仅供KP自己参考，玩家不可见)，用于记住该NPC的隐藏动机、秘密进展等需要跨轮保持注意力的信息。session_memory是整段覆盖而非追加：每次调用都要写入完整的最新记忆全文，遗漏的内容会被永久覆盖丢失。
+调用示例：{"npc_name":"NPC名","session_memory":"记忆内容"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"npc_name": {"type": "string", "description": "NPC名"},
-					"llm_note": {"type": "string", "description": "KP内部笔记内容"}
+					"session_memory": {"type": "string", "description": "完整的会话记忆全文(覆盖写入)"}
 				},
-				"required": ["npc_name", "llm_note"]
+				"required": ["npc_name", "session_memory"]
 			}`),
 		},
 	}
