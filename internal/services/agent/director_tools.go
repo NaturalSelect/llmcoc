@@ -339,16 +339,16 @@ func endGameTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolEndGame),
-			Description: `结束本次冒险(游戏会话)。win 必须明确给出 true(胜利)或 false(失败/团灭等)，end_summary 是可选的结局总结文本。
+			Description: `结束本次冒险(整个游戏会话，不可撤回，而非仅结束本轮)。只有当<endings>中至少一个结局的Trigger已经确认满足时才能调用；未满足时调用是硬错误。win 必须明确给出 true(触发[结局]/胜利)或 false(触发[失败结局]/团灭等)，end_summary 必须写明具体触发了哪个结局、其Trigger条件是如何被满足的。
 【批次硬规则】end_game只能与write/update_llm_note同批次，严禁与update_*/manage_*/record_*/advance_time等同批次——后端会拒绝整批。需先在独立的一轮完成所有最终状态更新，下一轮再发end_game。
-调用示例：{"win":true,"end_summary":"调查员成功封印了古神，胜利结束冒险"}`,
+调用示例：{"win":true,"end_summary":"触发结局[封印成功]：调查员完成封印仪式，邪神无法降临，胜利结束冒险"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"win": {"type": "boolean", "description": "是否胜利结束"},
-					"end_summary": {"type": "string", "description": "结局总结(可选)"}
+					"end_summary": {"type": "string", "description": "结局总结(必填)：须说明触发的具体结局名称及其Trigger条件如何被满足"}
 				},
-				"required": ["win"]
+				"required": ["win", "end_summary"]
 			}`),
 		},
 	}
@@ -518,6 +518,7 @@ func responseTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolResponse),
 			Description: `向玩家发送最终的对话式回复，结束本轮 KP 决策。reply 是口语化的回复正文(1-4句日常口吻，不使用编号列表和分析式术语)。可选字段 options 用于给出2到8个推荐可行行动；ack 用于确认/复述玩家刚才声明的动作。
+禁止用response替代end_game："收尾"某个已经达成Trigger的结局——只要<endings>中任意结局的Trigger已确认满足，本轮必须改为调用end_game结束游戏，而不是用response继续或收场。
 【批次硬规则】response 前必须完成本轮所有状态更新。正确模式：先在独立的一轮完成所有状态更新，再在下一轮发response。
 调用示例：{"reply":"口语化回复正文","options":["行动A","行动B"],"ack":["确认玩家声明的动作"]}`,
 			Parameters: jsonSchemaObject(`{
