@@ -540,35 +540,18 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 	// 	log.Printf("[editor] NPC %s: POW %d→%d, MaxMP→%d", npc.Name, prev, curr, newMaxMP)
 
 	case "cthulhu_mythos", "cthulhu_mythos_skill":
-		if upd.Delta > 0 {
-			npc.CthulhuMythosSkill = clamp(npc.CthulhuMythosSkill+upd.Delta, 0, 99)
-			newMaxSAN := 99 - npc.CthulhuMythosSkill
-			isHuman := npc.Race == "" || npc.Race == "人类"
-			if isHuman {
-				maxSAN := npcStat(stats, "MaxSAN")
-				if maxSAN == 0 || maxSAN > newMaxSAN {
-					setNPCStat(stats, "MaxSAN", newMaxSAN)
-				}
-				if san := npcStat(stats, "SAN"); san > newMaxSAN {
-					setNPCStat(stats, "SAN", newMaxSAN)
-				}
-			}
-			npc.Stats.Data = stats
-			log.Printf("[editor] NPC %s: cthulhu_mythos=%d, new MaxSAN=%d", npc.Name, npc.CthulhuMythosSkill, newMaxSAN)
-		} else if upd.Delta < 0 {
-			// 降低克苏鲁神话：按实际降低量同步提高人类 NPC 的 MaxSAN，不恢复当前 SAN。
-			oldVal := npc.CthulhuMythosSkill
-			npc.CthulhuMythosSkill = clamp(npc.CthulhuMythosSkill+upd.Delta, 0, 99)
-			actualDecrease := oldVal - npc.CthulhuMythosSkill
-			isHuman := npc.Race == "" || npc.Race == "人类"
-			if isHuman && actualDecrease > 0 {
-				newMaxSAN := 99 - npc.CthulhuMythosSkill
-				maxSAN := npcStat(stats, "MaxSAN")
-				setNPCStat(stats, "MaxSAN", clamp(maxSAN+actualDecrease, 0, newMaxSAN))
-			}
-			npc.Stats.Data = stats
-			log.Printf("[editor] NPC %s: cthulhu_mythos=%d→%d, new MaxSAN=%d", npc.Name, oldVal, npc.CthulhuMythosSkill, npcStat(stats, "MaxSAN"))
+		// ── 克苏鲁神话技能变更 → 按公式(99-克苏鲁神话)重新计算最大SAN上限 ──
+		// 与PC逻辑一致:不再区分delta正负增量patch,每次变更后直接用公式重新
+		// 赋值,克苏鲁神话降低时MaxSAN按公式自动回升,但当前SAN不会自动恢复。
+		npc.CthulhuMythosSkill = clamp(npc.CthulhuMythosSkill+upd.Delta, 0, 99)
+		isHuman := npc.Race == "" || npc.Race == "人类"
+		newMaxSAN := game.ComputeMaxSAN(npc.CthulhuMythosSkill, isHuman)
+		setNPCStat(stats, "MaxSAN", newMaxSAN)
+		if san := npcStat(stats, "SAN"); san > newMaxSAN {
+			setNPCStat(stats, "SAN", newMaxSAN)
 		}
+		npc.Stats.Data = stats
+		log.Printf("[editor] NPC %s: cthulhu_mythos=%d, new MaxSAN=%d", npc.Name, npc.CthulhuMythosSkill, newMaxSAN)
 
 	case "wound_state":
 		switch strings.ToLower(strings.TrimSpace(upd.NewValue)) {
@@ -596,10 +579,13 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 
 	case "race":
 		npc.Race = upd.NewValue
-		if npc.Race != "" && npc.Race != "人类" {
-			setNPCStat(stats, "MaxSAN", 99)
-			npc.Stats.Data = stats
+		isHuman := npc.Race == "" || npc.Race == "人类"
+		newMaxSAN := game.ComputeMaxSAN(npc.CthulhuMythosSkill, isHuman)
+		setNPCStat(stats, "MaxSAN", newMaxSAN)
+		if san := npcStat(stats, "SAN"); san > newMaxSAN {
+			setNPCStat(stats, "SAN", newMaxSAN)
 		}
+		npc.Stats.Data = stats
 		log.Printf("[editor] NPC %s: race changed to %q", npc.Name, npc.Race)
 	case "occupation":
 		npc.Occupation = upd.NewValue

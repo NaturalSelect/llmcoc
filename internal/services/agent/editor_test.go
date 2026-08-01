@@ -469,3 +469,92 @@ func TestApplyCharacterUpdate_RaceBackToHuman_MaxSANRecomputed(t *testing.T) {
 		t.Errorf("SAN should be capped to 69, got %d", saved.Stats.Data.SAN)
 	}
 }
+
+// ── NPC 侧 cthulhu_mythos/race 对 MaxSAN 的联动(与 PC 逻辑对称)───────────────
+// applyNPCStatUpdate 是纯内存操作，不触发 DB.Save，测试无需初始化DB。
+
+func newTestNPC(name string) *models.SessionNPC {
+	return &models.SessionNPC{
+		Name: name,
+		Race: "人类",
+		Stats: models.JSONField[map[string]int]{Data: map[string]int{
+			"MaxSAN": 99, "SAN": 50,
+		}},
+	}
+}
+
+// TestApplyNPCStatUpdate_CthulhuIncrease_SelfHealsStaleMaxSAN 验证 NPC 增加
+// 克苏鲁神话技能时，MaxSAN 无条件按公式重新计算，即使历史数据是脏的。
+func TestApplyNPCStatUpdate_CthulhuIncrease_SelfHealsStaleMaxSAN(t *testing.T) {
+	npc := newTestNPC("NPC增加")
+	npc.CthulhuMythosSkill = 10
+	npc.Stats.Data["MaxSAN"] = 99 // 模拟历史脏数据：未随CM降低
+	npc.Stats.Data["SAN"] = 50
+
+	applyNPCStatUpdate(npc, CharacterUpdate{CharacterName: npc.Name, Field: "cthulhu_mythos", Delta: 5})
+
+	if npc.CthulhuMythosSkill != 15 {
+		t.Errorf("CthulhuMythosSkill: got %d, want 15", npc.CthulhuMythosSkill)
+	}
+	if got := npcStat(npc.Stats.Data, "MaxSAN"); got != 84 {
+		t.Errorf("MaxSAN: got %d, want 84 (formula 99-15, must self-heal from stale 99)", got)
+	}
+	if got := npcStat(npc.Stats.Data, "SAN"); got != 50 {
+		t.Errorf("SAN should remain 50, got %d", got)
+	}
+}
+
+// TestApplyNPCStatUpdate_CthulhuDecrease_SelfHealsStaleMaxSAN 验证降低方向同样
+// 无条件按公式重新计算，不再受旧的增量恢复上限逻辑限制。
+func TestApplyNPCStatUpdate_CthulhuDecrease_SelfHealsStaleMaxSAN(t *testing.T) {
+	npc := newTestNPC("NPC降低")
+	npc.CthulhuMythosSkill = 20
+	npc.Stats.Data["MaxSAN"] = 60 // 模拟历史脏数据：应为79
+	npc.Stats.Data["SAN"] = 50
+
+	applyNPCStatUpdate(npc, CharacterUpdate{CharacterName: npc.Name, Field: "cthulhu_mythos", Delta: -10})
+
+	if npc.CthulhuMythosSkill != 10 {
+		t.Errorf("CthulhuMythosSkill: got %d, want 10", npc.CthulhuMythosSkill)
+	}
+	if got := npcStat(npc.Stats.Data, "MaxSAN"); got != 89 {
+		t.Errorf("MaxSAN: got %d, want 89 (formula 99-10, must self-heal from stale 60)", got)
+	}
+	if got := npcStat(npc.Stats.Data, "SAN"); got != 50 {
+		t.Errorf("SAN should remain 50, got %d", got)
+	}
+}
+
+// TestApplyNPCStatUpdate_CthulhuIncrease_NonHumanUnaffected 验证非人类 NPC
+// 的 MaxSAN 固定为99，不受克苏鲁神话技能影响。
+func TestApplyNPCStatUpdate_CthulhuIncrease_NonHumanUnaffected(t *testing.T) {
+	npc := newTestNPC("深潜者NPC")
+	npc.Race = "深潜者"
+	npc.Stats.Data["MaxSAN"] = 99
+
+	applyNPCStatUpdate(npc, CharacterUpdate{CharacterName: npc.Name, Field: "cthulhu_mythos", Delta: 30})
+
+	if got := npcStat(npc.Stats.Data, "MaxSAN"); got != 99 {
+		t.Errorf("MaxSAN (non-human NPC): got %d, want 99", got)
+	}
+}
+
+// TestApplyNPCStatUpdate_RaceBackToHuman_MaxSANRecomputed 验证 NPC 从非人类
+// 改回人类时，MaxSAN 会按当前克苏鲁神话技能重新计算。
+func TestApplyNPCStatUpdate_RaceBackToHuman_MaxSANRecomputed(t *testing.T) {
+	npc := newTestNPC("NPC复原")
+	npc.Race = "深潜者"
+	npc.CthulhuMythosSkill = 30
+	npc.Stats.Data["MaxSAN"] = 99
+	npc.Stats.Data["SAN"] = 90
+
+	applyNPCStatUpdate(npc, CharacterUpdate{CharacterName: npc.Name, Field: "race", NewValue: "人类"})
+
+	if got := npcStat(npc.Stats.Data, "MaxSAN"); got != 69 {
+		t.Errorf("MaxSAN: got %d, want 69 (formula 99-30 on returning to human)", got)
+	}
+	// SAN=90 超过新上限69，应被同步下调。
+	if got := npcStat(npc.Stats.Data, "SAN"); got != 69 {
+		t.Errorf("SAN should be capped to 69, got %d", got)
+	}
+}
