@@ -95,7 +95,7 @@ func hotFixChar(card *models.CharacterCard) {
 		needUpdate = true
 	}
 	before := card.Stats.Data
-	game.ApplyDerivedStats(&card.Stats.Data, card.Age, false)
+	game.ApplyDerivedStats(&card.Stats.Data, card.Age, card.CthulhuMythosSkill, card.Race == "" || card.Race == "人类", false)
 	if before.MaxHP != card.Stats.Data.MaxHP || before.MaxMP != card.Stats.Data.MaxMP || before.MaxSAN != card.Stats.Data.MaxSAN ||
 		before.MOV != card.Stats.Data.MOV || before.Build != card.Stats.Data.Build || before.DB != card.Stats.Data.DB ||
 		before.HP != card.Stats.Data.HP || before.MP != card.Stats.Data.MP || before.SAN != card.Stats.Data.SAN {
@@ -115,7 +115,7 @@ func hotFixChar(card *models.CharacterCard) {
 		needUpdate = true
 	}
 	before = card.Stats.Data
-	game.ApplyDerivedStats(&card.Stats.Data, card.Age, false)
+	game.ApplyDerivedStats(&card.Stats.Data, card.Age, card.CthulhuMythosSkill, card.Race == "" || card.Race == "人类", false)
 	if before.MaxHP != card.Stats.Data.MaxHP || before.MaxMP != card.Stats.Data.MaxMP || before.MaxSAN != card.Stats.Data.MaxSAN ||
 		before.MOV != card.Stats.Data.MOV || before.Build != card.Stats.Data.Build || before.DB != card.Stats.Data.DB ||
 		before.HP != card.Stats.Data.HP || before.MP != card.Stats.Data.MP || before.SAN != card.Stats.Data.SAN {
@@ -423,11 +423,11 @@ func UpdateCharacter(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "属性不符合规则", "details": []string{err.Error()}})
 			return
 		}
-		game.ApplyDerivedStats(&stats, card.Age, true)
+		game.ApplyDerivedStats(&stats, card.Age, card.CthulhuMythosSkill, card.Race == "" || card.Race == "人类", true)
 		card.Stats = models.JSONField[models.CharacterStats]{Data: stats}
 	} else {
 		stats := card.Stats.Data
-		game.ApplyDerivedStats(&stats, card.Age, false)
+		game.ApplyDerivedStats(&stats, card.Age, card.CthulhuMythosSkill, card.Race == "" || card.Race == "人类", false)
 		card.Stats = models.JSONField[models.CharacterStats]{Data: stats}
 	}
 	if req.Skills != nil {
@@ -741,7 +741,7 @@ func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats,
 	base.POW = adj.POW
 	base.EDU = adj.EDU
 
-	game.ApplyDerivedStats(base, age, true)
+	game.ApplyDerivedStats(base, age, 0, true, true)
 	return true
 }
 

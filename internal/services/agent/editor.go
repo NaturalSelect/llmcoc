@@ -174,10 +174,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			s := card.Stats.Data
 			oldPOW := s.POW
 			s.POW = clamp(s.POW+upd.Delta, 1, 500)
-			newMaxMP := s.POW / 5
-			if newMaxMP < 1 {
-				newMaxMP = 1
-			}
+			newMaxMP := game.ComputeMaxMP(s.POW)
 			// Scale current MP proportionally if MaxMP changes.
 			if oldPOW > 0 && s.MaxMP > 0 {
 				s.MP = clamp(s.MP*newMaxMP/s.MaxMP, 0, newMaxMP)
@@ -188,39 +185,18 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			models.DB.Save(card)
 
 		case "cthulhu_mythos", "cthulhu_mythos_skill":
-			// ── 克苏鲁神话技能变更 → 同步调整最大SAN上限 ──────────────────────
-			if upd.Delta > 0 {
-				maxVal := 99
-				card.CthulhuMythosSkill = clamp(card.CthulhuMythosSkill+upd.Delta, 0, maxVal)
-				s := card.Stats.Data
-				newMaxSAN := 99 - card.CthulhuMythosSkill
-				if isHuman {
-					if s.MaxSAN > newMaxSAN {
-						s.MaxSAN = newMaxSAN
-					}
-					if s.SAN > s.MaxSAN {
-						s.SAN = s.MaxSAN
-					}
-				}
-				card.Stats.Data = s
-				log.Printf("[editor] %s: cthulhu_mythos=%d, new MaxSAN=%d", card.Name, card.CthulhuMythosSkill, newMaxSAN)
-				models.DB.Save(card)
-			} else if upd.Delta < 0 {
-				// 降低克苏鲁神话：按实际降低量（考虑0下限）同步提高人类角色的 MaxSAN，
-				// 但不超过 99 - 新克苏鲁神话；当前 SAN 不恢复。
-				oldVal := card.CthulhuMythosSkill
-				card.CthulhuMythosSkill = clamp(card.CthulhuMythosSkill+upd.Delta, 0, 99)
-				actualDecrease := oldVal - card.CthulhuMythosSkill // 实际降低量（≥0）
-				if isHuman && actualDecrease > 0 {
-					s := card.Stats.Data
-					newMaxSAN := 99 - card.CthulhuMythosSkill
-					// MaxSAN 可恢复的上限即 99 - 新克苏鲁神话；不超过该值。
-					s.MaxSAN = clamp(s.MaxSAN+actualDecrease, 0, newMaxSAN)
-					card.Stats.Data = s
-				}
-				log.Printf("[editor] %s: cthulhu_mythos=%d→%d, new MaxSAN=%d", card.Name, oldVal, card.CthulhuMythosSkill, card.Stats.Data.MaxSAN)
-				models.DB.Save(card)
+			// ── 克苏鲁神话技能变更 → 按公式(99-克苏鲁神话)重新计算最大SAN上限 ──
+			// 不再增量patch:每次变更后直接用公式重新赋值,克苏鲁神话降低时
+			// MaxSAN 按公式自动回升,但当前SAN不会跟着自动恢复。
+			card.CthulhuMythosSkill = clamp(card.CthulhuMythosSkill+upd.Delta, 0, 99)
+			s := card.Stats.Data
+			s.MaxSAN = game.ComputeMaxSAN(card.CthulhuMythosSkill, isHuman)
+			if s.SAN > s.MaxSAN {
+				s.SAN = s.MaxSAN
 			}
+			card.Stats.Data = s
+			log.Printf("[editor] %s: cthulhu_mythos=%d, new MaxSAN=%d", card.Name, card.CthulhuMythosSkill, s.MaxSAN)
+			models.DB.Save(card)
 
 		case "skills":
 			skills := card.Skills.Data
@@ -282,9 +258,12 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 
 		case "race":
 			card.Race = upd.NewValue
-			if card.Race != "" && card.Race != "人类" {
-				card.Stats.Data.MaxSAN = 99 // 非人类的最大SAN上限为99,且不受克苏鲁神话技能影响
+			s := card.Stats.Data
+			s.MaxSAN = game.ComputeMaxSAN(card.CthulhuMythosSkill, card.Race == "" || card.Race == "人类")
+			if s.SAN > s.MaxSAN {
+				s.SAN = s.MaxSAN
 			}
+			card.Stats.Data = s
 			models.DB.Save(card)
 		case "occupation":
 			card.Occupation = upd.NewValue
@@ -297,7 +276,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			}
 			card.Age = newAge
 			stats := card.Stats.Data
-			game.ApplyDerivedStats(&stats, card.Age, false)
+			game.ApplyDerivedStats(&stats, card.Age, card.CthulhuMythosSkill, isHuman, false)
 			card.Stats.Data = stats
 			models.DB.Save(card)
 		case "str", "con", "siz", "dex", "app", "int", "edu":

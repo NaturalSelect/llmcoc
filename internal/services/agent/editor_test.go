@@ -329,53 +329,64 @@ func TestApplyCharacterUpdate_CthulhuDecrease_ClampedAtZero(t *testing.T) {
 	}
 }
 
-// TestApplyCharacterUpdate_CthulhuDecrease_MaxSANCap 验证 MaxSAN 恢复不超过
-// 99 - 新克苏鲁神话 的上限。
-func TestApplyCharacterUpdate_CthulhuDecrease_MaxSANCap(t *testing.T) {
+// TestApplyCharacterUpdate_CthulhuIncrease_SelfHealsStaleMaxSAN 验证即使
+// MaxSAN 此前因历史bug停留在错误的值(例如始终为99，未随克苏鲁神话增长而降低)，
+// 克苏鲁神话技能变更后 MaxSAN 也会无条件按公式(99-CM)重新计算，而不是仅在
+// "旧值大于新公式值"时才纠正——这正是本次修复要解决的问题。
+func TestApplyCharacterUpdate_CthulhuIncrease_SelfHealsStaleMaxSAN(t *testing.T) {
 	initAgentTestDB(t)
-	card := newTestCard(t, "调查员MaxSAN上限", 30)
-	// CthulhuMythosSkill=10, MaxSAN=60（已有额外损失），SAN=50
+	card := newTestCard(t, "调查员MaxSAN自愈", 30)
+	// 模拟历史脏数据：CthulhuMythosSkill=10，但 MaxSAN 仍停留在未降低的99。
 	card.CthulhuMythosSkill = 10
+	card.Stats.Data.MaxSAN = 99
+	card.Stats.Data.SAN = 50
+	models.DB.Save(card)
+
+	applyCthulhuUpdate(card, 5) // CthulhuMythosSkill 10→15
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.CthulhuMythosSkill != 15 {
+		t.Errorf("CthulhuMythosSkill: got %d, want 15", saved.CthulhuMythosSkill)
+	}
+	// 必须精确等于公式值 99-15=84，而不是脏数据 99，也不是任何增量结果。
+	if saved.Stats.Data.MaxSAN != 84 {
+		t.Errorf("MaxSAN: got %d, want 84 (formula 99-15, must self-heal from stale 99)", saved.Stats.Data.MaxSAN)
+	}
+	if saved.Stats.Data.SAN != 50 {
+		t.Errorf("SAN should remain 50, got %d", saved.Stats.Data.SAN)
+	}
+}
+
+// TestApplyCharacterUpdate_CthulhuDecrease_SelfHealsStaleMaxSAN 验证降低方向同样
+// 无条件按公式重新计算，不再受旧的"按实际降低量增量恢复,不超过上限"逻辑限制。
+func TestApplyCharacterUpdate_CthulhuDecrease_SelfHealsStaleMaxSAN(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员MaxSAN降低自愈", 30)
+	// 模拟历史脏数据：CthulhuMythosSkill=20，但 MaxSAN 停留在过低的60(应为79)。
+	card.CthulhuMythosSkill = 20
 	card.Stats.Data.MaxSAN = 60
 	card.Stats.Data.SAN = 50
 	models.DB.Save(card)
 
-	// 降低 5，CthulhuMythosSkill→5，上限=94；MaxSAN 本可恢复到 65，但不超过 94。
-	applyCthulhuUpdate(card, -5)
+	applyCthulhuUpdate(card, -10) // CthulhuMythosSkill 20→10
 
 	var saved models.CharacterCard
 	if err := models.DB.First(&saved, card.ID).Error; err != nil {
 		t.Fatalf("load card: %v", err)
 	}
-	if saved.CthulhuMythosSkill != 5 {
-		t.Errorf("CthulhuMythosSkill: got %d, want 5", saved.CthulhuMythosSkill)
+	if saved.CthulhuMythosSkill != 10 {
+		t.Errorf("CthulhuMythosSkill: got %d, want 10", saved.CthulhuMythosSkill)
 	}
-	// 60+5=65，未超过 94，应为 65。
-	if saved.Stats.Data.MaxSAN != 65 {
-		t.Errorf("MaxSAN: got %d, want 65", saved.Stats.Data.MaxSAN)
+	// 必须精确等于公式值 99-10=89，旧逻辑会算成 60+10=70(增量限制)。
+	if saved.Stats.Data.MaxSAN != 89 {
+		t.Errorf("MaxSAN: got %d, want 89 (formula 99-10, must self-heal from stale 60)", saved.Stats.Data.MaxSAN)
 	}
-}
-
-// TestApplyCharacterUpdate_CthulhuDecrease_MaxSANCap_HardCap 验证恢复量超过上限时取上限。
-func TestApplyCharacterUpdate_CthulhuDecrease_MaxSANCap_HardCap(t *testing.T) {
-	initAgentTestDB(t)
-	card := newTestCard(t, "调查员硬上限", 30)
-	// CthulhuMythosSkill=10, MaxSAN=88（接近上限 89），SAN=50
-	card.CthulhuMythosSkill = 10
-	card.Stats.Data.MaxSAN = 88
-	card.Stats.Data.SAN = 50
-	models.DB.Save(card)
-
-	// 降低 5，CthulhuMythosSkill→5，上限=94；MaxSAN 本要恢复到 93，不超过 94。
-	applyCthulhuUpdate(card, -5)
-
-	var saved models.CharacterCard
-	if err := models.DB.First(&saved, card.ID).Error; err != nil {
-		t.Fatalf("load card: %v", err)
-	}
-	// 88+5=93，未超过 94（99-5），应为 93。
-	if saved.Stats.Data.MaxSAN != 93 {
-		t.Errorf("MaxSAN: got %d, want 93", saved.Stats.Data.MaxSAN)
+	// SAN 不会因 MaxSAN 提升而自动恢复。
+	if saved.Stats.Data.SAN != 50 {
+		t.Errorf("SAN should remain 50, got %d", saved.Stats.Data.SAN)
 	}
 }
 
@@ -397,5 +408,64 @@ func TestApplyCharacterUpdate_CthulhuDecrease_SANUnchanged(t *testing.T) {
 	// SAN 必须保持 30，不因 MaxSAN 提升而恢复。
 	if saved.Stats.Data.SAN != 30 {
 		t.Errorf("SAN should remain 30, got %d", saved.Stats.Data.SAN)
+	}
+}
+
+// ── race 变更对 MaxSAN 的联动 ────────────────────────────────────────────────
+
+// applyRaceUpdate 辅助函数：对单个角色卡执行种族变更。
+func applyRaceUpdate(card *models.CharacterCard, newRace string) {
+	players := []models.SessionPlayer{{CharacterCard: *card}}
+	applyCharacterUpdate(CharacterUpdate{
+		CharacterName: card.Name,
+		Field:         "race",
+		NewValue:      newRace,
+	}, players)
+}
+
+// TestApplyCharacterUpdate_RaceToNonHuman_MaxSANFixed99 验证变为非人类种族时
+// MaxSAN 固定为99，不受已有克苏鲁神话技能影响。
+func TestApplyCharacterUpdate_RaceToNonHuman_MaxSANFixed99(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员变异", 30)
+	card.CthulhuMythosSkill = 30
+	card.Stats.Data.MaxSAN = 69 // 人类状态下的合规值(99-30)
+	card.Stats.Data.SAN = 50
+	models.DB.Save(card)
+
+	applyRaceUpdate(card, "深潜者")
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.Stats.Data.MaxSAN != 99 {
+		t.Errorf("MaxSAN: got %d, want 99 (non-human ignores CthulhuMythosSkill)", saved.Stats.Data.MaxSAN)
+	}
+}
+
+// TestApplyCharacterUpdate_RaceBackToHuman_MaxSANRecomputed 验证从非人类改回
+// 人类时，MaxSAN 会按当前克苏鲁神话技能重新计算(而不是停留在非人类时的99)。
+func TestApplyCharacterUpdate_RaceBackToHuman_MaxSANRecomputed(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员复原", 30)
+	card.Race = "深潜者"
+	card.CthulhuMythosSkill = 30
+	card.Stats.Data.MaxSAN = 99 // 非人类状态下的固定值
+	card.Stats.Data.SAN = 90
+	models.DB.Save(card)
+
+	applyRaceUpdate(card, "人类")
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.Stats.Data.MaxSAN != 69 {
+		t.Errorf("MaxSAN: got %d, want 69 (formula 99-30 on returning to human)", saved.Stats.Data.MaxSAN)
+	}
+	// SAN=90 超过新上限69，应被同步下调。
+	if saved.Stats.Data.SAN != 69 {
+		t.Errorf("SAN should be capped to 69, got %d", saved.Stats.Data.SAN)
 	}
 }

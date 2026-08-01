@@ -245,7 +245,7 @@ func prepareCharacterDraftFinalize(db *gorm.DB, userID uint, req finalizeCharact
 
 	stats := draft.Stats.Data
 	age := draft.RawRolls.Data.Age
-	game.ApplyDerivedStats(&stats, age, true)
+	game.ApplyDerivedStats(&stats, age, 0, true, true)
 	skills, spent, err := game.NormalizeSkills(req.Skills, stats)
 	if err != nil {
 		payload := gin.H{"error": "技能分配不符合规则", "spent": spent, "budget": game.SkillPointBudget(stats)}

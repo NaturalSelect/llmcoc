@@ -72,7 +72,7 @@ func GenerateStatsForAge(age int) (models.CharacterStats, models.CharacterRawRol
 
 	applyAgeRules(age, &stats, &raw)
 	syncRawFinals(&raw, stats)
-	ApplyDerivedStats(&stats, age, true)
+	ApplyDerivedStats(&stats, age, 0, true, true)
 	return stats, raw, nil
 }
 
@@ -205,10 +205,29 @@ func syncRawFinals(raw *models.CharacterRawRolls, stats models.CharacterStats) {
 	raw.EDU.Final = stats.EDU
 }
 
-func ApplyDerivedStats(stats *models.CharacterStats, age int, resetCurrent bool) {
+// ComputeMaxSAN 按公式计算理智上限:人类为 99-克苏鲁神话技能(不低于0)，
+// 非人类固定为99且不受克苏鲁神话技能影响。这是 MaxSAN 的唯一权威计算入口，
+// 调用方不应在其他地方自行增量维护 MaxSAN。
+func ComputeMaxSAN(cthulhuMythos int, isHuman bool) int {
+	if !isHuman {
+		return 99
+	}
+	return clampInt(99-cthulhuMythos, 0, 99)
+}
+
+// ComputeMaxMP 按公式计算魔法值上限:POW的五分之一，至少为1。
+func ComputeMaxMP(pow int) int {
+	maxMP := pow / 5
+	if maxMP < 1 {
+		maxMP = 1
+	}
+	return maxMP
+}
+
+func ApplyDerivedStats(stats *models.CharacterStats, age, cthulhuMythos int, isHuman bool, resetCurrent bool) {
 	maxHP := (stats.CON + stats.SIZ) / 10
-	maxMP := stats.POW / 5
-	maxSAN := 99
+	maxMP := ComputeMaxMP(stats.POW)
+	maxSAN := ComputeMaxSAN(cthulhuMythos, isHuman)
 	mov := calcMOV(stats.STR, stats.DEX, stats.SIZ) - AgeMOVPenalty(age)
 	if mov < 1 {
 		mov = 1
@@ -224,7 +243,7 @@ func ApplyDerivedStats(stats *models.CharacterStats, age int, resetCurrent bool)
 	if resetCurrent {
 		stats.HP = maxHP
 		stats.MP = maxMP
-		stats.SAN = stats.POW
+		stats.SAN = clampInt(stats.POW, 0, maxSAN)
 		return
 	}
 	stats.HP = clampInt(stats.HP, 0, stats.MaxHP)

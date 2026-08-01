@@ -959,7 +959,7 @@ func buildPlayerStatus(players []models.SessionPlayer) string {
 
 		// 克苏鲁神话技能
 		if card.CthulhuMythosSkill > 0 {
-			line += fmt.Sprintf("(克苏鲁神话技能:%d,最大SAN上限:%d)", card.CthulhuMythosSkill, 99-card.CthulhuMythosSkill)
+			line += fmt.Sprintf("(克苏鲁神话技能:%d,最大SAN上限:%d)", card.CthulhuMythosSkill, game.ComputeMaxSAN(card.CthulhuMythosSkill, card.Race == "" || card.Race == "人类"))
 		}
 		if len(card.SeenMonsters.Data) > 0 {
 			line += fmt.Sprintf("(已见神话存在:%s)", strings.Join(card.SeenMonsters.Data, "、"))
@@ -991,7 +991,7 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			st.STR, st.CON, st.SIZ, st.DEX, st.APP, st.INT, st.POW, st.EDU,
 			st.HP, st.MaxHP, st.MP, st.MaxMP, st.SAN, st.MaxSAN, st.Luck, st.MOV, st.Build, st.DB))
 		if card.CthulhuMythosSkill > 0 {
-			sb.WriteString(fmt.Sprintf(`<mythos skill="%d" max_san="%d"/>`, card.CthulhuMythosSkill, 99-card.CthulhuMythosSkill))
+			sb.WriteString(fmt.Sprintf(`<mythos skill="%d" max_san="%d"/>`, card.CthulhuMythosSkill, game.ComputeMaxSAN(card.CthulhuMythosSkill, card.Race == "" || card.Race == "人类")))
 		}
 		writeCompactMap(&sb, "skills", card.Skills.Data)
 		writeCompactList(&sb, "inv", card.Inventory.Data)
