@@ -30,7 +30,7 @@ func compilerSystemPrompt() string {
 - content.horror_mode / content.invest_focus / content.tone_tags：必须逐字等于<diversity_constraints>中的对应值，不得自行替换
 - content.mythos_anchor：必须逐字等于<mythos_anchor>输入
 - content.scenes：从故事文档的地点部分逐个提取；每个scene.id为snake_case英文标识；description须完整保留可见信息/可发现信息/杠杆/风险/出口/感官细节；triggers默认["available_from_start"]，仅当故事文档明确写出解锁条件时才使用条件触发
-- content.npcs：从故事文档的NPC部分逐个提取；description须完整保留公开身份/议程/秘密/标志性细节/关系网；stats按COC7规则书惯例给出合理属性值（含SAN、HP、MP）；attitude取自故事文档写明的初始态度
+- content.npcs：从故事文档的NPC部分逐个提取；description须完整保留公开身份/议程/秘密/标志性细节/关系网；stats按COC7规则书惯例给出合理属性值（含SAN、HP、MP）；attitude取自故事文档写明的初始态度；skills按该NPC的职业/角色身份给出3-6项最相关的技能及数值（COC7标准范围，普通人类技能值通常15-75），故事文档未写明具体数值时按惯例合理补全；spells为该NPC已掌握的法术列表，仅施法者/教团成员/神话存在等故事文档明确写明会施法的NPC才填写，普通人类NPC留空数组
 - content.clues：从故事文档的线索部分逐条提取为结构化对象{summary,source,skill_check,on_success,on_failure,nature}；nature必须是"真实"/"隐藏"/"误导"之一；summary保留来源事实/支持命题等关键信息；skill_check/on_success/on_failure按故事文档写明的检定与推进逐条对应，文档未写明时可留空；至少一条nature="隐藏"的线索须包含"神话本质"字样并与mythos_anchor强绑定
 - content.endings：从故事文档的结局部分逐个提取为{name,trigger,description,san_reward,is_failure}；trigger保持"如果[条件]，则[处境变化]"的条件句结构；san_reward取自文档写明的SAN恢复/损失（如"恢复1d6"），文档未写明时按结局性质给出合理数值；is_failure标记灾难/失败向结局；故事文档中每一个独立结局都要对应一个ending，不得合并或省略
 - content.system_prompt：包含KP独有的内部真相（复述故事文档的核心真相与mythos_anchor对故事的必要性，即为何不可替换）、施动者的细化设定（若故事文档写明了邪教组织的名称伪装/教义/仪式/结构/招募控制/经济据点/历史渊源，或个人施法者的身份掩护/接触契机/法术能力/终极目的，或神话生物的来历/栖身范围/可观察影响/行为驱动，须完整保留，不得压缩为一句话）以及时间推进/信息分层/不主动引导三项KP协议

@@ -1145,6 +1145,8 @@ func buildNPCDetail(npcName string, tempNPCs []models.SessionNPC, scenarioNPCs [
 			writeCompactText(&sb, "desc", npc.Description)
 			writeCompactText(&sb, "att", npc.Attitude)
 			writeCompactMap(&sb, "stats", npc.Stats)
+			writeCompactMap(&sb, "skills", npc.Skills)
+			writeCompactList(&sb, "spells", npc.Spells)
 			sb.WriteString("</npc>")
 		}
 	}

@@ -436,6 +436,16 @@ func buildNPCProfile(name string, gctx GameContext, tempNPCs []models.SessionNPC
 				}
 				profile += "\n属性:" + strings.Join(statParts, " ")
 			}
+			if len(npc.Skills) > 0 {
+				var skillParts []string
+				for k, v := range npc.Skills {
+					skillParts = append(skillParts, fmt.Sprintf("%s:%d", k, v))
+				}
+				profile += "\n技能:" + strings.Join(skillParts, " ")
+			}
+			if len(npc.Spells) > 0 {
+				profile += "\n法术:" + strings.Join(npc.Spells, "、")
+			}
 			return profile
 		}
 	}
@@ -463,6 +473,13 @@ func buildNPCProfile(name string, gctx GameContext, tempNPCs []models.SessionNPC
 			}
 			if len(npc.Spells.Data) > 0 {
 				profile += "\n法术:" + strings.Join(npc.Spells.Data, "、")
+			}
+			if len(npc.Skills.Data) > 0 {
+				var skillParts []string
+				for k, v := range npc.Skills.Data {
+					skillParts = append(skillParts, fmt.Sprintf("%s:%d", k, v))
+				}
+				profile += "\n技能:" + strings.Join(skillParts, " ")
 			}
 			if len(npc.Stats.Data) > 0 {
 				var statParts []string

@@ -1624,6 +1624,20 @@
                                             </template>
                                         </div>
                                     </template>
+                                    <template x-if="npc.skills && Object.keys(npc.skills).length">
+                                        <div class="flex flex-wrap gap-1.5 mt-1">
+                                            <template x-for="[k,v] in Object.entries(npc.skills)" :key="k">
+                                                <span class="text-[10px] px-1.5 py-0.5 rounded chip font-ui">
+                                                    <span class="text-amber-800" x-text="k + ' '"></span><span
+                                                        class="font-bold text-amber-500" x-text="v"></span>
+                                                </span>
+                                            </template>
+                                        </div>
+                                    </template>
+                                    <template x-if="npc.spells && npc.spells.length">
+                                        <div class="text-[10px] text-amber-700 mt-1.5 font-ui"
+                                            x-text="'法术: ' + npc.spells.join('、')"></div>
+                                    </template>
                                 </div>
                             </template>
                         </div>

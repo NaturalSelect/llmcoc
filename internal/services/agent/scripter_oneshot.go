@@ -81,6 +81,8 @@ var oneshotResultExample = OneshotResult{
 				Description: "公开身份：图书馆保安。议程：维护秩序。秘密：曾处理Douglas遗物。标志性细节：说话时总用拇指摩挲一把黄铜钥匙。关系：受馆长雇佣，与Douglas生前是牌友。",
 				Attitude:    "警惕、简短",
 				Stats:       map[string]int{"STR": 55, "CON": 60, "SIZ": 65, "DEX": 50, "APP": 40, "INT": 55, "POW": 50, "EDU": 55, "SAN": 50, "HP": 12, "MP": 10},
+				Skills:      map[string]int{"侦查": 50, "格斗(斗殴)": 45, "潜行": 40, "聆听": 55},
+				Spells:      []string{},
 			},
 		},
 		Clues: []models.ClueData{
@@ -368,7 +370,7 @@ submit.draft 必须包含以下字段：
     "map_description": "文字地图；体现可回访、可交叉验证的调查网络",
     "mythos_anchor": "translate_anchor确认的COC7元素全称",
     "scenes": [{"id":"...","name":"...","description":"可见/可发现/杠杆/风险/出口/感官细节；体现安全区/危险区/神话逼近区中的至少一种功能","triggers":["available_from_start"]}],
-    "npcs": [{"name":"...","description":"公开身份/议程/秘密或保留理由","attitude":"...","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"SAN":50,"HP":10,"MP":10}}],
+    "npcs": [{"name":"...","description":"公开身份/议程/秘密或保留理由","attitude":"...","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"SAN":50,"HP":10,"MP":10},"skills":{"侦查":50,"说服":40},"spells":[]}],
     "clues": [
       {"summary":"来自地点A的推进线索（自包含事实）","source":"地点/NPC/文件","skill_check":"推荐检定技能，可留空","on_success":"检定成功获得的信息或效果","on_failure":"检定失败时如何不卡关地获得同等或替代信息","nature":"真实"},
       {"summary":"来自NPC或文件的平行推进线索","source":"...","nature":"真实"},

@@ -282,6 +282,8 @@ type NPCData struct {
 	Attitude           string         `json:"attitude"`
 	Stats              map[string]int `json:"stats"`
 	CthulhuMythosSkill int            `json:"cthulhu_mythos_skill"`
+	Skills             map[string]int `json:"skills,omitempty"` // NPC技能值,供NPC主动发起技能检定
+	Spells             []string       `json:"spells,omitempty"` // NPC已掌握法术列表
 }
 
 // NOTE: Scenario is the database representation of a playable module or adventure.
