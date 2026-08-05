@@ -517,7 +517,7 @@ func responseTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolResponse),
-			Description: `向玩家发送最终的对话式回复，结束本轮 KP 决策。reply 是口语化的回复正文(1-4句日常口吻，不使用编号列表和分析式术语)。可选字段 options 用于给出2到8个推荐可行行动；ack 用于确认/复述玩家刚才声明的动作。
+			Description: `向玩家发送最终的对话式回复，结束本轮 KP 决策。reply 是口语化的回复正文(1-4句日常口吻，不使用编号列表和分析式术语)。可选字段 options 用于给出2个推荐可行行动；ack 用于确认/复述玩家刚才声明的动作。
 禁止用response替代end_game："收尾"某个已经达成Trigger的结局——只要<endings>中任意结局的Trigger已确认满足，本轮必须改为调用end_game结束游戏，而不是用response继续或收场。
 【批次硬规则】response 前必须完成本轮所有状态更新。正确模式：先在独立的一轮完成所有状态更新，再在下一轮发response。
 调用示例：{"reply":"口语化回复正文","options":["行动A","行动B"],"ack":["确认玩家声明的动作"]}`,
@@ -525,7 +525,7 @@ func responseTool() scripterTool {
 				"type": "object",
 				"properties": {
 					"reply": {"type": "string", "description": "口语化回复正文,1-4句,不使用编号列表"},
-					"options": {"type": "array", "items": {"type": "string"}, "description": "推荐可行行动(可选)"},
+					"options": {"type": "array", "items": {"type": "string"}, "description": "推荐可行行动,固定给出0-2个(可选),注意宁可不给也不要泄露后续剧情"},
 					"ack": {"type": "array", "items": {"type": "string"}, "description": "确认/复述玩家刚才声明的动作(可选)"}
 				},
 				"required": ["reply"]
