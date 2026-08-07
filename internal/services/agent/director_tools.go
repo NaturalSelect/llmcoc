@@ -414,7 +414,8 @@ func generateImageTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolGenerateImage),
-			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC或怪物首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略。image_prompt 需是完整的画面描述(人物外貌、场景、氛围等)，若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
+			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略。image_prompt 需是完整的画面描述(人物外貌、场景、氛围等)，若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
+【未知感规则】配图是玩家可见通道，同样受[UNKNOWN]约束。尚未被合法鉴定的神话实体、怪物与异常现象，禁止画出可辨认的正面全貌——正面肖像等于提前把答案交给玩家。这类对象只画它留下的痕迹与效果、事后现场、遮挡与局部(背光剪影、水下轮廓、门缝里的一部分)、它经过后的空环境，或目击者的反应；image_prompt里也不要写出它的正式名称、种族名与规则术语，用画面本身描述。已被完全鉴定或已正面遭遇过的对象不受此限制。
 【批次规则】generate_image可以与write/response同批次；返回结果只表示图片生成已排队，KP不需要也不能读取图片内容。
 调用示例：{"image_prompt":"完整的画面描述,包含人物外貌、场景、氛围等","aspect":"landscape"}`,
 			Parameters: jsonSchemaObject(`{
@@ -522,7 +523,7 @@ func responseTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolResponse),
-			Description: `向玩家发送最终的对话式回复，结束本轮 KP 决策。reply 是口语化的回复正文(1-4句日常口吻，不使用编号列表和分析式术语)。可选字段 options 用于给出2个推荐可行行动；ack 用于确认/复述玩家刚才声明的动作。
+			Description: `向玩家发送最终的对话式回复，结束本轮 KP 决策。reply 是口语化的回复正文(1-4句日常口吻，不使用编号列表和分析式术语)。可选字段 options 用于给出0-2条推荐可行行动，写法与禁止内容见[OPTIONS]；ack 用于确认/复述玩家刚才声明的动作。
 禁止用response替代end_game："收尾"某个已经达成Trigger的结局——只要<endings>中任意结局的Trigger已确认满足，本轮必须改为调用end_game结束游戏，而不是用response继续或收场。
 【批次硬规则】response 前必须完成本轮所有状态更新。正确模式：先在独立的一轮完成所有状态更新，再在下一轮发response。
 调用示例：{"reply":"口语化回复正文","options":["行动A","行动B"],"ack":["确认玩家声明的动作"]}`,
@@ -530,7 +531,7 @@ func responseTool() scripterTool {
 				"type": "object",
 				"properties": {
 					"reply": {"type": "string", "description": "口语化回复正文,1-4句,不使用编号列表"},
-					"options": {"type": "array", "items": {"type": "string"}, "description": "推荐可行行动,固定给出0-2个(可选),注意宁可不给也不要泄露后续剧情"},
+					"options": {"type": "array", "items": {"type": "string"}, "description": "推荐可行行动，0-2条(可选)。每条是不超过20字的短行动(动词+对象)，只回答现在可以做什么，不回答会得到什么；不写判定难度、概率、成败后果、评价性副词与危险暗示，不含未赚取的线索或未鉴定实体的正式名。宁可给0条也不要泄露"},
 					"ack": {"type": "array", "items": {"type": "string"}, "description": "确认/复述玩家刚才声明的动作(可选)"}
 				},
 				"required": ["reply"]
