@@ -48,9 +48,7 @@ func TestExtractAnchorFromDocument_Success(t *testing.T) {
 		},
 	}
 	askArgs, _ := json.Marshal(map[string]string{"question": "食尸鬼在COC7规则书中是否已收录？"})
-	respondArgs, _ := json.Marshal(map[string]string{
-		"result": `{"status":"found","selected_anchor":"食尸鬼（Ghoul）","rulebook_basis":"COC7规则书已收录","usable_interpretation":"死者变形后保留记忆继续行动","must_avoid":"不得自创属性","fallback":"无","blacklist_check":"未命中"}`,
-	})
+	respondArgs := `{"status":"found","selected_anchor":"食尸鬼（Ghoul）","rulebook_basis":"COC7规则书已收录","usable_interpretation":"死者变形后保留记忆继续行动","must_avoid":"不得自创属性","fallback":"无","blacklist_check":"未命中"}`
 	translatorFake := &sequentialFakeProvider{
 		callerName: "translator",
 		toolResponses: []llm.ToolChatResult{

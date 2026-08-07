@@ -144,7 +144,7 @@ func TestTranslatorProviderIsolation(t *testing.T) {
 		// NOTE: Round 1 → translator 先 ask_lawyer；Round 2 → translator respond
 		toolResponses: []llm.ToolChatResult{
 			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameAskLawyer, `{"question":"食尸鬼在COC7规则书中是否已收录？"}`)}},
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameRespond, `{"result":"{\"status\":\"found\",\"selected_anchor\":\"食尸鬼（Ghoul）\",\"rulebook_basis\":\"COC7规则书已收录\",\"usable_interpretation\":\"死者变形后保留记忆继续行动\",\"must_avoid\":\"不得自创属性\",\"fallback\":\"无\",\"blacklist_check\":\"未命中\"}"}`)}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameRespond, `{"status":"found","selected_anchor":"食尸鬼（Ghoul）","rulebook_basis":"COC7规则书已收录","usable_interpretation":"死者变形后保留记忆继续行动","must_avoid":"不得自创属性","fallback":"无","blacklist_check":"未命中"}`)}},
 		},
 	}
 
@@ -156,15 +156,15 @@ func TestTranslatorProviderIsolation(t *testing.T) {
 	room := makeTranslatorRoom(translatorProv, lawyerProv, "test-session-translator-1")
 
 	ctx := context.Background()
-	result, err := runOneshotTranslatorAgent(ctx, room, "死者被古老力量束缚继续行动", "作为剧本神话锚点")
+	conclusion, err := runOneshotTranslatorAgent(ctx, room, "死者被古老力量束缚继续行动", "作为剧本神话锚点")
 	if err != nil {
 		t.Fatalf("runOneshotTranslatorAgent failed: %v", err)
 	}
-	if strings.TrimSpace(result) == "" {
-		t.Fatal("result should not be empty")
+	if conclusion == nil || strings.TrimSpace(conclusion.Status) == "" {
+		t.Fatal("conclusion should not be nil or empty-status")
 	}
-	if !strings.Contains(result, "食尸鬼") {
-		t.Errorf("result should contain selected anchor 食尸鬼, got: %q", result)
+	if !strings.Contains(conclusion.SelectedAnchor, "食尸鬼") {
+		t.Errorf("selected_anchor should contain 食尸鬼, got: %q", conclusion.SelectedAnchor)
 	}
 
 	// NOTE: 验证 translator provider 被调用，且所有 cache key 含 "translator" 不含 "lawyer"

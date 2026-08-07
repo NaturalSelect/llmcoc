@@ -468,48 +468,22 @@ func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, conc
 	}
 	reason = strings.TrimSpace(reason)
 	log.Printf("[scripter:oneshot_translate_anchor] session=%s concept=%q reason=%q", sessionID, truncateRunes(concept, 200), truncateRunes(reason, 200))
-	result, err := runOneshotTranslatorAgent(ctx, room, concept, reason)
+	conclusion, err := runOneshotTranslatorAgent(ctx, room, concept, reason)
 	if err != nil {
 		log.Printf("[scripter:oneshot_translate_anchor] session=%s error concept=%q err=%v", sessionID, truncateRunes(concept, 200), err)
 		return fmt.Sprintf(`<translate_anchor_result concept=%q status="translator_error">%s</translate_anchor_result>`, concept, err.Error())
 	}
-	result = strings.TrimSpace(result)
-	if result == "" {
+	if conclusion == nil || strings.TrimSpace(conclusion.Status) == "" {
 		return fmt.Sprintf(`<translate_anchor_result concept=%q status="no_result">translator未返回可用结论；可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。</translate_anchor_result>`, concept)
 	}
-	return fmt.Sprintf(`<translate_anchor_result concept=%q status="translated">%s</translate_anchor_result>`, concept, result)
+	return fmt.Sprintf(`<translate_anchor_result concept=%q status=%q>%s</translate_anchor_result>`, concept, conclusion.Status, conclusion.Text())
 }
 
-// isTranslateAnchorFound checks whether a translate_anchor result represents a
-// successful rulebook match (status "found"). Returns false for no_result,
-// uncertain, translator_error, and empty results — all of which require the
-// architect to redesign the concept or try a different direction.
+// isTranslateAnchorFound 判断 translate_anchor 结果是否为成功匹配（status="found"）。
+// 结果文本由 translatorConclusion 结构化字段渲染，状态在包装属性上，直接判属性即可；
+// no_result / translator_error / uncertain / 空结果均视为未找到。
 func isTranslateAnchorFound(result string) bool {
-	if result == "" {
-		return false
-	}
-	// Check wrapper-level status first.
-	if strings.Contains(result, `status="no_result"`) || strings.Contains(result, `status="translator_error"`) {
-		return false
-	}
-	// The wrapper says "translated"; now check the inner translator respond.
-	// Look for the inner status field — only "found" is acceptable.
-	// The inner result is a JSON object with a "status" field.
-	if strings.Contains(result, `"status":"found"`) || strings.Contains(result, `"status": "found"`) {
-		return true
-	}
-	// If we can't find an explicit "found", check for explicit failure indicators.
-	if strings.Contains(result, `"status":"no_result"`) || strings.Contains(result, `"status": "no_result"`) ||
-		strings.Contains(result, `"status":"uncertain"`) || strings.Contains(result, `"status": "uncertain"`) {
-		return false
-	}
-	// If the inner status is not explicitly parseable, check whether
-	// selected_anchor is a real element (not "无").
-	if strings.Contains(result, `"selected_anchor"`) &&
-		!strings.Contains(result, `"无"`) {
-		return true
-	}
-	return false
+	return strings.Contains(result, `status="found"`)
 }
 
 // ---------------------------------------------------------------------------
@@ -517,17 +491,7 @@ func isTranslateAnchorFound(result string) bool {
 // ---------------------------------------------------------------------------
 
 const oneshotTranslatorSystemPrompt = `<role>COC7规则书概念翻译专家</role>
-<task>收到一个创意概念，将它翻译为COC7规则书中最匹配、可在剧本中使用的具体元素（实体/典籍/法术/诅咒物品/机制）。通过 ask_lawyer 工具向规则书专家提问，依据裁定综合，最后用 respond 工具返回翻译结论。</task>
-<result_requirements>
-respond.result 必须包含：
-1. status：found / no_result / uncertain
-2. selected_anchor：最匹配元素全称；无可靠匹配时写无
-3. rulebook_basis：来源和依据摘要
-4. usable_interpretation：此元素如何承载原概念
-5. must_avoid：必须避免的未核验数值、能力或误用
-6. fallback：若status不是found，给architect的保守替代方向
-7. blacklist_check：确认selected_anchor不在最近使用元素禁用列表中
-</result_requirements>
+<task>收到一个创意概念，将它翻译为COC7规则书中最匹配、可在剧本中使用的具体元素（实体/典籍/法术/诅咒物品/机制）。通过 ask_lawyer 工具向规则书专家提问，依据裁定综合，最后用 respond 工具以结构化字段返回翻译结论。</task>
 <rules>
 - 第一轮必须至少调用一次ask_lawyer；不得凭常识或记忆直接respond。
 - 用户消息中的<recently_used_mythos_anchors>是硬性禁用列表；selected_anchor不得返回列表中的元素、别名或同源变体。
@@ -543,6 +507,31 @@ respond.result 必须包含：
 - 但推理链条的每一步都必须在规则书中有明确依据，不能凭常识或记忆自创。
 </rules>`
 
+// translatorConclusion 是 translator respond 工具的结构化结论，
+// 字段与 respond 工具 schema 的属性一一对应，不再使用字符串内嵌 JSON。
+type translatorConclusion struct {
+	Status               string `json:"status"`
+	SelectedAnchor       string `json:"selected_anchor"`
+	RulebookBasis        string `json:"rulebook_basis"`
+	UsableInterpretation string `json:"usable_interpretation"`
+	MustAvoid            string `json:"must_avoid"`
+	Fallback             string `json:"fallback"`
+	BlacklistCheck       string `json:"blacklist_check"`
+}
+
+// Text 把结构化结论渲染为给 architect 阅读的结论文本。
+func (c *translatorConclusion) Text() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "status: %s\n", c.Status)
+	fmt.Fprintf(&sb, "selected_anchor: %s\n", c.SelectedAnchor)
+	fmt.Fprintf(&sb, "rulebook_basis: %s\n", c.RulebookBasis)
+	fmt.Fprintf(&sb, "usable_interpretation: %s\n", c.UsableInterpretation)
+	fmt.Fprintf(&sb, "must_avoid: %s\n", c.MustAvoid)
+	fmt.Fprintf(&sb, "fallback: %s\n", c.Fallback)
+	fmt.Fprintf(&sb, "blacklist_check: %s", c.BlacklistCheck)
+	return sb.String()
+}
+
 // oneshotTranslatorRespondTool 是 translator 的 respond 工具定义（solo，终止本轮循环）。
 func oneshotTranslatorRespondTool() scripterTool {
 	return scripterTool{
@@ -553,18 +542,24 @@ func oneshotTranslatorRespondTool() scripterTool {
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"result": {"type": "string", "description": "结构化翻译结论文本，需包含status/selected_anchor/rulebook_basis/usable_interpretation/must_avoid/fallback/blacklist_check"}
+					"status": {"type": "string", "enum": ["found", "no_result", "uncertain"], "description": "翻译结论状态"},
+					"selected_anchor": {"type": "string", "description": "最匹配元素全称；无可靠匹配时写无"},
+					"rulebook_basis": {"type": "string", "description": "来源和依据摘要；若为推导链条，逐步写明每步的规则书依据"},
+					"usable_interpretation": {"type": "string", "description": "此元素如何承载原概念"},
+					"must_avoid": {"type": "string", "description": "必须避免的未核验数值、能力或误用"},
+					"fallback": {"type": "string", "description": "若status不是found，给architect的保守替代方向"},
+					"blacklist_check": {"type": "string", "description": "确认selected_anchor不在最近使用元素禁用列表中"}
 				},
-				"required": ["result"]
+				"required": ["status", "selected_anchor", "rulebook_basis", "usable_interpretation", "must_avoid", "fallback", "blacklist_check"]
 			}`),
 		},
 	}
 }
 
-func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept string, reason string) (string, error) {
+func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept string, reason string) (*translatorConclusion, error) {
 	// NOTE: translator 独立 provider/session key，不复用 lawyer；fail-fast，不退回 lawyer。
 	if room.translator.provider == nil {
-		return "", fmt.Errorf("translator provider unavailable")
+		return nil, fmt.Errorf("translator provider unavailable")
 	}
 	requestJSON, _ := json.Marshal(struct {
 		Concept string `json:"concept"`
@@ -587,7 +582,7 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 	}
 
 	askedLawyer := false
-	var response string
+	var conclusion *translatorConclusion
 	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
 		switch call.Name {
 		case toolNameAskLawyer:
@@ -602,20 +597,18 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 			if !askedLawyer {
 				return toolOutcome{reject: "SYSTEM REJECT: respond前必须至少调用一次ask_lawyer。"}
 			}
-			var args struct {
-				Result string `json:"result"`
-			}
+			var args translatorConclusion
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 				return toolOutcome{reject: "SYSTEM REJECT: respond参数不是合法JSON，请重新调用。"}
 			}
-			if strings.TrimSpace(args.Result) == "" {
-				return toolOutcome{reject: "SYSTEM REJECT: respond的result字段不能为空。"}
+			if strings.TrimSpace(args.Status) == "" || strings.TrimSpace(args.SelectedAnchor) == "" {
+				return toolOutcome{reject: "SYSTEM REJECT: respond的status和selected_anchor字段不能为空。"}
 			}
-			if anchor := oneshotFindForbiddenAnchor(args.Result, room.mythosBlacklist); anchor != "" {
+			if anchor := oneshotFindForbiddenAnchor(args.SelectedAnchor, room.mythosBlacklist); anchor != "" {
 				return toolOutcome{reject: fmt.Sprintf(
 					"SYSTEM REJECT: selected_anchor命中了最近使用元素禁用列表：%s。必须继续ask_lawyer寻找替代候选，或返回uncertain/no_result并给出非禁用fallback。", anchor)}
 			}
-			response = args.Result
+			conclusion = &args
 			return toolOutcome{result: "已收到，翻译结论已提交。", done: true}
 		default:
 			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: translator只允许ask_lawyer/respond，不允许%s。", call.Name)}
@@ -624,9 +617,9 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 
 	const maxRounds = 16
 	if err := runScripterToolLoop(ctx, room, room.translator, "oneshot_translator", msgs, tools, maxRounds, dispatch); err != nil {
-		return "", err
+		return nil, err
 	}
-	return response, nil
+	return conclusion, nil
 }
 
 func oneshotTranslatorAskLawyer(ctx context.Context, room *scripterRoom, question string) string {
@@ -651,8 +644,10 @@ func oneshotTranslatorAskLawyer(ctx context.Context, room *scripterRoom, questio
 // Blacklist helpers
 // ---------------------------------------------------------------------------
 
-func oneshotFindForbiddenAnchor(response string, anchors []string) string {
-	selected := oneshotExtractSelectedAnchor(response)
+// oneshotFindForbiddenAnchor 检查 selectedAnchor（respond 工具的结构化字段，
+// 可能带括号别名等修饰）是否命中禁用列表；返回命中的禁用元素，未命中返回空串。
+func oneshotFindForbiddenAnchor(selectedAnchor string, anchors []string) string {
+	selected := strings.TrimSpace(selectedAnchor)
 	if selected == "" || selected == "无" {
 		return ""
 	}
@@ -663,28 +658,6 @@ func oneshotFindForbiddenAnchor(response string, anchors []string) string {
 	for _, anchor := range anchors {
 		if n := oneshotNormalizeAnchorKey(anchor); n != "" && strings.Contains(normalizedSelected, n) {
 			return anchor
-		}
-	}
-	return ""
-}
-
-func oneshotExtractSelectedAnchor(response string) string {
-	var obj map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(response)), &obj); err == nil {
-		if v, ok := obj["selected_anchor"].(string); ok {
-			return strings.TrimSpace(v)
-		}
-	}
-	for _, line := range strings.Split(response, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "selected_anchor") {
-			parts := strings.SplitN(trimmed, ":", 2)
-			if len(parts) != 2 {
-				parts = strings.SplitN(trimmed, "：", 2)
-			}
-			if len(parts) == 2 {
-				return strings.Trim(strings.TrimSpace(parts[1]), " `\"'，。；;")
-			}
 		}
 	}
 	return ""
