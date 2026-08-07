@@ -186,6 +186,11 @@ func CreateSession(c *gin.Context) {
 		req.MaxPlayers = 4
 	}
 
+	// NOTE: 全局 NSFW 开关禁用时忽略客户端传入的 enable_nsfw，防止绕过前端隐藏的选项直接调 API。
+	if models.GetSiteSetting("allow_nsfw", "true") != "true" {
+		req.EnableNSFW = false
+	}
+
 	var pwHash string
 	hasPassword := req.Password != ""
 	if hasPassword {

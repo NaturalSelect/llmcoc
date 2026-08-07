@@ -179,6 +179,7 @@ func Me(c *gin.Context) {
 func PublicSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"require_invite_code": models.GetSiteSetting("require_invite_code", "false") == "true",
+		"allow_nsfw":          models.GetSiteSetting("allow_nsfw", "true") == "true",
 	})
 }
 

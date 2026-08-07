@@ -262,6 +262,35 @@ func TestCreateSession_EnableNSFW(t *testing.T) {
 	}
 }
 
+// TestCreateSession_EnableNSFW_ForcedFalseWhenGloballyDisabled 验证全局 NSFW 开关关闭时，
+// 即使客户端在创建请求里传 enable_nsfw=true，后端也会静默强制改为 false，
+// 防止绕过前端隐藏的选项直接调用 API。
+func TestCreateSession_EnableNSFW_ForcedFalseWhenGloballyDisabled(t *testing.T) {
+	initTestDB(t)
+	models.SetSiteSetting("allow_nsfw", "false")
+	uid := seedUser(t, "u", "user", 0, 3)
+	sid := seedScenario(t, "Dark Scenario")
+
+	r := sessionCRUDRouter(uid, "u", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/sessions", map[string]any{
+		"name":        "Should Not Be NSFW",
+		"scenario_id": sid,
+		"enable_nsfw": true,
+	}))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created models.GameSession
+	if err := models.DB.First(&created, "name = ?", "Should Not Be NSFW").Error; err != nil {
+		t.Fatalf("session not persisted: %v", err)
+	}
+	if created.EnableNSFW {
+		t.Errorf("全局 allow_nsfw=false 时 EnableNSFW 应被强制为 false, got true")
+	}
+}
+
 func TestCreateSession_InvalidBody(t *testing.T) {
 	initTestDB(t)
 	uid := seedUser(t, "u", "user", 0, 3)

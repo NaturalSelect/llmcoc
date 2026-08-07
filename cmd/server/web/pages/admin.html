@@ -611,6 +611,19 @@
                                 :class="siteSettings.require_invite_code ? 'translate-x-6' : ''"></span>
                         </button>
                     </div>
+                    <div class="flex items-center justify-between mt-4 pt-4 border-t border-base">
+                        <div>
+                            <span class="text-sm font-ui block">允许创建 NSFW 房间</span>
+                            <span class="text-xs text-amber-800 font-ui">关闭后创建房间时不再显示 NSFW 选项，已创建的房间不受影响</span>
+                        </div>
+                        <button @click="toggleNSFWSetting()"
+                            class="w-12 h-6 rounded-full relative transition-colors shrink-0 ml-3"
+                            :class="siteSettings.allow_nsfw ? 'bg-amber-700' : 'bg-gray-700'">
+                            <span
+                                class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform"
+                                :class="siteSettings.allow_nsfw ? 'translate-x-6' : ''"></span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Coin cost settings -->

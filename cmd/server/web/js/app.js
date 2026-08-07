@@ -17,6 +17,7 @@ window.COC.core = function() {
                     loginForm: { username: '', password: '' },
                     regForm: { username: '', email: '', password: '', invite_code: '' },
                     requireInviteCode: false,
+                    allowNSFW: true,
 
                     // ── Data ──────────────────────────────────────────────────────────────
                     characters: [],
@@ -180,6 +181,7 @@ window.COC.core = function() {
                     newShopItem: { name: '', description: '', item_type: 'card_slot', price: 0, value: 1, is_active: true },
                     siteSettings: {
                         require_invite_code: false,
+                        allow_nsfw: true,
                         initial_coins: 600,
                         initial_card_slots: 3,
                         regenerate_appearance_cost: 100,
@@ -210,6 +212,7 @@ window.COC.core = function() {
                         try {
                             const ps = await this.api('GET', '/api/auth/settings/public');
                             this.requireInviteCode = !!ps.require_invite_code;
+                            this.allowNSFW = ps.allow_nsfw !== false;
                         } catch { }
                         // NOTE: 加载商城费率配置，无需鉴权
                         this.loadShopCosts().catch(() => {});
