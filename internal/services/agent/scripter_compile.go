@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/llmcoc/server/internal/services/llm"
 )
@@ -62,14 +63,8 @@ func submitCompiledScenarioTool() scripterTool {
 		solo: true,
 		def: llm.ToolDefinition{
 			Name:        toolNameSubmitCompiled,
-			Description: "提交编译后的完整结构化剧本JSON；字段结构严格匹配schema_skeleton",
-			Parameters: jsonSchemaObject(`{
-				"type": "object",
-				"properties": {
-					"draft": {"type": "object", "description": "完整oneshotResult JSON对象，字段结构见schema_skeleton"}
-				},
-				"required": ["draft"]
-			}`),
+			Description: "提交编译后的完整结构化剧本JSON；参数即完整oneshotResult本体（非嵌套在draft字段下），字段结构见本工具的parameters schema",
+			Parameters: jsonSchemaObject(oneshotDraftJSONSchema),
 		},
 	}
 }
@@ -149,16 +144,14 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 		if call.Name != toolNameSubmitCompiled {
 			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许submit_compiled_scenario，不允许%s。", call.Name)}
 		}
-		var args struct {
-			Draft *OneshotResult `json:"draft"`
-		}
-		if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+		var result OneshotResult
+		if err := json.Unmarshal([]byte(call.Arguments), &result); err != nil {
 			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario参数不是合法JSON，请重新调用。 err: " + err.Error()}
 		}
-		if args.Draft == nil {
-			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario的draft字段不能为空。"}
+		if strings.TrimSpace(result.Name) == "" {
+			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario的name字段不能为空。"}
 		}
-		submitted = args.Draft
+		submitted = &result
 		return toolOutcome{result: "已收到，编译结果已提交。", done: true}
 	}
 

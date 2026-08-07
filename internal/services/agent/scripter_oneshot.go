@@ -37,6 +37,189 @@ type OneshotResult struct {
 	Content     models.ScenarioContent `json:"content"`
 }
 
+// oneshotDraftJSONSchema 是 submit_compiled_scenario（scripter_compile.go）与
+// submit（本文件 runOneshotArchitectLoop）共用的工具参数 JSON Schema，逐字段对应
+// OneshotResult/models.ScenarioContent 的真实结构；两个工具直接把它整体作为
+// Parameters（原生参数，字段就是调用参数本身），不再包一层"draft"键。
+//
+// NOTE: 此前两处工具的参数都是 {"type":"object","properties":{"draft":{"type":"object",
+// "description":"见xxx_schema"}}}——draft 的真正字段结构只存在于旁边的自然语言 prompt 里，
+// 工具的正式 schema 里这个唯一参数是个没有 properties 的空壳。部分模型/兼容端点的原生
+// function calling 依赖这个正式 schema 做结构化解码；draft 需要一次性装下整份剧本
+// （scenes/npcs/clues/endings 等十余个嵌套字段），空壳 schema 会让这类模型在没有结构可循
+// 的情况下长时间生成推理内容却始终无法收敛出合法的工具调用，最终 content 和 tool_calls
+// 双双为空（表现为"LLM 一直返回空字符串"）。修复分两步：① 把结构显式声明出来；
+// ② 去掉多余的 draft 包装层，让工具参数本身就是结构化数据（原生参数），而不是"一个参数、
+// 里面塞一整块JSON"。
+const oneshotDraftJSONSchema = `{
+	"type": "object",
+	"description": "完整oneshotResult JSON对象",
+	"properties": {
+		"reward_concept": {"type": "string", "description": "逐字等于reward_concept输入，输入为空则留空字符串"},
+		"name": {"type": "string", "description": "剧本标题；无明确标题时从文档内具体名词提炼，不用低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒等滥用词"},
+		"description": {"type": "string", "description": "剧本简介，取自或忠实改写表层情境段落；中性日常、不剧透"},
+		"author": {"type": "string", "description": "固定为agent-team"},
+		"tags": {"type": "string", "description": "2-3个逗号分隔标签，指向本剧本独有的核心叙事装置/桥段；须避开recent_scenario_tags_blacklist"},
+		"min_players": {"type": "integer"},
+		"max_players": {"type": "integer"},
+		"difficulty": {"type": "string", "description": "如 normal"},
+		"content": {
+			"type": "object",
+			"properties": {
+				"system_prompt": {"type": "string", "description": "KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相与mythos_anchor必要性 + 施动者细化设定，不得压缩为一句话"},
+				"setting": {"type": "string", "description": "表层情境原文或忠实改写，必须保留文档中嵌入的具体年月日"},
+				"tone_tags": {"type": "array", "items": {"type": "string"}, "description": "必须逐字等于diversity_constraints.tone_tags"},
+				"horror_mode": {"type": "string", "description": "必须逐字等于diversity_constraints.horror_mode"},
+				"invest_focus": {"type": "string", "description": "必须逐字等于diversity_constraints.invest_focus"},
+				"intro": {"type": "string", "description": "调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步"},
+				"game_start_slot": {"type": "integer", "description": "0-47，每槽30分钟；未写明具体时刻时取16"},
+				"map_description": {"type": "string", "description": "按地点关系概括的文字地图，体现可回访、可交叉验证的调查网络"},
+				"mythos_anchor": {"type": "string", "description": "必须逐字等于mythos_anchor输入"},
+				"scenes": {
+					"type": "array",
+					"description": "从故事文档地点部分逐个提取",
+					"items": {
+						"type": "object",
+						"properties": {
+							"id": {"type": "string", "description": "snake_case英文标识"},
+							"name": {"type": "string"},
+							"description": {"type": "string", "description": "完整保留可见信息/可发现信息/杠杆/风险/出口/感官细节"},
+							"triggers": {"type": "array", "items": {"type": "string"}, "description": "默认[\"available_from_start\"]，仅文档明确写出解锁条件时才用条件触发"}
+						},
+						"required": ["id", "name", "description", "triggers"]
+					}
+				},
+				"npcs": {
+					"type": "array",
+					"description": "从故事文档NPC部分逐个提取",
+					"items": {
+						"type": "object",
+						"properties": {
+							"name": {"type": "string"},
+							"description": {"type": "string", "description": "完整保留公开身份/议程/秘密/标志性细节/关系网"},
+							"attitude": {"type": "string", "description": "文档写明的初始态度"},
+							"stats": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "COC7标准属性：STR/CON/SIZ/DEX/APP/INT/POW/EDU/SAN/HP/MP"},
+							"skills": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "按职业身份3-6项最相关技能，键为技能名，值为COC7标准范围（普通人类通常15-75）"},
+							"spells": {"type": "array", "items": {"type": "string"}, "description": "仅文档明确写明会施法者才填，普通人类留空数组"}
+						},
+						"required": ["name", "description", "attitude", "stats"]
+					}
+				},
+				"clues": {
+					"type": "array",
+					"description": "从故事文档线索部分逐条提取；至少2条nature为真实且互相独立可组合",
+					"items": {
+						"type": "object",
+						"properties": {
+							"summary": {"type": "string", "description": "保留来源事实/支持命题等关键信息"},
+							"source": {"type": "string"},
+							"skill_check": {"type": "string", "description": "可留空"},
+							"on_success": {"type": "string", "description": "可留空"},
+							"on_failure": {"type": "string", "description": "可留空"},
+							"nature": {"type": "string", "enum": ["真实", "隐藏", "误导"]}
+						},
+						"required": ["summary", "nature"]
+					}
+				},
+				"endings": {
+					"type": "array",
+					"description": "从故事文档结局部分逐个提取，每个独立结局都要对应一个ending，不得合并或省略",
+					"items": {
+						"type": "object",
+						"properties": {
+							"name": {"type": "string"},
+							"trigger": {"type": "string", "description": "保持如果[条件]，则[处境变化]的条件句结构"},
+							"description": {"type": "string"},
+							"san_reward": {"type": "string", "description": "如恢复1d6/损失1d6"},
+							"is_failure": {"type": "boolean", "description": "标记灾难/失败向结局"}
+						},
+						"required": ["name", "trigger"]
+					}
+				},
+				"handouts": {
+					"type": "array",
+					"description": "可直接朗读给玩家的手卡/信件/剪报等原文材料；文档未提供则留空数组，不得虚构",
+					"items": {
+						"type": "object",
+						"properties": {
+							"title": {"type": "string"},
+							"content": {"type": "string"},
+							"timing": {"type": "string"}
+						},
+						"required": ["title", "content"]
+					}
+				},
+				"timeline": {
+					"type": "array",
+					"description": "过去线痕迹或当天推进的时间节点；文档未写明则留空数组",
+					"items": {
+						"type": "object",
+						"properties": {
+							"time": {"type": "string"},
+							"event": {"type": "string"},
+							"phase": {"type": "string", "enum": ["past", "current"]}
+						},
+						"required": ["time", "event"]
+					}
+				},
+				"keeper_appendix": {
+					"type": "object",
+					"description": "难度调节/单双人团建议/恐怖呈现提示；文档未提供则整体省略（null）",
+					"properties": {
+						"difficulty_down": {"type": "string"},
+						"difficulty_up": {"type": "string"},
+						"solo_advice": {"type": "string"},
+						"group_advice": {"type": "string"},
+						"horror_tips": {"type": "string"},
+						"theme_guidance": {"type": "string"}
+					}
+				},
+				"entry_identities": {
+					"type": "array",
+					"description": "不同职业调查员的差异化入场方式；文档未区分职业入场则留空数组",
+					"items": {
+						"type": "object",
+						"properties": {
+							"profession": {"type": "string"},
+							"init_resource": {"type": "string"},
+							"init_limit": {"type": "string"},
+							"recommend_clues": {"type": "string"}
+						},
+						"required": ["profession", "init_resource"]
+					}
+				},
+				"mechanics": {
+					"type": "array",
+					"description": "可量化追踪的机制（如计数器、行动时钟），仅供KP参考；文档未设计此类机制则留空数组",
+					"items": {
+						"type": "object",
+						"properties": {
+							"name": {"type": "string"},
+							"type": {"type": "string", "enum": ["counter", "clock", "tracker"]},
+							"description": {"type": "string"},
+							"stages": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"label": {"type": "string"},
+										"effect": {"type": "string"},
+										"trigger": {"type": "string"}
+									},
+									"required": ["label"]
+								}
+							}
+						},
+						"required": ["name", "type", "description"]
+					}
+				}
+			},
+			"required": ["system_prompt", "setting", "tone_tags", "horror_mode", "invest_focus", "intro", "game_start_slot", "map_description", "mythos_anchor", "scenes", "npcs", "clues", "endings"]
+		}
+	},
+	"required": ["reward_concept", "name", "description", "author", "tags", "min_players", "max_players", "difficulty", "content"]
+}`
+
 func (r OneshotResult) toScenarioDraft() ScenarioDraft {
 	return ScenarioDraft{
 		Name: r.Name, Description: r.Description,
@@ -264,14 +447,8 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 			solo: true,
 			def: llm.ToolDefinition{
 				Name:        toolNameSubmit,
-				Description: "提交完整剧本；只有在translate_anchor确认元素后才调用；必须单独一轮调用",
-				Parameters: jsonSchemaObject(`{
-					"type": "object",
-					"properties": {
-						"draft": {"type": "object", "description": "完整oneshotResult JSON对象，字段结构见draft_schema"}
-					},
-					"required": ["draft"]
-				}`),
+				Description: "提交完整剧本；参数即完整oneshotResult本体（非嵌套在draft字段下）；只有在translate_anchor确认元素后才调用；必须单独一轮调用",
+				Parameters: jsonSchemaObject(oneshotDraftJSONSchema),
 			},
 		},
 	}
@@ -288,16 +465,14 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		case toolNameGenerateNPCName:
 			return dispatchGenerateNPCName(ctx, room, call)
 		case toolNameSubmit:
-			var args struct {
-				Draft *OneshotResult `json:"draft"`
-			}
-			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+			var result OneshotResult
+			if err := json.Unmarshal([]byte(call.Arguments), &result); err != nil {
 				return toolOutcome{reject: "SYSTEM REJECT: submit参数不是合法JSON，请重新调用。"}
 			}
-			if args.Draft == nil {
-				return toolOutcome{reject: "SYSTEM REJECT: submit的draft字段不能为空。"}
+			if strings.TrimSpace(result.Name) == "" {
+				return toolOutcome{reject: "SYSTEM REJECT: submit的name字段不能为空。"}
 			}
-			submitted = args.Draft
+			submitted = &result
 			return toolOutcome{result: "已收到，剧本已提交。", done: true}
 		default:
 			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/generate_npc_name/submit，不允许%s。", call.Name)}

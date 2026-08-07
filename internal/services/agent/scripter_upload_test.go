@@ -115,7 +115,7 @@ func TestCompileAndFinalize_Success(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName: "compiler",
 		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, `{"draft":`+oneshotExample+`}`)}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, oneshotExample)}},
 		},
 	}
 	room := &scripterRoom{
@@ -165,7 +165,7 @@ func TestCompileAndFinalize_RewardSkipped(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName: "compiler",
 		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, `{"draft":`+oneshotExample+`}`)}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, oneshotExample)}},
 		},
 	}
 	room := &scripterRoom{

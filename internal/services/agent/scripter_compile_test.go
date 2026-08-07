@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func TestCompilerFallbackToArchitect(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName: "architect",
 		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, `{"draft":`+oneshotExample+`}`)}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, oneshotExample)}},
 		},
 	}
 	room := &scripterRoom{
@@ -79,7 +80,7 @@ func TestCompilerMythosAnchorOverride(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName: "compiler",
 		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, `{"draft":`+marshalExample(tampered)+`}`)}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, marshalExample(tampered))}},
 		},
 	}
 	room := &scripterRoom{
@@ -109,5 +110,37 @@ func TestCompilerNoProviderAvailable(t *testing.T) {
 	room := &scripterRoom{sessionID: "test-session-compile-3"}
 	if _, err := compileStoryToModule(context.Background(), room, compileTestStory(), ScripterConstraints{}); err == nil {
 		t.Fatal("compiler/architect 均不可用时应返回错误")
+	}
+}
+
+// TestOneshotDraftJSONSchemaValid 验证 oneshotDraftJSONSchema 本身是合法 JSON、且直接
+// 声明了 OneshotResult 顶层字段（而不是包一层 draft），防止手写 schema 字符串出现语法错误
+// 或退化回"空壳 object 参数"的问题。
+func TestOneshotDraftJSONSchemaValid(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(oneshotDraftJSONSchema), &schema); err != nil {
+		t.Fatalf("oneshotDraftJSONSchema 不是合法 JSON: %v", err)
+	}
+	if schema["type"] != "object" {
+		t.Errorf("schema.type = %v, want object", schema["type"])
+	}
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("schema.properties 缺失或类型不对")
+	}
+	for _, key := range []string{"reward_concept", "name", "description", "author", "tags", "min_players", "max_players", "difficulty", "content"} {
+		if _, ok := props[key]; !ok {
+			t.Errorf("schema.properties 缺少顶层字段 %q（应为原生参数，不应嵌套在draft键下）", key)
+		}
+	}
+	if _, ok := props["draft"]; ok {
+		t.Error("schema.properties 不应再包含 draft 包装键")
+	}
+
+	full := jsonSchemaObject(oneshotDraftJSONSchema)
+	var tool llm.ToolDefinition
+	toolJSON := []byte(`{"name":"submit_compiled_scenario","parameters":` + string(full) + `}`)
+	if err := json.Unmarshal(toolJSON, &tool); err != nil {
+		t.Fatalf("组装为 ToolDefinition 后不是合法 JSON: %v", err)
 	}
 }
