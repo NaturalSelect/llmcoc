@@ -21,18 +21,21 @@ const (
 
 // NOTE: User represents a registered user account in the system.
 type User struct {
-	ID           uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	Username     string    `gorm:"uniqueIndex;not null;size:50" json:"username"`
-	Email        string    `gorm:"uniqueIndex;not null;size:200" json:"email"`
-	PasswordHash string    `gorm:"not null" json:"-"`
-	Role         Role      `gorm:"default:'user';not null" json:"role"`
-	IsBanned     bool      `gorm:"default:false;not null" json:"is_banned"`
-	BanReason    string    `gorm:"size:500" json:"ban_reason"`
-	Coins        int       `gorm:"default:0;not null" json:"coins"`
-	CardSlots    int       `gorm:"default:3;not null" json:"card_slots"`
-	ReviveCount  int       `gorm:"default:0;not null" json:"revive_count"` // 累计复活次数，影响后续复活费用
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	Username     string `gorm:"uniqueIndex;not null;size:50" json:"username"`
+	Email        string `gorm:"uniqueIndex;not null;size:200" json:"email"`
+	PasswordHash string `gorm:"not null" json:"-"`
+	Role         Role   `gorm:"default:'user';not null" json:"role"`
+	IsBanned     bool   `gorm:"default:false;not null" json:"is_banned"`
+	BanReason    string `gorm:"size:500" json:"ban_reason"`
+	Coins        int    `gorm:"default:0;not null" json:"coins"`
+	CardSlots    int    `gorm:"default:3;not null" json:"card_slots"`
+	ReviveCount  int    `gorm:"default:0;not null" json:"revive_count"` // 累计复活次数，影响后续复活费用
+	// NOTE: 账号级仓库，物品格式与人物卡 Inventory 一致（裸字符串，如 "绷带(x3)"）。
+	// 不加 gorm default，避免存量行 NULL->空串触发 JSONField.Scan 的 json.Unmarshal 报错。
+	Warehouse JSONField[[]string] `gorm:"type:text" json:"warehouse"`
+	CreatedAt time.Time           `json:"created_at"`
+	UpdatedAt time.Time           `json:"updated_at"`
 }
 
 // COC 7th character attributes
@@ -161,6 +164,8 @@ type CharacterCard struct {
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 	User          User      `gorm:"foreignKey:UserID" json:"-"`
+	// InSession 是运行时标记：人物卡是否正被未结束(lobby/playing)的房间占用，不入库、不持久化。
+	InSession bool `gorm:"-" json:"in_session"`
 }
 
 // NOTE: ScenarioReward describes a findable mythos item or tome pre-placed in the scenario.
@@ -420,8 +425,8 @@ type SessionPlayer struct {
 	CharacterCardID uint          `gorm:"not null" json:"character_card_id"`
 	JoinedAt        time.Time     `json:"joined_at"`
 	SessionMemory   string        `gorm:"column:llm_note;type:text" json:"session_memory"` // 会话记忆：KP需跨轮记住的隐藏动机/秘密进展等，非玩家可见
-	Location        string        `gorm:"size:200" json:"location"` // 当前所在地点，由 update_location 工具维护
-	Armor           int           `gorm:"default:0" json:"armor"`   // 当前护甲值，由 update_armor 工具维护
+	Location        string        `gorm:"size:200" json:"location"`                        // 当前所在地点，由 update_location 工具维护
+	Armor           int           `gorm:"default:0" json:"armor"`                          // 当前护甲值，由 update_armor 工具维护
 	User            User          `gorm:"foreignKey:UserID" json:"user"`
 	CharacterCard   CharacterCard `gorm:"foreignKey:CharacterCardID" json:"character_card"`
 }

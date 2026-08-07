@@ -114,10 +114,16 @@ window.COC.core = function() {
                         recoveryPoll: 4000,
                     },
 
-                    // ── Shop ──────────────────────────────────────────────────────────────
-                    purchasing: false,
-                    shopTargetCharacterId: '',
-                    inventoryInput: '',
+                        // ── Shop ──────────────────────────────────────────────────────────────
+                        purchasing: false,
+                        shopTargetCharacterId: '',
+                        inventoryInput: '',
+
+                        // ── Warehouse (账号级仓库) ────────────────────────────────────────────
+                        warehouse: [],
+                        warehouseLoading: false,
+                        warehouseTargetCharId: null,
+
 
                     // ── Revive ────────────────────────────────────────────────────────────
                     deadCharacters: [],

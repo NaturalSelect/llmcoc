@@ -97,7 +97,10 @@
                     <div class="lg:col-span-2">
                         <div class="flex items-center justify-between mb-4">
                             <h2 class="text-lg font-bold text-amber-100">我的调查员</h2>
-                            <button @click="openCreateChar()" class="btn btn-amber">+ 创建角色</button>
+                            <div class="flex items-center gap-2">
+                                <button @click="openWarehouse()" class="btn btn-ghost">仓库</button>
+                                <button @click="openCreateChar()" class="btn btn-amber">+ 创建角色</button>
+                            </div>
                         </div>
 
                         <!-- 人物卡骨架屏 -->
@@ -989,12 +992,15 @@
 
                 <div class="mb-4">
                     <h3 class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider font-ui">物品栏</h3>
-                    <p class="text-xs text-amber-800 mb-2 font-ui">点击物品右侧按钮可直接丢弃。</p>
+                    <p class="text-xs text-amber-800 mb-2 font-ui">点击物品右侧按钮可直接丢弃或存入账号仓库。</p>
+                    <p x-show="editChar?.in_session" class="text-xs text-red-400 mb-2 font-ui">该人物卡正在游戏中，无法存取仓库。</p>
                     <div x-show="(editChar?.inventory||[]).length" class="flex flex-wrap gap-1.5">
                         <template x-for="(item, idx) in (editChar?.inventory||[])" :key="idx">
                             <span
                                 class="inline-flex items-center gap-2 text-xs bg-amber-950/20 text-amber-300 px-2 py-1 rounded font-ui">
                                 <span x-text="item"></span>
+                                <button @click="depositToWarehouse(item)" :disabled="editChar?.in_session"
+                                    class="text-amber-500 hover:text-amber-300 transition leading-none disabled:opacity-40 disabled:cursor-not-allowed">存入仓库</button>
                                 <button @click="removeInventoryItem(item)"
                                     class="text-red-700 hover:text-red-400 transition leading-none">丢弃</button>
                             </span>
@@ -2020,6 +2026,50 @@
                     <div class="flex gap-2 pt-1">
                         <button @click="modal=null" class="btn btn-ghost flex-1">关闭</button>
                         <button @click="submitAdminInventoryItem()" :disabled="adminInventoryLoading || !adminInventorySelectedCard" class="btn btn-amber flex-1">添加物品</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Warehouse modal (账号级仓库) -->
+        <div x-show="modal === 'warehouse'" class="backdrop" @click.self="modal=null">
+            <div class="modal max-w-md p-6">
+                <div class="flex justify-between items-center mb-5">
+                    <h2 class="text-lg font-bold text-amber-100">账号仓库</h2>
+                    <button @click="modal=null"
+                        class="text-amber-800 hover:text-amber-400 text-xl leading-none">✕</button>
+                </div>
+                <div class="space-y-3">
+                    <p class="text-xs text-amber-800 font-ui">物品可在同账号的不同人物卡之间流通，正在游戏中的人物卡无法存取。</p>
+                    <div>
+                        <label class="block text-xs text-amber-700 mb-1 font-ui">取出到人物卡</label>
+                        <select x-model.number="warehouseTargetCharId" class="inp">
+                            <option value="">— 请选择 —</option>
+                            <template x-for="c in warehouseUsableCharacters()" :key="c.id">
+                                <option :value="c.id" x-text="c.name + (c.occupation ? '（' + c.occupation + '）' : '')"></option>
+                            </template>
+                        </select>
+                        <p x-show="!warehouseUsableCharacters().length" class="text-[11px] text-amber-900 mt-1 font-ui">所有人物卡都在游戏中，暂时无法取出物品。</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-amber-700 mb-1 font-ui">仓库物品</label>
+                        <div x-show="warehouseLoading" class="text-xs text-amber-800 font-ui">加载中…</div>
+                        <div x-show="!warehouseLoading && (warehouse||[]).length" class="flex flex-wrap gap-1.5">
+                            <template x-for="(item, idx) in (warehouse||[])" :key="idx">
+                                <span
+                                    class="inline-flex items-center gap-2 text-xs bg-amber-950/20 text-amber-300 px-2 py-1 rounded font-ui">
+                                    <span x-text="item"></span>
+                                    <button @click="withdrawFromWarehouse(item)" :disabled="!warehouseTargetCharId"
+                                        class="text-amber-500 hover:text-amber-300 transition leading-none disabled:opacity-40 disabled:cursor-not-allowed">取出</button>
+                                    <button @click="discardWarehouseItem(item)"
+                                        class="text-red-700 hover:text-red-400 transition leading-none">丢弃</button>
+                                </span>
+                            </template>
+                        </div>
+                        <p x-show="!warehouseLoading && !(warehouse||[]).length" class="text-xs text-amber-800 font-ui">仓库空空如也。</p>
+                    </div>
+                    <div class="flex gap-2 pt-1">
+                        <button @click="modal=null" class="btn btn-ghost flex-1">关闭</button>
                     </div>
                 </div>
             </div>

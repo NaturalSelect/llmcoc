@@ -286,4 +286,61 @@ window.COC.dashboard = {
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 
+                    // ══════════════════════════════════════════════════════════════════════
+                    // Warehouse (账号级仓库：物品在同账号角色间流通，仅未进入 session 的角色可操作)
+                    // ══════════════════════════════════════════════════════════════════════
+                    async openWarehouse() {
+                        this.modal = 'warehouse';
+                        const usable = this.warehouseUsableCharacters();
+                        this.warehouseTargetCharId = usable.length ? usable[0].id : null;
+                        await this.loadWarehouse();
+                    },
+
+                    async loadWarehouse() {
+                        this.warehouseLoading = true;
+                        try {
+                            const r = await this.api('GET', '/api/warehouse');
+                            this.warehouse = r.warehouse || [];
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                        this.warehouseLoading = false;
+                    },
+
+                    warehouseUsableCharacters() {
+                        return (this.characters || []).filter(c => c.is_active !== false && !c.in_session);
+                    },
+
+                    async depositToWarehouse(item) {
+                        if (!this.editChar?.id || !item) return;
+                        try {
+                            const r = await this.api('POST', '/api/warehouse/deposit', { character_card_id: this.editChar.id, item });
+                            this.syncCharacter(r.character_card);
+                            this.warehouse = r.warehouse || [];
+                            this.showToast('已存入仓库');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+
+                    async withdrawFromWarehouse(item) {
+                        if (!item) return;
+                        if (!this.warehouseTargetCharId) {
+                            this.showToast('请先选择接收物品的人物卡', 'error');
+                            return;
+                        }
+                        try {
+                            const r = await this.api('POST', '/api/warehouse/withdraw', { character_card_id: this.warehouseTargetCharId, item });
+                            this.syncCharacter(r.character_card);
+                            this.warehouse = r.warehouse || [];
+                            this.showToast('已取出到人物卡');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+
+                    async discardWarehouseItem(item) {
+                        if (!item) return;
+                        if (!await this.confirmDialog('确定要丢弃仓库中的「' + item + '」吗？此操作不可撤销。', { danger: true, confirmText: '丢弃' })) return;
+                        try {
+                            const r = await this.api('DELETE', '/api/warehouse/items/' + encodeURIComponent(item));
+                            this.warehouse = r.warehouse || [];
+                            this.showToast('已丢弃');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+
 };

@@ -207,6 +207,15 @@ func main() {
 		chars.DELETE("/:id/assets/:name", handlers.RemoveCharacterAsset)
 	}
 
+	// Warehouse (account-level, shared across characters)
+	warehouse := api.Group("/warehouse", middleware.AuthRequired(), middleware.BanCheck())
+	{
+		warehouse.GET("", handlers.GetWarehouse)
+		warehouse.POST("/deposit", handlers.DepositToWarehouse)
+		warehouse.POST("/withdraw", handlers.WithdrawFromWarehouse)
+		warehouse.DELETE("/items/*item", handlers.DiscardWarehouseItem)
+	}
+
 	// Scenarios
 	scenarios := api.Group("/scenarios", middleware.AuthRequired())
 	{

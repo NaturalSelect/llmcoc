@@ -289,14 +289,7 @@ func JoinSession(c *gin.Context) {
 	}
 
 	// Lock check: a character card may only participate in one active session at a time.
-	// Query whether this card already appears in any non-ended session.
-	var lockedCount int64
-	models.DB.Model(&models.SessionPlayer{}).
-		Joins("JOIN game_sessions ON game_sessions.id = session_players.session_id").
-		Where("session_players.character_card_id = ? AND game_sessions.status != ?",
-			req.CharacterCardID, models.SessionStatusEnded).
-		Count(&lockedCount)
-	if lockedCount > 0 {
+	if isCardLockedInSession(models.DB, req.CharacterCardID) {
 		c.JSON(http.StatusConflict, gin.H{"error": "该人物卡正在另一场游戏中使用,副本结束后才能再次使用"})
 		return
 	}
@@ -1802,6 +1795,37 @@ func chatTruncate(s string, maxLen int) string {
 // is_active=true 且 wound_state!="dead" 且 HP>0
 func checkCardCanJoinSession(card *models.CharacterCard) bool {
 	return card.IsActive && card.WoundState != "dead" && card.Stats.Data.HP > 0
+}
+
+// NOTE: isCardLockedInSession 判断人物卡是否正被某个未结束(lobby/playing)的房间占用。
+// 传入 db 以便调用方在事务内复用同一连接。
+func isCardLockedInSession(db *gorm.DB, cardID uint) bool {
+	var lockedCount int64
+	db.Model(&models.SessionPlayer{}).
+		Joins("JOIN game_sessions ON game_sessions.id = session_players.session_id").
+		Where("session_players.character_card_id = ? AND game_sessions.status != ?",
+			cardID, models.SessionStatusEnded).
+		Count(&lockedCount)
+	return lockedCount > 0
+}
+
+// NOTE: lockedCardIDs 批量返回给定人物卡中正被未结束房间占用的 ID 集合，避免逐个查询导致 N+1。
+func lockedCardIDs(db *gorm.DB, cardIDs []uint) map[uint]bool {
+	result := make(map[uint]bool)
+	if len(cardIDs) == 0 {
+		return result
+	}
+	var ids []uint
+	db.Model(&models.SessionPlayer{}).
+		Joins("JOIN game_sessions ON game_sessions.id = session_players.session_id").
+		Where("session_players.character_card_id IN ? AND game_sessions.status != ?",
+			cardIDs, models.SessionStatusEnded).
+		Distinct().
+		Pluck("session_players.character_card_id", &ids)
+	for _, id := range ids {
+		result[id] = true
+	}
+	return result
 }
 
 func isInSession(userID, sessionID uint) bool {

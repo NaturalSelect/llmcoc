@@ -75,6 +75,14 @@ func ListCharacters(c *gin.Context) {
 	for i := range cards {
 		hotFixChar(&cards[i])
 	}
+	ids := make([]uint, len(cards))
+	for i, card := range cards {
+		ids[i] = card.ID
+	}
+	locked := lockedCardIDs(models.DB, ids)
+	for i := range cards {
+		cards[i].InSession = locked[cards[i].ID]
+	}
 	c.JSON(http.StatusOK, newPaginatedResponse(cards, page, pageSize, total))
 }
 
