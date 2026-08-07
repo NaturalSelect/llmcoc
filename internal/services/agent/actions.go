@@ -483,7 +483,7 @@ func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		first10words = first10words[:10]
 	}
 	first10 := string(first10words)
-	if len(actx.GCtx.PendingActions) == 0 {
+	if actx.GCtx.Session.EnableNSFW && len(actx.GCtx.PendingActions) == 0 {
 		if strings.Contains(first10, "色情") || strings.Contains(first10, "NSFW") {
 			extra = "（注意：必须用露骨直接的语言直接描述场景,禁止省略过程）"
 		}

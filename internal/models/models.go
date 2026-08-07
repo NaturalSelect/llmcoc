@@ -341,6 +341,7 @@ type GameSession struct {
 	MaxPlayers    int                     `gorm:"default:4" json:"max_players"`
 	Password      string                  `gorm:"size:100" json:"-"`
 	HasPassword   bool                    `gorm:"default:false" json:"has_password"`
+	EnableNSFW    bool                    `gorm:"default:false" json:"enable_nsfw"`
 	CreatedBy     uint                    `gorm:"not null" json:"created_by"`
 	TurnRound     int                     `gorm:"default:1" json:"turn_round"`
 	WriterHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`

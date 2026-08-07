@@ -118,7 +118,7 @@ window.COC.sessions = {
                     // ══════════════════════════════════════════════════════════════════════
                     async openCreateSession() {
                         this.selectedScenario = null;
-                        this.sessionForm = { name: '', scenario_id: '', max_players: 4, password: '' };
+                        this.sessionForm = { name: '', scenario_id: '', max_players: 4, password: '', enable_nsfw: false };
                         this.modal = 'createSession';
                         await this.loadScenarios(1);
                     },

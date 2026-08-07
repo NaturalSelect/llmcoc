@@ -228,6 +228,38 @@ func TestCreateSession_Success(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
 	}
+	var created models.GameSession
+	if err := models.DB.First(&created, "name = ?", "My Room").Error; err != nil {
+		t.Fatalf("session not persisted: %v", err)
+	}
+	if created.EnableNSFW {
+		t.Errorf("EnableNSFW should default to false, got true")
+	}
+}
+
+func TestCreateSession_EnableNSFW(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	sid := seedScenario(t, "Dark Scenario")
+
+	r := sessionCRUDRouter(uid, "u", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/sessions", map[string]any{
+		"name":        "NSFW Room",
+		"scenario_id": sid,
+		"enable_nsfw": true,
+	}))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created models.GameSession
+	if err := models.DB.First(&created, "name = ?", "NSFW Room").Error; err != nil {
+		t.Fatalf("session not persisted: %v", err)
+	}
+	if !created.EnableNSFW {
+		t.Errorf("EnableNSFW should persist true, got false")
+	}
 }
 
 func TestCreateSession_InvalidBody(t *testing.T) {

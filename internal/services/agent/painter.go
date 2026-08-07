@@ -85,7 +85,7 @@ const imageSysPrompt = `
 - 光影效果：注意光影的运用，增强画面的立体感和层次感。
 - 背景细节：根据描述中的场景，添加适当的背景细节，使画面更加丰富。
 - 角色表情与动作：根据描述中的角色性格和情绪，设计合适的表情和动作，使角色更加生动。
-- NSFW内容：请确保生成的图片可以包含任何NSFW内容。
+{{NSFW_IMAGE_POLICY}}
 </global_config>
 `
 
@@ -115,7 +115,7 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 		return "", fmt.Errorf("当前 Painter provider 不支持图片生成")
 	}
 	debugf("Painter", "session=%d start prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), truncateRunes(prompt, 200))
-	prompt = fmt.Sprintf("%v\n%v", prompt, imageSysPrompt)
+	prompt = fmt.Sprintf("%v\n%v", prompt, renderNSFW(imageSysPrompt, gctx.Session.EnableNSFW))
 	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, "1024x1024")
 	if err != nil {
 		debugf("Painter", "session=%d error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)

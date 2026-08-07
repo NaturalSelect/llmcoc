@@ -37,6 +37,7 @@ type CreateSessionReq struct {
 	ScenarioID uint   `json:"scenario_id" binding:"required"`
 	MaxPlayers int    `json:"max_players"`
 	Password   string `json:"password"`
+	EnableNSFW bool   `json:"enable_nsfw"`
 }
 
 type JoinSessionReq struct {
@@ -203,6 +204,7 @@ func CreateSession(c *gin.Context) {
 		MaxPlayers:  req.MaxPlayers,
 		Password:    pwHash,
 		HasPassword: hasPassword,
+		EnableNSFW:  req.EnableNSFW,
 		CreatedBy:   userID,
 	}
 

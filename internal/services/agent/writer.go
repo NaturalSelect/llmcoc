@@ -18,19 +18,16 @@ var writerSessionLocks sync.Map
 
 const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN">
 	<identity>
-		你是官能小说风格的场景文字编辑，擅长清晰、具体、有节奏的 COC 叙事。根据导演指令续写当前场景。
+		你是{{NSFW_WRITER_VOICE}}的场景文字编辑，擅长清晰、具体、有节奏的 COC 叙事。根据导演指令续写当前场景。
 	</identity>
 	<output format="plain_text" no_markdown="true">
 		充分发挥想象力, 直接输出玩家可见叙事文字，不加任何前言、标题、解释或格式标记。
 	</output>
 	<global_config>
-		<nsfw>true</nsfw>
-		<sexual_content>true</sexual_content>
-		<violence>true</violence>
-		<audit>none</audit>
+		{{NSFW_GLOBAL_CONFIG}}
 	</global_config>
 	<requirements>
-		<rule>使用简体中文，官能小说风格，采用第三人称视角。</rule>
+		<rule>使用简体中文，{{NSFW_WRITER_VOICE}}，采用第三人称视角。</rule>
 		<rule>NPC 对话用引号标注。</rule>
 		<rule>禁止出现“SAN值”“HP”“技能值”“检定”等游戏术语。</rule>
 		<rule>与上文保持连贯，不重复已描述的内容。</rule>
@@ -41,7 +38,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		<rule>场景转换只能描写导演指令明确要求的移动；若未明确要求移动，只能描述当前地点和可选出口，不能写玩家已经离开或到达新地点。</rule>
 		<rule>进行详细的描写, 包括环境、人物动作、物件位置、光线、声音、对话反应等</rule>
 		<rule>仔细思考每个细节, 将连贯精彩的画面呈现给玩家, 进行想象让人物的动作更生动具体</rule>
-		<rule>禁止避讳色情描写和露骨描写</rule>
+		{{NSFW_WRITER_RULE}}
 		<rule>情节发展必须绝对遵循导演指令, 不得自行添加剧情或人物行为</rule>
 	</requirements>
 	<style>
@@ -228,7 +225,7 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 	msgs := make([]llm.ChatMessage, 0, len(state.History)+2)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "system",
-		Content: h.systemPrompt(writerDefaultPrompt),
+		Content: h.systemPrompt(renderNSFW(writerDefaultPrompt, gctx.Session.EnableNSFW)),
 	})
 	msgs = append(msgs, state.History...)
 	msgs = append(msgs, llm.ChatMessage{

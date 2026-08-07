@@ -213,7 +213,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	// NOTE: 运行时读取 balance_rules 并注入 Director 用户消息；与 Lawyer 保持一致语义。
 	kpBalanceRules := strings.TrimSpace(models.GetSiteSetting("balance_rules", models.DefaultBalanceRules))
-	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(kpSystemPrompt), kpMsgs, tempNPCs, kpBalanceRules)
+	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW)), kpMsgs, tempNPCs, kpBalanceRules)
 
 	switchRole := false
 
