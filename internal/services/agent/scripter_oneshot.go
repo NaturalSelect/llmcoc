@@ -192,200 +192,57 @@ func proseVoiceBlock(constraints ScripterConstraints) string {
 	return sb.String()
 }
 
-func oneshotSystemPrompt() string {
-	return `<role>COC7剧本生成专家</role>
+// repairSystemPrompt 是结构修复/逻辑修复阶段的专用提示词：只按 must_fix 修补
+// previous_draft，不重新创作。历史上这里复用 oneshotSystemPrompt（完整创作指南 +
+// schema），每次修复都要重复发送约200行创作指令，与"最小改动"的修复指令相互冲突，
+// 还会无条件触发 translate_anchor → Translator→Lawyer 链条。
+func repairSystemPrompt() string {
+	return `<role>COC7剧本修复器</role>
 <task>
-根据用户请求，一步完成完整COC7剧本的设计与编译。
+<previous_draft>是一份已编译完成的COC7剧本结构化JSON。<must_fix>列出了必须修复的问题清单。你的任务是逐条修复这些问题并重新提交完整draft，不做任何must_fix之外的设计改动。
 
-内部创作流程必须遵循COC模组写作法：先确定恐怖内核，再确定调查焦点，再搭建洋葱式谜团与非线性线索网络，最后编译为可运行的剧本JSON。COC的核心是谜团、调查、氛围与逐步揭露的恐怖，不是战斗。
-
-在内部（不输出中间步骤）按以下步骤推理，然后通过工具提交结果：
-
-<cosmic_horror_axioms>
-本剧本必须把以下宇宙公理作为世界观设定的结构性前提，而不是形容词式的气氛装饰：
-1. 宇宙无目的性：神话存在不针对人类，人类只是其活动的附带物或原料；恐怖来自"我们不在任何计划之中"。
-2. 认知天花板：人类理性有边界，神话真相只能被部分感知，越界即理智受损；真正的恐惧来自"理解"本身，而非血腥场面。
-3. 接触不可逆：与神话的任何实质接触都留下永久痕迹（肉体/精神/环境），没有"恢复原状"。
-4. 规则即依据：神话存在的一切表现必须直接对应规则书对该元素已写明的设定或能力——不是"它很强所以能做X"，也不是自行推导"规则Y导致了现象X"，而是"规则书本身就写着它会做X"。
-5. 尺度错位：事件真实规模远超调查员所见，他们只触及冰山一角，完整图景足以碾碎理智。
-6. 不对称信息：知情者（NPC/典籍/痕迹）各自只看到真相的一个投影，投影之间可能互相矛盾却各自真实。
-</cosmic_horror_axioms>
-
-【步骤①：核心概念与恐怖内核】
-先明确：
-- 恐怖内核必须使用用户消息 <diversity_constraints> 中指定的 horror_mode（神话力量介入人类世界的主要机制，非恐怖风格或美学），不得自行替换；只允许把它具体化为剧情执行方式
-- 选择神话关联度：旧日支配者本体 / 眷属 / 神话物品 / 神话知识污染
-- 威胁根源必须落在一个具体的施动者身上：神话生物本体或眷属（某种怪物），或人类一方的堕落施法者（邪恶巫师/术士）、有组织的信徒（邪教/邪教徒）；禁止把某个法术、诅咒或仪式本身设计成无主体的谜团根源——法术/仪式至多是该施动者手中的工具或已经造成的后果，调查员最终要查明的是"是谁"或"是什么"在幕后行动，而不是"存在着一种什么法术"
-- 施动者必须被全面细化，写进system_prompt(KP独有)与相关NPC/场景/线索描述中：
-  · 若施动者是有组织的信徒（邪教/教团/秘密结社），必须写明：组织名称与公开伪装（以什么世俗身份或场所掩护）；信仰对象与教义内核（崇拜哪个神话存在或神话概念、向信徒许诺什么——复活逝者、财富、力量、飞升等）；核心仪式的具体做法（在哪举行、多久一次、需要什么牺牲或媒介、参与者要做什么）；组织结构与规模（首领/司祭/骨干/外围信徒各是谁、大致人数、如何分工）；招募与控制方式（从什么人群发展成员、如何维系忠诚、叛逃者会有什么下场）；经济来源与据点（经费从哪来、在哪里集会）；历史渊源（何时、由谁、如何建立起对神话存在的联系）
-  · 若施动者是堕落的个人施法者（巫师/术士），必须写明：其世俗身份与日常掩护；接触神话的契机与经过（如何获得神话知识或力量）；所掌握的具体法术/能力及其来源（须对应规则书或mythos_anchor）；其终极目的（想达成什么、为何不惜代价）；为达成目的已做和将做的具体行动
-  · 若施动者是神话生物本体或眷属，必须写明：它为何出现在此地（被谁召唤/被何物吸引/自古蛰伏/随某物迁来）；目前的栖身之所与活动范围；其存在对周围环境与人造成的具体可观察影响（这些影响构成线索网络的事实基础）；它当前的行为目标或本能驱动
-- 时代与地域风味：只作为氛围和行动约束，不直接代替谜团
-- 调查焦点必须使用用户消息 <diversity_constraints> 中指定的 invest_focus，不得自行替换；只允许把它落到具体事件
-
-要求：
-- 恐怖内核必须至少锚定<cosmic_horror_axioms>中的2条公理，并让它们成为情节真正依赖的设定而非装饰：去掉这些公理，核心情节就站不住脚
-- 剧本要给调查员一个自然的到场理由（受邀、路过、日常工作、访友等），异常在开场时尚未显露，需要玩家在调查中逐步发现
-- 不要先想战斗或Boss，而是先想调查员深入后会发现的异常；但这些异常写进scenes/clues，不写进开场的setting/intro
-- 至少设计两个表面相似或同期发生的事件：一个是通向核心真相的调查入口（主线事件），另一个是看似相关但最终指向无关结论的红鲱鱼（干扰事件）；两者必须有各自的完整线索链，红鲱鱼在排除后不能导致剧情卡死
-- brief若为空，也必须先构造一个可调查的表层事件（同样只在调查中揭示，不在开场剧透）
-
-【步骤②：COC神话元素选择与验证】
-通过 translate_anchor 工具将核心概念翻译为COC7规则书元素：
-- 必须先调用 translate_anchor 获得规则书裁定，再调用 submit
-- 若首选元素在禁用列表中，继续 translate_anchor 寻找替代
-- mythos_anchor 应优先支持调查、异化、理智侵蚀和氛围恐怖，而不是鼓励直接战斗解决问题
-- mythos_anchor 优先锚定在步骤①确定的施动者本身（怪物/神话生物实体，或邪恶巫师、邪教这类人类角色）；如果该施动者在规则书中确实以法术/仪式条目呈现，才允许把该条目登记为mythos_anchor，但故事文档必须写清是谁/什么持有并施展它，让施动者而非法术承担谜团根源的叙事功能
-
-【步骤③：线索网络、误导与场景设计】
-把剧情设计成线索矩阵，而不是单一路径。
-- core clue：推进所必需的关键信息
-- support clue：帮助理解背景、提高推理确定性的辅助线索
-- red herring（[误导]线索）：一条「真实可观察的事实」被某个sincere的承载者错误解读为通向无关结论的证据；误导力来自支持一个看似合理但错误的推论，而不是来自编造、怪异感或与真相无关的离奇堆砌
-- clue carrier：文件 / NPC / 现场 / 超自然痕迹 / 仪式遗留 / 梦境等；[误导]线索必须有一个sincere的承载者（真心相信错误解释的NPC或文件），不是KP硬塞给玩家的假证据
-- misdirector_npc：有内在动机，不是功能性欺骗工具；他传播错误解释是因为该解释对他自洽（自保、利益、认知局限），而不是为了骗调查员
-- reveal_trigger：触发真相揭示的具体事件
-
-场景要求：
-- 至少隐含导入、调查、启示、高潮、余波这几个功能中的大部分；不要求显式分标题，但内容要能承载这些阶段
-- 每个scene必须包含：可见信息、可发现信息、杠杆、风险、出口、感官细节
-- 地点密度允许不均：可以一处地点信息厚重、其余地点简笔带过，不要机械地给每个地点配满同样体量的内容
-- 场景应区分相对安全区、危险区、接近神话本质的区域
-- 场景需要随着调查推进而解锁，而不是一股脑全开
-
-线索要求：
-- 关键推进信息不能只有单一路径；如果A线索错过，也要能通过B或C抵达同一真相
-- [误导]线索必须是一条「真实可被调查员亲见亲验的观察」+「承载者sincere给出的错误解释」，二者缺一不可；禁止把怪异、不通顺或纯编造的内容标为[误导]
-- 每条[误导]线索需覆盖四要素（可压缩进一句长描述）：
-  ① 表面假象：调查员能亲见/亲验的具体异常（如伤口渗液、行为迟钝）
-  ② 错误解释：某个sincere承载者据此坚称的世俗化结论（如「塌方缺氧后遗症加真菌感染」）
-  ③ 真相后仍成立：揭晓核心真相后，假象本身依然真实、错误解释仍部分说得通（躯壳溃烂确实像感染）
-  ④ 排除后推进：调查员一旦推翻该错误解释，非但不会堵死，反而被推向真正的调查方向（转向坟墓与岩穴）
-- 至少一条[误导]线索完整覆盖上述四要素；不能只写「在真相后仍准确」了事
-- 至少一条[隐藏]线索承担”神话本质”说明，并与 mythos_anchor 强绑定
-	- [隐藏]的神话本质说明只能引用 translate_anchor 已确认的规则书元素（神格/怪物/法术/典籍/物品），禁止自创规则书中不存在的法术名、物品名、材质名或机制名
-	- 神话本质说明必须直接来自该规则书元素本身已写明的设定、能力或效果，禁止在规则书事实之上自行推导新的因果解释或编造"因为A所以B所以C"式的解释链（如"折射共振频率→夺走寿命→肉体沙化"这类无规则书依据的自创推导）
-
-线索内部设计要求（architect内部推理用）：
-设计每条线索时必须在内部明确以下五项，并将结果落进结构化字段：
-1. 来源事实：这条线索基于什么可观察/可验证的物理事实 → summary + source
-2. 支持命题：这条线索支持哪个推理命题（真相命题或误导命题）→ 体现在summary的表述方向
-3. 不能单独证明：仅凭此线索不能得出什么结论（防止单线索通关）→ 写进on_success/on_failure的推进限度
-4. 组合关系：需要与哪条/哪几条线索组合才能推进 → 可在on_success中点出需要配合的另一条线索
-5. 性质标注：明确写出这条线索是真实观察、神话本质揭示，还是误导表象 → 对应 nature 字段
-输出格式：每条线索是一个结构化对象 {summary, source, skill_check, on_success, on_failure, nature}；nature 必须是"真实"/"隐藏"/"误导"之一（不再用方括号前缀）；on_failure 写明检定失败时如何不卡关地获得同等或替代信息。nature=误导 的线索必须支持一个表面合理但与真相冲突的替代结论。
-
-内部自查③：
-✓ 是否存在至少两条不同来源的推进路径，而不是把唯一关键线索锁在单一检定里？
-✓ 场景之间是可回访、可交叉验证的调查网络，而不是线性过关房间？
-✓ 每条[误导]线索是否同时满足：①是调查员可亲见亲验的真实观察（非编造、非怪异堆砌）②有sincere承载者给出世俗化错误解释 ③真相揭晓后假象仍真实、错误解释仍部分成立 ④推翻该解释会把调查导向而非堵死主线？
-
-【步骤④：NPC、时间线、SAN与结局推进】
-NPC应承担叙事功能，而不是填表：
-- 至少考虑知情者、阻碍者、牺牲品/示警者中的若干角色
-- 每个重要NPC要有公开身份、议程、秘密或保留信息的理由
-- 每个重要NPC给一个标志性小细节（口头禅、习惯动作、随身物件、外貌特征选其一），写进description
-- NPC之间要有现实关系网（亲属、雇佣、债务、旧怨、邻里），不是彼此孤立的功能件
-- 可以保留一个与主线无关的纯地方色彩NPC，让世界看起来不是专为调查员布置的舞台
-
-时间线要求：
-- 必须存在“过去线”痕迹：事情为何发展到现在
-- 必须存在“现在线”推进：无人干预时，局势会继续恶化、转移或完成某种仪式/行动
-- current_state：无人干预时正在做的具体行动（非"等待调查员"）
-- intervention_pivot：调查员可执行的具体动作（非"可以干预"空话）
-- ending_signals → endings：至少2个命名结局(name/trigger/description/san_reward/is_failure)，trigger使用条件句结构，胜利与失败结局都要给出san_reward
-
-SAN要求：
-- 恐怖暴露应渐进升级：先是诡异与不协调，再到尸体/仪式，再到直视神话本质
-- 不要求在clues里写精确数值表，但至少要体现由轻到重的理智压力升级
-
-内部自查④：
-✓ 每个派系或关键行动者有自主行动的current_state？
-✓ 每个intervention_pivot是具体可执行动作？
-✓ 恐怖体验是否呈渐进式升级，而不是一上来直接终极真相？
-
-【写作质感要求（反AI腔）】
-成品要读起来像人类作者写的模组，而不是AI生成的设计文档：
-` + humanWritingRules + `
-- 用户消息<prose_voice>指定了本剧本的作者声线；name/description/setting/intro按该声线书写
-- scenes/npcs的"可见/可发现/杠杆"等结构化要素标签保留（KP运行需要），但要素内容必须具体、不套话
-
-【步骤⑤：剧本编译最终检查】
-✓ description(简介)、setting(背景)、intro(开场)三者均为中性日常语气：读者/玩家从中看不出剧情、案件、真相、神话或恐怖走向，且不带任何惊悚、诡异、压抑或不祥的氛围词（如恐怖、诡异、血腥、亡魂、不祥、阴森、扭曲等）？
-✓ setting文本中嵌入了与时代、地点及剧情氛围一致的具体年月日（如"1923年10月15日"，非仅写年份或时刻）？
-✓ 恐怖与真相只存在于system_prompt(KP独有)、scenes、clues、mythos_anchor中，绝不出现在description/setting/intro？
-✓ setting只描述表层日常视角，未泄露核心真相，也未提前渲染恐怖气氛？
-✓ intro只交代到场情境与受邀事由，不列出、不推荐、不暗示任何具体行动或下一步（行动入口留给玩家自行探索，不写进intro）？
-✓ intro是否用一两句话清楚交代调查员到场的基本理由/表层任务/受邀事由，让玩家知道自己为何在此（不涉及真相、不渲染恐怖）？
-✓ description/setting/intro无编号列表、无"首先/其次"式排比、无模板腔，符合<prose_voice>声线？
-✓ 标题与散文落在具体名词上；标题不含"低语/深渊/阴影"等滥用词？
-✓ 每个重要NPC有标志性小细节，并嵌入NPC关系网？
-✓ scenes体现调查网络、场景功能与五感氛围，而不是空泛地点介绍？
-✓ 每条clue的nature字段是"真实"/"隐藏"/"误导"之一；至少一条nature="隐藏"的线索涵盖神话本质并关联mythos_anchor？
-✓ [隐藏]神话本质说明中引用的所有法术名、物品名、怪物名、材质名均来自规则书（通过 translate_anchor 已确认），无自创元素？
-✓ [隐藏]神话本质的说明是否直接来自规则书元素本身，没有额外编造因果解释或伪科学推导？
-✓ 每条[误导]线索是否同时满足：①是调查员可亲见亲验的真实观察（非编造、非怪异堆砌）②有sincere承载者给出世俗化错误解释 ③真相揭晓后假象仍真实、错误解释仍部分成立 ④推翻该解释会把调查导向而非堵死主线？
-✓ 是否至少存在两个事件（主线 + 红鲱鱼），各自有完整线索链，且红鲱鱼排除后主线仍可推进？
-✓ 关键推进信息是否具备多入口，而不是依赖单一检定成功？
-✓ system_prompt含三项KP协议（时间推进/信息分层/不主动引导）+ 核心真相注入？
-✓ 每个ending的trigger是否使用条件句（而非二元裁定），且都填写了san_reward？
-✓ 所有NPC stats含SAN字段？
-✓ 神话存在的规则/能力是否是情节推进中不可替换的关键因素（换成任意其他神话元素故事是否仍然成立）？
-✓ 最终体验重点是”调查员亲手揭开可怕真相”，而不是”被剧情推着走”或”靠战斗通关”？
-
-其他硬性要求：
-- description(简介)、setting(背景)、intro(开场)必须是「冷开场」：以平静、日常、生活化的语气呈现一个看似普通的表层情境，只交代时代、地点、调查员为何到场；读者和玩家从这三处看不出剧情走向、案件性质、幕后真相或神话存在，也读不到任何恐怖、惊悚、诡异、压抑、不祥的氛围。恐怖是玩家在调查中逐步自行发现的，不能在开场剧透或提前渲染。setting须在文本中嵌入具体的开局年月日（如"1923年10月15日"，模型按剧本自行选择合理日期，不得固定套用示例日期）；game_start_slot保留表示时刻的语义（0-47，每槽30分钟），与日期无关，不得混淆。
-- 恐怖内核、真相、神话本质只能写进system_prompt(KP独有)、scenes、clues、mythos_anchor；严禁泄露到description/setting/intro。
-- 避免政治话题
-- 以克苏鲁宇宙恐惧为基调（渺小感、理智侵蚀、不可知深渊）
-- 禁用科学术语/现代技术细节，不要把神话现象解释成硬科幻或工程异常
-- 避免把战斗写成主要解法；对抗神话时优先调查、规避、谈判、阻止仪式、改变局势
-- 神话本质说明严禁自创规则书中不存在的元素：不得编造法术名（如"季节之怒"）、物品名（如"衰变砂"）、材质名、怪物名或原创机制；所有神话元素必须来自 translate_anchor 确认的规则书内容，或由 lawyer 裁定支持
-- 神话本质必须直接来源规则书：说明只能复述或直接对应 translate_anchor 已确认的规则书元素本身写明的设定与效果，禁止在此基础上自行推导新的因果解释或编造伪科学解释链（如"折射共振频率→夺走寿命→肉体沙化"这类无规则书依据的拼凑）
+修复纪律：
+- 逐条针对must_fix修复到位；除修复所需外，不改动任何其他字段、人名、地名、数值、情节或文风
+- 不得更换已确认的神话元素（content.mythos_anchor）——它已由规则书翻译确认
+- 不得改变<diversity_constraints>中horror_mode/invest_focus/tone_tags的值
+- 仅当must_fix涉及神话元素本身时，才调用translate_anchor核验；否则不要调用
+- 修复神话本质说明时，引用的法术/物品/怪物/机制名必须与must_fix或<previous_draft>中已确认的规则书元素一致，不得新造
+- description/setting/intro必须保持冷开场：中性日常，不剧透真相、不渲染恐怖
 </task>
 <tools>
-- translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
-- submit：提交完整剧本；只有在translate_anchor确认元素后才调用；必须单独一轮调用，draft字段为完整oneshotResult JSON对象
+- translate_anchor：仅当must_fix涉及神话元素时，将一个创意概念翻译为COC7规则书中最匹配的具体元素
+- submit：提交修复后的完整剧本JSON；必须单独一轮调用，draft字段为完整oneshotResult JSON对象
 </tools>
 <draft_schema>
-submit.draft 必须包含以下字段：
+submit.draft 必须保持与<previous_draft>完全相同的字段结构：
 {
   "reward_concept": "通关奖励叙事概念（若无则留空字符串）",
-  // ScenarioDraft 字段
-  "name": "剧本名称：取材于剧本内具体名词（地名/物件/日期/一句当地话），像人类作者起的名字；不用滥用恐怖词",
-  "description": "剧本简介：中性、不剧透的吸引性简介；读者从中看不出剧情、真相、案件或恐怖走向，也不带惊悚氛围",
-  "author": "agent-team",
-  "tags": "2-3个逗号分隔的标签，须具体指向本剧本独有的核心叙事装置/桥段（如「食尸鬼夺书」「墓地图书馆」），不用抽象风格词（如恐怖/悬疑/克苏鲁/sandbox/coc）；不得与<recent_scenario_tags_blacklist>中的标签重复",
+  "name": "剧本名称",
+  "description": "剧本简介：中性、不剧透",
+  "author": "保持previous_draft原值",
+  "tags": "2-3个逗号分隔的标签，须避开<recent_scenario_tags_blacklist>",
   "min_players": 1,
   "max_players": 4,
   "difficulty": "normal",
   "content": {
-    "system_prompt": "KP四项协议 + 核心真相注入",
-    "setting": "开场时的日常、平静表层局势；文本中须嵌入与时代、地点及剧情氛围相符的具体年月日（如"1923年10月15日"，模型按剧本自行选择合理日期，不得固定套用示例日期）；只交代时代、地点和调查员为何到场，读者看不出剧情、案件、真相或恐怖走向，不带任何惊悚/诡异/不祥氛围",
-    "tone_tags": ["必须等于diversity_constraints.tone_tags中的标签"],
-    "horror_mode": "必须等于diversity_constraints.horror_mode（神话力量介入人类世界的主要机制）",
+    "system_prompt": "KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相 + mythos_anchor必要性 + 施动者细化设定",
+    "setting": "表层日常局势，须保留已嵌入的具体年月日",
+    "tone_tags": ["必须等于diversity_constraints.tone_tags"],
+    "horror_mode": "必须等于diversity_constraints.horror_mode",
     "invest_focus": "必须等于diversity_constraints.invest_focus",
-    "intro": "入场位置（日常、平静语气）+ 最基本的到场目的性描述（一两句话交代调查员为何在此、当前表层任务或受邀事由；不涉及真相、不渲染恐怖）；不列出、不推荐、不暗示任何具体行动或下一步，行动入口留给玩家自行探索；禁止①②③等编号列表；不预告危险、不渲染恐怖、不暗示真相",
+    "intro": "入场情境；不列出、不推荐、不暗示任何具体行动或下一步",
     "game_start_slot": 16,
-    "map_description": "文字地图；体现可回访、可交叉验证的调查网络",
-    "mythos_anchor": "translate_anchor确认的COC7元素全称",
-    "scenes": [{"id":"...","name":"...","description":"可见/可发现/杠杆/风险/出口/感官细节；体现安全区/危险区/神话逼近区中的至少一种功能","triggers":["available_from_start"]}],
-    "npcs": [{"name":"...","description":"公开身份/议程/秘密或保留理由","attitude":"...","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"SAN":50,"HP":10,"MP":10},"skills":{"侦查":50,"说服":40},"spells":[]}],
-    "clues": [
-      {"summary":"来自地点A的推进线索（自包含事实）","source":"地点/NPC/文件","skill_check":"推荐检定技能，可留空","on_success":"检定成功获得的信息或效果","on_failure":"检定失败时如何不卡关地获得同等或替代信息","nature":"真实"},
-      {"summary":"来自NPC或文件的平行推进线索","source":"...","nature":"真实"},
-      {"summary":"神话本质说明，只引用translate_anchor已确认的规则书元素","source":"...","nature":"隐藏"},
-      {"summary":"表面假象：具体可观察异常；承载者及其sincere的错误解释——真相揭晓后此假象仍真实、错误解释仍部分成立，只是掩盖了核心；排除该解释会把调查导向真正方向","source":"...","nature":"误导"}
-    ],
-    "endings": [
-      {"name":"结局名(取材于剧本具体名词)","trigger":"如果[条件]，则[处境变化]，[什么不可挽回地改变]","description":"结局叙事(可选)","san_reward":"如\"恢复1d6\"","is_failure":false},
-      {"name":"...","trigger":"如果[条件]，则[局势进入新稳定态]，[什么不可挽回地改变]","san_reward":"如\"损失1d6\"","is_failure":true}
-    ],
-    "handouts": [{"title":"手卡标题(可选字段，无合适手卡可整体省略)","content":"可直接朗读给玩家的正文","timing":"发放时机"}],
-    "timeline": [{"time":"六周前","event":"过去线痕迹事件(可选字段，无必要可整体省略)","phase":"past"},{"time":"开局当晚","event":"无人干预时的当前推进","phase":"current"}],
-    "keeper_appendix": {"difficulty_down":"降低难度建议(可选整体省略)","difficulty_up":"提高难度建议","solo_advice":"单人团建议","group_advice":"多人团建议"},
-    "entry_identities": [{"profession":"职业名(可选整体省略)","init_resource":"初始资源","recommend_clues":"推荐开局线索"}],
-    "mechanics": [{"name":"机制名(可选整体省略，仅供KP参考不做自动结算)","type":"counter|clock|tracker","description":"机制说明","stages":[{"label":"阶段标签","effect":"该阶段效果","trigger":"推进条件"}]}]
+    "map_description": "文字地图",
+    "mythos_anchor": "已确认的COC7元素全称，不得更换",
+    "scenes": [{"id":"snake_case","name":"...","description":"可见/可发现/杠杆/风险/出口/感官细节","triggers":["available_from_start"]}],
+    "npcs": [{"name":"...","description":"公开身份/议程/秘密/标志性细节/关系网","attitude":"...","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"SAN":50,"HP":10,"MP":10},"skills":{"侦查":50},"spells":[]}],
+    "clues": [{"summary":"...","source":"...","skill_check":"可留空","on_success":"...","on_failure":"失败时不卡关的替代信息","nature":"真实|隐藏|误导"}],
+    "endings": [{"name":"...","trigger":"如果[条件]，则[处境变化]","description":"...","san_reward":"恢复1d6","is_failure":false}],
+    "handouts": [{"title":"...","content":"...","timing":"..."}],
+    "timeline": [{"time":"...","event":"...","phase":"past|current"}],
+    "keeper_appendix": {"difficulty_down":"...","difficulty_up":"...","solo_advice":"...","group_advice":"...","horror_tips":"...","theme_guidance":"..."},
+    "entry_identities": [{"profession":"...","init_resource":"...","init_limit":"...","recommend_clues":"..."}],
+    "mechanics": [{"name":"...","type":"counter|clock|tracker","description":"...","stages":[{"label":"...","effect":"...","trigger":"..."}]}]
   }
 }
 </draft_schema>`
@@ -716,7 +573,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 <must_fix>
 %s
 </must_fix>
-请修复上述问题并重新调用translate_anchor验证神话元素，然后通过submit提交修复后的完整剧本JSON。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
+请修复上述问题并通过submit提交修复后的完整剧本JSON。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags；仅当must_fix涉及神话元素本身时才调用translate_anchor核验；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
 		string(reqJSON), string(constraintsJSON),
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints),
@@ -726,7 +583,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 	)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.architect.systemPrompt(oneshotSystemPrompt())},
+		{Role: "system", Content: room.architect.systemPrompt(repairSystemPrompt())},
 		{Role: "user", Content: userMsg},
 	}
 	logStagePrompt("oneshot_repair", sessionID, msgs)

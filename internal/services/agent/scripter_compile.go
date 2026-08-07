@@ -52,7 +52,7 @@ func compilerSystemPrompt() string {
 - 至少一位NPC的description须写明"秘密"或"保留"信息
 </task>
 <tools>
-- submit_compiled_scenario：提交编译后的完整结构化剧本JSON；字段结构严格匹配<schema_example>；只调用一次
+- submit_compiled_scenario：提交编译后的完整结构化剧本JSON；字段结构严格匹配<schema_skeleton>；只调用一次
 </tools>`
 }
 
@@ -62,17 +62,51 @@ func submitCompiledScenarioTool() scripterTool {
 		solo: true,
 		def: llm.ToolDefinition{
 			Name:        toolNameSubmitCompiled,
-			Description: "提交编译后的完整结构化剧本JSON；字段结构严格匹配schema_example",
+			Description: "提交编译后的完整结构化剧本JSON；字段结构严格匹配schema_skeleton",
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"draft": {"type": "object", "description": "完整oneshotResult JSON对象，字段结构见schema_example"}
+					"draft": {"type": "object", "description": "完整oneshotResult JSON对象，字段结构见schema_skeleton"}
 				},
 				"required": ["draft"]
 			}`),
 		},
 	}
 }
+
+// compilerSchemaTemplate 是编译阶段的字段注解式骨架：给出完整字段结构与类型/枚举占位，
+// 不填充任何剧情内容。此前用完整示例（oneshotExample，一整份食尸鬼故事）作schema，
+// 模型会模仿示例中的叙事词汇，造成跨剧本内容同质；骨架式只传达结构，不传染内容。
+const compilerSchemaTemplate = `{
+  "reward_concept": "string：逐字等于<reward_concept>输入",
+  "name": "string：故事文档标题；无明确标题时从文档内具体名词提炼，不用低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒等滥用词",
+  "description": "string：剧本简介，取自或忠实改写表层情境段落；中性日常、不剧透",
+  "author": "agent-team",
+  "tags": "string：2-3个逗号分隔标签，指向本剧本独有的核心叙事装置/桥段，不用抽象风格词；须避开<recent_scenario_tags_blacklist>",
+  "min_players": 1,
+  "max_players": 4,
+  "difficulty": "string：如 normal",
+  "content": {
+    "system_prompt": "string：KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相与mythos_anchor必要性 + 施动者细化设定（邪教/施法者/神话生物的全部维度，不得压缩为一句话）",
+    "setting": "string：表层情境原文或忠实改写，必须保留文档中嵌入的具体年月日",
+    "tone_tags": ["必须逐字等于<diversity_constraints>.tone_tags"],
+    "horror_mode": "必须逐字等于<diversity_constraints>.horror_mode",
+    "invest_focus": "必须逐字等于<diversity_constraints>.invest_focus",
+    "intro": "string：调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步",
+    "game_start_slot": "int：0-47，每槽30分钟；从文档嵌入的时刻推算，未写明时取16",
+    "map_description": "string：按地点关系概括的文字地图，体现可回访、可交叉验证的调查网络",
+    "mythos_anchor": "必须逐字等于<mythos_anchor>输入",
+    "scenes": [{"id": "snake_case英文标识", "name": "string", "description": "完整保留可见信息/可发现信息/杠杆/风险/出口/感官细节", "triggers": ["默认available_from_start；仅文档明确写出解锁条件时才用条件触发"]}],
+    "npcs": [{"name": "string", "description": "完整保留公开身份/议程/秘密/标志性细节/关系网", "attitude": "string：文档写明的初始态度", "stats": {"STR": 50, "CON": 50, "SIZ": 50, "DEX": 50, "APP": 50, "INT": 60, "POW": 50, "EDU": 60, "SAN": 50, "HP": 10, "MP": 10}, "skills": {"按职业身份3-6项最相关技能": 50}, "spells": ["仅文档明确写明会施法者才填，普通人类留空数组"]}],
+    "clues": [{"summary": "string：保留来源事实/支持命题等关键信息", "source": "string", "skill_check": "string，可留空", "on_success": "string，可留空", "on_failure": "string，可留空", "nature": "真实|隐藏|误导 三选一"}],
+    "endings": [{"name": "string", "trigger": "保持如果[条件]，则[处境变化]的条件句结构", "description": "string", "san_reward": "string：如恢复1d6/损失1d6，文档未写明时按结局性质给出", "is_failure": "bool：标记灾难/失败向结局"}],
+    "handouts": [{"title": "string", "content": "string", "timing": "string"}],
+    "timeline": [{"time": "string", "event": "string", "phase": "past|current"}],
+    "keeper_appendix": {"difficulty_down": "string", "difficulty_up": "string", "solo_advice": "string", "group_advice": "string", "horror_tips": "string", "theme_guidance": "string"},
+    "entry_identities": [{"profession": "string", "init_resource": "string", "init_limit": "string", "recommend_clues": "string"}],
+    "mechanics": [{"name": "string", "type": "counter|clock|tracker", "description": "string", "stages": [{"label": "string", "effect": "string", "trigger": "string"}]}]
+  }
+}`
 
 // compileStoryToModule 把故事 architect 的自由文本 StoryOutput 编译为结构化 ScenarioDraft。
 // compiler 未配置时 fallback 到 architect provider；编译走单工具（submit_compiled_scenario）循环。
@@ -95,13 +129,13 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 <recent_scenario_tags_blacklist>
 %s
 </recent_scenario_tags_blacklist>
-<schema_example>%s</schema_example>
-请将以上故事文档编译为结构化剧本JSON，严格遵循schema_example的字段结构；tags须避开recent_scenario_tags_blacklist中的标签。`,
+<schema_skeleton>%s</schema_skeleton>
+请将以上故事文档编译为结构化剧本JSON，严格遵循schema_skeleton的字段结构；tags须避开recent_scenario_tags_blacklist中的标签。`,
 		story.Document, story.MythosAnchor, story.RewardConcept,
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints),
 		formatScenarioTagsBlacklist(room.tagsBlacklist),
-		oneshotExample,
+		compilerSchemaTemplate,
 	)
 
 	msgs := []llm.ChatMessage{

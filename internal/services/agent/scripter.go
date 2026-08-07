@@ -588,7 +588,7 @@ var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
 - natural_geography阶段必须输出自然地理/地形/水文/气候约束类型。
 - 只输出现实地理/人文地理候选，不输出幕后真相。
 - 禁止输出伪科学、高科技、工程化异常或可诱导伪科学解释神话的候选。
-- 除settlement_scale阶段只输出一个固定选项外，其他阶段每行一个名称，正好5个，不要编号、解释、标题或描述句。</rules>`
+- 每行一个名称；country/natural_geography阶段正好5个候选，settlement_scale阶段按用户消息要求只输出一个选项；不要编号、解释、标题或描述句。</rules>`
 
 func generateGeographyChain(ctx context.Context, room *scripterRoom, era string) ([]string, error) {
 	var architect agentHandle
