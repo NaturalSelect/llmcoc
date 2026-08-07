@@ -94,6 +94,7 @@ type ToolCall struct {
 	ArmorValue    int                    `json:"armor_value"`    // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint"`           // hit: KP当前场景高密度提示
 	ImagePrompt   string                 `json:"image_prompt"`   // NOTE: generate_image: 英文自然语言画图描述
+	Aspect        string                 `json:"aspect"`         // NOTE: generate_image: 画面方向 landscape|portrait|square(可选,默认square)
 	Characters    []string               `json:"characters"`     // NOTE: describe_characters 参数;兼容旧 generate_image JSON,但生成图片时忽略
 	Options       []string               `json:"options"`        // response: 推荐给玩家的可行行动
 	Reply         string                 `json:"reply"`          // response: KP对玩家说的话(必填)
@@ -126,9 +127,11 @@ type ToolResult struct {
 	Result string       `json:"result"`
 }
 
-// NOTE: ImagePromptRequest carries the Director's final visual prompt only.
+// NOTE: ImagePromptRequest carries the Director's final visual prompt and optional
+// display options (e.g. aspect); the queued shape Painter/handler consume later.
 type ImagePromptRequest struct {
 	Prompt string `json:"prompt"`
+	Aspect string `json:"aspect"` // 画面方向 landscape|portrait|square(可选,默认square)
 }
 
 // WriterState 保存Writer自己的上下文和本次生成的白字描述。

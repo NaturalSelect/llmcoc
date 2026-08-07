@@ -53,8 +53,22 @@ type Provider interface {
 	ChatWithTools(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition) (ToolChatResult, error)
 }
 
+// ImageAspect 是 Director 可选择的语义化画面方向,由 Provider 负责翻译成具体模型的像素尺寸。
+type ImageAspect string
+
+const (
+	ImageAspectSquare    ImageAspect = "square"    // 方图,默认
+	ImageAspectLandscape ImageAspect = "landscape" // 横图
+	ImageAspectPortrait  ImageAspect = "portrait"  // 竖图
+)
+
+// ImageOptions 承载图片生成的可选参数;零值等价于当前默认行为(方图)。
+type ImageOptions struct {
+	Aspect ImageAspect
+}
+
 type ImageGenerator interface {
-	GenerateImage(ctx context.Context, prompt string, size string) (base64Data string, mimeType string, err error)
+	GenerateImage(ctx context.Context, prompt string, opts ImageOptions) (base64Data string, mimeType string, err error)
 }
 
 // NewProviderFromConfig creates a provider from a DB-stored LLMProviderConfig.

@@ -414,13 +414,18 @@ func generateImageTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolGenerateImage),
-			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC或怪物首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略。image_prompt 需是完整的画面描述(人物外貌、场景、氛围等)，若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词。
+			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC或怪物首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略。image_prompt 需是完整的画面描述(人物外貌、场景、氛围等)，若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
 【批次规则】generate_image可以与write/response同批次；返回结果只表示图片生成已排队，KP不需要也不能读取图片内容。
-调用示例：{"image_prompt":"完整的画面描述,包含人物外貌、场景、氛围等"}`,
+调用示例：{"image_prompt":"完整的画面描述,包含人物外貌、场景、氛围等","aspect":"landscape"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"image_prompt": {"type": "string", "description": "完整画面描述提示词"}
+					"image_prompt": {"type": "string", "description": "完整画面描述提示词"},
+					"aspect": {
+						"type": "string",
+						"enum": ["landscape", "portrait", "square"],
+						"description": "可选,画面方向。landscape=横图,适合场景全景、建筑外观、开阔环境、群像、战斗追逐的空间关系;portrait=竖图,适合单个角色立绘、近景特写、高耸或纵深的空间;square=方图,通用场景。省略时按square处理"
+					}
 				},
 				"required": ["image_prompt"]
 			}`),

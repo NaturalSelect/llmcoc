@@ -18,6 +18,7 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 		debugf("tool", "session=%d generate_image rejected: empty image_prompt", actx.Sid)
 		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation failed: image_prompt is required"}}
 	}
+	aspect := normalizeImageAspect(call.Aspect)
 
 	handle, ok := actx.Handles[models.AgentRolePainter]
 	if !ok || !handle.isEnabled() {
@@ -29,10 +30,23 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation unavailable"}}
 	}
 	if actx.PendingImages != nil {
-		*actx.PendingImages = append(*actx.PendingImages, ImagePromptRequest{Prompt: imagePrompt})
+		*actx.PendingImages = append(*actx.PendingImages, ImagePromptRequest{Prompt: imagePrompt, Aspect: aspect})
 	}
-	debugf("tool", "session=%d generate_image queued prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), imagePrompt)
+	debugf("tool", "session=%d generate_image queued prompt_len=%d aspect=%s prompt=%q", actx.Sid, len([]rune(imagePrompt)), aspect, imagePrompt)
 	return []ToolResult{{Action: ToolGenerateImage, Result: "image generation queued"}}
+}
+
+// normalizeImageAspect 校验/归一化 Director 传入的 aspect 参数;非法或未识别值一律
+// 回落方图,因为这是 LLM 不可信输入进入系统的边界,不能把乱填值透传给 Provider。
+func normalizeImageAspect(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case string(llm.ImageAspectLandscape):
+		return string(llm.ImageAspectLandscape)
+	case string(llm.ImageAspectPortrait):
+		return string(llm.ImageAspectPortrait)
+	default:
+		return string(llm.ImageAspectSquare)
+	}
 }
 
 type describeCharactersAction struct{}
@@ -114,9 +128,10 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 		debugf("Painter", "session=%d unavailable: provider lacks image generation elapsed=%.0fms", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000)
 		return "", fmt.Errorf("当前 Painter provider 不支持图片生成")
 	}
-	debugf("Painter", "session=%d start prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), truncateRunes(prompt, 200))
+	aspect := normalizeImageAspect(request.Aspect)
+	debugf("Painter", "session=%d start prompt_len=%d aspect=%s prompt=%q", gctx.Session.ID, len([]rune(prompt)), aspect, truncateRunes(prompt, 200))
 	prompt = fmt.Sprintf("%v\n%v", prompt, renderNSFW(imageSysPrompt, gctx.Session.EnableNSFW))
-	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, "1024x1024")
+	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, llm.ImageOptions{Aspect: llm.ImageAspect(aspect)})
 	if err != nil {
 		debugf("Painter", "session=%d error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
 		return "", err

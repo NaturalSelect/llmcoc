@@ -317,7 +317,7 @@ type fakeImageProvider struct {
 	err        error
 	called     bool
 	prompt     string
-	size       string
+	opts       llm.ImageOptions
 	chatCalled bool
 }
 
@@ -338,10 +338,10 @@ func (p *fakeImageProvider) ChatWithTools(ctx context.Context, cacheKey string, 
 	return llm.ToolChatResult{}, nil
 }
 
-func (p *fakeImageProvider) GenerateImage(ctx context.Context, prompt string, size string) (string, string, error) {
+func (p *fakeImageProvider) GenerateImage(ctx context.Context, prompt string, opts llm.ImageOptions) (string, string, error) {
 	p.called = true
 	p.prompt = prompt
-	p.size = size
+	p.opts = opts
 	return p.base64Data, p.mimeType, p.err
 }
 
@@ -374,8 +374,8 @@ func TestAdminPingProvider_ImageSuccess(t *testing.T) {
 	if imageProv.chatCalled {
 		t.Fatal("Chat must not be called for image ping")
 	}
-	if imageProv.prompt != "A simple black and white test icon" || imageProv.size != "1024x1024" {
-		t.Fatalf("GenerateImage prompt/size = %q/%q", imageProv.prompt, imageProv.size)
+	if imageProv.prompt != "A simple black and white test icon" || imageProv.opts != (llm.ImageOptions{}) {
+		t.Fatalf("GenerateImage prompt/opts = %q/%+v", imageProv.prompt, imageProv.opts)
 	}
 	if strings.Contains(w.Body.String(), imageProv.base64Data) {
 		t.Fatal("response must not contain generated image base64")

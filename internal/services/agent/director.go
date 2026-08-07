@@ -39,7 +39,7 @@ response只结束本轮决策,游戏继续;end_game会终止整个游戏会话�
 		  第N轮: describe_characters(characters=[...])        ← 先取得真实外貌描写
 		  第N+1轮: generate_image(image_prompt="...结合返回的外貌描写..."), write/response, ...
 		在describe_characters返回真实数据之前，直接画出可辨认调查员外貌是禁止的——任何未取自其结果的外貌细节都是编造，属于硬错误。调查员只以远景剪影/背影/无法辨认特征出现，或图中完全没有调查员时不受此限制。
-		GENERATE_IMAGE EXCEPTION: generate_image是可选的视觉输出工具，不写入游戏状态，可以和write/response同轮，本身不需要等待下一轮。每个玩家回合最多调用一次，只接受image_prompt参数，不支持characters。
+		GENERATE_IMAGE EXCEPTION: generate_image是可选的视觉输出工具，不写入游戏状态，可以和write/response同轮，本身不需要等待下一轮。每个玩家回合最多调用一次，参数为image_prompt(必填)和aspect(可选画面方向)，不支持characters。
 	</rule>
 </system>
 

@@ -351,7 +351,66 @@ func (p *openAIProvider) Chat(ctx context.Context, cacheKey string, messages []C
 	return msg, nil
 }
 
-func (p *openAIProvider) generateImage(ctx context.Context, prompt string, size string) (string, string, error) {
+// imageModelFamily 归类图片模型支持的参数范围(quality/size 的合法取值因模型而异)。
+type imageModelFamily int
+
+const (
+	imageModelOther imageModelFamily = iota
+	imageModelGptImage
+	imageModelDallE3
+)
+
+func classifyImageModel(model string) imageModelFamily {
+	m := strings.ToLower(model)
+	switch {
+	case strings.Contains(m, "gpt-image"):
+		return imageModelGptImage
+	case strings.Contains(m, "dall-e-3"), strings.Contains(m, "dall-e3"):
+		return imageModelDallE3
+	default:
+		return imageModelOther
+	}
+}
+
+// imageQualityForModel 按模型名选择最高画质参数;不传 quality 时接口会用默认档位
+// (dall-e-3 默认 standard、gpt-image-1 默认 auto)，画质会低于预期。
+// dall-e-2 不支持 quality 参数,返回空字符串让 omitempty 跳过。
+func imageQualityForModel(model string) string {
+	switch classifyImageModel(model) {
+	case imageModelGptImage:
+		return openai.CreateImageQualityHigh
+	case imageModelDallE3:
+		return openai.CreateImageQualityHD
+	default:
+		return ""
+	}
+}
+
+// imageSizeForModel 把 Director 选择的语义化画面方向翻译成具体模型的合法尺寸值。
+// 未知模型或未知/空 aspect 一律回落方图 1024x1024——非法尺寸会被 GenerateImage 的
+// 30 次重试循环放大成长时间失败,宁可忽略方向也不要发出会被拒绝的尺寸。
+func imageSizeForModel(model string, aspect ImageAspect) string {
+	family := classifyImageModel(model)
+	switch aspect {
+	case ImageAspectLandscape:
+		switch family {
+		case imageModelGptImage:
+			return openai.CreateImageSize1536x1024
+		case imageModelDallE3:
+			return openai.CreateImageSize1792x1024
+		}
+	case ImageAspectPortrait:
+		switch family {
+		case imageModelGptImage:
+			return openai.CreateImageSize1024x1536
+		case imageModelDallE3:
+			return openai.CreateImageSize1024x1792
+		}
+	}
+	return openai.CreateImageSize1024x1024
+}
+
+func (p *openAIProvider) generateImage(ctx context.Context, prompt string, opts ImageOptions) (string, string, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return "", "", errors.New("image prompt is empty")
@@ -360,15 +419,13 @@ func (p *openAIProvider) generateImage(ctx context.Context, prompt string, size 
 	if model == "" {
 		return "", "", errors.New("image model is empty")
 	}
-	if strings.TrimSpace(size) == "" {
-		size = openai.CreateImageSize1024x1024
-	}
 
 	resp, err := p.client.CreateImage(ctx, openai.ImageRequest{
 		Model:          model,
 		Prompt:         prompt,
 		N:              1,
-		Size:           size,
+		Quality:        imageQualityForModel(model),
+		Size:           imageSizeForModel(model, opts.Aspect),
 		ResponseFormat: openai.CreateImageResponseFormatB64JSON,
 	})
 	if err != nil {
@@ -380,9 +437,9 @@ func (p *openAIProvider) generateImage(ctx context.Context, prompt string, size 
 	return resp.Data[0].B64JSON, "image/png", nil
 }
 
-func (p *openAIProvider) GenerateImage(ctx context.Context, prompt string, size string) (string, string, error) {
+func (p *openAIProvider) GenerateImage(ctx context.Context, prompt string, opts ImageOptions) (string, string, error) {
 	for i := 0; i < 30; i++ {
-		data, mime, err := p.generateImage(ctx, prompt, size)
+		data, mime, err := p.generateImage(ctx, prompt, opts)
 		if err != nil {
 			log.Printf("[llm] GenerateImage error: %v", err)
 			continue

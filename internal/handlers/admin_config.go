@@ -362,7 +362,7 @@ func adminPingImageProvider(c *gin.Context, factory ProviderFactory, p *models.L
 	defer cancel()
 
 	start := time.Now()
-	base64Data, _, err := generator.GenerateImage(ctx, "A simple black and white test icon", "1024x1024")
+	base64Data, _, err := generator.GenerateImage(ctx, "A simple black and white test icon", llm.ImageOptions{})
 	latencyMs := time.Since(start).Milliseconds()
 	if err != nil {
 		log.Printf("[admin_config] ping_provider image id=%d error: %v", p.ID, err)
