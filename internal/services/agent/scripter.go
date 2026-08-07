@@ -622,13 +622,20 @@ func generateGeographyChain(ctx context.Context, room *scripterRoom, era string)
 			return chain, fmt.Errorf("%s 候选为空", stage.Key)
 		}
 		choice := ""
-		if stage.Key == "settlement_scale" {
+		switch stage.Key {
+		case "settlement_scale":
 			items = filterSettlementScaleCandidates(items)
 			if len(items) == 0 {
 				items = []string{"城市"}
 			}
 			choice = items[0]
-		} else {
+		case "country":
+			items = filterCountryCandidates(items, isModernEra(era))
+			if len(items) == 0 {
+				items = []string{"美国"}
+			}
+			choice = items[rand.Intn(len(items))]
+		default:
 			choice = items[rand.Intn(len(items))]
 		}
 		chain = append(chain, choice)
@@ -656,6 +663,12 @@ func generateGeographyCandidates(ctx context.Context, room *scripterRoom, msgs *
 	countInstruction := "请只输出本阶段的5个候选。"
 	if stageKey == "settlement_scale" {
 		countInstruction = "请只输出一个最合适的固定选项，必须完全等于：大都会、城市、市郊、乡镇、无人区 之一。"
+	}
+	if stageKey == "country" {
+		countInstruction += "\n候选中不得包含苏联、苏维埃社会主义共和国联盟。"
+		if !isModernEra(era) {
+			countInstruction += "\n当前时代非现代，候选中不得包含日本及日本相关政权、地区（如大日本帝国等）。"
+		}
 	}
 	prompt := fmt.Sprintf("已随机选中的前置布景：%s\n现在进入下一阶段：%s\n时代：%s\n输出要求：%s\n示例范围：%s\n\n%s", selected, stageKey, era, mode, examples, countInstruction)
 	log.Printf("[scripter:geography] session=%s prompt stage=%q len=%d body=%s", sessionID, stageKey, len(prompt), truncateRunes(prompt, scripterPromptLogLimit))
@@ -968,6 +981,28 @@ func filterSettlementScaleCandidates(items []string) []string {
 		if allowed[item] {
 			filtered = append(filtered, item)
 		}
+	}
+	return filtered
+}
+
+// isModernEra 判断时代文本是否为现代；采用白名单方式，只有显式包含"现代"/"modern"
+// 关键词才视为现代，未显式说明一律视为非现代。
+func isModernEra(era string) bool {
+	return strings.Contains(era, "现代") || strings.Contains(strings.ToLower(era), "modern")
+}
+
+// filterCountryCandidates 过滤country阶段候选：苏联始终禁止选为背景国家；
+// 日本仅在非现代年代禁止（现代年代允许）。
+func filterCountryCandidates(items []string, modern bool) []string {
+	filtered := make([]string, 0, len(items))
+	for _, item := range items {
+		if strings.Contains(item, "苏联") {
+			continue
+		}
+		if !modern && strings.Contains(item, "日本") {
+			continue
+		}
+		filtered = append(filtered, item)
 	}
 	return filtered
 }

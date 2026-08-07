@@ -171,3 +171,45 @@ func TestSoloMixed(t *testing.T) {
 		})
 	}
 }
+
+// TestIsModernEra 验证现代年代判定采用白名单方式：只有显式包含"现代"/"modern"才算现代。
+func TestIsModernEra(t *testing.T) {
+	cases := []struct {
+		name string
+		era  string
+		want bool
+	}{
+		{"中文现代", "现代东京", true},
+		{"英文modern", "modern", true},
+		{"英文modern大写", "Modern Boston", true},
+		{"1920s", "1920s", false},
+		{"1980s", "1980s", false},
+		{"空字符串", "", false},
+		{"其他自由文本", "明治时期京都", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := isModernEra(c.era)
+			if got != c.want {
+				t.Errorf("isModernEra(%q) = %v，预期 %v", c.era, got, c.want)
+			}
+		})
+	}
+}
+
+// TestFilterCountryCandidates 验证国家候选过滤：苏联始终禁止，日本仅非现代年代禁止。
+func TestFilterCountryCandidates(t *testing.T) {
+	items := []string{"美国", "日本", "苏联", "法国", "大日本帝国"}
+
+	modern := filterCountryCandidates(items, true)
+	wantModern := []string{"美国", "日本", "法国", "大日本帝国"}
+	if strings.Join(modern, ",") != strings.Join(wantModern, ",") {
+		t.Errorf("现代年代 filterCountryCandidates = %v，预期 %v（苏联应被过滤，日本应保留）", modern, wantModern)
+	}
+
+	nonModern := filterCountryCandidates(items, false)
+	wantNonModern := []string{"美国", "法国"}
+	if strings.Join(nonModern, ",") != strings.Join(wantNonModern, ",") {
+		t.Errorf("非现代年代 filterCountryCandidates = %v，预期 %v（苏联、日本均应被过滤）", nonModern, wantNonModern)
+	}
+}
