@@ -49,6 +49,7 @@ func compilerSystemPrompt() string {
 - 不得改变故事文档已确定的真相、神话锚点、误导线索的四要素设计或结局条件
 - [隐藏]神话本质说明中出现的法术名/物品名/怪物名/材质名必须与<mythos_anchor>及故事文档一致，不得新造规则书中不存在的元素
 - description/content.setting/content.intro必须保持故事文档表层情境的冷开场语气：中性日常，不剧透真相、不渲染恐怖、不出现惊悚诡异词汇
+- description/content.setting/content.intro优先照抄故事文档表层情境的原句；确需压缩时只做删句，不改写句式、不把多句合并成一个塞满信息的长句
 - content.clues中nature="真实"的线索至少2条且互相独立可组合；不得只编译出单一线索链
 - 至少一位NPC的description须写明"秘密"或"保留"信息
 </task>
@@ -64,7 +65,7 @@ func submitCompiledScenarioTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name:        toolNameSubmitCompiled,
 			Description: "提交编译后的完整结构化剧本JSON；参数即完整oneshotResult本体（非嵌套在draft字段下），字段结构见本工具的parameters schema",
-			Parameters: jsonSchemaObject(oneshotDraftJSONSchema),
+			Parameters:  jsonSchemaObject(oneshotDraftJSONSchema),
 		},
 	}
 }
@@ -75,7 +76,7 @@ func submitCompiledScenarioTool() scripterTool {
 const compilerSchemaTemplate = `{
   "reward_concept": "string：逐字等于<reward_concept>输入",
   "name": "string：故事文档标题；无明确标题时从文档内具体名词提炼，不用低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒等滥用词",
-  "description": "string：剧本简介，取自或忠实改写表层情境段落；中性日常、不剧透",
+  "description": "string：剧本简介，优先照抄故事文档表层情境原句，压缩只删不改写；中性日常、不剧透",
   "author": "agent-team",
   "tags": "string：2-3个逗号分隔标签，指向本剧本独有的核心叙事装置/桥段，不用抽象风格词；须避开<recent_scenario_tags_blacklist>",
   "min_players": 1,
@@ -83,11 +84,11 @@ const compilerSchemaTemplate = `{
   "difficulty": "string：如 normal",
   "content": {
     "system_prompt": "string：KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相与mythos_anchor必要性 + 施动者细化设定（邪教/施法者/神话生物的全部维度，不得压缩为一句话）",
-    "setting": "string：表层情境原文或忠实改写，必须保留文档中嵌入的具体年月日",
+    "setting": "string：优先照抄表层情境原句，压缩只删不改写；必须保留文档中嵌入的具体年月日",
     "tone_tags": ["必须逐字等于<diversity_constraints>.tone_tags"],
     "horror_mode": "必须逐字等于<diversity_constraints>.horror_mode",
     "invest_focus": "必须逐字等于<diversity_constraints>.invest_focus",
-    "intro": "string：调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步",
+    "intro": "string：优先照抄表层情境原句，压缩只删不改写；调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步",
     "game_start_slot": "int：0-47，每槽30分钟；从文档嵌入的时刻推算，未写明时取16",
     "map_description": "string：按地点关系概括的文字地图，体现可回访、可交叉验证的调查网络",
     "mythos_anchor": "必须逐字等于<mythos_anchor>输入",
