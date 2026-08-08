@@ -162,6 +162,9 @@ func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey str
 		Messages:            p.toOpenAIMessages(messages),
 		MaxCompletionTokens: p.maxTokens,
 		ReasoningEffort:     p.reasoningEffort,
+		// NOTE: 让最后一个流式 chunk 携带本次请求的 token 用量，配合 finish_reason
+		// 一起写入调试日志，用于区分"模型真的没输出"和"输出被截断"。
+		StreamOptions: &openai.StreamOptions{IncludeUsage: true},
 	}
 	// NOTE: 禁用 temperature 时不设置该参数(部分模型如 o1/o3 不支持)
 	if !p.disableTemperature {
@@ -205,10 +208,13 @@ func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey str
 // NOTE: 部分网关/反向代理对长耗时的非流式请求（尤其是 reasoning_effort=high 的模型）会因
 // 响应体迟迟无字节而触发空闲超时；流式请求持续有字节到达，可以规避这类超时，因此
 // Chat/JsonChat 内部统一改走流式请求，聚合后再以完整字符串返回，对外行为不变。
-func (p *openAIProvider) streamToString(ctx context.Context, chatReq openai.ChatCompletionRequest) (content string, reasoning string, toolCalls []ToolCall, err error) {
+// finishReason/usage 仅用于调试日志（见 chat()），不参与重试或返回值判断：
+// finish_reason=length 意味着输出被 max_tokens 截断而不是模型没有内容可说，
+// 与"确实没有生成任何内容/工具调用"是两种不同的空响应成因。
+func (p *openAIProvider) streamToString(ctx context.Context, chatReq openai.ChatCompletionRequest) (content string, reasoning string, toolCalls []ToolCall, finishReason string, usage *openai.Usage, err error) {
 	stream, err := p.client.CreateChatCompletionStream(ctx, chatReq)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, "", nil, err
 	}
 	defer stream.Close()
 
@@ -217,15 +223,21 @@ func (p *openAIProvider) streamToString(ctx context.Context, chatReq openai.Chat
 	for {
 		resp, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
-			return contentSB.String(), reasoningSB.String(), agg.finish(), nil
+			return contentSB.String(), reasoningSB.String(), agg.finish(), finishReason, usage, nil
 		}
 		if err != nil {
-			return "", "", nil, err
+			return "", "", nil, "", nil, err
+		}
+		if resp.Usage != nil {
+			usage = resp.Usage
 		}
 		for _, choice := range resp.Choices {
 			contentSB.WriteString(choice.Delta.Content)
 			reasoningSB.WriteString(choice.Delta.ReasoningContent)
 			agg.add(choice.Delta.ToolCalls)
+			if choice.FinishReason != "" {
+				finishReason = string(choice.FinishReason)
+			}
 		}
 	}
 }
@@ -233,12 +245,13 @@ func (p *openAIProvider) streamToString(ctx context.Context, chatReq openai.Chat
 func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, json bool, tools []ToolDefinition) (string, []ToolCall, error) {
 	start := time.Now()
 	chatReq := p.chatCompletionRequest(ctx, cacheKey, messages, json, tools)
-	var result, reasoning string
+	var result, reasoning, finishReason string
 	var toolCalls []ToolCall
+	var usage *openai.Usage
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		start := time.Now()
-		result, reasoning, toolCalls, err = p.streamToString(ctx, chatReq)
+		result, reasoning, toolCalls, finishReason, usage, err = p.streamToString(ctx, chatReq)
 		log.Printf("Chat model %v using %v\n", p.model, time.Since(start))
 		if err == nil || !isRetryableError(err) {
 			break
@@ -263,8 +276,8 @@ func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []C
 	}
 	if llmDebug {
 		elapsed := time.Since(start)
-		log.Printf("[llm] Chat done model=%s elapsed=%.0fms response_len=%d",
-			p.model, float64(elapsed.Microseconds())/1000, len([]rune(result)))
+		log.Printf("[llm] Chat done model=%s elapsed=%.0fms response_len=%d tool_calls=%d finish_reason=%q usage=%+v",
+			p.model, float64(elapsed.Microseconds())/1000, len([]rune(result)), len(toolCalls), finishReason, usage)
 	}
 	return result, toolCalls, nil
 }

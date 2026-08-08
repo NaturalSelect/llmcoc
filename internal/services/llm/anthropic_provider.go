@@ -100,7 +100,8 @@ func isAnthropicRetryableError(err error) bool {
 }
 
 // streamToResult 发起一次流式请求并用 SDK 内置的 Message.Accumulate 聚合成完整结果;
-// llmDebug 开启时额外打印 cache_key 及缓存命中 token 数,用于验证 cache_control 断点是否生效。
+// llmDebug 开启时打印 stop_reason 及 token 用量(含缓存命中数),既用于验证 cache_control
+// 断点是否生效,也用于区分"模型真的没输出"和"输出被截断"(stop_reason=max_tokens)。
 func (p *anthropicProvider) streamToResult(ctx context.Context, cacheKey string, params anthropic.MessageNewParams) (string, []ToolCall, error) {
 	stream := p.client.Messages.NewStreaming(ctx, params)
 	defer stream.Close()
@@ -115,12 +116,14 @@ func (p *anthropicProvider) streamToResult(ctx context.Context, cacheKey string,
 		return "", nil, err
 	}
 
+	content, toolCalls := fromAnthropicMessage(&acc)
+
 	if llmDebug {
-		log.Printf("[llm-cache] provider=anthropic cache_key=%s model=%s cache_read_tokens=%d cache_creation_tokens=%d",
-			cacheKey, p.model, acc.Usage.CacheReadInputTokens, acc.Usage.CacheCreationInputTokens)
+		log.Printf("[llm] Chat done provider=anthropic model=%s cache_key=%s response_len=%d tool_calls=%d stop_reason=%q input_tokens=%d output_tokens=%d cache_read_tokens=%d cache_creation_tokens=%d",
+			p.model, cacheKey, len([]rune(content)), len(toolCalls), acc.StopReason,
+			acc.Usage.InputTokens, acc.Usage.OutputTokens, acc.Usage.CacheReadInputTokens, acc.Usage.CacheCreationInputTokens)
 	}
 
-	content, toolCalls := fromAnthropicMessage(&acc)
 	return content, toolCalls, nil
 }
 
