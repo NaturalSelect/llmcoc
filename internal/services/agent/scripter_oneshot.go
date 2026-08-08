@@ -531,6 +531,7 @@ const oneshotTranslatorSystemPrompt = `<role>COC7规则书概念翻译专家</ro
 - 翻译的结果必须直接来自规则书裁定，不能是基于规则书裁定的二次创作。
 - 可以是合理的推导链条（例如： 规则书支持A，从A引发了B，B正好符合概念要求，那么B可以是selected_anchor，但必须在rulebook_basis里清晰说明推导链条和每一步的规则书依据）。
 - 但推理链条的每一步都必须在规则书中有明确依据，不能凭常识或记忆自创。
+- 如果找不到就直接返回没有，不要乱编。
 </rules>`
 
 // translatorConclusion 是 translator respond 工具的结构化结论，
