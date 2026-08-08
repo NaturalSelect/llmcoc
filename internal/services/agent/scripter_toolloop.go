@@ -439,7 +439,7 @@ func getWritingExampleTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: toolNameGetWritingExample,
 			Description: `获取一份职业出版模组的完整成稿作为写作参考，学习它如何组织篇章、控制信息密度、把检定与线索写进叙事句。
-不要照抄其中具体的人名、地名、机构名、情节或神话设定——你要写的是一份完全不同的剧本。建议在正式动笔前调用一次，无需参数。`,
+不要照抄其中具体的人名、地名、机构名、情节或神话设定——你要写的是一份完全不同的剧本。必须在正式动笔前调用一次，无需参数。`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {}

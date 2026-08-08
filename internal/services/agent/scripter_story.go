@@ -154,7 +154,7 @@ func storySystemPrompt() string {
 <tools>
 - translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
 - generate_npc_name：需要给人物起名时必须调用本工具从预置姓名池随机取名（指定culture和gender），不要自行编造姓名
-- get_writing_example：获取一份职业模组成稿作为写作参考，学习组织篇章、控制信息密度、把检定与线索写进叙事句的手法；建议正式动笔前调用一次。参考成稿的具体人名、地名、机构名、情节与神话设定与你要写的剧本无关，禁止照搬
+- get_writing_example：获取一份职业模组成稿作为写作参考，学习组织篇章、控制信息密度、把检定与线索写进叙事句的手法；必须在正式动笔前调用一次。参考成稿的具体人名、地名、机构名、情节与神话设定与你要写的剧本无关，禁止照搬
 - submit_story：提交完整故事文档；只有在translate_anchor确认元素后才调用；必须单独一轮调用。
   story_document 字段严禁用 draft/content/scenes/clues/endings/npcs/mechanics 等嵌套字段代替——story_document 只能是一个字符串，不是JSON对象；整份成稿的全部内容都写在这一个字符串里，用自然语言和小标题分段。不要为编译器做任何结构化整理，编译器会自己读懂你的叙述。
 </tools>`
