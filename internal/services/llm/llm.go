@@ -73,7 +73,19 @@ type ImageGenerator interface {
 
 // NewProviderFromConfig creates a provider from a DB-stored LLMProviderConfig.
 func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string) Provider {
-	return newOpenAIProvider(cfg.APIKey, cfg.BaseURL, modelName, maxTokens, temperature, disableTemperature, reasoningEffort)
+	return newProviderByType(cfg.Provider, cfg.APIKey, cfg.BaseURL, modelName, maxTokens, temperature, disableTemperature, reasoningEffort)
+}
+
+// newProviderByType 按 LLMProviderConfig.Provider 字段分发到具体实现。
+// 未识别的类型(包括历史遗留的 "custom"/空字符串)一律回落 OpenAI 兼容实现,
+// 保持与既有行为一致。
+func newProviderByType(providerType, apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string) Provider {
+	switch strings.ToLower(strings.TrimSpace(providerType)) {
+	case "anthropic":
+		return newAnthropicProvider(apiKey, baseURL, model, maxTokens, temperature, disableTemperature)
+	default:
+		return newOpenAIProvider(apiKey, baseURL, model, maxTokens, temperature, disableTemperature, reasoningEffort)
+	}
 }
 
 // LoadProviderFromDB loads an LLM provider for the given agent role from the database.
@@ -93,7 +105,7 @@ func LoadProviderFromDB(role models.AgentRole) (Provider, error) {
 	if maxTok == 0 {
 		maxTok = 1024
 	}
-	return newOpenAIProvider(cfg.ProviderConfig.APIKey, cfg.ProviderConfig.BaseURL, cfg.ModelName, maxTok, cfg.Temperature, cfg.DisableTemperature, cfg.ThinkingLevel), nil
+	return newProviderByType(cfg.ProviderConfig.Provider, cfg.ProviderConfig.APIKey, cfg.ProviderConfig.BaseURL, cfg.ModelName, maxTok, cfg.Temperature, cfg.DisableTemperature, cfg.ThinkingLevel), nil
 }
 
 // StripCodeFence removes markdown code fences from an LLM response.

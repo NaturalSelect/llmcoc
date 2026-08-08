@@ -54,7 +54,7 @@ func AdminListProviders(c *gin.Context) {
 func AdminCreateProvider(c *gin.Context) {
 	var req struct {
 		Name     string `json:"name" binding:"required,max=100"`
-		Provider string `json:"provider" binding:"required,oneof=openai custom"`
+		Provider string `json:"provider" binding:"required,oneof=openai custom anthropic"`
 		BaseURL  string `json:"base_url"`
 		APIKey   string `json:"api_key"`
 		IsActive *bool  `json:"is_active"`
@@ -95,7 +95,7 @@ func AdminUpdateProvider(c *gin.Context) {
 
 	var req struct {
 		Name     string `json:"name"`
-		Provider string `json:"provider"`
+		Provider string `json:"provider" binding:"omitempty,oneof=openai custom anthropic"`
 		BaseURL  string `json:"base_url"`
 		APIKey   string `json:"api_key"`
 		IsActive *bool  `json:"is_active"`
