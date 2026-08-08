@@ -94,6 +94,13 @@ type toolLoopOptions struct {
 	// onToolCalls 非 nil 时，在拿到本轮非空 tool_calls（assistant 消息已写入 msgs）、
 	// batchPolicy 判定之前触发，供调用方发出"计划执行哪些工具"一类的进度提示。
 	onToolCalls func(calls []llm.ToolCall)
+
+	// onPlainText 非 nil 时，若本轮模型未返回任何 tool_calls，不再计入 emptyRounds
+	// 失败探测，改由它判定这段纯文本是否构成"自然完成"：done=true 时驱动器立即
+	// 成功返回（调用方已在闭包中捕获结果）；done=false 时 retryMsg 作为下一轮 user
+	// 提示继续循环（retryMsg 为空则用默认的"必须输出至少一个工具调用"提示）。
+	// 为 nil 时保留原行为：空 tool_calls 计入 emptyRounds，达到阈值判定端点异常。
+	onPlainText func(content string) (done bool, retryMsg string)
 }
 
 // runScripterToolLoop 驱动一次原生工具调用的多轮循环。
@@ -208,6 +215,17 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls})
 
 		if len(result.ToolCalls) == 0 {
+			if opts.onPlainText != nil {
+				done, retryMsg := opts.onPlainText(result.Content)
+				if done {
+					return nil
+				}
+				if retryMsg == "" {
+					retryMsg = "SYSTEM REJECT: 必须输出至少一个工具调用。"
+				}
+				msgs = append(msgs, llm.ChatMessage{Role: "user", Content: retryMsg})
+				continue
+			}
 			emptyRounds++
 			if emptyRounds >= maxConsecutiveEmptyRounds {
 				modelName := "?"
@@ -339,7 +357,7 @@ const (
 	toolNameAskLawyer         = "ask_lawyer"
 	toolNameRespond           = "respond"
 	toolNameTranslateAnchor   = "translate_anchor"
-	toolNameSubmitStory       = "submit_story"
+	toolNameSubmitExtraction  = "submit_extraction"
 	toolNameSubmit            = "submit"
 	toolNameReportIssues      = "report_issues"
 	toolNameSubmitCompiled    = "submit_compiled_scenario"

@@ -321,13 +321,12 @@ var oneshotResultExample = OneshotResult{
 var oneshotExample = marshalExample(oneshotResultExample)
 
 // StoryOutput is the story architect's final submission: a free-text story
-// document plus the confirmed mythos anchor and optional reward concept.
-// It carries no strongly-typed scene/NPC/clue structure — the compiler stage
-// is responsible for extracting structure from Document.
+// document plus the confirmed mythos anchor. It carries no strongly-typed
+// scene/NPC/clue structure — the compiler stage is responsible for
+// extracting structure (including reward_concept) from Document.
 type StoryOutput struct {
-	Document      string `json:"story_document"`
-	MythosAnchor  string `json:"mythos_anchor"`
-	RewardConcept string `json:"reward_concept"`
+	Document     string `json:"story_document"`
+	MythosAnchor string `json:"mythos_anchor"`
 }
 
 // ---------------------------------------------------------------------------
@@ -455,7 +454,8 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
-			return toolOutcome{result: executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)}
+			text, _ := executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)
+			return toolOutcome{result: text}
 		case toolNameGenerateNPCName:
 			return dispatchGenerateNPCName(ctx, room, call)
 		case toolNameSubmit:
@@ -486,23 +486,25 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 
 // executeOneshotTranslateAnchor 由 oneshot architect repair 和 story architect
 // 两个循环共用；concept/reason 直接来自各自 translate_anchor 工具调用的解码参数。
-func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, concept, reason string) string {
+// 除了给模型看的结果文本外，还把结构化结论一并返回：story architect 用它在
+// status="found"时自动记下 selected_anchor，不再要求模型在提交故事时重复填写。
+func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, concept, reason string) (string, *translatorConclusion) {
 	sessionID := scripterSessionID(ctx, room)
 	concept = strings.TrimSpace(concept)
 	if concept == "" {
-		return `<translate_anchor_result error="concept字段为空，无法翻译"/>`
+		return `<translate_anchor_result error="concept字段为空，无法翻译"/>`, nil
 	}
 	reason = strings.TrimSpace(reason)
 	log.Printf("[scripter:oneshot_translate_anchor] session=%s concept=%q reason=%q", sessionID, truncateRunes(concept, 200), truncateRunes(reason, 200))
 	conclusion, err := runOneshotTranslatorAgent(ctx, room, concept, reason)
 	if err != nil {
 		log.Printf("[scripter:oneshot_translate_anchor] session=%s error concept=%q err=%v", sessionID, truncateRunes(concept, 200), err)
-		return fmt.Sprintf(`<translate_anchor_result concept=%q status="translator_error">%s</translate_anchor_result>`, concept, err.Error())
+		return fmt.Sprintf(`<translate_anchor_result concept=%q status="translator_error">%s</translate_anchor_result>`, concept, err.Error()), nil
 	}
 	if conclusion == nil || strings.TrimSpace(conclusion.Status) == "" {
-		return fmt.Sprintf(`<translate_anchor_result concept=%q status="no_result">translator未返回可用结论；可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。</translate_anchor_result>`, concept)
+		return fmt.Sprintf(`<translate_anchor_result concept=%q status="no_result">translator未返回可用结论；可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。</translate_anchor_result>`, concept), nil
 	}
-	return fmt.Sprintf(`<translate_anchor_result concept=%q status=%q>%s</translate_anchor_result>`, concept, conclusion.Status, conclusion.Text())
+	return fmt.Sprintf(`<translate_anchor_result concept=%q status=%q>%s</translate_anchor_result>`, concept, conclusion.Status, conclusion.Text()), conclusion
 }
 
 // isTranslateAnchorFound 判断 translate_anchor 结果是否为成功匹配（status="found"）。
@@ -529,7 +531,7 @@ const oneshotTranslatorSystemPrompt = `<role>COC7规则书概念翻译专家</ro
 - 除非概念本身明确要求法术/仪式是唯一能承载的机制，否则优先把创意概念翻译为实体锚点（神话生物/旧日支配者眷属，或施法的人类角色本身），不要翻译成脱离施动者的法术条目本身。
 - 若最终仍需要翻译为法术，必须在回复中提醒：该法术必须由一个具体的实体（人、神话生物等）施放，且该实体才是故事应锚定的真正核心，法术只是其手段而非谜团根源。
 - 翻译的结果必须直接来自规则书裁定，不能是基于规则书裁定的二次创作。
-- 可以是合理的推导链条（例如： 规则书支持A，从A引发了B，B正好符合概念要求，那么B可以是selected_anchor，但必须在rulebook_basis里清晰说明推导链条和每一步的规则书依据）。
+- 不可以是推导链条，无论其是否合理：必须直接引用规则书中的明确条文或裁定。
 - 但推理链条的每一步都必须在规则书中有明确依据，不能凭常识或记忆自创。
 - 如果找不到就直接返回没有，不要乱编。
 </rules>`

@@ -26,9 +26,8 @@ func TestCompilerSystemPromptContainsKey(t *testing.T) {
 // compileTestStory 返回编译阶段测试共用的最小合法 StoryOutput。
 func compileTestStory() StoryOutput {
 	return StoryOutput{
-		Document:      strings.Repeat("这是故事文档的正文内容，涵盖表层情境、KP内部真相、地点、NPC、线索、时间线与结局。", 20),
-		MythosAnchor:  "食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。",
-		RewardConcept: "与食尸鬼有关的古籍手稿",
+		Document:     strings.Repeat("这是故事文档的正文内容，涵盖表层情境、KP内部真相、地点、NPC、线索、时间线与结局。", 20),
+		MythosAnchor: "食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。",
 	}
 }
 
@@ -52,7 +51,7 @@ func TestCompilerFallbackToArchitect(t *testing.T) {
 	}
 	story := compileTestStory()
 
-	draft, err := compileStoryToModule(context.Background(), room, story, ScripterConstraints{})
+	draft, _, err := compileStoryToModule(context.Background(), room, story, ScripterConstraints{})
 	if err != nil {
 		t.Fatalf("compileStoryToModule failed: %v", err)
 	}
@@ -93,7 +92,7 @@ func TestCompilerMythosAnchorOverride(t *testing.T) {
 	}
 	story := compileTestStory()
 
-	draft, err := compileStoryToModule(context.Background(), room, story, ScripterConstraints{})
+	draft, _, err := compileStoryToModule(context.Background(), room, story, ScripterConstraints{})
 	if err != nil {
 		t.Fatalf("compileStoryToModule failed: %v", err)
 	}
@@ -108,7 +107,7 @@ func TestCompilerMythosAnchorOverride(t *testing.T) {
 // TestCompilerNoProviderAvailable 验证 compiler 与 architect provider 均不可用时返回明确错误。
 func TestCompilerNoProviderAvailable(t *testing.T) {
 	room := &scripterRoom{sessionID: "test-session-compile-3"}
-	if _, err := compileStoryToModule(context.Background(), room, compileTestStory(), ScripterConstraints{}); err == nil {
+	if _, _, err := compileStoryToModule(context.Background(), room, compileTestStory(), ScripterConstraints{}); err == nil {
 		t.Fatal("compiler/architect 均不可用时应返回错误")
 	}
 }

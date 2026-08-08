@@ -245,19 +245,19 @@ func TestValidateStoryDocument(t *testing.T) {
 	}
 }
 
-// TestSoloMixed 验证共享驱动器 soloMixed 对"独占一轮"工具（如 submit_story）与其他
+// TestSoloMixed 验证共享驱动器 soloMixed 对"独占一轮"工具（如 submit_extraction）与其他
 // 工具调用混排的判断逻辑（原 storySoloActionMixed 已被 runScripterToolLoop 内的
 // soloMixed 取代，测试改为直接覆盖该共享函数）。
 func TestSoloMixed(t *testing.T) {
-	soloNames := map[string]bool{toolNameSubmitStory: true}
+	soloNames := map[string]bool{toolNameSubmitExtraction: true}
 	cases := []struct {
 		name  string
 		calls []llm.ToolCall
 		want  bool
 	}{
-		{"仅submit_story一条", []llm.ToolCall{{Name: toolNameSubmitStory}}, false},
-		{"submit_story与translate_anchor混排", []llm.ToolCall{
-			{Name: toolNameSubmitStory}, {Name: toolNameTranslateAnchor},
+		{"仅submit_extraction一条", []llm.ToolCall{{Name: toolNameSubmitExtraction}}, false},
+		{"submit_extraction与translate_anchor混排", []llm.ToolCall{
+			{Name: toolNameSubmitExtraction}, {Name: toolNameTranslateAnchor},
 		}, true},
 		{"多条translate_anchor无submit", []llm.ToolCall{
 			{Name: toolNameTranslateAnchor}, {Name: toolNameTranslateAnchor},

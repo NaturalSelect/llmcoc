@@ -46,7 +46,7 @@ func compilerSystemPrompt() string {
 - content.keeper_appendix：通读全文，识别出难度调节、单双人团建议或恐怖呈现提示（可能是集中一段，也可能是散在各处对守密人说的话），归拢为{difficulty_down,difficulty_up,solo_advice,group_advice,horror_tips,theme_guidance}；给守密人的建议在成稿中常以"守密人应当……"这类口语化提示直接插在对应段落里，需要你把它们归拢到对应子字段；文档确实没有这类内容则整体省略（null）
 - content.entry_identities：通读全文，识别出是否为不同职业调查员写明了差异化的入场方式（可能是集中一段，也可能是散在各处），逐条提取为{profession,init_resource,init_limit,recommend_clues}；文档未区分职业入场则留空数组
 - content.mechanics：通读全文，识别出是否描述了可量化追踪的机制（如计数器、行动时钟）（可能是集中一段，也可能是散在各处），提取为{name,type:counter|clock|tracker,description,stages:[{label,effect,trigger}]}；这些机制仅供KP参考，不做自动结算；文档未设计此类机制则留空数组
-- reward_concept：逐字取自<reward_concept>输入，不改写、不留空（输入为空则留空字符串）
+- reward_concept：通读全文，识别故事文档是否写明了通关奖励概念（如某件神话物品、典籍等）；若已写明，原样提炼为一句话叙事概念；若文档完全未提及任何奖励，留空字符串，不得凭空编造
 
 【硬性约束】
 - 不得编造、合并或删除故事文档中不存在的人名、地名、事件、线索或结局
@@ -78,7 +78,7 @@ func submitCompiledScenarioTool() scripterTool {
 // 不填充任何剧情内容。此前用完整示例（oneshotExample，一整份食尸鬼故事）作schema，
 // 模型会模仿示例中的叙事词汇，造成跨剧本内容同质；骨架式只传达结构，不传染内容。
 const compilerSchemaTemplate = `{
-  "reward_concept": "string：逐字等于<reward_concept>输入",
+  "reward_concept": "string：通读全文识别文档是否写明了通关奖励概念（神话物品/典籍等），已写明则原样提炼为一句话叙事概念，未提及则留空字符串，不得凭空编造",
   "name": "string：故事文档标题；无明确标题时从文档内具体名词提炼，不用低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒等滥用词",
   "author": "agent-team",
   "tags": "string：2-3个逗号分隔标签，指向本剧本独有的核心叙事装置/桥段，不用抽象风格词；须避开<recent_scenario_tags_blacklist>",
@@ -109,20 +109,21 @@ const compilerSchemaTemplate = `{
 
 // compileStoryToModule 把故事 architect 的自由文本 StoryOutput 编译为结构化 ScenarioDraft。
 // compiler 未配置时 fallback 到 architect provider；编译走单工具（submit_compiled_scenario）循环。
-func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOutput, constraints ScripterConstraints) (ScenarioDraft, error) {
+// 第二个返回值是 compiler 从故事文档中提炼的 reward_concept（可能为空），供调用方决定是否
+// 触发 reward_agent；reward_concept 不属于 ScenarioDraft 的持久化字段，只在编译产出这一刻使用。
+func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOutput, constraints ScripterConstraints) (ScenarioDraft, string, error) {
 	compiler := room.compiler
 	if compiler.provider == nil {
 		compiler = room.architect
 	}
 	if compiler.provider == nil {
-		return ScenarioDraft{}, fmt.Errorf("compiler/architect provider unavailable")
+		return ScenarioDraft{}, "", fmt.Errorf("compiler/architect provider unavailable")
 	}
 	sessionID := scripterSessionID(ctx, room)
 
 	userMsg := fmt.Sprintf(
 		`<story_document>%s</story_document>
 <mythos_anchor>%s</mythos_anchor>
-<reward_concept>%s</reward_concept>
 %s
 %s
 <recent_scenario_tags_blacklist>
@@ -130,7 +131,7 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 </recent_scenario_tags_blacklist>
 <schema_skeleton>%s</schema_skeleton>
 请将以上故事文档编译为结构化剧本JSON，严格遵循schema_skeleton的字段结构；tags须避开recent_scenario_tags_blacklist中的标签。`,
-		story.Document, story.MythosAnchor, story.RewardConcept,
+		story.Document, story.MythosAnchor,
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints, proseVoiceScopeCompile),
 		formatScenarioTagsBlacklist(room.tagsBlacklist),
@@ -161,7 +162,7 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 
 	const maxRounds = 20
 	if err := runScripterToolLoop(ctx, nil, compiler, "compile", msgs, tools, maxRounds, dispatch); err != nil {
-		return ScenarioDraft{}, fmt.Errorf("compile failed: %w", err)
+		return ScenarioDraft{}, "", fmt.Errorf("compile failed: %w", err)
 	}
 
 	draft := submitted.toScenarioDraft()
@@ -170,5 +171,5 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 	log.Printf("[scripter:compile] session=%s done name=%q scenes=%d npcs=%d clues=%d",
 		sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
 	logScripterArtifact("Compiled ScenarioDraft", sessionID, draft)
-	return draft, nil
+	return draft, strings.TrimSpace(submitted.RewardConcept), nil
 }

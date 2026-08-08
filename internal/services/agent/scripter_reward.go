@@ -17,7 +17,7 @@ import (
 )
 
 const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
-<task>收到本剧本的通关奖励概念（Stage2 Architect提供的叙事描述）和已确认的mythos_anchor。通过ask_lawyer工具向规则书专家查询确认机械数据（tome的阅读SAN代价和学习收益，或artifact的激活条件和代价），然后通过respond工具返回一个完整的ScenarioReward。通关奖励在调查员达成非失败结局后自动给予，无需技能检定。</task>
+<task>收到本剧本的通关奖励概念（Compiler从故事文档中提炼的叙事描述）和已确认的mythos_anchor。通过ask_lawyer工具向规则书专家查询确认机械数据（tome的阅读SAN代价和学习收益，或artifact的激活条件和代价），然后通过respond工具返回一个完整的ScenarioReward。通关奖励在调查员达成非失败结局后自动给予，无需技能检定。</task>
 <design_rules>
 - 第一轮必须至少调用一次ask_lawyer；不得凭常识或记忆直接respond。
 - type=tome：mechanics_note必须包含具体阅读SAN代价（≥1d4，来自规则书裁定，非猜测）和学习收益（克苏鲁神话技能+N 或 可学法术名称）。

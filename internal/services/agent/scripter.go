@@ -424,7 +424,7 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 
 	log.Printf("[scripter] session=%s stage=compile start", sessionID)
 	r.emitProgress("compile", "start", "Compiler 编译结构化数据…")
-	draft, err := compileStoryToModule(ctx, r, story, constraints)
+	draft, rewardConcept, err := compileStoryToModule(ctx, r, story, constraints)
 	if err != nil {
 		log.Printf("[scripter] session=%s stage=compile error=%v", sessionID, err)
 		r.emitProgress("compile", "error", "编译失败："+err.Error())
@@ -484,12 +484,13 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 		r.emitProgress("logic_review", "done", "逻辑审查通过")
 	}
 
-	// Reward agent (isolated context, optional)
-	if strings.TrimSpace(story.RewardConcept) != "" {
+	// Reward agent (isolated context, optional)：reward_concept 由 compiler 在编译阶段
+	// 通读故事文档全文提炼（见 compileStoryToModule），不再依赖 story 阶段的提交字段。
+	if strings.TrimSpace(rewardConcept) != "" {
 		log.Printf("[scripter] session=%s stage=reward_agent start concept=%q anchor=%q",
-			sessionID, truncateRunes(story.RewardConcept, 200), truncateRunes(draft.Content.MythosAnchor, 200))
+			sessionID, truncateRunes(rewardConcept, 200), truncateRunes(draft.Content.MythosAnchor, 200))
 		r.emitProgress("reward_agent", "start", "奖励物品设计…")
-		rwd, rewardErr := runRewardAgent(ctx, r, story.RewardConcept, draft.Content.MythosAnchor)
+		rwd, rewardErr := runRewardAgent(ctx, r, rewardConcept, draft.Content.MythosAnchor)
 		if rewardErr != nil {
 			log.Printf("[scripter] session=%s stage=reward_agent error=%v (continuing without reward)", sessionID, rewardErr)
 			r.emitProgress("reward_agent", "error", "奖励设计失败（跳过，不影响模组）")
@@ -707,7 +708,7 @@ func fallbackGeographyFlavor(req ScenarioCreationRequest) []string {
 
 // buildDiversityCandidates 返回剔除近N条已用组合后的候选围池；DB为空时返回全笛卡尔积。
 func buildDiversityCandidates(req ScenarioCreationRequest, sessionID string) []diversityCombo {
-	recent := loadRecentDiversityCombos(5, sessionID)
+	recent := loadRecentDiversityCombos(2, sessionID)
 	recentSet := map[string]bool{}
 	for _, combo := range recent {
 		key := diversityComboKey(combo.HorrorMode, combo.InvestFocus)

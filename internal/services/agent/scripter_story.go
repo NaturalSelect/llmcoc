@@ -4,9 +4,12 @@
 // the document and compiles it into a structured models.ScenarioContent.
 //
 // The story architect keeps the same tool-call discipline as before
-// (translate_anchor for real-time rulebook validation + anchor dedup), but
-// submits via submit_story instead of submit, carrying prose instead of a
-// strict JSON draft.
+// (translate_anchor for real-time rulebook validation + anchor dedup, plus
+// ask_lawyer for on-demand rule fact checks while drafting scenes/clues),
+// but the final story document is never wrapped in a tool call: prose has no
+// structure worth encapsulating, so the architect just replies with plain
+// text once its research tool calls are done. See runStoryArchitectLoop's
+// onPlainText hook.
 package agent
 
 import (
@@ -62,7 +65,7 @@ func storySystemPrompt() string {
 
 【二、神话元素验证】
 通过 translate_anchor 工具将核心概念翻译为COC7规则书元素：
-- 必须先调用 translate_anchor 获得规则书裁定，再调用 submit_story
+- 必须先调用 translate_anchor 获得规则书裁定，确认成功（status为found）后才能动笔写正文
 - 若首选元素在禁用列表中，继续 translate_anchor 寻找替代
 - mythos_anchor 应优先支持调查、异化、理智侵蚀和氛围恐怖，而不是鼓励直接战斗解决问题
 - mythos_anchor 优先锚定在幕后那个主体本身；如果它在规则书中确实以法术/仪式条目呈现，才允许把该条目登记为 mythos_anchor，但成稿必须写清是谁在持有并施展它
@@ -152,12 +155,14 @@ func storySystemPrompt() string {
 - 避免把战斗写成主要解法；对抗神话时优先调查、规避、谈判、阻止仪式、改变局势
 </task>
 <tools>
-- translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
+- translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；正式写作前必须至少调用一次
+- ask_lawyer：向COC7规则书专家提出具体规则书问题，核验故事中出现的技能检定、法术效果、怪物能力、机制细节等是否符合规则书事实；写作过程中可随时多次调用
 - generate_npc_name：需要给人物起名时必须调用本工具从预置姓名池随机取名（指定culture和gender），不要自行编造姓名
 - get_writing_example：获取一份职业模组成稿作为写作参考，学习组织篇章、控制信息密度、把检定与线索写进叙事句的手法；必须在正式动笔前调用一次。参考成稿的具体人名、地名、机构名、情节与神话设定与你要写的剧本无关，禁止照搬
-- submit_story：提交完整故事文档；只有在translate_anchor确认元素后才调用；必须单独一轮调用。
-  story_document 字段严禁用 draft/content/scenes/clues/endings/npcs/mechanics 等嵌套字段代替——story_document 只能是一个字符串，不是JSON对象；整份成稿的全部内容都写在这一个字符串里，用自然语言和小标题分段。不要为编译器做任何结构化整理，编译器会自己读懂你的叙述。
-</tools>`
+</tools>
+<submit>
+完成上面的工具调用后，不要调用任何工具来"提交"故事——直接在下一条回复中输出完整故事文档正文本身，就是一段普通的自然语言回复，不要用JSON、代码块或字段名包裹，不要出现story_document/draft/content/scenes/clues/endings/npcs/mechanics等字段名。这一整段回复就是最终交付的成稿。
+</submit>`
 }
 
 // ---------------------------------------------------------------------------
@@ -168,16 +173,14 @@ func storySystemPrompt() string {
 func validateStoryDocument(story StoryOutput) []string {
 	var issues []string
 	if length := len([]rune(strings.TrimSpace(story.Document))); length < 500 {
-		msg := fmt.Sprintf("story_document 过短（当前%d字），需要一份完整成稿：导入、守密人知道的真相、调查员会走到的各处地方与其中的人和线索、时间线、结局", length)
+		msg := fmt.Sprintf("故事文档过短（当前%d字），需要一份完整成稿：导入、守密人知道的真相、调查员会走到的各处地方与其中的人和线索、时间线、结局", length)
 		if length == 0 {
-			// NOTE: 0字通常意味着模型把内容写进了draft/content等嵌套字段而不是story_document本身，
-			// 这些字段会被静默丢弃；直接点破该失败模式，避免下一轮重复同样的错误。
-			msg += "；如果你把故事内容写进了draft/content/clues等嵌套字段，这是错误用法——submit_story只有story_document/mythos_anchor/reward_concept三个顶层字段，story_document必须是完整故事正文本身（纯文本字符串），不能是JSON对象"
+			msg += "；不需要调用任何工具来提交，直接在回复正文里输出完整故事文档本身（纯文本，不是JSON）"
 		}
 		issues = append(issues, msg)
 	}
 	if strings.TrimSpace(story.MythosAnchor) == "" {
-		issues = append(issues, "mythos_anchor 为空，须填入translate_anchor确认的COC7元素全称")
+		issues = append(issues, "尚未确认mythos_anchor：须先调用translate_anchor并得到status为found的结论，再输出故事文档")
 	}
 	return issues
 }
@@ -186,34 +189,25 @@ func validateStoryDocument(story StoryOutput) []string {
 // Architect loop
 // ---------------------------------------------------------------------------
 
-// runStoryArchitectLoop 驱动故事 architect 工具循环：translate_anchor（可多次）+ submit_story（独占一轮）。
-func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (StoryOutput, error) {
+// runStoryArchitectLoop 驱动故事 architect 工具循环：translate_anchor（可多次）+
+// generate_npc_name/get_writing_example，完成后模型直接以不带 tool_calls 的一条
+// 普通回复输出完整故事文档正文——不封装成 submit_story 工具调用参数，因为故事文档
+// 本身就是自由文本，没有需要封装的结构。mythos_anchor 从 translate_anchor 最近一次
+// status="found"的结论中自动记录，不要求模型在结尾重复提交。
+// initialAnchor 非空时作为锚点初始值（repair场景传入已确认的旧锚点，允许修复措辞
+// 问题时不必重新调用translate_anchor）。
+func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string, initialAnchor string) (StoryOutput, error) {
 	stageName = firstNonEmpty(stageName, "story_architect")
 
 	tools := []scripterTool{
-		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次"),
+		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；正式写作前必须至少调用一次"),
+		askLawyerTool("向COC7规则书专家提出一个具体规则书问题，用于核验故事中出现的技能检定、法术效果、怪物能力、机制细节等是否符合规则书事实；可多次调用"),
 		generateNPCNameTool(),
 		getWritingExampleTool(),
-		{
-			solo: true,
-			def: llm.ToolDefinition{
-				Name:        toolNameSubmitStory,
-				Description: "提交完整故事文档；只有在translate_anchor确认元素后才调用；必须单独一轮调用",
-				Parameters: jsonSchemaObject(`{
-					"type": "object",
-					"properties": {
-						"story_document": {"type": "string", "description": "完整故事文档正文（纯文本自然语言，可用小标题分段，不要输出JSON、代码块或字段名）；地点/NPC/线索/结局等所有设计内容都必须写成这一个字符串内的自然语言段落"},
-						"mythos_anchor": {"type": "string", "description": "translate_anchor确认的COC7元素全称"},
-						"reward_concept": {"type": "string", "description": "通关奖励叙事概念（若无则留空字符串）"}
-					},
-					"required": ["story_document", "mythos_anchor", "reward_concept"]
-				}`),
-			},
-		},
 	}
 
 	sessionID := scripterSessionID(ctx, room)
-	var submitted *StoryOutput
+	confirmedAnchor := strings.TrimSpace(initialAnchor)
 	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
 		switch call.Name {
 		case toolNameTranslateAnchor:
@@ -221,42 +215,75 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
-			return toolOutcome{result: executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)}
+			text, conclusion := executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)
+			if conclusion != nil && conclusion.Status == "found" && strings.TrimSpace(conclusion.SelectedAnchor) != "" {
+				confirmedAnchor = strings.TrimSpace(conclusion.SelectedAnchor)
+				log.Printf("[scripter:story_loop] session=%s confirmed anchor=%q", sessionID, confirmedAnchor)
+			}
+			return toolOutcome{result: text}
+		case toolNameAskLawyer:
+			var args askLawyerArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: ask_lawyer参数不是合法JSON，请重新调用。"}
+			}
+			return toolOutcome{result: storyAskLawyer(ctx, room, args.Question)}
 		case toolNameGenerateNPCName:
 			return dispatchGenerateNPCName(ctx, room, call)
 		case toolNameGetWritingExample:
 			return toolOutcome{result: executeGetWritingExample(ctx, room)}
-		case toolNameSubmitStory:
-			var args struct {
-				StoryDocument string `json:"story_document"`
-				MythosAnchor  string `json:"mythos_anchor"`
-				RewardConcept string `json:"reward_concept"`
-			}
-			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-				return toolOutcome{reject: "SYSTEM REJECT: submit_story参数不是合法JSON，请重新调用。"}
-			}
-			story := StoryOutput{
-				Document:      args.StoryDocument,
-				MythosAnchor:  args.MythosAnchor,
-				RewardConcept: args.RewardConcept,
-			}
-			if issues := validateStoryDocument(story); len(issues) > 0 {
-				return toolOutcome{reject: fmt.Sprintf(
-					"SYSTEM REJECT: 故事文档校验失败: %s。请修复后重新submit_story。", strings.Join(issues, "；"))}
-			}
-			submitted = &story
-			log.Printf("[scripter:story_loop] session=%s submitted doc_len=%d anchor=%q", sessionID, len([]rune(story.Document)), truncateRunes(story.MythosAnchor, 80))
-			return toolOutcome{result: "已收到，故事文档已提交。", done: true}
 		default:
-			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/generate_npc_name/get_writing_example/submit_story，不允许%s。", call.Name)}
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/ask_lawyer/generate_npc_name/get_writing_example，不允许%s。", call.Name)}
 		}
 	}
 
+	var submitted *StoryOutput
+	onPlainText := func(content string) (bool, string) {
+		story := StoryOutput{Document: strings.TrimSpace(content), MythosAnchor: confirmedAnchor}
+		if issues := validateStoryDocument(story); len(issues) > 0 {
+			return false, fmt.Sprintf(
+				"SYSTEM REJECT: 故事文档校验失败: %s。不需要调用任何工具，直接在下一条回复中重新输出完整故事文档正文。",
+				strings.Join(issues, "；"))
+		}
+		submitted = &story
+		log.Printf("[scripter:story_loop] session=%s submitted doc_len=%d anchor=%q", sessionID, len([]rune(story.Document)), truncateRunes(story.MythosAnchor, 80))
+		return true, ""
+	}
+
 	const maxRounds = 30
-	if err := runScripterToolLoop(ctx, room, room.architect, stageName, msgs, tools, maxRounds, dispatch); err != nil {
+	err := runToolLoop(ctx, toolLoopOptions{
+		room:        room,
+		handle:      room.architect,
+		stage:       stageName,
+		msgs:        msgs,
+		tools:       tools,
+		maxRounds:   maxRounds,
+		dispatch:    dispatch,
+		onPlainText: onPlainText,
+	})
+	if err != nil {
 		return StoryOutput{}, err
 	}
 	return *submitted, nil
+}
+
+// storyAskLawyer 是 story architect 阶段 ask_lawyer 工具的执行逻辑，供写作过程中
+// 随时核验技能检定、法术效果、怪物能力等规则书事实；与reward_agent/oneshot_translator
+// 的同名实现一致，各agent各自持有一份小包装，不额外抽共享层。
+func storyAskLawyer(ctx context.Context, room *scripterRoom, question string) string {
+	sessionID := scripterSessionID(ctx, room)
+	question = strings.TrimSpace(question)
+	if question == "" {
+		return `<ask_lawyer_result error="question字段为空"/>`
+	}
+	log.Printf("[scripter:story_loop] session=%s ask_lawyer question=%q", sessionID, truncateRunes(question, 300))
+	if room.lawyer.provider == nil {
+		return fmt.Sprintf(`<ask_lawyer_result question=%q status="lawyer_unavailable">规则书专家不可用；不得声称已核验具体规则书事实。</ask_lawyer_result>`, question)
+	}
+	results := runLawyer(ctx, room.lawyer, question)
+	if len(results) == 0 {
+		return fmt.Sprintf(`<ask_lawyer_result question=%q status="no_result">规则书中未找到相关裁定；可换用更具体的提问方式重新提问，或在正文中避免依赖该未核验的规则细节。</ask_lawyer_result>`, question)
+	}
+	return fmt.Sprintf(`<ask_lawyer_result question=%q status="found">%s</ask_lawyer_result>`, question, formatLawyerResults(results))
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +372,7 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 	}
 	logStagePrompt("story", sessionID, msgs)
 
-	result, err := runStoryArchitectLoop(ctx, room, msgs, "story_architect")
+	result, err := runStoryArchitectLoop(ctx, room, msgs, "story_architect", "")
 	if err != nil {
 		return StoryOutput{}, err
 	}
@@ -372,7 +399,7 @@ func repairStoryDocument(ctx context.Context, room *scripterRoom, constraints Sc
 <must_fix>
 %s
 </must_fix>
-请修复上述问题并通过submit_story重新提交完整故事文档。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；除非must_fix明确要求，否则不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags所指向的核心设定。`,
+请直接在下一条回复中输出修复后的完整故事文档正文，不需要调用任何工具来提交。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；除非must_fix明确要求，否则不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags所指向的核心设定。`,
 		string(reqJSON), string(constraintsJSON),
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints, proseVoiceScopeStory),
@@ -387,15 +414,12 @@ func repairStoryDocument(ctx context.Context, room *scripterRoom, constraints Sc
 	}
 	logStagePrompt("story_repair", sessionID, msgs)
 
-	result, err := runStoryArchitectLoop(ctx, room, msgs, "story_repair_architect")
+	result, err := runStoryArchitectLoop(ctx, room, msgs, "story_repair_architect", previous.MythosAnchor)
 	if err != nil {
 		return StoryOutput{}, fmt.Errorf("story repair failed: %w", err)
 	}
 	if strings.TrimSpace(result.MythosAnchor) == "" {
 		result.MythosAnchor = previous.MythosAnchor
-	}
-	if strings.TrimSpace(result.RewardConcept) == "" {
-		result.RewardConcept = previous.RewardConcept
 	}
 	log.Printf("[scripter:story_repair] session=%s done doc_len=%d", sessionID, len([]rune(result.Document)))
 	return result, nil

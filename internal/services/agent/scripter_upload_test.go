@@ -1,5 +1,5 @@
 // NOTE: scripter_upload_test.go 验证管理员上传故事编译功能：
-// RunCompileStoryWithProgress 的输入校验、extractAnchorFromDocument 的锚点/奖励自动提取，
+// RunCompileStoryWithProgress 的输入校验、extractAnchorFromDocument 的锚点自动提取，
 // 以及 compileAndFinalize 在跳过 Story Architect 阶段时的编译产出、mythos_anchor 强制覆盖
 // 与 reward_agent 可选跳过行为。
 // 禁止真实网络/真实LLM；复用 translator_test.go 中的 sequentialFakeProvider。
@@ -25,8 +25,7 @@ func TestRunCompileStoryWithProgress_MissingDocument(t *testing.T) {
 }
 
 // TestExtractAnchorFromDocument_Success 验证 anchor_extract 阶段能通过
-// translate_anchor（经 translator/lawyer 校验）+ submit_story 识别出 mythos_anchor，
-// 并从文档中提炼 reward_concept。
+// translate_anchor（经 translator/lawyer 校验）+ submit_extraction 识别出 mythos_anchor。
 func TestExtractAnchorFromDocument_Success(t *testing.T) {
 	initTranslatorTestDB(t)
 	document := compileTestStory().Document
@@ -35,16 +34,14 @@ func TestExtractAnchorFromDocument_Success(t *testing.T) {
 		"concept": "死者被古老力量束缚继续行动",
 		"reason":  "识别文档核心神话元素",
 	})
-	submitStoryArgs, _ := json.Marshal(map[string]string{
-		"story_document": document,
-		"mythos_anchor":  "食尸鬼（Ghoul）",
-		"reward_concept": "与食尸鬼有关的古籍手稿",
+	submitExtractionArgs, _ := json.Marshal(map[string]string{
+		"mythos_anchor": "食尸鬼（Ghoul）",
 	})
 	architectFake := &sequentialFakeProvider{
 		callerName: "architect",
 		toolResponses: []llm.ToolChatResult{
 			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameTranslateAnchor, string(translateArgs))}},
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameSubmitStory, string(submitStoryArgs))}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameSubmitExtraction, string(submitExtractionArgs))}},
 		},
 	}
 	askArgs, _ := json.Marshal(map[string]string{"question": "食尸鬼在COC7规则书中是否已收录？"})
@@ -86,15 +83,12 @@ func TestExtractAnchorFromDocument_Success(t *testing.T) {
 	if result.MythosAnchor != "食尸鬼（Ghoul）" {
 		t.Errorf("MythosAnchor = %q, want 食尸鬼（Ghoul）", result.MythosAnchor)
 	}
-	if result.RewardConcept != "与食尸鬼有关的古籍手稿" {
-		t.Errorf("RewardConcept = %q, want 与食尸鬼有关的古籍手稿", result.RewardConcept)
-	}
 }
 
-// TestExtractAnchorFromDocument_Failure 验证 architect 始终不提交 submit_story
+// TestExtractAnchorFromDocument_Failure 验证 architect 始终不提交 submit_extraction
 // （工具循环轮数耗尽）时，extractAnchorFromDocument 返回错误。
 func TestExtractAnchorFromDocument_Failure(t *testing.T) {
-	architectFake := &sequentialFakeProvider{callerName: "architect"} // 无预设响应，ChatWithTools恒返回空tool_calls，触发连续空轮快速失败，永不submit_story
+	architectFake := &sequentialFakeProvider{callerName: "architect"} // 无预设响应，ChatWithTools恒返回空tool_calls，触发连续空轮快速失败，永不submit_extraction
 	room := &scripterRoom{
 		sessionID: "test-session-extract-2",
 		architect: agentHandle{
@@ -105,7 +99,7 @@ func TestExtractAnchorFromDocument_Failure(t *testing.T) {
 	}
 
 	if _, err := extractAnchorFromDocument(context.Background(), room, "故事文档正文"); err == nil {
-		t.Fatal("architect 始终未提交 submit_story 时应返回错误")
+		t.Fatal("architect 始终未提交 submit_extraction 时应返回错误")
 	}
 }
 
@@ -159,13 +153,15 @@ func TestCompileAndFinalize_Success(t *testing.T) {
 	}
 }
 
-// TestCompileAndFinalize_RewardSkipped 验证 RewardConcept 为空时跳过 reward_agent 阶段，
-// 且 compiler provider 只被调用一次（不会为奖励设计发起额外 LLM 调用）。
+// TestCompileAndFinalize_RewardSkipped 验证 compiler 提交的 reward_concept 为空时跳过
+// reward_agent 阶段，且 compiler provider 只被调用一次（不会为奖励设计发起额外 LLM 调用）。
 func TestCompileAndFinalize_RewardSkipped(t *testing.T) {
+	noReward := oneshotResultExample
+	noReward.RewardConcept = ""
 	fake := &sequentialFakeProvider{
 		callerName: "compiler",
 		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, oneshotExample)}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, marshalExample(noReward))}},
 		},
 	}
 	room := &scripterRoom{
@@ -177,16 +173,50 @@ func TestCompileAndFinalize_RewardSkipped(t *testing.T) {
 		},
 	}
 	story := compileTestStory()
-	story.RewardConcept = ""
 
 	draft, _, err := room.compileAndFinalize(context.Background(), story, ScripterConstraints{})
 	if err != nil {
 		t.Fatalf("compileAndFinalize failed: %v", err)
 	}
 	if draft.Content.Reward != nil {
-		t.Errorf("RewardConcept 为空时不应生成奖励, got %+v", draft.Content.Reward)
+		t.Errorf("compiler输出的reward_concept为空时不应生成奖励, got %+v", draft.Content.Reward)
 	}
 	if len(fake.recordedKeys) != 1 {
 		t.Errorf("跳过奖励设计时 compiler provider 应只被调用一次, got %d", len(fake.recordedKeys))
+	}
+}
+
+// TestCompileAndFinalize_RewardTriggeredByCompiler 验证 reward_agent 的触发信号来自
+// compiler 提交的 reward_concept（从故事文档通读提炼），而不是 story 阶段的字段——
+// 即使 architect provider 不可用导致 reward_agent 本身执行失败，也应仍尝试触发
+// （非致命错误，不影响 compileAndFinalize 整体成功）。
+func TestCompileAndFinalize_RewardTriggeredByCompiler(t *testing.T) {
+	fake := &sequentialFakeProvider{
+		callerName: "compiler",
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, oneshotExample)}},
+		},
+	}
+	room := &scripterRoom{
+		sessionID: "test-session-upload-3",
+		compiler: agentHandle{
+			provider: fake,
+			config:   &models.AgentConfig{Role: models.AgentRoleCompiler, IsActive: true},
+			enabled:  true,
+		},
+	}
+	var sawRewardStart bool
+	room.progressFn = func(stage, status, detail string) {
+		if stage == "reward_agent" && status == "start" {
+			sawRewardStart = true
+		}
+	}
+	story := compileTestStory()
+
+	if _, _, err := room.compileAndFinalize(context.Background(), story, ScripterConstraints{}); err != nil {
+		t.Fatalf("compileAndFinalize failed: %v", err)
+	}
+	if !sawRewardStart {
+		t.Error("oneshotExample的reward_concept非空，应触发reward_agent（即使无architect provider而失败，也应先发出reward_agent:start进度）")
 	}
 }

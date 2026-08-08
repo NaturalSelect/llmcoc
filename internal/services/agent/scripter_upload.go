@@ -20,8 +20,8 @@ type CompileStoryRequest struct {
 }
 
 // RunCompileStoryWithProgress 校验管理员上传的故事文档后，先执行 anchor_extract 阶段自动
-// 识别神话锚点与奖励概念，再执行 compile→repair→logic_review→reward_agent→normalize 流水线，
-// 跳过故事生成阶段。与 RunScripterScenarioTeamWithProgress 共享同一把全局锁，两条路径不会
+// 识别神话锚点，再执行 compile→repair→logic_review→reward_agent→normalize 流水线，跳过
+// 故事生成阶段。与 RunScripterScenarioTeamWithProgress 共享同一把全局锁，两条路径不会
 // 并发跑生成任务。
 func RunCompileStoryWithProgress(ctx context.Context, req CompileStoryRequest, progress ScripterProgressFunc) (ScenarioCreationOutput, error) {
 	if strings.TrimSpace(req.StoryDocument) == "" {
@@ -49,7 +49,7 @@ func RunCompileStoryWithProgress(ctx context.Context, req CompileStoryRequest, p
 	log.Printf("[scripter] session=%s compile-story-upload start doc_len=%d",
 		sessionID, len([]rune(req.StoryDocument)))
 
-	room.emitProgress("anchor_extract", "start", "正在从文档中识别神话锚点与奖励概念…")
+	room.emitProgress("anchor_extract", "start", "正在从文档中识别神话锚点…")
 	extracted, err := extractAnchorFromDocument(ctx, room, req.StoryDocument)
 	if err != nil {
 		room.emitProgress("anchor_extract", "error", err.Error())
@@ -58,9 +58,8 @@ func RunCompileStoryWithProgress(ctx context.Context, req CompileStoryRequest, p
 	room.emitProgress("anchor_extract", "done", fmt.Sprintf("锚点提取完成：%s", truncateRunes(extracted.MythosAnchor, 40)))
 
 	story := StoryOutput{
-		Document:      req.StoryDocument,
-		MythosAnchor:  extracted.MythosAnchor,
-		RewardConcept: extracted.RewardConcept,
+		Document:     req.StoryDocument,
+		MythosAnchor: extracted.MythosAnchor,
 	}
 	constraints := ScripterConstraints{
 		Era:          room.req.Era,
