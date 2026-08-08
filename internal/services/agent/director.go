@@ -454,7 +454,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			if userType == "admin" {
 				isDebug = true
 			}
-			userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s </%s>\n", tag, userType, a.PlayerName, isDebug, a.Content, tag))
+			extra := ""
+			if !isDebug {
+				extra = "(请留意system-reminder标签中可能包含的自动提示)"
+			}
+			userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s %s</%s>\n", tag, userType, a.PlayerName, isDebug, a.Content, extra, tag))
 		}
 		if hasDbg {
 			userSB.WriteString("\nNOTE: USER INPUT DEBUG COMMAND FOLLOW THE COMMAND\n")
@@ -470,7 +474,11 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		if tag == "debug" {
 			isDebug = true
 		}
-		userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s </%s>\n", tag, userType, gctx.UserName, isDebug, gctx.UserInput, tag))
+		extra := ""
+		if !isDebug {
+			extra = "(请留意system-reminder标签中可能包含的自动提示)"
+		}
+		userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s %s</%s>\n", tag, userType, gctx.UserName, isDebug, gctx.UserInput, extra, tag))
 	}
 	userSB.WriteString(`
 <system-reminder>
