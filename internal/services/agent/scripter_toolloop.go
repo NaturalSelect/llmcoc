@@ -185,6 +185,7 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 	}
 
 	emptyRounds := 0
+	loggedCount := 0 // msgs 中已经写入生成日志的前缀长度，避免每轮把完整历史重复写入（O(N²)）
 	for round := 1; round <= opts.maxRounds; round++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -203,16 +204,21 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 
 		roundStage := fmt.Sprintf("%s_round_%d", stage, round)
 		logStagePrompt(roundStage, sessionID, msgs)
-		callMessages := append([]llm.ChatMessage(nil), msgs...)
 
 		result, err := handle.provider.ChatWithTools(ctx, cacheKey, msgs, toolDefs)
 		if err != nil {
 			return err
 		}
-		recordScripterLLMExchange(ctx, opts.room, roundStage, callMessages, renderToolChatResultForLog(result))
+		// NOTE: 只把本轮相对上次记录新增的消息（首轮为全部初始消息）写入生成日志，
+		// 而不是每轮重新写入 msgs 的完整历史；否则 N 轮下来日志构建总量是 O(N²)。
+		newMessages := append([]llm.ChatMessage(nil), msgs[loggedCount:]...)
+		recordScripterLLMExchange(ctx, opts.room, roundStage, newMessages, renderToolChatResultForLog(result))
 		log.Printf("[scripter:%s] session=%s round=%d tool_calls=%d content_len=%d",
 			stage, sessionID, round, len(result.ToolCalls), len([]rune(result.Content)))
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls})
+		// assistant 回复已经通过 recordScripterLLMExchange 的 response 参数记录，
+		// 标记到此为止都已写入日志，下一轮的 newMessages 从这里开始算起。
+		loggedCount = len(msgs)
 
 		if len(result.ToolCalls) == 0 {
 			if opts.onPlainText != nil {

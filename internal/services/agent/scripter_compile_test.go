@@ -112,6 +112,43 @@ func TestCompilerNoProviderAvailable(t *testing.T) {
 	}
 }
 
+// TestCompileStoryToModule_EmptyRewardConceptRejectedOnce 验证 compiler 首次提交的
+// reward_concept 为空时会被机制层拒绝一次并要求重新提交；重提后给出非空概念则被接受，
+// compileStoryToModule 的第二个返回值应等于重提后的非空概念。
+func TestCompileStoryToModule_EmptyRewardConceptRejectedOnce(t *testing.T) {
+	empty := oneshotResultExample
+	empty.RewardConcept = ""
+	retried := oneshotResultExample
+	retried.RewardConcept = "死者遗物中的抄本残页"
+	fake := &sequentialFakeProvider{
+		callerName: "compiler",
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, marshalExample(empty))}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameSubmitCompiled, marshalExample(retried))}},
+		},
+	}
+	room := &scripterRoom{
+		sessionID: "test-session-compile-reward-retry",
+		compiler: agentHandle{
+			provider: fake,
+			config:   &models.AgentConfig{Role: models.AgentRoleCompiler, IsActive: true},
+			enabled:  true,
+		},
+	}
+	story := compileTestStory()
+
+	_, rewardConcept, err := compileStoryToModule(context.Background(), room, story, ScripterConstraints{})
+	if err != nil {
+		t.Fatalf("compileStoryToModule failed: %v", err)
+	}
+	if rewardConcept != "死者遗物中的抄本残页" {
+		t.Errorf("rewardConcept = %q, want 重提后的非空概念", rewardConcept)
+	}
+	if len(fake.recordedKeys) != 2 {
+		t.Errorf("reward_concept 首次为空应被拒绝一次并重提, compiler provider 调用次数 got %d, want 2", len(fake.recordedKeys))
+	}
+}
+
 // TestOneshotDraftJSONSchemaValid 验证 oneshotDraftJSONSchema 本身是合法 JSON、且直接
 // 声明了 OneshotResult 顶层字段（而不是包一层 draft），防止手写 schema 字符串出现语法错误
 // 或退化回"空壳 object 参数"的问题。

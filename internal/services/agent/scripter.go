@@ -486,11 +486,18 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 
 	// Reward agent (isolated context, optional)：reward_concept 由 compiler 在编译阶段
 	// 通读故事文档全文提炼（见 compileStoryToModule），不再依赖 story 阶段的提交字段。
-	if strings.TrimSpace(rewardConcept) != "" {
+	// compiler 提示词与机制层校验已经基本保证 reward_concept 非空；下面的锚点兜底只覆盖
+	// 极端情况下 compiler 两次提交仍为空的场景，避免奖励阶段被静默跳过。
+	concept := strings.TrimSpace(rewardConcept)
+	if concept == "" && strings.TrimSpace(draft.Content.MythosAnchor) != "" {
+		concept = fallbackRewardConcept(draft.Content.MythosAnchor)
+		log.Printf("[scripter] session=%s stage=reward_agent compiler未给出reward_concept，改用锚点兜底概念=%q", sessionID, concept)
+	}
+	if concept != "" {
 		log.Printf("[scripter] session=%s stage=reward_agent start concept=%q anchor=%q",
-			sessionID, truncateRunes(rewardConcept, 200), truncateRunes(draft.Content.MythosAnchor, 200))
+			sessionID, truncateRunes(concept, 200), truncateRunes(draft.Content.MythosAnchor, 200))
 		r.emitProgress("reward_agent", "start", "奖励物品设计…")
-		rwd, rewardErr := runRewardAgent(ctx, r, rewardConcept, draft.Content.MythosAnchor)
+		rwd, rewardErr := runRewardAgent(ctx, r, concept, draft.Content.MythosAnchor)
 		if rewardErr != nil {
 			log.Printf("[scripter] session=%s stage=reward_agent error=%v (continuing without reward)", sessionID, rewardErr)
 			r.emitProgress("reward_agent", "error", "奖励设计失败（跳过，不影响模组）")
@@ -1368,6 +1375,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 	const maxAttempts = 200
 	currentErr := parseErr
 	raw := rawJSON
+	loggedCount := 0 // msgs 中已经写入生成日志的前缀长度，避免每次尝试都把完整历史重复写入（O(N²)）
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
@@ -1381,12 +1389,14 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 				"注意: 仅输出修正后的 JSON,不要有任何其他文字。",
 			currentErr.Error(), raw, schemaExample)
 		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: fixPrompt})
-		callMessages := append([]llm.ChatMessage(nil), msgs...)
+		// NOTE: 只把相对上次记录新增的消息写入生成日志，而不是每次尝试都重新写入
+		// msgs 的完整历史；否则 maxAttempts=200 次下来日志构建总量是 O(N²)。
+		newMessages := append([]llm.ChatMessage(nil), msgs[loggedCount:]...)
 		fixed, chatErr := parser.provider.Chat(ctx, parser.cacheKey(sessionIDFromContextValue(ctx)), msgs)
 		if chatErr != nil {
 			return "", fmt.Errorf("parser 调用失败: %w", chatErr)
 		}
-		recordScripterLLMExchange(ctx, nil, fmt.Sprintf("parser_repair_attempt_%d", attempt), callMessages, fixed)
+		recordScripterLLMExchange(ctx, nil, fmt.Sprintf("parser_repair_attempt_%d", attempt), newMessages, fixed)
 		if strings.HasPrefix(fixed, "```json") {
 			fixed = strings.TrimPrefix(fixed, "```json")
 			fixed = strings.TrimSuffix(fixed, "```")
@@ -1418,6 +1428,8 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 		currentErr = fmt.Errorf("修复后的 JSON 仍然无效")
 		raw = fixed
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: fixed})
+		// assistant 回复已经通过 recordScripterLLMExchange 的 response 参数记录。
+		loggedCount = len(msgs)
 		log.Printf("[parser] session=%s attempt=%d 修复后仍无效", sessionID, attempt)
 	}
 	return "", fmt.Errorf("parser 修复失败(%d次尝试)", maxAttempts)

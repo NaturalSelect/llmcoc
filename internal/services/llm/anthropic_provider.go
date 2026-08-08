@@ -129,6 +129,7 @@ func (p *anthropicProvider) chat(ctx context.Context, cacheKey string, messages 
 	if err != nil {
 		return "", nil, err
 	}
+	params.Metadata.UserID.Value = cacheKey // 用于 Anthropic 端的用户分流,不影响缓存键
 
 	var content string
 	var toolCalls []ToolCall

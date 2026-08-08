@@ -17,7 +17,7 @@ import (
 )
 
 const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
-<task>收到本剧本的通关奖励概念（Compiler从故事文档中提炼的叙事描述）和已确认的mythos_anchor。通过ask_lawyer工具向规则书专家查询确认机械数据（tome的阅读SAN代价和学习收益，或artifact的激活条件和代价），然后通过respond工具返回一个完整的ScenarioReward。通关奖励在调查员达成非失败结局后自动给予，无需技能检定。</task>
+<task>收到本剧本的通关奖励概念（由Compiler依据故事文档指认或设计的叙事描述——可能是文档明写的，也可能是Compiler据文档已有元素设计的；无论哪种，都以它为本次设计的叙事起点）和已确认的mythos_anchor。通过ask_lawyer工具向规则书专家查询确认机械数据（tome的阅读SAN代价和学习收益，或artifact的激活条件和代价），然后通过respond工具返回一个完整的ScenarioReward。通关奖励在调查员达成非失败结局后自动给予，无需技能检定。</task>
 <design_rules>
 - 第一轮必须至少调用一次ask_lawyer；不得凭常识或记忆直接respond。
 - type=tome：mechanics_note必须包含具体阅读SAN代价（≥1d4，来自规则书裁定，非猜测）和学习收益（克苏鲁神话技能+N 或 可学法术名称）。
@@ -25,7 +25,7 @@ const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
 - 优先使用COC7规则书中记载的正式名称；若使用场景专属名称，需在description中说明叙事根据。
 - ask_lawyer返回must_avoid中的禁令不得绕过。
 - description必须说明物品与mythos_anchor的叙事关联。
-- 仔细思考，考虑设计一个有趣的奖励，避免过于平庸或过于强力的奖励；如果概念本身很弱，考虑在respond中设计一个更有趣的奖励来替代概念，但必须有规则书裁定作为支持。奖励设计要兼顾叙事和机制，避免纯叙事或纯数值提升。
+- 仔细思考，考虑设计一个有趣的奖励，避免过于平庸或过于强力的奖励；如果概念本身很弱，考虑在respond中设计一个更有趣的奖励来替代概念，但必须有规则书裁定作为支持。奖励设计要兼顾叙事和机制，避免纯叙事或纯数值提升。替换或深化概念时，仍须保留原概念中的叙事根据与mythos_anchor关联，不得改成与本剧本无关的规则书名物。
 </design_rules>`
 
 // rewardAgentReward is the structured reward returned by respond.
@@ -142,6 +142,18 @@ func runRewardAgent(ctx context.Context, room *scripterRoom, concept, mythosAnch
 		Description:   result.Description,
 		MechanicsNote: result.MechanicsNote,
 	}, nil
+}
+
+// fallbackRewardConcept 在 compiler 两次提交仍未给出 reward_concept 时生效，依据已确认的
+// mythos_anchor 合成一个兜底奖励概念，保证 reward agent 阶段总能触发。正常情况下不应被
+// 触发（compiler 提示词与机制层一次性校验已基本保证非空），一旦出现即说明提示词侧仍需
+// 收紧，应通过调用方打印的日志监控其发生率，而不是放宽这里的兜底文案。
+func fallbackRewardConcept(mythosAnchor string) string {
+	anchor := strings.TrimSpace(mythosAnchor)
+	if anchor == "" {
+		return ""
+	}
+	return fmt.Sprintf("与%s直接相关、由本案施动者留下的典籍或器物", anchor)
 }
 
 func rewardAgentAskLawyer(ctx context.Context, room *scripterRoom, question string) string {

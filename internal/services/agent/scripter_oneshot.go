@@ -55,7 +55,7 @@ const oneshotDraftJSONSchema = `{
 	"type": "object",
 	"description": "完整oneshotResult JSON对象",
 	"properties": {
-		"reward_concept": {"type": "string", "description": "逐字等于reward_concept输入，输入为空则留空字符串"},
+		"reward_concept": {"type": "string", "description": "本篇通关奖励的一句话叙事概念，由你依据故事文档已确立的施动者、地点、人物与mythos_anchor设计并指认一件调查员通关后能带走的实体载体（典籍/手稿/笔记/器物）；故事原文未明写奖励时也必须设计，但只能建立在文档已有的人事物之上，不得新增人物或地点、不得改动结局；不写规则数值与SAN代价；不得留空。修复阶段若<previous_draft>已有此字段，原样保留原值"},
 		"name": {"type": "string", "description": "剧本标题；无明确标题时从文档内具体名词提炼，不用低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒等滥用词"},
 		"author": {"type": "string", "description": "固定为agent-team"},
 		"tags": {"type": "string", "description": "2-3个逗号分隔标签，指向本剧本独有的核心叙事装置/桥段；须避开recent_scenario_tags_blacklist"},
@@ -393,7 +393,7 @@ func repairSystemPrompt() string {
 <draft_schema>
 submit.draft 必须保持与<previous_draft>完全相同的字段结构：
 {
-  "reward_concept": "通关奖励叙事概念（若无则留空字符串）",
+  "reward_concept": "保持previous_draft原值",
   "name": "剧本名称",
   "author": "保持previous_draft原值",
   "tags": "2-3个逗号分隔的标签，须避开<recent_scenario_tags_blacklist>",

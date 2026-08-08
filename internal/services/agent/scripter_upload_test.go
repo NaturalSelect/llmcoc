@@ -1,7 +1,7 @@
 // NOTE: scripter_upload_test.go 验证管理员上传故事编译功能：
 // RunCompileStoryWithProgress 的输入校验、extractAnchorFromDocument 的锚点自动提取，
 // 以及 compileAndFinalize 在跳过 Story Architect 阶段时的编译产出、mythos_anchor 强制覆盖
-// 与 reward_agent 可选跳过行为。
+// 与 reward_concept 为空时的机制层重试、兜底触发行为。
 // 禁止真实网络/真实LLM；复用 translator_test.go 中的 sequentialFakeProvider。
 package agent
 
@@ -153,15 +153,22 @@ func TestCompileAndFinalize_Success(t *testing.T) {
 	}
 }
 
-// TestCompileAndFinalize_RewardSkipped 验证 compiler 提交的 reward_concept 为空时跳过
-// reward_agent 阶段，且 compiler provider 只被调用一次（不会为奖励设计发起额外 LLM 调用）。
-func TestCompileAndFinalize_RewardSkipped(t *testing.T) {
+// TestCompileAndFinalize_RewardConceptEmptyFallsBack 验证 compiler 提交的 reward_concept
+// 为空时：机制层先拒绝一次要求重新提交（见 scripter_compile.go dispatch 的 rewardRetried
+// 逻辑），重提后仍为空则放行编译；触发点改用 mythos_anchor 合成兜底概念继续触发
+// reward_agent（见 scripter.go 的 fallbackRewardConcept 调用），而不是像旧行为那样
+// 静默跳过整个奖励阶段。
+// 本测试的 room 未配置 architect/lawyer provider，所以 reward_agent 执行本身必然因
+// "no LLM provider available" 而失败——这与"因为概念为空所以跳过"是两种不同的原因，
+// 这里只验证后者不再发生（reward_agent 仍会被尝试触发）。
+func TestCompileAndFinalize_RewardConceptEmptyFallsBack(t *testing.T) {
 	noReward := oneshotResultExample
 	noReward.RewardConcept = ""
 	fake := &sequentialFakeProvider{
 		callerName: "compiler",
 		toolResponses: []llm.ToolChatResult{
 			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, marshalExample(noReward))}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameSubmitCompiled, marshalExample(noReward))}},
 		},
 	}
 	room := &scripterRoom{
@@ -172,17 +179,28 @@ func TestCompileAndFinalize_RewardSkipped(t *testing.T) {
 			enabled:  true,
 		},
 	}
+	var sawRewardStart bool
+	room.progressFn = func(stage, status, detail string) {
+		if stage == "reward_agent" && status == "start" {
+			sawRewardStart = true
+		}
+	}
 	story := compileTestStory()
 
 	draft, _, err := room.compileAndFinalize(context.Background(), story, ScripterConstraints{})
 	if err != nil {
 		t.Fatalf("compileAndFinalize failed: %v", err)
 	}
-	if draft.Content.Reward != nil {
-		t.Errorf("compiler输出的reward_concept为空时不应生成奖励, got %+v", draft.Content.Reward)
+	if !sawRewardStart {
+		t.Error("reward_concept 重试后仍为空时，应改用 mythos_anchor 兜底概念继续触发 reward_agent，而不是静默跳过")
 	}
-	if len(fake.recordedKeys) != 1 {
-		t.Errorf("跳过奖励设计时 compiler provider 应只被调用一次, got %d", len(fake.recordedKeys))
+	// room 未配置 reward_agent 可用的 architect/lawyer provider，reward_agent 必然因无
+	// provider 而失败（非致命，跳过），这与"概念为空"是两回事。
+	if draft.Content.Reward != nil {
+		t.Errorf("room 未配置 reward_agent 可用 provider 时不应生成奖励, got %+v", draft.Content.Reward)
+	}
+	if len(fake.recordedKeys) != 2 {
+		t.Errorf("reward_concept 为空应被拒绝一次并重提, compiler provider 调用次数 got %d, want 2", len(fake.recordedKeys))
 	}
 }
 

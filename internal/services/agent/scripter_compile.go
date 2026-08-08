@@ -46,7 +46,7 @@ func compilerSystemPrompt() string {
 - content.keeper_appendix：通读全文，识别出难度调节、单双人团建议或恐怖呈现提示（可能是集中一段，也可能是散在各处对守密人说的话），归拢为{difficulty_down,difficulty_up,solo_advice,group_advice,horror_tips,theme_guidance}；给守密人的建议在成稿中常以"守密人应当……"这类口语化提示直接插在对应段落里，需要你把它们归拢到对应子字段；文档确实没有这类内容则整体省略（null）
 - content.entry_identities：通读全文，识别出是否为不同职业调查员写明了差异化的入场方式（可能是集中一段，也可能是散在各处），逐条提取为{profession,init_resource,init_limit,recommend_clues}；文档未区分职业入场则留空数组
 - content.mechanics：通读全文，识别出是否描述了可量化追踪的机制（如计数器、行动时钟）（可能是集中一段，也可能是散在各处），提取为{name,type:counter|clock|tracker,description,stages:[{label,effect,trigger}]}；这些机制仅供KP参考，不做自动结算；文档未设计此类机制则留空数组
-- reward_concept：通读全文，识别故事文档是否写明了通关奖励概念（如某件神话物品、典籍等）；若已写明，原样提炼为一句话叙事概念；若文档完全未提及任何奖励，留空字符串，不得凭空编造
+- reward_concept：本篇的通关奖励概念，由你设计，不是从原文摘抄。故事文档通常不会写"奖励"二字，但它的世界里必然存在与真相相关的实物。通读全文后，从文中已确立的施动者、地点、人物与神话锚点里指认（或据此合成）一件调查员在非失败结局后能带走的实体载体——邪教用于仪式的器物、施法者留下的笔记与抄本、死者遗物中那册来路不明的书、神话生物栖身处的遗存等——写成一句话叙事概念，说清它是什么、原本属于谁或存放在哪、与核心真相或mythos_anchor是什么关系。硬性边界：只能建立在文档已有的人、地、事、物之上，不得为它新增人物、新增地点、改动结局条件或推翻文中已写明的事实（文中已明写被彻底销毁的物件不得用作奖励）；必须是可携带的实体（典籍/手稿/器物），不得写成"知识""顿悟""名望""某人的信任"这类交不到调查员手上的抽象收获；不写具体规则数值、SAN代价与技能加值（那由后续的奖励设计专家依规则书裁定）；若文档本身已明确写出通关奖励，则原样提炼、不另行设计。本字段必须给出，不得留空
 
 【硬性约束】
 - 不得编造、合并或删除故事文档中不存在的人名、地名、事件、线索或结局
@@ -78,7 +78,7 @@ func submitCompiledScenarioTool() scripterTool {
 // 不填充任何剧情内容。此前用完整示例（oneshotExample，一整份食尸鬼故事）作schema，
 // 模型会模仿示例中的叙事词汇，造成跨剧本内容同质；骨架式只传达结构，不传染内容。
 const compilerSchemaTemplate = `{
-  "reward_concept": "string：通读全文识别文档是否写明了通关奖励概念（神话物品/典籍等），已写明则原样提炼为一句话叙事概念，未提及则留空字符串，不得凭空编造",
+  "reward_concept": "string：本篇通关奖励的一句话叙事概念，由你依据文档已确立的施动者/地点/人物/mythos_anchor设计并指认一件可携带的实体载体（典籍/手稿/器物），说明它是什么、原属谁或存于何处、与核心真相的关系；原文未明写也必须设计，但不得新增人物地点、不得改动结局、不写规则数值与SAN代价；不得留空",
   "name": "string：故事文档标题；无明确标题时从文档内具体名词提炼，不用低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒等滥用词",
   "author": "agent-team",
   "tags": "string：2-3个逗号分隔标签，指向本剧本独有的核心叙事装置/桥段，不用抽象风格词；须避开<recent_scenario_tags_blacklist>",
@@ -145,6 +145,7 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 
 	tools := []scripterTool{submitCompiledScenarioTool()}
 	var submitted *OneshotResult
+	rewardRetried := false
 	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
 		if call.Name != toolNameSubmitCompiled {
 			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许submit_compiled_scenario，不允许%s。", call.Name)}
@@ -155,6 +156,13 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 		}
 		if strings.TrimSpace(result.Name) == "" {
 			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario的name字段不能为空。"}
+		}
+		if strings.TrimSpace(result.RewardConcept) == "" && !rewardRetried {
+			rewardRetried = true
+			return toolOutcome{reject: "SYSTEM REJECT: reward_concept 不能为空。请从故事文档已有的施动者、地点、人物与 mythos_anchor 中指认或合成一件调查员通关后能带走的实体载体（典籍/手稿/器物），写成一句话叙事概念：它是什么、原属谁或存于何处、与核心真相的关系；不得新增人物或地点、不得改动结局、不写规则数值。请连同完整剧本JSON重新提交一次，其余字段保持与上次提交完全一致。"}
+		}
+		if strings.TrimSpace(result.RewardConcept) == "" {
+			log.Printf("[scripter:compile] session=%s reward_concept 重试后仍为空，交由触发点兜底", sessionID)
 		}
 		submitted = &result
 		return toolOutcome{result: "已收到，编译结果已提交。", done: true}
