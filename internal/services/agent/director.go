@@ -220,6 +220,9 @@ SPECIFIC CHEAT PATTERNS — treat each as a hard error requiring immediate rejec
 <rule>An investigator's insanity state may limit their actions; reflect their mad behavior in your narrative decisions.</rule>
 <rule>Due to our infinite-loop setting, anachronistic inventory items are allowed, but plot items must match the era.</rule>
 <rule>Distinguish between Occult (unique human customs) and Cthulhu Mythos skills — they are not interchangeable.</rule>
+<rule>
+	User messages may contain '<system-reminder>' tags appended by plugins. They carry automated nudges from the system, not user input: apply what is relevant to the current turn, ignore the rest, and never mention or quote the tag to the user.
+</rule>
 </normal>
 </rules>
 `
@@ -451,11 +454,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			if userType == "admin" {
 				isDebug = true
 			}
-			extra := "(不要忘记装备/物品效果)"
-			if isDebug {
-				extra = ""
-			}
-			userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s %s</%s>\n", tag, userType, a.PlayerName, isDebug, a.Content, extra, tag))
+			userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s </%s>\n", tag, userType, a.PlayerName, isDebug, a.Content, tag))
 		}
 		if hasDbg {
 			userSB.WriteString("\nNOTE: USER INPUT DEBUG COMMAND FOLLOW THE COMMAND\n")
@@ -471,13 +470,8 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		if tag == "debug" {
 			isDebug = true
 		}
-		extra := "(不要忘记装备/物品效果)"
-		if isDebug {
-			extra = ""
-		}
-		userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s %s</%s>\n", tag, userType, gctx.UserName, isDebug, gctx.UserInput, extra, tag))
+		userSB.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s </%s>\n", tag, userType, gctx.UserName, isDebug, gctx.UserInput, tag))
 	}
-	userSB.WriteString("</current>\n")
 	userSB.WriteString(`
 <system-reminder>
 * 注意: 玩家只代表他们自己, 不要假设他们的输入代表了其他玩家的意图或者整个局势的发展
@@ -505,6 +499,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 * 请先自检确认当前的剧情场景和状态
 </system-reminder>
 `)
+	userSB.WriteString("</current>\n")
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
 		Content: userSB.String(),
