@@ -14,7 +14,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
+	"sync"
 
 	"github.com/llmcoc/server/internal/services/llm"
 )
@@ -152,6 +154,7 @@ func storySystemPrompt() string {
 <tools>
 - translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
 - generate_npc_name：需要给人物起名时必须调用本工具从预置姓名池随机取名（指定culture和gender），不要自行编造姓名
+- get_writing_example：获取一份职业模组成稿作为写作参考，学习组织篇章、控制信息密度、把检定与线索写进叙事句的手法；建议正式动笔前调用一次。参考成稿的具体人名、地名、机构名、情节与神话设定与你要写的剧本无关，禁止照搬
 - submit_story：提交完整故事文档；只有在translate_anchor确认元素后才调用；必须单独一轮调用。
   story_document 字段严禁用 draft/content/scenes/clues/endings/npcs/mechanics 等嵌套字段代替——story_document 只能是一个字符串，不是JSON对象；整份成稿的全部内容都写在这一个字符串里，用自然语言和小标题分段。不要为编译器做任何结构化整理，编译器会自己读懂你的叙述。
 </tools>`
@@ -190,6 +193,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 	tools := []scripterTool{
 		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次"),
 		generateNPCNameTool(),
+		getWritingExampleTool(),
 		{
 			solo: true,
 			def: llm.ToolDefinition{
@@ -220,6 +224,8 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 			return toolOutcome{result: executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)}
 		case toolNameGenerateNPCName:
 			return dispatchGenerateNPCName(ctx, room, call)
+		case toolNameGetWritingExample:
+			return toolOutcome{result: executeGetWritingExample(ctx, room)}
 		case toolNameSubmitStory:
 			var args struct {
 				StoryDocument string `json:"story_document"`
@@ -242,7 +248,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 			log.Printf("[scripter:story_loop] session=%s submitted doc_len=%d anchor=%q", sessionID, len([]rune(story.Document)), truncateRunes(story.MythosAnchor, 80))
 			return toolOutcome{result: "已收到，故事文档已提交。", done: true}
 		default:
-			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/generate_npc_name/submit_story，不允许%s。", call.Name)}
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/generate_npc_name/get_writing_example/submit_story，不允许%s。", call.Name)}
 		}
 	}
 
@@ -251,6 +257,47 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 		return StoryOutput{}, err
 	}
 	return *submitted, nil
+}
+
+// ---------------------------------------------------------------------------
+// get_writing_example execution — serves a reference manuscript for style only
+// ---------------------------------------------------------------------------
+
+// storyWritingExamplePath 是参考成稿在仓库根目录下的文件名；进程按相对路径读取，
+// 与 main.go 加载 COC_kp.md 等规则资料的方式一致（服务从仓库根目录启动）。
+const storyWritingExamplePath = "example_story.md"
+
+var (
+	storyWritingExampleOnce    sync.Once
+	storyWritingExampleContent string
+	storyWritingExampleErr     error
+)
+
+// loadStoryWritingExample 懒加载参考成稿全文，只读一次后常驻内存供后续调用复用。
+func loadStoryWritingExample() (string, error) {
+	storyWritingExampleOnce.Do(func() {
+		data, err := os.ReadFile(storyWritingExamplePath)
+		if err != nil {
+			storyWritingExampleErr = err
+			return
+		}
+		storyWritingExampleContent = string(data)
+	})
+	return storyWritingExampleContent, storyWritingExampleErr
+}
+
+// executeGetWritingExample 是 get_writing_example 工具的执行逻辑。文件缺失时不阻塞
+// 生成流程，只返回说明，architect 应继续按<task>创作要求写作。
+func executeGetWritingExample(ctx context.Context, room *scripterRoom) string {
+	sessionID := scripterSessionID(ctx, room)
+	content, err := loadStoryWritingExample()
+	if err != nil {
+		log.Printf("[scripter:get_writing_example] session=%s load error=%v", sessionID, err)
+		return fmt.Sprintf("参考成稿读取失败（%v），本次不提供参考，请直接按<task>中的创作要求继续写作。", err)
+	}
+	log.Printf("[scripter:get_writing_example] session=%s served len=%d", sessionID, len([]rune(content)))
+	return "以下是一份职业模组成稿，仅供学习组织篇章、控制信息密度、把检定与线索写进叙事句的手法；" +
+		"其中具体的人名、地名、机构名、情节与神话设定与你要写的剧本无关，禁止照搬：\n\n" + content
 }
 
 // ---------------------------------------------------------------------------

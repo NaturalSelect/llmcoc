@@ -336,14 +336,15 @@ func jsonSchemaObject(schema string) []byte {
 // ---------------------------------------------------------------------------
 
 const (
-	toolNameAskLawyer       = "ask_lawyer"
-	toolNameRespond         = "respond"
-	toolNameTranslateAnchor = "translate_anchor"
-	toolNameSubmitStory     = "submit_story"
-	toolNameSubmit          = "submit"
-	toolNameReportIssues    = "report_issues"
-	toolNameSubmitCompiled  = "submit_compiled_scenario"
-	toolNameGenerateNPCName = "generate_npc_name"
+	toolNameAskLawyer         = "ask_lawyer"
+	toolNameRespond           = "respond"
+	toolNameTranslateAnchor   = "translate_anchor"
+	toolNameSubmitStory       = "submit_story"
+	toolNameSubmit            = "submit"
+	toolNameReportIssues      = "report_issues"
+	toolNameSubmitCompiled    = "submit_compiled_scenario"
+	toolNameGenerateNPCName   = "generate_npc_name"
+	toolNameGetWritingExample = "get_writing_example"
 )
 
 // askLawyerTool 是 translator / reward_agent 共用的 ask_lawyer 工具定义。
@@ -424,6 +425,24 @@ func generateNPCNameTool() scripterTool {
 					}
 				},
 				"required": ["culture", "gender"]
+			}`),
+		},
+	}
+}
+
+// getWritingExampleTool 是 story architect 专用的 get_writing_example 工具定义：
+// 获取一份人类写的职业模组成稿作为写作参考（文风/组织方式/信息密度），不作为
+// 剧情素材来源。执行逻辑见 scripter_story.go 的 executeGetWritingExample。
+func getWritingExampleTool() scripterTool {
+	return scripterTool{
+		solo: false,
+		def: llm.ToolDefinition{
+			Name: toolNameGetWritingExample,
+			Description: `获取一份职业出版模组的完整成稿作为写作参考，学习它如何组织篇章、控制信息密度、把检定与线索写进叙事句。
+不要照抄其中具体的人名、地名、机构名、情节或神话设定——你要写的是一份完全不同的剧本。建议在正式动笔前调用一次，无需参数。`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {}
 			}`),
 		},
 	}
