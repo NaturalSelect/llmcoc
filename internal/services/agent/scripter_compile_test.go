@@ -1,6 +1,7 @@
 // NOTE: scripter_compile_test.go 验证 compilerSystemPrompt 的关键约束语句，以及
-// compileStoryToModule 的 provider fallback 与 mythos_anchor 强制覆盖行为。
-// 禁止真实网络/真实LLM；使用 translator_test.go 中定义的 sequentialFakeProvider。
+// compileStoryToModule 的 provider fallback、mythos_anchor 强制覆盖与业务校验重试行为。
+// compile 阶段走纯文本 JsonChat（非原生工具调用），测试通过 sequentialFakeProvider 的
+// jsonResponses 序列驱动。禁止真实网络/真实LLM。
 package agent
 
 import (
@@ -35,10 +36,8 @@ func compileTestStory() StoryOutput {
 // 且编译结果字段取自 fake provider 返回的 JSON。
 func TestCompilerFallbackToArchitect(t *testing.T) {
 	fake := &sequentialFakeProvider{
-		callerName: "architect",
-		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, oneshotExample)}},
-		},
+		callerName:    "architect",
+		jsonResponses: []string{oneshotExample},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-compile-1",
@@ -77,10 +76,8 @@ func TestCompilerMythosAnchorOverride(t *testing.T) {
 	tampered := oneshotResultExample
 	tampered.Content.MythosAnchor = "被篡改的神话锚点"
 	fake := &sequentialFakeProvider{
-		callerName: "compiler",
-		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, marshalExample(tampered))}},
-		},
+		callerName:    "compiler",
+		jsonResponses: []string{marshalExample(tampered)},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-compile-2",
@@ -121,11 +118,8 @@ func TestCompileStoryToModule_EmptyRewardConceptRejectedOnce(t *testing.T) {
 	retried := oneshotResultExample
 	retried.RewardConcept = "死者遗物中的抄本残页"
 	fake := &sequentialFakeProvider{
-		callerName: "compiler",
-		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, marshalExample(empty))}},
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameSubmitCompiled, marshalExample(retried))}},
-		},
+		callerName:    "compiler",
+		jsonResponses: []string{marshalExample(empty), marshalExample(retried)},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-compile-reward-retry",
@@ -146,6 +140,39 @@ func TestCompileStoryToModule_EmptyRewardConceptRejectedOnce(t *testing.T) {
 	}
 	if len(fake.recordedKeys) != 2 {
 		t.Errorf("reward_concept 首次为空应被拒绝一次并重提, compiler provider 调用次数 got %d, want 2", len(fake.recordedKeys))
+	}
+}
+
+// TestCompileStoryToModule_EmptyNameRejectedThenRetried 验证 compiler 首次提交的 name
+// 字段为空时会被机制层拒绝并要求重新输出；重提后给出非空 name 则被接受。
+func TestCompileStoryToModule_EmptyNameRejectedThenRetried(t *testing.T) {
+	empty := oneshotResultExample
+	empty.Name = ""
+	retried := oneshotResultExample
+	retried.Name = "深井低语"
+	fake := &sequentialFakeProvider{
+		callerName:    "compiler",
+		jsonResponses: []string{marshalExample(empty), marshalExample(retried)},
+	}
+	room := &scripterRoom{
+		sessionID: "test-session-compile-name-retry",
+		compiler: agentHandle{
+			provider: fake,
+			config:   &models.AgentConfig{Role: models.AgentRoleCompiler, IsActive: true},
+			enabled:  true,
+		},
+	}
+	story := compileTestStory()
+
+	draft, _, err := compileStoryToModule(context.Background(), room, story, ScripterConstraints{})
+	if err != nil {
+		t.Fatalf("compileStoryToModule failed: %v", err)
+	}
+	if draft.Name != "深井低语" {
+		t.Errorf("draft.Name = %q, want 重提后的非空标题", draft.Name)
+	}
+	if len(fake.recordedKeys) != 2 {
+		t.Errorf("name首次为空应被拒绝一次并重提, compiler provider 调用次数 got %d, want 2", len(fake.recordedKeys))
 	}
 }
 

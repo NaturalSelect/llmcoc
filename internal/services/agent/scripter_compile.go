@@ -1,8 +1,14 @@
 // scripter_compile.go — Compiler stage: takes the story architect's free-text
 // StoryOutput (scripter_story.go) and compiles it into a structured
 // ScenarioDraft (OneshotResult shape), without inventing new facts. Runs as a
-// single-tool loop (submit_compiled_scenario); structural/logic issues found
-// afterwards are still patched by the existing repairOneshotDraft loop.
+// plain JSON-mode chat (no native tool calling): the target structure
+// (submit_compiled_scenario's former schema, dozens of fields with several
+// nested arrays) is too large/deep for a single native tool_use call to stay
+// reliable — models intermittently drop required top-level fields or
+// serialize a nested object field as a string. Plain JsonChat + RepairJSON
+// mirrors the proven pattern already used by character.go/npc.go/evaluator.go
+// for the same reason; structural/logic issues found afterwards are still
+// patched by the existing repairOneshotDraft loop.
 package agent
 
 import (
@@ -57,21 +63,9 @@ func compilerSystemPrompt() string {
 - content.clues中nature="真实"的线索至少2条且互相独立可组合；不得只编译出单一线索链
 - 至少一位NPC的description须写明"秘密"或"保留"信息
 </task>
-<tools>
-- submit_compiled_scenario：提交编译后的完整结构化剧本JSON；字段结构严格匹配<schema_skeleton>；只调用一次
-</tools>`
-}
-
-// submitCompiledScenarioTool 是 compile 阶段唯一的提交工具（solo，独占一轮）。
-func submitCompiledScenarioTool() scripterTool {
-	return scripterTool{
-		solo: true,
-		def: llm.ToolDefinition{
-			Name:        toolNameSubmitCompiled,
-			Description: "提交编译后的完整结构化剧本JSON；参数即完整oneshotResult本体（非嵌套在draft字段下），字段结构见本工具的parameters schema",
-			Parameters:  jsonSchemaObject(oneshotDraftJSONSchema),
-		},
-	}
+<output_format>
+只输出一个JSON对象本体，字段结构严格匹配<schema_skeleton>；不要输出任何解释性文字、前后缀说明或代码块围栏标记；content必须是原生嵌套JSON对象，不得整体或部分序列化成字符串。
+</output_format>`
 }
 
 // compilerSchemaTemplate 是编译阶段的字段注解式骨架：给出完整字段结构与类型/枚举占位，
@@ -108,7 +102,13 @@ const compilerSchemaTemplate = `{
 }`
 
 // compileStoryToModule 把故事 architect 的自由文本 StoryOutput 编译为结构化 ScenarioDraft。
-// compiler 未配置时 fallback 到 architect provider；编译走单工具（submit_compiled_scenario）循环。
+// compiler 未配置时 fallback 到 architect provider。编译走纯文本 JsonChat（不使用原生
+// tool calling）：目标结构字段多、content 内嵌7个数组，模型在单次原生工具调用里维持这种
+// 深度嵌套时曾观测到两类失败——必填顶层字段（如name）留空、或把content整体序列化成字符串
+// 而非原生对象。JsonChat 是这个代码库里同类"大段结构化JSON"生成的既有做法（character.go/
+// npc.go/evaluator.go 等都这样做），JSON语法错误交给 RepairJSON（复用 AgentRoleParser
+// 的既有修复循环），内容层面的必填校验（name/reward_concept）失败时则把上次输出连同具体的
+// 修正要求重新发回去，让compiler带着上下文重新生成一次。
 // 第二个返回值是 compiler 从故事文档中提炼的 reward_concept（可能为空），供调用方决定是否
 // 触发 reward_agent；reward_concept 不属于 ScenarioDraft 的持久化字段，只在编译产出这一刻使用。
 func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOutput, constraints ScripterConstraints) (ScenarioDraft, string, error) {
@@ -143,41 +143,59 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 		{Role: "user", Content: userMsg},
 	}
 
-	tools := []scripterTool{submitCompiledScenarioTool()}
-	var submitted *OneshotResult
+	cacheKey := compiler.cacheKey(sessionID)
+	const maxBusinessRetries = 3
 	rewardRetried := false
-	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
-		if call.Name != toolNameSubmitCompiled {
-			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许submit_compiled_scenario，不允许%s。", call.Name)}
+
+	for attempt := 1; attempt <= maxBusinessRetries; attempt++ {
+		stage := fmt.Sprintf("compile_attempt_%d", attempt)
+		logStagePrompt(stage, sessionID, msgs)
+		resp, err := compiler.provider.JsonChat(ctx, cacheKey, msgs)
+		if err != nil {
+			return ScenarioDraft{}, "", fmt.Errorf("compile failed: %w", err)
 		}
+		recordScripterLLMExchange(ctx, nil, stage, msgs, resp)
+		log.Printf("[scripter:compile] session=%s attempt=%d resp_len=%d", sessionID, attempt, len([]rune(resp)))
+
 		var result OneshotResult
-		if err := json.Unmarshal([]byte(call.Arguments), &result); err != nil {
-			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario参数不是合法JSON，请重新调用。 err: " + err.Error()}
+		if err := json.Unmarshal([]byte(resp), &result); err != nil {
+			fixed, repairErr := RepairJSON(ctx, resp, err, compilerSchemaTemplate)
+			if repairErr != nil {
+				return ScenarioDraft{}, "", fmt.Errorf("compile failed: JSON修复失败: %w", repairErr)
+			}
+			if err := json.Unmarshal([]byte(fixed), &result); err != nil {
+				return ScenarioDraft{}, "", fmt.Errorf("compile failed: JSON修复后仍无法解析: %w", err)
+			}
 		}
+
 		if strings.TrimSpace(result.Name) == "" {
-			return toolOutcome{reject: "SYSTEM REJECT: submit_compiled_scenario的name字段不能为空。"}
+			msgs = append(msgs,
+				llm.ChatMessage{Role: "assistant", Content: resp},
+				llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: name字段不能为空。请连同完整剧本JSON重新输出一次，其余字段保持与上次一致。"},
+			)
+			continue
 		}
 		if strings.TrimSpace(result.RewardConcept) == "" && !rewardRetried {
 			rewardRetried = true
-			return toolOutcome{reject: "SYSTEM REJECT: reward_concept 不能为空。请从故事文档已有的施动者、地点、人物与 mythos_anchor 中指认或合成一件调查员通关后能带走的实体载体（典籍/手稿/器物），写成一句话叙事概念：它是什么、原属谁或存于何处、与核心真相的关系；不得新增人物或地点、不得改动结局、不写规则数值。请连同完整剧本JSON重新提交一次，其余字段保持与上次提交完全一致。"}
+			msgs = append(msgs,
+				llm.ChatMessage{Role: "assistant", Content: resp},
+				llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: reward_concept 不能为空。请从故事文档已有的施动者、地点、人物与 mythos_anchor 中指认或合成一件调查员通关后能带走的实体载体（典籍/手稿/器物），写成一句话叙事概念：它是什么、原属谁或存于何处、与核心真相的关系；不得新增人物或地点、不得改动结局、不写规则数值。请连同完整剧本JSON重新输出一次，其余字段保持与上次一致。"},
+			)
+			continue
 		}
 		if strings.TrimSpace(result.RewardConcept) == "" {
 			log.Printf("[scripter:compile] session=%s reward_concept 重试后仍为空，交由触发点兜底", sessionID)
 		}
-		submitted = &result
-		return toolOutcome{result: "已收到，编译结果已提交。", done: true}
+
+		draft := result.toScenarioDraft()
+		// NOTE: mythos_anchor 已由 story 阶段 translate_anchor 确认，编译阶段强制覆盖，防止LLM篡改。
+		draft.Content.MythosAnchor = story.MythosAnchor
+		log.Printf("[scripter:compile] session=%s done name=%q scenes=%d npcs=%d clues=%d",
+			sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+		logScripterArtifact("Compiled ScenarioDraft", sessionID, draft)
+		return draft, strings.TrimSpace(result.RewardConcept), nil
 	}
 
-	const maxRounds = 20
-	if err := runScripterToolLoop(ctx, nil, compiler, "compile", msgs, tools, maxRounds, dispatch); err != nil {
-		return ScenarioDraft{}, "", fmt.Errorf("compile failed: %w", err)
-	}
-
-	draft := submitted.toScenarioDraft()
-	// NOTE: mythos_anchor 已由 story 阶段 translate_anchor 确认，编译阶段强制覆盖，防止LLM篡改。
-	draft.Content.MythosAnchor = story.MythosAnchor
-	log.Printf("[scripter:compile] session=%s done name=%q scenes=%d npcs=%d clues=%d",
-		sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
-	logScripterArtifact("Compiled ScenarioDraft", sessionID, draft)
-	return draft, strings.TrimSpace(submitted.RewardConcept), nil
+	return ScenarioDraft{}, "", fmt.Errorf("compile failed: 连续%d次内容校验未通过", maxBusinessRetries)
 }
+

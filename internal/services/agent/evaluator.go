@@ -137,6 +137,9 @@ func loadSingleAgent(role models.AgentRole) (agentHandle, error) {
 	if err != nil {
 		return agentHandle{}, fmt.Errorf("agent %q 未配置,请在管理面板配置 LLM provider", role)
 	}
+	// NOTE: 诊断日志——用于确认后台保存的 MaxTokens 是否真的被本次加载读到，
+	// 排查"后台改了值但生成时仍用旧值"这类问题。
+	log.Printf("[agent] loadSingleAgent role=%s max_tokens=%d model=%s", role, cfg.MaxTokens, cfg.ModelName)
 	h, err := newAgentHandleFromConfig(&cfg, nil)
 	if err != nil {
 		return agentHandle{}, err

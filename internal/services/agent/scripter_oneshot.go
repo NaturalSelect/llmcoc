@@ -216,6 +216,28 @@ func (r OneshotResult) toScenarioDraft() ScenarioDraft {
 	}
 }
 
+// parseOneshotResult 解析 submit 的工具调用参数为 OneshotResult。
+// oneshotDraftJSONSchema 顶层字段多、content 又是十几个字段的深层嵌套对象，模型偶尔会把
+// 整个 content 错误地序列化成一个字符串（而不是原生嵌套对象），此时原始 Go 反序列化错误
+// 是"cannot unmarshal string into Go struct field..."，容易被模型误读成"JSON语法错误"去
+// 反复重试同样的错误。这里先探测 content 字段的实际 JSON 类型，命中该失误时给出明确指出
+// 具体字段和具体问题的提示，帮助模型下一轮准确纠正。
+func parseOneshotResult(toolName, rawArgs string) (OneshotResult, string) {
+	var probe struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(rawArgs), &probe); err == nil && len(probe.Content) > 0 {
+		if trimmed := strings.TrimSpace(string(probe.Content)); strings.HasPrefix(trimmed, `"`) {
+			return OneshotResult{}, fmt.Sprintf("SYSTEM REJECT: %s的content字段必须是JSON对象（{...}），实际收到的是字符串。请勿把整个content值当成字符串包裹，需以原生嵌套对象重新提交完整参数。", toolName)
+		}
+	}
+	var result OneshotResult
+	if err := json.Unmarshal([]byte(rawArgs), &result); err != nil {
+		return OneshotResult{}, fmt.Sprintf("SYSTEM REJECT: %s参数不是合法JSON，请重新调用。 err: %s", toolName, err.Error())
+	}
+	return result, ""
+}
+
 // oneshotResultExample is a fully-populated example scenario reused by every
 // schema/repair prompt that needs to show the complete oneshotResult structure.
 var oneshotResultExample = OneshotResult{
@@ -459,9 +481,9 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 		case toolNameGenerateNPCName:
 			return dispatchGenerateNPCName(ctx, room, call)
 		case toolNameSubmit:
-			var result OneshotResult
-			if err := json.Unmarshal([]byte(call.Arguments), &result); err != nil {
-				return toolOutcome{reject: "SYSTEM REJECT: submit参数不是合法JSON，请重新调用。"}
+			result, reject := parseOneshotResult(toolNameSubmit, call.Arguments)
+			if reject != "" {
+				return toolOutcome{reject: reject}
 			}
 			if strings.TrimSpace(result.Name) == "" {
 				return toolOutcome{reject: "SYSTEM REJECT: submit的name字段不能为空。"}

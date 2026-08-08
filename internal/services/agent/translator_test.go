@@ -45,9 +45,9 @@ func initTranslatorTestDB(t *testing.T) {
 }
 
 // NOTE: sequentialFakeProvider 支持原生工具调用 ChatWithTools（translator/reward_agent/
-// architect/qa/lawyer 现已统一走此协议），按序返回预设响应，并记录调用的 cacheKey，
-// 用于路由隔离验证。满足 llm.Provider 接口，禁止真实网络。Chat/JsonChat/ChatStream
-// 不参与业务路径，仅为满足接口而提供的桩实现。
+// architect/qa/lawyer 现已统一走此协议）与纯文本 JsonChat（compile 阶段），按序返回预设
+// 响应，并记录调用的 cacheKey，用于路由隔离验证。满足 llm.Provider 接口，禁止真实网络。
+// Chat/ChatStream 不参与业务路径，仅为满足接口而提供的桩实现。
 type sequentialFakeProvider struct {
 	mu sync.Mutex
 
@@ -55,7 +55,11 @@ type sequentialFakeProvider struct {
 	toolResponses []llm.ToolChatResult
 	toolCallIdx   int
 
-	// NOTE: recordedKeys 记录 ChatWithTools 调用的 cacheKey 顺序，用于路由隔离验证。
+	// JsonChat 路径的预设响应序列（纯文本JSON模式，如compile阶段）；序列耗尽时返回"{}"。
+	jsonResponses []string
+	jsonCallIdx   int
+
+	// NOTE: recordedKeys 记录 ChatWithTools/JsonChat 调用的 cacheKey 顺序，用于路由隔离验证。
 	recordedKeys []string
 	// NOTE: recordedTools 记录每次 ChatWithTools 调用时传入的工具定义列表（按调用顺序），
 	// 用于验证按轮次变化的工具集限制（如 lawyer 第1轮只暴露 search_cache）。
@@ -75,8 +79,17 @@ func (p *sequentialFakeProvider) ChatStream(_ context.Context, _ string, _ []llm
 	return nil, nil, nil
 }
 
-func (p *sequentialFakeProvider) JsonChat(_ context.Context, _ string, _ []llm.ChatMessage) (string, error) {
-	return "{}", nil
+func (p *sequentialFakeProvider) JsonChat(_ context.Context, cacheKey string, msgs []llm.ChatMessage) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.recordedKeys = append(p.recordedKeys, cacheKey)
+	p.recordedMessages = append(p.recordedMessages, append([]llm.ChatMessage(nil), msgs...))
+	if p.jsonCallIdx >= len(p.jsonResponses) {
+		return "{}", nil
+	}
+	resp := p.jsonResponses[p.jsonCallIdx]
+	p.jsonCallIdx++
+	return resp, nil
 }
 
 func (p *sequentialFakeProvider) ChatWithTools(_ context.Context, cacheKey string, msgs []llm.ChatMessage, tools []llm.ToolDefinition) (llm.ToolChatResult, error) {

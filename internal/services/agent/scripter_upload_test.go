@@ -107,10 +107,8 @@ func TestExtractAnchorFromDocument_Failure(t *testing.T) {
 // 完成 compile→normalize，且不再输出"阶段 N/6"式编号（该编号仅属于完整 AI 生成路径）。
 func TestCompileAndFinalize_Success(t *testing.T) {
 	fake := &sequentialFakeProvider{
-		callerName: "compiler",
-		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, oneshotExample)}},
-		},
+		callerName:    "compiler",
+		jsonResponses: []string{oneshotExample},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-upload-1",
@@ -165,11 +163,8 @@ func TestCompileAndFinalize_RewardConceptEmptyFallsBack(t *testing.T) {
 	noReward := oneshotResultExample
 	noReward.RewardConcept = ""
 	fake := &sequentialFakeProvider{
-		callerName: "compiler",
-		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, marshalExample(noReward))}},
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameSubmitCompiled, marshalExample(noReward))}},
-		},
+		callerName:    "compiler",
+		jsonResponses: []string{marshalExample(noReward), marshalExample(noReward)},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-upload-2",
@@ -210,10 +205,8 @@ func TestCompileAndFinalize_RewardConceptEmptyFallsBack(t *testing.T) {
 // （非致命错误，不影响 compileAndFinalize 整体成功）。
 func TestCompileAndFinalize_RewardTriggeredByCompiler(t *testing.T) {
 	fake := &sequentialFakeProvider{
-		callerName: "compiler",
-		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitCompiled, oneshotExample)}},
-		},
+		callerName:    "compiler",
+		jsonResponses: []string{oneshotExample},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-upload-3",

@@ -366,7 +366,6 @@ const (
 	toolNameSubmitExtraction  = "submit_extraction"
 	toolNameSubmit            = "submit"
 	toolNameReportIssues      = "report_issues"
-	toolNameSubmitCompiled    = "submit_compiled_scenario"
 	toolNameGenerateNPCName   = "generate_npc_name"
 	toolNameGetWritingExample = "get_writing_example"
 )
