@@ -1269,22 +1269,46 @@ func applyGuardrailsBase(draft *ScenarioDraft, req ScenarioCreationRequest, auth
 func difficultySpec(difficulty string) string {
 	switch strings.ToLower(strings.TrimSpace(difficulty)) {
 	case "easy":
-		return "- 派系时间线节点推进缓慢，调查员有充足干预窗口\n- 线索分布：[真实]为主，少量[隐藏]，[误导]至多1条且其错误解释较易被识破\n- 杠杆代价低：对话、基础检定或公开信息即可拉动，无需牺牲\n- NPC初始态度：中立到谨慎，社交检定可以成功说服\n- 恐怖核心层：可进入但不强迫付出理智代价"
+		return "- 局势推进缓慢，调查员有充足的时间反应，晚一步也来得及\n" +
+			"- 多数发现是能直接查证的真实观察；会把人带偏的解释至多一处，稍加追问就能察觉不对\n" +
+			"- 想让人开口或让局面松动，通常谈一次、过一个基础检定或翻一份公开记录就够，不需要付出代价\n" +
+			"- 当地人对调查员多为中立到谨慎，好好说话能说得通\n" +
+			"- 调查员可以走到最接近神话真相的地方，不必被迫付出理智代价"
 	case "hard":
-		return "- 派系时间线推进快，干预窗口紧张，超时则产生不可逆后果\n- 线索分布：[隐藏]和[误导]为主（[误导]2-3条，错误解释与真相高度相似、极具迷惑性，四要素完整），表面可见的[真实]线索很少\n- 杠杆代价高：多数杠杆需要对抗检定、道德代价或信息暴露\n- NPC初始态度：多数敌对或欺骗性，说服有实质代价\n- 恐怖核心层：进入需承担显著理智或人际代价"
+		return "- 局势推进很快，能插手的窗口很窄，错过一次就产生无法挽回的后果\n" +
+			"- 表面上能直接查证的东西很少：多数关键信息要靠几处发现拼起来才看得懂；会把人带偏的解释有两到三处，且与真相高度相似，推翻它们需要真正的推理\n" +
+			"- 想让局面松动几乎都要付出代价：对抗检定、道德上的取舍，或者暴露自己在查什么\n" +
+			"- 当地人多数敌对或有意隐瞒，说服他们要付出实质代价\n" +
+			"- 接近神话真相必然伴随显著的理智损失或人际代价"
 	default: // normal
-		return "- 派系时间线推进速度适中，有几个明确干预窗口\n- 线索分布均衡：[真实]略多，[隐藏]次之，[误导]1-2条且错误解释具有中等迷惑性\n- 杠杆代价适中：部分杠杆可直接拉动，部分需要检定\n- NPC初始态度：混合，部分可说服，部分保持距离\n- 恐怖核心层：需要主动调查和付出一定代价"
+		return "- 局势按天推进，有几个明确的插手窗口，错过就要多绕一段路\n" +
+			"- 发现有真有假：能直接查证的略多，需要拼起来才看得懂的次之，会把人带偏的有一到两处，其错误解释听上去相当合理\n" +
+			"- 有些门一推就开，有些要过检定或先换到别的东西才推得开\n" +
+			"- 当地人态度混杂，有人肯说，有人回避\n" +
+			"- 想接近神话真相得主动去查，并且要付出一些代价"
 	}
 }
 
 func lengthSpec(targetLength string) string {
 	switch strings.ToLower(strings.TrimSpace(targetLength)) {
 	case "long", "剧本时间长度: 1week-1month":
-		return "- locations/scenes: 6-8个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 10-12条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 7-10个，来自派系且有独立议程\n- endings: 4-8个命名结局，每个含 trigger 和 san_reward\n- playthrough_outline: 覆盖全部场景的流程大纲，约800-1500字；timeline: 5-12个事件节点；keeper_appendix 与 entry_identities(2-5个) 尽量齐备；如有可量化的追踪机制可提供 mechanics"
+		return "- 地点：6-8处调查员会实际走到的地方\n" +
+			"- 发现：10-12处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
+			"- 人物：7-10位有名有姓的人，分属不同立场，各有各在做的事\n" +
+			"- 收场：4-8种，每种都有名字，其中至少一种是失败或灾难\n" +
+			"- 篇幅：约7000-12000字。事件时间线给出5-12个带具体日期的节点；给守密人的运营建议与不同职业的入场差异（2-5种）尽量写全；若剧情需要持续追踪某个进度，也写清它怎么走"
 	case "medium", "剧本时间长度: 3-7d":
-		return "- locations/scenes: 4-6个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 7-10条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 4-7个，来自派系且有独立议程\n- endings: 3-5个命名结局，每个含 trigger 和 san_reward\n- playthrough_outline: 覆盖全部场景的流程大纲，约400-800字；timeline: 3-6个事件节点；keeper_appendix/entry_identities/mechanics 按素材需要提供，可省略"
+		return "- 地点：4-6处调查员会实际走到的地方\n" +
+			"- 发现：7-10处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
+			"- 人物：4-7位有名有姓的人，分属不同立场或利益\n" +
+			"- 收场：3-5种，每种都有名字，其中至少一种是失败或灾难\n" +
+			"- 篇幅：约4000-7000字。事件时间线建议给出3-6个带具体日期的节点；给守密人的运营建议、职业入场差异、可追踪的进度机制按素材需要提供，可以省略"
 	default:
-		return "- locations/scenes: 3-4个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 5-7条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 2-4个，来自派系且有独立议程\n- endings: 至少2个命名结局，每个含 trigger 和 san_reward\n- playthrough_outline: 覆盖全部场景的流程大纲，约200-400字，必需；timeline/keeper_appendix/entry_identities/mechanics: 均为可选，篇幅有限时可省略"
+		return "- 地点：3-4处调查员会实际走到的地方\n" +
+			"- 发现：5-7处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
+			"- 人物：2-4位有名有姓的人，各有各的盘算\n" +
+			"- 收场：至少2种，每种都有名字，其中至少一种是失败或灾难\n" +
+			"- 篇幅：约2500-4000字。事件时间线、给守密人的运营建议、职业入场差异、可追踪的进度机制都属于可选，篇幅有限时略去，不要为凑数硬写"
 	}
 }
 
@@ -1585,8 +1609,9 @@ func logScripterArtifact(stage string, sessionID string, artifact any) {
 
 func logStagePrompt(tag string, sessionID string, msgs []llm.ChatMessage) {
 	log.Printf("[scripter:%s] session=%s prompt messages=%d", tag, sessionID, len(msgs))
-	for i, msg := range msgs {
-		log.Printf("[scripter:%s] session=%s prompt[%d] role=%s len=%d body=%s", tag, sessionID, i, msg.Role, len(msg.Content), truncateRunes(msg.Content, scripterPromptLogLimit))
+	if len(msgs) > 0 {
+		msg := msgs[len(msgs)-1]
+		log.Printf("[scripter:%s] session=%s prompt[%d] role=%s len=%d body=%s", tag, sessionID, len(msgs)-1, msg.Role, len(msg.Content), truncateRunes(msg.Content, scripterPromptLogLimit))
 	}
 }
 

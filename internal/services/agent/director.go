@@ -513,7 +513,8 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		Role:    "user",
 		Content: userSB.String(),
 	})
-	for _, msg := range msgs {
+	if len(msgs) > 1 {
+		msg := msgs[len(msgs)-1]
 		localMsg := msg.Content
 		if len(localMsg) > 20 {
 			localMsg = localMsg[:20]

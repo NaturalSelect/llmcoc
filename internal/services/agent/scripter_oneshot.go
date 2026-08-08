@@ -73,17 +73,17 @@ const oneshotDraftJSONSchema = `{
 				"intro": {"type": "string", "description": "调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步"},
 				"game_start_slot": {"type": "integer", "description": "0-47，每槽30分钟；未写明具体时刻时取16"},
 				"map_description": {"type": "string", "description": "按地点关系概括的文字地图，体现可回访、可交叉验证的调查网络"},
-				"playthrough_outline": {"type": "string", "description": "逐场景的游玩流程大纲，每个场景写明入口条件、可接触NPC、可得线索、出口去向与分支"},
+				"playthrough_outline": {"type": "string", "description": "由编译器依据全文脉络归纳的逐场景流程大纲，每个场景写明进入条件、可接触人物、可得发现、通向哪里与分支"},
 				"mythos_anchor": {"type": "string", "description": "必须逐字等于mythos_anchor输入"},
 				"scenes": {
 					"type": "array",
-					"description": "从故事文档地点部分逐个提取",
+					"description": "通读全文识别出的所有调查员会实际走到的地方，无论是否有独立小标题",
 					"items": {
 						"type": "object",
 						"properties": {
 							"id": {"type": "string", "description": "snake_case英文标识"},
 							"name": {"type": "string"},
-							"description": {"type": "string", "description": "完整保留可见信息/可发现信息/杠杆/风险/出口/感官细节"},
+							"description": {"type": "string", "description": "合并该地点在文中散落的全部信息：直接可见与可感知的、深查才能发现的（含所需检定）、可能发生的危险、通往哪些地方"},
 							"triggers": {"type": "array", "items": {"type": "string"}, "description": "默认[\"available_from_start\"]，仅文档明确写出解锁条件时才用条件触发"}
 						},
 						"required": ["id", "name", "description", "triggers"]
@@ -91,12 +91,12 @@ const oneshotDraftJSONSchema = `{
 				},
 				"npcs": {
 					"type": "array",
-					"description": "从故事文档NPC部分逐个提取",
+					"description": "通读全文识别出的所有有名有姓、调查员可能接触到的人物；他们通常介绍在其所在地点的段落里",
 					"items": {
 						"type": "object",
 						"properties": {
 							"name": {"type": "string"},
-							"description": {"type": "string", "description": "完整保留公开身份/议程/秘密/标志性细节/关系网"},
+							"description": {"type": "string", "description": "合并该人物在文中散落的全部信息：身份与营生、他想要什么、正在做什么、瞒着或不愿说的事、标志性细节、与他人的关系"},
 							"attitude": {"type": "string", "description": "文档写明的初始态度"},
 							"stats": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "COC7标准属性：STR/CON/SIZ/DEX/APP/INT/POW/EDU/SAN/HP/MP"},
 							"skills": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "按职业身份3-6项最相关技能，键为技能名，值为COC7标准范围（普通人类通常15-75）"},
@@ -107,11 +107,11 @@ const oneshotDraftJSONSchema = `{
 				},
 				"clues": {
 					"type": "array",
-					"description": "从故事文档线索部分逐条提取；至少2条nature为真实且互相独立可组合",
+					"description": "通读全文识别出的所有调查员能亲自获得的具体发现；至少2条nature为真实且互相独立可组合",
 					"items": {
 						"type": "object",
 						"properties": {
-							"summary": {"type": "string", "description": "保留来源事实/支持命题等关键信息"},
+							"summary": {"type": "string", "description": "写清这条发现是什么、从哪来、调查员由此知道了什么"},
 							"source": {"type": "string"},
 							"skill_check": {"type": "string", "description": "可留空"},
 							"on_success": {"type": "string", "description": "可留空"},
@@ -123,7 +123,7 @@ const oneshotDraftJSONSchema = `{
 				},
 				"endings": {
 					"type": "array",
-					"description": "从故事文档结局部分逐个提取，每个独立结局都要对应一个ending，不得合并或省略",
+					"description": "通读全文识别出的所有互不相同的收场，每种独立收场都要对应一个ending，不得合并或省略",
 					"items": {
 						"type": "object",
 						"properties": {
@@ -339,14 +339,22 @@ const humanWritingRules = `- 具体性：散文要落在具体名词上——人
 - 一段一焦点：一句话只推进一件事，一句里至多引入一个新专名或新意象；一段话围绕一个焦点纵深展开（远→近、整体→局部、看见→听见），不横向铺开多个互不相关的对象；三个以上互不相关的细节禁止用顿号或"一边…一边…"并列——细节之间要有因果、转折、时间先后或感知顺序的连接，禁止"她耳朵背、记性好"式的属性清单句，人物特征通过动作或对话带出
 - 细节要挂钩：每个具体细节须至少服务一项——刻画人物、埋设后文、承载情绪或关系、给出可行动的调查入口；自检法是删掉它文字是否受损，无损即删；宁少一个活细节，不多一个死细节
 - 细节复用优先：与其引入新道具，优先让已出现的细节再次出现、并让第二次出现改变含义（初见是日常记录，再见携带情绪或异样）；一段散文最多充分展开一个主细节，其余一笔带过
-- 禁止编号与模板腔：setting/intro中不得出现①②③、1.2.3.、"首先/其次/最后"式结构或列表排版
+- 禁止编号与模板腔：正文不写①②③、1.2.3.、"首先/其次/最后"式结构，也不写行首要素标签（"可见信息：""议程：""秘密：""性质：真实"）；交代零散事实时可以用短列表，但每条必须是完整的句子
 - 句式错落：长短句交替；不连续使用三个以上结构雷同的句子；不写成对仗排比
 - 标题像人起的：不用"低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒"等滥用词；优先取材于剧本内的具体名词（地名、物件、日期、一句当地人的话）
 - NPC人味：每个重要NPC给一个标志性小细节（口头禅、习惯动作、随身物件、外貌特征选其一）；NPC之间至少存在两条现实关系（亲属/雇佣/债务/旧怨/邻里）；可以保留一个与主线无关的纯地方色彩NPC
 - 密度不均：允许一处地点信息厚重、另一些地点只有一两笔；不给每个地点机械配满同样数量的要素`
 
+const (
+	// proseVoiceScopeStory 用于 story 阶段：声线覆盖整份成稿。
+	proseVoiceScopeStory = "适用范围：整份故事文档都按该声线书写——开头、地点、人物、线索、结局是同一位作者写的同一份读物；不使用信头、落款、日期行等格式排版。"
+	// proseVoiceScopeCompile 用于 compile/repair 阶段：产物是给KP与Director读的结构化数据，以信息完整为先。
+	proseVoiceScopeCompile = "适用范围：只作用于 name/setting/intro 等玩家可见散文的用词与节奏；不改变字段的功能与信息要求；不使用信头、落款、日期行等格式排版；scenes/npcs/clues 等结构化字段以信息完整为先，不追求声线。"
+)
+
 // proseVoiceBlock 把随机抽取的作者声线注入用户消息；只约束文风质感，不改变字段功能。
-func proseVoiceBlock(constraints ScripterConstraints) string {
+// scope 按调用阶段传入 proseVoiceScopeStory 或 proseVoiceScopeCompile。
+func proseVoiceBlock(constraints ScripterConstraints, scope string) string {
 	voice := strings.TrimSpace(constraints.ProseVoice)
 	if voice == "" {
 		return ""
@@ -357,7 +365,7 @@ func proseVoiceBlock(constraints ScripterConstraints) string {
 	if guide := proseVoiceGuides[voice]; guide != "" {
 		sb.WriteString(fmt.Sprintf("guide: %s\n", guide))
 	}
-	sb.WriteString("适用范围：只作用于name/setting/intro等玩家可见散文的用词与节奏；不改变字段的功能与信息要求；不使用信头、落款、日期行等格式排版；不影响scenes/npcs/clues的结构化要素。\n")
+	sb.WriteString(scope + "\n")
 	sb.WriteString("</prose_voice>")
 	return sb.String()
 }
@@ -402,10 +410,10 @@ submit.draft 必须保持与<previous_draft>完全相同的字段结构：
     "intro": "入场情境；不列出、不推荐、不暗示任何具体行动或下一步",
     "game_start_slot": 16,
     "map_description": "文字地图",
-    "playthrough_outline": "逐场景流程大纲：入口条件/可接触NPC/可得线索/出口去向与分支",
+    "playthrough_outline": "逐场景流程大纲：进入条件/可接触人物/可得发现/通向哪里与分支",
     "mythos_anchor": "已确认的COC7元素全称，不得更换",
-    "scenes": [{"id":"snake_case","name":"...","description":"可见/可发现/杠杆/风险/出口/感官细节","triggers":["available_from_start"]}],
-    "npcs": [{"name":"...","description":"公开身份/议程/秘密/标志性细节/关系网","attitude":"...","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"SAN":50,"HP":10,"MP":10},"skills":{"侦查":50},"spells":[]}],
+    "scenes": [{"id":"snake_case","name":"...","description":"直接可见与可感知的、深查才能发现的（含所需检定）、可能发生的危险、通往哪些地方","triggers":["available_from_start"]}],
+    "npcs": [{"name":"...","description":"身份与营生、想要什么、正在做什么、瞒着或不愿说的事、标志性细节、与他人的关系","attitude":"...","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"SAN":50,"HP":10,"MP":10},"skills":{"侦查":50},"spells":[]}],
     "clues": [{"summary":"...","source":"...","skill_check":"可留空","on_success":"...","on_failure":"失败时不卡关的替代信息","nature":"真实|隐藏|误导"}],
     "endings": [{"name":"...","trigger":"如果[条件]，则[处境变化]","description":"...","san_reward":"恢复1d6","is_failure":false}],
     "timeline": [{"time":"...","event":"中性事实记录句，不含引号引用的人物原话","phase":"past|current"}],
@@ -737,7 +745,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 请修复上述问题并通过submit提交修复后的完整剧本JSON。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags；仅当must_fix涉及神话元素本身时才调用translate_anchor核验；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
 		string(reqJSON), string(constraintsJSON),
 		diversityConstraintsBlock(constraints),
-		proseVoiceBlock(constraints),
+		proseVoiceBlock(constraints, proseVoiceScopeCompile),
 		string(prevJSON),
 		formatScenarioTagsBlacklist(room.tagsBlacklist),
 		strings.Join(issues, "\n"),
@@ -1019,7 +1027,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		draft.Content.Scenes = []models.SceneData{{
 			ID:          "location_1",
 			Name:        "调查入口",
-			Description: "可见：异常已经公开出现。可发现：主动调查可获得第一批事实。杠杆：公开或隐瞒信息会改变派系反应。风险：拖延会推进时间线。出口：所有相关地点。",
+			Description: "调查员进门就能感觉到异常已经公开出现，主动调查能获得第一批事实；是否公开或隐瞒所知会改变各方反应，拖延下去局势会继续推进；由此可以前往其他相关地点。",
 			Triggers:    []string{"available_from_start"},
 		}}
 		log.Printf("[scripter:normalize] session=%s generated default scene", sessionID)
@@ -1032,7 +1040,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			draft.Content.Scenes[i].Name = fmt.Sprintf("地点%d", i+1)
 		}
 		if strings.TrimSpace(draft.Content.Scenes[i].Description) == "" {
-			draft.Content.Scenes[i].Description = "可见：当前局势的表面信息。可发现：主动调查可获得的事实。杠杆：调查员行动会改变派系时间线。风险：拖延会让世界推进。出口：可前往相关地点。"
+			draft.Content.Scenes[i].Description = "调查员在此能看到当前局势的表面信息，主动调查能获得更多事实；调查员的行动会影响局势推进，拖延下去世界会继续变化；由此可以前往相关地点。"
 		}
 		if len(draft.Content.Scenes[i].Triggers) == 0 {
 			draft.Content.Scenes[i].Triggers = []string{"available_from_start"}
@@ -1061,7 +1069,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			draft.Content.NPCs[i].Name = name
 		}
 		if strings.TrimSpace(draft.Content.NPCs[i].Description) == "" {
-			draft.Content.NPCs[i].Description = "公开身份、所属派系、真实议程、秘密和可被调查员影响的杠杆。"
+			draft.Content.NPCs[i].Description = "公开身份和所属派系，心里真正想要的和正在做的事，以及一个不愿说但能被调查员发现的秘密。"
 		}
 		if strings.TrimSpace(draft.Content.NPCs[i].Attitude) == "" {
 			draft.Content.NPCs[i].Attitude = "谨慎观察调查员，只有在压力或交换下才透露深层信息。"
