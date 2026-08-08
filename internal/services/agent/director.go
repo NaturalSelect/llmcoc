@@ -317,6 +317,12 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	if content.MapDescription != "" {
 		scenarioSB.WriteString("<map>\n" + content.MapDescription + "\n</map>\n")
 	}
+	if strings.TrimSpace(content.PlaythroughOutline) != "" {
+		scenarioSB.WriteString("<playthrough_outline>\n")
+		scenarioSB.WriteString("以下是本模组的游玩流程大纲，供你把握主线走向与场景衔接；不得直接念给玩家，也不得据此替玩家决定行动：\n")
+		scenarioSB.WriteString(content.PlaythroughOutline + "\n")
+		scenarioSB.WriteString("</playthrough_outline>\n")
+	}
 	if len(content.NPCs) > 0 {
 		scenarioSB.WriteString("<npc_list>\n")
 		for _, npc := range content.NPCs {

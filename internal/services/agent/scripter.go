@@ -1072,13 +1072,23 @@ func settingHasDate(s string) bool {
 	return settingDateRe.MatchString(s)
 }
 
+// eventQuoteRe 匹配用引号包裹的片段（可能是转录的人物原话），覆盖中文全角引号、
+// ASCII直引号与中文书名号式的单/双直角引号四种常见写法。
+var eventQuoteRe = regexp.MustCompile(`“[^”]{2,}”|"[^"]{2,}"|「[^」]{2,}」|『[^』]{2,}』`)
+
+// eventDialogueVerbRe 匹配常见的对话转述动词。
+var eventDialogueVerbRe = regexp.MustCompile(`说|问|答|吐露|坦白|承认|告诉|喊|嘟囔|辩解`)
+
+// eventLooksLikeDialogueQuote 判定时间线事件描述是否疑似把对话引语误写成了中性事实记录：
+// 引号片段与对话动词须同时命中才报告，避免误伤书名号引用或专有名词。
+func eventLooksLikeDialogueQuote(event string) bool {
+	return eventQuoteRe.MatchString(event) && eventDialogueVerbRe.MatchString(event)
+}
+
 func validateDraftCompatibility(draft ScenarioDraft) []string {
 	var issues []string
 	if strings.TrimSpace(draft.Name) == "" {
 		issues = append(issues, "ScenarioDraft.name 为空")
-	}
-	if strings.TrimSpace(draft.Description) == "" {
-		issues = append(issues, "ScenarioDraft.description 为空")
 	}
 	if strings.TrimSpace(draft.Difficulty) == "" {
 		issues = append(issues, "ScenarioDraft.difficulty 为空")
@@ -1100,6 +1110,11 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	}
 	if strings.TrimSpace(content.MapDescription) == "" {
 		issues = append(issues, "content.map_description 为空")
+	}
+	if trimmed := strings.TrimSpace(content.PlaythroughOutline); trimmed == "" {
+		issues = append(issues, "content.playthrough_outline 为空，须给出串联场景/NPC/线索的游玩流程大纲，覆盖场景衔接与分支")
+	} else if length := len([]rune(trimmed)); length < 100 {
+		issues = append(issues, fmt.Sprintf("content.playthrough_outline 过短（当前%d字），须覆盖场景衔接与分支", length))
 	}
 	if len(content.Scenes) == 0 {
 		issues = append(issues, "content.scenes 为空")
@@ -1135,6 +1150,11 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	for i, ending := range content.Endings {
 		if strings.TrimSpace(ending.Name) == "" || strings.TrimSpace(ending.Trigger) == "" {
 			issues = append(issues, fmt.Sprintf("content.endings[%d] 缺少 name 或 trigger", i))
+		}
+	}
+	for i, event := range content.Timeline {
+		if eventLooksLikeDialogueQuote(event.Event) {
+			issues = append(issues, fmt.Sprintf("content.timeline[%d].event 疑似把对话引语误写成了记录（%q），须改写为中性事实记录句（谁在何时做了什么），不引用人物原话", i, truncateRunes(event.Event, 60)))
 		}
 	}
 	if strings.TrimSpace(content.MythosAnchor) == "" {
@@ -1260,11 +1280,11 @@ func difficultySpec(difficulty string) string {
 func lengthSpec(targetLength string) string {
 	switch strings.ToLower(strings.TrimSpace(targetLength)) {
 	case "long", "剧本时间长度: 1week-1month":
-		return "- locations/scenes: 6-8个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 10-12条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 7-10个，来自派系且有独立议程\n- endings: 4-8个命名结局，每个含 trigger 和 san_reward\n- handouts: 1-4份开局手卡；timeline: 5-12个事件节点；keeper_appendix 与 entry_identities(2-5个) 尽量齐备；如有可量化的追踪机制可提供 mechanics"
+		return "- locations/scenes: 6-8个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 10-12条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 7-10个，来自派系且有独立议程\n- endings: 4-8个命名结局，每个含 trigger 和 san_reward\n- playthrough_outline: 覆盖全部场景的流程大纲，约800-1500字；timeline: 5-12个事件节点；keeper_appendix 与 entry_identities(2-5个) 尽量齐备；如有可量化的追踪机制可提供 mechanics"
 	case "medium", "剧本时间长度: 3-7d":
-		return "- locations/scenes: 4-6个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 7-10条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 4-7个，来自派系且有独立议程\n- endings: 3-5个命名结局，每个含 trigger 和 san_reward\n- handouts: 1-2份开局手卡；timeline: 3-6个事件节点；keeper_appendix/entry_identities/mechanics 按素材需要提供，可省略"
+		return "- locations/scenes: 4-6个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 7-10条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 4-7个，来自派系且有独立议程\n- endings: 3-5个命名结局，每个含 trigger 和 san_reward\n- playthrough_outline: 覆盖全部场景的流程大纲，约400-800字；timeline: 3-6个事件节点；keeper_appendix/entry_identities/mechanics 按素材需要提供，可省略"
 	default:
-		return "- locations/scenes: 3-4个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 5-7条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 2-4个，来自派系且有独立议程\n- endings: 至少2个命名结局，每个含 trigger 和 san_reward\n- handouts/timeline/keeper_appendix/entry_identities/mechanics: 均为可选，篇幅有限时可省略"
+		return "- locations/scenes: 3-4个地点状态，每个有可见信息、可发现信息、杠杆、风险、出口\n- clues: 5-7条自包含事实线索，每条标注 nature(真实/隐藏/误导)，尽量给出 source/skill_check/on_success/on_failure\n- NPC数量: 2-4个，来自派系且有独立议程\n- endings: 至少2个命名结局，每个含 trigger 和 san_reward\n- playthrough_outline: 覆盖全部场景的流程大纲，约200-400字，必需；timeline/keeper_appendix/entry_identities/mechanics: 均为可选，篇幅有限时可省略"
 	}
 }
 

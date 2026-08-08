@@ -68,8 +68,7 @@ func TestScenarioContent_UnmarshalJSON_NewFormatPassesThrough(t *testing.T) {
 		"endings": [
 			{"name": "书归其主", "trigger": "如果调查员让Douglas重获藏书", "san_reward": "恢复1d4"}
 		],
-		"win_condition": "旧字段不应覆盖新endings",
-		"handouts": [{"title": "捐赠登记簿摘抄", "content": "手卡正文"}]
+		"win_condition": "旧字段不应覆盖新endings"
 	}`
 	var c ScenarioContent
 	if err := json.Unmarshal([]byte(raw), &c); err != nil {
@@ -81,9 +80,6 @@ func TestScenarioContent_UnmarshalJSON_NewFormatPassesThrough(t *testing.T) {
 	if len(c.Endings) != 1 || c.Endings[0].Name != "书归其主" || c.Endings[0].SANReward != "恢复1d4" {
 		t.Fatalf("新endings存在时不应被旧win_condition覆盖: %+v", c.Endings)
 	}
-	if len(c.Handouts) != 1 || c.Handouts[0].Title != "捐赠登记簿摘抄" {
-		t.Fatalf("Handouts 未正确解析: %+v", c.Handouts)
-	}
 }
 
 func TestScenarioContent_UnmarshalJSON_EmptyOptionalFields(t *testing.T) {
@@ -92,8 +88,55 @@ func TestScenarioContent_UnmarshalJSON_EmptyOptionalFields(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &c); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	if c.Handouts != nil || c.Timeline != nil || c.KeeperAppendix != nil || c.EntryIdentities != nil || c.Mechanics != nil {
-		t.Errorf("未提供的可选字段应保持零值(nil)，实际: handouts=%v timeline=%v keeper_appendix=%v entry_identities=%v mechanics=%v",
-			c.Handouts, c.Timeline, c.KeeperAppendix, c.EntryIdentities, c.Mechanics)
+	if c.Timeline != nil || c.KeeperAppendix != nil || c.EntryIdentities != nil || c.Mechanics != nil {
+		t.Errorf("未提供的可选字段应保持零值(nil)，实际: timeline=%v keeper_appendix=%v entry_identities=%v mechanics=%v",
+			c.Timeline, c.KeeperAppendix, c.EntryIdentities, c.Mechanics)
 	}
+}
+
+// TestScenarioContent_UnmarshalJSON_LegacyHandoutsIgnored 锁定兼容契约：旧模组数据中
+// 残留的 handouts 字段（该功能已删除）应被静默忽略，不影响其余字段解析、不报错。
+func TestScenarioContent_UnmarshalJSON_LegacyHandoutsIgnored(t *testing.T) {
+	raw := `{
+		"setting": "背景设定原文",
+		"clues": [{"summary": "唯一线索", "nature": "真实"}],
+		"handouts": [{"title": "捐赠登记簿摘抄", "content": "手卡正文"}]
+	}`
+	var c ScenarioContent
+	if err := json.Unmarshal([]byte(raw), &c); err != nil {
+		t.Fatalf("Unmarshal() error = %v，旧数据中的 handouts 字段应被安全忽略", err)
+	}
+	if c.Setting != "背景设定原文" {
+		t.Errorf("Setting = %q, want 背景设定原文", c.Setting)
+	}
+	if len(c.Clues) != 1 {
+		t.Errorf("len(Clues) = %d, want 1", len(c.Clues))
+	}
+}
+
+// TestScenario_DecodeData_DescriptionFallsBackToSetting 验证简介与背景设定合并后的
+// 派生回填规则：description 为空时自动取 content.setting；description 已有值（旧数据）
+// 时保持原值不被覆盖。
+func TestScenario_DecodeData_DescriptionFallsBackToSetting(t *testing.T) {
+	t.Run("空description回填为setting", func(t *testing.T) {
+		raw := `{"description": "", "content": {"setting": "背景设定原文"}}`
+		s := Scenario{Data: JSONField[json.RawMessage]{Data: json.RawMessage(raw)}}
+		if err := s.DecodeData(); err != nil {
+			t.Fatalf("DecodeData() error = %v", err)
+		}
+		if s.Description != "背景设定原文" {
+			t.Errorf("Description = %q, want 背景设定原文", s.Description)
+		}
+	})
+
+	t.Run("旧数据已有description时保持原值", func(t *testing.T) {
+		raw := `{"description": "旧的简介原文", "content": {"setting": "背景设定原文"}}`
+		s := Scenario{Data: JSONField[json.RawMessage]{Data: json.RawMessage(raw)}}
+		if err := s.DecodeData(); err != nil {
+			t.Fatalf("DecodeData() error = %v", err)
+		}
+		if s.Description != "旧的简介原文" {
+			t.Errorf("Description = %q, want 旧的简介原文（不应被覆盖）", s.Description)
+		}
+	})
 }

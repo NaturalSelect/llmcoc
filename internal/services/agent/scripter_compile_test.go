@@ -128,7 +128,7 @@ func TestOneshotDraftJSONSchemaValid(t *testing.T) {
 	if !ok {
 		t.Fatal("schema.properties 缺失或类型不对")
 	}
-	for _, key := range []string{"reward_concept", "name", "description", "author", "tags", "min_players", "max_players", "difficulty", "content"} {
+	for _, key := range []string{"reward_concept", "name", "author", "tags", "min_players", "max_players", "difficulty", "content"} {
 		if _, ok := props[key]; !ok {
 			t.Errorf("schema.properties 缺少顶层字段 %q（应为原生参数，不应嵌套在draft键下）", key)
 		}

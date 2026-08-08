@@ -1381,15 +1381,6 @@
                     </div>
                 </div>
 
-                <!-- 简介 -->
-                <template x-if="viewingScenario?.description">
-                    <div class="mb-4 p-3 rounded" style="background:#0e0d0b; border-left:3px solid #92400e">
-                        <div class="text-[10px] font-bold text-amber-600 mb-1 uppercase tracking-wider font-ui">模组简介</div>
-                        <p class="text-xs text-amber-200 font-ui" style="line-height:1.7"
-                            x-text="viewingScenario.description"></p>
-                    </div>
-                </template>
-
                 <!-- 背景设定 -->
                 <template x-if="viewingScenario?.content?.setting">
                     <div class="mb-4">
@@ -1426,29 +1417,15 @@
                     </div>
                 </template>
 
-                <!-- 开局手卡 -->
-                <template x-if="viewingScenario?.content?.handouts?.length">
+                <!-- 游玩大纲 -->
+                <template x-if="viewingScenario?.content?.playthrough_outline">
                     <div class="mb-4">
-                        <div class="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1.5 font-ui">
-                            <span class="text-amber-900">▍</span>开局手卡
-                            <span class="text-[10px] text-amber-800 font-normal"
-                                x-text="'共 ' + viewingScenario.content.handouts.length + ' 份'"></span>
+                        <div class="text-xs font-bold text-amber-500 mb-1.5 flex items-center gap-1.5 font-ui">
+                            <span class="text-amber-900">▍</span>游玩大纲
                         </div>
-                        <div class="space-y-2">
-                            <template x-for="(ho, hi) in viewingScenario.content.handouts" :key="hi">
-                                <div class="p-2.5 rounded" style="background:#120f0a; border:1px solid #3a2a0b">
-                                    <div class="flex items-center justify-between gap-2 mb-1">
-                                        <div class="text-xs font-bold text-amber-300 font-ui" x-text="ho.title"></div>
-                                        <template x-if="ho.timing">
-                                            <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0 chip font-ui" x-text="ho.timing"></span>
-                                        </template>
-                                    </div>
-                                    <p class="text-xs text-amber-200 font-ui"
-                                        style="line-height:1.6; white-space:pre-wrap; font-style:italic"
-                                        x-text="ho.content"></p>
-                                </div>
-                            </template>
-                        </div>
+                        <div class="text-xs text-amber-200 rounded p-2.5 font-ui panel-inset"
+                            style="line-height:1.6; white-space:pre-wrap"
+                            x-text="viewingScenario.content.playthrough_outline"></div>
                     </div>
                 </template>
 

@@ -180,26 +180,26 @@ type ScenarioReward struct {
 
 // NOTE: ScenarioContent defines the narrative and structural elements of a playable scenario.
 type ScenarioContent struct {
-	SystemPrompt    string          `json:"system_prompt"`
-	Setting         string          `json:"setting"`
-	ToneTags        []string        `json:"tone_tags"`
-	HorrorMode      string          `json:"horror_mode"`
-	InvestFocus     string          `json:"invest_focus"`
-	Intro           string          `json:"intro"`
-	GameStartSlot   int             `json:"game_start_slot"`            // 开局时间槽位(0-47),每槽30分钟
-	MapDescription  string          `json:"map_description"`            // 文字描述的场景地图,供KP感知空间关系
-	Scenes          []SceneData     `json:"scenes"`                     //
-	NPCs            []NPCData       `json:"npcs"`                       //
-	Clues           []ClueData      `json:"clues"`                      // 结构化线索（来源/推荐检定/成功/失败推进/性质）
-	Endings         []EndingData    `json:"endings"`                    // 命名多结局（触发条件+SAN恢复），替代旧的win/lose/partial
-	Reward          *ScenarioReward `json:"reward"`                     // 通关奖励（典籍/神话物品），达成非失败结局时给予
-	Handouts        []HandoutData   `json:"handouts,omitempty"`         // 开局手卡，可直接朗读给玩家
-	Timeline        []TimelineEvent `json:"timeline,omitempty"`         // 时间线（过去线痕迹+当天推进）
-	KeeperAppendix  *KeeperAppendix `json:"keeper_appendix,omitempty"`  // 守秘人附录（难度调节/单双人团/恐怖呈现）
-	EntryIdentities []EntryIdentity `json:"entry_identities,omitempty"` // 导入身份表（不同职业入场方式）
-	Mechanics       []MechanicData  `json:"mechanics,omitempty"`        // 量化核心机制标记（计数器/时钟），仅作KP参考
-	MythosAnchor    string          `json:"mythos_anchor"`              // Stage2确认的神话锚点，用于多样性去重
-	MythosCore      string          `json:"mythos_core"`                // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
+	SystemPrompt       string          `json:"system_prompt"`
+	Setting            string          `json:"setting"`
+	ToneTags           []string        `json:"tone_tags"`
+	HorrorMode         string          `json:"horror_mode"`
+	InvestFocus        string          `json:"invest_focus"`
+	Intro              string          `json:"intro"`
+	GameStartSlot      int             `json:"game_start_slot"`               // 开局时间槽位(0-47),每槽30分钟
+	MapDescription     string          `json:"map_description"`               // 文字描述的场景地图,供KP感知空间关系
+	PlaythroughOutline string          `json:"playthrough_outline,omitempty"` // 游玩流程大纲（场景衔接、触发分支），供KP把握主线
+	Scenes             []SceneData     `json:"scenes"`                        //
+	NPCs               []NPCData       `json:"npcs"`                          //
+	Clues              []ClueData      `json:"clues"`                         // 结构化线索（来源/推荐检定/成功/失败推进/性质）
+	Endings            []EndingData    `json:"endings"`                       // 命名多结局（触发条件+SAN恢复），替代旧的win/lose/partial
+	Reward             *ScenarioReward `json:"reward"`                        // 通关奖励（典籍/神话物品），达成非失败结局时给予
+	Timeline           []TimelineEvent `json:"timeline,omitempty"`            // 时间线（过去线痕迹+当天推进）
+	KeeperAppendix     *KeeperAppendix `json:"keeper_appendix,omitempty"`     // 守秘人附录（难度调节/单双人团/恐怖呈现）
+	EntryIdentities    []EntryIdentity `json:"entry_identities,omitempty"`    // 导入身份表（不同职业入场方式）
+	Mechanics          []MechanicData  `json:"mechanics,omitempty"`           // 量化核心机制标记（计数器/时钟），仅作KP参考
+	MythosAnchor       string          `json:"mythos_anchor"`                 // Stage2确认的神话锚点，用于多样性去重
+	MythosCore         string          `json:"mythos_core"`                   // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
 }
 
 // NOTE: ClueData 是结构化线索。旧版本 clues 为 []string（形如"[真实]xxx"），现拆成独立字段
@@ -220,13 +220,6 @@ type EndingData struct {
 	Description string `json:"description,omitempty"` // 结局叙事描述
 	SANReward   string `json:"san_reward,omitempty"`  // SAN 恢复/损失，如"恢复1d6"
 	IsFailure   bool   `json:"is_failure,omitempty"`  // 是否为失败/灾难结局
-}
-
-// NOTE: HandoutData 是开局手卡，KP 可直接朗读给玩家的内容。
-type HandoutData struct {
-	Title   string `json:"title"`            // 手卡标题
-	Content string `json:"content"`          // 可直接朗读的正文
-	Timing  string `json:"timing,omitempty"` // 发放时机
 }
 
 // NOTE: TimelineEvent 是时间线上的单个事件节点。

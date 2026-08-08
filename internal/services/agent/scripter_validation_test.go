@@ -119,6 +119,108 @@ func TestOneshotResultExampleSettingHasDate(t *testing.T) {
 	}
 }
 
+// TestEventLooksLikeDialogueQuote 验证时间线事件对话引语检测：引号片段与对话动词须同时命中才判定。
+func TestEventLooksLikeDialogueQuote(t *testing.T) {
+	cases := []struct {
+		name  string
+		event string
+		want  bool
+	}{
+		{"引号+吐露动词", `阿黛莱德首次向神父吐露"醒来身边是凉的"`, true},
+		{"中文全角引号+告诉动词", "看守人告诉调查员“钟楼从不在午夜敲响”", true},
+		{"直角引号+坦白动词", "他向警探坦白「箱子早已空了」", true},
+		{"中性事实记录句", "1923年3月，教堂完成翻修，登记簿上加盖了新印章", false},
+		{"无对话动词的引号", "墙上贴着一张写有“禁止入内”的告示", false},
+		{"无引号的动词", "管家向警探坦白了当晚的行踪", false},
+		{"空字符串", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := eventLooksLikeDialogueQuote(c.event)
+			if got != c.want {
+				t.Errorf("eventLooksLikeDialogueQuote(%q) = %v，预期 %v", c.event, got, c.want)
+			}
+		})
+	}
+}
+
+// TestValidateDraftCompatibility_Timeline 验证 validateDraftCompatibility 对时间线对话引语与
+// playthrough_outline 完整性的检查。
+func TestValidateDraftCompatibility_Timeline(t *testing.T) {
+	base := func(timeline []models.TimelineEvent) ScenarioDraft {
+		return ScenarioDraft{
+			Name:        "测试剧本",
+			Description: "测试简介",
+			Difficulty:  "normal",
+			Content: models.ScenarioContent{
+				SystemPrompt:   "KP协议",
+				Setting:        "1923年10月15日，初秋的小镇，你们受邀前来。",
+				Intro:          "你们抵达此地，可以四处走走。",
+				GameStartSlot:  16,
+				MapDescription: "【文字地图】A→B",
+				PlaythroughOutline: strings.Repeat(
+					"开场后先进入场景A，与NPC甲交谈可得线索一，出口通向场景B。", 5,
+				),
+				Scenes: []models.SceneData{
+					{ID: "a", Name: "场景A", Description: "描述"},
+				},
+				NPCs: []models.NPCData{
+					{Name: "NPC甲", Description: "某人", Attitude: "友好"},
+				},
+				Clues: []models.ClueData{
+					{Summary: "线索一：内容。", Nature: "真实"},
+				},
+				Endings: []models.EndingData{
+					{Name: "胜利", Trigger: "如果完成，则成功。"},
+					{Name: "失败", Trigger: "如果失败，则结束。", IsFailure: true},
+				},
+				Timeline: timeline,
+			},
+		}
+	}
+
+	t.Run("对话引语式event报问题", func(t *testing.T) {
+		issues := validateDraftCompatibility(base([]models.TimelineEvent{
+			{Time: "六周前", Event: `阿黛莱德首次向神父吐露"醒来身边是凉的"`, Phase: "past"},
+		}))
+		found := false
+		for _, issue := range issues {
+			if strings.Contains(issue, "timeline[0].event") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("对话引语式 event 应报 timeline[0].event 问题，实际 issues：%v", issues)
+		}
+	})
+
+	t.Run("中性事实句不报问题", func(t *testing.T) {
+		issues := validateDraftCompatibility(base([]models.TimelineEvent{
+			{Time: "六周前", Event: "教堂完成翻修，登记簿上加盖了新印章", Phase: "past"},
+		}))
+		for _, issue := range issues {
+			if strings.Contains(issue, "timeline[0].event") {
+				t.Errorf("中性事实句不应报 event 问题，实际 issues：%v", issues)
+			}
+		}
+	})
+
+	t.Run("空playthrough_outline报问题", func(t *testing.T) {
+		draft := base(nil)
+		draft.Content.PlaythroughOutline = ""
+		issues := validateDraftCompatibility(draft)
+		found := false
+		for _, issue := range issues {
+			if strings.Contains(issue, "playthrough_outline") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("playthrough_outline 为空时应报问题，实际 issues：%v", issues)
+		}
+	})
+}
+
 // TestValidateStoryDocument 验证 validateStoryDocument 对故事文档长度与 mythos_anchor 的校验。
 func TestValidateStoryDocument(t *testing.T) {
 	longDoc := strings.Repeat("这是故事文档的正文内容，包含表层情境、真相与线索设计。", 30) // 远超500 runes

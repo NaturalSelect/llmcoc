@@ -25,8 +25,7 @@ func compilerSystemPrompt() string {
 
 【字段映射规则】
 - name：取故事文档标题；若文档未给出明确标题，从文档内具体名词（地名/物件/日期/一句当地话）提炼一个像人类作者起的标题，不用"低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒"等滥用词
-- description：剧本简介，取自或忠实改写故事文档的表层情境段落；中性、不剧透，读者看不出剧情走向
-- content.setting：取自故事文档的表层情境原文或忠实改写，必须保留其中嵌入的具体年月日（如"1923年10月15日"）
+- content.setting：取自故事文档的表层情境原文或忠实改写，必须保留其中嵌入的具体年月日（如"1923年10月15日"）；该字段同时作为模组对外展示的简介
 - content.intro：取自故事文档中调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步
 - content.horror_mode / content.invest_focus / content.tone_tags：必须逐字等于<diversity_constraints>中的对应值，不得自行替换
 - content.mythos_anchor：必须逐字等于<mythos_anchor>输入
@@ -37,8 +36,8 @@ func compilerSystemPrompt() string {
 - content.system_prompt：包含KP独有的内部真相（复述故事文档的核心真相与mythos_anchor对故事的必要性，即为何不可替换）、施动者的细化设定（若故事文档写明了邪教组织的名称伪装/教义/仪式/结构/招募控制/经济据点/历史渊源，或个人施法者的身份掩护/接触契机/法术能力/终极目的，或神话生物的来历/栖身范围/可观察影响/行为驱动，须完整保留，不得压缩为一句话）以及时间推进/信息分层/不主动引导三项KP协议
 - content.game_start_slot：从故事文档嵌入的具体时刻推算（0-47，每槽30分钟）；文档未写明具体时刻时取16
 - content.map_description：根据故事文档的地点关系概括为文字地图，体现可回访、可交叉验证的调查网络
-- content.handouts：若故事文档包含可直接朗读给玩家的手卡/信件/剪报等原文材料，逐条提取为{title,content,timing}；文档未提供此类材料则content.handouts留空数组，不得虚构
-- content.timeline：若故事文档写明了过去线痕迹或当天推进的时间节点，逐条提取为{time,event,phase:past|current}；文档未写明明确时间线则留空数组
+- content.playthrough_outline：取自故事文档的"游玩大纲"小节，整段忠实转录（保留其条目式分行）；须完整保留每个场景的入口条件、可接触NPC、可得线索、出口去向与分支；若文档没有独立的游玩大纲小节，则依据文档已写明的场景解锁条件、线索来源与结局触发条件归纳出流程大纲，不得引入文档中不存在的场景、NPC、线索或分支
+- content.timeline：若故事文档写明了过去线痕迹或当天推进的时间节点，逐条提取为{time,event,phase:past|current}；event须写成中性事实记录句（谁在何时做了什么、什么状态发生了变化）；若故事文档以对话、引语或文学化叙事呈现该时间节点，只转述句式、不引用人物原话，事实内容本身不得改变；文档未写明明确时间线则留空数组
 - content.keeper_appendix：若故事文档包含难度调节、单双人团建议或恐怖呈现提示，提取为{difficulty_down,difficulty_up,solo_advice,group_advice,horror_tips,theme_guidance}；文档未提供则整体省略（null）
 - content.entry_identities：若故事文档为不同职业调查员写明了差异化的入场方式，逐条提取为{profession,init_resource,init_limit,recommend_clues}；文档未区分职业入场则留空数组
 - content.mechanics：若故事文档描述了可量化追踪的机制（如计数器、行动时钟），提取为{name,type:counter|clock|tracker,description,stages:[{label,effect,trigger}]}；这些机制仅供KP参考，不做自动结算；文档未设计此类机制则留空数组
@@ -48,8 +47,8 @@ func compilerSystemPrompt() string {
 - 不得编造、合并或删除故事文档中不存在的人名、地名、事件、线索或结局
 - 不得改变故事文档已确定的真相、神话锚点、误导线索的四要素设计或结局条件
 - [隐藏]神话本质说明中出现的法术名/物品名/怪物名/材质名必须与<mythos_anchor>及故事文档一致，不得新造规则书中不存在的元素
-- description/content.setting/content.intro必须保持故事文档表层情境的冷开场语气：中性日常，不剧透真相、不渲染恐怖、不出现惊悚诡异词汇
-- description/content.setting/content.intro优先照抄故事文档表层情境的原句；确需压缩时只做删句，不改写句式、不把多句合并成一个塞满信息的长句
+- content.setting/content.intro必须保持故事文档表层情境的冷开场语气：中性日常，不剧透真相、不渲染恐怖、不出现惊悚诡异词汇
+- content.setting/content.intro优先照抄故事文档表层情境的原句；确需压缩时只做删句，不改写句式、不把多句合并成一个塞满信息的长句
 - content.clues中nature="真实"的线索至少2条且互相独立可组合；不得只编译出单一线索链
 - 至少一位NPC的description须写明"秘密"或"保留"信息
 </task>
@@ -76,7 +75,6 @@ func submitCompiledScenarioTool() scripterTool {
 const compilerSchemaTemplate = `{
   "reward_concept": "string：逐字等于<reward_concept>输入",
   "name": "string：故事文档标题；无明确标题时从文档内具体名词提炼，不用低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒等滥用词",
-  "description": "string：剧本简介，优先照抄故事文档表层情境原句，压缩只删不改写；中性日常、不剧透",
   "author": "agent-team",
   "tags": "string：2-3个逗号分隔标签，指向本剧本独有的核心叙事装置/桥段，不用抽象风格词；须避开<recent_scenario_tags_blacklist>",
   "min_players": 1,
@@ -84,20 +82,20 @@ const compilerSchemaTemplate = `{
   "difficulty": "string：如 normal",
   "content": {
     "system_prompt": "string：KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相与mythos_anchor必要性 + 施动者细化设定（邪教/施法者/神话生物的全部维度，不得压缩为一句话）",
-    "setting": "string：优先照抄表层情境原句，压缩只删不改写；必须保留文档中嵌入的具体年月日",
+    "setting": "string：优先照抄表层情境原句，压缩只删不改写；必须保留文档中嵌入的具体年月日；同时作为模组简介展示",
     "tone_tags": ["必须逐字等于<diversity_constraints>.tone_tags"],
     "horror_mode": "必须逐字等于<diversity_constraints>.horror_mode",
     "invest_focus": "必须逐字等于<diversity_constraints>.invest_focus",
     "intro": "string：优先照抄表层情境原句，压缩只删不改写；调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步",
     "game_start_slot": "int：0-47，每槽30分钟；从文档嵌入的时刻推算，未写明时取16",
     "map_description": "string：按地点关系概括的文字地图，体现可回访、可交叉验证的调查网络",
+    "playthrough_outline": "string：逐场景流程大纲，每个场景写明入口条件/可接触NPC/可得线索/出口去向与分支",
     "mythos_anchor": "必须逐字等于<mythos_anchor>输入",
     "scenes": [{"id": "snake_case英文标识", "name": "string", "description": "完整保留可见信息/可发现信息/杠杆/风险/出口/感官细节", "triggers": ["默认available_from_start；仅文档明确写出解锁条件时才用条件触发"]}],
     "npcs": [{"name": "string", "description": "完整保留公开身份/议程/秘密/标志性细节/关系网", "attitude": "string：文档写明的初始态度", "stats": {"STR": 50, "CON": 50, "SIZ": 50, "DEX": 50, "APP": 50, "INT": 60, "POW": 50, "EDU": 60, "SAN": 50, "HP": 10, "MP": 10}, "skills": {"按职业身份3-6项最相关技能": 50}, "spells": ["仅文档明确写明会施法者才填，普通人类留空数组"]}],
     "clues": [{"summary": "string：保留来源事实/支持命题等关键信息", "source": "string", "skill_check": "string，可留空", "on_success": "string，可留空", "on_failure": "string，可留空", "nature": "真实|隐藏|误导 三选一"}],
     "endings": [{"name": "string", "trigger": "保持如果[条件]，则[处境变化]的条件句结构", "description": "string", "san_reward": "string：如恢复1d6/损失1d6，文档未写明时按结局性质给出", "is_failure": "bool：标记灾难/失败向结局"}],
-    "handouts": [{"title": "string", "content": "string", "timing": "string"}],
-    "timeline": [{"time": "string", "event": "string", "phase": "past|current"}],
+    "timeline": [{"time": "string", "event": "string：中性事实记录句，不含引号引用的人物原话", "phase": "past|current"}],
     "keeper_appendix": {"difficulty_down": "string", "difficulty_up": "string", "solo_advice": "string", "group_advice": "string", "horror_tips": "string", "theme_guidance": "string"},
     "entry_identities": [{"profession": "string", "init_resource": "string", "init_limit": "string", "recommend_clues": "string"}],
     "mechanics": [{"name": "string", "type": "counter|clock|tracker", "description": "string", "stages": [{"label": "string", "effect": "string", "trigger": "string"}]}]

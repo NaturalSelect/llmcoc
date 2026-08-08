@@ -57,7 +57,6 @@ const oneshotDraftJSONSchema = `{
 	"properties": {
 		"reward_concept": {"type": "string", "description": "逐字等于reward_concept输入，输入为空则留空字符串"},
 		"name": {"type": "string", "description": "剧本标题；无明确标题时从文档内具体名词提炼，不用低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒等滥用词"},
-		"description": {"type": "string", "description": "剧本简介，取自或忠实改写表层情境段落；中性日常、不剧透"},
 		"author": {"type": "string", "description": "固定为agent-team"},
 		"tags": {"type": "string", "description": "2-3个逗号分隔标签，指向本剧本独有的核心叙事装置/桥段；须避开recent_scenario_tags_blacklist"},
 		"min_players": {"type": "integer"},
@@ -74,6 +73,7 @@ const oneshotDraftJSONSchema = `{
 				"intro": {"type": "string", "description": "调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步"},
 				"game_start_slot": {"type": "integer", "description": "0-47，每槽30分钟；未写明具体时刻时取16"},
 				"map_description": {"type": "string", "description": "按地点关系概括的文字地图，体现可回访、可交叉验证的调查网络"},
+				"playthrough_outline": {"type": "string", "description": "逐场景的游玩流程大纲，每个场景写明入口条件、可接触NPC、可得线索、出口去向与分支"},
 				"mythos_anchor": {"type": "string", "description": "必须逐字等于mythos_anchor输入"},
 				"scenes": {
 					"type": "array",
@@ -136,19 +136,6 @@ const oneshotDraftJSONSchema = `{
 						"required": ["name", "trigger"]
 					}
 				},
-				"handouts": {
-					"type": "array",
-					"description": "可直接朗读给玩家的手卡/信件/剪报等原文材料；文档未提供则留空数组，不得虚构",
-					"items": {
-						"type": "object",
-						"properties": {
-							"title": {"type": "string"},
-							"content": {"type": "string"},
-							"timing": {"type": "string"}
-						},
-						"required": ["title", "content"]
-					}
-				},
 				"timeline": {
 					"type": "array",
 					"description": "过去线痕迹或当天推进的时间节点；文档未写明则留空数组",
@@ -156,7 +143,7 @@ const oneshotDraftJSONSchema = `{
 						"type": "object",
 						"properties": {
 							"time": {"type": "string"},
-							"event": {"type": "string"},
+							"event": {"type": "string", "description": "中性事实记录句（谁在何时做了什么/什么状态发生变化）；不引用人物原话、不含引号对白"},
 							"phase": {"type": "string", "enum": ["past", "current"]}
 						},
 						"required": ["time", "event"]
@@ -214,10 +201,10 @@ const oneshotDraftJSONSchema = `{
 					}
 				}
 			},
-			"required": ["system_prompt", "setting", "tone_tags", "horror_mode", "invest_focus", "intro", "game_start_slot", "map_description", "mythos_anchor", "scenes", "npcs", "clues", "endings"]
+			"required": ["system_prompt", "setting", "tone_tags", "horror_mode", "invest_focus", "intro", "game_start_slot", "map_description", "playthrough_outline", "mythos_anchor", "scenes", "npcs", "clues", "endings"]
 		}
 	},
-	"required": ["reward_concept", "name", "description", "author", "tags", "min_players", "max_players", "difficulty", "content"]
+	"required": ["reward_concept", "name", "author", "tags", "min_players", "max_players", "difficulty", "content"]
 }`
 
 func (r OneshotResult) toScenarioDraft() ScenarioDraft {
@@ -249,7 +236,11 @@ var oneshotResultExample = OneshotResult{
 		Intro:          "你们受镇图书馆之邀，来帮着整理清点一批新到的捐赠藏书。大厅里，馆员正在前台核对今天的编目单，先去打个招呼也好；门口的访客登记簿还空着一栏，顺手签上名字；再往里走走，认认书架区和档案室的门各朝哪边开。",
 		GameStartSlot:  16,
 		MapDescription: "【文字地图】图书馆→书架区↔档案室↔墓地。",
-		MythosAnchor:   "食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。",
+		PlaythroughOutline: "开场：调查员受邀到图书馆大厅协助编目，馆员提及近期失窃。" +
+			"图书馆大厅（入口条件：开局即可进入；可接触NPC：守墓人Henrik；可得线索：被取走的书出自同一捐赠者；出口：查阅捐赠登记签收单可解锁书架区细节，安抚或盘问Henrik可解锁档案室话题）→" +
+			"档案室（入口条件：从大厅获知捐赠者身份后可入；可得线索：窗台泥土成分与镇北墓地一致；出口：与「失窃书目的共同点」组合后指向墓地，调查员可选择连夜赶赴或次日再去）→" +
+			"墓地（入口条件：完成泥土与书目两条线索组合；可得线索：取书者是食尸鬼；分支：调查员归还藏书导向「书归其主」，选择声张致图书馆关闭则导向「永久关闭」）。",
+		MythosAnchor: "食尸鬼（Ghoul）：COC7规则书已收录；具体属性按规则书裁定。",
 		Scenes: []models.SceneData{
 			{
 				ID:          "library_main",
@@ -314,13 +305,6 @@ var oneshotResultExample = OneshotResult{
 				IsFailure:   true,
 			},
 		},
-		Handouts: []models.HandoutData{
-			{
-				Title:   "捐赠登记簿摘抄",
-				Content: "9月1日，Margaret Doyle代已故Douglas Whitfield捐出藏书47册，注明「按其遗愿，供图书馆自由处置」。",
-				Timing:  "调查员查阅捐赠登记时",
-			},
-		},
 		Timeline: []models.TimelineEvent{
 			{Time: "六周前", Event: "Douglas Whitfield病逝，侄女Margaret按遗愿将藏书捐赠图书馆", Phase: "past"},
 			{Time: "开局当晚", Event: "若无人阻止，取书者将在闭馆后潜入书架区，带走下一批目标书籍", Phase: "current"},
@@ -355,7 +339,7 @@ const humanWritingRules = `- 具体性：散文要落在具体名词上——人
 - 一段一焦点：一句话只推进一件事，一句里至多引入一个新专名或新意象；一段话围绕一个焦点纵深展开（远→近、整体→局部、看见→听见），不横向铺开多个互不相关的对象；三个以上互不相关的细节禁止用顿号或"一边…一边…"并列——细节之间要有因果、转折、时间先后或感知顺序的连接，禁止"她耳朵背、记性好"式的属性清单句，人物特征通过动作或对话带出
 - 细节要挂钩：每个具体细节须至少服务一项——刻画人物、埋设后文、承载情绪或关系、给出可行动的调查入口；自检法是删掉它文字是否受损，无损即删；宁少一个活细节，不多一个死细节
 - 细节复用优先：与其引入新道具，优先让已出现的细节再次出现、并让第二次出现改变含义（初见是日常记录，再见携带情绪或异样）；一段散文最多充分展开一个主细节，其余一笔带过
-- 禁止编号与模板腔：description/setting/intro中不得出现①②③、1.2.3.、"首先/其次/最后"式结构或列表排版
+- 禁止编号与模板腔：setting/intro中不得出现①②③、1.2.3.、"首先/其次/最后"式结构或列表排版
 - 句式错落：长短句交替；不连续使用三个以上结构雷同的句子；不写成对仗排比
 - 标题像人起的：不用"低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒"等滥用词；优先取材于剧本内的具体名词（地名、物件、日期、一句当地人的话）
 - NPC人味：每个重要NPC给一个标志性小细节（口头禅、习惯动作、随身物件、外貌特征选其一）；NPC之间至少存在两条现实关系（亲属/雇佣/债务/旧怨/邻里）；可以保留一个与主线无关的纯地方色彩NPC
@@ -373,7 +357,7 @@ func proseVoiceBlock(constraints ScripterConstraints) string {
 	if guide := proseVoiceGuides[voice]; guide != "" {
 		sb.WriteString(fmt.Sprintf("guide: %s\n", guide))
 	}
-	sb.WriteString("适用范围：只作用于name/description/setting/intro等玩家可见散文的用词与节奏；不改变字段的功能与信息要求；不使用信头、落款、日期行等格式排版；不影响scenes/npcs/clues的结构化要素。\n")
+	sb.WriteString("适用范围：只作用于name/setting/intro等玩家可见散文的用词与节奏；不改变字段的功能与信息要求；不使用信头、落款、日期行等格式排版；不影响scenes/npcs/clues的结构化要素。\n")
 	sb.WriteString("</prose_voice>")
 	return sb.String()
 }
@@ -393,7 +377,7 @@ func repairSystemPrompt() string {
 - 不得改变<diversity_constraints>中horror_mode/invest_focus/tone_tags的值
 - 仅当must_fix涉及神话元素本身时，才调用translate_anchor核验；否则不要调用
 - 修复神话本质说明时，引用的法术/物品/怪物/机制名必须与must_fix或<previous_draft>中已确认的规则书元素一致，不得新造
-- description/setting/intro必须保持冷开场：中性日常，不剧透真相、不渲染恐怖
+- setting/intro必须保持冷开场：中性日常，不剧透真相、不渲染恐怖
 </task>
 <tools>
 - translate_anchor：仅当must_fix涉及神话元素时，将一个创意概念翻译为COC7规则书中最匹配的具体元素
@@ -404,7 +388,6 @@ submit.draft 必须保持与<previous_draft>完全相同的字段结构：
 {
   "reward_concept": "通关奖励叙事概念（若无则留空字符串）",
   "name": "剧本名称",
-  "description": "剧本简介：中性、不剧透",
   "author": "保持previous_draft原值",
   "tags": "2-3个逗号分隔的标签，须避开<recent_scenario_tags_blacklist>",
   "min_players": 1,
@@ -419,13 +402,13 @@ submit.draft 必须保持与<previous_draft>完全相同的字段结构：
     "intro": "入场情境；不列出、不推荐、不暗示任何具体行动或下一步",
     "game_start_slot": 16,
     "map_description": "文字地图",
+    "playthrough_outline": "逐场景流程大纲：入口条件/可接触NPC/可得线索/出口去向与分支",
     "mythos_anchor": "已确认的COC7元素全称，不得更换",
     "scenes": [{"id":"snake_case","name":"...","description":"可见/可发现/杠杆/风险/出口/感官细节","triggers":["available_from_start"]}],
     "npcs": [{"name":"...","description":"公开身份/议程/秘密/标志性细节/关系网","attitude":"...","stats":{"STR":50,"CON":50,"SIZ":50,"DEX":50,"APP":50,"INT":60,"POW":50,"EDU":60,"SAN":50,"HP":10,"MP":10},"skills":{"侦查":50},"spells":[]}],
     "clues": [{"summary":"...","source":"...","skill_check":"可留空","on_success":"...","on_failure":"失败时不卡关的替代信息","nature":"真实|隐藏|误导"}],
     "endings": [{"name":"...","trigger":"如果[条件]，则[处境变化]","description":"...","san_reward":"恢复1d6","is_failure":false}],
-    "handouts": [{"title":"...","content":"...","timing":"..."}],
-    "timeline": [{"time":"...","event":"...","phase":"past|current"}],
+    "timeline": [{"time":"...","event":"中性事实记录句，不含引号引用的人物原话","phase":"past|current"}],
     "keeper_appendix": {"difficulty_down":"...","difficulty_up":"...","solo_advice":"...","group_advice":"...","horror_tips":"...","theme_guidance":"..."},
     "entry_identities": [{"profession":"...","init_resource":"...","init_limit":"...","recommend_clues":"..."}],
     "mechanics": [{"name":"...","type":"counter|clock|tracker","description":"...","stages":[{"label":"...","effect":"...","trigger":"..."}]}]
@@ -937,10 +920,6 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	if strings.TrimSpace(req.Name) != "" && draft.Name != strings.TrimSpace(req.Name) {
 		draft.Name = strings.TrimSpace(req.Name)
 	}
-	if strings.TrimSpace(draft.Description) == "" {
-		draft.Description = "一段看似寻常的经历正在等待几位到访者。接受这份邀约，故事便从平常的一天开始。"
-		log.Printf("[scripter:normalize] session=%s filled description", sessionID)
-	}
 	if draft.Author != author {
 		draft.Author = author
 	}
@@ -985,6 +964,16 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			constraints.Era, strings.Join(constraints.GeographyFlavor, " / "),
 		)
 		log.Printf("[scripter:normalize] session=%s filled setting", sessionID)
+	}
+	// 简介与背景设定已合并：description 不再由模型单独产出，统一取 content.setting；
+	// setting 本身仍为空的极端情况下才使用固定兜底文案。
+	if strings.TrimSpace(draft.Description) == "" {
+		if strings.TrimSpace(draft.Content.Setting) != "" {
+			draft.Description = draft.Content.Setting
+		} else {
+			draft.Description = "一段看似寻常的经历正在等待几位到访者。接受这份邀约，故事便从平常的一天开始。"
+		}
+		log.Printf("[scripter:normalize] session=%s filled description", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.Intro) == "" {
 		draft.Content.Intro = "你们按各自的缘由抵达此地，眼前一切安静而寻常。"

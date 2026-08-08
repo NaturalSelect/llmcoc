@@ -30,6 +30,11 @@ func normalizeScenarioDefaults(p *ScenarioPayload) {
 	if strings.TrimSpace(p.Difficulty) == "" {
 		p.Difficulty = "normal"
 	}
+	// 简介与背景设定已合并为 content.setting；顶层 description 仅在为空时
+	// 回填为 setting，作为 API/前端的兼容投影，旧数据中已有的 description 原样保留。
+	if strings.TrimSpace(p.Description) == "" {
+		p.Description = p.Content.Setting
+	}
 	sortCluesByNature(p.Content.Clues)
 }
 
