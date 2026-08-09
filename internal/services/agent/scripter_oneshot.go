@@ -410,10 +410,11 @@ func repairSystemPrompt() string {
 </task>
 <tools>
 - translate_anchor：仅当must_fix涉及神话元素时，将一个创意概念翻译为COC7规则书中最匹配的具体元素
-- submit：提交修复后的完整剧本JSON；必须单独一轮调用，draft字段为完整oneshotResult JSON对象
+- generate_npc_name：需要新增或替换NPC姓名时，从预置姓名池随机生成，不要自行编造
+- ready_to_submit：完成上述核验（或确认无需核验）后调用，确认准备好提交修复后的完整剧本；必须单独一轮调用。调用后系统会请你直接输出完整JSON本体
 </tools>
 <draft_schema>
-submit.draft 必须保持与<previous_draft>完全相同的字段结构：
+最终提交的JSON对象必须保持与<previous_draft>完全相同的字段结构：
 {
   "reward_concept": "保持previous_draft原值",
   "name": "剧本名称",
@@ -450,25 +451,49 @@ submit.draft 必须保持与<previous_draft>完全相同的字段结构：
 // Architect loop
 // ---------------------------------------------------------------------------
 
-// runOneshotArchitectLoop 驱动 architect 工具循环：translate_anchor（可多次）+ submit（独占一轮）。
-// 目前仅由 repairOneshotDraft 复用，用于在已编译草案上做 translate_anchor 校验 + 结构修复。
+// runOneshotArchitectLoop 驱动修复阶段的两段式提交。第一段（runOneshotVerificationPhase）
+// 是原生工具循环：translate_anchor/generate_npc_name按需多次调用，以ready_to_submit（独占
+// 一轮、空参数）收尾。第二段（runOneshotSubmitPhase）改为纯JsonChat直接输出完整JSON——
+// oneshotDraftJSONSchema十几个顶层字段、content又深层嵌套，原生tool calling单次调用维持
+// 这种结构时不稳定（同compileStoryToModule的既有结论：曾观测到必填字段留空或content被
+// 整体序列化成字符串），JsonChat+RepairJSON是这个代码库里同类"大段结构化JSON"生成的既有
+// 做法。目前仅由 repairOneshotDraft 复用，用于在已编译草案上做核验 + 结构修复。
 func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (OneshotResult, error) {
 	stageName = firstNonEmpty(stageName, "oneshot_architect")
 
-	tools := []scripterTool{
-		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次"),
-		generateNPCNameTool(),
-		{
-			solo: true,
-			def: llm.ToolDefinition{
-				Name:        toolNameSubmit,
-				Description: "提交完整剧本；参数即完整oneshotResult本体（非嵌套在draft字段下）；只有在translate_anchor确认元素后才调用；必须单独一轮调用",
-				Parameters:  jsonSchemaObject(oneshotDraftJSONSchema),
-			},
+	findings, err := runOneshotVerificationPhase(ctx, room, msgs, stageName)
+	if err != nil {
+		return OneshotResult{}, err
+	}
+	return runOneshotSubmitPhase(ctx, room, msgs, findings, stageName)
+}
+
+// readyToSubmitTool 是核验阶段的收尾信号工具（solo，空参数）：模型确认已完成必要的
+// translate_anchor/generate_npc_name核验（或确认本轮无需核验）后调用，驱动器随即返回，
+// 交由 runOneshotSubmitPhase 发起JsonChat提交。
+func readyToSubmitTool() scripterTool {
+	return scripterTool{
+		solo: true,
+		def: llm.ToolDefinition{
+			Name:        toolNameReadyToSubmit,
+			Description: "确认已完成必要的translate_anchor/generate_npc_name核验（或确认本轮无需核验），准备提交修复后的完整剧本；必须单独一轮调用，无需参数",
+			Parameters:  jsonSchemaObject(`{"type": "object", "properties": {}}`),
 		},
 	}
+}
 
-	var submitted *OneshotResult
+// runOneshotVerificationPhase 跑一次只含 translate_anchor/generate_npc_name/ready_to_submit
+// 的工具循环，把期间每次translate_anchor的结果文本拼接为findings返回，供
+// runOneshotSubmitPhase的JsonChat提交带上核验结论（否则模型在纯JsonChat轮会"忘记"
+// 核验阶段问到的规则书元素）。没有调用过translate_anchor时findings为空串。
+func runOneshotVerificationPhase(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (string, error) {
+	tools := []scripterTool{
+		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；仅当must_fix涉及神话元素时才需要调用"),
+		generateNPCNameTool(),
+		readyToSubmitTool(),
+	}
+
+	var findings []string
 	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
 		switch call.Name {
 		case toolNameTranslateAnchor:
@@ -477,29 +502,75 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm
 				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
 			text, _ := executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)
+			findings = append(findings, text)
 			return toolOutcome{result: text}
 		case toolNameGenerateNPCName:
 			return dispatchGenerateNPCName(ctx, room, call)
-		case toolNameSubmit:
-			result, reject := parseOneshotResult(toolNameSubmit, call.Arguments)
-			if reject != "" {
-				return toolOutcome{reject: reject}
-			}
-			if strings.TrimSpace(result.Name) == "" {
-				return toolOutcome{reject: "SYSTEM REJECT: submit的name字段不能为空。"}
-			}
-			submitted = &result
-			return toolOutcome{result: "已收到，剧本已提交。", done: true}
+		case toolNameReadyToSubmit:
+			return toolOutcome{result: "已确认，请直接输出完整剧本JSON。", done: true}
 		default:
-			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/generate_npc_name/submit，不允许%s。", call.Name)}
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/generate_npc_name/ready_to_submit，不允许%s。", call.Name)}
 		}
 	}
 
-	const maxRounds = 30
-	if err := runScripterToolLoop(ctx, room, room.architect, stageName, msgs, tools, maxRounds, dispatch); err != nil {
-		return OneshotResult{}, err
+	const maxRounds = 20
+	if err := runScripterToolLoop(ctx, room, room.architect, stageName+"_verify", msgs, tools, maxRounds, dispatch); err != nil {
+		return "", err
 	}
-	return *submitted, nil
+	return strings.Join(findings, "\n"), nil
+}
+
+// runOneshotSubmitPhase 是核验通过后的纯JsonChat提交：把核验阶段的findings（若有）连同
+// 原始system/user消息一起发给architect，直接要求输出完整oneshotResult JSON本体；解析失败
+// 时走RepairJSON修复，name为空等业务校验失败时把上次输出连同具体修正要求重新发回去，
+// 逻辑与compileStoryToModule的重试结构一致。
+func runOneshotSubmitPhase(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, findings string, stageName string) (OneshotResult, error) {
+	if room.architect.provider == nil {
+		return OneshotResult{}, fmt.Errorf("%s provider unavailable", stageName)
+	}
+	sessionID := scripterSessionID(ctx, room)
+
+	userContent := "现在请直接输出完整修复后的oneshotResult JSON本体，字段结构严格遵循前面draft_schema；不要输出解释性文字、前后缀说明或代码块围栏标记。"
+	if strings.TrimSpace(findings) != "" {
+		userContent = fmt.Sprintf("<verification_findings>\n%s\n</verification_findings>\n%s", findings, userContent)
+	}
+	submitMsgs := append(append([]llm.ChatMessage(nil), msgs...), llm.ChatMessage{Role: "user", Content: userContent})
+
+	cacheKey := room.architect.cacheKey(sessionID)
+	const maxBusinessRetries = 3
+	for attempt := 1; attempt <= maxBusinessRetries; attempt++ {
+		stage := fmt.Sprintf("%s_submit_attempt_%d", stageName, attempt)
+		logStagePrompt(stage, sessionID, submitMsgs)
+		resp, err := room.architect.provider.JsonChat(ctx, cacheKey, submitMsgs)
+		if err != nil {
+			return OneshotResult{}, fmt.Errorf("%s failed: %w", stageName, err)
+		}
+		recordScripterLLMExchange(ctx, room, stage, submitMsgs, resp)
+		log.Printf("[scripter:%s] session=%s attempt=%d resp_len=%d", stageName, sessionID, attempt, len([]rune(resp)))
+
+		result, reject := parseOneshotResult("submit", resp)
+		if reject != "" {
+			if fixed, repairErr := RepairJSON(ctx, resp, fmt.Errorf("%s", reject), oneshotDraftJSONSchema); repairErr == nil {
+				result, reject = parseOneshotResult("submit", fixed)
+			}
+		}
+		if reject != "" {
+			submitMsgs = append(submitMsgs,
+				llm.ChatMessage{Role: "assistant", Content: resp},
+				llm.ChatMessage{Role: "user", Content: reject + " 请重新输出完整JSON。"},
+			)
+			continue
+		}
+		if strings.TrimSpace(result.Name) == "" {
+			submitMsgs = append(submitMsgs,
+				llm.ChatMessage{Role: "assistant", Content: resp},
+				llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: name字段不能为空。请连同完整JSON重新输出一次，其余字段保持与上次一致。"},
+			)
+			continue
+		}
+		return result, nil
+	}
+	return OneshotResult{}, fmt.Errorf("%s 连续%d次未能提交合法剧本JSON", stageName, maxBusinessRetries)
 }
 
 // ---------------------------------------------------------------------------
@@ -767,7 +838,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 <must_fix>
 %s
 </must_fix>
-请修复上述问题并通过submit提交修复后的完整剧本JSON。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags；仅当must_fix涉及神话元素本身时才调用translate_anchor核验；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
+请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
 		string(reqJSON), string(constraintsJSON),
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints, proseVoiceScopeCompile),

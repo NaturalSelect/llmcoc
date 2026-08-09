@@ -364,7 +364,7 @@ const (
 	toolNameRespond           = "respond"
 	toolNameTranslateAnchor   = "translate_anchor"
 	toolNameSubmitExtraction  = "submit_extraction"
-	toolNameSubmit            = "submit"
+	toolNameReadyToSubmit     = "ready_to_submit"
 	toolNameReportIssues      = "report_issues"
 	toolNameGenerateNPCName   = "generate_npc_name"
 	toolNameGetWritingExample = "get_writing_example"
