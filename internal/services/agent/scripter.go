@@ -539,8 +539,7 @@ type ScripterConstraints struct {
 	HorrorMode      string   `json:"horror_mode"`
 	InvestFocus     string   `json:"invest_focus"`
 	ToneTags        []string `json:"tone_tags"`
-	ProseVoice      string   `json:"prose_voice"`      // NOTE: 玩家可见散文的作者声线，只影响文风不影响事实
-	DiversitySource string   `json:"diversity_source"` // NOTE: "ai"=AI围池选择，"fallback"=随机降级
+	ProseVoice      string   `json:"prose_voice"` // NOTE: 玩家可见散文的作者声线，只影响文风不影响事实
 }
 
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
@@ -556,23 +555,12 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		log.Printf("[scripter] session=%s geography generated=%q", sessionID, strings.Join(geography, " → "))
 	}
 
-	// NOTE: 先尝试 AI 从围池内选择，失败则降级随机
-	candidates := buildDiversityCandidates(r.req, sessionID)
-	var horrorMode, investFocus, source string
-	mode, focus, src, aiErr := selectDiversityConstraintsWithAI(ctx, r, candidates)
-	if aiErr != nil || src != "ai" || mode == "" {
-		horrorMode, investFocus, _ = selectDiversityConstraints(r.req, sessionID)
-		source = "fallback"
-		log.Printf("[scripter] session=%s diversity fallback horror_mode=%q invest_focus=%q", sessionID, horrorMode, investFocus)
-	} else {
-		horrorMode = mode
-		investFocus = focus
-		source = "ai"
-		log.Printf("[scripter] session=%s diversity ai horror_mode=%q invest_focus=%q", sessionID, horrorMode, investFocus)
-	}
-	toneTags := toneTagsForDiversity(horrorMode, investFocus, r.req)
-	log.Printf("[scripter] session=%s diversity final horror_mode=%q invest_focus=%q tone_tags=%q source=%q",
-		sessionID, horrorMode, investFocus, strings.Join(toneTags, ","), source)
+	// NOTE: 多样性组合改为纯随机挑选，不再让 AI 从围池内判断"最契合"——时代/主题等输入
+	// 在多次生成间几乎不变，这类判断任务会收敛到少数刻板组合，反而削弱多样性；契合题材交给
+	// 下游 Story Architect 在拿到约束后体现。
+	horrorMode, investFocus, toneTags := selectDiversityConstraints(r.req, sessionID)
+	log.Printf("[scripter] session=%s diversity horror_mode=%q invest_focus=%q tone_tags=%q",
+		sessionID, horrorMode, investFocus, strings.Join(toneTags, ","))
 
 	proseVoice := scripterProseVoices[rand.Intn(len(scripterProseVoices))]
 	log.Printf("[scripter] session=%s prose_voice=%q", sessionID, proseVoice)
@@ -588,7 +576,6 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		InvestFocus:     investFocus,
 		ToneTags:        toneTags,
 		ProseVoice:      proseVoice,
-		DiversitySource: source,
 	}
 }
 
@@ -713,14 +700,30 @@ func fallbackGeographyFlavor(req ScenarioCreationRequest) []string {
 	return flavor
 }
 
-// buildDiversityCandidates 返回剔除近N条已用组合后的候选围池；DB为空时返回全笛卡尔积。
+// buildDiversityCandidates 返回去重后的候选围池；DB为空时返回全笛卡尔积。
+// 两层去重：1) 精确组合（mode+focus）不与最近8条重复；2) 边际值——mode或focus单独
+// 不与最近2条重复，避免"只换focus不换mode"这类可感知的重复。任一层耗尽都逐级退化，
+// 保证候选池不为空。
 func buildDiversityCandidates(req ScenarioCreationRequest, sessionID string) []diversityCombo {
-	recent := loadRecentDiversityCombos(2, sessionID)
-	recentSet := map[string]bool{}
+	recent := loadRecentDiversityCombos(8, sessionID) // 按 created_at DESC 排列，recent[0] 最新
+
+	comboSet := map[string]bool{}
 	for _, combo := range recent {
-		key := diversityComboKey(combo.HorrorMode, combo.InvestFocus)
-		if key != "" {
-			recentSet[key] = true
+		if key := diversityComboKey(combo.HorrorMode, combo.InvestFocus); key != "" {
+			comboSet[key] = true
+		}
+	}
+	marginalModeSet := map[string]bool{}
+	marginalFocusSet := map[string]bool{}
+	for i, combo := range recent {
+		if i >= 2 {
+			break
+		}
+		if combo.HorrorMode != "" {
+			marginalModeSet[combo.HorrorMode] = true
+		}
+		if combo.InvestFocus != "" {
+			marginalFocusSet[combo.InvestFocus] = true
 		}
 	}
 
@@ -732,17 +735,32 @@ func buildDiversityCandidates(req ScenarioCreationRequest, sessionID string) []d
 		}
 	}
 
-	// 剔除最近用过的组合
+	// 第一层：精确组合 + 边际值双重过滤
+	strict := make([]diversityCombo, 0, len(candidates))
+	for _, c := range candidates {
+		if comboSet[diversityComboKey(c.HorrorMode, c.InvestFocus)] {
+			continue
+		}
+		if marginalModeSet[c.HorrorMode] || marginalFocusSet[c.InvestFocus] {
+			continue
+		}
+		strict = append(strict, c)
+	}
+	if len(strict) > 0 {
+		return strict
+	}
+
+	// 第二层：退化为只排除精确组合
 	available := make([]diversityCombo, 0, len(candidates))
 	for _, c := range candidates {
-		if !recentSet[diversityComboKey(c.HorrorMode, c.InvestFocus)] {
+		if !comboSet[diversityComboKey(c.HorrorMode, c.InvestFocus)] {
 			available = append(available, c)
 		}
 	}
-	// 围池耗尽时退化为全笛卡尔积
 	if len(available) > 0 {
 		return available
 	}
+	// 围池耗尽时退化为全笛卡尔积
 	return candidates
 }
 
@@ -754,100 +772,6 @@ func selectDiversityConstraints(req ScenarioCreationRequest, sessionID string) (
 	}
 	chosen := candidates[rand.Intn(len(candidates))]
 	return chosen.HorrorMode, chosen.InvestFocus, toneTagsForDiversity(chosen.HorrorMode, chosen.InvestFocus, req)
-}
-
-// selectDiversityConstraintsWithAI 让 architect 从围池候选中选最契合题材的组合；
-// 失败时返回 ("", "", "fallback", nil)，调用方应降级到随机选取。
-func selectDiversityConstraintsWithAI(ctx context.Context, room *scripterRoom, candidates []diversityCombo) (horrorMode, investFocus, source string, err error) {
-	if len(candidates) == 0 {
-		return "", "", "fallback", nil
-	}
-	if room == nil || room.architect.provider == nil {
-		return "", "", "fallback", nil
-	}
-	sessionID := scripterSessionID(ctx, room)
-
-	// 构建候选列表文本
-	var candLines []string
-	for i, c := range candidates {
-		modeLabel := horrorModeChineseLabels[c.HorrorMode]
-		focusLabel := investFocusChineseLabels[c.InvestFocus]
-		candLines = append(candLines, fmt.Sprintf("%d. mode=%s(%s) / focus=%s(%s)",
-			i+1, c.HorrorMode, modeLabel, c.InvestFocus, focusLabel))
-	}
-	candidatesText := strings.Join(candLines, "\n")
-
-	geographyFlavor := ""
-	if room.req.Theme != "" {
-		geographyFlavor = room.req.Theme
-	}
-	era := room.req.Era
-	theme := room.req.Theme
-
-	systemPrompt := `<role>COC7剧本架构师</role>
-<task>从候选围池内挑最契合题材与时代氛围的一个神话介入机制(horror_mode / 神话力量介入人类世界的主要机制) + 调查焦点(invest_focus / 调查切入点)组合。</task>`
-
-	userPrompt := fmt.Sprintf(`时代(Era): %s
-主题(Theme): %s
-地理风味: %s
-
-候选围池(编号 → 恐怖模式 / 调查焦点):
-%s
-
-强制规则: 只能从围池内选, 不得创造新的 mode 或 focus; 严格输出两行, 第一行 mode: <英文值>, 第二行 focus: <英文值>, 不要任何其他内容或解释。`,
-		era, theme, geographyFlavor, candidatesText)
-
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.architect.systemPrompt(systemPrompt)},
-		{Role: "user", Content: userPrompt},
-	}
-
-	log.Printf("[scripter:diversity_ai] session=%s prompt candidates=%d", sessionID, len(candidates))
-	callMessages := append([]llm.ChatMessage(nil), msgs...)
-	raw, chatErr := room.architect.provider.Chat(ctx, room.sessionID+":"+string(models.AgentRoleArchitect), msgs)
-	if chatErr != nil {
-		log.Printf("[scripter:diversity_ai] session=%s chat error=%v", sessionID, chatErr)
-		return "", "", "fallback", chatErr
-	}
-	raw = strings.TrimSpace(raw)
-	recordScripterLLMExchange(ctx, room, "diversity_ai", callMessages, raw)
-	log.Printf("[scripter:diversity_ai] session=%s raw=%s", sessionID, truncateRunes(raw, scripterRawLogLimit))
-
-	mode, focus, ok := parseDiversityAIResponse(raw, candidates)
-	if !ok {
-		log.Printf("[scripter:diversity_ai] session=%s parse failed or out-of-pool, falling back to random", sessionID)
-		return "", "", "fallback", nil
-	}
-	log.Printf("[scripter:diversity_ai] session=%s selected mode=%q focus=%q source=ai", sessionID, mode, focus)
-	return mode, focus, "ai", nil
-}
-
-// parseDiversityAIResponse 解析 AI 围池选择的纯文本响应，验证组合是否在候选内。
-func parseDiversityAIResponse(raw string, candidates []diversityCombo) (horrorMode, investFocus string, ok bool) {
-	var modeVal, focusVal string
-	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		lower := strings.ToLower(line)
-		if strings.HasPrefix(lower, "mode:") {
-			modeVal = strings.TrimSpace(line[len("mode:"):])
-		} else if strings.HasPrefix(lower, "focus:") {
-			focusVal = strings.TrimSpace(line[len("focus:"):])
-		}
-	}
-	if modeVal == "" || focusVal == "" {
-		return "", "", false
-	}
-	// 围池校验
-	for _, c := range candidates {
-		if strings.TrimSpace(c.HorrorMode) == modeVal && strings.TrimSpace(c.InvestFocus) == focusVal {
-			return modeVal, focusVal, true
-		}
-	}
-	return "", "", false
 }
 
 type diversityCombo struct {

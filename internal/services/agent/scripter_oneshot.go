@@ -1017,31 +1017,15 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		log.Printf("[scripter:normalize] session=%s filled map_description", sessionID)
 	}
 	if strings.TrimSpace(constraints.HorrorMode) != "" {
-		if constraints.DiversitySource == "ai" {
-			// NOTE: AI 围池选择时尊重 architect 输出，仅补空值
-			if strings.TrimSpace(draft.Content.HorrorMode) == "" {
-				draft.Content.HorrorMode = strings.TrimSpace(constraints.HorrorMode)
-			}
-		} else {
-			// fallback 或空: 维持强制覆盖
-			if strings.TrimSpace(draft.Content.HorrorMode) != strings.TrimSpace(constraints.HorrorMode) {
-				log.Printf("[scripter:normalize] session=%s override horror_mode from=%q to=%q", sessionID, draft.Content.HorrorMode, constraints.HorrorMode)
-				draft.Content.HorrorMode = strings.TrimSpace(constraints.HorrorMode)
-			}
+		if strings.TrimSpace(draft.Content.HorrorMode) != strings.TrimSpace(constraints.HorrorMode) {
+			log.Printf("[scripter:normalize] session=%s override horror_mode from=%q to=%q", sessionID, draft.Content.HorrorMode, constraints.HorrorMode)
+			draft.Content.HorrorMode = strings.TrimSpace(constraints.HorrorMode)
 		}
 	}
 	if strings.TrimSpace(constraints.InvestFocus) != "" {
-		if constraints.DiversitySource == "ai" {
-			// NOTE: AI 围池选择时尊重 architect 输出，仅补空值
-			if strings.TrimSpace(draft.Content.InvestFocus) == "" {
-				draft.Content.InvestFocus = strings.TrimSpace(constraints.InvestFocus)
-			}
-		} else {
-			// fallback 或空: 维持强制覆盖
-			if strings.TrimSpace(draft.Content.InvestFocus) != strings.TrimSpace(constraints.InvestFocus) {
-				log.Printf("[scripter:normalize] session=%s override invest_focus from=%q to=%q", sessionID, draft.Content.InvestFocus, constraints.InvestFocus)
-				draft.Content.InvestFocus = strings.TrimSpace(constraints.InvestFocus)
-			}
+		if strings.TrimSpace(draft.Content.InvestFocus) != strings.TrimSpace(constraints.InvestFocus) {
+			log.Printf("[scripter:normalize] session=%s override invest_focus from=%q to=%q", sessionID, draft.Content.InvestFocus, constraints.InvestFocus)
+			draft.Content.InvestFocus = strings.TrimSpace(constraints.InvestFocus)
 		}
 	}
 	if len(constraints.ToneTags) > 0 && !sameStringSlice(draft.Content.ToneTags, constraints.ToneTags) {
