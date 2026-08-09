@@ -414,14 +414,28 @@ func generateImageTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolGenerateImage),
-			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略。image_prompt 需是完整的画面描述(人物外貌、场景、氛围等)，若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
+			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略。若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
+【格式规则】image_prompt必须用英文撰写，并按以下Markdown分段模板组织，不要写成一段流水账描述：
+### Scene
+一句话概括场景类型与整体氛围/色调。
+### Subject
+仅当画面有可辨认的角色/生物主体时才写此段，用要点列出gender expression、age、ethnicity、body type、pose、clothing等视觉要点(角色外貌须来自describe_characters的结果，不可编造)；纯环境空镜或无主体特写省略本段。
+### Environment
+要点列出场景中的关键陈设、道具、空间布局等。
+### Lighting
+要点列出光源、光质、色调，契合场景年代与氛围。
+### Camera
+要点列出取景与镜头提示，如视角、取景范围、景深倾向、构图裁切等，用于控制画面呈现方式，不必是精确的真实相机参数。
+### Negative prompts
+要点列出应避免出现的元素，如时代穿帮物、文字水印、比例失调、过度美化等。
+没有内容的段落直接省略该标题，保留的段落一律用"* "开头的要点分行罗列，不要写成大段文字。
 【未知感规则】配图是玩家可见通道，同样受[UNKNOWN]约束。尚未被合法鉴定的神话实体、怪物与异常现象，禁止画出可辨认的正面全貌——正面肖像等于提前把答案交给玩家。这类对象只画它留下的痕迹与效果、事后现场、遮挡与局部(背光剪影、水下轮廓、门缝里的一部分)、它经过后的空环境，或目击者的反应；image_prompt里也不要写出它的正式名称、种族名与规则术语，用画面本身描述。已被完全鉴定或已正面遭遇过的对象不受此限制。
 【批次规则】generate_image可以与write/response同批次；返回结果只表示图片生成已排队，KP不需要也不能读取图片内容。
-调用示例：{"image_prompt":"完整的画面描述,包含人物外貌、场景、氛围等","aspect":"landscape"}`,
+调用示例：{"image_prompt":"### Scene\nDim Victorian study past midnight, sickly greenish gaslight tone.\n### Subject\n* An elderly butler standing rigid beside the desk, startled expression\n* Wearing a black tailcoat, holding a candle\n### Environment\n* Towering bookshelves with cracked leather spines\n* Cluttered mahogany desk buried in scattered papers\n### Lighting\n* Single candle as key light, deep long shadows\n### Camera\n* Eye-level wide shot, slightly tilted angle\n### Negative prompts\n* No modern objects or readable text","aspect":"landscape"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"image_prompt": {"type": "string", "description": "完整画面描述提示词"},
+					"image_prompt": {"type": "string", "description": "英文画面描述提示词,须按### Scene/### Subject/### Environment/### Lighting/### Camera/### Negative prompts分段模板撰写(无内容的段落可省略),具体要求见工具说明"},
 					"aspect": {
 						"type": "string",
 						"enum": ["landscape", "portrait", "square"],

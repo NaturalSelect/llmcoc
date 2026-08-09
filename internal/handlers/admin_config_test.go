@@ -513,3 +513,32 @@ func TestAdminUpdateAgent_TranslatorDefaultParams(t *testing.T) {
 		t.Error("is_active should be true")
 	}
 }
+
+func TestAdminUpdateAgent_ImageViaChatRoundTrip(t *testing.T) {
+	initTestDB(t)
+	r := adminConfigRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/admin/config/agents/painter", map[string]any{
+		"model_name":     "gpt-image-1",
+		"image_via_chat": true,
+		"is_active":      true,
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	t.Logf("PUT response: %s", w.Body.String())
+
+	var cfg models.AgentConfig
+	models.DB.Where("role = ?", "painter").First(&cfg)
+	if !cfg.ImageViaChat {
+		t.Fatalf("DB: ImageViaChat = false, want true after PUT")
+	}
+
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, jsonReq("GET", "/admin/config/agents", nil))
+	t.Logf("GET response: %s", w2.Body.String())
+	if w2.Code != http.StatusOK {
+		t.Fatalf("GET want 200, got %d", w2.Code)
+	}
+}
