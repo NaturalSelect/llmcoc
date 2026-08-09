@@ -22,6 +22,7 @@ const defaultReasoningEffort = "high"
 
 type openAIProvider struct {
 	client      *openai.Client
+	apiKey      string
 	model       string
 	maxTokens   int
 	temperature float32
@@ -29,9 +30,12 @@ type openAIProvider struct {
 	disableTemperature bool
 	reasoningEffort    string
 	baseURL            string
+	// imageViaChat 为 true 时 GenerateImage 改走 /chat/completions 而非 /images/generations，
+	// 用于只能通过 Chat 接口调用的画图模型/中转网关。
+	imageViaChat bool
 }
 
-func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string) *openAIProvider {
+func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, imageViaChat bool) *openAIProvider {
 	cfg := openai.DefaultConfig(apiKey)
 	if baseURL != "" {
 		cfg.BaseURL = baseURL
@@ -48,12 +52,14 @@ func newOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature
 	}
 	return &openAIProvider{
 		client:             openai.NewClientWithConfig(cfg),
+		apiKey:             apiKey,
 		model:              model,
 		maxTokens:          maxTokens,
 		temperature:        temperature,
 		disableTemperature: disableTemperature,
 		reasoningEffort:    reasoningEffort,
 		baseURL:            baseURL,
+		imageViaChat:       imageViaChat,
 	}
 }
 
@@ -431,6 +437,10 @@ func (p *openAIProvider) generateImage(ctx context.Context, prompt string, opts 
 	model := strings.TrimSpace(p.model)
 	if model == "" {
 		return "", "", errors.New("image model is empty")
+	}
+
+	if p.imageViaChat {
+		return p.generateImageViaChat(ctx, model, prompt)
 	}
 
 	resp, err := p.client.CreateImage(ctx, openai.ImageRequest{

@@ -223,6 +223,7 @@ window.COC.admin = {
                                 max_tokens: d.max_tokens,
                                 temperature: d.temperature,
                                 disable_temperature: d.disable_temperature || false,
+                                image_via_chat: d.image_via_chat || false,
                                 thinking_level: d.thinking_level || '',
                                 system_prompt: '',
                                 is_active: d.is_active !== undefined ? d.is_active : true,
@@ -368,7 +369,10 @@ window.COC.admin = {
                         this.agentPingLoading = loadingKey;
                         try {
                             const payload = { model_name: modelName, role };
-                            if (isPainter) payload.mode = 'image';
+                            if (isPainter) {
+                                payload.mode = 'image';
+                                payload.image_via_chat = ag.image_via_chat || false;
+                            }
                             const r = await this.api('POST', '/api/admin/config/providers/' + providerID + '/ping', payload);
                             if (isPainter) {
                                 this.showToast(`Painter 图片模型连通正常，延迟 ${r.latency_ms} ms`);
@@ -390,6 +394,7 @@ window.COC.admin = {
                                 max_tokens: ag.max_tokens,
                                 temperature: ag.temperature,
                                 disable_temperature: ag.disable_temperature || false,
+                                image_via_chat: ag.image_via_chat || false,
                                 system_prompt: ag.system_prompt,
                                 thinking_level: ag.thinking_level || '',
                                 is_active: ag.is_active,

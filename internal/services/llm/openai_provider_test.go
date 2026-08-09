@@ -59,7 +59,7 @@ func newFakeSSEProvider(t *testing.T, chunks []openai.ChatCompletionStreamRespon
 	}))
 	t.Cleanup(srv.Close)
 	// NOTE: model 名不能落在 go-openai 的 legacy completion 模型禁用名单里，用一个普通占位名即可。
-	return newOpenAIProvider("test-key", srv.URL, "test-model", 0, 0, false, "")
+	return newOpenAIProvider("test-key", srv.URL, "test-model", 0, 0, false, "", false)
 }
 
 // TestChatWithTools_FragmentedArguments 验证同一 index 的 arguments 分片按顺序追加拼接，

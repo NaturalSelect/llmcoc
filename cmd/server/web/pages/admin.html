@@ -158,6 +158,12 @@
                                         class="accent-amber-600" />
                                     <span>关闭 Temperature（不支持温度参数的模型，如 o1/o3）</span>
                                 </label>
+                                <label x-show="ag.role === 'painter'"
+                                    class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer mb-2.5 font-ui">
+                                    <input type="checkbox" x-model="ag.image_via_chat"
+                                        class="accent-amber-600" />
+                                    <span>画图走 Chat 接口（部分画图模型/中转网关只支持 /chat/completions 调用）</span>
+                                </label>
                             </div>
                             <div class="mb-2.5">
                                 <label class="text-xs text-amber-800 mb-1 block font-ui">System
