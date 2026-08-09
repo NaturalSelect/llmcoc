@@ -564,6 +564,121 @@ select.inp option {
     animation: fadeUp 0.18s ease-out;
 }
 
+/* ── Image preview (lightbox) ───────────────────────────────── */
+.image-preview-backdrop {
+    padding: 0;
+    cursor: zoom-out;
+}
+
+.image-preview-img {
+    max-width: 92vw;
+    max-height: 85vh;
+    object-fit: contain;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: zoom-in;
+    animation: fadeUp 0.15s ease-out;
+}
+
+.image-preview-img.is-zoomed {
+    cursor: grab;
+}
+
+.image-preview-close {
+    position: fixed;
+    top: 14px;
+    right: 16px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    font-size: 1.1rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.image-preview-close:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.image-preview-toolbar {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(20, 18, 16, 0.85);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: 8px 12px;
+}
+
+.image-preview-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    font-size: 1.05rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-preview-btn:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.image-preview-reset {
+    width: auto;
+    padding: 0 10px;
+    font-size: 0.78rem;
+    font-family: var(--font-mono);
+}
+
+.image-preview-scale {
+    min-width: 3ch;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+}
+
+@media (max-width: 640px) {
+    .image-preview-img {
+        max-width: 96vw;
+        max-height: 78vh;
+    }
+
+    .image-preview-toolbar {
+        bottom: 14px;
+        gap: 8px;
+        padding: 6px 10px;
+    }
+
+    .image-preview-btn {
+        width: 38px;
+        height: 38px;
+    }
+
+    .image-preview-close {
+        top: 10px;
+        right: 10px;
+        width: 38px;
+        height: 38px;
+    }
+}
+
 /* ── Misc ────────────────────────────────────────────────── */
 @keyframes fadeUp {
     from {

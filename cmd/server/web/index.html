@@ -605,8 +605,8 @@
                                                     <div class="mt-3 grid gap-2">
                                                         <template x-for="(img, idx) in msg.images" :key="idx">
                                                             <img :src="img" alt="KP生成的场景图" loading="lazy"
-                                                                decoding="async"
-                                                                class="rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20">
+                                                                decoding="async" @click="openImagePreview(img)"
+                                                                class="rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20 cursor-zoom-in hover:opacity-90 transition-opacity">
                                                         </template>
                                                     </div>
                                                 </template>
@@ -647,7 +647,8 @@
                                     <div x-show="imageBuffer && imageBuffer.length" class="mt-3 grid gap-2">
                                         <template x-for="(img, idx) in imageBuffer" :key="idx">
                                             <img :src="img" alt="KP生成的场景图" loading="lazy" decoding="async"
-                                                class="rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20">
+                                                @click="openImagePreview(img)"
+                                                class="rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20 cursor-zoom-in hover:opacity-90 transition-opacity">
                                         </template>
                                     </div>
                                 </div>
@@ -2206,6 +2207,26 @@
                         x-text="confirmState.confirmText"></button>
                 </div>
             </div>
+        </div>
+
+        <!-- Image preview modal（点击图片放大查看，支持滚轮/双指缩放与拖动平移） -->
+        <div x-show="modal === 'imagePreview'" class="backdrop image-preview-backdrop" style="z-index:70"
+            @click="closeImagePreview()" @keydown.escape.window="closeImagePreview()">
+            <button @click.stop="closeImagePreview()" class="image-preview-close" aria-label="关闭预览">✕</button>
+            <div class="image-preview-toolbar" @click.stop="null">
+                <button @click="previewZoomBy(-0.5)" class="image-preview-btn" aria-label="缩小">−</button>
+                <span class="image-preview-scale" x-text="Math.round(preview.scale * 100) + '%'"></span>
+                <button @click="previewZoomBy(0.5)" class="image-preview-btn" aria-label="放大">＋</button>
+                <button x-show="preview.scale !== 1" @click="previewReset()"
+                    class="image-preview-btn image-preview-reset" aria-label="重置缩放">1:1</button>
+            </div>
+            <img :src="preview.src" alt="图片预览" draggable="false" class="image-preview-img"
+                :class="preview.scale > 1 ? 'is-zoomed' : ''"
+                :style="'transform: translate(' + preview.tx + 'px,' + preview.ty + 'px) scale(' + preview.scale + ')'"
+                @click.stop="null" @dblclick.stop="previewToggleZoom()" @wheel.stop.prevent="previewWheel($event)"
+                @touchstart.stop.passive="onPreviewTouchStart($event)"
+                @touchmove.stop.prevent="onPreviewTouchMove($event)" @touchend.stop="onPreviewTouchEnd($event)"
+                @touchcancel.stop="onPreviewTouchEnd($event)" @mousedown.stop="onPreviewMouseDown($event)" />
         </div>
 
         <!-- ══════════════════════════════════════════════════════════════ SCRIPT -->

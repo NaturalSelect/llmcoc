@@ -212,6 +212,11 @@ window.COC.core = function() {
                     // ── Confirm dialog（自定义确认框，替代原生 confirm/prompt） ───────────
                     confirmState: { message: '', confirmText: '确认', danger: false, withInput: false, inputValue: '', inputPlaceholder: '', resolve: null },
 
+                    // ── Image preview（点击图片放大预览，支持鼠标滚轮/触摸双指缩放与拖动平移） ─
+                    preview: { src: '', scale: 1, tx: 0, ty: 0 },
+                    _previewDrag: null,
+                    _previewPinch: null,
+
                     // ══════════════════════════════════════════════════════════════════════
                     // Init
                     // ══════════════════════════════════════════════════════════════════════
@@ -369,6 +374,81 @@ window.COC.core = function() {
                         this.modal = null;
                         this.confirmState = { message: '', confirmText: '确认', danger: false, withInput: false, inputValue: '', inputPlaceholder: '', resolve: null };
                         if (r) r(ok ? (st.withInput ? st.inputValue : true) : (st.withInput ? null : false));
+                    },
+                    // ── Image preview ────────────────────────────────────────────────────
+                    openImagePreview(src) {
+                        if (!src) return;
+                        this.preview = { src, scale: 1, tx: 0, ty: 0 };
+                        this.modal = 'imagePreview';
+                    },
+                    closeImagePreview() {
+                        if (this.modal !== 'imagePreview') return;
+                        this.modal = null;
+                        this.preview = { src: '', scale: 1, tx: 0, ty: 0 };
+                        this._previewDrag = null;
+                        this._previewPinch = null;
+                    },
+                    previewZoomBy(delta) {
+                        const next = Math.min(4, Math.max(1, +(this.preview.scale + delta).toFixed(2)));
+                        this.preview.scale = next;
+                        if (next === 1) { this.preview.tx = 0; this.preview.ty = 0; }
+                    },
+                    previewReset() {
+                        this.preview.scale = 1;
+                        this.preview.tx = 0;
+                        this.preview.ty = 0;
+                    },
+                    previewToggleZoom() {
+                        if (this.preview.scale > 1) this.previewReset();
+                        else this.preview.scale = 2.5;
+                    },
+                    previewWheel(e) {
+                        this.previewZoomBy(e.deltaY < 0 ? 0.25 : -0.25);
+                    },
+                    _touchDist(touches) {
+                        const dx = touches[0].clientX - touches[1].clientX;
+                        const dy = touches[0].clientY - touches[1].clientY;
+                        return Math.hypot(dx, dy);
+                    },
+                    onPreviewTouchStart(e) {
+                        const t = e.touches;
+                        if (t.length === 2) {
+                            this._previewPinch = { dist: this._touchDist(t), scale: this.preview.scale };
+                            this._previewDrag = null;
+                        } else if (t.length === 1 && this.preview.scale > 1) {
+                            this._previewDrag = { startX: t[0].clientX, startY: t[0].clientY, startTx: this.preview.tx, startTy: this.preview.ty };
+                        }
+                    },
+                    onPreviewTouchMove(e) {
+                        const t = e.touches;
+                        if (t.length === 2 && this._previewPinch) {
+                            const ratio = this._touchDist(t) / this._previewPinch.dist;
+                            const next = Math.min(4, Math.max(1, this._previewPinch.scale * ratio));
+                            this.preview.scale = next;
+                            if (next === 1) { this.preview.tx = 0; this.preview.ty = 0; }
+                        } else if (t.length === 1 && this._previewDrag) {
+                            this.preview.tx = this._previewDrag.startTx + (t[0].clientX - this._previewDrag.startX);
+                            this.preview.ty = this._previewDrag.startTy + (t[0].clientY - this._previewDrag.startY);
+                        }
+                    },
+                    onPreviewTouchEnd(e) {
+                        if (e.touches.length < 2) this._previewPinch = null;
+                        if (e.touches.length < 1) this._previewDrag = null;
+                    },
+                    onPreviewMouseDown(e) {
+                        if (this.preview.scale <= 1) return;
+                        e.preventDefault();
+                        const start = { x: e.clientX, y: e.clientY, tx: this.preview.tx, ty: this.preview.ty };
+                        const onMove = (ev) => {
+                            this.preview.tx = start.tx + (ev.clientX - start.x);
+                            this.preview.ty = start.ty + (ev.clientY - start.y);
+                        };
+                        const onUp = () => {
+                            document.removeEventListener('mousemove', onMove);
+                            document.removeEventListener('mouseup', onUp);
+                        };
+                        document.addEventListener('mousemove', onMove);
+                        document.addEventListener('mouseup', onUp);
                     },
                     async api(method, path, body) {
                         const opts = {
