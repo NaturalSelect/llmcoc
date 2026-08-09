@@ -91,6 +91,10 @@ func seedDefaultSiteSettings() {
 		"max_character_drafts":       "3",
 		// NOTE: 全局 NSFW 总开关（区别于房间级 enable_nsfw）；默认允许，保持升级前后行为一致。
 		"allow_nsfw": "true",
+		// NOTE: 全局 NSFW 配图开关；仅管理员可读写(走 /api/admin/config/settings)。
+		// 控制 generate_image 工具里被标记为 nsfw=true 的调用是否放行，与文字层面的
+		// enable_nsfw/allow_nsfw 相互独立。默认允许，保持升级前后行为一致。
+		"allow_nsfw_images": "true",
 		// NOTE: 默认平衡调整规则，与 models.DefaultBalanceRules 保持同一来源；
 		// 已有该 key（含空字符串）时绝不覆盖。
 		"balance_rules": DefaultBalanceRules,

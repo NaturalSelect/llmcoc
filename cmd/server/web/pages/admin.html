@@ -630,6 +630,19 @@
                                 :class="siteSettings.allow_nsfw ? 'translate-x-6' : ''"></span>
                         </button>
                     </div>
+                    <div class="flex items-center justify-between mt-4 pt-4 border-t border-base">
+                        <div>
+                            <span class="text-sm font-ui block">允许生成 NSFW 配图</span>
+                            <span class="text-xs text-amber-800 font-ui">关闭后 KP 标记为 NSFW 的配图请求会被直接拒绝，与上面的文字开关相互独立</span>
+                        </div>
+                        <button @click="toggleNSFWImagesSetting()"
+                            class="w-12 h-6 rounded-full relative transition-colors shrink-0 ml-3"
+                            :class="siteSettings.allow_nsfw_images ? 'bg-amber-700' : 'bg-gray-700'">
+                            <span
+                                class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform"
+                                :class="siteSettings.allow_nsfw_images ? 'translate-x-6' : ''"></span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Coin cost settings -->

@@ -20,6 +20,12 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 	}
 	aspect := normalizeImageAspect(call.Aspect)
 
+	// NOTE: nsfw=true 的配图请求受管理员全局开关控制,与会话级 enable_nsfw(文字层面)相互独立。
+	if call.NSFW && strings.TrimSpace(models.GetSiteSetting("allow_nsfw_images", "true")) != "true" {
+		debugf("tool", "session=%d generate_image rejected: nsfw images disabled by admin prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
+		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation rejected: NSFW image generation is disabled by admin"}}
+	}
+
 	handle, ok := actx.Handles[models.AgentRolePainter]
 	if !ok || !handle.isEnabled() {
 		debugf("tool", "session=%d generate_image unavailable: painter disabled prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))

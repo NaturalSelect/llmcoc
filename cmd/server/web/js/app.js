@@ -188,6 +188,7 @@ window.COC.core = function() {
                     siteSettings: {
                         require_invite_code: false,
                         allow_nsfw: true,
+                        allow_nsfw_images: true,
                         initial_coins: 600,
                         initial_card_slots: 3,
                         regenerate_appearance_cost: 100,

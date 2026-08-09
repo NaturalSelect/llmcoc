@@ -435,6 +435,7 @@ window.COC.admin = {
                         settings.forEach(s => map[s.key] = s.value);
                         this.siteSettings.require_invite_code = map.require_invite_code === 'true';
                         this.siteSettings.allow_nsfw = map.allow_nsfw !== 'false';
+                        this.siteSettings.allow_nsfw_images = map.allow_nsfw_images !== 'false';
                         this.siteSettings.initial_coins = parseInt(map.initial_coins) || 600;
                         this.siteSettings.initial_card_slots = parseInt(map.initial_card_slots) || 3;
                         this.siteSettings.regenerate_appearance_cost = parseInt(map.regenerate_appearance_cost) || 100;
@@ -470,6 +471,14 @@ window.COC.admin = {
                         try {
                             await this.api('PUT', '/api/admin/config/settings/allow_nsfw', { value: newVal });
                             this.siteSettings.allow_nsfw = newVal === 'true';
+                            this.showToast('设置已更新');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+                    async toggleNSFWImagesSetting() {
+                        const newVal = this.siteSettings.allow_nsfw_images ? 'false' : 'true';
+                        try {
+                            await this.api('PUT', '/api/admin/config/settings/allow_nsfw_images', { value: newVal });
+                            this.siteSettings.allow_nsfw_images = newVal === 'true';
                             this.showToast('设置已更新');
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
