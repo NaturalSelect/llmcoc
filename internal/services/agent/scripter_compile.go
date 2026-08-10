@@ -38,7 +38,7 @@ func compilerSystemPrompt() string {
 - name：取故事文档标题；若文档未给出明确标题，从文档内具体名词（地名/物件/日期/一句当地话）提炼一个像人类作者起的标题，不用"低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒"等滥用词
 - content.setting：取自故事文档的表层情境原文或忠实改写，必须保留其中嵌入的具体年月日（如"1923年10月15日"）；该字段同时作为模组对外展示的简介
 - content.intro：取自故事文档中调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步
-- content.horror_mode / content.invest_focus / content.tone_tags：必须逐字等于<diversity_constraints>中的对应值，不得自行替换
+- content.invest_focus / content.tone_tags：必须逐字等于<diversity_constraints>中的对应值，不得自行替换
 - content.mythos_anchor：必须逐字等于<mythos_anchor>输入
 - content.scenes：通读全文，识别出所有调查员会实际走到的地方（无论它是否有独立小标题、无论按什么顺序出现），每处编译为一个scene；scene.id为snake_case英文标识；description要把该地点在文中散落的全部信息合并写全——进门能直接看见和感知到什么、深入查探能发现什么以及需要什么检定、这里可能发生什么危险、从这儿能通往哪些地方；triggers默认["available_from_start"]，仅当文中叙述明确表示需要先获得某个发现或完成某个行动才会来到此处时，才使用条件触发
 - content.npcs：通读全文，识别出所有有名有姓、调查员可能接触到的人物（他们通常介绍在其所在地点的段落里，而不是集中成名单），每位编译为一个npc；description要把该人物在文中散落的信息合并写全——他的身份与营生、他想要什么、他正在做什么、他瞒着或不愿说的事、他的标志性小细节、他与其他人的关系；文中若明确写出他隐瞒或保留了某些信息，description须把这一点写明；stats按COC7规则书惯例给出合理属性值（含SAN、HP、MP），文中已给出数值表时直接采用；attitude取自文中写明或可直接判断的初始态度；skills按该人物的职业/角色身份给出3-6项最相关的技能及数值（COC7标准范围，普通人类技能值通常15-75）；spells仅文中明确写明会施法的人物才填写，普通人类留空数组
@@ -83,7 +83,6 @@ const compilerSchemaTemplate = `{
     "system_prompt": "string：KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相与mythos_anchor必要性 + 施动者细化设定（邪教/施法者/神话生物的全部维度，不得压缩为一句话）",
     "setting": "string：优先照抄表层情境原句，压缩只删不改写；必须保留文档中嵌入的具体年月日；同时作为模组简介展示",
     "tone_tags": ["必须逐字等于<diversity_constraints>.tone_tags"],
-    "horror_mode": "必须逐字等于<diversity_constraints>.horror_mode",
     "invest_focus": "必须逐字等于<diversity_constraints>.invest_focus",
     "intro": "string：优先照抄表层情境原句，压缩只删不改写；调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步",
     "game_start_slot": "int：0-47，每槽30分钟；从文档嵌入的时刻推算，未写明时取16",

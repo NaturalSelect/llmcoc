@@ -238,7 +238,7 @@
                             <div class="flex items-center gap-3 p-2 rounded panel-inset">
                                 <div class="flex-1 min-w-0">
                                     <p class="text-sm text-amber-200 truncate font-ui" x-text="s.name"></p>
-                                    <p class="text-[11px] text-amber-900 mt-0.5 font-ui" x-text="(s.difficulty||'normal') + ' · ' + (s.min_players||1) + '-' + (s.max_players||4) + '人' + (s.author ? ' · ' + s.author : '')">
+                                    <p class="text-[11px] text-amber-900 mt-0.5 font-ui" x-text="difficultyLabel(s.difficulty) + ' · ' + (s.min_players||1) + '-' + (s.max_players||4) + '人' + (s.author ? ' · ' + s.author : '')">
                                     </p>
                                 </div>
                                 <button @click="viewScenario(s)" class="btn btn-ghost text-xs shrink-0">查看</button>
@@ -332,12 +332,12 @@
                         <div>
                             <label class="block text-xs text-amber-700 mb-1 font-ui">难度等级</label>
                             <select x-model="scenarioGenForm.difficulty" class="inp">
-                                <option value="easy">easy（入门，容错高）</option>
-                                <option value="normal">normal（标准）</option>
-                                <option value="hard">hard（高压，高风险）</option>
+                                <option value="easy">easy（简单 · 下级神话生物 / 邪教徒 / 人类巫师）</option>
+                                <option value="normal">normal（普通 · 上级神话生物 / 多种下级生物）</option>
+                                <option value="hard">hard（困难 · 大型邪教 / 旧日苏醒 / 旧日间接干涉）</option>
                             </select>
                             <p class="text-[11px] text-amber-900 mt-1 font-ui">
-                                影响线索密度、危机强度与生存压力。
+                                决定威胁主体的规模与神话位阶，同时影响调查节奏与代价。
                             </p>
                         </div>
                         <div>

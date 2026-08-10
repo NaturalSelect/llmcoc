@@ -183,7 +183,6 @@ type ScenarioContent struct {
 	SystemPrompt       string          `json:"system_prompt"`
 	Setting            string          `json:"setting"`
 	ToneTags           []string        `json:"tone_tags"`
-	HorrorMode         string          `json:"horror_mode"`
 	InvestFocus        string          `json:"invest_focus"`
 	Intro              string          `json:"intro"`
 	GameStartSlot      int             `json:"game_start_slot"`               // 开局时间槽位(0-47),每槽30分钟

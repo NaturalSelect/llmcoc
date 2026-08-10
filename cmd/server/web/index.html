@@ -1375,7 +1375,7 @@
                                     <p class="text-sm text-amber-200 font-ui"
                                         x-text="s.name + ' (' + s.min_players + '-' + s.max_players + '人)'"></p>
                                     <p class="text-[11px] text-amber-800 mt-0.5 font-ui"
-                                        x-text="s.difficulty || 'normal'">
+                                        x-text="difficultyLabel(s.difficulty)">
                                     </p>
                                 </div>
                             </template>
@@ -1392,7 +1392,7 @@
                         </div>
                     </div>
                     <div x-show="selectedScenario" class="text-xs text-amber-700 px-1 font-ui">
-                        难度：<span x-text="selectedScenario?.difficulty || 'normal'"></span>
+                        难度：<span x-text="difficultyLabel(selectedScenario?.difficulty)"></span>
                     </div>
                     <div x-show="selectedScenario" x-text="selectedScenario?.content?.setting"
                         class="text-xs text-amber-600 px-1 leading-relaxed border-l-2 border-amber-900/50 pl-2 font-ui"
@@ -1431,7 +1431,7 @@
                         <h2 class="text-xl font-bold text-amber-100" x-text="viewingScenario?.name"></h2>
                         <div class="flex flex-wrap gap-1.5 mt-1.5 items-center">
                             <span class="text-[11px] px-1.5 py-0.5 rounded tag-dim font-ui"
-                                x-text="viewingScenario?.difficulty || 'normal'"></span>
+                                x-text="difficultyLabel(viewingScenario?.difficulty)"></span>
                             <span class="text-[11px] text-amber-700 font-ui"
                                 x-text="(viewingScenario?.min_players||1) + '-' + (viewingScenario?.max_players||4) + '人'"></span>
                             <template x-if="viewingScenario?.author">

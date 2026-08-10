@@ -68,7 +68,6 @@ const oneshotDraftJSONSchema = `{
 				"system_prompt": {"type": "string", "description": "KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相与mythos_anchor必要性 + 施动者细化设定，不得压缩为一句话"},
 				"setting": {"type": "string", "description": "表层情境原文或忠实改写，必须保留文档中嵌入的具体年月日"},
 				"tone_tags": {"type": "array", "items": {"type": "string"}, "description": "必须逐字等于diversity_constraints.tone_tags"},
-				"horror_mode": {"type": "string", "description": "必须逐字等于diversity_constraints.horror_mode"},
 				"invest_focus": {"type": "string", "description": "必须逐字等于diversity_constraints.invest_focus"},
 				"intro": {"type": "string", "description": "调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步"},
 				"game_start_slot": {"type": "integer", "description": "0-47，每槽30分钟；未写明具体时刻时取16"},
@@ -201,7 +200,7 @@ const oneshotDraftJSONSchema = `{
 					}
 				}
 			},
-			"required": ["system_prompt", "setting", "tone_tags", "horror_mode", "invest_focus", "intro", "game_start_slot", "map_description", "playthrough_outline", "mythos_anchor", "scenes", "npcs", "clues", "endings"]
+			"required": ["system_prompt", "setting", "tone_tags", "invest_focus", "intro", "game_start_slot", "map_description", "playthrough_outline", "mythos_anchor", "scenes", "npcs", "clues", "endings"]
 		}
 	},
 	"required": ["reward_concept", "name", "author", "tags", "min_players", "max_players", "difficulty", "content"]
@@ -253,7 +252,6 @@ var oneshotResultExample = OneshotResult{
 		SystemPrompt:   "你是KP，管理会自行推进的局势，不主动把调查员引向答案；按时间推进后果，按信息分层给出线索。【KP独有】内部真相：失窃的书是Douglas生前的旧藏，他死后被镇北墓地的食尸鬼群落接纳、保留了生前记忆，如今潜回取回属于自己的东西。核心恐惧不在于怪物的样貌，而在于「死亡并非终点、逝者以非人的方式继续存在」这一认知对调查员世界观的不可逆冲击。",
 		Setting:        "1924年9月3日，初秋的傍晚，你们受镇图书馆之邀前来协助整理一批新捐赠的藏书。馆内灯光温暖，管理员热情地引你们入座，窗外街区安静而寻常。",
 		ToneTags:       []string{"forbidden-knowledge", "cosmic-dread", "occult-noir"},
-		HorrorMode:     "forbidden_knowledge",
 		InvestFocus:    "artifact_theft",
 		Intro:          "你们受镇图书馆之邀，来帮着整理清点一批新到的捐赠藏书。大厅里，馆员正在前台核对今天的编目单，先去打个招呼也好；门口的访客登记簿还空着一栏，顺手签上名字；再往里走走，认认书架区和档案室的门各朝哪边开。",
 		GameStartSlot:  16,
@@ -403,7 +401,7 @@ func repairSystemPrompt() string {
 修复纪律：
 - 逐条针对must_fix修复到位；除修复所需外，不改动任何其他字段、人名、地名、数值、情节或文风
 - 不得更换已确认的神话元素（content.mythos_anchor）——它已由规则书翻译确认
-- 不得改变<diversity_constraints>中horror_mode/invest_focus/tone_tags的值
+- 不得改变<diversity_constraints>中invest_focus/tone_tags的值
 - 仅当must_fix涉及神话元素本身时，才调用translate_anchor核验；否则不要调用
 - 修复神话本质说明时，引用的法术/物品/怪物/机制名必须与must_fix或<previous_draft>中已确认的规则书元素一致，不得新造
 - setting/intro必须保持冷开场：中性日常，不剧透真相、不渲染恐怖
@@ -427,7 +425,6 @@ func repairSystemPrompt() string {
     "system_prompt": "KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相 + mythos_anchor必要性 + 施动者细化设定",
     "setting": "表层日常局势，须保留已嵌入的具体年月日",
     "tone_tags": ["必须等于diversity_constraints.tone_tags"],
-    "horror_mode": "必须等于diversity_constraints.horror_mode",
     "invest_focus": "必须等于diversity_constraints.invest_focus",
     "intro": "入场情境；不列出、不推荐、不暗示任何具体行动或下一步",
     "game_start_slot": 16,
@@ -800,17 +797,13 @@ func oneshotNormalizeAnchorKey(s string) string {
 func diversityConstraintsBlock(constraints ScripterConstraints) string {
 	var sb strings.Builder
 	sb.WriteString("<diversity_constraints>\n")
-	sb.WriteString(fmt.Sprintf("horror_mode: %s\n", constraints.HorrorMode))
-	if label := horrorModeChineseLabels[constraints.HorrorMode]; label != "" {
-		sb.WriteString(fmt.Sprintf("horror_mode_zh: %s\n", label))
-	}
 	sb.WriteString(fmt.Sprintf("invest_focus: %s\n", constraints.InvestFocus))
 	if label := investFocusChineseLabels[constraints.InvestFocus]; label != "" {
 		sb.WriteString(fmt.Sprintf("invest_focus_zh: %s\n", label))
 	}
 	sb.WriteString(fmt.Sprintf("tone_tags: %s\n", strings.Join(constraints.ToneTags, ", ")))
-	sb.WriteString("硬约束：本次submit.draft.content.horror_mode、invest_focus、tone_tags必须逐字使用上述值，不得自行替换、翻译、改名或省略。\n")
-	sb.WriteString("含义：horror_mode指明神话力量介入人类世界的主要机制（非恐怖风格、美学或具体怪物）；invest_focus决定调查入口；tone_tags只约束文风、节奏、场面选择和NPC反应风格，不覆盖剧本事实、规则书裁定或工具结果。\n")
+	sb.WriteString("硬约束：本次submit.draft.content.invest_focus、tone_tags必须逐字使用上述值，不得自行替换、翻译、改名或省略。\n")
+	sb.WriteString("含义：invest_focus决定调查入口（调查员从哪一类异常开始介入）；tone_tags只约束文风、节奏、场面选择和NPC反应风格，不覆盖剧本事实、规则书裁定或工具结果。神话力量以何种方式介入人类世界不在本块约束范围内，由创作阶段自行决定。\n")
 	sb.WriteString("</diversity_constraints>")
 	return sb.String()
 }
@@ -838,7 +831,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 <must_fix>
 %s
 </must_fix>
-请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的horror_mode/invest_focus/tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
+请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的invest_focus/tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
 		string(reqJSON), string(constraintsJSON),
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints, proseVoiceScopeCompile),
@@ -1086,12 +1079,6 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	if strings.TrimSpace(draft.Content.MapDescription) == "" {
 		draft.Content.MapDescription = "【文字地图】各调查地点是剧本状态节点，不是顺序关卡：入口连接所有可调查地点；地点之间可往返；时间推进时，各地点状态可能因派系行动而改变。"
 		log.Printf("[scripter:normalize] session=%s filled map_description", sessionID)
-	}
-	if strings.TrimSpace(constraints.HorrorMode) != "" {
-		if strings.TrimSpace(draft.Content.HorrorMode) != strings.TrimSpace(constraints.HorrorMode) {
-			log.Printf("[scripter:normalize] session=%s override horror_mode from=%q to=%q", sessionID, draft.Content.HorrorMode, constraints.HorrorMode)
-			draft.Content.HorrorMode = strings.TrimSpace(constraints.HorrorMode)
-		}
 	}
 	if strings.TrimSpace(constraints.InvestFocus) != "" {
 		if strings.TrimSpace(draft.Content.InvestFocus) != strings.TrimSpace(constraints.InvestFocus) {

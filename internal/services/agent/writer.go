@@ -238,7 +238,7 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 
 func buildWriterScenarioToneBlock(gctx GameContext) string {
 	content := gctx.Session.Scenario.Content.Data
-	if strings.TrimSpace(content.HorrorMode) == "" && strings.TrimSpace(content.InvestFocus) == "" && len(content.ToneTags) == 0 && strings.TrimSpace(content.Setting) == "" {
+	if strings.TrimSpace(content.InvestFocus) == "" && len(content.ToneTags) == 0 && strings.TrimSpace(content.Setting) == "" {
 		return ""
 	}
 	var sb strings.Builder
@@ -248,9 +248,6 @@ func buildWriterScenarioToneBlock(gctx GameContext) string {
 	}
 	if strings.TrimSpace(content.Setting) != "" {
 		sb.WriteString("setting_summary: " + truncateRunes(content.Setting, 300) + "\n")
-	}
-	if strings.TrimSpace(content.HorrorMode) != "" {
-		sb.WriteString("horror_mode: " + strings.TrimSpace(content.HorrorMode) + "\n")
 	}
 	if strings.TrimSpace(content.InvestFocus) != "" {
 		sb.WriteString("invest_focus: " + strings.TrimSpace(content.InvestFocus) + "\n")

@@ -71,18 +71,6 @@ var scriptEra = []string{
 	"1920s", "modern",
 }
 
-// NOTE: 8 种神话力量介入机制，替代原泛恐怖美学分类；每种描述神话如何进入人类世界，而非恐怖风格或具体怪物。
-var scripterHorrorModes = []string{
-	"cult_ritual",
-	"forbidden_knowledge",
-	"mythos_infiltration",
-	"bloodline_corruption",
-	"mythos_predation",
-	"sealed_awakening",
-	"dimensional_intrusion",
-	"sorcerous_usurpation",
-}
-
 var scripterInvestFocuses = []string{
 	"disappearance",
 	"bizarre_death",
@@ -92,18 +80,6 @@ var scripterInvestFocuses = []string{
 	"local_legend",
 	"sealed_location",
 	"identity_replacement",
-}
-
-// NOTE: 中文标签对应 8 种介入机制，描述神话力量进入人类世界的方式，而非恐怖美学或具体怪物。
-var horrorModeChineseLabels = map[string]string{
-	"cult_ritual":           "邪教仪式——崇拜者通过献祭、召唤、开门或转化仪式引入神话力量",
-	"forbidden_knowledge":   "禁忌知识——典籍、铭文、公式或梦中授知传播足以腐化理解者的真相",
-	"mythos_infiltration":   "异族渗透——非人种族通过伪装、替换、混血或代理人潜入人类社会",
-	"bloodline_corruption":  "血脉腐化——家族中的非人血统、祖先契约或遗传诅咒逐渐显现",
-	"mythos_predation":      "神话猎食——神话生物将人类视为食物、宿主、祭品或繁殖材料",
-	"sealed_awakening":      "封印苏醒——人为活动破坏古老封印，使沉睡的神话存在重新活动",
-	"dimensional_intrusion": "异界侵入——梦境、异维度或异常时空突破边界并侵蚀现实",
-	"sorcerous_usurpation":  "巫术夺舍——施法者借助附身、意识转移或身体窃取延续自身",
 }
 
 var investFocusChineseLabels = map[string]string{
@@ -536,7 +512,6 @@ type ScripterConstraints struct {
 	TargetLength    string   `json:"target_length"`
 	PlayerRange     string   `json:"player_range"`
 	Difficulty      string   `json:"difficulty"`
-	HorrorMode      string   `json:"horror_mode"`
 	InvestFocus     string   `json:"invest_focus"`
 	ToneTags        []string `json:"tone_tags"`
 	ProseVoice      string   `json:"prose_voice"` // NOTE: 玩家可见散文的作者声线，只影响文风不影响事实
@@ -558,9 +533,9 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 	// NOTE: 多样性组合改为纯随机挑选，不再让 AI 从围池内判断"最契合"——时代/主题等输入
 	// 在多次生成间几乎不变，这类判断任务会收敛到少数刻板组合，反而削弱多样性；契合题材交给
 	// 下游 Story Architect 在拿到约束后体现。
-	horrorMode, investFocus, toneTags := selectDiversityConstraints(r.req, sessionID)
-	log.Printf("[scripter] session=%s diversity horror_mode=%q invest_focus=%q tone_tags=%q",
-		sessionID, horrorMode, investFocus, strings.Join(toneTags, ","))
+	investFocus, toneTags := selectDiversityConstraints(r.req, sessionID)
+	log.Printf("[scripter] session=%s diversity invest_focus=%q tone_tags=%q",
+		sessionID, investFocus, strings.Join(toneTags, ","))
 
 	proseVoice := scripterProseVoices[rand.Intn(len(scripterProseVoices))]
 	log.Printf("[scripter] session=%s prose_voice=%q", sessionID, proseVoice)
@@ -572,7 +547,6 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		TargetLength:    r.req.TargetLength,
 		PlayerRange:     fmt.Sprintf("%d-%d", r.req.MinPlayers, r.req.MaxPlayers),
 		Difficulty:      r.req.Difficulty,
-		HorrorMode:      horrorMode,
 		InvestFocus:     investFocus,
 		ToneTags:        toneTags,
 		ProseVoice:      proseVoice,
@@ -700,119 +674,63 @@ func fallbackGeographyFlavor(req ScenarioCreationRequest) []string {
 	return flavor
 }
 
-// buildDiversityCandidates 返回去重后的候选围池；DB为空时返回全笛卡尔积。
-// 两层去重：1) 精确组合（mode+focus）不与最近8条重复；2) 边际值——mode或focus单独
-// 不与最近2条重复，避免"只换focus不换mode"这类可感知的重复。任一层耗尽都逐级退化，
-// 保证候选池不为空。
-func buildDiversityCandidates(req ScenarioCreationRequest, sessionID string) []diversityCombo {
-	recent := loadRecentDiversityCombos(8, sessionID) // 按 created_at DESC 排列，recent[0] 最新
+// buildInvestFocusCandidates 返回去重后的调查入口候选池：排除最近3次用过的invest_focus，
+// 候选池恒不小于5（8种候选-3种排除），永不排空，无需二级退化。
+func buildInvestFocusCandidates(sessionID string) []string {
+	recent := loadRecentInvestFocuses(3, sessionID) // 按 created_at DESC 排列，recent[0] 最新
 
-	comboSet := map[string]bool{}
-	for _, combo := range recent {
-		if key := diversityComboKey(combo.HorrorMode, combo.InvestFocus); key != "" {
-			comboSet[key] = true
-		}
-	}
-	marginalModeSet := map[string]bool{}
-	marginalFocusSet := map[string]bool{}
-	for i, combo := range recent {
-		if i >= 2 {
-			break
-		}
-		if combo.HorrorMode != "" {
-			marginalModeSet[combo.HorrorMode] = true
-		}
-		if combo.InvestFocus != "" {
-			marginalFocusSet[combo.InvestFocus] = true
-		}
+	excluded := map[string]bool{}
+	for _, focus := range recent {
+		excluded[focus] = true
 	}
 
-	// 全笛卡尔积
-	candidates := make([]diversityCombo, 0, len(scripterHorrorModes)*len(scripterInvestFocuses))
-	for _, mode := range scripterHorrorModes {
-		for _, focus := range scripterInvestFocuses {
-			candidates = append(candidates, diversityCombo{HorrorMode: mode, InvestFocus: focus})
+	candidates := make([]string, 0, len(scripterInvestFocuses))
+	for _, focus := range scripterInvestFocuses {
+		if !excluded[focus] {
+			candidates = append(candidates, focus)
 		}
 	}
-
-	// 第一层：精确组合 + 边际值双重过滤
-	strict := make([]diversityCombo, 0, len(candidates))
-	for _, c := range candidates {
-		if comboSet[diversityComboKey(c.HorrorMode, c.InvestFocus)] {
-			continue
-		}
-		if marginalModeSet[c.HorrorMode] || marginalFocusSet[c.InvestFocus] {
-			continue
-		}
-		strict = append(strict, c)
+	if len(candidates) > 0 {
+		return candidates
 	}
-	if len(strict) > 0 {
-		return strict
-	}
-
-	// 第二层：退化为只排除精确组合
-	available := make([]diversityCombo, 0, len(candidates))
-	for _, c := range candidates {
-		if !comboSet[diversityComboKey(c.HorrorMode, c.InvestFocus)] {
-			available = append(available, c)
-		}
-	}
-	if len(available) > 0 {
-		return available
-	}
-	// 围池耗尽时退化为全笛卡尔积
-	return candidates
+	// 理论上不会发生（8种候选排除最多3种），兜底返回全集。
+	return append([]string(nil), scripterInvestFocuses...)
 }
 
-func selectDiversityConstraints(req ScenarioCreationRequest, sessionID string) (horrorMode string, investFocus string, toneTags []string) {
-	candidates := buildDiversityCandidates(req, sessionID)
+func selectDiversityConstraints(req ScenarioCreationRequest, sessionID string) (investFocus string, toneTags []string) {
+	candidates := buildInvestFocusCandidates(sessionID)
 	if len(candidates) == 0 {
-		// NOTE: 围池意外耗尽时的最终兜底；forbidden_knowledge 与 disappearance 均属候选池。
-		return "forbidden_knowledge", "disappearance", toneTagsForDiversity("forbidden_knowledge", "disappearance", req)
+		// NOTE: 候选池意外耗尽时的最终兜底。
+		return "disappearance", toneTagsForDiversity("disappearance", req)
 	}
 	chosen := candidates[rand.Intn(len(candidates))]
-	return chosen.HorrorMode, chosen.InvestFocus, toneTagsForDiversity(chosen.HorrorMode, chosen.InvestFocus, req)
+	return chosen, toneTagsForDiversity(chosen, req)
 }
 
-type diversityCombo struct {
-	HorrorMode  string
-	InvestFocus string
-}
-
-func diversityComboKey(horrorMode, investFocus string) string {
-	horrorMode = strings.TrimSpace(horrorMode)
-	investFocus = strings.TrimSpace(investFocus)
-	if horrorMode == "" || investFocus == "" {
-		return ""
-	}
-	return horrorMode + "|" + investFocus
-}
-
-func loadRecentDiversityCombos(limit int, sessionID string) []diversityCombo {
+func loadRecentInvestFocuses(limit int, sessionID string) []string {
 	if limit <= 0 || models.DB == nil {
 		return nil
 	}
 	var scenarios []models.Scenario
 	if err := models.DB.Order("created_at DESC").Limit(limit).Find(&scenarios).Error; err != nil {
-		log.Printf("[scripter] session=%s load diversity combos failed: %v", sessionID, err)
+		log.Printf("[scripter] session=%s load recent invest_focus failed: %v", sessionID, err)
 		return nil
 	}
-	combos := make([]diversityCombo, 0, len(scenarios))
+	focuses := make([]string, 0, len(scenarios))
 	for i := range scenarios {
 		if err := scenarios[i].DecodeData(); err != nil {
 			continue
 		}
-		mode := strings.TrimSpace(scenarios[i].Content.Data.HorrorMode)
 		focus := strings.TrimSpace(scenarios[i].Content.Data.InvestFocus)
-		if mode == "" || focus == "" {
+		if focus == "" {
 			continue
 		}
-		combos = append(combos, diversityCombo{HorrorMode: mode, InvestFocus: focus})
+		focuses = append(focuses, focus)
 	}
-	return combos
+	return focuses
 }
 
-func toneTagsForDiversity(horrorMode, investFocus string, req ScenarioCreationRequest) []string {
+func toneTagsForDiversity(investFocus string, req ScenarioCreationRequest) []string {
 	tags := make([]string, 0, 4)
 	addTag := func(tag string) {
 		tag = strings.TrimSpace(tag)
@@ -829,34 +747,16 @@ func toneTagsForDiversity(horrorMode, investFocus string, req ScenarioCreationRe
 		}
 	}
 
-	// NOTE: 按神话介入机制映射文风标签；旧 mode 字符串落入 default 分支，历史数据可读但不产生新候选。
-	switch horrorMode {
-	case "cult_ritual":
-		addTag("ritualistic")
-		addTag("social-dread")
-	case "forbidden_knowledge":
-		addTag("forbidden-knowledge")
-		addTag("cosmic-dread")
-	case "mythos_infiltration":
-		addTag("paranoia")
-		addTag("social-dread")
-	case "bloodline_corruption":
-		addTag("gothic")
-		addTag("body-horror")
-	case "mythos_predation":
-		addTag("visceral")
-		addTag("survival-dread")
-	case "sealed_awakening":
-		addTag("ancient-ruins")
-		addTag("cosmic-dread")
-	case "dimensional_intrusion":
-		addTag("reality-distortion")
-		addTag("cosmic-dread")
-	case "sorcerous_usurpation":
-		addTag("occult")
-		addTag("loss-of-agency")
-	default:
+	// NOTE: 按剧本难度映射威胁规模标签；难度取代原horror_mode成为tone_tags的主要来源之一。
+	switch strings.ToLower(strings.TrimSpace(req.Difficulty)) {
+	case "easy":
+		addTag("intimate-scale")
 		addTag("slow-burn")
+	case "hard":
+		addTag("large-scale-threat")
+		addTag("cosmic-dread")
+	default: // normal
+		addTag("escalating-dread")
 	}
 
 	switch investFocus {
@@ -1199,26 +1099,45 @@ func applyGuardrailsBase(draft *ScenarioDraft, req ScenarioCreationRequest, auth
 // ---------------------------------------------------------------------------
 
 func difficultySpec(difficulty string) string {
+	var scale, pacing string
 	switch strings.ToLower(strings.TrimSpace(difficulty)) {
 	case "easy":
-		return "- 局势推进缓慢，调查员有充足的时间反应，晚一步也来得及\n" +
+		scale = "【威胁规模】\n" +
+			"- 幕后主体只有一个，且限于以下三类之一：规则书中属于\"独立种族（下级）\"或\"仆从种族（下级）\"的神话生物；没有跨地域组织的人类邪教小团体（至多一处据点、十余人）；单独行动的人类巫师或术士\n" +
+			"- 不得出现旧日支配者本体或其直接注意力，也不得出现上级神话生物。这类存在至多以传闻、典籍记载或远方阴影的形式被提及，不在本剧本的时间线内行动"
+		pacing = "【调查节奏】\n" +
+			"- 局势推进缓慢，调查员有充足的时间反应，晚一步也来得及\n" +
 			"- 多数发现是能直接查证的真实观察；会把人带偏的解释至多一处，稍加追问就能察觉不对\n" +
 			"- 想让人开口或让局面松动，通常谈一次、过一个基础检定或翻一份公开记录就够，不需要付出代价\n" +
 			"- 当地人对调查员多为中立到谨慎，好好说话能说得通\n" +
 			"- 调查员可以走到最接近神话真相的地方，不必被迫付出理智代价"
 	case "hard":
-		return "- 局势推进很快，能插手的窗口很窄，错过一次就产生无法挽回的后果\n" +
+		scale = "【威胁规模】\n" +
+			"- 幕后是一场已经超出单一地点的危机，从以下三类中选一类作为主干：\n" +
+			"  · 大型邪教：有层级、经费、多个据点与社会掩护的组织，能动用世俗力量（警方、报社、议员、商会）对抗调查员\n" +
+			"  · 旧日苏醒：某位旧日支配者或古神正从沉睡或封印中苏醒，苏醒进程在剧本时间线内实际推进；调查员的行动只能延缓、转移或改变它的代价，不可能\"消灭\"它\n" +
+			"  · 旧日的间接干涉：某位旧日支配者通过眷属、代理人、梦境、赐福或它在现实中的投影施加影响，本体不亲自登场\n" +
+			"- 上级神话生物、施法者与邪教高层在这一档中作为爪牙或中层出现是合适的，但它们不是最终答案"
+		pacing = "【调查节奏】\n" +
+			"- 局势推进很快，能插手的窗口很窄，错过一次就产生无法挽回的后果\n" +
 			"- 表面上能直接查证的东西很少：多数关键信息要靠几处发现拼起来才看得懂；会把人带偏的解释有两到三处，且与真相高度相似，推翻它们需要真正的推理\n" +
 			"- 想让局面松动几乎都要付出代价：对抗检定、道德上的取舍，或者暴露自己在查什么\n" +
 			"- 当地人多数敌对或有意隐瞒，说服他们要付出实质代价\n" +
 			"- 接近神话真相必然伴随显著的理智损失或人际代价"
 	default: // normal
-		return "- 局势按天推进，有几个明确的插手窗口，错过就要多绕一段路\n" +
+		scale = "【威胁规模】\n" +
+			"- 幕后主体为以下两类之一：一只规则书中属于\"独立种族（上级）\"或\"仆从种族（上级）\"的神话生物；或多只下级神话生物——同一种群成群行动，或不同种群之间存在协作、寄生或竞争关系\n" +
+			"- 人类邪教或巫师可以作为它的代理人、供养者或看守者出现，但不是威胁的根源\n" +
+			"- 旧日支配者仍不直接介入，至多是这一主体所侍奉或所畏惧的背景存在"
+		pacing = "【调查节奏】\n" +
+			"- 局势按天推进，有几个明确的插手窗口，错过就要多绕一段路\n" +
 			"- 发现有真有假：能直接查证的略多，需要拼起来才看得懂的次之，会把人带偏的有一到两处，其错误解释听上去相当合理\n" +
 			"- 有些门一推就开，有些要过检定或先换到别的东西才推得开\n" +
 			"- 当地人态度混杂，有人肯说，有人回避\n" +
 			"- 想接近神话真相得主动去查，并且要付出一些代价"
 	}
+	return scale + "\n" + pacing + "\n" +
+		"- 威胁主体的神话位阶（下级/上级/眷属/旧日支配者）必须通过 translate_anchor 或 ask_lawyer 向规则书核验，不得凭印象判断；禁止自行发明规则书中不存在的神名、种族名或能力"
 }
 
 func lengthSpec(targetLength string) string {

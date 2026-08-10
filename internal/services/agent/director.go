@@ -273,11 +273,8 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	if content.Setting != "" {
 		scenarioSB.WriteString("<setting>" + content.Setting + "</setting>\n")
 	}
-	if strings.TrimSpace(content.HorrorMode) != "" || strings.TrimSpace(content.InvestFocus) != "" || len(content.ToneTags) > 0 {
+	if strings.TrimSpace(content.InvestFocus) != "" || len(content.ToneTags) > 0 {
 		scenarioSB.WriteString("<tone_profile>\n")
-		if strings.TrimSpace(content.HorrorMode) != "" {
-			scenarioSB.WriteString("horror_mode: " + strings.TrimSpace(content.HorrorMode) + "\n")
-		}
 		if strings.TrimSpace(content.InvestFocus) != "" {
 			scenarioSB.WriteString("invest_focus: " + strings.TrimSpace(content.InvestFocus) + "\n")
 		}
