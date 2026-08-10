@@ -17,7 +17,6 @@ import (
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/imagestore"
-	"github.com/llmcoc/server/internal/services/llm"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -416,16 +415,6 @@ func StartSession(c *gin.Context) {
 	}
 
 	models.DB.Model(&session).Update("status", models.SessionStatusPlaying)
-
-	// Insert KP system prompt as system message
-	systemPrompt := llm.BuildKPSystemPrompt(&session.Scenario, session.Players)
-	sysMsg := models.Message{
-		SessionID: session.ID,
-		Role:      models.MessageRoleSystem,
-		Content:   systemPrompt,
-		Username:  "系统",
-	}
-	models.DB.Create(&sysMsg)
 
 	// KP intro message
 	intro := session.Scenario.Content.Data.Setting + "\nKP:" + session.Scenario.Content.Data.Intro
