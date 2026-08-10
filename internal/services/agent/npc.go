@@ -46,9 +46,8 @@ const npcDefaultPrompt = `<system role="npc_agent" game="coc7" lang="zh-CN">
 	</identity>
 	<output format="json_only" no_markdown="true" no_reasoning="true">
 {
-  "npc_name": "NPC名称",
-  "action": "NPC的行动描述(50字以内)",
-  "dialogue": "NPC说的话,若NPC沉默则为空字符串"
+  "action": "你的行动",
+  "dialogue": "你的台词,若沉默则为空字符串"
 }
 	</output>
 	{{NSFW_NPC_CONFIG}}
