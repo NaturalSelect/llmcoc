@@ -602,7 +602,7 @@ type AgentConfig struct {
 	// 字段中以 data URL 形式返回（仅 Painter 角色使用）。
 	ImageViaChat       bool               `gorm:"default:false" json:"image_via_chat"`
 	SystemPrompt       string             `gorm:"type:text" json:"system_prompt"`
-	ThinkingLevel      string             `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh
+	ThinkingLevel      string             `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh|max
 	IsActive           bool               `gorm:"default:true" json:"is_active"`
 	CreatedAt          time.Time          `json:"created_at"`
 	UpdatedAt          time.Time          `json:"updated_at"`
