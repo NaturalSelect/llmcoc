@@ -184,7 +184,7 @@ func validateStoryDocument(story StoryOutput) []string {
 		issues = append(issues, msg)
 	}
 	if strings.TrimSpace(story.MythosAnchor) == "" {
-		issues = append(issues, "尚未确认mythos_anchor：须先调用translate_anchor并得到status为found的结论，再输出故事文档")
+		issues = append(issues, "尚未确认mythos_anchor：须先调用translate_anchor并得到disabled=false的结论，再输出故事文档")
 	}
 	return issues
 }
@@ -197,7 +197,7 @@ func validateStoryDocument(story StoryOutput) []string {
 // generate_npc_name/get_writing_example，完成后模型直接以不带 tool_calls 的一条
 // 普通回复输出完整故事文档正文——不封装成 submit_story 工具调用参数，因为故事文档
 // 本身就是自由文本，没有需要封装的结构。mythos_anchor 从 translate_anchor 最近一次
-// status="found"的结论中自动记录，不要求模型在结尾重复提交。
+// disabled=false的结论中自动记录，不要求模型在结尾重复提交。
 // initialAnchor 非空时作为锚点初始值（repair场景传入已确认的旧锚点，允许修复措辞
 // 问题时不必重新调用translate_anchor）。
 func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string, initialAnchor string) (StoryOutput, error) {
@@ -470,4 +470,99 @@ func runStoryQAReview(ctx context.Context, room *scripterRoom, storyDoc string) 
 		issues = issues[:8]
 	}
 	return issues
+}
+
+// ---------------------------------------------------------------------------
+// Story logic review — reviews whether the plot itself holds together
+// (motive/means/timeline/fair-play/solvability), independent of the author's
+// own self-check in storySystemPrompt and of the post-compile logic_review
+// in scripter_oneshot.go (which trusts the story document as ground truth
+// and only checks compiled-data fidelity + clue reachability).
+// ---------------------------------------------------------------------------
+
+// storyLogicReviewSystemPrompt 是独立于作者本人的怀疑读者视角：只审"这个故事本身能否
+// 成立"，不与 storyQAReviewSystemPrompt（文字质感）或编译后 logicReviewSystemPrompt
+// （结构数据的事实忠实度与线索可达性）重复。
+func storyLogicReviewSystemPrompt() string {
+	return `<role>剧本情节逻辑审查员</role>
+<task>以怀疑读者的视角重新审视这份COC剧本故事文档，只审"这个虚构故事本身站不站得住脚"，输出必须整改的问题清单。不审文字质感/AI腔（人写化审查员的职责），也不审编译后结构化字段是否与文本一一对应（那是编译后逻辑审查员的职责）。故事文档由作者一人写成，其中涉及的怪物能力、法术效果、检定难度、仪式细节等具体COC7规则书事实完全可能被作者记错或编造，你需要独立核实，不能假定写作时已经核验过。</task>
+<checklist>
+1. 动机自洽：关键人物尤其是幕后主体的行为，是否始终服务于他在文中被赋予的目标和处境？有没有某个举动只是"为了让情节按作者需要的方向发生"，而不是这个角色处在那个位置真的会做的事？
+2. 能力与机会匹配：某人做成某件事时，他是否具备与之匹配的能力、资源、时间窗口？有没有普通人被迫做出远超现实能力的事，或反派突然表现出文中其他地方从未支持过的能力？其中涉及规则书能力/效果的部分，用ask_lawyer核实是否确有其事
+3. 时间线自洽：文中出现的日期、时长、事件先后顺序、路程与体力消耗，能否连成一条不矛盾的时间线？有没有结果早于原因、或两件事同时占用同一个人却互不冲突这类硬伤？
+4. 推理本身是否讲理：抛开可达性不谈，单看每一步推理——从证据到结论是否常识可信，还是需要读者凭空跳跃、脑补文中没写出来的信息？
+5. 误导线索的公平性：文档设计规范要求误导线索必须真实可查、有人诚恳给出错误解释、真相揭晓后原观察与解释仍部分成立；核实成稿是否真的做到，而不是只信作者自称做到
+6. 反派计划经不经得起推敲：反派的计划本身是否合理、是否是达成其目标的正常做法？有没有反派什么都不做反而对他更有利的自我拆台？计划里是否有明显只为了给调查员留破绽而故意降智的环节？
+7. 结局因果：每个结局是否真的由调查员的行动/选择决定，而不是无论玩家做什么都会走到同一个结局？结局描述的后果是否与前文设定一致，没有凭空冒出的矛盾？
+8. 内部一致性：同一人物、地点、组织的设定（年龄、身份、人际关系、地理特征等）前后是否一致，没有自相矛盾？
+9. 可解性：调查员是否理论上存在至少一条完整、可被发现的证据链通向真相？真相有没有依赖某个几乎不可能被调查员获得的信息，导致除非守密人硬塞否则本质上破不了案？
+10. 规则书事实核验：文中出现的怪物能力/弱点、法术效果与施法条件、检定难度、道具与仪式细节等具体规则书事实性描述，只要你不能百分百确定是否符合COC7规则书，就调用ask_lawyer核实，不要凭记忆或常识猜测；核实后与文中描述冲突的，报告具体冲突点
+</checklist>
+<tools>
+- ask_lawyer：向COC7规则书专家提出一个具体规则书问题，用于核实故事文档中出现的怪物能力、法术效果、检定难度、仪式细节等是否符合COC7规则书事实；只在文中出现具体规则书事实性描述且你不确定时调用，可多次调用，不确定就问，不要凭空判断
+</tools>
+<scope>
+- 只报告真正会让守密人跑团时卡住、让案件不公平或不可解的问题；不要吹毛求疵到写作偏好或个人品味层面
+- 一个问题只报一次，不要为同一处硬伤既报"动机"又报"内部一致性"
+- 无法在<story_document>中找到依据的猜测不算数——只报文档里确实写出来、确实矛盾或确实缺失的地方
+- 核实完规则书事实或确认无需核验后，调用report_issues提交最终问题清单
+</scope>`
+}
+
+// runStoryLogicReview 返回情节逻辑整改清单；storyDoc为空或审查不可用/失败时返回nil（非致命，跳过即可）。
+// 与 runStoryQAReview/runLogicReview 不同：本审查允许在report_issues之前多次调用
+// ask_lawyer核实故事文档中的COC7规则书事实（怪物能力、法术效果等作者可能记错的细节）。
+func runStoryLogicReview(ctx context.Context, room *scripterRoom, storyDoc string) []string {
+	if room == nil || room.qa.provider == nil || strings.TrimSpace(storyDoc) == "" {
+		return nil
+	}
+	sessionID := scripterSessionID(ctx, room)
+	userMsg := fmt.Sprintf(`<story_document>%s</story_document>
+请按checklist审查以上故事文档的情节逻辑；涉及具体规则书事实且你不确定时先调用ask_lawyer核实，再通过report_issues工具提交问题清单。`,
+		storyDoc)
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: room.qa.systemPrompt(storyLogicReviewSystemPrompt())},
+		{Role: "user", Content: userMsg},
+	}
+
+	tools := []scripterTool{
+		askLawyerTool("向COC7规则书专家提出一个具体规则书问题，用于核实故事文档中出现的怪物能力、法术效果、检定难度、仪式细节等是否符合规则书事实；可多次调用"),
+		reportIssuesTool("提交本次审查发现的问题清单；没有问题时提交空数组"),
+	}
+	var issues []string
+	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
+		switch call.Name {
+		case toolNameAskLawyer:
+			var args askLawyerArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: ask_lawyer参数不是合法JSON，请重新调用。"}
+			}
+			return toolOutcome{result: storyAskLawyer(ctx, room, args.Question)}
+		case toolNameReportIssues:
+			var args qaReviewResult
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: report_issues参数不是合法JSON，请重新调用。"}
+			}
+			issues = args.Issues
+			return toolOutcome{result: "已收到问题清单。", done: true}
+		default:
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许ask_lawyer/report_issues，不允许%s。", call.Name)}
+		}
+	}
+	const maxRounds = 16
+	if err := runScripterToolLoop(ctx, room, room.qa, "story_logic_review", msgs, tools, maxRounds, dispatch); err != nil {
+		log.Printf("[scripter:story_logic_review] session=%s review failed: %v (skipping)", sessionID, err)
+		return nil
+	}
+
+	result := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		if issue = strings.TrimSpace(issue); issue != "" {
+			result = append(result, "[故事逻辑] "+issue)
+		}
+	}
+	if len(result) > 8 {
+		result = result[:8]
+	}
+	return result
 }

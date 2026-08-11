@@ -364,6 +364,30 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		r.emitProgress("qa_humanize", "done", "人写化审查通过")
 	}
 
+	// 故事逻辑审查：QA 审故事本身能否成立（动机/能力机会/时间线/误导公平性/反派计划/结局因果/
+	// 内部一致性/可解性），与人写化审查（只审文字质感）、编译后逻辑审查（只审编译忠实度与线索
+	// 可达性，且信任故事文档为真相源）都不重复；问题清单走一轮故事文档修复，失败不阻塞生成
+	log.Printf("[scripter] session=%s stage=story_logic_review start", sessionID)
+	r.emitProgress("story_logic_review", "start", "QA 故事逻辑审查…")
+	if logicIssues := runStoryLogicReview(ctx, r, story.Document); len(logicIssues) > 0 {
+		log.Printf("[scripter] session=%s stage=story_logic_review issues=%d %v", sessionID, len(logicIssues), logicIssues)
+		r.emitProgress("story_logic_review", "start", fmt.Sprintf("故事逻辑审查发现 %d 个问题，执行修复", len(logicIssues)))
+		logScripterArtifact("Story Logic Review Issues", sessionID, logicIssues)
+		repaired, repairErr := repairStoryDocument(ctx, r, constraints, story, logicIssues)
+		if repairErr != nil {
+			log.Printf("[scripter] session=%s stage=story_logic_review repair failed: %v (keeping story)", sessionID, repairErr)
+			r.emitProgress("story_logic_review", "error", "故事逻辑修复失败（保留当前故事文档）")
+		} else {
+			story = repaired
+			iterations++
+			log.Printf("[scripter] session=%s stage=story_logic_review done doc_len=%d", sessionID, len([]rune(story.Document)))
+			r.emitProgress("story_logic_review", "done", "故事逻辑修复完成")
+		}
+	} else {
+		log.Printf("[scripter] session=%s stage=story_logic_review no issues", sessionID)
+		r.emitProgress("story_logic_review", "done", "故事逻辑审查通过")
+	}
+
 	draft, compileIters, err := r.compileAndFinalize(ctx, story, constraints)
 	if err != nil {
 		return ScenarioCreationOutput{}, err
