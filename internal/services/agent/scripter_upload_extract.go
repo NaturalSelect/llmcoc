@@ -24,7 +24,7 @@ func extractAnchorSystemPrompt() string {
 <task>
 <story_document>是一份已经写定的完整COC7剧本故事文档，其中的真相、线索、人物、场景与结局均已确定。你的任务只是阅读理解，绝不改写、删减、重组或补充文档中的任何文字。
 
-你需要识别文档中真正承载恐怖内核的神话/超自然元素（旧日支配者本体/眷属/神话物品/神话知识等），通过 translate_anchor 工具将其翻译并校验为COC7规则书中的正式名称；若首选元素在禁用列表中，继续 translate_anchor 寻找文档中其他可用的元素。
+你需要识别文档中真正承载恐怖内核的神话/超自然元素（旧日支配者本体/眷属/神话物品/神话知识等），通过 translate_anchor 工具将其翻译并校验为COC7规则书中的正式名称；translate_anchor返回disabled=true时（规则书里没有可靠匹配，或候选命中了最近使用元素禁用列表），改在文档中寻找其他承载恐怖内核的元素重新查。
 
 完成识别后调用 submit_extraction 提交结果。不需要复述或改写原文档。
 </task>
@@ -79,7 +79,7 @@ func extractAnchorFromDocument(ctx context.Context, room *scripterRoom, document
 				return toolOutcome{reject: "SYSTEM REJECT: submit_extraction参数不是合法JSON，请重新调用。"}
 			}
 			if strings.TrimSpace(args.MythosAnchor) == "" {
-				return toolOutcome{reject: "SYSTEM REJECT: mythos_anchor不能为空，请先确认translate_anchor结果为found再提交。"}
+				return toolOutcome{reject: "SYSTEM REJECT: mythos_anchor不能为空，请先确认translate_anchor返回disabled=false再提交。"}
 			}
 			submitted = &StoryOutput{MythosAnchor: args.MythosAnchor}
 			return toolOutcome{result: "已收到，提取结果已提交。", done: true}

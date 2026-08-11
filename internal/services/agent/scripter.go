@@ -265,17 +265,18 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 		req.TargetLength = "short"
 	} else {
 		req.TargetLength = strings.ToLower(strings.TrimSpace(req.TargetLength))
-		if req.TargetLength != "short" && req.TargetLength != "medium" && req.TargetLength != "long" {
+		if req.TargetLength != "short" && req.TargetLength != "mid" && req.TargetLength != "long" {
 			req.TargetLength = "short"
 		}
 	}
+	// 三档统一按剧情内可游玩时间跨度标注：short 1-3天、mid 3-7天、long 7-30天。
 	switch req.TargetLength {
 	case "short":
 		req.TargetLength = "剧本时间长度: 1-3d"
-	case "medium":
+	case "mid":
 		req.TargetLength = "剧本时间长度: 3-7d"
 	case "long":
-		req.TargetLength = "剧本时间长度: 1week-1month"
+		req.TargetLength = "剧本时间长度: 7-30d"
 	}
 	if strings.TrimSpace(req.Era) == "" {
 		req.Era = defaultScripterEra()
@@ -1142,13 +1143,13 @@ func difficultySpec(difficulty string) string {
 
 func lengthSpec(targetLength string) string {
 	switch strings.ToLower(strings.TrimSpace(targetLength)) {
-	case "long", "剧本时间长度: 1week-1month":
+	case "long", "剧本时间长度: 7-30d":
 		return "- 地点：6-8处调查员会实际走到的地方\n" +
 			"- 发现：10-12处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
 			"- 人物：7-10位有名有姓的人，分属不同立场，各有各在做的事\n" +
 			"- 收场：4-8种，每种都有名字，其中至少一种是失败或灾难\n" +
 			"- 篇幅：约7000-12000字。事件时间线给出5-12个带具体日期的节点；给守密人的运营建议与不同职业的入场差异（2-5种）尽量写全；若剧情需要持续追踪某个进度，也写清它怎么走"
-	case "medium", "剧本时间长度: 3-7d":
+	case "mid", "剧本时间长度: 3-7d":
 		return "- 地点：4-6处调查员会实际走到的地方\n" +
 			"- 发现：7-10处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
 			"- 人物：4-7位有名有姓的人，分属不同立场或利益\n" +
@@ -1422,6 +1423,29 @@ func splitScenarioTags(raw string) []string {
 // ---------------------------------------------------------------------------
 // Format helpers
 // ---------------------------------------------------------------------------
+
+// scenarioRequestBlock 把生成请求与地理约束渲染成自然语言，取代直接
+// json.Marshal(ScenarioCreationRequest/ScripterConstraints) 塞进用户消息的做法——
+// 故事阶段的模型被要求只输出散文而不是JSON，输入端也不该是结构化JSON。
+// difficulty/target_length 已由 difficultySpec/lengthSpec 展开，
+// invest_focus/tone_tags 已由 diversityConstraintsBlock 展开，这里不重复。
+func scenarioRequestBlock(req ScenarioCreationRequest, constraints ScripterConstraints) string {
+	var sb strings.Builder
+	sb.WriteString("<scenario_request>\n")
+	sb.WriteString(fmt.Sprintf("剧本名称: %s\n", firstNonEmpty(req.Name, "(未指定，由你根据故事内容拟定)")))
+	sb.WriteString(fmt.Sprintf("主题: %s\n", firstNonEmpty(req.Theme, "(未指定，自行发挥)")))
+	sb.WriteString(fmt.Sprintf("时代: %s\n", req.Era))
+	sb.WriteString(fmt.Sprintf("玩家人数: %d-%d人\n", req.MinPlayers, req.MaxPlayers))
+	if len(constraints.GeographyFlavor) > 0 {
+		sb.WriteString(fmt.Sprintf("地理风味: %s\n", strings.Join(constraints.GeographyFlavor, " → ")))
+	}
+	sb.WriteString(fmt.Sprintf("生成批次标识（无实际含义，仅用于避免多份生成结果雷同）: %s\n", req.Salt))
+	sb.WriteString("</scenario_request>\n")
+	sb.WriteString("<brief>\n")
+	sb.WriteString(firstNonEmpty(req.Brief, "(用户未填写具体创作需求，自行构思)"))
+	sb.WriteString("\n</brief>")
+	return sb.String()
+}
 
 func formatMythosBlacklist(anchors []string) string {
 	if len(anchors) == 0 {

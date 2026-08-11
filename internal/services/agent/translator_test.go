@@ -157,7 +157,7 @@ func TestTranslatorProviderIsolation(t *testing.T) {
 		// NOTE: Round 1 → translator 先 ask_lawyer；Round 2 → translator respond
 		toolResponses: []llm.ToolChatResult{
 			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameAskLawyer, `{"question":"食尸鬼在COC7规则书中是否已收录？"}`)}},
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameRespond, `{"status":"found","selected_anchor":"食尸鬼（Ghoul）","rulebook_basis":"COC7规则书已收录","usable_interpretation":"死者变形后保留记忆继续行动","must_avoid":"不得自创属性","fallback":"无","blacklist_check":"未命中"}`)}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameRespond, `{"selected_anchor":"食尸鬼（Ghoul）","content":"COC7规则书已收录：死者变形后保留记忆继续行动；不得自创属性"}`)}},
 		},
 	}
 
@@ -173,8 +173,8 @@ func TestTranslatorProviderIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runOneshotTranslatorAgent failed: %v", err)
 	}
-	if conclusion == nil || strings.TrimSpace(conclusion.Status) == "" {
-		t.Fatal("conclusion should not be nil or empty-status")
+	if conclusion == nil || strings.TrimSpace(conclusion.SelectedAnchor) == "" {
+		t.Fatal("conclusion should not be nil or empty selected_anchor")
 	}
 	if !strings.Contains(conclusion.SelectedAnchor, "食尸鬼") {
 		t.Errorf("selected_anchor should contain 食尸鬼, got: %q", conclusion.SelectedAnchor)

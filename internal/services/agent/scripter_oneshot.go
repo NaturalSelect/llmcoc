@@ -577,7 +577,7 @@ func runOneshotSubmitPhase(ctx context.Context, room *scripterRoom, msgs []llm.C
 // executeOneshotTranslateAnchor 由 oneshot architect repair 和 story architect
 // 两个循环共用；concept/reason 直接来自各自 translate_anchor 工具调用的解码参数。
 // 除了给模型看的结果文本外，还把结构化结论一并返回：story architect 用它在
-// status="found"时自动记下 selected_anchor，不再要求模型在提交故事时重复填写。
+// disabled=false时自动记下 selected_anchor，不再要求模型在提交故事时重复填写。
 func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, concept, reason string) (string, *translatorConclusion) {
 	sessionID := scripterSessionID(ctx, room)
 	concept = strings.TrimSpace(concept)
@@ -589,19 +589,19 @@ func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, conc
 	conclusion, err := runOneshotTranslatorAgent(ctx, room, concept, reason)
 	if err != nil {
 		log.Printf("[scripter:oneshot_translate_anchor] session=%s error concept=%q err=%v", sessionID, truncateRunes(concept, 200), err)
-		return fmt.Sprintf(`<translate_anchor_result concept=%q status="translator_error">%s</translate_anchor_result>`, concept, err.Error()), nil
+		return fmt.Sprintf(`<translate_anchor_result concept=%q disabled="true">
+content: 查询失败（%s），可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。
+</translate_anchor_result>`, concept, err.Error()), nil
 	}
-	if conclusion == nil || strings.TrimSpace(conclusion.Status) == "" {
-		return fmt.Sprintf(`<translate_anchor_result concept=%q status="no_result">translator未返回可用结论；可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。</translate_anchor_result>`, concept), nil
+	if conclusion == nil || strings.TrimSpace(conclusion.SelectedAnchor) == "" {
+		return fmt.Sprintf(`<translate_anchor_result concept=%q disabled="true">
+content: translator未返回可用结论，可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。
+</translate_anchor_result>`, concept), nil
 	}
-	return fmt.Sprintf(`<translate_anchor_result concept=%q status=%q>%s</translate_anchor_result>`, concept, conclusion.Status, conclusion.Text()), conclusion
-}
-
-// isTranslateAnchorFound 判断 translate_anchor 结果是否为成功匹配（status="found"）。
-// 结果文本由 translatorConclusion 结构化字段渲染，状态在包装属性上，直接判属性即可；
-// no_result / translator_error / uncertain / 空结果均视为未找到。
-func isTranslateAnchorFound(result string) bool {
-	return strings.Contains(result, `status="found"`)
+	return fmt.Sprintf(`<translate_anchor_result concept=%q disabled="%t">
+selected_anchor: %s
+content: %s
+</translate_anchor_result>`, concept, conclusion.Disabled, conclusion.SelectedAnchor, conclusion.Content), conclusion
 }
 
 // ---------------------------------------------------------------------------
@@ -609,46 +609,32 @@ func isTranslateAnchorFound(result string) bool {
 // ---------------------------------------------------------------------------
 
 const oneshotTranslatorSystemPrompt = `<role>COC7规则书概念翻译专家</role>
-<task>收到一个创意概念，将它翻译为COC7规则书中最匹配、可在剧本中使用的具体元素（实体/典籍/法术/诅咒物品/机制）。通过 ask_lawyer 工具向规则书专家提问，依据裁定综合，最后用 respond 工具以结构化字段返回翻译结论。</task>
+<task>收到一个创意概念，将它翻译为COC7规则书中最匹配、可在剧本中使用的具体元素（实体/典籍/法术/诅咒物品/机制）。通过 ask_lawyer 工具向规则书专家提问，依据裁定综合，最后用 respond 工具提交结论。你只负责如实报告规则书里查到了什么；候选是否命中最近使用元素禁用列表、要不要为此重新查、能不能将就用，都交给上层自行判断，你不必为此反复重试。</task>
 <rules>
 - 第一轮必须至少调用一次ask_lawyer；不得凭常识或记忆直接respond。
-- 用户消息中的<recently_used_mythos_anchors>是硬性禁用列表；selected_anchor不得返回列表中的元素、别名或同源变体。
-- 如果规则书裁定显示最匹配候选属于禁用列表，必须继续ask_lawyer寻找替代，或返回uncertain/no_result并给出非禁用fallback。
-- ask_lawyer问题要具体，优先确认候选元素是否在规则书中存在、出处、核心机制和禁用边界。
-- 不把lawyer原文无筛选地倾倒给architect；必须总结成可执行的翻译结论。
+- 用户消息中的<recently_used_mythos_anchors>是最近已经用过的元素：查询候选时优先绕开它们；但如果规则书里最贴切的候选恰好在这份名单里，直接如实提交，在content中说明命中了这份名单，不必为了避开它而无限重试或勉强凑一个不贴切的候选。
+- ask_lawyer问题要具体，优先确认候选元素是否在规则书中存在、出处、核心机制和使用边界。
+- 不把lawyer原文无筛选地倾倒给architect；必须总结成可执行的结论。
 - 不得编造规则书不存在的正式名称、页码、数值或能力。
 - 法术不允许任何变体，必须完全符合规则书描述。
 - 除非概念本身明确要求法术/仪式是唯一能承载的机制，否则优先把创意概念翻译为实体锚点（神话生物/旧日支配者眷属，或施法的人类角色本身），不要翻译成脱离施动者的法术条目本身。
-- 若最终仍需要翻译为法术，必须在回复中提醒：该法术必须由一个具体的实体（人、神话生物等）施放，且该实体才是故事应锚定的真正核心，法术只是其手段而非谜团根源。
+- 若最终仍需要翻译为法术，必须在content中提醒：该法术必须由一个具体的实体（人、神话生物等）施放，且该实体才是故事应锚定的真正核心，法术只是其手段而非谜团根源。
 - 翻译的结果必须直接来自规则书裁定，不能是基于规则书裁定的二次创作。
 - 不可以是推导链条，无论其是否合理：必须直接引用规则书中的明确条文或裁定。
 - 但推理链条的每一步都必须在规则书中有明确依据，不能凭常识或记忆自创。
-- 如果找不到就直接返回没有，不要乱编。
+- 规则书里确实找不到贴切候选时，selected_anchor写无，在content中说明已尝试过什么方向、为什么都不合适，不要乱编凑数。
 </rules>`
 
 // translatorConclusion 是 translator respond 工具的结构化结论，
-// 字段与 respond 工具 schema 的属性一一对应，不再使用字符串内嵌 JSON。
+// 字段与 respond 工具 schema 的属性一一对应。translator 只负责如实报告事实
+// （查到了什么、为什么、有什么要注意的，合并写进 Content 一段连贯文字），
+// 不负责判断candidate是否命中禁用列表——Disabled 由代码在收到 respond 后
+// 依据禁用列表计算，不是LLM自报字段，因此不参与JSON解码（见下方dispatch）。
+// 是否重试、要不要换个概念，这类决策交给上层调用方（Story Architect等）。
 type translatorConclusion struct {
-	Status               string `json:"status"`
-	SelectedAnchor       string `json:"selected_anchor"`
-	RulebookBasis        string `json:"rulebook_basis"`
-	UsableInterpretation string `json:"usable_interpretation"`
-	MustAvoid            string `json:"must_avoid"`
-	Fallback             string `json:"fallback"`
-	BlacklistCheck       string `json:"blacklist_check"`
-}
-
-// Text 把结构化结论渲染为给 architect 阅读的结论文本。
-func (c *translatorConclusion) Text() string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "status: %s\n", c.Status)
-	fmt.Fprintf(&sb, "selected_anchor: %s\n", c.SelectedAnchor)
-	fmt.Fprintf(&sb, "rulebook_basis: %s\n", c.RulebookBasis)
-	fmt.Fprintf(&sb, "usable_interpretation: %s\n", c.UsableInterpretation)
-	fmt.Fprintf(&sb, "must_avoid: %s\n", c.MustAvoid)
-	fmt.Fprintf(&sb, "fallback: %s\n", c.Fallback)
-	fmt.Fprintf(&sb, "blacklist_check: %s", c.BlacklistCheck)
-	return sb.String()
+	SelectedAnchor string `json:"selected_anchor"`
+	Content        string `json:"content"`
+	Disabled       bool   `json:"-"`
 }
 
 // oneshotTranslatorRespondTool 是 translator 的 respond 工具定义（solo，终止本轮循环）。
@@ -661,15 +647,10 @@ func oneshotTranslatorRespondTool() scripterTool {
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"status": {"type": "string", "enum": ["found", "no_result", "uncertain"], "description": "翻译结论状态"},
-					"selected_anchor": {"type": "string", "description": "最匹配元素全称；无可靠匹配时写无"},
-					"rulebook_basis": {"type": "string", "description": "来源和依据摘要；若为推导链条，逐步写明每步的规则书依据"},
-					"usable_interpretation": {"type": "string", "description": "此元素如何承载原概念"},
-					"must_avoid": {"type": "string", "description": "必须避免的未核验数值、能力或误用"},
-					"fallback": {"type": "string", "description": "若status不是found，给architect的保守替代方向"},
-					"blacklist_check": {"type": "string", "description": "确认selected_anchor不在最近使用元素禁用列表中"}
+					"selected_anchor": {"type": "string", "description": "规则书中最匹配的元素全称；确实没有可靠匹配时写无"},
+					"content": {"type": "string", "description": "写给architect的完整结论，一段连贯文字：来源与依据、此元素如何承载原概念、必须避免的未核验数值/能力/误用；若selected_anchor为无或候选命中了最近使用元素禁用列表，说明原因并给出保守的替代方向"}
 				},
-				"required": ["status", "selected_anchor", "rulebook_basis", "usable_interpretation", "must_avoid", "fallback", "blacklist_check"]
+				"required": ["selected_anchor", "content"]
 			}`),
 		},
 	}
@@ -680,19 +661,18 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 	if room.translator.provider == nil {
 		return nil, fmt.Errorf("translator provider unavailable")
 	}
-	requestJSON, _ := json.Marshal(struct {
-		Concept string `json:"concept"`
-		Reason  string `json:"reason"`
-	}{Concept: concept, Reason: reason})
 
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.translator.systemPrompt(oneshotTranslatorSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf(`<translate_anchor_request>%s</translate_anchor_request>
+		{Role: "user", Content: fmt.Sprintf(`<translate_anchor_request>
+concept: %s
+reason: %s
+</translate_anchor_request>
 <recently_used_mythos_anchors>
 %s
 </recently_used_mythos_anchors>
-以上最近使用过的元素为硬性禁用列表：selected_anchor不得返回这些元素、同名别名、简称或明显同源变体；若最匹配候选命中禁用列表，必须继续查询替代候选或返回uncertain/no_result。`,
-			string(requestJSON), formatMythosBlacklist(room.mythosBlacklist))},
+以上是最近已经用过的元素：查询候选时优先绕开；如果规则书里最贴切的候选恰好在这份名单里，如实提交并在content中说明，不必为了避开它而无限重试。`,
+			concept, firstNonEmpty(reason, "(未说明)"), formatMythosBlacklist(room.mythosBlacklist))},
 	}
 
 	tools := []scripterTool{
@@ -720,13 +700,13 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 				return toolOutcome{reject: "SYSTEM REJECT: respond参数不是合法JSON，请重新调用。"}
 			}
-			if strings.TrimSpace(args.Status) == "" || strings.TrimSpace(args.SelectedAnchor) == "" {
-				return toolOutcome{reject: "SYSTEM REJECT: respond的status和selected_anchor字段不能为空。"}
+			if strings.TrimSpace(args.SelectedAnchor) == "" || strings.TrimSpace(args.Content) == "" {
+				return toolOutcome{reject: "SYSTEM REJECT: respond的selected_anchor和content字段不能为空。"}
 			}
-			if anchor := oneshotFindForbiddenAnchor(args.SelectedAnchor, room.mythosBlacklist); anchor != "" {
-				return toolOutcome{reject: fmt.Sprintf(
-					"SYSTEM REJECT: selected_anchor命中了最近使用元素禁用列表：%s。必须继续ask_lawyer寻找替代候选，或返回uncertain/no_result并给出非禁用fallback。", anchor)}
-			}
+			// NOTE: 是否命中禁用列表由代码判定，不要求LLM自报，也不因命中而拒绝重试——
+			// 判定结果随结论一起交给上层（Story Architect等）决定要不要换概念重查。
+			selected := strings.TrimSpace(args.SelectedAnchor)
+			args.Disabled = selected == "无" || oneshotFindForbiddenAnchor(selected, room.mythosBlacklist) != ""
 			conclusion = &args
 			return toolOutcome{result: "已收到，翻译结论已提交。", done: true}
 		default:
@@ -815,13 +795,10 @@ func diversityConstraintsBlock(constraints ScripterConstraints) string {
 
 func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, previous *ScenarioDraft, issues []string) (ScenarioDraft, error) {
 	sessionID := scripterSessionID(ctx, room)
-	reqJSON, _ := json.Marshal(room.req)
-	constraintsJSON, _ := json.Marshal(constraints)
 	prevJSON, _ := json.Marshal(previous)
 
 	userMsg := fmt.Sprintf(
-		`<request_json>%s</request_json>
-<constraints>%s</constraints>
+		`%s
 %s
 %s
 <previous_draft>%s</previous_draft>
@@ -832,7 +809,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 %s
 </must_fix>
 请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的invest_focus/tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
-		string(reqJSON), string(constraintsJSON),
+		scenarioRequestBlock(room.req, constraints),
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints, proseVoiceScopeCompile),
 		string(prevJSON),

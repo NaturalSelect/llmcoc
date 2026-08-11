@@ -68,10 +68,9 @@ func storySystemPrompt() string {
 【二、神话元素验证与取舍】
 通过 translate_anchor 工具将核心概念翻译为COC7规则书元素：
 - 必须先调用 translate_anchor 获得规则书裁定，后才能动笔写正文
-- status="found"只说明这个候选在规则书里确有依据、且不在禁用列表中，不代表它就是这个故事该用的那个；是否真正可用由你自己判断，translate_anchor不会替你把关，也不会主动帮你换
-- 出现以下任一情况就是不合适，必须换一个再查，不要将就着写：usable_interpretation要靠牵强解释才能对上你想要的效果；must_avoid把它能用的部分限制到几乎剩不下什么；它撑不起恐怖内核要锚定的那2条以上宇宙公理；换成任何其他同类元素都一样能讲这个故事，说明它只是能用，不是该用
+- translate_anchor只负责如实报告：它查到了什么（selected_anchor+content）、这个候选是否命中最近使用元素禁用列表（disabled）；它不会替你判断这个候选适不适合这个故事，也不会替你重试或换概念——要不要重试、换哪个概念、能不能将就用，都是你自己的决定
+- 出现以下任一情况就是不合适，必须换一个再查，不要将就着写：disabled=true（规则书里没有可靠匹配，或候选命中了禁用列表，具体原因看content）；content里的解读要靠牵强解释才能对上你想要的效果，或content提到的限制条件把它能用的部分削得几乎剩不下什么；它撑不起恐怖内核要锚定的那2条以上宇宙公理；换成任何其他同类元素都一样能讲这个故事，说明它只是能用，不是该用
 - 不要把"换一个"局限在同一个概念下的另一个候选——如果同一概念反复查都撑不起想要的效果，就换掉概念本身（例如从某个具体怪物改向人类堕落施法者，或换到另一个神话分支重新查），只要仍服务于brief与invest_focus
-- 若首选元素在禁用列表中，继续 translate_anchor 寻找替代
 - mythos_anchor 应优先支持调查、异化、理智侵蚀和氛围恐怖，而不是鼓励直接战斗解决问题
 - mythos_anchor 优先锚定在幕后那个主体本身；如果它在规则书中确实以法术/仪式条目呈现，才允许把该条目登记为 mythos_anchor，但成稿必须写清是谁在持有并施展它
 - 动笔前先问自己："换掉这个元素，我最初想讲的这个故事还成立吗？"如果换了也无所谓，说明它只是贴上去的标签，回 translate_anchor 换一个真正驱动情节的，不要等写完整篇才发现
@@ -222,7 +221,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
 			text, conclusion := executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)
-			if conclusion != nil && conclusion.Status == "found" && strings.TrimSpace(conclusion.SelectedAnchor) != "" {
+			if conclusion != nil && !conclusion.Disabled && strings.TrimSpace(conclusion.SelectedAnchor) != "" {
 				confirmedAnchor = strings.TrimSpace(conclusion.SelectedAnchor)
 				log.Printf("[scripter:story_loop] session=%s confirmed anchor=%q", sessionID, confirmedAnchor)
 			}
@@ -339,12 +338,10 @@ func executeGetWritingExample(ctx context.Context, room *scripterRoom) string {
 
 func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (StoryOutput, error) {
 	sessionID := scripterSessionID(ctx, room)
-	reqJSON, _ := json.Marshal(room.req)
-	constraintsJSON, _ := json.Marshal(constraints)
 
 	userMsg := fmt.Sprintf(
-		`<request_json>%s</request_json>
-<constraints>%s</constraints>
+		`
+%s
 %s
 %s
 <recently_used_mythos_anchors>
@@ -362,7 +359,7 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 %s
 </difficulty_spec>
 请设计并撰写完整的COC7剧本故事文档。`,
-		string(reqJSON), string(constraintsJSON),
+		scenarioRequestBlock(room.req, constraints),
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints, proseVoiceScopeStory),
 		formatMythosBlacklist(room.mythosBlacklist),
@@ -392,12 +389,9 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 
 func repairStoryDocument(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, previous StoryOutput, issues []string) (StoryOutput, error) {
 	sessionID := scripterSessionID(ctx, room)
-	reqJSON, _ := json.Marshal(room.req)
-	constraintsJSON, _ := json.Marshal(constraints)
 
 	userMsg := fmt.Sprintf(
-		`<request_json>%s</request_json>
-<constraints>%s</constraints>
+		`%s
 %s
 %s
 <previous_story_document>%s</previous_story_document>
@@ -406,7 +400,7 @@ func repairStoryDocument(ctx context.Context, room *scripterRoom, constraints Sc
 %s
 </must_fix>
 请直接在下一条回复中输出修复后的完整故事文档正文，不需要调用任何工具来提交。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；除非must_fix明确要求，否则不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的invest_focus/tone_tags所指向的核心设定。`,
-		string(reqJSON), string(constraintsJSON),
+		scenarioRequestBlock(room.req, constraints),
 		diversityConstraintsBlock(constraints),
 		proseVoiceBlock(constraints, proseVoiceScopeStory),
 		previous.Document,
