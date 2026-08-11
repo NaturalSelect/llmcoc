@@ -67,7 +67,8 @@ func storySystemPrompt() string {
 
 【二、神话元素验证】
 通过 translate_anchor 工具将核心概念翻译为COC7规则书元素：
-- 必须先调用 translate_anchor 获得规则书裁定，确认成功（status为found）后才能动笔写正文
+- 必须先调用 translate_anchor 获得规则书裁定，后才能动笔写正文
+- 不要强行使用不合适的元素，如果这个元素不符合你的要求那就换一个
 - 若首选元素在禁用列表中，继续 translate_anchor 寻找替代
 - mythos_anchor 应优先支持调查、异化、理智侵蚀和氛围恐怖，而不是鼓励直接战斗解决问题
 - mythos_anchor 优先锚定在幕后那个主体本身；如果它在规则书中确实以法术/仪式条目呈现，才允许把该条目登记为 mythos_anchor，但成稿必须写清是谁在持有并施展它
