@@ -150,7 +150,6 @@ func storySystemPrompt() string {
 【写作质感（反AI腔）】
 成稿要读起来像人类作者写的模组，而不是AI生成的设计文档：
 ` + humanWritingRules + `
-- 用户消息 <prose_voice> 指定了本剧本的作者声线，整份文档按该声线书写——开头、地点、人物、线索、结局都是同一位作者写的同一份读物
 
 【其他硬性要求】
 - 开头必须是冷开场：以平静、日常、生活化的语气呈现一个看似普通的表层情境，只交代时代、地点、调查员为何到场；读者和玩家从中看不出剧情走向、案件性质、幕后真相或神话存在，也读不到任何恐怖、惊悚、诡异、压抑、不祥的氛围。恐怖是玩家在调查中逐步自行发现的，不能在开场剧透或提前渲染
@@ -343,7 +342,6 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 		`
 %s
 %s
-%s
 <recently_used_mythos_anchors>
 %s
 </recently_used_mythos_anchors>
@@ -361,7 +359,6 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 请设计并撰写完整的COC7剧本故事文档。`,
 		scenarioRequestBlock(room.req, constraints),
 		diversityConstraintsBlock(constraints),
-		proseVoiceBlock(constraints, proseVoiceScopeStory),
 		formatMythosBlacklist(room.mythosBlacklist),
 		formatScenarioTitleBlacklist(room.titleSamples),
 		formatScenarioTagsBlacklist(room.tagsBlacklist),
@@ -393,7 +390,6 @@ func repairStoryDocument(ctx context.Context, room *scripterRoom, constraints Sc
 	userMsg := fmt.Sprintf(
 		`%s
 %s
-%s
 <previous_story_document>%s</previous_story_document>
 <previous_mythos_anchor>%s</previous_mythos_anchor>
 <must_fix>
@@ -402,7 +398,6 @@ func repairStoryDocument(ctx context.Context, room *scripterRoom, constraints Sc
 请直接在下一条回复中输出修复后的完整故事文档正文，不需要调用任何工具来提交。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；除非must_fix明确要求，否则不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的invest_focus/tone_tags所指向的核心设定。`,
 		scenarioRequestBlock(room.req, constraints),
 		diversityConstraintsBlock(constraints),
-		proseVoiceBlock(constraints, proseVoiceScopeStory),
 		previous.Document,
 		previous.MythosAnchor,
 		strings.Join(issues, "\n"),
@@ -443,20 +438,18 @@ func storyQAReviewSystemPrompt() string {
 - 交代零散事实用的短列表（当地人分别知道些什么、卡车上带了哪些装备）是职业模组的常见写法，只要每条都是完整的句子就不要报问题
 - 检定与后果写进叙事句（"成功的侦查检定可以发现……""失败的调查员会……"）是正确写法，不要报问题
 - 开头的导入段必须保持日常、平静、无恐怖氛围、不剧透真相；若违反必须报告（这是硬约束）
-- <prose_voice>是本剧本的作者声线，仅当散文明显是说明文/设计文档腔时才报问题，不苛求声线完美贴合
 </scope>`
 }
 
 // runStoryQAReview 返回人写化整改清单；storyDoc为空或审查不可用/失败时返回nil（非致命，跳过即可）。
-func runStoryQAReview(ctx context.Context, room *scripterRoom, storyDoc string, constraints ScripterConstraints) []string {
+func runStoryQAReview(ctx context.Context, room *scripterRoom, storyDoc string) []string {
 	if room == nil || room.qa.provider == nil || strings.TrimSpace(storyDoc) == "" {
 		return nil
 	}
 	sessionID := scripterSessionID(ctx, room)
-	userMsg := fmt.Sprintf(`%s
-<story_document>%s</story_document>
+	userMsg := fmt.Sprintf(`<story_document>%s</story_document>
 请按standards审查以上故事文档，通过report_issues工具提交问题清单。`,
-		proseVoiceBlock(constraints, proseVoiceScopeStory), storyDoc)
+		storyDoc)
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.qa.systemPrompt(storyQAReviewSystemPrompt())},
 		{Role: "user", Content: userMsg},

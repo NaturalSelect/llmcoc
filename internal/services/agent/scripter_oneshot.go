@@ -364,31 +364,6 @@ const humanWritingRules = `- 具体性：散文要落在具体名词上——人
 - NPC人味：每个重要NPC给一个标志性小细节（口头禅、习惯动作、随身物件、外貌特征选其一）；NPC之间至少存在两条现实关系（亲属/雇佣/债务/旧怨/邻里）；可以保留一个与主线无关的纯地方色彩NPC
 - 密度不均：允许一处地点信息厚重、另一些地点只有一两笔；不给每个地点机械配满同样数量的要素`
 
-const (
-	// proseVoiceScopeStory 用于 story 阶段：声线覆盖整份成稿。
-	proseVoiceScopeStory = "适用范围：整份故事文档都按该声线书写——开头、地点、人物、线索、结局是同一位作者写的同一份读物；不使用信头、落款、日期行等格式排版。"
-	// proseVoiceScopeCompile 用于 compile/repair 阶段：产物是给KP与Director读的结构化数据，以信息完整为先。
-	proseVoiceScopeCompile = "适用范围：只作用于 name/setting/intro 等玩家可见散文的用词与节奏；不改变字段的功能与信息要求；不使用信头、落款、日期行等格式排版；scenes/npcs/clues 等结构化字段以信息完整为先，不追求声线。"
-)
-
-// proseVoiceBlock 把随机抽取的作者声线注入用户消息；只约束文风质感，不改变字段功能。
-// scope 按调用阶段传入 proseVoiceScopeStory 或 proseVoiceScopeCompile。
-func proseVoiceBlock(constraints ScripterConstraints, scope string) string {
-	voice := strings.TrimSpace(constraints.ProseVoice)
-	if voice == "" {
-		return ""
-	}
-	var sb strings.Builder
-	sb.WriteString("<prose_voice>\n")
-	sb.WriteString(fmt.Sprintf("voice: %s\n", voice))
-	if guide := proseVoiceGuides[voice]; guide != "" {
-		sb.WriteString(fmt.Sprintf("guide: %s\n", guide))
-	}
-	sb.WriteString(scope + "\n")
-	sb.WriteString("</prose_voice>")
-	return sb.String()
-}
-
 // repairSystemPrompt 是结构修复/逻辑修复阶段的专用提示词：只按 must_fix 修补
 // previous_draft，不重新创作。历史上这里复用 oneshotSystemPrompt（完整创作指南 +
 // schema），每次修复都要重复发送约200行创作指令，与"最小改动"的修复指令相互冲突，
@@ -800,7 +775,6 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 	userMsg := fmt.Sprintf(
 		`%s
 %s
-%s
 <previous_draft>%s</previous_draft>
 <recent_scenario_tags_blacklist>
 %s
@@ -811,7 +785,6 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的invest_focus/tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
 		scenarioRequestBlock(room.req, constraints),
 		diversityConstraintsBlock(constraints),
-		proseVoiceBlock(constraints, proseVoiceScopeCompile),
 		string(prevJSON),
 		formatScenarioTagsBlacklist(room.tagsBlacklist),
 		strings.Join(issues, "\n"),

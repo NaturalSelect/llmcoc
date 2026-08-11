@@ -124,7 +124,6 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 		`<story_document>%s</story_document>
 <mythos_anchor>%s</mythos_anchor>
 %s
-%s
 <recent_scenario_tags_blacklist>
 %s
 </recent_scenario_tags_blacklist>
@@ -132,7 +131,6 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 请将以上故事文档编译为结构化剧本JSON，严格遵循schema_skeleton的字段结构；tags须避开recent_scenario_tags_blacklist中的标签。`,
 		story.Document, story.MythosAnchor,
 		diversityConstraintsBlock(constraints),
-		proseVoiceBlock(constraints, proseVoiceScopeCompile),
 		formatScenarioTagsBlacklist(room.tagsBlacklist),
 		compilerSchemaTemplate,
 	)

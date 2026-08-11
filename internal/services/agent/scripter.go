@@ -93,24 +93,6 @@ var investFocusChineseLabels = map[string]string{
 	"identity_replacement": "身份替换：从某人不再像本人或关系证据矛盾进入调查",
 }
 
-// NOTE: 散文声线池：每次生成随机注入一种"作者声线"，让玩家可见散文（简介/背景/开场）
-// 摆脱统一的设计文档腔，更接近人类作者的文风。声线取材于COC剧本中常见的记录/文书类叙事
-// 装置（委托文书、招募告示、地方志、追述证词），天然能承载邀约缘由与表层任务；只影响用词
-// 与节奏，不影响剧情事实。
-var scripterProseVoices = []string{
-	"委托信体",
-	"招募启事体",
-	"地方志摘录体",
-	"追述证词体",
-}
-
-var proseVoiceGuides = map[string]string{
-	"委托信体":   "以委托人邀请调查员到场的口吻转述来意：直陈请求与理由，语气客气但克制；不写称呼、落款、日期行等信件格式，只借书信语气传达委托背景",
-	"招募启事体":  "像报纸分类广告或招募告示：直陈需求、条件、地点，语气实用、公事公办，不做感情渲染",
-	"地方志摘录体": "像县志、教区记事或地方档案的编纂者在整理旧档：只陈述有据可查的事实，日期与地名精确，语气平实不作评论；默认读者熟悉本地，可顺笔带一句与主线无关的地方琐事",
-	"追述证词体":  "亲历者事后写下的第一人称记录口吻：按时间顺序平实交代来龙去脉，写下的细节都是“我当时注意到的”；允许一两处“当时没有多想”式的轻描淡写，但不预告后事、不渲染氛围；只借追述语气，不出现署名与写作场景",
-}
-
 func defaultScripterEra() string {
 	return scriptEra[rand.Intn(len(scriptEra))]
 }
@@ -363,7 +345,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	// 人写化审查：QA 审 AI 腔与写作质感，问题清单走一轮故事文档修复；失败不阻塞生成
 	log.Printf("[scripter] session=%s stage=qa_humanize start", sessionID)
 	r.emitProgress("qa_humanize", "start", "阶段 3/6：QA 人写化审查…")
-	if qaIssues := runStoryQAReview(ctx, r, story.Document, constraints); len(qaIssues) > 0 {
+	if qaIssues := runStoryQAReview(ctx, r, story.Document); len(qaIssues) > 0 {
 		log.Printf("[scripter] session=%s stage=qa_humanize issues=%d %v", sessionID, len(qaIssues), qaIssues)
 		r.emitProgress("qa_humanize", "start", fmt.Sprintf("人写化审查发现 %d 个问题，执行修复", len(qaIssues)))
 		logScripterArtifact("QA Humanize Issues", sessionID, qaIssues)
@@ -515,7 +497,6 @@ type ScripterConstraints struct {
 	Difficulty      string   `json:"difficulty"`
 	InvestFocus     string   `json:"invest_focus"`
 	ToneTags        []string `json:"tone_tags"`
-	ProseVoice      string   `json:"prose_voice"` // NOTE: 玩家可见散文的作者声线，只影响文风不影响事实
 }
 
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
@@ -538,9 +519,6 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 	log.Printf("[scripter] session=%s diversity invest_focus=%q tone_tags=%q",
 		sessionID, investFocus, strings.Join(toneTags, ","))
 
-	proseVoice := scripterProseVoices[rand.Intn(len(scripterProseVoices))]
-	log.Printf("[scripter] session=%s prose_voice=%q", sessionID, proseVoice)
-
 	return ScripterConstraints{
 		Era:             r.req.Era,
 		Theme:           firstNonEmpty(r.req.Theme, ""),
@@ -550,7 +528,6 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		Difficulty:      r.req.Difficulty,
 		InvestFocus:     investFocus,
 		ToneTags:        toneTags,
-		ProseVoice:      proseVoice,
 	}
 }
 
