@@ -537,10 +537,9 @@ var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
 - country阶段输出具体国家或具体政权范围。
 - settlement_scale阶段必须且只能从以下固定选项中选择一个：大都会、城市、市郊、乡镇、无人区。
 - 非country阶段只输出类型/形态/区位模式，不输出具体地名、真实行政区名、真实城市名或真实街区名。
-- natural_geography阶段必须输出自然地理/地形/水文/气候约束类型。
 - 只输出现实地理/人文地理候选，不输出幕后真相。
 - 禁止输出伪科学、高科技、工程化异常或可诱导伪科学解释神话的候选。
-- 每行一个名称；country/natural_geography阶段正好5个候选，settlement_scale阶段按用户消息要求只输出一个选项；不要编号、解释、标题或描述句。</rules>`
+- 每行一个名称；country阶段正好5个候选，settlement_scale阶段按用户消息要求只输出一个选项；不要编号、解释、标题或描述句。</rules>`
 
 func generateGeographyChain(ctx context.Context, room *scripterRoom, era string) ([]string, error) {
 	var architect agentHandle
@@ -559,7 +558,6 @@ func generateGeographyChain(ctx context.Context, room *scripterRoom, era string)
 	}{
 		{Key: "country", Mode: "具体国家或具体政权范围", Examples: "美国"},
 		{Key: "settlement_scale", Mode: "根据前置布景和时代，从固定选项中选择最适合调查剧本的聚落尺度：大都会、城市、市郊、乡镇、无人区。只输出一个选项", Examples: "城市"},
-		{Key: "natural_geography", Mode: "自然地理/地形/水文/气候约束类型，不输出具体地名", Examples: "林木覆盖的山谷"},
 	}
 	chain := make([]string, 0, len(stages))
 	msgs := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)}}
