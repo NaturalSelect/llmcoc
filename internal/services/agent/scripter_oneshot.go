@@ -68,7 +68,7 @@ const oneshotDraftJSONSchema = `{
 				"system_prompt": {"type": "string", "description": "KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相与mythos_anchor必要性 + 施动者细化设定，不得压缩为一句话"},
 				"setting": {"type": "string", "description": "表层情境原文或忠实改写，必须保留文档中嵌入的具体年月日"},
 				"tone_tags": {"type": "array", "items": {"type": "string"}, "description": "必须逐字等于diversity_constraints.tone_tags"},
-				"invest_focus": {"type": "string", "description": "必须逐字等于diversity_constraints.invest_focus"},
+				"invest_focus": {"type": "string", "description": "调查入口的简短概括；除非must_fix明确要求，否则保持previous_draft原值"},
 				"intro": {"type": "string", "description": "调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步"},
 				"game_start_slot": {"type": "integer", "description": "0-47，每槽30分钟；未写明具体时刻时取16"},
 				"map_description": {"type": "string", "description": "按地点关系概括的文字地图，体现可回访、可交叉验证的调查网络"},
@@ -376,7 +376,7 @@ func repairSystemPrompt() string {
 修复纪律：
 - 逐条针对must_fix修复到位；除修复所需外，不改动任何其他字段、人名、地名、数值、情节或文风
 - 不得更换已确认的神话元素（content.mythos_anchor）——它已由规则书翻译确认
-- 不得改变<diversity_constraints>中invest_focus/tone_tags的值
+- 不得改变<diversity_constraints>中tone_tags的值
 - 仅当must_fix涉及神话元素本身时，才调用translate_anchor核验；否则不要调用
 - 修复神话本质说明时，引用的法术/物品/怪物/机制名必须与must_fix或<previous_draft>中已确认的规则书元素一致，不得新造
 - setting/intro必须保持冷开场：中性日常，不剧透真相、不渲染恐怖
@@ -400,7 +400,7 @@ func repairSystemPrompt() string {
     "system_prompt": "KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相 + mythos_anchor必要性 + 施动者细化设定",
     "setting": "表层日常局势，须保留已嵌入的具体年月日",
     "tone_tags": ["必须等于diversity_constraints.tone_tags"],
-    "invest_focus": "必须等于diversity_constraints.invest_focus",
+    "invest_focus": "调查入口的简短概括；除非must_fix明确要求，否则保持previous_draft原值",
     "intro": "入场情境；不列出、不推荐、不暗示任何具体行动或下一步",
     "game_start_slot": 16,
     "map_description": "文字地图",
@@ -752,13 +752,9 @@ func oneshotNormalizeAnchorKey(s string) string {
 func diversityConstraintsBlock(constraints ScripterConstraints) string {
 	var sb strings.Builder
 	sb.WriteString("<diversity_constraints>\n")
-	sb.WriteString(fmt.Sprintf("invest_focus: %s\n", constraints.InvestFocus))
-	if label := investFocusChineseLabels[constraints.InvestFocus]; label != "" {
-		sb.WriteString(fmt.Sprintf("invest_focus_zh: %s\n", label))
-	}
 	sb.WriteString(fmt.Sprintf("tone_tags: %s\n", strings.Join(constraints.ToneTags, ", ")))
-	sb.WriteString("硬约束：本次submit.draft.content.invest_focus、tone_tags必须逐字使用上述值，不得自行替换、翻译、改名或省略。\n")
-	sb.WriteString("含义：invest_focus决定调查入口（调查员从哪一类异常开始介入）；tone_tags只约束文风、节奏、场面选择和NPC反应风格，不覆盖剧本事实、规则书裁定或工具结果。神话力量以何种方式介入人类世界不在本块约束范围内，由创作阶段自行决定。\n")
+	sb.WriteString("硬约束：本次submit.draft.content.tone_tags必须逐字使用上述值，不得自行替换、翻译、改名或省略。\n")
+	sb.WriteString("含义：tone_tags只约束文风、节奏、场面选择和NPC反应风格，不覆盖剧本事实、规则书裁定或工具结果。调查入口与神话力量介入人类世界的方式均不在本块约束范围内，由创作阶段自行决定。\n")
 	sb.WriteString("</diversity_constraints>")
 	return sb.String()
 }
@@ -782,7 +778,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 <must_fix>
 %s
 </must_fix>
-请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的invest_focus/tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
+请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
 		scenarioRequestBlock(room.req, constraints),
 		diversityConstraintsBlock(constraints),
 		string(prevJSON),
@@ -1029,12 +1025,6 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	if strings.TrimSpace(draft.Content.MapDescription) == "" {
 		draft.Content.MapDescription = "【文字地图】各调查地点是剧本状态节点，不是顺序关卡：入口连接所有可调查地点；地点之间可往返；时间推进时，各地点状态可能因派系行动而改变。"
 		log.Printf("[scripter:normalize] session=%s filled map_description", sessionID)
-	}
-	if strings.TrimSpace(constraints.InvestFocus) != "" {
-		if strings.TrimSpace(draft.Content.InvestFocus) != strings.TrimSpace(constraints.InvestFocus) {
-			log.Printf("[scripter:normalize] session=%s override invest_focus from=%q to=%q", sessionID, draft.Content.InvestFocus, constraints.InvestFocus)
-			draft.Content.InvestFocus = strings.TrimSpace(constraints.InvestFocus)
-		}
 	}
 	if len(constraints.ToneTags) > 0 && !sameStringSlice(draft.Content.ToneTags, constraints.ToneTags) {
 		log.Printf("[scripter:normalize] session=%s override tone_tags from=%q to=%q", sessionID, strings.Join(draft.Content.ToneTags, ","), strings.Join(constraints.ToneTags, ","))

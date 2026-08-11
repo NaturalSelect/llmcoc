@@ -71,28 +71,6 @@ var scriptEra = []string{
 	"1920s", "modern",
 }
 
-var scripterInvestFocuses = []string{
-	"disappearance",
-	"bizarre_death",
-	"artifact_theft",
-	"ritual_interruption",
-	"family_secret",
-	"local_legend",
-	"sealed_location",
-	"identity_replacement",
-}
-
-var investFocusChineseLabels = map[string]string{
-	"disappearance":        "失踪：从人或物的持续消失进入调查",
-	"bizarre_death":        "离奇死亡：从异常尸体、死亡方式或死亡时间进入调查",
-	"artifact_theft":       "古物失窃：从重要物品被盗、替换或争夺进入调查",
-	"ritual_interruption":  "仪式中断：从未完成或被打断的仪式现场进入调查",
-	"family_secret":        "家族秘密：从血缘、遗产、旧信件或亲属隐瞒进入调查",
-	"local_legend":         "地方传闻：从口述传说、禁地或旧俗异常复现进入调查",
-	"sealed_location":      "封闭地点：从被封锁、隔离或无法离开的空间进入调查",
-	"identity_replacement": "身份替换：从某人不再像本人或关系证据矛盾进入调查",
-}
-
 func defaultScripterEra() string {
 	return scriptEra[rand.Intn(len(scriptEra))]
 }
@@ -519,7 +497,6 @@ type ScripterConstraints struct {
 	TargetLength    string   `json:"target_length"`
 	PlayerRange     string   `json:"player_range"`
 	Difficulty      string   `json:"difficulty"`
-	InvestFocus     string   `json:"invest_focus"`
 	ToneTags        []string `json:"tone_tags"`
 }
 
@@ -536,12 +513,11 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		log.Printf("[scripter] session=%s geography generated=%q", sessionID, strings.Join(geography, " → "))
 	}
 
-	// NOTE: 多样性组合改为纯随机挑选，不再让 AI 从围池内判断"最契合"——时代/主题等输入
+	// NOTE: tone_tags 组合改为纯随机挑选，不再让 AI 从围池内判断"最契合"——时代/主题等输入
 	// 在多次生成间几乎不变，这类判断任务会收敛到少数刻板组合，反而削弱多样性；契合题材交给
 	// 下游 Story Architect 在拿到约束后体现。
-	investFocus, toneTags := selectDiversityConstraints(r.req, sessionID)
-	log.Printf("[scripter] session=%s diversity invest_focus=%q tone_tags=%q",
-		sessionID, investFocus, strings.Join(toneTags, ","))
+	toneTags := toneTagsForDiversity(r.req)
+	log.Printf("[scripter] session=%s diversity tone_tags=%q", sessionID, strings.Join(toneTags, ","))
 
 	return ScripterConstraints{
 		Era:             r.req.Era,
@@ -550,7 +526,6 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 		TargetLength:    r.req.TargetLength,
 		PlayerRange:     fmt.Sprintf("%d-%d", r.req.MinPlayers, r.req.MaxPlayers),
 		Difficulty:      r.req.Difficulty,
-		InvestFocus:     investFocus,
 		ToneTags:        toneTags,
 	}
 }
@@ -674,63 +649,7 @@ func fallbackGeographyFlavor(req ScenarioCreationRequest) []string {
 	return flavor
 }
 
-// buildInvestFocusCandidates 返回去重后的调查入口候选池：排除最近3次用过的invest_focus，
-// 候选池恒不小于5（8种候选-3种排除），永不排空，无需二级退化。
-func buildInvestFocusCandidates(sessionID string) []string {
-	recent := loadRecentInvestFocuses(3, sessionID) // 按 created_at DESC 排列，recent[0] 最新
-
-	excluded := map[string]bool{}
-	for _, focus := range recent {
-		excluded[focus] = true
-	}
-
-	candidates := make([]string, 0, len(scripterInvestFocuses))
-	for _, focus := range scripterInvestFocuses {
-		if !excluded[focus] {
-			candidates = append(candidates, focus)
-		}
-	}
-	if len(candidates) > 0 {
-		return candidates
-	}
-	// 理论上不会发生（8种候选排除最多3种），兜底返回全集。
-	return append([]string(nil), scripterInvestFocuses...)
-}
-
-func selectDiversityConstraints(req ScenarioCreationRequest, sessionID string) (investFocus string, toneTags []string) {
-	candidates := buildInvestFocusCandidates(sessionID)
-	if len(candidates) == 0 {
-		// NOTE: 候选池意外耗尽时的最终兜底。
-		return "disappearance", toneTagsForDiversity("disappearance", req)
-	}
-	chosen := candidates[rand.Intn(len(candidates))]
-	return chosen, toneTagsForDiversity(chosen, req)
-}
-
-func loadRecentInvestFocuses(limit int, sessionID string) []string {
-	if limit <= 0 || models.DB == nil {
-		return nil
-	}
-	var scenarios []models.Scenario
-	if err := models.DB.Order("created_at DESC").Limit(limit).Find(&scenarios).Error; err != nil {
-		log.Printf("[scripter] session=%s load recent invest_focus failed: %v", sessionID, err)
-		return nil
-	}
-	focuses := make([]string, 0, len(scenarios))
-	for i := range scenarios {
-		if err := scenarios[i].DecodeData(); err != nil {
-			continue
-		}
-		focus := strings.TrimSpace(scenarios[i].Content.Data.InvestFocus)
-		if focus == "" {
-			continue
-		}
-		focuses = append(focuses, focus)
-	}
-	return focuses
-}
-
-func toneTagsForDiversity(investFocus string, req ScenarioCreationRequest) []string {
+func toneTagsForDiversity(req ScenarioCreationRequest) []string {
 	tags := make([]string, 0, 4)
 	addTag := func(tag string) {
 		tag = strings.TrimSpace(tag)
@@ -757,25 +676,6 @@ func toneTagsForDiversity(investFocus string, req ScenarioCreationRequest) []str
 		addTag("cosmic-dread")
 	default: // normal
 		addTag("escalating-dread")
-	}
-
-	switch investFocus {
-	case "disappearance":
-		addTag("vanishing")
-	case "bizarre_death":
-		addTag("morbid")
-	case "artifact_theft":
-		addTag("occult-noir")
-	case "ritual_interruption":
-		addTag("ritualistic")
-	case "family_secret":
-		addTag("gothic")
-	case "local_legend":
-		addTag("folk-horror")
-	case "sealed_location":
-		addTag("claustrophobic")
-	case "identity_replacement":
-		addTag("paranoia")
 	}
 
 	era := strings.ToLower(strings.TrimSpace(req.Era))
@@ -1427,7 +1327,7 @@ func splitScenarioTags(raw string) []string {
 // json.Marshal(ScenarioCreationRequest/ScripterConstraints) 塞进用户消息的做法——
 // 故事阶段的模型被要求只输出散文而不是JSON，输入端也不该是结构化JSON。
 // difficulty/target_length 已由 difficultySpec/lengthSpec 展开，
-// invest_focus/tone_tags 已由 diversityConstraintsBlock 展开，这里不重复。
+// tone_tags 已由 diversityConstraintsBlock 展开，这里不重复。
 func scenarioRequestBlock(req ScenarioCreationRequest, constraints ScripterConstraints) string {
 	var sb strings.Builder
 	sb.WriteString("<scenario_request>\n")
