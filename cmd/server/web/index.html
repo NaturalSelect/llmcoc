@@ -1801,42 +1801,24 @@
                     </div>
                 </template>
 
-                <!-- 导入身份 -->
-                <template x-if="viewingScenario?.content?.entry_identities?.length">
-                    <div class="mb-4">
-                        <div class="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1.5 font-ui">
-                            <span class="text-amber-900">▍</span>导入身份
-                        </div>
-                        <div class="space-y-1.5">
-                            <template x-for="(ei, eii) in viewingScenario.content.entry_identities" :key="eii">
-                                <div class="rounded p-2 panel-inset">
-                                    <div class="text-xs font-bold text-amber-300 font-ui" x-text="ei.profession"></div>
-                                    <div class="text-[11px] text-amber-700 mt-0.5 font-ui" style="line-height:1.5">
-                                        <span class="text-amber-800">初始资源：</span><span x-text="ei.init_resource"></span>
-                                    </div>
-                                    <template x-if="ei.init_limit">
-                                        <div class="text-[11px] text-amber-700 mt-0.5 font-ui" style="line-height:1.5">
-                                            <span class="text-amber-800">限制：</span><span x-text="ei.init_limit"></span>
-                                        </div>
-                                    </template>
-                                    <template x-if="ei.recommend_clues">
-                                        <div class="text-[11px] text-amber-700 mt-0.5 font-ui" style="line-height:1.5">
-                                            <span class="text-amber-800">推荐线索：</span><span
-                                                x-text="ei.recommend_clues"></span>
-                                        </div>
-                                    </template>
-                                </div>
-                            </template>
-                        </div>
-                    </div>
-                </template>
-
                 <!-- 守秘人附录 -->
                 <template x-if="viewingScenario?.content?.keeper_appendix">
                     <div class="mb-4 p-3 rounded panel-inset">
                         <div class="text-[10px] font-bold text-amber-600 mb-1.5 uppercase tracking-wider font-ui">守秘人附录
                         </div>
                         <div class="space-y-1">
+                            <template x-if="viewingScenario.content.keeper_appendix.core_truth">
+                                <div class="text-[11px] text-amber-700 font-ui" style="line-height:1.5; white-space:pre-wrap">
+                                    <span class="text-amber-800">核心真相：</span><span
+                                        x-text="viewingScenario.content.keeper_appendix.core_truth"></span>
+                                </div>
+                            </template>
+                            <template x-if="viewingScenario.content.keeper_appendix.antagonist_dossier">
+                                <div class="text-[11px] text-amber-700 font-ui" style="line-height:1.5; white-space:pre-wrap">
+                                    <span class="text-amber-800">施动者设定：</span><span
+                                        x-text="viewingScenario.content.keeper_appendix.antagonist_dossier"></span>
+                                </div>
+                            </template>
                             <template x-if="viewingScenario.content.keeper_appendix.difficulty_down">
                                 <div class="text-[11px] text-amber-700 font-ui" style="line-height:1.5">
                                     <span class="text-amber-800">降低难度：</span><span
@@ -1909,21 +1891,6 @@
                                 </div>
                             </template>
                         </div>
-                    </div>
-                </template>
-
-                <!-- system_prompt 折叠 -->
-                <template x-if="viewingScenario?.content?.system_prompt">
-                    <div class="mb-4" x-data="{open:false}">
-                        <button @click="open=!open"
-                            class="text-[10px] text-amber-900 hover:text-amber-700 flex items-center gap-1 font-ui">
-                            <span x-text="open ? '▾' : '▸'"></span> KP 系统提示词
-                        </button>
-                        <template x-if="open">
-                            <pre class="mt-1.5 text-[10px] text-amber-900 rounded p-2 overflow-x-auto bg-chat border-inset font-mono"
-                                style="line-height:1.5; white-space:pre-wrap"
-                                x-text="viewingScenario.content.system_prompt"></pre>
-                        </template>
                     </div>
                 </template>
 

@@ -300,24 +300,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		}
 		scenarioSB.WriteString("</endings>\n")
 	}
-	if len(content.Mechanics) > 0 {
-		scenarioSB.WriteString("<mechanics>\n")
-		scenarioSB.WriteString("以下是本模组的量化追踪机制，供你在叙事中参考推进，不做自动结算：\n")
-		for _, m := range content.Mechanics {
-			scenarioSB.WriteString(fmt.Sprintf("  • %s（%s）：%s\n", m.Name, m.Type, m.Description))
-			for _, st := range m.Stages {
-				line := "      - " + st.Label
-				if strings.TrimSpace(st.Trigger) != "" {
-					line += "｜触发：" + st.Trigger
-				}
-				if strings.TrimSpace(st.Effect) != "" {
-					line += "｜效果：" + st.Effect
-				}
-				scenarioSB.WriteString(line + "\n")
-			}
-		}
-		scenarioSB.WriteString("</mechanics>\n")
-	}
 	if content.MapDescription != "" {
 		scenarioSB.WriteString("<map>\n" + content.MapDescription + "\n</map>\n")
 	}
@@ -414,12 +396,84 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		}
 	}
 
+	// Timeline 和 Mechanics 是每轮都要参考的节奏推进依据（对应 ACTIVE-PACING
+	// 规则的"时间条件"“scene/triggers”），放最后一条 user 消息而非首条 scenario
+	// 消息，离生成位置更近，长历史下更不容易被稀释注意力。
+	if len(content.Timeline) > 0 {
+		userSB.WriteString("\n<timeline>\n")
+		userSB.WriteString("以下是本模组的时间线，供你判断已发生的背景与当天推进节点，据此安排事件时机，不做自动结算：\n")
+		for _, ev := range content.Timeline {
+			tag := ""
+			switch ev.Phase {
+			case "past":
+				tag = "[过去] "
+			case "current":
+				tag = "[当天] "
+			}
+			userSB.WriteString(fmt.Sprintf("  • %s%s：%s\n", tag, ev.Time, ev.Event))
+		}
+		userSB.WriteString("</timeline>\n")
+	}
+	if len(content.Mechanics) > 0 {
+		userSB.WriteString("\n<mechanics>\n")
+		userSB.WriteString("以下是本模组的量化追踪机制，供你在叙事中参考推进，不做自动结算：\n")
+		for _, m := range content.Mechanics {
+			userSB.WriteString(fmt.Sprintf("  • %s（%s）：%s\n", m.Name, m.Type, m.Description))
+			for _, st := range m.Stages {
+				line := "      - " + st.Label
+				if strings.TrimSpace(st.Trigger) != "" {
+					line += "｜触发：" + st.Trigger
+				}
+				if strings.TrimSpace(st.Effect) != "" {
+					line += "｜效果：" + st.Effect
+				}
+				userSB.WriteString(line + "\n")
+			}
+		}
+		userSB.WriteString("</mechanics>\n")
+	}
+
 	// Show all players' actions when everyone has submitted (multi-player),
 	// otherwise show the single triggering player's action.
 	userSB.WriteString("\n")
 	userSB.WriteString("\n<config> 剧情特定法术:禁用 | 规则书中法术:启用 | 严格反作弊:启用 | 社交关系更新:实时变更(需推理) | 法术表更新:实时变更(需推理) | 学习时间:极短 | 物品栏更新:实时变更(需推理) | 种族更新:实时变更(需推理) | 已知神话生物更新:实时变更(需推理) | 使用道具: 允许 | 学习典籍: 严格按照典籍中记载的法术选择随机一个法术(禁止判定什么都没学到) </config>\n")
-	if content.SystemPrompt != "" {
-		userSB.WriteString("\n<kp_instruction>\n" + content.SystemPrompt + "\n</kp_instruction>\n")
+	if ka := content.KeeperAppendix; ka != nil {
+		var kaSB strings.Builder
+		if strings.TrimSpace(ka.CoreTruth) != "" {
+			kaSB.WriteString("【KP独有，勿向玩家直说】\n<core_truth>\n" + ka.CoreTruth + "\n</core_truth>\n")
+		}
+		if strings.TrimSpace(ka.AntagonistDossier) != "" {
+			kaSB.WriteString("<antagonist_dossier>\n" + ka.AntagonistDossier + "\n</antagonist_dossier>\n")
+		}
+		if strings.TrimSpace(ka.ThemeGuidance) != "" {
+			kaSB.WriteString("<theme_guidance>\n" + ka.ThemeGuidance + "\n</theme_guidance>\n")
+		}
+		if strings.TrimSpace(ka.HorrorTips) != "" {
+			kaSB.WriteString("<horror_tips>\n" + ka.HorrorTips + "\n</horror_tips>\n")
+		}
+		if down, up := strings.TrimSpace(ka.DifficultyDown), strings.TrimSpace(ka.DifficultyUp); down != "" || up != "" {
+			kaSB.WriteString("<difficulty_advice>\n")
+			if down != "" {
+				kaSB.WriteString("如果你判断当前对调查员太难、有团灭风险，可参考：" + down + "\n")
+			}
+			if up != "" {
+				kaSB.WriteString("如果你判断当前对调查员太容易、缺乏张力，可参考：" + up + "\n")
+			}
+			kaSB.WriteString("</difficulty_advice>\n")
+		}
+		var sizeAdvice string
+		switch {
+		case len(gctx.Session.Players) == 1:
+			sizeAdvice = strings.TrimSpace(ka.SoloAdvice)
+		case len(gctx.Session.Players) > 1:
+			sizeAdvice = strings.TrimSpace(ka.GroupAdvice)
+		}
+		if sizeAdvice != "" {
+			kaSB.WriteString("<group_size_advice>\n" + sizeAdvice + "\n</group_size_advice>\n")
+		}
+		if kaSB.Len() > 0 {
+			userSB.WriteString("\n<keeper_appendix>\n" + kaSB.String() + "</keeper_appendix>\n")
+		}
 	}
 	// NOTE: 运行时注入 balance_rules；空值时跳过，不产生任何段落。
 	if section := BuildDirectorPrompt(balanceRules); section != "" {

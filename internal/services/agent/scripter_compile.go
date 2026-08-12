@@ -45,13 +45,11 @@ func compilerSystemPrompt() string {
 - content.npcs：通读全文，识别出所有有名有姓、调查员可能接触到的人物（他们通常介绍在其所在地点的段落里，而不是集中成名单），每位编译为一个npc；description要把该人物在文中散落的信息合并写全——他的身份与营生、他想要什么、他正在做什么、他瞒着或不愿说的事、他的标志性小细节、他与其他人的关系；文中若明确写出他隐瞒或保留了某些信息，description须把这一点写明；stats按COC7规则书惯例给出合理属性值（含SAN、HP、MP），文中已给出数值表时直接采用；attitude取自文中写明或可直接判断的初始态度；skills按该人物的职业/角色身份给出3-6项最相关的技能及数值（COC7标准范围，普通人类技能值通常15-75）；spells仅文中明确写明会施法的人物才填写，普通人类留空数组
 - content.clues：通读全文，识别出所有调查员能亲自获得的具体发现——一份文件、一句证词、一处痕迹、一个检定结果、一件物品——每条编译为{summary,source,skill_check,on_success,on_failure,nature}。这些发现在文中通常写在叙事句里（"成功的侦查检定会让调查员发现地板上的一张纸条"），没有单独的清单，你需要自己把它们摘出来。nature由你根据文意判定："真实"指调查员可直接查证、指向主线的观察；"隐藏"指揭示神话存在本身是什么的那类发现；"误导"指本身真实、却被文中某人给出了看似合理却错误的解释、从而会把调查引向无关结论的那类发现。source填该发现来自哪个地点、哪个人或哪件物品；skill_check/on_success/on_failure按文中写明的检定名、难度与成败后果对应填写，文中未写明时可留空；至少一条nature="隐藏"的线索，其summary须包含"神话本质"字样并与mythos_anchor强绑定——这个字样是给运行时系统识别用的标记，故事文档里不会出现，由你补上
 - content.endings：通读全文，识别出所有互不相同的收场（通常集中在结尾附近，但也可能散见于"如果调查员没有……"这类叙述中），每种编译为{name,trigger,description,san_reward,is_failure}；文中已给出收场名称的直接采用，未命名的按其内容取一个名字；trigger改写为"如果[条件]，则[处境变化]"的条件句结构；san_reward由你依据文中描述的理智冲击轻重程度（是否失控、是否留下永久创伤、能否很快缓过来）对照COC7规则书惯例换算出一个具体骰值（如"恢复1d6"/"损失1d10"）；文中偶尔会直接给出具体数值，此时优先采用，多数情况下文中只有叙事化描述，由你自行判断给出；is_failure标记灾难/失败向的收场；每一种独立的收场都要对应一个ending，不得合并或省略
-- content.system_prompt：包含KP独有的内部真相（复述故事文档的核心真相与mythos_anchor对故事的必要性，即为何不可替换）、施动者的细化设定（若故事文档写明了邪教组织的名称伪装/教义/仪式/结构/招募控制/经济据点/历史渊源，或个人施法者的身份掩护/接触契机/法术能力/终极目的，或神话生物的来历/栖身范围/可观察影响/行为驱动，须完整保留，不得压缩为一句话）以及时间推进/信息分层/不主动引导三项KP协议
 - content.game_start_slot：从故事文档嵌入的具体时刻推算（0-47，每槽30分钟）；文档未写明具体时刻时取16
 - content.map_description：根据故事文档的地点关系概括为文字地图，体现可回访、可交叉验证的调查网络
 - content.playthrough_outline：由你依据全文脉络归纳出一份逐场景的游玩流程大纲，供KP按此把握主线。故事文档不会有独立的"游玩大纲"小节——路线、解锁条件与分支是写在正文叙述里的（"一个更简单前往矿井的方法是开卡车沿路上去""如果调查员先去了X，则……"），你需要把它们抽出来串成流程：开场调查员如何进入第一个场景；此后每个场景的进入条件（默认开局即可进入，或需先获得什么发现、完成什么行动）、在此能接触到的人物、能获得的发现、以及从这里通向哪些场景（有分支写清"若…则…"）；最后是哪些条件分别导向哪种收场。大纲中出现的场景、人物、发现与收场必须全部来自本次编译产出的内容，不得引入文档中不存在的东西
 - content.timeline：通读全文，识别出所有已发生事件与当天推进的时间节点（它们可能集中在一段时间线里，也可能散见于叙述中），逐条提取为{time,event,phase:past|current}；event须写成中性事实记录句（谁在何时做了什么、什么状态发生了变化）；若故事文档以对话、引语或文学化叙事呈现该时间节点，只转述句式、不引用人物原话，事实内容本身不得改变；文档确实没有可提取的时间节点则留空数组
-- content.keeper_appendix：通读全文，识别出难度调节、单双人团建议或恐怖呈现提示（可能是集中一段，也可能是散在各处对守密人说的话），归拢为{difficulty_down,difficulty_up,solo_advice,group_advice,horror_tips,theme_guidance}；给守密人的建议在成稿中常以"守密人应当……"这类口语化提示直接插在对应段落里，需要你把它们归拢到对应子字段；文档确实没有这类内容则整体省略（null）
-- content.entry_identities：通读全文，识别出是否为不同职业调查员写明了差异化的入场方式（可能是集中一段，也可能是散在各处），逐条提取为{profession,init_resource,init_limit,recommend_clues}；文档未区分职业入场则留空数组
+- content.keeper_appendix：本对象必须给出，不得整体省略。core_truth必填，复述故事文档的核心真相与mythos_anchor对故事的必要性（即为何不可替换）；antagonist_dossier在故事文档写明了施动者时必填——邪教组织的名称伪装/教义/仪式/结构/招募控制/经济据点/历史渊源，或个人施法者的身份掩护/接触契机/法术能力/终极目的，或神话生物的来历/栖身范围/可观察影响/行为驱动，须完整保留，不得压缩为一句话；文档确无独立施动者可写时留空。其余6个运营建议子字段（difficulty_down/difficulty_up/solo_advice/group_advice/horror_tips/theme_guidance）通读全文识别难度调节、单双人团建议或恐怖呈现提示（可能是集中一段，也可能是散在各处对守密人说的话）归拢填入；给守密人的建议在成稿中常以"守密人应当……"这类口语化提示直接插在对应段落里，需要你把它们归拢到对应子字段；文档没有对应内容的子字段留空
 - content.mechanics：通读全文，识别出是否描述了可量化追踪的机制（如计数器、行动时钟）（可能是集中一段，也可能是散在各处），提取为{name,type:counter|clock|tracker,description,stages:[{label,effect,trigger}]}；这些机制仅供KP参考，不做自动结算；文档未设计此类机制则留空数组
 - reward_concept：本篇的通关奖励概念，由你设计，不是从原文摘抄。故事文档通常不会写"奖励"二字，但它的世界里必然存在与真相相关的实物。通读全文后，从文中已确立的施动者、地点、人物与神话锚点里指认（或据此合成）一件调查员在非失败结局后能带走的实体载体——邪教用于仪式的器物、施法者留下的笔记与抄本、死者遗物中那册来路不明的书、神话生物栖身处的遗存等——写成一句话叙事概念，说清它是什么、原本属于谁或存放在哪、与核心真相或mythos_anchor是什么关系。硬性边界：只能建立在文档已有的人、地、事、物之上，不得为它新增人物、新增地点、改动结局条件或推翻文中已写明的事实（文中已明写被彻底销毁的物件不得用作奖励）；必须是可携带的实体（典籍/手稿/器物），不得写成"知识""顿悟""名望""某人的信任"这类交不到调查员手上的抽象收获；不写具体规则数值、SAN代价与技能加值（那由后续的奖励设计专家依规则书裁定）；若文档本身已明确写出通关奖励，则原样提炼、不另行设计。本字段必须给出，不得留空
 
@@ -81,7 +79,6 @@ const compilerSchemaTemplate = `{
   "max_players": 4,
   "difficulty": "string：如 normal",
   "content": {
-    "system_prompt": "string：KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相与mythos_anchor必要性 + 施动者细化设定（邪教/施法者/神话生物的全部维度，不得压缩为一句话）",
     "setting": "string：优先照抄表层情境原句，压缩只删不改写；必须保留文档中嵌入的具体年月日；同时作为模组简介展示",
     "tone_tags": ["必须逐字等于<diversity_constraints>.tone_tags"],
     "invest_focus": "string：从故事文档中概括出调查入口（调查员最初从哪一类异常介入），忠实提炼，不得自创",
@@ -95,8 +92,7 @@ const compilerSchemaTemplate = `{
     "clues": [{"summary": "string：写清这条发现是什么、从哪来、调查员由此知道了什么", "source": "string", "skill_check": "string，可留空", "on_success": "string，可留空", "on_failure": "string，可留空", "nature": "真实|隐藏|误导 三选一"}],
     "endings": [{"name": "string", "trigger": "保持如果[条件]，则[处境变化]的条件句结构", "description": "string", "san_reward": "string：如恢复1d6/损失1d6，文档未写明时按结局性质给出", "is_failure": "bool：标记灾难/失败向结局"}],
     "timeline": [{"time": "string", "event": "string：中性事实记录句，不含引号引用的人物原话", "phase": "past|current"}],
-    "keeper_appendix": {"difficulty_down": "string", "difficulty_up": "string", "solo_advice": "string", "group_advice": "string", "horror_tips": "string", "theme_guidance": "string"},
-    "entry_identities": [{"profession": "string", "init_resource": "string", "init_limit": "string", "recommend_clues": "string"}],
+    "keeper_appendix": {"core_truth": "string：必填，KP核心真相与mythos_anchor必要性", "antagonist_dossier": "string：施动者（邪教/施法者/神话生物）细化设定，不得压缩为一句话；文档无独立施动者可留空", "difficulty_down": "string", "difficulty_up": "string", "solo_advice": "string", "group_advice": "string", "horror_tips": "string", "theme_guidance": "string"},
     "mechanics": [{"name": "string", "type": "counter|clock|tracker", "description": "string", "stages": [{"label": "string", "effect": "string", "trigger": "string"}]}]
   }
 }`
@@ -196,4 +192,3 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 
 	return ScenarioDraft{}, "", fmt.Errorf("compile failed: 连续%d次内容校验未通过", maxBusinessRetries)
 }
-

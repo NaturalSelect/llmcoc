@@ -826,8 +826,10 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 		issues = append(issues, "ScenarioDraft.difficulty 为空")
 	}
 	content := draft.Content
-	if strings.TrimSpace(content.SystemPrompt) == "" {
-		issues = append(issues, "content.system_prompt 为空")
+	if content.KeeperAppendix == nil || strings.TrimSpace(content.KeeperAppendix.CoreTruth) == "" {
+		issues = append(issues, "content.keeper_appendix.core_truth 为空")
+	} else if length := len([]rune(strings.TrimSpace(content.KeeperAppendix.CoreTruth))); length < 60 {
+		issues = append(issues, fmt.Sprintf("content.keeper_appendix.core_truth 过短（当前%d字），须完整写出核心真相与mythos_anchor必要性，不得压缩为一句话", length))
 	}
 	if strings.TrimSpace(content.Setting) == "" {
 		issues = append(issues, "content.setting 为空")
@@ -906,9 +908,6 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	}
 	if len(content.NPCs) > 0 && !anyNPCHasSecretDescription(content.NPCs) {
 		issues = append(issues, "content.npcs 中没有任何一位NPC的description写明「秘密」或「保留」信息，NPC需要有不主动交代的知情边界")
-	}
-	if trimmed := strings.TrimSpace(content.SystemPrompt); trimmed != "" && !strings.Contains(trimmed, "真相") && !strings.Contains(trimmed, "内部") {
-		issues = append(issues, "content.system_prompt 未体现KP独有的内部真相，建议明确写出「内部真相」或类似表述")
 	}
 	return issues
 }
@@ -1047,19 +1046,19 @@ func lengthSpec(targetLength string) string {
 			"- 发现：10-12处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
 			"- 人物：7-10位有名有姓的人，分属不同立场，各有各在做的事\n" +
 			"- 收场：4-8种，每种都有名字，其中至少一种是失败或灾难\n" +
-			"- 篇幅：约7000-12000字。事件时间线给出5-12个带具体日期的节点；给守密人的运营建议与不同职业的入场差异（2-5种）尽量写全；若剧情需要持续追踪某个进度，也写清它怎么走"
+			"- 篇幅：约7000-12000字。事件时间线给出5-12个带具体日期的节点；给守密人的运营建议尽量写全；若剧情需要持续追踪某个进度，也写清它怎么走"
 	case "mid", "剧本时间长度: 3-7d":
 		return "- 地点：4-6处调查员会实际走到的地方\n" +
 			"- 发现：7-10处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
 			"- 人物：4-7位有名有姓的人，分属不同立场或利益\n" +
 			"- 收场：3-5种，每种都有名字，其中至少一种是失败或灾难\n" +
-			"- 篇幅：约4000-7000字。事件时间线建议给出3-6个带具体日期的节点；给守密人的运营建议、职业入场差异、可追踪的进度机制按素材需要提供，可以省略"
+			"- 篇幅：约4000-7000字。事件时间线建议给出3-6个带具体日期的节点；给守密人的运营建议、可追踪的进度机制按素材需要提供，可以省略"
 	default:
 		return "- 地点：3-4处调查员会实际走到的地方\n" +
 			"- 发现：5-7处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
 			"- 人物：2-4位有名有姓的人，各有各的盘算\n" +
 			"- 收场：至少2种，每种都有名字，其中至少一种是失败或灾难\n" +
-			"- 篇幅：约2500-4000字。事件时间线、给守密人的运营建议、职业入场差异、可追踪的进度机制都属于可选，篇幅有限时略去，不要为凑数硬写"
+			"- 篇幅：约2500-4000字。事件时间线、给守密人的运营建议、可追踪的进度机制都属于可选，篇幅有限时略去，不要为凑数硬写"
 	}
 }
 

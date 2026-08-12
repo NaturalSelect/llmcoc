@@ -88,9 +88,9 @@ func TestScenarioContent_UnmarshalJSON_EmptyOptionalFields(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &c); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	if c.Timeline != nil || c.KeeperAppendix != nil || c.EntryIdentities != nil || c.Mechanics != nil {
-		t.Errorf("未提供的可选字段应保持零值(nil)，实际: timeline=%v keeper_appendix=%v entry_identities=%v mechanics=%v",
-			c.Timeline, c.KeeperAppendix, c.EntryIdentities, c.Mechanics)
+	if c.Timeline != nil || c.KeeperAppendix != nil || c.Mechanics != nil {
+		t.Errorf("未提供的可选字段应保持零值(nil)，实际: timeline=%v keeper_appendix=%v mechanics=%v",
+			c.Timeline, c.KeeperAppendix, c.Mechanics)
 	}
 }
 

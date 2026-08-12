@@ -46,7 +46,7 @@ func TestValidateDraftCompatibility_SettingDate(t *testing.T) {
 			Description: "测试简介",
 			Difficulty:  "normal",
 			Content: models.ScenarioContent{
-				SystemPrompt:   "KP协议",
+				KeeperAppendix: &models.KeeperAppendix{CoreTruth: "KP独有的内部真相：这是用于测试的占位真相文本，用来满足core_truth的长度校验要求，不作为实际剧情内容使用。"},
 				Setting:        setting,
 				Intro:          "你们抵达此地，可以四处走走。",
 				GameStartSlot:  16,
@@ -153,7 +153,7 @@ func TestValidateDraftCompatibility_Timeline(t *testing.T) {
 			Description: "测试简介",
 			Difficulty:  "normal",
 			Content: models.ScenarioContent{
-				SystemPrompt:   "KP协议",
+				KeeperAppendix: &models.KeeperAppendix{CoreTruth: "KP独有的内部真相：这是用于测试的占位真相文本，用来满足core_truth的长度校验要求，不作为实际剧情内容使用。"},
 				Setting:        "1923年10月15日，初秋的小镇，你们受邀前来。",
 				Intro:          "你们抵达此地，可以四处走走。",
 				GameStartSlot:  16,

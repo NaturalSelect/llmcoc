@@ -65,7 +65,6 @@ const oneshotDraftJSONSchema = `{
 		"content": {
 			"type": "object",
 			"properties": {
-				"system_prompt": {"type": "string", "description": "KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相与mythos_anchor必要性 + 施动者细化设定，不得压缩为一句话"},
 				"setting": {"type": "string", "description": "表层情境原文或忠实改写，必须保留文档中嵌入的具体年月日"},
 				"tone_tags": {"type": "array", "items": {"type": "string"}, "description": "必须逐字等于diversity_constraints.tone_tags"},
 				"invest_focus": {"type": "string", "description": "调查入口的简短概括；除非must_fix明确要求，否则保持previous_draft原值"},
@@ -150,29 +149,18 @@ const oneshotDraftJSONSchema = `{
 				},
 				"keeper_appendix": {
 					"type": "object",
-					"description": "难度调节/单双人团建议/恐怖呈现提示；文档未提供则整体省略（null）",
+					"description": "守秘人专属材料：核心真相与施动者设定+运营建议；本对象必须给出，不得整体省略",
 					"properties": {
+						"core_truth": {"type": "string", "description": "KP独有的内部真相：复述故事核心真相与mythos_anchor为何不可替换；必填，不得压缩为一句话"},
+						"antagonist_dossier": {"type": "string", "description": "施动者（邪教/施法者/神话生物）细化设定，须完整保留不得压缩为一句话；文档无独立施动者可留空"},
 						"difficulty_down": {"type": "string"},
 						"difficulty_up": {"type": "string"},
 						"solo_advice": {"type": "string"},
 						"group_advice": {"type": "string"},
 						"horror_tips": {"type": "string"},
 						"theme_guidance": {"type": "string"}
-					}
-				},
-				"entry_identities": {
-					"type": "array",
-					"description": "不同职业调查员的差异化入场方式；文档未区分职业入场则留空数组",
-					"items": {
-						"type": "object",
-						"properties": {
-							"profession": {"type": "string"},
-							"init_resource": {"type": "string"},
-							"init_limit": {"type": "string"},
-							"recommend_clues": {"type": "string"}
-						},
-						"required": ["profession", "init_resource"]
-					}
+					},
+					"required": ["core_truth"]
 				},
 				"mechanics": {
 					"type": "array",
@@ -200,7 +188,7 @@ const oneshotDraftJSONSchema = `{
 					}
 				}
 			},
-			"required": ["system_prompt", "setting", "tone_tags", "invest_focus", "intro", "game_start_slot", "map_description", "playthrough_outline", "mythos_anchor", "scenes", "npcs", "clues", "endings"]
+			"required": ["setting", "tone_tags", "invest_focus", "intro", "game_start_slot", "map_description", "playthrough_outline", "mythos_anchor", "scenes", "npcs", "clues", "endings", "keeper_appendix"]
 		}
 	},
 	"required": ["reward_concept", "name", "author", "tags", "min_players", "max_players", "difficulty", "content"]
@@ -249,7 +237,6 @@ var oneshotResultExample = OneshotResult{
 	MaxPlayers:    4,
 	Difficulty:    "normal",
 	Content: models.ScenarioContent{
-		SystemPrompt:   "你是KP，管理会自行推进的局势，不主动把调查员引向答案；按时间推进后果，按信息分层给出线索。【KP独有】内部真相：失窃的书是Douglas生前的旧藏，他死后被镇北墓地的食尸鬼群落接纳、保留了生前记忆，如今潜回取回属于自己的东西。核心恐惧不在于怪物的样貌，而在于「死亡并非终点、逝者以非人的方式继续存在」这一认知对调查员世界观的不可逆冲击。",
 		Setting:        "1924年9月3日，初秋的傍晚，你们受镇图书馆之邀前来协助整理一批新捐赠的藏书。馆内灯光温暖，管理员热情地引你们入座，窗外街区安静而寻常。",
 		ToneTags:       []string{"forbidden-knowledge", "cosmic-dread", "occult-noir"},
 		InvestFocus:    "artifact_theft",
@@ -330,9 +317,11 @@ var oneshotResultExample = OneshotResult{
 			{Time: "开局当晚", Event: "若无人阻止，取书者将在闭馆后潜入书架区，带走下一批目标书籍", Phase: "current"},
 		},
 		KeeperAppendix: &models.KeeperAppendix{
-			DifficultyDown: "让守墓人主动提供泥土线索，缩短调查员定位墓地的时间",
-			DifficultyUp:   "取书者提前带走部分证据，迫使调查员更依赖NPC口述重建事实",
-			SoloAdvice:     "单人团可让守墓人承担更多主动提示功能",
+			CoreTruth:         "失窃的书是Douglas生前的旧藏，他死后被镇北墓地的食尸鬼群落接纳、保留了生前记忆，如今潜回取回属于自己的东西。核心恐惧不在于怪物的样貌，而在于「死亡并非终点、逝者以非人的方式继续存在」这一认知对调查员世界观的不可逆冲击，mythos_anchor(食尸鬼)因此不可替换——换成普通盗贼案件，这层恐惧根基就不存在了。",
+			AntagonistDossier: "食尸鬼Douglas：来历——原是镇民Douglas Whitfield，六周前病逝下葬后在镇北墓地被食尸鬼群落接纳同化；栖身范围——夜间活动于镇北墓地及其地下墓穴，不轻易进入人类聚居区腹地；可观察影响——墓地周边泥土翻动痕迹、窗台残留矿物质与墓地土质一致、深夜佝偻身影翻墙；行为驱动——保留生前对旧藏书的执念，唯一诉求是取回属于自己的书，并非无差别猎食。",
+			DifficultyDown:    "让守墓人主动提供泥土线索，缩短调查员定位墓地的时间",
+			DifficultyUp:      "取书者提前带走部分证据，迫使调查员更依赖NPC口述重建事实",
+			SoloAdvice:        "单人团可让守墓人承担更多主动提示功能",
 		},
 	},
 }
@@ -398,7 +387,6 @@ func repairSystemPrompt() string {
   "max_players": 4,
   "difficulty": "normal",
   "content": {
-    "system_prompt": "KP三项协议（时间推进/信息分层/不主动引导）+ 核心真相 + mythos_anchor必要性 + 施动者细化设定",
     "setting": "表层日常局势，须保留已嵌入的具体年月日",
     "tone_tags": ["必须等于diversity_constraints.tone_tags"],
     "invest_focus": "调查入口的简短概括；除非must_fix明确要求，否则保持previous_draft原值",
@@ -412,8 +400,7 @@ func repairSystemPrompt() string {
     "clues": [{"summary":"...","source":"...","skill_check":"可留空","on_success":"...","on_failure":"失败时不卡关的替代信息","nature":"真实|隐藏|误导"}],
     "endings": [{"name":"...","trigger":"如果[条件]，则[处境变化]","description":"...","san_reward":"恢复1d6","is_failure":false}],
     "timeline": [{"time":"...","event":"中性事实记录句，不含引号引用的人物原话","phase":"past|current"}],
-    "keeper_appendix": {"difficulty_down":"...","difficulty_up":"...","solo_advice":"...","group_advice":"...","horror_tips":"...","theme_guidance":"..."},
-    "entry_identities": [{"profession":"...","init_resource":"...","init_limit":"...","recommend_clues":"..."}],
+    "keeper_appendix": {"core_truth":"必填，核心真相+mythos_anchor必要性","antagonist_dossier":"施动者细化设定，不得压缩为一句话；无独立施动者可留空","difficulty_down":"...","difficulty_up":"...","solo_advice":"...","group_advice":"...","horror_tips":"...","theme_guidance":"..."},
     "mechanics": [{"name":"...","type":"counter|clock|tracker","description":"...","stages":[{"label":"...","effect":"...","trigger":"..."}]}]
   }
 }
@@ -880,7 +867,7 @@ func logicReviewSystemPrompt() string {
 </checklist>`
 }
 
-// buildLogicReviewPayload 送审因果逻辑相关字段：比人写化审查多送system_prompt/mythos/win-lose，
+// buildLogicReviewPayload 送审因果逻辑相关字段：比人写化审查多送core_truth/antagonist_dossier/mythos/win-lose，
 // 少送stats等与逻辑无关的噪音。
 func buildLogicReviewPayload(draft *ScenarioDraft) map[string]any {
 	scenes := make([]map[string]string, 0, len(draft.Content.Scenes))
@@ -891,15 +878,21 @@ func buildLogicReviewPayload(draft *ScenarioDraft) map[string]any {
 	for _, n := range draft.Content.NPCs {
 		npcs = append(npcs, map[string]string{"name": n.Name, "description": n.Description, "attitude": n.Attitude})
 	}
+	var coreTruth, antagonistDossier string
+	if ka := draft.Content.KeeperAppendix; ka != nil {
+		coreTruth = ka.CoreTruth
+		antagonistDossier = ka.AntagonistDossier
+	}
 	return map[string]any{
-		"name":          draft.Name,
-		"system_prompt": draft.Content.SystemPrompt,
-		"mythos_anchor": draft.Content.MythosAnchor,
-		"mythos_core":   draft.Content.MythosCore,
-		"scenes":        scenes,
-		"npcs":          npcs,
-		"clues":         draft.Content.Clues,
-		"endings":       draft.Content.Endings,
+		"name":               draft.Name,
+		"core_truth":         coreTruth,
+		"antagonist_dossier": antagonistDossier,
+		"mythos_anchor":      draft.Content.MythosAnchor,
+		"mythos_core":        draft.Content.MythosCore,
+		"scenes":             scenes,
+		"npcs":               npcs,
+		"clues":              draft.Content.Clues,
+		"endings":            draft.Content.Endings,
 	}
 }
 
@@ -993,14 +986,6 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	}
 	if draft.Content.GameStartSlot > 47 {
 		draft.Content.GameStartSlot = 47
-	}
-	if strings.TrimSpace(draft.Content.SystemPrompt) == "" {
-		draft.Content.SystemPrompt = fmt.Sprintf(
-			"你是本场COC跑团的KP，职责是管理会自行推进的局势而不是执行线性故事。按派系时间线推进后果；按表面可见、主动询问、需要行动、不可直接获得四层管理信息；不要主动把调查员引向正确答案。【KP独有，勿向玩家直说】内部真相：%s。固定神话锚点：%s；具体数值按规则书裁定。",
-			"真相将通过调查逐步揭示",
-			firstNonEmpty(draft.Content.MythosAnchor, "按规则书已收录神话元素处理"),
-		)
-		log.Printf("[scripter:normalize] session=%s filled system_prompt", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.Setting) == "" {
 		draft.Content.Setting = fmt.Sprintf(
@@ -1124,5 +1109,16 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			{Name: "新的稳定态", Trigger: "关键时间线终点到达且调查员没有改变任何派系行动", Description: "局势进入新的稳定态，某人或某地不可挽回地改变。", IsFailure: true, SANReward: "损失1d10"},
 		}
 		log.Printf("[scripter:normalize] session=%s filled default endings count=2", sessionID)
+	}
+	if draft.Content.KeeperAppendix == nil {
+		draft.Content.KeeperAppendix = &models.KeeperAppendix{}
+	}
+	if strings.TrimSpace(draft.Content.KeeperAppendix.CoreTruth) == "" {
+		draft.Content.KeeperAppendix.CoreTruth = fmt.Sprintf(
+			"【KP独有，勿向玩家直说】内部真相：%s。固定神话锚点：%s；具体数值按规则书裁定。",
+			firstNonEmpty(draft.Content.MythosCore, "真相将通过调查逐步揭示"),
+			firstNonEmpty(draft.Content.MythosAnchor, "按规则书已收录神话元素处理"),
+		)
+		log.Printf("[scripter:normalize] session=%s filled keeper_appendix.core_truth", sessionID)
 	}
 }

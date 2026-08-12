@@ -180,7 +180,6 @@ type ScenarioReward struct {
 
 // NOTE: ScenarioContent defines the narrative and structural elements of a playable scenario.
 type ScenarioContent struct {
-	SystemPrompt       string          `json:"system_prompt"`
 	Setting            string          `json:"setting"`
 	ToneTags           []string        `json:"tone_tags"`
 	InvestFocus        string          `json:"invest_focus"`
@@ -195,7 +194,6 @@ type ScenarioContent struct {
 	Reward             *ScenarioReward `json:"reward"`                        // 通关奖励（典籍/神话物品），达成非失败结局时给予
 	Timeline           []TimelineEvent `json:"timeline,omitempty"`            // 时间线（过去线痕迹+当天推进）
 	KeeperAppendix     *KeeperAppendix `json:"keeper_appendix,omitempty"`     // 守秘人附录（难度调节/单双人团/恐怖呈现）
-	EntryIdentities    []EntryIdentity `json:"entry_identities,omitempty"`    // 导入身份表（不同职业入场方式）
 	Mechanics          []MechanicData  `json:"mechanics,omitempty"`           // 量化核心机制标记（计数器/时钟），仅作KP参考
 	MythosAnchor       string          `json:"mythos_anchor"`                 // Stage2确认的神话锚点，用于多样性去重
 	MythosCore         string          `json:"mythos_core"`                   // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
@@ -228,22 +226,18 @@ type TimelineEvent struct {
 	Phase string `json:"phase,omitempty"` // past（过去线）| current（当天推进）
 }
 
-// NOTE: KeeperAppendix 是守秘人运营附录，指导难度调节与团型适配。
+// NOTE: KeeperAppendix 是守秘人专属材料，跑团时全部注入Director。CoreTruth/AntagonistDossier
+// 是KP独有的剧本真相（不得对玩家直说）；Difficulty*/SoloAdvice/GroupAdvice/HorrorTips/
+// ThemeGuidance 是运营建议，按当前团人数/难度判断条件性参考。
 type KeeperAppendix struct {
-	DifficultyDown string `json:"difficulty_down,omitempty"` // 降低难度建议
-	DifficultyUp   string `json:"difficulty_up,omitempty"`   // 提高难度建议
-	SoloAdvice     string `json:"solo_advice,omitempty"`     // 单人团建议
-	GroupAdvice    string `json:"group_advice,omitempty"`    // 多人团建议
-	HorrorTips     string `json:"horror_tips,omitempty"`     // 恐怖呈现建议
-	ThemeGuidance  string `json:"theme_guidance,omitempty"`  // 主题把握提示
-}
-
-// NOTE: EntryIdentity 是导入身份，描述不同职业调查员的入场方式。
-type EntryIdentity struct {
-	Profession     string `json:"profession"`                // 职业名
-	InitResource   string `json:"init_resource"`             // 初始资源
-	InitLimit      string `json:"init_limit,omitempty"`      // 初始限制
-	RecommendClues string `json:"recommend_clues,omitempty"` // 推荐开局线索
+	CoreTruth         string `json:"core_truth"`                   // KP独有的内部真相：故事核心真相+mythos_anchor为何不可替换
+	AntagonistDossier string `json:"antagonist_dossier,omitempty"` // 施动者细化设定（邪教/施法者/神话生物），须完整保留不得压缩
+	DifficultyDown    string `json:"difficulty_down,omitempty"`    // 降低难度建议
+	DifficultyUp      string `json:"difficulty_up,omitempty"`      // 提高难度建议
+	SoloAdvice        string `json:"solo_advice,omitempty"`        // 单人团建议
+	GroupAdvice       string `json:"group_advice,omitempty"`       // 多人团建议
+	HorrorTips        string `json:"horror_tips,omitempty"`        // 恐怖呈现建议
+	ThemeGuidance     string `json:"theme_guidance,omitempty"`     // 主题把握提示
 }
 
 // NOTE: MechanicData 是量化核心机制标记（如"三重承认"计数、反派"行动时钟"），
@@ -600,13 +594,13 @@ type AgentConfig struct {
 	// ImageViaChat 为 true 时画图请求改走 /chat/completions 接口而非专用图片生成接口；
 	// 部分画图模型/中转网关只能通过 Chat 接口调用，图片数据在响应的 delta.images[].image_url.url
 	// 字段中以 data URL 形式返回（仅 Painter 角色使用）。
-	ImageViaChat       bool               `gorm:"default:false" json:"image_via_chat"`
-	SystemPrompt       string             `gorm:"type:text" json:"system_prompt"`
-	ThinkingLevel      string             `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh|max
-	IsActive           bool               `gorm:"default:true" json:"is_active"`
-	CreatedAt          time.Time          `json:"created_at"`
-	UpdatedAt          time.Time          `json:"updated_at"`
-	ProviderConfig     *LLMProviderConfig `gorm:"foreignKey:ProviderConfigID" json:"provider_config"`
+	ImageViaChat   bool               `gorm:"default:false" json:"image_via_chat"`
+	SystemPrompt   string             `gorm:"type:text" json:"system_prompt"`
+	ThinkingLevel  string             `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh|max
+	IsActive       bool               `gorm:"default:true" json:"is_active"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+	ProviderConfig *LLMProviderConfig `gorm:"foreignKey:ProviderConfigID" json:"provider_config"`
 }
 
 // GameEvaluation stores the end-of-session LLM evaluation result.

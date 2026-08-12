@@ -59,8 +59,7 @@ func clueNatureOrder(nature string) int {
 }
 
 func hasScenarioContent(c ScenarioContent) bool {
-	if strings.TrimSpace(c.SystemPrompt) != "" ||
-		strings.TrimSpace(c.Setting) != "" ||
+	if strings.TrimSpace(c.Setting) != "" ||
 		strings.TrimSpace(c.Intro) != "" ||
 		len(c.Endings) > 0 {
 		return true

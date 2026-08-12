@@ -532,7 +532,6 @@ func DownloadScenarioTemplate(c *gin.Context) {
 		MaxPlayers:  4,
 		Difficulty:  "normal",
 		Content: models.ScenarioContent{
-			SystemPrompt:  "你是本场COC跑团的守秘人(KP)...",
 			Setting:       "时代与地点背景",
 			Intro:         "开场引子",
 			GameStartSlot: 36,
@@ -555,6 +554,10 @@ func DownloadScenarioTemplate(c *gin.Context) {
 			Endings: []models.EndingData{
 				{Name: "回归寂静", Trigger: "达成关键目标并安全撤离", Description: "威胁被封堵，城市恢复平静", SANReward: "恢复1d6"},
 				{Name: "灾难降临", Trigger: "关键节点被触发且无人阻止", IsFailure: true, SANReward: "损失1d10"},
+			},
+			KeeperAppendix: &models.KeeperAppendix{
+				CoreTruth:         "KP独有的内部真相：复述核心真相与mythos_anchor为何不可替换",
+				AntagonistDossier: "施动者（邪教/施法者/神话生物）细化设定，不得压缩为一句话",
 			},
 		},
 	}
