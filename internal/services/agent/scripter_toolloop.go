@@ -462,7 +462,7 @@ func getWritingExampleTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: toolNameGetWritingExample,
 			Description: `获取一份职业出版模组的完整成稿作为写作参考，学习它如何组织篇章、控制信息密度、把检定与线索写进叙事句。
-不要照抄其中具体的人名、地名、机构名、情节或神话设定——你要写的是一份完全不同的剧本。必须在正式动笔前调用一次，无需参数。`,
+不要照抄其中具体的人名、地名、机构名、情节或神话设定——你要写的是一份完全不同的剧本。参考成稿会直接写出骰子数值（如"1D6点伤害"）和数值化的属性/技能表，这是纸质出版物自带的排版惯例，不要把这种写法带进你的正文——你的成稿里检定和后果仍按同样的手法写进叙事句，但后果只写具体状态和感受，不写骰子表达式或点数。必须在正式动笔前调用一次，无需参数。`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {}
