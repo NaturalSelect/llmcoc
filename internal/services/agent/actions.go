@@ -588,7 +588,7 @@ func (advanceTimeAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 		actx.GCtx.Session.ID, rounds, reason, formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session)))
 	return []ToolResult{{
 		Action: ToolAdvanceTime,
-		Result: fmt.Sprintf("时间推进%d回合(%s),当前时间:%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session))),
+		Result: fmt.Sprintf("时间推进%d回合(每轮=30分钟)(%s),当前时间:%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session))),
 	}}
 }
 

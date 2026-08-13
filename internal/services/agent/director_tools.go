@@ -458,12 +458,12 @@ func advanceTimeTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolAdvanceTime),
-			Description: `推进游戏内时间。time_rounds 是推进的轮次/时间单位数值，time_reason 说明推进依据(如调查员选择长时间休息、赶路等)。
+			Description: `推进游戏内时间。time_rounds 是推进的轮次数值，1轮＝游戏内30分钟，time_reason 说明推进依据(如调查员选择长时间休息、赶路等)。
 调用示例：{"time_rounds":1,"time_reason":"调查员选择原地休息一晚"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"time_rounds": {"type": "integer", "description": "推进的时间数值"},
+					"time_rounds": {"type": "integer", "description": "推进的轮次数值，1轮＝游戏内30分钟"},
 					"time_reason": {"type": "string", "description": "时间推进依据"}
 				},
 				"required": ["time_rounds", "time_reason"]
