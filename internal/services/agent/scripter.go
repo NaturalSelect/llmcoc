@@ -329,14 +329,13 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		logScripterArtifact("QA Humanize Issues", sessionID, qaIssues)
 		repaired, repairErr := repairStoryDocument(ctx, r, constraints, story, qaIssues)
 		if repairErr != nil {
-			log.Printf("[scripter] session=%s stage=qa_humanize repair failed: %v (keeping story)", sessionID, repairErr)
-			r.emitProgress("qa_humanize", "error", "人写化修复失败（保留当前故事文档）")
-		} else {
-			story = repaired
-			iterations++
-			log.Printf("[scripter] session=%s stage=qa_humanize done doc_len=%d", sessionID, len([]rune(story.Document)))
-			r.emitProgress("qa_humanize", "done", "人写化修复完成")
+			log.Panicf("[scripter] session=%s stage=qa_humanize err=%v",sessionID,repairErr)
+			continue
 		}
+		story = repaired
+		iterations++
+		log.Printf("[scripter] session=%s stage=qa_humanize done doc_len=%d", sessionID, len([]rune(story.Document)))
+		r.emitProgress("qa_humanize", "done", "人写化修复完成")
 	}
 	log.Printf("[scripter] session=%s stage=qa_humanize no issues", sessionID)
 	r.emitProgress("qa_humanize", "done", "人写化审查通过")
@@ -352,14 +351,13 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		logScripterArtifact("Story Logic Review Issues", sessionID, logicIssues)
 		repaired, repairErr := repairStoryDocument(ctx, r, constraints, story, logicIssues)
 		if repairErr != nil {
-			log.Printf("[scripter] session=%s stage=story_logic_review repair failed: %v (keeping story)", sessionID, repairErr)
-			r.emitProgress("story_logic_review", "error", "故事逻辑修复失败（保留当前故事文档）")
-		} else {
-			story = repaired
-			iterations++
-			log.Printf("[scripter] session=%s stage=story_logic_review done doc_len=%d", sessionID, len([]rune(story.Document)))
-			r.emitProgress("story_logic_review", "done", "故事逻辑修复完成")
+			log.Printf("[scripter] session=%s stage=story_logic_review repair failed: %v", sessionID, repairErr)
+			continue
 		}
+		story = repaired
+		iterations++
+		log.Printf("[scripter] session=%s stage=story_logic_review done doc_len=%d", sessionID, len([]rune(story.Document)))
+		r.emitProgress("story_logic_review", "done", "故事逻辑修复完成")
 	}
 	log.Printf("[scripter] session=%s stage=story_logic_review no issues", sessionID)
 	r.emitProgress("story_logic_review", "done", "故事逻辑审查通过")
