@@ -199,8 +199,10 @@ func validateStoryDocument(story StoryOutput) []string {
 // 本身就是自由文本，没有需要封装的结构。mythos_anchor 从 translate_anchor 最近一次
 // disabled=false的结论中自动记录，不要求模型在结尾重复提交。
 // initialAnchor 非空时作为锚点初始值（repair场景传入已确认的旧锚点，允许修复措辞
-// 问题时不必重新调用translate_anchor）。
-func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string, initialAnchor string) (StoryOutput, error) {
+// 问题时不必重新调用translate_anchor）。conv 承载消息链，成功提交后会记一次成稿
+// （conv.markDraft），供后续修复轮次复用同一条对话。minDocRunes>0 时额外要求正文
+// 不得短于该字数（repair场景用于防止模型偷懒只输出改动片段而非完整正文）。
+func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, conv *scripterConversation, stageName string, initialAnchor string, minDocRunes int) (StoryOutput, error) {
 	stageName = firstNonEmpty(stageName, "story_architect")
 
 	tools := []scripterTool{
@@ -242,7 +244,13 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 
 	var submitted *StoryOutput
 	onPlainText := func(content string) (bool, string) {
-		story := StoryOutput{Document: strings.TrimSpace(content), MythosAnchor: confirmedAnchor}
+		doc := strings.TrimSpace(content)
+		if minDocRunes > 0 && len([]rune(doc)) < minDocRunes {
+			return false, fmt.Sprintf(
+				"SYSTEM REJECT: 正文过短（当前%d字，至少需要%d字）。必须输出修订后的完整故事文档全文，不得只给改动片段、摘要或用省略号/“其余部分不变”跳过未改动的章节。",
+				len([]rune(doc)), minDocRunes)
+		}
+		story := StoryOutput{Document: doc, MythosAnchor: confirmedAnchor}
 		if issues := validateStoryDocument(story); len(issues) > 0 {
 			return false, fmt.Sprintf(
 				"SYSTEM REJECT: 故事文档校验失败: %s。不需要调用任何工具，直接在下一条回复中重新输出完整故事文档正文。",
@@ -258,7 +266,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 		room:        room,
 		handle:      room.architect,
 		stage:       stageName,
-		msgs:        msgs,
+		conv:        conv,
 		tools:       tools,
 		maxRounds:   maxRounds,
 		dispatch:    dispatch,
@@ -267,6 +275,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.C
 	if err != nil {
 		return StoryOutput{}, err
 	}
+	conv.markDraft()
 	return *submitted, nil
 }
 
@@ -337,7 +346,7 @@ func executeGetWritingExample(ctx context.Context, room *scripterRoom) string {
 // Top-level story generation / repair
 // ---------------------------------------------------------------------------
 
-func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (StoryOutput, error) {
+func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints ScripterConstraints) (StoryOutput, *scripterConversation, error) {
 	sessionID := scripterSessionID(ctx, room)
 
 	userMsg := fmt.Sprintf(
@@ -368,29 +377,51 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 		difficultySpec(room.req.Difficulty),
 	)
 
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.architect.systemPrompt(storySystemPrompt())},
-		{Role: "user", Content: userMsg},
-	}
-	logStagePrompt("story", sessionID, msgs)
+	conv := newScripterConversation(
+		llm.ChatMessage{Role: "system", Content: room.architect.systemPrompt(storySystemPrompt())},
+		llm.ChatMessage{Role: "user", Content: userMsg},
+	)
+	logStagePrompt("story", sessionID, conv.msgs)
 
-	result, err := runStoryArchitectLoop(ctx, room, msgs, "story_architect", "")
+	result, err := runStoryArchitectLoop(ctx, room, conv, "story_architect", "", 0)
 	if err != nil {
-		return StoryOutput{}, err
+		return StoryOutput{}, nil, err
 	}
 
 	log.Printf("[scripter:story] session=%s done anchor=%q doc_len=%d",
 		sessionID, truncateRunes(result.MythosAnchor, 80), len([]rune(result.Document)))
 	logScripterArtifact("Story Output", sessionID, result)
 
-	return result, nil
+	return result, conv, nil
 }
 
-func repairStoryDocument(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, previous StoryOutput, issues []string) (StoryOutput, error) {
+// maxStoryConvRunes 是 story 消息链复用的字符数上限（近似token数）；超过后
+// repairStoryDocument 会放弃续接对话，降级为重建一条新链（改造前的行为），避免
+// qa_humanize/story_logic_review 等多轮修复下上下文无界增长。
+const maxStoryConvRunes = 80000
+
+// storyRepairInstruction 是延续原生成链续接修复时追加的指令：只包含 must_fix 清单
+// 与最小改动约束，不重复请求参数/多样性约束/上一版正文/锚点——它们已经在链中可见。
+func storyRepairInstruction(issues []string) string {
+	return fmt.Sprintf(
+		`<must_fix>
+%s
+</must_fix>
+请直接在下一条回复中输出修复后的完整故事文档全文，不需要调用任何工具来提交。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；除非must_fix明确要求，否则不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags所指向的核心设定。`,
+		strings.Join(issues, "\n"),
+	)
+}
+
+// repairStoryDocument 修复故事文档。conv 非空且未超过 maxStoryConvRunes 时，延续
+// 原生成链——把历史成稿正文替换为占位符后只追加一条 must_fix 消息，模型据此续接
+// 同一条对话；conv 为空、还没有任何历史消息、或链已超过复用上限时，退化为重建一条
+// 全新的 system+user 消息链（携带上一版正文全文快照），即改造前的行为。
+func repairStoryDocument(ctx context.Context, room *scripterRoom, conv *scripterConversation, constraints ScripterConstraints, previous StoryOutput, issues []string) (StoryOutput, error) {
 	sessionID := scripterSessionID(ctx, room)
 
-	userMsg := fmt.Sprintf(
-		`%s
+	if conv == nil || len(conv.msgs) == 0 || conv.runeLen() > maxStoryConvRunes {
+		userMsg := fmt.Sprintf(
+			`%s
 %s
 <previous_story_document>%s</previous_story_document>
 <previous_mythos_anchor>%s</previous_mythos_anchor>
@@ -398,20 +429,28 @@ func repairStoryDocument(ctx context.Context, room *scripterRoom, constraints Sc
 %s
 </must_fix>
 请直接在下一条回复中输出修复后的完整故事文档正文，不需要调用任何工具来提交。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；除非must_fix明确要求，否则不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags所指向的核心设定。`,
-		scenarioRequestBlock(room.req, constraints),
-		diversityConstraintsBlock(constraints),
-		previous.Document,
-		previous.MythosAnchor,
-		strings.Join(issues, "\n"),
-	)
-
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.architect.systemPrompt(storySystemPrompt())},
-		{Role: "user", Content: userMsg},
+			scenarioRequestBlock(room.req, constraints),
+			diversityConstraintsBlock(constraints),
+			previous.Document,
+			previous.MythosAnchor,
+			strings.Join(issues, "\n"),
+		)
+		if conv == nil {
+			conv = newScripterConversation()
+		}
+		log.Printf("[scripter:story_repair] session=%s conv为空或超出复用上限，重建消息链 rune_len=%d", sessionID, conv.runeLen())
+		conv.reset(
+			llm.ChatMessage{Role: "system", Content: room.architect.systemPrompt(storySystemPrompt())},
+			llm.ChatMessage{Role: "user", Content: userMsg},
+		)
+	} else {
+		conv.supersedePriorDrafts()
+		conv.append(llm.ChatMessage{Role: "user", Content: storyRepairInstruction(issues)})
 	}
-	logStagePrompt("story_repair", sessionID, msgs)
+	logStagePrompt("story_repair", sessionID, conv.msgs)
 
-	result, err := runStoryArchitectLoop(ctx, room, msgs, "story_repair_architect", previous.MythosAnchor)
+	minDocRunes := len([]rune(previous.Document)) * 6 / 10
+	result, err := runStoryArchitectLoop(ctx, room, conv, "story_repair_architect", previous.MythosAnchor, minDocRunes)
 	if err != nil {
 		return StoryOutput{}, fmt.Errorf("story repair failed: %w", err)
 	}

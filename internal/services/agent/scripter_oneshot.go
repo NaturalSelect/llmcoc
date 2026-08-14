@@ -418,14 +418,14 @@ func repairSystemPrompt() string {
 // 这种结构时不稳定（同compileStoryToModule的既有结论：曾观测到必填字段留空或content被
 // 整体序列化成字符串），JsonChat+RepairJSON是这个代码库里同类"大段结构化JSON"生成的既有
 // 做法。目前仅由 repairOneshotDraft 复用，用于在已编译草案上做核验 + 结构修复。
-func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (OneshotResult, error) {
+func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, conv *scripterConversation, stageName string) (OneshotResult, error) {
 	stageName = firstNonEmpty(stageName, "oneshot_architect")
 
-	findings, err := runOneshotVerificationPhase(ctx, room, msgs, stageName)
+	findings, err := runOneshotVerificationPhase(ctx, room, conv, stageName)
 	if err != nil {
 		return OneshotResult{}, err
 	}
-	return runOneshotSubmitPhase(ctx, room, msgs, findings, stageName)
+	return runOneshotSubmitPhase(ctx, room, conv, findings, stageName)
 }
 
 // readyToSubmitTool 是核验阶段的收尾信号工具（solo，空参数）：模型确认已完成必要的
@@ -446,7 +446,11 @@ func readyToSubmitTool() scripterTool {
 // 的工具循环，把期间每次translate_anchor的结果文本拼接为findings返回，供
 // runOneshotSubmitPhase的JsonChat提交带上核验结论（否则模型在纯JsonChat轮会"忘记"
 // 核验阶段问到的规则书元素）。没有调用过translate_anchor时findings为空串。
-func runOneshotVerificationPhase(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, stageName string) (string, error) {
+// NOTE: 核验阶段的原生工具往返（tool_calls/role=tool 消息）只落在 conv.branch() 分支
+// 上，不写回主链——主链之后要交给 JsonChat 提交，部分兼容端点在同一次请求里混入原生
+// tool_calls 历史与 response_format=json_object 会报错；核验学到的结论改以 findings
+// 文本形式追加进主链，跨轮依然可见。
+func runOneshotVerificationPhase(ctx context.Context, room *scripterRoom, conv *scripterConversation, stageName string) (string, error) {
 	tools := []scripterTool{
 		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；仅当must_fix涉及神话元素时才需要调用"),
 		generateNPCNameTool(),
@@ -474,17 +478,26 @@ func runOneshotVerificationPhase(ctx context.Context, room *scripterRoom, msgs [
 	}
 
 	const maxRounds = 20
-	if err := runScripterToolLoop(ctx, room, room.architect, stageName+"_verify", msgs, tools, maxRounds, dispatch); err != nil {
+	if err := runToolLoop(ctx, toolLoopOptions{
+		room:      room,
+		handle:    room.architect,
+		stage:     stageName + "_verify",
+		conv:      conv.branch(),
+		tools:     tools,
+		maxRounds: maxRounds,
+		dispatch:  dispatch,
+	}); err != nil {
 		return "", err
 	}
 	return strings.Join(findings, "\n"), nil
 }
 
 // runOneshotSubmitPhase 是核验通过后的纯JsonChat提交：把核验阶段的findings（若有）连同
-// 原始system/user消息一起发给architect，直接要求输出完整oneshotResult JSON本体；解析失败
-// 时走RepairJSON修复，name为空等业务校验失败时把上次输出连同具体修正要求重新发回去，
-// 逻辑与compileStoryToModule的重试结构一致。
-func runOneshotSubmitPhase(ctx context.Context, room *scripterRoom, msgs []llm.ChatMessage, findings string, stageName string) (OneshotResult, error) {
+// 提交指令追加进conv一起发给architect，直接要求输出完整oneshotResult JSON本体；解析失败
+// 时走RepairJSON修复，name为空等业务校验失败时把上次输出连同具体修正要求追加进conv重新
+// 发回去，让compiler带着上下文重新生成一次。成功提交后记一次成稿（conv.markDraft），供
+// 后续修复轮次复用同一条对话。
+func runOneshotSubmitPhase(ctx context.Context, room *scripterRoom, conv *scripterConversation, findings string, stageName string) (OneshotResult, error) {
 	if room.architect.provider == nil {
 		return OneshotResult{}, fmt.Errorf("%s provider unavailable", stageName)
 	}
@@ -494,18 +507,19 @@ func runOneshotSubmitPhase(ctx context.Context, room *scripterRoom, msgs []llm.C
 	if strings.TrimSpace(findings) != "" {
 		userContent = fmt.Sprintf("<verification_findings>\n%s\n</verification_findings>\n%s", findings, userContent)
 	}
-	submitMsgs := append(append([]llm.ChatMessage(nil), msgs...), llm.ChatMessage{Role: "user", Content: userContent})
+	conv.append(llm.ChatMessage{Role: "user", Content: userContent})
 
 	cacheKey := room.architect.cacheKey(sessionID)
 	const maxBusinessRetries = 3
 	for attempt := 1; attempt <= maxBusinessRetries; attempt++ {
 		stage := fmt.Sprintf("%s_submit_attempt_%d", stageName, attempt)
-		logStagePrompt(stage, sessionID, submitMsgs)
-		resp, err := room.architect.provider.JsonChat(ctx, cacheKey, submitMsgs)
+		logStagePrompt(stage, sessionID, conv.msgs)
+		resp, err := room.architect.provider.JsonChat(ctx, cacheKey, conv.msgs)
 		if err != nil {
 			return OneshotResult{}, fmt.Errorf("%s failed: %w", stageName, err)
 		}
-		recordScripterLLMExchange(ctx, room, stage, submitMsgs, resp)
+		conv.record(ctx, room, stage, resp)
+		conv.append(llm.ChatMessage{Role: "assistant", Content: resp})
 		log.Printf("[scripter:%s] session=%s attempt=%d resp_len=%d", stageName, sessionID, attempt, len([]rune(resp)))
 
 		result, reject := parseOneshotResult("submit", resp)
@@ -515,19 +529,14 @@ func runOneshotSubmitPhase(ctx context.Context, room *scripterRoom, msgs []llm.C
 			}
 		}
 		if reject != "" {
-			submitMsgs = append(submitMsgs,
-				llm.ChatMessage{Role: "assistant", Content: resp},
-				llm.ChatMessage{Role: "user", Content: reject + " 请重新输出完整JSON。"},
-			)
+			conv.append(llm.ChatMessage{Role: "user", Content: reject + " 请重新输出完整JSON。"})
 			continue
 		}
 		if strings.TrimSpace(result.Name) == "" {
-			submitMsgs = append(submitMsgs,
-				llm.ChatMessage{Role: "assistant", Content: resp},
-				llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: name字段不能为空。请连同完整JSON重新输出一次，其余字段保持与上次一致。"},
-			)
+			conv.append(llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: name字段不能为空。请连同完整JSON重新输出一次，其余字段保持与上次一致。"})
 			continue
 		}
+		conv.markDraft()
 		return result, nil
 	}
 	return OneshotResult{}, fmt.Errorf("%s 连续%d次未能提交合法剧本JSON", stageName, maxBusinessRetries)
@@ -752,12 +761,39 @@ func diversityConstraintsBlock(constraints ScripterConstraints) string {
 // raised by validateDraftCompatibility / runStoryQAReview / runLogicReview.
 // ---------------------------------------------------------------------------
 
-func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints ScripterConstraints, previous *ScenarioDraft, issues []string) (ScenarioDraft, error) {
-	sessionID := scripterSessionID(ctx, room)
-	prevJSON, _ := json.Marshal(previous)
+// maxOneshotConvRunes 是 oneshot 修复消息链复用的字符数上限（近似token数）；超过后
+// repairOneshotDraft 会放弃续接对话，降级为重建一条新链（改造前的行为）。
+const maxOneshotConvRunes = 60000
 
-	userMsg := fmt.Sprintf(
-		`%s
+// oneshotRepairInstruction 是延续原链续接修复时追加的指令：只包含标签黑名单、
+// must_fix清单与核验/最小改动约束，不重复请求参数/多样性约束/上一版draft全文——
+// 它们已经在链中可见。
+func oneshotRepairInstruction(issues []string, tagsBlacklist []string) string {
+	return fmt.Sprintf(
+		`<recent_scenario_tags_blacklist>
+%s
+</recent_scenario_tags_blacklist>
+<must_fix>
+%s
+</must_fix>
+请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags；若需修复tags，须避开recent_scenario_tags_blacklist中的所有标签。`,
+		formatScenarioTagsBlacklist(tagsBlacklist),
+		strings.Join(issues, "\n"),
+	)
+}
+
+// repairOneshotDraft 修复已编译的 ScenarioDraft。conv 非空、已有历史消息且未超过
+// maxOneshotConvRunes 时，延续原链——把历史成稿正文替换为占位符后只追加一条
+// must_fix 消息，模型据此续接同一条对话；conv 为空、还没有任何历史消息、或链已超过
+// 复用上限时，退化为重建一条全新的 system(repairSystemPrompt)+user 消息链（携带
+// 上一版draft全文快照），即改造前的行为。
+func repairOneshotDraft(ctx context.Context, room *scripterRoom, conv *scripterConversation, constraints ScripterConstraints, previous *ScenarioDraft, issues []string) (ScenarioDraft, error) {
+	sessionID := scripterSessionID(ctx, room)
+
+	if conv == nil || len(conv.msgs) == 0 || conv.runeLen() > maxOneshotConvRunes {
+		prevJSON, _ := json.Marshal(previous)
+		userMsg := fmt.Sprintf(
+			`%s
 %s
 <previous_draft>%s</previous_draft>
 <recent_scenario_tags_blacklist>
@@ -767,20 +803,27 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, constraints Scr
 %s
 </must_fix>
 请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
-		scenarioRequestBlock(room.req, constraints),
-		diversityConstraintsBlock(constraints),
-		string(prevJSON),
-		formatScenarioTagsBlacklist(room.tagsBlacklist),
-		strings.Join(issues, "\n"),
-	)
-
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.architect.systemPrompt(repairSystemPrompt())},
-		{Role: "user", Content: userMsg},
+			scenarioRequestBlock(room.req, constraints),
+			diversityConstraintsBlock(constraints),
+			string(prevJSON),
+			formatScenarioTagsBlacklist(room.tagsBlacklist),
+			strings.Join(issues, "\n"),
+		)
+		if conv == nil {
+			conv = newScripterConversation()
+		}
+		log.Printf("[scripter:oneshot_repair] session=%s conv为空或超出复用上限，重建消息链 rune_len=%d", sessionID, conv.runeLen())
+		conv.reset(
+			llm.ChatMessage{Role: "system", Content: room.architect.systemPrompt(repairSystemPrompt())},
+			llm.ChatMessage{Role: "user", Content: userMsg},
+		)
+	} else {
+		conv.supersedePriorDrafts()
+		conv.append(llm.ChatMessage{Role: "user", Content: oneshotRepairInstruction(issues, room.tagsBlacklist)})
 	}
-	logStagePrompt("oneshot_repair", sessionID, msgs)
+	logStagePrompt("oneshot_repair", sessionID, conv.msgs)
 
-	result, err := runOneshotArchitectLoop(ctx, room, msgs, "oneshot_repair_architect")
+	result, err := runOneshotArchitectLoop(ctx, room, conv, "oneshot_repair_architect")
 	if err != nil {
 		return ScenarioDraft{}, fmt.Errorf("oneshot repair failed: %w", err)
 	}

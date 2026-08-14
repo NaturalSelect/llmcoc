@@ -72,6 +72,11 @@ type toolLoopOptions struct {
 	maxRounds int
 	dispatch  scripterToolDispatch
 
+	// conv 非 nil 时，以其累积的消息链（conv.msgs/conv.logged）为起点续跑本次循环，
+	// 忽略 msgs 字段；循环期间的全部追加——含错误提前返回等任意退出路径——都会通过
+	// defer 写回 conv，供调用方在下一次修复轮次继续复用同一条对话。
+	conv *scripterConversation
+
 	// firstRoundTools 非空时，仅第1轮把可用工具集限制为这个列表（强制模型第一轮
 	// 只能调用其中的工具），第2轮起恢复使用 tools。为空则每轮都使用 tools。
 	firstRoundTools []scripterTool
@@ -173,6 +178,18 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 	}
 	sessionID := scripterSessionID(ctx, opts.room)
 
+	loggedCount := 0 // msgs 中已经写入生成日志的前缀长度，避免每轮把完整历史重复写入（O(N²)）
+	if opts.conv != nil {
+		msgs = opts.conv.msgs
+		loggedCount = opts.conv.logged
+		// NOTE: 无论本函数从哪条路径返回（成功/出错/ctx取消/轮数耗尽），都要把本轮
+		// 积累的消息链写回 conv，供调用方下一次修复轮次继续复用同一条对话。
+		defer func() {
+			opts.conv.msgs = msgs
+			opts.conv.logged = loggedCount
+		}()
+	}
+
 	defToolDefs, defValidNames, defSoloNames := buildToolState(opts.tools)
 	firstToolDefs, firstValidNames, firstSoloNames := defToolDefs, defValidNames, defSoloNames
 	if len(opts.firstRoundTools) > 0 {
@@ -185,7 +202,6 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 	}
 
 	emptyRounds := 0
-	loggedCount := 0 // msgs 中已经写入生成日志的前缀长度，避免每轮把完整历史重复写入（O(N²)）
 	for round := 1; round <= opts.maxRounds; round++ {
 		if ctx.Err() != nil {
 			return ctx.Err()

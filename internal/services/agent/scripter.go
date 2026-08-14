@@ -288,7 +288,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 
 	log.Printf("[scripter] session=%s stage=story start", sessionID)
 	r.emitProgress("story", "start", "阶段 2/6：Story Architect 创作故事文档（多轮工具调用，耗时较长）…")
-	story, err := generateStoryDocument(ctx, r, constraints)
+	story, storyConv, err := generateStoryDocument(ctx, r, constraints)
 	if err != nil {
 		log.Printf("[scripter] session=%s stage=story error=%v", sessionID, err)
 		r.emitProgress("story", "error", "故事文档生成失败："+err.Error())
@@ -308,7 +308,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		}
 		log.Printf("[scripter] session=%s stage=story_repair round=%d issues=%d %v", sessionID, round, len(issues), issues)
 		r.emitProgress("story_repair", "start", fmt.Sprintf("故事文档结构修复第 %d 轮：发现 %d 个问题", round, len(issues)))
-		repaired, repairErr := repairStoryDocument(ctx, r, constraints, story, issues)
+		repaired, repairErr := repairStoryDocument(ctx, r, storyConv, constraints, story, issues)
 		if repairErr != nil {
 			log.Printf("[scripter] session=%s stage=story_repair round=%d failed: %v", sessionID, round, repairErr)
 			r.emitProgress("story_repair", "error", fmt.Sprintf("故事文档修复第 %d 轮失败（保留当前文档）", round))
@@ -320,46 +320,57 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		r.emitProgress("story_repair", "done", fmt.Sprintf("故事文档结构修复第 %d 轮完成", round))
 	}
 
-	// 人写化审查：QA 审 AI 腔与写作质感，问题清单走一轮故事文档修复；失败不阻塞生成
+	// 人写化审查：QA 审 AI 腔与写作质感，问题清单走一轮故事文档修复；最多3轮，
+	// 单轮修复失败或3轮后仍有问题都不阻塞生成，保留当前文档进入下一阶段。
 	log.Printf("[scripter] session=%s stage=qa_humanize start", sessionID)
 	r.emitProgress("qa_humanize", "start", "阶段 3/6：QA 人写化审查…")
-	for qaIssues := runStoryQAReview(ctx, r, story.Document); len(qaIssues) > 0; {
-		log.Printf("[scripter] session=%s stage=qa_humanize issues=%d %v", sessionID, len(qaIssues), qaIssues)
-		r.emitProgress("qa_humanize", "start", fmt.Sprintf("人写化审查发现 %d 个问题，执行修复", len(qaIssues)))
+	for round := 1; round <= 3; round++ {
+		qaIssues := runStoryQAReview(ctx, r, story.Document)
+		if len(qaIssues) == 0 {
+			break
+		}
+		log.Printf("[scripter] session=%s stage=qa_humanize round=%d issues=%d %v", sessionID, round, len(qaIssues), qaIssues)
+		r.emitProgress("qa_humanize", "start", fmt.Sprintf("人写化审查第 %d 轮：发现 %d 个问题，执行修复", round, len(qaIssues)))
 		logScripterArtifact("QA Humanize Issues", sessionID, qaIssues)
-		repaired, repairErr := repairStoryDocument(ctx, r, constraints, story, qaIssues)
+		repaired, repairErr := repairStoryDocument(ctx, r, storyConv, constraints, story, qaIssues)
 		if repairErr != nil {
-			log.Panicf("[scripter] session=%s stage=qa_humanize err=%v",sessionID,repairErr)
-			continue
+			log.Printf("[scripter] session=%s stage=qa_humanize round=%d failed: %v", sessionID, round, repairErr)
+			r.emitProgress("qa_humanize", "error", fmt.Sprintf("人写化修复第 %d 轮失败（保留当前文档）", round))
+			break
 		}
 		story = repaired
 		iterations++
-		log.Printf("[scripter] session=%s stage=qa_humanize done doc_len=%d", sessionID, len([]rune(story.Document)))
-		r.emitProgress("qa_humanize", "done", "人写化修复完成")
+		log.Printf("[scripter] session=%s stage=qa_humanize round=%d done doc_len=%d", sessionID, round, len([]rune(story.Document)))
+		r.emitProgress("qa_humanize", "done", fmt.Sprintf("人写化修复第 %d 轮完成", round))
 	}
-	log.Printf("[scripter] session=%s stage=qa_humanize no issues", sessionID)
+	log.Printf("[scripter] session=%s stage=qa_humanize done", sessionID)
 	r.emitProgress("qa_humanize", "done", "人写化审查通过")
 
 	// 故事逻辑审查：QA 审故事本身能否成立（动机/能力机会/时间线/误导公平性/反派计划/结局因果/
 	// 内部一致性/可解性），与人写化审查（只审文字质感）、编译后逻辑审查（只审编译忠实度与线索
-	// 可达性，且信任故事文档为真相源）都不重复；问题清单走一轮故事文档修复，失败不阻塞生成
+	// 可达性，且信任故事文档为真相源）都不重复；问题清单走一轮故事文档修复；最多3轮
 	log.Printf("[scripter] session=%s stage=story_logic_review start", sessionID)
 	r.emitProgress("story_logic_review", "start", "QA 故事逻辑审查…")
-	for logicIssues := runStoryLogicReview(ctx, r, story.Document); len(logicIssues) > 0; {
-		log.Printf("[scripter] session=%s stage=story_logic_review issues=%d %v", sessionID, len(logicIssues), logicIssues)
-		r.emitProgress("story_logic_review", "start", fmt.Sprintf("故事逻辑审查发现 %d 个问题，执行修复", len(logicIssues)))
+	for round := 1; round <= 3; round++ {
+		logicIssues := runStoryLogicReview(ctx, r, story.Document)
+		if len(logicIssues) == 0 {
+			break
+		}
+		log.Printf("[scripter] session=%s stage=story_logic_review round=%d issues=%d %v", sessionID, round, len(logicIssues), logicIssues)
+		r.emitProgress("story_logic_review", "start", fmt.Sprintf("故事逻辑审查第 %d 轮：发现 %d 个问题，执行修复", round, len(logicIssues)))
 		logScripterArtifact("Story Logic Review Issues", sessionID, logicIssues)
-		repaired, repairErr := repairStoryDocument(ctx, r, constraints, story, logicIssues)
+		repaired, repairErr := repairStoryDocument(ctx, r, storyConv, constraints, story, logicIssues)
 		if repairErr != nil {
-			log.Printf("[scripter] session=%s stage=story_logic_review repair failed: %v", sessionID, repairErr)
-			continue
+			log.Printf("[scripter] session=%s stage=story_logic_review round=%d failed: %v", sessionID, round, repairErr)
+			r.emitProgress("story_logic_review", "error", fmt.Sprintf("故事逻辑修复第 %d 轮失败（保留当前文档）", round))
+			break
 		}
 		story = repaired
 		iterations++
-		log.Printf("[scripter] session=%s stage=story_logic_review done doc_len=%d", sessionID, len([]rune(story.Document)))
-		r.emitProgress("story_logic_review", "done", "故事逻辑修复完成")
+		log.Printf("[scripter] session=%s stage=story_logic_review round=%d done doc_len=%d", sessionID, round, len([]rune(story.Document)))
+		r.emitProgress("story_logic_review", "done", fmt.Sprintf("故事逻辑修复第 %d 轮完成", round))
 	}
-	log.Printf("[scripter] session=%s stage=story_logic_review no issues", sessionID)
+	log.Printf("[scripter] session=%s stage=story_logic_review done", sessionID)
 	r.emitProgress("story_logic_review", "done", "故事逻辑审查通过")
 
 	draft, compileIters, err := r.compileAndFinalize(ctx, story, constraints)
@@ -394,6 +405,11 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 
 	applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
 
+	// repairConv 承载 compile 后修复阶段（结构修复 + 逻辑修复）复用的消息链，两处
+	// repairOneshotDraft 调用共用；与 story 阶段的 storyConv 相互独立，因为 compiler
+	// 与 repair architect 的 system prompt 语义不同（忠实编译 vs 最小改动修复）。
+	repairConv := &scripterConversation{}
+
 	// Repair loop: up to 2 rounds for structural issues
 	for round := 1; round <= 2; round++ {
 		issues := validateDraftCompatibility(draft)
@@ -403,7 +419,7 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 		}
 		log.Printf("[scripter] session=%s stage=repair round=%d issues=%d %v", sessionID, round, len(issues), issues)
 		r.emitProgress("repair", "start", fmt.Sprintf("结构修复第 %d 轮：发现 %d 个结构问题", round, len(issues)))
-		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, issues)
+		repaired, repairErr := repairOneshotDraft(ctx, r, repairConv, constraints, &draft, issues)
 		if repairErr != nil {
 			log.Printf("[scripter] session=%s stage=repair round=%d failed: %v", sessionID, round, repairErr)
 			r.emitProgress("repair", "error", fmt.Sprintf("结构修复第 %d 轮失败（保留当前草稿）", round))
@@ -424,7 +440,7 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 		log.Printf("[scripter] session=%s stage=logic_review issues=%d %v", sessionID, len(logicIssues), logicIssues)
 		r.emitProgress("logic_review", "start", fmt.Sprintf("逻辑审查发现 %d 个问题，执行修复", len(logicIssues)))
 		logScripterArtifact("Logic Review Issues", sessionID, logicIssues)
-		repaired, repairErr := repairOneshotDraft(ctx, r, constraints, &draft, logicIssues)
+		repaired, repairErr := repairOneshotDraft(ctx, r, repairConv, constraints, &draft, logicIssues)
 		if repairErr != nil {
 			log.Printf("[scripter] session=%s stage=logic_review repair failed: %v (keeping draft)", sessionID, repairErr)
 			r.emitProgress("logic_review", "error", "逻辑修复失败（保留当前草稿）")

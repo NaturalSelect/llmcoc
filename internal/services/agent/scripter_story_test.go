@@ -47,11 +47,11 @@ func TestStoryArchitectLoop_AskLawyer(t *testing.T) {
 		},
 	}
 
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: storySystemPrompt()},
-		{Role: "user", Content: "请写一份故事文档"},
-	}
-	story, err := runStoryArchitectLoop(context.Background(), room, msgs, "story_test", "食尸鬼（Ghoul）：COC7规则书已收录")
+	conv := newScripterConversation(
+		llm.ChatMessage{Role: "system", Content: storySystemPrompt()},
+		llm.ChatMessage{Role: "user", Content: "请写一份故事文档"},
+	)
+	story, err := runStoryArchitectLoop(context.Background(), room, conv, "story_test", "食尸鬼（Ghoul）：COC7规则书已收录", 0)
 	if err != nil {
 		t.Fatalf("runStoryArchitectLoop failed: %v", err)
 	}
