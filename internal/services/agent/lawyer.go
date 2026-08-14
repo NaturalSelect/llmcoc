@@ -73,11 +73,9 @@ var lawyerSystemPromptBase = `你是COC TRPG(克苏鲁的呼唤7版)规则专家
 ` + rulebook.RulebookDir + `
 
 【可用工具】
-1. search_cache — 在缓存中搜索与当前问题相关的已有裁定(返回最多3条最相关结果,含完整裁定内容)
+1. search_cache — 在缓存中检索已有裁定(返回最多10条最相关结果,含完整裁定正文)
 	- keyword 必须是以 # 开头的标签，多个标签用空格分隔，例如 "#手枪 #伤害" 或 "#典籍 #SAN损失"
-	- 标签应精准反映问题的核心主题，不得使用自然语言句子
-	- 若返回结果与当前问题高度相关,可直接引用其裁定并调用 response,无需再搜索资料
-	- 若无相关结果,再进行grep等搜索
+	- 具体写法见下方【缓存使用手册】，标签写错等于必然落空
 
 2. grep — 在规则书 COC_kp.md 中搜索关键词或Go正则表达式,返回匹配行及其上下文原文
 	- 普通规则、典籍、系统机制优先使用此工具、但内容可能在别的文件中出现
@@ -110,14 +108,50 @@ var lawyerSystemPromptBase = `你是COC TRPG(克苏鲁的呼唤7版)规则专家
 	- 仅当 grep_monster 已定位相关内容但需要完整怪物/神格/生物词条时使用
 	- 结果仅用于本轮分析
 
-8. save_cache — 将本次裁定保存到缓存，供后续查询复用
-	- cache_key 必填，格式为以 # 开头的标签集合，多个标签空格分隔，例如 "#手枪 #伤害 #武器" 或 "#典籍 #不可名状之书 #SAN损失 #法术列表"
-	- 标签应覆盖主题、具体对象、涉及属性，保证下次 search_cache 能精准命中
-	- 仅在需要缓存裁定时调用，可与 response 在同一轮调用
+8. save_cache — 将本次查到的规则事实写入缓存，供后续查询复用
+	- cache_key 必填，格式为以 # 开头的标签集合，多个标签空格分隔
+	- 具体写什么、怎么写，见下方【缓存使用手册】
+	- 可与 response 在同一轮调用，同一轮可调用多次
 
 9. response — 给出最终规则裁定,结束本次查询
 	- 直接引用关键规则数值和判定条件
 	- 若原文未覆盖该问题,明确说明"规则书未明确规定"
+
+【缓存使用手册】
+缓存是一个"标签串 → 裁定正文"的词典，是你唯一能跳过检索的捷径，用对它能省掉大量 grep。
+
+一、匹配算法（决定了标签必须怎么写，先看懂再写标签）
+- 检索时**只比对标签串，永远不会检索裁定正文**。正文里写了什么，对能不能被搜到毫无影响。
+- 你的 keyword 会按空格拆成若干标签，每个标签只要是某条缓存标签串的**子串**就得1分；总分高的排前面，0分的不返回。
+- 由此推出三条硬性写法，违反任意一条都会检索落空：
+  1. 标签必须短而原子：写 "#手枪"，不要写 "#手枪的伤害是多少"。整句话几乎不可能是任何标签串的子串，等于必然0分。
+  2. 子串匹配是单向的：查询 "#SAN" 能命中缓存 "#SAN损失"，但查询 "#SAN损失" 命中不了只存了 "#SAN" 的缓存。**所以查询时用短词根，保存时长短写法都列上**。
+  3. 用词必须逐字一致："#手枪" 和 "#枪械" 是两个毫不相干的标签，不会互相命中。拿不准就把同义写法都写进 keyword。
+
+二、search_cache 怎么查（第1轮强制执行）
+- keyword 给 3~6 个标签，覆盖三个维度：
+  · 对象：#手枪 #.38左轮 #不可名状之书 #食尸鬼 #奈亚拉托提普
+  · 属性：#伤害 #SAN损失 #MP消耗 #护甲 #技能 #耐久
+  · 类别：#武器 #典籍 #法术 #怪物 #神格 #战斗 #追逐
+- 标签多不会有害：多余标签只是不得分，而正确标签能把真正相关的那条顶到最前面。
+- 返回结果里的 "匹配 n/m 标签" 是相关度：m 是你给的标签数，n 是这条缓存命中的个数。n 很低（如 1/5）基本是噪声。
+- 一条缓存能否直接拿来回答，必须**同时**满足三点：
+  1. 它的标签同时覆盖了当前问题的**对象**和**要问的属性**，而不是只沾上了类别；
+  2. 它的正文里有回答所需的**具体数值**；
+  3. 它标注的出处，与当前问题该查的资料一致。
+  三条全中 → 直接引用它调用 response，不要再做任何检索。
+- 只中一部分（例如同一把武器但问的是另一个属性）→ 把它当线索，继续 grep 补齐缺口，不得直接拿它作答。
+- 一条没中 → 允许换更短的词根或同义写法再查一次；仍然没有就转 grep，不要反复空查。
+
+三、save_cache 怎么存
+- 只存：从规则资料原文查到的、**跨场次通用**的规则事实（数值、判定条件、词条完整内容）。
+- 绝不存：与本场剧本/房间/某个调查员当前状态绑定的结论；依赖 <kp_balance_rules> 的裁定（该规则由管理员随时改动，缓存不会随之失效，会变成过期答案）；以及任何你没有在原文里核实过的内容。
+- cache_key 是这条缓存唯一的索引，正文永远搜不到，所以标签要把"以后可能被问到的角度"全列上：对象全称 + 常用简称 + 各项属性 + 类别。宁多勿少，例如：
+  "#不可名状之书 #典籍 #SAN损失 #克苏鲁神话 #法术列表 #阅读时间"
+- 正文必须能独立看懂：写清对象、原文数值、适用条件、出处（哪本资料 + 行号范围）。以后读到它的人看不到你现在这个问题。
+- 同一个 cache_key 再存一次会**整条覆盖**旧内容。要补充已有缓存时，把旧内容与新内容合并后完整写回，不要只写新增部分。
+- 一个主题一条缓存。同一轮可以多次调用 save_cache 分别保存不同主题，**不要把几个不相关的主题塞进同一个 key**——混合标签会在无关查询里骗到高分，污染以后所有检索。
+- 时机：与 response 同轮调用。本轮确实从资料里查到了新东西才存；完全靠缓存回答出来的，不需要再存一遍。
 
 【执行规则】
 - 禁止篡改规则书内容，缓存的裁定必须忠实引用原文细节，不得凭记忆总结或改写
@@ -129,8 +163,9 @@ var lawyerSystemPromptBase = `你是COC TRPG(克苏鲁的呼唤7版)规则专家
 - 召唤类法术需要查询神话生物的属性和特性, 你可以提前帮KP查询好这些信息, 同时提醒KP查看
 - 你必须逐步推理和思考, 通过工具调用来收集信息, 而不是直接凭记忆就给出结论, 你的回复不要修改原文内容, 也不要试图总结或概括原文, 只需直接引用原文中的具体数值和细节来回答问题
 - **第一轮必须且只能调用 search_cache**，不得跳过，不得在第一轮调用任何其他工具或response
-- 你可以通过 save_cache 来缓存你的搜集到的信息，供后续查询复用，这个工具可以被调用多次
-- 若 search_cache 返回了高度相关的缓存且你认为有足够的信息能够回答当前问题，直接引用并调用 response，不再进行任何搜索
+- 缓存的检索、判定、保存一律按【缓存使用手册】执行，不得凭自己的习惯写标签
+- 从资料原文查到新的通用规则事实时，必须在给出裁定的同一轮用 save_cache 存下来（判定标准见手册第三节）
+- 若 search_cache 返回的缓存通过了手册第二节的三条判定，直接引用并调用 response，不再进行任何搜索
 - 只有缓存未命中时，才允许进行 grep/read_lines/grep_spell/read_spell_lines/grep_monster/read_monster_lines 等搜索
 - 普通规则、典籍、系统机制优先用 grep/read_lines；具体法术词条、法术细节优先用 grep_spell/read_spell_lines；具体怪物、神格、生物属性优先用 grep_monster/read_monster_lines
 - 禁止在没有调用 search_cache 或资料检索工具的情况下就调用response
@@ -208,23 +243,36 @@ type lawyerResponseArgs struct {
 
 // lawyerSearchCacheDescription 是 search_cache 工具的描述，第1轮限制工具集和
 // 全量工具集共用同一份文案。
-const lawyerSearchCacheDescription = "在缓存中搜索与当前问题相关的已有裁定(返回最多3条最相关结果,含完整裁定内容)；keyword必须是以#开头的标签，多个标签用空格分隔，例如\"#手枪 #伤害\"或\"#典籍 #SAN损失\"，标签应精准反映问题的核心主题，不得使用自然语言句子。若返回结果与当前问题高度相关,可直接引用其裁定并调用response,无需再检索资料；若无相关结果,再使用grep等检索工具。"
+const lawyerSearchCacheDescription = "在缓存中检索已有裁定(最多返回10条,含完整裁定正文)。检索时只比对标签串、从不检索正文；keyword 按空格拆成标签，每个标签只要是某条缓存标签串的子串就得1分，总分高的排前面。因此标签必须短而原子(写\"#手枪\"，不要写\"#手枪的伤害是多少\")，且查询要用短词根(\"#SAN\"能命中\"#SAN损失\"，反过来不行)，用词逐字一致(\"#手枪\"命中不了\"#枪械\"，拿不准就两个都写)。建议给3~6个标签，覆盖对象/属性/类别三个维度，例如\"#手枪 #伤害 #武器\"。只有当某条缓存的标签同时覆盖了问题的对象与所问属性、且正文含所需具体数值时，才可直接引用它并调用response；只沾边的当作线索，继续用grep补齐。"
+
+// lawyerKeywordSchema 是 grep/grep_spell/grep_monster 的 keyword 参数 schema。
+const lawyerKeywordSchema = `{
+	"type": "object",
+	"properties": {
+		"keyword": {"type": "string", "description": "搜索关键词或Go正则表达式"}
+	},
+	"required": ["keyword"]
+}`
+
+// lawyerCacheKeywordSchema 是 search_cache 的 keyword 参数 schema：与 grep 系列不同，
+// 这里的 keyword 是标签集合而非正则，参数描述必须单独给，否则模型会照 grep 的语义填正则。
+const lawyerCacheKeywordSchema = `{
+	"type": "object",
+	"properties": {
+		"keyword": {"type": "string", "description": "以#开头的标签集合，空格分隔，3~6个短标签，覆盖对象/属性/类别，例如 #手枪 #伤害 #武器；不是正则，不要填自然语言句子"}
+	},
+	"required": ["keyword"]
+}`
 
 // lawyerKeywordTool 构造 search_cache/grep/grep_spell/grep_monster 这类
 // "仅需一个 keyword 参数" 的工具定义。
-func lawyerKeywordTool(name, description string) scripterTool {
+func lawyerKeywordTool(name, description, paramsSchema string) scripterTool {
 	return scripterTool{
 		solo: false,
 		def: llm.ToolDefinition{
 			Name:        name,
 			Description: description,
-			Parameters: jsonSchemaObject(`{
-				"type": "object",
-				"properties": {
-					"keyword": {"type": "string", "description": "搜索关键词或Go正则表达式"}
-				},
-				"required": ["keyword"]
-			}`),
+			Parameters:  jsonSchemaObject(paramsSchema),
 		},
 	}
 }
@@ -254,12 +302,12 @@ func lawyerSaveCacheTool() scripterTool {
 		solo: false,
 		def: llm.ToolDefinition{
 			Name:        toolNameSaveCache,
-			Description: "将本次裁定保存到缓存，供后续查询复用；cache_key为以#开头的标签集合，多个标签空格分隔，需覆盖主题、具体对象、涉及属性；可与 response 同轮调用",
+			Description: "把本轮从规则资料原文查到的、跨场次通用的规则事实写入缓存(同一 cache_key 会整条覆盖旧内容)。cache_key 是这条缓存唯一的索引且正文不参与检索，标签要把以后可能被问到的角度全列上：对象全称+常用简称+各项属性+类别。不要缓存与本场剧本/房间/调查员绑定的结论，也不要缓存依赖平衡规则的裁定。一个主题一条，可与 response 同轮调用，同一轮可多次调用分别保存不同主题。",
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"cache_key": {"type": "string", "description": "以#开头的标签集合，多个标签空格分隔，例如 #手枪 #伤害 #武器"},
-					"ruling": {"type": "string", "description": "规则裁定内容"}
+					"cache_key": {"type": "string", "description": "以#开头的标签集合，空格分隔，宁多勿少，需覆盖对象全称、常用简称、各项属性、类别，例如 #不可名状之书 #典籍 #SAN损失 #克苏鲁神话 #法术列表"},
+					"ruling": {"type": "string", "description": "缓存正文，必须脱离当前问题也能看懂：对象、原文数值、适用条件、出处(资料名+行号范围)"}
 				},
 				"required": ["cache_key", "ruling"]
 			}`),
@@ -287,16 +335,16 @@ func lawyerResponseTool() scripterTool {
 // lawyerFirstRoundTools 是第1轮唯一允许调用的工具集：强制模型第一轮只能
 // search_cache，取代纯 prompt 约定。
 func lawyerFirstRoundTools() []scripterTool {
-	return []scripterTool{lawyerKeywordTool(toolNameSearchCache, lawyerSearchCacheDescription)}
+	return []scripterTool{lawyerKeywordTool(toolNameSearchCache, lawyerSearchCacheDescription, lawyerCacheKeywordSchema)}
 }
 
 // lawyerAllTools 是第2轮起开放的全部9个工具。
 func lawyerAllTools() []scripterTool {
 	return []scripterTool{
-		lawyerKeywordTool(toolNameSearchCache, lawyerSearchCacheDescription),
-		lawyerKeywordTool(toolNameGrep, "在规则书 COC_kp.md 中搜索关键词或Go正则表达式,返回匹配行及其上下文原文。普通规则、典籍、系统机制优先使用此工具、但内容可能在别的文件中出现。如需搜索多个备选词,请使用正则 | 写法,不要用空格分隔；若提供的正则表达式无效,会按字面量关键词回退搜索；搜索结果仅用于本轮分析，不会被缓存。"),
-		lawyerKeywordTool(toolNameGrepSpell, "在法术图鉴 COC_spell.md 中搜索关键词或Go正则表达式。具体法术词条、法术细节、法术MP/SAN消耗优先使用此工具、但内容可能在别的文件中出现。如需搜索多个备选词,请使用正则 | 写法；正则无效时按字面量关键词回退搜索；搜索结果仅用于本轮分析。"),
-		lawyerKeywordTool(toolNameGrepMonster, "在怪物图鉴 COC_monster.md 中搜索关键词或Go正则表达式。具体怪物、神格、生物属性优先使用此工具、但内容可能在别的文件中出现。如需搜索多个备选词,请使用正则 | 写法；正则无效时按字面量关键词回退搜索；搜索结果仅用于本轮分析。"),
+		lawyerKeywordTool(toolNameSearchCache, lawyerSearchCacheDescription, lawyerCacheKeywordSchema),
+		lawyerKeywordTool(toolNameGrep, "在规则书 COC_kp.md 中搜索关键词或Go正则表达式,返回匹配行及其上下文原文。普通规则、典籍、系统机制优先使用此工具、但内容可能在别的文件中出现。如需搜索多个备选词,请使用正则 | 写法,不要用空格分隔；若提供的正则表达式无效,会按字面量关键词回退搜索；搜索结果仅用于本轮分析，不会被缓存。", lawyerKeywordSchema),
+		lawyerKeywordTool(toolNameGrepSpell, "在法术图鉴 COC_spell.md 中搜索关键词或Go正则表达式。具体法术词条、法术细节、法术MP/SAN消耗优先使用此工具、但内容可能在别的文件中出现。如需搜索多个备选词,请使用正则 | 写法；正则无效时按字面量关键词回退搜索；搜索结果仅用于本轮分析。", lawyerKeywordSchema),
+		lawyerKeywordTool(toolNameGrepMonster, "在怪物图鉴 COC_monster.md 中搜索关键词或Go正则表达式。具体怪物、神格、生物属性优先使用此工具、但内容可能在别的文件中出现。如需搜索多个备选词,请使用正则 | 写法；正则无效时按字面量关键词回退搜索；搜索结果仅用于本轮分析。", lawyerKeywordSchema),
 		lawyerLineRangeTool(toolNameReadLines, "直接读取规则书 COC_kp.md 的特定行号范围；仅当 grep 已定位相关内容但需要完整上下文时使用；结果仅用于本轮分析。"),
 		lawyerLineRangeTool(toolNameReadSpellLines, "直接读取法术图鉴 COC_spell.md 的特定行号范围；仅当 grep_spell 已定位相关内容但需要完整法术词条时使用；结果仅用于本轮分析。"),
 		lawyerLineRangeTool(toolNameReadMonsterLines, "直接读取怪物图鉴 COC_monster.md 的特定行号范围；仅当 grep_monster 已定位相关内容但需要完整怪物/神格/生物词条时使用；结果仅用于本轮分析。"),
@@ -368,7 +416,8 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 	}
 	userSB.WriteString("<instruction>\n")
 	userSB.WriteString("请通过工具调用逐步收集信息，完成后调用 response 给出规则裁定。\n")
-	userSB.WriteString("你的第一轮只能调用 search_cache，keyword 用#开头的标签（如\"#手枪 #伤害\"）。\n")
+	userSB.WriteString("第一轮只能调用 search_cache：从问题里抽出 3~6 个短标签（对象/属性/类别），如\"#手枪 #伤害 #武器\"，不要写成句子。\n")
+	userSB.WriteString("若本轮确实从资料原文查到了跨场次通用的规则事实，在调用 response 的同一轮用 save_cache 存下来。\n")
 	userSB.WriteString("</instruction>\n")
 
 	msgs := []llm.ChatMessage{
@@ -386,14 +435,17 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 			query := strings.TrimSpace(args.Keyword)
 			debugf("Lawyer", "search_cache query=%q", query)
 			matches := lawyerCache.Search(query, 10)
+			// NOTE: 回显"命中标签数/查询标签数"，让模型能自己判断相关度；
+			// Search 只要有1个标签命中就会返回，低分结果基本是噪声。
+			totalTags := len(strings.Fields(query))
 			var sb strings.Builder
 			if len(matches) == 0 {
-				sb.WriteString("[搜索缓存] 未找到相关缓存裁定。\n\n")
+				sb.WriteString("[搜索缓存] 未找到相关缓存裁定。可换更短的词根或同义写法再查一次；仍无结果则改用 grep 等资料检索工具。\n\n")
 			} else {
 				cacheSearchHadResults = true
 				sb.WriteString(fmt.Sprintf("[搜索缓存] 找到 %d 条相关裁定：\n", len(matches)))
 				for i, m := range matches {
-					sb.WriteString(fmt.Sprintf("%d. 问题：%s\n   裁定：%s\n", i+1, m.Key, m.Ruling))
+					sb.WriteString(fmt.Sprintf("%d. 匹配 %d/%d 标签\n   标签：%s\n   裁定：%s\n", i+1, m.Score, totalTags, m.Key, m.Ruling))
 				}
 				sb.WriteString("\n")
 			}

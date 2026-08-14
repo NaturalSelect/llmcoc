@@ -293,6 +293,31 @@ func TestRunLawyerInvalidArgsAndEmptyRulingRejected(t *testing.T) {
 	}
 }
 
+// TestRunLawyerSearchCacheShowsTagRelevance 验证 search_cache 回执把命中标签数/
+// 查询标签数回显给模型（相关度信号），且用"标签"而非"问题"标注 cache key。
+func TestRunLawyerSearchCacheShowsTagRelevance(t *testing.T) {
+	initTranslatorTestDB(t)
+
+	lawyerCache.Set("#相关度专用标签 #伤害 #武器", "相关度用例的裁定")
+
+	prov := &sequentialFakeProvider{
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("c1", toolNameSearchCache, `{"keyword":"#相关度专用标签 #伤害 #绝不存在xyz"}`)}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("c2", toolNameLawyerResponse, responseArgsJSON(t, "裁定"))}},
+		},
+	}
+
+	runLawyer(context.Background(), newLawyerTestHandle(prov), "某规则问题")
+
+	last := prov.recordedMessages[1][len(prov.recordedMessages[1])-1]
+	if !strings.Contains(last.Content, "匹配 2/3 标签") {
+		t.Errorf("search_cache result should report matched/total tags, got %q", last.Content)
+	}
+	if !strings.Contains(last.Content, "标签：#相关度专用标签") {
+		t.Errorf("search_cache result should label the cache key as 标签, got %q", last.Content)
+	}
+}
+
 // TestRunLawyerConsecutiveEmptyRoundsFastFail 验证连续多轮不返回任何工具调用
 // 时驱动器快速失败（runLawyer 对应返回 nil），而不是耗尽全部 maxRounds。
 func TestRunLawyerConsecutiveEmptyRoundsFastFail(t *testing.T) {
