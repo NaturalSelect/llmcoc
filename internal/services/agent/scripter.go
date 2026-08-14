@@ -481,6 +481,24 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 		}
 	}
 
+	// Title agent（隔离上下文，可选）：标题在 compile 阶段只是照抄故事文档，质量不受控。
+	// 放在此处是因为 draft 内容已定稿——标题基于最终内容拟定，且后续不再有任何 LLM 环节
+	// 会改写它（repair 的 schema 对 name 无"保持原值"约束，放在修复循环之前会被冲掉）。
+	// req.Name 非空时整段跳过：下面的 applyGuardrails 会强制覆盖，调用纯属浪费。
+	if strings.TrimSpace(r.req.Name) == "" {
+		log.Printf("[scripter] session=%s stage=title start current=%q", sessionID, draft.Name)
+		r.emitProgress("title", "start", "拟定模组标题…")
+		title, titleErr := runTitleAgent(ctx, r, &draft)
+		if titleErr != nil {
+			log.Printf("[scripter] session=%s stage=title error=%v (保留编译标题=%q)", sessionID, titleErr, draft.Name)
+			r.emitProgress("title", "error", "标题拟定失败（保留编译标题）")
+		} else {
+			log.Printf("[scripter] session=%s stage=title done old=%q new=%q", sessionID, draft.Name, title)
+			draft.Name = title
+			r.emitProgress("title", "done", fmt.Sprintf("标题拟定完成：《%s》", title))
+		}
+	}
+
 	beforeIssues := validateDraftCompatibility(draft)
 	log.Printf("[scripter] session=%s normalization start pre_issues=%d", sessionID, len(beforeIssues))
 	r.emitProgress("normalize", "start", "规范化与收尾…")

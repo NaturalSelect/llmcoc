@@ -349,7 +349,6 @@ const humanWritingRules = `- 具体性：散文要落在具体名词上——人
 - 细节复用优先：与其引入新道具，优先让已出现的细节再次出现、并让第二次出现改变含义（初见是日常记录，再见携带情绪或异样）；一段散文最多充分展开一个主细节，其余一笔带过
 - 禁止编号与模板腔：正文不写①②③、1.2.3.、"首先/其次/最后"式结构，也不写行首要素标签（"可见信息：""议程：""秘密：""性质：真实"）；交代零散事实时可以用短列表，但每条必须是完整的句子
 - 句式错落：长短句交替；不连续使用三个以上结构雷同的句子；不写成对仗排比
-- 标题像人起的：不用"低语/回响/深渊/阴影/凝视/苏醒/沉睡/诅咒"等滥用词；优先取材于剧本内的具体名词（地名、物件、日期、一句当地人的话）
 - NPC人味：每个重要NPC给一个标志性小细节（口头禅、习惯动作、随身物件、外貌特征选其一）；NPC之间至少存在两条现实关系（亲属/雇佣/债务/旧怨/邻里）；可以保留一个与主线无关的纯地方色彩NPC
 - 密度不均：允许一处地点信息厚重、另一些地点只有一两笔；不给每个地点机械配满同样数量的要素
 - 不写机械数值：正文不出现骰子表达式（"1D6""1d3""2D6+3"）、技能成功率、伤害点数、理智增减的具体点数等规则数值；检定、伤害、法术效果、理智冲击等机制后果一律写它造成的具体状态、感受或场面变化（伤在哪、能不能动、看见听见了什么、心智被冲击成什么样），这些数值本身留给编译后的结构化字段供KP参考，不落进叙事段落`
@@ -993,7 +992,10 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	if author == "" {
 		author = defaultScripterAuthor
 	}
-	if strings.TrimSpace(draft.Name) == "" {
+	// NOTE: normalizeScenarioTitle 此前只用于归一化黑名单样本，从未作用于产出标题，
+	// 导致模型返回的《XX》会带书名号原样入库。
+	draft.Name = normalizeScenarioTitle(draft.Name)
+	if draft.Name == "" {
 		draft.Name = "未命名剧本"
 		log.Printf("[scripter:normalize] session=%s filled name=%q", sessionID, draft.Name)
 	}

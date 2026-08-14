@@ -194,8 +194,10 @@ func TestCompileAndFinalize_RewardConceptEmptyFallsBack(t *testing.T) {
 	if draft.Content.Reward != nil {
 		t.Errorf("room 未配置 reward_agent 可用 provider 时不应生成奖励, got %+v", draft.Content.Reward)
 	}
-	if len(fake.recordedKeys) != 2 {
-		t.Errorf("reward_concept 为空应被拒绝一次并重提, compiler provider 调用次数 got %d, want 2", len(fake.recordedKeys))
+	// NOTE: 取标题环节在 architect 缺席时同样 fallback 到 compiler provider，会追加若干次
+	// 调用；这里只数 compile 阶段的调用（cache key 不带 :title 后缀）。
+	if got := len(fake.recordedKeys) - countTitleCalls(fake); got != 2 {
+		t.Errorf("reward_concept 为空应被拒绝一次并重提, compile 阶段调用次数 got %d, want 2", got)
 	}
 }
 

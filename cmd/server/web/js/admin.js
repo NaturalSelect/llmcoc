@@ -745,7 +745,7 @@ window.COC.admin = {
                     },
 
                     // NOTE: 上传故事编译为 SSE 流式请求：跳过 AI 故事生成阶段，只让模型做
-                    // 锚点提取（anchor_extract）+ 编译（compile→repair→logic_review→reward_agent→normalize），
+                    // 锚点提取（anchor_extract）+ 编译（compile→repair→logic_review→reward_agent→title→normalize），
                     // 不支持批量。神话锚点与奖励概念均由后端从文档内容自动识别，前端只负责上传文件。
                     async compileStoryUpload() {
                         const file = this.$refs.compileStoryFile?.files?.[0];
