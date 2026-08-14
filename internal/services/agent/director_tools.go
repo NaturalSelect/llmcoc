@@ -166,10 +166,14 @@ func actNPCTool() scripterTool {
 			Description: `询问NPC(该NPC独立记忆), NPC回复动作(例如使用技能等)和对话内容(请把对话内容保留到write调用), 可以选择是否让NPC隐瞒他的秘密(hide_secret), 参数必须被正确填写, 使用查询到的名称而不是名称的一部分, spell参数填写该NPC已经掌握的法术(如果没有,可以为空)。
 【身份确认】调用前必须确定玩家所指的具体NPC。玩家使用代词("他"/"她"/"它"/"they")或模糊指代("那个人"/"the man")时，须回溯对话历史确定具体命名NPC；指代不明时禁止随意选择附近NPC代替，应要求玩家澄清。禁止使用对话或scenario中未明确建立的NPC名称。
 【玩家秘密】 先思考什么是NPC能够得到的信息, 不要将玩家的秘密透漏给NPC， 例如：玩家可能是伪装成人类的吸血鬼，但NPC不应该立刻知道这一点。
-【社交掷骰顺序】当玩家对NPC使用任何技能（魅惑/说服/话术/恐吓/威吓/心理学/侦查/图书馆/快速交谈等）时，强制顺序：先调用roll_dice；读取骰子结果后，在下一轮的question中明确写明成功/失败/大成功/大失败及roll值，再调用act_npc。Hard errors：(1)roll_dice与act_npc同轮；(2)act_npc时question中未提及骰子结果。
-【NPC主动技能检定顺序】当NPC需要主动使用任何技能（说服、侦查、闪避、反击、施法等），无论是NPC主动发起还是对玩家行动的反应，强制顺序：先调用query_npc_card确认该NPC的真实技能值/已掌握法术(不得凭记忆假设)；下一轮调用roll_dice(character=NPC名,what=技能名)掷骰；读取骰子结果后，自行比较骰值与技能值判定成功/失败/大成功/大失败，再调用act_npc，在kp_directive中写明已裁定的结果(例如"说服检定成功(roll=32 vs 65)，据此反应")，让NPC基于已确定的机械结果角色扮演，而不是自己编造结果。需要检定时，act_npc不得在roll_dice之前调用。NPC施法成功后，须调用update_npc_card扣减该NPC的MP消耗，再叙述法术效果。
-【批次硬规则】act_npc返回结果必须先读到才能写叙事/回复：严禁在同一轮调用中混入write、response、end_game、update_npc_session_memory或任何副作用工具。正确模式：本轮[act_npc(...), act_npc(...)]；读取NPC结果的下一轮再[write, response]或状态更新。
-【后续硬规则】读取act_npc结果后，write/response只能呈现NPC已返回的可见动作、台词、环境反应和可选的"等待玩家回应"停顿；严禁替玩家回答、同意、拒绝、沉默、点头、接受物品/任务、跟随、离开、攻击、施法、搜索、做心理反应或任何后续行动。若NPC提出问题、邀请、交易、命令、威胁、要求选择或等待调查员表态，本轮必须停在这里，response只提示"等玩家回应/决定"，不得推进到玩家的假定回复之后。
+【技能检定顺序】任何需要检定的场合——玩家对NPC使用技能(魅惑/说服/话术/恐吓/威吓/心理学/侦查/图书馆/快速交谈等)，或NPC主动使用技能(说服/侦查/闪避/反击/施法等)——都走同一条链，act_npc必须排在最后：
+  (1) 取真实数值：NPC侧先query_npc_card确认技能值与已掌握法术，不得凭记忆假设(玩家侧数值同理来自query_character)；
+  (2) 掷骰：roll_dice(character=角色名, what=技能名)；
+  (3) 自行比较骰值与技能值，判定成功/失败/大成功/大失败；
+  (4) 调用act_npc，把已裁定的结果写进question或kp_directive(例如"说服检定成功(roll=32 vs 65)，据此反应")，让NPC基于既定机械结果扮演，而不是自己编造成败。
+Hard errors：需要检定时act_npc早于roll_dice调用；act_npc时未把骰子结果告知NPC。NPC施法成功后，须调用update_npc_card扣减MP，再叙述法术效果。
+【批次规则】act_npc结果须先读到才能写叙事或触发状态更新；可以并列调用多个不同NPC的act_npc，完整批次规则见系统提示。
+【后续边界】读取act_npc结果后，write/response只能呈现NPC已返回的可见动作、台词、环境反应，以及"等待玩家回应"的停顿；不得替玩家作出任何回应或后续行动——见[PLAYER-AGENCY]。若NPC提出问题、邀请、交易、命令、威胁或要求选择，本轮必须停在这里等玩家决定。
 【kp_directive】用于向NPC传递KP的剧情指令和行为约束（但你必须有适当原因才能使用这个参数： 1. 剧情设定; 2. 骰子等机械原因），例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。
 	- kp_directive不好的用法："食尸鬼是纯粹的野兽，入侵者打扰了它的巢穴。它会把任何靠近的生物视为食物或威胁。可以根据骰子或直觉选择：如果它判断入侵者只是单独一个（实际上入口有三人一狗一被绑者），它可能会直接攻击；但考虑到有多个生物，它也可能先潜伏观察。请给出合理的反应。"
 	- kp_directive好的用法："你是食尸鬼，食尸鬼是纯粹的野兽，入侵者潜行失败,打扰了你的巢穴请你发动攻击。"
@@ -340,7 +344,7 @@ func endGameTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolEndGame),
 			Description: `结束本次冒险(整个游戏会话，不可撤回，而非仅结束本轮)。只有当<endings>中至少一个结局的Trigger已经确认满足时才能调用；未满足时调用是硬错误。win 必须明确给出 true(触发[结局]/胜利)或 false(触发[失败结局]/团灭等)，end_summary 必须写明具体触发了哪个结局、其Trigger条件是如何被满足的。
-【批次硬规则】end_game只能与write/update_session_memory同批次，严禁与update_*/manage_*/record_*/advance_time等同批次——后端会拒绝整批。需先在独立的一轮完成所有最终状态更新，下一轮再发end_game。
+【批次硬规则】end_game可以与write/update_session_memory/update_*/manage_*/record_monster/advance_time等收尾状态更新同批次；但不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/act_npc同批——这些工具的结果必须先在更早的一轮读到，才能在之后的一轮调用end_game。
 调用示例：{"win":true,"end_summary":"触发结局[封印成功]：调查员完成封印仪式，邪神无法降临，胜利结束冒险"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
@@ -379,7 +383,9 @@ func writeTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolWrite),
 			Description: `向 Writer 提供叙事方向指令，由 Writer 据此生成玩家可见的正式描述文本(白字)。direction 应清晰描述本轮发生的场景、动作和感官细节，而不是直接输出最终文案。
+【与response对齐】write是response.reply的角色扮演(RP)化衍生，不是另一条独立叙事线：reply把本轮发生了什么直说给桌边玩家，direction把同一件事展开成场景化正文。两者必须描述同一批事实、同一个结果、同一个停顿点，含义不得分叉——direction不得出现reply里没有的事件、结果或状态变化，也不得改写reply已给出的成败、数值与因果(reply说检定失败，direction就不能写成勉强成功)。二者冲突时以reply为准。
 【玩家动作边界】direction 只能描述已通过工具确认的结果(骰子结果、NPC已给出的反应、状态变更结果)，不得替玩家做出未声明的选择或杜撰未经判定的后果。
+【感官细节要求】遵循[UNKNOWN]的现象免费/解释收费：形状、声音、气味、温度、痕迹等可感知现象可以直接写入direction；性质、成因、身份等解释性内容，只有在本轮已通过检定成功、NPC明说或scenario公开文本赚取时才能写入，未赚取的解释不得通过write泄露给玩家。
 调用示例：{"direction":"描述本轮场景、动作和感官细节的导演指令"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
@@ -397,7 +403,7 @@ func describeCharactersTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolDescribeCharacters),
 			Description: `查询一个或多个角色(调查员/NPC)的外貌描述，用于后续 generate_image 组织画面提示词。
-【批次规则】describe_characters是no-sideeffect查询工具。调用后需在下一轮读取结果，再把需要的外貌细节自然地写进generate_image.image_prompt；不要与generate_image同批次调用。
+【批次规则】describe_characters是no-sideeffect查询工具，不能与generate_image同批；下一轮读取结果后再把外貌细节写进image_prompt。
 调用示例：{"characters":["约翰","艾琳"]}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
@@ -429,7 +435,7 @@ func generateImageTool() scripterTool {
 ### Negative prompts
 要点列出应避免出现的元素，如时代穿帮物、文字水印、比例失调、过度美化等。
 没有内容的段落直接省略该标题，保留的段落一律用"* "开头的要点分行罗列，不要写成大段文字。
-【风格规则】画风统一采用二次元(ACG/动漫)插画审美：人物五官、身形与氛围渲染要符合角色卡设定里的二次元风格基调，而不是写实人类摄影；Camera段仍可用摄影语言(取景/景深/构图)增强临场感，两者不冲突——是"二次元插画,但用镜头语言构图"，不是真实照片。纯环境/怪物痕迹类空镜按场景氛围渲染，同样保持二次元插画质感。
+【风格规则】统一二次元(ACG/动漫)插画审美，不是写实摄影；Camera段仍用摄影语言(取景/景深/构图)增强临场感——即"二次元插画,但用镜头语言构图"。纯环境/痕迹类空镜同样保持二次元插画质感。
 【NSFW规则】可选参数nsfw(布尔,默认false)：本次画面若包含裸露、性暗示或露骨性描写等NSFW内容，必须如实设为true；不含这类内容或不确定时省略/设为false。管理员未开启NSFW配图时，nsfw=true的调用会被直接拒绝且不会生成图片，与本会话是否允许NSFW文字内容是两个独立开关。
 【未知感规则】配图是玩家可见通道，同样受[UNKNOWN]约束。尚未被合法鉴定的神话实体、怪物与异常现象，禁止画出可辨认的正面全貌——正面肖像等于提前把答案交给玩家。这类对象只画它留下的痕迹与效果、事后现场、遮挡与局部(背光剪影、水下轮廓、门缝里的一部分)、它经过后的空环境，或目击者的反应；image_prompt里也不要写出它的正式名称、种族名与规则术语，用画面本身描述。已被完全鉴定或已正面遭遇过的对象不受此限制。
 【批次规则】generate_image可以与write/response同批次；返回结果只表示图片生成已排队，KP不需要也不能读取图片内容。
@@ -491,7 +497,7 @@ func queryCharacterTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolQueryCharacter),
 			Description: `查询调查员的完整角色卡(属性、技能、状态、物品等)。character_name 留空返回所有调查员。
-【例外】为roll_dice获取技能值时，query_character须独占一轮单独调用，roll_dice在下一轮——不得同轮调用。
+【例外】不得与同一角色的技能检定roll_dice同批——该角色的query_character结果要到下一轮才能读到，本批次里的骰子只能是猜测数值；character_name留空(查询全部)时视为与本批次任何角色的技能骰都冲突。查询该角色的同时对其他角色掷骰不受影响。
 调用示例：{"character_name":"角色名,留空返回所有调查员"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
@@ -508,7 +514,7 @@ func queryNPCCardTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolQueryNPCCard),
 			Description: `查询NPC的完整角色卡(属性、技能、态度、秘密等)。npc_name 留空返回全部NPC。
-【例外】为roll_dice获取NPC技能值时，query_npc_card须独占一轮单独调用，roll_dice在下一轮。
+【例外】不得与同名NPC的技能检定roll_dice同批——该NPC的query_npc_card结果要到下一轮才能读到；npc_name留空(查询全部)时视为与本批次任何NPC的技能骰都冲突。查询该NPC的同时对其他角色掷骰不受影响。
 调用示例：{"npc_name":"NPC名,留空返回全部NPC"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
@@ -545,13 +551,13 @@ func responseTool() scripterTool {
 			Name: string(ToolResponse),
 			Description: `向玩家发送最终的对话式回复，结束本轮 KP 决策。reply 是口语化的回复正文(1-4句日常口吻，不使用编号列表和分析式术语)。可选字段 options 用于给出0-2条推荐可行行动，写法与禁止内容见[OPTIONS]；ack 用于确认/复述玩家刚才声明的动作。
 禁止用response替代end_game："收尾"某个已经达成Trigger的结局——只要<endings>中任意结局的Trigger已确认满足，本轮必须改为调用end_game结束游戏，而不是用response继续或收场。
-【批次硬规则】response 前必须完成本轮所有状态更新。正确模式：先在独立的一轮完成所有状态更新，再在下一轮发response。
+【批次规则】response可与状态更新工具同批，但查询/掷骰/act_npc类工具的结果必须先在更早的一轮读到。
 调用示例：{"reply":"口语化回复正文","options":["行动A","行动B"],"ack":["确认玩家声明的动作"]}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"reply": {"type": "string", "description": "口语化回复正文,1-4句,不使用编号列表"},
-					"options": {"type": "array", "items": {"type": "string"}, "description": "推荐可行行动，0-2条(可选)。每条是不超过20字的短行动(动词+对象)，只回答现在可以做什么，不回答会得到什么；不写判定难度、概率、成败后果、评价性副词与危险暗示，不含未赚取的线索或未鉴定实体的正式名。宁可给0条也不要泄露"},
+					"options": {"type": "array", "items": {"type": "string"}, "maxItems": 2, "description": "推荐可行行动，0-2条(可选)。每条是不超过20字的短行动(动词+对象)，不带括号补充说明；只回答现在可以做什么，不回答会得到什么。宁可给0条也不要泄露。禁止内容(hard限制)：✗判定难度/目标值/成败概率/奖惩骰(如困难侦查、需要70以上)；✗成功或失败的具体后果(如搜抽屉(能找到日记)、开门会触发陷阱)；✗评价性副词与情绪修饰(小心地、谨慎地、冒险、鼓起勇气)——副词就是泄露，只留动词和对象；✗倾向性措辞(正确、最佳、安全、危险、致命、务必、唯一的办法)，两条选项之间不得构成对与错的对照；✗尚未合法获得的线索/NPC秘密/隐藏地点/未触发事件/结局条件，未鉴定实体的正式名同样禁止；✗SAN代价预告与check_rule裁定原文/规则条目名/规则数值；✗吐槽、OOC评论、元游戏说明；✗替玩家决定情绪立场或暗示只能在选项里选。✓合格示例：检查刻痕、问神父昨晚的事、退回走廊、翻抽屉"},
 					"ack": {"type": "array", "items": {"type": "string"}, "description": "确认/复述玩家刚才声明的动作(可选)"}
 				},
 				"required": ["reply"]

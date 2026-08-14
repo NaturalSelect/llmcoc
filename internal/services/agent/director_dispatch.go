@@ -54,7 +54,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, emitProgress func(string)
 		}
 		if hasResponse && hasNonCompatible {
 			emitProgress("KP正在修正工具调用顺序")
-			return "SYSTEM REJECT: your entire batch was rejected. response/end_game may only share a batch with write/generate_image/hint/update_session_memory. Split into two rounds: first call the result-producing tools, then after reading the results call response separately."
+			return "SYSTEM REJECT: your entire batch was rejected. response/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call response/end_game after reading the results. Write and state-update tools may stay in the same batch as response."
 		}
 		if hasResponse && respStr == "" {
 			emitProgress("KP正在补全主流程回复")
@@ -80,6 +80,133 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, emitProgress func(string)
 			return fmt.Sprintf(
 				"SYSTEM REJECT: act_npc 返回结果必须先读到才能执行状态更新或叙事，本轮不能把 act_npc 与 %s 混在一起。请先单独调用 act_npc，读取结果后再在下一轮调用这些工具。",
 				strings.Join(incompatible, "、"))
+		}
+
+		// SKILL-ROLL SEQUENCING：查询结果要到下一轮才存在，同批的技能检定只能靠
+		// 猜测填技能值。按角色名匹配，避免误伤"查A的卡 + 掷B的骰"这类合法组合；
+		// what 为空的伤害/资源类纯数值骰不需要技能值，不参与判定。
+		queriedAll := false
+		queried := map[string]bool{}
+		for _, call := range calls {
+			tc, err := decodeDirectorToolCall(call)
+			if err != nil {
+				continue
+			}
+			var name string
+			switch ToolCallType(call.Name) {
+			case ToolQueryCharacter:
+				name = strings.TrimSpace(tc.CharacterName)
+			case ToolQueryNPCCard:
+				name = strings.TrimSpace(tc.NPCName)
+			default:
+				continue
+			}
+			if name == "" {
+				queriedAll = true
+			} else {
+				queried[name] = true
+			}
+		}
+		if queriedAll || len(queried) > 0 {
+			for _, call := range calls {
+				if ToolCallType(call.Name) != ToolRollDice {
+					continue
+				}
+				tc, err := decodeDirectorToolCall(call)
+				if err != nil || tc.Dice == nil || strings.TrimSpace(tc.Dice.What) == "" {
+					continue
+				}
+				if queriedAll || queried[strings.TrimSpace(tc.Dice.Character)] {
+					emitProgress("KP正在修正工具调用顺序")
+					return "SYSTEM REJECT: query_character/query_npc_card 与技能检定 roll_dice 不能同批——提交时查询结果还不存在，骰子里的技能值只能是猜测。请本轮只发查询，读到真实技能值后再在下一轮掷骰。"
+				}
+			}
+		}
+
+		// IMAGE-CHARACTER SEQUENCING：同理，外貌描写要先读到才能写进 image_prompt。
+		hasDescribe := false
+		hasImage := false
+		for _, call := range calls {
+			switch ToolCallType(call.Name) {
+			case ToolDescribeCharacters:
+				hasDescribe = true
+			case ToolGenerateImage:
+				hasImage = true
+			}
+		}
+		if hasDescribe && hasImage {
+			emitProgress("KP正在修正工具调用顺序")
+			return "SYSTEM REJECT: describe_characters 与 generate_image 不能同批——提交时外貌描写还没返回，image_prompt 里的角色外貌只能是编造。请本轮只发 describe_characters，读到结果后再在下一轮画图。"
+		}
+
+		// EMBEDDED-SKILL-VALUE：roll_dice.what 只是纯文本标签，不能编码猜测的技能值。
+		// 只检测数字——COC技能名本身常见圆括号(格斗(斗殴)/母语(英语)等)，不能用圆括号判定。
+		for _, call := range calls {
+			if ToolCallType(call.Name) != ToolRollDice {
+				continue
+			}
+			tc, err := decodeDirectorToolCall(call)
+			if err != nil || tc.Dice == nil {
+				continue
+			}
+			if strings.ContainsAny(tc.Dice.What, "0123456789０１２３４５６７８９") {
+				emitProgress("KP正在修正工具调用顺序")
+				return fmt.Sprintf("SYSTEM REJECT: roll_dice.what=%q 疑似嵌入了猜测的技能值(例如\"投掷(50)\")。what只是纯文本技能名标签，技能值必须来自query_character/query_npc_card的真实结果，不得写进what。", tc.Dice.What)
+			}
+		}
+
+		// ITEM-NAME-FORMAT：item_name 是物品基础名，状态/数量等附加信息应放入 item_desc/item_count。
+		for _, call := range calls {
+			if ToolCallType(call.Name) != ToolManageInventory {
+				continue
+			}
+			tc, err := decodeDirectorToolCall(call)
+			if err != nil {
+				continue
+			}
+			if strings.ContainsAny(tc.ItemName, "()（）") {
+				emitProgress("KP正在修正工具调用顺序")
+				return fmt.Sprintf("SYSTEM REJECT: manage_inventory.item_name=%q 不能包含圆括号。item_name只写物品基础名，状态描述放item_desc，数量放item_count。", tc.ItemName)
+			}
+		}
+
+		// OPTIONS-CAP：response.options 固定 0-2 条，宁可给0条也不要泄露。
+		for _, call := range calls {
+			if ToolCallType(call.Name) != ToolResponse {
+				continue
+			}
+			tc, err := decodeDirectorToolCall(call)
+			if err != nil {
+				continue
+			}
+			if len(tc.Options) > 2 {
+				emitProgress("KP正在修正工具调用顺序")
+				return fmt.Sprintf("SYSTEM REJECT: response.options 有 %d 条，超过上限2条。宁可给0条也不要泄露，删减到最多2条最合适的行动入口。", len(tc.Options))
+			}
+		}
+
+		// DUP-SETTLEMENT-IN-BATCH：同一批次内对同一角色的同一物品重复调用 manage_inventory，
+		// 通常是同一个叙事事件被记了两次结算。跨轮的重复结算由提示词的DUP CHECK覆盖，这里只管同批。
+		type invSettlement struct{ character, operate, item string }
+		seenInventoryOps := map[invSettlement]bool{}
+		for _, call := range calls {
+			if ToolCallType(call.Name) != ToolManageInventory {
+				continue
+			}
+			tc, err := decodeDirectorToolCall(call)
+			if err != nil {
+				continue
+			}
+			key := invSettlement{
+				character: strings.TrimSpace(tc.CharacterName),
+				operate:   strings.TrimSpace(tc.Operate),
+				item:      strings.TrimSpace(tc.ItemName),
+			}
+			if seenInventoryOps[key] {
+				emitProgress("KP正在修正工具调用顺序")
+				return fmt.Sprintf("SYSTEM REJECT: 本批次对角色%q的物品%q重复调用了manage_inventory(重复结算)。确认这不是同一个事件被记了两次；如需一次性增减多个，合并成单次调用。", key.character, key.item)
+			}
+			seenInventoryOps[key] = true
 		}
 
 		generateImageCalls := 0
