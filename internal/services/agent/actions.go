@@ -478,21 +478,14 @@ type writeAction struct{}
 
 func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	extra := ""
-	first10words := []rune(call.Direction)
-	if len(first10words) > 10 {
-		first10words = first10words[:10]
-	}
-	first10 := string(first10words)
-	if actx.GCtx.Session.EnableNSFW && len(actx.GCtx.PendingActions) == 0 {
-		if strings.Contains(first10, "色情") || strings.Contains(first10, "NSFW") {
-			extra = "（注意：必须用露骨直接的语言直接描述场景,禁止省略过程）"
-		}
+	if actx.GCtx.Session.EnableNSFW && call.NSFW && len(actx.GCtx.PendingActions) == 0 {
+		extra = "（注意：必须用露骨直接的语言直接描述场景,禁止省略过程）"
 	}
 	*actx.PendingWrite += fmt.Sprintf("%s%s\n", extra, call.Direction)
 	if actx.WroteNarrative != nil {
 		*actx.WroteNarrative = true
 	}
-	debugf("tool", "session=%d write direction=%s", actx.Sid, call.Direction)
+	debugf("tool", "session=%d write direction=%s nsfw=%v", actx.Sid, call.Direction, call.NSFW)
 	return nil
 }
 
