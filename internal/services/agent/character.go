@@ -30,10 +30,57 @@ type GeneratedCharacter struct {
 	Stats      *models.CharacterStats `json:"stats"`
 }
 
+// characterAskLawyer 是外貌/角色生成流程共用的 ask_lawyer 工具执行逻辑：委托给
+// runLawyer 做规则书自主检索，返回格式化后的裁定文本，供 respond 前确认属性数值含义。
+func characterAskLawyer(ctx context.Context, lawyerHandle agentHandle, question string) string {
+	question = strings.TrimSpace(question)
+	if question == "" {
+		return `<ask_lawyer_result error="question字段为空"/>`
+	}
+	log.Printf("[agent] character ask_lawyer question=%q", truncateRunes(question, 300))
+	results := runLawyer(ctx, lawyerHandle, question)
+	if len(results) == 0 {
+		return fmt.Sprintf(`<ask_lawyer_result question=%q status="no_result">规则书中未找到相关内容；可换用更具体的问题重新提问。</ask_lawyer_result>`, question)
+	}
+	return fmt.Sprintf(`<ask_lawyer_result question=%q status="found">%s</ask_lawyer_result>`, question, formatLawyerResults(results))
+}
+
+// appearanceAgentSystemPrompt 是 RegenerateAppearance 的系统提示：要求先查规则书再 respond。
+const appearanceAgentSystemPrompt = `<role>COC7外貌描写专家</role>
+<task>根据调查员的姓名、职业、性别、年龄和STR/CON/SIZ/DEX/APP属性数值，撰写一段外貌描述。通过ask_lawyer工具向规则书专家查询这些属性数值及年龄对应的体格、气色、身手、外貌等级含义，然后通过respond工具返回最终外貌描述。</task>
+<design_rules>
+- respond前必须至少调用一次ask_lawyer，确认属性数值的规则书含义，不得凭印象直接respond。
+- 外貌描述100字以内，只描述身体特征(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质，不包括服饰。
+- 描述需与查询到的属性数值、年龄含义相符。
+</design_rules>`
+
+// appearanceRespondTool 是 RegenerateAppearance 的 respond 工具定义（solo，终止本轮循环）。
+func appearanceRespondTool() scripterTool {
+	return scripterTool{
+		solo: true,
+		def: llm.ToolDefinition{
+			Name:        toolNameRespond,
+			Description: "返回最终外貌描述并结束；必须在至少一次ask_lawyer之后调用；必须单独一轮调用。",
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"appearance": {"type": "string", "description": "100字以内的外貌描述，只描述身体特征和气质，不包括服饰"}
+				},
+				"required": ["appearance"]
+			}`),
+		},
+	}
+}
+
 // RegenerateAppearance uses the Evaluator agent to produce a fresh appearance description
-// for an existing character. It only needs the fields already stored on the card.
+// for an existing character. It queries the rulebook via the Lawyer agent (ask_lawyer tool)
+// so the description is grounded in the actual attribute-value meanings, not guesswork.
 func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (string, error) {
 	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
+	if err != nil {
+		return "", err
+	}
+	lawyerHandle, err := loadSingleAgent(models.AgentRoleLawyer)
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +102,7 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (stri
 		age = fmt.Sprintf("%d", card.Age)
 	}
 
-	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)调查员重新生成外貌描述,以JSON格式返回,不要有任何额外文字。
+	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)调查员重新生成外貌描述。
 
 调查员信息:
 - 姓名:%s
@@ -64,59 +111,61 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (stri
 - 年龄:%s
 - 属性:STR=%d CON=%d SIZ=%d DEX=%d APP=%d
 
-【属性与外貌的对应关系(来自COC第七版规则书)】
-力量(STR): 15=虚弱, 50=普通人, 90=你见过的力气最大的人, 99=世界水平(举重冠军)
-体质(CON): 15=体弱多病, 50=普通人, 90=不惧寒冷强壮精神, 99=钢铁之躯
-体型(SIZ): 15=孩童或身短体瘦(约15kg), 65=普通体型(约75kg), 80=非常高强健或非常胖(约110kg), 99=超大号(约150kg)
-敏捷(DEX): 15=缓慢笨拙, 50=普通人, 90=高速灵活(杂技演员), 99=世界级运动员
-外貌(APP): 0=十分难看令人恐惧厌恶, 15=挫(受伤或先天), 50=普通人, 90=最漂亮的人天然吸引力, 99=魅力巅峰(超级名模/世界影星)
-伤害加值与体格由STR+SIZ决定: 2-64=-2伤害体格-2(瘦小), 65-84=-1伤害体格-1, 85-124=无加值体格0(普通), 125-164=+1d4伤害体格1(壮实), 165-204=+1d6伤害体格2(魁梧)
-
-【年龄对外貌的影响(来自COC第七版规则书)】
-15-19岁: 少年体态,略显青涩
-20-39岁: 成年全盛期
-40-49岁: 开始显老,外貌(APP)减5
-50-59岁: 明显老态,外貌(APP)减10
-60-69岁: 老年貌,外貌(APP)减15
-70-79岁: 年迈苍老,外貌(APP)减20
-80+岁: 风烛残年,外貌(APP)减25
-
-请严格参照上述属性数值和年龄来描写体型和气质:
-- STR/SIZ高→身材高大壮实,体格魁梧;STR/SIZ低→身材瘦小纤细
-- CON高→面色红润精力充沛;CON低→面色苍白体弱多病
-- DEX高→动作矫健姿态灵活;DEX低→动作迟缓笨拙
-- APP高→容貌出众气质迷人;APP低→相貌平平甚至丑陋
-- 年龄大→白发皱纹老态;年龄小→青春稚嫩
-
-要求:外貌描述100字以内,只描述身体特征(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质,不包括服饰,与之前不同。
-
-请返回如下JSON格式:
-{"appearance": "外貌描述"}`,
+请先通过ask_lawyer查询规则书中这些属性数值及年龄对应的体格、气色、身手、外貌等级含义，再据此撰写外貌描述，与之前不同。`,
 		name, occupation, gender, age,
 		card.Stats.Data.STR, card.Stats.Data.CON, card.Stats.Data.SIZ,
 		card.Stats.Data.DEX, card.Stats.Data.APP,
 	)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: "你是一名克苏鲁神话TRPG专家,只输出JSON,不输出任何其他内容。"},
+		{Role: "system", Content: appearanceAgentSystemPrompt},
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, "nosession:evaluator", msgs)
-	if err != nil {
-		return "", err
+	tools := []scripterTool{
+		askLawyerTool("向COC7规则书专家提出一个具体规则书问题；查询STR/CON/SIZ/DEX/APP等属性数值或年龄对外貌、体格的影响；可多次调用"),
+		appearanceRespondTool(),
 	}
 
-	var out struct {
-		Appearance string `json:"appearance"`
+	askedLawyer := false
+	var appearance string
+	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
+		switch call.Name {
+		case toolNameAskLawyer:
+			var args askLawyerArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: ask_lawyer参数不是合法JSON，请重新调用。"}
+			}
+			askedLawyer = true
+			return toolOutcome{result: characterAskLawyer(ctx, lawyerHandle, args.Question)}
+		case toolNameRespond:
+			if !askedLawyer {
+				return toolOutcome{reject: "SYSTEM REJECT: respond前必须至少调用一次ask_lawyer。"}
+			}
+			var args struct {
+				Appearance string `json:"appearance"`
+			}
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: respond参数不是合法JSON，请重新调用。"}
+			}
+			if strings.TrimSpace(args.Appearance) == "" {
+				return toolOutcome{reject: "SYSTEM REJECT: respond的appearance字段不能为空。"}
+			}
+			appearance = args.Appearance
+			return toolOutcome{result: "已收到，外貌描述已提交。", done: true}
+		default:
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 只允许ask_lawyer/respond，不允许%s。", call.Name)}
+		}
 	}
-	if err := json.Unmarshal([]byte(resp), &out); err != nil {
-		return "", fmt.Errorf("parse LLM response failed: %w (raw: %s)", err, resp)
+
+	const maxRounds = 8
+	if err := runScripterToolLoop(ctx, nil, handle, "regenerate_appearance", msgs, tools, maxRounds, dispatch); err != nil {
+		return "", err
 	}
-	if out.Appearance == "" {
-		return "", fmt.Errorf("LLM returned empty appearance (raw: %s)", resp)
+	if appearance == "" {
+		return "", fmt.Errorf("LLM returned empty appearance")
 	}
-	return out.Appearance, nil
+	return appearance, nil
 }
 
 // RegenerateBackstory uses the Writer agent to produce a fresh backstory
@@ -248,10 +297,53 @@ type AdjustSkillsReq struct {
 	BaseSkills map[string]int
 }
 
+// generateCharacterSystemPrompt 是 GenerateCharacter 的系统提示：要求先查规则书再 respond。
+const generateCharacterSystemPrompt = `<role>COC7调查员生成专家</role>
+<task>根据调查员的姓名、时代背景、年龄、职业、性别、角色构思和骰子已生成的基础属性，生成完整的调查员信息（背景故事、外貌描述、性格特征），并可按用户消息给出的规则重新分配属性点。通过ask_lawyer工具向规则书专家查询属性数值对应的体格、气色、身手、外貌等级含义，然后通过respond工具返回最终结果。</task>
+<design_rules>
+- respond前必须至少调用一次ask_lawyer，确认属性数值的规则书含义，不得凭印象直接respond。
+- 外貌描述需与查询到的属性数值含义相符，100字以内，只描述身体特征和气质，不包括服饰。
+- 属性重分配必须遵守用户消息中给出的分组总和与数值范围约束。
+</design_rules>`
+
+// generateCharacterRespondTool 是 GenerateCharacter 的 respond 工具定义（solo，终止本轮循环）。
+func generateCharacterRespondTool() scripterTool {
+	return scripterTool{
+		solo: true,
+		def: llm.ToolDefinition{
+			Name:        toolNameRespond,
+			Description: "返回调查员的背景故事、外貌、性格特征与最终属性并结束；必须在至少一次ask_lawyer之后调用；必须单独一轮调用。",
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"backstory": {"type": "string", "description": "200字以内的个人经历（成长背景、人生轨迹等）"},
+					"appearance": {"type": "string", "description": "100字以内的外貌描述(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质，不包括服饰"},
+					"traits": {"type": "string", "description": "性格特征，以空格分隔，1-5个标签，包含语言风格、性格特点等，二次元风格，如：雌小鬼 大和抚子等"},
+					"stats": {
+						"type": "object",
+						"properties": {
+							"STR": {"type": "integer"}, "CON": {"type": "integer"}, "SIZ": {"type": "integer"}, "DEX": {"type": "integer"},
+							"APP": {"type": "integer"}, "INT": {"type": "integer"}, "POW": {"type": "integer"}, "EDU": {"type": "integer"}
+						},
+						"required": ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU"]
+					}
+				},
+				"required": ["backstory", "appearance", "traits", "stats"]
+			}`),
+		},
+	}
+}
+
 // GenerateCharacter uses the Writer agent to fill in character backstory, appearance,
-// traits, and optionally redistributes base stats.
+// traits, and optionally redistributes base stats. It queries the rulebook via the
+// Lawyer agent (ask_lawyer tool) so the appearance is grounded in the actual
+// attribute-value meanings, not guesswork.
 func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*GeneratedCharacter, error) {
 	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
+	if err != nil {
+		return nil, err
+	}
+	lawyerHandle, err := loadSingleAgent(models.AgentRoleLawyer)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +369,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 		age = fmt.Sprintf("%d", req.Age)
 	}
 
-	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)生成一名调查员的详细信息,以JSON格式返回,不要有任何额外文字。
+	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)生成一名调查员的详细信息。
 
 要求:
 - 调查员姓名:%s
@@ -285,7 +377,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 - 年龄:%s
 - 职业:%s
 - 性别:%s
-	- 角色构思:%s
+- 角色构思:%s
 - 骰子已生成的基础属性:STR=%d CON=%d SIZ=%d DEX=%d APP=%d INT=%d POW=%d EDU=%d
 
 【属性重分配规则】
@@ -295,27 +387,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
   - 约束:每个属性均为5的倍数；STR/CON/DEX/APP/POW 范围 15-90；SIZ/INT/EDU 范围 40-90
   - 若无需调整,原样返回即可
 
-【属性与外貌的对应关系(来自COC第七版规则书)】
-力量(STR): 15=虚弱, 50=普通人, 90=你见过的力气最大的人, 99=世界水平(举重冠军)
-体质(CON): 15=体弱多病, 50=普通人, 90=不惧寒冷强壮精神, 99=钢铁之躯
-体型(SIZ): 15=孩童或身短体瘦(约15kg), 65=普通体型(约75kg), 80=非常高强健或非常胖(约110kg), 99=超大号(约150kg)
-敏捷(DEX): 15=缓慢笨拙, 50=普通人, 90=高速灵活(杂技演员), 99=世界级运动员
-外貌(APP): 0=十分难看令人恐惧厌恶, 15=挫(受伤或先天), 50=普通人, 90=最漂亮的人天然吸引力, 99=魅力巅峰(超级名模/世界影星)
-伤害加值与体格由STR+SIZ决定: 2-64=-2伤害体格-2(瘦小), 65-84=-1伤害体格-1, 85-124=无加值体格0(普通), 125-164=+1d4伤害体格1(壮实), 165-204=+1d6伤害体格2(魁梧)
-
-请严格参照上述属性数值来描写体型和气质:
-- STR/SIZ高→身材高大壮实,体格魁梧;STR/SIZ低→身材瘦小纤细
-- CON高→面色红润精力充沛;CON低→面色苍白体弱多病
-- DEX高→动作矫健姿态灵活;DEX低→动作迟缓笨拙
-- APP高→容貌出众气质迷人;APP低→相貌平平甚至丑陋
-
-请返回如下JSON格式(所有字段都用中文):
-{
-  "backstory": "200字以内的个人经历（成长背景、人生轨迹等）",
-  "appearance": "100字以内的外貌描述(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质,不包括服饰",
-  "traits": "性格特征(以空格分隔,1-5个标签,包含语言风格、性格特点等，二次元风格, 如:雌小鬼 大和抚子等)",
-  "stats": {"STR":N,"CON":N,"SIZ":N,"DEX":N,"APP":N,"INT":N,"POW":N,"EDU":N}
-}`,
+请先通过ask_lawyer查询规则书中STR/CON/SIZ/DEX/APP等属性数值对应的体格、气色、身手、外貌等级含义，再据此撰写外貌描述，与体型、气质相符。`,
 		name, era, age, occupation, gender, req.Background,
 		req.Stats.STR, req.Stats.CON, req.Stats.SIZ,
 		req.Stats.DEX, req.Stats.APP, req.Stats.INT,
@@ -325,37 +397,48 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 	)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: "你是一名克苏鲁神话TRPG专家,只输出JSON,不输出任何其他内容。"},
+		{Role: "system", Content: generateCharacterSystemPrompt},
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, "nosession:evaluator", msgs)
-	if err != nil {
-		return nil, err
+	tools := []scripterTool{
+		askLawyerTool("向COC7规则书专家提出一个具体规则书问题；查询属性数值对应的体格、气色、身手、外貌等级含义；可多次调用"),
+		generateCharacterRespondTool(),
 	}
 
+	askedLawyer := false
 	var out GeneratedCharacter
-	if err := json.Unmarshal([]byte(resp), &out); err != nil {
-		maxTry := 30
-		for i := 0; i < maxTry; i++ {
-			resp, err = RepairJSON(ctx, resp, err,
-				`{
-  "backstory": "200字以内的背景故事",
-  "appearance": "100字以内的外貌描述(发色、发型、眼睛颜色、肤色、身高、体型、女性还包括胸部特征等)和气质,不包括服饰",
-  "traits": "性格特征(以空格分隔,1-5个标签,包含语言风格、性格特点等，二次元风格, 如:雌小鬼 大和抚子等)",
-  "stats": {"STR":N,"CON":N,"SIZ":N,"DEX":N,"APP":N,"INT":N,"POW":N,"EDU":N}
-}`)
-			if err == nil {
-				err = json.Unmarshal([]byte(resp), &out)
-				if err == nil {
-					break
-				}
+	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
+		switch call.Name {
+		case toolNameAskLawyer:
+			var args askLawyerArgs
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: "SYSTEM REJECT: ask_lawyer参数不是合法JSON，请重新调用。"}
 			}
-			log.Printf("[agent] GenerateCharacter JSON parse error attempt %d: %v", i+1, err)
+			askedLawyer = true
+			return toolOutcome{result: characterAskLawyer(ctx, lawyerHandle, args.Question)}
+		case toolNameRespond:
+			if !askedLawyer {
+				return toolOutcome{reject: "SYSTEM REJECT: respond前必须至少调用一次ask_lawyer。"}
+			}
+			var args GeneratedCharacter
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: respond参数不是合法JSON：%v，请重新调用。", err)}
+			}
+			if strings.TrimSpace(args.Backstory) == "" || strings.TrimSpace(args.Appearance) == "" ||
+				strings.TrimSpace(args.Traits) == "" || args.Stats == nil {
+				return toolOutcome{reject: "SYSTEM REJECT: respond的backstory/appearance/traits/stats字段不能为空。"}
+			}
+			out = args
+			return toolOutcome{result: "已收到，调查员信息已提交。", done: true}
+		default:
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 只允许ask_lawyer/respond，不允许%s。", call.Name)}
 		}
-		if err != nil {
-			return nil, fmt.Errorf("parse LLM response failed: %w (raw: %s)", err, resp)
-		}
+	}
+
+	const maxRounds = 10
+	if err := runScripterToolLoop(ctx, nil, handle, "generate_character", msgs, tools, maxRounds, dispatch); err != nil {
+		return nil, err
 	}
 	return &out, nil
 }
