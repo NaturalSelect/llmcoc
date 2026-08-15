@@ -146,6 +146,59 @@ func TestWriteToolAlignsWithResponse(t *testing.T) {
 	}
 }
 
+// TestProceduresBlockCoversComplexFlows 验证复杂流程样板存在，且其中与 COC_kp.md 对应的
+// 关键机制没有被后续编辑改坏——尤其是两处反直觉判定，改错不会报错但会让裁定系统性出错。
+func TestProceduresBlockCoversComplexFlows(t *testing.T) {
+	start := strings.Index(kpSystemPrompt, "<procedures>")
+	end := strings.Index(kpSystemPrompt, "</procedures>")
+	if start < 0 || end < 0 {
+		t.Fatal("kp system prompt should contain a <procedures> block")
+	}
+	proc := kpSystemPrompt[start:end]
+
+	for _, name := range []string{"[战斗轮]", "[SAN级联]", "[追逐]", "[多玩家分歧意图]"} {
+		if !strings.Contains(proc, name) {
+			t.Errorf("procedures block should contain flow %q", name)
+		}
+	}
+
+	// COC_kp.md:6296-6298 —— 智力检定"通过"才进入临时性疯狂，失败是抑制记忆不疯。
+	// 这条与直觉相反，是最容易被"顺手改顺"的地方。
+	if !strings.Contains(proc, "智力检定**通过**＝角色意识到自己经历了什么＝陷入临时性疯狂") {
+		t.Error("SAN cascade must keep the counter-intuitive INT-check direction (pass -> madness)")
+	}
+	if !strings.Contains(proc, "智力检定**失败**＝记忆被抑制＝不进入疯狂") {
+		t.Error("SAN cascade must keep that a failed INT check suppresses memory instead of causing madness")
+	}
+	// COC_kp.md:4352 —— 成功等级相同时由攻击方命中。
+	if !strings.Contains(proc, "成功等级相同时是攻击方命中") {
+		t.Error("combat flow must keep the tie-goes-to-attacker rule")
+	}
+	// COC_kp.md:6239 —— 理智检定不适用奖励骰/惩罚骰。
+	if !strings.Contains(proc, "奖励骰与惩罚骰不适用于理智检定") {
+		t.Error("SAN cascade must keep the bonus/penalty die exclusion")
+	}
+	// COC_kp.md:5377-5379 —— 逃离者更快则当场脱离，不进入追逐轮。
+	if !strings.Contains(proc, "逃离者高于追逐者→当场逃脱") {
+		t.Error("chase flow must keep the early-escape branch")
+	}
+
+	// 样板引用的锚点必须在系统提示词里真实存在。
+	for _, anchor := range []string{"[PLAYER-AGENCY]", "[PLAYER-TO-PLAYER]", "[MADNESS-EFFECT]", "[KP-REPLY]"} {
+		if !strings.Contains(proc, anchor) {
+			continue
+		}
+		if strings.Count(kpSystemPrompt, anchor) < 2 {
+			t.Errorf("anchor %q referenced by procedures must also be defined as a rule", anchor)
+		}
+	}
+
+	// 每轮清单要把模型引到样板，否则样板不会被读。
+	if !strings.Contains(kpTurnReminder, "<procedures>") {
+		t.Error("turn checklist should route complex turns to the procedures block")
+	}
+}
+
 // TestKPTurnReminderStructure 验证每轮追加的执行清单只承载动作与红线，不重复规则定义。
 func TestKPTurnReminderStructure(t *testing.T) {
 	for _, want := range []string{
