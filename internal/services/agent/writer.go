@@ -127,16 +127,42 @@ func loadWriterState(gctx GameContext) (agentHandle, *WriterState, error) {
 	return writerHandle, state, nil
 }
 
+// writerRefusalPrefix 命中该前缀视为模型拒绝生成正文,与空内容一样需要丢弃重试。
+const writerRefusalPrefix = "I cannot fulfill this request."
+
+// writerMaxGenerateAttempts 是 Writer 单次续写在遇到拒绝/空内容时的最大尝试次数(含首次)。
+const writerMaxGenerateAttempts = 20
+
+// isWriterResponseRejected 判断一次Writer响应是否需要丢弃重试:剥离thinking块后为空,
+// 或正文以拒绝前缀开头。
+func isWriterResponseRejected(resp string) bool {
+	trimmed := strings.TrimSpace(stripThinkingBlock(resp))
+	return trimmed == "" || strings.HasPrefix(trimmed, writerRefusalPrefix)
+}
+
 // appendWriter 根据导演指令调用Writer,并把生成结果追加到本次白字缓冲。
+// 响应为空或以拒绝前缀开头时视为无效,丢弃并重新生成,最多尝试 writerMaxGenerateAttempts 次。
 func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direction string, gctx GameContext) error {
 	if !h.isEnabled() {
 		return fmt.Errorf("writer agent 未配置或未启用")
 	}
 	msgs, direction := buildWriterMessages(h, state, direction, gctx)
+	cacheKey := h.cacheKey(fmt.Sprintf("%v", gctx.Session.ID))
 
-	resp, err := h.provider.Chat(ctx, h.cacheKey(fmt.Sprintf("%v", gctx.Session.ID)), msgs)
-	if err != nil {
-		return err
+	var resp string
+	for attempt := 1; attempt <= writerMaxGenerateAttempts; attempt++ {
+		var err error
+		resp, err = h.provider.Chat(ctx, cacheKey, msgs)
+		if err != nil {
+			return err
+		}
+		if !isWriterResponseRejected(resp) {
+			break
+		}
+		debugf("Writer", "response rejected attempt=%d/%d preview=%s", attempt, writerMaxGenerateAttempts, truncateRunes(resp, 100))
+		if attempt == writerMaxGenerateAttempts {
+			return fmt.Errorf("writer response rejected after %d attempts", writerMaxGenerateAttempts)
+		}
 	}
 
 	debugf("Writer", "response len=%d preview=%s", len([]rune(resp)), resp)
@@ -144,41 +170,120 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	return nil
 }
 
+// appendWriterStream 流式调用Writer;响应为空或以拒绝前缀开头时丢弃重新生成,
+// 最多尝试 writerMaxGenerateAttempts 次。拒绝判定完成前的正文通过 writerRefusalGate
+// 缓冲,避免拒绝文本在判定前已经流给玩家。
 func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, direction string, gctx GameContext, onToken func(string)) error {
 	if !h.isEnabled() {
 		return fmt.Errorf("writer agent 未配置或未启用")
 	}
 	msgs, direction := buildWriterMessages(h, state, direction, gctx)
+	cacheKey := h.cacheKey(fmt.Sprintf("%v", gctx.Session.ID))
 
-	tokenCh, errCh, err := h.provider.ChatStream(ctx, h.cacheKey(fmt.Sprintf("%v", gctx.Session.ID)), msgs)
-	if err != nil {
-		return err
-	}
-
-	// NOTE: 流式过滤 thinking 块,onToken 只收到正文部分;resp 仍累积原始全文。
-	var resp strings.Builder
-	var filter streamThinkingFilter
-	for token := range tokenCh {
-		resp.WriteString(token)
-		if onToken != nil {
-			if emit := filter.feed(token); emit != "" {
-				onToken(emit)
-			}
+	var text string
+	for attempt := 1; attempt <= writerMaxGenerateAttempts; attempt++ {
+		var err error
+		text, err = streamWriterOnce(ctx, h, cacheKey, msgs, onToken)
+		if err != nil {
+			// 传输层错误：把已流出的部分正文写入缓冲(不进history),再把错误返回给上层。
+			appendWriterResponse(state, direction, text, false)
+			return err
+		}
+		if !isWriterResponseRejected(text) {
+			debugf("Writer", "stream response len=%d preview=%s", len([]rune(text)), text)
+			appendWriterResponse(state, direction, text, true)
+			return nil
+		}
+		debugf("Writer", "stream response rejected attempt=%d/%d preview=%s", attempt, writerMaxGenerateAttempts, truncateRunes(text, 100))
+		if attempt == writerMaxGenerateAttempts {
+			return fmt.Errorf("writer stream response rejected after %d attempts", writerMaxGenerateAttempts)
 		}
 	}
+	return nil
+}
+
+// streamWriterOnce 执行一次Writer流式请求,过滤thinking块并通过 writerRefusalGate
+// 缓冲正文头部,返回完整原始正文(未做拒绝判定,由调用方决定保存还是丢弃重试)。
+func streamWriterOnce(ctx context.Context, h agentHandle, cacheKey string, msgs []llm.ChatMessage, onToken func(string)) (string, error) {
+	tokenCh, errCh, err := h.provider.ChatStream(ctx, cacheKey, msgs)
+	if err != nil {
+		return "", err
+	}
+
+	// NOTE: 流式过滤 thinking 块,再经拒绝前缀 gate,onToken 只收到确认非拒绝的正文;
+	// resp 仍累积原始全文用于拒绝判定和history保存。
+	var resp strings.Builder
+	var filter streamThinkingFilter
+	var gate writerRefusalGate
+	forward := func(chunk string) {
+		if onToken == nil {
+			return
+		}
+		if out := gate.feed(chunk); out != "" {
+			onToken(out)
+		}
+	}
+	for token := range tokenCh {
+		resp.WriteString(token)
+		if emit := filter.feed(token); emit != "" {
+			forward(emit)
+		}
+	}
+	if emit := filter.eof(); emit != "" {
+		forward(emit)
+	}
 	if onToken != nil {
-		if emit := filter.eof(); emit != "" {
-			onToken(emit)
+		if out := gate.eof(); out != "" {
+			onToken(out)
 		}
 	}
 	streamErr := <-errCh
-	text := strings.TrimSpace(resp.String())
-	if streamErr == nil && text == "" {
-		streamErr = fmt.Errorf("writer stream returned empty content")
+	return strings.TrimSpace(resp.String()), streamErr
+}
+
+// NOTE: writerRefusalGate 在确认正文不是拒绝前缀(writerRefusalPrefix)之前缓冲内容、
+// 不转发;一旦缓冲长度达到前缀长度即可判定:命中则转入丢弃状态(整段视为拒绝,后续内容
+// 也不转发),未命中则一次性放行缓冲内容并转入直通状态。
+type writerRefusalGate struct {
+	buf   strings.Builder
+	state int // 0=peeking, 1=forwarding(直通), 2=suppressing(丢弃)
+}
+
+const (
+	wrgPeek     = 0
+	wrgForward  = 1
+	wrgSuppress = 2
+)
+
+func (g *writerRefusalGate) feed(chunk string) string {
+	switch g.state {
+	case wrgForward:
+		return chunk
+	case wrgSuppress:
+		return ""
 	}
-	debugf("Writer", "stream response len=%d preview=%s", len([]rune(text)), text)
-	appendWriterResponse(state, direction, text, streamErr == nil)
-	return streamErr
+	g.buf.WriteString(chunk)
+	if g.buf.Len() < len(writerRefusalPrefix) {
+		return ""
+	}
+	content := g.buf.String()
+	g.buf.Reset()
+	if strings.HasPrefix(content, writerRefusalPrefix) {
+		g.state = wrgSuppress
+		return ""
+	}
+	g.state = wrgForward
+	return content
+}
+
+// eof 处理流结束时仍处于peek状态(总长度不足前缀长度)的残留内容,原样放行。
+func (g *writerRefusalGate) eof() string {
+	if g.state != wrgPeek {
+		return ""
+	}
+	content := g.buf.String()
+	g.buf.Reset()
+	return content
 }
 
 // NOTE: siteSettingInt 读取 SiteSetting 并解析为 int，解析失败或空值时返回 fallback。
