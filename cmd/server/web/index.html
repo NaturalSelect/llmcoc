@@ -1047,8 +1047,12 @@
                     <h3 class="text-xs font-bold text-amber-400 mb-2 uppercase tracking-wider font-ui">法术</h3>
                     <div x-show="(editChar?.spells||[]).length" class="flex flex-wrap gap-1.5">
                         <template x-for="(spell, idx) in (editChar?.spells||[])" :key="idx">
-                            <span class="text-xs bg-blue-950/20 text-blue-300 px-2 py-1 rounded font-ui"
-                                x-text="spell"></span>
+                            <span
+                                class="inline-flex items-center gap-2 text-xs bg-blue-950/20 text-blue-300 px-2 py-1 rounded font-ui">
+                                <span x-text="spell"></span>
+                                <button @click="forgetSpell(spell)"
+                                    class="text-red-700 hover:text-red-400 transition leading-none">遗忘</button>
+                            </span>
                         </template>
                     </div>
                     <p x-show="!(editChar?.spells||[]).length" class="text-xs text-amber-800 font-ui">

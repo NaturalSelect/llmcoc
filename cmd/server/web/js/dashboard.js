@@ -286,6 +286,16 @@ window.COC.dashboard = {
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 
+                    async forgetSpell(spell) {
+                        if (!this.editChar?.id || !spell) return;
+                        if (!await this.confirmDialog('确定要遗忘法术「' + spell + '」吗？遗忘后克苏鲁神话技能-1，理智上限将相应提升，此操作不可撤销。', { danger: true, confirmText: '遗忘' })) return;
+                        try {
+                            const updated = await this.api('DELETE', '/api/characters/' + this.editChar.id + '/spells/' + encodeURIComponent(spell));
+                            this.syncCharacter(updated);
+                            this.showToast('已遗忘法术');
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+
                     // ══════════════════════════════════════════════════════════════════════
                     // Warehouse (账号级仓库：物品在同账号角色间流通，仅未进入 session 的角色可操作)
                     // ══════════════════════════════════════════════════════════════════════

@@ -22,6 +22,7 @@ func charRouter(userID uint) *gin.Engine {
 	r.PUT("/characters/:id", auth, UpdateCharacter)
 	r.DELETE("/characters/:id", auth, DeleteCharacter)
 	r.DELETE("/characters/:id/assets/:name", auth, RemoveCharacterAsset)
+	r.DELETE("/characters/:id/spells/:name", auth, ForgetCharacterSpell)
 	return r
 }
 
@@ -380,5 +381,221 @@ func TestRemoveCharacterAsset_OtherCard_Forbidden(t *testing.T) {
 	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/characters/%d/assets/%s", card.ID, url.PathEscape("老宅")), nil))
 	if w.Code != http.StatusForbidden {
 		t.Errorf("want 403, got %d", w.Code)
+	}
+}
+
+// ── ForgetCharacterSpell ────────────────────────────────────────────────────────
+
+func TestForgetCharacterSpell_Success(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	card := models.CharacterCard{
+		UserID:             uid,
+		Name:               "Investigator",
+		IsActive:           true,
+		Stats:              models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, POW: 50, SAN: 50}},
+		Skills:             models.JSONField[map[string]int]{Data: map[string]int{}},
+		Spells:             models.JSONField[[]string]{Data: []string{"日光咒", "枯萎术"}},
+		CthulhuMythosSkill: 5,
+	}
+	if err := models.DB.Create(&card).Error; err != nil {
+		t.Fatalf("seed card: %v", err)
+	}
+
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/characters/%d/spells/%s", card.ID, url.PathEscape("日光咒")), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp models.CharacterCard
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Spells.Data) != 1 || resp.Spells.Data[0] != "枯萎术" {
+		t.Fatalf("spell not removed: %#v", resp.Spells.Data)
+	}
+	if resp.CthulhuMythosSkill != 4 {
+		t.Fatalf("want cthulhu_mythos_skill=4, got %d", resp.CthulhuMythosSkill)
+	}
+	if resp.Stats.Data.MaxSAN != 95 {
+		t.Fatalf("want max_san=95, got %d", resp.Stats.Data.MaxSAN)
+	}
+}
+
+func TestForgetCharacterSpell_SANNotAutoRaised(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	card := models.CharacterCard{
+		UserID:             uid,
+		Name:               "Investigator",
+		IsActive:           true,
+		Stats:              models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, POW: 50, SAN: 40}},
+		Skills:             models.JSONField[map[string]int]{Data: map[string]int{}},
+		Spells:             models.JSONField[[]string]{Data: []string{"日光咒"}},
+		CthulhuMythosSkill: 5,
+	}
+	if err := models.DB.Create(&card).Error; err != nil {
+		t.Fatalf("seed card: %v", err)
+	}
+
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/characters/%d/spells/%s", card.ID, url.PathEscape("日光咒")), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp models.CharacterCard
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Stats.Data.MaxSAN != 95 {
+		t.Fatalf("want max_san=95, got %d", resp.Stats.Data.MaxSAN)
+	}
+	if resp.Stats.Data.SAN != 40 {
+		t.Fatalf("SAN should not auto-rise, want 40, got %d", resp.Stats.Data.SAN)
+	}
+}
+
+func TestForgetCharacterSpell_NotLearned(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	card := models.CharacterCard{
+		UserID:             uid,
+		Name:               "Investigator",
+		IsActive:           true,
+		Stats:              models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, POW: 50}},
+		Skills:             models.JSONField[map[string]int]{Data: map[string]int{}},
+		Spells:             models.JSONField[[]string]{Data: []string{"枯萎术"}},
+		CthulhuMythosSkill: 5,
+	}
+	if err := models.DB.Create(&card).Error; err != nil {
+		t.Fatalf("seed card: %v", err)
+	}
+
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/characters/%d/spells/%s", card.ID, url.PathEscape("不存在的法术")), nil))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded models.CharacterCard
+	if err := models.DB.First(&reloaded, card.ID).Error; err != nil {
+		t.Fatalf("reload card: %v", err)
+	}
+	if len(reloaded.Spells.Data) != 1 || reloaded.Spells.Data[0] != "枯萎术" {
+		t.Fatalf("spells should be unchanged: %#v", reloaded.Spells.Data)
+	}
+	if reloaded.CthulhuMythosSkill != 5 {
+		t.Fatalf("cthulhu_mythos_skill should be unchanged, want 5, got %d", reloaded.CthulhuMythosSkill)
+	}
+}
+
+func TestForgetCharacterSpell_CardNotFound(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", "/characters/9999/spells/whatever", nil))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("want 404, got %d", w.Code)
+	}
+}
+
+func TestForgetCharacterSpell_OtherCard_Forbidden(t *testing.T) {
+	initTestDB(t)
+	uid1 := seedUser(t, "alice", "user", 0, 3)
+	uid2 := seedUser(t, "bob", "user", 0, 3)
+	card := models.CharacterCard{
+		UserID:   uid2,
+		Name:     "Bob's",
+		IsActive: true,
+		Stats:    models.JSONField[models.CharacterStats]{},
+		Skills:   models.JSONField[map[string]int]{Data: map[string]int{}},
+		Spells:   models.JSONField[[]string]{Data: []string{"日光咒"}},
+	}
+	if err := models.DB.Create(&card).Error; err != nil {
+		t.Fatalf("seed card: %v", err)
+	}
+	r := charRouter(uid1)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/characters/%d/spells/%s", card.ID, url.PathEscape("日光咒")), nil))
+	if w.Code != http.StatusForbidden {
+		t.Errorf("want 403, got %d", w.Code)
+	}
+}
+
+func TestForgetCharacterSpell_CthulhuFloorAtZero(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	card := models.CharacterCard{
+		UserID:             uid,
+		Name:               "Investigator",
+		IsActive:           true,
+		Stats:              models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, POW: 50}},
+		Skills:             models.JSONField[map[string]int]{Data: map[string]int{}},
+		Spells:             models.JSONField[[]string]{Data: []string{"日光咒"}},
+		CthulhuMythosSkill: 0,
+	}
+	if err := models.DB.Create(&card).Error; err != nil {
+		t.Fatalf("seed card: %v", err)
+	}
+
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/characters/%d/spells/%s", card.ID, url.PathEscape("日光咒")), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp models.CharacterCard
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.CthulhuMythosSkill != 0 {
+		t.Fatalf("cthulhu_mythos_skill should not go negative, want 0, got %d", resp.CthulhuMythosSkill)
+	}
+	if resp.Stats.Data.MaxSAN != 99 {
+		t.Fatalf("want max_san=99, got %d", resp.Stats.Data.MaxSAN)
+	}
+}
+
+func TestForgetCharacterSpell_NonHuman_MaxSANStays99(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "alice", "user", 0, 3)
+	card := models.CharacterCard{
+		UserID:             uid,
+		Name:               "Ghoul",
+		Race:               "食尸鬼",
+		IsActive:           true,
+		Stats:              models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, POW: 50}},
+		Skills:             models.JSONField[map[string]int]{Data: map[string]int{}},
+		Spells:             models.JSONField[[]string]{Data: []string{"日光咒"}},
+		CthulhuMythosSkill: 5,
+	}
+	if err := models.DB.Create(&card).Error; err != nil {
+		t.Fatalf("seed card: %v", err)
+	}
+
+	r := charRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", fmt.Sprintf("/characters/%d/spells/%s", card.ID, url.PathEscape("日光咒")), nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp models.CharacterCard
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.CthulhuMythosSkill != 4 {
+		t.Fatalf("want cthulhu_mythos_skill=4, got %d", resp.CthulhuMythosSkill)
+	}
+	if resp.Stats.Data.MaxSAN != 99 {
+		t.Fatalf("non-human max_san should stay 99, got %d", resp.Stats.Data.MaxSAN)
 	}
 }

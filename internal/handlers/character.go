@@ -713,6 +713,64 @@ func RemoveCharacterAsset(c *gin.Context) {
 	c.JSON(http.StatusOK, card)
 }
 
+// NOTE: ForgetCharacterSpell 从人物卡法术表中移除指定法术，同时将克苏鲁神话技能-1(下限0)
+// NOTE: 并重算衍生属性(主要是MaxSAN上升，当前SAN不自动回升，仅超限时下调)。
+// NOTE: 只有本人或admin可操作；只有法术确实命中才会产生副作用，防止重复调用/误传导致属性漂移。
+func ForgetCharacterSpell(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	// URL decode the name parameter because Chinese characters may be encoded
+	name, err := url.QueryUnescape(c.Param("name"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "法术名称解码失败"})
+		return
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "法术名称不能为空"})
+		return
+	}
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		var user models.User
+		models.DB.First(&user, userID)
+		if user.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+			return
+		}
+	}
+
+	list := card.Spells.Data
+	out := make([]string, 0, len(list))
+	for _, s := range list {
+		if s != name {
+			out = append(out, s)
+		}
+	}
+	if len(out) == len(list) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "该人物卡未掌握此法术"})
+		return
+	}
+	card.Spells = models.JSONField[[]string]{Data: out}
+
+	if card.CthulhuMythosSkill > 0 {
+		card.CthulhuMythosSkill--
+	}
+	game.ApplyDerivedStats(&card.Stats.Data, card.Age, card.CthulhuMythosSkill, card.Race == "" || card.Race == "人类", false)
+
+	if err := models.DB.Save(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存法术列表失败"})
+		return
+	}
+	c.JSON(http.StatusOK, card)
+}
+
 // NOTE: applyAdjustedStats validates and applies LLM-returned stat adjustments.
 // NOTE: It preserves group totals, keeps base attributes human-range, and recalculates derived values.
 func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats, age int) bool {

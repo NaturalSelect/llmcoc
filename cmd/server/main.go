@@ -205,6 +205,7 @@ func main() {
 		chars.DELETE("/:id/inventory/*item", handlers.RemoveCharacterInventoryItem)
 		chars.DELETE("/:id/social-relations/:name", handlers.RemoveCharacterSocialRelation)
 		chars.DELETE("/:id/assets/:name", handlers.RemoveCharacterAsset)
+		chars.DELETE("/:id/spells/:name", handlers.ForgetCharacterSpell)
 	}
 
 	// Warehouse (account-level, shared across characters)
