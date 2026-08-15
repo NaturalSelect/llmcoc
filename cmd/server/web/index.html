@@ -580,8 +580,8 @@
                                                 x-text="fmtTime(msg.created_at)"></span>
                                             <span class="text-xs text-amber-700 font-mono"
                                                 x-show="msg.role==='assistant' && msg.director_elapsed_ms"
-                                                title="KP决策耗时(不含叙事生成),Director工具调用循环轮数"
-                                                x-text="'⏱ ' + fmtDuration(msg.director_elapsed_ms) + ' · ' + msg.director_steps + ' 步'"></span>
+                                                title="KP决策耗时(不含叙事生成),Director工具调用循环轮数及平均每步延迟"
+                                                x-text="'⏱ ' + fmtDuration(msg.director_elapsed_ms) + ' · ' + msg.director_steps + ' 步 · 均 ' + fmtStepAvg(msg.director_elapsed_ms, msg.director_steps) + '/步'"></span>
                                         </div>
 
                                         <template x-if="msg.role === 'assistant'">

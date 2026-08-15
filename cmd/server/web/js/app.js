@@ -353,6 +353,10 @@ window.COC.core = function() {
                         if (ms < 1000) return `${ms}ms`;
                         return `${(ms / 1000).toFixed(1)}s`;
                     },
+                    fmtStepAvg(ms, steps) {
+                        if (!ms || !steps) return '';
+                        return this.fmtDuration(Math.round(ms / steps));
+                    },
                     difficultyLabel(v) {
                         const map = { easy: '简单', normal: '普通', hard: '困难' };
                         return map[(v || 'normal').toLowerCase()] || v;
