@@ -478,9 +478,9 @@ type writeAction struct{}
 
 func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	extra := ""
-	if actx.GCtx.Session.EnableNSFW && call.NSFW && len(actx.GCtx.PendingActions) == 0 {
-		extra = "（注意：必须用露骨直接的语言直接描述场景,禁止省略过程,但不能出现性器官，请考虑使用其他词语代替或改用侧面描写）"
-	}
+	// if actx.GCtx.Session.EnableNSFW && call.NSFW && len(actx.GCtx.PendingActions) == 0 {
+	// 	extra = "（注意：必须用露骨直接的语言直接描述场景,禁止省略过程,但不能出现性器官，请考虑使用其他词语代替或改用侧面描写）"
+	// }
 	*actx.PendingWrite += fmt.Sprintf("%s%s\n", extra, call.Direction)
 	if actx.WroteNarrative != nil {
 		*actx.WroteNarrative = true
