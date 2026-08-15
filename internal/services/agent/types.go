@@ -144,10 +144,12 @@ type WriterState struct {
 // RunOutput 是一次KP主流程的结构化结果。
 // KPReply 是游戏主流程输出; WriterDirection 只用于之后异步生成白字描述。
 type RunOutput struct {
-	WriterText      string               // 已生成的白字描述,主要用于测试或兼容旧调用
-	WriterDirection string               // Writer后续生成描述所需的导演指令
-	KPReply         string               // KP对玩家的主流程回复
-	ImagePrompts    []ImagePromptRequest // NOTE: 本轮KP主流程排队的画图请求;生成后的data URL由handler持久化到消息内容。
+	WriterText        string               // 已生成的白字描述,主要用于测试或兼容旧调用
+	WriterDirection   string               // Writer后续生成描述所需的导演指令
+	KPReply           string               // KP对玩家的主流程回复
+	ImagePrompts      []ImagePromptRequest // NOTE: 本轮KP主流程排队的画图请求;生成后的data URL由handler持久化到消息内容。
+	DirectorElapsedMs int64                // Director工具调用循环的总耗时(毫秒),不含Writer/画图等异步阶段
+	DirectorSteps     int                  // Director工具调用循环实际执行的轮数
 }
 
 // ── Dice types ────────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
@@ -242,6 +243,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	// round 记录 runToolLoop 最后处理到的轮次(1-indexed)，用于失败时判断是否已经
 	// 取得过任何进展(等价于旧协议 iter==0 时才把错误当作硬失败的规则)。
 	round := 0
+	directorStart := time.Now()
 	err = runToolLoop(ctx, toolLoopOptions{
 		handle:        handles[models.AgentRoleDirector],
 		stage:         "director",
@@ -260,6 +262,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			emitProgress(progressPlannedCalls(calls))
 		},
 	})
+	directorElapsedMs := time.Since(directorStart).Milliseconds()
 
 	if err != nil {
 		if round <= 1 {
@@ -306,7 +309,13 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		kpNarration += "\n<dice>" + strings.TrimSuffix(diceMsg, "; ") + "</dice>"
 	}
 	kpNarration += "\n<time_point>" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</time_point>"
-	return RunOutput{WriterDirection: writerDirection, KPReply: kpNarration, ImagePrompts: pendingImages}, nil
+	return RunOutput{
+		WriterDirection:   writerDirection,
+		KPReply:           kpNarration,
+		ImagePrompts:      pendingImages,
+		DirectorElapsedMs: directorElapsedMs,
+		DirectorSteps:     round,
+	}, nil
 }
 
 func visibleActionNeedsWriter(action ToolCallType) bool {

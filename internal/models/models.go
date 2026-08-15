@@ -437,14 +437,16 @@ const (
 
 // NOTE: Message records a single chat message sent within a game session.
 type Message struct {
-	ID        uint        `gorm:"primaryKey;autoIncrement" json:"id"`
-	SessionID uint        `gorm:"not null;index" json:"session_id"`
-	UserID    *uint       `json:"user_id"`
-	Role      MessageRole `gorm:"not null" json:"role"`
-	Content   string      `gorm:"type:text;not null" json:"content"`
-	Username  string      `gorm:"size:50" json:"username"`
-	CreatedAt time.Time   `json:"created_at"`
-	User      *User       `gorm:"foreignKey:UserID" json:"-"`
+	ID                uint        `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID         uint        `gorm:"not null;index" json:"session_id"`
+	UserID            *uint       `json:"user_id"`
+	Role              MessageRole `gorm:"not null" json:"role"`
+	Content           string      `gorm:"type:text;not null" json:"content"`
+	Username          string      `gorm:"size:50" json:"username"`
+	DirectorElapsedMs *int64      `json:"director_elapsed_ms"` // Director工具调用循环总耗时(毫秒),仅assistant消息有值
+	DirectorSteps     *int        `json:"director_steps"`      // Director工具调用循环执行轮数,仅assistant消息有值
+	CreatedAt         time.Time   `json:"created_at"`
+	User              *User       `gorm:"foreignKey:UserID" json:"-"`
 }
 
 type ItemType string

@@ -45,14 +45,16 @@ type JoinSessionReq struct {
 }
 
 type messageResponse struct {
-	ID        uint               `json:"id"`
-	SessionID uint               `json:"session_id"`
-	UserID    *uint              `json:"user_id"`
-	Role      models.MessageRole `json:"role"`
-	Content   string             `json:"content"`
-	Username  string             `json:"username"`
-	CreatedAt time.Time          `json:"created_at"`
-	Images    []string           `json:"images"`
+	ID                uint               `json:"id"`
+	SessionID         uint               `json:"session_id"`
+	UserID            *uint              `json:"user_id"`
+	Role              models.MessageRole `json:"role"`
+	Content           string             `json:"content"`
+	Username          string             `json:"username"`
+	CreatedAt         time.Time          `json:"created_at"`
+	Images            []string           `json:"images"`
+	DirectorElapsedMs *int64             `json:"director_elapsed_ms"`
+	DirectorSteps     *int               `json:"director_steps"`
 }
 
 func newMessageResponse(msg models.Message) messageResponse {
@@ -61,14 +63,16 @@ func newMessageResponse(msg models.Message) messageResponse {
 		images = []string{}
 	}
 	return messageResponse{
-		ID:        msg.ID,
-		SessionID: msg.SessionID,
-		UserID:    msg.UserID,
-		Role:      msg.Role,
-		Content:   stripInternalImageTags(msg.Content),
-		Username:  msg.Username,
-		CreatedAt: msg.CreatedAt,
-		Images:    images,
+		ID:                msg.ID,
+		SessionID:         msg.SessionID,
+		UserID:            msg.UserID,
+		Role:              msg.Role,
+		Content:           stripInternalImageTags(msg.Content),
+		Username:          msg.Username,
+		CreatedAt:         msg.CreatedAt,
+		Images:            images,
+		DirectorElapsedMs: msg.DirectorElapsedMs,
+		DirectorSteps:     msg.DirectorSteps,
 	}
 }
 
@@ -1762,6 +1766,12 @@ func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content 
 			Role:      models.MessageRoleAssistant,
 			Content:   fullReply,
 			Username:  "KP",
+		}
+		if output.DirectorSteps > 0 {
+			elapsed := output.DirectorElapsedMs
+			steps := output.DirectorSteps
+			assistantMsg.DirectorElapsedMs = &elapsed
+			assistantMsg.DirectorSteps = &steps
 		}
 		return tx.Create(&assistantMsg).Error
 	})

@@ -818,6 +818,66 @@ func TestSaveChatMessagesMarksWriterPending(t *testing.T) {
 	}
 }
 
+func TestSaveChatMessagesRecordsDirectorMetrics(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+
+	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, agent.RunOutput{
+		WriterDirection:   "描述门锁上的痕迹",
+		KPReply:           "你注意到锁孔边缘有新鲜划痕。",
+		DirectorElapsedMs: 1234,
+		DirectorSteps:     5,
+	})
+	if err != nil {
+		t.Fatalf("save chat messages: %v", err)
+	}
+	if msg == nil {
+		t.Fatal("assistant message is nil")
+	}
+	if msg.DirectorElapsedMs == nil || *msg.DirectorElapsedMs != 1234 {
+		t.Fatalf("assistant message director_elapsed_ms = %v, want 1234", msg.DirectorElapsedMs)
+	}
+	if msg.DirectorSteps == nil || *msg.DirectorSteps != 5 {
+		t.Fatalf("assistant message director_steps = %v, want 5", msg.DirectorSteps)
+	}
+
+	var userMsg models.Message
+	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleUser).
+		Order("id DESC").First(&userMsg).Error; err != nil {
+		t.Fatalf("reload user message: %v", err)
+	}
+	if userMsg.DirectorElapsedMs != nil || userMsg.DirectorSteps != nil {
+		t.Fatalf("user message should have nil director metrics, got elapsed=%v steps=%v", userMsg.DirectorElapsedMs, userMsg.DirectorSteps)
+	}
+
+	resp := newMessageResponse(*msg)
+	if resp.DirectorElapsedMs == nil || *resp.DirectorElapsedMs != 1234 {
+		t.Fatalf("response director_elapsed_ms = %v, want 1234", resp.DirectorElapsedMs)
+	}
+	if resp.DirectorSteps == nil || *resp.DirectorSteps != 5 {
+		t.Fatalf("response director_steps = %v, want 5", resp.DirectorSteps)
+	}
+}
+
+func TestSaveChatMessagesZeroRunOutputLeavesDirectorMetricsNil(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+
+	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, agent.RunOutput{
+		WriterDirection: "描述门锁上的痕迹",
+		KPReply:         "你注意到锁孔边缘有新鲜划痕。",
+	})
+	if err != nil {
+		t.Fatalf("save chat messages: %v", err)
+	}
+	if msg == nil {
+		t.Fatal("assistant message is nil")
+	}
+	if msg.DirectorElapsedMs != nil || msg.DirectorSteps != nil {
+		t.Fatalf("zero RunOutput should leave director metrics nil, got elapsed=%v steps=%v", msg.DirectorElapsedMs, msg.DirectorSteps)
+	}
+}
+
 func TestUpdateAssistantMessageWriterPreservesImageRef(t *testing.T) {
 	initTestDB(t)
 	restore := imagestore.SetDefaultDir(t.TempDir())

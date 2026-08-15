@@ -348,6 +348,11 @@ window.COC.core = function() {
                         if (!iso) return '';
                         return new Date(iso).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
                     },
+                    fmtDuration(ms) {
+                        if (!ms) return '';
+                        if (ms < 1000) return `${ms}ms`;
+                        return `${(ms / 1000).toFixed(1)}s`;
+                    },
                     difficultyLabel(v) {
                         const map = { easy: '简单', normal: '普通', hard: '困难' };
                         return map[(v || 'normal').toLowerCase()] || v;
