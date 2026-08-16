@@ -62,6 +62,7 @@ window.COC.core = function() {
 
                     // ── Character forms ───────────────────────────────────────────────────
                     editChar: null,
+                    appearanceGuidance: '',
                     regenningAppearance: false,
                     regenningBackstory: false,
                     regenningTraits: false,

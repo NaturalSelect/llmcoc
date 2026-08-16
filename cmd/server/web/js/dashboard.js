@@ -30,7 +30,7 @@ window.COC.dashboard = {
                         this.loadSkillDefaults().catch(() => {});
                         this.modal = 'createChar';
                     },
-                    openCharDetail(c) { this.editChar = c; this.inventoryInput = ''; this.modal = 'charDetail'; },
+                    openCharDetail(c) { this.editChar = c; this.inventoryInput = ''; this.appearanceGuidance = ''; this.modal = 'charDetail'; },
                     openSessionPlayerCharDetail(player) {
                         if (!player?.character_card) {
                             this.showToast('该玩家未绑定人物卡', 'error');
@@ -202,7 +202,9 @@ window.COC.dashboard = {
                         if (!await this.confirmDialog(`确认花费 ${this.shopCosts?.regenerate_appearance_cost ?? 100} 金币为「${this.editChar.name}」重新生成外貌？`, { confirmText: '重新生成' })) return;
                         this.regenningAppearance = true;
                         try {
-                            const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-appearance');
+                            const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-appearance', {
+                                guidance: this.appearanceGuidance.trim(),
+                            });
                             if (this.user) this.user.coins = r.coins;
                             this.editChar.appearance = r.appearance;
                             this.syncCharacter({ ...this.editChar, appearance: r.appearance });

@@ -837,8 +837,16 @@ func applyAdjustedSkills(base map[string]int, adjusted map[string]int, stats mod
 	base["闪避"] = stats.DEX / 2
 }
 
-// NOTE: RegenerateAppearance 通过 SiteSetting 读取费率，扣除金币后重新生成外貌
+type regenerateAppearanceReq struct {
+	Guidance string `json:"guidance"`
+}
+
+// NOTE: RegenerateAppearance 通过 SiteSetting 读取费率，扣除金币后重新生成外貌；
+// guidance 为可选字段，body 为空时按无指导处理。
 func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
+	var req regenerateAppearanceReq
+	_ = c.ShouldBindJSON(&req)
+
 	cost := siteSettingInt("regenerate_appearance_cost", 100)
 	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -871,7 +879,7 @@ func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 		}
 	}
 
-	appearance, err := agent.RegenerateAppearance(c.Request.Context(), &card)
+	appearance, err := agent.RegenerateAppearance(c.Request.Context(), &card, req.Guidance)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
 		return

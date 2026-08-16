@@ -75,7 +75,8 @@ func appearanceRespondTool() scripterTool {
 // RegenerateAppearance uses the Evaluator agent to produce a fresh appearance description
 // for an existing character. It queries the rulebook via the Lawyer agent (ask_lawyer tool)
 // so the description is grounded in the actual attribute-value meanings, not guesswork.
-func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (string, error) {
+// guidance 为玩家提供的可选外貌指导（如发色、疤痕、穿搭风格等），会拼入 prompt 供 LLM 参考。
+func RegenerateAppearance(ctx context.Context, card *models.CharacterCard, guidance string) (string, error) {
 	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
 	if err != nil {
 		return "", err
@@ -102,6 +103,11 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (stri
 		age = fmt.Sprintf("%d", card.Age)
 	}
 
+	guidanceLine := ""
+	if guidance = strings.TrimSpace(guidance); guidance != "" {
+		guidanceLine = fmt.Sprintf("\n玩家补充要求(需尽量满足，但仍需与规则书查询到的属性含义相符):%s\n", guidance)
+	}
+
 	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)调查员重新生成外貌描述。
 
 调查员信息:
@@ -110,11 +116,12 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard) (stri
 - 性别:%s
 - 年龄:%s
 - 属性:STR=%d CON=%d SIZ=%d DEX=%d APP=%d
-
+%s
 请先通过ask_lawyer查询规则书中这些属性数值及年龄对应的体格、气色、身手、外貌等级含义，再据此撰写外貌描述，与之前不同。`,
 		name, occupation, gender, age,
 		card.Stats.Data.STR, card.Stats.Data.CON, card.Stats.Data.SIZ,
 		card.Stats.Data.DEX, card.Stats.Data.APP,
+		guidanceLine,
 	)
 
 	msgs := []llm.ChatMessage{

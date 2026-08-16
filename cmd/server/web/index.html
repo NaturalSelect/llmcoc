@@ -1144,6 +1144,9 @@
                         </button>
                     </div>
                     <p class="text-sm text-amber-700" x-text="editChar?.appearance"></p>
+                    <input x-model="appearanceGuidance" type="text" maxlength="200"
+                        placeholder="可选：补充外貌指导，如「戴金丝眼镜」「左脸有一道疤痕」"
+                        class="inp text-xs mt-1.5" />
                 </div>
                 <div x-show="editChar?.traits">
                     <div class="flex items-center gap-2 mb-1">
