@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"math/rand"
 	"regexp"
@@ -255,8 +254,7 @@ func (r *scripterRoom) prepareContext() {
 	r.mythosBlacklist = loadRecentMythosAnchors(100, r.sessionID)
 	r.tagsBlacklist = loadRecentScenarioTags(60, r.sessionID)
 	r.usedNPCNames = make(map[string]bool)
-	log.Printf("[scripter] session=%s context prepared title_samples=%d mythos_blacklist=%d tags_blacklist=%d",
-		r.sessionID, len(r.titleSamples), len(r.mythosBlacklist), len(r.tagsBlacklist))
+	alog.Debug("scripter context prepared", "session", r.sessionID, "title_samples", len(r.titleSamples), "mythos_blacklist", len(r.mythosBlacklist), "tags_blacklist", len(r.tagsBlacklist))
 }
 
 // ---------------------------------------------------------------------------
@@ -277,25 +275,24 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		return ScenarioCreationOutput{}, ctx.Err()
 	}
 	reqJSON, _ := json.Marshal(r.req)
-	log.Printf("[scripter] session=%s story-to-compile generation start req=%s", sessionID, reqJSON)
+	alog.Info("scripter generation start", "session", sessionID, "req", string(reqJSON))
 
-	log.Printf("[scripter] session=%s stage=constraints start", sessionID)
+	alog.Debug("scripter stage start", "session", sessionID, "stage", "constraints")
 	r.emitProgress("constraints", "start", "阶段 1/6：构建地理与多样性约束…")
 	constraints := r.buildConstraints(ctx)
-	log.Printf("[scripter] session=%s stage=constraints done geography=%q", sessionID, strings.Join(constraints.GeographyFlavor, " → "))
+	alog.Debug("scripter stage done", "session", sessionID, "stage", "constraints", "geography", strings.Join(constraints.GeographyFlavor, " → "))
 	r.emitProgress("constraints", "done", "约束就绪："+strings.Join(constraints.GeographyFlavor, " → "))
 	logScripterArtifact("Constraints", sessionID, constraints)
 
-	log.Printf("[scripter] session=%s stage=story start", sessionID)
+	alog.Debug("scripter stage start", "session", sessionID, "stage", "story")
 	r.emitProgress("story", "start", "阶段 2/6：Story Architect 创作故事文档（多轮工具调用，耗时较长）…")
 	story, storyConv, err := generateStoryDocument(ctx, r, constraints)
 	if err != nil {
-		log.Printf("[scripter] session=%s stage=story error=%v", sessionID, err)
+		alog.Error("scripter stage failed", "session", sessionID, "stage", "story", "err", err)
 		r.emitProgress("story", "error", "故事文档生成失败："+err.Error())
 		return ScenarioCreationOutput{}, fmt.Errorf("故事文档生成失败: %w", err)
 	}
-	log.Printf("[scripter] session=%s stage=story done doc_len=%d anchor=%q",
-		sessionID, len([]rune(story.Document)), truncateRunes(story.MythosAnchor, 80))
+	alog.Debug("scripter stage done", "session", sessionID, "stage", "story", "doc_len", len([]rune(story.Document)), "anchor", truncateRunes(story.MythosAnchor, 80))
 	r.emitProgress("story", "done", fmt.Sprintf("故事文档完成：%d字，神话锚点：%s", len([]rune(story.Document)), truncateRunes(story.MythosAnchor, 40)))
 
 	iterations := 1
@@ -306,71 +303,71 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 		if len(issues) == 0 {
 			break
 		}
-		log.Printf("[scripter] session=%s stage=story_repair round=%d issues=%d %v", sessionID, round, len(issues), issues)
+		alog.Warn("scripter repair issues found", "session", sessionID, "stage", "story_repair", "round", round, "count", len(issues), "issues", issues)
 		r.emitProgress("story_repair", "start", fmt.Sprintf("故事文档结构修复第 %d 轮：发现 %d 个问题", round, len(issues)))
 		repaired, repairErr := repairStoryDocument(ctx, r, storyConv, constraints, story, issues)
 		if repairErr != nil {
-			log.Printf("[scripter] session=%s stage=story_repair round=%d failed: %v", sessionID, round, repairErr)
+			alog.Warn("scripter repair failed", "session", sessionID, "stage", "story_repair", "round", round, "err", repairErr)
 			r.emitProgress("story_repair", "error", fmt.Sprintf("故事文档修复第 %d 轮失败（保留当前文档）", round))
 			break
 		}
 		story = repaired
 		iterations++
-		log.Printf("[scripter] session=%s stage=story_repair round=%d done doc_len=%d", sessionID, round, len([]rune(story.Document)))
+		alog.Debug("scripter repair done", "session", sessionID, "stage", "story_repair", "round", round, "doc_len", len([]rune(story.Document)))
 		r.emitProgress("story_repair", "done", fmt.Sprintf("故事文档结构修复第 %d 轮完成", round))
 	}
 
 	// 人写化审查：QA 审 AI 腔与写作质感，问题清单走一轮故事文档修复；最多3轮，
 	// 单轮修复失败或3轮后仍有问题都不阻塞生成，保留当前文档进入下一阶段。
-	log.Printf("[scripter] session=%s stage=qa_humanize start", sessionID)
+	alog.Debug("scripter stage start", "session", sessionID, "stage", "qa_humanize")
 	r.emitProgress("qa_humanize", "start", "阶段 3/6：QA 人写化审查…")
 	for round := 1; round <= 3; round++ {
 		qaIssues := runStoryQAReview(ctx, r, story.Document)
 		if len(qaIssues) == 0 {
 			break
 		}
-		log.Printf("[scripter] session=%s stage=qa_humanize round=%d issues=%d %v", sessionID, round, len(qaIssues), qaIssues)
+		alog.Warn("scripter repair issues found", "session", sessionID, "stage", "qa_humanize", "round", round, "count", len(qaIssues), "issues", qaIssues)
 		r.emitProgress("qa_humanize", "start", fmt.Sprintf("人写化审查第 %d 轮：发现 %d 个问题，执行修复", round, len(qaIssues)))
 		logScripterArtifact("QA Humanize Issues", sessionID, qaIssues)
 		repaired, repairErr := repairStoryDocument(ctx, r, storyConv, constraints, story, qaIssues)
 		if repairErr != nil {
-			log.Printf("[scripter] session=%s stage=qa_humanize round=%d failed: %v", sessionID, round, repairErr)
+			alog.Warn("scripter repair failed", "session", sessionID, "stage", "qa_humanize", "round", round, "err", repairErr)
 			r.emitProgress("qa_humanize", "error", fmt.Sprintf("人写化修复第 %d 轮失败（保留当前文档）", round))
 			break
 		}
 		story = repaired
 		iterations++
-		log.Printf("[scripter] session=%s stage=qa_humanize round=%d done doc_len=%d", sessionID, round, len([]rune(story.Document)))
+		alog.Debug("scripter repair done", "session", sessionID, "stage", "qa_humanize", "round", round, "doc_len", len([]rune(story.Document)))
 		r.emitProgress("qa_humanize", "done", fmt.Sprintf("人写化修复第 %d 轮完成", round))
 	}
-	log.Printf("[scripter] session=%s stage=qa_humanize done", sessionID)
+	alog.Debug("scripter stage done", "session", sessionID, "stage", "qa_humanize")
 	r.emitProgress("qa_humanize", "done", "人写化审查通过")
 
 	// 故事逻辑审查：QA 审故事本身能否成立（动机/能力机会/时间线/误导公平性/反派计划/结局因果/
 	// 内部一致性/可解性），与人写化审查（只审文字质感）、编译后逻辑审查（只审编译忠实度与线索
 	// 可达性，且信任故事文档为真相源）都不重复；问题清单走一轮故事文档修复；最多3轮
-	log.Printf("[scripter] session=%s stage=story_logic_review start", sessionID)
+	alog.Debug("scripter stage start", "session", sessionID, "stage", "story_logic_review")
 	r.emitProgress("story_logic_review", "start", "QA 故事逻辑审查…")
 	for round := 1; round <= 3; round++ {
 		logicIssues := runStoryLogicReview(ctx, r, story.Document)
 		if len(logicIssues) == 0 {
 			break
 		}
-		log.Printf("[scripter] session=%s stage=story_logic_review round=%d issues=%d %v", sessionID, round, len(logicIssues), logicIssues)
+		alog.Warn("scripter repair issues found", "session", sessionID, "stage", "story_logic_review", "round", round, "count", len(logicIssues), "issues", logicIssues)
 		r.emitProgress("story_logic_review", "start", fmt.Sprintf("故事逻辑审查第 %d 轮：发现 %d 个问题，执行修复", round, len(logicIssues)))
 		logScripterArtifact("Story Logic Review Issues", sessionID, logicIssues)
 		repaired, repairErr := repairStoryDocument(ctx, r, storyConv, constraints, story, logicIssues)
 		if repairErr != nil {
-			log.Printf("[scripter] session=%s stage=story_logic_review round=%d failed: %v", sessionID, round, repairErr)
+			alog.Warn("scripter repair failed", "session", sessionID, "stage", "story_logic_review", "round", round, "err", repairErr)
 			r.emitProgress("story_logic_review", "error", fmt.Sprintf("故事逻辑修复第 %d 轮失败（保留当前文档）", round))
 			break
 		}
 		story = repaired
 		iterations++
-		log.Printf("[scripter] session=%s stage=story_logic_review round=%d done doc_len=%d", sessionID, round, len([]rune(story.Document)))
+		alog.Debug("scripter repair done", "session", sessionID, "stage", "story_logic_review", "round", round, "doc_len", len([]rune(story.Document)))
 		r.emitProgress("story_logic_review", "done", fmt.Sprintf("故事逻辑修复第 %d 轮完成", round))
 	}
-	log.Printf("[scripter] session=%s stage=story_logic_review done", sessionID)
+	alog.Debug("scripter stage done", "session", sessionID, "stage", "story_logic_review")
 	r.emitProgress("story_logic_review", "done", "故事逻辑审查通过")
 
 	draft, compileIters, err := r.compileAndFinalize(ctx, story, constraints)
@@ -390,16 +387,15 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 	sessionID := r.sessionID
 	iterations := 0
 
-	log.Printf("[scripter] session=%s stage=compile start", sessionID)
+	alog.Debug("scripter stage start", "session", sessionID, "stage", "compile")
 	r.emitProgress("compile", "start", "Compiler 编译结构化数据…")
 	draft, rewardConcept, err := compileStoryToModule(ctx, r, story, constraints)
 	if err != nil {
-		log.Printf("[scripter] session=%s stage=compile error=%v", sessionID, err)
+		alog.Error("scripter stage failed", "session", sessionID, "stage", "compile", "err", err)
 		r.emitProgress("compile", "error", "编译失败："+err.Error())
 		return ScenarioDraft{}, iterations, fmt.Errorf("编译失败: %w", err)
 	}
-	log.Printf("[scripter] session=%s stage=compile done name=%q scenes=%d npcs=%d clues=%d",
-		sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+	alog.Debug("scripter stage done", "session", sessionID, "stage", "compile", "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
 	r.emitProgress("compile", "done", fmt.Sprintf("编译完成：《%s》，场景 %d 个、NPC %d 个、线索 %d 条",
 		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues)))
 
@@ -417,43 +413,41 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 		if len(issues) == 0 {
 			break
 		}
-		log.Printf("[scripter] session=%s stage=repair round=%d issues=%d %v", sessionID, round, len(issues), issues)
+		alog.Warn("scripter repair issues found", "session", sessionID, "stage", "repair", "round", round, "count", len(issues), "issues", issues)
 		r.emitProgress("repair", "start", fmt.Sprintf("结构修复第 %d 轮：发现 %d 个结构问题", round, len(issues)))
 		repaired, repairErr := repairOneshotDraft(ctx, r, repairConv, constraints, &draft, issues)
 		if repairErr != nil {
-			log.Printf("[scripter] session=%s stage=repair round=%d failed: %v", sessionID, round, repairErr)
+			alog.Warn("scripter repair failed", "session", sessionID, "stage", "repair", "round", round, "err", repairErr)
 			r.emitProgress("repair", "error", fmt.Sprintf("结构修复第 %d 轮失败（保留当前草稿）", round))
 			break
 		}
 		draft = repaired
 		applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
 		iterations++
-		log.Printf("[scripter] session=%s stage=repair round=%d done name=%q scenes=%d npcs=%d clues=%d",
-			sessionID, round, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+		alog.Debug("scripter repair done", "session", sessionID, "stage", "repair", "round", round, "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
 		r.emitProgress("repair", "done", fmt.Sprintf("结构修复第 %d 轮完成", round))
 	}
 
 	// 逻辑审查：QA agent 以故事文档为真相源审因果可达性与编译忠实度，问题清单走一轮修复；失败不阻塞生成
-	log.Printf("[scripter] session=%s stage=logic_review start", sessionID)
+	alog.Debug("scripter stage start", "session", sessionID, "stage", "logic_review")
 	r.emitProgress("logic_review", "start", "逻辑一致性审查…")
 	if logicIssues := runLogicReview(ctx, r, &draft, story.Document); len(logicIssues) > 0 {
-		log.Printf("[scripter] session=%s stage=logic_review issues=%d %v", sessionID, len(logicIssues), logicIssues)
+		alog.Warn("scripter repair issues found", "session", sessionID, "stage", "logic_review", "count", len(logicIssues), "issues", logicIssues)
 		r.emitProgress("logic_review", "start", fmt.Sprintf("逻辑审查发现 %d 个问题，执行修复", len(logicIssues)))
 		logScripterArtifact("Logic Review Issues", sessionID, logicIssues)
 		repaired, repairErr := repairOneshotDraft(ctx, r, repairConv, constraints, &draft, logicIssues)
 		if repairErr != nil {
-			log.Printf("[scripter] session=%s stage=logic_review repair failed: %v (keeping draft)", sessionID, repairErr)
+			alog.Warn("scripter repair failed", "session", sessionID, "stage", "logic_review", "err", repairErr)
 			r.emitProgress("logic_review", "error", "逻辑修复失败（保留当前草稿）")
 		} else {
 			draft = repaired
 			applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
 			iterations++
-			log.Printf("[scripter] session=%s stage=logic_review done name=%q scenes=%d npcs=%d clues=%d",
-				sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+			alog.Debug("scripter repair done", "session", sessionID, "stage", "logic_review", "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
 			r.emitProgress("logic_review", "done", "逻辑修复完成")
 		}
 	} else {
-		log.Printf("[scripter] session=%s stage=logic_review no issues", sessionID)
+		alog.Debug("scripter stage done", "session", sessionID, "stage", "logic_review", "issues", 0)
 		r.emitProgress("logic_review", "done", "逻辑审查通过")
 	}
 
@@ -464,19 +458,18 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 	concept := strings.TrimSpace(rewardConcept)
 	if concept == "" && strings.TrimSpace(draft.Content.MythosAnchor) != "" {
 		concept = fallbackRewardConcept(draft.Content.MythosAnchor)
-		log.Printf("[scripter] session=%s stage=reward_agent compiler未给出reward_concept，改用锚点兜底概念=%q", sessionID, concept)
+		alog.Warn("scripter reward concept fallback", "session", sessionID, "concept", concept)
 	}
 	if concept != "" {
-		log.Printf("[scripter] session=%s stage=reward_agent start concept=%q anchor=%q",
-			sessionID, truncateRunes(concept, 200), truncateRunes(draft.Content.MythosAnchor, 200))
+		alog.Debug("scripter stage start", "session", sessionID, "stage", "reward_agent", "concept", truncateRunes(concept, 200), "anchor", truncateRunes(draft.Content.MythosAnchor, 200))
 		r.emitProgress("reward_agent", "start", "奖励物品设计…")
 		rwd, rewardErr := runRewardAgent(ctx, r, concept, draft.Content.MythosAnchor)
 		if rewardErr != nil {
-			log.Printf("[scripter] session=%s stage=reward_agent error=%v (continuing without reward)", sessionID, rewardErr)
+			alog.Warn("scripter stage failed", "session", sessionID, "stage", "reward_agent", "err", rewardErr)
 			r.emitProgress("reward_agent", "error", "奖励设计失败（跳过，不影响模组）")
 		} else if rwd != nil {
 			draft.Content.Reward = rwd
-			log.Printf("[scripter] session=%s stage=reward_agent done name=%q type=%q", sessionID, rwd.Name, rwd.Type)
+			alog.Debug("scripter stage done", "session", sessionID, "stage", "reward_agent", "name", rwd.Name, "type", rwd.Type)
 			r.emitProgress("reward_agent", "done", fmt.Sprintf("奖励设计完成：%s", rwd.Name))
 		}
 	}
@@ -486,31 +479,29 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 	// 会改写它（repair 的 schema 对 name 无"保持原值"约束，放在修复循环之前会被冲掉）。
 	// req.Name 非空时整段跳过：下面的 applyGuardrails 会强制覆盖，调用纯属浪费。
 	if strings.TrimSpace(r.req.Name) == "" {
-		log.Printf("[scripter] session=%s stage=title start current=%q", sessionID, draft.Name)
+		alog.Debug("scripter stage start", "session", sessionID, "stage", "title", "current", draft.Name)
 		r.emitProgress("title", "start", "拟定模组标题…")
 		title, titleErr := runTitleAgent(ctx, r, &draft)
 		if titleErr != nil {
-			log.Printf("[scripter] session=%s stage=title error=%v (保留编译标题=%q)", sessionID, titleErr, draft.Name)
+			alog.Warn("scripter stage failed", "session", sessionID, "stage", "title", "err", titleErr, "kept", draft.Name)
 			r.emitProgress("title", "error", "标题拟定失败（保留编译标题）")
 		} else {
-			log.Printf("[scripter] session=%s stage=title done old=%q new=%q", sessionID, draft.Name, title)
+			alog.Debug("scripter stage done", "session", sessionID, "stage", "title", "from", draft.Name, "to", title)
 			draft.Name = title
 			r.emitProgress("title", "done", fmt.Sprintf("标题拟定完成：《%s》", title))
 		}
 	}
 
 	beforeIssues := validateDraftCompatibility(draft)
-	log.Printf("[scripter] session=%s normalization start pre_issues=%d", sessionID, len(beforeIssues))
+	alog.Debug("scripter stage start", "session", sessionID, "stage", "normalize", "pre_issues", len(beforeIssues))
 	r.emitProgress("normalize", "start", "规范化与收尾…")
 	normalizeOneshotDraft(&draft, r.req, r.architectModelName(), constraints, r.usedNPCNames, sessionID)
 	applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
-	log.Printf("[scripter] session=%s normalization done name=%q players=%d-%d slot=%d scenes=%d npcs=%d clues=%d endings=%d",
-		sessionID, draft.Name, draft.MinPlayers, draft.MaxPlayers, draft.Content.GameStartSlot,
-		len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues), len(draft.Content.Endings))
+	alog.Debug("scripter stage done", "session", sessionID, "stage", "normalize", "name", draft.Name, "players", fmt.Sprintf("%d-%d", draft.MinPlayers, draft.MaxPlayers), "slot", draft.Content.GameStartSlot, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues), "endings", len(draft.Content.Endings))
 	r.emitProgress("normalize", "done", fmt.Sprintf("规范化完成：《%s》，准备入库", draft.Name))
 
 	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
-		log.Printf("[scripter] session=%s draft issues after normalization: %v", sessionID, issues)
+		alog.Warn("scripter draft issues after normalization", "session", sessionID, "issues", issues)
 	}
 
 	return draft, iterations, nil
@@ -535,19 +526,19 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 	geography, err := generateGeographyChain(ctx, r, r.req.Era)
 	if err != nil || len(geography) == 0 {
 		if err != nil {
-			log.Printf("[scripter] session=%s geography flavor generation failed: %v", sessionID, err)
+			alog.Warn("scripter geography generation failed", "session", sessionID, "err", err)
 		}
 		geography = fallbackGeographyFlavor(r.req)
-		log.Printf("[scripter] session=%s geography fallback=%q", sessionID, strings.Join(geography, " → "))
+		alog.Debug("scripter geography fallback", "session", sessionID, "geography", strings.Join(geography, " → "))
 	} else {
-		log.Printf("[scripter] session=%s geography generated=%q", sessionID, strings.Join(geography, " → "))
+		alog.Debug("scripter geography generated", "session", sessionID, "geography", strings.Join(geography, " → "))
 	}
 
 	// NOTE: tone_tags 组合改为纯随机挑选，不再让 AI 从围池内判断"最契合"——时代/主题等输入
 	// 在多次生成间几乎不变，这类判断任务会收敛到少数刻板组合，反而削弱多样性；契合题材交给
 	// 下游 Story Architect 在拿到约束后体现。
 	toneTags := toneTagsForDiversity(r.req)
-	log.Printf("[scripter] session=%s diversity tone_tags=%q", sessionID, strings.Join(toneTags, ","))
+	alog.Debug("scripter diversity tone_tags", "session", sessionID, "tone_tags", strings.Join(toneTags, ","))
 
 	return ScripterConstraints{
 		Era:             r.req.Era,
@@ -579,7 +570,7 @@ func generateGeographyChain(ctx context.Context, room *scripterRoom, era string)
 		return nil, fmt.Errorf("architect provider unavailable")
 	}
 	sessionID := sessionIDFromContextValue(ctx)
-	log.Printf("[scripter:geography] session=%s start era=%q", sessionID, era)
+	alog.Debug("scripter geography chain start", "session", sessionID, "era", era)
 	stages := []struct {
 		Key      string
 		Mode     string
@@ -591,10 +582,10 @@ func generateGeographyChain(ctx context.Context, room *scripterRoom, era string)
 	chain := make([]string, 0, len(stages))
 	msgs := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)}}
 	for _, stage := range stages {
-		log.Printf("[scripter:geography] session=%s stage=%q selected_so_far=%q", sessionID, stage.Key, strings.Join(chain, " → "))
+		alog.Debug("scripter geography stage selecting", "session", sessionID, "stage", stage.Key, "selected_so_far", strings.Join(chain, " → "))
 		items, err := generateGeographyCandidates(ctx, room, &msgs, era, stage.Key, stage.Mode, stage.Examples, chain)
 		if err != nil {
-			log.Printf("[scripter:geography] session=%s stage=%q error=%v", sessionID, stage.Key, err)
+			alog.Error("scripter geography stage failed", "session", sessionID, "stage", stage.Key, "err", err)
 			return chain, err
 		}
 		if len(items) == 0 {
@@ -618,7 +609,7 @@ func generateGeographyChain(ctx context.Context, room *scripterRoom, era string)
 			choice = items[rand.Intn(len(items))]
 		}
 		chain = append(chain, choice)
-		log.Printf("[scripter] session=%s geography stage=%q candidates=%d chosen=%q", sessionID, stage.Key, len(items), choice)
+		alog.Debug("scripter geography stage chosen", "session", sessionID, "stage", stage.Key, "candidates", len(items), "chosen", choice)
 	}
 	return chain, nil
 }
@@ -650,21 +641,21 @@ func generateGeographyCandidates(ctx context.Context, room *scripterRoom, msgs *
 		}
 	}
 	prompt := fmt.Sprintf("已随机选中的前置布景：%s\n现在进入下一阶段：%s\n时代：%s\n输出要求：%s\n示例范围：%s\n\n%s", selected, stageKey, era, mode, examples, countInstruction)
-	log.Printf("[scripter:geography] session=%s prompt stage=%q len=%d body=%s", sessionID, stageKey, len(prompt), truncateRunes(prompt, scripterPromptLogLimit))
+	alog.Debug("scripter geography prompt", "session", sessionID, "stage", stageKey, "len", len(prompt), "content", truncateRunes(prompt, scripterPromptLogLimit))
 	*msgs = append(*msgs, llm.ChatMessage{Role: "user", Content: prompt})
 	callMessages := append([]llm.ChatMessage(nil), (*msgs)...)
 	raw, err := architect.provider.Chat(ctx, sessionIDFromContextValue(ctx)+":"+string(models.AgentRoleArchitect), *msgs)
 	if err != nil {
-		log.Printf("[scripter:geography] session=%s chat error stage=%q err=%v", sessionID, stageKey, err)
+		alog.Error("scripter geography chat failed", "session", sessionID, "stage", stageKey, "err", err)
 		return nil, err
 	}
 	recordScripterLLMExchange(ctx, room, fmt.Sprintf("geography_%s", stageKey), callMessages, raw)
-	log.Printf("[scripter:geography] session=%s raw stage=%q len=%d body=%s", sessionID, stageKey, len(raw), truncateRunes(raw, scripterRawLogLimit))
+	alog.Debug("scripter geography raw response", "session", sessionID, "stage", stageKey, "len", len(raw), "content", truncateRunes(raw, scripterRawLogLimit))
 	*msgs = append(*msgs, llm.ChatMessage{Role: "assistant", Content: raw})
 	items := parseElementNames(raw)
-	log.Printf("[scripter:geography] session=%s parsed stage=%q count=%d items=%q", sessionID, stageKey, len(items), strings.Join(items, " | "))
+	alog.Debug("scripter geography parsed", "session", sessionID, "stage", stageKey, "count", len(items), "items", strings.Join(items, " | "))
 	if len(items) == 0 {
-		log.Printf("[scripter:geography] session=%s parse empty stage=%q raw=%s", sessionID, stageKey, truncateRunes(raw, scripterRawLogLimit))
+		alog.Warn("scripter geography parse empty", "session", sessionID, "stage", stageKey, "raw", truncateRunes(raw, scripterRawLogLimit))
 		return nil, fmt.Errorf("地理候选列表为空")
 	}
 	return items, nil
@@ -1000,22 +991,22 @@ func applyGuardrailsBase(draft *ScenarioDraft, req ScenarioCreationRequest, auth
 		author = defaultScripterAuthor
 	}
 	if strings.TrimSpace(req.Name) != "" && draft.Name != strings.TrimSpace(req.Name) {
-		log.Printf("[scripter:guardrails] session=%s override name from=%q to=%q", sessionID, draft.Name, strings.TrimSpace(req.Name))
+		alog.Debug("scripter guardrail override", "session", sessionID, "field", "name", "from", draft.Name, "to", strings.TrimSpace(req.Name))
 		draft.Name = strings.TrimSpace(req.Name)
 	}
 	if req.MinPlayers > 0 && draft.MinPlayers != req.MinPlayers {
-		log.Printf("[scripter:guardrails] session=%s override min_players from=%d to=%d", sessionID, draft.MinPlayers, req.MinPlayers)
+		alog.Debug("scripter guardrail override", "session", sessionID, "field", "min_players", "from", draft.MinPlayers, "to", req.MinPlayers)
 		draft.MinPlayers = req.MinPlayers
 	}
 	if req.MaxPlayers > 0 && draft.MaxPlayers != req.MaxPlayers {
-		log.Printf("[scripter:guardrails] session=%s override max_players from=%d to=%d", sessionID, draft.MaxPlayers, req.MaxPlayers)
+		alog.Debug("scripter guardrail override", "session", sessionID, "field", "max_players", "from", draft.MaxPlayers, "to", req.MaxPlayers)
 		draft.MaxPlayers = req.MaxPlayers
 	}
 	if draft.MaxPlayers > 0 && draft.MinPlayers > 0 && draft.MaxPlayers < draft.MinPlayers {
 		draft.MaxPlayers = draft.MinPlayers
 	}
 	if strings.TrimSpace(req.Difficulty) != "" && draft.Difficulty != strings.TrimSpace(req.Difficulty) {
-		log.Printf("[scripter:guardrails] session=%s override difficulty from=%q to=%q", sessionID, draft.Difficulty, strings.TrimSpace(req.Difficulty))
+		alog.Debug("scripter guardrail override", "session", sessionID, "field", "difficulty", "from", draft.Difficulty, "to", strings.TrimSpace(req.Difficulty))
 		draft.Difficulty = strings.TrimSpace(req.Difficulty)
 	}
 	if draft.Author != author {
@@ -1176,14 +1167,14 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 		debugf("Parser", "session=%s Fixed JSON: %v", sessionID, fixed)
 		stripped := fixed
 		if json.Valid([]byte(stripped)) {
-			log.Printf("[parser] session=%s JSON 修复成功 attempt=%d", sessionID, attempt)
+			alog.Debug("parser json repair succeeded", "session", sessionID, "attempt", attempt, "method", "direct")
 			return stripped, nil
 		}
 		if s := strings.Index(stripped, "{"); s >= 0 {
 			if e := strings.LastIndex(stripped, "}"); e > s {
 				candidate := stripped[s : e+1]
 				if json.Valid([]byte(candidate)) {
-					log.Printf("[parser] session=%s JSON 修复成功(提取) attempt=%d", sessionID, attempt)
+					alog.Debug("parser json repair succeeded", "session", sessionID, "attempt", attempt, "method", "brace_extract")
 					return candidate, nil
 				}
 			}
@@ -1192,7 +1183,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 			if e := strings.LastIndex(stripped, "]"); e > s {
 				candidate := stripped[s : e+1]
 				if json.Valid([]byte(candidate)) {
-					log.Printf("[parser] session=%s JSON 修复成功(提取数组) attempt=%d", sessionID, attempt)
+					alog.Debug("parser json repair succeeded", "session", sessionID, "attempt", attempt, "method", "bracket_extract")
 					return candidate, nil
 				}
 			}
@@ -1202,7 +1193,7 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: fixed})
 		// assistant 回复已经通过 recordScripterLLMExchange 的 response 参数记录。
 		loggedCount = len(msgs)
-		log.Printf("[parser] session=%s attempt=%d 修复后仍无效", sessionID, attempt)
+		alog.Warn("parser json repair attempt still invalid", "session", sessionID, "attempt", attempt)
 	}
 	return "", fmt.Errorf("parser 修复失败(%d次尝试)", maxAttempts)
 }
@@ -1251,7 +1242,7 @@ func loadScenarioTitleSamples(sampleSize int, sessionIDs ...string) []string {
 	}
 	var scenarios []models.Scenario
 	if err := models.DB.Order("created_at DESC").Limit(sampleSize).Find(&scenarios).Error; err != nil {
-		log.Printf("[scripter] session=%s load scenario titles failed: %v", sessionID, err)
+		alog.Warn("scripter load scenario titles failed", "session", sessionID, "err", err)
 		return nil
 	}
 	titles := make([]string, 0, len(scenarios))
@@ -1277,7 +1268,7 @@ func loadRecentMythosAnchors(limit int, sessionIDs ...string) []string {
 	}
 	var scenarios []models.Scenario
 	if err := models.DB.Order("created_at DESC").Limit(limit * 2).Find(&scenarios).Error; err != nil {
-		log.Printf("[scripter] session=%s load recent mythos anchors failed: %v", sessionID, err)
+		alog.Warn("scripter load recent mythos anchors failed", "session", sessionID, "err", err)
 		return nil
 	}
 	seen := map[string]bool{}
@@ -1310,7 +1301,7 @@ func loadRecentScenarioTags(limit int, sessionIDs ...string) []string {
 	}
 	var scenarios []models.Scenario
 	if err := models.DB.Order("created_at DESC").Limit(limit * 2).Find(&scenarios).Error; err != nil {
-		log.Printf("[scripter] session=%s load recent scenario tags failed: %v", sessionID, err)
+		alog.Warn("scripter load recent scenario tags failed", "session", sessionID, "err", err)
 		return nil
 	}
 	seen := map[string]bool{}
@@ -1409,17 +1400,17 @@ func normalizeScenarioTitle(name string) string {
 func logScripterArtifact(stage string, sessionID string, artifact any) {
 	bs, err := json.MarshalIndent(artifact, "", "  ")
 	if err != nil {
-		log.Printf("[scripter-artifact] session=%s %s marshal failed: %v", sessionID, stage, err)
+		alog.Error("scripter artifact marshal failed", "session", sessionID, "stage", stage, "err", err)
 		return
 	}
-	log.Printf("[scripter-artifact] session=%s %s len=%d\n%s", sessionID, stage, len(bs), string(bs))
+	alog.Debug("scripter artifact", "session", sessionID, "stage", stage, "len", len(bs), "content", truncateForLog(string(bs), 2000))
 }
 
 func logStagePrompt(tag string, sessionID string, msgs []llm.ChatMessage) {
-	log.Printf("[scripter:%s] session=%s prompt messages=%d", tag, sessionID, len(msgs))
+	alog.Debug("scripter stage prompt", "tag", tag, "session", sessionID, "messages", len(msgs))
 	if len(msgs) > 0 {
 		msg := msgs[len(msgs)-1]
-		log.Printf("[scripter:%s] session=%s prompt[%d] role=%s len=%d body=%s", tag, sessionID, len(msgs)-1, msg.Role, len(msg.Content), truncateRunes(msg.Content, scripterPromptLogLimit))
+		alog.Debug("scripter stage prompt", "tag", tag, "session", sessionID, "index", len(msgs)-1, "role", msg.Role, "len", len(msg.Content), "content", truncateRunes(msg.Content, scripterPromptLogLimit))
 	}
 }
 

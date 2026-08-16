@@ -2,13 +2,15 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/llmcoc/server/internal/logging"
 	"github.com/llmcoc/server/internal/models"
 )
+
+var shopLog = logging.For("shop")
 
 // NOTE: siteSettingInt 读取 SiteSetting 并解析为 int，解析失败或空值时返回 fallback。
 func siteSettingInt(key string, fallback int) int {
@@ -75,7 +77,7 @@ func PurchaseItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	log.Printf("[shop] purchase user_id=%d item_id=%d", userID, req.ItemID)
+	shopLog.Debug("purchase request", "user_id", userID, "item_id", req.ItemID)
 
 	var item models.ShopItem
 	if err := models.DB.First(&item, req.ItemID).Error; err != nil || !item.IsActive {
@@ -185,7 +187,7 @@ func PurchaseItem(c *gin.Context) {
 
 	// Reload user
 	models.DB.First(&user, userID)
-	log.Printf("[shop] purchase ok user_id=%d item_id=%d coins_left=%d", userID, req.ItemID, user.Coins)
+	shopLog.Info("purchase ok", "user_id", userID, "item_id", req.ItemID, "coins_left", user.Coins)
 	resp := gin.H{
 		"message":    "购买成功",
 		"coins":      user.Coins,

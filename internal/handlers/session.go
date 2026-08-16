@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -14,12 +13,15 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/llmcoc/server/internal/logging"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/imagestore"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+var chatLog = logging.For("chat")
 
 // SessionHandlers holds injectable dependencies for session-related handlers.
 type SessionHandlers struct {
@@ -898,8 +900,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[chat] session=%d user=%q content_len=%d round=%d",
-		sessionID, username, len([]rune(content)), session.TurnRound)
+	chatLog.Debug("chat request", "session", sessionID, "user", username, "content_len", len([]rune(content)), "round", session.TurnRound)
 
 	// ── Multi-player turn-collection ────────────────────────────────────────
 	playerCount := len(session.Players)
@@ -922,7 +923,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	actionCutoff, hasActionCutoff := lastKPReplyTime(session.ID)
 	if playerCount > 1 {
 		if activePlayerCount > 0 && (!isTrackedPlayer || !isActiveTurnPlayer) {
-			log.Printf("[chat] session=%d user=%q rejected dead/non-player input while active players remain", sessionID, username)
+			chatLog.Warn("chat rejected dead or non-player input", "session", sessionID, "user", username)
 			setChatSSEHeaders(c)
 			c.SSEvent("error", "当前仍有存活调查员，只有非死亡玩家可以提交本轮行动")
 			c.Writer.Flush()
@@ -931,7 +932,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			return
 		}
 		if activePlayerCount == 0 && !isTrackedPlayer {
-			log.Printf("[chat] session=%d user=%q rejected non-player input after party wipe", sessionID, username)
+			chatLog.Warn("chat rejected non-player input after party wipe", "session", sessionID, "user", username)
 			setChatSSEHeaders(c)
 			c.SSEvent("error", "所有调查员均已死亡时，只有房间内玩家可以推进剧情")
 			c.Writer.Flush()
@@ -976,7 +977,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			return nil
 		})
 		if err != nil {
-			log.Printf("[chat] session=%d user=%q transaction error: %v", sessionID, username, err)
+			chatLog.Error("chat transaction failed", "session", sessionID, "user", username, "err", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
 			return
 		}
@@ -986,7 +987,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			// NOTE: 构建含已提交/待提交姓名的等待载荷，查询失败时降级为计数格式
 			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, activePlayerIDs, actionCutoff, hasActionCutoff)
 			if wErr != nil {
-				log.Printf("[chat] session=%d user=%q waiting payload error: %v", sessionID, username, wErr)
+				chatLog.Error("chat waiting payload failed", "session", sessionID, "user", username, "err", wErr)
 				submitted := countSubmittedTurnPlayers(models.DB, session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
 				wPayload = waitingPayload{
 					Pending:        activePlayerCount - int(submitted),
@@ -995,8 +996,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 					PendingNames:   []string{},
 				}
 			}
-			log.Printf("[chat] session=%d user=%q waiting pending=%d/%d",
-				sessionID, username, wPayload.Pending, wPayload.Total)
+			chatLog.Debug("chat waiting pending", "session", sessionID, "user", username, "pending", wPayload.Pending, "total", wPayload.Total)
 			sendWaitingSSE(c, wPayload)
 			c.SSEvent("done", "")
 			c.Writer.Flush()
@@ -1010,7 +1010,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			// NOTE: 构建含已提交/待提交姓名的等待载荷，查询失败时降级为计数格式
 			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, activePlayerIDs, actionCutoff, hasActionCutoff)
 			if wErr != nil {
-				log.Printf("[chat] session=%d user=%q waiting payload error: %v", sessionID, username, wErr)
+				chatLog.Error("chat waiting payload failed", "session", sessionID, "user", username, "err", wErr)
 				wPayload = waitingPayload{
 					Pending:        activePlayerCount - len(turnActions),
 					Total:          activePlayerCount,
@@ -1018,7 +1018,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 					PendingNames:   []string{},
 				}
 			}
-			log.Printf("[chat] session=%d user=%q waiting after load pending=%d/%d", sessionID, username, wPayload.Pending, wPayload.Total)
+			chatLog.Debug("chat waiting after load pending", "session", sessionID, "user", username, "pending", wPayload.Pending, "total", wPayload.Total)
 			sendWaitingSSE(c, wPayload)
 			c.SSEvent("done", "")
 			c.Writer.Flush()
@@ -1105,7 +1105,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	lockReleased = true
 
 	// ── Run agent pipeline ────────────────────────────────────────────────────
-	log.Printf("[chat] session=%d user=%q pipeline start round=%d", sessionID, username, session.TurnRound)
+	chatLog.Debug("chat pipeline start", "session", sessionID, "user", username, "round", session.TurnRound)
 	pipelineStart := time.Now()
 	sendProgress := func(text string) {
 		text = strings.TrimSpace(text)
@@ -1150,8 +1150,7 @@ loop:
 		case res := <-resultCh:
 			ticker.Stop()
 			if res.err != nil {
-				log.Printf("[chat] session=%d user=%q pipeline error (%.0fms): %v",
-					sessionID, username, float64(time.Since(pipelineStart).Milliseconds()), res.err)
+				chatLog.Error("chat pipeline failed", "session", sessionID, "user", username, "elapsed_ms", float64(time.Since(pipelineStart).Milliseconds()), "err", res.err)
 				c.SSEvent("error", res.err.Error())
 				c.Writer.Flush()
 				return
@@ -1180,7 +1179,7 @@ loop:
 			if res.err == nil {
 				assistantMsg, err := saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, res.output)
 				if err != nil {
-					log.Printf("[chat] session=%d user=%q save after disconnect error: %v", sessionID, username, err)
+					chatLog.Error("chat save after disconnect failed", "session", sessionID, "user", username, "err", err)
 				} else {
 					finishSessionProcessing(session.ID)
 					processingOwned = false
@@ -1211,7 +1210,7 @@ loop:
 
 	assistantMsg, err := saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, output)
 	if err != nil {
-		log.Printf("[chat] session=%d user=%q save error: %v", sessionID, username, err)
+		chatLog.Error("chat save failed", "session", sessionID, "user", username, "err", err)
 		c.SSEvent("error", "保存消息失败")
 		c.Writer.Flush()
 		return
@@ -1245,7 +1244,7 @@ loop:
 	var painterCh <-chan painterJobResult
 	if len(output.ImagePrompts) > 0 {
 		imageRequest := output.ImagePrompts[0]
-		log.Printf("[chat] session=%d user=%q painter queued prompt_len=%d prompt=%q", sessionID, username, len([]rune(imageRequest.Prompt)), chatTruncate(imageRequest.Prompt, 200))
+		chatLog.Debug("chat painter queued", "session", sessionID, "user", username, "prompt_len", len([]rune(imageRequest.Prompt)), "prompt", chatTruncate(imageRequest.Prompt, 200))
 		painterClientDone := make(chan struct{})
 		defer close(painterClientDone)
 		assistantMessageID := uint(0)
@@ -1285,7 +1284,7 @@ loop:
 					streamedWriter = wr.text
 				}
 				if wr.err != nil {
-					log.Printf("[chat] session=%d user=%q writer async error: %v", sessionID, username, wr.err)
+					chatLog.Error("chat writer async failed", "session", sessionID, "user", username, "err", wr.err)
 				}
 				writerCh = nil
 			case pr, ok := <-painterCh:
@@ -1294,7 +1293,7 @@ loop:
 					continue
 				}
 				if pr.err != nil {
-					log.Printf("[chat] session=%d user=%q painter async error: %v", sessionID, username, pr.err)
+					chatLog.Error("chat painter async failed", "session", sessionID, "user", username, "err", pr.err)
 					painterCh = nil
 					continue
 				}
@@ -1310,8 +1309,7 @@ loop:
 	}
 
 	fullReply := buildAssistantContent(streamedWriter, output.KPReply)
-	log.Printf("[chat] session=%d user=%q done tokens=%d elapsed=%.0fms",
-		sessionID, username, len([]rune(fullReply)), float64(time.Since(pipelineStart).Milliseconds()))
+	chatLog.Debug("chat done", "session", sessionID, "user", username, "tokens", len([]rune(fullReply)), "elapsed_ms", float64(time.Since(pipelineStart).Milliseconds()))
 	c.SSEvent("done", "")
 	c.Writer.Flush()
 }
@@ -1375,7 +1373,7 @@ func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext,
 		if err == nil {
 			err = dbErr
 		} else if dbErr != nil {
-			log.Printf("[chat] writer message update after stream error failed: %v", dbErr)
+			chatLog.Error("chat writer message update failed", "err", dbErr)
 		}
 		send(writerJobResult{text: text, done: true, err: err})
 	}()
@@ -1399,7 +1397,7 @@ func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext
 		ctx, cancel := context.WithTimeout(context.Background(), painterJobTimeout)
 		defer cancel()
 		start := time.Now()
-		log.Printf("[chat] session=%d painter async start prompt_len=%d prompt=%q", gctx.Session.ID, len([]rune(prompt)), chatTruncate(prompt, 200))
+		chatLog.Debug("chat painter async start", "session", gctx.Session.ID, "prompt_len", len([]rune(prompt)), "prompt", chatTruncate(prompt, 200))
 		if clientDone != nil && messageID == 0 {
 			go func() {
 				select {
@@ -1422,9 +1420,9 @@ func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext
 			}
 		}
 		if err != nil {
-			log.Printf("[chat] session=%d painter async finished error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
+			chatLog.Error("chat painter async failed", "session", gctx.Session.ID, "elapsed_ms", float64(time.Since(start).Microseconds())/1000, "err", err)
 		} else {
-			log.Printf("[chat] session=%d painter async finished success elapsed=%.0fms", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000)
+			chatLog.Debug("chat painter async success", "session", gctx.Session.ID, "elapsed_ms", float64(time.Since(start).Microseconds())/1000)
 		}
 		result := painterJobResult{dataURL: dataURL, err: err}
 		if ch == nil {
@@ -1732,8 +1730,7 @@ func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content 
 	}
 	fullReply = appendWriterPendingMarker(fullReply,
 		strings.TrimSpace(output.WriterDirection) != "" && strings.TrimSpace(output.WriterText) == "")
-	log.Printf("[chat] session=%d user=%q saving messages content_len=%d reply_len=%d turn_actions=%d",
-		sessionID, playerDisplayName, len([]rune(content)), len([]rune(fullReply)), len(turnActions))
+	chatLog.Debug("chat saving messages", "session", sessionID, "user", playerDisplayName, "content_len", len([]rune(content)), "reply_len", len([]rune(fullReply)), "turn_actions", len(turnActions))
 	var assistantMsg models.Message
 	err := models.DB.Transaction(func(tx *gorm.DB) error {
 		if len(turnActions) > 0 {

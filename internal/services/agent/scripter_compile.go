@@ -15,7 +15,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/services/llm"
@@ -149,7 +148,7 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 			return ScenarioDraft{}, "", fmt.Errorf("compile failed: %w", err)
 		}
 		recordScripterLLMExchange(ctx, nil, stage, msgs, resp)
-		log.Printf("[scripter:compile] session=%s attempt=%d resp_len=%d", sessionID, attempt, len([]rune(resp)))
+		alog.Debug("scripter compile attempt", "session", sessionID, "attempt", attempt, "resp_len", len([]rune(resp)))
 
 		var result OneshotResult
 		if err := json.Unmarshal([]byte(resp), &result); err != nil {
@@ -178,14 +177,13 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 			continue
 		}
 		if strings.TrimSpace(result.RewardConcept) == "" {
-			log.Printf("[scripter:compile] session=%s reward_concept 重试后仍为空，交由触发点兜底", sessionID)
+			alog.Warn("scripter compile reward_concept still empty after retry", "session", sessionID)
 		}
 
 		draft := result.toScenarioDraft()
 		// NOTE: mythos_anchor 已由 story 阶段 translate_anchor 确认，编译阶段强制覆盖，防止LLM篡改。
 		draft.Content.MythosAnchor = story.MythosAnchor
-		log.Printf("[scripter:compile] session=%s done name=%q scenes=%d npcs=%d clues=%d",
-			sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+		alog.Debug("scripter compile done", "session", sessionID, "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
 		logScripterArtifact("Compiled ScenarioDraft", sessionID, draft)
 		return draft, strings.TrimSpace(result.RewardConcept), nil
 	}

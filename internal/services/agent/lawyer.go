@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -42,12 +41,12 @@ func LoadLawyerCache(hashes LawyerCacheHashes) {
 	path := lawyerCachePath()
 	loaded, err := lawyerCache.LoadFromFile(path, hashes)
 	if err != nil {
-		log.Printf("[lawyer] failed to load cache %s: %v", path, err)
+		alog.Warn("lawyer cache load failed", "path", path, "err", err)
 		return
 	}
 	if loaded {
 		entries, used, _ := lawyerCache.Stats()
-		log.Printf("[lawyer] loaded cache: %d entries (%d bytes) from %s", entries, used, path)
+		alog.Info("lawyer cache loaded", "entries", entries, "used_bytes", used, "path", path)
 	}
 }
 
@@ -58,11 +57,11 @@ func SaveLawyerCache(hashes LawyerCacheHashes) {
 	}
 	path := lawyerCachePath()
 	if err := lawyerCache.SaveToFile(path, hashes); err != nil {
-		log.Printf("[lawyer] failed to save cache %s: %v", path, err)
+		alog.Warn("lawyer cache save failed", "path", path, "err", err)
 		return
 	}
 	entries, used, _ := lawyerCache.Stats()
-	log.Printf("[lawyer] saved cache: %d entries (%d bytes) to %s", entries, used, path)
+	alog.Info("lawyer cache saved", "entries", entries, "used_bytes", used, "path", path)
 }
 
 // lawyerSystemPromptBase 是 Lawyer 系统提示的不可配置前半段（工具说明 + 执行规则主体）。
@@ -556,7 +555,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 		afterRound:       afterRound,
 	})
 	if err != nil {
-		log.Printf("[lawyer] %v", err)
+		alog.Error("lawyer failed", "err", err)
 		return nil
 	}
 	return []LawyerResult{{Query: situation, RuleText: rulingText}}
@@ -567,7 +566,7 @@ func appendGrepResults(resultSB *strings.Builder, action, keyword, sourceName st
 	if keyword == "" {
 		return false
 	}
-	log.Printf("[lawyer] %s: %s", action, keyword)
+	alog.Debug("lawyer grep", "action", action, "keyword", keyword)
 	text := formatGrepResults(grep(keyword))
 	if text == "" {
 		text = fmt.Sprintf("(%s中未找到相关内容)", sourceName)
@@ -710,13 +709,12 @@ func LoadLawyerCacheStats() {
 	var stats models.LawyerCacheStats
 	if err := models.DB.Order("id DESC").First(&stats).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Printf("[lawyer] failed to load cache stats: %v", err)
+			alog.Error("lawyer cache stats load failed", "err", err)
 		}
 		return
 	}
 	lawyerCache.SetStats(stats.FullHits, stats.PartialHits, stats.Misses)
-	log.Printf("[lawyer] loaded cache stats: full=%d partial=%d miss=%d",
-		stats.FullHits, stats.PartialHits, stats.Misses)
+	alog.Info("lawyer cache stats loaded", "full_hits", stats.FullHits, "partial_hits", stats.PartialHits, "misses", stats.Misses)
 }
 
 // StartLawyerCacheStatsPersistence starts a background ticker that periodically
@@ -756,6 +754,6 @@ func persistLawyerCacheStats() {
 		Misses:      miss,
 		SavedAt:     time.Now(),
 	}).Error; err != nil {
-		log.Printf("[lawyer] persist cache stats error: %v", err)
+		alog.Error("lawyer cache stats persist failed", "err", err)
 	}
 }

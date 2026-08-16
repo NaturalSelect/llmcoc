@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +16,11 @@ import (
 	"time"
 
 	"github.com/llmcoc/server/internal/config"
+	"github.com/llmcoc/server/internal/logging"
 )
+
+// log 是 imagestore 包内共享的 logger。
+var log = logging.For("imagestore")
 
 var (
 	ErrInvalidHash = errors.New("invalid image hash")
@@ -295,10 +298,10 @@ func StartCleanup(ctx context.Context, store Store, maxAge, interval time.Durati
 		run := func() {
 			report := store.CleanupOlderThanReport(time.Now().Add(-maxAge))
 			for _, err := range report.Errors {
-				log.Printf("[images] cleanup failed: %v", err)
+				log.Error("image cleanup failed", "err", err)
 			}
 			if report.Deleted > 0 {
-				log.Printf("[images] cleanup deleted %d old files", report.Deleted)
+				log.Info("image cleanup deleted old files", "count", report.Deleted)
 			}
 		}
 		run()

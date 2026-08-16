@@ -3,7 +3,6 @@ package agent
 
 import (
 	"context"
-	"log"
 	"regexp"
 	"strings"
 
@@ -66,7 +65,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 			}
 			evo, evoErr := RunCharacterEvolution(ctx, card, writerHistory)
 			if evoErr != nil {
-				log.Printf("[agent] character evolution skipped for %q: %v", card.Name, evoErr)
+				alog.Warn("character evolution skipped", "character", card.Name, "err", evoErr)
 				continue
 			}
 			evolutions = append(evolutions, evolutionEntry{
@@ -202,7 +201,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 	})
 
 	if txErr != nil {
-		log.Printf("[agent] RunEndSession transaction error for session %d: %v", session.ID, txErr)
+		alog.Error("end session transaction failed", "session", session.ID, "err", txErr)
 	}
 	return EndSessionResult{Evaluation: evalResult, Growth: growthResult}, txErr
 }

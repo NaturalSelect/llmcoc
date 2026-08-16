@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -46,8 +45,7 @@ func RunCompileStoryWithProgress(ctx context.Context, req CompileStoryRequest, p
 	ctx = contextWithScripterGenerationLog(ctx, room.generationLog)
 	room.prepareContext()
 
-	log.Printf("[scripter] session=%s compile-story-upload start doc_len=%d",
-		sessionID, len([]rune(req.StoryDocument)))
+	alog.Info("compile story upload start", "session", sessionID, "doc_len", len([]rune(req.StoryDocument)))
 
 	room.emitProgress("anchor_extract", "start", "正在从文档中识别神话锚点…")
 	extracted, err := extractAnchorFromDocument(ctx, room, req.StoryDocument)

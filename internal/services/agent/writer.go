@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"sync"
@@ -668,10 +667,10 @@ func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writ
 					break
 				}
 			}
-			log.Printf("[agent] character evolution JSON parse error for %q: %v; attempt %d to repair with parser", card.Name, err, i+1)
+			alog.Warn("character evolution JSON parse retry", "character", card.Name, "attempt", i+1, "err", err)
 		}
 		if err != nil {
-			log.Printf("[agent] character evolution JSON parse error for %q: %v", card.Name, err)
+			alog.Error("character evolution JSON parse failed", "character", card.Name, "err", err)
 			return CharacterEvolutionResult{}, fmt.Errorf("character evolution JSON parse error: %w", err)
 		}
 	}

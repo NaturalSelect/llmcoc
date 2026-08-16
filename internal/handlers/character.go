@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -10,10 +9,13 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/llmcoc/server/internal/logging"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/game"
 )
+
+var characterLog = logging.For("character")
 
 // CharacterHandlers holds handlers for character-related routes.
 type CharacterHandlers struct{}
@@ -274,14 +276,14 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 
 	var req GenerateCharacterReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("Bad request data: %v", err)
+		characterLog.Warn("generate character bad request", "err", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
 
 	if req.Gender != models.GenderMale && req.Gender != models.GenderFemale {
-		log.Printf("Invalid gender: %s", req.Gender)
+		characterLog.Warn("generate character invalid gender", "gender", req.Gender)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别"})
 		return
 	}
@@ -317,7 +319,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		Stats:      stats,
 	})
 	if err != nil {
-		log.Printf("GenerateCharacter LLM error: %v", err)
+		characterLog.Error("generate character llm error", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
 		return
 	}
@@ -339,7 +341,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		BaseSkills: skills,
 	})
 	if skillErr != nil {
-		log.Printf("[character] AdjustSkills failed (using base skills): %v", skillErr)
+		characterLog.Warn("adjust skills failed, using base skills", "err", skillErr)
 	} else {
 		applyAdjustedSkills(skills, adjustedSkills, stats)
 	}
@@ -572,7 +574,7 @@ func AddCharacterInventoryItem(c *gin.Context) {
 		return
 	}
 	if card.UserID != userID {
-		log.Printf("[admin] add_inventory admin_id=%d target_user=%d card_id=%d item=%q", userID, card.UserID, card.ID, item)
+		characterLog.Info("admin add inventory", "admin_id", userID, "target_user", card.UserID, "card_id", card.ID, "item", item)
 	}
 	c.JSON(http.StatusOK, card)
 }
@@ -1194,8 +1196,7 @@ func ReviveCharacter(c *gin.Context) {
 		models.DB.First(&user, userID)
 		resp["coins"] = user.Coins
 		resp["revive_count"] = user.ReviveCount
-		log.Printf("[revive] user_id=%d card_id=%d cost=%d coins_left=%d inv_kept=%d spells_kept=%d",
-			userID, card.ID, cost, user.Coins, len(inv), len(spells))
+		characterLog.Info("revive ok", "user_id", userID, "card_id", card.ID, "cost", cost, "coins_left", user.Coins, "inv_kept", len(inv), "spells_kept", len(spells))
 	}
 	c.JSON(http.StatusOK, resp)
 }

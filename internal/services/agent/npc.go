@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 
@@ -275,7 +274,7 @@ func actNPC(
 var npcExample = func() string {
 	data, err := json.Marshal(NPCAction{})
 	if err != nil {
-		log.Printf("failed to marshal NPCAction example: %v", err)
+		alog.Error("failed to marshal NPCAction example", "err", err)
 		return ""
 	}
 	return string(data)
@@ -294,7 +293,7 @@ func runNPC(
 	question string,
 	tempNPCs []models.SessionNPC,
 ) (NPCAction, error) {
-	log.Printf("[npc] acting: %s", npcName)
+	alog.Debug("npc acting", "npc", npcName)
 	debugf("NPC", "name=%q question=%s", npcName, question)
 
 	// Build NPC profile from DB/scenario lookup (profile only, no scenario background).
@@ -347,10 +346,10 @@ func runNPC(
 					break
 				}
 			}
-			log.Printf("[npc] JSON parse error for %s: %v; attempt %d to repair with parser", npcName, err, i+1)
+			alog.Warn("npc JSON parse retry", "npc", npcName, "attempt", i+1, "err", err)
 		}
 		if err != nil {
-			log.Printf("[npc] final JSON parse error for %s: %v; response was: %s", npcName, err, resp)
+			alog.Error("npc JSON parse failed", "npc", npcName, "err", err, "response", resp)
 			return NPCAction{NPCName: npcName, Action: "保持沉默", Dialogue: ""}, nil
 		}
 	}

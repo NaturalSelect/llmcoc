@@ -3,7 +3,6 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
@@ -51,14 +50,14 @@ func parseStateChange(change string) (CharacterUpdate, string, bool) {
 		if !strings.HasPrefix(deltaStr, "+") && !strings.HasPrefix(deltaStr, "-") {
 			errMsg := fmt.Sprintf("[%s] 数值字段缺少+/-符号: %q，正确格式如 %s +40(角色名) 或 %s -3(角色名)",
 				field, change, field, field)
-			log.Printf("[editor] %s", errMsg)
+			alog.Error("state change parse failed", "reason", errMsg)
 			return CharacterUpdate{}, errMsg, false
 		}
 		_, scanErr := fmt.Sscanf(deltaStr, "%d", &delta)
 		if scanErr != nil {
 			errMsg := fmt.Sprintf("[%s] 无法解析数值: %q，正确格式如 %s +40(角色名) 或 %s -3(角色名)",
 				field, deltaStr, field, field)
-			log.Printf("[editor] %s", errMsg)
+			alog.Error("state change parse failed", "reason", errMsg)
 			return CharacterUpdate{}, errMsg, false
 		}
 		return CharacterUpdate{
@@ -68,7 +67,7 @@ func parseStateChange(change string) (CharacterUpdate, string, bool) {
 		}, "", true
 	}
 	errMsg := fmt.Sprintf("无法识别的变更字段: %q，支持的字段: HP, SAN, MP, POW, STR, CON, SIZ, DEX, APP, INT, EDU, age, cthulhu_mythos, race, occupation, wound_state。正确格式如 HP -3(角色名)", change)
-	log.Printf("[editor] %s", errMsg)
+	alog.Error("state change parse failed", "reason", errMsg)
 	return CharacterUpdate{}, errMsg, false
 }
 
@@ -78,7 +77,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 		if card.Name != upd.CharacterName {
 			continue
 		}
-		log.Printf("[editor] applying %s.%s delta=%d add=%q", card.Name, upd.Field, upd.Delta, upd.AddValue)
+		alog.Debug("character update applying", "character", card.Name, "field", upd.Field, "delta", upd.Delta, "add", upd.AddValue)
 
 		isHuman := card.Race == "" || card.Race == "人类"
 		switch strings.ToLower(upd.Field) {
@@ -114,7 +113,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 					card.Stats.Data = s
 				}
 			default:
-				log.Printf("[editor] %s: invalid wound_state %q", card.Name, upd.NewValue)
+				alog.Error("character invalid wound_state", "character", card.Name, "value", upd.NewValue)
 				continue
 			}
 			models.DB.Save(card)
@@ -135,7 +134,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			if upd.Delta > 0 && wasDead && s.HP > 0 {
 				card.WoundState = "none"
 				card.IsUnconscious = false
-				log.Printf("[editor] %s: revived by HP change %+d", card.Name, upd.Delta)
+				alog.Debug("character revived", "character", card.Name, "delta", upd.Delta)
 			}
 
 			// ── 伤害事件:检查重伤/濒死/即死 ─────────────────────────────────
@@ -144,10 +143,10 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				case game.CheckInstantDeath(damage, s.MaxHP):
 					card.WoundState = "dead"
 					card.IsUnconscious = true
-					log.Printf("[editor] %s: instant death (damage %d > maxHP %d)", card.Name, damage, s.MaxHP)
+					alog.Debug("character instant death", "character", card.Name, "damage", damage, "max_hp", s.MaxHP)
 				case game.CheckMajorWound(damage, s.MaxHP):
 					card.WoundState = "major"
-					log.Printf("[editor] %s: major wound (damage %d >= maxHP/2 %d)", card.Name, damage, s.MaxHP/2)
+					alog.Debug("character major wound", "character", card.Name, "damage", damage, "half_max_hp", s.MaxHP/2)
 				}
 			} else if upd.Delta > 0 && (s.HP == s.MaxHP || upd.Delta >= s.MaxHP/2) {
 				card.WoundState = "none"
@@ -181,7 +180,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			}
 			s.MaxMP = newMaxMP
 			card.Stats.Data = s
-			log.Printf("[editor] %s: POW %d→%d, MaxMP→%d", card.Name, oldPOW, s.POW, newMaxMP)
+			alog.Debug("character field updated", "character", card.Name, "field", "pow", "from", oldPOW, "to", s.POW, "max_mp", newMaxMP)
 			models.DB.Save(card)
 
 		case "cthulhu_mythos", "cthulhu_mythos_skill":
@@ -195,7 +194,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 				s.SAN = s.MaxSAN
 			}
 			card.Stats.Data = s
-			log.Printf("[editor] %s: cthulhu_mythos=%d, new MaxSAN=%d", card.Name, card.CthulhuMythosSkill, s.MaxSAN)
+			alog.Debug("character field updated", "character", card.Name, "field", "cthulhu_mythos", "value", card.CthulhuMythosSkill, "max_san", s.MaxSAN)
 			models.DB.Save(card)
 
 		case "skills":
@@ -271,7 +270,7 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 		case "age":
 			newAge, err := strconv.Atoi(strings.TrimSpace(upd.NewValue))
 			if err != nil || newAge < game.MinManualCharacterAge || newAge > game.MaxManualCharacterAge {
-				log.Printf("[editor] %s: invalid age value %q (must be %d-%d)", card.Name, upd.NewValue, game.MinManualCharacterAge, game.MaxManualCharacterAge)
+				alog.Error("character invalid age value", "character", card.Name, "value", upd.NewValue, "min", game.MinManualCharacterAge, "max", game.MaxManualCharacterAge)
 				return // character found but update rejected; nothing saved
 			}
 			card.Age = newAge
@@ -350,11 +349,11 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			card.Stats.Data = s
 			models.DB.Save(card)
 		default:
-			log.Printf("[editor] unrecognised field in character update: %q", upd.Field)
+			alog.Error("unrecognised character update field", "field", upd.Field)
 		}
 		return
 	}
-	log.Printf("[editor] character %q not found in session players", upd.CharacterName)
+	alog.Error("character not found for update", "character", upd.CharacterName)
 }
 
 // applyMadnessToCard sets the madness fields on a CharacterCard based on MadnessKind.
@@ -366,14 +365,14 @@ func applyMadnessToCard(card *models.CharacterCard, kind game.MadnessKind) {
 		sym := game.RollMadnessSymptom(false)
 		card.MadnessSymptom = sym.Description
 		card.MadnessDuration = 0
-		log.Printf("[editor] %s: PERMANENT madness — SAN=0", card.Name)
+		alog.Debug("character permanent madness", "character", card.Name)
 
 	case game.MadnessIndefinite:
 		card.MadnessState = "indefinite"
 		sym := game.RollMadnessSymptom(false)
 		card.MadnessSymptom = sym.Description
 		card.MadnessDuration = sym.Duration // flagged as active
-		log.Printf("[editor] %s: indefinite madness triggered (daily loss threshold)", card.Name)
+		alog.Debug("character indefinite madness triggered", "character", card.Name)
 
 	case game.MadnessTemporary:
 		// Temporary madness: roll INT check — if pass, character develops symptom; if fail, memory suppression
@@ -383,10 +382,10 @@ func applyMadnessToCard(card *models.CharacterCard, kind game.MadnessKind) {
 			sym := game.RollMadnessSymptom(true) // instantaneous (bystanders present)
 			card.MadnessSymptom = sym.Description
 			card.MadnessDuration = sym.Duration
-			log.Printf("[editor] %s: temporary madness — INT check passed, symptom rolled", card.Name)
+			alog.Debug("character temporary madness triggered", "character", card.Name)
 		} else {
 			// Failed INT check → memory suppression, no visible madness (but sanity is still lost)
-			log.Printf("[editor] %s: temporary madness suppressed by INT check failure", card.Name)
+			alog.Debug("character temporary madness suppressed", "character", card.Name)
 		}
 	}
 }
@@ -434,7 +433,7 @@ func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.Sessi
 			break
 		}
 		if npc.ID == 0 {
-			log.Printf("[editor] NPC %q not found in session %d", upd.CharacterName, sessionID)
+			alog.Error("npc not found for update", "npc", upd.CharacterName, "session", sessionID)
 			return
 		}
 	}
@@ -443,7 +442,7 @@ func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.Sessi
 }
 
 func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
-	log.Printf("[editor] applying NPC %s.%s delta=%d", npc.Name, upd.Field, upd.Delta)
+	alog.Debug("npc update applying", "npc", npc.Name, "field", upd.Field, "delta", upd.Delta)
 	stats := npc.Stats.Data
 	if stats == nil {
 		stats = make(map[string]int)
@@ -459,7 +458,7 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 		curr := clamp(prev+upd.Delta, 0, maxSAN)
 		setNPCStat(stats, "SAN", curr)
 		npc.Stats.Data = stats
-		log.Printf("[editor] NPC %s: SAN %d→%d", npc.Name, prev, curr)
+		alog.Debug("npc field updated", "npc", npc.Name, "field", "san", "from", prev, "to", curr)
 
 	case "hp":
 		prev := npcStat(stats, "HP")
@@ -504,7 +503,7 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 			npc.IsAlive = true
 		}
 		npc.Stats.Data = stats
-		log.Printf("[editor] NPC %s: HP %d→%d", npc.Name, prev, curr)
+		alog.Debug("npc field updated", "npc", npc.Name, "field", "hp", "from", prev, "to", curr)
 
 	case "mp":
 		prev := npcStat(stats, "MP")
@@ -520,7 +519,7 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 		}
 		setNPCStat(stats, "MP", curr)
 		npc.Stats.Data = stats
-		log.Printf("[editor] NPC %s: MP %d→%d", npc.Name, prev, curr)
+		alog.Debug("npc field updated", "npc", npc.Name, "field", "mp", "from", prev, "to", curr)
 
 	// case "pow":
 	// 	prev := npcStat(stats, "POW")
@@ -551,7 +550,7 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 			setNPCStat(stats, "SAN", newMaxSAN)
 		}
 		npc.Stats.Data = stats
-		log.Printf("[editor] NPC %s: cthulhu_mythos=%d, new MaxSAN=%d", npc.Name, npc.CthulhuMythosSkill, newMaxSAN)
+		alog.Debug("npc field updated", "npc", npc.Name, "field", "cthulhu_mythos", "value", npc.CthulhuMythosSkill, "max_san", newMaxSAN)
 
 	case "wound_state":
 		switch strings.ToLower(strings.TrimSpace(upd.NewValue)) {
@@ -572,10 +571,10 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 			npc.IsAlive = false
 			setNPCStat(stats, "HP", 0)
 		default:
-			log.Printf("[editor] NPC %s: invalid wound_state %q", npc.Name, upd.NewValue)
+			alog.Error("npc invalid wound_state", "npc", npc.Name, "value", upd.NewValue)
 		}
 		npc.Stats.Data = stats
-		log.Printf("[editor] NPC %s: wound_state changed to %q", npc.Name, npc.WoundState)
+		alog.Debug("npc field updated", "npc", npc.Name, "field", "wound_state", "value", npc.WoundState)
 
 	case "race":
 		npc.Race = upd.NewValue
@@ -586,10 +585,10 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 			setNPCStat(stats, "SAN", newMaxSAN)
 		}
 		npc.Stats.Data = stats
-		log.Printf("[editor] NPC %s: race changed to %q", npc.Name, npc.Race)
+		alog.Debug("npc field updated", "npc", npc.Name, "field", "race", "value", npc.Race)
 	case "occupation":
 		npc.Occupation = upd.NewValue
-		log.Printf("[editor] NPC %s: occupation changed to %q", npc.Name, npc.Occupation)
+		alog.Debug("npc field updated", "npc", npc.Name, "field", "occupation", "value", npc.Occupation)
 	// case "str", "con", "siz", "dex", "app", "int", "edu":
 	// 	key := strings.ToUpper(field)
 	// 	prev := npcStat(stats, key)
@@ -599,7 +598,7 @@ func applyNPCStatUpdate(npc *models.SessionNPC, upd CharacterUpdate) {
 	// 	npc.Stats.Data = stats
 	// 	log.Printf("[editor] NPC %s: %s %d→%d", npc.Name, key, prev, curr)
 	default:
-		log.Printf("[editor] unrecognised field in NPC update: %q", upd.Field)
+		alog.Error("unrecognised npc update field", "field", upd.Field)
 	}
 }
 
@@ -713,7 +712,7 @@ func TearDeadInvestigators(players []models.SessionPlayer) []string {
 		if (card.WoundState == "dead" || card.Stats.Data.HP <= 0) && card.IsActive {
 			card.IsActive = false
 			models.DB.Model(card).Update("is_active", false)
-			log.Printf("[editor] 撕卡: %s (WoundState=dead)", card.Name)
+			alog.Info("character torn (dead)", "character", card.Name)
 			torn = append(torn, card.Name)
 		}
 	}

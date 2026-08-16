@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"time"
 
@@ -10,11 +9,14 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/llmcoc/server/internal/config"
+	"github.com/llmcoc/server/internal/logging"
 	"github.com/llmcoc/server/internal/middleware"
 	"github.com/llmcoc/server/internal/models"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+var authLog = logging.For("auth")
 
 type RegisterReq struct {
 	Username   string `json:"username" binding:"required,min=3,max=50"`
@@ -34,7 +36,7 @@ func Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": registerBindErrorMessage(err)})
 		return
 	}
-	log.Printf("[register] username=%q email=%q", req.Username, req.Email)
+	authLog.Debug("register request", "username", req.Username, "email", req.Email)
 
 	// Check invite code if required
 	var inviteCode models.InviteCode
@@ -76,12 +78,12 @@ func Register(c *gin.Context) {
 		return tx.Create(&user).Error
 	})
 	if txErr != nil {
-		log.Printf("[register] create user failed username=%q: %v", req.Username, txErr)
+		authLog.Error("register create user failed", "username", req.Username, "err", txErr)
 		c.JSON(http.StatusConflict, gin.H{"error": "用户名或邮箱已存在"})
 		return
 	}
 	if user.Role == models.RoleAdmin {
-		log.Printf("[register] first user, set as admin: username=%q", req.Username)
+		authLog.Info("first user registered as admin", "username", req.Username)
 	}
 
 	// Mark invite code as used
@@ -96,7 +98,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[register] ok user_id=%d username=%q", user.ID, user.Username)
+	authLog.Info("register ok", "user_id", user.ID, "username", user.Username)
 	c.JSON(http.StatusCreated, gin.H{
 		"token": token,
 		"user":  user,
@@ -137,17 +139,17 @@ func Login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写完整的登录信息"})
 		return
 	}
-	log.Printf("[login] username=%q", req.Username)
+	authLog.Debug("login request", "username", req.Username)
 
 	var user models.User
 	if err := models.DB.Where("username = ? OR email = ?", req.Username, req.Username).First(&user).Error; err != nil {
-		log.Printf("[login] not_found username=%q", req.Username)
+		authLog.Warn("login username not found", "username", req.Username)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		log.Printf("[login] wrong_password user_id=%d", user.ID)
+		authLog.Warn("login wrong password", "user_id", user.ID)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
@@ -158,7 +160,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[login] ok user_id=%d username=%q role=%s", user.ID, user.Username, user.Role)
+	authLog.Info("login ok", "user_id", user.ID, "username", user.Username, "role", user.Role)
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user":  user,

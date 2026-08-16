@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/llmcoc/server/internal/config"
+	"github.com/llmcoc/server/internal/logging"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -62,12 +63,13 @@ func InitDB() error {
 		&SiteSetting{},
 		&InviteCode{},
 		&LawyerCacheStats{},
+		&LLMLatencyStat{},
 	); err != nil {
 		return err
 	}
 
 	seedDefaultData()
-	log.Printf("Database initialized: %s", dbPath)
+	logging.For("models").Info("database initialized", "path", dbPath)
 	return nil
 }
 

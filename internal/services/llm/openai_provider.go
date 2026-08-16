@@ -6,17 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 )
-
-// llmDebug controls per-request LLM timing logs (set LLM_DEBUG=1 to enable).
-var llmDebug = func() bool {
-	return true
-}()
 
 const defaultReasoningEffort = "high"
 
@@ -190,7 +184,7 @@ func (p *openAIProvider) chatCompletionRequest(ctx context.Context, cacheKey str
 		if metadata == nil {
 			metadata = make(map[string]string)
 		}
-		log.Printf("[chat] using session id %v for model %v", sessionID, p.model)
+		log.Debug("using session for prompt cache", "session", sessionID, "model", p.model)
 		// NOTE: prompt_cache_key 必须按 agent 角色/NPC 实例隔离,避免跨 agent 缓存污染。
 		cacheKeyValue := cacheKey
 		if cacheKeyValue == "" {
@@ -248,43 +242,40 @@ func (p *openAIProvider) streamToString(ctx context.Context, chatReq openai.Chat
 	}
 }
 
-func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, json bool, tools []ToolDefinition) (string, []ToolCall, error) {
+func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, json bool, tools []ToolDefinition) (result string, toolCalls []ToolCall, err error) {
 	start := time.Now()
+	role := roleFromCacheKey(cacheKey)
+	defer func() { recordLatency(role, p.model, "chat", time.Since(start), err) }()
+
 	chatReq := p.chatCompletionRequest(ctx, cacheKey, messages, json, tools)
-	var result, reasoning, finishReason string
-	var toolCalls []ToolCall
+	var reasoning, finishReason string
 	var usage *openai.Usage
-	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		start := time.Now()
+		attemptStart := time.Now()
 		result, reasoning, toolCalls, finishReason, usage, err = p.streamToString(ctx, chatReq)
-		log.Printf("Chat model %v using %v\n", p.model, time.Since(start))
+		log.Debug("chat attempt done", "model", p.model, "attempt", attempt+1, "elapsed_ms", float64(time.Since(attemptStart).Microseconds())/1000)
 		if err == nil || !isRetryableError(err) {
 			break
 		}
-		log.Printf("[llm] Chat attempt %d/%d failed (5xx), retrying in 8s: %v", attempt+1, maxRetries, err)
+		log.Warn("chat attempt failed, retrying", "attempt", attempt+1, "max_retries", maxRetries, "err", err)
 		select {
 		case <-ctx.Done():
-			return "", nil, ctx.Err()
+			err = ctx.Err()
+			return "", nil, err
 		case <-time.After(8 * time.Second):
 		}
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("LLM chat error: %w", err)
+		err = fmt.Errorf("LLM chat error: %w", err)
+		return "", nil, err
 	}
 	// NOTE: 提取reasoning_content用于审计日志
 	if reasoning != "" {
-		log.Printf("[llm-reasoning] session=%s model=%s len=%d",
-			sessionIDFromContext(ctx), p.model, len([]rune(reasoning)))
-		if llmDebug {
-			log.Printf("[llm-reasoning-full] %s", reasoning)
-		}
+		log.Debug("llm reasoning", "session", sessionIDFromContext(ctx), "model", p.model,
+			"len", len([]rune(reasoning)), "reasoning", truncateForLog(reasoning, 2000))
 	}
-	if llmDebug {
-		elapsed := time.Since(start)
-		log.Printf("[llm] Chat done model=%s elapsed=%.0fms response_len=%d tool_calls=%d finish_reason=%q usage=%+v",
-			p.model, float64(elapsed.Microseconds())/1000, len([]rune(result)), len(toolCalls), finishReason, usage)
-	}
+	log.Debug("chat done", "role", role, "model", p.model, "elapsed_ms", float64(time.Since(start).Microseconds())/1000,
+		"response_len", len([]rune(result)), "tool_calls", len(toolCalls), "finish_reason", finishReason, "usage", usage)
 	return result, toolCalls, nil
 }
 
@@ -298,7 +289,7 @@ func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messag
 		if err == nil || !isRetryableError(err) {
 			break
 		}
-		log.Printf("[llm] ChatStream attempt %d/%d failed, retrying in 8s: %v", attempt+1, maxRetries, err)
+		log.Warn("chat stream attempt failed, retrying", "attempt", attempt+1, "max_retries", maxRetries, "err", err)
 		select {
 		case <-ctx.Done():
 			return nil, nil, ctx.Err()
@@ -309,6 +300,7 @@ func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messag
 		return nil, nil, fmt.Errorf("LLM chat stream error: %w", err)
 	}
 
+	role := roleFromCacheKey(cacheKey)
 	tokenCh := make(chan string)
 	errCh := make(chan error, 1)
 	go func() {
@@ -320,14 +312,14 @@ func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messag
 		for {
 			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
-				if llmDebug {
-					elapsed := time.Since(start)
-					log.Printf("[llm] ChatStream done model=%s elapsed=%.0fms response_len=%d",
-						p.model, float64(elapsed.Microseconds())/1000, tokenRunes)
-				}
+				elapsed := time.Since(start)
+				recordLatency(role, p.model, "stream", elapsed, nil)
+				log.Debug("chat stream done", "role", role, "model", p.model,
+					"elapsed_ms", float64(elapsed.Microseconds())/1000, "response_len", tokenRunes)
 				return
 			}
 			if err != nil {
+				recordLatency(role, p.model, "stream", time.Since(start), err)
 				errCh <- fmt.Errorf("LLM chat stream receive error: %w", err)
 				return
 			}
@@ -336,8 +328,8 @@ func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messag
 				// NOTE: 捕获流式reasoning token用于审计
 				reasoningToken := choice.Delta.ReasoningContent
 				if reasoningToken != "" {
-					log.Printf("[llm-reasoning-stream] session=%s model=%s token_len=%d token=%s",
-						sessionIDFromContext(ctx), p.model, len([]rune(reasoningToken)), reasoningToken)
+					log.Debug("llm reasoning stream token", "session", sessionIDFromContext(ctx), "model", p.model,
+						"token_len", len([]rune(reasoningToken)), "token", reasoningToken)
 				}
 				if token == "" {
 					continue
@@ -359,7 +351,7 @@ func (p *openAIProvider) Chat(ctx context.Context, cacheKey string, messages []C
 	for i := 0; i < 3; i++ {
 		msg, _, err = p.chat(ctx, cacheKey, messages, false, nil)
 		if err != nil {
-			log.Printf("[llm] Chat error: %v", err)
+			log.Error("chat error", "err", err)
 			continue
 		}
 		if msg == "" {
@@ -462,9 +454,11 @@ func (p *openAIProvider) generateImage(ctx context.Context, prompt string, opts 
 
 func (p *openAIProvider) GenerateImage(ctx context.Context, prompt string, opts ImageOptions) (string, string, error) {
 	for i := 0; i < 30; i++ {
+		start := time.Now()
 		data, mime, err := p.generateImage(ctx, prompt, opts)
+		recordLatency("painter", p.model, "image", time.Since(start), err)
 		if err != nil {
-			log.Printf("[llm] GenerateImage error: %v", err)
+			log.Error("generate image failed", "attempt", i+1, "err", err)
 			continue
 		}
 		if data == "" {
@@ -483,7 +477,7 @@ func (p *openAIProvider) JsonChat(ctx context.Context, cacheKey string, messages
 	for i := 0; i < 3; i++ {
 		msg, _, err := p.chat(ctx, cacheKey, messages, true, nil)
 		if err != nil {
-			log.Printf("[llm] JsonChat error: %v", err)
+			log.Error("json chat error", "err", err)
 			continue
 		}
 		if msg == "" {
@@ -503,7 +497,7 @@ func (p *openAIProvider) ChatWithTools(ctx context.Context, cacheKey string, mes
 	for i := 0; i < 3; i++ {
 		content, toolCalls, err := p.chat(ctx, cacheKey, messages, false, tools)
 		if err != nil {
-			log.Printf("[llm] ChatWithTools error: %v", err)
+			log.Error("chat with tools error", "err", err)
 			lastErr = err
 			continue
 		}

@@ -10,7 +10,7 @@
 #   LLM_API_KEY   — API key for the LLM provider (overrides config.yaml api_key)
 #   CONFIG_PATH   — Path to config.yaml (default: ./config.yaml)
 #   GIN_MODE      — "release" or "debug" (overridden by --debug flag)
-#   AGENT_DEBUG   — "1" to enable per-call agent tracing (set by --debug flag)
+#   LOG_LEVEL     — "debug"|"info"|"warn"|"error" 日志级别 (default: debug；--debug/--dev 强制 debug)
 #   DB_PATH       — SQLite database path (overrides config.yaml database.path)
 
 set -euo pipefail
@@ -29,7 +29,7 @@ fi
 # ── Defaults ──────────────────────────────────────────────────────────────────
 : "${CONFIG_PATH:=./config.yaml}"
 : "${GIN_MODE:=release}"
-: "${AGENT_DEBUG:=0}"
+: "${LOG_LEVEL:=debug}"
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
 MODE="build"   # build | dev
@@ -40,14 +40,14 @@ for arg in "$@"; do
     --debug)
       DEBUG=1
       GIN_MODE="debug"
-      AGENT_DEBUG="1"
-      echo "[start.sh] Debug mode enabled (AGENT_DEBUG=1, GIN_MODE=debug)"
+      LOG_LEVEL="debug"
+      echo "[start.sh] Debug mode enabled (LOG_LEVEL=debug, GIN_MODE=debug)"
       ;;
     --dev)
       DEBUG=1
       MODE="dev"
       GIN_MODE="debug"
-      AGENT_DEBUG="1"
+      LOG_LEVEL="debug"
       echo "[start.sh] Dev mode: using 'go run'"
       ;;
     --help|-h)
@@ -62,7 +62,7 @@ for arg in "$@"; do
 done
 
 export GIN_MODE
-export AGENT_DEBUG
+export LOG_LEVEL
 export CONFIG_PATH
 
 # ── Ensure data directory exists ──────────────────────────────────────────────

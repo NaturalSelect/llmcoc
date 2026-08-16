@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -15,9 +14,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/llmcoc/server/internal/logging"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 )
+
+var scenarioLog = logging.For("scenario")
 
 type ScenarioListResponse = PaginatedResponse[models.Scenario]
 
@@ -255,7 +257,7 @@ func GenerateScenarioByAgents(c *gin.Context) {
 				Salt:         RandomSalt(),
 			}, progress)
 			if err != nil {
-				log.Printf("[agent] scenario generation failed (index=%d/%d): %v", index, count, err)
+				scenarioLog.Error("scenario generation failed", "index", index, "count", count, "err", err)
 				msg := "模组生成失败: " + err.Error()
 				events <- scenarioGenEvent{name: "error", data: gin.H{"index": index, "message": msg}}
 				results = append(results, scenarioBatchResult{Index: index, Error: msg})
@@ -292,7 +294,7 @@ func GenerateScenarioByAgents(c *gin.Context) {
 			}
 
 			if err := models.DB.Create(&scenario).Error; err != nil {
-				log.Printf("[agent] failed to save generated scenario to DB: %v", err)
+				scenarioLog.Error("save generated scenario failed", "err", err)
 				msg := "模组入库失败，请联系管理员查看服务端日志"
 				events <- scenarioGenEvent{name: "error", data: gin.H{"index": index, "message": msg}}
 				results = append(results, scenarioBatchResult{Index: index, Error: msg})
@@ -309,7 +311,7 @@ func GenerateScenarioByAgents(c *gin.Context) {
 				generationLog.LogText = "本次 AI 生成未捕获到 LLM 对话记录。"
 			}
 			if err := models.DB.Create(&generationLog).Error; err != nil {
-				log.Printf("[agent] failed to save scenario generation log scenario_id=%d: %v", scenario.ID, err)
+				scenarioLog.Error("save scenario generation log failed", "scenario_id", scenario.ID, "err", err)
 			}
 
 			events <- scenarioGenEvent{name: "done", data: gin.H{"index": index, "scenario_id": scenario.ID, "name": scenario.Name}}
@@ -337,7 +339,7 @@ func GenerateScenarioByAgents(c *gin.Context) {
 			select {
 			case <-c.Request.Context().Done():
 				disconnected = true
-				log.Printf("[agent] scenario generation client disconnected, continuing in background")
+				scenarioLog.Info("scenario generation client disconnected, continuing in background")
 			default:
 			}
 		}
@@ -372,7 +374,7 @@ func CompileStoryByUpload(c *gin.Context) {
 			Name:          req.Name,
 		}, progress)
 		if err != nil {
-			log.Printf("[agent] compile-story-upload failed: %v", err)
+			scenarioLog.Error("compile story upload failed", "err", err)
 			msg := "模组编译失败: " + err.Error()
 			events <- scenarioGenEvent{name: "error", data: gin.H{"index": 1, "message": msg}}
 			return
@@ -404,7 +406,7 @@ func CompileStoryByUpload(c *gin.Context) {
 		}
 
 		if err := models.DB.Create(&scenario).Error; err != nil {
-			log.Printf("[agent] failed to save compiled scenario to DB: %v", err)
+			scenarioLog.Error("save compiled scenario failed", "err", err)
 			msg := "模组入库失败，请联系管理员查看服务端日志"
 			events <- scenarioGenEvent{name: "error", data: gin.H{"index": 1, "message": msg}}
 			return
@@ -420,7 +422,7 @@ func CompileStoryByUpload(c *gin.Context) {
 			generationLog.LogText = "本次编译未捕获到 LLM 对话记录。"
 		}
 		if err := models.DB.Create(&generationLog).Error; err != nil {
-			log.Printf("[agent] failed to save scenario generation log scenario_id=%d: %v", scenario.ID, err)
+			scenarioLog.Error("save scenario generation log failed", "scenario_id", scenario.ID, "err", err)
 		}
 
 		events <- scenarioGenEvent{name: "done", data: gin.H{"index": 1, "scenario_id": scenario.ID, "name": scenario.Name}}
@@ -432,7 +434,7 @@ func CompileStoryByUpload(c *gin.Context) {
 			select {
 			case <-c.Request.Context().Done():
 				disconnected = true
-				log.Printf("[agent] compile-story-upload client disconnected, continuing in background")
+				scenarioLog.Info("compile story upload client disconnected, continuing in background")
 			default:
 			}
 		}

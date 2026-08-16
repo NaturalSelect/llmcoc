@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -100,7 +99,7 @@ func isAnthropicRetryableError(err error) bool {
 }
 
 // streamToResult 发起一次流式请求并用 SDK 内置的 Message.Accumulate 聚合成完整结果;
-// llmDebug 开启时打印 stop_reason 及 token 用量(含缓存命中数),既用于验证 cache_control
+// Debug 级别打印 stop_reason 及 token 用量(含缓存命中数),既用于验证 cache_control
 // 断点是否生效,也用于区分"模型真的没输出"和"输出被截断"(stop_reason=max_tokens)。
 func (p *anthropicProvider) streamToResult(ctx context.Context, cacheKey string, params anthropic.MessageNewParams) (string, []ToolCall, error) {
 	stream := p.client.Messages.NewStreaming(ctx, params)
@@ -118,40 +117,44 @@ func (p *anthropicProvider) streamToResult(ctx context.Context, cacheKey string,
 
 	content, toolCalls := fromAnthropicMessage(&acc)
 
-	if llmDebug {
-		log.Printf("[llm] Chat done provider=anthropic model=%s cache_key=%s response_len=%d tool_calls=%d stop_reason=%q input_tokens=%d output_tokens=%d cache_read_tokens=%d cache_creation_tokens=%d",
-			p.model, cacheKey, len([]rune(content)), len(toolCalls), acc.StopReason,
-			acc.Usage.InputTokens, acc.Usage.OutputTokens, acc.Usage.CacheReadInputTokens, acc.Usage.CacheCreationInputTokens)
-	}
+	log.Debug("anthropic chat done", "model", p.model, "cache_key", cacheKey, "response_len", len([]rune(content)),
+		"tool_calls", len(toolCalls), "stop_reason", acc.StopReason, "input_tokens", acc.Usage.InputTokens,
+		"output_tokens", acc.Usage.OutputTokens, "cache_read_tokens", acc.Usage.CacheReadInputTokens,
+		"cache_creation_tokens", acc.Usage.CacheCreationInputTokens)
 
 	return content, toolCalls, nil
 }
 
-func (p *anthropicProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition) (string, []ToolCall, error) {
+func (p *anthropicProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition) (content string, toolCalls []ToolCall, err error) {
+	start := time.Now()
+	role := roleFromCacheKey(cacheKey)
+	defer func() { recordLatency(role, p.model, "chat", time.Since(start), err) }()
+
 	params, err := p.buildParams(messages, tools)
 	if err != nil {
 		return "", nil, err
 	}
 	params.Metadata.UserID.Value = cacheKey // 用于 Anthropic 端的用户分流,不影响缓存键
 
-	var content string
-	var toolCalls []ToolCall
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		start := time.Now()
+		attemptStart := time.Now()
 		content, toolCalls, err = p.streamToResult(ctx, cacheKey, params)
-		log.Printf("[llm] anthropic chat model %v using %v\n", p.model, time.Since(start))
+		log.Debug("anthropic chat attempt done", "model", p.model, "attempt", attempt+1,
+			"elapsed_ms", float64(time.Since(attemptStart).Microseconds())/1000)
 		if err == nil || !isAnthropicRetryableError(err) {
 			break
 		}
-		log.Printf("[llm] anthropic chat attempt %d/%d failed, retrying in 8s: %v", attempt+1, maxRetries, err)
+		log.Warn("anthropic chat attempt failed, retrying", "attempt", attempt+1, "max_retries", maxRetries, "err", err)
 		select {
 		case <-ctx.Done():
-			return "", nil, ctx.Err()
+			err = ctx.Err()
+			return "", nil, err
 		case <-time.After(8 * time.Second):
 		}
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("anthropic chat error: %w", err)
+		err = fmt.Errorf("anthropic chat error: %w", err)
+		return "", nil, err
 	}
 	return content, toolCalls, nil
 }
@@ -162,7 +165,7 @@ func (p *anthropicProvider) Chat(ctx context.Context, cacheKey string, messages 
 	for i := 0; i < 3; i++ {
 		msg, _, err = p.chat(ctx, cacheKey, messages, nil)
 		if err != nil {
-			log.Printf("[llm] anthropic Chat error: %v", err)
+			log.Error("anthropic chat error", "err", err)
 			continue
 		}
 		if msg == "" {
@@ -180,7 +183,7 @@ func (p *anthropicProvider) JsonChat(ctx context.Context, cacheKey string, messa
 	for i := 0; i < 3; i++ {
 		msg, _, err := p.chat(ctx, cacheKey, messages, nil)
 		if err != nil {
-			log.Printf("[llm] anthropic JsonChat error: %v", err)
+			log.Error("anthropic json chat error", "err", err)
 			continue
 		}
 		if msg == "" {
@@ -198,7 +201,7 @@ func (p *anthropicProvider) ChatWithTools(ctx context.Context, cacheKey string, 
 	for i := 0; i < 3; i++ {
 		content, toolCalls, err := p.chat(ctx, cacheKey, messages, tools)
 		if err != nil {
-			log.Printf("[llm] anthropic ChatWithTools error: %v", err)
+			log.Error("anthropic chat with tools error", "err", err)
 			lastErr = err
 			continue
 		}
@@ -216,6 +219,7 @@ func (p *anthropicProvider) ChatWithTools(ctx context.Context, cacheKey string, 
 
 func (p *anthropicProvider) ChatStream(ctx context.Context, cacheKey string, messages []ChatMessage) (<-chan string, <-chan error, error) {
 	start := time.Now()
+	role := roleFromCacheKey(cacheKey)
 	params, err := p.buildParams(messages, nil)
 	if err != nil {
 		return nil, nil, err
@@ -232,7 +236,7 @@ func (p *anthropicProvider) ChatStream(ctx context.Context, cacheKey string, mes
 		if hasFirst || s.Err() == nil || !isAnthropicRetryableError(s.Err()) {
 			break
 		}
-		log.Printf("[llm] anthropic ChatStream attempt %d/%d failed, retrying in 8s: %v", attempt+1, maxRetries, s.Err())
+		log.Warn("anthropic chat stream attempt failed, retrying", "attempt", attempt+1, "max_retries", maxRetries, "err", s.Err())
 		s.Close()
 		select {
 		case <-ctx.Done():
@@ -280,15 +284,15 @@ func (p *anthropicProvider) ChatStream(ctx context.Context, cacheKey string, mes
 			}
 		}
 		if err := stream.Err(); err != nil {
+			recordLatency(role, p.model, "stream", time.Since(start), err)
 			errCh <- fmt.Errorf("anthropic chat stream receive error: %w", err)
 			return
 		}
-		if llmDebug {
-			log.Printf("[llm] anthropic ChatStream done model=%s elapsed=%.0fms response_len=%d",
-				p.model, float64(time.Since(start).Microseconds())/1000, tokenRunes)
-			log.Printf("[llm-cache] provider=anthropic cache_key=%s model=%s cache_read_tokens=%d cache_creation_tokens=%d",
-				cacheKey, p.model, acc.Usage.CacheReadInputTokens, acc.Usage.CacheCreationInputTokens)
-		}
+		recordLatency(role, p.model, "stream", time.Since(start), nil)
+		log.Debug("anthropic chat stream done", "role", role, "model", p.model,
+			"elapsed_ms", float64(time.Since(start).Microseconds())/1000, "response_len", tokenRunes)
+		log.Debug("anthropic chat stream cache", "cache_key", cacheKey, "model", p.model,
+			"cache_read_tokens", acc.Usage.CacheReadInputTokens, "cache_creation_tokens", acc.Usage.CacheCreationInputTokens)
 	}()
 	return tokenCh, errCh, nil
 }

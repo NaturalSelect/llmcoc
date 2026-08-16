@@ -12,7 +12,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -519,7 +518,7 @@ func runOneshotSubmitPhase(ctx context.Context, room *scripterRoom, conv *script
 		}
 		conv.record(ctx, room, stage, resp)
 		conv.append(llm.ChatMessage{Role: "assistant", Content: resp})
-		log.Printf("[scripter:%s] session=%s attempt=%d resp_len=%d", stageName, sessionID, attempt, len([]rune(resp)))
+		alog.Debug("oneshot submit attempt", "stage", stageName, "session", sessionID, "attempt", attempt, "resp_len", len([]rune(resp)))
 
 		result, reject := parseOneshotResult("submit", resp)
 		if reject != "" {
@@ -556,10 +555,10 @@ func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, conc
 		return `<translate_anchor_result error="concept字段为空，无法翻译"/>`, nil
 	}
 	reason = strings.TrimSpace(reason)
-	log.Printf("[scripter:oneshot_translate_anchor] session=%s concept=%q reason=%q", sessionID, truncateRunes(concept, 200), truncateRunes(reason, 200))
+	alog.Debug("oneshot translate anchor", "session", sessionID, "concept", truncateRunes(concept, 200), "reason", truncateRunes(reason, 200))
 	conclusion, err := runOneshotTranslatorAgent(ctx, room, concept, reason)
 	if err != nil {
-		log.Printf("[scripter:oneshot_translate_anchor] session=%s error concept=%q err=%v", sessionID, truncateRunes(concept, 200), err)
+		alog.Error("oneshot translate anchor failed", "session", sessionID, "concept", truncateRunes(concept, 200), "err", err)
 		return fmt.Sprintf(`<translate_anchor_result concept=%q disabled="true">
 content: 查询失败（%s），可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。
 </translate_anchor_result>`, concept, err.Error()), nil
@@ -698,7 +697,7 @@ func oneshotTranslatorAskLawyer(ctx context.Context, room *scripterRoom, questio
 	if question == "" {
 		return `<ask_lawyer_result error="question字段为空，无法查询规则书"/>`
 	}
-	log.Printf("[scripter:oneshot_translator] session=%s ask_lawyer question=%q", sessionID, truncateRunes(question, 300))
+	alog.Debug("oneshot translator ask_lawyer", "session", sessionID, "question", truncateRunes(question, 300))
 	if room.lawyer.provider == nil {
 		return fmt.Sprintf(`<ask_lawyer_result question=%q status="lawyer_unavailable">规则书专家不可用；不得声称已核验具体规则书元素。</ask_lawyer_result>`, question)
 	}
@@ -811,7 +810,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, conv *scripterC
 		if conv == nil {
 			conv = newScripterConversation()
 		}
-		log.Printf("[scripter:oneshot_repair] session=%s conv为空或超出复用上限，重建消息链 rune_len=%d", sessionID, conv.runeLen())
+		alog.Debug("oneshot repair conversation rebuilt", "session", sessionID, "rune_len", conv.runeLen())
 		conv.reset(
 			llm.ChatMessage{Role: "system", Content: room.architect.systemPrompt(repairSystemPrompt())},
 			llm.ChatMessage{Role: "user", Content: userMsg},
@@ -828,8 +827,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, conv *scripterC
 	}
 
 	draft := result.toScenarioDraft()
-	log.Printf("[scripter:oneshot_repair] session=%s done name=%q scenes=%d npcs=%d clues=%d",
-		sessionID, draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues))
+	alog.Debug("oneshot repair done", "session", sessionID, "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
 	return draft, nil
 }
 
@@ -947,7 +945,7 @@ func runLogicReview(ctx context.Context, room *scripterRoom, draft *ScenarioDraf
 	sessionID := scripterSessionID(ctx, room)
 	payloadJSON, err := json.Marshal(buildLogicReviewPayload(draft))
 	if err != nil {
-		log.Printf("[scripter:logic_review] session=%s marshal payload failed: %v", sessionID, err)
+		alog.Error("logic review marshal payload failed", "session", sessionID, "err", err)
 		return nil
 	}
 	userMsg := fmt.Sprintf(`<story_document>%s</story_document>
@@ -961,7 +959,7 @@ func runLogicReview(ctx context.Context, room *scripterRoom, draft *ScenarioDraf
 	result, err := runReportIssuesTool(ctx, room.qa, "logic_review", msgs,
 		"提交本次审查发现的问题清单；没有问题时提交空数组")
 	if err != nil {
-		log.Printf("[scripter:logic_review] session=%s review failed: %v (skipping)", sessionID, err)
+		alog.Warn("logic review failed, skipping", "session", sessionID, "err", err)
 		return nil
 	}
 	issues := make([]string, 0, len(result))
@@ -997,7 +995,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	draft.Name = normalizeScenarioTitle(draft.Name)
 	if draft.Name == "" {
 		draft.Name = "未命名剧本"
-		log.Printf("[scripter:normalize] session=%s filled name=%q", sessionID, draft.Name)
+		alog.Debug("normalize filled name", "session", sessionID, "name", draft.Name)
 	}
 	if strings.TrimSpace(req.Name) != "" && draft.Name != strings.TrimSpace(req.Name) {
 		draft.Name = strings.TrimSpace(req.Name)
@@ -1037,7 +1035,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			"%s的%s。这是平常的一天，你们因各自的缘由来到此地，眼前的一切安静而寻常，尚无任何异样。",
 			constraints.Era, strings.Join(constraints.GeographyFlavor, " / "),
 		)
-		log.Printf("[scripter:normalize] session=%s filled setting", sessionID)
+		alog.Debug("normalize filled setting", "session", sessionID)
 	}
 	// 简介与背景设定已合并：description 不再由模型单独产出，统一取 content.setting；
 	// setting 本身仍为空的极端情况下才使用固定兜底文案。
@@ -1047,18 +1045,18 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		} else {
 			draft.Description = "一段看似寻常的经历正在等待几位到访者。接受这份邀约，故事便从平常的一天开始。"
 		}
-		log.Printf("[scripter:normalize] session=%s filled description", sessionID)
+		alog.Debug("normalize filled description", "session", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.Intro) == "" {
 		draft.Content.Intro = "你们按各自的缘由抵达此地，眼前一切安静而寻常。"
-		log.Printf("[scripter:normalize] session=%s filled intro", sessionID)
+		alog.Debug("normalize filled intro", "session", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.MapDescription) == "" {
 		draft.Content.MapDescription = "【文字地图】各调查地点是剧本状态节点，不是顺序关卡：入口连接所有可调查地点；地点之间可往返；时间推进时，各地点状态可能因派系行动而改变。"
-		log.Printf("[scripter:normalize] session=%s filled map_description", sessionID)
+		alog.Debug("normalize filled map_description", "session", sessionID)
 	}
 	if len(constraints.ToneTags) > 0 && !sameStringSlice(draft.Content.ToneTags, constraints.ToneTags) {
-		log.Printf("[scripter:normalize] session=%s override tone_tags from=%q to=%q", sessionID, strings.Join(draft.Content.ToneTags, ","), strings.Join(constraints.ToneTags, ","))
+		alog.Debug("normalize override tone_tags", "session", sessionID, "from", strings.Join(draft.Content.ToneTags, ","), "to", strings.Join(constraints.ToneTags, ","))
 		draft.Content.ToneTags = append([]string(nil), constraints.ToneTags...)
 	}
 	if len(draft.Content.Scenes) == 0 {
@@ -1068,7 +1066,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			Description: "调查员进门就能感觉到异常已经公开出现，主动调查能获得第一批事实；是否公开或隐瞒所知会改变各方反应，拖延下去局势会继续推进；由此可以前往其他相关地点。",
 			Triggers:    []string{"available_from_start"},
 		}}
-		log.Printf("[scripter:normalize] session=%s generated default scene", sessionID)
+		alog.Debug("normalize generated default scene", "session", sessionID)
 	}
 	for i := range draft.Content.Scenes {
 		if strings.TrimSpace(draft.Content.Scenes[i].ID) == "" {
@@ -1095,7 +1093,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			Description: "公开身份：地方相关人员。真实议程：自保并观察局势。秘密：掌握部分真相但不会主动全盘托出。",
 			Attitude:    "谨慎防备",
 		}}
-		log.Printf("[scripter:normalize] session=%s generated default npc", sessionID)
+		alog.Debug("normalize generated default npc", "session", sessionID)
 	}
 	for i := range draft.Content.NPCs {
 		if strings.TrimSpace(draft.Content.NPCs[i].Name) == "" {
@@ -1119,7 +1117,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			{Summary: "佐证细节(深入调查): 与公开异常相互印证的独立事实，须两条线索合并才能确认事态走向", Nature: "真实", Source: "深入调查或与相关人员交流"},
 			{Summary: "表象线索(初步调查): 支持错误推断的表象证据；表面合理但只能解释一部分", Nature: "误导", Source: "初步调查"},
 		}
-		log.Printf("[scripter:normalize] session=%s generated default clues count=3", sessionID)
+		alog.Debug("normalize generated default clues", "session", sessionID, "count", 3)
 	}
 	for i := range draft.Content.Clues {
 		draft.Content.Clues[i].Summary = strings.TrimSpace(draft.Content.Clues[i].Summary)
@@ -1138,7 +1136,7 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			} else {
 				draft.Content.MythosCore += "；" + clue.Summary
 			}
-			log.Printf("[scripter:normalize] session=%s extracted mythos_core=%q", sessionID, truncateRunes(clue.Summary, 200))
+			alog.Debug("normalize extracted mythos_core", "session", sessionID, "mythos_core", truncateRunes(clue.Summary, 200))
 		} else {
 			filteredClues = append(filteredClues, clue)
 		}
@@ -1146,14 +1144,14 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	draft.Content.Clues = filteredClues
 	if strings.TrimSpace(draft.Content.MythosCore) == "" && strings.TrimSpace(draft.Content.MythosAnchor) != "" {
 		draft.Content.MythosCore = fmt.Sprintf("神话本质(核心发现): %s；到达终止节点并触发揭示后承担理智代价。", draft.Content.MythosAnchor)
-		log.Printf("[scripter:normalize] session=%s synthesized mythos_core from anchor", sessionID)
+		alog.Debug("normalize synthesized mythos_core from anchor", "session", sessionID)
 	}
 	if len(draft.Content.Endings) == 0 {
 		draft.Content.Endings = []models.EndingData{
 			{Name: "余波固化", Trigger: "调查员让关键事实公开并改变至少一个派系时间线", Description: "局势以较低代价固化，但神话锚点的余波仍保留。", SANReward: "恢复1d6"},
 			{Name: "新的稳定态", Trigger: "关键时间线终点到达且调查员没有改变任何派系行动", Description: "局势进入新的稳定态，某人或某地不可挽回地改变。", IsFailure: true, SANReward: "损失1d10"},
 		}
-		log.Printf("[scripter:normalize] session=%s filled default endings count=2", sessionID)
+		alog.Debug("normalize filled default endings", "session", sessionID, "count", 2)
 	}
 	if draft.Content.KeeperAppendix == nil {
 		draft.Content.KeeperAppendix = &models.KeeperAppendix{}
@@ -1164,6 +1162,6 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 			firstNonEmpty(draft.Content.MythosCore, "真相将通过调查逐步揭示"),
 			firstNonEmpty(draft.Content.MythosAnchor, "按规则书已收录神话元素处理"),
 		)
-		log.Printf("[scripter:normalize] session=%s filled keeper_appendix.core_truth", sessionID)
+		alog.Debug("normalize filled keeper_appendix core_truth", "session", sessionID)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -173,7 +172,7 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	action, npcErr := actNPC(actx.Ctx, actx.Handles[models.AgentRoleNPC], *actx.GCtx, call.NPCName, question, *actx.TempNPCs)
 	doneNPC()
 	if npcErr != nil {
-		log.Printf("[agent] act_npc %q error: %v", call.NPCName, npcErr)
+		alog.Error("act_npc failed", "npc", call.NPCName, "err", npcErr)
 		return []ToolResult{{Action: ToolActNPC, Result: fmt.Sprintf("NPC行动生成失败: %v", npcErr)}}
 	}
 	return []ToolResult{{Action: ToolActNPC, Result: formatNPCAction(action)}}
@@ -577,8 +576,7 @@ func (advanceTimeAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 		models.DB.Save(card)
 		break
 	}
-	log.Printf("[agent] session %d advance_time +%d rounds (%s) → %s",
-		actx.GCtx.Session.ID, rounds, reason, formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session)))
+	alog.Debug("advance time", "session", actx.GCtx.Session.ID, "rounds", rounds, "reason", reason, "game_time", formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session)))
 	return []ToolResult{{
 		Action: ToolAdvanceTime,
 		Result: fmt.Sprintf("时间推进%d回合(每轮=30分钟)(%s),当前时间:%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session))),

@@ -3,17 +3,19 @@ package handlers
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/llmcoc/server/internal/logging"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/llm"
 )
+
+var adminConfigLog = logging.For("admin_config")
 
 // ── view type ─────────────────────────────────────────────────────────────────
 
@@ -63,7 +65,7 @@ func AdminCreateProvider(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	log.Printf("[admin_config] create_provider name=%q provider=%s", req.Name, req.Provider)
+	adminConfigLog.Info("create provider", "name", req.Name, "provider", req.Provider)
 	isActive := true
 	if req.IsActive != nil {
 		isActive = *req.IsActive
@@ -80,13 +82,13 @@ func AdminCreateProvider(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败:" + err.Error()})
 		return
 	}
-	log.Printf("[admin_config] create_provider ok id=%d name=%q", p.ID, p.Name)
+	adminConfigLog.Info("create provider ok", "id", p.ID, "name", p.Name)
 	c.JSON(http.StatusCreated, toProviderView(p))
 }
 
 func AdminUpdateProvider(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	log.Printf("[admin_config] update_provider id=%d", id)
+	adminConfigLog.Info("update provider", "id", id)
 	var p models.LLMProviderConfig
 	if err := models.DB.First(&p, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "提供商不存在"})
@@ -127,13 +129,13 @@ func AdminUpdateProvider(c *gin.Context) {
 		return
 	}
 	models.DB.First(&p, id)
-	log.Printf("[admin_config] update_provider ok id=%d name=%q", p.ID, p.Name)
+	adminConfigLog.Info("update provider ok", "id", p.ID, "name", p.Name)
 	c.JSON(http.StatusOK, toProviderView(p))
 }
 
 func AdminDeleteProvider(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	log.Printf("[admin_config] delete_provider id=%d", id)
+	adminConfigLog.Info("delete provider", "id", id)
 
 	var count int64
 	models.DB.Model(&models.AgentConfig{}).Where("provider_config_id = ?", id).Count(&count)
@@ -145,7 +147,7 @@ func AdminDeleteProvider(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
 		return
 	}
-	log.Printf("[admin_config] delete_provider ok id=%d", id)
+	adminConfigLog.Info("delete provider ok", "id", id)
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
@@ -165,7 +167,7 @@ func AdminListAgents(c *gin.Context) {
 
 func AdminUpdateAgent(c *gin.Context) {
 	role := c.Param("role")
-	log.Printf("[admin_config] update_agent role=%s", role)
+	adminConfigLog.Info("update agent", "role", role)
 	validRoles := map[string]bool{
 		"director": true, "writer": true, "lawyer": true, "npc": true, "evaluator": true, "growth": true,
 		"scripter": true, "architect": true, "compiler": true, "lore_researcher": true, "encounter_designer": true, "qa_guard": true,
@@ -271,7 +273,7 @@ func AdminUpdateAgent(c *gin.Context) {
 	if agentCfg.ProviderConfig != nil {
 		agentCfg.ProviderConfig.APIKey = ""
 	}
-	log.Printf("[admin_config] update_agent ok role=%s provider_config_id=%v model=%s", role, providerConfigID, modelName)
+	adminConfigLog.Info("update agent ok", "role", role, "provider_config_id", providerConfigID, "model", modelName)
 	c.JSON(http.StatusOK, agentCfg)
 	agent.ClearAllCachedAgents()
 }
@@ -318,7 +320,7 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 		factory = DefaultProviderFactory
 	}
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	log.Printf("[admin_config] ping_provider id=%d", id)
+	adminConfigLog.Info("ping provider", "id", id)
 	var p models.LLMProviderConfig
 	if err := models.DB.First(&p, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "提供商不存在"})
@@ -347,11 +349,11 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 	latencyMs := time.Since(start).Milliseconds()
 
 	if err != nil {
-		log.Printf("[admin_config] ping_provider id=%d error: %v", id, err)
+		adminConfigLog.Error("ping provider failed", "id", id, "err", err)
 		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "mode": "chat", "error": err.Error()})
 		return
 	}
-	log.Printf("[admin_config] ping_provider ok id=%d latency_ms=%d", id, latencyMs)
+	adminConfigLog.Info("ping provider ok", "id", id, "latency_ms", latencyMs)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "mode": "chat", "latency_ms": latencyMs})
 }
 
@@ -375,15 +377,15 @@ func adminPingImageProvider(c *gin.Context, factory ProviderFactory, p *models.L
 	base64Data, _, err := generator.GenerateImage(ctx, "A simple black and white test icon", llm.ImageOptions{})
 	latencyMs := time.Since(start).Milliseconds()
 	if err != nil {
-		log.Printf("[admin_config] ping_provider image id=%d error: %v", p.ID, err)
+		adminConfigLog.Error("ping provider image failed", "id", p.ID, "err", err)
 		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "mode": "image", "error": "图片生成测试失败: " + err.Error()})
 		return
 	}
 	if strings.TrimSpace(base64Data) == "" {
-		log.Printf("[admin_config] ping_provider image id=%d empty image data", p.ID)
+		adminConfigLog.Warn("ping provider image empty data", "id", p.ID)
 		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "mode": "image", "error": "图片生成测试未返回图片数据"})
 		return
 	}
-	log.Printf("[admin_config] ping_provider image ok id=%d latency_ms=%d", p.ID, latencyMs)
+	adminConfigLog.Info("ping provider image ok", "id", p.ID, "latency_ms", latencyMs)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "mode": "image", "latency_ms": latencyMs})
 }

@@ -677,3 +677,18 @@ type LawyerCacheStats struct {
 	Misses      int64     `gorm:"not null;default:0" json:"misses"`
 	SavedAt     time.Time `json:"saved_at"`
 }
+
+// LLMLatencyStat stores cumulative LLM call latency statistics, aggregated by
+// role (caller agent) × model × method (chat/stream/image). 每个组合一行，
+// 由内存统计定期落库刷新；(role, model, method) 三元组唯一。
+type LLMLatencyStat struct {
+	ID       uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Role     string    `gorm:"not null;uniqueIndex:idx_llm_latency_key" json:"role"`
+	Model    string    `gorm:"not null;uniqueIndex:idx_llm_latency_key" json:"model"`
+	Method   string    `gorm:"not null;uniqueIndex:idx_llm_latency_key" json:"method"`
+	Count    int64     `gorm:"not null;default:0" json:"count"`
+	SumMs    int64     `gorm:"not null;default:0" json:"sum_ms"`
+	ErrCount int64     `gorm:"not null;default:0" json:"err_count"`
+	MaxMs    int64     `gorm:"not null;default:0" json:"max_ms"`
+	SavedAt  time.Time `json:"saved_at"`
+}

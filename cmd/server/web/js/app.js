@@ -157,6 +157,7 @@ window.COC.core = function() {
                     adminShopItemTotal: 0,
                     adminShopItemTotalPages: 1,
                     cacheStats: null,
+                    llmStats: null,
                     cacheKeys: [],
                     cacheKeyPage: 1,
                     cacheKeyPageSize: 20,

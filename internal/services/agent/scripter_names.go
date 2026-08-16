@@ -15,7 +15,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"strings"
 
@@ -256,7 +255,7 @@ func generateLocalizedNPCNames(ctx context.Context, handle agentHandle, sessionI
 		for attempt := 0; attempt < maxLLMNameAttempts; attempt++ {
 			candidate, err := generateLocalizedNPCName(ctx, handle, sessionID, culture, gender)
 			if err != nil {
-				log.Printf("[scripter:generate_npc_name] session=%s culture=%s gender=%s attempt=%d error=%v", sessionID, culture, gender, attempt+1, err)
+				alog.Warn("npc name generation attempt failed", "tag", "generate_npc_name", "session", sessionID, "culture", culture, "gender", gender, "attempt", attempt+1, "err", err)
 				continue
 			}
 			key := strings.ToLower(candidate)

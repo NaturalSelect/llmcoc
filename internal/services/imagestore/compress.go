@@ -6,7 +6,6 @@ import (
 	"image"
 	"image/jpeg"
 	_ "image/png" // 注册 PNG 解码器供 image.Decode 使用
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -50,13 +49,13 @@ func CompressImage(raw []byte, srcMIME string) (dst []byte, dstMIME string, dstE
 
 	img, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
-		log.Printf("[images] decode for compression failed, keep original: %v", err)
+		log.Error("image decode for compression failed, keep original", "err", err)
 		return raw, srcMIME, srcExt, false
 	}
 
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
-		log.Printf("[images] jpeg encode failed, keep original: %v", err)
+		log.Error("jpeg encode failed, keep original", "err", err)
 		return raw, srcMIME, srcExt, false
 	}
 

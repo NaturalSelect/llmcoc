@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -37,7 +36,7 @@ func characterAskLawyer(ctx context.Context, lawyerHandle agentHandle, question 
 	if question == "" {
 		return `<ask_lawyer_result error="question字段为空"/>`
 	}
-	log.Printf("[agent] character ask_lawyer question=%q", truncateRunes(question, 300))
+	alog.Debug("character ask_lawyer", "question", truncateRunes(question, 300))
 	results := runLawyer(ctx, lawyerHandle, question)
 	if len(results) == 0 {
 		return fmt.Sprintf(`<ask_lawyer_result question=%q status="no_result">规则书中未找到相关内容；可换用更具体的问题重新提问。</ask_lawyer_result>`, question)
@@ -526,12 +525,12 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 					break
 				}
 			}
-			log.Printf("[agent] AdjustSkills JSON parse error attempt %d: %v", i+1, err)
+			alog.Warn("adjust skills JSON parse retry", "attempt", i+1, "err", err)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("AdjustSkills parse failed: %w (raw: %s)", err, resp)
 		}
 	}
-	log.Printf("[agent] AdjustSkills done, skills=%d", len(raw))
+	alog.Info("adjust skills done", "skills", len(raw))
 	return raw, nil
 }

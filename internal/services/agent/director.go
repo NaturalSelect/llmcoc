@@ -3,7 +3,6 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -617,7 +616,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		if len(localMsg) > 20 {
 			localMsg = localMsg[:20]
 		}
-		log.Printf("KP SESSION: %v MSG: %v LEN:%v", gctx.Session.ID, localMsg, len([]rune(msg.Content)))
+		alog.Debug("director prompt", "session", gctx.Session.ID, "content", localMsg, "len", len([]rune(msg.Content)))
 	}
 	return msgs
 }

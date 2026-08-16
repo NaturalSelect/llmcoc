@@ -5,7 +5,7 @@
                     x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'settings',label:'系统设置'},{id:'cache',label:'规则缓存'}]"
                     :key="t.id">
                     <button
-                        @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems(); if (t.id === 'cache') { loadCacheStats(); loadCacheKeys(); } if (t.id === 'scenarios') loadAdminScenarios()"
+                        @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems(); if (t.id === 'cache') { loadCacheStats(); loadCacheKeys(); loadLlmStats(); } if (t.id === 'scenarios') loadAdminScenarios()"
                         class="tab" :class="adminTab===t.id?'active':''" x-text="t.label"></button>
                 </template>
             </div>
@@ -540,6 +540,61 @@
                                 <div class="h-1.5 rounded-full" style="background:#4a3318"
                                     :style="'width:' + (cacheStats ? Math.min(100, (cacheStats.used_bytes / cacheStats.max_bytes) * 100) : 0) + '%'">
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- LLM call latency stats -->
+                <div class="card rounded p-5 max-w-xl">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="font-bold text-amber-300 text-sm font-ui">LLM 调用延迟</h3>
+                        <div class="flex gap-2">
+                            <button @click="loadLlmStats()" class="btn btn-ghost text-xs">刷新</button>
+                            <button @click="resetLlmStats()" class="btn btn-red text-xs">清空统计</button>
+                        </div>
+                    </div>
+                    <p class="text-xs mb-3 font-ui" style="color:#6a6152">持续累积的历史平均值，按调用方角色/模型聚合；与上方 Provider
+                        连通性测试返回的单次探活延迟是两回事。</p>
+                    <div x-show="!llmStats" class="text-amber-900 text-sm font-ui">加载中…</div>
+                    <div x-show="llmStats" class="space-y-3">
+                        <div class="grid grid-cols-4 gap-2">
+                            <div class="rounded p-2 text-center" style="background:#141210; border:1px solid #252018">
+                                <div class="text-lg font-bold text-amber-200 font-ui" x-text="llmStats?.overall?.count ?? 0"></div>
+                                <div class="text-[10px] mt-0.5 font-ui text-dim">总调用数</div>
+                            </div>
+                            <div class="rounded p-2 text-center" style="background:#141210; border:1px solid #252018">
+                                <div class="text-lg font-bold text-amber-200 font-ui" x-text="(llmStats?.overall?.avg_ms ?? 0).toFixed(0) + ' ms'"></div>
+                                <div class="text-[10px] mt-0.5 font-ui text-dim">平均延迟</div>
+                            </div>
+                            <div class="rounded p-2 text-center" style="background:#141210; border:1px solid #252018">
+                                <div class="text-lg font-bold text-amber-200 font-ui" x-text="(llmStats?.overall?.max_ms ?? 0) + ' ms'"></div>
+                                <div class="text-[10px] mt-0.5 font-ui text-dim">最大延迟</div>
+                            </div>
+                            <div class="rounded p-2 text-center" style="background:#141210; border:1px solid #252018">
+                                <div class="text-lg font-bold text-red-400 font-ui" x-text="llmStats?.overall?.err_count ?? 0"></div>
+                                <div class="text-[10px] mt-0.5 font-ui text-dim">错误数</div>
+                            </div>
+                        </div>
+                        <div x-show="llmStats?.by_role?.length" class="pt-2 border-t border-base">
+                            <div class="text-[10px] font-bold text-amber-700 mb-1 uppercase tracking-wider font-ui">按角色</div>
+                            <div class="space-y-1">
+                                <template x-for="line in (llmStats?.by_role ?? [])" :key="'role-'+line.key">
+                                    <div class="flex items-center justify-between text-xs font-ui" style="color:#b0a080">
+                                        <span x-text="line.key"></span>
+                                        <span x-text="line.count + ' 次 · 均值 ' + line.avg_ms.toFixed(0) + 'ms · 最大 ' + line.max_ms + 'ms' + (line.err_count ? ' · 错误 ' + line.err_count : '')"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <div x-show="llmStats?.by_model?.length" class="pt-2 border-t border-base">
+                            <div class="text-[10px] font-bold text-amber-700 mb-1 uppercase tracking-wider font-ui">按模型</div>
+                            <div class="space-y-1">
+                                <template x-for="line in (llmStats?.by_model ?? [])" :key="'model-'+line.key">
+                                    <div class="flex items-center justify-between text-xs font-ui" style="color:#b0a080">
+                                        <span x-text="line.key"></span>
+                                        <span x-text="line.count + ' 次 · 均值 ' + line.avg_ms.toFixed(0) + 'ms · 最大 ' + line.max_ms + 'ms' + (line.err_count ? ' · 错误 ' + line.err_count : '')"></span>
+                                    </div>
+                                </template>
                             </div>
                         </div>
                     </div>

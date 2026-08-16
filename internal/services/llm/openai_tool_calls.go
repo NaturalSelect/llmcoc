@@ -4,8 +4,6 @@
 package llm
 
 import (
-	"log"
-
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -78,7 +76,7 @@ func (a *toolCallAggregator) finish() []ToolCall {
 	for _, idx := range a.order {
 		entry := a.byIdx[idx]
 		if entry.Name == "" {
-			log.Printf("[llm] tool call aggregator: dropping incomplete entry with empty name (id=%q args_len=%d)", entry.ID, len(entry.Arguments))
+			log.Warn("tool call aggregator: dropping incomplete entry with empty name", "id", entry.ID, "args_len", len(entry.Arguments))
 			continue
 		}
 		result = append(result, *entry)

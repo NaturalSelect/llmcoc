@@ -16,7 +16,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -229,7 +228,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, conv *script
 			text, conclusion := executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)
 			if conclusion != nil && !conclusion.Disabled && strings.TrimSpace(conclusion.SelectedAnchor) != "" {
 				confirmedAnchor = strings.TrimSpace(conclusion.SelectedAnchor)
-				log.Printf("[scripter:story_loop] session=%s confirmed anchor=%q", sessionID, confirmedAnchor)
+				alog.Debug("story loop anchor confirmed", "session", sessionID, "anchor", confirmedAnchor)
 			}
 			return toolOutcome{result: text}
 		case toolNameAskLawyer:
@@ -262,7 +261,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, conv *script
 				strings.Join(issues, "；"))
 		}
 		submitted = &story
-		log.Printf("[scripter:story_loop] session=%s submitted doc_len=%d anchor=%q", sessionID, len([]rune(story.Document)), truncateRunes(story.MythosAnchor, 80))
+		alog.Debug("story loop submitted", "session", sessionID, "doc_len", len([]rune(story.Document)), "anchor", truncateRunes(story.MythosAnchor, 80))
 		return true, ""
 	}
 
@@ -293,7 +292,7 @@ func storyAskLawyer(ctx context.Context, room *scripterRoom, question string) st
 	if question == "" {
 		return `<ask_lawyer_result error="question字段为空"/>`
 	}
-	log.Printf("[scripter:story_loop] session=%s ask_lawyer question=%q", sessionID, truncateRunes(question, 300))
+	alog.Debug("story ask_lawyer", "session", sessionID, "question", truncateRunes(question, 300))
 	if room.lawyer.provider == nil {
 		return fmt.Sprintf(`<ask_lawyer_result question=%q status="lawyer_unavailable">规则书专家不可用；不得声称已核验具体规则书事实。</ask_lawyer_result>`, question)
 	}
@@ -337,10 +336,10 @@ func executeGetWritingExample(ctx context.Context, room *scripterRoom) string {
 	sessionID := scripterSessionID(ctx, room)
 	content, err := loadStoryWritingExample()
 	if err != nil {
-		log.Printf("[scripter:get_writing_example] session=%s load error=%v", sessionID, err)
+		alog.Warn("get writing example load failed", "session", sessionID, "err", err)
 		return fmt.Sprintf("参考成稿读取失败（%v），本次不提供参考，请直接按<task>中的创作要求继续写作。", err)
 	}
-	log.Printf("[scripter:get_writing_example] session=%s served len=%d", sessionID, len([]rune(content)))
+	alog.Debug("get writing example served", "session", sessionID, "len", len([]rune(content)))
 	return "以下是一份职业模组成稿，仅供学习组织篇章、控制信息密度、把检定与线索写进叙事句的手法；" +
 		"其中具体的人名、地名、机构名、情节与神话设定与你要写的剧本无关，禁止照搬；" +
 		"其中直接写出的骰子数值（如1D6点伤害）和数值化属性/技能表是纸质出版物的排版惯例，不要模仿到你的正文叙事段落里，" +
@@ -393,8 +392,7 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 		return StoryOutput{}, nil, err
 	}
 
-	log.Printf("[scripter:story] session=%s done anchor=%q doc_len=%d",
-		sessionID, truncateRunes(result.MythosAnchor, 80), len([]rune(result.Document)))
+	alog.Debug("story stage done", "session", sessionID, "anchor", truncateRunes(result.MythosAnchor, 80), "doc_len", len([]rune(result.Document)))
 	logScripterArtifact("Story Output", sessionID, result)
 
 	return result, conv, nil
@@ -443,7 +441,7 @@ func repairStoryDocument(ctx context.Context, room *scripterRoom, conv *scripter
 		if conv == nil {
 			conv = newScripterConversation()
 		}
-		log.Printf("[scripter:story_repair] session=%s conv为空或超出复用上限，重建消息链 rune_len=%d", sessionID, conv.runeLen())
+		alog.Debug("story repair conversation rebuilt", "session", sessionID, "rune_len", conv.runeLen())
 		conv.reset(
 			llm.ChatMessage{Role: "system", Content: room.architect.systemPrompt(storySystemPrompt())},
 			llm.ChatMessage{Role: "user", Content: userMsg},
@@ -462,7 +460,7 @@ func repairStoryDocument(ctx context.Context, room *scripterRoom, conv *scripter
 	if strings.TrimSpace(result.MythosAnchor) == "" {
 		result.MythosAnchor = previous.MythosAnchor
 	}
-	log.Printf("[scripter:story_repair] session=%s done doc_len=%d", sessionID, len([]rune(result.Document)))
+	alog.Debug("story repair done", "session", sessionID, "doc_len", len([]rune(result.Document)))
 	return result, nil
 }
 
@@ -503,7 +501,7 @@ func runStoryQAReview(ctx context.Context, room *scripterRoom, storyDoc string) 
 	result, err := runReportIssuesTool(ctx, room.qa, "qa_humanize", msgs,
 		"提交本次审查发现的问题清单；没有问题时提交空数组")
 	if err != nil {
-		log.Printf("[scripter:qa_humanize] session=%s review failed: %v (skipping)", sessionID, err)
+		alog.Warn("qa humanize review failed, skipping", "session", sessionID, "err", err)
 		return nil
 	}
 	issues := make([]string, 0, len(result))
@@ -597,7 +595,7 @@ func runStoryLogicReview(ctx context.Context, room *scripterRoom, storyDoc strin
 	}
 	const maxRounds = 16
 	if err := runScripterToolLoop(ctx, room, room.qa, "story_logic_review", msgs, tools, maxRounds, dispatch); err != nil {
-		log.Printf("[scripter:story_logic_review] session=%s review failed: %v (skipping)", sessionID, err)
+		alog.Warn("story logic review failed, skipping", "session", sessionID, "err", err)
 		return nil
 	}
 

@@ -4,7 +4,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
 	"regexp"
 	"sort"
 	"strconv"
@@ -270,7 +269,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 		// 已经取得过至少一轮进展(如已读到工具结果)，与旧协议一致地优雅降级：
 		// 不整体报错，改用目前已经积累的叙事/白字方向继续走完本回合。
-		log.Printf("[agent] KP round %d error: %v", round, err)
+		alog.Error("KP round failed", "round", round, "err", err)
 	} else {
 		if !timeAdvancedInTurn {
 			for i := range gctx.Session.Players {
@@ -820,7 +819,7 @@ func advanceTurnRound(gctx *GameContext) {
 	models.DB.Model(&models.GameSession{}).Where("id = ?", gctx.Session.ID).Update("turn_round", nextRound)
 	models.DB.Where("session_id = ? AND round <= ?", gctx.Session.ID, gctx.Session.TurnRound).Delete(&models.SessionTurnAction{})
 	gctx.Session.TurnRound = nextRound
-	log.Printf("[agent] session %d advanced to round %d", gctx.Session.ID, nextRound)
+	alog.Debug("turn round advanced", "session", gctx.Session.ID, "round", nextRound)
 }
 
 // clearTurnActions removes SessionTurnAction records for the current round
@@ -828,7 +827,7 @@ func advanceTurnRound(gctx *GameContext) {
 // so that players can resubmit in-game actions afterwards.
 func clearTurnActions(gctx GameContext) {
 	models.DB.Where("session_id = ? AND round = ?", gctx.Session.ID, gctx.Session.TurnRound).Delete(&models.SessionTurnAction{})
-	log.Printf("[agent] session %d cleared turn actions (round %d, no time advance)", gctx.Session.ID, gctx.Session.TurnRound)
+	alog.Debug("turn actions cleared", "session", gctx.Session.ID, "round", gctx.Session.TurnRound)
 }
 
 // formatGameTime converts an absolute round number to a human-readable game time string.

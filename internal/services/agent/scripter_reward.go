@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -162,7 +161,7 @@ func rewardAgentAskLawyer(ctx context.Context, room *scripterRoom, question stri
 	if question == "" {
 		return `<ask_lawyer_result error="question字段为空"/>`
 	}
-	log.Printf("[scripter:reward_agent] session=%s ask_lawyer question=%q", sessionID, truncateRunes(question, 300))
+	alog.Debug("reward agent ask_lawyer", "session", sessionID, "question", truncateRunes(question, 300))
 	if room.lawyer.provider == nil {
 		return fmt.Sprintf(`<ask_lawyer_result question=%q status="lawyer_unavailable">规则书专家不可用；不得声称已核验具体规则书数据。</ask_lawyer_result>`, question)
 	}

@@ -2,17 +2,19 @@ package handlers
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/llmcoc/server/internal/logging"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 	"gorm.io/gorm"
 )
+
+var adminLog = logging.For("admin")
 
 const (
 	adminScenarioDefaultPage     = 1
@@ -202,7 +204,7 @@ func AdminRechargeCoins(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	log.Printf("[admin] recharge admin_id=%d target_user=%d amount=%d", adminID, req.UserID, req.Amount)
+	adminLog.Info("recharge", "admin_id", adminID, "target_user", req.UserID, "amount", req.Amount)
 
 	var user models.User
 	if err := models.DB.First(&user, req.UserID).Error; err != nil {
@@ -231,7 +233,7 @@ func AdminRechargeCoins(c *gin.Context) {
 	tx.Commit()
 
 	models.DB.First(&user, req.UserID)
-	log.Printf("[admin] recharge ok admin_id=%d target_user=%d amount=%d new_coins=%d", adminID, req.UserID, req.Amount, user.Coins)
+	adminLog.Info("recharge ok", "admin_id", adminID, "target_user", req.UserID, "amount", req.Amount, "new_coins", user.Coins)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "充值成功",
 		"user":    user,
@@ -248,7 +250,7 @@ func AdminSetRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	log.Printf("[admin] set_role admin_id=%d target_user=%d new_role=%s", adminID, id, req.Role)
+	adminLog.Info("set role", "admin_id", adminID, "target_user", id, "new_role", req.Role)
 
 	var user models.User
 	if err := models.DB.First(&user, id).Error; err != nil {
@@ -256,7 +258,7 @@ func AdminSetRole(c *gin.Context) {
 		return
 	}
 	models.DB.Model(&user).Update("role", req.Role)
-	log.Printf("[admin] set_role ok user_id=%d role=%s", id, req.Role)
+	adminLog.Info("set role ok", "user_id", id, "role", req.Role)
 	c.JSON(http.StatusOK, gin.H{"message": "角色已更新", "user": user})
 }
 
@@ -291,12 +293,12 @@ func AdminCreateShopItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	log.Printf("[admin] create_shop_item name=%q price=%d type=%s", item.Name, item.Price, item.ItemType)
+	adminLog.Info("create shop item", "name", item.Name, "price", item.Price, "type", item.ItemType)
 	if err := models.DB.Create(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建商品失败"})
 		return
 	}
-	log.Printf("[admin] create_shop_item ok item_id=%d", item.ID)
+	adminLog.Info("create shop item ok", "item_id", item.ID)
 	c.JSON(http.StatusCreated, item)
 }
 
@@ -311,7 +313,7 @@ func AdminDeleteShopItem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除商品失败"})
 		return
 	}
-	log.Printf("[admin] delete_shop_item ok item_id=%d", item.ID)
+	adminLog.Info("delete shop item ok", "item_id", item.ID)
 	c.JSON(http.StatusOK, gin.H{"message": "商品已删除"})
 }
 
@@ -327,7 +329,7 @@ func AdminGetCacheStats(c *gin.Context) {
 func AdminClearCache(c *gin.Context) {
 	adminID := c.GetUint("user_id")
 	agent.ClearLawyerCacheAll()
-	log.Printf("[admin] clear_lawyer_cache admin_id=%d", adminID)
+	adminLog.Info("clear lawyer cache", "admin_id", adminID)
 	c.JSON(http.StatusOK, gin.H{"message": "缓存已清空"})
 }
 
@@ -378,7 +380,7 @@ func AdminDeleteCacheEntry(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "缓存条目不存在"})
 		return
 	}
-	log.Printf("[admin] delete_cache_entry admin_id=%d key=%q", adminID, key)
+	adminLog.Info("delete cache entry", "admin_id", adminID, "key", key)
 	c.JSON(http.StatusOK, gin.H{"message": "缓存条目已删除", "key": key})
 }
 
@@ -404,7 +406,7 @@ func AdminBanUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "封号失败"})
 		return
 	}
-	log.Printf("[admin] ban_user admin_id=%d target_user=%d reason=%q", adminID, id, req.Reason)
+	adminLog.Info("ban user", "admin_id", adminID, "target_user", id, "reason", req.Reason)
 	c.JSON(http.StatusOK, gin.H{"message": "已封号", "user_id": id})
 }
 
@@ -422,6 +424,6 @@ func AdminUnbanUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "解封失败"})
 		return
 	}
-	log.Printf("[admin] unban_user admin_id=%d target_user=%d", adminID, id)
+	adminLog.Info("unban user", "admin_id", adminID, "target_user", id)
 	c.JSON(http.StatusOK, gin.H{"message": "已解封", "user_id": id})
 }

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,15 +21,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/config"
 	"github.com/llmcoc/server/internal/handlers"
+	"github.com/llmcoc/server/internal/logging"
 	"github.com/llmcoc/server/internal/middleware"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/imagestore"
+	"github.com/llmcoc/server/internal/services/llm"
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 //go:embed web
 var webFS embed.FS
+
+var log = logging.For("main")
 
 func main() {
 	// Load config
@@ -39,12 +42,14 @@ func main() {
 		cfgPath = "config.yaml"
 	}
 	if err := config.Load(cfgPath); err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Error("failed to load config", "err", err)
+		os.Exit(1)
 	}
 
 	// Init DB
 	if err := models.InitDB(); err != nil {
-		log.Fatalf("Failed to init database: %v", err)
+		log.Error("failed to init database", "err", err)
+		os.Exit(1)
 	}
 
 	// Seed scenarios from scenarios/ directory
@@ -70,41 +75,42 @@ func main() {
 	lawyerCacheEnabled := false
 	lawyerCacheHashes := agent.LawyerCacheHashes{}
 	if hash, err := rulebook.FileHash(rbPath); err != nil {
-		log.Printf("Warning: failed to hash rulebook (%s): %v — Lawyer cache persistence disabled", rbPath, err)
+		log.Warn("failed to hash rulebook, lawyer cache persistence disabled", "path", rbPath, "err", err)
 	} else {
 		rulebook.GlobalHash = hash
 		lawyerCacheHashes.RulebookHash = hash
 	}
 	if hash, err := rulebook.FileHash(spellPath); err != nil {
-		log.Printf("Warning: failed to hash spellbook (%s): %v — Lawyer cache persistence disabled", spellPath, err)
+		log.Warn("failed to hash spellbook, lawyer cache persistence disabled", "path", spellPath, "err", err)
 	} else {
 		lawyerCacheHashes.SpellbookHash = hash
 	}
 	if hash, err := rulebook.FileHash(monsterPath); err != nil {
-		log.Printf("Warning: failed to hash monsterbook (%s): %v — Lawyer cache persistence disabled", monsterPath, err)
+		log.Warn("failed to hash monsterbook, lawyer cache persistence disabled", "path", monsterPath, "err", err)
 	} else {
 		lawyerCacheHashes.MonsterbookHash = hash
 	}
 	if err := rulebook.Load(rbPath); err != nil {
-		log.Printf("Warning: failed to load rulebook (%s): %v — Lawyer agent will have no rule data", rbPath, err)
+		log.Warn("failed to load rulebook, lawyer agent will have no rule data", "path", rbPath, "err", err)
 	} else {
-		log.Printf("Rulebook loaded from %s", rbPath)
+		log.Info("rulebook loaded", "path", rbPath)
 	}
 	if err := rulebook.LoadSpellBook(spellPath); err != nil {
-		log.Printf("Warning: failed to load spellbook (%s): %v — Lawyer spell lookup unavailable", spellPath, err)
+		log.Warn("failed to load spellbook, lawyer spell lookup unavailable", "path", spellPath, "err", err)
 	} else {
-		log.Printf("Spellbook loaded from %s", spellPath)
+		log.Info("spellbook loaded", "path", spellPath)
 	}
 	if err := rulebook.LoadMonsterBook(monsterPath); err != nil {
-		log.Printf("Warning: failed to load monsterbook (%s): %v — Lawyer monster lookup unavailable", monsterPath, err)
+		log.Warn("failed to load monsterbook, lawyer monster lookup unavailable", "path", monsterPath, "err", err)
 	} else {
-		log.Printf("Monsterbook loaded from %s", monsterPath)
+		log.Info("monsterbook loaded", "path", monsterPath)
 	}
 	if lawyerCacheHashes.RulebookHash != "" && lawyerCacheHashes.SpellbookHash != "" && lawyerCacheHashes.MonsterbookHash != "" {
 		lawyerCacheEnabled = true
 		agent.LoadLawyerCache(lawyerCacheHashes)
 		agent.LoadLawyerCacheStats()
 	}
+	llm.LoadStats()
 	var stopStatsPersistence func()
 	var saveLawyerCacheOnce sync.Once
 	saveLawyerCache := func() {
@@ -112,17 +118,21 @@ func main() {
 			return
 		}
 		saveLawyerCacheOnce.Do(func() {
-			log.Printf("Saving Lawyer cache to disk...")
+			log.Info("saving lawyer cache to disk")
 			agent.SaveLawyerCache(lawyerCacheHashes)
 		})
 	}
 	if lawyerCacheEnabled {
 		stopStatsPersistence = agent.StartLawyerCacheStatsPersistence(30 * time.Second)
 	}
+	// NOTE: LLM 延迟统计不依赖规则书哈希，与 lawyerCacheEnabled 无关，始终启动；
+	// 用 sync.OnceFunc 包一层使其可安全重复调用（下方 defer 与 select 分支都会调用一次）。
+	stopLLMStatsPersistence := sync.OnceFunc(llm.StartStatsPersistence(30 * time.Second))
 	defer func() {
 		if stopStatsPersistence != nil {
 			stopStatsPersistence()
 		}
+		stopLLMStatsPersistence()
 		saveLawyerCache()
 	}()
 	cleanupCtx, stopImageCleanup := context.WithCancel(context.Background())
@@ -295,6 +305,9 @@ func main() {
 		admin.GET("/cache/keys", handlers.AdminListCacheKeys)
 		admin.GET("/cache/entry", handlers.AdminGetCacheEntry)
 		admin.DELETE("/cache/entry", handlers.AdminDeleteCacheEntry)
+		// LLM latency stats
+		admin.GET("/llm/stats", handlers.AdminGetLLMStats)
+		admin.DELETE("/llm/stats", handlers.AdminResetLLMStats)
 		// Ban management
 		admin.PUT("/users/:id/ban", handlers.AdminBanUser)
 		admin.PUT("/users/:id/unban", handlers.AdminUnbanUser)
@@ -303,7 +316,8 @@ func main() {
 	// ─── Frontend (embedded) ─────────────────────────────────────────────────
 	sub, err := fs.Sub(webFS, "web")
 	if err != nil {
-		log.Fatalf("Failed to sub web FS: %v", err)
+		log.Error("failed to sub web FS", "err", err)
+		os.Exit(1)
 	}
 	r.NoRoute(func(c *gin.Context) {
 		// Serve index.html for SPA routes, static files otherwise
@@ -331,7 +345,7 @@ func main() {
 	})
 
 	addr := fmt.Sprintf("%s:%d", config.Global.Server.Host, config.Global.Server.Port)
-	log.Printf("🎲 LLM-COC server starting on http://%s", addr)
+	log.Info("llm-coc server starting", "addr", addr)
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      r,
@@ -351,26 +365,30 @@ func main() {
 
 	select {
 	case <-ctx.Done():
-		log.Printf("Shutdown signal received")
+		log.Info("shutdown signal received")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Server shutdown failed: %v", err)
+			log.Error("server shutdown failed", "err", err)
 		}
 		if stopStatsPersistence != nil {
 			stopStatsPersistence()
 		}
+		stopLLMStatsPersistence()
 		saveLawyerCache()
 		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("Server failed: %v", err)
+			log.Error("server failed", "err", err)
+			os.Exit(1)
 		}
 	case err := <-errCh:
 		if stopStatsPersistence != nil {
 			stopStatsPersistence()
 		}
+		stopLLMStatsPersistence()
 		saveLawyerCache()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("Server failed: %v", err)
+			log.Error("server failed", "err", err)
+			os.Exit(1)
 		}
 	}
 }

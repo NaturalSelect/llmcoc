@@ -38,6 +38,15 @@ window.COC.admin = {
                         await this.loadAdminUsers(1);
                     },
                     async loadCacheStats() { this.cacheStats = await this.api('GET', '/api/admin/cache/stats'); },
+                    async loadLlmStats() { this.llmStats = await this.api('GET', '/api/admin/llm/stats'); },
+                    async resetLlmStats() {
+                        if (!await this.confirmDialog('确认清空 LLM 调用延迟统计？', { danger: true, confirmText: '清空' })) return;
+                        try {
+                            await this.api('DELETE', '/api/admin/llm/stats');
+                            this.showToast('LLM 延迟统计已清空');
+                            await this.loadLlmStats();
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
                     async viewCacheEntry(key) {
                         this.cacheEntryLoading = true;
                         this.selectedCacheEntry = { key, value: '' };

@@ -14,7 +14,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/services/llm"
@@ -161,7 +160,7 @@ func runTitleAgent(ctx context.Context, room *scripterRoom, draft *ScenarioDraft
 		logStagePrompt(stage, sessionID, msgs)
 		resp, err := provider.provider.JsonChat(ctx, cacheKey, msgs)
 		if err != nil {
-			log.Printf("[scripter:title] session=%s attempt=%d chat failed: %v", sessionID, attempt, err)
+			alog.Error("title agent chat failed", "session", sessionID, "attempt", attempt, "err", err)
 			break
 		}
 		recordScripterLLMExchange(ctx, nil, stage, msgs, resp)
@@ -181,11 +180,11 @@ func runTitleAgent(ctx context.Context, room *scripterRoom, draft *ScenarioDraft
 			lastCandidate = candidate
 		}
 		if reason == "" {
-			log.Printf("[scripter:title] session=%s attempt=%d accepted title=%q", sessionID, attempt, candidate)
+			alog.Debug("title agent accepted", "session", sessionID, "attempt", attempt, "title", candidate)
 			return candidate, nil
 		}
 
-		log.Printf("[scripter:title] session=%s attempt=%d rejected title=%q reason=%s", sessionID, attempt, candidate, reason)
+		alog.Debug("title agent rejected", "session", sessionID, "attempt", attempt, "title", candidate, "reason", reason)
 		msgs = append(msgs,
 			llm.ChatMessage{Role: "assistant", Content: resp},
 			llm.ChatMessage{Role: "user", Content: fmt.Sprintf(`SYSTEM REJECT: 上一个标题不合格——%s。请重新给出一个标题，只输出 {"title": "..."}。`, reason)},
@@ -195,6 +194,6 @@ func runTitleAgent(ctx context.Context, room *scripterRoom, draft *ScenarioDraft
 	if lastCandidate == "" {
 		return "", fmt.Errorf("title agent: 连续%d次未取得可用标题", maxTitleRetries)
 	}
-	log.Printf("[scripter:title] session=%s 重试用尽，采用最后一个候选 title=%q", sessionID, lastCandidate)
+	alog.Warn("title agent retries exhausted, using last candidate", "session", sessionID, "title", lastCandidate)
 	return lastCandidate, nil
 }

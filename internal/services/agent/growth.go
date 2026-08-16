@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -46,7 +45,7 @@ func RunGrowth(ctx context.Context, session *models.GameSession, messages []mode
 
 	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
 	if err != nil {
-		log.Printf("[growth] evaluator agent unavailable, skipping growth: %v", err)
+		alog.Warn("growth evaluator agent unavailable, skipping growth", "err", err)
 		return GrowthResult{}, nil
 	}
 
@@ -82,7 +81,7 @@ func RunGrowth(ctx context.Context, session *models.GameSession, messages []mode
 
 	resp, err := handle.provider.JsonChat(ctx, fmt.Sprintf("%v:evaluator", session.ID), msgs)
 	if err != nil {
-		log.Printf("[growth] LLM error: %v; skipping growth", err)
+		alog.Error("growth LLM call failed, skipping growth", "err", err)
 		return GrowthResult{}, nil
 	}
 
@@ -96,10 +95,10 @@ func RunGrowth(ctx context.Context, session *models.GameSession, messages []mode
 					break
 				}
 			}
-			log.Printf("[growth] JSON repair attempt %d: %v", i+1, jsonErr)
+			alog.Warn("growth JSON parse retry", "attempt", i+1, "err", jsonErr)
 		}
 		if jsonErr != nil {
-			log.Printf("[growth] JSON parse failed after repairs: %v; skipping growth", jsonErr)
+			alog.Error("growth JSON parse failed, skipping growth", "err", jsonErr)
 			return GrowthResult{}, nil
 		}
 	}
@@ -117,7 +116,7 @@ func RunGrowth(ctx context.Context, session *models.GameSession, messages []mode
 		charName := charEntry.CharacterName
 		currentSkills := skillOf[charName]
 		if currentSkills == nil {
-			log.Printf("[growth] character %q not found in session players; skipping", charName)
+			alog.Warn("growth character not found in session players, skipping", "character", charName)
 			continue
 		}
 
@@ -141,7 +140,7 @@ func RunGrowth(ctx context.Context, session *models.GameSession, messages []mode
 			}
 			if gain > 0 {
 				changes = append(changes, SkillChange{Skill: skill, Delta: gain})
-				log.Printf("[growth] %s / %s: current=%d gain=%d new=%d", charName, skill, current, gain, newVal)
+				alog.Debug("growth skill gain", "character", charName, "skill", skill, "current", current, "gain", gain, "new", newVal)
 			}
 		}
 

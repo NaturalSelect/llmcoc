@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -76,7 +75,7 @@ func RunEvaluator(ctx context.Context, session *models.GameSession, messages []m
 
 	resp, err := handle.provider.JsonChat(ctx, fmt.Sprintf("%v:evaluator", session.ID), msgs)
 	if err != nil {
-		log.Printf("[agent] evaluator error: %v; using fallback rewards", err)
+		alog.Error("evaluator failed, using fallback rewards", "err", err)
 		return fallbackEvaluation(session), nil
 	}
 
@@ -90,10 +89,10 @@ func RunEvaluator(ctx context.Context, session *models.GameSession, messages []m
 					break
 				}
 			}
-			log.Printf("[agent] evaluator JSON parse error: %v; attempt %d to repair with parser", err, i+1)
+			alog.Warn("evaluator JSON parse retry", "attempt", i+1, "err", err)
 		}
 		if err != nil {
-			log.Printf("[agent] evaluator JSON parse error: %v; using fallback rewards", err)
+			alog.Error("evaluator JSON parse failed, using fallback rewards", "err", err)
 			return fallbackEvaluation(session), nil
 		}
 	}
@@ -139,7 +138,7 @@ func loadSingleAgent(role models.AgentRole) (agentHandle, error) {
 	}
 	// NOTE: 诊断日志——用于确认后台保存的 MaxTokens 是否真的被本次加载读到，
 	// 排查"后台改了值但生成时仍用旧值"这类问题。
-	log.Printf("[agent] loadSingleAgent role=%s max_tokens=%d model=%s", role, cfg.MaxTokens, cfg.ModelName)
+	alog.Debug("load single agent", "role", role, "max_tokens", cfg.MaxTokens, "model", cfg.ModelName)
 	h, err := newAgentHandleFromConfig(&cfg, nil)
 	if err != nil {
 		return agentHandle{}, err
