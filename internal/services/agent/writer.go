@@ -130,6 +130,7 @@ func loadWriterState(gctx GameContext) (agentHandle, *WriterState, error) {
 var writerRefusalPrefixes = []string{
 	"I cannot fulfill this request.",
 	"我无法完成您的请求。",
+	"很抱歉，我无法根据指令生成",
 }
 
 // writerRefusalPrefixMaxLen 是所有拒绝前缀中最长的字节长度,writerRefusalGate
