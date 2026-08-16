@@ -126,8 +126,33 @@ func loadWriterState(gctx GameContext) (agentHandle, *WriterState, error) {
 	return writerHandle, state, nil
 }
 
-// writerRefusalPrefix 命中该前缀视为模型拒绝生成正文,与空内容一样需要丢弃重试。
-const writerRefusalPrefix = "I cannot fulfill this request."
+// writerRefusalPrefixes 命中其中任一前缀视为模型拒绝生成正文,与空内容一样需要丢弃重试。
+var writerRefusalPrefixes = []string{
+	"I cannot fulfill this request.",
+	"我无法完成您的请求。",
+}
+
+// writerRefusalPrefixMaxLen 是所有拒绝前缀中最长的字节长度,writerRefusalGate
+// 需要缓冲到这个长度才能对全部前缀做出判定。
+var writerRefusalPrefixMaxLen = func() int {
+	max := 0
+	for _, p := range writerRefusalPrefixes {
+		if len(p) > max {
+			max = len(p)
+		}
+	}
+	return max
+}()
+
+// hasWriterRefusalPrefix 判断 s 是否以任一拒绝前缀开头。
+func hasWriterRefusalPrefix(s string) bool {
+	for _, p := range writerRefusalPrefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
+}
 
 // writerMaxGenerateAttempts 是 Writer 单次续写在遇到拒绝/空内容时的最大尝试次数(含首次)。
 const writerMaxGenerateAttempts = 20
@@ -136,7 +161,7 @@ const writerMaxGenerateAttempts = 20
 // 或正文以拒绝前缀开头。
 func isWriterResponseRejected(resp string) bool {
 	trimmed := strings.TrimSpace(stripThinkingBlock(resp))
-	return trimmed == "" || strings.HasPrefix(trimmed, writerRefusalPrefix)
+	return trimmed == "" || hasWriterRefusalPrefix(trimmed)
 }
 
 // appendWriter 根据导演指令调用Writer,并把生成结果追加到本次白字缓冲。
@@ -240,9 +265,9 @@ func streamWriterOnce(ctx context.Context, h agentHandle, cacheKey string, msgs 
 	return strings.TrimSpace(resp.String()), streamErr
 }
 
-// NOTE: writerRefusalGate 在确认正文不是拒绝前缀(writerRefusalPrefix)之前缓冲内容、
-// 不转发;一旦缓冲长度达到前缀长度即可判定:命中则转入丢弃状态(整段视为拒绝,后续内容
-// 也不转发),未命中则一次性放行缓冲内容并转入直通状态。
+// NOTE: writerRefusalGate 在确认正文不是拒绝前缀(writerRefusalPrefixes)之前缓冲内容、
+// 不转发;一旦缓冲长度达到最长前缀长度即可判定:命中任一前缀则转入丢弃状态(整段视为拒绝,
+// 后续内容也不转发),未命中则一次性放行缓冲内容并转入直通状态。
 type writerRefusalGate struct {
 	buf   strings.Builder
 	state int // 0=peeking, 1=forwarding(直通), 2=suppressing(丢弃)
@@ -262,12 +287,12 @@ func (g *writerRefusalGate) feed(chunk string) string {
 		return ""
 	}
 	g.buf.WriteString(chunk)
-	if g.buf.Len() < len(writerRefusalPrefix) {
+	if g.buf.Len() < writerRefusalPrefixMaxLen {
 		return ""
 	}
 	content := g.buf.String()
 	g.buf.Reset()
-	if strings.HasPrefix(content, writerRefusalPrefix) {
+	if hasWriterRefusalPrefix(content) {
 		g.state = wrgSuppress
 		return ""
 	}

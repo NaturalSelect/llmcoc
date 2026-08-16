@@ -102,8 +102,12 @@ func TestIsWriterResponseRejected(t *testing.T) {
 		{"精确拒绝前缀", "I cannot fulfill this request.", true},
 		{"拒绝前缀带后续说明", "I cannot fulfill this request. It violates policy.", true},
 		{"前缀不完整不算拒绝", "I cannot fulfill this request", false},
+		{"中文拒绝前缀", "我无法完成您的请求。", true},
+		{"中文拒绝前缀带后续说明", "我无法完成您的请求。这违反了相关政策。", true},
+		{"中文拒绝前缀不完整不算拒绝", "我无法完成您的请求", false},
 		{"正常中文正文", "他推开了吱呀作响的木门。", false},
 		{"thinking块之后是拒绝前缀", "Thinking...\n> reasoning here\n\nI cannot fulfill this request.", true},
+		{"thinking块之后是中文拒绝前缀", "Thinking...\n> reasoning here\n\n我无法完成您的请求。", true},
 		{"thinking块之后是正常正文", "Thinking...\n> reasoning here\n\n他走进了房间。", false},
 	}
 	for _, tc := range cases {
@@ -139,9 +143,20 @@ func TestWriterRefusalGate_ShortNonMatchingFlushedAtEOF(t *testing.T) {
 
 func TestWriterRefusalGate_MatchingPrefixFullySuppressed(t *testing.T) {
 	var g writerRefusalGate
-	out := feedAllToGate(&g, writerRefusalPrefix+" because of policy reasons that keep going on.")
+	out := feedAllToGate(&g, writerRefusalPrefixes[0]+" because of policy reasons that keep going on.")
 	if out != "" {
 		t.Errorf("命中拒绝前缀后不应转发任何内容,got %q", out)
+	}
+	if got := g.eof(); got != "" {
+		t.Errorf("eof() after suppress = %q, want empty", got)
+	}
+}
+
+func TestWriterRefusalGate_MatchingChinesePrefixFullySuppressed(t *testing.T) {
+	var g writerRefusalGate
+	out := feedAllToGate(&g, writerRefusalPrefixes[1]+"这违反了相关政策。")
+	if out != "" {
+		t.Errorf("命中中文拒绝前缀后不应转发任何内容,got %q", out)
 	}
 	if got := g.eof(); got != "" {
 		t.Errorf("eof() after suppress = %q, want empty", got)
@@ -212,7 +227,30 @@ func TestAppendWriter_RetriesOnRefusalThenSucceeds(t *testing.T) {
 		t.Errorf("Buffer = %q, 不应包含拒绝文本", state.Buffer)
 	}
 	for _, m := range state.History {
-		if strings.Contains(m.Content, writerRefusalPrefix) {
+		if strings.Contains(m.Content, writerRefusalPrefixes[0]) {
+			t.Errorf("History不应包含拒绝文本: %+v", state.History)
+		}
+	}
+}
+
+func TestAppendWriter_RetriesOnChineseRefusalThenSucceeds(t *testing.T) {
+	initTranslatorTestDB(t)
+	prov := &writerFakeProvider{responses: []string{
+		"我无法完成您的请求。这违反了相关政策",
+		"她小心翼翼地翻开了那本古书。",
+	}}
+	h := newWriterTestHandle(prov)
+	state := &WriterState{}
+	gctx := GameContext{Session: models.GameSession{ID: 1}}
+
+	if err := appendWriter(context.Background(), h, state, "继续描述", gctx); err != nil {
+		t.Fatalf("appendWriter error: %v", err)
+	}
+	if state.Buffer != "她小心翼翼地翻开了那本古书。" {
+		t.Errorf("Buffer = %q, 不应包含拒绝文本", state.Buffer)
+	}
+	for _, m := range state.History {
+		if strings.Contains(m.Content, writerRefusalPrefixes[1]) {
 			t.Errorf("History不应包含拒绝文本: %+v", state.History)
 		}
 	}
@@ -248,6 +286,37 @@ func TestAppendWriterStream_SuppressesRefusalThenSucceeds(t *testing.T) {
 		chunkSize: 1, // 逐字符喂给gate,充分覆盖累积判定路径
 		responses: []string{
 			"I cannot fulfill this request. blocked by policy",
+			"他缓缓地走向那扇门。",
+		},
+	}
+	h := newWriterTestHandle(prov)
+	state := &WriterState{}
+	gctx := GameContext{Session: models.GameSession{ID: 1}}
+
+	var forwarded strings.Builder
+	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, func(tok string) {
+		forwarded.WriteString(tok)
+	})
+	if err != nil {
+		t.Fatalf("appendWriterStream error: %v", err)
+	}
+	if forwarded.String() != "他缓缓地走向那扇门。" {
+		t.Errorf("forwarded = %q, 不应包含拒绝文本,也不应缺内容", forwarded.String())
+	}
+	if state.Buffer != "他缓缓地走向那扇门。" {
+		t.Errorf("Buffer = %q, want %q", state.Buffer, "他缓缓地走向那扇门。")
+	}
+	if got := prov.callCount(); got != 2 {
+		t.Errorf("provider call count = %d, want 2", got)
+	}
+}
+
+func TestAppendWriterStream_SuppressesChineseRefusalThenSucceeds(t *testing.T) {
+	initTranslatorTestDB(t)
+	prov := &writerFakeProvider{
+		chunkSize: 1, // 逐字符喂给gate,充分覆盖多字节前缀的累积判定路径
+		responses: []string{
+			"我无法完成您的请求。这违反了相关政策",
 			"他缓缓地走向那扇门。",
 		},
 	}
