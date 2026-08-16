@@ -106,7 +106,7 @@ func TestIsWriterResponseRejected(t *testing.T) {
 		{"中文拒绝前缀带后续说明", "我无法完成您的请求。这违反了相关政策。", true},
 		{"中文拒绝前缀不完整不算拒绝", "我无法完成您的请求", false},
 		{"另一种中文拒绝前缀", "很抱歉，我无法根据指令生成相关内容。", true},
-		{"另一种中文拒绝前缀不完整不算拒绝", "很抱歉，我无法根据指令生成", false},
+		{"另一种中文拒绝前缀不完整不算拒绝", "很抱", false},
 		{"正常中文正文", "他推开了吱呀作响的木门。", false},
 		{"thinking块之后是拒绝前缀", "Thinking...\n> reasoning here\n\nI cannot fulfill this request.", true},
 		{"thinking块之后是中文拒绝前缀", "Thinking...\n> reasoning here\n\n我无法完成您的请求。", true},
@@ -157,6 +157,17 @@ func TestWriterRefusalGate_MatchingPrefixFullySuppressed(t *testing.T) {
 func TestWriterRefusalGate_MatchingChinesePrefixFullySuppressed(t *testing.T) {
 	var g writerRefusalGate
 	out := feedAllToGate(&g, writerRefusalPrefixes[1]+"这违反了相关政策。")
+	if out != "" {
+		t.Errorf("命中中文拒绝前缀后不应转发任何内容,got %q", out)
+	}
+	if got := g.eof(); got != "" {
+		t.Errorf("eof() after suppress = %q, want empty", got)
+	}
+}
+
+func TestWriterRefusalGate_MatchingSorryChinesePrefixFullySuppressed(t *testing.T) {
+	var g writerRefusalGate
+	out := feedAllToGate(&g, writerRefusalPrefixes[2]+"相关内容。")
 	if out != "" {
 		t.Errorf("命中中文拒绝前缀后不应转发任何内容,got %q", out)
 	}

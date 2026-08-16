@@ -130,7 +130,7 @@ func loadWriterState(gctx GameContext) (agentHandle, *WriterState, error) {
 var writerRefusalPrefixes = []string{
 	"I cannot fulfill this request.",
 	"我无法完成您的请求。",
-	"很抱歉，我无法根据指令生成",
+	"很抱歉",
 }
 
 // writerRefusalPrefixMaxLen 是所有拒绝前缀中最长的字节长度,writerRefusalGate
@@ -301,13 +301,18 @@ func (g *writerRefusalGate) feed(chunk string) string {
 	return content
 }
 
-// eof 处理流结束时仍处于peek状态(总长度不足前缀长度)的残留内容,原样放行。
+// eof 处理流结束时仍处于peek状态(总长度不足最长前缀长度)的残留内容:多前缀长度不一,
+// 残留内容仍可能完整命中较短的前缀,因此放行前必须再做一次拒绝判定,命中则丢弃。
 func (g *writerRefusalGate) eof() string {
 	if g.state != wrgPeek {
 		return ""
 	}
 	content := g.buf.String()
 	g.buf.Reset()
+	if hasWriterRefusalPrefix(content) {
+		g.state = wrgSuppress
+		return ""
+	}
 	return content
 }
 
