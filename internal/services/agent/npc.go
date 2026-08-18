@@ -78,6 +78,27 @@ const npcDefaultPrompt = `<system role="npc_agent" game="coc7" lang="zh-CN">
 </system>
 `
 
+// npcNSFWPromptSuffix 只在实际路由到 NSFW NPC 时追加;共享规则仍来自 npcDefaultPrompt,
+// 避免两份提示词各自漂移。
+const npcNSFWPromptSuffix = `<explicit_scene_requirements>
+	<rule>本次互动被导演标记为色情/性描写场景,action和dialogue必须正面完整描写,禁止淡出、回避或用省略号带过。</rule>
+	<rule>使用具体直接的语言描写身体反应、动作细节和台词,符合该NPC的性格、当前处境与关系。</rule>
+	<rule>必须严格按 {"action": "...", "dialogue": "..."} 的JSON格式输出,不得新增字段或改变结构。</rule>
+</explicit_scene_requirements>
+`
+
+// pickNPCHandle 选择本次act_npc使用的handle:仅当本次调用被标记为NSFW且npc_nsfw已配置并启用
+// 时才路由过去,否则使用默认NPC(在requiredRoles中,batchLoadAgents已保证可用)。第二个返回值
+// 表示是否按NSFW模式组装提示词。
+func pickNPCHandle(handles map[models.AgentRole]agentHandle, nsfw bool) (agentHandle, bool) {
+	if nsfw {
+		if h := handles[models.AgentRoleNPCNSFW]; h.isEnabled() {
+			return h, true
+		}
+	}
+	return handles[models.AgentRoleNPC], false
+}
+
 // npcAgentStates keeps per-session, per-npc conversation memory so each NPC
 // behaves like an independent long-lived agent.
 var npcAgentStates sync.Map // key: "sessionID:npcName" -> []llm.ChatMessage
@@ -267,8 +288,9 @@ func actNPC(
 	npcName string,
 	question string,
 	tempNPCs []models.SessionNPC,
+	nsfwMode bool,
 ) (NPCAction, error) {
-	return runNPC(ctx, h, gctx, npcName, question, tempNPCs)
+	return runNPC(ctx, h, gctx, npcName, question, tempNPCs, nsfwMode)
 }
 
 var npcExample = func() string {
@@ -279,6 +301,38 @@ var npcExample = func() string {
 	}
 	return string(data)
 }()
+
+// buildNPCMessages 组装NPC agent的消息:系统提示词(含NPC人设)+历史+本次情境。
+// nsfwMode为true时追加露骨场景专用规则,由调用方保证此时房间EnableNSFW已开启。
+func buildNPCMessages(h agentHandle, gctx GameContext, npcProfile string, npcHistory []llm.ChatMessage, question string, nsfwMode bool) []llm.ChatMessage {
+	prompt := renderNSFW(npcDefaultPrompt, gctx.Session.EnableNSFW)
+	if nsfwMode {
+		prompt += npcNSFWPromptSuffix
+	}
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: withJailbreakPrompt(h.systemPrompt(prompt))},
+		{Role: "user", Content: "你需要扮演该NPC:\n" + npcProfile},
+	}
+	msgs = append(msgs, npcHistory...)
+
+	sb := strings.Builder{}
+	sb.WriteString("<context>\n")
+	sb.WriteString(question)
+	sb.WriteString("\n</context>\n")
+	sb.WriteString("<note>\n")
+	sb.WriteString(renderNSFW("在符合NPC人设和context的前提下, 表现NPC的{{NSFW_NPC_DESIRES}}等多维度真情实感\n", gctx.Session.EnableNSFW))
+	if nsfwMode {
+		sb.WriteString("请主要表现人物的色情欲望和性癖，主动发起色情互动\n")
+	}
+	sb.WriteString("注意人物的行动逻辑，不要让行为和语言前后矛盾\n")
+	sb.WriteString("</note>\n")
+
+	msgs = append(msgs, llm.ChatMessage{
+		Role:    "user",
+		Content: sb.String(),
+	})
+	return msgs
+}
 
 // runNPC makes one NPC act based on its own profile and the context brief provided by the KP.
 // The NPC agent does NOT receive scenario information — it only gets:
@@ -292,9 +346,10 @@ func runNPC(
 	npcName string,
 	question string,
 	tempNPCs []models.SessionNPC,
+	nsfwMode bool,
 ) (NPCAction, error) {
 	alog.Debug("npc acting", "npc", npcName)
-	debugf("NPC", "name=%q question=%s", npcName, question)
+	debugf("NPC", "name=%q question=%s nsfw=%v", npcName, question, nsfwMode)
 
 	// Build NPC profile from DB/scenario lookup (profile only, no scenario background).
 	npcProfile := buildNPCProfile(npcName, gctx, tempNPCs)
@@ -306,29 +361,9 @@ func runNPC(
 		question = fmt.Sprintf("调查员行动:[%s] %s。你要做什么？", gctx.UserName, gctx.UserInput)
 	}
 
-	// System prompt + NPC profile as static context.
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: withJailbreakPrompt(h.systemPrompt(renderNSFW(npcDefaultPrompt, gctx.Session.EnableNSFW)))},
-		{Role: "user", Content: "你需要扮演该NPC:\n" + npcProfile},
-	}
 	// Each NPC owns independent dialogue history in this session.
 	npcHistory := loadNPCState(gctx.Session.ID, npcName)
-	msgs = append(msgs, npcHistory...)
-
-	sb := strings.Builder{}
-	sb.WriteString("<context>\n")
-	sb.WriteString(question)
-	sb.WriteString("\n</context>\n")
-	sb.WriteString("<note>\n")
-	sb.WriteString(renderNSFW("在符合NPC人设和context的前提下, 表现NPC的{{NSFW_NPC_DESIRES}}等多维度真情实感\n", gctx.Session.EnableNSFW))
-	sb.WriteString("注意人物的行动逻辑，不要让行为和语言前后矛盾\n")
-	sb.WriteString("</note>\n")
-
-	// Current question as the final user message.
-	msgs = append(msgs, llm.ChatMessage{
-		Role:    "user",
-		Content: sb.String(),
-	})
+	msgs := buildNPCMessages(h, gctx, npcProfile, npcHistory, question, nsfwMode)
 
 	resp, err := h.provider.JsonChat(ctx, sessionIDFromContextValue(ctx)+":npc:"+npcName, msgs)
 	if err != nil {

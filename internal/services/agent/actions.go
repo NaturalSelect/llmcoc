@@ -156,7 +156,7 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	if strings.TrimSpace(call.KPDirective) != "" {
 		question = question + "\n【KP剧情指令(最高优先级，不得透露给玩家)】" + call.KPDirective
 	}
-	debugf("tool", "session=%d act_npc npc=%q question=%s", actx.Sid, call.NPCName, question)
+	debugf("tool", "session=%d act_npc npc=%q question=%s nsfw=%v", actx.Sid, call.NPCName, question, call.NSFW)
 	doneNPC := timedDebug("NPC", "session=%d npc=%s", actx.Sid, call.NPCName)
 	if call.HideSecret {
 		question = "(注意隐瞒你的秘密) " + question
@@ -170,7 +170,8 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	} else {
 		question += " (你没有法术可用, 且无法创造改造魔法物品)"
 	}
-	action, npcErr := actNPC(actx.Ctx, actx.Handles[models.AgentRoleNPC], *actx.GCtx, call.NPCName, question, *actx.TempNPCs)
+	npcHandle, nsfwMode := pickNPCHandle(actx.Handles, actx.GCtx.Session.EnableNSFW && call.NSFW)
+	action, npcErr := actNPC(actx.Ctx, npcHandle, *actx.GCtx, call.NPCName, question, *actx.TempNPCs, nsfwMode)
 	doneNPC()
 	if npcErr != nil {
 		alog.Error("act_npc failed", "npc", call.NPCName, "err", npcErr)

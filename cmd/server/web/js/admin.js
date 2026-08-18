@@ -207,6 +207,8 @@ window.COC.admin = {
                             writer_nsfw: { max_tokens: 800, temperature: 0.85, is_active: false },
                             lawyer: { max_tokens: 800, temperature: 0.3 },
                             npc: { max_tokens: 600, temperature: 0.9 },
+                            // NOTE: npc_nsfw 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用，默认关闭。
+                            npc_nsfw: { max_tokens: 600, temperature: 0.9, is_active: false },
                             painter: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
                             evaluator: { max_tokens: 1200, temperature: 0.5 },
                             growth: { max_tokens: 1000, temperature: 0.4 },
@@ -904,7 +906,7 @@ window.COC.admin = {
                     agentLabel(role) {
                         return {
                             director: '🎬 Director', writer: '✍️ Writer', writer_nsfw: '🔞 NSFW Writer', lawyer: '⚖️ Lawyer',
-                            npc: '🎭 NPC', painter: '🎨 Painter', evaluator: '📊 Evaluator', growth: '🌱 Growth',
+                            npc: '🎭 NPC', npc_nsfw: '🔞 NSFW NPC', painter: '🎨 Painter', evaluator: '📊 Evaluator', growth: '🌱 Growth',
                             architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
                             parser: '🔧 Parser',
                             // NOTE: translator — 翻译/资料转译
@@ -920,6 +922,7 @@ window.COC.admin = {
                             writer_nsfw: '成人向叙事 — 仅在房间开启NSFW且本轮被标记为色情内容时启用；未配置或关闭时自动回落默认 Writer（默认关闭）',
                             lawyer: '规则顾问 — 查阅规则书提供裁决依据',
                             npc: 'NPC扮演 — 给出场景NPC的行动与对话',
+                            npc_nsfw: '成人向NPC互动 — 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用；未配置或关闭时自动回落默认 NPC（默认关闭）',
                             painter: '画图代理 — 按需生成场景图片（默认关闭，不落库）',
                             evaluator: '成长评估 — 分析本场表现建议奖励',
                             growth: '成长应用 — 将评估结果写入角色卡',
@@ -939,6 +942,7 @@ window.COC.admin = {
                             writer_nsfw: '为成人向场景单独绑定更宽松的 provider/模型；未启用时自动使用默认 Writer（默认关闭）',
                             lawyer: '留空使用内置 Lawyer 提示词（规则查阅模式）',
                             npc: '留空使用内置 NPC 提示词',
+                            npc_nsfw: '为成人向NPC互动单独绑定更宽松的 provider/模型；未启用时自动使用默认 NPC（默认关闭）',
                             painter: '配置 OpenAI 兼容图片模型，如 dall-e-3（默认关闭）',
                             evaluator: '留空使用内置 Evaluator 提示词',
                             growth: '留空使用内置 Growth 提示词',

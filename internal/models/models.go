@@ -564,6 +564,9 @@ const (
 	AgentRoleGrowth    AgentRole = "growth"
 	AgentRoleLawyer    AgentRole = "lawyer"
 	AgentRoleNPC       AgentRole = "npc"
+	// NOTE: AgentRoleNPCNSFW 是可选的成人向NPC互动 Agent；仅当房间开启NSFW且本次act_npc调用被
+	// 标记为色情内容时才路由过去，可绑定独立的provider/模型，未配置或未启用时自动回落默认NPC。
+	AgentRoleNPCNSFW AgentRole = "npc_nsfw"
 	AgentRolePainter   AgentRole = "painter"
 	AgentRoleParser    AgentRole = "parser"
 	// NOTE: AgentRoleTranslator 负责发散联想、世界知识和资料转译；独立于Lawyer，不复用其provider/model。

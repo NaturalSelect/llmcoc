@@ -2,6 +2,9 @@
 package agent
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/llmcoc/server/internal/models"
@@ -75,5 +78,53 @@ func TestWriteActionNSFWFlagSticky(t *testing.T) {
 	}
 	if pendingWrite != "第一段\n第二段\n第三段\n" {
 		t.Errorf("PendingWrite = %q, want %q", pendingWrite, "第一段\n第二段\n第三段\n")
+	}
+}
+
+// TestActNPCActionNSFWRouting 验证actNPCAction.Execute端到端选中正确的NPC handle:
+// 房间NSFW开关和call.NSFW同时满足时才路由到npc_nsfw,否则一律回落默认NPC。
+func TestActNPCActionNSFWRouting(t *testing.T) {
+	initTranslatorTestDB(t)
+
+	cases := []struct {
+		name     string
+		roomNSFW bool
+		callNSFW bool
+		wantAct  string
+	}{
+		{"房间开启且call标记nsfw则路由到NSFW NPC", true, true, "欲拒还迎"},
+		{"房间关闭时即使call标记nsfw也回落默认NPC", false, true, "保持警惕"},
+		{"房间开启但call未标记nsfw则用默认NPC", true, false, "保持警惕"},
+	}
+
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			npcName := fmt.Sprintf("线人%d", i) // 避免npcAgentStates跨用例共享同一key
+			tempNPCs := []models.SessionNPC{{Name: npcName, Description: "一个线人", IsAlive: true}}
+
+			defaultProv := &sequentialFakeProvider{jsonResponses: []string{`{"action":"保持警惕","dialogue":"你想干什么？"}`}}
+			nsfwProv := &sequentialFakeProvider{jsonResponses: []string{`{"action":"欲拒还迎","dialogue":"你会负责的，对吧？"}`}}
+
+			handles := map[models.AgentRole]agentHandle{
+				models.AgentRoleNPC:     newNPCTestHandle(defaultProv, true),
+				models.AgentRoleNPCNSFW: newNPCNSFWTestHandle(nsfwProv, true),
+			}
+
+			gctx := &GameContext{Session: models.GameSession{EnableNSFW: tc.roomNSFW}}
+			actx := ActionContext{
+				Ctx:      context.Background(),
+				GCtx:     gctx,
+				Handles:  handles,
+				TempNPCs: &tempNPCs,
+			}
+
+			results := actNPCAction{}.Execute(ToolCall{NPCName: npcName, Question: "他有什么反应？", NSFW: tc.callNSFW}, actx)
+			if len(results) != 1 {
+				t.Fatalf("want 1 result, got %d", len(results))
+			}
+			if !strings.Contains(results[0].Result, tc.wantAct) {
+				t.Errorf("Result = %q, want contains %q", results[0].Result, tc.wantAct)
+			}
+		})
 	}
 }
