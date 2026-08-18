@@ -89,6 +89,14 @@ func newWriterTestHandle(prov llm.Provider) agentHandle {
 	}
 }
 
+func newWriterNSFWTestHandle(prov llm.Provider, active bool) agentHandle {
+	return agentHandle{
+		provider: prov,
+		config:   &models.AgentConfig{Role: models.AgentRoleWriterNSFW, IsActive: active},
+		enabled:  true,
+	}
+}
+
 // ── isWriterResponseRejected ─────────────────────────────────────────────────
 
 func TestIsWriterResponseRejected(t *testing.T) {
@@ -209,7 +217,7 @@ func TestAppendWriter_RetriesOnEmptyThenSucceeds(t *testing.T) {
 	state := &WriterState{}
 	gctx := GameContext{Session: models.GameSession{ID: 1}}
 
-	if err := appendWriter(context.Background(), h, state, "继续描述", gctx); err != nil {
+	if err := appendWriter(context.Background(), h, state, "继续描述", gctx, false); err != nil {
 		t.Fatalf("appendWriter error: %v", err)
 	}
 	if state.Buffer != "他推开了门。" {
@@ -233,7 +241,7 @@ func TestAppendWriter_RetriesOnRefusalThenSucceeds(t *testing.T) {
 	state := &WriterState{}
 	gctx := GameContext{Session: models.GameSession{ID: 1}}
 
-	if err := appendWriter(context.Background(), h, state, "继续描述", gctx); err != nil {
+	if err := appendWriter(context.Background(), h, state, "继续描述", gctx, false); err != nil {
 		t.Fatalf("appendWriter error: %v", err)
 	}
 	if state.Buffer != "她小心翼翼地翻开了那本古书。" {
@@ -256,7 +264,7 @@ func TestAppendWriter_RetriesOnChineseRefusalThenSucceeds(t *testing.T) {
 	state := &WriterState{}
 	gctx := GameContext{Session: models.GameSession{ID: 1}}
 
-	if err := appendWriter(context.Background(), h, state, "继续描述", gctx); err != nil {
+	if err := appendWriter(context.Background(), h, state, "继续描述", gctx, false); err != nil {
 		t.Fatalf("appendWriter error: %v", err)
 	}
 	if state.Buffer != "她小心翼翼地翻开了那本古书。" {
@@ -276,7 +284,7 @@ func TestAppendWriter_AllAttemptsRejected_ReturnsErrorAndSkipsHistory(t *testing
 	state := &WriterState{}
 	gctx := GameContext{Session: models.GameSession{ID: 1}}
 
-	err := appendWriter(context.Background(), h, state, "继续描述", gctx)
+	err := appendWriter(context.Background(), h, state, "继续描述", gctx, false)
 	if err == nil {
 		t.Fatal("全部尝试都被拒绝时应返回错误")
 	}
@@ -307,7 +315,7 @@ func TestAppendWriterStream_SuppressesRefusalThenSucceeds(t *testing.T) {
 	gctx := GameContext{Session: models.GameSession{ID: 1}}
 
 	var forwarded strings.Builder
-	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, func(tok string) {
+	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, false, func(tok string) {
 		forwarded.WriteString(tok)
 	})
 	if err != nil {
@@ -338,7 +346,7 @@ func TestAppendWriterStream_SuppressesChineseRefusalThenSucceeds(t *testing.T) {
 	gctx := GameContext{Session: models.GameSession{ID: 1}}
 
 	var forwarded strings.Builder
-	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, func(tok string) {
+	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, false, func(tok string) {
 		forwarded.WriteString(tok)
 	})
 	if err != nil {
@@ -366,7 +374,7 @@ func TestAppendWriterStream_EmptyThenSucceeds(t *testing.T) {
 	gctx := GameContext{Session: models.GameSession{ID: 1}}
 
 	var forwarded strings.Builder
-	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, func(tok string) {
+	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, false, func(tok string) {
 		forwarded.WriteString(tok)
 	})
 	if err != nil {
@@ -385,7 +393,7 @@ func TestAppendWriterStream_AllAttemptsRejected_ReturnsErrorAndForwardsNothing(t
 	gctx := GameContext{Session: models.GameSession{ID: 1}}
 
 	var forwarded strings.Builder
-	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, func(tok string) {
+	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, false, func(tok string) {
 		forwarded.WriteString(tok)
 	})
 	if err == nil {
@@ -396,5 +404,109 @@ func TestAppendWriterStream_AllAttemptsRejected_ReturnsErrorAndForwardsNothing(t
 	}
 	if got := prov.callCount(); got != writerMaxGenerateAttempts {
 		t.Errorf("provider call count = %d, want %d", got, writerMaxGenerateAttempts)
+	}
+}
+
+// ── pickWriterHandle ──────────────────────────────────────────────────────────
+
+func TestPickWriterHandle(t *testing.T) {
+	prov := &writerFakeProvider{}
+	writerHandle := newWriterTestHandle(prov)
+	nsfwHandle := newWriterNSFWTestHandle(prov, true)
+	disabledNSFWHandle := newWriterNSFWTestHandle(prov, false)
+	disabledWriterHandle := agentHandle{
+		provider: prov,
+		config:   &models.AgentConfig{Role: models.AgentRoleWriter, IsActive: false},
+		enabled:  true,
+	}
+
+	cases := []struct {
+		name         string
+		handles      map[models.AgentRole]agentHandle
+		nsfw         bool
+		wantRole     models.AgentRole
+		wantNSFWMode bool
+		wantErr      bool
+	}{
+		{
+			name:         "非NSFW场景使用默认writer",
+			handles:      map[models.AgentRole]agentHandle{models.AgentRoleWriter: writerHandle, models.AgentRoleWriterNSFW: nsfwHandle},
+			nsfw:         false,
+			wantRole:     models.AgentRoleWriter,
+			wantNSFWMode: false,
+		},
+		{
+			name:         "NSFW场景且writer_nsfw已启用则路由过去",
+			handles:      map[models.AgentRole]agentHandle{models.AgentRoleWriter: writerHandle, models.AgentRoleWriterNSFW: nsfwHandle},
+			nsfw:         true,
+			wantRole:     models.AgentRoleWriterNSFW,
+			wantNSFWMode: true,
+		},
+		{
+			name:         "NSFW场景但writer_nsfw未配置则回落默认writer",
+			handles:      map[models.AgentRole]agentHandle{models.AgentRoleWriter: writerHandle},
+			nsfw:         true,
+			wantRole:     models.AgentRoleWriter,
+			wantNSFWMode: false,
+		},
+		{
+			name:         "NSFW场景但writer_nsfw被禁用则回落默认writer",
+			handles:      map[models.AgentRole]agentHandle{models.AgentRoleWriter: writerHandle, models.AgentRoleWriterNSFW: disabledNSFWHandle},
+			nsfw:         true,
+			wantRole:     models.AgentRoleWriter,
+			wantNSFWMode: false,
+		},
+		{
+			name:    "默认writer未启用时返回错误",
+			handles: map[models.AgentRole]agentHandle{models.AgentRoleWriter: disabledWriterHandle},
+			nsfw:    false,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, nsfwMode, err := pickWriterHandle(tc.handles, tc.nsfw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("want error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("pickWriterHandle error: %v", err)
+			}
+			if got.roleName() != string(tc.wantRole) {
+				t.Errorf("role = %q, want %q", got.roleName(), tc.wantRole)
+			}
+			if nsfwMode != tc.wantNSFWMode {
+				t.Errorf("nsfwMode = %v, want %v", nsfwMode, tc.wantNSFWMode)
+			}
+		})
+	}
+}
+
+// ── buildWriterMessages NSFW后缀 ─────────────────────────────────────────────
+
+func TestBuildWriterMessagesNSFWSuffix(t *testing.T) {
+	initTranslatorTestDB(t)
+	prov := &writerFakeProvider{}
+	h := newWriterTestHandle(prov)
+	gctx := GameContext{Session: models.GameSession{ID: 1, EnableNSFW: true}}
+
+	msgsOff, _ := buildWriterMessages(h, &WriterState{}, "继续描述", gctx, false)
+	msgsOn, _ := buildWriterMessages(h, &WriterState{}, "继续描述", gctx, true)
+
+	sysOff := msgsOff[0].Content
+	sysOn := msgsOn[0].Content
+
+	if strings.Contains(sysOff, "explicit_scene_requirements") {
+		t.Error("非NSFW模式不应包含explicit_scene_requirements后缀")
+	}
+	if !strings.Contains(sysOn, "explicit_scene_requirements") {
+		t.Error("NSFW模式应包含explicit_scene_requirements后缀")
+	}
+	if !strings.Contains(sysOff, "官能小说风格") || !strings.Contains(sysOn, "官能小说风格") {
+		t.Error("房间EnableNSFW已开启时,两种模式都应渲染NSFW开态的基础提示词,后缀只是增量")
 	}
 }

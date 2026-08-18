@@ -95,6 +95,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 	roles := []models.AgentRole{
 		models.AgentRoleDirector,
 		models.AgentRoleWriter,
+		models.AgentRoleWriterNSFW,
 		models.AgentRoleLawyer,
 		models.AgentRoleNPC,
 		models.AgentRolePainter,
@@ -219,6 +220,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	pendingWrite := ""
 	pendingImages := []ImagePromptRequest{}
+	writerNSFW := false
 
 	diceMsg := ""
 	imageGeneratedThisTurn := false
@@ -234,6 +236,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		pendingWrite:        &pendingWrite,
 		pendingImages:       &pendingImages,
 		wroteNarrative:      &wroteNarrative,
+		writerNSFW:          &writerNSFW,
 		diceMsg:             &diceMsg,
 		needsWriterFallback: &needsWriterFallback,
 		emitProgress:        emitProgress,
@@ -310,6 +313,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	kpNarration += "\n<time_point>" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</time_point>"
 	return RunOutput{
 		WriterDirection:   writerDirection,
+		WriterNSFW:        writerNSFW,
 		KPReply:           kpNarration,
 		ImagePrompts:      pendingImages,
 		DirectorElapsedMs: directorElapsedMs,

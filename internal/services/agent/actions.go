@@ -27,6 +27,7 @@ type ActionContext struct {
 	PendingWrite       *string
 	PendingImages      *[]ImagePromptRequest
 	WroteNarrative     *bool
+	WriterNSFW         *bool
 	DiceMsg            *string
 }
 
@@ -476,13 +477,13 @@ func (queryCharacterAction) Execute(call ToolCall, actx ActionContext) []ToolRes
 type writeAction struct{}
 
 func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	extra := ""
-	// if actx.GCtx.Session.EnableNSFW && call.NSFW && len(actx.GCtx.PendingActions) == 0 {
-	// 	extra = "（注意：必须用露骨直接的语言直接描述场景,禁止省略过程,但不能出现性器官，请考虑使用其他词语代替或改用侧面描写）"
-	// }
-	*actx.PendingWrite += fmt.Sprintf("%s%s\n", extra, call.Direction)
+	*actx.PendingWrite += call.Direction + "\n"
 	if actx.WroteNarrative != nil {
 		*actx.WroteNarrative = true
+	}
+	// 本轮任一write标记nsfw即整轮走NSFW Writer:Writer每轮只调用一次,粒度只能到轮。
+	if actx.WriterNSFW != nil && actx.GCtx.Session.EnableNSFW && call.NSFW {
+		*actx.WriterNSFW = true
 	}
 	debugf("tool", "session=%d write direction=%s nsfw=%v", actx.Sid, call.Direction, call.NSFW)
 	return nil

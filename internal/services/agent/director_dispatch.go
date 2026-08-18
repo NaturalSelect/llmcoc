@@ -241,6 +241,7 @@ type directorDispatchState struct {
 	pendingWrite        *string
 	pendingImages       *[]ImagePromptRequest
 	wroteNarrative      *bool
+	writerNSFW          *bool
 	diceMsg             *string
 	needsWriterFallback *bool
 	emitProgress        func(string)
@@ -290,6 +291,7 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			PendingWrite:       st.pendingWrite,
 			PendingImages:      st.pendingImages,
 			WroteNarrative:     st.wroteNarrative,
+			WriterNSFW:         st.writerNSFW,
 			DiceMsg:            st.diceMsg,
 		}
 

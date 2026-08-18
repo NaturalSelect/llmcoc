@@ -146,6 +146,7 @@ type WriterState struct {
 type RunOutput struct {
 	WriterText        string               // 已生成的白字描述,主要用于测试或兼容旧调用
 	WriterDirection   string               // Writer后续生成描述所需的导演指令
+	WriterNSFW        bool                 // 本轮write被标记为色情内容(且房间NSFW已开),决定Writer路由到writer_nsfw
 	KPReply           string               // KP对玩家的主流程回复
 	ImagePrompts      []ImagePromptRequest // NOTE: 本轮KP主流程排队的画图请求;生成后的data URL由handler持久化到消息内容。
 	DirectorElapsedMs int64                // Director工具调用循环的总耗时(毫秒),不含Writer/画图等异步阶段

@@ -1362,7 +1362,7 @@ func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext,
 			case <-clientDone:
 			}
 		}
-		text, err := h.Runner.RunWriterStream(context.Background(), gctx, direction, func(token string) {
+		text, err := h.Runner.RunWriterStream(context.Background(), gctx, direction, output.WriterNSFW, func(token string) {
 			if token == "" {
 				return
 			}

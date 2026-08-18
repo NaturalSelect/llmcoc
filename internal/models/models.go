@@ -557,6 +557,9 @@ const (
 	AgentRoleEncounter AgentRole = "encounter_designer"
 	AgentRoleQAGuard   AgentRole = "qa_guard"
 	AgentRoleWriter    AgentRole = "writer"
+	// NOTE: AgentRoleWriterNSFW 是可选的成人向叙事 Agent；仅当房间开启NSFW且本轮被标记为
+	// 色情内容时才路由过去，可绑定独立的provider/模型，未配置或未启用时自动回落默认Writer。
+	AgentRoleWriterNSFW AgentRole = "writer_nsfw"
 	AgentRoleEvaluator AgentRole = "evaluator"
 	AgentRoleGrowth    AgentRole = "growth"
 	AgentRoleLawyer    AgentRole = "lawyer"

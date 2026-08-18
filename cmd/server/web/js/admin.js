@@ -203,6 +203,8 @@ window.COC.admin = {
                         const roleDefaults = {
                             director: { max_tokens: 1500, temperature: 0.7 },
                             writer: { max_tokens: 800, temperature: 0.85 },
+                            // NOTE: writer_nsfw 仅在房间开启NSFW且本轮被标记为色情内容时启用，默认关闭。
+                            writer_nsfw: { max_tokens: 800, temperature: 0.85, is_active: false },
                             lawyer: { max_tokens: 800, temperature: 0.3 },
                             npc: { max_tokens: 600, temperature: 0.9 },
                             painter: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
@@ -901,7 +903,7 @@ window.COC.admin = {
 
                     agentLabel(role) {
                         return {
-                            director: '🎬 Director', writer: '✍️ Writer', lawyer: '⚖️ Lawyer',
+                            director: '🎬 Director', writer: '✍️ Writer', writer_nsfw: '🔞 NSFW Writer', lawyer: '⚖️ Lawyer',
                             npc: '🎭 NPC', painter: '🎨 Painter', evaluator: '📊 Evaluator', growth: '🌱 Growth',
                             architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
                             parser: '🔧 Parser',
@@ -915,6 +917,7 @@ window.COC.admin = {
                         return {
                             director: '场景导演 — 决策工具调用序列',
                             writer: '叙事撰写 — 生成面向玩家的克苏鲁叙述（流式输出）',
+                            writer_nsfw: '成人向叙事 — 仅在房间开启NSFW且本轮被标记为色情内容时启用；未配置或关闭时自动回落默认 Writer（默认关闭）',
                             lawyer: '规则顾问 — 查阅规则书提供裁决依据',
                             npc: 'NPC扮演 — 给出场景NPC的行动与对话',
                             painter: '画图代理 — 按需生成场景图片（默认关闭，不落库）',
@@ -933,6 +936,7 @@ window.COC.admin = {
                         return {
                             director: '留空使用内置 Director 提示词（JSON工具调用格式）',
                             writer: '留空使用内置 Writer 提示词（克苏鲁散文风格）',
+                            writer_nsfw: '为成人向场景单独绑定更宽松的 provider/模型；未启用时自动使用默认 Writer（默认关闭）',
                             lawyer: '留空使用内置 Lawyer 提示词（规则查阅模式）',
                             npc: '留空使用内置 NPC 提示词',
                             painter: '配置 OpenAI 兼容图片模型，如 dall-e-3（默认关闭）',

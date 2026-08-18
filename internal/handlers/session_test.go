@@ -184,11 +184,11 @@ func (r *blockingAuxRunner) Run(context.Context, agent.GameContext) (agent.RunOu
 	}, nil
 }
 
-func (*blockingAuxRunner) RunWriter(context.Context, agent.GameContext, string) (string, error) {
+func (*blockingAuxRunner) RunWriter(context.Context, agent.GameContext, string, bool) (string, error) {
 	return "", nil
 }
 
-func (r *blockingAuxRunner) RunWriterStream(_ context.Context, _ agent.GameContext, _ string, onToken func(string)) (string, error) {
+func (r *blockingAuxRunner) RunWriterStream(_ context.Context, _ agent.GameContext, _ string, _ bool, onToken func(string)) (string, error) {
 	select {
 	case <-r.writerStarted:
 	default:
@@ -219,11 +219,11 @@ func (r *blockingRunner) Run(context.Context, agent.GameContext) (agent.RunOutpu
 	return r.output, nil
 }
 
-func (*blockingRunner) RunWriter(context.Context, agent.GameContext, string) (string, error) {
+func (*blockingRunner) RunWriter(context.Context, agent.GameContext, string, bool) (string, error) {
 	return "", nil
 }
 
-func (*blockingRunner) RunWriterStream(context.Context, agent.GameContext, string, func(string)) (string, error) {
+func (*blockingRunner) RunWriterStream(context.Context, agent.GameContext, string, bool, func(string)) (string, error) {
 	return "", nil
 }
 
@@ -583,8 +583,8 @@ func TestChatStream_Success(t *testing.T) {
 		WriterDirection: "描述古籍翻开后的异变",
 		KPReply:         "恐惧正在蔓延。",
 	}, nil)
-	runner.EXPECT().RunWriterStream(gomock.Any(), gomock.Any(), "描述古籍翻开后的异变", gomock.Any()).
-		DoAndReturn(func(ctx context.Context, gctx agent.GameContext, direction string, onToken func(string)) (string, error) {
+	runner.EXPECT().RunWriterStream(gomock.Any(), gomock.Any(), "描述古籍翻开后的异变", gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, gctx agent.GameContext, direction string, nsfw bool, onToken func(string)) (string, error) {
 			onToken("克苏鲁")
 			onToken("觉醒了")
 			return "克苏鲁觉醒了", nil
@@ -937,7 +937,7 @@ func TestStartWriterJobClearsPendingWhenWriterReturnsEmpty(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().RunWriterStream(gomock.Any(), gomock.Any(), output.WriterDirection, gomock.Any()).
+	runner.EXPECT().RunWriterStream(gomock.Any(), gomock.Any(), output.WriterDirection, gomock.Any(), gomock.Any()).
 		Return("", nil)
 	h := NewSessionHandlers(runner)
 	clientDone := make(chan struct{})
