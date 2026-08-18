@@ -322,7 +322,8 @@ func buildNPCMessages(h agentHandle, gctx GameContext, npcProfile string, npcHis
 	sb.WriteString("<note>\n")
 	sb.WriteString(renderNSFW("在符合NPC人设和context的前提下, 表现NPC的{{NSFW_NPC_DESIRES}}等多维度真情实感\n", gctx.Session.EnableNSFW))
 	if nsfwMode {
-		sb.WriteString("请主要表现人物的色情欲望和性癖，主动发起色情互动\n")
+		sb.WriteString("请重点表现人物的色情欲望和性癖主动发起色情互动，体现男性对女性的欲望和凝视\n")
+		sb.WriteString("不要省略性交而是主动描写，描写可能出现的玩法和姿势\n")
 	}
 	sb.WriteString("注意人物的行动逻辑，不要让行为和语言前后矛盾\n")
 	sb.WriteString("</note>\n")

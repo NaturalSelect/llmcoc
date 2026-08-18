@@ -383,6 +383,9 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 	sb.WriteString(direction)
 	sb.WriteString("\n</director_instruction>\n")
 	sb.WriteString("请在上文的基础上续写文章,并保持逻辑、时间、空间上的连贯")
+	if nsfwMode {
+		sb.WriteString(",请将描写的重点放在色情场景上重点突出女角色的反应")
+	}
 
 	// 组装Writer消息:系统提示词、保留历史、本次导演指令。
 	// nsfwMode蕴含房间EnableNSFW已开(标记只在writeAction里带该守卫置位),模板已按on态渲染,后缀是纯增量。
