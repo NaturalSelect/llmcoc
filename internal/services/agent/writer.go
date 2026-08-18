@@ -60,6 +60,7 @@ const writerNSFWPromptSuffix = `<explicit_scene_requirements>
 	<rule>使用具体直接的语言写动作、姿态、触感、声音、气味与情绪反应,按时间顺序推进,不要只铺氛围。</rule>
 	<rule>参与者的意愿、情绪和身体反应要写清楚,并与人物性格、当前处境、伤势状态保持一致。</rule>
 	<rule>本段仍受上文全部约束:不得越过导演指令新增玩家行为,不得替玩家做出选择,不得出现游戏术语。</rule>
+	<rule>请将描写重点放在色情内容上,特别是性器官交互的细节值得使用更大的篇幅书写。</rule>
 	<rule>本段结束时同样要停在玩家可选择的位置。</rule>
 </explicit_scene_requirements>
 `
