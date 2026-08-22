@@ -396,12 +396,12 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 	msgs := make([]llm.ChatMessage, 0, len(state.History)+2)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "system",
-		Content: withJailbreakPrompt(h.systemPrompt(prompt)),
+		Content: h.systemPrompt(prompt),
 	})
 	msgs = append(msgs, state.History...)
 	msgs = append(msgs, llm.ChatMessage{
 		Role:    "user",
-		Content: withJailbreakPrompt(sb.String()),
+		Content: sb.String(),
 	})
 	return msgs, direction
 }
