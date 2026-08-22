@@ -22,6 +22,7 @@ type GameContext struct {
 // PlayerAction 是一个玩家在当前回合提交的行动。
 type PlayerAction struct {
 	IsAdmin    bool // true表示管理员/KP输入,false表示普通玩家输入
+	UserID     uint // 提交该行动的玩家UserID;管理员输入为0
 	PlayerName string
 	Content    string
 }
@@ -32,35 +33,42 @@ type PlayerAction struct {
 type ToolCallType string
 
 const (
-	ToolCheckRule          ToolCallType = "check_rule"          // 查阅规则书
-	ToolRollDice           ToolCallType = "roll_dice"           // 骰子检定
-	ToolCreateNPC          ToolCallType = "create_npc"          // 创建临时NPC
-	ToolDestroyNPC         ToolCallType = "destroy_npc"         // 销毁临时NPC
-	ToolActNPC             ToolCallType = "act_npc"             // 与指定NPC对话并获取反应
-	ToolUpdateCharacters   ToolCallType = "update_characters"   // 更新角色状态
-	ToolManageInventory    ToolCallType = "manage_inventory"    // 角色物品增删
-	ToolRecordMonster      ToolCallType = "record_monster"      // 记录已见神话存在
-	ToolManageSpell        ToolCallType = "manage_spell"        // 管理已掌握法术
-	ToolManageRelation     ToolCallType = "manage_relation"     // 管理社会关系
-	ToolManageAsset        ToolCallType = "manage_asset"        // 管理资产
-	ToolEndGame            ToolCallType = "end_game"            // 结束游戏
-	ToolManageMadness      ToolCallType = "manage_madness"      // 管理疯狂状态
-	ToolWrite              ToolCallType = "write"               // 生成叙事段落
-	ToolAdvanceTime        ToolCallType = "advance_time"        // 推进游戏内时间
-	ToolQueryClues         ToolCallType = "query_clues"         // 查询剧本线索
-	ToolQueryCharacter     ToolCallType = "query_character"     // 查询调查员完整人物卡
-	ToolQueryNPCCard       ToolCallType = "query_npc_card"      // 查询NPC完整角色卡
-	ToolUpdateNPCCard      ToolCallType = "update_npc_card"     // 更新NPC角色卡状态
+	ToolCheckRule              ToolCallType = "check_rule"                // 查阅规则书
+	ToolRollDice               ToolCallType = "roll_dice"                 // 骰子检定
+	ToolCreateNPC              ToolCallType = "create_npc"                // 创建临时NPC
+	ToolDestroyNPC             ToolCallType = "destroy_npc"               // 销毁临时NPC
+	ToolActNPC                 ToolCallType = "act_npc"                   // 与指定NPC对话并获取反应
+	ToolUpdateCharacters       ToolCallType = "update_characters"         // 更新角色状态
+	ToolManageInventory        ToolCallType = "manage_inventory"          // 角色物品增删
+	ToolRecordMonster          ToolCallType = "record_monster"            // 记录已见神话存在
+	ToolManageSpell            ToolCallType = "manage_spell"              // 管理已掌握法术
+	ToolManageRelation         ToolCallType = "manage_relation"           // 管理社会关系
+	ToolManageAsset            ToolCallType = "manage_asset"              // 管理资产
+	ToolEndGame                ToolCallType = "end_game"                  // 结束游戏
+	ToolManageMadness          ToolCallType = "manage_madness"            // 管理疯狂状态
+	ToolWrite                  ToolCallType = "write"                     // 生成叙事段落
+	ToolAdvanceTime            ToolCallType = "advance_time"              // 推进游戏内时间
+	ToolQueryClues             ToolCallType = "query_clues"               // 查询剧本线索
+	ToolQueryCharacter         ToolCallType = "query_character"           // 查询调查员完整人物卡
+	ToolQueryNPCCard           ToolCallType = "query_npc_card"            // 查询NPC完整角色卡
+	ToolUpdateNPCCard          ToolCallType = "update_npc_card"           // 更新NPC角色卡状态
 	ToolUpdateSessionMemory    ToolCallType = "update_session_memory"     // 更新调查员的会话记忆
 	ToolUpdateNPCSessionMemory ToolCallType = "update_npc_session_memory" // 更新NPC的会话记忆
-	ToolUpdateLocation     ToolCallType = "update_location"     // 更新调查员当前位置
-	ToolUpdateNPCLocation  ToolCallType = "update_npc_location" // 更新NPC当前位置
-	ToolUpdateArmor        ToolCallType = "update_armor"        // 更新调查员护甲值
-	ToolHint               ToolCallType = "hint"                // KP写入当前场景高密度提示
-	ToolGenerateImage      ToolCallType = "generate_image"      // NOTE: 生成即时场景图片
-	ToolDescribeCharacters ToolCallType = "describe_characters" // NOTE: 获取调查员可见外貌描写
-	ToolResponse           ToolCallType = "response"            // 结束本轮并给出回复
-	ToolReport             ToolCallType = "report"              // 向管理系统自首
+	ToolUpdateLocation         ToolCallType = "update_location"           // 更新调查员当前位置
+	ToolUpdateNPCLocation      ToolCallType = "update_npc_location"       // 更新NPC当前位置
+	ToolUpdateArmor            ToolCallType = "update_armor"              // 更新调查员护甲值
+	ToolHint                   ToolCallType = "hint"                      // KP写入当前场景高密度提示
+	ToolGenerateImage          ToolCallType = "generate_image"            // NOTE: 生成即时场景图片
+	ToolDescribeCharacters     ToolCallType = "describe_characters"       // NOTE: 获取调查员可见外貌描写
+	ToolResponse               ToolCallType = "response"                  // 结束本轮并给出回复
+	ToolReport                 ToolCallType = "report"                    // 向管理系统自首
+
+	ToolStartCombat ToolCallType = "start_combat" // 开始一场战斗,建立DEX行动顺序
+	ToolCombatAct   ToolCallType = "combat_act"   // 结算战斗轮中一名参战者的行动
+	ToolEndCombat   ToolCallType = "end_combat"   // 结束当前战斗
+	ToolStartChase  ToolCallType = "start_chase"  // 开始一场追逐,建立DEX行动顺序
+	ToolChaseAct    ToolCallType = "chase_act"    // 结算追逐轮中一名参与者的行动
+	ToolEndChase    ToolCallType = "end_chase"    // 结束当前追逐
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
@@ -256,18 +264,25 @@ type GrowthResult struct {
 
 // CombatParticipantInput is the KP-provided entry for one combatant when starting a combat.
 type CombatParticipantInput struct {
-	Name  string `json:"name"`
-	DEX   int    `json:"dex"`
-	HP    int    `json:"hp"`
-	IsNPC bool   `json:"is_npc"`
+	Name        string `json:"name"`
+	DEX         int    `json:"dex"`
+	CombatSkill int    `json:"combat_skill"` // DEX相同时的次级排序依据(斗殴/格斗等技能值)
+	HP          int    `json:"hp"`
+	IsNPC       bool   `json:"is_npc"`
 }
 
 // CombatActionDetail describes the specific action a combatant takes this turn.
 type CombatActionDetail struct {
-	Type       string `json:"type"`         // attack/dodge/fight_back/aim/take_cover/other
+	Type       string `json:"type"`         // attack/dodge/fight_back/aim/take_cover/maneuver/other
 	TargetName string `json:"target_name"`  // 攻击/闪避/反击目标
 	WeaponName string `json:"weapon_name"`  // 使用的武器
 	APDebtNext int    `json:"ap_debt_next"` // 下轮扣除的AP(如寻找掩体)
+
+	// NeedsClarification: 被攻击方是调查员,且其本轮已提交的意图无法推断出闪避/反击倾向时使用。
+	// 置位后本战斗轮在当前行动者处暂停(不推进ActorIndex/Round),Director应立即调用response
+	// 通过ClarifyQuestion向该玩家提问,禁止代选默认值。
+	NeedsClarification bool   `json:"needs_clarification"`
+	ClarifyQuestion    string `json:"clarify_question"` // 待澄清时向玩家提出的问题
 }
 
 // ── Chase input types ─────────────────────────────────────────────────────────
@@ -276,6 +291,7 @@ type CombatActionDetail struct {
 type ChaseParticipantInput struct {
 	Name      string `json:"name"`
 	IsNPC     bool   `json:"is_npc"`
+	DEX       int    `json:"dex"`      // 追逐轮行动顺序依据
 	MOV       int    `json:"mov"`      // 速度检定后的MOV值
 	Location  int    `json:"location"` // 起始地点索引
 	IsPursuer bool   `json:"is_pursuer"`
@@ -283,11 +299,16 @@ type ChaseParticipantInput struct {
 
 // ChaseActionDetail describes the specific chase action taken this turn.
 type ChaseActionDetail struct {
-	Type          string `json:"type"`          // move/hazard/obstacle/conflict/other
-	MoveDelta     int    `json:"move_delta"`    // 移动的地点数(正=追近,负=拉开)
-	ObstacleName  string `json:"obstacle_name"` // 通过/攻击的障碍名称
-	ObstacleHP    int    `json:"obstacle_hp"`   // 障碍当前HP(创建障碍时使用)
-	ObstacleMaxHP int    `json:"obstacle_max_hp"`
-	APDebtNext    int    `json:"ap_debt_next"` // 险境失败时下轮扣除的AP
-	TargetName    string `json:"target_name"`  // 冲突目标名称
+	Type            string `json:"type"`          // move/hazard/obstacle/conflict/other
+	MoveDelta       int    `json:"move_delta"`    // 移动的地点数(正=追近,负=拉开)
+	ObstacleName    string `json:"obstacle_name"` // 通过/攻击的障碍名称
+	ObstacleHP      int    `json:"obstacle_hp"`   // 障碍当前HP(创建障碍时使用)
+	ObstacleMaxHP   int    `json:"obstacle_max_hp"`
+	ObstacleBetween [2]int `json:"obstacle_between"` // 障碍所在的两个相邻地点索引(创建障碍时使用)
+	APDebtNext      int    `json:"ap_debt_next"`     // 险境失败时下轮扣除的AP
+	TargetName      string `json:"target_name"`      // 冲突目标名称
+
+	// NeedsClarification: 语义同CombatActionDetail,用于追逐中被攻击方(conflict类型)的反应暂停。
+	NeedsClarification bool   `json:"needs_clarification"`
+	ClarifyQuestion    string `json:"clarify_question"`
 }

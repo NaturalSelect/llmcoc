@@ -280,6 +280,15 @@ func policyCall(name, args string) llm.ToolCall {
 	return llm.ToolCall{Name: name, Arguments: args}
 }
 
+// noEncounterBatchPolicy 是不关心战斗/追逐状态的测试用例的默认构造：没有激活的
+// 战斗/追逐，本回合也未推进过任何战斗/追逐轮次。
+func noEncounterBatchPolicy(imageDone *bool) toolBatchPolicy {
+	var combat *models.CombatState
+	var chase *models.ChaseState
+	roundClosed := false
+	return directorBatchPolicy(imageDone, &combat, &chase, &roundClosed, nil, func(string) {})
+}
+
 // TestDirectorBatchPolicySkillRollSequencing 验证 query_* 与技能检定 roll_dice 同批被拒，
 // 而纯数值骰与角色名不匹配的组合仍然放行。
 func TestDirectorBatchPolicySkillRollSequencing(t *testing.T) {
@@ -340,7 +349,7 @@ func TestDirectorBatchPolicySkillRollSequencing(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			imageDone := false
-			reject := directorBatchPolicy(&imageDone, func(string) {})(tc.calls)
+			reject := noEncounterBatchPolicy(&imageDone)(tc.calls)
 			if tc.wantReject && reject == "" {
 				t.Error("batch should have been rejected but was accepted")
 			}
@@ -355,7 +364,7 @@ func TestDirectorBatchPolicySkillRollSequencing(t *testing.T) {
 // 同批被拒，且被拒批次不会消耗当轮画图配额。
 func TestDirectorBatchPolicyImageCharacterSequencing(t *testing.T) {
 	imageDone := false
-	reject := directorBatchPolicy(&imageDone, func(string) {})([]llm.ToolCall{
+	reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
 		policyCall("describe_characters", `{"characters":["约翰"]}`),
 		policyCall("generate_image", `{"image_prompt":"### Scene\nA dim study"}`),
 	})
@@ -367,7 +376,7 @@ func TestDirectorBatchPolicyImageCharacterSequencing(t *testing.T) {
 	}
 
 	// 拆成两轮后画图应当仍然可用。
-	if reject := directorBatchPolicy(&imageDone, func(string) {})([]llm.ToolCall{
+	if reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
 		policyCall("generate_image", `{"image_prompt":"### Scene\nA dim study"}`),
 	}); reject != "" {
 		t.Errorf("generate_image alone should be accepted, got: %s", reject)
@@ -396,7 +405,7 @@ func TestDirectorBatchPolicyEmbeddedSkillValue(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			imageDone := false
 			args := fmt.Sprintf(`{"dice":{"character":"约翰","what":%q,"dice_expr":"1D100"},"reason":"测试"}`, tc.what)
-			reject := directorBatchPolicy(&imageDone, func(string) {})([]llm.ToolCall{
+			reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
 				policyCall("roll_dice", args),
 			})
 			if tc.wantReject && reject == "" {
@@ -424,7 +433,7 @@ func TestDirectorBatchPolicyItemNameFormat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			imageDone := false
 			args := fmt.Sprintf(`{"character_name":"约翰","operate":"add","item_name":%q,"reason":"测试"}`, tc.itemName)
-			reject := directorBatchPolicy(&imageDone, func(string) {})([]llm.ToolCall{
+			reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
 				policyCall("manage_inventory", args),
 			})
 			if tc.wantReject && reject == "" {
@@ -452,7 +461,7 @@ func TestDirectorBatchPolicyOptionsCap(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			imageDone := false
 			args := fmt.Sprintf(`{"reply":"测试回复","options":%s}`, tc.options)
-			reject := directorBatchPolicy(&imageDone, func(string) {})([]llm.ToolCall{
+			reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
 				policyCall("response", args),
 			})
 			if tc.wantReject && reject == "" {
@@ -509,7 +518,7 @@ func TestDirectorBatchPolicyDupSettlementInBatch(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			imageDone := false
-			reject := directorBatchPolicy(&imageDone, func(string) {})(tc.calls)
+			reject := noEncounterBatchPolicy(&imageDone)(tc.calls)
 			if tc.wantReject && reject == "" {
 				t.Error("batch should have been rejected but was accepted")
 			}
@@ -518,4 +527,166 @@ func TestDirectorBatchPolicyDupSettlementInBatch(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDirectorBatchPolicyEncounterSequencing 覆盖6d新增的5条战斗/追逐批次规则:
+// 独占成批、无激活状态时拒绝推进/结束、战斗与追逐互斥、advance_time互斥、
+// response完整性前置(可推进者未结算拒绝/剩余全无声明PC放行/待澄清放行/
+// roundClosed放行/end_combat同批放行)。
+func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
+	freshCombat := func() *models.CombatState {
+		return &models.CombatState{
+			Active: true, Round: 1, ActorIndex: 0,
+			Participants: []models.CombatParticipant{
+				{Name: "甲", DEX: 80, HasActed: false},
+				{Name: "乙", DEX: 50, HasActed: false},
+			},
+		}
+	}
+	freshChase := func() *models.ChaseState {
+		return &models.ChaseState{
+			Active: true, Round: 1, ActorIndex: 0,
+			Participants: []models.ChaseParticipant{{Name: "丙", DEX: 60}},
+		}
+	}
+
+	t.Run("combat_act与report同批放行", func(t *testing.T) {
+		imageDone := false
+		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
+		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
+			policyCall("report", `{"report":"备注"}`),
+		})
+		if reject != "" {
+			t.Errorf("combat_act+report应放行,got reject: %s", reject)
+		}
+	})
+
+	t.Run("combat_act与其他工具同批被拒", func(t *testing.T) {
+		imageDone := false
+		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
+		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
+			policyCall("roll_dice", `{"dice":{"character":"甲","what":"格斗","dice_expr":"1D100"},"reason":"攻击"}`),
+		})
+		if reject == "" {
+			t.Error("combat_act与非report工具同批应被拒")
+		}
+	})
+
+	t.Run("combat_act调用两次(含彼此)被拒", func(t *testing.T) {
+		imageDone := false
+		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
+		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
+			policyCall("combat_act", `{"combat_actor_name":"乙","combat_action":{"type":"attack"}}`),
+		})
+		if reject == "" {
+			t.Error("combat_act同批调用两次应被拒")
+		}
+	})
+
+	t.Run("无激活战斗时combat_act被拒", func(t *testing.T) {
+		imageDone := false
+		var nilCombat *models.CombatState
+		var nilChase *models.ChaseState
+		roundClosed := false
+		reject := directorBatchPolicy(&imageDone, &nilCombat, &nilChase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
+		})
+		if reject == "" {
+			t.Error("没有激活战斗时combat_act应被拒")
+		}
+	})
+
+	t.Run("追逐激活时start_combat被拒(互斥)", func(t *testing.T) {
+		imageDone := false
+		var nilCombat *models.CombatState
+		chase := freshChase()
+		roundClosed := false
+		reject := directorBatchPolicy(&imageDone, &nilCombat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+			policyCall("start_combat", `{"combat_participants":[{"name":"甲","is_npc":true}]}`),
+		})
+		if reject == "" {
+			t.Error("追逐激活时start_combat应被拒(战斗与追逐互斥)")
+		}
+	})
+
+	t.Run("战斗激活时advance_time被拒", func(t *testing.T) {
+		imageDone := false
+		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
+		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+			policyCall("advance_time", `{"time_rounds":1,"time_reason":"等待"}`),
+		})
+		if reject == "" {
+			t.Error("战斗激活时advance_time应被拒")
+		}
+	})
+
+	t.Run("可推进者未结算时response被拒并列出未行动者", func(t *testing.T) {
+		imageDone := false
+		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
+		// 甲乙均已提交本轮声明(在当前批次内),因此未行动即视为可推进,应挡住response。
+		declared := []PlayerAction{{PlayerName: "甲", Content: "攻击"}, {PlayerName: "乙", Content: "闪避"}}
+		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, declared, func(string) {})([]llm.ToolCall{
+			policyCall("response", `{"reply":"战斗继续"}`),
+		})
+		if reject == "" {
+			t.Fatal("还有已声明但未行动的可推进参战者时response应被拒")
+		}
+		if !strings.Contains(reject, "乙") {
+			t.Errorf("reject = %q, want 提及还未行动的乙", reject)
+		}
+	})
+
+	t.Run("剩余全是未提交声明的PC时response放行", func(t *testing.T) {
+		imageDone := false
+		actedCombat := freshCombat()
+		actedCombat.Participants[0].HasActed = true // 甲已行动(当前批次内唯一成员)
+		combat, chase, roundClosed := actedCombat, (*models.ChaseState)(nil), false
+		// pendingActions为nil:乙不在当前批次,本轮未提交任何声明,不应卡住response。
+		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+			policyCall("response", `{"reply":"甲行动完毕,轮到乙,但乙尚未到批次"}`),
+		})
+		if reject != "" {
+			t.Errorf("剩余全是未提交声明的PC时response应放行,got reject: %s", reject)
+		}
+	})
+
+	t.Run("存在待澄清时response放行", func(t *testing.T) {
+		imageDone := false
+		pendingCombat := freshCombat()
+		pendingCombat.Participants[1].PendingClarification = true
+		pendingCombat.Participants[1].PendingQuestion = "闪避还是反击？"
+		combat, chase, roundClosed := pendingCombat, (*models.ChaseState)(nil), false
+		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+			policyCall("response", `{"reply":"你被攻击了,闪避还是反击？"}`),
+		})
+		if reject != "" {
+			t.Errorf("存在PendingClarification时response应放行,got reject: %s", reject)
+		}
+	})
+
+	t.Run("roundClosed为true时response放行", func(t *testing.T) {
+		imageDone := false
+		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), true
+		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+			policyCall("response", `{"reply":"本轮战斗结束"}`),
+		})
+		if reject != "" {
+			t.Errorf("roundClosed=true时response应放行,got reject: %s", reject)
+		}
+	})
+
+	t.Run("end_combat与response同批放行(即使未结算完毕)", func(t *testing.T) {
+		imageDone := false
+		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
+		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+			policyCall("end_combat", `{"combat_end_reason":"敌人逃离"}`),
+			policyCall("response", `{"reply":"战斗结束,敌人逃走了"}`),
+		})
+		if reject != "" {
+			t.Errorf("end_combat+response应放行,got reject: %s", reject)
+		}
+	})
 }

@@ -567,6 +567,10 @@ func getSessionProcessing(sessionID uint) (sessionProcessingState, bool) {
 	return state, ok
 }
 
+// activeTurnPlayerIDs 返回房间内全体存活玩家(角色卡WoundState!=dead)的UserID集合，
+// 用于判断"发言者本人是否存活"——与agent.BuildTurnCollection的批次收集集合是两回
+// 事：遭遇激活时批次可能只含存活玩家的子集，但死亡玩家永远不该被允许发言，这条判
+// 断必须独立于批次存在。
 func activeTurnPlayerIDs(players []models.SessionPlayer) map[uint]bool {
 	ids := make(map[uint]bool, len(players))
 	for _, p := range players {
@@ -576,14 +580,6 @@ func activeTurnPlayerIDs(players []models.SessionPlayer) map[uint]bool {
 		ids[p.UserID] = true
 	}
 	return ids
-}
-
-func mapKeys(m map[uint]bool) []uint {
-	keys := make([]uint, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }
 
 func lastKPReplyTime(sessionID uint) (time.Time, bool) {
@@ -596,32 +592,46 @@ func lastKPReplyTime(sessionID uint) (time.Time, bool) {
 	return lastKP.CreatedAt, true
 }
 
-func countSubmittedTurnPlayers(db *gorm.DB, sessionID uint, round int, activePlayerIDs map[uint]bool, cutoff time.Time, hasCutoff bool) int64 {
-	ids := mapKeys(activePlayerIDs)
-	if len(ids) == 0 {
+// countSubmittedTurnPlayers 统计collectUserIDs里已有多少人本轮提交过SessionTurnAction。
+// collectUserIDs 来自 agent.BuildTurnCollection：非遭遇场景是全体存活玩家，遭遇激活
+// 时是当前DEX批次，二者均已是[]uint，无需再靠map/mapKeys桥接。
+func countSubmittedTurnPlayers(db *gorm.DB, sessionID uint, round int, collectUserIDs []uint) int64 {
+	if len(collectUserIDs) == 0 {
 		return 0
 	}
-	query := db.Model(&models.SessionTurnAction{}).
-		Select("user_id").
-		Where("session_id = ? AND round = ? AND user_id IN ?", sessionID, round, ids)
-	if hasCutoff {
-		query = query.Where("created_at > ?", cutoff)
-	}
 	var rows []struct{ UserID uint }
-	query.Group("user_id").Find(&rows)
+	db.Model(&models.SessionTurnAction{}).
+		Select("user_id").
+		Where("session_id = ? AND round = ? AND user_id IN ?", sessionID, round, collectUserIDs).
+		Group("user_id").Find(&rows)
 	return int64(len(rows))
 }
 
-func loadLatestTurnActions(sessionID uint, round int, activePlayerIDs map[uint]bool, cutoff time.Time, hasCutoff bool) []models.SessionTurnAction {
-	ids := mapKeys(activePlayerIDs)
-	turnActions := make([]models.SessionTurnAction, 0, len(ids))
-	for _, id := range ids {
-		var ta models.SessionTurnAction
-		query := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", sessionID, round, id)
-		if hasCutoff {
-			query = query.Where("created_at > ?", cutoff)
+// turnActionsCoverBatch 校验turnActions是否覆盖了batchUserIDs里的每一个人。会话锁已
+// 保证同一房间的ChatStream调用串行执行，这里只是"最后一人提交"之后的防御性复核。
+func turnActionsCoverBatch(turnActions []models.SessionTurnAction, batchUserIDs []uint) bool {
+	present := make(map[uint]bool, len(turnActions))
+	for _, ta := range turnActions {
+		present[ta.UserID] = true
+	}
+	for _, id := range batchUserIDs {
+		if !present[id] {
+			return false
 		}
-		if err := query.Order("created_at DESC, id DESC").
+	}
+	return true
+}
+
+// loadLatestTurnActions 按 players 的房间顺序(而非DB返回序)加载每个玩家本轮最新一条
+// 行动记录，不按"当前批次"过滤——D4精确清理会跨run保留尚未被消费的声明(被冻结的攻
+// 击方、还没轮到的参战者)，这里必须把它们也读出来喂给Director，否则combat_act/
+// chase_act的声明可见性闸门会看不到玩家已经提交过的内容。
+func loadLatestTurnActions(sessionID uint, round int, players []models.SessionPlayer) []models.SessionTurnAction {
+	turnActions := make([]models.SessionTurnAction, 0, len(players))
+	for _, p := range players {
+		var ta models.SessionTurnAction
+		if err := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", sessionID, round, p.UserID).
+			Order("created_at DESC, id DESC").
 			First(&ta).Error; err == nil {
 			turnActions = append(turnActions, ta)
 		}
@@ -629,13 +639,32 @@ func loadLatestTurnActions(sessionID uint, round int, activePlayerIDs map[uint]b
 	return turnActions
 }
 
-// waitingPayload 是"等待其他玩家"SSE 事件的 JSON 结构。
+// filterTurnActionsSince 只保留cutoff之后新建/更新的记录，供saveChatMessages把"跨run
+// 保留、之前已经落过聊天记录"的旧声明排除在外，避免同一条声明被重复写入transcript。
+func filterTurnActionsSince(actions []models.SessionTurnAction, cutoff time.Time) []models.SessionTurnAction {
+	filtered := make([]models.SessionTurnAction, 0, len(actions))
+	for _, a := range actions {
+		if a.CreatedAt.After(cutoff) {
+			filtered = append(filtered, a)
+		}
+	}
+	return filtered
+}
+
+// waitingPayload 是"等待其他玩家"SSE 事件/chat-status 的 JSON 结构。
 // submitted_names/pending_names 按房间 Players 顺序排列，前端可直接展示 badges。
+// batched=true 时 batch_user_ids 是遭遇激活时当前DEX批次的玩家UserID列表；
+// encounter_order 覆盖遭遇全部参与者(含NPC、已行动、未行动)，供前端渲染完整队列；
+// 无激活遭遇时 batched=false、encounter_label/encounter_order 为零值。
 type waitingPayload struct {
-	Pending        int      `json:"pending"`
-	Total          int      `json:"total"`
-	SubmittedNames []string `json:"submitted_names"`
-	PendingNames   []string `json:"pending_names"`
+	Pending        int                    `json:"pending"`
+	Total          int                    `json:"total"`
+	SubmittedNames []string               `json:"submitted_names"`
+	PendingNames   []string               `json:"pending_names"`
+	Batched        bool                   `json:"batched"`
+	BatchUserIDs   []uint                 `json:"batch_user_ids"`
+	EncounterLabel string                 `json:"encounter_label"`
+	EncounterOrder []agent.EncounterActor `json:"encounter_order"`
 }
 
 // sessionPlayerDisplayName 返回玩家的显示名：优先角色名（trim 后非空），回退用户名。
@@ -650,29 +679,35 @@ func sessionPlayerDisplayName(p models.SessionPlayer) string {
 	return "玩家"
 }
 
-// buildWaitingSSEPayload 查询本轮已提交行动的玩家集合，按房间 Players 顺序
-// 生成已提交/待提交姓名列表。若查询失败则返回 error，由调用方决定是否降级。
-func buildWaitingSSEPayload(db *gorm.DB, session models.GameSession, activePlayerIDs map[uint]bool, cutoff time.Time, hasCutoff bool) (waitingPayload, error) {
-	ids := mapKeys(activePlayerIDs)
+// buildWaitingSSEPayload 查询collect.UserIDs里已提交行动的玩家集合，按房间 Players
+// 顺序生成已提交/待提交姓名列表，并透传批次与DEX序信息供前端渲染完整收集队列。
+// 若查询失败则返回 error，由调用方决定是否降级。
+func buildWaitingSSEPayload(db *gorm.DB, session models.GameSession, collect agent.TurnCollection) (waitingPayload, error) {
+	ids := collect.UserIDs
 	total := len(ids)
 	if total == 0 {
-		return waitingPayload{SubmittedNames: []string{}, PendingNames: []string{}}, nil
+		return waitingPayload{
+			SubmittedNames: []string{}, PendingNames: []string{},
+			Batched: collect.Batched, BatchUserIDs: collect.UserIDs,
+			EncounterLabel: collect.Label, EncounterOrder: collect.Order,
+		}, nil
 	}
 
-	q := db.Model(&models.SessionTurnAction{}).
-		Select("user_id").
-		Where("session_id = ? AND round = ? AND user_id IN ?", session.ID, session.TurnRound, ids)
-	if hasCutoff {
-		q = q.Where("created_at > ?", cutoff)
-	}
 	var rows []struct{ UserID uint }
-	if err := q.Group("user_id").Find(&rows).Error; err != nil {
+	if err := db.Model(&models.SessionTurnAction{}).
+		Select("user_id").
+		Where("session_id = ? AND round = ? AND user_id IN ?", session.ID, session.TurnRound, ids).
+		Group("user_id").Find(&rows).Error; err != nil {
 		return waitingPayload{}, err
 	}
 
 	submittedSet := make(map[uint]bool, len(rows))
 	for _, r := range rows {
 		submittedSet[r.UserID] = true
+	}
+	idSet := make(map[uint]bool, len(ids))
+	for _, id := range ids {
+		idSet[id] = true
 	}
 
 	submitted := len(rows)
@@ -685,7 +720,7 @@ func buildWaitingSSEPayload(db *gorm.DB, session models.GameSession, activePlaye
 	submittedNames := make([]string, 0, submitted)
 	pendingNames := make([]string, 0, pending)
 	for _, p := range session.Players {
-		if !activePlayerIDs[p.UserID] {
+		if !idSet[p.UserID] {
 			continue
 		}
 		name := sessionPlayerDisplayName(p)
@@ -701,6 +736,10 @@ func buildWaitingSSEPayload(db *gorm.DB, session models.GameSession, activePlaye
 		Total:          total,
 		SubmittedNames: submittedNames,
 		PendingNames:   pendingNames,
+		Batched:        collect.Batched,
+		BatchUserIDs:   collect.UserIDs,
+		EncounterLabel: collect.Label,
+		EncounterOrder: collect.Order,
 	}, nil
 }
 
@@ -715,6 +754,40 @@ func sendWaitingSSE(c *gin.Context, payload waitingPayload) {
 	}
 	c.SSEvent("waiting", string(data))
 	c.Writer.Flush()
+}
+
+// turnCollectionIncludesUser 判断userID是否在collect.UserIDs(本次应收集的批次/全员
+// 集合)里。
+func turnCollectionIncludesUser(collect agent.TurnCollection, userID uint) bool {
+	for _, id := range collect.UserIDs {
+		if id == userID {
+			return true
+		}
+	}
+	return false
+}
+
+// turnCollectionRejectReason 解释遭遇按批次收集时，一名存活玩家为什么此刻不能提交：
+// 完全不在collect.Order里(D7旁观锁定，未参与这场战斗/追逐)，或在Order里但不在当前
+// 批次(还没轮到，报出当前批次成员姓名)。只应在collect.Batched时调用。
+func turnCollectionRejectReason(collect agent.TurnCollection, userID uint) string {
+	var batchNames []string
+	inOrder := false
+	for _, a := range collect.Order {
+		if a.UserID == userID && !a.IsNPC {
+			inOrder = true
+		}
+		if a.InBatch {
+			batchNames = append(batchNames, a.Name)
+		}
+	}
+	if !inOrder {
+		return "战斗/追逐进行中，你未参与本场遭遇，暂时无法提交行动"
+	}
+	if len(batchNames) == 0 {
+		return "还没轮到你行动，请稍候"
+	}
+	return fmt.Sprintf("还没轮到你行动，当前轮到 %s，请稍候", strings.Join(batchNames, "、"))
 }
 
 type chatStatusResponse struct {
@@ -753,9 +826,8 @@ func (h *SessionHandlers) GetChatStatus(c *gin.Context) {
 	}
 
 	processingState, processing := getSessionProcessing(session.ID)
-	activePlayerIDs := activeTurnPlayerIDs(session.Players)
-	actionCutoff, hasActionCutoff := lastKPReplyTime(session.ID)
-	wPayload, err := buildWaitingSSEPayload(models.DB, session, activePlayerIDs, actionCutoff, hasActionCutoff)
+	collect := agent.BuildTurnCollection(session)
+	wPayload, err := buildWaitingSSEPayload(models.DB, session, collect)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询本轮状态失败"})
 		return
@@ -763,12 +835,9 @@ func (h *SessionHandlers) GetChatStatus(c *gin.Context) {
 
 	var submittedAction models.SessionTurnAction
 	submitted := false
-	if activePlayerIDs[userID] {
-		query := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID)
-		if hasActionCutoff {
-			query = query.Where("created_at > ?", actionCutoff)
-		}
-		if err := query.Order("created_at DESC, id DESC").First(&submittedAction).Error; err == nil {
+	if turnCollectionIncludesUser(collect, userID) {
+		if err := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID).
+			Order("created_at DESC, id DESC").First(&submittedAction).Error; err == nil {
 			submitted = true
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询行动提交状态失败"})
@@ -777,7 +846,7 @@ func (h *SessionHandlers) GetChatStatus(c *gin.Context) {
 	}
 
 	submittedCount := wPayload.Total - wPayload.Pending
-	waitingForPlayers := session.Status == models.SessionStatusPlaying && len(session.Players) > 1 && len(activePlayerIDs) > 1 && submittedCount > 0 && wPayload.Pending > 0
+	waitingForPlayers := session.Status == models.SessionStatusPlaying && len(session.Players) > 1 && wPayload.Total > 1 && submittedCount > 0 && wPayload.Pending > 0
 	phase := "idle"
 	if waitingForPlayers {
 		phase = "waiting"
@@ -917,10 +986,10 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	var pendingActions []agent.PlayerAction
 	var turnActions []models.SessionTurnAction
 
+	collect := agent.BuildTurnCollection(session)
 	activePlayerIDs := activeTurnPlayerIDs(session.Players)
 	activePlayerCount := len(activePlayerIDs)
 	isActiveTurnPlayer := activePlayerIDs[userID]
-	actionCutoff, hasActionCutoff := lastKPReplyTime(session.ID)
 	if playerCount > 1 {
 		if activePlayerCount > 0 && (!isTrackedPlayer || !isActiveTurnPlayer) {
 			chatLog.Warn("chat rejected dead or non-player input", "session", sessionID, "user", username)
@@ -940,19 +1009,28 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			c.Writer.Flush()
 			return
 		}
+		// D7: 遭遇激活时按DEX批次收集——存活且受追踪的玩家如果不在当前批次里，要么是
+		// 旁观者(未参与这场战斗/追逐)，要么是还没轮到，均拒绝提交，不静默吞掉输入。
+		if isTrackedPlayer && isActiveTurnPlayer && collect.Batched && !turnCollectionIncludesUser(collect, userID) {
+			chatLog.Warn("chat rejected: not in current encounter batch", "session", sessionID, "user", username)
+			setChatSSEHeaders(c)
+			c.SSEvent("error", turnCollectionRejectReason(collect, userID))
+			c.Writer.Flush()
+			c.SSEvent("done", "")
+			c.Writer.Flush()
+			return
+		}
 	}
 
-	if playerCount > 1 && isTrackedPlayer && isActiveTurnPlayer && activePlayerCount > 1 {
+	if playerCount > 1 && isTrackedPlayer && isActiveTurnPlayer {
 		// Use a DB transaction so that record + count is atomic, preventing the
 		// race where two simultaneous last-submitters both try to run the agent.
+		batchUserIDs := collect.UserIDs
 		var isLastToSubmit bool
 		err := models.DB.Transaction(func(tx *gorm.DB) error {
 			var existing models.SessionTurnAction
-			query := tx.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID)
-			if hasActionCutoff {
-				query = query.Where("created_at > ?", actionCutoff)
-			}
-			err := query.First(&existing).Error
+			err := tx.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID).
+				First(&existing).Error
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
@@ -969,11 +1047,12 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			} else if err := tx.Model(&existing).Updates(map[string]any{
 				"username":       playerDisplayName,
 				"action_summary": content,
+				"created_at":     time.Now().UTC(),
 			}).Error; err != nil {
 				return err
 			}
-			submitted := countSubmittedTurnPlayers(tx, session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
-			isLastToSubmit = submitted >= int64(activePlayerCount)
+			submitted := countSubmittedTurnPlayers(tx, session.ID, session.TurnRound, batchUserIDs)
+			isLastToSubmit = submitted >= int64(len(batchUserIDs))
 			return nil
 		})
 		if err != nil {
@@ -984,14 +1063,14 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 
 		if !isLastToSubmit {
 			setChatSSEHeaders(c)
-			// NOTE: 构建含已提交/待提交姓名的等待载荷，查询失败时降级为计数格式
-			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, activePlayerIDs, actionCutoff, hasActionCutoff)
+			// NOTE: 构建含已提交/待提交姓名及批次信息的等待载荷，查询失败时降级为计数格式
+			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, collect)
 			if wErr != nil {
 				chatLog.Error("chat waiting payload failed", "session", sessionID, "user", username, "err", wErr)
-				submitted := countSubmittedTurnPlayers(models.DB, session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
+				submitted := countSubmittedTurnPlayers(models.DB, session.ID, session.TurnRound, batchUserIDs)
 				wPayload = waitingPayload{
-					Pending:        activePlayerCount - int(submitted),
-					Total:          activePlayerCount,
+					Pending:        len(batchUserIDs) - int(submitted),
+					Total:          len(batchUserIDs),
 					SubmittedNames: []string{},
 					PendingNames:   []string{},
 				}
@@ -1003,17 +1082,19 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			return
 		}
 
-		// Last to submit: load exactly one latest action per active actor for the KP prompt.
-		turnActions = loadLatestTurnActions(session.ID, session.TurnRound, activePlayerIDs, actionCutoff, hasActionCutoff)
-		if len(turnActions) < activePlayerCount {
+		// Last to submit: load every player's latest unconsumed declaration for the KP
+		// prompt——不只是当前批次，还包含D4精确清理跨run保留下来的、之前批次未被消费
+		// 的声明(被冻结的攻击方、还没轮到的参战者)，否则声明可见性闸门会看不到它们。
+		turnActions = loadLatestTurnActions(session.ID, session.TurnRound, session.Players)
+		if !turnActionsCoverBatch(turnActions, batchUserIDs) {
 			setChatSSEHeaders(c)
 			// NOTE: 构建含已提交/待提交姓名的等待载荷，查询失败时降级为计数格式
-			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, activePlayerIDs, actionCutoff, hasActionCutoff)
+			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, collect)
 			if wErr != nil {
 				chatLog.Error("chat waiting payload failed", "session", sessionID, "user", username, "err", wErr)
 				wPayload = waitingPayload{
-					Pending:        activePlayerCount - len(turnActions),
-					Total:          activePlayerCount,
+					Pending:        len(batchUserIDs),
+					Total:          len(batchUserIDs),
 					SubmittedNames: []string{},
 					PendingNames:   []string{},
 				}
@@ -1028,6 +1109,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			var user models.User
 			models.DB.First(&user, ta.UserID)
 			pendingActions = append(pendingActions, agent.PlayerAction{
+				UserID:     ta.UserID,
 				IsAdmin:    user.Role == models.RoleAdmin,
 				PlayerName: ta.Username,
 				Content:    ta.ActionSummary,
@@ -1036,11 +1118,8 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	} else {
 		// Single-player or creator/spectator: keep only the latest action for this round.
 		var existing models.SessionTurnAction
-		query := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID)
-		if hasActionCutoff {
-			query = query.Where("created_at > ?", actionCutoff)
-		}
-		err := query.First(&existing).Error
+		err := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID).
+			First(&existing).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
 			return
@@ -1057,11 +1136,28 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			err = models.DB.Model(&existing).Updates(map[string]any{
 				"username":       playerDisplayName,
 				"action_summary": content,
+				"created_at":     time.Now().UTC(),
 			}).Error
 		}
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
 			return
+		}
+		// D6: 单人房/创建者兜底路径不经过loadLatestTurnActions，需要手动补一条自己的
+		// 声明，否则战斗/追逐激活时声明可见性闸门会把这个PC拒死。
+		pendingActions = append(pendingActions, agent.PlayerAction{
+			UserID:     userID,
+			IsAdmin:    user.Role == models.RoleAdmin,
+			PlayerName: playerDisplayName,
+			Content:    content,
+		})
+	}
+
+	// D4: 跨run保留的旧声明不该被重复落成聊天记录；只把本次KP回复之后新建/更新的
+	// 记录转成消息，此前已经落过消息的保留行仍用于pendingActions但不重复入库。
+	if len(turnActions) > 0 {
+		if cutoff, ok := lastKPReplyTime(session.ID); ok {
+			turnActions = filterTurnActionsSince(turnActions, cutoff)
 		}
 	}
 

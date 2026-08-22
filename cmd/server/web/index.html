@@ -754,6 +754,11 @@
                                 <!-- Waiting for other players -->
                                 <div x-show="waitingForPlayers && !connectionRecovering"
                                     class="msg msg-sys fade-up border border-[#1a2d4a]">
+                                    <!-- NOTE: 战斗/追逐激活时显示轮次与当前批次行动者(DEX相邻时可能多人同批) -->
+                                    <p x-show="waitingInfo.encounter_label"
+                                        class="text-amber-300/80 text-xs italic font-ui mb-1">⚔️
+                                        <span x-text="waitingInfo.encounter_label"></span> — 等待<span
+                                            x-text="encounterBatchActorNames()"></span>行动</p>
                                     <!-- NOTE: 服务端返回姓名列表时显示 badges，否则回退"还差 N 人" -->
                                     <div x-show="(waitingInfo.submitted_names || []).length > 0 || (waitingInfo.pending_names || []).length > 0"
                                         class="space-y-1.5">

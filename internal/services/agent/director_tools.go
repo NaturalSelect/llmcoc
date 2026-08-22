@@ -54,6 +54,12 @@ func directorTools() []scripterTool {
 		updateNPCSessionMemoryTool(),
 		hintTool(),
 		reportTool(),
+		startCombatTool(),
+		combatActTool(),
+		endCombatTool(),
+		startChaseTool(),
+		chaseActTool(),
+		endChaseTool(),
 	}
 }
 
@@ -689,6 +695,179 @@ func reportTool() scripterTool {
 					"report": {"type": "string", "description": "需要说明的情况"}
 				},
 				"required": ["report"]
+			}`),
+		},
+	}
+}
+
+func startCombatTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolStartCombat),
+			Description: `开始一场战斗，由后端建立DEX(敏捷)行动顺序并维护轮次，之后必须按<combat_state>给出的顺序逐个调用combat_act，不要自行记忆轮次或行动顺序。combat_participants列出全部参战者(调查员+NPC)。
+【数值权威】调查员的dex/hp字段会被后端忽略并直接从角色卡读取，无需查询也无需真实填写；NPC的dex优先取该NPC卡上的真实值，找不到时才使用你填写的值。combat_skill仅用于DEX相同时的次级排序(填格斗/闪避等实际战斗技能值)，DEX相同且未提供combat_skill时按你的列表顺序排列。
+【批次规则】本工具必须单独成批(可与report同批)，不能与其他任何工具(含自身重复调用)同批——建立的顺序需要先被你读到，才能开始调用combat_act。
+调用示例：{"combat_participants":[{"name":"约翰","is_npc":false},{"name":"食尸鬼","is_npc":true,"dex":70,"combat_skill":60,"hp":15}]}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"combat_participants": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"name": {"type": "string", "description": "参战者名称,调查员须为角色卡真实姓名"},
+								"dex": {"type": "integer", "description": "敏捷值;调查员此字段会被忽略,NPC若无卡则使用"},
+								"combat_skill": {"type": "integer", "description": "DEX相同时的次级排序依据(格斗/闪避等战斗技能值)"},
+								"hp": {"type": "integer", "description": "已废弃,填写会被忽略,HP始终实时读角色卡/NPC卡"},
+								"is_npc": {"type": "boolean", "description": "是否为NPC"}
+							},
+							"required": ["name", "is_npc"]
+						},
+						"description": "全部参战者列表"
+					}
+				},
+				"required": ["combat_participants"]
+			}`),
+		},
+	}
+}
+
+func combatActTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolCombatAct),
+			Description: `结算战斗轮中一名参战者的行动。combat_actor_name必须等于<combat_state>里当前指针指向的行动者，顺序由后端强制，乱序/超前调用会被拒绝并告知正确的下一行动者；不要自己猜测或提前处理还未轮到的参战者。
+combat_action.type: attack(攻击)/dodge(闪避,置对方已闪避标记)/fight_back(反击,置对方已反击标记)/aim(瞄准,下轮攻击获得奖励骰)/take_cover(寻找掩体,下轮扣AP)/maneuver(战技)/other。dodge/fight_back用于记录target这次选择了哪种反应(用于寡不敌众判定)，target_name填被攻击方。
+【needs_clarification】唯一合法用途：被攻击方是调查员，且其本轮已提交意图完全无法推断出闪避/反击倾向时，置为true并在clarify_question写出要问玩家的话(如"你选择闪避还是反击？")。这会暂停本战斗轮(不推进顺序)，你必须紧接着调用response直接问该玩家，不要猜测/代选，也不要继续处理后续参战者。禁止对NPC使用——NPC的反应由你直接决定。能从玩家本轮已提交的意图合理推断倾向时(如"我打算硬拼""我尽量躲开")不得使用本信号，直接按推断结果结算。
+真正的攻击命中/伤害仍须走roll_dice+check_rule+update_characters等常规流程，combat_act本身只负责顺序推进与状态标记，不计算成败。
+【批次规则】本工具必须单独成批(可与report同批)，结果需先被你读到才能继续下一步。
+调用示例：{"combat_actor_name":"约翰","combat_action":{"type":"attack","target_name":"食尸鬼","weapon_name":"左轮手枪"}}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"combat_actor_name": {"type": "string", "description": "本次行动者姓名,须等于<combat_state>当前指针指向的行动者"},
+					"combat_action": {
+						"type": "object",
+						"properties": {
+							"type": {"type": "string", "enum": ["attack", "dodge", "fight_back", "aim", "take_cover", "maneuver", "other"], "description": "行动类型"},
+							"target_name": {"type": "string", "description": "攻击/闪避/反击/战技的目标名称"},
+							"weapon_name": {"type": "string", "description": "使用的武器(可选)"},
+							"ap_debt_next": {"type": "integer", "description": "take_cover等动作导致下轮扣除的行动点(可选,默认1)"},
+							"needs_clarification": {"type": "boolean", "description": "被攻击方是调查员且其本轮意图无法推断闪避/反击倾向时置true,仅限此情形使用"},
+							"clarify_question": {"type": "string", "description": "needs_clarification为true时,要向玩家提出的问题原文"}
+						},
+						"required": ["type"]
+					}
+				},
+				"required": ["combat_actor_name", "combat_action"]
+			}`),
+		},
+	}
+}
+
+func endCombatTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolEndCombat),
+			Description: `结束当前战斗(所有参战者已行动完毕、一方阵亡/逃离/投降等)。combat_end_reason说明结束原因。
+【批次规则】可以与write/response/update_*/manage_*等收尾状态更新同批次。
+调用示例：{"combat_end_reason":"食尸鬼被击杀,战斗结束"}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"combat_end_reason": {"type": "string", "description": "战斗结束原因"}
+				},
+				"required": ["combat_end_reason"]
+			}`),
+		},
+	}
+}
+
+func startChaseTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolStartChase),
+			Description: `开始一场追逐，由后端建立DEX(敏捷)行动顺序并维护轮次与行动点，之后必须按<chase_state>给出的顺序逐个调用chase_act，不要自行记忆轮次、顺序或行动点。chase_participants列出全部参与者(追逐者+逃离者)。
+【数值权威】调查员的dex字段会被后端忽略并直接从角色卡读取；mov必须填写速度检定后的调整值(检定结果，而非角色卡基础MOV)。DEX相同者请先做一次敏捷对抗检定，按对抗结果的先后顺序在列表中排列。location是起始地点索引(数字越大越靠前/越接近逃离方向)，is_pursuer标记该角色是追逐者还是逃离者。
+【批次规则】本工具必须单独成批(可与report同批)，不能与其他任何工具同批——建立的顺序需要先被你读到，才能开始调用chase_act。
+调用示例：{"chase_participants":[{"name":"哈维","is_npc":false,"mov":5,"location":0,"is_pursuer":false},{"name":"愤怒的农夫","is_npc":true,"dex":50,"mov":6,"location":-2,"is_pursuer":true}]}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"chase_participants": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"name": {"type": "string", "description": "参与者名称,调查员须为角色卡真实姓名"},
+								"is_npc": {"type": "boolean", "description": "是否为NPC"},
+								"dex": {"type": "integer", "description": "敏捷值;调查员此字段会被忽略,NPC若无卡则使用"},
+								"mov": {"type": "integer", "description": "速度检定后的调整MOV值(检定结果,不是角色卡基础值)"},
+								"location": {"type": "integer", "description": "起始地点索引"},
+								"is_pursuer": {"type": "boolean", "description": "是否为追逐者(false=逃离者)"}
+							},
+							"required": ["name", "is_npc", "mov", "location", "is_pursuer"]
+						},
+						"description": "全部追逐参与者列表"
+					}
+				},
+				"required": ["chase_participants"]
+			}`),
+		},
+	}
+}
+
+func chaseActTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolChaseAct),
+			Description: `结算追逐轮中一名参与者本轮的全部行动。chase_actor_name必须等于<chase_state>里当前指针指向的行动者，顺序由后端强制，乱序/超前调用会被拒绝并告知正确的下一行动者。
+一次调用需报告该参与者本轮全部行动点的完整使用结果(移动了几格、路上是否闯过险境/障碍、是否与人冲突)，而不是每花一点行动点就调用一次。
+chase_action.type: move(单纯移动)/hazard(闯险境)/obstacle(遇到或破坏障碍,需给出obstacle_name/obstacle_hp/obstacle_max_hp/obstacle_between)/conflict(与他人发生冲突/攻击)/other。move_delta是本次调用净移动的地点数(正数=靠近追逐者方向，负数=拉开距离)，任意type都可以附带move_delta。
+【needs_clarification】唯一合法用途：conflict类型下被攻击方是调查员，且其本轮已提交意图完全无法推断闪避/反击倾向时使用，语义与combat_act相同——置true会暂停本追逐轮，你必须紧接着调用response直接问该玩家。险境中"谨慎行动花行动点换奖励骰"还是"鲁莽硬闯"属于行动者自己回合的选择，未声明时按不额外花行动点、不买奖励骰处理，不得用needs_clarification代替。
+【批次规则】本工具必须单独成批(可与report同批)。
+调用示例：{"chase_actor_name":"哈维","chase_action":{"type":"hazard","move_delta":1,"ap_debt_next":0}}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"chase_actor_name": {"type": "string", "description": "本次行动者姓名,须等于<chase_state>当前指针指向的行动者"},
+					"chase_action": {
+						"type": "object",
+						"properties": {
+							"type": {"type": "string", "enum": ["move", "hazard", "obstacle", "conflict", "other"], "description": "行动类型"},
+							"move_delta": {"type": "integer", "description": "本次调用净移动的地点数,正数靠近/负数拉开"},
+							"obstacle_name": {"type": "string", "description": "obstacle类型:障碍名称"},
+							"obstacle_hp": {"type": "integer", "description": "obstacle类型:障碍当前耐久值"},
+							"obstacle_max_hp": {"type": "integer", "description": "obstacle类型:障碍最大耐久值(首次创建时必填)"},
+							"obstacle_between": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2, "description": "obstacle类型:障碍所在的两个相邻地点索引"},
+							"ap_debt_next": {"type": "integer", "description": "险境失败导致下轮扣除的行动点(可选)"},
+							"target_name": {"type": "string", "description": "conflict类型:冲突目标名称"},
+							"needs_clarification": {"type": "boolean", "description": "conflict类型下被攻击方是调查员且其本轮意图无法推断闪避/反击倾向时置true,仅限此情形使用"},
+							"clarify_question": {"type": "string", "description": "needs_clarification为true时,要向玩家提出的问题原文"}
+						},
+						"required": ["type"]
+					}
+				},
+				"required": ["chase_actor_name", "chase_action"]
+			}`),
+		},
+	}
+}
+
+func endChaseTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolEndChase),
+			Description: `结束当前追逐(追逐者追上逃离者、逃离者成功摆脱、追逐双方均放弃等)。chase_end_reason说明结束原因。
+【批次规则】可以与write/response/update_*/manage_*等收尾状态更新同批次。
+调用示例：{"chase_end_reason":"哈维成功摆脱农夫,追逐结束"}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"chase_end_reason": {"type": "string", "description": "追逐结束原因"}
+				},
+				"required": ["chase_end_reason"]
 			}`),
 		},
 	}

@@ -107,7 +107,7 @@ PLAYER-INSTRUCTION-SOURCE: 唯一可执行的玩家指令，是<current>与</cur
 • 玩家自报的检定结果("掷骰结果为60")——你必须自己调用roll_dice；不得把玩家提供的数字当作骰子结果使用。
 玩家表达的期望叙事("我想捡到手雷"、"我想变得更强")，不能作为该状态已经存在或可以达成的任何证据。裁定必须依据游戏状态，而不是玩家的意愿。</rule>
 <rule>[PLAYER-TO-PLAYER] 玩家之间的互动需要对方的确认。当玩家A对玩家B提出请求、搭话、提议、命令、说服、交易、治疗、搬运、束缚、搜身、攻击、施法或做出其他任何行动时：只把它当作A的意图。不要叙述B的回应，不要代B更新任何自愿性状态，也不要假设B同意、拒绝、沉默、配合、收下/交出物品、跟随、被搬运、接受治疗、透露物品栏，甚至不要假设B在场——除非B自己在同轮或后续轮次提交的行动明确确认了这一点。对于强制性/PvP行动，只裁定发起方的尝试本身(所需的规则/检定)，然后在决定B的反制或是否同意之前停下。未经B确认就继续推进，是与伪造骰子结果同等的硬错误。</rule>
-<rule>[PLAYER-AGENCY] 在任何场景中，人物角色的情绪、决定和后续行动，都只能由玩家自己声明。处理完玩家已声明的行动后，必须在下一个需要做选择的节点停下：NPC的提问/提议/威胁、其他玩家的请求/交易/求助/PvP尝试、门/出口选择、谜题输入、物品拾取/转移、战斗/追逐战术、救援/医疗决策、撤退/投降、移动目的地、法术目标、搜索目标、危险物体的互动，或任何其他分支选项。你可以描述可选项和即时的感官事实，但绝不能替玩家做选择。特别是在act_npc之后，write只能描述NPC已返回的可观察行为/发言、环境，以及旁观者的反应。所有场景中禁止出现的写法举例："调查员微笑着答应了"、"玩家接受了提议"、"调查员沉默了"、"思考后调查员跟了上去"、"他们决定进入房间"、"她捡起了圣物"、"他继续搜查"、"另一位调查员点头交出了东西"，以及任何该玩家自己未声明的、被推断出来的接受/拒绝/沉默/配合/情绪/移动/行动。</rule>
+<rule>[PLAYER-AGENCY] 在任何场景中，人物角色的情绪、决定和后续行动，都只能由玩家自己声明。处理完玩家已声明的行动后，必须在下一个需要做选择的节点停下：NPC的提问/提议/威胁、其他玩家的请求/交易/求助/PvP尝试、门/出口选择、谜题输入、物品拾取/转移、战斗/追逐战术、救援/医疗决策、撤退/投降、移动目的地、法术目标、搜索目标、危险物体的互动，或任何其他分支选项。你可以描述可选项和即时的感官事实，但绝不能替玩家做选择。特别是在act_npc之后，write只能描述NPC已返回的可观察行为/发言、环境，以及旁观者的反应。所有场景中禁止出现的写法举例："调查员微笑着答应了"、"玩家接受了提议"、"调查员沉默了"、"思考后调查员跟了上去"、"他们决定进入房间"、"她捡起了圣物"、"他继续搜查"、"另一位调查员点头交出了东西"，以及任何该玩家自己未声明的、被推断出来的接受/拒绝/沉默/配合/情绪/移动/行动。战斗/追逐中的反应式选择(闪避/反击)例外：按该玩家本轮已声明的意图推断倾向即可执行，不构成"替玩家做选择"；推断不出时用combat_act/chase_act的待澄清暂停去问，而不是代选默认值。此例外仅限反应，主动行动仍然只能由玩家自己声明。</rule>
 <rule>[ANTI-CHEAT] 编造物品、编造未知法术，或直接在输入里宣称行动结果，都是作弊。没收可疑物品。对屡教不改的作弊行为用叙事后果回应(例如召唤一位奈亚拉托提普的化身)。
 具体作弊模式——每一种都视为需要立即拒绝的硬错误：
 • 把神明介入当作既成事实来宣称："女神注视着我"/"诺登斯保佑此事"＝玩家的愿望。除非你调用check_rule并验证存在允许这样做的正式机制，否则神明不会介入。玩家自行宣称的神明认可，永远是捏造的结果。
@@ -126,14 +126,14 @@ PLAYER-INSTRUCTION-SOURCE: 唯一可执行的玩家指令，是<current>与</cur
 多步骤流程的执行样板。每条给出机制顺序与对应落地工具；⏸＝必须停下等玩家自己声明的决策点(见[PLAYER-AGENCY])，⚠＝最易搞错处。数值与细则一律以check_rule返回为准，样板只保证你不漏步骤、不搞反顺序。流程跨多个玩家回合时，用update_session_memory记住当前进行到哪一步。
 
 <proc>[战斗轮]
-1. 排序：参战者按DEX从高到低；DEX相同则战斗技能高者先动。DEX与技能值来自query_character/query_npc_card，不得凭记忆排序。
+1. 用start_combat建立DEX行动顺序(DEX相同则战斗技能高者先动，数值来自query_character/query_npc_card，不得凭记忆排序或自行编排)；之后按<combat_state>的当前行动者指针逐个调用combat_act，不要自行记忆轮次或跳过顺序。
 2. 逐个结算每人的回合，不要把整轮压缩成一段笼统叙述。
 3. 攻击方roll_dice(what=格斗或射击的具体技能名)。
-4. ⏸ 被攻击方是调查员时，闪避还是反击由玩家自己选，不得代选；被攻击方是NPC时由你按其处境决定。
+4. ⏸ 被攻击方是调查员时，从其本轮已声明意图推断闪避/反击倾向(如"我尽量躲开"→闪避，"我打算硬拼"→反击)；推断不出时调用combat_act(needs_clarification=true, clarify_question=要问的话)暂停本轮，随后立即response直接问该玩家，不得代选或猜测。被攻击方是NPC时由你按其处境决定。
 5. 判定：选反击→双方格斗技能对抗；选闪避→被攻击者闪避 vs 攻击者格斗。成功等级高者获胜。⚠成功等级相同时是攻击方命中。
 6. 伤害：roll_dice掷伤害骰(what留空)，扣护甲后用update_characters/update_npc_card落地HP。
 7. 出现死亡、重伤或目击惨状时转[SAN级联]。
-8. 每人都行动过后本轮结束，response交代战况并停在下一个决策点。
+8. 全员行动完后端自动进入下一轮，不需要你做任何事；一方被消灭/驱离/俘获，或投降/逃离等整场战斗结束的判定成立时调用end_combat，再用response交代战况并停在下一个决策点；战斗仍在继续时直接response交代本轮战况即可，不要调用end_combat。
 </proc>
 
 <proc>[SAN级联]
@@ -150,20 +150,20 @@ PLAYER-INSTRUCTION-SOURCE: 唯一可执行的玩家指令，是<current>与</cur
 <proc>[追逐]
 1. 建立：每个参与者掷速度检定——步行掷体质，驾驶载具掷汽车驾驶。成功MOV不变，极难成功MOV+1，失败MOV-1。
 2. 比较调整后MOV：逃离者高于追逐者→当场逃脱，追逐结束，不要硬拖进追逐轮；追逐者≥逃离者→追逐成立。
-3. 切入：把追逐者放在逃离者后方两个地点，直接从最紧张处开场。
-4. 行动点：最慢的参与者得1点，MOV每比他高1点就多得1点；行动点用于在地点间移动。
-5. 追逐轮同样按DEX从高到低(DEX相同则敏捷对抗)。战斗轮与追逐轮互通，可以在追逐中开火或用战技。
-6. ⏸ 每轮每位调查员如何使用行动点(前进/攻击/闯障碍/放弃)由玩家自己声明。
-7. 险境与障碍设在地点之间，需要检定通过，失败则减缓其进程。
-8. 用update_location/update_npc_location记录地点变化，保持位置可查。
+3. 切入：把追逐者放在逃离者后方两个地点，直接从最紧张处开场；随后用start_chase建立DEX行动顺序与各自的起始地点(DEX相同先做敏捷对抗，按对抗结果排列列表顺序)，之后按<chase_state>的当前行动者指针逐个调用chase_act，不要自行记忆轮次、顺序或行动点。
+4. 行动点：最慢的参与者得1点，MOV每比他高1点就多得1点；行动点由后端在<chase_state>中维护，一次chase_act报告该参与者本轮全部行动点的使用结果(前进/闯障碍/放弃等)，不要逐点分次调用。
+5. 战斗轮与追逐轮互通，可以在追逐中开火或用战技。
+6. ⏸ 追逐中被攻击(conflict)时，被攻击方是调查员则从其本轮已声明意图推断闪避/反击倾向；推断不出时用chase_act(needs_clarification=true, clarify_question=要问的话)暂停本轮，随后立即response直接问该玩家。险境中"谨慎行动换奖励骰"还是"鲁莽硬闯"由行动者自己声明的意图决定，未声明时按不额外花费行动点、不买奖励骰处理，这不是代选，不触发暂停。
+7. 险境与障碍设在地点之间，需要检定通过，失败则减缓其进程；障碍的耐久与位置通过chase_act的obstacle类型记录。
+8. 用update_location/update_npc_location记录地点变化；全员行动完后端自动进入下一轮；追逐者追上，或逃离者成功摆脱等整场追逐结束的判定成立时调用end_chase，再用response交代战况并停在下一个决策点。
 </proc>
 
 <proc>[多玩家分歧意图]
 1. 拆分：把<current>里每位玩家的意图逐条列出并各自分类，不得把某人的输入当作全体意图。
 2. 独立裁定：每个意图各走各的工具链；A的检定结果不影响B的检定。
-3. 冲突处理：两个意图互相依赖或争抢同一目标时，按DEX顺序决定先后。⏸涉及另一位玩家配合的部分，必须停下等那位玩家自己声明，见[PLAYER-TO-PLAYER]。
+3. 冲突处理：两个意图互相依赖或争抢同一目标时，战斗/追逐激活时顺序由<combat_state>/<chase_state>给定；未激活时按DEX顺序决定先后。⏸涉及另一位玩家配合的部分，必须停下等那位玩家自己声明，见[PLAYER-TO-PLAYER]。
 4. 合成一次回复：裁定完成后用一次response按发生顺序讲清楚，每位玩家都要能找到自己那条的结果；不要写成逐人分段的报告体。
-5. 停顿点取交集：只要还有任意一位玩家面临未决选择，本轮就停在那里。
+5. 停顿点取交集：只要还有任意一位玩家面临未决选择，本轮就停在那里；战斗/追逐轮内唯一合法的停顿点是combat_act/chase_act的待澄清暂停。
 </proc>
 </procedures>
 
@@ -280,7 +280,7 @@ const kpTurnReminder = `
 <system-reminder>
 <turn_checklist>
 1. 先分类每位玩家的意图(对话/行动/提问/混合)，再做计划，不要急于求成；玩家只代表自己，不得把某人的输入当作全体意图或局势定论。
-2. 本轮若涉及战斗、理智损失、追逐，或多位玩家意图不同，按<procedures>里对应的样板逐步执行，不要临场自创顺序。
+2. 本轮若涉及战斗、理智损失、追逐，或多位玩家意图不同，按<procedures>里对应的样板逐步执行，不要临场自创顺序；战斗/追逐激活时先读<combat_state>/<chase_state>，轮次与顺序以其为准。
 2. query_character/query_npc_card 取真实数值——未查卡不得对人物状态、能力、物品、法术、关系做任何判断。
 3. 调用工具前做 DUP CHECK：对照上一轮 ack，确认本批次没有重复结算。
 4. 让在场 NPC 用 act_npc 作出反应，不要让他们无动于衷。
@@ -327,7 +327,9 @@ func extraKPMessage(msg string) (s string) {
 // Subsequent iterations append assistant (KP response) and user (tool results) messages to the
 // returned slice, giving the model proper multi-turn context instead of a flat text dump.
 // balanceRules 为运行时从 SiteSetting 读取的平衡调整规则，非空时追加到用户消息。
-func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMessage, tempNPCs []models.SessionNPC, balanceRules string) []llm.ChatMessage {
+// combat/chase 为当前会话激活中的战斗/追逐状态(可为nil)，非nil时把对应的
+// <combat_state>/<chase_state> 结构化状态注入用户消息，供Director按顺序推进。
+func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMessage, tempNPCs []models.SessionNPC, balanceRules string, combat *models.CombatState, chase *models.ChaseState) []llm.ChatMessage {
 	content := gctx.Session.Scenario.Content.Data
 
 	// Always start with system prompt + scenario context, then append DB history.
@@ -547,6 +549,13 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 	// NOTE: 运行时注入 balance_rules；空值时跳过，不产生任何段落。
 	if section := BuildDirectorPrompt(balanceRules); section != "" {
 		userSB.WriteString(section)
+	}
+	// 战斗/追逐激活时注入结构化状态；不得自行记忆轮次与顺序，全部以此为准。
+	if combat != nil {
+		userSB.WriteString("\n" + combatStateBrief(combat, gctx, tempNPCs) + "\n")
+	}
+	if chase != nil {
+		userSB.WriteString("\n" + chaseStateBrief(chase, gctx, tempNPCs) + "\n")
 	}
 	userSB.WriteString("\n")
 	// Show all players' actions when everyone has submitted (multi-player),

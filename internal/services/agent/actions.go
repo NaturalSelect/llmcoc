@@ -22,13 +22,20 @@ type ActionContext struct {
 	// 工具执行器写入、调度循环读取的可变状态。
 	HasEnd             *bool
 	TimeAdvancedInTurn *bool
-	SwitchRole         *bool
 	KPNarration        *string
 	PendingWrite       *string
 	PendingImages      *[]ImagePromptRequest
 	WroteNarrative     *bool
 	WriterNSFW         *bool
 	DiceMsg            *string
+
+	// Combat/Chase 是本次run()持有的活战斗/追逐状态(nil=未激活);战斗/追逐工具
+	// 执行器通过它们读写、并允许置nil(start_*建立/end_*清空)。二者互斥。
+	// RoundClosed是run内一次性闸门(D2):一次run最多完整推进一个战斗/追逐轮,
+	// 翻页后置位,同一run内后续combat_act/chase_act一律拒绝,逼Director用response收尾。
+	Combat      **models.CombatState
+	Chase       **models.ChaseState
+	RoundClosed *bool
 }
 
 // Action is implemented by every tool call handler.
@@ -75,6 +82,8 @@ var responseCompatibleActions = map[ToolCallType]bool{
 	ToolAdvanceTime:            true,
 	ToolCreateNPC:              true,
 	ToolDestroyNPC:             true,
+	ToolEndCombat:              true,
+	ToolEndChase:               true,
 }
 
 // actionRegistry 映射工具动作到具体执行器。
@@ -109,6 +118,13 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolGenerateImage:          generateImageAction{},
 	ToolResponse:               responseAction{},
 	ToolReport:                 reportAction{},
+
+	ToolStartCombat: startCombatAction{},
+	ToolCombatAct:   combatActAction{},
+	ToolEndCombat:   endCombatAction{},
+	ToolStartChase:  startChaseAction{},
+	ToolChaseAct:    chaseActAction{},
+	ToolEndChase:    endChaseAction{},
 }
 
 // ── Rule / lookup actions ─────────────────────────────────────────────────────

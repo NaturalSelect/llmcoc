@@ -26,7 +26,7 @@ func initAgentTestDB(t *testing.T) {
 		t.Fatalf("get sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&models.CharacterCard{}); err != nil {
+	if err := db.AutoMigrate(&models.CharacterCard{}, &models.GameSession{}, &models.SessionPlayer{}, &models.SessionNPC{}); err != nil {
 		t.Fatalf("auto-migrate: %v", err)
 	}
 	prev := models.DB

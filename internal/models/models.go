@@ -495,16 +495,19 @@ type CoinRecharge struct {
 // ── Combat cross-round state ──────────────────────────────────────────────────
 
 // CombatParticipant tracks one combatant's cross-round state.
+// HP/伤势不在此存储,权威始终是角色卡/NPC卡,渲染提示时实时读取。
 type CombatParticipant struct {
-	Name          string `json:"name"`
-	DEX           int    `json:"dex"`
-	HP            int    `json:"hp"`
-	IsNPC         bool   `json:"is_npc"`
-	HasActed      bool   `json:"has_acted"`        // 本轮是否已行动
-	HasDodgedOrFB bool   `json:"has_dodged_or_fb"` // 本轮是否已闪避/反击(寡不敌众判断用)
-	IsAiming      bool   `json:"is_aiming"`        // 是否正在瞄准(下轮攻击+奖励骰)
-	APDebt        int    `json:"ap_debt"`          // 下轮行动点扣除(寻找掩体等动作欠债)
-	WoundState    string `json:"wound_state"`      // none/major/dying/dead
+	Name                 string `json:"name"`
+	DEX                  int    `json:"dex"`
+	CombatSkill          int    `json:"combat_skill"` // DEX相同时的次级排序依据,仅记录审计用
+	IsNPC                bool   `json:"is_npc"`
+	UserID               uint   `json:"user_id"`               // PC对应的玩家UserID;NPC为0
+	HasActed             bool   `json:"has_acted"`             // 本轮是否已行动
+	HasDodgedOrFB        bool   `json:"has_dodged_or_fb"`      // 本轮是否已闪避/反击(寡不敌众判断用)
+	IsAiming             bool   `json:"is_aiming"`             // 是否正在瞄准(下轮攻击+奖励骰)
+	APDebt               int    `json:"ap_debt"`               // 下轮行动点扣除(寻找掩体等动作欠债)
+	PendingClarification bool   `json:"pending_clarification"` // 是否卡在"待澄清暂停"(反应意图无法从已提交内容推断)
+	PendingQuestion      string `json:"pending_question"`      // 待澄清暂停时要问玩家的问题
 }
 
 // CombatState holds the full cross-round state of an ongoing combat encounter.
@@ -520,12 +523,17 @@ type CombatState struct {
 
 // ChaseParticipant tracks one participant's cross-round state in a chase.
 type ChaseParticipant struct {
-	Name      string `json:"name"`
-	IsNPC     bool   `json:"is_npc"`
-	MOV       int    `json:"mov"`      // 速度检定后固定的MOV值
-	Location  int    `json:"location"` // 当前地点索引(数字越大越靠前)
-	APDebt    int    `json:"ap_debt"`  // 下轮扣除的行动点(险境失败欠债)
-	IsPursuer bool   `json:"is_pursuer"`
+	Name                 string `json:"name"`
+	IsNPC                bool   `json:"is_npc"`
+	DEX                  int    `json:"dex"`      // 追逐轮行动顺序依据
+	MOV                  int    `json:"mov"`      // 速度检定后固定的MOV值
+	Location             int    `json:"location"` // 当前地点索引(数字越大越靠前)
+	APDebt               int    `json:"ap_debt"`  // 下轮扣除的行动点(险境失败欠债)
+	IsPursuer            bool   `json:"is_pursuer"`
+	UserID               uint   `json:"user_id"`               // PC对应的玩家UserID;NPC为0
+	HasActed             bool   `json:"has_acted"`             // 本轮是否已行动
+	PendingClarification bool   `json:"pending_clarification"` // 是否卡在"待澄清暂停"
+	PendingQuestion      string `json:"pending_question"`      // 待澄清暂停时要问玩家的问题
 }
 
 // ChaseObstacle represents a persistent obstacle between two chase locations.
@@ -544,6 +552,7 @@ type ChaseState struct {
 	MinMOV       int                `json:"min_mov"` // 所有参与者中最低MOV,用于计算行动点
 	Participants []ChaseParticipant `json:"participants"`
 	Obstacles    []ChaseObstacle    `json:"obstacles"`
+	ActorIndex   int                `json:"actor_index"` // 当前行动者在Participants中的索引
 }
 
 // ── Agent system models ──────────────────────────────────────────────────────
@@ -560,15 +569,15 @@ const (
 	// NOTE: AgentRoleWriterNSFW 是可选的成人向叙事 Agent；仅当房间开启NSFW且本轮被标记为
 	// 色情内容时才路由过去，可绑定独立的provider/模型，未配置或未启用时自动回落默认Writer。
 	AgentRoleWriterNSFW AgentRole = "writer_nsfw"
-	AgentRoleEvaluator AgentRole = "evaluator"
-	AgentRoleGrowth    AgentRole = "growth"
-	AgentRoleLawyer    AgentRole = "lawyer"
-	AgentRoleNPC       AgentRole = "npc"
+	AgentRoleEvaluator  AgentRole = "evaluator"
+	AgentRoleGrowth     AgentRole = "growth"
+	AgentRoleLawyer     AgentRole = "lawyer"
+	AgentRoleNPC        AgentRole = "npc"
 	// NOTE: AgentRoleNPCNSFW 是可选的成人向NPC互动 Agent；仅当房间开启NSFW且本次act_npc调用被
 	// 标记为色情内容时才路由过去，可绑定独立的provider/模型，未配置或未启用时自动回落默认NPC。
 	AgentRoleNPCNSFW AgentRole = "npc_nsfw"
-	AgentRolePainter   AgentRole = "painter"
-	AgentRoleParser    AgentRole = "parser"
+	AgentRolePainter AgentRole = "painter"
+	AgentRoleParser  AgentRole = "parser"
 	// NOTE: AgentRoleTranslator 负责发散联想、世界知识和资料转译；独立于Lawyer，不复用其provider/model。
 	AgentRoleTranslator AgentRole = "translator"
 	// NOTE: AgentRoleCompiler 负责把故事阶段产出的纯文本剧本编译为结构化ScenarioContent；

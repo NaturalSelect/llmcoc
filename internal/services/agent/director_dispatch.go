@@ -30,8 +30,12 @@ func directorActNPCCompatible(action ToolCallType) bool {
 // directorBatchPolicy 构造 Director 原生工具循环的整批校验策略。
 // imageGeneratedThisTurn 由 run() 持有并跨轮次共享，用于保留"每回合最多生成一张
 // 图片"的限制(这条限制跨越多轮 ChatWithTools 调用，必须用闭包捕获的指针维持)。
+// combat/chase/roundClosed 是 run() 持有的战斗/追逐状态与"本轮是否已推进过一个
+// 战斗/追逐回合"标记，用于战斗/追逐轮次的批次校验(见下方 ENCOUNTER SEQUENCING)。
+// pendingActions 是本次run收到的玩家声明集合，用于RULE 5判断"未行动者是否可推进"
+// ——按批次收集后，不在当前批次的PC不会有声明，不能因为它们未行动就卡住response。
 // emitProgress 用于在拒绝分支保留原有的 SSE 提示文案。
-func directorBatchPolicy(imageGeneratedThisTurn *bool, emitProgress func(string)) toolBatchPolicy {
+func directorBatchPolicy(imageGeneratedThisTurn *bool, combat **models.CombatState, chase **models.ChaseState, roundClosed *bool, pendingActions []PlayerAction, emitProgress func(string)) toolBatchPolicy {
 	return func(calls []llm.ToolCall) string {
 		hasResponse := false
 		hasNonCompatible := false
@@ -139,6 +143,126 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, emitProgress func(string)
 			return "SYSTEM REJECT: describe_characters 与 generate_image 不能同批——提交时外貌描写还没返回，image_prompt 里的角色外貌只能是编造。请本轮只发 describe_characters，读到结果后再在下一轮画图。"
 		}
 
+		// ENCOUNTER SEQUENCING：战斗/追逐轮次的批次校验。
+		combatActive := combat != nil && *combat != nil && (*combat).Active
+		chaseActive := chase != nil && *chase != nil && (*chase).Active
+
+		// RULE 1: start_combat/combat_act/start_chase/chase_act 必须单独成批(可搭配
+		// report)，不能与彼此、与自身多次调用、或其他任何工具同批——后端强制的行动
+		// 顺序需要先被模型读到，才能决定下一步调用谁。
+		soloEncounterActions := map[ToolCallType]bool{
+			ToolStartCombat: true,
+			ToolCombatAct:   true,
+			ToolStartChase:  true,
+			ToolChaseAct:    true,
+		}
+		soloCount := 0
+		hasOtherThanReport := false
+		var soloAction string
+		for _, call := range calls {
+			action := ToolCallType(call.Name)
+			if soloEncounterActions[action] {
+				soloCount++
+				soloAction = string(action)
+			} else if action != ToolReport {
+				hasOtherThanReport = true
+			}
+		}
+		if soloCount > 1 || (soloCount == 1 && hasOtherThanReport) {
+			emitProgress("KP正在修正工具调用顺序")
+			return fmt.Sprintf("SYSTEM REJECT: %s 必须单独成批调用(可以搭配report)，不能与其他工具或自身的多次调用混在同一批。请拆成多轮，每次只发一个战斗/追逐推进工具，读到结果后再决定下一步。", soloAction)
+		}
+
+		// RULE 2: 没有激活战斗/追逐时，拒绝对应的推进/结束工具。
+		for _, call := range calls {
+			switch ToolCallType(call.Name) {
+			case ToolCombatAct, ToolEndCombat:
+				if !combatActive {
+					emitProgress("KP正在修正工具调用顺序")
+					return "SYSTEM REJECT: 当前没有进行中的战斗，不能调用combat_act/end_combat。请先调用start_combat。"
+				}
+			case ToolChaseAct, ToolEndChase:
+				if !chaseActive {
+					emitProgress("KP正在修正工具调用顺序")
+					return "SYSTEM REJECT: 当前没有进行中的追逐，不能调用chase_act/end_chase。请先调用start_chase。"
+				}
+			}
+		}
+
+		// RULE 3: 战斗与追逐互斥，同一时刻只能有一种进行中。
+		for _, call := range calls {
+			action := ToolCallType(call.Name)
+			if action == ToolStartCombat && chaseActive {
+				emitProgress("KP正在修正工具调用顺序")
+				return "SYSTEM REJECT: 追逐正在进行中，战斗与追逐互斥，不能调用start_combat。请先end_chase。"
+			}
+			if action == ToolStartChase && combatActive {
+				emitProgress("KP正在修正工具调用顺序")
+				return "SYSTEM REJECT: 战斗正在进行中，战斗与追逐互斥，不能调用start_chase。请先end_combat。"
+			}
+		}
+
+		// RULE 4: advance_time 与战斗/追逐互斥——战斗/追逐轮以秒计，与30分钟/轮的
+		// 时间推进语义冲突。
+		if combatActive || chaseActive {
+			for _, call := range calls {
+				if ToolCallType(call.Name) == ToolAdvanceTime {
+					emitProgress("KP正在修正工具调用顺序")
+					return "SYSTEM REJECT: 战斗/追逐进行中不能调用advance_time——战斗/追逐轮以秒计，与30分钟/轮的时间推进语义冲突。"
+				}
+			}
+		}
+
+		// RULE 5: response/end_game 完整性前置——战斗/追逐激活且本批未把它结束时，
+		// 若本回合还有"可推进"的未行动者(NPC，或已提交声明的PC)、且没有任何参战者
+		// 处于待澄清暂停，则整批拒绝并列出还差谁未结算；不在当前批次里的PC(还没
+		// 提交声明)不计入未行动者——按批次收集后，它们本来就不该在这次run里被推
+		// 进，不能因为它们未行动就卡住收尾。有待澄清暂停时放行(模型需要紧接着用
+		// response去问)。
+		if hasResponse {
+			hasEndCombat, hasEndChase := false, false
+			for _, call := range calls {
+				switch ToolCallType(call.Name) {
+				case ToolEndCombat:
+					hasEndCombat = true
+				case ToolEndChase:
+					hasEndChase = true
+				}
+			}
+			if combatActive && !hasEndCombat && !*roundClosed {
+				hasPending := false
+				var unresolved []string
+				for _, p := range (*combat).Participants {
+					if p.PendingClarification {
+						hasPending = true
+					}
+					if !p.HasActed && (p.IsNPC || hasDeclaration(pendingActions, p.UserID, p.Name)) {
+						unresolved = append(unresolved, p.Name)
+					}
+				}
+				if !hasPending && len(unresolved) > 0 {
+					emitProgress("KP正在补全战斗轮结算")
+					return fmt.Sprintf("SYSTEM REJECT: 本战斗轮还有参战者未行动(%s)，不能调用response/end_game收尾。请按<combat_state>顺序对当前行动者继续调用combat_act，全员行动完后端会自动进入下一轮再允许response。", strings.Join(unresolved, "、"))
+				}
+			}
+			if chaseActive && !hasEndChase && !*roundClosed {
+				hasPending := false
+				var unresolved []string
+				for _, p := range (*chase).Participants {
+					if p.PendingClarification {
+						hasPending = true
+					}
+					if !p.HasActed && (p.IsNPC || hasDeclaration(pendingActions, p.UserID, p.Name)) {
+						unresolved = append(unresolved, p.Name)
+					}
+				}
+				if !hasPending && len(unresolved) > 0 {
+					emitProgress("KP正在补全追逐轮结算")
+					return fmt.Sprintf("SYSTEM REJECT: 本追逐轮还有参与者未行动(%s)，不能调用response/end_game收尾。请按<chase_state>顺序对当前行动者继续调用chase_act，全员行动完后端会自动进入下一轮再允许response。", strings.Join(unresolved, "、"))
+				}
+			}
+		}
+
 		// EMBEDDED-SKILL-VALUE：roll_dice.what 只是纯文本标签，不能编码猜测的技能值。
 		// 只检测数字——COC技能名本身常见圆括号(格斗(斗殴)/母语(英语)等)，不能用圆括号判定。
 		for _, call := range calls {
@@ -228,15 +352,22 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, emitProgress func(string)
 }
 
 // directorDispatchState 汇总 run() 里跨轮次共享、由 Director 工具执行读写的可变
-// 状态；每轮 ActionContext 都指向同一份状态(HasEnd/switchInThisBatch
-// 除外，这两个是每轮独立重置的局部状态，见 directorBatchDispatch)。
+// 状态；每轮 ActionContext 都指向同一份状态(HasEnd 除外，它是每轮独立重置的局部
+// 状态，见 directorBatchDispatch)。combat/chase 是双重指针：外层指针本身不变(整个
+// run() 期间地址稳定)，内层指针在 start_combat/start_chase/end_combat/end_chase
+// 执行时被替换，使同一份 ActionContext 能跨轮观察到状态从 nil 到非 nil 或反之的
+// 变化。roundClosed 由 combat_act/chase_act 在推进到下一轮时置位，是一次 run() 内
+// "最多推进一个战斗/追逐回合"的门闩，同时供 directorBatchPolicy 判断本回合是否
+// 已经结算完毕。
 type directorDispatchState struct {
 	sid                 uint
 	gctx                *GameContext
 	handles             map[models.AgentRole]agentHandle
 	tempNPCs            *[]models.SessionNPC
 	timeAdvancedInTurn  *bool
-	switchRole          *bool
+	combat              **models.CombatState
+	chase               **models.ChaseState
+	roundClosed         *bool
 	kpNarration         *string
 	pendingWrite        *string
 	pendingImages       *[]ImagePromptRequest
@@ -270,13 +401,12 @@ func joinToolResults(results []ToolResult) string {
 //
 // 并发策略与旧 executeParallelBatch 一致：check_rule 各自并发；act_npc 按 NPC 名
 // 分组，不同 NPC 并发、同一 NPC 顺序执行以保留其记忆顺序；其余工具按原始顺序依次
-// 执行。switchRole 语义照旧保留(目前唯一置位来源是战斗/追逐死代码，实际不会触发)。
+// 执行。
 // SSE 进度文案的粒度与旧代码一致：批内出现 >1 个 check_rule 或 >1 个不同 NPC 时，
 // 发一条合并提示；否则按调用顺序逐条发。
 func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 	return func(ctx context.Context, calls []llm.ToolCall) []toolOutcome {
 		hasEnd := false
-		switchInThisBatch := false
 
 		actx := ActionContext{
 			Ctx:                ctx,
@@ -286,7 +416,9 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			TempNPCs:           st.tempNPCs,
 			HasEnd:             &hasEnd,
 			TimeAdvancedInTurn: st.timeAdvancedInTurn,
-			SwitchRole:         st.switchRole,
+			Combat:             st.combat,
+			Chase:              st.chase,
+			RoundClosed:        st.roundClosed,
 			KPNarration:        st.kpNarration,
 			PendingWrite:       st.pendingWrite,
 			PendingImages:      st.pendingImages,
@@ -382,7 +514,7 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			}(i, tc)
 		}
 
-		// 顺序执行剩余调用；switchRole 语义与旧代码一致(目前恒为false，仅保留结构)。
+		// 顺序执行剩余调用。
 		for i, tc := range decoded {
 			if decodeErr[i] != nil || asyncIdx[i] {
 				continue
@@ -390,21 +522,8 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			if ctx.Err() != nil {
 				break
 			}
-			if *st.switchRole {
-				if switchInThisBatch || (tc.Action != ToolWrite && tc.Action != ToolResponse && tc.Action != ToolEndGame && tc.Action != ToolHint) {
-					resultSlots[i] = []ToolResult{{
-						Action: tc.Action,
-						Result: "Interrupted: KP has switched control to Player, skipping this tool call. Please use write or response in next message to proceed.",
-					}}
-					continue
-				}
-			}
-			prevSwitch := *st.switchRole
 			if handler, ok := actionRegistry[tc.Action]; ok {
 				resultSlots[i] = handler.Execute(tc, actx)
-			}
-			if !switchInThisBatch && *st.switchRole && !prevSwitch {
-				switchInThisBatch = true
 			}
 		}
 

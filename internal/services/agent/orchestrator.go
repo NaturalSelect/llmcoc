@@ -18,6 +18,10 @@ import (
 
 const MaxKpRound = 30
 
+// MaxKpRoundEncounter 是战斗/追逐激活时的单轮预算：DEX 序需要每个存活参战者各发
+// 一次 combat_act/chase_act，参战人数多时远超 MaxKpRound 的常规预算。
+const MaxKpRoundEncounter = 40
+
 var internalTagPattern = regexp.MustCompile(`(?s)<(?:ack|direction|response_options)\b[^>]*>.*?</(?:ack|direction|response_options)>`)
 
 // activeSessions prevents concurrent agent runs for the same game session.
@@ -196,7 +200,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	if len(gctx.PendingActions) > 1 {
 		debugf("run", "session=%d multi-player round: %d actions", sid, len(gctx.PendingActions))
 	}
-	turnPlayerIDs := activeTurnPlayerIDs(gctx.Session.Players)
 
 	// Load temp NPCs for this session.
 	var tempNPCs []models.SessionNPC
@@ -215,9 +218,11 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	// NOTE: 运行时读取 balance_rules 并注入 Director 用户消息；与 Lawyer 保持一致语义。
 	kpBalanceRules := strings.TrimSpace(models.GetSiteSetting("balance_rules", models.DefaultBalanceRules))
-	kpMsgs = buildKPMessages(gctx, withJailbreakPrompt(handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW))), kpMsgs, tempNPCs, kpBalanceRules)
+	combat := gctx.Session.CombatState.Data
+	chase := gctx.Session.ChaseState.Data
+	kpMsgs = buildKPMessages(gctx, withJailbreakPrompt(handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW))), kpMsgs, tempNPCs, kpBalanceRules, combat, chase)
 
-	switchRole := false
+	roundClosed := false
 
 	pendingWrite := ""
 	pendingImages := []ImagePromptRequest{}
@@ -232,7 +237,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		handles:             handles,
 		tempNPCs:            &tempNPCs,
 		timeAdvancedInTurn:  &timeAdvancedInTurn,
-		switchRole:          &switchRole,
+		combat:              &combat,
+		chase:               &chase,
+		roundClosed:         &roundClosed,
 		kpNarration:         &kpNarration,
 		pendingWrite:        &pendingWrite,
 		pendingImages:       &pendingImages,
@@ -247,18 +254,22 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	// 取得过任何进展(等价于旧协议 iter==0 时才把错误当作硬失败的规则)。
 	round := 0
 	directorStart := time.Now()
+	maxRounds := MaxKpRound
+	if combat != nil || chase != nil {
+		maxRounds = MaxKpRoundEncounter
+	}
 	err = runToolLoop(ctx, toolLoopOptions{
 		handle:        handles[models.AgentRoleDirector],
 		stage:         "director",
 		msgs:          kpMsgs,
 		tools:         directorTools(),
-		maxRounds:     MaxKpRound,
-		batchPolicy:   directorBatchPolicy(&imageGeneratedThisTurn, emitProgress),
+		maxRounds:     maxRounds,
+		batchPolicy:   directorBatchPolicy(&imageGeneratedThisTurn, &combat, &chase, &roundClosed, gctx.PendingActions, emitProgress),
 		batchDispatch: directorBatchDispatch(st),
 		beforeRound: func(r int) {
 			round = r
-			debugf("KP", "session=%d round=%d/%d — calling LLM", sid, r, MaxKpRound)
-			emitProgress(progressKPIteration(r-1, MaxKpRound))
+			debugf("KP", "session=%d round=%d/%d — calling LLM", sid, r, maxRounds)
+			emitProgress(progressKPIteration(r-1, maxRounds))
 		},
 		onToolCalls: func(calls []llm.ToolCall) {
 			debugf("KP", "session=%d round=%d → %d tool call(s): %s", sid, round, len(calls), formatNativeCallNames(calls))
@@ -291,9 +302,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 				models.DB.Save(card)
 				break
 			}
-			if checkTurnReadyForPlayers(gctx, turnPlayerIDs) {
-				clearTurnActions(gctx)
-			}
+			clearConsumedTurnActions(gctx, combat, chase)
 		}
 		emitProgress("KP主流程裁定完成")
 	}
@@ -339,7 +348,13 @@ func visibleActionNeedsWriter(action ToolCallType) bool {
 		ToolUpdateNPCCard,
 		ToolUpdateLocation,
 		ToolUpdateNPCLocation,
-		ToolUpdateArmor:
+		ToolUpdateArmor,
+		ToolStartCombat,
+		ToolCombatAct,
+		ToolEndCombat,
+		ToolStartChase,
+		ToolChaseAct,
+		ToolEndChase:
 		return true
 	default:
 		return false
@@ -426,6 +441,10 @@ func progressToolLabel(action ToolCallType) string {
 		return "生成场景图像"
 	case ToolAdvanceTime:
 		return "推进时间"
+	case ToolStartCombat, ToolCombatAct, ToolEndCombat:
+		return "推进战斗轮"
+	case ToolStartChase, ToolChaseAct, ToolEndChase:
+		return "推进追逐轮"
 	case ToolWrite:
 		return "整理白字素材"
 	case ToolResponse:
@@ -460,298 +479,6 @@ func saveWriterHistory(sessionID uint, state *WriterState) {
 		})
 }
 
-// ── Combat state helpers ──────────────────────────────────────────────────────
-
-// saveCombatState persists the CombatState JSON column on GameSession.
-// Pass nil to clear an ended combat.
-func saveCombatState(sessionID uint, cs *models.CombatState) {
-	models.DB.Model(&models.GameSession{}).
-		Where("id = ?", sessionID).
-		Update("combat_state", models.JSONField[*models.CombatState]{Data: cs})
-}
-
-// buildCombatState initialises a new CombatState from KP-provided participant inputs.
-// Participants are sorted by DEX descending (ties keep input order).
-func buildCombatState(inputs []CombatParticipantInput) models.CombatState {
-	parts := make([]models.CombatParticipant, len(inputs))
-	for i, inp := range inputs {
-		parts[i] = models.CombatParticipant{
-			Name:       inp.Name,
-			DEX:        inp.DEX,
-			HP:         inp.HP,
-			IsNPC:      inp.IsNPC,
-			WoundState: "none",
-		}
-	}
-	// Stable sort: higher DEX acts first.
-	sort.SliceStable(parts, func(i, j int) bool {
-		return parts[i].DEX > parts[j].DEX
-	})
-	return models.CombatState{
-		Active:       true,
-		Round:        1,
-		Participants: parts,
-		ActorIndex:   0,
-	}
-}
-
-// applyCombatAct applies one combatant's action to the CombatState and advances
-// the actor pointer. Returns a human-readable result string for the KP.
-func applyCombatAct(cs *models.CombatState, call ToolCall) (result string, switchRole bool) {
-	actorName := call.CombatActorName
-	act := call.CombatAction
-
-	// Find the actor in the participant list.
-	actorIdx := -1
-	for i, p := range cs.Participants {
-		if p.Name == actorName {
-			actorIdx = i
-			break
-		}
-	}
-	if actorIdx < 0 {
-		return fmt.Sprintf("错误:找不到战斗参与者 %q", actorName), false
-	}
-
-	actor := &cs.Participants[actorIdx]
-	actor.HasActed = true
-
-	switchRole = false
-	if next := (actorIdx + 1) % len(cs.Participants); next != actorIdx {
-		// NOTE: 如果下一个行动者是NPC,则保持KP角色不变让它继续决策；如果是玩家,则切换到玩家角色让KP决策玩家行动。
-		nextActor := cs.Participants[next]
-		switchRole = !nextActor.IsNPC && actor.IsNPC
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("【%s 行动】", actorName))
-
-	if act != nil {
-		switch act.Type {
-		case "aim":
-			actor.IsAiming = true
-			sb.WriteString("正在瞄准,下轮攻击获得奖励骰。")
-		case "take_cover":
-			debt := act.APDebtNext
-			if debt <= 0 {
-				debt = 1
-			}
-			actor.APDebt += debt
-			sb.WriteString(fmt.Sprintf("寻找掩体,下轮行动点-1。"))
-		case "dodge":
-			actor.HasDodgedOrFB = true
-			sb.WriteString(fmt.Sprintf("闪避 %s。", act.TargetName))
-		case "fight_back":
-			actor.HasDodgedOrFB = true
-			sb.WriteString(fmt.Sprintf("反击 %s。", act.TargetName))
-		case "attack":
-			// Clear aiming bonus after use.
-			if actor.IsAiming {
-				actor.IsAiming = false
-				sb.WriteString("(使用瞄准奖励骰)")
-			}
-			sb.WriteString(fmt.Sprintf("攻击 %s(武器:%s)。", act.TargetName, act.WeaponName))
-		default:
-			sb.WriteString(fmt.Sprintf("执行动作:%s。", act.Type))
-		}
-	}
-
-	// Advance actor index; if all have acted, start a new round.
-	allActed := true
-	for _, p := range cs.Participants {
-		if !p.HasActed && p.WoundState != "dead" {
-			allActed = false
-			break
-		}
-	}
-	if allActed {
-		cs.Round++
-		// Reset per-round flags and apply AP debts.
-		for i := range cs.Participants {
-			cs.Participants[i].HasActed = false
-			cs.Participants[i].HasDodgedOrFB = false
-			if cs.Participants[i].APDebt > 0 {
-				cs.Participants[i].APDebt-- // consume one point of debt
-			}
-		}
-		cs.ActorIndex = 0
-		sb.WriteString(fmt.Sprintf(" 本轮结束,进入第%d轮。", cs.Round))
-	} else {
-		// Advance to next living actor.
-		next := (actorIdx + 1) % len(cs.Participants)
-		for cs.Participants[next].HasActed || cs.Participants[next].WoundState == "dead" {
-			next = (next + 1) % len(cs.Participants)
-		}
-		cs.ActorIndex = next
-		sb.WriteString(fmt.Sprintf(" 下一行动者:%s(DEX %d)。", cs.Participants[next].Name, cs.Participants[next].DEX))
-	}
-
-	if switchRole {
-		sb.WriteString(fmt.Sprintf(" 控制权从KP,移交到玩家,请使用 write/response 移交控制权"))
-	}
-
-	return sb.String(), switchRole
-}
-
-// combatOrderSummary returns a compact DEX-order string for the KP result message.
-func combatOrderSummary(parts []models.CombatParticipant) string {
-	names := make([]string, len(parts))
-	for i, p := range parts {
-		names[i] = fmt.Sprintf("%s(DEX%d)", p.Name, p.DEX)
-	}
-	return strings.Join(names, " → ")
-}
-
-// ── Chase state helpers ───────────────────────────────────────────────────────
-
-// saveChaseState persists the ChaseState JSON column on GameSession.
-// Pass nil to clear an ended chase.
-func saveChaseState(sessionID uint, chs *models.ChaseState) {
-	models.DB.Model(&models.GameSession{}).
-		Where("id = ?", sessionID).
-		Update("chase_state", models.JSONField[*models.ChaseState]{Data: chs})
-}
-
-// buildChaseState initialises a new ChaseState from KP-provided participant inputs.
-// MinMOV is computed from the participant list.
-func buildChaseState(inputs []ChaseParticipantInput) models.ChaseState {
-	parts := make([]models.ChaseParticipant, len(inputs))
-	minMOV := -1
-	for i, inp := range inputs {
-		parts[i] = models.ChaseParticipant{
-			Name:      inp.Name,
-			IsNPC:     inp.IsNPC,
-			MOV:       inp.MOV,
-			Location:  inp.Location,
-			IsPursuer: inp.IsPursuer,
-		}
-		if minMOV < 0 || inp.MOV < minMOV {
-			minMOV = inp.MOV
-		}
-	}
-	if minMOV < 0 {
-		minMOV = 0
-	}
-	return models.ChaseState{
-		Active:       true,
-		Round:        1,
-		MinMOV:       minMOV,
-		Participants: parts,
-		Obstacles:    nil,
-	}
-}
-
-// applyChaseAct applies one participant's chase action and returns a result string.
-func applyChaseAct(chs *models.ChaseState, call ToolCall) (result string, switchRole bool) {
-	actorName := call.ChaseActorName
-	act := call.ChaseAction
-
-	actorIdx := -1
-	for i, p := range chs.Participants {
-		if p.Name == actorName {
-			actorIdx = i
-			break
-		}
-	}
-	if actorIdx < 0 {
-		return fmt.Sprintf("错误:找不到追逐参与者 %q", actorName), false
-	}
-
-	actor := &chs.Participants[actorIdx]
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("【%s 追逐行动】", actorName))
-
-	if act == nil {
-		return sb.String() + "(无行动详情)", false
-	}
-
-	if next := (actorIdx + 1) % len(chs.Participants); next != actorIdx {
-		switchRole = !chs.Participants[next].IsNPC && actor.IsNPC
-	}
-
-	switch act.Type {
-	case "move":
-		actor.Location += act.MoveDelta
-		sb.WriteString(fmt.Sprintf("移动%+d格,当前位置:%d。", act.MoveDelta, actor.Location))
-	case "hazard":
-		if act.APDebtNext > 0 {
-			actor.APDebt += act.APDebtNext
-			sb.WriteString(fmt.Sprintf("险境检定失败,下轮行动点-%d。", act.APDebtNext))
-		} else {
-			sb.WriteString("险境检定成功,正常通过。")
-		}
-	case "obstacle":
-		// Create or update an obstacle.
-		if act.ObstacleName != "" && act.ObstacleMaxHP > 0 {
-			found := false
-			for i, ob := range chs.Obstacles {
-				if ob.Name == act.ObstacleName {
-					chs.Obstacles[i].HP = act.ObstacleHP
-					found = true
-					sb.WriteString(fmt.Sprintf("障碍【%s】HP更新为%d/%d。", act.ObstacleName, act.ObstacleHP, ob.MaxHP))
-					break
-				}
-			}
-			if !found {
-				chs.Obstacles = append(chs.Obstacles, models.ChaseObstacle{
-					Name:  act.ObstacleName,
-					HP:    act.ObstacleHP,
-					MaxHP: act.ObstacleMaxHP,
-				})
-				sb.WriteString(fmt.Sprintf("新增障碍【%s】HP=%d/%d。", act.ObstacleName, act.ObstacleHP, act.ObstacleMaxHP))
-			}
-		}
-	case "conflict":
-		sb.WriteString(fmt.Sprintf("与%s发生冲突。", act.TargetName))
-	default:
-		sb.WriteString(fmt.Sprintf("执行追逐动作:%s。", act.Type))
-	}
-
-	// Check for chase-end conditions: pursuer reaches same location as prey.
-	for _, p := range chs.Participants {
-		if p.IsPursuer {
-			for _, q := range chs.Participants {
-				if !q.IsPursuer && p.Location >= q.Location {
-					sb.WriteString(fmt.Sprintf(" ⚠ 追逐者%s已追上%s(位置%d≥%d),KP可宣告追逐结束。",
-						p.Name, q.Name, p.Location, q.Location))
-				}
-			}
-		}
-	}
-
-	if switchRole {
-		sb.WriteString(fmt.Sprintf(" 控制权从KP,移交到玩家,请使用 write/response 移交控制权"))
-	}
-
-	return sb.String(), switchRole
-}
-
-// chaseParticipantSummary returns a compact participant list string.
-func chaseParticipantSummary(parts []models.ChaseParticipant) string {
-	names := make([]string, len(parts))
-	for i, p := range parts {
-		role := "猎物"
-		if p.IsPursuer {
-			role = "追逐者"
-		}
-		names[i] = fmt.Sprintf("%s(%s,MOV%d,位置%d)", p.Name, role, p.MOV, p.Location)
-	}
-	return strings.Join(names, "、")
-}
-
-// chaseAPSummary returns each participant's action points for the round.
-func chaseAPSummary(parts []models.ChaseParticipant, minMOV int) string {
-	items := make([]string, len(parts))
-	for i, p := range parts {
-		ap := 1 + (p.MOV - minMOV)
-		if ap < 1 {
-			ap = 1
-		}
-		items[i] = fmt.Sprintf("%s=%d", p.Name, ap)
-	}
-	return strings.Join(items, "、")
-}
-
 func formatSingleDiceResult(r DiceCheckResult) string {
 	hidden := ""
 	if r.Hidden {
@@ -784,55 +511,49 @@ func executeSingleDiceCheck(dc DiceCheck, players []models.SessionPlayer) DiceCh
 
 // ── Turn tracking ─────────────────────────────────────────────────────────────
 
-// checkTurnReady returns true when every non-dead investigator in the session
-// has a SessionTurnAction record for the current round. Dead investigators do
-// not block multiplayer turns; if revived later, WoundState is cleared and they
-// are counted again in subsequent rounds.
-func checkTurnReady(gctx GameContext) bool {
-	if len(gctx.Session.Players) == 0 {
-		return false
-	}
-	return checkTurnReadyForPlayers(gctx, activeTurnPlayerIDs(gctx.Session.Players))
-}
-
-func checkTurnReadyForPlayers(gctx GameContext, playerIDs []uint) bool {
-	if len(playerIDs) == 0 {
-		return true
-	}
-	var count int64
-	models.DB.Model(&models.SessionTurnAction{}).
-		Where("session_id = ? AND round = ? AND user_id IN ?", gctx.Session.ID, gctx.Session.TurnRound, playerIDs).
-		Count(&count)
-	return count >= int64(len(playerIDs))
-}
-
-func activeTurnPlayerIDs(players []models.SessionPlayer) []uint {
-	ids := make([]uint, 0, len(players))
-	for _, p := range players {
-		if p.CharacterCard.WoundState == "dead" {
-			continue
+// clearConsumedTurnActions 按D4精确清理本轮SessionTurnAction:删除已消费的声明,
+// 但保留"遭遇仍激活、参与者存活、本轮尚未被combat_act/chase_act读到"的PC声明——
+// 这些声明还没被消费,删掉会导致按批次收集时靠后批次玩家的输入静默丢失(修复的
+// 核心bug)。combat/chase是run()结束时的局部状态:end_combat/end_chase会把它们
+// 置nil，天然覆盖"遭遇本次结束→全删"这一分支，与非战斗/追逐场景的历史行为一致。
+func clearConsumedTurnActions(gctx GameContext, combat *models.CombatState, chase *models.ChaseState) {
+	keep := unresolvedEncounterUserIDs(gctx.Session.Players, combat, chase)
+	q := models.DB.Where("session_id = ? AND round = ?", gctx.Session.ID, gctx.Session.TurnRound)
+	if len(keep) > 0 {
+		keepIDs := make([]uint, 0, len(keep))
+		for id := range keep {
+			keepIDs = append(keepIDs, id)
 		}
-		ids = append(ids, p.UserID)
+		q = q.Where("user_id NOT IN ?", keepIDs)
 	}
-	return ids
+	q.Delete(&models.SessionTurnAction{})
+	alog.Debug("turn actions cleared", "session", gctx.Session.ID, "round", gctx.Session.TurnRound, "kept", len(keep))
 }
 
-// advanceTurnRound increments TurnRound and deletes turn action records for the
-// completed round.
-func advanceTurnRound(gctx *GameContext) {
-	nextRound := gctx.Session.TurnRound + 1
-	models.DB.Model(&models.GameSession{}).Where("id = ?", gctx.Session.ID).Update("turn_round", nextRound)
-	models.DB.Where("session_id = ? AND round <= ?", gctx.Session.ID, gctx.Session.TurnRound).Delete(&models.SessionTurnAction{})
-	gctx.Session.TurnRound = nextRound
-	alog.Debug("turn round advanced", "session", gctx.Session.ID, "round", nextRound)
-}
-
-// clearTurnActions removes SessionTurnAction records for the current round
-// without incrementing TurnRound. Used for out-of-character KP consultations
-// so that players can resubmit in-game actions afterwards.
-func clearTurnActions(gctx GameContext) {
-	models.DB.Where("session_id = ? AND round = ?", gctx.Session.ID, gctx.Session.TurnRound).Delete(&models.SessionTurnAction{})
-	alog.Debug("turn actions cleared", "session", gctx.Session.ID, "round", gctx.Session.TurnRound)
+// unresolvedEncounterUserIDs 返回遭遇激活时声明尚未被消费的存活PC UserID集合:
+// 本轮未行动、且不处于待澄清暂停——待澄清暂停会用新问题取代旧声明,旧声明必须
+// 清掉,否则下一次玩家的新回答与旧声明共存会让Director误读(见待澄清分支设计)。
+func unresolvedEncounterUserIDs(players []models.SessionPlayer, combat *models.CombatState, chase *models.ChaseState) map[uint]bool {
+	keep := map[uint]bool{}
+	collectUnresolved := func(name string, isNPC, hasActed, pendingClarification bool, userID uint) {
+		if isNPC || hasActed || pendingClarification {
+			return
+		}
+		if isCharacterAlive(name, false, players, nil) {
+			keep[userID] = true
+		}
+	}
+	if combat != nil && combat.Active {
+		for _, p := range combat.Participants {
+			collectUnresolved(p.Name, p.IsNPC, p.HasActed, p.PendingClarification, p.UserID)
+		}
+	}
+	if chase != nil && chase.Active {
+		for _, p := range chase.Participants {
+			collectUnresolved(p.Name, p.IsNPC, p.HasActed, p.PendingClarification, p.UserID)
+		}
+	}
+	return keep
 }
 
 // formatGameTime converts an absolute round number to a human-readable game time string.

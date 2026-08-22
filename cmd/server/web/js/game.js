@@ -145,16 +145,21 @@ window.COC.game = {
                                                 this.waitingForPlayers = true;
                                                 this.waitingSince = submittedAt;
                                                 try {
-                                                    const info = JSON.parse(data);
-                                                    if (info.pending !== undefined) {
-                                                        // NOTE: 合并新字段（submitted_names/pending_names）到 waitingInfo
-                                                        this.waitingInfo = {
-                                                            pending: info.pending ?? 0,
-                                                            total: info.total ?? 0,
-                                                            submitted_names: Array.isArray(info.submitted_names) ? info.submitted_names : [],
-                                                            pending_names: Array.isArray(info.pending_names) ? info.pending_names : [],
-                                                        };
-                                                    }
+                                                     const info = JSON.parse(data);
+                                                     if (info.pending !== undefined) {
+                                                         // NOTE: 合并新字段（submitted_names/pending_names/batched/batch_user_ids/
+                                                         // encounter_label/encounter_order）到 waitingInfo
+                                                         this.waitingInfo = {
+                                                             pending: info.pending ?? 0,
+                                                             total: info.total ?? 0,
+                                                             submitted_names: Array.isArray(info.submitted_names) ? info.submitted_names : [],
+                                                             pending_names: Array.isArray(info.pending_names) ? info.pending_names : [],
+                                                             batched: !!info.batched,
+                                                             batch_user_ids: Array.isArray(info.batch_user_ids) ? info.batch_user_ids : [],
+                                                             encounter_label: info.encounter_label || '',
+                                                             encounter_order: Array.isArray(info.encounter_order) ? info.encounter_order : [],
+                                                         };
+                                                     }
                                                 } catch (_) { }
                                                 break;
 
@@ -282,6 +287,10 @@ window.COC.game = {
                             total: waiting.total ?? 0,
                             submitted_names: Array.isArray(waiting.submitted_names) ? waiting.submitted_names : [],
                             pending_names: Array.isArray(waiting.pending_names) ? waiting.pending_names : [],
+                            batched: !!waiting.batched,
+                            batch_user_ids: Array.isArray(waiting.batch_user_ids) ? waiting.batch_user_ids : [],
+                            encounter_label: waiting.encounter_label || '',
+                            encounter_order: Array.isArray(waiting.encounter_order) ? waiting.encounter_order : [],
                         };
                         this.connectionRecovering = false;
 
@@ -568,7 +577,7 @@ window.COC.game = {
                                 if (gotKP) {
                                     this.waitingForPlayers = false;
                                     this.waitingSince = null;
-                                    this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
+                                    this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] };
                                 }
                             }
                             if (changed || optimisticChanged) {
@@ -920,7 +929,7 @@ window.COC.game = {
 
                     // NOTE: 重置等待状态到空初值，含新字段
                     resetWaitingInfo() {
-                        this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
+                        this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] };
                     },
 
                     // NOTE: 判断调查员在当前轮的提交状态，供调查员列表 modal 展示 badge。
@@ -935,6 +944,14 @@ window.COC.game = {
                         if (submittedNames.includes(name)) return 'submitted';
                         if (pendingNames.includes(name)) return 'pending';
                         return null;
+                    },
+
+                    // NOTE: 从encounter_order(EncounterActor对象数组)取出当前批次里存活玩家的
+                    // 名字并拼接，供等待横幅在战斗/追逐激活时提示"正在等谁行动"——同一批次可能
+                    // 同时轮到多名DEX相邻的玩家。
+                    encounterBatchActorNames() {
+                        const order = this.waitingInfo?.encounter_order || [];
+                        return order.filter(a => a && a.in_batch).map(a => a.name).join('、');
                     },
 
 };

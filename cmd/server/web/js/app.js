@@ -107,7 +107,7 @@ window.COC.core = function() {
 
                     // Multi-player waiting
                     waitingForPlayers: false,
-                    waitingInfo: { pending: 0, total: 0, submitted_names: [], pending_names: [] },
+                    waitingInfo: { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] },
                     // 游戏页角色状态条：HP/SAN 下降时的一次性高亮标记
                     hudFlash: { hp: false, san: false },
                     _hudLastStats: null,
@@ -289,7 +289,7 @@ window.COC.core = function() {
                             this.stopGameAutoRefresh();
                             this.stopChatStatusPolling();
                             this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.imageBuffer = []; this.progressText = '';
-                            this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
+                            this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] };
                             this.waitingSince = null;
                             this.connectionRecovering = false;
                         }
@@ -313,7 +313,7 @@ window.COC.core = function() {
                     async goToSession(id) {
                         this.stopChatStatusPolling();
                         this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.imageBuffer = []; this.progressText = '';
-                        this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [] };
+                        this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] };
                         this.waitingSince = null;
                         this.connectionRecovering = false;
                         try {

@@ -1238,3 +1238,140 @@ func TestChatStream_WaitingPayload_UsernameFallback(t *testing.T) {
 		t.Errorf("submitted_names = %v, want [\"mp_user1\"]", payload.SubmittedNames)
 	}
 }
+
+// seedActiveCombat 把session的CombatState设为激活,participants按传入顺序即DEX序。
+func seedActiveCombat(t *testing.T, sessionID uint, participants []models.CombatParticipant) {
+	t.Helper()
+	var session models.GameSession
+	if err := models.DB.First(&session, sessionID).Error; err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	session.CombatState.Data = &models.CombatState{Active: true, Round: 1, ActorIndex: 0, Participants: participants}
+	if err := models.DB.Save(&session).Error; err != nil {
+		t.Fatalf("save combat state: %v", err)
+	}
+}
+
+// TestChatStream_EncounterBatch_OutOfBatchPlayerRejected 验证D7:战斗按DEX批次收集时,
+// 不在当前批次里的存活玩家(乙,被NPC食尸鬼与甲隔开)提交会被拒绝,不写入
+// SessionTurnAction,也不会触发Runner——不能让批次外的输入被静默吞掉或误用。
+func TestChatStream_EncounterBatch_OutOfBatchPlayerRejected(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "甲", "乙")
+	seedActiveCombat(t, sessionID, []models.CombatParticipant{
+		{Name: "甲", DEX: 80, IsNPC: false, UserID: user1ID},
+		{Name: "食尸鬼", DEX: 50, IsNPC: true},
+		{Name: "乙", DEX: 30, IsNPC: false, UserID: user2ID},
+	})
+
+	ctrl := gomock.NewController(t)
+	// 不设置Run()期望：若批次外输入意外触发了Runner,gomock会让测试失败。
+	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
+
+	r := makeTestRouter(h, user2ID, "mp_user2")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我也想行动"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200(SSE通道), got %d", w.Code)
+	}
+	events := parseSSE(w.Body.String())
+	if len(events["error"]) == 0 {
+		t.Fatalf("expected error SSE event; body:\n%s", w.Body.String())
+	}
+	if len(events["waiting"]) != 0 {
+		t.Errorf("批次外玩家不应收到waiting事件; body:\n%s", w.Body.String())
+	}
+
+	var count int64
+	models.DB.Model(&models.SessionTurnAction{}).Where("session_id = ? AND user_id = ?", sessionID, user2ID).Count(&count)
+	if count != 0 {
+		t.Errorf("批次外玩家的SessionTurnAction行数 = %d, want 0", count)
+	}
+}
+
+// TestChatStream_EncounterBatch_SoleBatchMemberTriggersRunImmediately 验证D7:当前批次
+// 只有甲一人时(乙被NPC隔开在批次外),甲提交应立即触发Runner,不等待乙——批次收集的
+// 触发阈值是批次大小而不是全房存活玩家数。
+func TestChatStream_EncounterBatch_SoleBatchMemberTriggersRunImmediately(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "甲", "乙")
+	seedActiveCombat(t, sessionID, []models.CombatParticipant{
+		{Name: "甲", DEX: 80, IsNPC: false, UserID: user1ID},
+		{Name: "食尸鬼", DEX: 50, IsNPC: true},
+		{Name: "乙", DEX: 30, IsNPC: false, UserID: user2ID},
+	})
+
+	ctrl := gomock.NewController(t)
+	runner := mocks.NewMockAgentRunner(ctrl)
+	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Times(1).Return(agent.RunOutput{WriterText: "甲出手了"}, nil)
+
+	h := NewSessionHandlers(runner)
+	r := makeTestRouter(h, user1ID, "mp_user1")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我攻击食尸鬼"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	events := parseSSE(w.Body.String())
+	if len(events["waiting"]) != 0 {
+		t.Fatalf("批次内唯一成员不应等待其他玩家; body:\n%s", w.Body.String())
+	}
+	if len(events["kp_done"]) == 0 {
+		t.Fatalf("expected kp_done event(Run应立即触发); body:\n%s", w.Body.String())
+	}
+}
+
+// TestGetChatStatus_EncounterBatch_PayloadReflectsBatchAndOrder 验证chat-status载荷
+// 里batched/batch_user_ids/encounter_order正确反映DEX批次与is_current/in_batch/
+// has_acted状态,供前端渲染收集队列。
+func TestGetChatStatus_EncounterBatch_PayloadReflectsBatchAndOrder(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "甲", "乙")
+	seedActiveCombat(t, sessionID, []models.CombatParticipant{
+		{Name: "甲", DEX: 80, IsNPC: false, UserID: user1ID},
+		{Name: "食尸鬼", DEX: 50, IsNPC: true},
+		{Name: "乙", DEX: 30, IsNPC: false, UserID: user2ID},
+	})
+
+	ctrl := gomock.NewController(t)
+	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
+
+	r1 := makeTestRouter(h, user1ID, "mp_user1")
+	rec1 := httptest.NewRecorder()
+	r1.ServeHTTP(rec1, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
+	status1 := decodeChatStatus(t, rec1.Body.String())
+
+	if !status1.Waiting.Batched {
+		t.Fatalf("want Batched=true, got %+v", status1.Waiting)
+	}
+	if len(status1.Waiting.BatchUserIDs) != 1 || status1.Waiting.BatchUserIDs[0] != user1ID {
+		t.Errorf("BatchUserIDs = %v, want [%d]", status1.Waiting.BatchUserIDs, user1ID)
+	}
+	if status1.Submitted {
+		t.Errorf("甲尚未提交,Submitted应为false")
+	}
+
+	order := status1.Waiting.EncounterOrder
+	if len(order) != 3 {
+		t.Fatalf("EncounterOrder长度 = %d, want 3", len(order))
+	}
+	if order[0].Name != "甲" || !order[0].IsCurrent || !order[0].InBatch || order[0].HasActed || order[0].IsNPC {
+		t.Errorf("甲的EncounterActor = %+v, want IsCurrent+InBatch+非NPC+未行动", order[0])
+	}
+	if order[1].Name != "食尸鬼" || !order[1].IsNPC || order[1].InBatch {
+		t.Errorf("食尸鬼的EncounterActor = %+v, want IsNPC且不在批次", order[1])
+	}
+	if order[2].Name != "乙" || order[2].IsCurrent || order[2].InBatch || order[2].IsNPC {
+		t.Errorf("乙的EncounterActor = %+v, want 非当前非批次", order[2])
+	}
+
+	r2 := makeTestRouter(h, user2ID, "mp_user2")
+	rec2 := httptest.NewRecorder()
+	r2.ServeHTTP(rec2, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
+	status2 := decodeChatStatus(t, rec2.Body.String())
+	if status2.Submitted {
+		t.Errorf("乙不在当前批次,Submitted应为false")
+	}
+}
