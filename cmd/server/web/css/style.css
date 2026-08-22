@@ -71,6 +71,12 @@
     --alert-error-text: #e07070;
     --bg-chat: #0a0908;
 
+    /* ── 骰子结果 / 游戏内状态条 ── */
+    --dice-bg: #14100a;
+    --dice-border: #3a2a14;
+    --dice-roll: #e8c56a;
+    --hud-bg: #0e0c0a;
+
     /* ── 字体 ── */
     --font-serif: 'Georgia', 'Songti SC', 'SimSun', serif;
     --font-ui: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -453,6 +459,219 @@ select.inp option {
     font-size: 0.875rem;
     line-height: 1.6;
     white-space: pre-wrap;
+}
+
+/* ── Message avatars ─────────────────────────────────────── */
+.msg-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid transparent;
+    font-size: 0.7rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.msg-avatar-kp {
+    background: var(--red-bg);
+    border-color: var(--red-border);
+}
+
+.msg-avatar-user {
+    background: var(--green-bg);
+    border-color: var(--green-border);
+}
+
+.msg-avatar-sys {
+    background: var(--blue-bg);
+    border-color: var(--blue-border);
+}
+
+/* 本人发言：比其他玩家更亮，便于在多人回合里定位自己 */
+.msg-user-self {
+    border-left-color: var(--green-border-strong);
+    background: #0f150f;
+}
+
+/* ── Dice results ────────────────────────────────────────── */
+.dice-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    border-top: 1px solid #3a1a1a;
+    margin-top: 0.625rem;
+    padding-top: 0.625rem;
+}
+
+.dice-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.375rem;
+    background: var(--dice-bg);
+    border: 1px solid var(--dice-border);
+    border-radius: var(--radius-sm);
+    padding: 0.1875rem 0.5rem;
+    animation: diceReveal 0.28s ease-out both;
+}
+
+.dice-chip:nth-child(2) {
+    animation-delay: 0.06s;
+}
+
+.dice-chip:nth-child(3) {
+    animation-delay: 0.12s;
+}
+
+.dice-chip:nth-child(4) {
+    animation-delay: 0.18s;
+}
+
+.dice-chip-what {
+    font-family: var(--font-ui);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    /* NOTE: 后端在 what 为空时会回填整句 reason，这里截断避免撑爆消息卡 */
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dice-chip-roll {
+    font-family: var(--font-mono);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--dice-roll);
+}
+
+.dice-chip-level {
+    font-family: var(--font-ui);
+    font-size: 0.65rem;
+    color: var(--text-faint);
+}
+
+.dice-chip-raw {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+}
+
+/* ── Game time chip ──────────────────────────────────────── */
+.time-chip {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    background: var(--chip-bg);
+    border: 1px solid var(--chip-border);
+    color: var(--chip-text);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+}
+
+/* ── Game HUD（会话头部下方常驻角色状态） ────────────────── */
+.hud-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.375rem 0.75rem;
+    background: var(--hud-bg);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+}
+
+.hud-name {
+    max-width: 8rem;
+    color: var(--amber-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.hud-stat {
+    flex: 1;
+    min-width: 3.5rem;
+    border-radius: var(--radius-sm);
+}
+
+.hud-stat-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.25rem;
+    margin-bottom: 2px;
+    line-height: 1;
+}
+
+.hud-bar .bar-track {
+    background: var(--bg-sunken);
+    height: 3px;
+}
+
+.hud-bar .bar-hp,
+.hud-bar .bar-san,
+.hud-bar .bar-mp {
+    transition: width 0.4s ease;
+}
+
+.hud-chip-danger {
+    background: var(--alert-error-bg);
+    border: 1px solid var(--alert-error-border);
+    color: var(--alert-error-text);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+}
+
+.hud-flash {
+    animation: hudPulse 0.7s ease-out;
+}
+
+/* 配图载入渐显 */
+.chat-image {
+    animation: fadeUp 0.25s ease-out;
+}
+
+@keyframes diceReveal {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes hudPulse {
+
+    0%,
+    100% {
+        background: transparent;
+    }
+
+    30% {
+        background: rgba(155, 28, 28, 0.35);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .dice-chip,
+    .chat-image,
+    .hud-flash {
+        animation: none;
+    }
+
+    .hud-bar .bar-hp,
+    .hud-bar .bar-san,
+    .hud-bar .bar-mp {
+        transition: none;
+    }
 }
 
 /* ── Streaming cursor ────────────────────────────────────── */

@@ -108,6 +108,9 @@ window.COC.core = function() {
                     // Multi-player waiting
                     waitingForPlayers: false,
                     waitingInfo: { pending: 0, total: 0, submitted_names: [], pending_names: [] },
+                    // 游戏页角色状态条：HP/SAN 下降时的一次性高亮标记
+                    hudFlash: { hp: false, san: false },
+                    _hudLastStats: null,
                     preSendMessageCount: -1, // snapshot of messages.length before local user push
                     refreshIntervals: {
                         gameAuto: 5000,

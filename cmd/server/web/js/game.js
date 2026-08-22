@@ -362,6 +362,8 @@ window.COC.game = {
 
                     _commitStreamBuffers(meta = {}) {
                         const responseOptions = this.extractResponseOptionsPayload(this.narrationBuffer) || this.extractResponseOptionsPayload(this.writerBuffer);
+                        const diceResults = this.extractDiceResults(this.narrationBuffer);
+                        const timePoint = this.extractTimePoint(this.narrationBuffer);
                         const wt = this.stripAckContent(this.writerBuffer).trim();
                         const nt = this.stripAckContent(this.narrationBuffer).trim();
                         const images = Array.isArray(this.imageBuffer) ? [...this.imageBuffer] : [];
@@ -373,6 +375,8 @@ window.COC.game = {
                             writer_text: wt,
                             narration_text: nt,
                             images,
+                            dice_results: diceResults,
+                            time_point: timePoint,
                             response_options: responseOptions,
                             created_at: meta.created_at || new Date().toISOString(),
                             _writer_streaming: !!meta.writerStreaming,
@@ -485,6 +489,7 @@ window.COC.game = {
                         this.refreshingSession = true;
                         try {
                             this.currentSession = await this.api('GET', '/api/sessions/' + this.currentSession.id);
+                            this._syncHudFlash(this.myCurrentCard());
                         } catch (e) {
                             if (!silent) this.showToast(e.message, 'error');
                         } finally {
@@ -600,6 +605,55 @@ window.COC.game = {
                         return player?.character_card?.name || this.user?.username || '玩家';
                     },
 
+                    myCurrentCard() {
+                        const uid = this.user?.id;
+                        if (!uid) return null;
+                        return this.currentSession?.players?.find(p => p.user_id === uid)?.character_card || null;
+                    },
+
+                    // 乐观消息还没有服务端 user_id，先按本地标记认作自己的发言。
+                    isMyMessage(msg) {
+                        if (!msg || msg.role !== 'user') return false;
+                        if (msg._optimistic) return true;
+                        const uid = this.user?.id;
+                        return !!(uid && msg.user_id && Number(msg.user_id) === Number(uid));
+                    },
+
+                    statPercent(value, max) {
+                        const total = Number(max) || 0;
+                        if (total <= 0) return 0;
+                        return Math.max(0, Math.min(100, Math.round((Number(value) || 0) / total * 100)));
+                    },
+
+                    currentGameTime() {
+                        for (let i = this.messages.length - 1; i >= 0; i--) {
+                            const tp = this.messages[i]?.time_point;
+                            if (tp) return tp;
+                        }
+                        return null;
+                    },
+
+                    // NOTE: HP/SAN 下降时闪一次高亮，比较基准随房间切换重置，避免换房误闪。
+                    _syncHudFlash(card) {
+                        const sid = this.currentSession?.id || null;
+                        if (!card || !sid) {
+                            this._hudLastStats = null;
+                            return;
+                        }
+                        const snapshot = {
+                            sid,
+                            hp: Number(card.stats?.hp ?? 0),
+                            san: Number(card.stats?.san ?? 0),
+                        };
+                        const prev = this._hudLastStats;
+                        this._hudLastStats = snapshot;
+                        if (!prev || prev.sid !== sid) return;
+                        const flash = { hp: snapshot.hp < prev.hp, san: snapshot.san < prev.san };
+                        if (!flash.hp && !flash.san) return;
+                        this.hudFlash = flash;
+                        setTimeout(() => { this.hudFlash = { hp: false, san: false }; }, 700);
+                    },
+
                     normalizeMessages(messages) {
                         return messages.map(msg => this.normalizeMessage(msg));
                     },
@@ -669,12 +723,21 @@ window.COC.game = {
                         if (images.length === 0 && String(content).includes('<image_data_url')) {
                             images.push(...this.extractImageDataURLs(content));
                         }
+                        // 必须在 stripAckContent 之前解析：接口只返回 content，标签清理后信息就没了。
+                        const narrationRaw = message.narration_text || '';
+                        let diceResults = this.extractDiceResults(narrationRaw);
+                        if (diceResults.length === 0) {
+                            diceResults = this.extractDiceResults(content);
+                        }
+                        const timePoint = this.extractTimePoint(narrationRaw) || this.extractTimePoint(content);
                         message = {
                             ...message,
                             content: this.stripAckContent(content),
                             writer_text: this.stripAckContent(message.writer_text || ''),
                             narration_text: this.stripAckContent(message.narration_text || ''),
                             images,
+                            dice_results: diceResults,
+                            time_point: timePoint,
                             response_options: message.response_options || responseOptions,
                             _writer_streaming: !!writerPending,
                         };
@@ -738,20 +801,58 @@ window.COC.game = {
                         return src.startsWith('data:image/') || src.startsWith('/api/images/');
                     },
 
+                    // NOTE: 骰子/时间由后端以内部标签追加在 KP 回复末尾（orchestrator 的
+                    // formatSingleDiceResult / formatGameTime），此处解析成结构化数据单独渲染，
+                    // 标签本身由 stripAckContent 清掉，不再泄漏到玩家可见正文。
+                    extractDiceResults(content) {
+                        content = String(content || '');
+                        if (!content.includes('<dice')) return [];
+                        const match = content.match(/<dice\b[^>]*>([\s\S]*?)<\/dice>/i);
+                        if (!match) return [];
+                        return String(match[1] || '')
+                            .split(';')
+                            .map(part => part.trim())
+                            .filter(Boolean)
+                            .map(part => {
+                                // 后端格式固定为 "%v鉴定: %v 难度:%s (暗骰)"，难度与暗骰均可缺省。
+                                const parsed = part.match(/^(.*?)鉴定[:：]\s*(\S+)(?:\s*难度[:：]\s*([^\s(（]+))?/);
+                                // 解析不出来时降级显示原文，避免格式变化直接吞掉信息。
+                                if (!parsed) return { raw: part };
+                                return {
+                                    what: (parsed[1] || '').trim(),
+                                    roll: (parsed[2] || '').trim(),
+                                    level: (parsed[3] || '').trim(),
+                                };
+                            });
+                    },
+
+                    extractTimePoint(content) {
+                        content = String(content || '');
+                        if (!content.includes('<time_point')) return null;
+                        const match = content.match(/<time_point\b[^>]*>([\s\S]*?)<\/time_point>/i);
+                        if (!match) return null;
+                        const raw = String(match[1] || '').trim();
+                        if (!raw) return null;
+                        const parsed = raw.match(/^第(\d+)天\s*(\d{1,2}:\d{2})(?:[(（](.*?)[)）])?/);
+                        if (!parsed) return { raw, label: raw, elapsed: '' };
+                        return {
+                            raw,
+                            label: '第' + parsed[1] + '天 ' + parsed[2],
+                            elapsed: (parsed[3] || '').trim(),
+                        };
+                    },
+
                     stripAckContent(content) {
                         content = String(content || '');
-                        if (!content.includes('<ack') &&
-                            !content.includes('<direction') &&
-                            !content.includes('<response_options') &&
-                            !content.includes('<writer_pending') &&
-                            !content.includes('<image_data_url') &&
-                            !content.includes('<image_ref')) {
+                        if (!content.includes('<')) {
                             return content.trim();
                         }
                         return content
                             .replace(/<image_ref\b[^>]*(?:\/>|>\s*<\/image_ref>)/gi, '')
-                            .replace(/<(ack|direction|response_options|writer_pending|image_data_url)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
-                            .replace(/<(ack|direction|response_options|writer_pending|image_data_url)\b[^>]*>[\s\S]*$/gi, '')
+                            .replace(/<(ack|direction|response_options|writer_pending|image_data_url|dice|time_point)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+                            .replace(/<(ack|direction|response_options|writer_pending|image_data_url|dice|time_point)\b[^>]*>[\s\S]*$/gi, '')
+                            // NOTE: SSE 按固定字符数切片推送，流式中途缓冲区尾部必然出现 "<dic" 这类半截标签。
+                            .replace(/<[a-z_]*$/i, '')
                             .trim();
                     },
 
