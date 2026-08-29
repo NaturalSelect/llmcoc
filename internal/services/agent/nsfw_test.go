@@ -40,7 +40,7 @@ func TestRenderNSFW(t *testing.T) {
 			},
 			offWanted: []string{
 				"<nsfw>false</nsfw>",
-				"克苏鲁风格",
+				"洛氏小说风格",
 				"不写色情或露骨性描写",
 			},
 		},
