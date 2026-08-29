@@ -825,6 +825,23 @@ func settingHasDate(s string) bool {
 	return settingDateRe.MatchString(s)
 }
 
+// introBriefingLabels 是 intro 末尾【当前情况】行必须齐备的三项标签。
+var introBriefingLabels = []string{"地点：", "时间：", "目标："}
+
+// introHasBriefing 检查 intro 是否带有结构化的情况说明行：【当前情况】标记、三项标签齐全，
+// 且时间含具体年月日。
+func introHasBriefing(s string) bool {
+	if !strings.Contains(s, "【当前情况】") {
+		return false
+	}
+	for _, label := range introBriefingLabels {
+		if !strings.Contains(s, label) {
+			return false
+		}
+	}
+	return settingDateRe.MatchString(s)
+}
+
 // eventQuoteRe 匹配用引号包裹的片段（可能是转录的人物原话），覆盖中文全角引号、
 // ASCII直引号与中文书名号式的单/双直角引号四种常见写法。
 var eventQuoteRe = regexp.MustCompile(`“[^”]{2,}”|"[^"]{2,}"|「[^」]{2,}」|『[^』]{2,}』`)
@@ -859,6 +876,8 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	}
 	if strings.TrimSpace(content.Intro) == "" {
 		issues = append(issues, "content.intro 为空")
+	} else if !introHasBriefing(content.Intro) {
+		issues = append(issues, "content.intro 缺少结尾的情况说明行；须在正文末尾另起一行补上：【当前情况】地点：<具体场所>；时间：<具体年月日+时刻>；目标：<调查员要达成的那件事>（目标只写要达成的事本身，不写行动步骤）")
 	}
 	if content.GameStartSlot < 0 || content.GameStartSlot > 47 {
 		issues = append(issues, "content.game_start_slot 必须在0-47之间")
@@ -1060,24 +1079,30 @@ func difficultySpec(difficulty string) string {
 		"- 威胁主体的神话位阶（下级/上级/眷属/旧日支配者）必须通过 translate_anchor 或 ask_lawyer 向规则书核验，不得凭印象判断；禁止自行发明规则书中不存在的神名、种族名或能力"
 }
 
+// 地点与人物的数量不随剧本长度分档：与"篇幅"一项同一原则，数量由剧情实际需要决定，不为凑数硬写。
+const (
+	scenePlacementSpec = "- 地点：几处由剧情实际需要决定，不设数量指标——每一处都得是调查员真的会走到、且在那里能拿到东西或撞上事的地方；不要为凑数硬写一笔带过的过场地点，也不要把本该分开的两处并成一处"
+	castPlacementSpec  = "- 人物：几位由剧情实际需要决定，不设数量指标——每一位有名有姓的人都要有自己的立场和正在做的事；不要为凑数硬写只出场一次的功能性路人，也不要把几个人的作用压到同一个人身上"
+)
+
 func lengthSpec(targetLength string) string {
 	switch strings.ToLower(strings.TrimSpace(targetLength)) {
 	case "long", "剧本时间长度: 7-30d":
-		return "- 地点：6-8处调查员会实际走到的地方\n" +
+		return scenePlacementSpec + "\n" +
 			"- 发现：10-12处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
-			"- 人物：7-10位有名有姓的人，分属不同立场，各有各在做的事\n" +
+			castPlacementSpec + "\n" +
 			"- 收场：4-8种，每种都有名字，其中至少一种是失败或灾难\n" +
 			"- 篇幅：约7000-12000字。事件时间线给出5-12个带具体日期的节点；给守密人的运营建议尽量写全；若剧情需要持续追踪某个进度，也写清它怎么走"
 	case "mid", "剧本时间长度: 3-7d":
-		return "- 地点：4-6处调查员会实际走到的地方\n" +
+		return scenePlacementSpec + "\n" +
 			"- 发现：7-10处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
-			"- 人物：4-7位有名有姓的人，分属不同立场或利益\n" +
+			castPlacementSpec + "\n" +
 			"- 收场：3-5种，每种都有名字，其中至少一种是失败或灾难\n" +
 			"- 篇幅：约4000-7000字。事件时间线建议给出3-6个带具体日期的节点；给守密人的运营建议、可追踪的进度机制按素材需要提供，可以省略"
 	default:
-		return "- 地点：3-4处调查员会实际走到的地方\n" +
+		return scenePlacementSpec + "\n" +
 			"- 发现：5-7处调查员能亲自拿到手的具体东西（一份文件、一句证词、一处痕迹、一个检定结果）\n" +
-			"- 人物：2-4位有名有姓的人，各有各的盘算\n" +
+			castPlacementSpec + "\n" +
 			"- 收场：至少2种，每种都有名字，其中至少一种是失败或灾难\n" +
 			"- 篇幅：约2500-4000字。事件时间线、给守密人的运营建议、可追踪的进度机制都属于可选，篇幅有限时略去，不要为凑数硬写"
 	}

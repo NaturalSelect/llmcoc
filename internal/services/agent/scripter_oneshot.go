@@ -67,7 +67,7 @@ const oneshotDraftJSONSchema = `{
 				"setting": {"type": "string", "description": "表层情境原文或忠实改写，必须保留文档中嵌入的具体年月日"},
 				"tone_tags": {"type": "array", "items": {"type": "string"}, "description": "必须逐字等于diversity_constraints.tone_tags"},
 				"invest_focus": {"type": "string", "description": "调查入口的简短概括；除非must_fix明确要求，否则保持previous_draft原值"},
-				"intro": {"type": "string", "description": "调查员到场情境与基本理由；不列出、不推荐、不暗示任何具体行动或下一步"},
+				"intro": {"type": "string", "description": "调查员到场情境与基本理由，末尾另起一行给出【当前情况】地点：具体场所；时间：具体年月日+时刻；目标：要达成的那件事；除该行外不列出、不推荐、不暗示任何具体行动或下一步"},
 				"game_start_slot": {"type": "integer", "description": "0-47，每槽30分钟；未写明具体时刻时取16"},
 				"map_description": {"type": "string", "description": "按地点关系概括的文字地图，体现可回访、可交叉验证的调查网络"},
 				"playthrough_outline": {"type": "string", "description": "由编译器依据全文脉络归纳的逐场景流程大纲，每个场景写明进入条件、可接触人物、可得发现、通向哪里与分支"},
@@ -239,8 +239,8 @@ var oneshotResultExample = OneshotResult{
 		Setting:        "1924年9月3日，初秋的傍晚，你们受镇图书馆之邀前来协助整理一批新捐赠的藏书。馆内灯光温暖，管理员热情地引你们入座，窗外街区安静而寻常。",
 		ToneTags:       []string{"forbidden-knowledge", "cosmic-dread", "occult-noir"},
 		InvestFocus:    "artifact_theft",
-		Intro:          "你们受镇图书馆之邀，来帮着整理清点一批新到的捐赠藏书。大厅里，馆员正在前台核对今天的编目单，先去打个招呼也好；门口的访客登记簿还空着一栏，顺手签上名字；再往里走走，认认书架区和档案室的门各朝哪边开。",
-		GameStartSlot:  16,
+		Intro:          "你们受镇图书馆之邀，来帮着整理清点一批新到的捐赠藏书。馆员在前台核对着今天的编目单，大厅里只有翻纸的声音。\n【当前情况】地点：镇图书馆一层大厅；时间：1924年9月3日傍晚六点；目标：帮助馆方清点整理这批新到的捐赠藏书。",
+		GameStartSlot:  36,
 		MapDescription: "【文字地图】图书馆→书架区↔档案室↔墓地。",
 		PlaythroughOutline: "开场：调查员受邀到图书馆大厅协助编目，馆员提及近期失窃。" +
 			"图书馆大厅（入口条件：开局即可进入；可接触NPC：守墓人Henrik；可得线索：被取走的书出自同一捐赠者；出口：查阅捐赠登记签收单可解锁书架区细节，安抚或盘问Henrik可解锁档案室话题）→" +
@@ -367,7 +367,7 @@ func repairSystemPrompt() string {
 - 不得改变<diversity_constraints>中tone_tags的值
 - 仅当must_fix涉及神话元素本身时，才调用translate_anchor核验；否则不要调用
 - 修复神话本质说明时，引用的法术/物品/怪物/机制名必须与must_fix或<previous_draft>中已确认的规则书元素一致，不得新造
-- setting/intro必须保持冷开场：中性日常，不剧透真相、不渲染恐怖
+- setting/intro必须保持冷开场：中性日常，不剧透真相、不渲染恐怖；intro末尾的【当前情况】地点：…；时间：…；目标：… 一行必须保留（must_fix指出缺失时按此格式补上），三项取自<previous_draft>与故事既有事实，目标只写要达成的那件事本身、不写行动步骤
 </task>
 <tools>
 - translate_anchor：仅当must_fix涉及神话元素时，将一个创意概念翻译为COC7规则书中最匹配的具体元素
@@ -388,7 +388,7 @@ func repairSystemPrompt() string {
     "setting": "表层日常局势，须保留已嵌入的具体年月日",
     "tone_tags": ["必须等于diversity_constraints.tone_tags"],
     "invest_focus": "调查入口的简短概括；除非must_fix明确要求，否则保持previous_draft原值",
-    "intro": "入场情境；不列出、不推荐、不暗示任何具体行动或下一步",
+    "intro": "入场情境＋末尾一行【当前情况】地点：具体场所；时间：具体年月日+时刻；目标：要达成的那件事；除该行外不列出、不推荐、不暗示任何具体行动或下一步",
     "game_start_slot": 16,
     "map_description": "文字地图",
     "playthrough_outline": "逐场景流程大纲：进入条件/可接触人物/可得发现/通向哪里与分支",
@@ -903,7 +903,7 @@ func logicReviewSystemPrompt() string {
 5. 神话锚点必要性：mythos_anchor是否是故事文本中不可替换的关键因素（换成其他神话元素故事是否仍然成立）？
 6. 洛氏恐怖强度：剧本是否体现了认知冲击、尺度错位、不可逆代价中的至少两项？而非仅靠血腥或惊吓桥段？
 7. 结局条件因果：每个ending的trigger是否与故事文本描述的对应结局条件一致，且从不同终止状态逻辑推出？
-8. Intro目的性：intro是否清楚交代了调查员到场的基本理由/表层任务，让玩家知道自己为何在此，且不列出、不推荐任何具体行动或下一步（行动留给玩家自行探索）？
+8. Intro目的性：intro是否清楚交代了调查员到场的基本理由/表层任务，并在末尾以【当前情况】行写明地点（具体场所）、时间（具体年月日+时刻）、目标（要达成的那件事）三项？三项是否都能在<story_document>里找到依据、没有新增事实？该行的"目标"是否只写了要达成的那件事本身，而没有变成行动步骤建议（"先去问谁""应该搜查哪里"）？intro其余部分是否仍不列出、不推荐任何具体行动或下一步（行动留给玩家自行探索）？
 </checklist>`
 }
 
@@ -1048,7 +1048,17 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		alog.Debug("normalize filled description", "session", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.Intro) == "" {
-		draft.Content.Intro = "你们按各自的缘由抵达此地，眼前一切安静而寻常。"
+		dateStr := settingDateRe.FindString(draft.Content.Setting)
+		if dateStr == "" {
+			dateStr = "当天"
+		}
+		hour := draft.Content.GameStartSlot / 2
+		minute := (draft.Content.GameStartSlot % 2) * 30
+		location := strings.Join(constraints.GeographyFlavor, " / ")
+		draft.Content.Intro = fmt.Sprintf(
+			"你们按各自的缘由抵达此地，眼前一切安静而寻常。\n【当前情况】地点：%s；时间：%s%d点%02d分；目标：弄清你们此行要处理的这件事。",
+			location, dateStr, hour, minute,
+		)
 		alog.Debug("normalize filled intro", "session", sessionID)
 	}
 	if strings.TrimSpace(draft.Content.MapDescription) == "" {

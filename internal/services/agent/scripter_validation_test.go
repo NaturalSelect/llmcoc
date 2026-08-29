@@ -48,7 +48,7 @@ func TestValidateDraftCompatibility_SettingDate(t *testing.T) {
 			Content: models.ScenarioContent{
 				KeeperAppendix: &models.KeeperAppendix{CoreTruth: "KP独有的内部真相：这是用于测试的占位真相文本，用来满足core_truth的长度校验要求，不作为实际剧情内容使用。"},
 				Setting:        setting,
-				Intro:          "你们抵达此地，可以四处走走。",
+				Intro:          "你们抵达此地，可以四处走走。\n【当前情况】地点：镇图书馆一层大厅；时间：1924年9月3日傍晚六点；目标：清点整理新到的捐赠藏书。",
 				GameStartSlot:  16,
 				MapDescription: "【文字地图】A→B",
 				Scenes: []models.SceneData{
@@ -119,6 +119,36 @@ func TestOneshotResultExampleSettingHasDate(t *testing.T) {
 	}
 }
 
+// TestIntroHasBriefing 验证 introHasBriefing 能正确识别intro末尾的【当前情况】结构化情况说明行。
+func TestIntroHasBriefing(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"完整合规行", "你们受邀而来。\n【当前情况】地点：镇图书馆一层大厅；时间：1924年9月3日傍晚六点；目标：清点整理捐赠藏书。", true},
+		{"缺当前情况标记", "地点：镇图书馆；时间：1924年9月3日；目标：清点藏书。", false},
+		{"缺目标标签", "你们受邀而来。\n【当前情况】地点：镇图书馆一层大厅；时间：1924年9月3日傍晚六点。", false},
+		{"有标记但时间无具体年月日", "你们受邀而来。\n【当前情况】地点：镇图书馆一层大厅；时间：傍晚六点；目标：清点整理捐赠藏书。", false},
+		{"空字符串", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := introHasBriefing(c.input)
+			if got != c.want {
+				t.Errorf("introHasBriefing(%q) = %v，预期 %v", c.input, got, c.want)
+			}
+		})
+	}
+}
+
+// TestOneshotResultExampleIntroHasBriefing 验证内置示例 intro 满足结构化情况说明要求（示例作为模型参考）。
+func TestOneshotResultExampleIntroHasBriefing(t *testing.T) {
+	if !introHasBriefing(oneshotResultExample.Content.Intro) {
+		t.Errorf("oneshotResultExample.Content.Intro 缺少【当前情况】情况说明行，intro=%q", oneshotResultExample.Content.Intro)
+	}
+}
+
 // TestEventLooksLikeDialogueQuote 验证时间线事件对话引语检测：引号片段与对话动词须同时命中才判定。
 func TestEventLooksLikeDialogueQuote(t *testing.T) {
 	cases := []struct {
@@ -155,7 +185,7 @@ func TestValidateDraftCompatibility_Timeline(t *testing.T) {
 			Content: models.ScenarioContent{
 				KeeperAppendix: &models.KeeperAppendix{CoreTruth: "KP独有的内部真相：这是用于测试的占位真相文本，用来满足core_truth的长度校验要求，不作为实际剧情内容使用。"},
 				Setting:        "1923年10月15日，初秋的小镇，你们受邀前来。",
-				Intro:          "你们抵达此地，可以四处走走。",
+				Intro:          "你们抵达此地，可以四处走走。\n【当前情况】地点：镇图书馆一层大厅；时间：1924年9月3日傍晚六点；目标：清点整理新到的捐赠藏书。",
 				GameStartSlot:  16,
 				MapDescription: "【文字地图】A→B",
 				PlaythroughOutline: strings.Repeat(
@@ -296,6 +326,39 @@ func TestIsModernEra(t *testing.T) {
 				t.Errorf("isModernEra(%q) = %v，预期 %v", c.era, got, c.want)
 			}
 		})
+	}
+}
+
+// TestLengthSpecSceneAndCastNotTiered 验证 lengthSpec 的地点/人物规格不再随剧本长度分档，
+// 而发现/收场/篇幅等其他数量项的档位差异保持不变。
+func TestLengthSpecSceneAndCastNotTiered(t *testing.T) {
+	short := lengthSpec("short")
+	mid := lengthSpec("mid")
+	long := lengthSpec("long")
+
+	for _, spec := range []struct {
+		name string
+		text string
+	}{{"short", short}, {"mid", mid}, {"long", long}} {
+		if !strings.Contains(spec.text, scenePlacementSpec) {
+			t.Errorf("lengthSpec(%s) 应包含统一的地点规格，实际：%v", spec.name, spec.text)
+		}
+		if !strings.Contains(spec.text, castPlacementSpec) {
+			t.Errorf("lengthSpec(%s) 应包含统一的人物规格，实际：%v", spec.name, spec.text)
+		}
+		for _, forbidden := range []string{"6-8处", "4-6处", "3-4处", "7-10位", "4-7位", "2-4位"} {
+			if strings.Contains(spec.text, forbidden) {
+				t.Errorf("lengthSpec(%s) 不应再包含随长度分档的数字区间 %q，实际：%v", spec.name, forbidden, spec.text)
+			}
+		}
+	}
+
+	// 发现/收场/篇幅的档位差异应保持不变。
+	if !strings.Contains(long, "10-12处") || strings.Contains(short, "10-12处") {
+		t.Errorf("发现数量的档位差异应保留：long 含 10-12处，short 不含，实际 long=%v short=%v", long, short)
+	}
+	if !strings.Contains(long, "4-8种") || strings.Contains(short, "4-8种") {
+		t.Errorf("收场数量的档位差异应保留：long 含 4-8种，short 不含，实际 long=%v short=%v", long, short)
 	}
 }
 
