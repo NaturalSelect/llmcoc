@@ -231,6 +231,8 @@
                                 class="btn btn-ghost text-xs">下一页</button>
                             <button @click="loadAdminScenarios(adminScenarioPage)"
                                 class="btn btn-ghost text-xs">刷新</button>
+                            <button @click="clearAllScenarios()"
+                                class="btn btn-red text-xs">清空所有模组</button>
                         </div>
                     </div>
                     <div x-show="adminScenarios.length === 0" class="text-amber-900 text-xs font-ui">暂无模组</div>

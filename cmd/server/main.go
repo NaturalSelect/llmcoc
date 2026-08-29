@@ -239,6 +239,7 @@ func main() {
 		scenarios.POST("/compile-story", middleware.AdminRequired(), handlers.CompileStoryByUpload)
 		scenarios.POST("/upload", middleware.AdminRequired(), handlers.UploadScenario)
 		scenarios.DELETE("/:id", middleware.AdminRequired(), handlers.DeleteScenario)
+		scenarios.DELETE("", middleware.AdminRequired(), handlers.ClearScenarios)
 	}
 
 	// Sessions

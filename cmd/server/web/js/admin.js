@@ -195,6 +195,14 @@ window.COC.admin = {
                             await Promise.all([this.loadAdminScenarios(nextPage), this.loadScenarios()]);
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
+                    async clearAllScenarios() {
+                        if (!await this.confirmDialog('确认清空所有模组？此操作不可逆，将删除全部已有模组。', { danger: true, confirmText: '清空' })) return;
+                        try {
+                            await this.api('DELETE', '/api/scenarios');
+                            this.showToast('模组已清空');
+                            await Promise.all([this.loadAdminScenarios(1), this.loadScenarios()]);
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
                     async loadAdminAgents() {
                         const agents = (await this.api('GET', '/api/admin/config/agents')) || [];
                         agents.forEach(ag => { if (ag.provider_config_id == null) ag.provider_config_id = ''; });

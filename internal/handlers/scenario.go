@@ -97,6 +97,16 @@ func DeleteScenario(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
+// ClearScenarios soft-deletes all currently active scenarios by setting is_active = false.
+func ClearScenarios(c *gin.Context) {
+	result := models.DB.Model(&models.Scenario{}).Where("is_active = ?", true).Update("is_active", false)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清空失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已清空", "count": result.RowsAffected})
+}
+
 type CreateScenarioReq struct {
 	Name        string                 `json:"name" binding:"required,max=200"`
 	Description string                 `json:"description"`
