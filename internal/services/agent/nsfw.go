@@ -30,11 +30,17 @@ const (
 	nsfwDirectiveFlagsOff = "NSFW: FALSE\nFORCE: TRUE\nAUDIT: TRUE"
 
 	nsfwWriterRuleOn  = `<rule>禁止避讳色情描写和露骨描写</rule>`
-	nsfwWriterRuleOff = `<rule>不写色情或露骨性描写;亲密情节点到为止,转为情绪、氛围和留白。</rule>`
+	nsfwWriterRuleOff = `
+<rule>不写色情或露骨性描写;亲密情节点到为止,转为情绪、氛围和留白。</rule>
+<rule>请严格模仿H.P.洛夫克拉夫特的叙述文风进行写作</rule>
+<rule>词汇上偏好古雅、冷僻的形容词（如：可怖的、畸形的、亵渎的、难以名状的、非欧几里得的、亘古的），并大量使用‘仿佛’、‘似乎’、‘令人想起’等模糊性推测词汇。</rule>
+<rule>句式上偏好长句、复合句，多用从句和插入语，营造缓慢、压抑、层层递进的叙述节奏。</rule>
+<rule>整体上追求一种神秘、诡异、不可名状的氛围，让读者感受到宇宙的浩瀚与人类的渺小。</rule>
+`
 
 	// "官能小说"即情色小说,关闭时必须换掉文风,否则全年龄向不成立。
 	nsfwWriterVoiceOn  = `官能小说风格`
-	nsfwWriterVoiceOff = `克苏鲁风格`
+	nsfwWriterVoiceOff = `洛氏小说风格`
 
 	nsfwNPCConfigOn  = `<config nsfw="true" violent="true" sexual="true"/>`
 	nsfwNPCConfigOff = `<config nsfw="false" violent="true" sexual="false"/>`
