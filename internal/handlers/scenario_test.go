@@ -22,6 +22,7 @@ func scenarioRouter(userID uint, isAdmin bool) *gin.Engine {
 	r.GET("/scenarios/:id", auth, GetScenario)
 	r.POST("/scenarios", auth, CreateScenario)
 	r.POST("/scenarios/compile-story", auth, CompileStoryByUpload)
+	r.DELETE("/scenarios", auth, ClearScenarios)
 	return r
 }
 
@@ -178,6 +179,37 @@ func TestCreateScenario_InvalidBody(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("want 400, got %d", w.Code)
+	}
+}
+
+// TestClearScenarios_SoftDeletesAllActive 验证清空接口把所有在架剧本软删除（is_active=false），
+// 已经软删除过的剧本不受影响，列表接口随后查不到任何剧本。
+func TestClearScenarios_SoftDeletesAllActive(t *testing.T) {
+	initTestDB(t)
+	seedScenario(t, "Scenario A")
+	seedScenario(t, "Scenario B")
+	alreadyInactive := seedScenario(t, "Already Inactive")
+	models.DB.Exec("UPDATE scenarios SET is_active = false WHERE id = ?", alreadyInactive)
+
+	uid := seedUser(t, "admin", "admin", 0, 3)
+	r := scenarioRouter(uid, true)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("DELETE", "/scenarios", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["count"].(float64) != 2 {
+		t.Errorf("count = %v, want 2", resp["count"])
+	}
+
+	var remaining int64
+	models.DB.Model(&models.Scenario{}).Where("is_active = ?", true).Count(&remaining)
+	if remaining != 0 {
+		t.Errorf("remaining active scenarios = %d, want 0", remaining)
 	}
 }
 
