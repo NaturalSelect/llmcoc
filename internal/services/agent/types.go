@@ -92,7 +92,8 @@ type ToolCall struct {
 	Spell         string                 `json:"spell"`          // manage_spell: 法术名称
 	Relation      *models.SocialRelation `json:"relation"`       // manage_relation: 社会关系条目
 	Asset         *models.Asset          `json:"asset"`          // manage_asset: 资产条目
-	IsBystander   bool                   `json:"is_bystander"`   // manage_madness trigger: 是否有旁观者
+	IsBystander   bool                   `json:"is_bystander"`   // manage_madness trigger: 是否有旁观者在场(仅决定症状表,不代表疯狂类型)
+	MadnessType   string                 `json:"madness_type"`   // manage_madness trigger: 疯狂类型 temporary/indefinite/permanent,由Director按规则判定
 	Direction     string                 `json:"direction"`      // write: 叙事方向(供Writer参考)
 	TimeRounds    int                    `json:"time_rounds"`    // advance_time: 推进的回合数
 	TimeReason    string                 `json:"time_reason"`    // advance_time: 原因(如"睡觉"/"吃饭")

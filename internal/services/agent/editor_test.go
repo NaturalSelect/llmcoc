@@ -67,7 +67,7 @@ func applyAgeUpdate(card *models.CharacterCard, newAgeStr string) {
 		CharacterName: card.Name,
 		Field:         "age",
 		NewValue:      newAgeStr,
-	}, players)
+	}, players, 1)
 }
 
 // ── parseStateChange unit tests ───────────────────────────────────────────────
@@ -205,6 +205,77 @@ func TestApplyCharacterUpdate_AgeBoundaryConstants(t *testing.T) {
 	}
 }
 
+// ── san 每日累计损失(DailySanLoss)────────────────────────────────────────────
+
+// TestApplyCharacterUpdate_San_AccumulatesDailyLoss 验证同一游戏内天数中多次SAN损失会
+// 累加进DailySanLoss,供Director每轮直接从角色状态行读取判断不定性疯狂阈值,不必跨轮心算
+// 或依赖会被裁剪的历史工具调用记录。
+func TestApplyCharacterUpdate_San_AccumulatesDailyLoss(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员SAN累计", 30)
+	players := []models.SessionPlayer{{CharacterCard: *card}}
+
+	applyCharacterUpdate(CharacterUpdate{CharacterName: card.Name, Field: "san", Delta: -3}, players, 1)
+	applyCharacterUpdate(CharacterUpdate{CharacterName: card.Name, Field: "san", Delta: -4}, players, 1)
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.Stats.Data.SAN != 50-3-4 {
+		t.Errorf("SAN: got %d, want %d", saved.Stats.Data.SAN, 50-3-4)
+	}
+	if saved.DailySanLoss != 7 {
+		t.Errorf("DailySanLoss: got %d, want 7 (3+4 within the same game day)", saved.DailySanLoss)
+	}
+	if saved.DailySanLossDay != 1 {
+		t.Errorf("DailySanLossDay: got %d, want 1", saved.DailySanLossDay)
+	}
+}
+
+// TestApplyCharacterUpdate_San_ResetsOnNewDay 验证游戏内天数变化时DailySanLoss重新计数,
+// 而不是无限累加导致提前误判不定性疯狂。
+func TestApplyCharacterUpdate_San_ResetsOnNewDay(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员SAN跨天", 30)
+	players := []models.SessionPlayer{{CharacterCard: *card}}
+
+	applyCharacterUpdate(CharacterUpdate{CharacterName: card.Name, Field: "san", Delta: -6}, players, 1)
+	applyCharacterUpdate(CharacterUpdate{CharacterName: card.Name, Field: "san", Delta: -2}, players, 2)
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.DailySanLoss != 2 {
+		t.Errorf("DailySanLoss: got %d, want 2 (day-2 loss only; day-1's 6 must not carry over)", saved.DailySanLoss)
+	}
+	if saved.DailySanLossDay != 2 {
+		t.Errorf("DailySanLossDay: got %d, want 2", saved.DailySanLossDay)
+	}
+}
+
+// TestApplyCharacterUpdate_San_GainDoesNotAccumulate 验证SAN恢复(正delta)不计入DailySanLoss。
+func TestApplyCharacterUpdate_San_GainDoesNotAccumulate(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "调查员SAN恢复", 30)
+	players := []models.SessionPlayer{{CharacterCard: *card}}
+
+	applyCharacterUpdate(CharacterUpdate{CharacterName: card.Name, Field: "san", Delta: -5}, players, 1)
+	applyCharacterUpdate(CharacterUpdate{CharacterName: card.Name, Field: "san", Delta: 2}, players, 1)
+
+	var saved models.CharacterCard
+	if err := models.DB.First(&saved, card.ID).Error; err != nil {
+		t.Fatalf("load card: %v", err)
+	}
+	if saved.Stats.Data.SAN != 50-5+2 {
+		t.Errorf("SAN: got %d, want %d", saved.Stats.Data.SAN, 50-5+2)
+	}
+	if saved.DailySanLoss != 5 {
+		t.Errorf("DailySanLoss: got %d, want 5 (a SAN gain must not offset already-accumulated loss)", saved.DailySanLoss)
+	}
+}
+
 // applyCthulhuUpdate 辅助函数：对单个角色卡执行克苏鲁神话技能变更。
 func applyCthulhuUpdate(card *models.CharacterCard, delta int) {
 	players := []models.SessionPlayer{{CharacterCard: *card}}
@@ -212,7 +283,7 @@ func applyCthulhuUpdate(card *models.CharacterCard, delta int) {
 		CharacterName: card.Name,
 		Field:         "cthulhu_mythos",
 		Delta:         delta,
-	}, players)
+	}, players, 1)
 }
 
 // ── cthulhu_mythos 增加行为（无回归）────────────────────────────────────────
@@ -420,7 +491,7 @@ func applyRaceUpdate(card *models.CharacterCard, newRace string) {
 		CharacterName: card.Name,
 		Field:         "race",
 		NewValue:      newRace,
-	}, players)
+	}, players, 1)
 }
 
 // TestApplyCharacterUpdate_RaceToNonHuman_MaxSANFixed99 验证变为非人类种族时

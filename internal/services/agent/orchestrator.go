@@ -287,21 +287,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		alog.Error("KP round failed", "round", round, "err", err)
 	} else {
 		if !timeAdvancedInTurn {
-			for i := range gctx.Session.Players {
-				card := &gctx.Session.Players[i].CharacterCard
-				if card.MadnessState == "none" || card.MadnessState == "" {
-					continue
-				}
-				card.MadnessDuration -= 1
-				if card.MadnessDuration <= 0 {
-					card.MadnessState = "none"
-					card.MadnessSymptom = ""
-					card.MadnessDuration = 0
-					debugf("madness", "session=%d char=%s madness ended", sid, card.Name)
-				}
-				models.DB.Save(card)
-				break
-			}
 			clearConsumedTurnActions(gctx, combat, chase)
 		}
 		emitProgress("KP主流程裁定完成")
@@ -590,6 +575,18 @@ func scenarioStartSlot(session models.GameSession) int {
 	return session.Scenario.Content.Data.GameStartSlot
 }
 
+// gameDay converts a turn round (1-based, 30 minutes/round) and scenario start
+// slot into a 1-based in-game day number, matching the day shown by formatGameTime.
+func gameDay(round, startSlot int) int {
+	if round <= 0 {
+		round = 1
+	}
+	if startSlot < 0 || startSlot > 47 {
+		startSlot = 16 // 08:00
+	}
+	return (round-1+startSlot)/48 + 1
+}
+
 // ResetMadnessAfterSession clears non-permanent madness state on session end.
 // Returns true when any field was changed.
 func ResetMadnessAfterSession(card *models.CharacterCard) bool {
@@ -604,6 +601,7 @@ func ResetMadnessAfterSession(card *models.CharacterCard) bool {
 	card.MadnessSymptom = ""
 	card.MadnessDuration = 0
 	card.DailySanLoss = 0
+	card.DailySanLossDay = 0
 	return changed
 }
 
@@ -936,6 +934,9 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 			line += "【不定性疯狂】"
 		case "permanent":
 			line += "【永久性疯狂】"
+		}
+		if card.DailySanLoss > 0 {
+			line += fmt.Sprintf("【今日已损失SAN:%d,不定性疯狂阈值:%d】", card.DailySanLoss, card.Stats.Data.MaxSAN/5)
 		}
 		switch card.WoundState {
 		case "major":

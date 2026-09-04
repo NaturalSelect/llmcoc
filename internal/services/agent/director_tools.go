@@ -370,14 +370,20 @@ func manageMadnessTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolManageMadness),
-			Description: `触发或解除调查员的疯狂状态。operate 为 trigger(触发,默认)或 clear(解除)。is_bystander 标记该角色是否为旁观者疯狂(而非直接经历者)。reason 必须说明触发/解除依据(如本轮 SAN 单次损失≥5，或疯狂持续时间结束)。
-调用示例：{"operate":"trigger","character_name":"角色名","is_bystander":true,"reason":"本轮SAN单次损失≥5"}`,
+			Description: `触发或解除调查员的疯狂状态。是否触发/何时解除/属于哪一种疯狂，一律由你按COC规则书自行判定；本工具只负责按规则随机生成症状文本与持续时间、并把你的判定落地到角色卡。
+operate 为 trigger(触发,默认)或 clear(解除)。系统不会自动清除疯狂状态，发作结束、持续时间用完或经治疗痊愈等情形，都需要你主动调用clear显式解除。
+trigger 时必须提供 madness_type：single loss≥5且智力检定通过→temporary(临时性疯狂)；游戏内一天累计损失≥最大SAN的1/5→indefinite(不定性疯狂)；SAN降至0→permanent(永久性疯狂,调查员退场成为NPC)。
+is_bystander 只用于选择症状表(决定随机症状文本与持续时间)：true=有旁观者在场→即时症状表(固定持续10战斗轮)；false=独自一人→总结症状表(持续1D10×2小时)。它与madness_type是两个独立维度，不要用is_bystander去推断疯狂类型。
+reason 必须说明触发/解除依据(如"本轮SAN单次损失5点且智力检定成功"、"当日累计损失18≥80/5"、"SAN降至0"、"发作已叙述完毕"等)。
+调用示例(触发)：{"operate":"trigger","character_name":"角色名","madness_type":"temporary","is_bystander":true,"reason":"本轮SAN单次损失5点且智力检定成功"}
+调用示例(解除)：{"operate":"clear","character_name":"角色名","reason":"发作已叙述完毕，交还控制权"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"operate": {"type": "string", "enum": ["trigger", "clear"], "description": "触发或解除疯狂(可选,默认trigger)"},
 					"character_name": {"type": "string", "description": "角色名"},
-					"is_bystander": {"type": "boolean", "description": "是否为旁观者疯狂"},
+					"madness_type": {"type": "string", "enum": ["temporary", "indefinite", "permanent"], "description": "疯狂类型,trigger时必填,由你按规则书判定,与is_bystander无关"},
+					"is_bystander": {"type": "boolean", "description": "是否有旁观者在场,仅决定随机症状表(即时/总结),不代表疯狂类型"},
 					"reason": {"type": "string", "description": "触发/解除依据"}
 				},
 				"required": ["character_name", "reason"]

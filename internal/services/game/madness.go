@@ -89,31 +89,3 @@ func itoa(n int) string {
 	}
 }
 
-// MadnessKind categorises the severity of a sanity loss event.
-type MadnessKind int
-
-const (
-	MadnessNone       MadnessKind = iota
-	MadnessTemporary              // single loss ≥5
-	MadnessIndefinite             // daily cumulative loss ≥ maxSAN/5
-	MadnessPermanent              // SAN drops to 0
-)
-
-// EvalMadness determines what kind of madness (if any) a sanity loss event triggers.
-// loss      – the SAN points lost in this single event (positive integer)
-// newSAN    – the character's SAN after applying the loss
-// dailyLoss – total SAN lost so far today (including this event)
-// maxSAN    – the character's current maximum SAN
-func EvalMadness(loss, newSAN, dailyLoss, maxSAN int) MadnessKind {
-	if newSAN <= 0 {
-		return MadnessPermanent
-	}
-	// Check for indefinite first, as it's more severe than temporary
-	if maxSAN > 0 && dailyLoss >= maxSAN/5 {
-		return MadnessIndefinite
-	}
-	if loss >= 5 {
-		return MadnessTemporary
-	}
-	return MadnessNone
-}

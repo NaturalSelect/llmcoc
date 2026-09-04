@@ -156,6 +156,7 @@ type CharacterCard struct {
 	MadnessSymptom     string `gorm:"type:text" json:"madness_symptom"`            // 当前疯狂症状描述
 	MadnessDuration    int    `gorm:"default:0" json:"madness_duration"`           // 剩余轮数(临时性)或标记仍在发作(不定性)
 	DailySanLoss       int    `gorm:"default:0" json:"daily_san_loss"`             // 当日累计SAN损失(用于不定性疯狂判断)
+	DailySanLossDay    int    `gorm:"default:0" json:"daily_san_loss_day"`         // DailySanLoss对应的游戏内天数,天数变化时清零重新计数
 	CthulhuMythosSkill int    `gorm:"default:0" json:"cthulhu_mythos_skill"`       // 克苏鲁神话技能值(控制最大SAN上限)
 	// COC 伤亡状态
 	WoundState    string    `gorm:"size:20;default:'none'" json:"wound_state"` // none/major/dying/dead

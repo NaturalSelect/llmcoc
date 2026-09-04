@@ -71,7 +71,7 @@ func parseStateChange(change string) (CharacterUpdate, string, bool) {
 	return CharacterUpdate{}, errMsg, false
 }
 
-func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
+func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer, gameDay int) {
 	for i := range players {
 		card := &players[i].CharacterCard
 		if card.Name != upd.CharacterName {
@@ -86,6 +86,15 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 			newSAN := s.SAN + upd.Delta
 			s.SAN = clamp(newSAN, 0, card.Stats.Data.MaxSAN)
 			card.Stats.Data = s
+			if upd.Delta < 0 {
+				// NOTE: DailySanLoss供Director每轮读取,判断是否达到不定性疯狂阈值(规则书:1/5 MaxSAN/天),
+				// 避免其依赖会被裁剪的历史工具调用记录跨轮心算。
+				if card.DailySanLossDay != gameDay {
+					card.DailySanLossDay = gameDay
+					card.DailySanLoss = 0
+				}
+				card.DailySanLoss += -upd.Delta
+			}
 			models.DB.Save(card)
 
 		case "wound_state":
@@ -354,40 +363,6 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer) {
 		return
 	}
 	alog.Error("character not found for update", "character", upd.CharacterName)
-}
-
-// applyMadnessToCard sets the madness fields on a CharacterCard based on MadnessKind.
-// It rolls a madness symptom and updates the card in memory (caller must DB.Save).
-func applyMadnessToCard(card *models.CharacterCard, kind game.MadnessKind) {
-	switch kind {
-	case game.MadnessPermanent:
-		card.MadnessState = "permanent"
-		sym := game.RollMadnessSymptom(false)
-		card.MadnessSymptom = sym.Description
-		card.MadnessDuration = 0
-		alog.Debug("character permanent madness", "character", card.Name)
-
-	case game.MadnessIndefinite:
-		card.MadnessState = "indefinite"
-		sym := game.RollMadnessSymptom(false)
-		card.MadnessSymptom = sym.Description
-		card.MadnessDuration = sym.Duration // flagged as active
-		alog.Debug("character indefinite madness triggered", "character", card.Name)
-
-	case game.MadnessTemporary:
-		// Temporary madness: roll INT check — if pass, character develops symptom; if fail, memory suppression
-		intCheck := game.SkillCheck(card.Stats.Data.INT)
-		if intCheck.Success {
-			card.MadnessState = "temporary"
-			sym := game.RollMadnessSymptom(true) // instantaneous (bystanders present)
-			card.MadnessSymptom = sym.Description
-			card.MadnessDuration = sym.Duration
-			alog.Debug("character temporary madness triggered", "character", card.Name)
-		} else {
-			// Failed INT check → memory suppression, no visible madness (but sanity is still lost)
-			alog.Debug("character temporary madness suppressed", "character", card.Name)
-		}
-	}
 }
 
 func applyNPCUpdate(upd CharacterUpdate, sessionID uint, tempNPCs []models.SessionNPC, scenarioNPCs []models.NPCData) {

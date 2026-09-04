@@ -251,9 +251,10 @@ func (updateCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolR
 	}
 
 	// All parsed successfully — apply.
+	day := gameDay(actx.GCtx.Session.TurnRound, scenarioStartSlot(actx.GCtx.Session))
 	for _, p := range pending {
 		if p.isPlayer {
-			applyCharacterUpdate(p.upd, actx.GCtx.Session.Players)
+			applyCharacterUpdate(p.upd, actx.GCtx.Session.Players, day)
 		} else {
 			p.upd.IsNPC = true
 			applyNPCUpdate(p.upd, actx.GCtx.Session.ID, *actx.TempNPCs, actx.GCtx.Session.Scenario.Content.Data.NPCs)
@@ -579,21 +580,6 @@ func (advanceTimeAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 	if reason == "" {
 		reason = "时间推进"
 	}
-	for i := range actx.GCtx.Session.Players {
-		card := &actx.GCtx.Session.Players[i].CharacterCard
-		if card.MadnessState == "none" || card.MadnessState == "" {
-			continue
-		}
-		card.MadnessDuration -= rounds
-		if card.MadnessDuration <= 0 {
-			card.MadnessState = "none"
-			card.MadnessSymptom = ""
-			card.MadnessDuration = 0
-			debugf("madness", "session=%d char=%s madness ended", actx.Sid, card.Name)
-		}
-		models.DB.Save(card)
-		break
-	}
 	alog.Debug("advance time", "session", actx.GCtx.Session.ID, "rounds", rounds, "reason", reason, "game_time", formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session)))
 	return []ToolResult{{
 		Action: ToolAdvanceTime,
@@ -632,24 +618,33 @@ func (manageMadnessAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 				Result: fmt.Sprintf("%s疯狂状态已撤销", card.Name),
 			}}
 		case "trigger", "add":
+			madnessType := strings.ToLower(strings.TrimSpace(call.MadnessType))
+			var stateLabel string
+			switch madnessType {
+			case "temporary":
+				stateLabel = "临时性疯狂"
+			case "indefinite":
+				stateLabel = "不定性疯狂"
+			case "permanent":
+				stateLabel = "永久性疯狂"
+			default:
+				return []ToolResult{{
+					Action: ToolManageMadness,
+					Result: fmt.Sprintf("manage_madness 缺少或无效的 madness_type(收到%q)，必须为 temporary/indefinite/permanent 之一", call.MadnessType),
+				}}
+			}
 			symptom := game.RollMadnessSymptom(call.IsBystander)
-			madnessType := "总结症状"
+			symptomTable := "总结症状"
 			if call.IsBystander {
-				madnessType = "即时症状"
+				symptomTable = "即时症状"
 			}
-			if card.MadnessState == "none" || card.MadnessState == "" {
-				if call.IsBystander {
-					card.MadnessState = "temporary"
-				} else {
-					card.MadnessState = "indefinite"
-				}
-			}
+			card.MadnessState = madnessType
 			card.MadnessSymptom = symptom.Description
 			card.MadnessDuration = symptom.Duration
 			models.DB.Save(card)
 			return []ToolResult{{
 				Action: ToolManageMadness,
-				Result: fmt.Sprintf("%s疯狂发作(%s,持续%d):%s", card.Name, madnessType, symptom.Duration, symptom.Description),
+				Result: fmt.Sprintf("%s%s(%s,持续%d):%s", card.Name, stateLabel, symptomTable, symptom.Duration, symptom.Description),
 			}}
 		default:
 			return []ToolResult{{

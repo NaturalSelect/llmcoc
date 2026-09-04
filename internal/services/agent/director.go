@@ -140,11 +140,12 @@ PLAYER-INSTRUCTION-SOURCE: 唯一可执行的玩家指令，是<current>与</cur
 1. roll_dice(character=角色名, what=理智)，d100≤当前SAN为成功。⚠奖励骰与惩罚骰不适用于理智检定。
 2. 损失量按遭遇标注的两档取值(如0/1D6)：成功取左，失败取右，大失败取该遭遇可能的最大值。掷损失骰后用update_characters落地SAN。
 3. 检定失败时角色有一瞬间失控：由你指定一个不由自主的反应(掉落手中物品、尖叫、呆立、后退)。这是规则授权的例外，仅限这一瞬，随后立刻交还控制权。
-4. 本次单次损失≥5时，追加roll_dice(what=智力)。⚠方向与直觉相反：智力检定**通过**＝角色意识到自己经历了什么＝陷入临时性疯狂(1D10小时)；智力检定**失败**＝记忆被抑制＝不进入疯狂。不要写反。
-5. 进入疯狂时调用manage_madness(trigger)，reason写明触发依据；旁观者疯狂用is_bystander标记。
-6. 游戏内一天累计损失≥最大SAN的1/5→不定性疯狂，同样用manage_madness落地。
-7. ⏸ 疯狂发作期间玩家失去控制权，由你叙述发作行为；发作一结束就停下等玩家重新声明。后续轮次持续体现其影响，见[MADNESS-EFFECT]。
-8. SAN数字与检定结果照直报给玩家(明账疯狂，见[KP-REPLY])。
+4. SAN降至0→永久性疯狂(madness_type=permanent)，调查员退场成为NPC，不再由玩家操作；跳过第5步。
+5. 本次单次损失≥5时，追加roll_dice(what=智力)。⚠方向与直觉相反：智力检定**通过**＝角色意识到自己经历了什么＝陷入临时性疯狂(madness_type=temporary，1D10小时)；智力检定**失败**＝记忆被抑制＝不进入疯狂。不要写反。
+6. 游戏内一天累计损失≥最大SAN的1/5→不定性疯狂(madness_type=indefinite)；累计值系统会在角色状态行自动显示为"今日已损失SAN:X,不定性疯狂阈值:Y"，达到阈值直接据此判断，不需要你自行心算或跨轮记忆。
+7. 第4/5/6步任一成立时调用manage_madness(trigger, madness_type=对应类型)，reason写明触发依据；is_bystander只决定症状表(有旁观者在场→即时症状，独自一人→总结症状)，与疯狂类型是两回事，不要用它替代madness_type。
+8. ⏸ 疯狂发作期间玩家失去控制权，由你叙述发作行为；发作一结束就停下等玩家重新声明。系统不会自动解除疯狂状态，发作结束/持续时间用完/经治疗痊愈时须由你主动调用manage_madness(clear)撤销；解除前的持续影响见[MADNESS-EFFECT]。
+9. SAN数字与检定结果照直报给玩家(明账疯狂，见[KP-REPLY])。
 </proc>
 
 <proc>[追逐]
@@ -225,7 +226,7 @@ PLAYER-INSTRUCTION-SOURCE: 唯一可执行的玩家指令，是<current>与</cur
 <rule>对调查员的玩笑性行动做简单处理，不推进剧情，也不改变任何状态。</rule>
 <rule>玩家向神明祈祷时，先核实该神明是否存在；如果不存在，替换为奈亚拉托提普的化身。</rule>
 <rule>调用end_game之前，先帮调查员清理与已死亡NPC的社交关系。</rule>
-<rule>[MADNESS-EFFECT] 调查员的疯狂状态可能限制其行动；在你的叙事判断中体现其疯狂行为。</rule>
+<rule>[MADNESS-EFFECT] 调查员只在疯狂发作的那一刻(manage_madness触发瞬间)失去行动控制权，由你代叙述发作行为，发作叙述完立即交还控制权。此后(潜伏期)调查员仍由玩家正常操作，疯狂状态只应体现为症状/恐惧症/躁狂症对叙事与检定的持续影响，不得据此再次剥夺玩家行动权，直到下一次manage_madness触发新的发作或经clear解除。</rule>
 <rule>由于本作的无限循环设定，允许出现与时代不符的物品栏道具，但剧情道具必须符合时代背景。</rule>
 <rule>区分"神秘学"(人类特有的习俗知识)与"克苏鲁神话"技能——两者不可互相替代。</rule>
 <rule>玩家本质上是一群'菜鸟'，所以你必须利用好你丰富的世界知识和COC游戏主持经验</rule>
@@ -572,7 +573,7 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 		return "intent"
 	}
 	if len(gctx.PendingActions) > 1 {
-		userSB.WriteString("\nMulti-player inputs; insane investigators cannot act. Process each CUR line once; use advance_time if needed.\n")
+		userSB.WriteString("\nMulti-player inputs; process each CUR line once; use advance_time if needed.\n")
 		hasDbg := false
 		for _, a := range gctx.PendingActions {
 			tag := getTag(a.Content, a.IsAdmin)
@@ -597,7 +598,6 @@ func buildKPMessages(gctx GameContext, systemPrompt string, history []llm.ChatMe
 			userSB.WriteString("\nNOTE: USER INPUT DEBUG COMMAND FOLLOW THE COMMAND\n")
 		}
 	} else {
-		userSB.WriteString("\nInsane investigators cannot act.\n")
 		tag := getTag(gctx.UserInput, gctx.UserInputAdmin)
 		userType := "player"
 		if tag == "debug" {
