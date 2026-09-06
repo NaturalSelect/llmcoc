@@ -20,7 +20,7 @@ import (
 func TestStoryArchitectLoop_AskLawyer(t *testing.T) {
 	initTranslatorTestDB(t)
 
-	document := strings.Repeat("这是故事文档的正文内容，涵盖表层情境、KP内部真相、地点、NPC、线索、时间线与结局。", 20)
+	document := "# 导入\n## 调查地点\n### 守密人信息\n" + strings.Repeat("这是故事文档的正文内容，涵盖表层情境、KP内部真相、地点、NPC、线索、时间线与结局。", 20)
 	askArgs, _ := json.Marshal(map[string]string{"question": "食尸鬼的移动速度和负重规则是什么？"})
 	architectFake := &sequentialFakeProvider{
 		callerName: "architect",

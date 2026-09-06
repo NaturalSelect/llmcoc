@@ -251,9 +251,13 @@ func TestValidateDraftCompatibility_Timeline(t *testing.T) {
 	})
 }
 
-// TestValidateStoryDocument 验证 validateStoryDocument 对故事文档长度与 mythos_anchor 的校验。
+// TestValidateStoryDocument 验证 validateStoryDocument 对故事文档长度、标题结构与 mythos_anchor 的校验。
 func TestValidateStoryDocument(t *testing.T) {
-	longDoc := strings.Repeat("这是故事文档的正文内容，包含表层情境、真相与线索设计。", 30) // 远超500 runes
+	// 长文档与短文档都自带3个Markdown标题，使各用例只单独触发自己关心的那个问题。
+	headings := "# 导入\n## 调查地点\n### 守密人信息\n"
+	longDoc := headings + strings.Repeat("这是故事文档的正文内容，包含表层情境、真相与线索设计。", 30) // 远超500 runes
+	shortDoc := headings + "太短了"
+	noHeadingDoc := strings.Repeat("这是故事文档的正文内容，包含表层情境、真相与线索设计。", 30) // 长度足够但无标题
 
 	cases := []struct {
 		name       string
@@ -261,15 +265,41 @@ func TestValidateStoryDocument(t *testing.T) {
 		wantIssues int
 	}{
 		{"正常文档", StoryOutput{Document: longDoc, MythosAnchor: "食尸鬼（Ghoul）"}, 0},
-		{"文档过短", StoryOutput{Document: "太短了", MythosAnchor: "食尸鬼（Ghoul）"}, 1},
+		{"文档过短", StoryOutput{Document: shortDoc, MythosAnchor: "食尸鬼（Ghoul）"}, 1},
+		{"缺少标题", StoryOutput{Document: noHeadingDoc, MythosAnchor: "食尸鬼（Ghoul）"}, 1},
 		{"anchor为空", StoryOutput{Document: longDoc, MythosAnchor: ""}, 1},
-		{"两者都不满足", StoryOutput{Document: "太短了", MythosAnchor: ""}, 2},
+		{"三者都不满足", StoryOutput{Document: "太短了", MythosAnchor: ""}, 3},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			issues := validateStoryDocument(c.story)
 			if len(issues) != c.wantIssues {
 				t.Errorf("validateStoryDocument() issues = %v (len=%d), want len=%d", issues, len(issues), c.wantIssues)
+			}
+		})
+	}
+}
+
+// TestMarkdownHeadingCount 验证 markdownHeadingCount 对 #/##/### 标题行的识别。
+func TestMarkdownHeadingCount(t *testing.T) {
+	cases := []struct {
+		name     string
+		document string
+		want     int
+	}{
+		{"无标题", "普通正文第一行。\n普通正文第二行。", 0},
+		{"一个一级标题", "# 导入\n正文内容。", 1},
+		{"三个不同级别标题", "# 导入\n正文。\n## 调查地点\n正文。\n### 守密人信息\n正文。", 3},
+		{"标题前有空白缩进", "   ## 调查地点\n正文。", 1},
+		{"井号无空格不算标题", "#导入\n##调查地点\n正文。", 0},
+		{"四级标题不计入", "#### 细节\n正文。", 0},
+		{"空字符串", "", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := markdownHeadingCount(c.document)
+			if got != c.want {
+				t.Errorf("markdownHeadingCount(%q) = %d, want %d", c.document, got, c.want)
 			}
 		})
 	}
