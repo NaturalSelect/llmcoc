@@ -171,6 +171,13 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 			)
 			continue
 		}
+		if hits := compileFieldBannedKeywords(result); len(hits) > 0 {
+			msgs = append(msgs,
+				llm.ChatMessage{Role: "assistant", Content: resp},
+				llm.ChatMessage{Role: "user", Content: fmt.Sprintf("SYSTEM REJECT: 以下字段出现了禁用关键词：%s。这些字段由你自主设计而非照抄故事文档，请换用其他具体说法重写，不得使用财务审计类桥段，也不得出现与COC模组主题不符的不当内容。请连同完整剧本JSON重新输出一次，其余字段保持与上次一致。", strings.Join(hits, "；"))},
+			)
+			continue
+		}
 		if strings.TrimSpace(result.RewardConcept) == "" && !rewardRetried {
 			rewardRetried = true
 			msgs = append(msgs,
@@ -192,4 +199,28 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 	}
 
 	return ScenarioDraft{}, "", fmt.Errorf("compile failed: 连续%d次内容校验未通过", maxBusinessRetries)
+}
+
+// compileFieldBannedKeywords 检查 name/tags/reward_concept 三个由 compiler 自主设计、并非
+// 从故事文档忠实转录的字段，是否重新带回了故事文档阶段已禁止的关键词（见 bannedStoryCliches/
+// bannedStoryContent），返回形如"name(账目)"的命中说明；正文其余字段忠实转录自已通过校验的
+// 故事文档，无需重复检查。
+func compileFieldBannedKeywords(result OneshotResult) []string {
+	fields := []struct {
+		label string
+		value string
+	}{
+		{"name", result.Name},
+		{"tags", result.Tags},
+		{"reward_concept", result.RewardConcept},
+	}
+	var hits []string
+	for _, f := range fields {
+		kws := findKeywords(f.value, bannedStoryCliches)
+		kws = append(kws, findKeywords(f.value, bannedStoryContent)...)
+		if len(kws) > 0 {
+			hits = append(hits, fmt.Sprintf("%s(%s)", f.label, strings.Join(kws, "、")))
+		}
+	}
+	return hits
 }
