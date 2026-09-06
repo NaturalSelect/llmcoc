@@ -615,6 +615,8 @@ window.COC.admin = {
                     // NOTE: AI 模组生成已改为 SSE 流式请求：后端实时推送阶段进度与 LLM 交互摘要，
                     // 客户端断开不影响后台生成与入库。支持 count>1 批量生成，后端串行跑完每个子任务
                     // 并通过 batch_progress/batch_done 事件承载整体进度与汇总结果。
+                    // 按钮不阻塞：允许在一次生成尚未完成时再次点击提交新任务，后端本身按全局槽位排队执行，
+                    // 因此这里不做互斥拦截；仅在当前没有任务运行时才清空日志，避免打断正在输出的历史记录。
                     async generateScenarioByAgents() {
                         const minPlayers = Number(this.scenarioGenForm.min_players || 1);
                         const maxPlayers = Number(this.scenarioGenForm.max_players || 4);
@@ -623,11 +625,12 @@ window.COC.admin = {
                             return;
                         }
                         const count = Number(this.scenarioGenForm.count || 1);
-                        if (this.scenarioGenRunning) return;
 
-                        this.scenarioGenRunning = true;
-                        this.scenarioGenLogs = [];
-                        this.scenarioGenBatchStatus = null;
+                        if (this.scenarioGenActiveCount === 0) {
+                            this.scenarioGenLogs = [];
+                            this.scenarioGenBatchStatus = null;
+                        }
+                        this.scenarioGenActiveCount++;
                         const pushLog = (line) => {
                             const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
                             this.scenarioGenLogs.push('[' + time + '] ' + line);
@@ -752,8 +755,9 @@ window.COC.admin = {
                         } catch (e) {
                             pushLog('❌ ' + (e.message || '生成失败'));
                             this.showToast(e.message, 'error');
+                        } finally {
+                            this.scenarioGenActiveCount--;
                         }
-                        this.scenarioGenRunning = false;
                     },
 
                     // NOTE: 把后端 progress 事件格式化为日志行；exchange 事件展示 LLM 交互摘要。

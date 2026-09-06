@@ -175,9 +175,10 @@ window.COC.core = function() {
                     scenarioGenerationLogLoading: false,
                     generationLogTab: 'story',
                     scenarioGenForm: { name: '', theme: '', era: '', brief: '', target_length: 'short', min_players: 1, max_players: 4, difficulty: 'normal', count: 1 },
-                    // NOTE: AI 模组生成的 SSE 流式状态：running 表示流式请求进行中，logs 为实时进度日志，
-                    // batchStatus 记录批量生成的整体进度与每个子任务结果（current/total/succeeded/failed/results）
-                    scenarioGenRunning: false,
+                    // NOTE: AI 模组生成的 SSE 流式状态：按钮不阻塞 UI，允许在生成过程中继续提交新任务
+                    // 或做其他操作；activeCount 为当前后台并行/排队中的生成请求数量，logs 为实时进度日志，
+                    // batchStatus 记录最近一次批量生成的整体进度与每个子任务结果（current/total/succeeded/failed/results）
+                    scenarioGenActiveCount: 0,
                     scenarioGenLogs: [],
                     scenarioGenBatchStatus: null,
                     // NOTE: 上传故事编译：管理员只上传故事文档文件，跳过 AI 故事生成阶段，
