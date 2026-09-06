@@ -269,6 +269,8 @@ func TestValidateStoryDocument(t *testing.T) {
 		{"缺少标题", StoryOutput{Document: noHeadingDoc, MythosAnchor: "食尸鬼（Ghoul）"}, 1},
 		{"anchor为空", StoryOutput{Document: longDoc, MythosAnchor: ""}, 1},
 		{"三者都不满足", StoryOutput{Document: "太短了", MythosAnchor: ""}, 3},
+		{"含财务审计关键词", StoryOutput{Document: longDoc + "此外还需要查账才能核实真相。", MythosAnchor: "食尸鬼（Ghoul）"}, 1},
+		{"含不当内容关键词", StoryOutput{Document: longDoc + "这里绝不应该出现幼女相关描写。", MythosAnchor: "食尸鬼（Ghoul）"}, 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -300,6 +302,29 @@ func TestMarkdownHeadingCount(t *testing.T) {
 			got := markdownHeadingCount(c.document)
 			if got != c.want {
 				t.Errorf("markdownHeadingCount(%q) = %d, want %d", c.document, got, c.want)
+			}
+		})
+	}
+}
+
+// TestFindKeywords 验证 findKeywords 对禁用关键词的检测：只报告实际命中的词，保持传入顺序。
+func TestFindKeywords(t *testing.T) {
+	cases := []struct {
+		name     string
+		document string
+		keywords []string
+		want     []string
+	}{
+		{"命中单个", "调查员需要查账才能核实真相", []string{"账目", "查账"}, []string{"查账"}},
+		{"命中多个保持原始顺序", "既要看账目又要查账", []string{"账目", "查账"}, []string{"账目", "查账"}},
+		{"未命中", "调查员翻阅了旧信件", []string{"账目", "查账"}, nil},
+		{"空文档", "", []string{"账目", "查账"}, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := findKeywords(c.document, c.keywords)
+			if strings.Join(got, "|") != strings.Join(c.want, "|") {
+				t.Errorf("findKeywords(%q, %v) = %v, want %v", c.document, c.keywords, got, c.want)
 			}
 		})
 	}

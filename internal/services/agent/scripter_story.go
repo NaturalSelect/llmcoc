@@ -158,6 +158,8 @@ func storySystemPrompt() string {
 【其他硬性要求】
 - 开头必须是冷开场：以平静、日常、生活化的语气呈现一个看似普通的表层情境，只交代具体日期与时刻、调查员此刻所在的具体场所、以及他们要达成的那件事；读者和玩家从中看不出剧情走向、案件性质、幕后真相或神话存在，也读不到任何恐怖、惊悚、诡异、压抑、不祥的氛围。恐怖是玩家在调查中逐步自行发现的，不能在开场剧透或提前渲染
 - 避免政治话题
+- 禁止出现"账目""查账"等财务审计类关键词或桥段：调查入口、线索与检定不得围绕核对账本/查账展开，换用其他具体调查手段
+- 禁止出现涉及未成年人性内容、人兽等严重不当内容：这类内容与COC恐怖模组主题完全无关，任何情况下都不得出现
 - 以克苏鲁宇宙恐惧为基调（渺小感、理智侵蚀、不可知深渊）
 - 可以使用与时代相称的历史、地理、医学、矿业等具体知识和技能；不要用现代科学术语、硬科幻或工程化异常替代神话解释
 </task>
@@ -189,10 +191,33 @@ func validateStoryDocument(story StoryOutput) []string {
 	if count := markdownHeadingCount(story.Document); count < 3 {
 		issues = append(issues, fmt.Sprintf("故事文档缺少出版模组体例所需的章节/地点标题（当前%d个，至少需要3个）；请用Markdown标题（#/##/###）组织导入、调查地点、守密人信息、结局等段落", count))
 	}
+	if kws := findKeywords(story.Document, bannedStoryCliches); len(kws) > 0 {
+		issues = append(issues, fmt.Sprintf("故事文档中出现了禁用关键词%s：不得使用财务审计/查账类桥段作为调查手法或线索，请改用其他具体调查手段重写相关段落", strings.Join(kws, "、")))
+	}
+	if kws := findKeywords(story.Document, bannedStoryContent); len(kws) > 0 {
+		issues = append(issues, fmt.Sprintf("故事文档中出现了禁用关键词%s：这类内容与COC恐怖模组主题明显不符，任何情况下都不得出现，请删除并重写相关段落", strings.Join(kws, "、")))
+	}
 	if strings.TrimSpace(story.MythosAnchor) == "" {
 		issues = append(issues, "尚未确认mythos_anchor：须先调用translate_anchor并得到disabled=false的结论，再输出故事文档")
 	}
 	return issues
+}
+
+// bannedStoryCliches 是容易让不同模组调查手法趋同的桥段关键词。
+var bannedStoryCliches = []string{"账目", "查账"}
+
+// bannedStoryContent 是与COC模组主题明显不符、任何情况下都不得出现的不当内容关键词。
+var bannedStoryContent = []string{"儿童色情", "幼女", "萝莉控", "人兽"}
+
+// findKeywords 返回 document 中命中的 keywords 子集，保持 keywords 的原始顺序。
+func findKeywords(document string, keywords []string) []string {
+	var found []string
+	for _, kw := range keywords {
+		if strings.Contains(document, kw) {
+			found = append(found, kw)
+		}
+	}
+	return found
 }
 
 // markdownHeadingCount 统计文档中形如 #/##/### 的Markdown标题行数，用于粗略判断
