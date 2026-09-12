@@ -223,7 +223,7 @@ func generateLocalizedNPCName(ctx context.Context, handle agentHandle, sessionID
 	}
 	seed := gofakeit.Name()
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: "你是COC跑团剧本创作助手，只负责给NPC起一个地道自然的姓名。"},
+		{Role: "system", Content: handle.systemPrompt("你是COC跑团剧本创作助手，只负责给NPC起一个地道自然的姓名。")},
 		{Role: "user", Content: fmt.Sprintf(
 			"请以英文姓名%q为灵感种子，创作一个符合克苏鲁跑团设定、地道自然的%s姓名（性别：%s）。只输出姓名本身，不要输出任何解释、标点、引号或其他文字。",
 			seed, cultureLabels[culture], genderLabels[gender],

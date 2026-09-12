@@ -612,7 +612,9 @@ type AgentConfig struct {
 	// ImageViaChat 为 true 时画图请求改走 /chat/completions 接口而非专用图片生成接口；
 	// 部分画图模型/中转网关只能通过 Chat 接口调用，图片数据在响应的 delta.images[].image_url.url
 	// 字段中以 data URL 形式返回（仅 Painter 角色使用）。
-	ImageViaChat   bool               `gorm:"default:false" json:"image_via_chat"`
+	ImageViaChat bool `gorm:"default:false" json:"image_via_chat"`
+	// WithJailbreak 为 true 时在该 Agent 的系统提示词外包裹越狱提示词，用于降低模型因内容审查拒绝创作黑暗/成人向剧情的概率。
+	WithJailbreak  bool               `gorm:"default:false" json:"with_jailbreak"`
 	SystemPrompt   string             `gorm:"type:text" json:"system_prompt"`
 	ThinkingLevel  string             `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh|max
 	IsActive       bool               `gorm:"default:true" json:"is_active"`

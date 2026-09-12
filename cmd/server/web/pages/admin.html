@@ -164,6 +164,11 @@
                                         class="accent-amber-600" />
                                     <span>画图走 Chat 接口（部分画图模型/中转网关只支持 /chat/completions 调用）</span>
                                 </label>
+                                <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer mb-2.5 font-ui">
+                                    <input type="checkbox" x-model="ag.with_jailbreak"
+                                        class="accent-amber-600" />
+                                    <span>启用越狱提示词（在该 Agent 提示词外包裹破限内容，降低模型因审查拒绝创作黑暗/成人向剧情的概率）</span>
+                                </label>
                             </div>
                             <div class="mb-2.5">
                                 <label class="text-xs text-amber-800 mb-1 block font-ui">System

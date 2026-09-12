@@ -44,8 +44,12 @@ func (h agentHandle) isEnabled() bool {
 	return h.config.IsActive
 }
 
-// systemPrompt always returns the built-in prompt. Runtime prompt overrides are disabled.
+// systemPrompt 返回该 Agent 最终使用的系统提示词;运行时不支持覆盖默认提示词,
+// 但若该 Agent 配置了 WithJailbreak,会在外层包裹越狱提示词,对所有角色统一生效。
 func (h agentHandle) systemPrompt(defaultPrompt string) string {
+	if h.config != nil && h.config.WithJailbreak {
+		return withJailbreakPrompt(defaultPrompt)
+	}
 	return defaultPrompt
 }
 
@@ -220,7 +224,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	kpBalanceRules := strings.TrimSpace(models.GetSiteSetting("balance_rules", models.DefaultBalanceRules))
 	combat := gctx.Session.CombatState.Data
 	chase := gctx.Session.ChaseState.Data
-	kpMsgs = buildKPMessages(gctx, withJailbreakPrompt(handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW))), kpMsgs, tempNPCs, kpBalanceRules, combat, chase)
+	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW)), kpMsgs, tempNPCs, kpBalanceRules, combat, chase)
 
 	roundClosed := false
 

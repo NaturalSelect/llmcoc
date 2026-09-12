@@ -39,6 +39,10 @@ func InitDB() error {
 		return err
 	}
 
+	// NOTE: with_jailbreak 字段新增前，Director/NPC/NPCNSFW 一直硬编码开启越狱提示词；
+	// 记录该列此前是否已存在，若是老库升级，则迁移后把这三个角色的既有记录回填为 true，避免行为静默改变。
+	needsJailbreakBackfill := !DB.Migrator().HasColumn(&AgentConfig{}, "WithJailbreak")
+
 	// Auto-migrate all tables
 	if err := DB.AutoMigrate(
 		&User{},
@@ -66,6 +70,12 @@ func InitDB() error {
 		&LLMLatencyStat{},
 	); err != nil {
 		return err
+	}
+
+	if needsJailbreakBackfill {
+		DB.Model(&AgentConfig{}).
+			Where("role IN ?", []string{string(AgentRoleDirector), string(AgentRoleNPC), string(AgentRoleNPCNSFW)}).
+			Update("with_jailbreak", true)
 	}
 
 	seedDefaultData()
@@ -175,16 +185,16 @@ func seedDefaultAgentConfigs() {
 
 	// Ensure each active agent has a config row (upsert-style: create only if missing).
 	required := []AgentConfig{
-		{Role: AgentRoleDirector, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleDirector, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true, WithJailbreak: true},
 		{Role: AgentRoleArchitect, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleQAGuard, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		// NOTE: writer_nsfw 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时自动回落默认 Writer。
 		{Role: AgentRoleWriterNSFW, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, ThinkingLevel: "low", IsActive: false},
 		{Role: AgentRoleLawyer, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
-		{Role: AgentRoleNPC, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleNPC, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true, WithJailbreak: true},
 		// NOTE: npc_nsfw 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时自动回落默认 NPC。
-		{Role: AgentRoleNPCNSFW, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: false},
+		{Role: AgentRoleNPCNSFW, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: false, WithJailbreak: true},
 		{Role: AgentRolePainter, ProviderConfigID: provID, ModelName: "dall-e-3", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
 		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleEvaluator, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},

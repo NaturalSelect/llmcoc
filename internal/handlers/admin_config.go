@@ -231,6 +231,13 @@ func AdminUpdateAgent(c *gin.Context) {
 			imageViaChat = b
 		}
 	}
+	// NOTE: 解析 with_jailbreak 开关,用于在该 Agent 系统提示词外包裹越狱提示词
+	withJailbreak := false
+	if v, ok := raw["with_jailbreak"]; ok {
+		if b, ok := v.(bool); ok {
+			withJailbreak = b
+		}
+	}
 
 	updates := map[string]interface{}{
 		"provider_config_id":  providerConfigID,
@@ -239,6 +246,7 @@ func AdminUpdateAgent(c *gin.Context) {
 		"temperature":         temperature,
 		"disable_temperature": disableTemperature,
 		"image_via_chat":      imageViaChat,
+		"with_jailbreak":      withJailbreak,
 		"thinking_level":      thinkingLevel,
 	}
 	if isActive != nil {
@@ -261,6 +269,7 @@ func AdminUpdateAgent(c *gin.Context) {
 			Temperature:        temperature,
 			DisableTemperature: disableTemperature,
 			ImageViaChat:       imageViaChat,
+			WithJailbreak:      withJailbreak,
 			ThinkingLevel:      thinkingLevel,
 			IsActive:           active,
 		}

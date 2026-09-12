@@ -310,7 +310,7 @@ func buildNPCMessages(h agentHandle, gctx GameContext, npcProfile string, npcHis
 		prompt += npcNSFWPromptSuffix
 	}
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: withJailbreakPrompt(h.systemPrompt(prompt))},
+		{Role: "system", Content: h.systemPrompt(prompt)},
 		{Role: "user", Content: "你需要扮演该NPC:\n" + npcProfile},
 	}
 	msgs = append(msgs, npcHistory...)

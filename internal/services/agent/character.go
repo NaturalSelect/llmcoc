@@ -125,7 +125,7 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard, guida
 	)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: appearanceAgentSystemPrompt},
+		{Role: "system", Content: handle.systemPrompt(appearanceAgentSystemPrompt)},
 		{Role: "user", Content: prompt},
 	}
 
@@ -211,7 +211,7 @@ func RegenerateBackstory(ctx context.Context, card *models.CharacterCard) (strin
 	)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: "你是一名克苏鲁神话TRPG专家,只输出JSON,不输出任何其他内容。"},
+		{Role: "system", Content: handle.systemPrompt("你是一名克苏鲁神话TRPG专家,只输出JSON,不输出任何其他内容。")},
 		{Role: "user", Content: prompt},
 	}
 
@@ -273,7 +273,7 @@ func RegenerateTraits(ctx context.Context, card *models.CharacterCard) (string, 
 	)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: "你是一名克苏鲁神话TRPG专家,只输出JSON,不输出任何其他内容。"},
+		{Role: "system", Content: handle.systemPrompt("你是一名克苏鲁神话TRPG专家,只输出JSON,不输出任何其他内容。")},
 		{Role: "user", Content: prompt},
 	}
 
@@ -405,7 +405,7 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 	)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: generateCharacterSystemPrompt},
+		{Role: "system", Content: handle.systemPrompt(generateCharacterSystemPrompt)},
 		{Role: "user", Content: prompt},
 	}
 
@@ -512,7 +512,7 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 	debugf("skills", "prompt: %v", prompt)
 
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: "你是COC第七版规则专家。请根据调查员的职业和背景,合理分配技能加成点,输出调整后的完整技能列表(JSON对象)"},
+		{Role: "system", Content: handle.systemPrompt("你是COC第七版规则专家。请根据调查员的职业和背景,合理分配技能加成点,输出调整后的完整技能列表(JSON对象)")},
 		{Role: "user", Content: prompt},
 	}
 
