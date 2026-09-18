@@ -108,6 +108,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 		models.AgentRoleNPC,
 		models.AgentRoleNPCNSFW,
 		models.AgentRolePainter,
+		models.AgentRoleProvidence,
 	}
 	requiredRoles := map[models.AgentRole]bool{
 		models.AgentRoleDirector: true,
@@ -224,7 +225,14 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	kpBalanceRules := strings.TrimSpace(models.GetSiteSetting("balance_rules", models.DefaultBalanceRules))
 	combat := gctx.Session.CombatState.Data
 	chase := gctx.Session.ChaseState.Data
-	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW)), kpMsgs, tempNPCs, kpBalanceRules, combat, chase)
+	// Providence 是可选的节奏顾问；未配置provider/model时isEnabled()为false直接跳过，
+	// Director退回[ACTIVE-PACING]规则自行判断，不影响主流程。
+	providenceGuidance := ""
+	if handles[models.AgentRoleProvidence].isEnabled() {
+		emitProgress("天意正在判断剧情节奏")
+		providenceGuidance = runProvidence(ctx, handles[models.AgentRoleProvidence], gctx)
+	}
+	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW)), kpMsgs, tempNPCs, kpBalanceRules, combat, chase, providenceGuidance)
 
 	roundClosed := false
 

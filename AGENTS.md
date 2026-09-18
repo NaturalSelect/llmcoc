@@ -67,6 +67,7 @@
 - Actions：`internal/services/agent/actions.go`，负责工具调用到业务状态的落地。
 - Writer：`internal/services/agent/writer.go`，负责玩家可见叙事正文。
 - Lawyer：`internal/services/agent/lawyer.go`，负责规则资料检索和裁定。
+- Providence：`internal/services/agent/providence.go`，比对模组大纲/时间线/线索与当前局势给出剧情节奏建议；可选顾问，不配置 Provider/Model 即由 Director 自行按 `[ACTIVE-PACING]` 判断节奏。
 - NPC：`internal/services/agent/npc.go`，负责临时 NPC 独立行动与记忆。
 - Painter：`internal/services/agent/painter.go`，负责配图生成。
 - Editor：`internal/services/agent/editor.go`，负责文本润色与编辑。

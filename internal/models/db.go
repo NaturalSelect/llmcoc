@@ -205,6 +205,9 @@ func seedDefaultAgentConfigs() {
 		// MaxTokens=4000 实测会被单次submit_compiled_scenario工具调用（scenes/npcs/clues/endings等
 		// 十余个字段一次性生成）打满导致stop_reason=max_tokens截断，调大到8000留出余量。
 		{Role: AgentRoleCompiler, ProviderConfigID: provID, ModelName: model, MaxTokens: 128000, Temperature: 0.15, ThinkingLevel: "low", IsActive: true},
+		// NOTE: providence 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时Director按自身
+		// [ACTIVE-PACING]规则自行判断节奏,不影响主流程。
+		{Role: AgentRoleProvidence, ProviderConfigID: provID, ModelName: model, MaxTokens: 500, Temperature: 0.5, ThinkingLevel: "low", IsActive: false},
 	}
 	for _, ag := range required {
 		var existing AgentConfig

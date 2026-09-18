@@ -174,6 +174,8 @@ func AdminUpdateAgent(c *gin.Context) {
 		"parser": true, "painter": true,
 		// NOTE: translator 是独立的资料转译 Agent，允许管理员配置其 provider/model。
 		"translator": true,
+		// NOTE: providence 是可选的剧情节奏顾问 Agent，允许管理员配置其 provider/model，不配置即禁用。
+		"providence": true,
 	}
 	if !validRoles[role] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent 角色"})

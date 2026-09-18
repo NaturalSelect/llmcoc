@@ -584,6 +584,10 @@ const (
 	// NOTE: AgentRoleCompiler 负责把故事阶段产出的纯文本剧本编译为结构化ScenarioContent；
 	// 只做格式转换和技术字段补充，无权改写故事事实。
 	AgentRoleCompiler AgentRole = "compiler"
+	// NOTE: AgentRoleProvidence 是可选的剧情节奏顾问；比对大纲/时间线/线索与当前局势给出节奏建议，
+	// 不操作任何游戏状态。未配置provider/model时Orchestrator跳过调用，Director按自身
+	// [ACTIVE-PACING]规则运作，不影响主流程。
+	AgentRoleProvidence AgentRole = "providence"
 )
 
 // LLMProviderConfig stores a named LLM API endpoint configuration.
