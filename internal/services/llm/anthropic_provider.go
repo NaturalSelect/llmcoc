@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -19,9 +20,12 @@ type anthropicProvider struct {
 	temperature float32
 	// disableTemperature 为 true 时不发送 temperature 参数,与 OpenAI 分支语义一致
 	disableTemperature bool
+	// thinkingLevel 为空或"none"时不开启扩展思考;其余取值(low/medium/high/xhigh/max)
+	// 映射为 Anthropic adaptive thinking 的 output_config.effort。
+	thinkingLevel string
 }
 
-func newAnthropicProvider(apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool) *anthropicProvider {
+func newAnthropicProvider(apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, thinkingLevel string) *anthropicProvider {
 	var opts []option.RequestOption
 	// NOTE: 只有非空时才显式传 APIKey/BaseURL,留空则让 SDK 使用其默认取值链
 	// (ANTHROPIC_API_KEY 环境变量 / 官方 https://api.anthropic.com/ 端点)。
@@ -48,6 +52,26 @@ func newAnthropicProvider(apiKey, baseURL, model string, maxTokens int, temperat
 		maxTokens:          maxTokens,
 		temperature:        temperature,
 		disableTemperature: disableTemperature,
+		thinkingLevel:      thinkingLevel,
+	}
+}
+
+// anthropicEffortFromLevel 把项目内统一的 thinking_level(none|low|medium|high|xhigh|max)
+// 映射为 Anthropic 的 output_config.effort;"none"/空/未识别值返回 false 表示不开启思考。
+func anthropicEffortFromLevel(level string) (anthropic.OutputConfigEffort, bool) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "low":
+		return anthropic.OutputConfigEffortLow, true
+	case "medium":
+		return anthropic.OutputConfigEffortMedium, true
+	case "high":
+		return anthropic.OutputConfigEffortHigh, true
+	case "xhigh":
+		return anthropic.OutputConfigEffortXhigh, true
+	case "max":
+		return anthropic.OutputConfigEffortMax, true
+	default:
+		return "", false
 	}
 }
 
@@ -80,7 +104,12 @@ func (p *anthropicProvider) buildParams(messages []ChatMessage, tools []ToolDefi
 	if len(anthropicTools) > 0 {
 		params.Tools = anthropicTools
 	}
-	if !p.disableTemperature {
+	// NOTE: Anthropic 扩展思考与自定义 temperature 互斥(开启思考后传 temperature 会被 API 拒绝),
+	// 所以开启思考时跳过下面的 Temperature 赋值,让请求走 API 默认值。
+	if effort, ok := anthropicEffortFromLevel(p.thinkingLevel); ok {
+		params.Thinking = anthropic.ThinkingConfigParamUnion{OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{}}
+		params.OutputConfig = anthropic.OutputConfigParam{Effort: effort}
+	} else if !p.disableTemperature {
 		params.Temperature = anthropic.Float(clampTemperature(p.temperature))
 	}
 	return params, nil
@@ -101,44 +130,44 @@ func isAnthropicRetryableError(err error) bool {
 // streamToResult 发起一次流式请求并用 SDK 内置的 Message.Accumulate 聚合成完整结果;
 // Debug 级别打印 stop_reason 及 token 用量(含缓存命中数),既用于验证 cache_control
 // 断点是否生效,也用于区分"模型真的没输出"和"输出被截断"(stop_reason=max_tokens)。
-func (p *anthropicProvider) streamToResult(ctx context.Context, cacheKey string, params anthropic.MessageNewParams) (string, []ToolCall, error) {
+func (p *anthropicProvider) streamToResult(ctx context.Context, cacheKey string, params anthropic.MessageNewParams) (string, []ReasoningBlock, []ToolCall, error) {
 	stream := p.client.Messages.NewStreaming(ctx, params)
 	defer stream.Close()
 
 	acc := anthropic.Message{}
 	for stream.Next() {
 		if err := acc.Accumulate(stream.Current()); err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
-	content, toolCalls := fromAnthropicMessage(&acc)
+	content, blocks, toolCalls := fromAnthropicMessage(&acc)
 
 	log.Debug("anthropic chat done", "model", p.model, "cache_key", cacheKey, "response_len", len([]rune(content)),
-		"tool_calls", len(toolCalls), "stop_reason", acc.StopReason, "input_tokens", acc.Usage.InputTokens,
+		"tool_calls", len(toolCalls), "reasoning_blocks", len(blocks), "stop_reason", acc.StopReason, "input_tokens", acc.Usage.InputTokens,
 		"output_tokens", acc.Usage.OutputTokens, "cache_read_tokens", acc.Usage.CacheReadInputTokens,
 		"cache_creation_tokens", acc.Usage.CacheCreationInputTokens)
 
-	return content, toolCalls, nil
+	return content, blocks, toolCalls, nil
 }
 
-func (p *anthropicProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition) (content string, toolCalls []ToolCall, err error) {
+func (p *anthropicProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition) (content string, blocks []ReasoningBlock, toolCalls []ToolCall, err error) {
 	start := time.Now()
 	role := roleFromCacheKey(cacheKey)
 	defer func() { recordLatency(role, p.model, "chat", time.Since(start), err) }()
 
 	params, err := p.buildParams(messages, tools)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	params.Metadata.UserID.Value = cacheKey // 用于 Anthropic 端的用户分流,不影响缓存键
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		attemptStart := time.Now()
-		content, toolCalls, err = p.streamToResult(ctx, cacheKey, params)
+		content, blocks, toolCalls, err = p.streamToResult(ctx, cacheKey, params)
 		log.Debug("anthropic chat attempt done", "model", p.model, "attempt", attempt+1,
 			"elapsed_ms", float64(time.Since(attemptStart).Microseconds())/1000)
 		if err == nil || !isAnthropicRetryableError(err) {
@@ -148,22 +177,22 @@ func (p *anthropicProvider) chat(ctx context.Context, cacheKey string, messages 
 		select {
 		case <-ctx.Done():
 			err = ctx.Err()
-			return "", nil, err
+			return "", nil, nil, err
 		case <-time.After(8 * time.Second):
 		}
 	}
 	if err != nil {
 		err = fmt.Errorf("anthropic chat error: %w", err)
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	return content, toolCalls, nil
+	return content, blocks, toolCalls, nil
 }
 
 // Chat 与 OpenAI 分支保持相同的对外语义:3 次空响应重试后即使仍失败也返回 nil error
 // (既有行为,调用方据此假定 Chat 几乎不返回错误;本次不修正,避免影响所有调用方)。
 func (p *anthropicProvider) Chat(ctx context.Context, cacheKey string, messages []ChatMessage) (msg string, err error) {
 	for i := 0; i < 3; i++ {
-		msg, _, err = p.chat(ctx, cacheKey, messages, nil)
+		msg, _, _, err = p.chat(ctx, cacheKey, messages, nil)
 		if err != nil {
 			log.Error("anthropic chat error", "err", err)
 			continue
@@ -181,7 +210,7 @@ func (p *anthropicProvider) Chat(ctx context.Context, cacheKey string, messages 
 // 剥离常见的 ```json 代码块包裹或前导说明文字。
 func (p *anthropicProvider) JsonChat(ctx context.Context, cacheKey string, messages []ChatMessage) (string, error) {
 	for i := 0; i < 3; i++ {
-		msg, _, err := p.chat(ctx, cacheKey, messages, nil)
+		msg, _, _, err := p.chat(ctx, cacheKey, messages, nil)
 		if err != nil {
 			log.Error("anthropic json chat error", "err", err)
 			continue
@@ -199,7 +228,7 @@ func (p *anthropicProvider) JsonChat(ctx context.Context, cacheKey string, messa
 func (p *anthropicProvider) ChatWithTools(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition) (ToolChatResult, error) {
 	var lastErr error
 	for i := 0; i < 3; i++ {
-		content, toolCalls, err := p.chat(ctx, cacheKey, messages, tools)
+		content, blocks, toolCalls, err := p.chat(ctx, cacheKey, messages, tools)
 		if err != nil {
 			log.Error("anthropic chat with tools error", "err", err)
 			lastErr = err
@@ -209,7 +238,7 @@ func (p *anthropicProvider) ChatWithTools(ctx context.Context, cacheKey string, 
 			lastErr = nil
 			continue
 		}
-		return ToolChatResult{Content: content, ToolCalls: toolCalls}, nil
+		return ToolChatResult{Content: content, ToolCalls: toolCalls, ReasoningBlocks: blocks}, nil
 	}
 	if lastErr != nil {
 		return ToolChatResult{}, fmt.Errorf("anthropic chat with tools error: %w", lastErr)

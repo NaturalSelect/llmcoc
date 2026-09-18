@@ -39,7 +39,17 @@ func toAnthropicRequest(messages []ChatMessage) ([]anthropic.TextBlockParam, []a
 			prevWasTool = false
 
 		case "assistant":
-			blocks := make([]anthropic.ContentBlockParamUnion, 0, 1+len(m.ToolCalls))
+			blocks := make([]anthropic.ContentBlockParamUnion, 0, len(m.ReasoningBlocks)+1+len(m.ToolCalls))
+			// NOTE: Anthropic 要求 thinking/redacted_thinking block 必须排在 assistant 消息内容的最前面，
+			// 且多轮工具调用时必须原样带回签名/加密数据，否则 API 会拒绝或不认这是同一段推理的延续。
+			for _, rb := range m.ReasoningBlocks {
+				switch rb.Type {
+				case "thinking":
+					blocks = append(blocks, anthropic.NewThinkingBlock(rb.Signature, rb.Text))
+				case "redacted_thinking":
+					blocks = append(blocks, anthropic.NewRedactedThinkingBlock(rb.Data))
+				}
+			}
 			if text := strings.TrimSpace(m.Content); text != "" {
 				blocks = append(blocks, anthropic.NewTextBlock(text))
 			}
@@ -52,7 +62,7 @@ func toAnthropicRequest(messages []ChatMessage) ([]anthropic.TextBlockParam, []a
 					},
 				})
 			}
-			// NOTE: 既无文本也无工具调用的 assistant 消息会产生空 content block，Anthropic 会 400，直接丢弃。
+			// NOTE: 既无 thinking、文本，也无工具调用的 assistant 消息会产生空 content block，Anthropic 会 400，直接丢弃。
 			if len(blocks) == 0 {
 				continue
 			}
@@ -163,15 +173,21 @@ func setBlockCacheControl(b *anthropic.ContentBlockParamUnion) {
 	}
 }
 
-// fromAnthropicMessage 把 Anthropic 响应的 content block 列表拆成纯文本内容和工具调用
-// 列表；text block 按出现顺序拼接，tool_use block 转换为 ToolCall，Arguments 保留原始
-// JSON 文本以对齐 OpenAI 分支的约定（由调用方按工具自身参数结构反序列化）。
-func fromAnthropicMessage(msg *anthropic.Message) (content string, toolCalls []ToolCall) {
+// fromAnthropicMessage 把 Anthropic 响应的 content block 列表拆成纯文本内容、思考回放块
+// 和工具调用列表；text block 按出现顺序拼接进 content；thinking/redacted_thinking block
+// 整块保留进 blocks（含签名/加密数据，用于下一轮原样回传）；tool_use block 转换为
+// ToolCall，Arguments 保留原始 JSON 文本以对齐 OpenAI 分支的约定（由调用方按工具自身
+// 参数结构反序列化）。
+func fromAnthropicMessage(msg *anthropic.Message) (content string, blocks []ReasoningBlock, toolCalls []ToolCall) {
 	var sb strings.Builder
 	for _, block := range msg.Content {
 		switch block.Type {
 		case "text":
 			sb.WriteString(block.Text)
+		case "thinking":
+			blocks = append(blocks, ReasoningBlock{Type: "thinking", Text: block.Thinking, Signature: block.Signature})
+		case "redacted_thinking":
+			blocks = append(blocks, ReasoningBlock{Type: "redacted_thinking", Data: block.Data})
 		case "tool_use":
 			toolCalls = append(toolCalls, ToolCall{
 				ID:        block.ID,
@@ -180,5 +196,5 @@ func fromAnthropicMessage(msg *anthropic.Message) (content string, toolCalls []T
 			})
 		}
 	}
-	return sb.String(), toolCalls
+	return sb.String(), blocks, toolCalls
 }

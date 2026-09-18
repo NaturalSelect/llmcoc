@@ -18,6 +18,19 @@ type ChatMessage struct {
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 	// ToolCallID 在 Role=="tool" 时标识该消息是对哪一次工具调用的响应结果。
 	ToolCallID string `json:"tool_call_id,omitempty"`
+	// ReasoningBlocks 携带 Anthropic 扩展思考的原始 thinking/redacted_thinking block，
+	// 必须在下一轮请求里原样回传（含签名/加密数据）才能通过 Anthropic 的多轮校验；
+	// 其余 provider 不产出也不消费此字段。
+	ReasoningBlocks []ReasoningBlock `json:"reasoning_blocks,omitempty"`
+}
+
+// ReasoningBlock 是 Anthropic 扩展思考返回的单个 content block，用于原样回放给 API。
+// Type 为 "thinking" 时 Text+Signature 有效；为 "redacted_thinking" 时 Data 有效。
+type ReasoningBlock struct {
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Data      string `json:"data,omitempty"`
 }
 
 // ToolDefinition 描述一个可被模型原生调用的函数工具（function calling schema）。
@@ -36,9 +49,11 @@ type ToolCall struct {
 
 // ToolChatResult 是一次原生工具调用对话的返回。Content 为模型的文本部分（可能为空）；
 // ToolCalls 为模型请求调用的工具列表（可能为空，表示模型选择直接文本回复而非调用工具）。
+// ReasoningBlocks 见 ChatMessage 同名字段。
 type ToolChatResult struct {
-	Content   string
-	ToolCalls []ToolCall
+	Content         string
+	ToolCalls       []ToolCall
+	ReasoningBlocks []ReasoningBlock
 }
 
 // Provider defines the interface for interacting with various LLM backends.
@@ -82,7 +97,7 @@ func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxT
 func newProviderByType(providerType, apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, imageViaChat bool) Provider {
 	switch strings.ToLower(strings.TrimSpace(providerType)) {
 	case "anthropic":
-		return newAnthropicProvider(apiKey, baseURL, model, maxTokens, temperature, disableTemperature)
+		return newAnthropicProvider(apiKey, baseURL, model, maxTokens, temperature, disableTemperature, reasoningEffort)
 	default:
 		return newOpenAIProvider(apiKey, baseURL, model, maxTokens, temperature, disableTemperature, reasoningEffort, imageViaChat)
 	}

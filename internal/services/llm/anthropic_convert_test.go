@@ -242,11 +242,89 @@ func TestFromAnthropicMessage(t *testing.T) {
 			{Type: "tool_use", ID: "id1", Name: "foo", Input: json.RawMessage(`{"a":1}`)},
 		},
 	}
-	content, toolCalls := fromAnthropicMessage(msg)
+	content, blocks, toolCalls := fromAnthropicMessage(msg)
 	if content != "hello world" {
 		t.Fatalf("expected concatenated text, got %q", content)
 	}
+	if len(blocks) != 0 {
+		t.Fatalf("expected no reasoning blocks, got %+v", blocks)
+	}
 	if len(toolCalls) != 1 || toolCalls[0].ID != "id1" || toolCalls[0].Name != "foo" || toolCalls[0].Arguments != `{"a":1}` {
 		t.Fatalf("tool call not extracted correctly: %+v", toolCalls)
+	}
+}
+
+// TestFromAnthropicMessage_ThinkingAndRedacted 验证 thinking block 的正文+签名、
+// redacted_thinking block 的加密数据都被整块保留进 ReasoningBlocks，供下一轮原样回传。
+func TestFromAnthropicMessage_ThinkingAndRedacted(t *testing.T) {
+	msg := &anthropic.Message{
+		Content: []anthropic.ContentBlockUnion{
+			{Type: "thinking", Thinking: "let me think", Signature: "sig-abc"},
+			{Type: "redacted_thinking", Data: "encrypted-blob"},
+			{Type: "text", Text: "final answer"},
+		},
+	}
+	content, blocks, _ := fromAnthropicMessage(msg)
+	if content != "final answer" {
+		t.Fatalf("expected only text block in content, got %q", content)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 reasoning blocks, got %d: %+v", len(blocks), blocks)
+	}
+	if blocks[0].Type != "thinking" || blocks[0].Text != "let me think" || blocks[0].Signature != "sig-abc" {
+		t.Fatalf("thinking block not captured correctly: %+v", blocks[0])
+	}
+	if blocks[1].Type != "redacted_thinking" || blocks[1].Data != "encrypted-blob" {
+		t.Fatalf("redacted_thinking block not captured correctly: %+v", blocks[1])
+	}
+}
+
+// TestToAnthropicRequest_ReasoningBlocksRoundTrip 验证 assistant 消息里的 ReasoningBlocks
+// 在请求侧被原样重建成 thinking/redacted_thinking block，且排在文本/工具调用之前
+// （Anthropic 要求 thinking block 必须是 assistant 消息内容的第一个 block）。
+func TestToAnthropicRequest_ReasoningBlocksRoundTrip(t *testing.T) {
+	_, msgs, err := toAnthropicRequest([]ChatMessage{
+		{Role: "user", Content: "hi"},
+		{
+			Role:    "assistant",
+			Content: "answer",
+			ReasoningBlocks: []ReasoningBlock{
+				{Type: "thinking", Text: "thinking text", Signature: "sig-xyz"},
+				{Type: "redacted_thinking", Data: "opaque-data"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assistantMsg := msgs[1]
+	if len(assistantMsg.Content) != 3 {
+		t.Fatalf("expected 3 blocks (thinking + redacted_thinking + text), got %d: %+v", len(assistantMsg.Content), assistantMsg.Content)
+	}
+	thinkingBlock := assistantMsg.Content[0].OfThinking
+	if thinkingBlock == nil || thinkingBlock.Thinking != "thinking text" || thinkingBlock.Signature != "sig-xyz" {
+		t.Fatalf("thinking block not reconstructed correctly: %+v", assistantMsg.Content[0])
+	}
+	redactedBlock := assistantMsg.Content[1].OfRedactedThinking
+	if redactedBlock == nil || redactedBlock.Data != "opaque-data" {
+		t.Fatalf("redacted_thinking block not reconstructed correctly: %+v", assistantMsg.Content[1])
+	}
+	if assistantMsg.Content[2].OfText == nil || assistantMsg.Content[2].OfText.Text != "answer" {
+		t.Fatalf("text block should come after reasoning blocks: %+v", assistantMsg.Content[2])
+	}
+}
+
+// TestToAnthropicRequest_ReasoningOnlyAssistantSurvives 验证只有 ReasoningBlocks、
+// 没有文本也没有工具调用的 assistant 消息不会被空内容防御逻辑误删。
+func TestToAnthropicRequest_ReasoningOnlyAssistantSurvives(t *testing.T) {
+	_, msgs, err := toAnthropicRequest([]ChatMessage{
+		{Role: "user", Content: "hi"},
+		{Role: "assistant", ReasoningBlocks: []ReasoningBlock{{Type: "thinking", Text: "t", Signature: "s"}}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected the reasoning-only assistant message to survive, got %d messages: %+v", len(msgs), msgs)
 	}
 }
