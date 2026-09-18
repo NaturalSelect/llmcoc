@@ -22,6 +22,10 @@ type ChatMessage struct {
 	// 必须在下一轮请求里原样回传（含签名/加密数据）才能通过 Anthropic 的多轮校验；
 	// 其余 provider 不产出也不消费此字段。
 	ReasoningBlocks []ReasoningBlock `json:"reasoning_blocks,omitempty"`
+	// Reasoning 携带 OpenAI 兼容接口（如 deepseek-reasoner 等推理模型）返回的明文
+	// reasoning_content，需要在下一轮请求里原样回传到同一 assistant 消息，否则多轮
+	// 推理质量会下降；纯文本无需签名，仅 OpenAI 兼容 provider 产出/消费。
+	Reasoning string `json:"reasoning,omitempty"`
 }
 
 // ReasoningBlock 是 Anthropic 扩展思考返回的单个 content block，用于原样回放给 API。
@@ -49,11 +53,12 @@ type ToolCall struct {
 
 // ToolChatResult 是一次原生工具调用对话的返回。Content 为模型的文本部分（可能为空）；
 // ToolCalls 为模型请求调用的工具列表（可能为空，表示模型选择直接文本回复而非调用工具）。
-// ReasoningBlocks 见 ChatMessage 同名字段。
+// ReasoningBlocks/Reasoning 见 ChatMessage 同名字段。
 type ToolChatResult struct {
 	Content         string
 	ToolCalls       []ToolCall
 	ReasoningBlocks []ReasoningBlock
+	Reasoning       string
 }
 
 // Provider defines the interface for interacting with various LLM backends.

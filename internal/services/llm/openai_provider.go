@@ -65,6 +65,9 @@ func (p *openAIProvider) toOpenAIMessages(msgs []ChatMessage) []openai.ChatCompl
 			Content:    m.Content,
 			ToolCallID: m.ToolCallID,
 			ToolCalls:  toOpenAIToolCalls(m.ToolCalls),
+			// ReasoningContent 是 go-openai 为 deepseek-reasoner 等推理模型预留的字段，
+			// 原样回传上一轮的 reasoning_content 才能维持多轮推理质量。
+			ReasoningContent: m.Reasoning,
 		}
 	}
 	return out
@@ -242,13 +245,13 @@ func (p *openAIProvider) streamToString(ctx context.Context, chatReq openai.Chat
 	}
 }
 
-func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, json bool, tools []ToolDefinition) (result string, toolCalls []ToolCall, err error) {
+func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []ChatMessage, json bool, tools []ToolDefinition) (result string, reasoning string, toolCalls []ToolCall, err error) {
 	start := time.Now()
 	role := roleFromCacheKey(cacheKey)
 	defer func() { recordLatency(role, p.model, "chat", time.Since(start), err) }()
 
 	chatReq := p.chatCompletionRequest(ctx, cacheKey, messages, json, tools)
-	var reasoning, finishReason string
+	var finishReason string
 	var usage *openai.Usage
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		attemptStart := time.Now()
@@ -261,13 +264,13 @@ func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []C
 		select {
 		case <-ctx.Done():
 			err = ctx.Err()
-			return "", nil, err
+			return "", "", nil, err
 		case <-time.After(8 * time.Second):
 		}
 	}
 	if err != nil {
 		err = fmt.Errorf("LLM chat error: %w", err)
-		return "", nil, err
+		return "", "", nil, err
 	}
 	// NOTE: 提取reasoning_content用于审计日志
 	if reasoning != "" {
@@ -276,7 +279,7 @@ func (p *openAIProvider) chat(ctx context.Context, cacheKey string, messages []C
 	}
 	log.Debug("chat done", "role", role, "model", p.model, "elapsed_ms", float64(time.Since(start).Microseconds())/1000,
 		"response_len", len([]rune(result)), "tool_calls", len(toolCalls), "finish_reason", finishReason, "usage", usage)
-	return result, toolCalls, nil
+	return result, reasoning, toolCalls, nil
 }
 
 func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messages []ChatMessage) (<-chan string, <-chan error, error) {
@@ -349,7 +352,7 @@ func (p *openAIProvider) ChatStream(ctx context.Context, cacheKey string, messag
 
 func (p *openAIProvider) Chat(ctx context.Context, cacheKey string, messages []ChatMessage) (msg string, err error) {
 	for i := 0; i < 3; i++ {
-		msg, _, err = p.chat(ctx, cacheKey, messages, false, nil)
+		msg, _, _, err = p.chat(ctx, cacheKey, messages, false, nil)
 		if err != nil {
 			log.Error("chat error", "err", err)
 			continue
@@ -475,7 +478,7 @@ var (
 
 func (p *openAIProvider) JsonChat(ctx context.Context, cacheKey string, messages []ChatMessage) (string, error) {
 	for i := 0; i < 3; i++ {
-		msg, _, err := p.chat(ctx, cacheKey, messages, true, nil)
+		msg, _, _, err := p.chat(ctx, cacheKey, messages, true, nil)
 		if err != nil {
 			log.Error("json chat error", "err", err)
 			continue
@@ -495,7 +498,7 @@ func (p *openAIProvider) JsonChat(ctx context.Context, cacheKey string, messages
 func (p *openAIProvider) ChatWithTools(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition) (ToolChatResult, error) {
 	var lastErr error
 	for i := 0; i < 3; i++ {
-		content, toolCalls, err := p.chat(ctx, cacheKey, messages, false, tools)
+		content, reasoning, toolCalls, err := p.chat(ctx, cacheKey, messages, false, tools)
 		if err != nil {
 			log.Error("chat with tools error", "err", err)
 			lastErr = err
@@ -505,7 +508,7 @@ func (p *openAIProvider) ChatWithTools(ctx context.Context, cacheKey string, mes
 			lastErr = nil
 			continue
 		}
-		return ToolChatResult{Content: content, ToolCalls: toolCalls}, nil
+		return ToolChatResult{Content: content, ToolCalls: toolCalls, Reasoning: reasoning}, nil
 	}
 	if lastErr != nil {
 		return ToolChatResult{}, fmt.Errorf("LLM chat with tools error: %w", lastErr)

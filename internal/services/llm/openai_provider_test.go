@@ -181,3 +181,55 @@ func TestChatWithTools_DropsIncompleteEntryWithoutName(t *testing.T) {
 		t.Fatalf("期望 ErrEmptyLLMResponse（残缺条目应被丢弃），实际 err=%v", err)
 	}
 }
+
+// chunkWithReasoning 构造一个只携带 reasoning_content 增量的流式 chunk。
+func chunkWithReasoning(reasoning string) openai.ChatCompletionStreamResponse {
+	return openai.ChatCompletionStreamResponse{
+		Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ReasoningContent: reasoning}}},
+	}
+}
+
+// TestChatWithTools_CapturesReasoningContent 验证流式响应里的 reasoning_content 增量被正确
+// 聚合进 ToolChatResult.Reasoning，供调用方在下一轮请求里原样回传。
+func TestChatWithTools_CapturesReasoningContent(t *testing.T) {
+	chunks := []openai.ChatCompletionStreamResponse{
+		chunkWithReasoning("让我想想，"),
+		chunkWithReasoning("食尸鬼应该没有反应速度加成。"),
+		chunkWithContent("好的，我来查询规则书。"),
+		chunkWithToolCalls(openai.ToolCall{Index: intPtr(0), ID: "call_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "ask_lawyer", Arguments: `{"question":"x"}`}}),
+	}
+	p := newFakeSSEProvider(t, chunks)
+
+	result, err := p.ChatWithTools(context.Background(), "", []ChatMessage{{Role: "user"}}, testToolDefs)
+	if err != nil {
+		t.Fatalf("ChatWithTools error: %v", err)
+	}
+	wantReasoning := "让我想想，食尸鬼应该没有反应速度加成。"
+	if result.Reasoning != wantReasoning {
+		t.Errorf("reasoning_content 未正确聚合: got %q want %q", result.Reasoning, wantReasoning)
+	}
+	if result.Content != "好的，我来查询规则书。" {
+		t.Errorf("content 丢失: got %q", result.Content)
+	}
+}
+
+// TestToOpenAIMessages_ResendsReasoningContent 验证 ChatMessage.Reasoning 会被原样放进下一轮
+// 请求的 reasoning_content 字段——OpenAI 兼容推理模型（如 deepseek-reasoner）要求把上一轮的
+// 明文思考过程重新发回去，否则多轮推理质量会下降。
+func TestToOpenAIMessages_ResendsReasoningContent(t *testing.T) {
+	p := newOpenAIProvider("test-key", "", "test-model", 0, 0, false, "", false)
+	msgs := []ChatMessage{
+		{Role: "user", Content: "食尸鬼是否存在反应速度加成？"},
+		{Role: "assistant", Content: "不存在。", Reasoning: "让我想想，食尸鬼应该没有反应速度加成。"},
+	}
+	out := p.toOpenAIMessages(msgs)
+	if len(out) != 2 {
+		t.Fatalf("期望2条消息，实际%d条", len(out))
+	}
+	if out[1].ReasoningContent != "让我想想，食尸鬼应该没有反应速度加成。" {
+		t.Errorf("assistant 消息的 reasoning_content 未被回传: got %q", out[1].ReasoningContent)
+	}
+	if out[0].ReasoningContent != "" {
+		t.Errorf("user 消息不应携带 reasoning_content: got %q", out[0].ReasoningContent)
+	}
+}

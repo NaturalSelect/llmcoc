@@ -229,10 +229,11 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 		newMessages := append([]llm.ChatMessage(nil), msgs[loggedCount:]...)
 		recordScripterLLMExchange(ctx, opts.room, roundStage, newMessages, renderToolChatResultForLog(result))
 		alog.Debug("tool loop round", "stage", stage, "session", sessionID, "round", round, "tool_calls", len(result.ToolCalls), "content_len", len([]rune(result.Content)))
-		// NOTE: ReasoningBlocks 原样透传，不做裁剪：Anthropic 扩展思考要求多轮工具调用时
-		// 把上一轮的 thinking/redacted_thinking block（含签名/加密数据）原样带回去，否则
-		// 会被 API 拒绝或不被视为同一段推理的延续；其余 provider 不产出此字段，透传是空操作。
-		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls, ReasoningBlocks: result.ReasoningBlocks})
+		// NOTE: ReasoningBlocks/Reasoning 原样透传，不做裁剪：Anthropic 扩展思考要求多轮工具调用时
+		// 把上一轮的 thinking/redacted_thinking block（含签名/加密数据）原样带回去，否则会被 API
+		// 拒绝或不被视为同一段推理的延续；OpenAI 兼容推理模型（如 deepseek-reasoner）同理需要把
+		// 上一轮明文 reasoning_content 带回去维持多轮推理质量；其余情况透传是空操作。
+		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls, ReasoningBlocks: result.ReasoningBlocks, Reasoning: result.Reasoning})
 		// assistant 回复已经通过 recordScripterLLMExchange 的 response 参数记录，
 		// 标记到此为止都已写入日志，下一轮的 newMessages 从这里开始算起。
 		loggedCount = len(msgs)
