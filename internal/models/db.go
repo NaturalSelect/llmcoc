@@ -172,7 +172,8 @@ func seedDefaultAgentConfigs() {
 	}
 
 	// Remove obsolete agent roles that no longer exist in the pipeline.
-	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer", "anti_cheat"}).Delete(&AgentConfig{})
+	// NOTE: providence 已改名为 dramaturg，需清理老库中遗留的 providence 行，否则会在后台Agent列表里以裸role字符串显示。
+	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer", "anti_cheat", "providence"}).Delete(&AgentConfig{})
 
 	var provID *uint
 	var prov LLMProviderConfig
