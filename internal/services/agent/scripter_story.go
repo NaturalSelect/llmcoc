@@ -16,7 +16,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -349,43 +351,74 @@ func storyAskLawyer(ctx context.Context, room *scripterRoom, question string) st
 // get_writing_example execution — serves a reference manuscript for style only
 // ---------------------------------------------------------------------------
 
-// storyWritingExamplePath 是参考成稿在仓库根目录下的文件名；进程按相对路径读取，
-// 与 main.go 加载 COC_kp.md 等规则资料的方式一致（服务从仓库根目录启动）。
-const storyWritingExamplePath = "example_story.md"
+// storyWritingExampleDir 是参考成稿范文池所在目录，相对仓库根目录读取，与 main.go 加载
+// COC_kp.md 等规则资料的方式一致（服务从仓库根目录启动）。目录下每个 .md 文件都是一份独立
+// 范文，新增、替换或下线范文只需要增删文件，不需要改代码或重新编译。
+// NOTE: 范文之间应当在钩子类型、空间结构与终局解决方式上保持差异，避免只有一份范文可学时，
+// architect 把它自己的具体桥段当成"COC模组该有的样子"反复复刻（参见目录下现有几篇范文：
+// 挚友委托寻人/村落到地下矿井/常规武器免疫+元素弱点战斗 vs 专业委托编目/宅邸到暗室剧场/
+// 焚毁法器中断仪式 vs 事故应急响应/孤岛到海蚀洞穴/数量压制下的撤离 vs 雇佣搜救追缉/市镇到
+// 林中湖泊/对峙旧日支配者化身及其仆从 vs 受托追查失窃档案/阿卡姆多方开放场所/对抗依附文书
+// 的非实体存在）。后两篇（example_story_4/5）译自COC7守秘人规则书第十五章收录的官方模组，
+// 其余为本项目按同一多样性原则创作。
+const storyWritingExampleDir = "example_stories"
 
 var (
-	storyWritingExampleOnce    sync.Once
-	storyWritingExampleContent string
-	storyWritingExampleErr     error
+	storyWritingExamplesOnce     sync.Once
+	storyWritingExampleContents  []string
+	storyWritingExampleLoadError error
 )
 
-// loadStoryWritingExample 懒加载参考成稿全文，只读一次后常驻内存供后续调用复用。
-func loadStoryWritingExample() (string, error) {
-	storyWritingExampleOnce.Do(func() {
-		data, err := os.ReadFile(storyWritingExamplePath)
+// loadStoryWritingExamples 懒加载范文池目录下全部 .md 文件，只读一次后常驻内存供后续调用
+// 复用；目录中个别文件读取失败不影响其余文件，仅当整个目录读取失败或目录下没有任何可用
+// 范文时才返回错误。
+func loadStoryWritingExamples() ([]string, error) {
+	storyWritingExamplesOnce.Do(func() {
+		entries, err := os.ReadDir(storyWritingExampleDir)
 		if err != nil {
-			storyWritingExampleErr = err
+			storyWritingExampleLoadError = fmt.Errorf("读取范文目录%s失败：%w", storyWritingExampleDir, err)
 			return
 		}
-		storyWritingExampleContent = string(data)
+		var loadErrs []string
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+				continue
+			}
+			path := filepath.Join(storyWritingExampleDir, entry.Name())
+			data, err := os.ReadFile(path)
+			if err != nil {
+				loadErrs = append(loadErrs, fmt.Sprintf("%s: %v", path, err))
+				continue
+			}
+			storyWritingExampleContents = append(storyWritingExampleContents, string(data))
+		}
+		if len(storyWritingExampleContents) == 0 {
+			if len(loadErrs) > 0 {
+				storyWritingExampleLoadError = fmt.Errorf("%s", strings.Join(loadErrs, "; "))
+			} else {
+				storyWritingExampleLoadError = fmt.Errorf("范文目录%s下没有可用的.md文件", storyWritingExampleDir)
+			}
+		}
 	})
-	return storyWritingExampleContent, storyWritingExampleErr
+	return storyWritingExampleContents, storyWritingExampleLoadError
 }
 
-// executeGetWritingExample 是 get_writing_example 工具的执行逻辑。文件缺失时不阻塞
-// 生成流程，只返回说明，architect 应继续按<task>创作要求写作。
+// executeGetWritingExample 是 get_writing_example 工具的执行逻辑：从范文池中随机抽取一份
+// 提供参考，每次调用独立随机，不保证多次调用抽到同一份。范文池全部缺失时不阻塞生成流程，
+// 只返回说明，architect 应继续按<task>创作要求写作。
 func executeGetWritingExample(ctx context.Context, room *scripterRoom) string {
 	sessionID := scripterSessionID(ctx, room)
-	content, err := loadStoryWritingExample()
-	if err != nil {
+	contents, err := loadStoryWritingExamples()
+	if len(contents) == 0 {
 		alog.Warn("get writing example load failed", "session", sessionID, "err", err)
 		return fmt.Sprintf("参考成稿读取失败（%v），本次不提供参考，请直接按<task>中的创作要求继续写作。", err)
 	}
-	alog.Debug("get writing example served", "session", sessionID, "len", len([]rune(content)))
+	chosen := contents[rand.Intn(len(contents))]
+	alog.Debug("get writing example served", "session", sessionID, "pool_size", len(contents), "len", len([]rune(chosen)))
 	return "以下是一份职业模组成稿，仅供学习出版体例：观察它如何用章节和地点标题安排阅读顺序，如何在地点段落里同时交代环境、人物、发现、检定、遭遇和去向，如何用时间线、守密人提示、可选方案以及角色和怪物数据帮助守密人运行；" +
 		"其中具体的人名、地名、机构名、情节与神话设定与你要写的剧本无关，禁止照搬；" +
 		"参考稿中的规则数值、骰值和数据表是出版模组的正常组成部分，你可以学习它们如何放在检定、遭遇、结局和数据段落中，但必须根据本篇已核验的COC7事实重新编写，不能照抄数值或规则；" +
-		"正文不要写JSON字段、内部设计术语或机械化的要素表，出版模组需要的可执行规则信息也不要为了散文感而省略：\n\n" + content
+		"正文不要写JSON字段、内部设计术语或机械化的要素表，出版模组需要的可执行规则信息也不要为了散文感而省略：\n\n" + chosen
 }
 
 // ---------------------------------------------------------------------------
@@ -414,7 +447,7 @@ func generateStoryDocument(ctx context.Context, room *scripterRoom, constraints 
 %s
 </difficulty_spec>
 请设计并撰写完整的COC7剧本故事文档。`,
-		scenarioRequestBlock(room.req, constraints),
+		scenarioRequestBlock(room.req),
 		diversityConstraintsBlock(constraints),
 		formatMythosBlacklist(room.mythosBlacklist),
 		formatScenarioTitleBlacklist(room.titleSamples),
@@ -474,7 +507,7 @@ func repairStoryDocument(ctx context.Context, room *scripterRoom, conv *scripter
 %s
 </must_fix>
 请直接在下一条回复中输出修复后的完整故事文档正文，不需要调用任何工具来提交。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；除非must_fix明确要求，否则不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags所指向的核心设定。`,
-			scenarioRequestBlock(room.req, constraints),
+			scenarioRequestBlock(room.req),
 			diversityConstraintsBlock(constraints),
 			previous.Document,
 			previous.MythosAnchor,

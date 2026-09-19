@@ -278,10 +278,10 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	alog.Info("scripter generation start", "session", sessionID, "req", string(reqJSON))
 
 	alog.Debug("scripter stage start", "session", sessionID, "stage", "constraints")
-	r.emitProgress("constraints", "start", "阶段 1/6：构建地理与多样性约束…")
+	r.emitProgress("constraints", "start", "阶段 1/6：构建多样性约束…")
 	constraints := r.buildConstraints(ctx)
-	alog.Debug("scripter stage done", "session", sessionID, "stage", "constraints", "geography", strings.Join(constraints.GeographyFlavor, " → "))
-	r.emitProgress("constraints", "done", "约束就绪："+strings.Join(constraints.GeographyFlavor, " → "))
+	alog.Debug("scripter stage done", "session", sessionID, "stage", "constraints", "tone_tags", strings.Join(constraints.ToneTags, ","), "narrative_seed", constraints.NarrativeSeed)
+	r.emitProgress("constraints", "done", "约束就绪："+strings.Join(constraints.ToneTags, ",")+"｜起点参考："+truncateRunes(constraints.NarrativeSeed, 40))
 	logScripterArtifact("Constraints", sessionID, constraints)
 
 	alog.Debug("scripter stage start", "session", sessionID, "stage", "story")
@@ -512,27 +512,17 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 // ---------------------------------------------------------------------------
 
 type ScripterConstraints struct {
-	Era             string   `json:"era"`
-	Theme           string   `json:"theme"`
-	GeographyFlavor []string `json:"geography_flavor"`
-	TargetLength    string   `json:"target_length"`
-	PlayerRange     string   `json:"player_range"`
-	Difficulty      string   `json:"difficulty"`
-	ToneTags        []string `json:"tone_tags"`
+	Era           string   `json:"era"`
+	Theme         string   `json:"theme"`
+	TargetLength  string   `json:"target_length"`
+	PlayerRange   string   `json:"player_range"`
+	Difficulty    string   `json:"difficulty"`
+	ToneTags      []string `json:"tone_tags"`
+	NarrativeSeed string   `json:"narrative_seed"`
 }
 
 func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints {
 	sessionID := scripterSessionID(ctx, r)
-	geography, err := generateGeographyChain(ctx, r, r.req.Era)
-	if err != nil || len(geography) == 0 {
-		if err != nil {
-			alog.Warn("scripter geography generation failed", "session", sessionID, "err", err)
-		}
-		geography = fallbackGeographyFlavor(r.req)
-		alog.Debug("scripter geography fallback", "session", sessionID, "geography", strings.Join(geography, " → "))
-	} else {
-		alog.Debug("scripter geography generated", "session", sessionID, "geography", strings.Join(geography, " → "))
-	}
 
 	// NOTE: tone_tags 组合改为纯随机挑选，不再让 AI 从围池内判断"最契合"——时代/主题等输入
 	// 在多次生成间几乎不变，这类判断任务会收敛到少数刻板组合，反而削弱多样性；契合题材交给
@@ -540,134 +530,20 @@ func (r *scripterRoom) buildConstraints(ctx context.Context) ScripterConstraints
 	toneTags := toneTagsForDiversity(r.req)
 	alog.Debug("scripter diversity tone_tags", "session", sessionID, "tone_tags", strings.Join(toneTags, ","))
 
+	// NOTE: narrative_seed 与 tone_tags 同理需要真随机——同一批 era/theme/difficulty 输入下
+	// 多次生成也要能抽到不同的构思切入角度，避免每次都从最容易想到的套路起步。
+	narrativeSeed := randomNarrativeSeed()
+	alog.Debug("scripter diversity narrative_seed", "session", sessionID, "narrative_seed", narrativeSeed)
+
 	return ScripterConstraints{
-		Era:             r.req.Era,
-		Theme:           firstNonEmpty(r.req.Theme, ""),
-		GeographyFlavor: geography,
-		TargetLength:    r.req.TargetLength,
-		PlayerRange:     fmt.Sprintf("%d-%d", r.req.MinPlayers, r.req.MaxPlayers),
-		Difficulty:      r.req.Difficulty,
-		ToneTags:        toneTags,
+		Era:           r.req.Era,
+		Theme:         firstNonEmpty(r.req.Theme, ""),
+		TargetLength:  r.req.TargetLength,
+		PlayerRange:   fmt.Sprintf("%d-%d", r.req.MinPlayers, r.req.MaxPlayers),
+		Difficulty:    r.req.Difficulty,
+		ToneTags:      toneTags,
+		NarrativeSeed: narrativeSeed,
 	}
-}
-
-var geographyElementSystemPrompt = `<role>事件发生地候选列举器</role>
-<task>根据用户给定阶段列举5个可用于事件发生地的候选。该结果只作为布景风味，不决定剧情结构。</task>
-<rules>
-- country阶段输出具体国家或具体政权范围。
-- settlement_scale阶段必须且只能从以下固定选项中选择一个：大都会、城市、市郊、乡镇、无人区。
-- 非country阶段只输出类型/形态/区位模式，不输出具体地名、真实行政区名、真实城市名或真实街区名。
-- 只输出现实地理/人文地理候选，不输出幕后真相。
-- 禁止输出伪科学、高科技、工程化异常或可诱导伪科学解释神话的候选。
-- 每行一个名称；country阶段正好5个候选，settlement_scale阶段按用户消息要求只输出一个选项；不要编号、解释、标题或描述句。</rules>`
-
-func generateGeographyChain(ctx context.Context, room *scripterRoom, era string) ([]string, error) {
-	var architect agentHandle
-	if room != nil {
-		architect = room.architect
-	}
-	if architect.provider == nil {
-		return nil, fmt.Errorf("architect provider unavailable")
-	}
-	sessionID := sessionIDFromContextValue(ctx)
-	alog.Debug("scripter geography chain start", "session", sessionID, "era", era)
-	stages := []struct {
-		Key      string
-		Mode     string
-		Examples string
-	}{
-		{Key: "country", Mode: "具体国家或具体政权范围", Examples: "美国"},
-		{Key: "settlement_scale", Mode: "根据前置布景和时代，从固定选项中选择最适合调查剧本的聚落尺度：大都会、城市、市郊、乡镇、无人区。只输出一个选项", Examples: "城市"},
-	}
-	chain := make([]string, 0, len(stages))
-	msgs := []llm.ChatMessage{{Role: "system", Content: architect.systemPrompt(geographyElementSystemPrompt)}}
-	for _, stage := range stages {
-		alog.Debug("scripter geography stage selecting", "session", sessionID, "stage", stage.Key, "selected_so_far", strings.Join(chain, " → "))
-		items, err := generateGeographyCandidates(ctx, room, &msgs, era, stage.Key, stage.Mode, stage.Examples, chain)
-		if err != nil {
-			alog.Error("scripter geography stage failed", "session", sessionID, "stage", stage.Key, "err", err)
-			return chain, err
-		}
-		if len(items) == 0 {
-			return chain, fmt.Errorf("%s 候选为空", stage.Key)
-		}
-		choice := ""
-		switch stage.Key {
-		case "settlement_scale":
-			items = filterSettlementScaleCandidates(items)
-			if len(items) == 0 {
-				items = []string{"城市"}
-			}
-			choice = items[0]
-		case "country":
-			items = filterCountryCandidates(items, isModernEra(era))
-			if len(items) == 0 {
-				items = []string{"美国"}
-			}
-			choice = items[rand.Intn(len(items))]
-		default:
-			choice = items[rand.Intn(len(items))]
-		}
-		chain = append(chain, choice)
-		alog.Debug("scripter geography stage chosen", "session", sessionID, "stage", stage.Key, "candidates", len(items), "chosen", choice)
-	}
-	return chain, nil
-}
-
-func generateGeographyCandidates(ctx context.Context, room *scripterRoom, msgs *[]llm.ChatMessage, era string, stageKey string, mode string, examples string, chain []string) ([]string, error) {
-	var architect agentHandle
-	if room != nil {
-		architect = room.architect
-	}
-	if architect.provider == nil {
-		return nil, fmt.Errorf("architect provider unavailable")
-	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	sessionID := sessionIDFromContextValue(ctx)
-	selected := "无，第一轮先选择具体国家或政权范围"
-	if len(chain) > 0 {
-		selected = strings.Join(chain, " → ")
-	}
-	countInstruction := "请只输出本阶段的5个候选。"
-	if stageKey == "settlement_scale" {
-		countInstruction = "请只输出一个最合适的固定选项，必须完全等于：大都会、城市、市郊、乡镇、无人区 之一。"
-	}
-	if stageKey == "country" {
-		countInstruction += "\n候选中不得包含苏联、苏维埃社会主义共和国联盟。"
-		if !isModernEra(era) {
-			countInstruction += "\n当前时代非现代，候选中不得包含日本及日本相关政权、地区（如大日本帝国等）。"
-		}
-	}
-	prompt := fmt.Sprintf("已随机选中的前置布景：%s\n现在进入下一阶段：%s\n时代：%s\n输出要求：%s\n示例范围：%s\n\n%s", selected, stageKey, era, mode, examples, countInstruction)
-	alog.Debug("scripter geography prompt", "session", sessionID, "stage", stageKey, "len", len(prompt), "content", truncateRunes(prompt, scripterPromptLogLimit))
-	*msgs = append(*msgs, llm.ChatMessage{Role: "user", Content: prompt})
-	callMessages := append([]llm.ChatMessage(nil), (*msgs)...)
-	raw, err := architect.provider.Chat(ctx, sessionIDFromContextValue(ctx)+":"+string(models.AgentRoleArchitect), *msgs)
-	if err != nil {
-		alog.Error("scripter geography chat failed", "session", sessionID, "stage", stageKey, "err", err)
-		return nil, err
-	}
-	recordScripterLLMExchange(ctx, room, fmt.Sprintf("geography_%s", stageKey), callMessages, raw)
-	alog.Debug("scripter geography raw response", "session", sessionID, "stage", stageKey, "len", len(raw), "content", truncateRunes(raw, scripterRawLogLimit))
-	*msgs = append(*msgs, llm.ChatMessage{Role: "assistant", Content: raw})
-	items := parseElementNames(raw)
-	alog.Debug("scripter geography parsed", "session", sessionID, "stage", stageKey, "count", len(items), "items", strings.Join(items, " | "))
-	if len(items) == 0 {
-		alog.Warn("scripter geography parse empty", "session", sessionID, "stage", stageKey, "raw", truncateRunes(raw, scripterRawLogLimit))
-		return nil, fmt.Errorf("地理候选列表为空")
-	}
-	return items, nil
-}
-
-func fallbackGeographyFlavor(req ScenarioCreationRequest) []string {
-	flavor := []string{firstNonEmpty(req.Era, defaultScripterEra()), "城市"}
-	if strings.TrimSpace(req.Theme) != "" {
-		flavor = append(flavor, strings.TrimSpace(req.Theme))
-	}
-	flavor = append(flavor, "具备地方关系、交通阻力和可调查公共空间的地点")
-	return flavor
 }
 
 func toneTagsForDiversity(req ScenarioCreationRequest) []string {
@@ -724,93 +600,28 @@ func toneTagsForDiversity(req ScenarioCreationRequest) []string {
 	return tags
 }
 
-func settlementScaleCandidates() []string {
-	return []string{"大都会", "城市", "市郊", "乡镇", "无人区"}
+// scenarioNarrativeSeeds 取材自COC7守秘人规则书"创作模组"一节列出的构思起点，用于随机给
+// Story Architect 一个切入角度参考。只影响立意角度，不预设具体地点、人物或神话元素——这些
+// 仍由 Architect 在写作时自行决定；参见 diversityConstraintsBlock 中 narrative_seed 的
+// 非强制措辞。
+var scenarioNarrativeSeeds = []string{
+	"以具体的时空切片为起点：选一个真实存在过的年代、地点与当时的人群风潮作为背景土壤，从中生长出剧情，而不是先想好情节再找一个背景去套",
+	"以一桩悬而未决的怪事为起点：找一桩本身就缺乏常规解释的怪异事件（而非性质已经明确的普通案件）作为核心，让调查员一步步去解释它",
+	"以历史的平行演变为起点：选一个真实的历史转折点，假设当时发生了某种神话力量介入，历史会如何被悄悄改写",
+	"以某个神话存在的主题为起点：先选定一种神话生物或概念承载的主题（如吞噬、腐化、疯狂、寒冷），再围绕这个主题搭建剧情，而不是先有剧情再找怪物往里填",
+	"以一个人类组织为起点：设计一个有自己教义、架构与目的的邪教或秘密团体作为调查员能实际交手的对手，神话力量退到幕后",
+	"以绝境求生为起点：把调查员直接扔进一个必须靠自己想办法活下去的险境，调查退居其次，行动与抉择优先",
+	"以孤立无援为起点：设计一个调查员因地理位置或自身处境而联系不到外界救援的局面，逼他们只能自己解决",
+	"以改写一个经典文本为起点：取一部你熟悉的恐怖故事，抽走它的具体设定，替换成完全不同的时代、地点与神话元素，只保留骨架",
+	"以一幕抓人的开场画面为起点：先想清楚调查员第一眼看到的那个反常画面是什么样子，再倒推是什么样的因果链会让这一幕发生",
+	"以一个令人脊背发凉的反转为起点（谨慎使用）：先确定一个到结尾才会揭晓的震撼真相，再回过头设计前期的调查如何一步步逼近它又不过早暴露它",
+	"以调查员自身的背景为起点：让某位调查员的过去、牵挂或秘密直接成为卷入事件的原因，剧情因人物而生，而不是人物为剧情服务",
+	"以真相的层层剥开为起点：把核心秘密设计成可以一层层深入的结构，调查员每解开一层就会撞见一个更深的问题，而不是一次性揭晓全部真相",
 }
 
-func filterSettlementScaleCandidates(items []string) []string {
-	allowed := map[string]bool{}
-	for _, item := range settlementScaleCandidates() {
-		allowed[item] = true
-	}
-	filtered := make([]string, 0, len(items))
-	for _, item := range items {
-		item = strings.TrimSpace(item)
-		if allowed[item] {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
-}
-
-// isModernEra 判断时代文本是否为现代；采用白名单方式，只有显式包含"现代"/"modern"
-// 关键词才视为现代，未显式说明一律视为非现代。
-func isModernEra(era string) bool {
-	return strings.Contains(era, "现代") || strings.Contains(strings.ToLower(era), "modern")
-}
-
-// filterCountryCandidates 过滤country阶段候选：苏联始终禁止选为背景国家；
-// 日本仅在非现代年代禁止（现代年代允许）。
-func filterCountryCandidates(items []string, modern bool) []string {
-	filtered := make([]string, 0, len(items))
-	for _, item := range items {
-		if strings.Contains(item, "苏联") {
-			continue
-		}
-		if !modern && strings.Contains(item, "日本") {
-			continue
-		}
-		filtered = append(filtered, item)
-	}
-	return filtered
-}
-
-func parseElementNames(raw string) []string {
-	raw = llm.StripCodeFence(strings.TrimSpace(raw))
-	raw = strings.ReplaceAll(raw, "，", "\n")
-	raw = strings.ReplaceAll(raw, ",", "\n")
-	raw = strings.ReplaceAll(raw, "、", "\n")
-	lines := strings.Split(raw, "\n")
-	items := make([]string, 0, len(lines))
-	seen := map[string]bool{}
-	for _, line := range lines {
-		name := normalizeElementName(line)
-		if name == "" || seen[name] {
-			continue
-		}
-		seen[name] = true
-		items = append(items, name)
-	}
-	return items
-}
-
-func normalizeElementName(s string) string {
-	s = strings.TrimSpace(s)
-	s = strings.TrimLeft(s, "-•*· ")
-	s = strings.TrimSpace(s)
-	if idx := strings.IndexAny(s, ".、)"); idx >= 0 && idx <= 4 {
-		prefix := strings.TrimSpace(s[:idx])
-		if prefix != "" {
-			allDigits := true
-			for _, r := range prefix {
-				if r < '0' || r > '9' {
-					allDigits = false
-					break
-				}
-			}
-			if allDigits {
-				s = strings.TrimSpace(s[idx+1:])
-			}
-		}
-	}
-	s = strings.Trim(s, " `\"'，。；;：:（）()【】[]《》")
-	if s == "" || strings.Contains(s, "：") || strings.Contains(s, ":") {
-		return ""
-	}
-	if len([]rune(s)) > 40 {
-		return ""
-	}
-	return strings.TrimSpace(s)
+// randomNarrativeSeed 从 scenarioNarrativeSeeds 中随机抽取一条，每次生成独立随机。
+func randomNarrativeSeed() string {
+	return scenarioNarrativeSeeds[rand.Intn(len(scenarioNarrativeSeeds))]
 }
 
 // ---------------------------------------------------------------------------
@@ -1368,21 +1179,19 @@ func splitScenarioTags(raw string) []string {
 // Format helpers
 // ---------------------------------------------------------------------------
 
-// scenarioRequestBlock 把生成请求与地理约束渲染成自然语言，取代直接
+// scenarioRequestBlock 把生成请求渲染成自然语言，取代直接
 // json.Marshal(ScenarioCreationRequest/ScripterConstraints) 塞进用户消息的做法——
 // 故事阶段的模型被要求只输出散文而不是JSON，输入端也不该是结构化JSON。
 // difficulty/target_length 已由 difficultySpec/lengthSpec 展开，
-// tone_tags 已由 diversityConstraintsBlock 展开，这里不重复。
-func scenarioRequestBlock(req ScenarioCreationRequest, constraints ScripterConstraints) string {
+// tone_tags 已由 diversityConstraintsBlock 展开，这里不重复；具体事件发生地不再由
+// 上游预先决定，交给 Story Architect 在写作时自行构思。
+func scenarioRequestBlock(req ScenarioCreationRequest) string {
 	var sb strings.Builder
 	sb.WriteString("<scenario_request>\n")
 	sb.WriteString(fmt.Sprintf("剧本名称: %s\n", firstNonEmpty(req.Name, "(未指定，由你根据故事内容拟定)")))
 	sb.WriteString(fmt.Sprintf("主题: %s\n", firstNonEmpty(req.Theme, "(未指定，自行发挥)")))
 	sb.WriteString(fmt.Sprintf("时代: %s\n", req.Era))
 	sb.WriteString(fmt.Sprintf("玩家人数: %d-%d人\n", req.MinPlayers, req.MaxPlayers))
-	if len(constraints.GeographyFlavor) > 0 {
-		sb.WriteString(fmt.Sprintf("地理风味: %s\n", strings.Join(constraints.GeographyFlavor, " → ")))
-	}
 	sb.WriteString(fmt.Sprintf("生成批次标识（无实际含义，仅用于避免多份生成结果雷同）: %s\n", req.Salt))
 	sb.WriteString("</scenario_request>\n")
 	sb.WriteString("<brief>\n")

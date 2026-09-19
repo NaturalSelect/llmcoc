@@ -51,3 +51,27 @@ func TestToneTagsIncludeDifficultyScale(t *testing.T) {
 		t.Errorf("Era=1920s 时应包含 noir 标签，实际标签：%v", tags)
 	}
 }
+
+// TestRandomNarrativeSeedNonEmpty 验证 narrative_seed 随机选取器每次都能从固定候选池中
+// 取到一条候选池内的非空提示。
+func TestRandomNarrativeSeedNonEmpty(t *testing.T) {
+	if len(scenarioNarrativeSeeds) == 0 {
+		t.Fatal("scenarioNarrativeSeeds 不应为空")
+	}
+	for i := 0; i < 20; i++ {
+		seed := randomNarrativeSeed()
+		if seed == "" {
+			t.Fatal("randomNarrativeSeed 返回了空字符串")
+		}
+		found := false
+		for _, candidate := range scenarioNarrativeSeeds {
+			if candidate == seed {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("randomNarrativeSeed 返回了候选池之外的值：%q", seed)
+		}
+	}
+}

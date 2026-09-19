@@ -753,6 +753,10 @@ func diversityConstraintsBlock(constraints ScripterConstraints) string {
 	sb.WriteString(fmt.Sprintf("tone_tags: %s\n", strings.Join(constraints.ToneTags, ", ")))
 	sb.WriteString("硬约束：本次submit.draft.content.tone_tags必须逐字使用上述值，不得自行替换、翻译、改名或省略。\n")
 	sb.WriteString("含义：tone_tags只约束文风、节奏、场面选择和NPC反应风格，不覆盖剧本事实、规则书裁定或工具结果。调查入口与神话力量介入人类世界的方式均不在本块约束范围内，由创作阶段自行决定。\n")
+	if seed := strings.TrimSpace(constraints.NarrativeSeed); seed != "" {
+		sb.WriteString(fmt.Sprintf("narrative_seed: %s\n", seed))
+		sb.WriteString("含义：narrative_seed只是本次构思可参考的切入角度，用来避免多次生成落入同一种套路，不是必须体现的情节要素，也不需要在成稿中提及这个角度本身；按需取舍怎么落地。\n")
+	}
 	sb.WriteString("</diversity_constraints>")
 	return sb.String()
 }
@@ -804,7 +808,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, conv *scripterC
 %s
 </must_fix>
 请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
-			scenarioRequestBlock(room.req, constraints),
+			scenarioRequestBlock(room.req),
 			diversityConstraintsBlock(constraints),
 			string(prevJSON),
 			formatScenarioTagsBlacklist(room.tagsBlacklist),
@@ -1035,8 +1039,8 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	}
 	if strings.TrimSpace(draft.Content.Setting) == "" {
 		draft.Content.Setting = fmt.Sprintf(
-			"%s的%s。这是平常的一天，你们因各自的缘由来到此地，眼前的一切安静而寻常，尚无任何异样。",
-			constraints.Era, strings.Join(constraints.GeographyFlavor, " / "),
+			"%s。这是平常的一天，你们因各自的缘由来到此地，眼前的一切安静而寻常，尚无任何异样。",
+			constraints.Era,
 		)
 		alog.Debug("normalize filled setting", "session", sessionID)
 	}
@@ -1057,10 +1061,9 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		}
 		hour := draft.Content.GameStartSlot / 2
 		minute := (draft.Content.GameStartSlot % 2) * 30
-		location := strings.Join(constraints.GeographyFlavor, " / ")
 		draft.Content.Intro = fmt.Sprintf(
-			"你们按各自的缘由抵达此地，眼前一切安静而寻常。\n【当前情况】地点：%s；时间：%s%d点%02d分；目标：弄清你们此行要处理的这件事。",
-			location, dateStr, hour, minute,
+			"你们按各自的缘由抵达此地，眼前一切安静而寻常。\n【当前情况】时间：%s%d点%02d分；目标：弄清你们此行要处理的这件事。",
+			dateStr, hour, minute,
 		)
 		alog.Debug("normalize filled intro", "session", sessionID)
 	}
