@@ -23,8 +23,8 @@ import (
 // 参数 Schema 的字段名均对应 ToolCall（见 types.go）的 json tag，解码时统一走
 // decodeDirectorToolCall。
 
-func directorTools() []scripterTool {
-	return []scripterTool{
+func directorTools(dramaturgEnabled bool) []scripterTool {
+	tools := []scripterTool{
 		checkRuleTool(),
 		rollDiceTool(),
 		createNPCTool(),
@@ -61,6 +61,12 @@ func directorTools() []scripterTool {
 		chaseActTool(),
 		endChaseTool(),
 	}
+	// NOTE: consult_dramaturg 只在启用时才加入列表;未启用时不暴露该工具,
+	// 避免Director每回合都白白耗费一次调用去确认不可用。
+	if dramaturgEnabled {
+		tools = append(tools, consultDramaturgTool())
+	}
+	return tools
 }
 
 func checkRuleTool() scripterTool {
@@ -81,6 +87,28 @@ func checkRuleTool() scripterTool {
 					"question": {"type": "string", "description": "向规则专家提出的具体问题"}
 				},
 				"required": ["question"]
+			}`),
+		},
+	}
+}
+
+func consultDramaturgTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolConsultDramaturg),
+			Description: `向剧构顾问(Dramaturg)汇报本回合剧情进度，获取节奏与走向指导。剧构顾问只看得到你写的progress_note和模组大纲/线索/结局等结构化资料，看不到玩家原始发言、角色数值和物品。
+【时机】必须在本回合第一批工具调用中调用且只能调用一次(与check_rule/query_*等查询工具同批)；本回合后续批次不得再调用，重复调用会被拒绝。
+✓ progress_note应包含：当前场景/地点名称；上回合达成的进展(线索用[Idx]编号、场景/触发用名称、结局条件推进情况)；进展的达成方式(技能名+成败、说服/威胁了哪个NPC、时间推进了多久、战斗/追逐结果)；本回合调查员的意图(用"调查员"指代，多人用"调查员甲/乙"区分)。
+✗ progress_note中禁止出现：调查员/玩家的真实姓名；任何数值(属性、HP、SAN、骰点、金钱)；物品/法术/人际关系/资产清单；玩家的原始发言引用。
+✗ 不能替你裁定规则、掷骰或决定NPC行为——这些仍需check_rule/roll_dice/act_npc。
+✗ 剧构顾问的回复是KP内部参考备注，不得向玩家转述或引用其内容。
+调用示例：{"progress_note":"调查员已抵达图书馆，通过侦查检定发现了[Idx:2]号线索，尚未与管理员NPC交谈，意图是查找失踪学者的借阅记录。"}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"progress_note": {"type": "string", "description": "本回合剧情进展的脱敏事件报告，不含真实姓名/数值/物品清单/玩家原话"}
+				},
+				"required": ["progress_note"]
 			}`),
 		},
 	}

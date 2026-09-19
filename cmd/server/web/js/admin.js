@@ -227,8 +227,8 @@ window.COC.admin = {
                             translator: { max_tokens: 2000, temperature: 0.7 },
                             // NOTE: compiler 负责把故事文本编译为结构化模组JSON，低温度减少擅自发挥。
                             compiler: { max_tokens: 4000, temperature: 0.15 },
-                            // NOTE: providence 是可选的剧情节奏顾问，默认关闭，需管理员单独绑定 provider 才会被路由。
-                            providence: { max_tokens: 500, temperature: 0.5, is_active: false },
+                            // NOTE: dramaturg 是可选的剧构顾问，由Director按需通过工具调用咨询，默认关闭，需管理员单独绑定 provider 才会被路由。
+                            dramaturg: { max_tokens: 500, temperature: 0.5, is_active: false },
                         };
                         const expectedRoles = Object.keys(roleDefaults).filter(r => r !== 'scripter');
                         const byRole = new Map(agents.filter(a => a.role !== 'scripter').map(a => [a.role, a]));
@@ -929,7 +929,7 @@ window.COC.admin = {
                             translator: '🌐 Translator',
                             // NOTE: compiler — 故事转模组编译
                             compiler: '🛠️ Compiler',
-                            providence: '🔮 Providence',
+                            dramaturg: '🎭 Dramaturg',
                         }[role] || role;
                     },
                     agentDesc(role) {
@@ -950,8 +950,8 @@ window.COC.admin = {
                             translator: '翻译/资料转译 — 发散联想与COC元素转译；建议配置世界知识丰富、发散能力较好的模型',
                             // NOTE: compiler — 只做故事文本到结构化JSON的忠实转换，无权改写剧情事实
                             compiler: '模组编译 — 将故事文本忠实编译为结构化模组JSON；建议配置低温度模型',
-                            // NOTE: providence — 剧情节奏顾问，只给建议不操作游戏状态，未配置或关闭时Director自行判断节奏（默认关闭）
-                            providence: '天意顾问 — 比对大纲/时间线/线索给出节奏与走向建议，供Director参考（默认关闭）',
+                            // NOTE: dramaturg — 剧构顾问，Director按需咨询，输入经脱敏处理不含玩家原始数据，只给建议不操作游戏状态（默认关闭）
+                            dramaturg: '剧构顾问 — Director按需咨询，输入已脱敏不含玩家数据，给出节奏与走向建议（默认关闭）',
                         }[role] || '';
                     },
                     agentDefaultHint(role) {
@@ -972,8 +972,8 @@ window.COC.admin = {
                             translator: '留空使用内置 Translator 提示词（翻译/资料转译）；建议配置世界知识丰富的模型',
                             // NOTE: compiler 留空使用内置 Compiler 提示词（故事转模组编译）
                             compiler: '留空使用内置 Compiler 提示词（故事转模组编译）；建议配置低温度模型',
-                            // NOTE: providence 未绑定 provider 时自动跳过，Director回退自身节奏判断规则（默认关闭）
-                            providence: '留空使用内置 Providence 提示词（节奏顾问）；不配置则Director自行判断节奏（默认关闭）',
+                            // NOTE: dramaturg 未绑定 provider 时工具不可见，Director回退自身节奏判断规则（默认关闭）
+                            dramaturg: '留空使用内置 Dramaturg 提示词（节奏顾问）；不配置则Director自行判断节奏（默认关闭）',
                         }[role] || '留空使用默认';
                     },
 

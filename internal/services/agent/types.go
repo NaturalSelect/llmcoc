@@ -69,6 +69,8 @@ const (
 	ToolStartChase  ToolCallType = "start_chase"  // 开始一场追逐,建立DEX行动顺序
 	ToolChaseAct    ToolCallType = "chase_act"    // 结算追逐轮中一名参与者的行动
 	ToolEndChase    ToolCallType = "end_chase"    // 结束当前追逐
+
+	ToolConsultDramaturg ToolCallType = "consult_dramaturg" // 向剧构顾问汇报进度,获取节奏与走向指导
 )
 
 // ToolCall is one item in the master KP agent's output sequence.
@@ -95,6 +97,7 @@ type ToolCall struct {
 	IsBystander   bool                   `json:"is_bystander"`   // manage_madness trigger: 是否有旁观者在场(仅决定症状表,不代表疯狂类型)
 	MadnessType   string                 `json:"madness_type"`   // manage_madness trigger: 疯狂类型 temporary/indefinite/permanent,由Director按规则判定
 	Direction     string                 `json:"direction"`      // write: 叙事方向(供Writer参考)
+	ProgressNote  string                 `json:"progress_note"`  // consult_dramaturg: 脱敏后的剧情进展报告
 	TimeRounds    int                    `json:"time_rounds"`    // advance_time: 推进的回合数
 	TimeReason    string                 `json:"time_reason"`    // advance_time: 原因(如"睡觉"/"吃饭")
 	Keyword       string                 `json:"keyword"`        // query_clues: 已废弃(保留仅为兼容旧输出)

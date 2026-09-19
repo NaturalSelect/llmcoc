@@ -286,7 +286,8 @@ func noEncounterBatchPolicy(imageDone *bool) toolBatchPolicy {
 	var combat *models.CombatState
 	var chase *models.ChaseState
 	roundClosed := false
-	return directorBatchPolicy(imageDone, &combat, &chase, &roundClosed, nil, func(string) {})
+	dramaturgDone := false
+	return directorBatchPolicy(imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})
 }
 
 // TestDirectorBatchPolicySkillRollSequencing 验证 query_* 与技能检定 roll_dice 同批被拒，
@@ -552,8 +553,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("combat_act与report同批放行", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
 			policyCall("report", `{"report":"备注"}`),
 		})
@@ -564,8 +566,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("combat_act与其他工具同批被拒", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
 			policyCall("roll_dice", `{"dice":{"character":"甲","what":"格斗","dice_expr":"1D100"},"reason":"攻击"}`),
 		})
@@ -576,8 +579,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("combat_act调用两次(含彼此)被拒", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
 			policyCall("combat_act", `{"combat_actor_name":"乙","combat_action":{"type":"attack"}}`),
 		})
@@ -588,10 +592,11 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("无激活战斗时combat_act被拒", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		var nilCombat *models.CombatState
 		var nilChase *models.ChaseState
 		roundClosed := false
-		reject := directorBatchPolicy(&imageDone, &nilCombat, &nilChase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &nilCombat, &nilChase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
 		})
 		if reject == "" {
@@ -601,10 +606,11 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("追逐激活时start_combat被拒(互斥)", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		var nilCombat *models.CombatState
 		chase := freshChase()
 		roundClosed := false
-		reject := directorBatchPolicy(&imageDone, &nilCombat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &nilCombat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("start_combat", `{"combat_participants":[{"name":"甲","is_npc":true}]}`),
 		})
 		if reject == "" {
@@ -614,8 +620,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("战斗激活时advance_time被拒", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("advance_time", `{"time_rounds":1,"time_reason":"等待"}`),
 		})
 		if reject == "" {
@@ -625,10 +632,11 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("可推进者未结算时response被拒并列出未行动者", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
 		// 甲乙均已提交本轮声明(在当前批次内),因此未行动即视为可推进,应挡住response。
 		declared := []PlayerAction{{PlayerName: "甲", Content: "攻击"}, {PlayerName: "乙", Content: "闪避"}}
-		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, declared, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, declared, func(string) {})([]llm.ToolCall{
 			policyCall("response", `{"reply":"战斗继续"}`),
 		})
 		if reject == "" {
@@ -641,11 +649,12 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("剩余全是未提交声明的PC时response放行", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		actedCombat := freshCombat()
 		actedCombat.Participants[0].HasActed = true // 甲已行动(当前批次内唯一成员)
 		combat, chase, roundClosed := actedCombat, (*models.ChaseState)(nil), false
 		// pendingActions为nil:乙不在当前批次,本轮未提交任何声明,不应卡住response。
-		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("response", `{"reply":"甲行动完毕,轮到乙,但乙尚未到批次"}`),
 		})
 		if reject != "" {
@@ -655,11 +664,12 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("存在待澄清时response放行", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		pendingCombat := freshCombat()
 		pendingCombat.Participants[1].PendingClarification = true
 		pendingCombat.Participants[1].PendingQuestion = "闪避还是反击？"
 		combat, chase, roundClosed := pendingCombat, (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("response", `{"reply":"你被攻击了,闪避还是反击？"}`),
 		})
 		if reject != "" {
@@ -669,8 +679,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("roundClosed为true时response放行", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), true
-		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("response", `{"reply":"本轮战斗结束"}`),
 		})
 		if reject != "" {
@@ -680,8 +691,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 
 	t.Run("end_combat与response同批放行(即使未结算完毕)", func(t *testing.T) {
 		imageDone := false
+		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("end_combat", `{"combat_end_reason":"敌人逃离"}`),
 			policyCall("response", `{"reply":"战斗结束,敌人逃走了"}`),
 		})

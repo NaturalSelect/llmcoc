@@ -35,7 +35,9 @@ func directorActNPCCompatible(action ToolCallType) bool {
 // pendingActions 是本次run收到的玩家声明集合，用于RULE 5判断"未行动者是否可推进"
 // ——按批次收集后，不在当前批次的PC不会有声明，不能因为它们未行动就卡住response。
 // emitProgress 用于在拒绝分支保留原有的 SSE 提示文案。
-func directorBatchPolicy(imageGeneratedThisTurn *bool, combat **models.CombatState, chase **models.ChaseState, roundClosed *bool, pendingActions []PlayerAction, emitProgress func(string)) toolBatchPolicy {
+// dramaturgConsultedThisTurn 与 imageGeneratedThisTurn 同理，保留"每回合最多咨询一次
+// 剧构顾问"的限制。
+func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTurn *bool, combat **models.CombatState, chase **models.ChaseState, roundClosed *bool, pendingActions []PlayerAction, emitProgress func(string)) toolBatchPolicy {
 	return func(calls []llm.ToolCall) string {
 		hasResponse := false
 		hasNonCompatible := false
@@ -345,6 +347,20 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, combat **models.CombatSta
 		}
 		if generateImageCalls > 0 {
 			*imageGeneratedThisTurn = true
+		}
+
+		dramaturgCalls := 0
+		for _, call := range calls {
+			if call.Name == string(ToolConsultDramaturg) {
+				dramaturgCalls++
+			}
+		}
+		if dramaturgCalls > 1 || (dramaturgCalls > 0 && *dramaturgConsultedThisTurn) {
+			emitProgress("KP正在减少重复剧情节奏咨询")
+			return "SYSTEM REJECT: consult_dramaturg may be called at most once per turn. Use the guidance you already received."
+		}
+		if dramaturgCalls > 0 {
+			*dramaturgConsultedThisTurn = true
 		}
 
 		return ""

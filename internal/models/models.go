@@ -325,27 +325,30 @@ type ChatMsg struct {
 
 // NOTE: GameSession tracks an active or completed run of a scenario with players.
 type GameSession struct {
-	ID            uint                    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name          string                  `gorm:"not null;size:200" json:"name"`
-	Race          string                  `gorm:"size:50" json:"race"` // 新增种族字段
-	ScenarioID    uint                    `gorm:"not null" json:"scenario_id"`
-	Status        SessionStatus           `gorm:"default:'lobby'" json:"status"`
-	MaxPlayers    int                     `gorm:"default:4" json:"max_players"`
-	Password      string                  `gorm:"size:100" json:"-"`
-	HasPassword   bool                    `gorm:"default:false" json:"has_password"`
-	EnableNSFW    bool                    `gorm:"default:false" json:"enable_nsfw"`
-	CreatedBy     uint                    `gorm:"not null" json:"created_by"`
-	TurnRound     int                     `gorm:"default:1" json:"turn_round"`
-	WriterHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
-	CombatState   JSONField[*CombatState] `gorm:"type:text" json:"-"`
-	ChaseState    JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
-	KPHint        string                  `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
-	Introspection string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
-	CreatedAt     time.Time               `json:"created_at"`
-	UpdatedAt     time.Time               `json:"updated_at"`
-	Scenario      Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario"`
-	Creator       User                    `gorm:"foreignKey:CreatedBy" json:"creator"`
-	Players       []SessionPlayer         `gorm:"foreignKey:SessionID" json:"players"`
+	ID            uint                 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name          string               `gorm:"not null;size:200" json:"name"`
+	Race          string               `gorm:"size:50" json:"race"` // 新增种族字段
+	ScenarioID    uint                 `gorm:"not null" json:"scenario_id"`
+	Status        SessionStatus        `gorm:"default:'lobby'" json:"status"`
+	MaxPlayers    int                  `gorm:"default:4" json:"max_players"`
+	Password      string               `gorm:"size:100" json:"-"`
+	HasPassword   bool                 `gorm:"default:false" json:"has_password"`
+	EnableNSFW    bool                 `gorm:"default:false" json:"enable_nsfw"`
+	CreatedBy     uint                 `gorm:"not null" json:"created_by"`
+	TurnRound     int                  `gorm:"default:1" json:"turn_round"`
+	WriterHistory JSONField[[]ChatMsg] `gorm:"type:text" json:"-"`
+	// NOTE: DramaturgHistory 是剧构顾问独立的多轮进度线，与WriterHistory同结构；
+	// 只存Director脱敏后的progress_note与顾问回复，不与messages/WriterHistory共享数据源。
+	DramaturgHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
+	CombatState      JSONField[*CombatState] `gorm:"type:text" json:"-"`
+	ChaseState       JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
+	KPHint           string                  `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
+	Introspection    string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
+	CreatedAt        time.Time               `json:"created_at"`
+	UpdatedAt        time.Time               `json:"updated_at"`
+	Scenario         Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario"`
+	Creator          User                    `gorm:"foreignKey:CreatedBy" json:"creator"`
+	Players          []SessionPlayer         `gorm:"foreignKey:SessionID" json:"players"`
 }
 
 // SessionNPC is a temporary NPC card created during a session (e.g. monsters, minor NPCs).
@@ -584,10 +587,10 @@ const (
 	// NOTE: AgentRoleCompiler 负责把故事阶段产出的纯文本剧本编译为结构化ScenarioContent；
 	// 只做格式转换和技术字段补充，无权改写故事事实。
 	AgentRoleCompiler AgentRole = "compiler"
-	// NOTE: AgentRoleProvidence 是可选的剧情节奏顾问；比对大纲/时间线/线索与当前局势给出节奏建议，
-	// 不操作任何游戏状态。未配置provider/model时Orchestrator跳过调用，Director按自身
-	// [ACTIVE-PACING]规则运作，不影响主流程。
-	AgentRoleProvidence AgentRole = "providence"
+	// NOTE: AgentRoleDramaturg 是可选的剧情节奏顾问；由Director按需通过consult_dramaturg
+	// 工具调用，只接收脱敏后的进度报告，不读取玩家原始数据。未配置provider/model时该工具
+	// 不会出现在Director工具列表中，Director按自身[ACTIVE-PACING]规则运作，不影响主流程。
+	AgentRoleDramaturg AgentRole = "dramaturg"
 )
 
 // LLMProviderConfig stores a named LLM API endpoint configuration.

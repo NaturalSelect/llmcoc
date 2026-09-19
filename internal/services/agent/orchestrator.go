@@ -108,7 +108,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 		models.AgentRoleNPC,
 		models.AgentRoleNPCNSFW,
 		models.AgentRolePainter,
-		models.AgentRoleProvidence,
+		models.AgentRoleDramaturg,
 	}
 	requiredRoles := map[models.AgentRole]bool{
 		models.AgentRoleDirector: true,
@@ -225,14 +225,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	kpBalanceRules := strings.TrimSpace(models.GetSiteSetting("balance_rules", models.DefaultBalanceRules))
 	combat := gctx.Session.CombatState.Data
 	chase := gctx.Session.ChaseState.Data
-	// Providence 是可选的节奏顾问；未配置provider/model时isEnabled()为false直接跳过，
-	// Director退回[ACTIVE-PACING]规则自行判断，不影响主流程。
-	providenceGuidance := ""
-	if handles[models.AgentRoleProvidence].isEnabled() {
-		emitProgress("天意正在判断剧情节奏")
-		providenceGuidance = runProvidence(ctx, handles[models.AgentRoleProvidence], gctx)
-	}
-	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW)), kpMsgs, tempNPCs, kpBalanceRules, combat, chase, providenceGuidance)
+	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW)), kpMsgs, tempNPCs, kpBalanceRules, combat, chase)
 
 	roundClosed := false
 
@@ -242,6 +235,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	diceMsg := ""
 	imageGeneratedThisTurn := false
+	// NOTE: consult_dramaturg 是 Director 按需调用的可选工具，闸门语义与
+	// imageGeneratedThisTurn 一致：跨越本次 run() 内的多轮 ChatWithTools 调用。
+	dramaturgConsultedThisTurn := false
 
 	st := directorDispatchState{
 		sid:                 sid,
@@ -274,9 +270,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		handle:        handles[models.AgentRoleDirector],
 		stage:         "director",
 		msgs:          kpMsgs,
-		tools:         directorTools(),
+		tools:         directorTools(handles[models.AgentRoleDramaturg].isEnabled()),
 		maxRounds:     maxRounds,
-		batchPolicy:   directorBatchPolicy(&imageGeneratedThisTurn, &combat, &chase, &roundClosed, gctx.PendingActions, emitProgress),
+		batchPolicy:   directorBatchPolicy(&imageGeneratedThisTurn, &dramaturgConsultedThisTurn, &combat, &chase, &roundClosed, gctx.PendingActions, emitProgress),
 		batchDispatch: directorBatchDispatch(st),
 		beforeRound: func(r int) {
 			round = r
@@ -436,6 +432,8 @@ func progressToolLabel(action ToolCallType) string {
 		return "处理线索"
 	case ToolGenerateImage:
 		return "生成场景图像"
+	case ToolConsultDramaturg:
+		return "咨询剧构顾问"
 	case ToolAdvanceTime:
 		return "推进时间"
 	case ToolStartCombat, ToolCombatAct, ToolEndCombat:

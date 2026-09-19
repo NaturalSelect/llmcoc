@@ -100,7 +100,10 @@ func seedDefaultSiteSettings() {
 		"revive_base_cost":           "2000",
 		"end_session_cost":           "200",
 		"writer_history_max_runes":   "20000",
-		"max_character_drafts":       "3",
+		// NOTE: dramaturg_history_max_runes 专用于剧构顾问自己的进度对话历史，
+		// 内容远短于Writer正文，默认预算小于writer_history_max_runes。
+		"dramaturg_history_max_runes": "8000",
+		"max_character_drafts":        "3",
 		// NOTE: 全局 NSFW 总开关（区别于房间级 enable_nsfw）；默认允许，保持升级前后行为一致。
 		"allow_nsfw": "true",
 		// NOTE: 全局 NSFW 配图开关；仅管理员可读写(走 /api/admin/config/settings)。
@@ -205,9 +208,9 @@ func seedDefaultAgentConfigs() {
 		// MaxTokens=4000 实测会被单次submit_compiled_scenario工具调用（scenes/npcs/clues/endings等
 		// 十余个字段一次性生成）打满导致stop_reason=max_tokens截断，调大到8000留出余量。
 		{Role: AgentRoleCompiler, ProviderConfigID: provID, ModelName: model, MaxTokens: 128000, Temperature: 0.15, ThinkingLevel: "low", IsActive: true},
-		// NOTE: providence 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时Director按自身
-		// [ACTIVE-PACING]规则自行判断节奏,不影响主流程。
-		{Role: AgentRoleProvidence, ProviderConfigID: provID, ModelName: model, MaxTokens: 500, Temperature: 0.5, ThinkingLevel: "low", IsActive: false},
+		// NOTE: dramaturg 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时该工具不会
+		// 出现在Director工具列表中,Director按自身[ACTIVE-PACING]规则自行判断节奏,不影响主流程。
+		{Role: AgentRoleDramaturg, ProviderConfigID: provID, ModelName: model, MaxTokens: 500, Temperature: 0.5, ThinkingLevel: "low", IsActive: false},
 	}
 	for _, ag := range required {
 		var existing AgentConfig

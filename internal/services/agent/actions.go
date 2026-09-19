@@ -49,6 +49,7 @@ type Action interface {
 var noSideEffectActions = map[ToolCallType]bool{
 	ToolRollDice:           true,
 	ToolCheckRule:          true,
+	ToolConsultDramaturg:   true,
 	ToolQueryClues:         true,
 	ToolQueryCharacter:     true,
 	ToolQueryNPCCard:       true,
@@ -90,6 +91,7 @@ var responseCompatibleActions = map[ToolCallType]bool{
 // 未列出的动作不会产生结果。
 var actionRegistry = map[ToolCallType]Action{
 	ToolCheckRule:              checkRuleAction{},
+	ToolConsultDramaturg:       consultDramaturgAction{},
 	ToolRollDice:               rollDiceAction{},
 	ToolActNPC:                 actNPCAction{},
 	ToolCreateNPC:              createNPCAction{},
@@ -138,6 +140,31 @@ func (checkRuleAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	doneL()
 	debugf("tool", "session=%d check_rule result=%s", actx.Sid, formatLawyerResults(results))
 	return []ToolResult{{Action: ToolCheckRule, Result: formatLawyerResults(results)}}
+}
+
+// consultDramaturgAction 将Director汇报的进度转交给剧构顾问，获取节奏/走向指导。脱敏三层中的
+// 代码层在这里落地：即使Director不小心写入了真实姓名，也会在传给剧构顾问前被替换掉。
+type consultDramaturgAction struct{}
+
+func (consultDramaturgAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	handle, ok := actx.Handles[models.AgentRoleDramaturg]
+	if !ok || !handle.isEnabled() {
+		debugf("tool", "session=%d consult_dramaturg unavailable: dramaturg disabled", actx.Sid)
+		return []ToolResult{{Action: ToolConsultDramaturg, Result: "dramaturg unavailable"}}
+	}
+	note := strings.TrimSpace(call.ProgressNote)
+	if note == "" {
+		return []ToolResult{{Action: ToolConsultDramaturg, Result: "consult_dramaturg failed: progress_note is required"}}
+	}
+	if actx.GCtx != nil {
+		note = sanitizeDramaturgNote(note, actx.GCtx.Session.Players)
+	}
+	debugf("tool", "session=%d consult_dramaturg note=%s", actx.Sid, note)
+	doneL := timedDebug("Dramaturg", "session=%d", actx.Sid)
+	guidance := runDramaturg(actx.Ctx, handle, *actx.GCtx, note)
+	doneL()
+	debugf("tool", "session=%d consult_dramaturg result=%s", actx.Sid, guidance)
+	return []ToolResult{{Action: ToolConsultDramaturg, Result: guidance}}
 }
 
 // ── Dice action ───────────────────────────────────────────────────────────────
