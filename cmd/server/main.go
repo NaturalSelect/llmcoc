@@ -314,6 +314,7 @@ func main() {
 		admin.PUT("/users/:id/unban", handlers.AdminUnbanUser)
 		// Session management
 		admin.POST("/sessions/end-all", handlers.AdminEndAllSessions)
+		admin.GET("/sessions/:id/context", handlers.AdminGetSessionContext)
 	}
 
 	// ─── Frontend (embedded) ─────────────────────────────────────────────────

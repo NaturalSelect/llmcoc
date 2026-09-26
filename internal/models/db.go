@@ -68,6 +68,7 @@ func InitDB() error {
 		&InviteCode{},
 		&LawyerCacheStats{},
 		&LLMLatencyStat{},
+		&AgentTranscript{},
 	); err != nil {
 		return err
 	}

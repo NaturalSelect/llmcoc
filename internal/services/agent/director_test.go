@@ -233,39 +233,57 @@ func TestKPTurnReminderStructure(t *testing.T) {
 	}
 }
 
-// TestBuildKPArchivedCurrentMessage_OmitsPerTurnStaticSections 验证归档版的本轮
-// user消息只保留玩家简介、<now>、Active NPC、战斗/追逐结构化状态与玩家原始输入；
-// timeline/mechanics/config/keeper_appendix这些"每轮都要看运行时最新值"的静态
-// 大段内容和<current>/kpTurnReminder不应归档，避免历史越滚越大，也避免模型把
-// 旧一轮读到的静态内容误当作当前轮最新配置。
-func TestBuildKPArchivedCurrentMessage_OmitsPerTurnStaticSections(t *testing.T) {
+// TestBuildKPTurnOpening_SendVersionEqualsArchiveVersion 验证 buildKPTurnOpening
+// 返回的两条user消息就是唯一版本——不再有裁剪掉timeline/mechanics/keeper_appendix
+// 的单独"归档版"：第1条携带玩家简介、<now>、Active NPC与<player_turn seq=N>包裹的
+// 玩家原始输入；第2条<system-reminder>携带timeline/mechanics/config/keeper_appendix
+// 与turn_checklist/hard_gates，且不嵌套两层<system-reminder>。
+func TestBuildKPTurnOpening_SendVersionEqualsArchiveVersion(t *testing.T) {
+	content := models.ScenarioContent{
+		Timeline:       []models.TimelineEvent{{Phase: "past", Time: "昨夜", Event: "教堂钟声异常"}},
+		KeeperAppendix: &models.KeeperAppendix{CoreTruth: "真相ABC"},
+	}
 	gctx := GameContext{
-		Session:   models.GameSession{TurnRound: 3},
+		Session: models.GameSession{
+			TurnRound: 3,
+			Scenario:  models.Scenario{Content: models.JSONField[models.ScenarioContent]{Data: content}},
+		},
 		UserInput: "调查员推开门，环顾四周",
 		UserName:  "张三",
 	}
 
-	msg := buildKPArchivedCurrentMessage(gctx, nil, nil, nil)
+	msgs := buildKPTurnOpening(gctx, 2, nil, "", nil, nil)
+	if len(msgs) != 2 {
+		t.Fatalf("buildKPTurnOpening应返回2条user消息, got %d", len(msgs))
+	}
+	if msgs[0].Role != "user" || msgs[1].Role != "user" {
+		t.Fatalf("两条消息都应是user角色: %+v", msgs)
+	}
 
-	for _, unwanted := range []string{"<current>", "</current>", "<timeline>", "<mechanics>", "<keeper_appendix>", "<config>"} {
-		if strings.Contains(msg.Content, unwanted) {
-			t.Errorf("archived message should not contain %q, got %q", unwanted, msg.Content)
+	if !strings.Contains(msgs[0].Content, "<player_turn seq=2>") {
+		t.Errorf("第1条应携带<player_turn seq=2>, got %q", msgs[0].Content)
+	}
+	if !strings.Contains(msgs[0].Content, "</player_turn>") {
+		t.Error("第1条应闭合</player_turn>")
+	}
+	if !strings.Contains(msgs[0].Content, "调查员推开门，环顾四周") {
+		t.Error("第1条应保留玩家原始输入")
+	}
+
+	for _, want := range []string{"<system-reminder>", "</system-reminder>", "<timeline>", "<keeper_appendix>", "<config>", "<turn_checklist>"} {
+		if !strings.Contains(msgs[1].Content, want) {
+			t.Errorf("第2条应包含%q, got %q", want, msgs[1].Content)
 		}
 	}
-	if strings.Contains(msg.Content, kpTurnReminder) {
-		t.Error("archived message should not carry kpTurnReminder")
+	// NOTE: 只数闭合标签"</system-reminder>"，不数开标签——正文里DEBUG/Intent分类
+	// 提示会以说明性文字提到"<system-reminder>"这个标签名(告诉模型忽略历史里旧的
+	// system-reminder块)，这不构成真正的"嵌套两层包裹"，只有闭合标签的出现次数才能
+	// 准确反映实际包裹了几层。
+	if strings.Count(msgs[1].Content, "</system-reminder>") != 1 {
+		t.Errorf("system-reminder不应嵌套两层, 闭合标签出现%d次: %q", strings.Count(msgs[1].Content, "</system-reminder>"), msgs[1].Content)
 	}
-	if !strings.Contains(msg.Content, "<past_turn round=3>") {
-		t.Errorf("archived message should wrap the turn in <past_turn round=N>, got %q", msg.Content)
-	}
-	if !strings.Contains(msg.Content, "</past_turn>") {
-		t.Error("archived message should close </past_turn>")
-	}
-	if !strings.Contains(msg.Content, "调查员推开门，环顾四周") {
-		t.Error("archived message should retain the raw player input")
-	}
-	if msg.Role != "user" {
-		t.Errorf("archived message role = %q, want %q", msg.Role, "user")
+	if strings.Contains(msgs[1].Content, "<current>") || strings.Contains(msgs[1].Content, "<past_turn") {
+		t.Error("新设计不应再出现<current>/<past_turn>标签")
 	}
 }
 
@@ -737,4 +755,53 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 			t.Errorf("end_combat+response应放行,got reject: %s", reject)
 		}
 	})
+}
+
+// TestBuildKPHeadScenarioNPCRenderingIsDeterministic 验证<scenario>里NPC属性/技能的
+// 渲染在多次调用之间字节完全一致。NPCData.Stats/Skills都是map[string]int，Go的map遍历
+// 顺序是随机的，如果不排序key直接遍历，同一份剧本数据在同一局游戏的不同轮次里，第2条
+// (scenario)消息的字节可能不同，会打断prompt cache的前缀匹配——这个问题独立于是否发生trim。
+func TestBuildKPHeadScenarioNPCRenderingIsDeterministic(t *testing.T) {
+	content := models.ScenarioContent{
+		NPCs: []models.NPCData{
+			{
+				Name:        "旅店老板",
+				Description: "沉默寡言的中年男人",
+				Attitude:    "警惕",
+				Stats: map[string]int{
+					"STR": 50, "CON": 60, "SIZ": 55, "DEX": 45, "APP": 40,
+				},
+				Skills: map[string]int{
+					"侦查": 40, "话术": 35, "图书馆使用": 20, "聆听": 50, "潜行": 30,
+				},
+			},
+		},
+	}
+	gctx := GameContext{
+		Session: models.GameSession{
+			Scenario: models.Scenario{
+				Name:    "测试剧本",
+				Content: models.JSONField[models.ScenarioContent]{Data: content},
+			},
+		},
+	}
+
+	var first string
+	for i := 0; i < 20; i++ {
+		msgs := buildKPHead(gctx, "system")
+		if len(msgs) < 2 {
+			t.Fatalf("buildKPHead应至少返回system+scenario两条消息,got %d", len(msgs))
+		}
+		scenario := msgs[1].Content
+		if i == 0 {
+			first = scenario
+			if !strings.Contains(first, "STR: 50") || !strings.Contains(first, "侦查: 40") {
+				t.Fatalf("scenario消息应包含NPC属性/技能文本,got %q", first)
+			}
+			continue
+		}
+		if scenario != first {
+			t.Fatalf("第%d次调用的scenario消息与第1次不一致(NPC属性/技能渲染非确定性)\n第1次:%q\n第%d次:%q", i+1, first, i+1, scenario)
+		}
+	}
 }

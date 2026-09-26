@@ -558,14 +558,14 @@
                 <!-- LLM call latency stats -->
                 <div class="card rounded p-5 max-w-xl">
                     <div class="flex items-center justify-between mb-2">
-                        <h3 class="font-bold text-amber-300 text-sm font-ui">LLM 调用延迟</h3>
+                        <h3 class="font-bold text-amber-300 text-sm font-ui">LLM 调用统计</h3>
                         <div class="flex gap-2">
                             <button @click="loadLlmStats()" class="btn btn-ghost text-xs">刷新</button>
                             <button @click="resetLlmStats()" class="btn btn-red text-xs">清空统计</button>
                         </div>
                     </div>
                     <p class="text-xs mb-3 font-ui" style="color:#6a6152">持续累积的历史平均值，按调用方角色/模型聚合；与上方 Provider
-                        连通性测试返回的单次探活延迟是两回事。</p>
+                        连通性测试返回的单次探活延迟是两回事。缓存命中率 = cache_read_tokens / prompt_tokens。</p>
                     <div x-show="!llmStats" class="text-amber-900 text-sm font-ui">加载中…</div>
                     <div x-show="llmStats" class="space-y-3">
                         <div class="grid grid-cols-4 gap-2">
@@ -586,13 +586,17 @@
                                 <div class="text-[10px] mt-0.5 font-ui text-dim">错误数</div>
                             </div>
                         </div>
+                        <div class="rounded p-2 text-center" style="background:#141210; border:1px solid #252018">
+                            <div class="text-lg font-bold text-amber-200 font-ui" x-text="((llmStats?.overall?.cache_hit_rate ?? 0) * 100).toFixed(1) + '%'"></div>
+                            <div class="text-[10px] mt-0.5 font-ui text-dim">整体缓存命中率</div>
+                        </div>
                         <div x-show="llmStats?.by_role?.length" class="pt-2 border-t border-base">
                             <div class="text-[10px] font-bold text-amber-700 mb-1 uppercase tracking-wider font-ui">按角色</div>
                             <div class="space-y-1">
                                 <template x-for="line in (llmStats?.by_role ?? [])" :key="'role-'+line.key">
                                     <div class="flex items-center justify-between text-xs font-ui" style="color:#b0a080">
                                         <span x-text="line.key"></span>
-                                        <span x-text="line.count + ' 次 · 均值 ' + line.avg_ms.toFixed(0) + 'ms · 最大 ' + line.max_ms + 'ms' + (line.err_count ? ' · 错误 ' + line.err_count : '')"></span>
+                                        <span x-text="line.count + ' 次 · 均值 ' + line.avg_ms.toFixed(0) + 'ms · 最大 ' + line.max_ms + 'ms' + (line.err_count ? ' · 错误 ' + line.err_count : '') + ' · 缓存命中 ' + (line.cache_hit_rate * 100).toFixed(1) + '%'"></span>
                                     </div>
                                 </template>
                             </div>
@@ -603,11 +607,45 @@
                                 <template x-for="line in (llmStats?.by_model ?? [])" :key="'model-'+line.key">
                                     <div class="flex items-center justify-between text-xs font-ui" style="color:#b0a080">
                                         <span x-text="line.key"></span>
-                                        <span x-text="line.count + ' 次 · 均值 ' + line.avg_ms.toFixed(0) + 'ms · 最大 ' + line.max_ms + 'ms' + (line.err_count ? ' · 错误 ' + line.err_count : '')"></span>
+                                        <span x-text="line.count + ' 次 · 均值 ' + line.avg_ms.toFixed(0) + 'ms · 最大 ' + line.max_ms + 'ms' + (line.err_count ? ' · 错误 ' + line.err_count : '') + ' · 缓存命中 ' + (line.cache_hit_rate * 100).toFixed(1) + '%'"></span>
                                     </div>
                                 </template>
                             </div>
                         </div>
+                    </div>
+                </div>
+                <!-- Per-session context/transcript inspector -->
+                <div class="card rounded p-5 max-w-xl">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="font-bold text-amber-300 text-sm font-ui">会话上下文</h3>
+                    </div>
+                    <p class="text-xs mb-3 font-ui" style="color:#6a6152">按会话ID查看每个agent(director/writer/dramaturg/npc:*)已提交的历史轮数、估算字符数与最近若干轮的缓存命中统计，用于核对某个具体会话的prompt
+                        cache前缀是否稳定命中。</p>
+                    <div class="flex gap-2 mb-3">
+                        <input type="text" x-model="sessionContextId" @keydown.enter="loadSessionContext()" placeholder="会话ID"
+                            class="inp flex-1 text-sm">
+                        <button @click="loadSessionContext()" class="btn btn-ghost text-xs" :disabled="sessionContextLoading">查询</button>
+                    </div>
+                    <div x-show="sessionContextLoading" class="text-amber-900 text-sm font-ui">查询中…</div>
+                    <div x-show="!sessionContextLoading && sessionContext && sessionContext.agents.length === 0" class="text-amber-900 text-sm font-ui">
+                        该会话暂无已持久化的上下文记录</div>
+                    <div x-show="!sessionContextLoading && sessionContext && sessionContext.agents.length > 0" class="space-y-3">
+                        <template x-for="agent in (sessionContext?.agents ?? [])" :key="agent.agent_key">
+                            <div class="rounded p-2" style="background:#141210; border:1px solid #252018">
+                                <div class="flex items-center justify-between text-xs font-ui mb-1">
+                                    <span class="font-bold text-amber-200" x-text="agent.agent_key"></span>
+                                    <span style="color:#b0a080" x-text="agent.turns + ' 轮 · next_seq=' + agent.next_seq + ' · 约 ' + agent.estimated_runes + ' 字符'"></span>
+                                </div>
+                                <div class="space-y-0.5">
+                                    <template x-for="stat in (agent.recent_stats ?? []).slice().reverse()" :key="agent.agent_key + '-' + stat.seq">
+                                        <div class="flex items-center justify-between text-[11px] font-ui" style="color:#8a7f6a">
+                                            <span x-text="'seq=' + stat.seq + ' round=' + stat.round"></span>
+                                            <span x-text="stat.calls + '次 · prompt ' + stat.prompt_tokens + ' · 命中 ' + (stat.prompt_tokens > 0 ? (stat.cache_read_tokens / stat.prompt_tokens * 100).toFixed(1) : '0.0') + '%' + (stat.trimmed_turns ? ' · trim ' + stat.trimmed_turns : '')"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
                     </div>
                 </div>
                 <!-- Cache key list & single-entry delete -->

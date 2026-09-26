@@ -57,7 +57,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 		growthResult, _ = RunGrowth(ctx, session, messages)
 
 		// NOTE: win=true：对每个存活角色执行背景演变（writer agent，best-effort）。
-		writerHistory := session.WriterHistory.Data // []models.ChatMsg
+		writerHistory := loadWriterTranscriptHistory(session.ID) // []models.ChatMsg
 		for i := range session.Players {
 			card := &session.Players[i].CharacterCard
 			if card.WoundState == "dead" || card.Stats.Data.HP <= 0 {

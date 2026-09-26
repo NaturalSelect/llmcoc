@@ -99,7 +99,7 @@ func TestActNPCActionNSFWRouting(t *testing.T) {
 
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			npcName := fmt.Sprintf("线人%d", i) // 避免npcAgentStates跨用例共享同一key
+			npcName := fmt.Sprintf("线人%d", i) // 避免不同用例共享同一个AgentTranscript(npc:<name>)key
 			tempNPCs := []models.SessionNPC{{Name: npcName, Description: "一个线人", IsAlive: true}}
 
 			defaultProv := &sequentialFakeProvider{jsonResponses: []string{`{"action":"保持警惕","dialogue":"你想干什么？"}`}}

@@ -185,3 +185,58 @@ func TestPersistAndLoadStatsRoundTrip(t *testing.T) {
 		t.Fatalf("db row count after second persist = %d, want 1 (upsert not insert)", count)
 	}
 }
+
+func TestRecordUsageAggregatesAndComputesHitRate(t *testing.T) {
+	resetStatsForTest()
+	recordLatency("director", "claude", "chat", 100*time.Millisecond, nil)
+	recordUsage("director", "claude", "chat", Usage{PromptTokens: 1000, CacheReadTokens: 900, OutputTokens: 50})
+	recordLatency("director", "claude", "chat", 100*time.Millisecond, nil)
+	recordUsage("director", "claude", "chat", Usage{PromptTokens: 1100, CacheReadTokens: 950, CacheCreationTokens: 100, OutputTokens: 60})
+
+	got := Stats()
+	if got.Overall.PromptTokens != 2100 {
+		t.Fatalf("overall prompt tokens = %d, want 2100", got.Overall.PromptTokens)
+	}
+	if got.Overall.CacheReadTokens != 1850 {
+		t.Fatalf("overall cache read tokens = %d, want 1850", got.Overall.CacheReadTokens)
+	}
+	if got.Overall.CacheCreationTokens != 100 {
+		t.Fatalf("overall cache creation tokens = %d, want 100", got.Overall.CacheCreationTokens)
+	}
+	if got.Overall.OutputTokens != 110 {
+		t.Fatalf("overall output tokens = %d, want 110", got.Overall.OutputTokens)
+	}
+	wantHitRate := 1850.0 / 2100.0
+	if diff := got.Overall.CacheHitRate - wantHitRate; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("overall cache hit rate = %v, want %v", got.Overall.CacheHitRate, wantHitRate)
+	}
+}
+
+func TestRecordUsageWithoutPromptTokensHasZeroHitRate(t *testing.T) {
+	resetStatsForTest()
+	recordLatency("writer", "gpt-4o", "chat", 10*time.Millisecond, nil)
+	// 网关未返回usage时Usage为零值,不应产生除零或非零命中率。
+	recordUsage("writer", "gpt-4o", "chat", Usage{})
+
+	got := Stats()
+	if got.Overall.CacheHitRate != 0 {
+		t.Fatalf("cache hit rate with zero usage = %v, want 0", got.Overall.CacheHitRate)
+	}
+}
+
+func TestPersistAndLoadStatsRoundTripIncludesUsage(t *testing.T) {
+	initLLMTestDB(t)
+	resetStatsForTest()
+	recordLatency("director", "claude", "chat", 100*time.Millisecond, nil)
+	recordUsage("director", "claude", "chat", Usage{PromptTokens: 500, CacheReadTokens: 400, CacheCreationTokens: 20, OutputTokens: 30})
+	persistStats()
+
+	resetStatsForTest()
+	LoadStats()
+
+	got := Stats()
+	if got.Overall.PromptTokens != 500 || got.Overall.CacheReadTokens != 400 ||
+		got.Overall.CacheCreationTokens != 20 || got.Overall.OutputTokens != 30 {
+		t.Fatalf("usage after LoadStats = %+v, want prompt=500 cache_read=400 cache_creation=20 output=30", got.Overall)
+	}
+}

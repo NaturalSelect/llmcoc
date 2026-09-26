@@ -162,11 +162,19 @@ func anthropicEffortFromLevel(level string) (anthropic.Effort, bool) {
 	}
 }
 
-// toPrompt 把统一的 []ChatMessage 转换为 fantasy.Prompt。tool role 消息不在这里合并——
-// fantasy 的 Anthropic 实现会用 groupIntoBlocks 把连续的 user/tool 消息自动分组进同一条
-// Anthropic user 消息，效果与旧 toAnthropicRequest 手动合并一致。
-func (p *fantasyProvider) toPrompt(messages []ChatMessage) fantasy.Prompt {
+// toPrompt 把统一的 []ChatMessage 转换为 fantasy.Prompt，并额外返回输入消息里标记了
+// CacheBreakpoint 的消息在输出 prompt 中的下标(过滤掉空内容被跳过的消息后的真实下标)，
+// 供 applyCacheBreakpoints 在这些位置打显式断点。tool role 消息不在这里合并——fantasy 的
+// Anthropic 实现会用 groupIntoBlocks 把连续的 user/tool 消息自动分组进同一条 Anthropic
+// user 消息，效果与旧 toAnthropicRequest 手动合并一致。
+func (p *fantasyProvider) toPrompt(messages []ChatMessage) (fantasy.Prompt, []int) {
 	prompt := make(fantasy.Prompt, 0, len(messages))
+	var explicitBreaks []int
+	markIfBreakpoint := func(m ChatMessage) {
+		if m.CacheBreakpoint {
+			explicitBreaks = append(explicitBreaks, len(prompt)-1)
+		}
+	}
 	for _, m := range messages {
 		switch m.Role {
 		case "system":
@@ -178,6 +186,7 @@ func (p *fantasyProvider) toPrompt(messages []ChatMessage) fantasy.Prompt {
 				Role:    fantasy.MessageRoleSystem,
 				Content: []fantasy.MessagePart{fantasy.TextPart{Text: text}},
 			})
+			markIfBreakpoint(m)
 
 		case "user":
 			text := strings.TrimSpace(m.Content)
@@ -188,6 +197,7 @@ func (p *fantasyProvider) toPrompt(messages []ChatMessage) fantasy.Prompt {
 				Role:    fantasy.MessageRoleUser,
 				Content: []fantasy.MessagePart{fantasy.TextPart{Text: text}},
 			})
+			markIfBreakpoint(m)
 
 		case "assistant":
 			parts := make([]fantasy.MessagePart, 0, len(m.ReasoningBlocks)+1+len(m.ToolCalls))
@@ -229,6 +239,7 @@ func (p *fantasyProvider) toPrompt(messages []ChatMessage) fantasy.Prompt {
 				continue
 			}
 			prompt = append(prompt, fantasy.Message{Role: fantasy.MessageRoleAssistant, Content: parts})
+			markIfBreakpoint(m)
 
 		case "tool":
 			prompt = append(prompt, fantasy.Message{
@@ -238,9 +249,10 @@ func (p *fantasyProvider) toPrompt(messages []ChatMessage) fantasy.Prompt {
 					Output:     fantasy.ToolResultOutputContentText{Text: m.Content},
 				}},
 			})
+			markIfBreakpoint(m)
 		}
 	}
-	return prompt
+	return prompt, explicitBreaks
 }
 
 // toolCallInputJSON 把工具调用的原始 JSON 参数文本转换为 fantasy ToolCallPart.Input 需要的
@@ -300,12 +312,17 @@ func anthropicCacheControlOptions() fantasy.ProviderOptions {
 	})
 }
 
-// applyCacheBreakpoints 在 system 最后一条消息、tools 最后一个、以及 prompt 末尾最多两个
-// "连续 user/tool 消息段"各自的最后一条消息上打 cache_control 断点，合计最多 4 个——这是
-// Anthropic 单次请求 cache breakpoint 的上限。fantasy 会把连续的 user/tool 消息自动分组成
-// 一条 Anthropic user 消息(groupIntoBlocks)，所以这里按"下一条是否仍是 user/tool"判断
-// 一条消息是否是其所在分组的最后一条，等价于旧实现按"合并后的 Anthropic 消息列表"定位。
-func applyCacheBreakpoints(prompt fantasy.Prompt, tools []fantasy.Tool) {
+// applyCacheBreakpoints 在 Anthropic 请求上标注 cache_control 断点(最多 4 个，Anthropic
+// 单次请求上限)。调用方(通过 ChatMessage.CacheBreakpoint，见 toPrompt)显式标记了断点
+// 位置时——用于 ContextManager 这类需要跨调用保持前缀字节稳定的场景——只在 system 最后
+// 一条、显式标记(最多取最后 2 个)、以及 prompt 末尾一条上打点，tools 不再单独打点
+// (system 断点已覆盖 tools：Anthropic 的请求前缀顺序是 tools→system→messages)。没有
+// 显式标记时(Scripter/Lawyer 等一次性多轮工具循环的旧调用方式)保持原有启发式：system
+// 最后一条+tools 最后一个+prompt 末尾最多两个"连续 user/tool 消息段"各自的最后一条，
+// 行为不变。fantasy 会把连续的 user/tool 消息自动分组成一条 Anthropic user 消息
+// (groupIntoBlocks)，所以启发式分支里按"下一条是否仍是 user/tool"判断一条消息是否是
+// 其所在分组的最后一条，等价于旧实现按"合并后的 Anthropic 消息列表"定位。
+func applyCacheBreakpoints(prompt fantasy.Prompt, tools []fantasy.Tool, explicitBreaks []int) {
 	lastSystem := -1
 	for i, m := range prompt {
 		if m.Role == fantasy.MessageRoleSystem {
@@ -314,6 +331,22 @@ func applyCacheBreakpoints(prompt fantasy.Prompt, tools []fantasy.Tool) {
 	}
 	if lastSystem >= 0 {
 		prompt[lastSystem].ProviderOptions = anthropicCacheControlOptions()
+	}
+
+	if len(explicitBreaks) > 0 {
+		start := 0
+		if len(explicitBreaks) > 2 {
+			start = len(explicitBreaks) - 2
+		}
+		for _, idx := range explicitBreaks[start:] {
+			if idx >= 0 && idx < len(prompt) {
+				prompt[idx].ProviderOptions = anthropicCacheControlOptions()
+			}
+		}
+		if last := len(prompt) - 1; last >= 0 {
+			prompt[last].ProviderOptions = anthropicCacheControlOptions()
+		}
+		return
 	}
 
 	if len(tools) > 0 {
@@ -396,7 +429,7 @@ func (p *fantasyProvider) buildProviderOptions(ctx context.Context, cacheKey str
 // buildCall 组装一次完整的 fantasy.Call。thinking 开启时(仅 Anthropic)跳过 Temperature——
 // Anthropic 扩展思考与自定义 temperature 互斥，开启思考后传 temperature 会被 API 拒绝。
 func (p *fantasyProvider) buildCall(ctx context.Context, cacheKey string, messages []ChatMessage, jsonMode bool, tools []ToolDefinition) fantasy.Call {
-	prompt := p.toPrompt(messages)
+	prompt, explicitBreaks := p.toPrompt(messages)
 	fantasyTools := toFantasyTools(tools)
 
 	thinkingActive := false
@@ -404,7 +437,7 @@ func (p *fantasyProvider) buildCall(ctx context.Context, cacheKey string, messag
 		if _, ok := anthropicEffortFromLevel(p.reasoningEffort); ok {
 			thinkingActive = true
 		}
-		applyCacheBreakpoints(prompt, fantasyTools)
+		applyCacheBreakpoints(prompt, fantasyTools, explicitBreaks)
 	}
 
 	maxTokens := int64(p.maxTokens)
@@ -592,6 +625,11 @@ func (p *fantasyProvider) chat(ctx context.Context, cacheKey string, messages []
 		log.Debug("llm reasoning", "session", sessionIDFromContext(ctx), "model", p.model,
 			"len", len([]rune(res.reasoning)), "reasoning", truncateForLog(res.reasoning, 2000))
 	}
+	recordUsage(role, p.model, "chat", res.usage)
+	logUsage(role, p.model, res.usage)
+	if sink := usageSinkFromContext(ctx); sink != nil {
+		sink(res.usage)
+	}
 	log.Debug("chat done", "role", role, "model", p.model, "elapsed_ms", float64(time.Since(start).Microseconds())/1000,
 		"response_len", len([]rune(res.content)), "tool_calls", len(res.toolCalls), "finish_reason", res.finishReason, "usage", res.usage)
 	return res.content, res.reasoning, res.blocks, res.toolCalls, res.usage, nil
@@ -724,6 +762,13 @@ func (p *fantasyProvider) ChatStream(ctx context.Context, cacheKey string, messa
 				recordLatency(role, p.model, "stream", time.Since(start), part.Error)
 				errCh <- fmt.Errorf("LLM chat stream receive error: %w", part.Error)
 				return true
+			case fantasy.StreamPartTypeFinish:
+				usage := usageFromFantasy(part.Usage)
+				recordUsage(role, p.model, "stream", usage)
+				logUsage(role, p.model, usage)
+				if sink := usageSinkFromContext(ctx); sink != nil {
+					sink(usage)
+				}
 			}
 			return false
 		}

@@ -41,12 +41,16 @@ type statKey struct {
 }
 
 // statEntry 用 Count+SumMs 累积而非浮点滑动平均，避免精度随调用次数增长而漂移；
-// 平均值在读取时用 SumMs/Count 现算。
+// 平均值在读取时用 SumMs/Count 现算。token 用量同理用总量累积，命中率读取时现算。
 type statEntry struct {
-	Count    int64
-	SumMs    int64
-	ErrCount int64
-	MaxMs    int64
+	Count               int64
+	SumMs               int64
+	ErrCount            int64
+	MaxMs               int64
+	PromptTokens        int64
+	OutputTokens        int64
+	CacheReadTokens     int64
+	CacheCreationTokens int64
 }
 
 func (e *statEntry) merge(o *statEntry) {
@@ -56,6 +60,10 @@ func (e *statEntry) merge(o *statEntry) {
 	if o.MaxMs > e.MaxMs {
 		e.MaxMs = o.MaxMs
 	}
+	e.PromptTokens += o.PromptTokens
+	e.OutputTokens += o.OutputTokens
+	e.CacheReadTokens += o.CacheReadTokens
+	e.CacheCreationTokens += o.CacheCreationTokens
 }
 
 // maxStatKeys 是内存中允许存在的 (role,model,method) 组合数上限；超出后新 key 一律
@@ -90,16 +98,7 @@ func recordLatency(role, model, method string, elapsed time.Duration, err error)
 	statsMu.Lock()
 	defer statsMu.Unlock()
 
-	key := statKey{Role: role, Model: model, Method: method}
-	e, ok := statsEntries[key]
-	if !ok && len(statsEntries) >= maxStatKeys {
-		key = statKey{Role: "other", Model: model, Method: method}
-		e, ok = statsEntries[key]
-	}
-	if !ok {
-		e = &statEntry{}
-		statsEntries[key] = e
-	}
+	e := statEntryFor(role, model, method)
 	e.Count++
 	e.SumMs += ms
 	if ms > e.MaxMs {
@@ -110,13 +109,61 @@ func recordLatency(role, model, method string, elapsed time.Duration, err error)
 	}
 }
 
+// statEntryFor 按(role,model,method)取或创建统计条目；调用方必须已持有 statsMu。
+func statEntryFor(role, model, method string) *statEntry {
+	key := statKey{Role: role, Model: model, Method: method}
+	e, ok := statsEntries[key]
+	if !ok && len(statsEntries) >= maxStatKeys {
+		key = statKey{Role: "other", Model: model, Method: method}
+		e, ok = statsEntries[key]
+	}
+	if !ok {
+		e = &statEntry{}
+		statsEntries[key] = e
+	}
+	return e
+}
+
+// recordUsage 记录一次实际模型往返的 token 用量，和 recordLatency 共享(role,model,method)
+// 维度；只在调用成功、拿到网关返回的 usage 时调用。
+func recordUsage(role, model, method string, u Usage) {
+	statsMu.Lock()
+	defer statsMu.Unlock()
+
+	e := statEntryFor(role, model, method)
+	e.PromptTokens += u.PromptTokens
+	e.OutputTokens += u.OutputTokens
+	e.CacheReadTokens += u.CacheReadTokens
+	e.CacheCreationTokens += u.CacheCreationTokens
+}
+
+// logUsage 打一条结构化日志记录本次调用的 token 用量与缓存命中率，供人工核对
+// ContextManager 的前缀稳定性设计是否在实际调用中生效(见 director_history.go/
+// context_transcript.go 的设计说明)。hit_rate = cache_read_tokens / prompt_tokens。
+func logUsage(role, model string, u Usage) {
+	hitRate := 0.0
+	if u.PromptTokens > 0 {
+		hitRate = float64(u.CacheReadTokens) / float64(u.PromptTokens)
+	}
+	log.Info("llm usage", "role", role, "model", model,
+		"prompt_tokens", u.PromptTokens, "cache_read_tokens", u.CacheReadTokens,
+		"cache_creation_tokens", u.CacheCreationTokens, "output_tokens", u.OutputTokens,
+		"hit_rate", hitRate)
+}
+
 // StatLine 是单个聚合维度（整体/按角色/按模型）的延迟统计快照。
 type StatLine struct {
-	Key      string  `json:"key"`
-	Count    int64   `json:"count"`
-	AvgMs    float64 `json:"avg_ms"`
-	MaxMs    int64   `json:"max_ms"`
-	ErrCount int64   `json:"err_count"`
+	Key                 string  `json:"key"`
+	Count               int64   `json:"count"`
+	AvgMs               float64 `json:"avg_ms"`
+	MaxMs               int64   `json:"max_ms"`
+	ErrCount            int64   `json:"err_count"`
+	PromptTokens        int64   `json:"prompt_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	// CacheHitRate = CacheReadTokens / PromptTokens，PromptTokens 为 0 时为 0。
+	CacheHitRate float64 `json:"cache_hit_rate"`
 }
 
 // StatsResult 是延迟统计的完整快照，供 admin API 直接序列化返回。
@@ -131,7 +178,16 @@ func toLine(key string, e *statEntry) StatLine {
 	if e.Count > 0 {
 		avg = float64(e.SumMs) / float64(e.Count)
 	}
-	return StatLine{Key: key, Count: e.Count, AvgMs: avg, MaxMs: e.MaxMs, ErrCount: e.ErrCount}
+	hitRate := 0.0
+	if e.PromptTokens > 0 {
+		hitRate = float64(e.CacheReadTokens) / float64(e.PromptTokens)
+	}
+	return StatLine{
+		Key: key, Count: e.Count, AvgMs: avg, MaxMs: e.MaxMs, ErrCount: e.ErrCount,
+		PromptTokens: e.PromptTokens, OutputTokens: e.OutputTokens,
+		CacheReadTokens: e.CacheReadTokens, CacheCreationTokens: e.CacheCreationTokens,
+		CacheHitRate: hitRate,
+	}
 }
 
 // Stats 返回当前延迟统计快照：整体聚合，以及按角色、按模型拆分的聚合（按调用次数降序）。
@@ -197,6 +253,8 @@ func LoadStats() {
 	for _, r := range rows {
 		statsEntries[statKey{Role: r.Role, Model: r.Model, Method: r.Method}] = &statEntry{
 			Count: r.Count, SumMs: r.SumMs, ErrCount: r.ErrCount, MaxMs: r.MaxMs,
+			PromptTokens: r.PromptTokens, OutputTokens: r.OutputTokens,
+			CacheReadTokens: r.CacheReadTokens, CacheCreationTokens: r.CacheCreationTokens,
 		}
 	}
 	statsMu.Unlock()
@@ -241,6 +299,8 @@ func persistStats() {
 		err := models.DB.Where(models.LLMLatencyStat{Role: k.Role, Model: k.Model, Method: k.Method}).
 			Assign(models.LLMLatencyStat{
 				Count: e.Count, SumMs: e.SumMs, ErrCount: e.ErrCount, MaxMs: e.MaxMs, SavedAt: time.Now(),
+				PromptTokens: e.PromptTokens, OutputTokens: e.OutputTokens,
+				CacheReadTokens: e.CacheReadTokens, CacheCreationTokens: e.CacheCreationTokens,
 			}).
 			FirstOrCreate(&models.LLMLatencyStat{}).Error
 		if err != nil {

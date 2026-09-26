@@ -232,7 +232,9 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 		{Role: "system", Content: h.systemPrompt(imagePromptCharacterVisualSystemPrompt)},
 		{Role: "user", Content: buildImagePromptCharacterVisualUserPrompt(scenePrompt, cards)},
 	}
-	resp, err := h.provider.Chat(ctx, sessionID+":"+string(models.AgentRoleWriter), msgs)
+	// NOTE: 独立缓存key(sessionID:painter),不再借用Writer的"sessionID:writer",避免
+	// 两个agent的prompt cache互相污染彼此的前缀。
+	resp, err := h.provider.Chat(ctx, sessionID+":painter", msgs)
 	if err != nil {
 		return "", err
 	}

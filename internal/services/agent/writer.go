@@ -50,7 +50,8 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 `
 
 // writerNSFWPromptSuffix 只在实际路由到 NSFW Writer 时追加;共享规则仍来自
-// writerDefaultPrompt,避免两份提示词各自漂移。
+// writerDefaultPrompt,避免两份提示词各自漂移。拼进本轮user消息尾部(而不是system),
+// 保证system prompt跨轮字节不变,prompt cache前缀才能稳定命中。
 const writerNSFWPromptSuffix = `<explicit_scene_requirements>
 	<rule>本段被导演标记为色情/性描写场景,必须正面完整描写,禁止淡出、跳过、省略过程或用一句概括带过。</rule>
 	<rule>使用具体直接的语言写动作、姿态、触感、声音、气味与情绪反应,按时间顺序推进,不要只铺氛围。</rule>
@@ -60,6 +61,11 @@ const writerNSFWPromptSuffix = `<explicit_scene_requirements>
 	<rule>本段结束时同样要停在玩家可选择的位置。</rule>
 </explicit_scene_requirements>
 `
+
+// writerAgentKey 是Writer在AgentTranscript表里的agent_key。NSFW Writer与默认Writer
+// 共用同一条历史线(路由只影响本次调用用哪个provider,不影响历史归属),与旧版
+// GameSession.WriterHistory不区分NSFW/非NSFW的行为一致。
+const writerAgentKey = "writer"
 
 func writerLock(sessionID uint) *sync.Mutex {
 	lock, _ := writerSessionLocks.LoadOrStore(sessionID, &sync.Mutex{})
@@ -91,7 +97,6 @@ func RunWriter(ctx context.Context, gctx GameContext, direction string, nsfw boo
 	if err := appendWriter(ctx, writerHandle, state, direction, gctx, nsfwMode); err != nil {
 		return "", err
 	}
-	saveWriterHistory(gctx.Session.ID, state)
 	return state.Buffer, nil
 }
 
@@ -108,9 +113,6 @@ func RunWriterStream(ctx context.Context, gctx GameContext, direction string, ns
 	}
 
 	err = appendWriterStream(ctx, writerHandle, state, direction, gctx, nsfwMode, onToken)
-	if err == nil {
-		saveWriterHistory(gctx.Session.ID, state)
-	}
 	return state.Buffer, err
 }
 
@@ -139,14 +141,44 @@ func loadWriterState(gctx GameContext, nsfw bool) (agentHandle, bool, *WriterSta
 		return agentHandle{}, false, nil, err
 	}
 
-	state := &WriterState{}
+	// NOTE: writer_history_max_runes 从 SiteSetting 读取，管理员可在后台调整 Writer 历史缓存上限。
+	maxRunes := siteSettingInt("writer_history_max_runes", 20000)
+	head := buildWriterHead(writerHandle, gctx)
+	cm := LoadContext(gctx.Session.ID, writerAgentKey, head, ContextOptions{RuneBudget: int64(maxRunes)})
+	// 老会话transcript为空但GameSession.WriterHistory列有旧数据时，把旧的扁平历史当作
+	// seq=0的一轮种子先提交进去，只执行一次，之后像普通历史轮一样被trim掉。
+	if cm.IsEmpty() {
+		if legacy := loadLegacyWriterHistory(gctx); len(legacy) > 0 {
+			cm.Commit(0, legacy)
+		}
+	}
+	return writerHandle, nsfwMode, &WriterState{cm: cm}, nil
+}
+
+// loadLegacyWriterHistory 读取旧版按GameSession.WriterHistory整段存的历史，供
+// ContextManager为空时做一次性迁移种子；查库失败时回落gctx自带的快照。
+func loadLegacyWriterHistory(gctx GameContext) []llm.ChatMessage {
 	var session models.GameSession
 	if err := models.DB.Select("id", "writer_history").First(&session, gctx.Session.ID).Error; err == nil {
-		state.History = chatMsgsToLLM(session.WriterHistory.Data)
-	} else {
-		state.History = chatMsgsToLLM(gctx.Session.WriterHistory.Data)
+		return chatMsgsToLLM(session.WriterHistory.Data)
 	}
-	return writerHandle, nsfwMode, state, nil
+	return chatMsgsToLLM(gctx.Session.WriterHistory.Data)
+}
+
+// loadWriterTranscriptHistory 读取AgentTranscript(writer)里已提交的全部历史轮，展平成
+// 供角色成长(RunCharacterEvolution)复用的[]models.ChatMsg；找不到记录时(如老会话结束
+// 前从未触发过Writer)回落旧的GameSession.WriterHistory列，兼容还没迁移过的数据。
+func loadWriterTranscriptHistory(sessionID uint) []models.ChatMsg {
+	var rec models.AgentTranscript
+	if err := models.DB.Where("session_id = ? AND agent_key = ?", sessionID, writerAgentKey).
+		First(&rec).Error; err == nil && rec.Version == contextTranscriptVersion && len(rec.Data.Data.Turns) > 0 {
+		return llmToChatMsgs(flattenTranscriptTurns(rec.Data.Data.Turns))
+	}
+	var session models.GameSession
+	if err := models.DB.Select("id", "writer_history").First(&session, sessionID).Error; err == nil {
+		return session.WriterHistory.Data
+	}
+	return nil
 }
 
 // writerRefusalPrefixes 命中其中任一前缀视为模型拒绝生成正文,与空内容一样需要丢弃重试。
@@ -194,8 +226,13 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	if !h.isEnabled() {
 		return fmt.Errorf("writer agent 未配置或未启用")
 	}
-	msgs, direction := buildWriterMessages(h, state, direction, gctx, nsfwMode)
+	opening, direction := buildWriterOpening(direction, gctx, nsfwMode)
+	msgs := state.cm.Build(opening)
+	debugf("Writer", "direction=%s msgs=%d nsfw=%v", direction, len(msgs), nsfwMode)
 	cacheKey := h.cacheKey(fmt.Sprintf("%v", gctx.Session.ID))
+	// NOTE: Writer走Chat,拿不到返回值里的Usage;通过WithUsageSink把usage送进cm,
+	// 既用于会话上下文后台展示的逐轮缓存统计，也让cm感知超阈值需要trim时同步更新msgs。
+	ctx = llm.WithUsageSink(ctx, func(u llm.Usage) { msgs = state.cm.Observe(u, msgs) })
 
 	var resp string
 	for attempt := 1; attempt <= writerMaxGenerateAttempts; attempt++ {
@@ -214,7 +251,7 @@ func appendWriter(ctx context.Context, h agentHandle, state *WriterState, direct
 	}
 
 	debugf("Writer", "response len=%d preview=%s", len([]rune(resp)), resp)
-	appendWriterResponse(state, direction, resp, true)
+	appendWriterResponse(state, gctx, msgs, resp, true)
 	return nil
 }
 
@@ -225,8 +262,11 @@ func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, 
 	if !h.isEnabled() {
 		return fmt.Errorf("writer agent 未配置或未启用")
 	}
-	msgs, direction := buildWriterMessages(h, state, direction, gctx, nsfwMode)
+	opening, direction := buildWriterOpening(direction, gctx, nsfwMode)
+	msgs := state.cm.Build(opening)
+	debugf("Writer", "direction=%s msgs=%d nsfw=%v", direction, len(msgs), nsfwMode)
 	cacheKey := h.cacheKey(fmt.Sprintf("%v", gctx.Session.ID))
+	ctx = llm.WithUsageSink(ctx, func(u llm.Usage) { msgs = state.cm.Observe(u, msgs) })
 
 	var text string
 	for attempt := 1; attempt <= writerMaxGenerateAttempts; attempt++ {
@@ -234,12 +274,12 @@ func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, 
 		text, err = streamWriterOnce(ctx, h, cacheKey, msgs, onToken)
 		if err != nil {
 			// 传输层错误：把已流出的部分正文写入缓冲(不进history),再把错误返回给上层。
-			appendWriterResponse(state, direction, text, false)
+			appendWriterResponse(state, gctx, msgs, text, false)
 			return err
 		}
 		if !isWriterResponseRejected(text) {
 			debugf("Writer", "stream response len=%d preview=%s", len([]rune(text)), text)
-			appendWriterResponse(state, direction, text, true)
+			appendWriterResponse(state, gctx, msgs, text, true)
 			return nil
 		}
 		debugf("Writer", "stream response rejected attempt=%d/%d preview=%s", attempt, writerMaxGenerateAttempts, truncateRunes(text, 100))
@@ -353,21 +393,27 @@ func siteSettingInt(key string, fallback int) int {
 	return v
 }
 
-func buildWriterMessages(h agentHandle, state *WriterState, direction string, gctx GameContext, nsfwMode bool) ([]llm.ChatMessage, string) {
+// buildWriterHead 构造Writer本次调用固定不变的前缀:仅system prompt。NSFW专属的
+// explicit_scene_requirements 不再拼进本函数,而是在buildWriterOpening中拼进本轮
+// user消息尾部——这样system prompt在本会话内(EnableNSFW不变)始终字节相同,prompt
+// cache前缀才能跨轮稳定命中。
+func buildWriterHead(h agentHandle, gctx GameContext) []llm.ChatMessage {
+	prompt := renderNSFW(writerDefaultPrompt, gctx.Session.EnableNSFW)
+	return []llm.ChatMessage{{
+		Role:    "system",
+		Content: h.systemPrompt(prompt),
+	}}
+}
+
+// buildWriterOpening 组装本轮发给Writer的唯一一条user消息:人物卡、导演指令与续写
+// 要求;nsfwMode为true时在尾部追加色情场景写作要求。发送版即归档版,不再有另外一份
+// 归档内容。
+func buildWriterOpening(direction string, gctx GameContext, nsfwMode bool) (llm.ChatMessage, string) {
 	if direction == "" {
 		direction = "继续描述当前场景"
 	}
 
-	debugf("Writer", "direction=%s history_msgs=%d nsfw=%v", direction, len(state.History), nsfwMode)
-
-	// NOTE: writer_history_max_runes 从 SiteSetting 读取，管理员可在后台调整 Writer 历史缓存上限。
-	writerHistoryMaxRunes := siteSettingInt("writer_history_max_runes", 20000)
-	state.History = trimWriterHistoryForCache(state.History, writerHistoryMaxRunes)
-
 	sb := &strings.Builder{}
-	// if toneBlock := buildWriterScenarioToneBlock(gctx); toneBlock != "" {
-	// 	sb.WriteString(toneBlock)
-	// }
 	sb.WriteString("<character>")
 	for _, p := range gctx.Session.Players {
 		card := p.CharacterCard
@@ -380,26 +426,10 @@ func buildWriterMessages(h agentHandle, state *WriterState, direction string, gc
 	sb.WriteString("\n</director_instruction>\n")
 	sb.WriteString("请在上文的基础上续写文章,并保持逻辑、时间、空间上的连贯")
 	if nsfwMode {
-		sb.WriteString(",请将描写的重点放在色情场景上重点突出女角色的反应")
+		sb.WriteString(",请将描写的重点放在色情场景上重点突出女角色的反应\n")
+		sb.WriteString(writerNSFWPromptSuffix)
 	}
-
-	// 组装Writer消息:系统提示词、保留历史、本次导演指令。
-	// nsfwMode蕴含房间EnableNSFW已开(标记只在writeAction里带该守卫置位),模板已按on态渲染,后缀是纯增量。
-	prompt := renderNSFW(writerDefaultPrompt, gctx.Session.EnableNSFW)
-	if nsfwMode {
-		prompt += writerNSFWPromptSuffix
-	}
-	msgs := make([]llm.ChatMessage, 0, len(state.History)+2)
-	msgs = append(msgs, llm.ChatMessage{
-		Role:    "system",
-		Content: h.systemPrompt(prompt),
-	})
-	msgs = append(msgs, state.History...)
-	msgs = append(msgs, llm.ChatMessage{
-		Role:    "user",
-		Content: sb.String(),
-	})
-	return msgs, direction
+	return llm.ChatMessage{Role: "user", Content: sb.String()}, direction
 }
 
 func buildWriterScenarioToneBlock(gctx GameContext) string {
@@ -426,14 +456,13 @@ func buildWriterScenarioToneBlock(gctx GameContext) string {
 	return sb.String()
 }
 
-func appendWriterResponse(state *WriterState, direction, resp string, saveHistory bool) {
+// appendWriterResponse 把本次交换(发送的msgs + assistant响应)原样提交为新一轮,
+// 发送版即归档版。saveHistory为false时(响应被拒绝或传输层错误)不落库,仅更新Buffer。
+func appendWriterResponse(state *WriterState, gctx GameContext, msgs []llm.ChatMessage, resp string, saveHistory bool) {
 	resp = stripThinkingBlock(resp)
 	if saveHistory {
-		// 写回本次交换,供后续叙事正文保持连续性。
-		state.History = append(state.History,
-			llm.ChatMessage{Role: "user", Content: "叙事指令:" + direction},
-			llm.ChatMessage{Role: "assistant", Content: resp},
-		)
+		finalMsgs := append(msgs, llm.ChatMessage{Role: "assistant", Content: resp})
+		state.cm.Commit(gctx.Session.TurnRound, finalMsgs)
 	}
 	if resp == "" {
 		return

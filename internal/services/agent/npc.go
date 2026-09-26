@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
@@ -99,63 +98,35 @@ func pickNPCHandle(handles map[models.AgentRole]agentHandle, nsfw bool) (agentHa
 	return handles[models.AgentRoleNPC], false
 }
 
-// npcAgentStates keeps per-session, per-npc conversation memory so each NPC
-// behaves like an independent long-lived agent.
-var npcAgentStates sync.Map // key: "sessionID:npcName" -> []llm.ChatMessage
-
-func npcStateKey(sessionID uint, npcName string) string {
-	return fmt.Sprintf("%d:%s", sessionID, npcName)
+// npcAgentKey 是某个NPC在AgentTranscript表里的agent_key,每个NPC独立一条记录,
+// 互不共享历史,与Director/Writer/Dramaturg共用同一套ContextManager。
+func npcAgentKey(npcName string) string {
+	return "npc:" + npcName
 }
 
-func loadNPCState(sessionID uint, npcName string) []llm.ChatMessage {
-	// Prefer in-memory cache for current process performance.
-	key := npcStateKey(sessionID, npcName)
-	if v, ok := npcAgentStates.Load(key); ok {
-		if hist, ok2 := v.([]llm.ChatMessage); ok2 {
-			return hist
-		}
-	}
+// npcHistoryMaxRunes是NPC对话历史的字符预算,超预算时从最旧的一轮开始砍到预算一半。
+// 旧实现是硬编码"超过64条消息只保留最新64条"的滑动窗口,这里换成与Writer/Dramaturg
+// 一致的RuneBudget机制;NPC每轮问答是精简的JSON动作+台词,体量远小于Writer正文,
+// 预算相应给得更小。
+const npcHistoryMaxRunes = 10000
 
-	// Fallback to persistent context on SessionNPC.
+// loadLegacyNPCHistory读取迁移到ContextManager之前的两种旧存档,供transcript为空时
+// 做一次性播种,只执行一次:优先SessionNPC.AgentCtx这份存活对话原文,没有的话退化到
+// 该NPC上次非死亡销毁时压缩保存的SessionNPCMemory摘要。
+func loadLegacyNPCHistory(sessionID uint, npcName string) []llm.ChatMessage {
 	var npc models.SessionNPC
 	if err := models.DB.Where("session_id = ? AND name = ?", sessionID, npcName).First(&npc).Error; err == nil {
 		if len(npc.AgentCtx.Data) > 0 {
-			history := chatMsgsToLLM(npc.AgentCtx.Data)
-			npcAgentStates.Store(key, history)
-			return history
+			return chatMsgsToLLM(npc.AgentCtx.Data)
 		}
 	}
-
-	// If no live context exists, try compact memory from prior non-death destroy.
 	var mem models.SessionNPCMemory
 	if err := models.DB.Where("session_id = ? AND name = ?", sessionID, npcName).First(&mem).Error; err == nil {
 		if strings.TrimSpace(mem.MemorySummary) != "" {
-			seed := []llm.ChatMessage{{
-				Role:    "assistant",
-				Content: "【NPC记忆】" + mem.MemorySummary,
-			}}
-			npcAgentStates.Store(key, seed)
-			return seed
+			return []llm.ChatMessage{{Role: "assistant", Content: "【NPC记忆】" + mem.MemorySummary}}
 		}
 	}
 	return nil
-}
-
-func saveNPCState(sessionID uint, npcName string, history []llm.ChatMessage) {
-	if len(history) > 64 {
-		history = history[len(history)-64:]
-	}
-	key := npcStateKey(sessionID, npcName)
-	npcAgentStates.Store(key, history)
-
-	// Persist to DB so temp NPC survives process restarts.
-	_ = models.DB.Model(&models.SessionNPC{}).
-		Where("session_id = ? AND name = ?", sessionID, npcName).
-		Update("agent_ctx", models.JSONField[[]models.ChatMsg]{Data: llmToChatMsgs(history)}).Error
-}
-
-func clearNPCState(sessionID uint, npcName string) {
-	npcAgentStates.Delete(npcStateKey(sessionID, npcName))
 }
 
 func createNPC(sessionID uint, card *NPCCard) string {
@@ -253,10 +224,11 @@ func destroyNPC(sessionID uint, name string, reason string) string {
 		return fmt.Sprintf("已标记NPC:%s(死亡)", name)
 	}
 
-	state := loadNPCState(sessionID, name)
+	agentKey := npcAgentKey(name)
+	turns := LoadContext(sessionID, agentKey, nil, ContextOptions{}).data.Turns
 	{
 		// Non-death destroy (e.g. out_of_range): compact context into long-term memory.
-		summary := compactNPCMemory(state)
+		summary := compactNPCMemory(flattenTranscriptTurns(turns))
 		if summary != "" {
 			var mem models.SessionNPCMemory
 			err := models.DB.Where("session_id = ? AND name = ?", sessionID, name).First(&mem).Error
@@ -274,7 +246,7 @@ func destroyNPC(sessionID uint, name string, reason string) string {
 	}
 
 	res := models.DB.Where("session_id = ? AND name = ?", sessionID, name).Delete(&models.SessionNPC{})
-	clearNPCState(sessionID, name)
+	DeleteContext(sessionID, agentKey)
 	if res.RowsAffected == 0 {
 		return fmt.Sprintf("未找到NPC:%s", name)
 	}
@@ -302,19 +274,22 @@ var npcExample = func() string {
 	return string(data)
 }()
 
-// buildNPCMessages 组装NPC agent的消息:系统提示词(含NPC人设)+历史+本次情境。
-// nsfwMode为true时追加露骨场景专用规则,由调用方保证此时房间EnableNSFW已开启。
-func buildNPCMessages(h agentHandle, gctx GameContext, npcProfile string, npcHistory []llm.ChatMessage, question string, nsfwMode bool) []llm.ChatMessage {
+// buildNPCHead 构造NPC本次调用固定不变的前缀:系统提示词(仅按房间EnableNSFW渲染基础
+// 提示词,不含只在本次调用生效的explicit_scene_requirements后缀)+NPC人设简介。人设
+// 会随剧情变化(受伤/死亡/态度调整等)而不是绝对静态,但相对每轮都要发的情境/note,
+// 明显更接近可以放进head的稳定背景资料。
+func buildNPCHead(h agentHandle, gctx GameContext, npcProfile string) []llm.ChatMessage {
 	prompt := renderNSFW(npcDefaultPrompt, gctx.Session.EnableNSFW)
-	if nsfwMode {
-		prompt += npcNSFWPromptSuffix
-	}
-	msgs := []llm.ChatMessage{
+	return []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(prompt)},
 		{Role: "user", Content: "你需要扮演该NPC:\n" + npcProfile},
 	}
-	msgs = append(msgs, npcHistory...)
+}
 
+// buildNPCOpening 组装本轮发给NPC的唯一一条user消息:当前情境+行为注意事项。nsfwMode
+// 为true时,原来挂在system prompt里的explicit_scene_requirements后缀现在拼进这里,
+// 保证head(含system)跨NSFW/非NSFW调用保持字节稳定。
+func buildNPCOpening(gctx GameContext, question string, nsfwMode bool) llm.ChatMessage {
 	sb := strings.Builder{}
 	sb.WriteString("<context>\n")
 	sb.WriteString(question)
@@ -327,12 +302,10 @@ func buildNPCMessages(h agentHandle, gctx GameContext, npcProfile string, npcHis
 	}
 	sb.WriteString("注意人物的行动逻辑，不要让行为和语言前后矛盾\n")
 	sb.WriteString("</note>\n")
-
-	msgs = append(msgs, llm.ChatMessage{
-		Role:    "user",
-		Content: sb.String(),
-	})
-	return msgs
+	if nsfwMode {
+		sb.WriteString(npcNSFWPromptSuffix)
+	}
+	return llm.ChatMessage{Role: "user", Content: sb.String()}
 }
 
 // runNPC makes one NPC act based on its own profile and the context brief provided by the KP.
@@ -362,9 +335,23 @@ func runNPC(
 		question = fmt.Sprintf("调查员行动:[%s] %s。你要做什么？", gctx.UserName, gctx.UserInput)
 	}
 
-	// Each NPC owns independent dialogue history in this session.
-	npcHistory := loadNPCState(gctx.Session.ID, npcName)
-	msgs := buildNPCMessages(h, gctx, npcProfile, npcHistory, question, nsfwMode)
+	// Each NPC owns an independent transcript in this session (agentKey="npc:<name>").
+	agentKey := npcAgentKey(npcName)
+	head := buildNPCHead(h, gctx, npcProfile)
+	cm := LoadContext(gctx.Session.ID, agentKey, head, ContextOptions{RuneBudget: npcHistoryMaxRunes})
+	// 老会话transcript为空但SessionNPC.AgentCtx/SessionNPCMemory有旧数据时,把旧存档
+	// 当作seq=0的一轮先提交进去,只执行一次,之后像普通历史轮一样被trim掉。
+	if cm.IsEmpty() {
+		if legacy := loadLegacyNPCHistory(gctx.Session.ID, npcName); len(legacy) > 0 {
+			cm.Commit(0, legacy)
+		}
+	}
+
+	opening := buildNPCOpening(gctx, question, nsfwMode)
+	msgs := cm.Build(opening)
+	// NOTE: NPC走JsonChat,拿不到返回值里的Usage;通过WithUsageSink把usage送进cm,
+	// 既用于后台展示的逐轮缓存统计,也让cm感知超阈值需要trim时同步更新msgs。
+	ctx = llm.WithUsageSink(ctx, func(u llm.Usage) { msgs = cm.Observe(u, msgs) })
 
 	resp, err := h.provider.JsonChat(ctx, sessionIDFromContextValue(ctx)+":npc:"+npcName, msgs)
 	if err != nil {
@@ -393,13 +380,11 @@ func runNPC(
 		action.NPCName = npcName
 	}
 
-	// Persist per-NPC memory so each NPC behaves like a dedicated agent.
-	assistantMemo := fmt.Sprintf("行动:%s\n对话:%s", action.Action, action.Dialogue)
-	npcHistory = append(npcHistory,
-		llm.ChatMessage{Role: "user", Content: question},
-		llm.ChatMessage{Role: "assistant", Content: assistantMemo},
-	)
-	saveNPCState(gctx.Session.ID, npcName, npcHistory)
+	// 发送版=归档版:把本轮实际发出的msgs+LLM的原始JSON响应原样提交为新一轮,不再是
+	// 旧版本那份改写过的"行动:...对话:..."摘要(与Director R1同类问题——归档内容和
+	// 发送内容不一致,下一轮的前缀就会和上一轮实际发的内容对不上)。
+	finalMsgs := append(msgs, llm.ChatMessage{Role: "assistant", Content: resp})
+	cm.Commit(gctx.Session.TurnRound, finalMsgs)
 
 	debugf("NPC", "name=%q action=%s dialogue=%s", npcName, action.Action, action.Dialogue)
 	return action, nil
@@ -436,7 +421,8 @@ func compactNPCMemory(history []llm.ChatMessage) string {
 }
 
 func seedNPCFromMemory(sessionID uint, npcName string) {
-	clearNPCState(sessionID, npcName)
+	agentKey := npcAgentKey(npcName)
+	DeleteContext(sessionID, agentKey)
 	var mem models.SessionNPCMemory
 	if err := models.DB.Where("session_id = ? AND name = ?", sessionID, npcName).First(&mem).Error; err != nil {
 		return
@@ -445,8 +431,8 @@ func seedNPCFromMemory(sessionID uint, npcName string) {
 	if summary == "" {
 		return
 	}
-	history := []llm.ChatMessage{{Role: "assistant", Content: "【NPC记忆】" + summary}}
-	saveNPCState(sessionID, npcName, history)
+	cm := LoadContext(sessionID, agentKey, nil, ContextOptions{})
+	cm.Commit(0, []llm.ChatMessage{{Role: "assistant", Content: "【NPC记忆】" + summary}})
 }
 
 // buildNPCProfile returns a text description of an NPC for use in prompts.
@@ -466,15 +452,15 @@ func buildNPCProfile(name string, gctx GameContext, tempNPCs []models.SessionNPC
 			profile := fmt.Sprintf("姓名:%s\n种族:%s\n描述:%s\n态度:%s", npc.Name, race, desc, npc.Attitude)
 			if len(npc.Stats) > 0 {
 				var statParts []string
-				for k, v := range npc.Stats {
-					statParts = append(statParts, fmt.Sprintf("%s:%d", k, v))
+				for _, k := range sortedIntMapKeys(npc.Stats) {
+					statParts = append(statParts, fmt.Sprintf("%s:%d", k, npc.Stats[k]))
 				}
 				profile += "\n属性:" + strings.Join(statParts, " ")
 			}
 			if len(npc.Skills) > 0 {
 				var skillParts []string
-				for k, v := range npc.Skills {
-					skillParts = append(skillParts, fmt.Sprintf("%s:%d", k, v))
+				for _, k := range sortedIntMapKeys(npc.Skills) {
+					skillParts = append(skillParts, fmt.Sprintf("%s:%d", k, npc.Skills[k]))
 				}
 				profile += "\n技能:" + strings.Join(skillParts, " ")
 			}
@@ -511,15 +497,15 @@ func buildNPCProfile(name string, gctx GameContext, tempNPCs []models.SessionNPC
 			}
 			if len(npc.Skills.Data) > 0 {
 				var skillParts []string
-				for k, v := range npc.Skills.Data {
-					skillParts = append(skillParts, fmt.Sprintf("%s:%d", k, v))
+				for _, k := range sortedIntMapKeys(npc.Skills.Data) {
+					skillParts = append(skillParts, fmt.Sprintf("%s:%d", k, npc.Skills.Data[k]))
 				}
 				profile += "\n技能:" + strings.Join(skillParts, " ")
 			}
 			if len(npc.Stats.Data) > 0 {
 				var statParts []string
-				for k, v := range npc.Stats.Data {
-					statParts = append(statParts, fmt.Sprintf("%s:%d", k, v))
+				for _, k := range sortedIntMapKeys(npc.Stats.Data) {
+					statParts = append(statParts, fmt.Sprintf("%s:%d", k, npc.Stats.Data[k]))
 				}
 				profile += "\n属性:" + strings.Join(statParts, " ")
 			}

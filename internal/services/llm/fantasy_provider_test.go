@@ -217,7 +217,7 @@ func TestIsRetryableFantasyError(t *testing.T) {
 
 func TestToPrompt_SystemAndUserMessages(t *testing.T) {
 	p := &fantasyProvider{isAnthropic: false}
-	prompt := p.toPrompt([]ChatMessage{
+	prompt, _ := p.toPrompt([]ChatMessage{
 		{Role: "system", Content: "sys prompt"},
 		{Role: "system", Content: "   "},
 		{Role: "user", Content: "hello"},
@@ -242,7 +242,7 @@ func TestToPrompt_SystemAndUserMessages(t *testing.T) {
 
 func TestToPrompt_AssistantTextAndToolCalls(t *testing.T) {
 	p := &fantasyProvider{isAnthropic: false}
-	prompt := p.toPrompt([]ChatMessage{
+	prompt, _ := p.toPrompt([]ChatMessage{
 		{Role: "assistant", Content: "sure, let me check", ToolCalls: []ToolCall{
 			{ID: "call_1", Name: "check_rule", Arguments: `{"q":"x"}`},
 		}},
@@ -265,7 +265,7 @@ func TestToPrompt_AssistantTextAndToolCalls(t *testing.T) {
 
 func TestToPrompt_EmptyAssistantMessageDropped(t *testing.T) {
 	p := &fantasyProvider{isAnthropic: false}
-	prompt := p.toPrompt([]ChatMessage{
+	prompt, _ := p.toPrompt([]ChatMessage{
 		{Role: "user", Content: "hi"},
 		{Role: "assistant", Content: ""},
 		{Role: "user", Content: "still there?"},
@@ -279,7 +279,7 @@ func TestToPrompt_AnthropicReasoningBlocksRoundTrip(t *testing.T) {
 	// NOTE: Anthropic 要求 thinking/redacted_thinking block 排在 assistant 消息内容最前面，
 	// 且必须带上签名/加密数据才能通过多轮工具调用校验。
 	p := &fantasyProvider{isAnthropic: true}
-	prompt := p.toPrompt([]ChatMessage{
+	prompt, _ := p.toPrompt([]ChatMessage{
 		{
 			Role:    "assistant",
 			Content: "final answer",
@@ -317,7 +317,7 @@ func TestToPrompt_AnthropicReasoningBlocksRoundTrip(t *testing.T) {
 
 func TestToPrompt_AnthropicReasoningOnlyAssistantSurvives(t *testing.T) {
 	p := &fantasyProvider{isAnthropic: true}
-	prompt := p.toPrompt([]ChatMessage{
+	prompt, _ := p.toPrompt([]ChatMessage{
 		{Role: "user", Content: "hi"},
 		{Role: "assistant", ReasoningBlocks: []ReasoningBlock{{Type: "thinking", Text: "t", Signature: "s"}}},
 	})
@@ -328,7 +328,7 @@ func TestToPrompt_AnthropicReasoningOnlyAssistantSurvives(t *testing.T) {
 
 func TestToPrompt_OpenAICompatPlainReasoning(t *testing.T) {
 	p := &fantasyProvider{isAnthropic: false}
-	prompt := p.toPrompt([]ChatMessage{
+	prompt, _ := p.toPrompt([]ChatMessage{
 		{Role: "assistant", Content: "answer", Reasoning: "let me think first"},
 	})
 	parts := prompt[0].Content
@@ -348,7 +348,7 @@ func TestToPrompt_ToolMessagesStaySeparate(t *testing.T) {
 	// groupIntoBlocks 自动把连续 user/tool 消息分组进单条 Anthropic 请求消息，
 	// 所以这里每条工具结果各自保持独立的 fantasy.Message，不需要手动合并。
 	p := &fantasyProvider{isAnthropic: true}
-	prompt := p.toPrompt([]ChatMessage{
+	prompt, _ := p.toPrompt([]ChatMessage{
 		{Role: "tool", ToolCallID: "call_1", Content: "rule result"},
 		{Role: "tool", ToolCallID: "call_2", Content: "dice result"},
 	})
@@ -383,7 +383,7 @@ func toolCacheControl(t *testing.T, tool fantasy.Tool) *anthropic.CacheControl {
 
 func TestApplyCacheBreakpoints_Placement(t *testing.T) {
 	p := &fantasyProvider{isAnthropic: true}
-	prompt := p.toPrompt([]ChatMessage{
+	prompt, _ := p.toPrompt([]ChatMessage{
 		{Role: "system", Content: "sys prompt"},
 		{Role: "user", Content: "scenario context"},
 		{Role: "user", Content: "current turn"},
@@ -399,7 +399,7 @@ func TestApplyCacheBreakpoints_Placement(t *testing.T) {
 		{Name: "tool_b", Parameters: json.RawMessage(`{"type":"object","properties":{}}`)},
 	})
 
-	applyCacheBreakpoints(prompt, tools)
+	applyCacheBreakpoints(prompt, tools, nil)
 
 	if anthropic.GetCacheControl(prompt[0].ProviderOptions) == nil {
 		t.Error("system message should be cache-marked")
@@ -439,13 +439,105 @@ func TestApplyCacheBreakpoints_Placement(t *testing.T) {
 
 func TestApplyCacheBreakpoints_SingleUserMessage(t *testing.T) {
 	p := &fantasyProvider{isAnthropic: true}
-	prompt := p.toPrompt([]ChatMessage{
+	prompt, _ := p.toPrompt([]ChatMessage{
 		{Role: "system", Content: "sys"},
 		{Role: "user", Content: "only message"},
 	})
-	applyCacheBreakpoints(prompt, nil) // 不应 panic/越界
+	applyCacheBreakpoints(prompt, nil, nil) // 不应 panic/越界
 	if anthropic.GetCacheControl(prompt[1].ProviderOptions) == nil {
 		t.Error("the only user message should be cache-marked")
+	}
+}
+
+// TestApplyCacheBreakpoints_ExplicitMarksTakePriorityOverHeuristic 验证有显式标记
+// (ChatMessage.CacheBreakpoint)时改走"system+显式标记(最多2个)+prompt末尾一条"的规则，
+// 不再使用启发式；这是ContextManager用来在head末尾/已提交历史轮末尾锚定稳定断点的机制。
+func TestApplyCacheBreakpoints_ExplicitMarksTakePriorityOverHeuristic(t *testing.T) {
+	p := &fantasyProvider{isAnthropic: true}
+	prompt, explicitBreaks := p.toPrompt([]ChatMessage{
+		{Role: "system", Content: "sys prompt"},
+		{Role: "user", Content: "head", CacheBreakpoint: true},
+		{Role: "user", Content: "turn1 opening"},
+		{Role: "assistant", Content: "turn1 reply"},
+		{Role: "user", Content: "turn2 opening", CacheBreakpoint: true},
+		{Role: "assistant", Content: "turn2 reply(still streaming, not yet a breakpoint)"},
+	})
+	if len(explicitBreaks) != 2 {
+		t.Fatalf("explicitBreaks = %v, want 2 entries", explicitBreaks)
+	}
+	tools := toFantasyTools([]ToolDefinition{{Name: "tool_a", Parameters: json.RawMessage(`{"type":"object","properties":{}}`)}})
+
+	applyCacheBreakpoints(prompt, tools, explicitBreaks)
+
+	if anthropic.GetCacheControl(prompt[0].ProviderOptions) == nil {
+		t.Error("system message should be cache-marked")
+	}
+	if got := toolCacheControl(t, tools[0]); got != nil {
+		t.Error("tools should NOT be cache-marked when explicit marks are present")
+	}
+	if anthropic.GetCacheControl(prompt[1].ProviderOptions) == nil {
+		t.Error("head message (explicit breakpoint) should be cache-marked")
+	}
+	if anthropic.GetCacheControl(prompt[2].ProviderOptions) != nil {
+		t.Error("turn1 opening (not marked) should NOT be cache-marked")
+	}
+	if anthropic.GetCacheControl(prompt[3].ProviderOptions) != nil {
+		t.Error("turn1 reply (not marked) should NOT be cache-marked")
+	}
+	if anthropic.GetCacheControl(prompt[4].ProviderOptions) == nil {
+		t.Error("turn2 opening (explicit breakpoint) should be cache-marked")
+	}
+	last := len(prompt) - 1
+	if anthropic.GetCacheControl(prompt[last].ProviderOptions) == nil {
+		t.Error("last message in the prompt should always be cache-marked (moving frontier)")
+	}
+
+	marked := 0
+	for _, m := range prompt {
+		if anthropic.GetCacheControl(m.ProviderOptions) != nil {
+			marked++
+		}
+	}
+	if marked != 4 { // system + head + turn2 opening + 末尾一条，合计4个(<=Anthropic上限)
+		t.Errorf("total cache-marked messages = %d, want 4", marked)
+	}
+}
+
+// TestApplyCacheBreakpoints_ExplicitMarksKeepOnlyLastTwo 验证显式标记超过2个时只取最后2个，
+// 加上system与末尾一条，合计不超过Anthropic单次请求4个断点的上限。
+func TestApplyCacheBreakpoints_ExplicitMarksKeepOnlyLastTwo(t *testing.T) {
+	p := &fantasyProvider{isAnthropic: true}
+	prompt, explicitBreaks := p.toPrompt([]ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "head", CacheBreakpoint: true},
+		{Role: "user", Content: "turn1", CacheBreakpoint: true},
+		{Role: "user", Content: "turn2", CacheBreakpoint: true},
+		{Role: "user", Content: "turn3 opening"},
+	})
+	if len(explicitBreaks) != 3 {
+		t.Fatalf("explicitBreaks = %v, want 3 entries", explicitBreaks)
+	}
+
+	applyCacheBreakpoints(prompt, nil, explicitBreaks)
+
+	if anthropic.GetCacheControl(prompt[1].ProviderOptions) != nil {
+		t.Error("oldest explicit mark(head) should be dropped when more than 2 marks exist")
+	}
+	if anthropic.GetCacheControl(prompt[2].ProviderOptions) == nil {
+		t.Error("second-to-last explicit mark(turn1) should be kept")
+	}
+	if anthropic.GetCacheControl(prompt[3].ProviderOptions) == nil {
+		t.Error("last explicit mark(turn2) should be kept")
+	}
+
+	marked := 0
+	for _, m := range prompt {
+		if anthropic.GetCacheControl(m.ProviderOptions) != nil {
+			marked++
+		}
+	}
+	if marked != 4 { // system + 2个显式标记 + 末尾一条
+		t.Errorf("total cache-marked messages = %d, want 4", marked)
 	}
 }
 
@@ -891,6 +983,42 @@ func TestFantasyProvider_OpenAICompatEndToEnd_Success(t *testing.T) {
 	}
 	if len(body.Messages) != 1 || body.Messages[0].Role != "user" || body.Messages[0].Content != "hi" {
 		t.Errorf("request messages = %+v, want single user message %q", body.Messages, "hi")
+	}
+}
+
+// TestFantasyProvider_UsageSinkInvokedOnChat 验证Chat()(不像ChatWithTools那样把Usage放进
+// 返回值里)在ctx携带WithUsageSink时会用最终usage回调一次，供拿不到ToolChatResult的调用方
+// (Writer/Dramaturg/NPC等用Chat/ChatStream的agent)把usage送进自己的ContextManager；同时
+// 验证全局(role×model)统计不依赖sink,始终会被记录。
+func TestFantasyProvider_UsageSinkInvokedOnChat(t *testing.T) {
+	resetStatsForTest()
+	srv, _ := newFakeChatCompletionsServer(t, func(w http.ResponseWriter, r *http.Request, _ int) {
+		writeSSEChatCompletion(w, []string{"ok"}, "stop", map[string]any{
+			"prompt_tokens": 40, "completion_tokens": 5, "total_tokens": 45,
+			"prompt_tokens_details": map[string]any{"cached_tokens": 30},
+		})
+	})
+	p, err := newFantasyProvider(false, "test-key", srv.URL, "test-model", 0, 0, false, "")
+	if err != nil {
+		t.Fatalf("newFantasyProvider error: %v", err)
+	}
+
+	var got Usage
+	var called bool
+	ctx := WithUsageSink(context.Background(), func(u Usage) { called = true; got = u })
+	if _, err := p.Chat(ctx, "sess:writer", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+		t.Fatalf("Chat error: %v", err)
+	}
+	if !called {
+		t.Fatal("usage sink should have been invoked")
+	}
+	if got.PromptTokens != 40 || got.CacheReadTokens != 30 || got.OutputTokens != 5 {
+		t.Errorf("sink usage = %+v, want prompt=40 cache_read=30 output=5", got)
+	}
+
+	stats := Stats()
+	if stats.Overall.PromptTokens != 40 || stats.Overall.CacheReadTokens != 30 {
+		t.Errorf("global stats after Chat = %+v, want prompt=40 cache_read=30", stats.Overall)
 	}
 }
 

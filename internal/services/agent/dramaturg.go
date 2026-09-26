@@ -23,25 +23,43 @@ KP每回合会用一段"progress_note"向你汇报本回合的进展，这段文
 
 var dramaturgSessionLocks sync.Map
 
+// dramaturgAgentKey 是Dramaturg在AgentTranscript表里的agent_key。
+const dramaturgAgentKey = "dramaturg"
+
 func dramaturgLock(sessionID uint) *sync.Mutex {
 	lock, _ := dramaturgSessionLocks.LoadOrStore(sessionID, &sync.Mutex{})
 	return lock.(*sync.Mutex)
 }
 
-// runDramaturg 是Director按需发起的剧情节奏咨询：加锁读取剧构自己独立的进度历史、
-// 附上模组静态资料与本回合脱敏后的进展、调用LLM，把这轮问答追加进历史并持久化，
-// 返回两段式回复供Director的工具结果使用。h是否启用由调用方(consultDramaturgAction)
-// 提前拦截，这里只处理"已启用但调用失败"的情形。
+// runDramaturg 是Director按需发起的剧情节奏咨询：加锁后用ContextManager拼出本次调用的
+// 完整消息序列(head=system+整局不变的静态模组资料,opening=本轮<now>+脱敏后的进展)、
+// 调用LLM、把这轮问答原样提交为新一轮并落库，返回两段式回复供Director的工具结果使用。
+// h是否启用由调用方(consultDramaturgAction)提前拦截，这里只处理"已启用但调用失败"的情形。
 func runDramaturg(ctx context.Context, h agentHandle, gctx GameContext, progressNote string) string {
 	lock := dramaturgLock(gctx.Session.ID)
 	lock.Lock()
 	defer lock.Unlock()
 
+	// NOTE: dramaturg_history_max_runes 从 SiteSetting 读取，管理员可在后台调整历史上限。
 	maxRunes := siteSettingInt("dramaturg_history_max_runes", 8000)
-	history := trimWriterHistoryForCache(loadDramaturgHistory(gctx), maxRunes)
+	head := buildDramaturgHead(h, gctx)
+	cm := LoadContext(gctx.Session.ID, dramaturgAgentKey, head, ContextOptions{RuneBudget: int64(maxRunes)})
+	// 老会话transcript为空但GameSession.DramaturgHistory列有旧数据时，把旧的扁平历史当作
+	// seq=0的一轮种子先提交进去，只执行一次，之后像普通历史轮一样被trim掉。
+	if cm.IsEmpty() {
+		if legacy := loadLegacyDramaturgHistory(gctx); len(legacy) > 0 {
+			cm.Commit(0, legacy)
+		}
+	}
 
-	msgs := buildDramaturgMessages(h, history, gctx, progressNote)
-	resp, err := h.provider.Chat(ctx, h.cacheKey(sessionIDFromContextValue(ctx)), msgs)
+	opening := buildDramaturgOpening(gctx, progressNote)
+	msgs := cm.Build(opening)
+	cacheKey := h.cacheKey(sessionIDFromContextValue(ctx))
+	// NOTE: Dramaturg走Chat,拿不到返回值里的Usage;通过WithUsageSink把usage送进cm,
+	// 既用于后台展示的逐轮缓存统计，也让cm感知超阈值需要trim时同步更新msgs。
+	ctx = llm.WithUsageSink(ctx, func(u llm.Usage) { msgs = cm.Observe(u, msgs) })
+
+	resp, err := h.provider.Chat(ctx, cacheKey, msgs)
 	if err != nil {
 		alog.Error("dramaturg failed", "err", err)
 		return "剧构顾问暂时无法响应"
@@ -49,30 +67,19 @@ func runDramaturg(ctx context.Context, h agentHandle, gctx GameContext, progress
 	guidance := strings.TrimSpace(stripThinkingBlock(resp))
 	debugf("Dramaturg", "guidance=%s", guidance)
 
-	history = append(history,
-		llm.ChatMessage{Role: "user", Content: progressNote},
-		llm.ChatMessage{Role: "assistant", Content: guidance},
-	)
-	saveDramaturgHistory(gctx.Session.ID, history)
+	finalMsgs := append(msgs, llm.ChatMessage{Role: "assistant", Content: guidance})
+	cm.Commit(gctx.Session.TurnRound, finalMsgs)
 	return guidance
 }
 
-// loadDramaturgHistory 读取剧构顾问自己独立的进度对话历史，与Director/Writer的历史
-// 来源互不相通：优先查库避免gctx携带的是过期快照，查库失败时回落gctx自带的数据。
-func loadDramaturgHistory(gctx GameContext) []llm.ChatMessage {
+// loadLegacyDramaturgHistory 读取旧版按GameSession.DramaturgHistory整段存的历史，供
+// ContextManager为空时做一次性迁移种子；查库失败时回落gctx自带的快照。
+func loadLegacyDramaturgHistory(gctx GameContext) []llm.ChatMessage {
 	var session models.GameSession
 	if err := models.DB.Select("id", "dramaturg_history").First(&session, gctx.Session.ID).Error; err == nil {
 		return chatMsgsToLLM(session.DramaturgHistory.Data)
 	}
 	return chatMsgsToLLM(gctx.Session.DramaturgHistory.Data)
-}
-
-func saveDramaturgHistory(sessionID uint, history []llm.ChatMessage) {
-	models.DB.Model(&models.GameSession{}).
-		Where("id = ?", sessionID).
-		Update("dramaturg_history", models.JSONField[[]models.ChatMsg]{
-			Data: llmToChatMsgs(history),
-		})
 }
 
 // sanitizeDramaturgNote 把progress_note中的角色名替换为不透露身份的占位符，是脱敏三层
@@ -102,17 +109,19 @@ func replaceCharacterName(note, name, label string) string {
 	return strings.ReplaceAll(note, name, label)
 }
 
-// buildDramaturgMessages 组装剧构顾问的输入：系统提示词 + 自己的历史(已裁剪) + 本次的
-// 静态模组资料与脱敏后的进展。静态资料每次都完整重发而不并入history，避免被rune预算裁掉。
-func buildDramaturgMessages(h agentHandle, history []llm.ChatMessage, gctx GameContext, progressNote string) []llm.ChatMessage {
-	msgs := make([]llm.ChatMessage, 0, len(history)+2)
-	msgs = append(msgs, llm.ChatMessage{Role: "system", Content: h.systemPrompt(dramaturgSystemPrompt)})
-	msgs = append(msgs, history...)
-	msgs = append(msgs, llm.ChatMessage{Role: "user", Content: buildDramaturgUserContent(gctx, progressNote)})
-	return msgs
+// buildDramaturgHead 构造Dramaturg本次调用固定不变的前缀:system prompt + 整局不变的
+// 静态模组资料(大纲/场景/时间线/机制/线索/结局/KP专属真相)。这部分资料体积很大,
+// 但head永不被trim且整局只需在head里发一次,比Director"每轮重发"更适合这种体量的静态文本。
+func buildDramaturgHead(h agentHandle, gctx GameContext) []llm.ChatMessage {
+	return []llm.ChatMessage{
+		{Role: "system", Content: h.systemPrompt(dramaturgSystemPrompt)},
+		{Role: "user", Content: buildDramaturgStaticContent(gctx)},
+	}
 }
 
-func buildDramaturgUserContent(gctx GameContext, progressNote string) string {
+// buildDramaturgStaticContent 渲染整局不变的模组静态资料(原 buildDramaturgUserContent
+// 里除<now>/<progress_note>/<instruction>之外的部分),作为head的第2条消息。
+func buildDramaturgStaticContent(gctx GameContext) string {
 	content := gctx.Session.Scenario.Content.Data
 
 	var sb strings.Builder
@@ -191,9 +200,15 @@ func buildDramaturgUserContent(gctx GameContext, progressNote string) string {
 			sb.WriteString("\n<antagonist_dossier>\n" + ka.AntagonistDossier + "\n</antagonist_dossier>\n")
 		}
 	}
-	sb.WriteString("\n<now>当前时间(每轮=游戏内30分钟): " + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</now>\n")
+	return sb.String()
+}
+
+// buildDramaturgOpening 组装本轮发给Dramaturg的唯一一条user消息:当前时间与脱敏后的
+// 进展。发送版即归档版,不再有另外一份归档内容。
+func buildDramaturgOpening(gctx GameContext, progressNote string) llm.ChatMessage {
+	var sb strings.Builder
+	sb.WriteString("<now>当前时间(每轮=游戏内30分钟): " + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</now>\n")
 	sb.WriteString("\n<progress_note>\n" + progressNote + "\n</progress_note>\n")
 	sb.WriteString("\n<instruction>结合以上信息，用固定两段式给出结论：【进度】当前处于剧情的哪个阶段、整体进展如何；【指导】接下来应该发生什么来推进节奏、有没有该出现但还未出现的线索或伏笔。</instruction>\n")
-
-	return sb.String()
+	return llm.ChatMessage{Role: "user", Content: sb.String()}
 }

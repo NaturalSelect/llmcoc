@@ -30,6 +30,11 @@ type ChatMessage struct {
 	// reasoning_content，需要在下一轮请求里原样回传到同一 assistant 消息，否则多轮
 	// 推理质量会下降；纯文本无需签名，仅 OpenAI 兼容 provider 产出/消费。
 	Reasoning string `json:"reasoning,omitempty"`
+	// CacheBreakpoint 标记这条消息是 Anthropic prompt cache 断点的候选位置(仅 Anthropic
+	// provider 消费)。调用方(如 agent 包的 ContextManager)在消息序列里稳定不变的位置
+	// (system 尾部、已提交历史轮的末尾)显式打上标记，取代按"末尾几条消息"猜测断点位置的
+	// 启发式——只要标记的那条消息内容跨调用保持字节不变，就能持续命中缓存。不持久化。
+	CacheBreakpoint bool `json:"-"`
 }
 
 // ReasoningBlock 是 Anthropic 扩展思考返回的单个 content block，用于原样回放给 API。
@@ -82,6 +87,23 @@ type Usage struct {
 // ContextTokens 返回本次调用实际占用的上下文窗口大小(prompt+output)。
 func (u Usage) ContextTokens() int64 {
 	return u.PromptTokens + u.OutputTokens
+}
+
+// usageSinkKey 是挂在 context 上的 usage 回调的私有 key 类型，避免和其他包的 context 值冲突。
+type usageSinkKey struct{}
+
+// WithUsageSink 把一个 usage 回调函数挂进 ctx；chat()/ChatStream 在一次调用实际完成
+// (拿到网关返回的 usage)时，如果 ctx 带了 sink 就调用一次。用于 Chat/ChatStream 这类不
+// 直接把 Usage 暴露在返回值里的方法(Writer/Dramaturg/NPC 等 agent 用的就是这两个)，
+// 把 usage 顺带送回给调用方做统计；ChatWithTools 已经把 Usage 放在 ToolChatResult 里
+// 直接返回，调用方不需要也不应该再挂 sink，否则同一次调用会被统计两次。
+func WithUsageSink(ctx context.Context, sink func(Usage)) context.Context {
+	return context.WithValue(ctx, usageSinkKey{}, sink)
+}
+
+func usageSinkFromContext(ctx context.Context) func(Usage) {
+	sink, _ := ctx.Value(usageSinkKey{}).(func(Usage))
+	return sink
 }
 
 // Provider defines the interface for interacting with various LLM backends.

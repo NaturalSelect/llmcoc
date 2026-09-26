@@ -47,6 +47,18 @@ window.COC.admin = {
                             await this.loadLlmStats();
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
+                    async loadSessionContext() {
+                        const id = String(this.sessionContextId || '').trim();
+                        if (!id) { this.showToast('请输入会话ID', 'error'); return; }
+                        this.sessionContextLoading = true;
+                        try {
+                            this.sessionContext = await this.api('GET', '/api/admin/sessions/' + encodeURIComponent(id) + '/context');
+                        } catch (e) {
+                            this.sessionContext = null;
+                            this.showToast('查询会话上下文失败：' + e.message, 'error');
+                        }
+                        this.sessionContextLoading = false;
+                    },
                     async viewCacheEntry(key) {
                         this.cacheEntryLoading = true;
                         this.selectedCacheEntry = { key, value: '' };

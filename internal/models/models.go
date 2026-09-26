@@ -323,31 +323,79 @@ type ChatMsg struct {
 	Content string `json:"content"`
 }
 
-// DirectorToolCall 是持久化到 DirectorHistory 里的一次原生工具调用记录，字段含义与
-// agent 包里 llm.ToolCall 一致；models 不依赖 llm 包，单独定义一份存储用 DTO，
-// 转换在 agent 包的 director_history.go 里完成。
-type DirectorToolCall struct {
+// AgentTranscript 持久化单个 agent 在某个会话里跨回合的完整原生消息链，按会话+AgentKey
+// (如 "director"、"writer"、"dramaturg"、"npc:<name>")联合唯一。取代原来分散在
+// GameSession 上的 DirectorHistory/WriterHistory/DramaturgHistory 各自为政的存法：
+// internal/services/agent 包的 ContextManager(context_transcript.go)统一负责读写、
+// 按整轮 trim、以及在 head 末尾/已提交历史轮末尾标记 prompt cache 断点，具体设计见该文件。
+type AgentTranscript struct {
+	ID        uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID uint   `gorm:"not null;uniqueIndex:idx_agent_transcript_key" json:"session_id"`
+	AgentKey  string `gorm:"not null;size:100;uniqueIndex:idx_agent_transcript_key" json:"agent_key"`
+	// Version 标记 TranscriptData 的结构版本；调用方读到不认识的 Version 时视为空
+	// transcript 重新开始，不做迁移，避免升级后旧结构数据被错误解析。
+	Version   int                       `gorm:"not null;default:0" json:"version"`
+	Data      JSONField[TranscriptData] `gorm:"type:text" json:"-"`
+	UpdatedAt time.Time                 `json:"updated_at"`
+}
+
+// TranscriptData 是 AgentTranscript.Data 的负载。NextSeq 是下一个待分配的回合序号——
+// 不能直接借用 GameSession.TurnRound，因为同一个 TurnRound 内可能有多次调用(如战斗/追逐
+// 一个回合内多名参与者各自触发一次 run())，seq 必须严格递增且每次调用唯一，才能在
+// system prompt 里准确指代"最新一轮"。Turns 按回合切分以便整体 trim 时不拆散某一轮内部
+// tool_call 与对应 tool 结果的配对。Stats 只保留最近若干条供后台按会话展示缓存命中率，
+// 是纯审计数据，不参与 trim 等业务判断。
+type TranscriptData struct {
+	NextSeq int              `json:"next_seq"`
+	Turns   []TranscriptTurn `json:"turns"`
+	Stats   []TurnCacheStat  `json:"stats"`
+}
+
+// TranscriptTurn 是一次调用(一个回合)产生的完整原生消息链。
+type TranscriptTurn struct {
+	Seq      int             `json:"seq"`
+	Round    int             `json:"round"`
+	Messages []TranscriptMsg `json:"messages"`
+}
+
+// TranscriptMsg 字段与 llm.ChatMessage 一一对应；models 不依赖 llm 包，单独定义一份
+// 存储用 DTO，转换在 agent 包的 context_transcript.go 里完成。和旧 DirectorMsg 不同，
+// 这里保留 Reasoning/ReasoningBlocks——历史轮原样存档，不再做"发送版/归档版"两份内容，
+// 保证同一条消息在"当轮"和"归档后"字节完全一致，prompt cache 前缀才能跨轮稳定命中。
+type TranscriptMsg struct {
+	Role            string                     `json:"role"`
+	Content         string                     `json:"content"`
+	ToolCallID      string                     `json:"tool_call_id,omitempty"`
+	ToolCalls       []TranscriptToolCall       `json:"tool_calls,omitempty"`
+	Reasoning       string                     `json:"reasoning,omitempty"`
+	ReasoningBlocks []TranscriptReasoningBlock `json:"reasoning_blocks,omitempty"`
+}
+
+// TranscriptToolCall 字段与 llm.ToolCall 一一对应。
+type TranscriptToolCall struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 }
 
-// DirectorMsg 是持久化到 DirectorHistory 里的一条原生消息，字段含义与 llm.ChatMessage
-// 一致；不含 ReasoningBlocks/Reasoning ——归档历史轮时会被丢弃，因为扩展思考签名/
-// reasoning_content 只在当轮工具循环内需要原样回传，跨轮复用没有意义。
-type DirectorMsg struct {
-	Role       string             `json:"role"`
-	Content    string             `json:"content"`
-	ToolCalls  []DirectorToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string             `json:"tool_call_id,omitempty"`
+// TranscriptReasoningBlock 字段与 llm.ReasoningBlock 一一对应。
+type TranscriptReasoningBlock struct {
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Data      string `json:"data,omitempty"`
 }
 
-// DirectorTurn 是 Director 一次 run() 调用(一个玩家回合)产生的完整原生消息链。
-// 按回合切分是为了让阈值 trim 从最旧的整轮开始整体丢弃，不会拆开某一轮内部的
-// tool_call 与对应 tool 结果的配对。
-type DirectorTurn struct {
-	Round    int           `json:"round"`
-	Messages []DirectorMsg `json:"messages"`
+// TurnCacheStat 记录一次调用的 token 用量与缓存命中情况，供后台按会话查看逐轮命中率。
+type TurnCacheStat struct {
+	Seq                 int   `json:"seq"`
+	Round               int   `json:"round"`
+	Calls               int   `json:"calls"`
+	PromptTokens        int64 `json:"prompt_tokens"`
+	CacheReadTokens     int64 `json:"cache_read_tokens"`
+	CacheCreationTokens int64 `json:"cache_creation_tokens"`
+	OutputTokens        int64 `json:"output_tokens"`
+	TrimmedTurns        int   `json:"trimmed_turns"`
 }
 
 // NOTE: GameSession tracks an active or completed run of a scenario with players.
@@ -366,21 +414,16 @@ type GameSession struct {
 	WriterHistory JSONField[[]ChatMsg] `gorm:"type:text" json:"-"`
 	// NOTE: DramaturgHistory 是剧构顾问独立的多轮进度线，与WriterHistory同结构；
 	// 只存Director脱敏后的progress_note与顾问回复，不与messages/WriterHistory共享数据源。
-	DramaturgHistory JSONField[[]ChatMsg] `gorm:"type:text" json:"-"`
-	// NOTE: DirectorHistory 持久化 Director 逐回合的完整原生消息链(含 tool_calls/tool
-	// 结果)，按 DirectorTurn 切分以便阈值 trim 整体丢弃最旧的若干轮而不拆散单轮内部的
-	// 调用配对；为空(老会话或首个回合)时 orchestrator 会用 messages 表退化生成一条
-	// 种子轮，兼容升级前的存量数据。
-	DirectorHistory JSONField[[]DirectorTurn] `gorm:"type:text" json:"-"`
-	CombatState     JSONField[*CombatState]   `gorm:"type:text" json:"-"`
-	ChaseState      JSONField[*ChaseState]    `gorm:"type:text" json:"-"`
-	KPHint          string                    `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
-	Introspection   string                    `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
-	CreatedAt       time.Time                 `json:"created_at"`
-	UpdatedAt       time.Time                 `json:"updated_at"`
-	Scenario        Scenario                  `gorm:"foreignKey:ScenarioID" json:"scenario"`
-	Creator         User                      `gorm:"foreignKey:CreatedBy" json:"creator"`
-	Players         []SessionPlayer           `gorm:"foreignKey:SessionID" json:"players"`
+	DramaturgHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
+	CombatState      JSONField[*CombatState] `gorm:"type:text" json:"-"`
+	ChaseState       JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
+	KPHint           string                  `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
+	Introspection    string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
+	CreatedAt        time.Time               `json:"created_at"`
+	UpdatedAt        time.Time               `json:"updated_at"`
+	Scenario         Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario"`
+	Creator          User                    `gorm:"foreignKey:CreatedBy" json:"creator"`
+	Players          []SessionPlayer         `gorm:"foreignKey:SessionID" json:"players"`
 }
 
 // SessionNPC is a temporary NPC card created during a session (e.g. monsters, minor NPCs).
@@ -743,13 +786,17 @@ type LawyerCacheStats struct {
 // role (caller agent) × model × method (chat/stream/image). 每个组合一行，
 // 由内存统计定期落库刷新；(role, model, method) 三元组唯一。
 type LLMLatencyStat struct {
-	ID       uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	Role     string    `gorm:"not null;uniqueIndex:idx_llm_latency_key" json:"role"`
-	Model    string    `gorm:"not null;uniqueIndex:idx_llm_latency_key" json:"model"`
-	Method   string    `gorm:"not null;uniqueIndex:idx_llm_latency_key" json:"method"`
-	Count    int64     `gorm:"not null;default:0" json:"count"`
-	SumMs    int64     `gorm:"not null;default:0" json:"sum_ms"`
-	ErrCount int64     `gorm:"not null;default:0" json:"err_count"`
-	MaxMs    int64     `gorm:"not null;default:0" json:"max_ms"`
-	SavedAt  time.Time `json:"saved_at"`
+	ID                  uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Role                string    `gorm:"not null;uniqueIndex:idx_llm_latency_key" json:"role"`
+	Model               string    `gorm:"not null;uniqueIndex:idx_llm_latency_key" json:"model"`
+	Method              string    `gorm:"not null;uniqueIndex:idx_llm_latency_key" json:"method"`
+	Count               int64     `gorm:"not null;default:0" json:"count"`
+	SumMs               int64     `gorm:"not null;default:0" json:"sum_ms"`
+	ErrCount            int64     `gorm:"not null;default:0" json:"err_count"`
+	MaxMs               int64     `gorm:"not null;default:0" json:"max_ms"`
+	PromptTokens        int64     `gorm:"not null;default:0" json:"prompt_tokens"`
+	OutputTokens        int64     `gorm:"not null;default:0" json:"output_tokens"`
+	CacheReadTokens     int64     `gorm:"not null;default:0" json:"cache_read_tokens"`
+	CacheCreationTokens int64     `gorm:"not null;default:0" json:"cache_creation_tokens"`
+	SavedAt             time.Time `json:"saved_at"`
 }

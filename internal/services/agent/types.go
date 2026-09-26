@@ -2,9 +2,22 @@
 package agent
 
 import (
+	"sort"
+
 	"github.com/llmcoc/server/internal/models"
-	"github.com/llmcoc/server/internal/services/llm"
 )
+
+// sortedIntMapKeys 返回map[string]int的key按字典序排序后的切片。渲染进prompt/head的内容
+// 必须保证确定性输出——Go的map遍历顺序是随机的，同一份NPC属性/技能数据如果不排序直接遍历，
+// 每次调用生成的字节都可能不同，会打断prompt cache的前缀匹配。
+func sortedIntMapKeys(m map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 // GameContext 承载一次聊天回合所需的全部上下文。
 type GameContext struct {
@@ -147,10 +160,10 @@ type ImagePromptRequest struct {
 	Aspect string `json:"aspect"` // 画面方向 landscape|portrait|square(可选,默认square)
 }
 
-// WriterState 保存Writer自己的上下文和本次生成的白字描述。
+// WriterState 保存Writer本次调用的跨回合上下文管理器和本次生成的白字描述。
 type WriterState struct {
-	History []llm.ChatMessage // Writer自己的历史,用于保持文本连续性
-	Buffer  string            // 本次生成的白字描述
+	cm     *ContextManager // Writer自己跨回合的原生消息链,由ContextManager统一管理
+	Buffer string          // 本次生成的白字描述
 }
 
 // RunOutput 是一次KP主流程的结构化结果。
