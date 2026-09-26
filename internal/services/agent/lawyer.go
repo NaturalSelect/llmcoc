@@ -542,7 +542,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 	}
 
 	const lawyerMaxRounds = 30
-	err := runToolLoop(ctx, toolLoopOptions{
+	_, err := runToolLoop(ctx, toolLoopOptions{
 		handle:           h,
 		stage:            "lawyer",
 		msgs:             msgs,

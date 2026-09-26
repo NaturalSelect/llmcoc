@@ -4,11 +4,15 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
 )
+
+// ErrEmptyLLMResponse 表示模型在耗尽内部重试后仍未返回任何文本或工具调用。
+var ErrEmptyLLMResponse = errors.New("LLM returned empty response")
 
 // ChatMessage represents a single message in a conversation
 type ChatMessage struct {
@@ -59,6 +63,25 @@ type ToolChatResult struct {
 	ToolCalls       []ToolCall
 	ReasoningBlocks []ReasoningBlock
 	Reasoning       string
+	Usage           Usage
+}
+
+// Usage 记录一次 LLM 调用消耗的 token 数,供调用方判断是否需要整体 trim 历史。
+// 约定:PromptTokens 表示完整的 prompt token 数,即使其中一部分命中了 prompt cache
+// 也要计入(与 Anthropic/OpenAI 各自的"总输入 token"口径对齐,详见各 provider 里的
+// usageFromXxx)；CacheReadTokens/CacheCreationTokens 只是 PromptTokens 的子集,
+// 用于审计缓存命中率,不需要在 ContextTokens 里再叠加。网关未返回 usage 时,
+// 各字段保持零值,调用方需要回退到按字符数估算。
+type Usage struct {
+	PromptTokens        int64
+	OutputTokens        int64
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+}
+
+// ContextTokens 返回本次调用实际占用的上下文窗口大小(prompt+output)。
+func (u Usage) ContextTokens() int64 {
+	return u.PromptTokens + u.OutputTokens
 }
 
 // Provider defines the interface for interacting with various LLM backends.
@@ -99,13 +122,20 @@ func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxT
 // newProviderByType 按 LLMProviderConfig.Provider 字段分发到具体实现。
 // 未识别的类型(包括历史遗留的 "custom"/空字符串)一律回落 OpenAI 兼容实现,
 // 保持与既有行为一致。imageViaChat 只对 OpenAI 兼容实现生效(Anthropic 目前不支持画图)。
+// 两种类型都由 fantasy.LanguageModel 驱动(见 fantasy_provider.go)，画图能力则始终由
+// openAIProvider 提供，与聊天用的是哪个 provider 无关。
 func newProviderByType(providerType, apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, imageViaChat bool) Provider {
-	switch strings.ToLower(strings.TrimSpace(providerType)) {
-	case "anthropic":
-		return newAnthropicProvider(apiKey, baseURL, model, maxTokens, temperature, disableTemperature, reasoningEffort)
-	default:
-		return newOpenAIProvider(apiKey, baseURL, model, maxTokens, temperature, disableTemperature, reasoningEffort, imageViaChat)
+	isAnthropic := strings.ToLower(strings.TrimSpace(providerType)) == "anthropic"
+	p, err := newFantasyProvider(isAnthropic, apiKey, baseURL, model, maxTokens, temperature, disableTemperature, reasoningEffort)
+	if err != nil {
+		// NOTE: anthropic.New/openaicompat.New 在不使用 vertex/bedrock 时不会失败，这里只是
+		// 防御性兜底；真出现时后续调用会带着这个 error 一路失败，日志用于定位配置问题。
+		log.Error("construct llm provider failed", "provider_type", providerType, "model", model, "err", err)
 	}
+	if isAnthropic {
+		return p
+	}
+	return &fantasyOpenAIProvider{fantasyProvider: p, image: newOpenAIProvider(apiKey, baseURL, model, imageViaChat)}
 }
 
 // LoadProviderFromDB loads an LLM provider for the given agent role from the database.

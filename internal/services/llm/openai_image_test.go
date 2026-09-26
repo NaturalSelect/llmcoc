@@ -6,7 +6,7 @@ package llm
 import (
 	"testing"
 
-	openai "github.com/sashabaranov/go-openai"
+	openai "github.com/openai/openai-go/v3"
 )
 
 func TestImageSizeForModel(t *testing.T) {
@@ -14,18 +14,18 @@ func TestImageSizeForModel(t *testing.T) {
 		name   string
 		model  string
 		aspect ImageAspect
-		want   string
+		want   openai.ImageGenerateParamsSize
 	}{
-		{"gpt-image landscape", "gpt-image-1", ImageAspectLandscape, openai.CreateImageSize1536x1024},
-		{"gpt-image portrait", "gpt-image-1", ImageAspectPortrait, openai.CreateImageSize1024x1536},
-		{"gpt-image square", "gpt-image-1", ImageAspectSquare, openai.CreateImageSize1024x1024},
-		{"dall-e-3 landscape", "dall-e-3", ImageAspectLandscape, openai.CreateImageSize1792x1024},
-		{"dall-e-3 portrait", "dall-e-3", ImageAspectPortrait, openai.CreateImageSize1024x1792},
-		{"dall-e3 无连字符变体仍识别为 dall-e-3", "dall-e3", ImageAspectLandscape, openai.CreateImageSize1792x1024},
-		{"dall-e-2 不支持横竖图,回落方图", "dall-e-2", ImageAspectLandscape, openai.CreateImageSize1024x1024},
-		{"未知模型回落方图", "some-third-party-model", ImageAspectLandscape, openai.CreateImageSize1024x1024},
-		{"空 aspect 回落方图", "gpt-image-1", "", openai.CreateImageSize1024x1024},
-		{"非法 aspect 回落方图", "dall-e-3", ImageAspect("garbage"), openai.CreateImageSize1024x1024},
+		{"gpt-image landscape", "gpt-image-1", ImageAspectLandscape, openai.ImageGenerateParamsSize1536x1024},
+		{"gpt-image portrait", "gpt-image-1", ImageAspectPortrait, openai.ImageGenerateParamsSize1024x1536},
+		{"gpt-image square", "gpt-image-1", ImageAspectSquare, openai.ImageGenerateParamsSize1024x1024},
+		{"dall-e-3 landscape", "dall-e-3", ImageAspectLandscape, openai.ImageGenerateParamsSize1792x1024},
+		{"dall-e-3 portrait", "dall-e-3", ImageAspectPortrait, openai.ImageGenerateParamsSize1024x1792},
+		{"dall-e3 无连字符变体仍识别为 dall-e-3", "dall-e3", ImageAspectLandscape, openai.ImageGenerateParamsSize1792x1024},
+		{"dall-e-2 不支持横竖图,回落方图", "dall-e-2", ImageAspectLandscape, openai.ImageGenerateParamsSize1024x1024},
+		{"未知模型回落方图", "some-third-party-model", ImageAspectLandscape, openai.ImageGenerateParamsSize1024x1024},
+		{"空 aspect 回落方图", "gpt-image-1", "", openai.ImageGenerateParamsSize1024x1024},
+		{"非法 aspect 回落方图", "dall-e-3", ImageAspect("garbage"), openai.ImageGenerateParamsSize1024x1024},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -41,11 +41,11 @@ func TestImageQualityForModel(t *testing.T) {
 	tests := []struct {
 		name  string
 		model string
-		want  string
+		want  openai.ImageGenerateParamsQuality
 	}{
-		{"gpt-image 取 high", "gpt-image-1", openai.CreateImageQualityHigh},
-		{"dall-e-3 取 hd", "dall-e-3", openai.CreateImageQualityHD},
-		{"dall-e3 无连字符变体仍取 hd", "dall-e3", openai.CreateImageQualityHD},
+		{"gpt-image 取 high", "gpt-image-1", openai.ImageGenerateParamsQualityHigh},
+		{"dall-e-3 取 hd", "dall-e-3", openai.ImageGenerateParamsQualityHD},
+		{"dall-e3 无连字符变体仍取 hd", "dall-e3", openai.ImageGenerateParamsQualityHD},
 		{"dall-e-2 不支持quality,留空", "dall-e-2", ""},
 		{"未知模型留空", "some-third-party-model", ""},
 	}

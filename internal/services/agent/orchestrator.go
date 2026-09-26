@@ -217,15 +217,62 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	needsWriterFallback := false
 	var kpNarration string
 
-	// Seed KP with read-only transcript context. Do not pass previous user turns
-	// as active LLM user messages, otherwise the KP may process old requests again.
-	kpMsgs := []llm.ChatMessage{{Role: "user", Content: formatHistoryTranscript(gctx.History)}}
+	// Director 有状态：加载跨回合原生消息链(assistant的tool_calls与对应tool结果)，
+	// 而不是每轮都重新拼一段扁平HIST(RO)文本——上一轮的工具调用与结果原样可见，
+	// DUP CHECK更可靠。老会话DirectorHistory为空但messages表有历史时，用旧的扁平
+	// transcript当作第0轮种子，之后会像普通历史轮一样被trim掉。
+	directorTurns := loadDirectorHistory(gctx)
+	if len(directorTurns) == 0 && len(gctx.History) > 0 {
+		directorTurns = []models.DirectorTurn{{
+			Round:    0,
+			Messages: llmToDirectorMsgs([]llm.ChatMessage{{Role: "user", Content: formatHistoryTranscript(gctx.History)}}),
+		}}
+	}
+	historyMsgs := flattenDirectorTurns(directorTurns)
 
 	// NOTE: 运行时读取 balance_rules 并注入 Director 用户消息；与 Lawyer 保持一致语义。
 	kpBalanceRules := strings.TrimSpace(models.GetSiteSetting("balance_rules", models.DefaultBalanceRules))
 	combat := gctx.Session.CombatState.Data
 	chase := gctx.Session.ChaseState.Data
-	kpMsgs = buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW)), kpMsgs, tempNPCs, kpBalanceRules, combat, chase)
+	kpMsgs, archivedCurrentMsg := buildKPMessages(gctx, handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW)), historyMsgs, tempNPCs, kpBalanceRules, combat, chase)
+
+	// directorWindow<=0表示后台未配置阈值，历史无限增长、永不触发trim。
+	directorWindow := int64(0)
+	if cfg := handles[models.AgentRoleDirector].config; cfg != nil {
+		directorWindow = int64(cfg.ContextWindow)
+	}
+	// directorHistoryHead 是kpMsgs里[system, scenario]的固定长度，historyLen是
+	// 紧随其后的"历史轮"当前还剩多少条消息——afterCall整体trim掉最旧的历史轮时
+	// 会同步减少，循环结束后据此定位出"这一轮自己新产生的消息"从哪里开始，不受
+	// 循环内是否发生过trim影响。
+	const directorHistoryHead = 2
+	historyLen := len(historyMsgs)
+	var lastUsage llm.Usage
+	afterCall := func(usage llm.Usage, msgs []llm.ChatMessage) []llm.ChatMessage {
+		lastUsage = usage
+		if directorWindow <= 0 || historyLen == 0 {
+			return msgs
+		}
+		used := directorEstimatedUsedTokens(usage, msgs)
+		if !directorOverThreshold(directorWindow, used) {
+			return msgs
+		}
+		trimmed, dropped := trimDirectorTurns(directorTurns, directorWindow, used, chatMessagesRuneCount(msgs))
+		if dropped == 0 {
+			return msgs
+		}
+		droppedMsgCount := 0
+		for _, t := range directorTurns[:dropped] {
+			droppedMsgCount += len(t.Messages)
+		}
+		directorTurns = trimmed
+		historyLen -= droppedMsgCount
+		alog.Debug("director history trimmed mid-turn", "session", sid, "dropped_turns", dropped, "used_tokens", used, "window", directorWindow)
+		out := make([]llm.ChatMessage, 0, len(msgs)-droppedMsgCount)
+		out = append(out, msgs[:directorHistoryHead]...)
+		out = append(out, msgs[directorHistoryHead+droppedMsgCount:]...)
+		return out
+	}
 
 	roundClosed := false
 
@@ -266,7 +313,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	if combat != nil || chase != nil {
 		maxRounds = MaxKpRoundEncounter
 	}
-	err = runToolLoop(ctx, toolLoopOptions{
+	finalMsgs, err := runToolLoop(ctx, toolLoopOptions{
 		handle:        handles[models.AgentRoleDirector],
 		stage:         "director",
 		msgs:          kpMsgs,
@@ -274,6 +321,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		maxRounds:     maxRounds,
 		batchPolicy:   directorBatchPolicy(&imageGeneratedThisTurn, &dramaturgConsultedThisTurn, &combat, &chase, &roundClosed, gctx.PendingActions, emitProgress),
 		batchDispatch: directorBatchDispatch(st),
+		afterCall:     afterCall,
 		beforeRound: func(r int) {
 			round = r
 			debugf("KP", "session=%d round=%d/%d — calling LLM", sid, r, maxRounds)
@@ -299,6 +347,22 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 		emitProgress("KP主流程裁定完成")
 	}
+
+	// 归档本轮：把归档版user消息换下发送版，拼上循环里产生的全部assistant/tool
+	// 消息，追加为新一轮持久化。round<=1的硬失败已经在上面return，不会执行到
+	// 这里，所以这里始终代表"至少取得过一轮进展"，持久化范围与旧协议一致。
+	newTurnNative := finalMsgs[directorHistoryHead+historyLen:]
+	newTurnMsgs := append([]llm.ChatMessage{archivedCurrentMsg}, newTurnNative[1:]...)
+	directorTurns = append(directorTurns, models.DirectorTurn{Round: gctx.Session.TurnRound, Messages: llmToDirectorMsgs(newTurnMsgs)})
+	if directorWindow > 0 {
+		if used := directorEstimatedUsedTokens(lastUsage, finalMsgs); directorOverThreshold(directorWindow, used) {
+			if trimmed, dropped := trimDirectorTurns(directorTurns, directorWindow, used, chatMessagesRuneCount(finalMsgs)); dropped > 0 {
+				alog.Debug("director history trimmed", "session", sid, "dropped_turns", dropped, "used_tokens", used, "window", directorWindow)
+				directorTurns = trimmed
+			}
+		}
+	}
+	saveDirectorHistory(sid, directorTurns)
 
 	if kpNarration == "" {
 		kpNarration = "本轮未生成KP独白。"

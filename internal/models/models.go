@@ -323,6 +323,33 @@ type ChatMsg struct {
 	Content string `json:"content"`
 }
 
+// DirectorToolCall 是持久化到 DirectorHistory 里的一次原生工具调用记录，字段含义与
+// agent 包里 llm.ToolCall 一致；models 不依赖 llm 包，单独定义一份存储用 DTO，
+// 转换在 agent 包的 director_history.go 里完成。
+type DirectorToolCall struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// DirectorMsg 是持久化到 DirectorHistory 里的一条原生消息，字段含义与 llm.ChatMessage
+// 一致；不含 ReasoningBlocks/Reasoning ——归档历史轮时会被丢弃，因为扩展思考签名/
+// reasoning_content 只在当轮工具循环内需要原样回传，跨轮复用没有意义。
+type DirectorMsg struct {
+	Role       string             `json:"role"`
+	Content    string             `json:"content"`
+	ToolCalls  []DirectorToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string             `json:"tool_call_id,omitempty"`
+}
+
+// DirectorTurn 是 Director 一次 run() 调用(一个玩家回合)产生的完整原生消息链。
+// 按回合切分是为了让阈值 trim 从最旧的整轮开始整体丢弃，不会拆开某一轮内部的
+// tool_call 与对应 tool 结果的配对。
+type DirectorTurn struct {
+	Round    int           `json:"round"`
+	Messages []DirectorMsg `json:"messages"`
+}
+
 // NOTE: GameSession tracks an active or completed run of a scenario with players.
 type GameSession struct {
 	ID            uint                 `gorm:"primaryKey;autoIncrement" json:"id"`
@@ -339,16 +366,21 @@ type GameSession struct {
 	WriterHistory JSONField[[]ChatMsg] `gorm:"type:text" json:"-"`
 	// NOTE: DramaturgHistory 是剧构顾问独立的多轮进度线，与WriterHistory同结构；
 	// 只存Director脱敏后的progress_note与顾问回复，不与messages/WriterHistory共享数据源。
-	DramaturgHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
-	CombatState      JSONField[*CombatState] `gorm:"type:text" json:"-"`
-	ChaseState       JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
-	KPHint           string                  `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
-	Introspection    string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
-	CreatedAt        time.Time               `json:"created_at"`
-	UpdatedAt        time.Time               `json:"updated_at"`
-	Scenario         Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario"`
-	Creator          User                    `gorm:"foreignKey:CreatedBy" json:"creator"`
-	Players          []SessionPlayer         `gorm:"foreignKey:SessionID" json:"players"`
+	DramaturgHistory JSONField[[]ChatMsg] `gorm:"type:text" json:"-"`
+	// NOTE: DirectorHistory 持久化 Director 逐回合的完整原生消息链(含 tool_calls/tool
+	// 结果)，按 DirectorTurn 切分以便阈值 trim 整体丢弃最旧的若干轮而不拆散单轮内部的
+	// 调用配对；为空(老会话或首个回合)时 orchestrator 会用 messages 表退化生成一条
+	// 种子轮，兼容升级前的存量数据。
+	DirectorHistory JSONField[[]DirectorTurn] `gorm:"type:text" json:"-"`
+	CombatState     JSONField[*CombatState]   `gorm:"type:text" json:"-"`
+	ChaseState      JSONField[*ChaseState]    `gorm:"type:text" json:"-"`
+	KPHint          string                    `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
+	Introspection   string                    `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
+	CreatedAt       time.Time                 `json:"created_at"`
+	UpdatedAt       time.Time                 `json:"updated_at"`
+	Scenario        Scenario                  `gorm:"foreignKey:ScenarioID" json:"scenario"`
+	Creator         User                      `gorm:"foreignKey:CreatedBy" json:"creator"`
+	Players         []SessionPlayer           `gorm:"foreignKey:SessionID" json:"players"`
 }
 
 // SessionNPC is a temporary NPC card created during a session (e.g. monsters, minor NPCs).
@@ -620,6 +652,10 @@ type AgentConfig struct {
 	// 部分画图模型/中转网关只能通过 Chat 接口调用，图片数据在响应的 delta.images[].image_url.url
 	// 字段中以 data URL 形式返回（仅 Painter 角色使用）。
 	ImageViaChat bool `gorm:"default:false" json:"image_via_chat"`
+	// ContextWindow 是该 Agent 所用模型的上下文窗口 token 数上限，供需要按阈值整体
+	// 裁剪历史的 Agent(目前仅 Director)判断何时该 trim；0 表示不开启该判断(不 trim)。
+	// 不同模型窗口差异很大，这里不设非零默认值，需要在后台按实际模型手动填写。
+	ContextWindow int `gorm:"default:0" json:"context_window"`
 	// WithJailbreak 为 true 时在该 Agent 的系统提示词外包裹越狱提示词，用于降低模型因内容审查拒绝创作黑暗/成人向剧情的概率。
 	WithJailbreak  bool               `gorm:"default:false" json:"with_jailbreak"`
 	SystemPrompt   string             `gorm:"type:text" json:"system_prompt"`

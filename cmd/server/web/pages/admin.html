@@ -153,6 +153,11 @@
                                             :class="ag.disable_temperature ? 'opacity-40 cursor-not-allowed' : ''" />
                                     </div>
                                 </div>
+                                <div x-show="ag.role === 'director'">
+                                    <label class="text-xs text-amber-800 mb-1 block font-ui">上下文窗口（token，按模型实际值填写）</label>
+                                    <input x-model.number="ag.context_window" type="number" min="0"
+                                        placeholder="0 = 不整体裁剪历史" class="inp" />
+                                </div>
                                 <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer mb-2.5 font-ui">
                                     <input type="checkbox" x-model="ag.disable_temperature"
                                         class="accent-amber-600" />

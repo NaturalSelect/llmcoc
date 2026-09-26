@@ -17,18 +17,19 @@
 
 ## 技术栈
 
-- Go 1.23
+- Go 1.26
 - Gin
 - GORM + SQLite
 - JWT（`github.com/golang-jwt/jwt/v5`）
-- OpenAI SDK（`github.com/sashabaranov/go-openai`）
+- LLM SDK（`charm.land/fantasy`，统一封装 OpenAI 兼容与 Anthropic 的对话接口）
+- 图片生成 SDK（`github.com/openai/openai-go/v3`）
 - 前端：嵌入式单页页面（`cmd/server/web/index.html`）
 
 ## 快速开始
 
 ### 1. 准备环境
 
-- Go 1.23+
+- Go 1.26+
 - 可选：Docker / Docker Compose
 
 ### 2. 配置

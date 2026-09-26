@@ -3,3 +3,4 @@
 .env
 config.local.yaml
 tmp/
+angela.json

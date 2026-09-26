@@ -542,3 +542,40 @@ func TestAdminUpdateAgent_ImageViaChatRoundTrip(t *testing.T) {
 		t.Fatalf("GET want 200, got %d", w2.Code)
 	}
 }
+
+// TestAdminUpdateAgent_ContextWindowRoundTrip 覆盖 context_window 在创建分支
+// （agentCfg 字面量）与更新分支（updates map）两条路径都能正确落库，且未显式传值
+// 时不会意外写成非零默认值（0 = 不整体裁剪历史）。
+func TestAdminUpdateAgent_ContextWindowRoundTrip(t *testing.T) {
+	initTestDB(t)
+	r := adminConfigRouter()
+
+	// 创建分支：首次 PUT 时 director 行不存在，走 agentCfg 字面量。
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/admin/config/agents/director", map[string]any{
+		"model_name":     "gpt-4o",
+		"context_window": 128000,
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("create PUT want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var cfg models.AgentConfig
+	models.DB.Where("role = ?", "director").First(&cfg)
+	if cfg.ContextWindow != 128000 {
+		t.Fatalf("create: ContextWindow = %d, want 128000", cfg.ContextWindow)
+	}
+
+	// 更新分支：director 行已存在，走 updates map；不传 context_window 时应回落为 0，
+	// 而不是保留上一次的值——与 max_tokens 等其他数值字段的既有语义一致。
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, jsonReq("PUT", "/admin/config/agents/director", map[string]any{
+		"model_name": "gpt-4o",
+	}))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("update PUT want 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+	models.DB.Where("role = ?", "director").First(&cfg)
+	if cfg.ContextWindow != 0 {
+		t.Fatalf("update without context_window: ContextWindow = %d, want 0", cfg.ContextWindow)
+	}
+}

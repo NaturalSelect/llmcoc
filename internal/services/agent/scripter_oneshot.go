@@ -479,7 +479,7 @@ func runOneshotVerificationPhase(ctx context.Context, room *scripterRoom, conv *
 	}
 
 	const maxRounds = 20
-	if err := runToolLoop(ctx, toolLoopOptions{
+	if _, err := runToolLoop(ctx, toolLoopOptions{
 		room:      room,
 		handle:    room.architect,
 		stage:     stageName + "_verify",

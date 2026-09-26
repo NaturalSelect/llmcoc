@@ -209,7 +209,7 @@ window.COC.admin = {
 
                         // Ensure all configurable roles exist in UI, even if DB row is missing.
                         const roleDefaults = {
-                            director: { max_tokens: 1500, temperature: 0.7 },
+                            director: { max_tokens: 1500, temperature: 0.7, context_window: 0 },
                             writer: { max_tokens: 800, temperature: 0.85 },
                             // NOTE: writer_nsfw 仅在房间开启NSFW且本轮被标记为色情内容时启用，默认关闭。
                             writer_nsfw: { max_tokens: 800, temperature: 0.85, is_active: false },
@@ -244,6 +244,7 @@ window.COC.admin = {
                                 provider_config_id: '',
                                 model_name: d.model_name || '',
                                 max_tokens: d.max_tokens,
+                                context_window: d.context_window || 0,
                                 temperature: d.temperature,
                                 disable_temperature: d.disable_temperature || false,
                                 image_via_chat: d.image_via_chat || false,
@@ -416,6 +417,7 @@ window.COC.admin = {
                                 provider_config_id: ag.provider_config_id || null,
                                 model_name: ag.model_name,
                                 max_tokens: ag.max_tokens,
+                                context_window: ag.context_window || 0,
                                 temperature: ag.temperature,
                                 disable_temperature: ag.disable_temperature || false,
                                 image_via_chat: ag.image_via_chat || false,

@@ -233,6 +233,42 @@ func TestKPTurnReminderStructure(t *testing.T) {
 	}
 }
 
+// TestBuildKPArchivedCurrentMessage_OmitsPerTurnStaticSections 验证归档版的本轮
+// user消息只保留玩家简介、<now>、Active NPC、战斗/追逐结构化状态与玩家原始输入；
+// timeline/mechanics/config/keeper_appendix这些"每轮都要看运行时最新值"的静态
+// 大段内容和<current>/kpTurnReminder不应归档，避免历史越滚越大，也避免模型把
+// 旧一轮读到的静态内容误当作当前轮最新配置。
+func TestBuildKPArchivedCurrentMessage_OmitsPerTurnStaticSections(t *testing.T) {
+	gctx := GameContext{
+		Session:   models.GameSession{TurnRound: 3},
+		UserInput: "调查员推开门，环顾四周",
+		UserName:  "张三",
+	}
+
+	msg := buildKPArchivedCurrentMessage(gctx, nil, nil, nil)
+
+	for _, unwanted := range []string{"<current>", "</current>", "<timeline>", "<mechanics>", "<keeper_appendix>", "<config>"} {
+		if strings.Contains(msg.Content, unwanted) {
+			t.Errorf("archived message should not contain %q, got %q", unwanted, msg.Content)
+		}
+	}
+	if strings.Contains(msg.Content, kpTurnReminder) {
+		t.Error("archived message should not carry kpTurnReminder")
+	}
+	if !strings.Contains(msg.Content, "<past_turn round=3>") {
+		t.Errorf("archived message should wrap the turn in <past_turn round=N>, got %q", msg.Content)
+	}
+	if !strings.Contains(msg.Content, "</past_turn>") {
+		t.Error("archived message should close </past_turn>")
+	}
+	if !strings.Contains(msg.Content, "调查员推开门，环顾四周") {
+		t.Error("archived message should retain the raw player input")
+	}
+	if msg.Role != "user" {
+		t.Errorf("archived message role = %q, want %q", msg.Role, "user")
+	}
+}
+
 // TestGenerateImageToolBlocksUnidentifiedEntityPortrait 验证配图工具描述已收紧未鉴定实体的正面描绘规则。
 func TestGenerateImageToolBlocksUnidentifiedEntityPortrait(t *testing.T) {
 	desc := generateImageTool().def.Description

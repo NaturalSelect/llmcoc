@@ -310,7 +310,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, conv *script
 	}
 
 	const maxRounds = 30
-	err := runToolLoop(ctx, toolLoopOptions{
+	_, err := runToolLoop(ctx, toolLoopOptions{
 		room:        room,
 		handle:      room.architect,
 		stage:       stageName,

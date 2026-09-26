@@ -212,6 +212,8 @@ func AdminUpdateAgent(c *gin.Context) {
 
 	modelName, _ := raw["model_name"].(string)
 	maxTokens := int(toFloat(raw["max_tokens"]))
+	// NOTE: 不同模型的上下文窗口差异很大,0 表示不开启阈值 trim(目前仅 director 角色消费)。
+	contextWindow := int(toFloat(raw["context_window"]))
 	temperature := float32(toFloat(raw["temperature"]))
 	thinkingLevel, _ := raw["thinking_level"].(string)
 	var isActive *bool
@@ -246,6 +248,7 @@ func AdminUpdateAgent(c *gin.Context) {
 		"provider_config_id":  providerConfigID,
 		"model_name":          modelName,
 		"max_tokens":          maxTokens,
+		"context_window":      contextWindow,
 		"temperature":         temperature,
 		"disable_temperature": disableTemperature,
 		"image_via_chat":      imageViaChat,
@@ -269,6 +272,7 @@ func AdminUpdateAgent(c *gin.Context) {
 			ProviderConfigID:   providerConfigID,
 			ModelName:          modelName,
 			MaxTokens:          maxTokens,
+			ContextWindow:      contextWindow,
 			Temperature:        temperature,
 			DisableTemperature: disableTemperature,
 			ImageViaChat:       imageViaChat,

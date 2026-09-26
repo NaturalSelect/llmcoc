@@ -99,6 +99,13 @@ type toolLoopOptions struct {
 	// batchPolicy 判定之前触发，供调用方发出"计划执行哪些工具"一类的进度提示。
 	onToolCalls func(calls []llm.ToolCall)
 
+	// afterCall 非 nil 时，在每轮 ChatWithTools 成功返回、assistant 消息追加进 msgs
+	// 之后立即调用一次，入参为本轮 usage 与追加后的 msgs，返回值替换 msgs（用于按
+	// token 阈值整体 trim 掉调用方能定位到的历史片段，如 Director 的跨回合原生消息
+	// 链）；为 nil 时 msgs 不变。该钩子对应 fantasy Agent 里 PrepareStep 读取
+	// Steps[len-1].Usage 的位置，是阶段2迁移前的等价实现。
+	afterCall func(usage llm.Usage, msgs []llm.ChatMessage) []llm.ChatMessage
+
 	// onPlainText 非 nil 时，若本轮模型未返回任何 tool_calls，不再计入 emptyRounds
 	// 失败探测，改由它判定这段纯文本是否构成"自然完成"：done=true 时驱动器立即
 	// 成功返回（调用方已在闭包中捕获结果）；done=false 时 retryMsg 作为下一轮 user
@@ -125,7 +132,7 @@ func runScripterToolLoop(
 	maxRounds int,
 	dispatch scripterToolDispatch,
 ) error {
-	return runToolLoop(ctx, toolLoopOptions{
+	_, err := runToolLoop(ctx, toolLoopOptions{
 		room:      room,
 		handle:    handle,
 		stage:     stage,
@@ -134,6 +141,7 @@ func runScripterToolLoop(
 		maxRounds: maxRounds,
 		dispatch:  dispatch,
 	})
+	return err
 }
 
 // buildToolState 把工具定义列表展开为 ChatWithTools 需要的 []ToolDefinition，
@@ -167,13 +175,15 @@ func defaultBatchPolicy(soloNames map[string]bool) toolBatchPolicy {
 }
 
 // runToolLoop 驱动一次原生工具调用的多轮循环，是 Scripter（经 runScripterToolLoop
-// 兼容包装）与 Lawyer 等 agent 共用的核心实现。
-func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
+// 兼容包装）与 Lawyer 等 agent 共用的核心实现。返回值额外带回循环终止时刻完整的
+// msgs（含本次循环追加的全部 assistant/tool 消息），供 Director 等需要把原生消息链
+// 归档到自己历史里的调用方使用；只关心成功与否的调用方可以直接丢弃第一个返回值。
+func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, error) {
 	handle := opts.handle
 	stage := opts.stage
 	msgs := opts.msgs
 	if handle.provider == nil {
-		return fmt.Errorf("%s provider unavailable", stage)
+		return msgs, fmt.Errorf("%s provider unavailable", stage)
 	}
 	sessionID := scripterSessionID(ctx, opts.room)
 
@@ -203,7 +213,7 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 	emptyRounds := 0
 	for round := 1; round <= opts.maxRounds; round++ {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return msgs, ctx.Err()
 		}
 		if opts.beforeRound != nil {
 			opts.beforeRound(round)
@@ -222,7 +232,7 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 
 		result, err := handle.provider.ChatWithTools(ctx, cacheKey, msgs, toolDefs)
 		if err != nil {
-			return err
+			return msgs, err
 		}
 		// NOTE: 只把本轮相对上次记录新增的消息（首轮为全部初始消息）写入生成日志，
 		// 而不是每轮重新写入 msgs 的完整历史；否则 N 轮下来日志构建总量是 O(N²)。
@@ -234,15 +244,20 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 		// 拒绝或不被视为同一段推理的延续；OpenAI 兼容推理模型（如 deepseek-reasoner）同理需要把
 		// 上一轮明文 reasoning_content 带回去维持多轮推理质量；其余情况透传是空操作。
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls, ReasoningBlocks: result.ReasoningBlocks, Reasoning: result.Reasoning})
+		if opts.afterCall != nil {
+			msgs = opts.afterCall(result.Usage, msgs)
+		}
 		// assistant 回复已经通过 recordScripterLLMExchange 的 response 参数记录，
-		// 标记到此为止都已写入日志，下一轮的 newMessages 从这里开始算起。
+		// 标记到此为止都已写入日志，下一轮的 newMessages 从这里开始算起；重新用
+		// len(msgs)取值（而不是在旧长度上做加法）天然兼容afterCall整体trim掉
+		// 前缀的情况，不需要额外计算下标偏移量。
 		loggedCount = len(msgs)
 
 		if len(result.ToolCalls) == 0 {
 			if opts.onPlainText != nil {
 				done, retryMsg := opts.onPlainText(result.Content)
 				if done {
-					return nil
+					return msgs, nil
 				}
 				if retryMsg == "" {
 					retryMsg = "SYSTEM REJECT: 必须输出至少一个工具调用。"
@@ -256,7 +271,7 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 				if handle.config != nil && strings.TrimSpace(handle.config.ModelName) != "" {
 					modelName = handle.config.ModelName
 				}
-				return fmt.Errorf("%s 连续 %d 轮未返回任何工具调用，端点可能不支持或未正确配置 function calling（agent=%s model=%s）",
+				return msgs, fmt.Errorf("%s 连续 %d 轮未返回任何工具调用，端点可能不支持或未正确配置 function calling（agent=%s model=%s）",
 					stage, emptyRounds, handle.roleName(), modelName)
 			}
 			msgs = append(msgs, llm.ChatMessage{Role: "user", Content: "SYSTEM REJECT: 必须输出至少一个工具调用。"})
@@ -337,10 +352,10 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) error {
 			opts.afterRound()
 		}
 		if done {
-			return nil
+			return msgs, nil
 		}
 	}
-	return fmt.Errorf("%s 未在%d轮内完成", stage, opts.maxRounds)
+	return msgs, fmt.Errorf("%s 未在%d轮内完成", stage, opts.maxRounds)
 }
 
 // soloMixed 判断本轮响应中是否有 solo 工具与其他调用（含另一个 solo 工具）混批。

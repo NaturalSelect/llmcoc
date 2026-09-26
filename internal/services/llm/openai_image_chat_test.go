@@ -93,7 +93,7 @@ func newFakeImageChatServer(t *testing.T, chunks []fakeImageChatChunk) (*httptes
 func TestGenerateImageViaChat_DataURLSingleChunk(t *testing.T) {
 	wantURL := "data:image/jpeg;base64,ZmFrZS1qcGVn"
 	srv, _ := newFakeImageChatServer(t, []fakeImageChatChunk{imageChunk(wantURL)})
-	p := newOpenAIProvider("test-key", srv.URL, "gemini-3.1-flash-image", 0, 0, false, "", true)
+	p := newOpenAIProvider("test-key", srv.URL, "gemini-3.1-flash-image", true)
 
 	base64Data, mimeType, err := p.generateImageViaChat(context.Background(), p.model, "a cat")
 	if err != nil {
@@ -116,7 +116,7 @@ func TestGenerateImageViaChat_DataURLFragmented(t *testing.T) {
 		imageChunk(full[:mid]),
 		imageChunk(full[mid:]),
 	})
-	p := newOpenAIProvider("test-key", srv.URL, "gemini-3.1-flash-image", 0, 0, false, "", true)
+	p := newOpenAIProvider("test-key", srv.URL, "gemini-3.1-flash-image", true)
 
 	base64Data, mimeType, err := p.generateImageViaChat(context.Background(), p.model, "a cat")
 	if err != nil {
@@ -139,7 +139,7 @@ func TestGenerateImageViaChat_RemoteURLDownloaded(t *testing.T) {
 	t.Cleanup(imgSrv.Close)
 
 	srv, _ := newFakeImageChatServer(t, []fakeImageChatChunk{imageChunk(imgSrv.URL + "/generated.webp")})
-	p := newOpenAIProvider("test-key", srv.URL, "some-chat-image-model", 0, 0, false, "", true)
+	p := newOpenAIProvider("test-key", srv.URL, "some-chat-image-model", true)
 
 	base64Data, mimeType, err := p.generateImageViaChat(context.Background(), p.model, "a cat")
 	if err != nil {
@@ -159,7 +159,7 @@ func TestGenerateImageViaChat_RemoteURLDownloaded(t *testing.T) {
 
 func TestGenerateImageViaChat_NoImageData(t *testing.T) {
 	srv, _ := newFakeImageChatServer(t, []fakeImageChatChunk{contentChunk("我不会画图")})
-	p := newOpenAIProvider("test-key", srv.URL, "gemini-3.1-flash-image", 0, 0, false, "", true)
+	p := newOpenAIProvider("test-key", srv.URL, "gemini-3.1-flash-image", true)
 
 	if _, _, err := p.generateImageViaChat(context.Background(), p.model, "a cat"); err == nil {
 		t.Fatal("want error when stream contains no images field, got nil")
@@ -170,7 +170,7 @@ func TestGenerateImageViaChat_RequestShape(t *testing.T) {
 	srv, captured := newFakeImageChatServer(t, []fakeImageChatChunk{
 		imageChunk("data:image/png;base64,QUJD"),
 	})
-	p := newOpenAIProvider("my-api-key", srv.URL, "gemini-3.1-flash-image", 0, 0, false, "", true)
+	p := newOpenAIProvider("my-api-key", srv.URL, "gemini-3.1-flash-image", true)
 
 	if _, _, err := p.generateImageViaChat(context.Background(), p.model, "draw a cat"); err != nil {
 		t.Fatalf("generateImageViaChat error: %v", err)
