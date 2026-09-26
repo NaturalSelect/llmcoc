@@ -509,6 +509,14 @@ window.COC.admin = {
                             this.showToast('设置已更新');
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
+                    async endAllSessions() {
+                        if (!await this.confirmDialog('确认强制结束所有运行中的房间？此操作不可逆，不会向玩家收取结束游戏费用。', { danger: true, confirmText: '一键结束' })) return;
+                        try {
+                            const r = await this.api('POST', '/api/admin/sessions/end-all');
+                            this.showToast(r.message || '已结束所有房间');
+                            await this.loadSessions().catch(() => {});
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
                     async updateSiteSettingCost(key) {
                         const val = String(this.siteSettings[key] ?? '');
                         if (!val || isNaN(parseInt(val)) || parseInt(val) < 0) {

@@ -28,6 +28,7 @@ func adminRouter() *gin.Engine {
 	admin.POST("/shop/items", AdminCreateShopItem)
 	admin.DELETE("/shop/items/:id", AdminDeleteShopItem)
 	admin.GET("/cache/entry", AdminGetCacheEntry)
+	admin.POST("/sessions/end-all", AdminEndAllSessions)
 	return r
 }
 
@@ -597,4 +598,88 @@ func TestAdminDeleteShopItem_NotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", w.Code)
 	}
+}
+
+// ── AdminEndAllSessions ──────────────────────────────────────────────────────
+
+func TestAdminEndAllSessions_NoActiveSessions(t *testing.T) {
+	initTestDB(t)
+	r := adminRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/admin/sessions/end-all", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if count, _ := resp["count"].(float64); count != 0 {
+		t.Errorf("count = %v, want 0", resp["count"])
+	}
+}
+
+// TestAdminEndAllSessions_EndsLobbyAndPlayingOnly 验证批量结束只处理 lobby/playing 房间，
+// 已结束的房间不受影响也不计入结果。
+func TestAdminEndAllSessions_EndsLobbyAndPlayingOnly(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "owner", "user", 0, 3)
+	sID := seedScenario(t, "S")
+
+	lobby := models.GameSession{Name: "Lobby", ScenarioID: sID, Status: models.SessionStatusLobby, MaxPlayers: 4, CreatedBy: uid}
+	models.DB.Create(&lobby)
+	playing := models.GameSession{Name: "Playing", ScenarioID: sID, Status: models.SessionStatusPlaying, MaxPlayers: 4, CreatedBy: uid}
+	models.DB.Create(&playing)
+	ended := models.GameSession{Name: "Ended", ScenarioID: sID, Status: models.SessionStatusEnded, MaxPlayers: 4, CreatedBy: uid}
+	models.DB.Create(&ended)
+
+	r := adminRouter()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/admin/sessions/end-all", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if count, _ := resp["count"].(float64); count != 2 {
+		t.Errorf("count = %v, want 2", resp["count"])
+	}
+
+	var got models.GameSession
+	models.DB.First(&got, lobby.ID)
+	if got.Status != models.SessionStatusEnded {
+		t.Errorf("lobby session status = %q, want ended", got.Status)
+	}
+	models.DB.First(&got, playing.ID)
+	if got.Status != models.SessionStatusEnded {
+		t.Errorf("playing session status = %q, want ended", got.Status)
+	}
+}
+
+// TestAdminEndAllSessions_DoesNotChargeCost 验证强制批量结束不收取 end_session_cost，
+// 即使玩家金币为 0 也能成功结束（区别于玩家自行结束需要付费）。
+func TestAdminEndAllSessions_DoesNotChargeCost(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "brokeowner", "user", 0, 3)
+	sID := seedScenario(t, "S")
+	cardID := seedCard(t, uid, "Card")
+	sess := models.GameSession{Name: "Playing", ScenarioID: sID, Status: models.SessionStatusPlaying, MaxPlayers: 4, CreatedBy: uid}
+	models.DB.Create(&sess)
+	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: uid, CharacterCardID: cardID})
+
+	r := adminRouter()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/admin/sessions/end-all", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got models.GameSession
+	models.DB.First(&got, sess.ID)
+	if got.Status != models.SessionStatusEnded {
+		t.Errorf("status = %q, want ended", got.Status)
+	}
+	// NOTE: RunEndSession 的 fallback 结算会发放少量金币，这里只需确认没有因 0 金币被拒绝(无 402)。
 }

@@ -312,6 +312,8 @@ func main() {
 		// Ban management
 		admin.PUT("/users/:id/ban", handlers.AdminBanUser)
 		admin.PUT("/users/:id/unban", handlers.AdminUnbanUser)
+		// Session management
+		admin.POST("/sessions/end-all", handlers.AdminEndAllSessions)
 	}
 
 	// ─── Frontend (embedded) ─────────────────────────────────────────────────

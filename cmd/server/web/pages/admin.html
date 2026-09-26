@@ -712,6 +712,18 @@
                     </div>
                 </div>
 
+                <!-- Session maintenance -->
+                <div class="card rounded p-5 max-w-md">
+                    <h3 class="font-bold text-amber-300 mb-4 text-sm font-ui">房间维护</h3>
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <span class="text-sm font-ui block">强制结束所有运行中房间</span>
+                            <span class="text-xs text-amber-800 font-ui">用于后端升级后清理与新版本不兼容的存量房间；不收取结束游戏费用，仅做基础结算与角色恢复</span>
+                        </div>
+                        <button @click="endAllSessions()" class="btn btn-red text-xs shrink-0">一键结束</button>
+                    </div>
+                </div>
+
                 <!-- Coin cost settings -->
                 <div class="card rounded p-5 max-w-md">
                     <h3 class="font-bold text-amber-300 mb-4 text-sm font-ui">金币与初始配置</h3>

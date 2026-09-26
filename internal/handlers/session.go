@@ -2017,6 +2017,55 @@ func EndSession(c *gin.Context) {
 	})
 }
 
+// AdminEndAllSessions 一键强制结束所有运行中(lobby/playing)的房间，供后端升级后清理与
+// 新版本编排逻辑不兼容的存量房间使用。与玩家自行结束不同：不收取 end_session_cost 费用
+// (强制下线非玩家自愿)，但复用 RunEndSession 做基础结算与角色恢复(回满HP/MP/SAN、撕卡、
+// 清疯狂)，win 固定为 false。RunEndSession 不读取 DirectorHistory，对旧数据结构安全。
+func AdminEndAllSessions(c *gin.Context) {
+	adminID := c.GetUint("user_id")
+
+	var sessions []models.GameSession
+	if err := models.DB.
+		Preload("Players.User").
+		Preload("Players.CharacterCard").
+		Where("status IN ?", []string{string(models.SessionStatusLobby), string(models.SessionStatusPlaying)}).
+		Find(&sessions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询运行中房间失败"})
+		return
+	}
+
+	type endAllResult struct {
+		SessionID uint   `json:"session_id"`
+		Name      string `json:"name"`
+		Settled   bool   `json:"settled"`
+	}
+	results := make([]endAllResult, 0, len(sessions))
+
+	for i := range sessions {
+		session := &sessions[i]
+		models.DB.Model(session).Update("status", models.SessionStatusEnded)
+
+		var messages []models.Message
+		models.DB.Where("session_id = ? AND role != ?", session.ID, models.MessageRoleSystem).
+			Order("created_at ASC").
+			Limit(150).
+			Find(&messages)
+		stripMessageImageDataURLTags(messages)
+
+		_, txErr := agent.RunEndSession(context.Background(), session, messages, false)
+		removeSessionLock(session.ID)
+
+		results = append(results, endAllResult{SessionID: session.ID, Name: session.Name, Settled: txErr == nil})
+	}
+
+	adminLog.Info("end all sessions", "admin_id", adminID, "count", len(results))
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("已强制结束 %d 个房间", len(results)),
+		"count":   len(results),
+		"results": results,
+	})
+}
+
 // ListMyFavoriteSessions returns the user's favorite sessions, paginated.
 func ListMyFavoriteSessions(c *gin.Context) {
 	page, pageSize, ok := parseAdminPagination(c)
