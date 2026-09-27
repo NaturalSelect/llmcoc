@@ -221,15 +221,19 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	// 对应tool结果)——发送版=归档版，不再有裁剪掉timeline/mechanics/keeper_appendix
 	// 的单独"归档版"，上一轮的工具调用与结果原样可见，DUP CHECK更可靠，prompt cache
 	// 前缀也能跨轮稳定命中。directorWindow<=0表示后台未配置阈值，历史无限增长、永不
-	// 触发trim。
+	// 触发裁剪。超阈值时用TrimCompactDirectorTurns剥离最旧轮内部的工具调用/结果、只
+	// 保留首条user消息与本轮最终结果，不像Writer/Dramaturg/NPC那样整轮丢弃——工具
+	// 调用本身是只读上下文，丢了不影响后续推理，但连同结果一起整轮丢弃会导致
+	// Director"忘记"上一轮实际做过什么。
 	directorWindow := int64(0)
 	if cfg := handles[models.AgentRoleDirector].config; cfg != nil {
 		directorWindow = int64(cfg.ContextWindow)
 	}
 	kpSysPrompt := handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW))
-	cm := LoadContext(sid, "director", buildKPHead(gctx, kpSysPrompt), ContextOptions{Window: directorWindow})
+	cm := LoadContext(sid, "director", buildKPHead(gctx, kpSysPrompt), ContextOptions{Window: directorWindow, Strategy: TrimCompactDirectorTurns})
 	// 老会话transcript为空但messages表有历史时，用旧的扁平transcript当作seq=0的一轮
-	// 种子先提交进去，只执行一次，之后会像普通历史轮一样被trim掉。
+	// 种子先提交进去；它没有任何工具调用，compactDirectorTurn会原样跳过，既不会被
+	// 压缩也不会被丢弃。
 	if cm.IsEmpty() && len(gctx.History) > 0 {
 		cm.Commit(0, []llm.ChatMessage{{Role: "user", Content: formatHistoryTranscript(gctx.History)}})
 	}

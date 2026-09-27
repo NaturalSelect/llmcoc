@@ -640,7 +640,7 @@
                                     <template x-for="stat in (agent.recent_stats ?? []).slice().reverse()" :key="agent.agent_key + '-' + stat.seq">
                                         <div class="flex items-center justify-between text-[11px] font-ui" style="color:#8a7f6a">
                                             <span x-text="'seq=' + stat.seq + ' round=' + stat.round"></span>
-                                            <span x-text="stat.calls + '次 · prompt ' + stat.prompt_tokens + ' · 命中 ' + (stat.prompt_tokens > 0 ? (stat.cache_read_tokens / stat.prompt_tokens * 100).toFixed(1) : '0.0') + '%' + (stat.trimmed_turns ? ' · trim ' + stat.trimmed_turns : '')"></span>
+                                            <span x-text="stat.calls + '次 · prompt ' + stat.prompt_tokens + ' · 命中 ' + (stat.prompt_tokens > 0 ? (stat.cache_read_tokens / stat.prompt_tokens * 100).toFixed(1) : '0.0') + '%' + (stat.trimmed_turns ? ' · trim ' + stat.trimmed_turns : '') + (stat.compacted_turns ? ' · 压缩 ' + stat.compacted_turns : '')"></span>
                                         </div>
                                     </template>
                                 </div>

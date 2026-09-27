@@ -3,12 +3,16 @@
 // 取代原来 director_history.go 里 Director 专用、"发送版/归档版"两份内容不一致的实现：
 // 发送版=归档版，历史轮原样持久化(含 reasoning/ReasoningBlocks)，按 (session_id,
 // agent_key) 落在独立的 AgentTranscript 表(具体设计见 models.AgentTranscript 的注释)，
-// 供 Director/Writer/Dramaturg/NPC 共用同一套"按整轮 trim + 显式断点标记"逻辑。
+// 供 Director/Writer/Dramaturg/NPC 共用同一套"按整轮裁剪 + 显式断点标记"逻辑。裁剪
+// 有两种互斥的策略(见 TrimStrategy)：TrimDropTurns 整轮丢弃(Writer/Dramaturg/NPC，
+// 轮内本就是纯文本，没有需要保留的中间结构)；TrimCompactDirectorTurns 剥离轮内的
+// tool_call/tool 结果、只保留首条 user 消息与本轮最终结果(Director，工具调用本身是
+// 只读上下文，丢了不影响后续推理，但完全丢弃整轮会连同结果一起丢掉)。
 //
 // 消息布局约定(Build 的返回值)：
 //
 //	[head...]                      稳定，调用方每次 run() 重新构造，确定性渲染，永不 trim
-//	[历史轮1消息][历史轮2消息]...   已提交的历史，只追加，按整轮 trim
+//	[历史轮1消息][历史轮2消息]...   已提交的历史，只追加，按整轮裁剪(丢弃或压缩)
 //	[opening...][循环内追加的消息]  本轮新消息，Commit 时整体归档为新的一轮
 //
 // head 末尾、最后一个已提交历史轮末尾各打一个 CacheBreakpoint，是 Anthropic prompt
@@ -17,6 +21,9 @@
 package agent
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
 )
@@ -93,7 +100,8 @@ func transcriptTurnRunes(t models.TranscriptTurn) int64 {
 	return n
 }
 
-// trimTranscriptTurns 从最旧的整轮开始批量丢弃，直到估算的总用量降到窗口的一半(低
+// trimTranscriptTurns 是 TrimDropTurns 策略(Writer/Dramaturg/NPC)的实现：从最旧的
+// 整轮开始批量丢弃，直到估算的总用量降到窗口的一半(低
 // 水位)，至少保留最近 1 轮；按回合(而不是按消息)裁剪保证不会拆散某一轮内部的
 // tool_call 与对应 tool 结果的配对。tokensPerRune = usedTokens/totalRunes 是"当前这次
 // 调用"的 token/字符密度，用于把只有字符数可数的历史回合换算成估算 token 数。
@@ -121,6 +129,175 @@ func trimTranscriptTurns(turns []models.TranscriptTurn, window int64, usedTokens
 		return turns, 0
 	}
 	return turns[dropped:], dropped
+}
+
+// compactTranscriptTurns 是 TrimCompactDirectorTurns 策略(Director)的实现：从最旧的
+// 轮开始逐轮压缩(compactDirectorTurn)，直到估算用量降到窗口的一半(低水位)或没有更多
+// 轮可压缩为止；永远跳过最后一轮(与 trimTranscriptTurns 一样至少保留最近 1 轮不动)，
+// 已经压缩过的轮(Compacted=true)和没有工具调用可剥离的轮(如老会话的纯文本种子轮)
+// 直接跳过、不重复处理，也不贡献任何用量下降。与 trimTranscriptTurns 不同的是本函数
+// 从不丢弃轮——所有历史轮(压缩后)永远保留，压缩只减少轮内消息数量，不减少轮数。
+// tokensPerRune/lowWater 的口径与 trimTranscriptTurns 完全一致。
+func compactTranscriptTurns(turns []models.TranscriptTurn, window int64, usedTokens int64, totalRunes int64) ([]models.TranscriptTurn, int) {
+	if window <= 0 || len(turns) <= 1 {
+		return turns, 0
+	}
+	tokensPerRune := 1.0
+	if usedTokens > 0 && totalRunes > 0 {
+		tokensPerRune = float64(usedTokens) / float64(totalRunes)
+	}
+	lowWater := float64(window) / 2
+	estimated := float64(usedTokens)
+
+	out := append([]models.TranscriptTurn(nil), turns...)
+	n := 0
+	for i := 0; i < len(out)-1 && estimated > lowWater; i++ {
+		if out[i].Compacted {
+			continue
+		}
+		compacted, ok := compactDirectorTurn(out[i])
+		if !ok {
+			continue
+		}
+		estimated -= float64(transcriptTurnRunes(out[i])-transcriptTurnRunes(compacted)) * tokensPerRune
+		out[i] = compacted
+		n++
+	}
+	if n == 0 {
+		return turns, 0
+	}
+	return out, n
+}
+
+// compactDirectorTurn 把一个 Director 历史轮改写为[首条消息][剥离标记][本轮结果]共
+// 3 条消息：首条消息原样保留(轮的起点，通常是 buildKPTurnOpening 产出的第一条 user
+// 消息，即"state+<player_turn>"；其后的第二条 user 消息如<system-reminder>连同中间
+// 全部 tool_call/tool 消息一起被丢弃)；剥离标记记录被删掉的工具调用统计(见
+// renderTrimmedToolCallsMarker)；本轮结果是从轮内 response/write/end_game 三种工具
+// 调用的参数里提取出的、这一轮实际生效的产出(见 renderDirectorTurnResult)，不是
+// "发送给模型的原始消息"，只用于给 Director 自己在后续轮次里回顾"上一轮做过什么"。
+// ok=false 表示该轮没有任何 ToolCalls(如老会话的纯文本种子轮)，不需要也不应该压缩，
+// 调用方应原样保留。
+func compactDirectorTurn(t models.TranscriptTurn) (models.TranscriptTurn, bool) {
+	if len(t.Messages) == 0 {
+		return models.TranscriptTurn{}, false
+	}
+	hasToolCalls := false
+	for _, m := range t.Messages {
+		if len(m.ToolCalls) > 0 {
+			hasToolCalls = true
+			break
+		}
+	}
+	if !hasToolCalls {
+		return models.TranscriptTurn{}, false
+	}
+
+	first := t.Messages[0]
+	first.Reasoning = ""
+	first.ReasoningBlocks = nil
+	marker := models.TranscriptMsg{Role: "user", Content: renderTrimmedToolCallsMarker(t.Messages)}
+	result := models.TranscriptMsg{Role: "assistant", Content: renderDirectorTurnResult(t.Messages)}
+	return models.TranscriptTurn{
+		Seq:       t.Seq,
+		Round:     t.Round,
+		Compacted: true,
+		Messages:  []models.TranscriptMsg{first, marker, result},
+	}, true
+}
+
+// renderTrimmedToolCallsMarker 统计一轮内(被剥离前)带 ToolCalls 的 assistant 消息数
+// (rounds)与工具调用总数(calls)，以及按工具名的计数——按在轮内首次出现的顺序排列，
+// 保证渲染结果确定性、跨次调用字节稳定。calls 计入全部工具调用，不区分调用最终是
+// 成功执行还是被 SYSTEM REJECT 拒绝(拒绝的调用同样占用了一轮，值得在统计里体现)。
+func renderTrimmedToolCallsMarker(msgs []models.TranscriptMsg) string {
+	rounds := 0
+	calls := 0
+	var order []string
+	counts := map[string]int{}
+	for _, m := range msgs {
+		if len(m.ToolCalls) == 0 {
+			continue
+		}
+		rounds++
+		for _, tc := range m.ToolCalls {
+			calls++
+			if _, seen := counts[tc.Name]; !seen {
+				order = append(order, tc.Name)
+			}
+			counts[tc.Name]++
+		}
+	}
+	parts := make([]string, len(order))
+	for i, name := range order {
+		parts[i] = fmt.Sprintf("%s×%d", name, counts[name])
+	}
+	return fmt.Sprintf(`<trimmed_tool_calls rounds="%d" calls="%d">%s</trimmed_tool_calls>`, rounds, calls, strings.Join(parts, ", "))
+}
+
+// renderDirectorTurnResult 从一轮内的 response/write/end_game 调用参数里提取这一轮
+// 实际生效的产出：按消息出现顺序遍历所有 ToolCalls，同类型调用后出现的覆盖先出现
+// 的(等价于"最后一次成功调用生效")；调用结果消息(role=tool)以"SYSTEM REJECT"开头
+// 视为被拒绝、不采纳(不影响 renderTrimmedToolCallsMarker 的计数，只影响这里是否
+// 采纳其参数)；decodeDirectorToolCall 解码失败的调用同样跳过。三块都为空时说明这一
+// 轮没有产生任何生效结果(如硬失败提前中断)，返回一个占位说明。
+func renderDirectorTurnResult(msgs []models.TranscriptMsg) string {
+	results := make(map[string]string, len(msgs))
+	for _, m := range msgs {
+		if m.Role == "tool" {
+			results[m.ToolCallID] = m.Content
+		}
+	}
+
+	var reply, direction, endSummary string
+	var options, ack []string
+	for _, m := range msgs {
+		for _, tc := range m.ToolCalls {
+			if strings.HasPrefix(results[tc.ID], "SYSTEM REJECT") {
+				continue
+			}
+			switch ToolCallType(tc.Name) {
+			case ToolResponse:
+				if parsed, err := decodeDirectorToolCall(llm.ToolCall{ID: tc.ID, Name: tc.Name, Arguments: tc.Arguments}); err == nil {
+					reply, options, ack = parsed.Reply, parsed.Options, parsed.Ack
+				}
+			case ToolWrite:
+				if parsed, err := decodeDirectorToolCall(llm.ToolCall{ID: tc.ID, Name: tc.Name, Arguments: tc.Arguments}); err == nil {
+					direction = parsed.Direction
+				}
+			case ToolEndGame:
+				if parsed, err := decodeDirectorToolCall(llm.ToolCall{ID: tc.ID, Name: tc.Name, Arguments: tc.Arguments}); err == nil {
+					endSummary = parsed.EndSummary
+				}
+			}
+		}
+	}
+
+	if reply == "" && direction == "" && endSummary == "" {
+		return "<turn_result>（本轮未产生结果）</turn_result>"
+	}
+	var b strings.Builder
+	b.WriteString("<turn_result>\n")
+	if reply != "" {
+		b.WriteString("<response>\n")
+		b.WriteString(reply)
+		b.WriteString("\n")
+		if len(options) > 0 {
+			b.WriteString("<options>" + strings.Join(options, " | ") + "</options>\n")
+		}
+		if len(ack) > 0 {
+			b.WriteString("<ack>" + strings.Join(ack, ";") + "</ack>\n")
+		}
+		b.WriteString("</response>\n")
+	}
+	if direction != "" {
+		b.WriteString("<write>" + direction + "</write>\n")
+	}
+	if endSummary != "" {
+		b.WriteString("<end_game>" + endSummary + "</end_game>\n")
+	}
+	b.WriteString("</turn_result>")
+	return b.String()
 }
 
 // llmMsgToTranscript/transcriptMsgToLLM 在 llm.ChatMessage 与持久化用的
@@ -186,15 +363,33 @@ func flattenTranscriptTurns(turns []models.TranscriptTurn) []llm.ChatMessage {
 	return out
 }
 
-// ContextOptions 配置 ContextManager 的 trim 策略。两者按需求互斥使用：Window>0 用于
-// 能拿到真实 Usage 的 agent(如 Director 的 ChatWithTools 直接在返回值里带 Usage)，按
-// token 阈值 trim；RuneBudget>0 用于拿不到 Usage 的 agent(如 Writer/Dramaturg/NPC 走
-// Chat/ChatStream)，按总字符数 trim。都为 0 表示历史无限增长、永不 trim。同时配置时
-// Window 优先。
+// ContextOptions 配置 ContextManager 的用量阈值与裁剪策略。Window/RuneBudget 按需求
+// 互斥使用：Window>0 用于能拿到真实 Usage 的 agent(如 Director 的 ChatWithTools 直接
+// 在返回值里带 Usage)，按 token 阈值判断是否超限；RuneBudget>0 用于拿不到 Usage 的
+// agent(如 Writer/Dramaturg/NPC 走 Chat/ChatStream)，按总字符数判断。都为 0 表示历史
+// 无限增长、永不裁剪。同时配置时 Window 优先。Strategy 决定超限后具体怎么裁剪，与
+// Window/RuneBudget 的选择相互独立，零值 TrimDropTurns 对现有调用方(Writer/Dramaturg/
+// NPC)是无行为变化的默认值。
 type ContextOptions struct {
 	Window     int64
 	RuneBudget int64
+	Strategy   TrimStrategy
 }
+
+// TrimStrategy 选择 ContextManager 超过用量阈值后的裁剪方式。
+type TrimStrategy int
+
+const (
+	// TrimDropTurns 从最旧的整轮开始整体丢弃(trimTranscriptTurns)，是 Writer/
+	// Dramaturg/NPC 使用的默认策略——它们的轮本就是纯文本对话，没有需要单独保留的
+	// 中间结构，丢弃整轮最简单也最省空间。
+	TrimDropTurns TrimStrategy = iota
+	// TrimCompactDirectorTurns 剥离最旧轮内部的 tool_call/tool 结果，只保留该轮首条
+	// user 消息与最终结果(compactTranscriptTurns)，永不整轮丢弃——Director 的轮内
+	// 工具调用本身是只读上下文，但轮的最终结果(response/write/end_game 的产出)
+	// 不能像 Writer/Dramaturg/NPC 那样随便丢弃整轮。
+	TrimCompactDirectorTurns
+)
 
 // ContextManager 管理单个 (session_id, agent_key) 的跨回合原生消息链：Build 拼出本次
 // 调用要发送的完整消息序列并打好 prompt cache 断点，Observe 在工具循环每一轮结束后
@@ -208,14 +403,19 @@ type ContextManager struct {
 	data      models.TranscriptData
 
 	// headLen/historyLen 是 Build 时 [head...][历史轮...] 各自贡献的消息条数；
-	// Observe 整体丢弃最旧历史轮时会同步减少 historyLen。turnStart=headLen+historyLen
-	// (在最近一次 Build 调用时刻)，标记 Build 返回值里 opening 的起始下标，据此在
-	// Commit 时定位"这次调用真正新产生的消息"，不受循环内是否发生过 trim 影响。
-	headLen    int
-	historyLen int
-	turnStart  int
-	lastUsage  llm.Usage
-	stat       models.TurnCacheStat
+	// historyTurns 是历史轮的条数(不是消息数)，标记 c.data.Turns 里"已经反映在
+	// historyLen 里"的前缀长度——TrimDropTurns 丢弃整轮会同步减少它；
+	// TrimCompactDirectorTurns 压缩轮不改变轮数，不需要调整它，但压缩后每轮的消息数
+	// 变了，historyLen 必须重新展开计算，不能像丢弃那样简单减去消息数。
+	// turnStart=headLen+historyLen(在最近一次 Build 调用时刻)，标记 Build 返回值里
+	// opening 的起始下标，据此在 Commit 时定位"这次调用真正新产生的消息"，不受循环内
+	// 是否发生过裁剪影响。
+	headLen      int
+	historyLen   int
+	historyTurns int
+	turnStart    int
+	lastUsage    llm.Usage
+	stat         models.TurnCacheStat
 }
 
 // LoadContext 按 (session_id, agent_key) 读取已持久化的 transcript；未找到记录或
@@ -252,6 +452,7 @@ func (c *ContextManager) IsEmpty() bool {
 // 锚点；历史为空时只标 head。
 func (c *ContextManager) Build(opening ...llm.ChatMessage) []llm.ChatMessage {
 	c.headLen = len(c.head)
+	c.historyTurns = len(c.data.Turns)
 	historyMsgs := flattenTranscriptTurns(c.data.Turns)
 	c.historyLen = len(historyMsgs)
 
@@ -285,9 +486,13 @@ func (c *ContextManager) thresholdParams(msgs []llm.ChatMessage, usage llm.Usage
 	return 0, 0, 0, false
 }
 
-// trimIfNeeded 是 Observe/Commit 共用的整体 trim 实现：判断是否超阈值、从最旧历史轮
-// 开始丢弃、同步调整 headLen 之后的偏移量。返回去掉被丢弃历史轮的 msgs 与丢弃的轮数；
-// 未触发 trim 时原样返回 msgs、dropped=0。historyLen==0 时没有可丢的历史，直接跳过。
+// trimIfNeeded 是 Observe/Commit 共用的裁剪实现：判断是否超阈值，按 ContextOptions.
+// Strategy 分派到 trimTranscriptTurns(整轮丢弃)或 compactTranscriptTurns(压缩
+// Director 轮内工具调用)，再把 [headLen:headLen+historyLen] 这段历史消息整体替换成
+// 裁剪后的 c.data.Turns[:historyTurns] 重新展开的结果——两种策略下轮内消息数都可能
+// 变化(丢弃是变少到 0，压缩是变成固定 3 条)，只有整段重建才能保证正确性，不能像
+// "减去消息数"那样在原 msgs 上做局部拼接。返回替换后的 msgs 与本次裁剪触及的轮数；
+// 未触发裁剪时原样返回 msgs、n=0。historyLen==0 时没有可裁剪的历史，直接跳过。
 func (c *ContextManager) trimIfNeeded(msgs []llm.ChatMessage, usage llm.Usage) ([]llm.ChatMessage, int) {
 	if c.historyLen == 0 {
 		return msgs, 0
@@ -296,29 +501,38 @@ func (c *ContextManager) trimIfNeeded(msgs []llm.ChatMessage, usage llm.Usage) (
 	if !ok || !contextOverThreshold(window, used) {
 		return msgs, 0
 	}
-	trimmed, dropped := trimTranscriptTurns(c.data.Turns, window, used, totalRunes)
-	if dropped == 0 {
+
+	var newTurns []models.TranscriptTurn
+	var n int
+	switch c.opts.Strategy {
+	case TrimCompactDirectorTurns:
+		newTurns, n = compactTranscriptTurns(c.data.Turns, window, used, totalRunes)
+		if n > 0 {
+			c.stat.CompactedTurns += n
+		}
+	default:
+		newTurns, n = trimTranscriptTurns(c.data.Turns, window, used, totalRunes)
+		if n > 0 {
+			c.historyTurns -= n
+			c.stat.TrimmedTurns += n
+		}
+	}
+	if n == 0 {
 		return msgs, 0
 	}
-	droppedMsgCount := 0
-	for _, t := range c.data.Turns[:dropped] {
-		droppedMsgCount += len(t.Messages)
-	}
-	c.data.Turns = trimmed
-	c.historyLen -= droppedMsgCount
-	c.turnStart -= droppedMsgCount
-	c.stat.TrimmedTurns += dropped
+	c.data.Turns = newTurns
 
-	out := make([]llm.ChatMessage, 0, len(msgs)-droppedMsgCount)
+	hist := flattenTranscriptTurns(c.data.Turns[:c.historyTurns])
+	out := make([]llm.ChatMessage, 0, c.headLen+len(hist)+(len(msgs)-c.turnStart))
 	out = append(out, msgs[:c.headLen]...)
-	out = append(out, msgs[c.headLen+droppedMsgCount:]...)
-	// NOTE: 按整轮从最旧的开始丢弃时最后一个历史轮永远保留(至少留1轮)，它末尾的
-	// CacheBreakpoint 本应随切片拷贝原样保留；这里显式重置只是防御性写法，不依赖
-	// trimTranscriptTurns 未来的实现细节。
-	if c.historyLen > 0 {
-		out[c.turnStart-1].CacheBreakpoint = true
+	out = append(out, hist...)
+	out = append(out, msgs[c.turnStart:]...)
+	if len(hist) > 0 {
+		out[c.headLen+len(hist)-1].CacheBreakpoint = true
 	}
-	return out, dropped
+	c.historyLen = len(hist)
+	c.turnStart = c.headLen + len(hist)
+	return out, n
 }
 
 // Observe 是 toolLoopOptions.afterCall 的实现：每轮 ChatWithTools 成功返回后调用一次，

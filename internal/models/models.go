@@ -342,20 +342,23 @@ type AgentTranscript struct {
 // TranscriptData 是 AgentTranscript.Data 的负载。NextSeq 是下一个待分配的回合序号——
 // 不能直接借用 GameSession.TurnRound，因为同一个 TurnRound 内可能有多次调用(如战斗/追逐
 // 一个回合内多名参与者各自触发一次 run())，seq 必须严格递增且每次调用唯一，才能在
-// system prompt 里准确指代"最新一轮"。Turns 按回合切分以便整体 trim 时不拆散某一轮内部
-// tool_call 与对应 tool 结果的配对。Stats 只保留最近若干条供后台按会话展示缓存命中率，
-// 是纯审计数据，不参与 trim 等业务判断。
+// system prompt 里准确指代"最新一轮"。Turns 按回合切分，两种 trim 策略(整轮丢弃/剥离
+// 轮内工具调用)都不会拆散某一轮内部 tool_call 与对应 tool 结果的配对。Stats 只保留最近
+// 若干条供后台按会话展示缓存命中率，是纯审计数据，不参与 trim 等业务判断。
 type TranscriptData struct {
 	NextSeq int              `json:"next_seq"`
 	Turns   []TranscriptTurn `json:"turns"`
 	Stats   []TurnCacheStat  `json:"stats"`
 }
 
-// TranscriptTurn 是一次调用(一个回合)产生的完整原生消息链。
+// TranscriptTurn 是一次调用(一个回合)产生的完整原生消息链。Compacted 标记该轮是否已被
+// Director 专用的"剥离轮内工具调用"策略永久改写过(见 agent 包 compactDirectorTurn)——
+// 压缩后的轮不再重复压缩，也不会再被当作可以整轮丢弃的对象。
 type TranscriptTurn struct {
-	Seq      int             `json:"seq"`
-	Round    int             `json:"round"`
-	Messages []TranscriptMsg `json:"messages"`
+	Seq       int             `json:"seq"`
+	Round     int             `json:"round"`
+	Compacted bool            `json:"compacted,omitempty"`
+	Messages  []TranscriptMsg `json:"messages"`
 }
 
 // TranscriptMsg 字段与 llm.ChatMessage 一一对应；models 不依赖 llm 包，单独定义一份
@@ -396,6 +399,7 @@ type TurnCacheStat struct {
 	CacheCreationTokens int64 `json:"cache_creation_tokens"`
 	OutputTokens        int64 `json:"output_tokens"`
 	TrimmedTurns        int   `json:"trimmed_turns"`
+	CompactedTurns      int   `json:"compacted_turns,omitempty"`
 }
 
 // NOTE: GameSession tracks an active or completed run of a scenario with players.

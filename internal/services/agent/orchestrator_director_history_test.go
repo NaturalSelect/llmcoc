@@ -2,9 +2,9 @@
 // Provider,端到端跑run()两轮,验证Director跨轮ContextManager(context_transcript.go)
 // 的核心回归行为:①下一轮第1次调用收到的msgs,以上一轮最后一次调用的msgs+其assistant
 // 输出为逐字段相同的前缀(发送版=归档版,prompt cache前缀跨轮稳定);②reasoning在下一轮
-// 仍然原样保留;③超阈值时最旧一轮被整体丢弃;④CacheBreakpoint只打在head末尾和上一轮
-// 末尾;⑤round<=1硬失败不落库,transcript保持不变。不涉及真实游戏业务逻辑,response
-// 之外的工具都不会被调用。
+// 仍然原样保留;③超阈值时最旧一轮被压缩(剥离tool_call/tool结果、保留首条消息与本轮
+// 结果)而不是整轮丢弃;④CacheBreakpoint只打在head末尾和上一轮末尾;⑤round<=1硬失败
+// 不落库,transcript保持不变。不涉及真实游戏业务逻辑,response之外的工具都不会被调用。
 package agent
 
 import (
@@ -193,16 +193,17 @@ func TestRun_DirectorContextPrefixStableAcrossTurns(t *testing.T) {
 	}
 }
 
-// TestRun_DirectorTranscriptTrimsOldestTurnWhenOverThreshold 验证③:超过Window
-// 阈值时,ContextManager从最旧的已提交历史轮开始整体丢弃,不拆散某一轮内部的
-// tool_call与对应tool结果。
-func TestRun_DirectorTranscriptTrimsOldestTurnWhenOverThreshold(t *testing.T) {
+// TestRun_DirectorCompactsOldTurnWhenOverThreshold 验证③:超过Window阈值时，
+// ContextManager从最旧的已提交历史轮开始压缩(剥离轮内tool_call/tool结果、只保留
+// 首条消息与本轮最终结果)，永不整轮丢弃——Director自己上一轮的response产出(reply)
+// 必须在压缩后仍然可见，不能像Writer/Dramaturg/NPC那样被整轮抹掉。
+func TestRun_DirectorCompactsOldTurnWhenOverThreshold(t *testing.T) {
 	initAgentTestDB(t)
 	const sessionID = 102
 	if err := models.DB.Create(&models.GameSession{ID: sessionID}).Error; err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	// window很小、usage人为设很高,每一轮都必然越过阈值,逼出"整体trim最旧一轮"。
+	// window很小、usage人为设很高,每一轮都必然越过阈值,逼出"压缩最旧一轮"。
 	prov := &directorHistoryFakeProvider{usage: llm.Usage{PromptTokens: 900}}
 	setDirectorFakeHandle(t, sessionID, prov, 1000)
 
@@ -211,7 +212,7 @@ func TestRun_DirectorTranscriptTrimsOldestTurnWhenOverThreshold(t *testing.T) {
 	}
 	afterTurn1 := loadTranscript(t, sessionID, "director")
 	if len(afterTurn1.Turns) != 1 {
-		t.Fatalf("只有1轮时不应trim(trimTranscriptTurns对len<=1直接跳过),got %d轮", len(afterTurn1.Turns))
+		t.Fatalf("只有1轮时不应压缩(compactTranscriptTurns对len<=1直接跳过),got %d轮", len(afterTurn1.Turns))
 	}
 
 	if _, err := run(context.Background(), newDirectorRunGctx(sessionID, 2, "第二轮输入")); err != nil {
@@ -219,20 +220,51 @@ func TestRun_DirectorTranscriptTrimsOldestTurnWhenOverThreshold(t *testing.T) {
 	}
 	afterTurn2 := loadTranscript(t, sessionID, "director")
 	turns := afterTurn2.Turns
-	if len(turns) != 1 {
-		t.Fatalf("超阈值后应整体trim掉最旧一轮、只剩最新1轮,got %d轮: %+v", len(turns), turns)
+	if len(turns) != 2 {
+		t.Fatalf("超阈值后应压缩最旧一轮、不整轮丢弃,got %d轮: %+v", len(turns), turns)
 	}
-	if turns[0].Round != 2 {
-		t.Errorf("剩下的应是第2轮,got Round=%d", turns[0].Round)
+
+	turn1 := turns[0]
+	if turn1.Round != 1 || !turn1.Compacted {
+		t.Fatalf("第1轮应被标记为已压缩, got %+v", turn1)
 	}
-	for _, m := range turns[0].Messages {
-		if strings.Contains(m.Content, "第一轮输入") {
-			t.Errorf("第2轮的历史消息不应包含第1轮的玩家输入文本,got %q", m.Content)
+	if len(turn1.Messages) != 3 {
+		t.Fatalf("压缩后的轮应只剩[opening首条][标记][结果]共3条消息, got %d条: %+v", len(turn1.Messages), turn1.Messages)
+	}
+	for _, m := range turn1.Messages {
+		if len(m.ToolCalls) != 0 {
+			t.Errorf("压缩后的轮不应残留任何ToolCalls, got %+v", m)
 		}
-		for _, tc := range m.ToolCalls {
-			if strings.Contains(tc.Arguments, "第1次调用") {
-				t.Errorf("第1轮的tool_call不应残留在trim之后的历史里,got %q", tc.Arguments)
-			}
+	}
+	if !strings.Contains(turn1.Messages[1].Content, `rounds="1" calls="1"`) || !strings.Contains(turn1.Messages[1].Content, "response×1") {
+		t.Errorf("压缩标记内容不对, got %q", turn1.Messages[1].Content)
+	}
+	if !strings.Contains(turn1.Messages[2].Content, "KP回复第1次调用") {
+		t.Errorf("压缩后的结果应保留第1轮response的reply, got %q", turn1.Messages[2].Content)
+	}
+
+	turn2 := turns[1]
+	if turn2.Round != 2 || turn2.Compacted {
+		t.Fatalf("第2轮应原样保留、未被压缩, got %+v", turn2)
+	}
+
+	// 第3轮:验证压缩后的前缀跨轮稳定——第1次调用收到的msgs必须以head+压缩后的
+	// 两轮历史展开为逐字段相同的前缀(CacheBreakpoint除外)。
+	if _, err := run(context.Background(), newDirectorRunGctx(sessionID, 3, "第三轮输入")); err != nil {
+		t.Fatalf("run() turn3: %v", err)
+	}
+	turn3FirstCallMsgs := prov.msgsAt(2)
+	wantHistory := flattenTranscriptTurns(turns)
+	const headLen = 2
+	if len(turn3FirstCallMsgs) < headLen+len(wantHistory) {
+		t.Fatalf("turn3收到的msgs长度%d应不小于head+压缩后历史长度%d", len(turn3FirstCallMsgs), headLen+len(wantHistory))
+	}
+	for i, want := range wantHistory {
+		got := turn3FirstCallMsgs[headLen+i]
+		got.CacheBreakpoint = false
+		want.CacheBreakpoint = false
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("turn3Msgs[%d]与压缩后历史不一致:\ngot  %+v\nwant %+v", headLen+i, got, want)
 		}
 	}
 }
