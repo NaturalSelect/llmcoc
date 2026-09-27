@@ -74,6 +74,14 @@ func defaultScripterEra() string {
 	return scriptEra[rand.Intn(len(scriptEra))]
 }
 
+var scripterDifficulties = []string{
+	"easy", "normal", "hard",
+}
+
+func randomScripterDifficulty() string {
+	return scripterDifficulties[rand.Intn(len(scripterDifficulties))]
+}
+
 const scriptSessionId = math.MaxInt64
 
 var scripterCounter int
@@ -219,6 +227,10 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 		req.Difficulty = "normal"
 	} else {
 		req.Difficulty = strings.TrimSpace(req.Difficulty)
+		// NOTE: "random" 是前端提供的占位值，实际生成前需落地为具体档位，避免非法值流入下游 prompt 与落库。
+		if strings.EqualFold(req.Difficulty, "random") {
+			req.Difficulty = randomScripterDifficulty()
+		}
 	}
 	if strings.TrimSpace(req.TargetLength) == "" {
 		req.TargetLength = "short"
