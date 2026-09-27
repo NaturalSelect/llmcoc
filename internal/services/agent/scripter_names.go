@@ -15,7 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 
 	"github.com/brianvoe/gofakeit/v7"
@@ -105,7 +105,7 @@ func pickWesternNames(gender string, count int, used map[string]bool) ([]string,
 	seenThisCall := map[string]bool{}
 	const maxAttempts = 40
 	for attempt := 0; attempt < maxAttempts && len(picked) < count; attempt++ {
-		name := firstPool[rand.Intn(len(firstPool))] + " " + gofakeit.LastName()
+		name := firstPool[rand.IntN(len(firstPool))] + " " + gofakeit.LastName()
 		key := strings.ToLower(name)
 		if (used != nil && used[key]) || seenThisCall[key] {
 			continue

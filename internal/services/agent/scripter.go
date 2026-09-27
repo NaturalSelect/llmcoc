@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"regexp"
 	"strings"
 	"sync"
@@ -71,7 +71,7 @@ var scriptEra = []string{
 }
 
 func defaultScripterEra() string {
-	return scriptEra[rand.Intn(len(scriptEra))]
+	return scriptEra[rand.IntN(len(scriptEra))]
 }
 
 var scripterDifficulties = []string{
@@ -79,7 +79,7 @@ var scripterDifficulties = []string{
 }
 
 func randomScripterDifficulty() string {
-	return scripterDifficulties[rand.Intn(len(scripterDifficulties))]
+	return scripterDifficulties[rand.IntN(len(scripterDifficulties))]
 }
 
 var scripterLengths = []string{
@@ -87,7 +87,7 @@ var scripterLengths = []string{
 }
 
 func randomScripterLength() string {
-	return scripterLengths[rand.Intn(len(scripterLengths))]
+	return scripterLengths[rand.IntN(len(scripterLengths))]
 }
 
 const scriptSessionId = math.MaxInt64
@@ -645,7 +645,7 @@ var scenarioNarrativeSeeds = []string{
 
 // randomNarrativeSeed 从 scenarioNarrativeSeeds 中随机抽取一条，每次生成独立随机。
 func randomNarrativeSeed() string {
-	return scenarioNarrativeSeeds[rand.Intn(len(scenarioNarrativeSeeds))]
+	return scenarioNarrativeSeeds[rand.IntN(len(scenarioNarrativeSeeds))]
 }
 
 // ---------------------------------------------------------------------------

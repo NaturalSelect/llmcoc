@@ -16,7 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -413,7 +413,7 @@ func executeGetWritingExample(ctx context.Context, room *scripterRoom) string {
 		alog.Warn("get writing example load failed", "session", sessionID, "err", err)
 		return fmt.Sprintf("参考成稿读取失败（%v），本次不提供参考，请直接按<task>中的创作要求继续写作。", err)
 	}
-	chosen := contents[rand.Intn(len(contents))]
+	chosen := contents[rand.IntN(len(contents))]
 	alog.Debug("get writing example served", "session", sessionID, "pool_size", len(contents), "len", len([]rune(chosen)))
 	return "以下是一份职业模组成稿，仅供学习出版体例：观察它如何用章节和地点标题安排阅读顺序，如何在地点段落里同时交代环境、人物、发现、检定、遭遇和去向，如何用时间线、守密人提示、可选方案以及角色和怪物数据帮助守密人运行；" +
 		"其中具体的人名、地名、机构名、情节与神话设定与你要写的剧本无关，禁止照搬；" +

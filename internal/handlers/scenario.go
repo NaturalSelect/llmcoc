@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -198,13 +198,11 @@ func CreateScenario(c *gin.Context) {
 	c.JSON(http.StatusCreated, scenario)
 }
 
-var ranGen = rand.New(rand.NewSource(time.Now().UnixMilli()))
-
 func RandomSalt() string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, 16)
 	for i := range b {
-		b[i] = letters[ranGen.Intn(len(letters))]
+		b[i] = letters[rand.IntN(len(letters))]
 	}
 	return string(b)
 }
