@@ -1079,7 +1079,7 @@ func loadScenarioTitleSamples(sampleSize int, sessionIDs ...string) []string {
 		return nil
 	}
 	var scenarios []models.Scenario
-	if err := models.DB.Order("created_at DESC").Limit(sampleSize).Find(&scenarios).Error; err != nil {
+	if err := models.DB.Where("is_active = ?", true).Order("created_at DESC").Limit(sampleSize).Find(&scenarios).Error; err != nil {
 		alog.Warn("scripter load scenario titles failed", "session", sessionID, "err", err)
 		return nil
 	}
@@ -1105,7 +1105,7 @@ func loadRecentMythosAnchors(limit int, sessionIDs ...string) []string {
 		return nil
 	}
 	var scenarios []models.Scenario
-	if err := models.DB.Order("created_at DESC").Limit(limit * 2).Find(&scenarios).Error; err != nil {
+	if err := models.DB.Where("is_active = ?", true).Order("created_at DESC").Limit(limit * 2).Find(&scenarios).Error; err != nil {
 		alog.Warn("scripter load recent mythos anchors failed", "session", sessionID, "err", err)
 		return nil
 	}
@@ -1138,7 +1138,7 @@ func loadRecentScenarioTags(limit int, sessionIDs ...string) []string {
 		return nil
 	}
 	var scenarios []models.Scenario
-	if err := models.DB.Order("created_at DESC").Limit(limit * 2).Find(&scenarios).Error; err != nil {
+	if err := models.DB.Where("is_active = ?", true).Order("created_at DESC").Limit(limit * 2).Find(&scenarios).Error; err != nil {
 		alog.Warn("scripter load recent scenario tags failed", "session", sessionID, "err", err)
 		return nil
 	}
