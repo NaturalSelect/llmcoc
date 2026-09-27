@@ -499,7 +499,7 @@ func buildKPTurnOpening(gctx GameContext, seq int, tempNPCs []models.SessionNPC,
 		}
 		reminderSB.WriteString("</mechanics>\n")
 	}
-	reminderSB.WriteString("\n<config> 剧情特定法术:禁用 | 规则书中法术:启用 | 严格反作弊:启用 | 社交关系更新:实时变更(需推理) | 法术表更新:实时变更(需推理) | 学习时间:极短 | 物品栏更新:实时变更(需推理) | 种族更新:实时变更(需推理) | 已知神话生物更新:实时变更(需推理) | 使用道具: 允许 | 学习典籍: 严格按照典籍中记载的法术选择随机一个法术(禁止判定什么都没学到) </config>\n")
+	reminderSB.WriteString("\n<config> 剧情特定法术:禁用 | 规则书中法术:启用 | 严格反作弊:启用 | 社交关系更新:本局记录(需推理)，结算时筛选入卡 | 法术表更新:实时变更(需推理) | 学习时间:极短 | 物品栏更新:实时变更(需推理) | 种族更新:实时变更(需推理) | 已知神话生物更新:实时变更(需推理) | 使用道具: 允许 | 学习典籍: 严格按照典籍中记载的法术选择随机一个法术(禁止判定什么都没学到) </config>\n")
 	if ka := content.KeeperAppendix; ka != nil {
 		var kaSB strings.Builder
 		if strings.TrimSpace(ka.CoreTruth) != "" {

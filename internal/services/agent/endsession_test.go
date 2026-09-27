@@ -421,3 +421,98 @@ func TestRunEndSession_WinFalse_GrowthResultEmpty(t *testing.T) {
 		t.Errorf("win=false: growth.characters should be empty, got %d", len(result.Growth.Characters))
 	}
 }
+
+// ── 社交关系分层结算：tier1(会话) → tier2(人物卡) ────────────────────────────
+
+// TestRunEndSession_RelationPromotion_ExistingUpdatesApplyWithoutAI 验证结算时：
+//   - 人物卡(tier2)已有关系的本局更新/移除直接生效，不需要 AI 判断；
+//   - 本局新结识的候选关系(B)在测试环境无 AgentConfig、LLM 不可用时不会写入人物卡。
+func TestRunEndSession_RelationPromotion_ExistingUpdatesApplyWithoutAI(t *testing.T) {
+	initEndSessionTestDB(t)
+
+	uid := newEndSessionUser(t, "reltest")
+	card := newEndSessionCard(t, "RelChar", models.CharacterStats{
+		MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 99, SAN: 50, POW: 50,
+	}, nil)
+	card.SocialRelations.Data = []models.SocialRelation{
+		{Name: "A", Relationship: "线人", Note: "旧备注"},
+		{Name: "C", Relationship: "仇敌", Note: ""},
+	}
+	if err := models.DB.Save(card).Error; err != nil {
+		t.Fatalf("save card social_relations: %v", err)
+	}
+
+	sess := &models.GameSession{
+		ID: 20,
+		Players: []models.SessionPlayer{{
+			UserID:        uid,
+			CharacterCard: *card,
+			SessionRelations: models.JSONField[[]models.SessionRelation]{Data: []models.SessionRelation{
+				{SocialRelation: models.SocialRelation{Name: "A", Relationship: "盟友", Note: "新备注"}}, // tier2已有,本局更新
+				{SocialRelation: models.SocialRelation{Name: "B", Relationship: "路人", Note: "只打过照面"}}, // tier2没有,新候选
+				{SocialRelation: models.SocialRelation{Name: "C"}, Removed: true},                    // tier2已有,本局移除
+			}},
+		}},
+	}
+
+	if _, err := RunEndSession(context.Background(), sess, nil, false); err != nil {
+		t.Fatalf("RunEndSession(win=false): %v", err)
+	}
+
+	var updated models.CharacterCard
+	models.DB.First(&updated, card.ID)
+	byName := make(map[string]models.SocialRelation)
+	for _, r := range updated.SocialRelations.Data {
+		byName[r.Name] = r
+	}
+	if rel, ok := byName["A"]; !ok || rel.Relationship != "盟友" || rel.Note != "新备注" {
+		t.Errorf("A should be updated to 盟友/新备注, got %+v (ok=%v)", rel, ok)
+	}
+	if _, ok := byName["C"]; ok {
+		t.Errorf("C should have been removed by tombstone, got %+v", byName["C"])
+	}
+	if _, ok := byName["B"]; ok {
+		t.Errorf("B is a new candidate and LLM is unavailable in this test, should not be written, got %+v", byName["B"])
+	}
+}
+
+// TestRunEndSession_RelationPromotion_DeadCharacterSkipped 验证已死亡角色不参与关系合并
+// （卡即将被撕，本局的 tier1 关系变更全部作废）。
+func TestRunEndSession_RelationPromotion_DeadCharacterSkipped(t *testing.T) {
+	initEndSessionTestDB(t)
+
+	uid := newEndSessionUser(t, "reldeadtest")
+	card := newEndSessionCard(t, "DeadRelChar", models.CharacterStats{
+		MaxHP: 10, HP: 0, MaxMP: 10, MP: 5, MaxSAN: 99, SAN: 30, POW: 50,
+	}, nil)
+	card.WoundState = "dead"
+	card.SocialRelations.Data = []models.SocialRelation{{Name: "A", Relationship: "线人"}}
+	if err := models.DB.Save(card).Error; err != nil {
+		t.Fatalf("save card: %v", err)
+	}
+
+	sess := &models.GameSession{
+		ID: 21,
+		Players: []models.SessionPlayer{{
+			UserID:        uid,
+			CharacterCard: *card,
+			SessionRelations: models.JSONField[[]models.SessionRelation]{Data: []models.SessionRelation{
+				{SocialRelation: models.SocialRelation{Name: "A"}, Removed: true},
+				{SocialRelation: models.SocialRelation{Name: "B", Relationship: "路人"}},
+			}},
+		}},
+	}
+
+	if _, err := RunEndSession(context.Background(), sess, nil, false); err != nil {
+		t.Fatalf("RunEndSession(win=false, dead): %v", err)
+	}
+
+	var updated models.CharacterCard
+	models.DB.First(&updated, card.ID)
+	if len(updated.SocialRelations.Data) != 1 || updated.SocialRelations.Data[0].Name != "A" {
+		t.Errorf("dead character's social_relations should stay untouched, got %+v", updated.SocialRelations.Data)
+	}
+	if updated.IsActive {
+		t.Error("dead card should have IsActive=false")
+	}
+}

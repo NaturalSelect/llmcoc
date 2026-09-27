@@ -243,8 +243,9 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer, g
 				if len(parts) >= 3 {
 					rel.Note = parts[2]
 				}
-				card.SocialRelations.Data = append(card.SocialRelations.Data, rel)
-				models.DB.Save(card)
+				// NOTE: 只写本局(tier1)，是否提升进人物卡由结算时的 AI 判断决定。
+				players[i].SessionRelations.Data = upsertSessionRelation(players[i].SessionRelations.Data, rel, false)
+				models.DB.Save(&players[i])
 			}
 
 		case "assets":

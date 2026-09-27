@@ -27,7 +27,9 @@ type EndSessionResult struct {
 //  1. Runs the Evaluator agent to score players and suggest rewards.
 //  2. 若 win=true：运行 Growth 计算技能成长，并对每个存活角色运行背景演变。
 //     若 win=false：跳过技能成长、POW 增长及背景演变（失败无角色成长）。
-//  3. Applies coins, madness cleanup, card teardown (dead), and state restore
+//  3. 运行 RunRelationPromotion（胜负均执行），判断本局新结识的候选关系(tier1)是否
+//     值得写进人物卡(tier2)；人物卡已有关系的更新/移除不需要 AI 判断，直接生效。
+//  4. Applies coins, madness cleanup, card teardown (dead), and state restore
 //     in a single DB transaction. If win=true also applies skill growth, POW,
 //     and backstory evolution.
 //
@@ -75,6 +77,11 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 		}
 	}
 	// NOTE: win=false：跳过 RunGrowth / RunCharacterEvolution，growthResult 保持零值。
+
+	// ── 社交关系提升（tier1 会话关系 → tier2 人物卡，胜负均执行）──────────────────
+	// NOTE: 本局新结识的关系先存在 session 里，避免浅层关系挤占人物卡；
+	// 结算时才由 AI 判断哪些值得长期写入人物卡（已有关系的更新/移除不需要 AI 判断，直接生效）。
+	relationPromotions := RunRelationPromotion(ctx, session, messages)
 
 	// Build lookup maps for fast access.
 	evalByChar := make(map[string]PlayerEvaluation, len(evalResult.Players))
@@ -162,6 +169,9 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 			if card.WoundState == "dead" || card.Stats.Data.HP <= 0 {
 				card.IsActive = false
 			} else {
+				// 社交关系提升（win=true/false 均执行）：已死亡角色不合并，卡即将被撕。
+				card.SocialRelations.Data = mergeSessionRelations(card.SocialRelations.Data, player.SessionRelations.Data, relationPromotions[card.Name])
+
 				card.Stats.Data.HP = card.Stats.Data.MaxHP // Heal to full HP at session end for living investigators.
 				card.Stats.Data.MP = card.Stats.Data.MaxMP // Restore MP as well.
 				if card.Stats.Data.SAN > 0 {

@@ -752,9 +752,9 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		writeCompactList(&sb, "inv", card.Inventory.Data)
 		writeCompactList(&sb, "spells", card.Spells.Data)
 		writeCompactList(&sb, "seen", card.SeenMonsters.Data)
-		if len(card.SocialRelations.Data) > 0 {
+		if rels := effectiveRelations(card.SocialRelations.Data, p.SessionRelations.Data); len(rels) > 0 {
 			sb.WriteString("<rels>")
-			for _, r := range card.SocialRelations.Data {
+			for _, r := range rels {
 				sb.WriteString(fmt.Sprintf(`<rel n=%q type=%q note=%q/>`, r.Name, r.Relationship, r.Note))
 			}
 			sb.WriteString("</rels>")
@@ -1197,6 +1197,9 @@ func manageSpell(players []models.SessionPlayer, characterName, operate, spell s
 	return fmt.Sprintf("法术操作失败:未找到角色 %s", characterName)
 }
 
+// manageSocialRelation 只写本局(tier1)的 SessionRelations，不再直接改人物卡：
+// 浅层的一局性关系不应该挤占人物卡空间，是否提升进人物卡由结算时的 AI 判断决定
+// (见 RunRelationPromotion / mergeSessionRelations)。
 func manageSocialRelation(players []models.SessionPlayer, characterName, operate string, rel *models.SocialRelation) string {
 	if characterName == "" || rel == nil || rel.Name == "" {
 		return "社会关系操作失败:缺少角色名或关系条目"
@@ -1206,34 +1209,14 @@ func manageSocialRelation(players []models.SessionPlayer, characterName, operate
 		if card.Name != characterName {
 			continue
 		}
-		list := card.SocialRelations.Data
 		if operate == "remove" {
-			filtered := make([]models.SocialRelation, 0, len(list))
-			for _, existing := range list {
-				if existing.Name == rel.Name {
-					continue
-				}
-				filtered = append(filtered, existing)
-			}
-			card.SocialRelations.Data = filtered
-			models.DB.Save(card)
-			return fmt.Sprintf("%s 移除社会关系:%s", card.Name, rel.Name)
+			players[i].SessionRelations.Data = upsertSessionRelation(players[i].SessionRelations.Data, *rel, true)
+			models.DB.Save(&players[i])
+			return fmt.Sprintf("%s 本局关系已移除:%s", card.Name, rel.Name)
 		}
-
-		updated := false
-		for idx := range list {
-			if list[idx].Name == rel.Name {
-				list[idx] = *rel
-				updated = true
-				break
-			}
-		}
-		if !updated {
-			list = append(list, *rel)
-		}
-		card.SocialRelations.Data = list
-		models.DB.Save(card)
-		return fmt.Sprintf("%s 更新社会关系:%s(%s)", card.Name, rel.Name, rel.Relationship)
+		players[i].SessionRelations.Data = upsertSessionRelation(players[i].SessionRelations.Data, *rel, false)
+		models.DB.Save(&players[i])
+		return fmt.Sprintf("%s 本局关系已记录:%s(%s)(结算时决定是否写入人物卡)", card.Name, rel.Name, rel.Relationship)
 	}
 	return fmt.Sprintf("社会关系操作失败:未找到角色 %s", characterName)
 }

@@ -49,19 +49,6 @@ func RunGrowth(ctx context.Context, session *models.GameSession, messages []mode
 		return GrowthResult{}, nil
 	}
 
-	// Build chat log for LLM context.
-	var logBuilder strings.Builder
-	for _, m := range messages {
-		role := "KP"
-		if m.Role == models.MessageRoleUser {
-			role = m.Username
-			if role == "" {
-				role = "玩家"
-			}
-		}
-		logBuilder.WriteString(fmt.Sprintf("[%s]: %s\n", role, m.Content))
-	}
-
 	// Build per-character skill list so LLM only picks from existing skills.
 	var charInfo strings.Builder
 	for _, p := range session.Players {
@@ -76,7 +63,7 @@ func RunGrowth(ctx context.Context, session *models.GameSession, messages []mode
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: handle.systemPrompt(growthPrompt)},
 		{Role: "user", Content: charInfo.String()},
-		{Role: "user", Content: "聊天记录:\n" + logBuilder.String()},
+		{Role: "user", Content: "聊天记录:\n" + buildSessionChatLog(messages)},
 	}
 
 	resp, err := handle.provider.JsonChat(ctx, fmt.Sprintf("%v:evaluator", session.ID), msgs)
@@ -168,4 +155,21 @@ func buildGrowthDescription(changes []SkillChange) string {
 		desc += fmt.Sprintf("%s +%d", sc.Skill, sc.Delta)
 	}
 	return desc
+}
+
+// buildSessionChatLog 把消息列表格式化为逐行"[角色]: 内容"的聊天记录文本，
+// 供成长判定、关系提升等结算类 LLM 调用共用。
+func buildSessionChatLog(messages []models.Message) string {
+	var logBuilder strings.Builder
+	for _, m := range messages {
+		role := "KP"
+		if m.Role == models.MessageRoleUser {
+			role = m.Username
+			if role == "" {
+				role = "玩家"
+			}
+		}
+		logBuilder.WriteString(fmt.Sprintf("[%s]: %s\n", role, m.Content))
+	}
+	return logBuilder.String()
 }

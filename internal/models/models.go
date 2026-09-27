@@ -122,6 +122,13 @@ type SocialRelation struct {
 	Note         string `json:"note"`
 }
 
+// SessionRelation 是 tier1 关系条目：本局内新增/更新/移除的社交关系，先落在会话里，
+// 结算时由 AI 判断是否提升进人物卡的 SocialRelations（tier2），避免浅层关系挤占人物卡空间。
+type SessionRelation struct {
+	SocialRelation
+	Removed bool `json:"removed,omitempty"` // 墓碑：本局内移除了该关系（可覆盖人物卡已有的同名条目）
+}
+
 type Asset struct {
 	Name     string `json:"name"`
 	Category string `json:"category"`
@@ -496,7 +503,10 @@ type SessionPlayer struct {
 	SessionMemory   string        `gorm:"column:llm_note;type:text" json:"session_memory"` // 会话记忆：KP需跨轮记住的隐藏动机/秘密进展等，非玩家可见
 	Location        string        `gorm:"size:200" json:"location"`                        // 当前所在地点，由 update_location 工具维护
 	Armor           int           `gorm:"default:0" json:"armor"`                          // 当前护甲值，由 update_armor 工具维护
-	User            User          `gorm:"foreignKey:UserID" json:"user"`
+	// SessionRelations 是本局内的 tier1 社交关系变更，manage_relation 只写这里；
+	// 结算(end_game/手动结束/管理员一键结束)时由 AI 判断哪些提升进人物卡的 SocialRelations。
+	SessionRelations JSONField[[]SessionRelation] `gorm:"type:text" json:"session_relations"`
+	User             User                         `gorm:"foreignKey:UserID" json:"user"`
 	CharacterCard   CharacterCard `gorm:"foreignKey:CharacterCardID" json:"character_card"`
 }
 

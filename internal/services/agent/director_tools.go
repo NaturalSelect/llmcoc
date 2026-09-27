@@ -324,6 +324,7 @@ func manageRelationTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolManageRelation),
 			Description: `增加或移除调查员的社交关系条目(记录与某人/组织的关系)。relation.name 是条目名(通常为人名/组织名)，relationship 是关系类型，note 记录种族、具体关系、态度等补充信息。reason 必须说明变更依据。
+本局内的增加/移除只记录在会话里，不会直接改动人物卡；结算时系统会判断哪些关系值得长期写入人物卡，所以可以放心记录本局新结识的人物。若人物卡上已有该人物，relation.name 必须和 query_character 返回的已有条目名完全一致，否则会被当成新关系处理。
 调用示例：{"character_name":"角色名","operate":"add","relation":{"name":"条目名","relationship":"关系类型","note":"种族、具体关系、态度等其他信息"},"reason":"描述变更原因"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
