@@ -422,8 +422,9 @@ func StartSession(c *gin.Context) {
 
 	models.DB.Model(&session).Update("status", models.SessionStatusPlaying)
 
-	// KP intro message
-	intro := session.Scenario.Content.Data.Setting + "\nKP:" + session.Scenario.Content.Data.Intro
+	// KP intro message：直接展示 content.intro 原文（已是完整叙事散文），不再拼接
+	// content.setting（那是模组列表页用的简介文案，混进对局消息会造成文风断层）。
+	intro := strings.TrimSpace(session.Scenario.Content.Data.Intro)
 	if intro == "" {
 		intro = "游戏开始。KP将为你们展开这段旅程……"
 	}

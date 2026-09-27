@@ -340,6 +340,10 @@ func buildKPHead(gctx GameContext, systemPrompt string) []llm.ChatMessage {
 	if content.Setting != "" {
 		scenarioSB.WriteString("<setting>" + content.Setting + "</setting>\n")
 	}
+	if strings.TrimSpace(content.Intro) != "" {
+		scenarioSB.WriteString("<opening>" + content.Intro + "</opening>\n")
+		scenarioSB.WriteString("指令：<opening>是本局开局时已原样展示给玩家的第一条消息，玩家已经读过，不要重复、复述或与其矛盾；你规划的第一轮回应须承接它的时间、地点、人物设定继续推进，不要重新交代这些已知信息。\n")
+	}
 	if strings.TrimSpace(content.InvestFocus) != "" || len(content.ToneTags) > 0 {
 		scenarioSB.WriteString("<tone_profile>\n")
 		if strings.TrimSpace(content.InvestFocus) != "" {

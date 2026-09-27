@@ -48,7 +48,7 @@ func TestValidateDraftCompatibility_SettingDate(t *testing.T) {
 			Content: models.ScenarioContent{
 				KeeperAppendix: &models.KeeperAppendix{CoreTruth: "KP独有的内部真相：这是用于测试的占位真相文本，用来满足core_truth的长度校验要求，不作为实际剧情内容使用。"},
 				Setting:        setting,
-				Intro:          "你们抵达此地，可以四处走走。\n【当前情况】地点：镇图书馆一层大厅；时间：1924年9月3日傍晚六点；目标：清点整理新到的捐赠藏书。",
+				Intro:          "1924年9月3日傍晚六点，你们抵达镇图书馆一层大厅，可以四处走走，清点整理新到的捐赠藏书。",
 				GameStartSlot:  16,
 				MapDescription: "【文字地图】A→B",
 				Scenes: []models.SceneData{
@@ -119,33 +119,33 @@ func TestOneshotResultExampleSettingHasDate(t *testing.T) {
 	}
 }
 
-// TestIntroHasBriefing 验证 introHasBriefing 能正确识别intro末尾的【当前情况】结构化情况说明行。
-func TestIntroHasBriefing(t *testing.T) {
+// TestIntroHasDate 验证 introHasDate 能正确识别 intro 叙事文本中是否已写入具体年月日。
+func TestIntroHasDate(t *testing.T) {
 	cases := []struct {
 		name  string
 		input string
 		want  bool
 	}{
-		{"完整合规行", "你们受邀而来。\n【当前情况】地点：镇图书馆一层大厅；时间：1924年9月3日傍晚六点；目标：清点整理捐赠藏书。", true},
-		{"缺当前情况标记", "地点：镇图书馆；时间：1924年9月3日；目标：清点藏书。", false},
-		{"缺目标标签", "你们受邀而来。\n【当前情况】地点：镇图书馆一层大厅；时间：1924年9月3日傍晚六点。", false},
-		{"有标记但时间无具体年月日", "你们受邀而来。\n【当前情况】地点：镇图书馆一层大厅；时间：傍晚六点；目标：清点整理捐赠藏书。", false},
+		{"叙事中自然嵌入日期", "1924年9月3日傍晚六点，你们受邀而来，在镇图书馆大厅帮着清点捐赠藏书。", true},
+		{"旧式【当前情况】行仍能命中日期", "你们受邀而来。\n【当前情况】地点：镇图书馆一层大厅；时间：1924年9月3日傍晚六点；目标：清点藏书。", true},
+		{"无具体年月日", "你们受邀而来，在镇图书馆大厅帮着清点藏书。", false},
+		{"只有时刻无年月日", "傍晚六点，你们抵达图书馆。", false},
 		{"空字符串", "", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := introHasBriefing(c.input)
+			got := introHasDate(c.input)
 			if got != c.want {
-				t.Errorf("introHasBriefing(%q) = %v，预期 %v", c.input, got, c.want)
+				t.Errorf("introHasDate(%q) = %v，预期 %v", c.input, got, c.want)
 			}
 		})
 	}
 }
 
-// TestOneshotResultExampleIntroHasBriefing 验证内置示例 intro 满足结构化情况说明要求（示例作为模型参考）。
-func TestOneshotResultExampleIntroHasBriefing(t *testing.T) {
-	if !introHasBriefing(oneshotResultExample.Content.Intro) {
-		t.Errorf("oneshotResultExample.Content.Intro 缺少【当前情况】情况说明行，intro=%q", oneshotResultExample.Content.Intro)
+// TestOneshotResultExampleIntroHasDate 验证内置示例 intro 满足具体年月日要求（示例作为模型参考）。
+func TestOneshotResultExampleIntroHasDate(t *testing.T) {
+	if !introHasDate(oneshotResultExample.Content.Intro) {
+		t.Errorf("oneshotResultExample.Content.Intro 缺少具体年月日，intro=%q", oneshotResultExample.Content.Intro)
 	}
 }
 
@@ -185,7 +185,7 @@ func TestValidateDraftCompatibility_Timeline(t *testing.T) {
 			Content: models.ScenarioContent{
 				KeeperAppendix: &models.KeeperAppendix{CoreTruth: "KP独有的内部真相：这是用于测试的占位真相文本，用来满足core_truth的长度校验要求，不作为实际剧情内容使用。"},
 				Setting:        "1923年10月15日，初秋的小镇，你们受邀前来。",
-				Intro:          "你们抵达此地，可以四处走走。\n【当前情况】地点：镇图书馆一层大厅；时间：1924年9月3日傍晚六点；目标：清点整理新到的捐赠藏书。",
+				Intro:          "1924年9月3日傍晚六点，你们抵达镇图书馆一层大厅，可以四处走走，清点整理新到的捐赠藏书。",
 				GameStartSlot:  16,
 				MapDescription: "【文字地图】A→B",
 				PlaythroughOutline: strings.Repeat(

@@ -648,20 +648,8 @@ func settingHasDate(s string) bool {
 	return settingDateRe.MatchString(s)
 }
 
-// introBriefingLabels 是 intro 末尾【当前情况】行必须齐备的三项标签。
-var introBriefingLabels = []string{"地点：", "时间：", "目标："}
-
-// introHasBriefing 检查 intro 是否带有结构化的情况说明行：【当前情况】标记、三项标签齐全，
-// 且时间含具体年月日。
-func introHasBriefing(s string) bool {
-	if !strings.Contains(s, "【当前情况】") {
-		return false
-	}
-	for _, label := range introBriefingLabels {
-		if !strings.Contains(s, label) {
-			return false
-		}
-	}
+// introHasDate 检查 intro 是否已把具体年月日自然写进叙事文本，避免开场语焉不详。
+func introHasDate(s string) bool {
 	return settingDateRe.MatchString(s)
 }
 
@@ -699,8 +687,10 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	}
 	if strings.TrimSpace(content.Intro) == "" {
 		issues = append(issues, "content.intro 为空")
-	} else if !introHasBriefing(content.Intro) {
-		issues = append(issues, "content.intro 缺少结尾的情况说明行；须在正文末尾另起一行补上：【当前情况】地点：<具体场所>；时间：<具体年月日+时刻>；目标：<调查员要达成的那件事>（目标只写要达成的事本身，不写行动步骤）")
+	} else if !introHasDate(content.Intro) {
+		issues = append(issues, "content.intro 缺少具体年月日；须把调查员此刻所在的具体场所、具体年月日+时刻、要达成的那件事自然写进叙事句子（不得用【】或地点/时间/目标式标签另起一行罗列）")
+	} else if length := len([]rune(strings.TrimSpace(content.Intro))); length < 40 {
+		issues = append(issues, fmt.Sprintf("content.intro 过短（当前%d字），须写出至少两处能让人看见/听见/感受到的具体场景细节，不能只有一句抽象事实交代", length))
 	}
 	if content.GameStartSlot < 0 || content.GameStartSlot > 47 {
 		issues = append(issues, "content.game_start_slot 必须在0-47之间")

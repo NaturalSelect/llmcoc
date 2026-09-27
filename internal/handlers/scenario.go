@@ -545,7 +545,7 @@ func DownloadScenarioTemplate(c *gin.Context) {
 		Difficulty:  "normal",
 		Content: models.ScenarioContent{
 			Setting:       "时代与地点背景",
-			Intro:         "开场引子\n【当前情况】地点：具体场所；时间：具体年月日+时刻；目标：调查员要达成的那件事",
+			Intro:         "具体年月日+时刻，调查员在具体场所遇到的开场情境，把要达成的那件事自然写进叙事句子里",
 			GameStartSlot: 36,
 			Scenes: []models.SceneData{{
 				ID:          "arrival",
