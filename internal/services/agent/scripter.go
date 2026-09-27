@@ -82,6 +82,14 @@ func randomScripterDifficulty() string {
 	return scripterDifficulties[rand.Intn(len(scripterDifficulties))]
 }
 
+var scripterLengths = []string{
+	"short", "mid", "long",
+}
+
+func randomScripterLength() string {
+	return scripterLengths[rand.Intn(len(scripterLengths))]
+}
+
 const scriptSessionId = math.MaxInt64
 
 var scripterCounter int
@@ -236,6 +244,10 @@ func normalizeScenarioCreationRequest(req ScenarioCreationRequest) ScenarioCreat
 		req.TargetLength = "short"
 	} else {
 		req.TargetLength = strings.ToLower(strings.TrimSpace(req.TargetLength))
+		// NOTE: "random" 是前端提供的占位值，实际生成前需落地为具体档位，避免非法值流入下游 prompt 与落库。
+		if req.TargetLength == "random" {
+			req.TargetLength = randomScripterLength()
+		}
 		if req.TargetLength != "short" && req.TargetLength != "mid" && req.TargetLength != "long" {
 			req.TargetLength = "short"
 		}
