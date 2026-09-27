@@ -837,14 +837,16 @@ func applyAdjustedSkills(base map[string]int, adjusted map[string]int, stats mod
 	base["闪避"] = stats.DEX / 2
 }
 
-type regenerateAppearanceReq struct {
+// regenerateGuidanceReq 供外貌/个人经历/性格特征重新生成接口共用；
+// guidance 为可选字段，body 为空时按无指导处理。
+type regenerateGuidanceReq struct {
 	Guidance string `json:"guidance"`
 }
 
 // NOTE: RegenerateAppearance 通过 SiteSetting 读取费率，扣除金币后重新生成外貌；
 // guidance 为可选字段，body 为空时按无指导处理。
 func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
-	var req regenerateAppearanceReq
+	var req regenerateGuidanceReq
 	_ = c.ShouldBindJSON(&req)
 
 	cost := siteSettingInt("regenerate_appearance_cost", 100)
@@ -920,8 +922,12 @@ func (h *CharacterHandlers) RegenerateAppearance(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// NOTE: RegenerateBackstory 通过 SiteSetting 读取费率，扣除金币后重新生成个人经历
+// NOTE: RegenerateBackstory 通过 SiteSetting 读取费率，扣除金币后重新生成个人经历；
+// guidance 为可选字段，body 为空时按无指导处理。
 func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
+	var req regenerateGuidanceReq
+	_ = c.ShouldBindJSON(&req)
+
 	cost := siteSettingInt("regenerate_backstory_cost", 100)
 	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -954,7 +960,7 @@ func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 		}
 	}
 
-	backstory, err := agent.RegenerateBackstory(c.Request.Context(), &card)
+	backstory, err := agent.RegenerateBackstory(c.Request.Context(), &card, req.Guidance)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
 		return
@@ -995,8 +1001,12 @@ func (h *CharacterHandlers) RegenerateBackstory(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// NOTE: RegenerateTraits 通过 SiteSetting 读取费率，扣除金币后重新生成性格特征
+// NOTE: RegenerateTraits 通过 SiteSetting 读取费率，扣除金币后重新生成性格特征；
+// guidance 为可选字段，body 为空时按无指导处理。
 func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
+	var req regenerateGuidanceReq
+	_ = c.ShouldBindJSON(&req)
+
 	cost := siteSettingInt("regenerate_traits_cost", 100)
 	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -1029,7 +1039,7 @@ func (h *CharacterHandlers) RegenerateTraits(c *gin.Context) {
 		}
 	}
 
-	traits, err := agent.RegenerateTraits(c.Request.Context(), &card)
+	traits, err := agent.RegenerateTraits(c.Request.Context(), &card, req.Guidance)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
 		return

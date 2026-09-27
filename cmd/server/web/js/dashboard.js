@@ -30,7 +30,7 @@ window.COC.dashboard = {
                         this.loadSkillDefaults().catch(() => {});
                         this.modal = 'createChar';
                     },
-                    openCharDetail(c) { this.editChar = c; this.inventoryInput = ''; this.appearanceGuidance = ''; this.modal = 'charDetail'; },
+                    openCharDetail(c) { this.editChar = c; this.inventoryInput = ''; this.appearanceGuidance = ''; this.backstoryGuidance = ''; this.traitsGuidance = ''; this.modal = 'charDetail'; },
                     openSessionPlayerCharDetail(player) {
                         if (!player?.character_card) {
                             this.showToast('该玩家未绑定人物卡', 'error');
@@ -218,7 +218,9 @@ window.COC.dashboard = {
                         if (!await this.confirmDialog(`确认花费 ${this.shopCosts?.regenerate_backstory_cost ?? 100} 金币为「${this.editChar.name}」重新生成个人经历？`, { confirmText: '重新生成' })) return;
                         this.regenningBackstory = true;
                         try {
-                            const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-backstory');
+                            const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-backstory', {
+                                guidance: this.backstoryGuidance.trim(),
+                            });
                             if (this.user) this.user.coins = r.coins;
                             this.editChar.backstory = r.backstory;
                             this.syncCharacter({ ...this.editChar, backstory: r.backstory });
@@ -232,7 +234,9 @@ window.COC.dashboard = {
                         if (!await this.confirmDialog(`确认花费 ${this.shopCosts?.regenerate_traits_cost ?? 100} 金币为「${this.editChar.name}」重新生成性格特征？`, { confirmText: '重新生成' })) return;
                         this.regenningTraits = true;
                         try {
-                            const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-traits');
+                            const r = await this.api('POST', '/api/characters/' + this.editChar.id + '/regenerate-traits', {
+                                guidance: this.traitsGuidance.trim(),
+                            });
                             if (this.user) this.user.coins = r.coins;
                             this.editChar.traits = r.traits;
                             this.syncCharacter({ ...this.editChar, traits: r.traits });

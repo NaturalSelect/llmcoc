@@ -1240,6 +1240,9 @@
                         </button>
                     </div>
                     <p class="text-sm text-amber-700 leading-relaxed" x-text="editChar?.backstory"></p>
+                    <input x-model="backstoryGuidance" type="text" maxlength="200"
+                        placeholder="可选：补充个人经历指导，如「曾是一名水手」「家道中落」"
+                        class="inp text-xs mt-1.5" />
                 </div>
                 <div x-show="editChar?.appearance" class="mb-3">
                     <div class="flex items-center gap-2 mb-1">
@@ -1271,6 +1274,9 @@
                         </button>
                     </div>
                     <p class="text-sm text-amber-700" x-text="editChar?.traits"></p>
+                    <input x-model="traitsGuidance" type="text" maxlength="200"
+                        placeholder="可选：补充性格特征指导，如「毒舌」「傲娇」"
+                        class="inp text-xs mt-1.5" />
                 </div>
 
                 <div class="mt-4 mb-2">

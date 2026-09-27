@@ -176,8 +176,8 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard, guida
 }
 
 // RegenerateBackstory uses the Writer agent to produce a fresh backstory
-// for an existing character.
-func RegenerateBackstory(ctx context.Context, card *models.CharacterCard) (string, error) {
+// for an existing character. guidance为可选的玩家补充要求。
+func RegenerateBackstory(ctx context.Context, card *models.CharacterCard, guidance string) (string, error) {
 	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
 	if err != nil {
 		return "", err
@@ -196,18 +196,23 @@ func RegenerateBackstory(ctx context.Context, card *models.CharacterCard) (strin
 		gender = "(未指定)"
 	}
 
+	guidanceLine := ""
+	if guidance = strings.TrimSpace(guidance); guidance != "" {
+		guidanceLine = fmt.Sprintf("\n玩家补充要求(需尽量满足):%s\n", guidance)
+	}
+
 	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)调查员重新生成个人经历,以JSON格式返回,不要有任何额外文字。
 
 调查员信息:
 - 姓名:%s
 - 职业:%s
 - 性别:%s
-
+%s
 要求:个人经历200字以内,记录成长经历等人生轨迹,与之前的内容不同。
 
 请返回如下JSON格式:
 {"backstory": "个人经历"}`,
-		name, occupation, gender,
+		name, occupation, gender, guidanceLine,
 	)
 
 	msgs := []llm.ChatMessage{
@@ -233,8 +238,8 @@ func RegenerateBackstory(ctx context.Context, card *models.CharacterCard) (strin
 }
 
 // RegenerateTraits uses the Writer agent to produce fresh personality traits
-// for an existing character.
-func RegenerateTraits(ctx context.Context, card *models.CharacterCard) (string, error) {
+// for an existing character. guidance为可选的玩家补充要求。
+func RegenerateTraits(ctx context.Context, card *models.CharacterCard, guidance string) (string, error) {
 	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
 	if err != nil {
 		return "", err
@@ -257,6 +262,11 @@ func RegenerateTraits(ctx context.Context, card *models.CharacterCard) (string, 
 		backstory = "(无)"
 	}
 
+	guidanceLine := ""
+	if guidance = strings.TrimSpace(guidance); guidance != "" {
+		guidanceLine = fmt.Sprintf("\n玩家补充要求(需尽量满足):%s\n", guidance)
+	}
+
 	prompt := fmt.Sprintf(`请为克苏鲁神话TRPG(COC第七版)调查员重新生成性格特征,以JSON格式返回,不要有任何额外文字。
 
 调查员信息:
@@ -264,12 +274,12 @@ func RegenerateTraits(ctx context.Context, card *models.CharacterCard) (string, 
 - 职业:%s
 - 性别:%s
 - 背景故事:%s
-
+%s
 要求:性格特征以空格分隔,1-5个标签,包含语言风格、性格特点等，二次元风格, 如:雌小鬼 大和抚子等,与之前的特征不同。
 
 请返回如下JSON格式:
 {"traits": "特征1 特征2 特征3"}`,
-		name, occupation, gender, backstory,
+		name, occupation, gender, backstory, guidanceLine,
 	)
 
 	msgs := []llm.ChatMessage{
