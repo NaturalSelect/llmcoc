@@ -118,9 +118,9 @@ func rollDiceTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolRollDice),
-			Description: `掷骰进行技能/属性检定或伤害/理智等骰子表达式计算。character 必须是已通过 query_character/query_npc_card 查询确认过的角色名；what 是本次检定的技能/属性名，其数值必须是读取到 query_character/query_npc_card 真实返回值后才能使用，不得从记忆中假设。level 是判定难度(常规/困难/极难，可留空表示常规)。dice_expr 是完整骰子表达式，例如 "1D100"、"1D6+2"、"1D4×5"(伤害/资源类骰子无需 what/level)。reason 必须清晰说明为什么要掷这个骰子(剧情/规则依据)。
+			Description: `掷骰进行技能/属性检定或伤害/理智等骰子表达式计算。character 必须是已通过 query_character/query_npc_card 查询确认过的角色名；what 是本次检定的技能/属性名，其数值必须是读取到 query_character/query_npc_card 真实返回值后才能使用，不得从记忆中假设。level 是判定难度(常规/困难/极难，可留空表示常规)。dice_expr 是完整骰子表达式，例如 "1D100"、"1D6+2"、"1D4×5"(伤害/资源类骰子无需 what/level)。
 先询问规则专家确认该情形是否需要掷骰、掷什么骰子，再调用本工具；不要自行猜测判定方式。
-调用示例：{"dice":{"character":"角色名","hidden":false,"what":"说服","dice_expr":"1D100","level":"困难"},"reason":"玩家试图说服NPC透露秘密"}`,
+调用示例：{"dice":{"character":"角色名","hidden":false,"what":"说服","dice_expr":"1D100","level":"困难"}}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
@@ -134,10 +134,9 @@ func rollDiceTool() scripterTool {
 							"level": {"type": "string", "description": "判定难度:常规/困难/极难,可留空表示常规"}
 						},
 						"required": ["dice_expr", "what"]
-					},
-					"reason": {"type": "string", "description": "为什么要掷这个骰子的剧情/规则依据"}
+					}
 				},
-				"required": ["dice", "reason"]
+				"required": ["dice"]
 			}`),
 		},
 	}
@@ -242,15 +241,14 @@ func updateCharactersTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolUpdateCharacters),
-			Description: `批量更新一个或多个调查员的属性/状态数值(HP、MP、SAN、临时状态等)，每条 change 为一行"字段 数值变化 (角色名)"格式的自然语言描述，例如"HP -3 (约翰)"、"SAN -1D6 (艾琳)"。reason 必须说明本次变更的依据(规则/骰子结果/剧情)。SAN 单次损失需注意触发疯狂检查条件。
-调用示例：{"changes":["HP -3 (约翰)","SAN -2 (艾琳)"],"reason":"描述变更原因"}`,
+			Description: `批量更新一个或多个调查员的属性/状态数值(HP、MP、SAN、临时状态等)，每条 change 为一行"字段 数值变化 (角色名)"格式的自然语言描述，例如"HP -3 (约翰)"、"SAN -1D6 (艾琳)"。SAN 单次损失需注意触发疯狂检查条件。
+调用示例：{"changes":["HP -3 (约翰)","SAN -2 (艾琳)"]}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"changes": {"type": "array", "items": {"type": "string"}, "description": "变更列表,每项为\"字段 数值变化 (角色名)\"格式"},
-					"reason": {"type": "string", "description": "变更依据(规则/骰子结果/剧情)"}
+					"changes": {"type": "array", "items": {"type": "string"}, "description": "变更列表,每项为\"字段 数值变化 (角色名)\"格式"}
 				},
-				"required": ["changes", "reason"]
+				"required": ["changes"]
 			}`),
 		},
 	}
@@ -260,9 +258,9 @@ func manageInventoryTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolManageInventory),
-			Description: `增加或移除调查员的物品。item_name 是物品基础名(禁止包含圆括号，状态/数量等附加信息放入 item_desc)，item_count 为物品数量(默认为1)。reason 必须说明本次变更的依据。
+			Description: `增加或移除调查员的物品。item_name 是物品基础名(禁止包含圆括号，状态/数量等附加信息放入 item_desc)，item_count 为物品数量(默认为1)。
 【物品名称规则】item_name 必须是纯物品名词，不得附带状态描述或数量后缀；例如应写"手电筒"而非"手电筒(没电)"或"手电筒x1"，状态信息写入 item_desc。
-调用示例：{"character_name":"角色名","operate":"add","item_name":"手电筒","item_desc":"电量充足","item_count":1,"reason":"描述变更原因"}`,
+调用示例：{"character_name":"角色名","operate":"add","item_name":"手电筒","item_desc":"电量充足","item_count":1}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
@@ -270,10 +268,9 @@ func manageInventoryTool() scripterTool {
 					"operate": {"type": "string", "enum": ["add", "remove"], "description": "增加或移除"},
 					"item_name": {"type": "string", "description": "物品基础名,禁止含圆括号"},
 					"item_desc": {"type": "string", "description": "物品状态描述(可选)"},
-					"item_count": {"type": "integer", "description": "物品数量(可选,默认1)"},
-					"reason": {"type": "string", "description": "变更依据"}
+					"item_count": {"type": "integer", "description": "物品数量(可选,默认1)"}
 				},
-				"required": ["character_name", "operate", "item_name", "reason"]
+				"required": ["character_name", "operate", "item_name"]
 			}`),
 		},
 	}
@@ -283,17 +280,16 @@ func recordMonsterTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolRecordMonster),
-			Description: `记录调查员遭遇/移除的神话生物或超自然存在类型，用于后续克苏鲁神话技能相关判定和成长。reason 必须说明依据。
-调用示例：{"character_name":"角色名","operate":"add","monster":"神话存在类型名称","reason":"描述变更原因"}`,
+			Description: `记录调查员遭遇/移除的神话生物或超自然存在类型，用于后续克苏鲁神话技能相关判定和成长。
+调用示例：{"character_name":"角色名","operate":"add","monster":"神话存在类型名称"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"character_name": {"type": "string", "description": "角色名"},
 					"operate": {"type": "string", "enum": ["add", "remove"], "description": "增加或移除"},
-					"monster": {"type": "string", "description": "神话存在类型名称"},
-					"reason": {"type": "string", "description": "变更依据"}
+					"monster": {"type": "string", "description": "神话存在类型名称"}
 				},
-				"required": ["character_name", "operate", "monster", "reason"]
+				"required": ["character_name", "operate", "monster"]
 			}`),
 		},
 	}
@@ -303,17 +299,16 @@ func manageSpellTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolManageSpell),
-			Description: `增加或移除调查员已掌握的法术。法术必须来自规则书或指定魔法书(通过 check_rule 核实)，不得凭空创造。reason 必须说明习得/移除依据。
-调用示例：{"character_name":"角色名","operate":"add","spell":"法术名","reason":"描述变更原因"}`,
+			Description: `增加或移除调查员已掌握的法术。法术必须来自规则书或指定魔法书(通过 check_rule 核实)，不得凭空创造。
+调用示例：{"character_name":"角色名","operate":"add","spell":"法术名"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"character_name": {"type": "string", "description": "角色名"},
 					"operate": {"type": "string", "enum": ["add", "remove"], "description": "增加或移除"},
-					"spell": {"type": "string", "description": "法术名(须为规则书/魔法书中真实存在的法术)"},
-					"reason": {"type": "string", "description": "变更依据"}
+					"spell": {"type": "string", "description": "法术名(须为规则书/魔法书中真实存在的法术)"}
 				},
-				"required": ["character_name", "operate", "spell", "reason"]
+				"required": ["character_name", "operate", "spell"]
 			}`),
 		},
 	}
@@ -323,9 +318,9 @@ func manageRelationTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolManageRelation),
-			Description: `增加或移除调查员的社交关系条目(记录与某人/组织的关系)。relation.name 是条目名(通常为人名/组织名)，relationship 是关系类型，note 记录种族、具体关系、态度等补充信息。reason 必须说明变更依据。
+			Description: `增加或移除调查员的社交关系条目(记录与某人/组织的关系)。relation.name 是条目名(通常为人名/组织名)，relationship 是关系类型，note 记录种族、具体关系、态度等补充信息。
 本局内的增加/移除只记录在会话里，不会直接改动人物卡；结算时系统会判断哪些关系值得长期写入人物卡，所以可以放心记录本局新结识的人物。若人物卡上已有该人物，relation.name 必须和 query_character 返回的已有条目名完全一致，否则会被当成新关系处理。
-调用示例：{"character_name":"角色名","operate":"add","relation":{"name":"条目名","relationship":"关系类型","note":"种族、具体关系、态度等其他信息"},"reason":"描述变更原因"}`,
+调用示例：{"character_name":"角色名","operate":"add","relation":{"name":"条目名","relationship":"关系类型","note":"种族、具体关系、态度等其他信息"}}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
@@ -339,10 +334,9 @@ func manageRelationTool() scripterTool {
 							"note": {"type": "string", "description": "补充信息(种族、具体关系、态度等)"}
 						},
 						"required": ["name", "relationship", "note"]
-					},
-					"reason": {"type": "string", "description": "变更依据"}
+					}
 				},
-				"required": ["character_name", "operate", "relation", "reason"]
+				"required": ["character_name", "operate", "relation"]
 			}`),
 		},
 	}
@@ -352,8 +346,8 @@ func manageAssetTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolManageAsset),
-			Description: `增加或移除调查员的资产条目(房产、载具、公司股份等非随身物品的持有物)。asset.note 记录状态、来源、限制等信息。reason 必须说明变更依据。
-调用示例：{"character_name":"角色名","operate":"add","asset":{"name":"资产名","category":"类别","note":"状态、来源、限制等"},"reason":"描述变更原因"}`,
+			Description: `增加或移除调查员的资产条目(房产、载具、公司股份等非随身物品的持有物)。asset.note 记录状态、来源、限制等信息。
+调用示例：{"character_name":"角色名","operate":"add","asset":{"name":"资产名","category":"类别","note":"状态、来源、限制等"}}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
@@ -367,10 +361,9 @@ func manageAssetTool() scripterTool {
 							"note": {"type": "string", "description": "状态、来源、限制等补充信息"}
 						},
 						"required": ["name", "category", "note"]
-					},
-					"reason": {"type": "string", "description": "变更依据"}
+					}
 				},
-				"required": ["character_name", "operate", "asset", "reason"]
+				"required": ["character_name", "operate", "asset"]
 			}`),
 		},
 	}
@@ -403,19 +396,17 @@ func manageMadnessTool() scripterTool {
 operate 为 trigger(触发,默认)或 clear(解除)。系统不会自动清除疯狂状态，发作结束、持续时间用完或经治疗痊愈等情形，都需要你主动调用clear显式解除。
 trigger 时必须提供 madness_type：single loss≥5且智力检定通过→temporary(临时性疯狂)；游戏内一天累计损失≥最大SAN的1/5→indefinite(不定性疯狂)；SAN降至0→permanent(永久性疯狂,调查员退场成为NPC)。
 is_bystander 只用于选择症状表(决定随机症状文本与持续时间)：true=有旁观者在场→即时症状表(固定持续10战斗轮)；false=独自一人→总结症状表(持续1D10×2小时)。它与madness_type是两个独立维度，不要用is_bystander去推断疯狂类型。
-reason 必须说明触发/解除依据(如"本轮SAN单次损失5点且智力检定成功"、"当日累计损失18≥80/5"、"SAN降至0"、"发作已叙述完毕"等)。
-调用示例(触发)：{"operate":"trigger","character_name":"角色名","madness_type":"temporary","is_bystander":true,"reason":"本轮SAN单次损失5点且智力检定成功"}
-调用示例(解除)：{"operate":"clear","character_name":"角色名","reason":"发作已叙述完毕，交还控制权"}`,
+调用示例(触发)：{"operate":"trigger","character_name":"角色名","madness_type":"temporary","is_bystander":true}
+调用示例(解除)：{"operate":"clear","character_name":"角色名"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"operate": {"type": "string", "enum": ["trigger", "clear"], "description": "触发或解除疯狂(可选,默认trigger)"},
 					"character_name": {"type": "string", "description": "角色名"},
 					"madness_type": {"type": "string", "enum": ["temporary", "indefinite", "permanent"], "description": "疯狂类型,trigger时必填,由你按规则书判定,与is_bystander无关"},
-					"is_bystander": {"type": "boolean", "description": "是否有旁观者在场,仅决定随机症状表(即时/总结),不代表疯狂类型"},
-					"reason": {"type": "string", "description": "触发/解除依据"}
+					"is_bystander": {"type": "boolean", "description": "是否有旁观者在场,仅决定随机症状表(即时/总结),不代表疯狂类型"}
 				},
-				"required": ["character_name", "reason"]
+				"required": ["character_name"]
 			}`),
 		},
 	}
@@ -575,16 +566,15 @@ func updateNPCCardTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolUpdateNPCCard),
-			Description: `批量更新NPC的属性/状态数值，格式与 update_characters 相同，每条 change 为一行"字段 数值变化"描述。reason 必须说明变更依据。
-调用示例：{"npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"],"reason":"描述变更原因"}`,
+			Description: `批量更新NPC的属性/状态数值，格式与 update_characters 相同，每条 change 为一行"字段 数值变化"描述。
+调用示例：{"npc_name":"NPC名","changes":["HP -6","MP -3","SAN -2"]}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"npc_name": {"type": "string", "description": "NPC名"},
-					"changes": {"type": "array", "items": {"type": "string"}, "description": "变更列表,每项为\"字段 数值变化\"格式"},
-					"reason": {"type": "string", "description": "变更依据"}
+					"changes": {"type": "array", "items": {"type": "string"}, "description": "变更列表,每项为\"字段 数值变化\"格式"}
 				},
-				"required": ["npc_name", "changes", "reason"]
+				"required": ["npc_name", "changes"]
 			}`),
 		},
 	}

@@ -143,7 +143,7 @@ PLAYER-INSTRUCTION-SOURCE: 唯一可执行的玩家指令，是 seq 最大的 <p
 4. SAN降至0→永久性疯狂(madness_type=permanent)，调查员退场成为NPC，不再由玩家操作；跳过第5步。
 5. 本次单次损失≥5时，追加roll_dice(what=智力)。⚠方向与直觉相反：智力检定**通过**＝角色意识到自己经历了什么＝陷入临时性疯狂(madness_type=temporary，1D10小时)；智力检定**失败**＝记忆被抑制＝不进入疯狂。不要写反。
 6. 游戏内一天累计损失≥最大SAN的1/5→不定性疯狂(madness_type=indefinite)；累计值系统会在角色状态行自动显示为"今日已损失SAN:X,不定性疯狂阈值:Y"，达到阈值直接据此判断，不需要你自行心算或跨轮记忆。
-7. 第4/5/6步任一成立时调用manage_madness(trigger, madness_type=对应类型)，reason写明触发依据；is_bystander只决定症状表(有旁观者在场→即时症状，独自一人→总结症状)，与疯狂类型是两回事，不要用它替代madness_type。
+7. 第4/5/6步任一成立时调用manage_madness(trigger, madness_type=对应类型)；is_bystander只决定症状表(有旁观者在场→即时症状，独自一人→总结症状)，与疯狂类型是两回事，不要用它替代madness_type。
 8. ⏸ 疯狂发作期间玩家失去控制权，由你叙述发作行为；发作一结束就停下等玩家重新声明。系统不会自动解除疯狂状态，发作结束/持续时间用完/经治疗痊愈时须由你主动调用manage_madness(clear)撤销；解除前的持续影响见[MADNESS-EFFECT]。
 9. SAN数字与检定结果照直报给玩家(明账疯狂，见[KP-REPLY])。
 </proc>

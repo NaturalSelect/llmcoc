@@ -169,7 +169,7 @@ func TestTranslatorProviderIsolation(t *testing.T) {
 	room := makeTranslatorRoom(translatorProv, lawyerProv, "test-session-translator-1")
 
 	ctx := context.Background()
-	conclusion, err := runOneshotTranslatorAgent(ctx, room, "死者被古老力量束缚继续行动", "作为剧本神话锚点")
+	conclusion, err := runOneshotTranslatorAgent(ctx, room, "死者被古老力量束缚继续行动")
 	if err != nil {
 		t.Fatalf("runOneshotTranslatorAgent failed: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestTranslatorProviderNilFastFail(t *testing.T) {
 	room := makeTranslatorRoom(nil, lawyerProv, "test-session-translator-2")
 
 	ctx := context.Background()
-	_, err := runOneshotTranslatorAgent(ctx, room, "某概念", "")
+	_, err := runOneshotTranslatorAgent(ctx, room, "某概念")
 	if err == nil {
 		t.Fatal("should fail when translator provider is nil")
 	}

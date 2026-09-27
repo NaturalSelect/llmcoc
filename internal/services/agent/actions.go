@@ -175,9 +175,6 @@ func (rollDiceAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	if call.Dice == nil {
 		return nil
 	}
-	if call.Dice.What == "" {
-		call.Dice.What = call.Reason
-	}
 	dcr := executeSingleDiceCheck(*call.Dice, actx.GCtx.Session.Players)
 	debugf("tool", "session=%d roll_dice result=%s", actx.Sid, formatSingleDiceResult(dcr))
 	if dcr.Roll == 0 {

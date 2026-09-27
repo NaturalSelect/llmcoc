@@ -69,7 +69,7 @@ func extractAnchorFromDocument(ctx context.Context, room *scripterRoom, document
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
-			text, _ := executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)
+			text, _ := executeOneshotTranslateAnchor(ctx, room, args.Concept)
 			return toolOutcome{result: text}
 		case toolNameSubmitExtraction:
 			var args struct {

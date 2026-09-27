@@ -466,7 +466,7 @@ func runOneshotVerificationPhase(ctx context.Context, room *scripterRoom, conv *
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
-			text, _ := executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)
+			text, _ := executeOneshotTranslateAnchor(ctx, room, args.Concept)
 			findings = append(findings, text)
 			return toolOutcome{result: text}
 		case toolNameGenerateNPCName:
@@ -548,18 +548,17 @@ func runOneshotSubmitPhase(ctx context.Context, room *scripterRoom, conv *script
 // ---------------------------------------------------------------------------
 
 // executeOneshotTranslateAnchor 由 oneshot architect repair 和 story architect
-// 两个循环共用；concept/reason 直接来自各自 translate_anchor 工具调用的解码参数。
+// 两个循环共用；concept 直接来自各自 translate_anchor 工具调用的解码参数。
 // 除了给模型看的结果文本外，还把结构化结论一并返回：story architect 用它在
 // disabled=false时自动记下 selected_anchor，不再要求模型在提交故事时重复填写。
-func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, concept, reason string) (string, *translatorConclusion) {
+func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, concept string) (string, *translatorConclusion) {
 	sessionID := scripterSessionID(ctx, room)
 	concept = strings.TrimSpace(concept)
 	if concept == "" {
 		return `<translate_anchor_result error="concept字段为空，无法翻译"/>`, nil
 	}
-	reason = strings.TrimSpace(reason)
-	alog.Debug("oneshot translate anchor", "session", sessionID, "concept", truncateRunes(concept, 200), "reason", truncateRunes(reason, 200))
-	conclusion, err := runOneshotTranslatorAgent(ctx, room, concept, reason)
+	alog.Debug("oneshot translate anchor", "session", sessionID, "concept", truncateRunes(concept, 200))
+	conclusion, err := runOneshotTranslatorAgent(ctx, room, concept)
 	if err != nil {
 		alog.Error("oneshot translate anchor failed", "session", sessionID, "concept", truncateRunes(concept, 200), "err", err)
 		return fmt.Sprintf(`<translate_anchor_result concept=%q disabled="true">
@@ -629,7 +628,7 @@ func oneshotTranslatorRespondTool() scripterTool {
 	}
 }
 
-func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept string, reason string) (*translatorConclusion, error) {
+func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept string) (*translatorConclusion, error) {
 	// NOTE: translator 独立 provider/session key，不复用 lawyer；fail-fast，不退回 lawyer。
 	if room.translator.provider == nil {
 		return nil, fmt.Errorf("translator provider unavailable")
@@ -639,13 +638,12 @@ func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept 
 		{Role: "system", Content: room.translator.systemPrompt(oneshotTranslatorSystemPrompt)},
 		{Role: "user", Content: fmt.Sprintf(`<translate_anchor_request>
 concept: %s
-reason: %s
 </translate_anchor_request>
 <recently_used_mythos_anchors>
 %s
 </recently_used_mythos_anchors>
 以上是最近已经用过的元素：查询候选时优先绕开；如果规则书里最贴切的候选恰好在这份名单里，如实提交并在content中说明，不必为了避开它而无限重试。`,
-			concept, firstNonEmpty(reason, "(未说明)"), formatMythosBlacklist(room.mythosBlacklist))},
+			concept, formatMythosBlacklist(room.mythosBlacklist))},
 	}
 
 	tools := []scripterTool{

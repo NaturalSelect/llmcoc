@@ -269,7 +269,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, conv *script
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
 			}
-			text, conclusion := executeOneshotTranslateAnchor(ctx, room, args.Concept, args.Reason)
+			text, conclusion := executeOneshotTranslateAnchor(ctx, room, args.Concept)
 			if conclusion != nil && !conclusion.Disabled && strings.TrimSpace(conclusion.SelectedAnchor) != "" {
 				confirmedAnchor = strings.TrimSpace(conclusion.SelectedAnchor)
 				alog.Debug("story loop anchor confirmed", "session", sessionID, "anchor", confirmedAnchor)

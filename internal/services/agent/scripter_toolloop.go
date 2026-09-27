@@ -432,10 +432,9 @@ func translateAnchorTool(description string) scripterTool {
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"concept": {"type": "string", "description": "概念描述"},
-					"reason": {"type": "string", "description": "该概念在剧本中承担什么角色"}
+					"concept": {"type": "string", "description": "概念描述"}
 				},
-				"required": ["concept", "reason"]
+				"required": ["concept"]
 			}`),
 		},
 	}
@@ -449,7 +448,6 @@ type askLawyerArgs struct {
 // translateAnchorArgs 是 translate_anchor 工具调用参数。
 type translateAnchorArgs struct {
 	Concept string `json:"concept"`
-	Reason  string `json:"reason"`
 }
 
 // generateNPCNameTool 是 story architect / oneshot architect repair 共用的
