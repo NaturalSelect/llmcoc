@@ -790,9 +790,14 @@ func applyAdjustedStats(base *models.CharacterStats, adj *models.CharacterStats,
 		hi int
 	}
 	checks := []check{
-		{adj.STR, 1, 99}, {adj.CON, 1, 99}, {adj.DEX, 1, 99},
-		{adj.APP, 1, 99}, {adj.POW, 1, 99},
-		{adj.SIZ, 1, 99}, {adj.INT, 1, 99}, {adj.EDU, 1, 99},
+		{adj.STR, 1, 99},
+		{adj.CON, 1, 99},
+		{adj.DEX, 1, 99},
+		{adj.APP, 1, 99},
+		{adj.POW, 1, 99},
+		{adj.SIZ, 1, 99},
+		{adj.INT, 1, 99},
+		{adj.EDU, 1, 99},
 	}
 	for _, ck := range checks {
 		if ck.v%5 != 0 || ck.v < ck.lo || ck.v > ck.hi {
@@ -1171,20 +1176,27 @@ func ReviveCharacter(c *gin.Context) {
 		}
 	}
 
-	// Randomly lose half inventory
 	inv := card.Inventory.Data
-	if len(inv) > 0 {
-		rand.Shuffle(len(inv), func(i, j int) { inv[i], inv[j] = inv[j], inv[i] })
-		inv = inv[:(len(inv)+1)/2]
-	}
-	// Randomly forget half spells
 	spells := card.Spells.Data
-	if len(spells) > 0 {
-		rand.Shuffle(len(spells), func(i, j int) { spells[i], spells[j] = spells[j], spells[i] })
-		spells = spells[:(len(spells)+1)/2]
+	if user.Role != "admin" {
+		// Randomly lose half inventory
+		if len(inv) > 0 {
+			rand.Shuffle(len(inv), func(i, j int) { inv[i], inv[j] = inv[j], inv[i] })
+			inv = inv[:(len(inv)+1)/2]
+		}
+		// Randomly forget half spells
+		if len(spells) > 0 {
+			rand.Shuffle(len(spells), func(i, j int) { spells[i], spells[j] = spells[j], spells[i] })
+			spells = spells[:(len(spells)+1)/2]
+		}
 	}
 
-	reviveHP := card.Stats.Data.MaxHP / 2
+	reviveHP := card.Stats.Data.MaxHP
+	if user.Role != "admin" {
+		reviveHP = reviveHP / 2
+	} else {
+		card.Stats.Data.SAN = card.Stats.Data.MaxSAN
+	}
 	if reviveHP < 1 {
 		reviveHP = 1
 	}
