@@ -410,6 +410,28 @@ select.inp option {
     padding-top: 0.625rem;
 }
 
+/* KP旁白默认折叠，减少检定细节对沉浸感的打断；骰子结果条不受影响，单独渲染 */
+.narration-toggle {
+    color: #a98555;
+    font-size: 0.75rem;
+    font-family: var(--font-ui);
+    cursor: pointer;
+    user-select: none;
+}
+
+.narration-toggle:hover {
+    color: #d8c39a;
+}
+
+.narration-toggle .toggle-arrow {
+    font-size: 0.625rem;
+    margin-right: 0.25rem;
+}
+
+.narration-block .narration {
+    margin-top: 0.375rem;
+}
+
 .response-suggestions {
     margin-bottom: 0.625rem;
     font-family: var(--font-ui);

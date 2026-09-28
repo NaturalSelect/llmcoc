@@ -663,9 +663,16 @@
                                                                 </template>
                                                             </div>
                                                         </template>
-                                                        <p x-show="stripAckContent(msg.narration_text).trim()"
-                                                            class="narration narrative-after-kp"
-                                                            x-text="'KP：' + stripAckContent(msg.narration_text)"></p>
+                                                        <template x-if="stripAckContent(msg.narration_text).trim()">
+                                                            <div class="narration-block narrative-after-kp" x-data="{ collapsed: true }">
+                                                                <div class="narration-toggle" @click="collapsed = !collapsed">
+                                                                    <span x-text="collapsed ? '▶' : '▼'" class="toggle-arrow"></span>
+                                                                    KP 旁白
+                                                                </div>
+                                                                <p class="narration" x-show="!collapsed"
+                                                                    x-text="'KP：' + stripAckContent(msg.narration_text)"></p>
+                                                            </div>
+                                                        </template>
                                                     </div>
                                                 </template>
                                                 <template x-if="!msg.writer_text && !msg.narration_text">
