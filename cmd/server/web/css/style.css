@@ -982,6 +982,105 @@ select.inp option {
     border: 1px solid #2a2a2a;
 }
 
+.badge-pinned {
+    background: var(--amber-bg);
+    color: var(--amber-text);
+    border: 1px solid var(--amber-border);
+}
+
+/* ── Announcements ───────────────────────────────────────── */
+.announcement-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border-strong);
+}
+
+.announcement-important {
+    border-left-color: var(--amber-accent);
+}
+
+.announcement-warning {
+    border-left-color: var(--red-border);
+}
+
+.announcement-warning .announcement-title {
+    color: var(--red-text);
+}
+
+/* NOTE: Tailwind Play CDN 的 preflight 会清空 h1-h6/ul/ol 的默认样式,Markdown 渲染出的标签需要重新排版 */
+.announcement-md {
+    color: var(--text);
+    line-height: 1.6;
+}
+
+.announcement-md>*+* {
+    margin-top: 0.5em;
+}
+
+.announcement-md h1,
+.announcement-md h2,
+.announcement-md h3 {
+    color: var(--text-bright);
+    font-weight: 700;
+}
+
+.announcement-md h1 {
+    font-size: 1.05rem;
+}
+
+.announcement-md h2 {
+    font-size: 1rem;
+}
+
+.announcement-md h3 {
+    font-size: 0.9rem;
+}
+
+.announcement-md ul {
+    list-style: disc;
+    padding-left: 1.25em;
+}
+
+.announcement-md ol {
+    list-style: decimal;
+    padding-left: 1.25em;
+}
+
+.announcement-md a {
+    color: var(--amber-accent);
+    text-decoration: underline;
+}
+
+.announcement-md code {
+    background: var(--bg-sunken);
+    padding: 1px 4px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+}
+
+.announcement-md pre {
+    background: var(--bg-sunken);
+    padding: 0.5em 0.75em;
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+}
+
+.announcement-md pre code {
+    background: none;
+    padding: 0;
+}
+
+.announcement-md blockquote {
+    border-left: 2px solid var(--border-strong);
+    padding-left: 0.75em;
+    color: var(--text-dim);
+}
+
+.announcement-md img {
+    max-width: 100%;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
     width: 4px;
 }

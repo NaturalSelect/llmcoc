@@ -9,9 +9,11 @@
 - 剧本系统：剧本列表、详情、模板下载、上传与 AI 生成（管理员）。
 - 房间与会话：创建房间、加入房间、开局、聊天与消息记录。
 - 商店系统：商品列表、购买、交易记录、金币充值（管理员）。
+- 公告系统：首页展示当前有效公告，支持置顶、有效期、Markdown 正文（管理员维护）。
 - 管理后台接口：
   - 用户与权限管理。
   - 邀请码管理。
+  - 公告管理。
   - 站点设置（如是否需要邀请码注册）。
   - LLM Provider 与 Agent 参数管理（模型、温度、token 上限等）。
 
@@ -161,6 +163,8 @@ sqlite3 data/llmcoc.db "update users set role='admin' where username='your_usern
   - `GET /shop/items`
   - `POST /shop/purchase`
   - `GET /shop/transactions`
+- 公告：
+  - `GET /announcements`（登录用户可读，只返回当前启用且在有效期内的公告）
 - 管理：
   - `GET /admin/users`
   - `POST /admin/recharge`
@@ -179,6 +183,10 @@ sqlite3 data/llmcoc.db "update users set role='admin' where username='your_usern
   - `GET /admin/invite-codes`
   - `POST /admin/invite-codes`
   - `DELETE /admin/invite-codes/:id`
+  - `GET /admin/announcements`
+  - `POST /admin/announcements`
+  - `PUT /admin/announcements/:id`
+  - `DELETE /admin/announcements/:id`
 
 ## 开发与测试
 

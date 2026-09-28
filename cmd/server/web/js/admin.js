@@ -590,6 +590,93 @@ window.COC.admin = {
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
 
+                    // ── Announcements ─────────────────────────────────────────────────────
+                    async loadAdminAnnouncements(page) {
+                        const nextPage = Math.max(1, Number(page || this.adminAnnouncementPage || 1));
+                        const pageSize = Math.max(1, Number(this.adminAnnouncementPageSize || 20));
+                        const resp = await this.api('GET', `/api/admin/announcements?page=${encodeURIComponent(nextPage)}&page_size=${encodeURIComponent(pageSize)}`);
+                        this.adminAnnouncements = resp?.items || [];
+                        this.adminAnnouncementPage = Math.max(1, Number(resp?.page || nextPage));
+                        this.adminAnnouncementPageSize = Math.max(1, Number(resp?.page_size || pageSize));
+                        this.adminAnnouncementTotal = Math.max(0, Number(resp?.total || 0));
+                        this.adminAnnouncementTotalPages = Math.max(1, Number(resp?.total_pages || 1));
+                    },
+                    async setAdminAnnouncementPage(page) {
+                        const totalPages = Math.max(1, Number(this.adminAnnouncementTotalPages || 1));
+                        const nextPage = Math.min(Math.max(1, Number(page || 1)), totalPages);
+                        await this.loadAdminAnnouncements(nextPage);
+                    },
+                    async prevAdminAnnouncementPage() {
+                        await this.setAdminAnnouncementPage(this.adminAnnouncementPage - 1);
+                    },
+                    async nextAdminAnnouncementPage() {
+                        await this.setAdminAnnouncementPage(this.adminAnnouncementPage + 1);
+                    },
+                    // NOTE: <input type="datetime-local"> 只认本地时间的 YYYY-MM-DDTHH:mm,后端返回的 ISO 字符串需要转换后才能回填编辑表单
+                    toDatetimeLocalValue(iso) {
+                        if (!iso) return '';
+                        const d = new Date(iso);
+                        const pad = n => String(n).padStart(2, '0');
+                        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                    },
+                    announcementStatusLabel(a) {
+                        if (!a.is_active) return '已下线';
+                        const now = new Date();
+                        if (a.starts_at && new Date(a.starts_at) > now) return '未开始';
+                        if (a.ends_at && new Date(a.ends_at) <= now) return '已过期';
+                        return '展示中';
+                    },
+                    openCreateAnnouncement() {
+                        this.editingAnnouncement = null;
+                        this.announcementForm = { title: '', content: '', level: 'normal', is_pinned: false, is_active: true, starts_at: '', ends_at: '' };
+                        this.modal = 'announcement';
+                    },
+                    openEditAnnouncement(a) {
+                        this.editingAnnouncement = a;
+                        this.announcementForm = {
+                            title: a.title, content: a.content, level: a.level,
+                            is_pinned: a.is_pinned, is_active: a.is_active,
+                            starts_at: this.toDatetimeLocalValue(a.starts_at),
+                            ends_at: this.toDatetimeLocalValue(a.ends_at),
+                        };
+                        this.modal = 'announcement';
+                    },
+                    async saveAnnouncement() {
+                        if (!this.announcementForm.title.trim()) {
+                            this.showToast('标题不能为空', 'error');
+                            return;
+                        }
+                        const payload = {
+                            ...this.announcementForm,
+                            starts_at: this.announcementForm.starts_at ? new Date(this.announcementForm.starts_at).toISOString() : null,
+                            ends_at: this.announcementForm.ends_at ? new Date(this.announcementForm.ends_at).toISOString() : null,
+                        };
+                        this.loading = true;
+                        try {
+                            if (this.editingAnnouncement) {
+                                await this.api('PUT', '/api/admin/announcements/' + this.editingAnnouncement.id, payload);
+                                this.showToast('公告已更新');
+                            } else {
+                                await this.api('POST', '/api/admin/announcements', payload);
+                                this.showToast('公告已创建');
+                            }
+                            this.modal = null;
+                            await this.loadAdminAnnouncements(this.adminAnnouncementPage);
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                        this.loading = false;
+                    },
+                    async deleteAnnouncement(id) {
+                        if (!await this.confirmDialog('确认删除此公告？', { danger: true, confirmText: '删除' })) return;
+                        try {
+                            await this.api('DELETE', '/api/admin/announcements/' + id);
+                            this.showToast('已删除');
+                            const nextPage = this.adminAnnouncements.length === 1 && this.adminAnnouncementPage > 1
+                                ? this.adminAnnouncementPage - 1
+                                : this.adminAnnouncementPage;
+                            await this.loadAdminAnnouncements(nextPage);
+                        } catch (e) { this.showToast(e.message, 'error'); }
+                    },
+
                     async downloadScenarioTemplate() {
                         try {
                             const resp = await fetch('/api/scenarios/template', {

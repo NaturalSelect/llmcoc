@@ -2,10 +2,10 @@
 
             <div class="flex gap-0 mb-5 border-b border-base">
                 <template
-                    x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'settings',label:'系统设置'},{id:'cache',label:'规则缓存'}]"
+                    x-for="t in [{id:'users',label:'用户'},{id:'providers',label:'LLM 提供商'},{id:'agents',label:'Agent 配置'},{id:'scenarios',label:'模组管理'},{id:'shop',label:'商城管理'},{id:'announcements',label:'公告管理'},{id:'settings',label:'系统设置'},{id:'cache',label:'规则缓存'}]"
                     :key="t.id">
                     <button
-                        @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems(); if (t.id === 'cache') { loadCacheStats(); loadCacheKeys(); loadLlmStats(); } if (t.id === 'scenarios') loadAdminScenarios()"
+                        @click="adminTab=t.id; if (t.id === 'shop') loadAdminShopItems(); if (t.id === 'cache') { loadCacheStats(); loadCacheKeys(); loadLlmStats(); } if (t.id === 'scenarios') loadAdminScenarios(); if (t.id === 'announcements') loadAdminAnnouncements()"
                         class="tab" :class="adminTab===t.id?'active':''" x-text="t.label"></button>
                 </template>
             </div>
@@ -706,6 +706,54 @@
                             </div>
                         </div>
                     </template>
+                </div>
+            </div>
+
+            <!-- Announcement management -->
+            <div x-show="adminTab==='announcements'" class="space-y-5">
+                <div class="card rounded p-5">
+                    <div class="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h3 class="font-bold text-amber-300 text-sm font-ui">公告管理</h3>
+                            <p class="text-xs text-amber-800 mt-1 font-ui">
+                                共 <span x-text="adminAnnouncementTotal"></span> 条 · 第
+                                <span x-text="adminAnnouncementPage"></span> /
+                                <span x-text="adminAnnouncementTotalPages"></span> 页
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button @click="openCreateAnnouncement()" class="btn btn-amber text-xs">+ 新建公告</button>
+                            <button @click="prevAdminAnnouncementPage()" :disabled="adminAnnouncementPage <= 1"
+                                class="btn btn-ghost text-xs">上一页</button>
+                            <button @click="nextAdminAnnouncementPage()"
+                                :disabled="adminAnnouncementPage >= adminAnnouncementTotalPages"
+                                class="btn btn-ghost text-xs">下一页</button>
+                            <button @click="loadAdminAnnouncements(adminAnnouncementPage)"
+                                class="text-xs text-amber-800 hover:text-amber-500 font-ui">刷新</button>
+                        </div>
+                    </div>
+                    <div x-show="adminAnnouncements.length === 0" class="text-amber-900 text-xs font-ui">
+                        暂无公告</div>
+                    <div class="space-y-2">
+                        <template x-for="a in adminAnnouncements" :key="a.id">
+                            <div class="flex items-center justify-between text-xs border-b pb-2 border-base font-ui gap-3">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="text-amber-200 font-semibold truncate" x-text="a.title"></span>
+                                        <span :class="a.level==='important'?'text-amber-400':a.level==='warning'?'text-red-400':'text-amber-800'"
+                                            x-text="{normal:'普通',important:'重要',warning:'警告'}[a.level]||a.level"></span>
+                                        <span x-show="a.is_pinned" class="badge badge-pinned">置顶</span>
+                                        <span class="text-amber-900" x-text="announcementStatusLabel(a)"></span>
+                                    </div>
+                                    <p class="text-amber-900 mt-0.5" x-text="new Date(a.created_at).toLocaleString()"></p>
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <button @click="openEditAnnouncement(a)" class="text-amber-500 hover:text-amber-300">编辑</button>
+                                    <button @click="deleteAnnouncement(a.id)" class="text-red-700 hover:text-red-400">删除</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
                 </div>
             </div>
 

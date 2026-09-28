@@ -1,6 +1,9 @@
 // LLM-COC Dashboard — Character management
 window.COC = window.COC || {};
 window.COC.dashboard = {
+                    async loadAnnouncements() {
+                        this.announcements = (await this.api('GET', '/api/announcements')) || [];
+                    },
                     async loadCharacters() {
                         this.dashboardLoading = true;
                         try {

@@ -33,7 +33,7 @@
 - `cmd/server/web/js/app.js`：前端核心状态、鉴权、导航、通用 API。
 - `cmd/server/web/js/game.js`：游戏页聊天、SSE、消息刷新。
 - `cmd/server/web/js/sessions.js`：房间列表、创建、加入、开始、结束。
-- `cmd/server/web/js/admin.js`：后台用户、Provider、Agent、模组、商城、设置、缓存管理。
+- `cmd/server/web/js/admin.js`：后台用户、Provider、Agent、模组、商城、公告、设置、缓存管理。
 - `cmd/server/web/js/dashboard.js`：首页和人物卡相关前端逻辑。
 - `cmd/server/web/js/shop.js`：商城和购买逻辑。
 - `cmd/server/web/js/init.js`：前端初始化与启动逻辑。
@@ -55,6 +55,7 @@
 - 模组：`internal/handlers/scenario.go`、`internal/models/scenario_module.go`、`internal/services/agent/scripter*.go`。
 - 房间与聊天：`internal/handlers/session.go`。
 - 商城与经济：`internal/handlers/shop.go`、`internal/handlers/admin.go`。
+- 公告：`internal/handlers/announcement.go`（首页公开读取接口与后台 CRUD）。
 - 图片：`internal/handlers/image.go`、`internal/services/imagestore`。
 - LLM Provider 和 Agent 配置：`internal/handlers/admin_config.go`、`internal/models/db.go`。
 - 规则缓存后台接口：`internal/handlers/admin_config.go`、`internal/services/agent/lawyer.go`、`internal/services/agent/cache.go`。

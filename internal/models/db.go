@@ -66,6 +66,7 @@ func InitDB() error {
 		&SessionGrowthMark{},
 		&SiteSetting{},
 		&InviteCode{},
+		&Announcement{},
 		&LawyerCacheStats{},
 		&LLMLatencyStat{},
 		&AgentTranscript{},

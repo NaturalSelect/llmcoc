@@ -495,19 +495,19 @@ type SessionGrowthMark struct {
 }
 
 type SessionPlayer struct {
-	ID              uint          `gorm:"primaryKey;autoIncrement" json:"id"`
-	SessionID       uint          `gorm:"not null;index" json:"session_id"`
-	UserID          uint          `gorm:"not null" json:"user_id"`
-	CharacterCardID uint          `gorm:"not null" json:"character_card_id"`
-	JoinedAt        time.Time     `json:"joined_at"`
-	SessionMemory   string        `gorm:"column:llm_note;type:text" json:"session_memory"` // 会话记忆：KP需跨轮记住的隐藏动机/秘密进展等，非玩家可见
-	Location        string        `gorm:"size:200" json:"location"`                        // 当前所在地点，由 update_location 工具维护
-	Armor           int           `gorm:"default:0" json:"armor"`                          // 当前护甲值，由 update_armor 工具维护
+	ID              uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID       uint      `gorm:"not null;index" json:"session_id"`
+	UserID          uint      `gorm:"not null" json:"user_id"`
+	CharacterCardID uint      `gorm:"not null" json:"character_card_id"`
+	JoinedAt        time.Time `json:"joined_at"`
+	SessionMemory   string    `gorm:"column:llm_note;type:text" json:"session_memory"` // 会话记忆：KP需跨轮记住的隐藏动机/秘密进展等，非玩家可见
+	Location        string    `gorm:"size:200" json:"location"`                        // 当前所在地点，由 update_location 工具维护
+	Armor           int       `gorm:"default:0" json:"armor"`                          // 当前护甲值，由 update_armor 工具维护
 	// SessionRelations 是本局内的 tier1 社交关系变更，manage_relation 只写这里；
 	// 结算(end_game/手动结束/管理员一键结束)时由 AI 判断哪些提升进人物卡的 SocialRelations。
 	SessionRelations JSONField[[]SessionRelation] `gorm:"type:text" json:"session_relations"`
 	User             User                         `gorm:"foreignKey:UserID" json:"user"`
-	CharacterCard   CharacterCard `gorm:"foreignKey:CharacterCardID" json:"character_card"`
+	CharacterCard    CharacterCard                `gorm:"foreignKey:CharacterCardID" json:"character_card"`
 }
 
 // SessionFavorite stores a user's favorite sessions (many-to-many relationship)
@@ -784,6 +784,34 @@ func GetSiteSetting(key, defaultVal string) string {
 // SetSiteSetting upserts a site setting.
 func SetSiteSetting(key, val string) error {
 	return DB.Where("key = ?", key).Assign(SiteSetting{Value: val}).FirstOrCreate(&SiteSetting{Key: key}).Error
+}
+
+// ── Announcements ────────────────────────────────────────────────────────────
+
+type AnnouncementLevel string
+
+const (
+	AnnouncementLevelNormal    AnnouncementLevel = "normal"
+	AnnouncementLevelImportant AnnouncementLevel = "important"
+	AnnouncementLevelWarning   AnnouncementLevel = "warning"
+)
+
+// Announcement is an admin-authored notice shown on the homepage.
+// Content is Markdown source, rendered and sanitized on the client.
+type Announcement struct {
+	ID       uint              `gorm:"primaryKey;autoIncrement" json:"id"`
+	Title    string            `gorm:"not null;size:200" json:"title"`
+	Content  string            `gorm:"type:text;not null" json:"content"`
+	Level    AnnouncementLevel `gorm:"not null;size:20" json:"level"`
+	IsPinned bool              `gorm:"not null" json:"is_pinned"`
+	// IsActive 不加 `default:true`：GORM 在 Create 时会跳过带 default 标签的零值字段，
+	// 管理员创建一条"下线"公告（IsActive=false）会被静默存成启用，默认值由 handler 负责填充。
+	IsActive  bool       `gorm:"not null" json:"is_active"`
+	StartsAt  *time.Time `json:"starts_at"` // nil 表示立即生效
+	EndsAt    *time.Time `json:"ends_at"`   // nil 表示永不过期
+	CreatedBy uint       `gorm:"not null" json:"created_by"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 // LawyerCacheStats stores cumulative lawyer cache hit/miss statistics.

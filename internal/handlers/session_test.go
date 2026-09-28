@@ -62,6 +62,7 @@ func initTestDB(t *testing.T) {
 		&models.CoinRecharge{},
 		&models.SiteSetting{},
 		&models.InviteCode{},
+		&models.Announcement{},
 		&models.LLMLatencyStat{},
 		&models.AgentTranscript{},
 	); err != nil {

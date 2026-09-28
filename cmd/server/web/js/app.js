@@ -2,6 +2,16 @@
 // All reactive state + auth + navigation + utilities
 window.COC = window.COC || {};
 
+// NOTE: 只注册一次:给清洗后的公告正文里的链接补上 target/rel,避免点击后离开 SPA 又留下 opener 引用
+if (typeof DOMPurify !== 'undefined') {
+    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+        if (node.tagName === 'A') {
+            node.setAttribute('target', '_blank');
+            node.setAttribute('rel', 'noopener noreferrer');
+        }
+    });
+}
+
 window.COC.core = function() {
     return {
                     // ── Core ──────────────────────────────────────────────────────────────
@@ -21,6 +31,8 @@ window.COC.core = function() {
 
                     // ── Data ──────────────────────────────────────────────────────────────
                     characters: [],
+                    announcements: [],
+                    announcementsExpanded: false,
                     sessions: [],
                     sessionPage: 1,
                     sessionPageSize: 20,
@@ -216,6 +228,13 @@ window.COC.core = function() {
                     inviteCodeTotal: 0,
                     inviteCodeTotalPages: 1,
                     inviteCodeCount: 5,
+                    adminAnnouncements: [],
+                    adminAnnouncementPage: 1,
+                    adminAnnouncementPageSize: 20,
+                    adminAnnouncementTotal: 0,
+                    adminAnnouncementTotalPages: 1,
+                    announcementForm: { title: '', content: '', level: 'normal', is_pinned: false, is_active: true, starts_at: '', ends_at: '' },
+                    editingAnnouncement: null,
 
                     // ── Toast ─────────────────────────────────────────────────────────────
                     toast: { show: false, message: '', type: 'success' },
@@ -300,6 +319,7 @@ window.COC.core = function() {
                             this.connectionRecovering = false;
                         }
                         this.page = p;
+                        if (p === 'dashboard') this.loadAnnouncements().catch(() => {});
                         if (p === 'sessions') {
                             this.loadSessions().catch(e => this.showToast(e.message, 'error'));
                         }
@@ -358,6 +378,11 @@ window.COC.core = function() {
                     fmtDate(iso) {
                         if (!iso) return '';
                         return new Date(iso).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                    },
+                    // NOTE: marked/DOMPurify 未加载成功时退化为空串,避免抛错影响页面渲染
+                    renderMarkdown(md) {
+                        if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') return '';
+                        return DOMPurify.sanitize(marked.parse(md || ''));
                     },
                     fmtDuration(ms) {
                         if (!ms) return '';

@@ -273,6 +273,9 @@ func main() {
 	// NOTE: 费率公开接口，无需鉴权，供前端页面初始化时读取
 	api.GET("/shop/costs", handlers.GetShopCosts)
 
+	// Announcements（首页公告，登录用户可读）
+	api.GET("/announcements", middleware.AuthRequired(), middleware.BanCheck(), handlers.ListAnnouncements)
+
 	// Admin
 	admin := api.Group("/admin", middleware.AuthRequired(), middleware.AdminRequired())
 	{
@@ -300,6 +303,11 @@ func main() {
 		admin.GET("/invite-codes", handlers.AdminListInviteCodes)
 		admin.POST("/invite-codes", handlers.AdminCreateInviteCodes)
 		admin.DELETE("/invite-codes/:id", handlers.AdminDeleteInviteCode)
+		// Announcements
+		admin.GET("/announcements", handlers.AdminListAnnouncements)
+		admin.POST("/announcements", handlers.AdminCreateAnnouncement)
+		admin.PUT("/announcements/:id", handlers.AdminUpdateAnnouncement)
+		admin.DELETE("/announcements/:id", handlers.AdminDeleteAnnouncement)
 		// Lawyer cache management
 		admin.GET("/cache/stats", handlers.AdminGetCacheStats)
 		admin.DELETE("/cache", handlers.AdminClearCache)
