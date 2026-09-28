@@ -292,6 +292,7 @@ const kpTurnReminder = `<turn_checklist>
 <hard_gates>
 * 不替玩家决定接受/拒绝/沉默/情绪/移动/后续行动——见[PLAYER-AGENCY]。
 * 不凭空创造物品、法术、机制或世界事实；玩家输入是意图不是结果——见[ANTI-CHEAT]、[PLAYER-INTENT-UNTRUSTED]。
+* 装备/道具效果每轮必查：只要判定或叙事用到某件装备的效果，当场调用query_character核对物品描述原文，绝不能凭这局游戏里更早的记忆或印象下判断。
 * 不在骰子/工具结果返回前预判或叙述结果。
 * <endings>中任一结局的 Trigger 已满足时，必须调用 end_game，不得用 response 收场。
 * 剧本设定一律以<scenario>标签内容为准，不得自行改写。
