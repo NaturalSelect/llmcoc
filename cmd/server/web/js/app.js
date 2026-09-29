@@ -219,7 +219,7 @@ window.COC.core = function() {
                         regenerate_traits_cost: 100,
                         revive_base_cost: 2000,
                         end_session_cost: 200,
-                        writer_history_max_runes: 20000,
+                        writer_history_max_tokens: 100000,
                         balance_rules: '',
                     },
                     inviteCodes: [],

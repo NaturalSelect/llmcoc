@@ -101,11 +101,11 @@ func seedDefaultSiteSettings() {
 		"regenerate_traits_cost":     "100",
 		"revive_base_cost":           "2000",
 		"end_session_cost":           "200",
-		"writer_history_max_runes":   "20000",
-		// NOTE: dramaturg_history_max_runes 专用于剧构顾问自己的进度对话历史，
-		// 内容远短于Writer正文，默认预算小于writer_history_max_runes。
-		"dramaturg_history_max_runes": "8000",
-		"max_character_drafts":        "3",
+		"writer_history_max_tokens":  "100000",
+		// NOTE: dramaturg_history_max_tokens 专用于剧构顾问自己的进度对话历史，
+		// 与writer_history_max_tokens相互独立。
+		"dramaturg_history_max_tokens": "100000",
+		"max_character_drafts":         "3",
 		// NOTE: 全局 NSFW 总开关（区别于房间级 enable_nsfw）；默认允许，保持升级前后行为一致。
 		"allow_nsfw": "true",
 		// NOTE: 全局 NSFW 配图开关；仅管理员可读写(走 /api/admin/config/settings)。

@@ -40,7 +40,9 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		<rule>指令交代了某NPC在场景外的行踪（去了哪里、做了什么、为何此刻出现）时，该NPC登场必须体现来历：脚步声由远及近、外观或气息透露刚经历的事、或一句话点出他从何处赶来；禁止让NPC毫无铺垫地凭空出现在玩家面前。</rule>
 		<rule>进行详细的描写, 包括环境、人物动作、物件位置、光线、声音、对话反应等</rule>
 		<rule>仔细思考每个细节, 将连贯精彩的画面呈现给玩家, 进行想象让人物的动作更生动具体</rule>
-		<rule>正文篇幅不设上限，需要多长就写多长；不要因为担心“写太长”而主动收尾、跳过段落或把该展开的场景压缩成概括句，细节越丰富具体越好，只要仍在导演指令覆盖的事实范围内。</rule>
+		<rule>鼓励把细节写足：每个拍点都展开成有画面感的完整段落，而不是一句概括。逐项写清空间布局与物件位置、光线与影子的走向、声音与气味的来源和变化、人物手部动作/姿态/表情/呼吸等具体小动作、NPC 的语气与停顿，以及环境对动作的物理反馈（门轴的阻力、纸页的质感、地面的湿度）。</rule>
+		<rule>细节只能是对导演指令已确认事实的具体化，用来放大画面，不能用来添加剧情：不得借细节新增未授权的线索、结果、NPC台词或玩家行为。</rule>
+		<rule>正文篇幅不设上限，通常应写成多个自然段；宁可多写一层感官细节、多补一个过渡镜头，也不要用概括句带过。不要因为担心“写太长”而主动收尾、跳过段落或把该展开的场景压缩成概括句。</rule>
 		{{NSFW_WRITER_RULE}}
 		<rule>情节发展必须绝对遵循导演指令, 不得自行添加剧情或人物行为</rule>
 	</requirements>
@@ -48,7 +50,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		<rule>怪物或异常真正出现时，先用一两个正常细节建立基线，再写异常打破基线，突出反差。</rule>
 		<rule>避免无病呻吟和空泛心理描写。不要频繁写“某种不安”“难以言说”“仿佛有什么东西”等没有具体对象的句子。</rule>
 		<rule>暴力、血腥、性暗示只在导演指令需要时使用；不要为了风格主动添加。</rule>
-		<rule>保证信息的完整传达和逻辑连贯：宁可牺牲文笔的精炼与篇幅长度，也不能省略指令里的时间推进、NPC行踪、状态变化信息；漏掉这些视为不合格输出。</rule>
+		<rule>保证信息的完整传达和逻辑连贯：宁可写得更长、文笔不够精炼，也不能省略指令里的时间推进、NPC行踪、状态变化信息；漏掉这些视为不合格输出。</rule>
 		<rule>整体基调贴近H.P.洛夫克拉夫特(Lovecraft)风格: 用精确、近乎档案记录般冷静克制的笔法描写具体细节(比例、角度、材质、构造、气味成分、声音频率)，让精确本身透出不祥——反差来自“越描述越清楚，却越发现说不通”，而不是靠空泛情绪词堆砌。</rule>
 		<rule>感官线索按气味/声响→触感→视觉的顺序逐层堆叠、层层递进，不要一次性把最骇人的画面摆在开头。</rule>
 	</style>
@@ -147,10 +149,10 @@ func loadWriterState(gctx GameContext, nsfw bool) (agentHandle, bool, *WriterSta
 		return agentHandle{}, false, nil, err
 	}
 
-	// NOTE: writer_history_max_runes 从 SiteSetting 读取，管理员可在后台调整 Writer 历史缓存上限。
-	maxRunes := siteSettingInt("writer_history_max_runes", 20000)
+	// NOTE: writer_history_max_tokens 从 SiteSetting 读取，管理员可在后台调整 Writer 上下文的 token 上限。
+	windowTokens := siteSettingInt("writer_history_max_tokens", 100000)
 	head := buildWriterHead(writerHandle, gctx)
-	cm := LoadContext(gctx.Session.ID, writerAgentKey, head, ContextOptions{RuneBudget: int64(maxRunes)})
+	cm := LoadContext(gctx.Session.ID, writerAgentKey, head, ContextOptions{Window: int64(windowTokens)})
 	// 老会话transcript为空但GameSession.WriterHistory列有旧数据时，把旧的扁平历史当作
 	// seq=0的一轮种子先提交进去，只执行一次，之后像普通历史轮一样被trim掉。
 	if cm.IsEmpty() {
@@ -430,7 +432,7 @@ func buildWriterOpening(direction string, gctx GameContext, nsfwMode bool) (llm.
 	sb.WriteString("<director_instruction>\n")
 	sb.WriteString(direction)
 	sb.WriteString("\n</director_instruction>\n")
-	sb.WriteString("请在上文的基础上续写文章,并保持逻辑、时间、空间上的连贯")
+	sb.WriteString("请在上文的基础上续写文章,并保持逻辑、时间、空间上的连贯,把场景细节充分展开")
 	if nsfwMode {
 		sb.WriteString(",请将描写的重点放在色情场景上重点突出女角色的反应\n")
 		sb.WriteString(writerNSFWPromptSuffix)

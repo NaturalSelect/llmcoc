@@ -889,11 +889,11 @@
                             </div>
                         </div>
                         <div class="flex items-center justify-between text-xs font-ui">
-                            <span class="text-amber-700">Writer 历史缓存上限（字符数）</span>
+                            <span class="text-amber-700">Writer 上下文窗口（token 数）</span>
                             <div class="flex items-center gap-2">
-                                <input x-model.number="siteSettings.writer_history_max_runes" type="number" min="1000"
+                                <input x-model.number="siteSettings.writer_history_max_tokens" type="number" min="1000"
                                     class="inp w-28 text-right text-xs" />
-                                <button @click="updateSiteSettingCost('writer_history_max_runes')"
+                                <button @click="updateSiteSettingCost('writer_history_max_tokens')"
                                     class="btn btn-amber text-xs shrink-0">保存</button>
                             </div>
                         </div>

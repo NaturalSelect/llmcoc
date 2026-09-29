@@ -113,7 +113,7 @@ func newWriterNSFWTestHandle(prov llm.Provider, active bool) agentHandle {
 // 所以head用固定占位内容即可。
 func newTestWriterState(sessionID uint) *WriterState {
 	head := []llm.ChatMessage{{Role: "system", Content: "test-writer-system"}}
-	return &WriterState{cm: LoadContext(sessionID, writerAgentKey, head, ContextOptions{RuneBudget: 20000})}
+	return &WriterState{cm: LoadContext(sessionID, writerAgentKey, head, ContextOptions{Window: 100000})}
 }
 
 // committedTurns 返回state.cm已提交的历史轮,供测试断言Commit的落库内容。

@@ -620,12 +620,12 @@ func TestContextManager_WindowZero_NeverTrims(t *testing.T) {
 	}
 }
 
-func TestContextManager_RuneBudgetTrim(t *testing.T) {
+func TestContextManager_WindowTrimFallsBackToRunesWithoutUsage(t *testing.T) {
 	cm := &ContextManager{
 		sessionID: 1,
 		agentKey:  "npc:cat",
 		head:      []llm.ChatMessage{{Role: "system"}},
-		opts:      ContextOptions{RuneBudget: 100_000},
+		opts:      ContextOptions{Window: 100_000},
 		data: models.TranscriptData{
 			Turns: []models.TranscriptTurn{
 				makeTranscriptTurn(0, 1, 40_000),
@@ -634,7 +634,8 @@ func TestContextManager_RuneBudgetTrim(t *testing.T) {
 		},
 	}
 	msgs := cm.Build() // 无opening，只看历史trim
-	// budget=100_000 → reserve=20_000 → 触发阈值=80_000；totalRunes=80_000恰好触发；
+	// window=100_000 → reserve=20_000 → 触发阈值=80_000；网关无usage时按字符数估算，
+	// totalRunes=80_000恰好触发；
 	// lowWater=50_000；丢第1轮(40_000)后剩40_000<=lowWater，停止。
 	out := cm.Observe(llm.Usage{}, msgs)
 	if len(cm.data.Turns) != 1 {

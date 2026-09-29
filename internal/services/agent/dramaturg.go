@@ -40,10 +40,10 @@ func runDramaturg(ctx context.Context, h agentHandle, gctx GameContext, progress
 	lock.Lock()
 	defer lock.Unlock()
 
-	// NOTE: dramaturg_history_max_runes 从 SiteSetting 读取，管理员可在后台调整历史上限。
-	maxRunes := siteSettingInt("dramaturg_history_max_runes", 8000)
+	// NOTE: dramaturg_history_max_tokens 从 SiteSetting 读取，管理员可在后台调整上下文的 token 上限。
+	windowTokens := siteSettingInt("dramaturg_history_max_tokens", 100000)
 	head := buildDramaturgHead(h, gctx)
-	cm := LoadContext(gctx.Session.ID, dramaturgAgentKey, head, ContextOptions{RuneBudget: int64(maxRunes)})
+	cm := LoadContext(gctx.Session.ID, dramaturgAgentKey, head, ContextOptions{Window: int64(windowTokens)})
 	// 老会话transcript为空但GameSession.DramaturgHistory列有旧数据时，把旧的扁平历史当作
 	// seq=0的一轮种子先提交进去，只执行一次，之后像普通历史轮一样被trim掉。
 	if cm.IsEmpty() {

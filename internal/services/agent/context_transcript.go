@@ -76,7 +76,7 @@ func contextEstimatedUsedTokens(usage llm.Usage, msgs []llm.ChatMessage) int64 {
 }
 
 // chatMessagesRuneCount 统计一组消息(含工具调用参数)的总字符数，用于估算 token 密度、
-// 或在 usage 缺失/RuneBudget 模式下直接作为用量。
+// 或在 usage 缺失时直接作为用量。
 func chatMessagesRuneCount(msgs []llm.ChatMessage) int64 {
 	var n int64
 	for _, m := range msgs {
@@ -105,8 +105,7 @@ func transcriptTurnRunes(t models.TranscriptTurn) int64 {
 // 水位)，至少保留最近 1 轮；按回合(而不是按消息)裁剪保证不会拆散某一轮内部的
 // tool_call 与对应 tool 结果的配对。tokensPerRune = usedTokens/totalRunes 是"当前这次
 // 调用"的 token/字符密度，用于把只有字符数可数的历史回合换算成估算 token 数。
-// RuneBudget 模式下调用方直接传 window=RuneBudget、usedTokens=totalRunes=同一个总
-// 字符数，tokensPerRune 自然退化为 1，等价于"总字符数超过 budget 时丢到 budget/2"。
+// 网关未返回 usage 时 usedTokens 退化为 totalRunes，tokensPerRune 自然为 1。
 // 调用方应仅在 contextOverThreshold 判定超过阈值时才调用本函数；未超过阈值时
 // estimated 不会跌破 lowWater，循环体不会执行，函数本身也可以安全地无条件调用。
 func trimTranscriptTurns(turns []models.TranscriptTurn, window int64, usedTokens int64, totalRunes int64) ([]models.TranscriptTurn, int) {
@@ -363,17 +362,14 @@ func flattenTranscriptTurns(turns []models.TranscriptTurn) []llm.ChatMessage {
 	return out
 }
 
-// ContextOptions 配置 ContextManager 的用量阈值与裁剪策略。Window/RuneBudget 按需求
-// 互斥使用：Window>0 用于能拿到真实 Usage 的 agent(如 Director 的 ChatWithTools 直接
-// 在返回值里带 Usage)，按 token 阈值判断是否超限；RuneBudget>0 用于拿不到 Usage 的
-// agent(如 Writer/Dramaturg/NPC 走 Chat/ChatStream)，按总字符数判断。都为 0 表示历史
-// 无限增长、永不裁剪。同时配置时 Window 优先。Strategy 决定超限后具体怎么裁剪，与
-// Window/RuneBudget 的选择相互独立，零值 TrimDropTurns 对现有调用方(Writer/Dramaturg/
-// NPC)是无行为变化的默认值。
+// ContextOptions 配置 ContextManager 的用量阈值与裁剪策略。Window 是模型上下文窗口
+// 的 token 数，Window<=0 表示历史无限增长、永不裁剪。所有 agent 统一按 token 判断：
+// Director 从 ChatWithTools 的返回值拿 Usage，Writer/Dramaturg/NPC 通过
+// llm.WithUsageSink 拿 Usage；网关不返回 usage 时退化为按总字符数估算。Strategy 决定
+// 超限后具体怎么裁剪，零值 TrimDropTurns 是 Writer/Dramaturg/NPC 使用的默认值。
 type ContextOptions struct {
-	Window     int64
-	RuneBudget int64
-	Strategy   TrimStrategy
+	Window   int64
+	Strategy TrimStrategy
 }
 
 // TrimStrategy 选择 ContextManager 超过用量阈值后的裁剪方式。
@@ -472,18 +468,13 @@ func (c *ContextManager) Build(opening ...llm.ChatMessage) []llm.ChatMessage {
 	return append(msgs, opening...)
 }
 
-// thresholdParams 根据 ContextOptions 决定这次判断该用哪个"窗口"和"已用量"比较：
-// Window>0 时用 usage 换算 token 数与 Window 比较；否则 RuneBudget>0 时用总字符数与
-// RuneBudget 比较；都为 0 时 ok=false，调用方不做任何 trim 判断。
+// thresholdParams 返回这次判断用的窗口与已用量：Window>0 时用 usage 换算 token 数与
+// Window 比较；Window<=0 时 ok=false，调用方不做任何 trim 判断。
 func (c *ContextManager) thresholdParams(msgs []llm.ChatMessage, usage llm.Usage) (window int64, used int64, totalRunes int64, ok bool) {
-	totalRunes = chatMessagesRuneCount(msgs)
-	if c.opts.Window > 0 {
-		return c.opts.Window, contextEstimatedUsedTokens(usage, msgs), totalRunes, true
+	if c.opts.Window <= 0 {
+		return 0, 0, 0, false
 	}
-	if c.opts.RuneBudget > 0 {
-		return c.opts.RuneBudget, totalRunes, totalRunes, true
-	}
-	return 0, 0, 0, false
+	return c.opts.Window, contextEstimatedUsedTokens(usage, msgs), chatMessagesRuneCount(msgs), true
 }
 
 // trimIfNeeded 是 Observe/Commit 共用的裁剪实现：判断是否超阈值，按 ContextOptions.

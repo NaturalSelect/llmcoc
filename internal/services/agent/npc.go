@@ -104,11 +104,9 @@ func npcAgentKey(npcName string) string {
 	return "npc:" + npcName
 }
 
-// npcHistoryMaxRunes是NPC对话历史的字符预算,超预算时从最旧的一轮开始砍到预算一半。
-// 旧实现是硬编码"超过64条消息只保留最新64条"的滑动窗口,这里换成与Writer/Dramaturg
-// 一致的RuneBudget机制;NPC每轮问答是精简的JSON动作+台词,体量远小于Writer正文,
-// 预算相应给得更小。
-const npcHistoryMaxRunes = 10000
+// npcHistoryWindowTokens是NPC对话上下文的token窗口,用量逼近窗口时从最旧的一轮开始
+// 砍到窗口一半。
+const npcHistoryWindowTokens = 100000
 
 // loadLegacyNPCHistory读取迁移到ContextManager之前的两种旧存档,供transcript为空时
 // 做一次性播种,只执行一次:优先SessionNPC.AgentCtx这份存活对话原文,没有的话退化到
@@ -338,7 +336,7 @@ func runNPC(
 	// Each NPC owns an independent transcript in this session (agentKey="npc:<name>").
 	agentKey := npcAgentKey(npcName)
 	head := buildNPCHead(h, gctx, npcProfile)
-	cm := LoadContext(gctx.Session.ID, agentKey, head, ContextOptions{RuneBudget: npcHistoryMaxRunes})
+	cm := LoadContext(gctx.Session.ID, agentKey, head, ContextOptions{Window: npcHistoryWindowTokens})
 	// 老会话transcript为空但SessionNPC.AgentCtx/SessionNPCMemory有旧数据时,把旧存档
 	// 当作seq=0的一轮先提交进去,只执行一次,之后像普通历史轮一样被trim掉。
 	if cm.IsEmpty() {

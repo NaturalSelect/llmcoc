@@ -483,7 +483,7 @@ window.COC.admin = {
                         this.siteSettings.revive_base_cost = parseInt(map.revive_base_cost) || 2000;
                         this.siteSettings.max_character_drafts = parseInt(map.max_character_drafts) || 3;
                         this.siteSettings.end_session_cost = parseInt(map.end_session_cost) || 200;
-                        this.siteSettings.writer_history_max_runes = parseInt(map.writer_history_max_runes) || 20000;
+                        this.siteSettings.writer_history_max_tokens = parseInt(map.writer_history_max_tokens) || 100000;
                         this.siteSettings.balance_rules = map.balance_rules !== undefined ? map.balance_rules : '';
                     },
                     async updateBalanceRules() {
