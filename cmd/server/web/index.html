@@ -859,7 +859,7 @@
                                 </template>
                                 <div class="flex flex-col sm:flex-row gap-2">
                                     <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()" id="chatInputBox"
-                                        placeholder="描述你的行动… (Ctrl+Enter 发送)" rows="2"
+                                        placeholder="以角色身份写下你的行动或台词，如：我推开门，「有人在吗？」 (Ctrl+Enter 发送)" rows="2"
                                         :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || connectionRecovering"
                                         class="inp game-chat-input flex-1 resize-none bg-chat focus:border-amber-700 transition-colors"
                                         style="line-height:1.5"></textarea>

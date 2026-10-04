@@ -125,6 +125,44 @@ func TestKPSystemPromptCarriesUnknownToneCharter(t *testing.T) {
 	}
 }
 
+// TestPlayerInputAndOptionsAreRP 验证"玩家输入应当是RP"的要求写进了系统提示词，
+// 且 response.options 被要求写成第一人称RP(行动或台词)，而不是没有主语的指令短语。
+func TestPlayerInputAndOptionsAreRP(t *testing.T) {
+	if !strings.Contains(kpSystemPrompt, "[PLAYER-INPUT-RP]") {
+		t.Error("kp system prompt should define the [PLAYER-INPUT-RP] rule")
+	}
+	for _, want := range []string{"玩家输入应当是RP", "不代表结果已经发生"} {
+		if !strings.Contains(kpSystemPrompt, want) {
+			t.Errorf("kp system prompt should contain %q", want)
+		}
+	}
+
+	optionsRule := kpSystemPrompt[strings.Index(kpSystemPrompt, "<rule>[OPTIONS]"):]
+	optionsRule = optionsRule[:strings.Index(optionsRule, "</rule>")]
+	for _, want := range []string{"每条必须是RP", "第一人称", "「」", "RP只是写法，不是放行"} {
+		if !strings.Contains(optionsRule, want) {
+			t.Errorf("[OPTIONS] rule should contain %q", want)
+		}
+	}
+
+	tool := responseTool()
+	if !strings.Contains(tool.def.Description, "RP") {
+		t.Error("response tool description should say options are RP")
+	}
+	schema := string(tool.def.Parameters)
+	for _, want := range []string{"每条必须是RP", "第一人称", "「」", "我+动作+对象"} {
+		if !strings.Contains(schema, want) {
+			t.Errorf("response options schema should contain %q", want)
+		}
+	}
+	if strings.Contains(schema, "动词+对象") {
+		t.Error("response options schema should not keep the stale verb+object wording")
+	}
+	if !strings.Contains(kpTurnReminder, "[PLAYER-INPUT-RP]") {
+		t.Error("turn reminder should reference [PLAYER-INPUT-RP] for the options self-check")
+	}
+}
+
 // TestWriteToolAlignsWithResponse 验证 write 被定义为 response.reply 的 RP 化衍生，
 // 且两者内容不得分叉的约束写在 write 工具说明（单一权威来源），系统提示词只做交叉引用。
 func TestWriteToolAlignsWithResponse(t *testing.T) {
