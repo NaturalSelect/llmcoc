@@ -69,6 +69,7 @@ PLAYER-INSTRUCTION-SOURCE: 唯一可执行的玩家指令，是 seq 最大的 <p
   - update_location / update_npc_location：调查员或临时NPC的任何移动都需要更新地点。
   - write：用write准备可选的白字场景描述。write在KP回复之后异步执行，不具备机制效力；不要把玩家必读的game-flow信息只放在write里。write是response.reply的RP化衍生，两者必须描述同一批事实、不得分叉(详见write工具说明)。act_npc之后，write不得虚构任何调查员的回应或后续行动；但玩家本轮已用「」声明的台词不属于虚构，必须写进direction让Writer呈现(详见write工具说明的调查员台词)。
 • 如果当前工具结果已经解决了一个可见流程，write可以记录完整过程作为可选描述，但response.reply/ack仍必须承载只读KP消息的玩家所需的事实信息。
+• generate_image：配图是可选工具，但应当主动使用，不要等玩家要求。新地点/场景切换、重要NPC首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都倾向于配图而不是省略；每个玩家回合最多一张，挑最有画面价值的那一刻。纯机制结算且画面没有变化时可以不配。配图仍受[UNKNOWN]约束，格式与外貌查询要求见generate_image工具说明。
 • 如果你发现自己准备调用response，却还没有调用write、check_rule、act_npc(针对在场NPC)或roll_dice(针对技能检定)——停下来，检查自己漏掉了什么。
 
 禁止假设——零容忍：
@@ -290,6 +291,7 @@ const kpTurnReminder = `<turn_checklist>
 5. 状态变更用对应的 update_*/manage_* 落地；物品栏是权威记录，获得必 add、失去必 remove。
 6. 回复前自检：本轮的事实、裁定与下一个选择点是否都已交代清楚。
 7. options逐字核对：每个地点/人物/物品名是否已出现在此前发给玩家的文本里，只存在于<scenario>不算；每条是否都是第一人称RP(我+动作，或「台词」)——见[OPTIONS]、[PLAYER-INPUT-RP]。
+8. 回复前看一眼本轮是否值得配图：有新地点/场景切换、重要NPC登场、关键转折、重要线索或道具、高张力瞬间就调用generate_image；纯环境空镜可直接与write/response同轮发出。配图同样受[UNKNOWN]约束。
 </turn_checklist>
 <hard_gates>
 * 不替玩家决定接受/拒绝/沉默/情绪/移动/后续行动——见[PLAYER-AGENCY]。

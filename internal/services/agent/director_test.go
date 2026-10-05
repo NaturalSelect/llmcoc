@@ -345,6 +345,23 @@ func TestGenerateImageToolBlocksUnidentifiedEntityPortrait(t *testing.T) {
 	}
 }
 
+// TestDirectorEncouragedToGenerateImages 验证"主动配图"的鼓励同时出现在系统提示词、每轮清单
+// 和 generate_image 工具说明里，且空镜可以跳过 describe_characters。
+func TestDirectorEncouragedToGenerateImages(t *testing.T) {
+	if !strings.Contains(kpSystemPrompt, "配图是可选工具，但应当主动使用") {
+		t.Error("kp system prompt should encourage proactive image generation")
+	}
+	if !strings.Contains(kpTurnReminder, "是否值得配图") || !strings.Contains(kpTurnReminder, "generate_image") {
+		t.Error("turn checklist should prompt the director to consider generate_image every turn")
+	}
+	desc := generateImageTool().def.Description
+	for _, want := range []string{"每个玩家回合最多一张", "空镜不需要 describe_characters"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("generate_image description should contain %q", want)
+		}
+	}
+}
+
 // TestResponseToolOptionsDescriptionConsistent 验证 response 工具的 Description 与 options 参数 schema 数量表述一致，且 schema 仍是合法 JSON。
 func TestResponseToolOptionsDescriptionConsistent(t *testing.T) {
 	tool := responseTool()

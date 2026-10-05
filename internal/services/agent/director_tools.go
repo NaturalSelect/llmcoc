@@ -457,7 +457,7 @@ func generateImageTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolGenerateImage),
-			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略。若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
+			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略；每个玩家回合最多一张，挑最有画面价值的瞬间。若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词；纯环境、物件、痕迹的空镜不需要 describe_characters，可以直接与write/response同轮发出，不要因为查外貌要多走一轮就放弃配图。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
 【格式规则】image_prompt必须用英文撰写，并按以下Markdown分段模板组织，不要写成一段流水账描述：
 ### Scene
 一句话概括场景类型与整体氛围/色调。
