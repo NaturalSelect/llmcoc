@@ -666,6 +666,8 @@ func TestWriterPromptAllowsParaphraseAndRequiresInvestigatorSpeech(t *testing.T)
 		"允许同义改写",
 		"不得借改写增添、删减或反转发言里的事实",
 		"必须在正文里让该调查员开口说出来",
+		"调查员的台词必须做同义转写",
+		"转写只改说法不改内容",
 	} {
 		if !strings.Contains(writerDefaultPrompt, want) {
 			t.Errorf("writer prompt should contain %q", want)
