@@ -857,6 +857,11 @@
                                         </div>
                                     </div>
                                 </template>
+                                <div class="chat-quick-bar">
+                                    <button type="button" class="chat-quick-btn" @click="insertDialogueQuotes()"
+                                        :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || connectionRecovering"
+                                        title="插入台词括号；选中文字时会直接包住选中内容">「」 台词</button>
+                                </div>
                                 <div class="flex flex-col sm:flex-row gap-2">
                                     <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()" id="chatInputBox"
                                         placeholder="以角色身份写下你的行动或台词，如：我推开门，「有人在吗？」 (Ctrl+Enter 发送)" rows="2"

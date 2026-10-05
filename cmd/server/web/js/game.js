@@ -892,6 +892,22 @@ window.COC.game = {
                         });
                     },
 
+                    // NOTE: 在光标处插入「」并把光标放进括号内；有选中文字时直接包住选中内容。
+                    insertDialogueQuotes() {
+                        const input = document.getElementById('chatInputBox');
+                        if (!input || input.disabled) return;
+                        const value = String(this.chatInput || '');
+                        const start = input.selectionStart ?? value.length;
+                        const end = input.selectionEnd ?? value.length;
+                        const selected = value.slice(start, end);
+                        this.chatInput = value.slice(0, start) + '「' + selected + '」' + value.slice(end);
+                        const caret = selected ? end + 2 : start + 1;
+                        this.$nextTick(() => {
+                            input.focus();
+                            input.setSelectionRange(caret, caret);
+                        });
+                    },
+
                     splitAssistantContent(content) {
                         const kpMarkers = ['\n\nKP：', '\n\nKP:', '\nKP：', '\nKP:', 'KP：', 'KP:'];
                         let marker = '';

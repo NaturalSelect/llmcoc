@@ -476,6 +476,36 @@ select.inp option {
     color: #f0d79f;
 }
 
+.chat-quick-bar {
+    display: flex;
+    gap: 0.375rem;
+    margin-bottom: 0.375rem;
+    font-family: var(--font-ui);
+}
+
+.chat-quick-btn {
+    border: 1px solid #3a2a18;
+    background: #0f0c09;
+    color: #d8c39a;
+    padding: 0.1875rem 0.5rem;
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: all var(--ease);
+}
+
+.chat-quick-btn:hover:not(:disabled) {
+    border-color: #76552b;
+    background: #1c130b;
+    color: #f0d79f;
+}
+
+.chat-quick-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 /* Player action */
 .action {
     font-size: 0.875rem;
