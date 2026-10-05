@@ -658,3 +658,34 @@ func TestLoadWriterTranscriptHistory_FallsBackToLegacyColumn(t *testing.T) {
 		t.Errorf("loadWriterTranscriptHistory = %+v, want %+v", got, legacy)
 	}
 }
+
+// TestWriterPromptAllowsParaphraseAndRequiresInvestigatorSpeech 验证Writer提示词允许对人物发言
+// 做同义改写(但不得编造发言)，并要求导演指令里的调查员台词必须在正文里开口说出。
+func TestWriterPromptAllowsParaphraseAndRequiresInvestigatorSpeech(t *testing.T) {
+	for _, want := range []string{
+		"允许同义改写",
+		"不得借改写增添、删减或反转发言里的事实",
+		"必须在正文里让该调查员开口说出来",
+	} {
+		if !strings.Contains(writerDefaultPrompt, want) {
+			t.Errorf("writer prompt should contain %q", want)
+		}
+	}
+	if strings.Contains(writerDefaultPrompt, "原话直接引用") {
+		t.Error("writer prompt should no longer require quoting speech verbatim")
+	}
+}
+
+// TestWriteToolAsksDirectorToCarryInvestigatorSpeech 验证write工具说明要求导演把玩家声明的
+// 调查员台词搬进direction，导演系统提示词也没有把这类台词一并禁掉。
+func TestWriteToolAsksDirectorToCarryInvestigatorSpeech(t *testing.T) {
+	desc := writeTool().def.Description
+	for _, want := range []string{"【调查员台词】", "看不到玩家原始输入", "必须搬进direction"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("write tool description should contain %q", want)
+		}
+	}
+	if !strings.Contains(kpSystemPrompt, "玩家本轮已用「」声明的台词不属于虚构") {
+		t.Error("kp system prompt should exempt player-declared speech from the write no-fabrication rule")
+	}
+}
