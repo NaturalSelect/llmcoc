@@ -668,6 +668,8 @@ func TestWriterPromptAllowsParaphraseAndRequiresInvestigatorSpeech(t *testing.T)
 		"必须在正文里让该调查员开口说出来",
 		"调查员的台词必须做同义转写",
 		"转写只改说法不改内容",
+		"适当使用“哈”“嗯”“啊”",
+		"不能单独构成一句新发言",
 	} {
 		if !strings.Contains(writerDefaultPrompt, want) {
 			t.Errorf("writer prompt should contain %q", want)
