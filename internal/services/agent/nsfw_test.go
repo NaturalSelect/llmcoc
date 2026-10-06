@@ -36,7 +36,7 @@ func TestRenderNSFW(t *testing.T) {
 			onWanted: []string{
 				"<nsfw>true</nsfw>",
 				"官能小说风格",
-				"<rule>禁止避讳色情描写和露骨描写</rule>",
+				"<rule>禁止避讳色情描写和露骨描写,适当加娇喘入拟声词和符号</rule>",
 			},
 			offWanted: []string{
 				"<nsfw>false</nsfw>",
