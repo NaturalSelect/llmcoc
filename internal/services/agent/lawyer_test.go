@@ -132,9 +132,9 @@ func TestBuildLawyerPromptOpenTagBeforeCloseTag(t *testing.T) {
 	}
 }
 
-// TestRunLawyerFirstRoundOnlySearchCache 验证第1轮的工具集被限制为只有
-// search_cache（recordedTools[0] 只含1个工具），且模型在第1轮尝试调用
-// response 会被驱动器当作未知工具拒绝，循环继续到第2轮改用 search_cache 成功。
+// TestRunLawyerFirstRoundOnlySearchCache 验证第1轮只接受 search_cache：模型在第1轮
+// 尝试调用 response 会被驱动器拒绝，循环继续到第2轮改用 search_cache 成功；同时每轮
+// 发给模型的工具定义必须是同一份全集，否则 Anthropic 的 prompt cache 前缀会逐轮失效。
 func TestRunLawyerFirstRoundOnlySearchCache(t *testing.T) {
 	initTranslatorTestDB(t)
 
@@ -154,8 +154,19 @@ func TestRunLawyerFirstRoundOnlySearchCache(t *testing.T) {
 	if len(results) != 1 || results[0].RuleText != "最终裁定" {
 		t.Fatalf("expected final ruling, got %+v", results)
 	}
-	if len(prov.recordedTools) < 1 || len(prov.recordedTools[0]) != 1 || prov.recordedTools[0][0].Name != toolNameSearchCache {
-		t.Fatalf("round 1 tool set should contain only search_cache, got %+v", prov.recordedTools)
+	allTools := lawyerAllTools()
+	if len(prov.recordedTools) != 3 {
+		t.Fatalf("expected 3 rounds, got %d", len(prov.recordedTools))
+	}
+	for round, tools := range prov.recordedTools {
+		if len(tools) != len(allTools) {
+			t.Fatalf("round %d should send all %d tools, got %d", round+1, len(allTools), len(tools))
+		}
+		for i := range tools {
+			if tools[i].Name != allTools[i].def.Name {
+				t.Fatalf("round %d tool[%d] = %q, want %q", round+1, i, tools[i].Name, allTools[i].def.Name)
+			}
+		}
 	}
 	if len(prov.recordedMessages) < 2 {
 		t.Fatalf("expected at least 2 rounds, got %d", len(prov.recordedMessages))

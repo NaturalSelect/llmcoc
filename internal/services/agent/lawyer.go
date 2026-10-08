@@ -337,13 +337,13 @@ func lawyerResponseTool() scripterTool {
 	}
 }
 
-// lawyerFirstRoundTools 是第1轮唯一允许调用的工具集：强制模型第一轮只能
-// search_cache，取代纯 prompt 约定。
+// lawyerFirstRoundTools 是第1轮唯一接受的工具调用集合：强制模型第一轮只能
+// search_cache，取代纯 prompt 约定。发给模型的工具定义仍是全集，见 lawyerAllTools。
 func lawyerFirstRoundTools() []scripterTool {
 	return []scripterTool{lawyerKeywordTool(toolNameSearchCache, lawyerSearchCacheDescription, lawyerCacheKeywordSchema)}
 }
 
-// lawyerAllTools 是第2轮起开放的全部9个工具。
+// lawyerAllTools 是每轮都发给模型的全部9个工具，第2轮起全部可调用。
 func lawyerAllTools() []scripterTool {
 	return []scripterTool{
 		lawyerKeywordTool(toolNameSearchCache, lawyerSearchCacheDescription, lawyerCacheKeywordSchema),
@@ -388,9 +388,9 @@ func lawyerBatchPolicy(calls []llm.ToolCall) string {
 // read_spell_lines/grep_monster/read_monster_lines to gather evidence, then
 // calls response (optionally alongside save_cache) to give the final ruling.
 //
-// 第1轮的可用工具被限制为只有 search_cache（lawyerFirstRoundTools），第2轮起
-// 开放全部9个工具（lawyerAllTools）；response 与检索工具的分组互斥由
-// lawyerBatchPolicy 强制。
+// 每轮发给模型的工具定义都是全部9个工具（lawyerAllTools），保证 Anthropic 的
+// prompt cache 前缀跨轮不变；第1轮只接受 search_cache（lawyerFirstRoundTools），
+// 其余调用被拒绝；response 与检索工具的分组互斥由 lawyerBatchPolicy 强制。
 func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerResult {
 	if situation == "" {
 		return nil

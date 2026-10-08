@@ -62,7 +62,7 @@ type sequentialFakeProvider struct {
 	// NOTE: recordedKeys 记录 ChatWithTools/JsonChat 调用的 cacheKey 顺序，用于路由隔离验证。
 	recordedKeys []string
 	// NOTE: recordedTools 记录每次 ChatWithTools 调用时传入的工具定义列表（按调用顺序），
-	// 用于验证按轮次变化的工具集限制（如 lawyer 第1轮只暴露 search_cache）。
+	// 用于验证各轮发给模型的工具定义保持一致（如 lawyer 每轮都发全集，保证 prompt cache 前缀稳定）。
 	recordedTools [][]llm.ToolDefinition
 	// NOTE: recordedMessages 记录每次 ChatWithTools 调用时传入的完整消息历史（按调用顺序），
 	// 用于验证工具调用回执（tool 消息）内容，如 SYSTEM REJECT 提示是否正确回传。

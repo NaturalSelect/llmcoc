@@ -8,7 +8,7 @@
 // 字段校验、前置状态如"respond前必须先ask_lawyer"）由各调用方通过 dispatch
 // 闭包提供，终止工具成功后的结构化结果由调用方通过闭包捕获的变量取回。
 //
-// runToolLoop 核心已扩展支持按轮次变化的工具集（firstRoundTools）和自定义分组
+// runToolLoop 核心已扩展支持按轮次变化的可调用工具集（firstRoundTools）和自定义分组
 // 互斥策略（batchPolicy），供 Lawyer（lawyer.go）复用；runScripterToolLoop 是
 // 面向 Scripter 现有调用点的兼容包装，参数与行为保持逐字不变。
 package agent
@@ -76,8 +76,9 @@ type toolLoopOptions struct {
 	// defer 写回 conv，供调用方在下一次修复轮次继续复用同一条对话。
 	conv *scripterConversation
 
-	// firstRoundTools 非空时，仅第1轮把可用工具集限制为这个列表（强制模型第一轮
-	// 只能调用其中的工具），第2轮起恢复使用 tools。为空则每轮都使用 tools。
+	// firstRoundTools 非空时，仅第1轮只接受这个列表里的工具调用（其余按未知工具拒绝），
+	// 第2轮起恢复接受 tools 全集。为空则每轮都接受 tools。
+	// NOTE: 发给模型的工具定义每轮恒为 tools，tools 变化会使 Anthropic 的 system/messages 前缀缓存整体失效。
 	firstRoundTools []scripterTool
 	// batchPolicy 为 nil 时使用默认策略：由 tools 中 solo=true 的工具构成
 	// soloNames，调用 soloMixed/soloNamesIn 判定"独占工具与任意其他调用混批"。
@@ -199,10 +200,10 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, 
 		}()
 	}
 
-	defToolDefs, defValidNames, defSoloNames := buildToolState(opts.tools)
-	firstToolDefs, firstValidNames, firstSoloNames := defToolDefs, defValidNames, defSoloNames
+	toolDefs, defValidNames, defSoloNames := buildToolState(opts.tools)
+	firstValidNames, firstSoloNames := defValidNames, defSoloNames
 	if len(opts.firstRoundTools) > 0 {
-		firstToolDefs, firstValidNames, firstSoloNames = buildToolState(opts.firstRoundTools)
+		_, firstValidNames, firstSoloNames = buildToolState(opts.firstRoundTools)
 	}
 
 	cacheKey := opts.cacheKeyOverride
@@ -218,9 +219,9 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, 
 		if opts.beforeRound != nil {
 			opts.beforeRound(round)
 		}
-		toolDefs, validNames, soloNames := defToolDefs, defValidNames, defSoloNames
+		validNames, soloNames := defValidNames, defSoloNames
 		if round == 1 && len(opts.firstRoundTools) > 0 {
-			toolDefs, validNames, soloNames = firstToolDefs, firstValidNames, firstSoloNames
+			validNames, soloNames = firstValidNames, firstSoloNames
 		}
 		policy := opts.batchPolicy
 		if policy == nil {
