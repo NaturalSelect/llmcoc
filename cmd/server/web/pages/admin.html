@@ -194,6 +194,12 @@
                                     <option value="max">最高</option>
                                 </select>
                             </div>
+                            <div class="mb-2.5">
+                                <label class="text-xs text-amber-800 mb-1 block font-ui">思考预算（token，Anthropic 专用）</label>
+                                <input x-model.number="ag.thinking_budget_tokens" type="number" min="0"
+                                    placeholder="0 = 自适应思考；claude-haiku-4-5 等不支持自适应的模型填 ≥1024 且小于 MaxTokens"
+                                    class="inp" />
+                            </div>
                             <div class="flex items-center gap-3">
                                 <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer font-ui">
                                     <input type="checkbox" x-model="ag.is_active" class="accent-amber-600" /> 启用

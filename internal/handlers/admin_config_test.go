@@ -253,7 +253,7 @@ func TestAdminPingProvider_Success(t *testing.T) {
 	mockProv.EXPECT().Chat(gomock.Any(), gomock.Any(), gomock.Any()).Return("pong", nil)
 
 	mockFac := mocks.NewMockProviderFactory(ctrl)
-	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(mockProv)
+	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(mockProv)
 
 	r := gin.New()
 	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
@@ -287,7 +287,7 @@ func TestAdminPingProvider_LLMError(t *testing.T) {
 	mockProv.EXPECT().Chat(gomock.Any(), gomock.Any(), gomock.Any()).Return("", errors.New("connection refused"))
 
 	mockFac := mocks.NewMockProviderFactory(ctrl)
-	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	mockFac.EXPECT().NewProvider(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(mockProv)
 
 	r := gin.New()
@@ -352,7 +352,7 @@ func TestAdminPingProvider_ImageSuccess(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	imageProv := &fakeImageProvider{base64Data: "ZmFrZS1pbWFnZQ==", mimeType: "image/png"}
 	mockFac := mocks.NewMockProviderFactory(ctrl)
-	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), false, "none", false).Return(imageProv)
+	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), false, "none", 0, false).Return(imageProv)
 
 	r := gin.New()
 	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
@@ -430,7 +430,7 @@ func TestAdminPingProvider_ImageUnsupported(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockProv := mocks.NewMockProvider(ctrl)
 	mockFac := mocks.NewMockProviderFactory(ctrl)
-	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), false, "none", false).Return(mockProv)
+	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), false, "none", 0, false).Return(mockProv)
 
 	r := gin.New()
 	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
@@ -511,6 +511,45 @@ func TestAdminUpdateAgent_TranslatorDefaultParams(t *testing.T) {
 	}
 	if !cfg.IsActive {
 		t.Error("is_active should be true")
+	}
+}
+
+func TestAdminUpdateAgent_ThinkingBudgetTokens(t *testing.T) {
+	tests := []struct {
+		name       string
+		budget     int
+		wantStatus int
+	}{
+		{"zero means adaptive", 0, http.StatusOK},
+		{"valid fixed budget", 2048, http.StatusOK},
+		{"below anthropic minimum", 512, http.StatusBadRequest},
+		{"not below max_tokens", 4096, http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			initTestDB(t)
+			r := adminConfigRouter()
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, jsonReq("PUT", "/admin/config/agents/director", map[string]any{
+				"model_name":             "claude-haiku-4-5",
+				"max_tokens":             4096,
+				"thinking_level":         "low",
+				"thinking_budget_tokens": tt.budget,
+			}))
+			if w.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
+			var cfg models.AgentConfig
+			if err := models.DB.Where("role = ?", "director").First(&cfg).Error; err != nil {
+				t.Fatalf("director AgentConfig not found: %v", err)
+			}
+			if cfg.ThinkingBudgetTokens != tt.budget {
+				t.Errorf("thinking_budget_tokens = %d, want %d", cfg.ThinkingBudgetTokens, tt.budget)
+			}
+		})
 	}
 }
 

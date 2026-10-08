@@ -714,13 +714,16 @@ type AgentConfig struct {
 	// 不同模型窗口差异很大，这里不设非零默认值，需要在后台按实际模型手动填写。
 	ContextWindow int `gorm:"default:0" json:"context_window"`
 	// WithJailbreak 为 true 时在该 Agent 的系统提示词外包裹越狱提示词，用于降低模型因内容审查拒绝创作黑暗/成人向剧情的概率。
-	WithJailbreak  bool               `gorm:"default:false" json:"with_jailbreak"`
-	SystemPrompt   string             `gorm:"type:text" json:"system_prompt"`
-	ThinkingLevel  string             `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh|max
-	IsActive       bool               `gorm:"default:true" json:"is_active"`
-	CreatedAt      time.Time          `json:"created_at"`
-	UpdatedAt      time.Time          `json:"updated_at"`
-	ProviderConfig *LLMProviderConfig `gorm:"foreignKey:ProviderConfigID" json:"provider_config"`
+	WithJailbreak bool   `gorm:"default:false" json:"with_jailbreak"`
+	SystemPrompt  string `gorm:"type:text" json:"system_prompt"`
+	ThinkingLevel string `gorm:"size:20;default:'high'" json:"thinking_level"` // none|low|medium|high|xhigh|max
+	// ThinkingBudgetTokens 大于 0 时 Anthropic 改用固定预算思考(budget_tokens)，用于不支持自适应
+	// 思考的模型(如 claude-haiku-4-5)；0 表示使用自适应思考。是否开启思考仍由 ThinkingLevel 决定。
+	ThinkingBudgetTokens int                `gorm:"default:0" json:"thinking_budget_tokens"`
+	IsActive             bool               `gorm:"default:true" json:"is_active"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+	ProviderConfig       *LLMProviderConfig `gorm:"foreignKey:ProviderConfigID" json:"provider_config"`
 }
 
 // GameEvaluation stores the end-of-session LLM evaluation result.

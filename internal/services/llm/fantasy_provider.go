@@ -50,9 +50,13 @@ type fantasyProvider struct {
 	// reasoningEffort 在 Anthropic 分支是 thinking_level(none|low|medium|high|xhigh|max)，
 	// 在 OpenAI 兼容分支是 reasoning_effort，原样透传给网关。
 	reasoningEffort string
+	// NOTE: thinkingBudgetTokens > 0 时 Anthropic 分支改用固定预算思考(thinking.enabled + budget_tokens)
+	// 而不是自适应思考，供 claude-haiku-4-5 这类不支持自适应思考的模型使用；是否开启思考仍由
+	// reasoningEffort 决定。OpenAI 兼容分支忽略该字段。
+	thinkingBudgetTokens int
 }
 
-func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string) (*fantasyProvider, error) {
+func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, thinkingBudgetTokens int) (*fantasyProvider, error) {
 	if maxTokens == 0 {
 		maxTokens = 2048
 	}
@@ -98,13 +102,14 @@ func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxToke
 	}
 
 	return &fantasyProvider{
-		lm:                 lm,
-		isAnthropic:        isAnthropic,
-		model:              model,
-		maxTokens:          maxTokens,
-		temperature:        temperature,
-		disableTemperature: disableTemperature,
-		reasoningEffort:    reasoningEffort,
+		lm:                   lm,
+		isAnthropic:          isAnthropic,
+		model:                model,
+		maxTokens:            maxTokens,
+		temperature:          temperature,
+		disableTemperature:   disableTemperature,
+		reasoningEffort:      reasoningEffort,
+		thinkingBudgetTokens: thinkingBudgetTokens,
 	}, nil
 }
 
@@ -361,14 +366,19 @@ func applyCacheBreakpoints(prompt fantasy.Prompt, tools []fantasy.Tool, explicit
 	}
 }
 
-// buildProviderOptions 构造一次调用的 provider 专属选项：Anthropic 分支处理扩展思考 effort
-// 与用户分流 metadata；OpenAI 兼容分支处理 reasoning_effort、session 级 prompt cache key，
+// buildProviderOptions 构造一次调用的 provider 专属选项：Anthropic 分支处理扩展思考
+// (自适应 effort 或固定 budget)与用户分流 metadata；OpenAI 兼容分支处理 reasoning_effort、session 级 prompt cache key，
 // 以及 tools 与 json_object 互斥的 response_format。
 func (p *fantasyProvider) buildProviderOptions(ctx context.Context, cacheKey string, jsonMode, hasTools bool) fantasy.ProviderOptions {
 	if p.isAnthropic {
 		opts := &anthropic.ProviderOptions{}
 		if effort, ok := anthropicEffortFromLevel(p.reasoningEffort); ok {
-			opts.Effort = &effort
+			if p.thinkingBudgetTokens > 0 {
+				// NOTE: fantasy 在 Effort 非空时强制走自适应思考，固定预算模式必须不带 Effort。
+				opts.Thinking = &anthropic.ThinkingProviderOption{BudgetTokens: int64(p.thinkingBudgetTokens)}
+			} else {
+				opts.Effort = &effort
+			}
 		}
 		if cacheKey != "" {
 			// 用于 Anthropic 端的用户分流，不影响缓存键。

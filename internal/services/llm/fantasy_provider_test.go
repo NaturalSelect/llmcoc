@@ -562,6 +562,49 @@ func TestBuildProviderOptions_Anthropic(t *testing.T) {
 	}
 }
 
+func TestBuildProviderOptions_AnthropicThinkingBudget(t *testing.T) {
+	tests := []struct {
+		name            string
+		reasoningEffort string
+		budgetTokens    int
+		wantBudget      int64 // 0 表示期望不使用固定预算
+		wantEffort      bool
+	}{
+		{"budget with thinking on uses fixed budget", "low", 2048, 2048, false},
+		{"zero budget keeps adaptive effort", "high", 0, 0, true},
+		{"budget ignored when thinking is none", "none", 2048, 0, false},
+		{"budget ignored when thinking is unset", "", 2048, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &fantasyProvider{isAnthropic: true, reasoningEffort: tt.reasoningEffort, thinkingBudgetTokens: tt.budgetTokens}
+			po := p.buildProviderOptions(context.Background(), "", false, false)
+			ao, ok := po[anthropic.Name].(*anthropic.ProviderOptions)
+			if !ok {
+				t.Fatalf("provider options missing/wrong type: %#v", po)
+			}
+			if (ao.Effort != nil) != tt.wantEffort {
+				t.Errorf("Effort set = %v, want %v", ao.Effort != nil, tt.wantEffort)
+			}
+			if tt.wantBudget == 0 {
+				if ao.Thinking != nil {
+					t.Errorf("Thinking = %+v, want nil", ao.Thinking)
+				}
+			} else if ao.Thinking == nil || ao.Thinking.BudgetTokens != tt.wantBudget {
+				t.Errorf("Thinking = %+v, want budget %d", ao.Thinking, tt.wantBudget)
+			}
+		})
+	}
+}
+
+func TestBuildCall_AnthropicFixedBudgetSuppressesTemperature(t *testing.T) {
+	p := &fantasyProvider{isAnthropic: true, model: "claude-haiku-4-5", maxTokens: 4096, temperature: 0.65, reasoningEffort: "low", thinkingBudgetTokens: 2048}
+	call := p.buildCall(context.Background(), "", []ChatMessage{{Role: "user", Content: "hi"}}, false, nil)
+	if call.Temperature != nil {
+		t.Errorf("Temperature = %v, want nil when fixed-budget thinking is active", *call.Temperature)
+	}
+}
+
 func TestBuildProviderOptions_OpenAICompat(t *testing.T) {
 	sessionCtx := context.WithValue(context.Background(), "session", "sess-1")
 	tests := []struct {
@@ -907,7 +950,7 @@ func TestFantasyProvider_OpenAICompatEndToEnd_Success(t *testing.T) {
 		})
 	})
 
-	p, err := newFantasyProvider(false, "test-key", srv.URL, "test-model", 0, 0, false, "")
+	p, err := newFantasyProvider(false, "test-key", srv.URL, "test-model", 0, 0, false, "", 0)
 	if err != nil {
 		t.Fatalf("newFantasyProvider error: %v", err)
 	}
@@ -963,7 +1006,7 @@ func TestFantasyProvider_UsageSinkInvokedOnChat(t *testing.T) {
 			"prompt_tokens_details": map[string]any{"cached_tokens": 30},
 		})
 	})
-	p, err := newFantasyProvider(false, "test-key", srv.URL, "test-model", 0, 0, false, "")
+	p, err := newFantasyProvider(false, "test-key", srv.URL, "test-model", 0, 0, false, "", 0)
 	if err != nil {
 		t.Fatalf("newFantasyProvider error: %v", err)
 	}
@@ -997,7 +1040,7 @@ func TestFantasyProvider_OpenAICompatEndToEnd_NonRetryableErrorExhaustsFast(t *t
 		_, _ = w.Write([]byte(`{"error":{"message":"invalid api key","type":"invalid_request_error"}}`))
 	})
 
-	p, err := newFantasyProvider(false, "bad-key", srv.URL, "test-model", 0, 0, false, "")
+	p, err := newFantasyProvider(false, "bad-key", srv.URL, "test-model", 0, 0, false, "", 0)
 	if err != nil {
 		t.Fatalf("newFantasyProvider error: %v", err)
 	}

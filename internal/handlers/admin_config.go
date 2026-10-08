@@ -216,6 +216,13 @@ func AdminUpdateAgent(c *gin.Context) {
 	contextWindow := int(toFloat(raw["context_window"]))
 	temperature := float32(toFloat(raw["temperature"]))
 	thinkingLevel, _ := raw["thinking_level"].(string)
+	// NOTE: Anthropic 固定预算思考要求 budget_tokens >= 1024 且小于 max_tokens；上游返回的 400
+	// 会被 provider 当作可重试错误反复重试，所以在入口处拦截。0 表示使用自适应思考。
+	thinkingBudgetTokens := int(toFloat(raw["thinking_budget_tokens"]))
+	if thinkingBudgetTokens != 0 && (thinkingBudgetTokens < 1024 || thinkingBudgetTokens >= maxTokens) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "思考预算必须为 0（自适应思考），或不小于 1024 且小于 MaxTokens"})
+		return
+	}
 	var isActive *bool
 	if v, ok := raw["is_active"]; ok {
 		if b, ok := v.(bool); ok {
@@ -245,15 +252,16 @@ func AdminUpdateAgent(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
-		"provider_config_id":  providerConfigID,
-		"model_name":          modelName,
-		"max_tokens":          maxTokens,
-		"context_window":      contextWindow,
-		"temperature":         temperature,
-		"disable_temperature": disableTemperature,
-		"image_via_chat":      imageViaChat,
-		"with_jailbreak":      withJailbreak,
-		"thinking_level":      thinkingLevel,
+		"provider_config_id":     providerConfigID,
+		"model_name":             modelName,
+		"max_tokens":             maxTokens,
+		"context_window":         contextWindow,
+		"temperature":            temperature,
+		"disable_temperature":    disableTemperature,
+		"image_via_chat":         imageViaChat,
+		"with_jailbreak":         withJailbreak,
+		"thinking_level":         thinkingLevel,
+		"thinking_budget_tokens": thinkingBudgetTokens,
 	}
 	if isActive != nil {
 		updates["is_active"] = *isActive
@@ -268,17 +276,18 @@ func AdminUpdateAgent(c *gin.Context) {
 			active = *isActive
 		}
 		agentCfg = models.AgentConfig{
-			Role:               models.AgentRole(role),
-			ProviderConfigID:   providerConfigID,
-			ModelName:          modelName,
-			MaxTokens:          maxTokens,
-			ContextWindow:      contextWindow,
-			Temperature:        temperature,
-			DisableTemperature: disableTemperature,
-			ImageViaChat:       imageViaChat,
-			WithJailbreak:      withJailbreak,
-			ThinkingLevel:      thinkingLevel,
-			IsActive:           active,
+			Role:                 models.AgentRole(role),
+			ProviderConfigID:     providerConfigID,
+			ModelName:            modelName,
+			MaxTokens:            maxTokens,
+			ContextWindow:        contextWindow,
+			Temperature:          temperature,
+			DisableTemperature:   disableTemperature,
+			ImageViaChat:         imageViaChat,
+			WithJailbreak:        withJailbreak,
+			ThinkingLevel:        thinkingLevel,
+			ThinkingBudgetTokens: thinkingBudgetTokens,
+			IsActive:             active,
 		}
 		models.DB.Create(&agentCfg)
 	} else {
@@ -304,14 +313,14 @@ func toFloat(v any) float64 {
 
 // NOTE: ProviderFactory 抽象 llm.Provider 构造，方便 ping 测试注入替身。
 type ProviderFactory interface {
-	NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, imageViaChat bool) llm.Provider
+	NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, thinkingBudgetTokens int, imageViaChat bool) llm.Provider
 }
 
 // NOTE: defaultProviderFactory 是生产环境使用的 Provider 工厂。
 type defaultProviderFactory struct{}
 
-func (defaultProviderFactory) NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, imageViaChat bool) llm.Provider {
-	return llm.NewProviderFromConfig(cfg, modelName, maxTokens, temperature, disableTemperature, reasoningEffort, imageViaChat)
+func (defaultProviderFactory) NewProvider(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, thinkingBudgetTokens int, imageViaChat bool) llm.Provider {
+	return llm.NewProviderFromConfig(cfg, modelName, maxTokens, temperature, disableTemperature, reasoningEffort, thinkingBudgetTokens, imageViaChat)
 }
 
 // NOTE: DefaultProviderFactory 是生产 handler 使用的单例工厂。
@@ -356,7 +365,7 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 		req.ModelName = "gpt-5.4-nano"
 	}
 
-	provider := factory.NewProvider(&p, req.ModelName, 16, 0.1, false, "", false)
+	provider := factory.NewProvider(&p, req.ModelName, 16, 0.1, false, "", 0, false)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
@@ -379,7 +388,7 @@ func adminPingImageProvider(c *gin.Context, factory ProviderFactory, p *models.L
 		return
 	}
 
-	provider := factory.NewProvider(p, modelName, 0, 0, false, "none", imageViaChat)
+	provider := factory.NewProvider(p, modelName, 0, 0, false, "none", 0, imageViaChat)
 	generator, ok := provider.(llm.ImageGenerator)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "mode": "image", "error": "当前 Provider 不支持图片生成接口，无法测试 Painter 图片模型"})

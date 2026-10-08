@@ -262,6 +262,7 @@ window.COC.admin = {
                                 image_via_chat: d.image_via_chat || false,
                                 with_jailbreak: d.with_jailbreak || false,
                                 thinking_level: d.thinking_level || '',
+                                thinking_budget_tokens: d.thinking_budget_tokens || 0,
                                 system_prompt: '',
                                 is_active: d.is_active !== undefined ? d.is_active : true,
                             });
@@ -436,6 +437,7 @@ window.COC.admin = {
                                 with_jailbreak: ag.with_jailbreak || false,
                                 system_prompt: ag.system_prompt,
                                 thinking_level: ag.thinking_level || '',
+                                thinking_budget_tokens: ag.thinking_budget_tokens || 0,
                                 is_active: ag.is_active,
                             });
                             this.showToast(this.agentLabel(ag.role) + ' 配置已保存');
