@@ -710,8 +710,9 @@ type AgentConfig struct {
 	// 字段中以 data URL 形式返回（仅 Painter 角色使用）。
 	ImageViaChat bool `gorm:"default:false" json:"image_via_chat"`
 	// ContextWindow 是该 Agent 所用模型的上下文窗口 token 数上限，供需要按阈值整体
-	// 裁剪历史的 Agent(目前仅 Director)判断何时该 trim；0 表示不开启该判断(不 trim)。
-	// 不同模型窗口差异很大，这里不设非零默认值，需要在后台按实际模型手动填写。
+	// 裁剪历史的 Agent(目前为 Director、Writer、Writer NSFW)判断何时该 trim。
+	// Director 为 0 表示不 trim；Writer/Writer NSFW 为 0 时回落 DefaultWriterContextWindow。
+	// 不同模型窗口差异很大，需要在后台按实际模型手动填写。
 	ContextWindow int `gorm:"default:0" json:"context_window"`
 	// WithJailbreak 为 true 时在该 Agent 的系统提示词外包裹越狱提示词，用于降低模型因内容审查拒绝创作黑暗/成人向剧情的概率。
 	WithJailbreak bool   `gorm:"default:false" json:"with_jailbreak"`
@@ -756,6 +757,10 @@ type PlayerEvalContent struct {
 // the "balance_rules" key is absent from the database.
 // agent/lawyer.go references this constant directly to avoid string duplication.
 const DefaultBalanceRules = "调查员/玩家被禁止使用《精神转移术》,《精神交换术》,《内心灵光唤醒术》,《完善术》，《伊格的尖牙》, 任何涉及到这些法术的查询都必须告知KP这一禁令, 并且明确说明这些法术无法作为任何调查员属性变更的依据"
+
+// DefaultWriterContextWindow 是 Writer/Writer NSFW 未在后台填写上下文窗口(ContextWindow<=0)
+// 时使用的 token 数上限，避免历史无限增长。
+const DefaultWriterContextWindow = 300000
 
 // SiteSetting is a simple key/value store for site-wide configuration.
 type SiteSetting struct {

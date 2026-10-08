@@ -143,6 +143,15 @@ func pickWriterHandle(handles map[models.AgentRole]agentHandle, nsfw bool) (agen
 	return h, false, nil
 }
 
+// writerContextWindow 返回本轮选中的 Writer 配置的上下文窗口；未配置或为 0 时回落
+// 默认值，保证 Writer 历史始终有裁剪阈值。
+func writerContextWindow(h agentHandle) int64 {
+	if h.config != nil && h.config.ContextWindow > 0 {
+		return int64(h.config.ContextWindow)
+	}
+	return models.DefaultWriterContextWindow
+}
+
 func loadWriterState(gctx GameContext, nsfw bool) (agentHandle, bool, *WriterState, error) {
 	handles, err := getCachedAgents(gctx.Session.ID)
 	if err != nil {
@@ -153,10 +162,8 @@ func loadWriterState(gctx GameContext, nsfw bool) (agentHandle, bool, *WriterSta
 		return agentHandle{}, false, nil, err
 	}
 
-	// NOTE: writer_history_max_tokens 从 SiteSetting 读取，管理员可在后台调整 Writer 上下文的 token 上限。
-	windowTokens := siteSettingInt("writer_history_max_tokens", 100000)
 	head := buildWriterHead(writerHandle, gctx)
-	cm := LoadContext(gctx.Session.ID, writerAgentKey, head, ContextOptions{Window: int64(windowTokens)})
+	cm := LoadContext(gctx.Session.ID, writerAgentKey, head, ContextOptions{Window: writerContextWindow(writerHandle)})
 	// 老会话transcript为空但GameSession.WriterHistory列有旧数据时，把旧的扁平历史当作
 	// seq=0的一轮种子先提交进去，只执行一次，之后像普通历史轮一样被trim掉。
 	if cm.IsEmpty() {

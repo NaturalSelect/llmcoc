@@ -516,6 +516,49 @@ func TestPickWriterHandle(t *testing.T) {
 	}
 }
 
+// TestWriterContextWindow 验证Writer的上下文窗口取自本轮选中的Writer配置，
+// 未配置或为0时回落默认值，保证历史始终有裁剪阈值。
+func TestWriterContextWindow(t *testing.T) {
+	cases := []struct {
+		name   string
+		handle agentHandle
+		want   int64
+	}{
+		{
+			name:   "配置了窗口则使用配置值",
+			handle: agentHandle{config: &models.AgentConfig{Role: models.AgentRoleWriter, ContextWindow: 200000}},
+			want:   200000,
+		},
+		{
+			name:   "窗口为0回落默认值",
+			handle: agentHandle{config: &models.AgentConfig{Role: models.AgentRoleWriter}},
+			want:   models.DefaultWriterContextWindow,
+		},
+		{
+			name:   "窗口为负数回落默认值",
+			handle: agentHandle{config: &models.AgentConfig{Role: models.AgentRoleWriter, ContextWindow: -1}},
+			want:   models.DefaultWriterContextWindow,
+		},
+		{
+			name:   "config为空回落默认值",
+			handle: agentHandle{},
+			want:   models.DefaultWriterContextWindow,
+		},
+		{
+			name:   "NSFW Writer使用自己的窗口而不是默认Writer的",
+			handle: agentHandle{config: &models.AgentConfig{Role: models.AgentRoleWriterNSFW, ContextWindow: 64000}},
+			want:   64000,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := writerContextWindow(tc.handle); got != tc.want {
+				t.Errorf("writerContextWindow = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // ── buildWriterHead/buildWriterOpening NSFW后缀 ──────────────────────────────
 
 // TestBuildWriterHeadStableAcrossNSFWMode 验证system prompt(head)不再随每轮nsfwMode

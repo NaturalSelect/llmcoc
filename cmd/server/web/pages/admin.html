@@ -153,10 +153,10 @@
                                             :class="ag.disable_temperature ? 'opacity-40 cursor-not-allowed' : ''" />
                                     </div>
                                 </div>
-                                <div x-show="ag.role === 'director'">
+                                <div x-show="['director', 'writer', 'writer_nsfw'].includes(ag.role)">
                                     <label class="text-xs text-amber-800 mb-1 block font-ui">上下文窗口（token，按模型实际值填写）</label>
                                     <input x-model.number="ag.context_window" type="number" min="0"
-                                        placeholder="0 = 不整体裁剪历史" class="inp" />
+                                        :placeholder="ag.role === 'director' ? '0 = 不整体裁剪历史' : '0 = 使用默认 300000'" class="inp" />
                                 </div>
                                 <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer mb-2.5 font-ui">
                                     <input type="checkbox" x-model="ag.disable_temperature"
@@ -891,15 +891,6 @@
                                 <input x-model.number="siteSettings.end_session_cost" type="number" min="0"
                                     class="inp w-24 text-right text-xs" />
                                 <button @click="updateSiteSettingCost('end_session_cost')"
-                                    class="btn btn-amber text-xs shrink-0">保存</button>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between text-xs font-ui">
-                            <span class="text-amber-700">Writer 上下文窗口（token 数）</span>
-                            <div class="flex items-center gap-2">
-                                <input x-model.number="siteSettings.writer_history_max_tokens" type="number" min="1000"
-                                    class="inp w-28 text-right text-xs" />
-                                <button @click="updateSiteSettingCost('writer_history_max_tokens')"
                                     class="btn btn-amber text-xs shrink-0">保存</button>
                             </div>
                         </div>

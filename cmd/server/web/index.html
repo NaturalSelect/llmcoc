@@ -690,8 +690,18 @@
                                                             </div>
                                                         </template>
                                                         <template x-if="stripAckContent(msg.narration_text).trim()">
-                                                            <div class="narration-block narrative-after-kp" x-data="{ collapsed: true }">
-                                                                <div class="narration-toggle" @click="collapsed = !collapsed">
+                                                            <div class="narration-block"
+                                                                :class="hasLeadingContent ? 'narrative-after-kp' : ''"
+                                                                x-data="{
+                                                                    manualCollapsed: null,
+                                                                    get hasLeadingContent() {
+                                                                        return !!(stripAckContent(msg.writer_text).trim() || msg._writer_streaming || (msg.images && msg.images.length));
+                                                                    },
+                                                                    get collapsed() {
+                                                                        return this.manualCollapsed ?? this.hasLeadingContent;
+                                                                    }
+                                                                }">
+                                                                <div class="narration-toggle" @click="manualCollapsed = !collapsed">
                                                                     <span x-text="collapsed ? '▶' : '▼'" class="toggle-arrow"></span>
                                                                     KP 旁白
                                                                 </div>

@@ -222,9 +222,9 @@ window.COC.admin = {
                         // Ensure all configurable roles exist in UI, even if DB row is missing.
                         const roleDefaults = {
                             director: { max_tokens: 1500, temperature: 0.7, context_window: 0 },
-                            writer: { max_tokens: 800, temperature: 0.85 },
+                            writer: { max_tokens: 800, temperature: 0.85, context_window: 300000 },
                             // NOTE: writer_nsfw 仅在房间开启NSFW且本轮被标记为色情内容时启用，默认关闭。
-                            writer_nsfw: { max_tokens: 800, temperature: 0.85, is_active: false },
+                            writer_nsfw: { max_tokens: 800, temperature: 0.85, context_window: 300000, is_active: false },
                             lawyer: { max_tokens: 800, temperature: 0.3 },
                             npc: { max_tokens: 600, temperature: 0.9 },
                             // NOTE: npc_nsfw 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用，默认关闭。
@@ -485,7 +485,6 @@ window.COC.admin = {
                         this.siteSettings.revive_base_cost = parseInt(map.revive_base_cost) || 2000;
                         this.siteSettings.max_character_drafts = parseInt(map.max_character_drafts) || 3;
                         this.siteSettings.end_session_cost = parseInt(map.end_session_cost) || 200;
-                        this.siteSettings.writer_history_max_tokens = parseInt(map.writer_history_max_tokens) || 100000;
                         this.siteSettings.balance_rules = map.balance_rules !== undefined ? map.balance_rules : '';
                     },
                     async updateBalanceRules() {
