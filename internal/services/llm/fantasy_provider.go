@@ -50,8 +50,6 @@ type fantasyProvider struct {
 	// reasoningEffort 在 Anthropic 分支是 thinking_level(none|low|medium|high|xhigh|max)，
 	// 在 OpenAI 兼容分支是 reasoning_effort，原样透传给网关。
 	reasoningEffort string
-	// isGemini 仅 OpenAI 兼容分支使用，构造时算好，避免每次请求重复判断 baseURL/model。
-	isGemini bool
 }
 
 func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string) (*fantasyProvider, error) {
@@ -64,7 +62,7 @@ func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxToke
 
 	var lm fantasy.LanguageModel
 	if isAnthropic {
-		var opts []anthropic.Option
+		opts := []anthropic.Option{anthropic.WithHTTPClient(llmHTTPClient)}
 		// NOTE: 只有非空时才显式传 APIKey/BaseURL，留空则让 SDK 使用其默认取值链
 		// (ANTHROPIC_API_KEY 环境变量 / 官方 https://api.anthropic.com/ 端点)。
 		if apiKey != "" {
@@ -85,7 +83,7 @@ func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxToke
 		if reasoningEffort == "" {
 			reasoningEffort = defaultReasoningEffort
 		}
-		opts := []openaicompat.Option{openaicompat.WithAPIKey(apiKey)}
+		opts := []openaicompat.Option{openaicompat.WithAPIKey(apiKey), openaicompat.WithHTTPClient(llmHTTPClient)}
 		if baseURL != "" {
 			opts = append(opts, openaicompat.WithBaseURL(baseURL))
 		}
@@ -107,7 +105,6 @@ func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxToke
 		temperature:        temperature,
 		disableTemperature: disableTemperature,
 		reasoningEffort:    reasoningEffort,
-		isGemini:           !isAnthropic && isGeminiRequest(model, baseURL),
 	}, nil
 }
 
@@ -121,15 +118,6 @@ type fantasyOpenAIProvider struct {
 
 func (p *fantasyOpenAIProvider) GenerateImage(ctx context.Context, prompt string, opts ImageOptions) (string, string, error) {
 	return p.image.GenerateImage(ctx, prompt, opts)
-}
-
-func isGeminiRequest(model, baseURL string) bool {
-	m := strings.ToLower(model)
-	if strings.Contains(m, "gemini") {
-		return true
-	}
-	u := strings.ToLower(baseURL)
-	return strings.Contains(u, "generativelanguage") || strings.Contains(u, "googleapis") || strings.Contains(u, "aistudio")
 }
 
 func sessionIDFromContext(ctx context.Context) string {
@@ -374,8 +362,8 @@ func applyCacheBreakpoints(prompt fantasy.Prompt, tools []fantasy.Tool, explicit
 }
 
 // buildProviderOptions 构造一次调用的 provider 专属选项：Anthropic 分支处理扩展思考 effort
-// 与用户分流 metadata；OpenAI 兼容分支处理 reasoning_effort、session 级 prompt cache key、
-// Gemini 专属的 cache_mode/cache_vendor/store，以及 tools 与 json_object 互斥的 response_format。
+// 与用户分流 metadata；OpenAI 兼容分支处理 reasoning_effort、session 级 prompt cache key，
+// 以及 tools 与 json_object 互斥的 response_format。
 func (p *fantasyProvider) buildProviderOptions(ctx context.Context, cacheKey string, jsonMode, hasTools bool) fantasy.ProviderOptions {
 	if p.isAnthropic {
 		opts := &anthropic.ProviderOptions{}
@@ -406,11 +394,6 @@ func (p *fantasyProvider) buildProviderOptions(ctx context.Context, cacheKey str
 			cacheKeyValue = sessionID
 		}
 		metadata["prompt_cache_key"] = cacheKeyValue
-	}
-	if p.isGemini {
-		extraBody["store"] = true
-		metadata["cache_mode"] = "prefix"
-		metadata["cache_vendor"] = "gemini"
 	}
 	if len(metadata) > 0 {
 		extraBody["metadata"] = metadata

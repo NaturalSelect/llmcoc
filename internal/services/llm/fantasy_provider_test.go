@@ -104,7 +104,7 @@ func TestToFantasyInputSchema(t *testing.T) {
 	})
 }
 
-// ---------- anthropicEffortFromLevel / usageFromFantasy / isGeminiRequest / sessionIDFromContext ----------
+// ---------- anthropicEffortFromLevel / usageFromFantasy / sessionIDFromContext ----------
 
 func TestAnthropicEffortFromLevel(t *testing.T) {
 	tests := []struct {
@@ -142,29 +142,6 @@ func TestUsageFromFantasy(t *testing.T) {
 
 	if zero := usageFromFantasy(fantasy.Usage{}); zero != (Usage{}) {
 		t.Errorf("usageFromFantasy(zero) = %+v, want zero value", zero)
-	}
-}
-
-func TestIsGeminiRequest(t *testing.T) {
-	tests := []struct {
-		name    string
-		model   string
-		baseURL string
-		want    bool
-	}{
-		{"model name contains gemini", "gemini-2.5-pro", "", true},
-		{"model name case-insensitive", "GEMINI-pro", "", true},
-		{"generativelanguage base URL", "some-model", "https://generativelanguage.googleapis.com/v1beta/openai/", true},
-		{"googleapis base URL", "some-model", "https://my-proxy.googleapis.com/", true},
-		{"aistudio base URL", "some-model", "https://aistudio.example.com/", true},
-		{"neither", "gpt-4o", "https://api.openai.com/v1", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := isGeminiRequest(tt.model, tt.baseURL); got != tt.want {
-				t.Errorf("isGeminiRequest(%q, %q) = %v, want %v", tt.model, tt.baseURL, got, tt.want)
-			}
-		})
 	}
 }
 
@@ -593,25 +570,22 @@ func TestBuildProviderOptions_OpenAICompat(t *testing.T) {
 		cacheKey        string
 		jsonMode        bool
 		hasTools        bool
-		isGemini        bool
 		reasoningEffort string
 		wantUser        string
 		wantCacheKey    string
-		wantStore       bool
 		wantResponseFmt bool
 		wantEffort      string
 	}{
-		{name: "no session, no gemini, no json: extra body empty", ctx: context.Background()},
+		{name: "no session, no json: extra body empty", ctx: context.Background()},
 		{name: "session sets user and prompt_cache_key", ctx: sessionCtx, wantUser: "sess-1", wantCacheKey: "sess-1"},
 		{name: "explicit cacheKey overrides session fallback", ctx: sessionCtx, cacheKey: "npc:5", wantUser: "sess-1", wantCacheKey: "npc:5"},
-		{name: "gemini adds store and cache_mode metadata", ctx: context.Background(), isGemini: true, wantStore: true},
 		{name: "json mode without tools sets response_format", ctx: context.Background(), jsonMode: true, hasTools: false, wantResponseFmt: true},
-		{name: "json mode with tools omits response_format", ctx: context.Background(), isGemini: true, jsonMode: true, hasTools: true, wantStore: true, wantResponseFmt: false},
+		{name: "json mode with tools omits response_format", ctx: context.Background(), jsonMode: true, hasTools: true, wantResponseFmt: false},
 		{name: "reasoning effort passed through", ctx: context.Background(), reasoningEffort: "medium", wantEffort: "medium"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &fantasyProvider{isAnthropic: false, isGemini: tt.isGemini, reasoningEffort: tt.reasoningEffort}
+			p := &fantasyProvider{isAnthropic: false, reasoningEffort: tt.reasoningEffort}
 			po := p.buildProviderOptions(tt.ctx, tt.cacheKey, tt.jsonMode, tt.hasTools)
 			oc, ok := po[openaicompat.Name].(*openaicompat.ProviderOptions)
 			if !ok {
@@ -634,7 +608,7 @@ func TestBuildProviderOptions_OpenAICompat(t *testing.T) {
 				t.Errorf("ReasoningEffort = %v, want %q", oc.ReasoningEffort, tt.wantEffort)
 			}
 
-			if tt.wantCacheKey == "" && !tt.wantStore && !tt.wantResponseFmt {
+			if tt.wantCacheKey == "" && !tt.wantResponseFmt {
 				if oc.ExtraBody != nil {
 					t.Fatalf("ExtraBody = %#v, want nil", oc.ExtraBody)
 				}
@@ -647,15 +621,6 @@ func TestBuildProviderOptions_OpenAICompat(t *testing.T) {
 				md, ok := oc.ExtraBody["metadata"].(map[string]string)
 				if !ok || md["prompt_cache_key"] != tt.wantCacheKey {
 					t.Errorf("metadata.prompt_cache_key = %v, want %q", oc.ExtraBody["metadata"], tt.wantCacheKey)
-				}
-			}
-			if tt.wantStore {
-				if store, _ := oc.ExtraBody["store"].(bool); !store {
-					t.Errorf("ExtraBody[store] = %v, want true", oc.ExtraBody["store"])
-				}
-				md, _ := oc.ExtraBody["metadata"].(map[string]string)
-				if md["cache_mode"] != "prefix" || md["cache_vendor"] != "gemini" {
-					t.Errorf("gemini metadata = %v, want cache_mode=prefix cache_vendor=gemini", md)
 				}
 			}
 			_, hasResponseFmt := oc.ExtraBody["response_format"]
