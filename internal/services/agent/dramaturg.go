@@ -70,7 +70,7 @@ func runDramaturg(ctx context.Context, h agentHandle, gctx GameContext, progress
 		alog.Error("dramaturg failed", "err", err)
 		return "剧构顾问暂时无法响应"
 	}
-	guidance := strings.TrimSpace(stripThinkingBlock(resp))
+	guidance := strings.TrimSpace(resp)
 	debugf("Dramaturg", "guidance=%s", guidance)
 
 	finalMsgs := append(msgs, llm.ChatMessage{Role: "assistant", Content: guidance})

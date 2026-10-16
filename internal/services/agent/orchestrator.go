@@ -109,6 +109,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 		models.AgentRoleNPCNSFW,
 		models.AgentRolePainter,
 		models.AgentRolePainterNSFW,
+		models.AgentRoleDiffusionTranslator,
 		models.AgentRoleDramaturg,
 	}
 	requiredRoles := map[models.AgentRole]bool{

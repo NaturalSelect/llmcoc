@@ -232,6 +232,8 @@ window.COC.admin = {
                             painter: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
                             // NOTE: painter_nsfw 仅在 Director 把配图标记为 nsfw=true 时启用，默认关闭；未启用时这类配图请求会被拒绝。
                             painter_nsfw: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
+                            // NOTE: diffusion_translator 把画面描述翻译成扩散模型标签，仅在 Painter 开启扩散模型模式时被调用；低温度减少擅自添加画面元素。
+                            diffusion_translator: { max_tokens: 800, temperature: 0.3 },
                             evaluator: { max_tokens: 1200, temperature: 0.5 },
                             growth: { max_tokens: 1000, temperature: 0.4 },
                             architect: { max_tokens: 4000, temperature: 0.7 },
@@ -1026,7 +1028,7 @@ window.COC.admin = {
                     agentLabel(role) {
                         return {
                             director: '🎬 Director', writer: '✍️ Writer', writer_nsfw: '🔞 NSFW Writer', lawyer: '⚖️ Lawyer',
-                            npc: '🎭 NPC', npc_nsfw: '🔞 NSFW NPC', painter: '🎨 Painter', painter_nsfw: '🔞 NSFW Painter', evaluator: '📊 Evaluator', growth: '🌱 Growth',
+                            npc: '🎭 NPC', npc_nsfw: '🔞 NSFW NPC', painter: '🎨 Painter', painter_nsfw: '🔞 NSFW Painter', diffusion_translator: '🏷️ Diffusion Translator', evaluator: '📊 Evaluator', growth: '🌱 Growth',
                             architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
                             parser: '🔧 Parser',
                             // NOTE: compiler — 故事转模组编译
@@ -1044,6 +1046,7 @@ window.COC.admin = {
                             npc_nsfw: '成人向NPC互动 — 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用；未配置或关闭时自动回落默认 NPC（默认关闭）',
                             painter: '画图代理 — 按需生成场景图片（默认关闭，不落库）',
                             painter_nsfw: '成人向画图 — Director 把配图标记为 nsfw=true 时只路由到它；未启用时这类配图请求会被直接拒绝，不回落默认 Painter（默认关闭）',
+                            diffusion_translator: '扩散提示词翻译 — Painter 开启扩散模型模式时，把导演的自然语言画面描述翻译成标签式提示词；未启用时扩散模式的配图会失败',
                             evaluator: '成长评估 — 分析本场表现建议奖励',
                             growth: '成长应用 — 将评估结果写入角色卡',
                             architect: '模组设计 — 生成大纲并转化为完整JSON模组',
@@ -1065,6 +1068,7 @@ window.COC.admin = {
                             npc_nsfw: '为成人向NPC互动单独绑定更宽松的 provider/模型；未启用时自动使用默认 NPC（默认关闭）',
                             painter: '配置 OpenAI 兼容图片模型，如 dall-e-3（默认关闭）',
                             painter_nsfw: '为成人向配图单独绑定更宽松的图片模型；未启用时 nsfw=true 的配图会被拒绝（默认关闭）',
+                            diffusion_translator: '留空使用内置提示词（输出一行 Danbooru 风格标签）；建议配置低温度、指令遵循强的文本模型',
                             evaluator: '留空使用内置 Evaluator 提示词',
                             growth: '留空使用内置 Growth 提示词',
                             architect: '留空使用内置 Architect 提示词（大纲+JSON生成）',

@@ -620,6 +620,30 @@ func TestAdminUpdateAgent_PainterNSFWRoleAccepted(t *testing.T) {
 	}
 }
 
+// TestAdminUpdateAgent_DiffusionTranslatorRoleAccepted 覆盖 diffusion_translator 是合法角色并可落库。
+func TestAdminUpdateAgent_DiffusionTranslatorRoleAccepted(t *testing.T) {
+	initTestDB(t)
+	r := adminConfigRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/admin/config/agents/diffusion_translator", map[string]any{
+		"model_name":  "gpt-4o-mini",
+		"temperature": 0.2,
+		"is_active":   true,
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT diffusion_translator want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var cfg models.AgentConfig
+	if err := models.DB.Where("role = ?", "diffusion_translator").First(&cfg).Error; err != nil {
+		t.Fatalf("diffusion_translator AgentConfig not found: %v", err)
+	}
+	if cfg.ModelName != "gpt-4o-mini" || !cfg.IsActive {
+		t.Fatalf("stored config = %+v", cfg)
+	}
+}
+
 func TestAdminPingProvider_PainterNSFWUsesImageMode(t *testing.T) {
 	initTestDB(t)
 	pid := seedProvider(t, "Painter")

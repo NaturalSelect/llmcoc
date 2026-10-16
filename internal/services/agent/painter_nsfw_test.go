@@ -160,8 +160,8 @@ func TestRunPainter_DiffusionNSFWRequestSkipsAllAgesNegativeTags(t *testing.T) {
 	writer := &chatFakeProvider{chatResponses: []string{"1girl"}}
 	nsfw := &recordingImageProvider{}
 	sessionAgents.Store(uint(sessionID), map[models.AgentRole]agentHandle{
-		models.AgentRoleWriter:      newDiffusionTranslatorHandle(writer),
-		models.AgentRolePainterNSFW: newPainterTestHandle(models.AgentRolePainterNSFW, nsfw, true, true),
+		models.AgentRoleDiffusionTranslator: newDiffusionTranslatorHandle(writer),
+		models.AgentRolePainterNSFW:         newPainterTestHandle(models.AgentRolePainterNSFW, nsfw, true, true),
 	})
 	t.Cleanup(func() { deleteCachedAgents(sessionID) })
 

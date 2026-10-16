@@ -39,18 +39,17 @@ func diffusionNegativePromptFor(enableNSFW bool) string {
 	return allAgesNegativeTags + ", " + diffusionBaseNegativePrompt
 }
 
-// translateToDiffusionPrompt 用 Writer 把 Director 的自然语言画面描述翻译成扩散模型的标签式正面提示词。
-func translateToDiffusionPrompt(ctx context.Context, writer agentHandle, sessionID string, scenePrompt string, enableNSFW bool) (string, error) {
+// translateToDiffusionPrompt 用 diffusion_translator 把 Director 的自然语言画面描述翻译成扩散模型的标签式正面提示词。
+func translateToDiffusionPrompt(ctx context.Context, translator agentHandle, sessionID string, scenePrompt string, enableNSFW bool) (string, error) {
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: writer.systemPrompt(renderNSFW(diffusionPromptSystemPrompt, enableNSFW))},
+		{Role: "system", Content: translator.systemPrompt(renderNSFW(diffusionPromptSystemPrompt, enableNSFW))},
 		{Role: "user", Content: scenePrompt},
 	}
-	resp, err := writer.provider.Chat(ctx, sessionID+":painter", msgs)
+	resp, err := translator.provider.Chat(ctx, translator.cacheKey(sessionID), msgs)
 	if err != nil {
 		return "", err
 	}
-	// NOTE: Writer 模型可能输出 thinking 头，先清理再压缩空白，避免污染下游提示词。
-	prompt := compactPromptText(stripThinkingBlock(resp))
+	prompt := compactPromptText(resp)
 	if prompt == "" {
 		return "", errors.New("diffusion prompt is empty")
 	}

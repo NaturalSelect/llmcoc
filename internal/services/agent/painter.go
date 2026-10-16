@@ -152,11 +152,11 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 	debugf("Painter", "session=%d start prompt_len=%d aspect=%s nsfw=%v prompt=%q", gctx.Session.ID, len([]rune(prompt)), aspect, request.NSFW, prompt)
 	opts := llm.ImageOptions{Aspect: llm.ImageAspect(aspect)}
 	if handle.config != nil && handle.config.DiffusionMode {
-		writer, _, err := pickWriterHandle(handles, allowNSFW)
-		if err != nil {
-			return "", fmt.Errorf("扩散模型模式需要可用的 Writer 翻译提示词: %w", err)
+		translator := handles[models.AgentRoleDiffusionTranslator]
+		if !translator.isEnabled() {
+			return "", fmt.Errorf("扩散模型模式需要启用 %s agent 翻译提示词", models.AgentRoleDiffusionTranslator)
 		}
-		tagPrompt, err := translateToDiffusionPrompt(withWriterGameSessionID(ctx, gctx), writer, fmt.Sprintf("%v", gctx.Session.ID), prompt, allowNSFW)
+		tagPrompt, err := translateToDiffusionPrompt(withWriterGameSessionID(ctx, gctx), translator, fmt.Sprintf("%v", gctx.Session.ID), prompt, allowNSFW)
 		if err != nil {
 			debugf("Painter", "session=%d diffusion translate error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
 			return "", err
@@ -270,7 +270,6 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 		return "", err
 	}
 	// NOTE: Writer 模型可能输出 thinking 头,先清理再 TrimSpace,避免污染下游 image prompt。
-	resp = stripThinkingBlock(resp)
 	resp = strings.TrimSpace(resp)
 	if resp == "" {
 		return "", fmt.Errorf("writer returned empty visual description")

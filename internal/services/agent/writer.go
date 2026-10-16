@@ -235,7 +235,7 @@ const writerMaxGenerateAttempts = 20
 // isWriterResponseRejected 判断一次Writer响应是否需要丢弃重试:剥离thinking块后为空,
 // 或正文以拒绝前缀开头。
 func isWriterResponseRejected(resp string) bool {
-	trimmed := strings.TrimSpace(stripThinkingBlock(resp))
+	trimmed := strings.TrimSpace(resp)
 	return trimmed == "" || hasWriterRefusalPrefix(trimmed)
 }
 
@@ -469,7 +469,6 @@ func buildWriterScenarioToneBlock(gctx GameContext) string {
 // appendWriterResponse 把本次交换(发送的msgs + assistant响应)原样提交为新一轮,
 // 发送版即归档版。saveHistory为false时(响应被拒绝或传输层错误)不落库,仅更新Buffer。
 func appendWriterResponse(state *WriterState, gctx GameContext, msgs []llm.ChatMessage, resp string, saveHistory bool) {
-	resp = stripThinkingBlock(resp)
 	if saveHistory {
 		finalMsgs := append(msgs, llm.ChatMessage{Role: "assistant", Content: resp})
 		state.cm.Commit(gctx.Session.TurnRound, finalMsgs)
@@ -482,29 +481,6 @@ func appendWriterResponse(state *WriterState, gctx GameContext, msgs []llm.ChatM
 		state.Buffer += "\n\n"
 	}
 	state.Buffer += resp
-}
-
-// stripThinkingBlock 清理 LLM 输出前导的思考痕迹。
-// 形如:
-//
-//	Thinking...
-//	> something reasoning
-//	> more reasoning
-//	正文...
-//
-// 规则:若首行以 "Thinking..." 开头则删除该行,并继续删除其后所有以 ">" 开头的行,
-// 直到遇到第一个非 ">" 开头的行,之后的内容原样保留。
-func stripThinkingBlock(text string) string {
-	lines := strings.Split(text, "\n")
-	idx := 0
-	if idx >= len(lines) || !strings.HasPrefix(strings.TrimSpace(lines[idx]), "Thinking...") {
-		return text
-	}
-	idx++ // 跳过 Thinking... 行
-	for idx < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[idx]), ">") {
-		idx++
-	}
-	return strings.TrimSpace(strings.Join(lines[idx:], "\n"))
 }
 
 func trimWriterHistoryForCache(history []llm.ChatMessage, maxRunes int) []llm.ChatMessage {

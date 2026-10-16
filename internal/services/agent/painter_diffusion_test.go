@@ -41,7 +41,7 @@ func (p *chatFakeProvider) Chat(_ context.Context, cacheKey string, msgs []llm.C
 func newDiffusionTranslatorHandle(prov llm.Provider) agentHandle {
 	return agentHandle{
 		provider: prov,
-		config:   &models.AgentConfig{Role: models.AgentRoleWriter, IsActive: true},
+		config:   &models.AgentConfig{Role: models.AgentRoleDiffusionTranslator, IsActive: true},
 		enabled:  true,
 	}
 }
@@ -54,7 +54,6 @@ func TestTranslateToDiffusionPrompt_ReturnsCompactedTags(t *testing.T) {
 	}{
 		{"标准标签行", "1girl, library, bookshelf", "1girl, library, bookshelf"},
 		{"空白与换行被压缩", " 1girl,\n  library \n", "1girl, library"},
-		{"thinking 头被清理", "Thinking...\n> reasoning\nno humans, lighthouse, fog", "no humans, lighthouse, fog"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -114,8 +113,8 @@ func TestTranslateToDiffusionPrompt_MessageShape(t *testing.T) {
 	if _, err := translateToDiffusionPrompt(context.Background(), newDiffusionTranslatorHandle(prov), "42", "### Scene\nA lighthouse.", false); err != nil {
 		t.Fatalf("translate error: %v", err)
 	}
-	if len(prov.chatKeys) != 1 || prov.chatKeys[0] != "42:painter" {
-		t.Errorf("cacheKey = %v, want [42:painter]", prov.chatKeys)
+	if len(prov.chatKeys) != 1 || prov.chatKeys[0] != "42:diffusion_translator" {
+		t.Errorf("cacheKey = %v, want [42:diffusion_translator]", prov.chatKeys)
 	}
 	msgs := prov.chatMessages[0]
 	if len(msgs) != 2 || msgs[0].Role != "system" || msgs[1].Role != "user" {
@@ -149,11 +148,10 @@ func (p *recordingImageProvider) GenerateImage(_ context.Context, prompt string,
 
 var _ llm.ImageGenerator = (*recordingImageProvider)(nil)
 
-func storePainterHandles(t *testing.T, sessionID uint, painterDiffusion bool, writer agentHandle, painter llm.Provider) {
+func storePainterHandles(t *testing.T, sessionID uint, painterDiffusion bool, translator agentHandle, painter llm.Provider) {
 	t.Helper()
 	sessionAgents.Store(sessionID, map[models.AgentRole]agentHandle{
-		models.AgentRoleWriter:     writer,
-		models.AgentRoleWriterNSFW: {enabled: false},
+		models.AgentRoleDiffusionTranslator: translator,
 		models.AgentRolePainter: {
 			provider: painter,
 			config:   &models.AgentConfig{Role: models.AgentRolePainter, IsActive: true, DiffusionMode: painterDiffusion},
@@ -189,14 +187,14 @@ func TestRunPainter_DiffusionModeTranslatesThenGenerates(t *testing.T) {
 	}
 }
 
-func TestRunPainter_DiffusionModeFailsWithoutWriter(t *testing.T) {
+func TestRunPainter_DiffusionModeFailsWithoutTranslator(t *testing.T) {
 	const sessionID = 9102
 	painter := &recordingImageProvider{}
 	storePainterHandles(t, sessionID, true, agentHandle{enabled: false}, painter)
 
 	_, err := RunPainter(context.Background(), GameContext{Session: models.GameSession{ID: sessionID}}, ImagePromptRequest{Prompt: "a lighthouse"})
-	if err == nil {
-		t.Fatal("want error when no Writer is available to translate")
+	if err == nil || !strings.Contains(err.Error(), string(models.AgentRoleDiffusionTranslator)) {
+		t.Fatalf("err = %v, want error naming diffusion_translator", err)
 	}
 	if painter.calls != 0 {
 		t.Errorf("GenerateImage calls = %d, want 0 when translation cannot run", painter.calls)

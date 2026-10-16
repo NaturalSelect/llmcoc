@@ -673,7 +673,10 @@ const (
 	// NOTE: AgentRolePainterNSFW 是可选的成人向配图 Agent；Director 标记 nsfw=true 的 generate_image 只路由到它，
 	// 未启用时这类请求直接被拒绝，不回落默认 Painter。它取代了原先的管理员「允许 NSFW 配图」全局开关。
 	AgentRolePainterNSFW AgentRole = "painter_nsfw"
-	AgentRoleParser      AgentRole = "parser"
+	// NOTE: AgentRoleDiffusionTranslator 把 Director 的自然语言画面描述翻译成扩散模型的标签式提示词；
+	// 仅在 Painter/Painter NSFW 开启 diffusion_mode 时被调用，未启用时扩散模式的配图直接失败，不回落 Writer。
+	AgentRoleDiffusionTranslator AgentRole = "diffusion_translator"
+	AgentRoleParser              AgentRole = "parser"
 	// NOTE: AgentRoleCompiler 负责把故事阶段产出的纯文本剧本编译为结构化ScenarioContent；
 	// 只做格式转换和技术字段补充，无权改写故事事实。
 	AgentRoleCompiler AgentRole = "compiler"
