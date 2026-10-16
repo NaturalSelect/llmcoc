@@ -189,7 +189,7 @@ func compileStoryToModule(ctx context.Context, room *scripterRoom, story StoryOu
 		}
 
 		draft := result.toScenarioDraft()
-		// NOTE: mythos_anchor 已由 story 阶段 translate_anchor 确认，编译阶段强制覆盖，防止LLM篡改。
+		// NOTE: mythos_anchor 已由 story 阶段 confirm_anchor 登记，编译阶段强制覆盖，防止LLM篡改。
 		draft.Content.MythosAnchor = story.MythosAnchor
 		alog.Debug("scripter compile done", "session", sessionID, "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
 		logScripterArtifact("Compiled ScenarioDraft", sessionID, draft)

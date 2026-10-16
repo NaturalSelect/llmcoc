@@ -1,6 +1,6 @@
 // scripter_toolloop.go — 原生 tool calling 共享驱动器。
 //
-// 把 Scripter 内所有多轮工具循环（translator/reward_agent/story architect/
+// 把 Scripter 内所有多轮工具循环（reward_agent/story architect/
 // oneshot architect repair）以及单次工具输出（qa_humanize/logic_review/compile）
 // 共同的协议机制抽成一个驱动器：发起请求、把助手消息（含 ToolCalls）写入历史、
 // 未知工具名拒绝、"独占一轮"工具的混批拒绝、为每个 tool_call_id 生成对应的
@@ -34,7 +34,7 @@ type scripterTool struct {
 //     驱动器继续下一轮，不认为循环已终止（即使 done=true 也会被忽略）。
 //   - reject 为空且 done=true：终止工具已成功执行并被调用方闭包捕获，
 //     驱动器在本轮所有 tool_call 都得到响应后返回成功。
-//   - reject 为空且 done=false：普通非终止工具调用（如 ask_lawyer/translate_anchor）
+//   - reject 为空且 done=false：普通非终止工具调用（如 ask_lawyer/confirm_anchor）
 //     成功执行，result 作为对应 tool 消息回传，循环继续。
 type toolOutcome struct {
 	result string
@@ -396,7 +396,7 @@ func jsonSchemaObject(schema string) []byte {
 const (
 	toolNameAskLawyer         = "ask_lawyer"
 	toolNameRespond           = "respond"
-	toolNameTranslateAnchor   = "translate_anchor"
+	toolNameConfirmAnchor     = "confirm_anchor"
 	toolNameSubmitExtraction  = "submit_extraction"
 	toolNameReadyToSubmit     = "ready_to_submit"
 	toolNameReportIssues      = "report_issues"
@@ -404,7 +404,7 @@ const (
 	toolNameGetWritingExample = "get_writing_example"
 )
 
-// askLawyerTool 是 translator / reward_agent 共用的 ask_lawyer 工具定义。
+// askLawyerTool 是各 scripter / reward / character 工具循环共用的 ask_lawyer 工具定义。
 func askLawyerTool(description string) scripterTool {
 	return scripterTool{
 		solo: false,
@@ -422,20 +422,20 @@ func askLawyerTool(description string) scripterTool {
 	}
 }
 
-// translateAnchorTool 是 story architect / oneshot architect repair 共用的
-// translate_anchor 工具定义。
-func translateAnchorTool(description string) scripterTool {
+// confirmAnchorTool 是 story architect / 上传锚点提取共用的 confirm_anchor 工具定义：
+// 模型先用 ask_lawyer 核验规则书元素，再用它登记元素全称。
+func confirmAnchorTool(description string) scripterTool {
 	return scripterTool{
 		solo: false,
 		def: llm.ToolDefinition{
-			Name:        toolNameTranslateAnchor,
+			Name:        toolNameConfirmAnchor,
 			Description: description,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"concept": {"type": "string", "description": "概念描述"}
+					"anchor": {"type": "string", "description": "COC7规则书中该神话元素的正式全称，必须来自ask_lawyer的裁定"}
 				},
-				"required": ["concept"]
+				"required": ["anchor"]
 			}`),
 		},
 	}
@@ -446,9 +446,9 @@ type askLawyerArgs struct {
 	Question string `json:"question"`
 }
 
-// translateAnchorArgs 是 translate_anchor 工具调用参数。
-type translateAnchorArgs struct {
-	Concept string `json:"concept"`
+// confirmAnchorArgs 是 confirm_anchor 工具调用参数。
+type confirmAnchorArgs struct {
+	Anchor string `json:"anchor"`
 }
 
 // generateNPCNameTool 是 story architect / oneshot architect repair 共用的

@@ -2,7 +2,7 @@
 // RunCompileStoryWithProgress 的输入校验、extractAnchorFromDocument 的锚点自动提取，
 // 以及 compileAndFinalize 在跳过 Story Architect 阶段时的编译产出、mythos_anchor 强制覆盖
 // 与 reward_concept 为空时的机制层重试、兜底触发行为。
-// 禁止真实网络/真实LLM；复用 translator_test.go 中的 sequentialFakeProvider。
+// 禁止真实网络/真实LLM；复用 testhelpers_test.go 中的 sequentialFakeProvider。
 package agent
 
 import (
@@ -25,32 +25,22 @@ func TestRunCompileStoryWithProgress_MissingDocument(t *testing.T) {
 }
 
 // TestExtractAnchorFromDocument_Success 验证 anchor_extract 阶段能通过
-// translate_anchor（经 translator/lawyer 校验）+ submit_extraction 识别出 mythos_anchor。
+// ask_lawyer 核验 + confirm_anchor 登记 + submit_extraction 识别出 mythos_anchor。
 func TestExtractAnchorFromDocument_Success(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 	document := compileTestStory().Document
 
-	translateArgs, _ := json.Marshal(map[string]string{
-		"concept": "死者被古老力量束缚继续行动",
-		"reason":  "识别文档核心神话元素",
-	})
+	askArgs, _ := json.Marshal(map[string]string{"question": "食尸鬼在COC7规则书中是否已收录？"})
+	confirmArgs, _ := json.Marshal(map[string]string{"anchor": "食尸鬼（Ghoul）"})
 	submitExtractionArgs, _ := json.Marshal(map[string]string{
 		"mythos_anchor": "食尸鬼（Ghoul）",
 	})
 	architectFake := &sequentialFakeProvider{
 		callerName: "architect",
 		toolResponses: []llm.ToolChatResult{
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameTranslateAnchor, string(translateArgs))}},
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameSubmitExtraction, string(submitExtractionArgs))}},
-		},
-	}
-	askArgs, _ := json.Marshal(map[string]string{"question": "食尸鬼在COC7规则书中是否已收录？"})
-	respondArgs := `{"selected_anchor":"食尸鬼（Ghoul）","content":"COC7规则书已收录：死者变形后保留记忆继续行动；不得自创属性"}`
-	translatorFake := &sequentialFakeProvider{
-		callerName: "translator",
-		toolResponses: []llm.ToolChatResult{
 			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameAskLawyer, string(askArgs))}},
-			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameRespond, string(respondArgs))}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameConfirmAnchor, string(confirmArgs))}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_3", toolNameSubmitExtraction, string(submitExtractionArgs))}},
 		},
 	}
 	lawyerFake := &sequentialFakeProvider{
@@ -62,11 +52,6 @@ func TestExtractAnchorFromDocument_Success(t *testing.T) {
 		architect: agentHandle{
 			provider: architectFake,
 			config:   &models.AgentConfig{Role: models.AgentRoleArchitect, IsActive: true},
-			enabled:  true,
-		},
-		translator: agentHandle{
-			provider: translatorFake,
-			config:   &models.AgentConfig{Role: models.AgentRoleTranslator, IsActive: true},
 			enabled:  true,
 		},
 		lawyer: agentHandle{
@@ -82,6 +67,62 @@ func TestExtractAnchorFromDocument_Success(t *testing.T) {
 	}
 	if result.MythosAnchor != "食尸鬼（Ghoul）" {
 		t.Errorf("MythosAnchor = %q, want 食尸鬼（Ghoul）", result.MythosAnchor)
+	}
+	if len(lawyerFake.recordedKeys) == 0 {
+		t.Error("ask_lawyer 应触发 lawyer provider 调用")
+	}
+}
+
+// TestExtractAnchorFromDocument_RejectsUnverifiedSubmit 验证 architect 没有登记锚点就直接
+// submit_extraction 时被拒绝，且拒绝提示回传给模型，之后补做核验与登记仍可成功提交。
+func TestExtractAnchorFromDocument_RejectsUnverifiedSubmit(t *testing.T) {
+	initSiteSettingTestDB(t)
+
+	askArgs, _ := json.Marshal(map[string]string{"question": "食尸鬼在COC7规则书中是否已收录？"})
+	confirmArgs, _ := json.Marshal(map[string]string{"anchor": "食尸鬼（Ghoul）"})
+	submitArgs, _ := json.Marshal(map[string]string{"mythos_anchor": "食尸鬼（Ghoul）"})
+	architectFake := &sequentialFakeProvider{
+		callerName: "architect",
+		toolResponses: []llm.ToolChatResult{
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_1", toolNameSubmitExtraction, string(submitArgs))}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_2", toolNameAskLawyer, string(askArgs))}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_3", toolNameConfirmAnchor, string(confirmArgs))}},
+			{ToolCalls: []llm.ToolCall{fakeToolCall("call_4", toolNameSubmitExtraction, string(submitArgs))}},
+		},
+	}
+	room := &scripterRoom{
+		sessionID: "test-session-extract-3",
+		architect: agentHandle{
+			provider: architectFake,
+			config:   &models.AgentConfig{Role: models.AgentRoleArchitect, IsActive: true},
+			enabled:  true,
+		},
+		lawyer: agentHandle{
+			provider: &sequentialFakeProvider{
+				callerName:    "lawyer",
+				toolResponses: lawyerDirectResponseToolResponses("食尸鬼（Ghoul）：COC7规则书已收录。"),
+			},
+			config:  &models.AgentConfig{Role: models.AgentRoleLawyer, IsActive: true},
+			enabled: true,
+		},
+	}
+
+	result, err := extractAnchorFromDocument(context.Background(), room, "故事文档正文")
+	if err != nil {
+		t.Fatalf("extractAnchorFromDocument failed: %v", err)
+	}
+	if result.MythosAnchor != "食尸鬼（Ghoul）" {
+		t.Errorf("MythosAnchor = %q, want 食尸鬼（Ghoul）", result.MythosAnchor)
+	}
+	secondRound := architectFake.recordedMessages[1]
+	rejected := false
+	for _, m := range secondRound {
+		if m.Role == "tool" && strings.Contains(m.Content, "SYSTEM REJECT") && strings.Contains(m.Content, "confirm_anchor") {
+			rejected = true
+		}
+	}
+	if !rejected {
+		t.Error("未登记锚点就提交时，应把 SYSTEM REJECT 回传给 architect")
 	}
 }
 

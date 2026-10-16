@@ -341,11 +341,11 @@ func TestSoloMixed(t *testing.T) {
 		want  bool
 	}{
 		{"仅submit_extraction一条", []llm.ToolCall{{Name: toolNameSubmitExtraction}}, false},
-		{"submit_extraction与translate_anchor混排", []llm.ToolCall{
-			{Name: toolNameSubmitExtraction}, {Name: toolNameTranslateAnchor},
+		{"submit_extraction与confirm_anchor混排", []llm.ToolCall{
+			{Name: toolNameSubmitExtraction}, {Name: toolNameConfirmAnchor},
 		}, true},
-		{"多条translate_anchor无submit", []llm.ToolCall{
-			{Name: toolNameTranslateAnchor}, {Name: toolNameTranslateAnchor},
+		{"多条confirm_anchor无submit", []llm.ToolCall{
+			{Name: toolNameConfirmAnchor}, {Name: toolNameConfirmAnchor},
 		}, false},
 		{"空数组", nil, false},
 	}

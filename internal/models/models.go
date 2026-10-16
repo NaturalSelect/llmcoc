@@ -674,8 +674,6 @@ const (
 	// 未启用时这类请求直接被拒绝，不回落默认 Painter。它取代了原先的管理员「允许 NSFW 配图」全局开关。
 	AgentRolePainterNSFW AgentRole = "painter_nsfw"
 	AgentRoleParser      AgentRole = "parser"
-	// NOTE: AgentRoleTranslator 负责发散联想、世界知识和资料转译；独立于Lawyer，不复用其provider/model。
-	AgentRoleTranslator AgentRole = "translator"
 	// NOTE: AgentRoleCompiler 负责把故事阶段产出的纯文本剧本编译为结构化ScenarioContent；
 	// 只做格式转换和技术字段补充，无权改写故事事实。
 	AgentRoleCompiler AgentRole = "compiler"

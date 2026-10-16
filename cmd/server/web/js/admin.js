@@ -237,8 +237,6 @@ window.COC.admin = {
                             architect: { max_tokens: 4000, temperature: 0.7 },
                             qa_guard: { max_tokens: 2000, temperature: 0.3 },
                             parser: { max_tokens: 4000, temperature: 0.1 },
-                            // NOTE: translator 负责发散联想、世界知识和资料转译，建议配置世界知识丰富、发散能力较好的模型。
-                            translator: { max_tokens: 2000, temperature: 0.7 },
                             // NOTE: compiler 负责把故事文本编译为结构化模组JSON，低温度减少擅自发挥。
                             compiler: { max_tokens: 4000, temperature: 0.15 },
                             // NOTE: dramaturg 是可选的剧构顾问，由Director按需通过工具调用咨询，默认关闭，需管理员单独绑定 provider 才会被路由。
@@ -1031,8 +1029,6 @@ window.COC.admin = {
                             npc: '🎭 NPC', npc_nsfw: '🔞 NSFW NPC', painter: '🎨 Painter', painter_nsfw: '🔞 NSFW Painter', evaluator: '📊 Evaluator', growth: '🌱 Growth',
                             architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
                             parser: '🔧 Parser',
-                            // NOTE: translator — 翻译/资料转译
-                            translator: '🌐 Translator',
                             // NOTE: compiler — 故事转模组编译
                             compiler: '🛠️ Compiler',
                             dramaturg: '🎭 Dramaturg',
@@ -1053,8 +1049,6 @@ window.COC.admin = {
                             architect: '模组设计 — 生成大纲并转化为完整JSON模组',
                             qa_guard: '质量审查 — 审查模组可玩性、规则合规与线索设计',
                             parser: 'JSON修复 — 低温度结构化输出，修复其他Agent的JSON格式错误',
-                            // NOTE: translator — 翻译/资料转译；负责发散联想、世界知识和COC元素转译
-                            translator: '翻译/资料转译 — 发散联想与COC元素转译；建议配置世界知识丰富、发散能力较好的模型',
                             // NOTE: compiler — 只做故事文本到结构化JSON的忠实转换，无权改写剧情事实
                             compiler: '模组编译 — 将故事文本忠实编译为结构化模组JSON；建议配置低温度模型',
                             // NOTE: dramaturg — 剧构顾问，Director按需咨询，输入经脱敏处理不含玩家原始数据，只给建议不操作游戏状态（默认关闭）
@@ -1076,8 +1070,6 @@ window.COC.admin = {
                             architect: '留空使用内置 Architect 提示词（大纲+JSON生成）',
                             qa_guard: '留空使用内置 QA Guard 提示词（模组质量审查）',
                             parser: '留空使用内置 Parser 提示词（JSON格式修复）',
-                            // NOTE: translator 留空使用内置 Translator 提示词（翻译/资料转译）
-                            translator: '留空使用内置 Translator 提示词（翻译/资料转译）；建议配置世界知识丰富的模型',
                             // NOTE: compiler 留空使用内置 Compiler 提示词（故事转模组编译）
                             compiler: '留空使用内置 Compiler 提示词（故事转模组编译）；建议配置低温度模型',
                             // NOTE: dramaturg 未绑定 provider 时工具不可见，Director回退自身节奏判断规则（默认关闭）

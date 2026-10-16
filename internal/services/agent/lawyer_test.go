@@ -136,7 +136,7 @@ func TestBuildLawyerPromptOpenTagBeforeCloseTag(t *testing.T) {
 // 尝试调用 response 会被驱动器拒绝，循环继续到第2轮改用 search_cache 成功；同时每轮
 // 发给模型的工具定义必须是同一份全集，否则 Anthropic 的 prompt cache 前缀会逐轮失效。
 func TestRunLawyerFirstRoundOnlySearchCache(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	prov := &sequentialFakeProvider{
 		toolResponses: []llm.ToolChatResult{
@@ -181,7 +181,7 @@ func TestRunLawyerFirstRoundOnlySearchCache(t *testing.T) {
 // TestRunLawyerMultipleRetrievalToolsSameRound 验证同一轮内可以同时调用多个
 // 检索工具（grep + grep_spell），驱动器不会整批拒绝，且两个结果都会回传。
 func TestRunLawyerMultipleRetrievalToolsSameRound(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	prov := &sequentialFakeProvider{
 		toolResponses: []llm.ToolChatResult{
@@ -218,7 +218,7 @@ func TestRunLawyerMultipleRetrievalToolsSameRound(t *testing.T) {
 // TestRunLawyerResponseWithSaveCacheSameRound 验证 response 与 save_cache
 // 可以同轮调用且不被 batchPolicy 拒绝，且 save_cache 确实写入了缓存。
 func TestRunLawyerResponseWithSaveCacheSameRound(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	const cacheKey = "#测试专用标签-response-savecache"
 	const ruling = "response与save_cache同轮的裁定"
@@ -251,7 +251,7 @@ func TestRunLawyerResponseWithSaveCacheSameRound(t *testing.T) {
 // TestRunLawyerOutputToolMixedWithRetrievalRejected 验证 response 与检索类
 // 工具（grep）混批会被 lawyerBatchPolicy 整批拒绝，循环继续而不终止。
 func TestRunLawyerOutputToolMixedWithRetrievalRejected(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	prov := &sequentialFakeProvider{
 		toolResponses: []llm.ToolChatResult{
@@ -286,7 +286,7 @@ func TestRunLawyerOutputToolMixedWithRetrievalRejected(t *testing.T) {
 // TestRunLawyerInvalidArgsAndEmptyRulingRejected 验证 response 的非法JSON参数
 // 和空 ruling 都会被拒绝并要求重试，而不是被当作成功终止。
 func TestRunLawyerInvalidArgsAndEmptyRulingRejected(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	prov := &sequentialFakeProvider{
 		toolResponses: []llm.ToolChatResult{
@@ -307,7 +307,7 @@ func TestRunLawyerInvalidArgsAndEmptyRulingRejected(t *testing.T) {
 // TestRunLawyerSearchCacheShowsTagRelevance 验证 search_cache 回执把命中标签数/
 // 查询标签数回显给模型（相关度信号），且用"标签"而非"问题"标注 cache key。
 func TestRunLawyerSearchCacheShowsTagRelevance(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	lawyerCache.Set("#相关度专用标签 #伤害 #武器", "相关度用例的裁定")
 
@@ -332,7 +332,7 @@ func TestRunLawyerSearchCacheShowsTagRelevance(t *testing.T) {
 // TestRunLawyerConsecutiveEmptyRoundsFastFail 验证连续多轮不返回任何工具调用
 // 时驱动器快速失败（runLawyer 对应返回 nil），而不是耗尽全部 maxRounds。
 func TestRunLawyerConsecutiveEmptyRoundsFastFail(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	prov := &sequentialFakeProvider{} // 无预设响应，ChatWithTools恒返回空tool_calls
 
@@ -354,7 +354,7 @@ func TestRunLawyerConsecutiveEmptyRoundsFastFail(t *testing.T) {
 // miss 用例：3轮（search_cache未命中 → grep → response），第1轮两个条件都不满足
 // 不计数，第2/3轮都满足"searchedRulebook && !cacheSearchHadResults"，故 miss=2。
 func TestRunLawyerCacheStatsRecorded(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	t.Run("full hit", func(t *testing.T) {
 		const key = "#缓存命中专用标签"
@@ -398,7 +398,7 @@ func TestRunLawyerCacheStatsRecorded(t *testing.T) {
 // TestRunLawyerReadLinesInvalidRangeRejected 验证 read_lines 的 start/end
 // 为0（非法）时被拒绝，而不是被当作合法调用静默放行。
 func TestRunLawyerReadLinesInvalidRangeRejected(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	prov := &sequentialFakeProvider{
 		toolResponses: []llm.ToolChatResult{

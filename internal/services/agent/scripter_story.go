@@ -4,8 +4,8 @@
 // the document and compiles it into a structured models.ScenarioContent.
 //
 // The story architect keeps the same tool-call discipline as before
-// (translate_anchor for real-time rulebook validation + anchor dedup, plus
-// ask_lawyer for on-demand rule fact checks while drafting scenes/clues),
+// (ask_lawyer for real-time rulebook validation + confirm_anchor for anchor dedup,
+// plus ask_lawyer again for on-demand rule fact checks while drafting scenes/clues),
 // but the final story document is never wrapped in a tool call: prose has no
 // structure worth encapsulating, so the architect just replies with plain
 // text once its research tool calls are done. See runStoryArchitectLoop's
@@ -69,14 +69,17 @@ func storySystemPrompt() string {
 - brief若为空，也必须先构造一个可调查的表层事件
 
 【二、神话元素验证与取舍】
-通过 translate_anchor 工具将核心概念翻译为COC7规则书元素：
-- 必须先调用 translate_anchor 获得规则书裁定，后才能动笔写正文
-- translate_anchor只负责如实报告：它查到了什么（selected_anchor+content）、这个候选是否命中最近使用元素禁用列表（disabled）；它不会替你判断这个候选适不适合这个故事，也不会替你重试或换概念——要不要重试、换哪个概念、能不能将就用，都是你自己的决定
-- 出现以下任一情况就是不合适，必须换一个再查，不要将就着写：disabled=true（规则书里没有可靠匹配，或候选命中了禁用列表，具体原因看content）；content里的解读要靠牵强解释才能对上你想要的效果，或content提到的限制条件把它能用的部分削得几乎剩不下什么；它撑不起恐怖内核要锚定的那2条以上宇宙公理；换成任何其他同类元素都一样能讲这个故事，说明它只是能用，不是该用
+通过 ask_lawyer 向规则书专家核验核心概念，找到COC7规则书中真正对应的元素，再用 confirm_anchor 登记：
+- 必须先用 ask_lawyer 查到规则书里的明确条文或裁定，再调用 confirm_anchor 登记元素的正式全称，之后才能动笔写正文
+- 提问要具体：优先确认候选元素是否在规则书中存在、出处、核心机制和使用边界；不得凭常识或记忆直接登记，不得编造规则书不存在的正式名称、页码、数值或能力
+- 登记的元素必须直接来自规则书裁定，不能是基于裁定的二次创作或推导链条；法术不允许任何变体，必须完全符合规则书描述
+- 除非概念本身明确要求法术/仪式是唯一能承载的机制，否则优先把创意概念落到实体上（神话生物/旧日支配者眷属，或施法的人类角色本身），不要登记成脱离施动者的法术条目；若确需登记法术，成稿必须写清它由哪个具体的实体施放，该实体才是故事应锚定的真正核心
+- confirm_anchor 命中最近使用元素禁用列表时会被代码拒绝，此时换一个元素或换掉概念重查。规则书里确实找不到贴切候选时，换个方向继续查，不要乱编凑数
+- 出现以下任一情况就是不合适，必须换一个再查，不要将就着写：规则书里没有可靠匹配；裁定的解读要靠牵强解释才能对上你想要的效果，或裁定提到的限制条件把它能用的部分削得几乎剩不下什么；它撑不起恐怖内核要锚定的那2条以上宇宙公理；换成任何其他同类元素都一样能讲这个故事，说明它只是能用，不是该用
 - 不要把"换一个"局限在同一个概念下的另一个候选——如果同一概念反复查都撑不起想要的效果，就换掉概念本身（例如从某个具体怪物改向人类堕落施法者，或换到另一个神话分支重新查），只要仍服务于brief与你已确定的调查焦点
 - mythos_anchor 应优先支持调查、异化、理智侵蚀和氛围恐怖，而不是鼓励直接战斗解决问题
 - mythos_anchor 优先锚定在幕后那个主体本身；如果它在规则书中确实以法术/仪式条目呈现，才允许把该条目登记为 mythos_anchor，但成稿必须写清是谁在持有并施展它
-- 动笔前先问自己："换掉这个元素，我最初想讲的这个故事还成立吗？"如果换了也无所谓，说明它只是贴上去的标签，回 translate_anchor 换一个真正驱动情节的，不要等写完整篇才发现
+- 动笔前先问自己："换掉这个元素，我最初想讲的这个故事还成立吗？"如果换了也无所谓，说明它只是贴上去的标签，回头重新核验并登记一个真正驱动情节的，不要等写完整篇才发现
 
 【三、线索网络与误导】
 把剧情设计成一张可以交叉验证的网，不是一条单行道。
@@ -84,7 +87,7 @@ func storySystemPrompt() string {
 - 每条线索都要落在调查员能亲自看到、听到、挖到、查到的具体东西上；单凭任何一条都得不出全部结论
 - 会把人带偏的那条线索，本身必须是真的、调查员可以亲自验证；它之所以误导，是因为有个真心相信自己没错的人（或一份真诚写下的记录）给了它一个听上去合理的世俗解释。真相揭晓之后，这个观察依然成立，那个解释也依然有几分道理；而调查员一旦发现解释不对，不会走进死胡同，反而会被推向该去的方向。禁止把怪异、不通顺或纯编造的内容当作误导
 - 给出错误解释的那个人要有自己的理由——自保、利益、认知局限——他不是为了骗调查员才那么说的
-- 至少有一处让调查员真正理解他们面对的是什么。这一处只能照 translate_anchor 已确认的规则书元素本身写明的设定与效果来写：不得编造规则书中不存在的法术名、物品名、材质名、怪物名或机制名，也不得在规则书事实之上自行推导新的因果解释链
+- 至少有一处让调查员真正理解他们面对的是什么。这一处只能照 confirm_anchor 已登记的规则书元素本身写明的设定与效果来写：不得编造规则书中不存在的法术名、物品名、材质名、怪物名或机制名，也不得在规则书事实之上自行推导新的因果解释链
 - 场景要随调查推进而逐步打开，不是一股脑全摆在那儿；要区分相对安全的地方、危险的地方、以及最接近神话本质的地方
 
 内部自查：
@@ -168,8 +171,8 @@ func storySystemPrompt() string {
 - 可以使用与时代相称的历史、地理、医学、矿业等具体知识和技能；不要用现代科学术语、硬科幻或工程化异常替代神话解释
 </task>
 <tools>
-- translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；正式写作前必须至少调用一次
-- ask_lawyer：向COC7规则书专家提出具体规则书问题，核验故事中出现的技能检定、法术效果、怪物能力、机制细节等是否符合规则书事实；写作过程中可随时多次调用
+- ask_lawyer：向COC7规则书专家提出具体规则书问题，既用来确认候选神话元素在规则书中的出处与设定，也用来核验故事中出现的技能检定、法术效果、怪物能力、机制细节等是否符合规则书事实；写作过程中可随时多次调用
+- confirm_anchor：登记故事所依托的核心神话元素（规则书正式全称）；必须在至少一次ask_lawyer之后调用，正式写作前必须登记
 - generate_npc_name：需要给人物起名时必须调用本工具从预置姓名池随机取名（指定culture和gender），不要自行编造姓名
 - get_writing_example：获取一份职业模组成稿作为写作参考，学习组织篇章、控制信息密度、把检定与线索写进叙事句的手法；必须在正式动笔前调用一次。参考成稿的具体人名、地名、机构名、情节与神话设定与你要写的剧本无关，禁止照搬
 </tools>
@@ -202,7 +205,7 @@ func validateStoryDocument(story StoryOutput) []string {
 		issues = append(issues, fmt.Sprintf("故事文档中出现了禁用关键词%s：这类内容与COC恐怖模组主题明显不符，任何情况下都不得出现，请删除并重写相关段落", strings.Join(kws, "、")))
 	}
 	if strings.TrimSpace(story.MythosAnchor) == "" {
-		issues = append(issues, "尚未确认mythos_anchor：须先调用translate_anchor并得到disabled=false的结论，再输出故事文档")
+		issues = append(issues, "尚未登记mythos_anchor：须先用ask_lawyer核验规则书元素，再调用confirm_anchor登记，然后输出故事文档")
 	}
 	return issues
 }
@@ -241,52 +244,43 @@ func markdownHeadingCount(document string) int {
 // Architect loop
 // ---------------------------------------------------------------------------
 
-// runStoryArchitectLoop 驱动故事 architect 工具循环：translate_anchor（可多次）+
+// runStoryArchitectLoop 驱动故事 architect 工具循环：ask_lawyer（可多次）+ confirm_anchor +
 // generate_npc_name/get_writing_example，完成后模型直接以不带 tool_calls 的一条
 // 普通回复输出完整故事文档正文——不封装成 submit_story 工具调用参数，因为故事文档
-// 本身就是自由文本，没有需要封装的结构。mythos_anchor 从 translate_anchor 最近一次
-// disabled=false的结论中自动记录，不要求模型在结尾重复提交。
+// 本身就是自由文本，没有需要封装的结构。mythos_anchor 取自 confirm_anchor 最近一次
+// 通过校验的登记，不要求模型在结尾重复提交。
 // initialAnchor 非空时作为锚点初始值（repair场景传入已确认的旧锚点，允许修复措辞
-// 问题时不必重新调用translate_anchor）。conv 承载消息链，成功提交后会记一次成稿
+// 问题时不必重新登记锚点）。conv 承载消息链，成功提交后会记一次成稿
 // （conv.markDraft），供后续修复轮次复用同一条对话。minDocRunes>0 时额外要求正文
 // 不得短于该字数（repair场景用于防止模型偷懒只输出改动片段而非完整正文）。
 func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, conv *scripterConversation, stageName string, initialAnchor string, minDocRunes int) (StoryOutput, error) {
 	stageName = firstNonEmpty(stageName, "story_architect")
 
 	tools := []scripterTool{
-		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；正式写作前必须至少调用一次"),
-		askLawyerTool("向COC7规则书专家提出一个具体规则书问题，用于核验故事中出现的技能检定、法术效果、怪物能力、机制细节等是否符合规则书事实；可多次调用"),
+		askLawyerTool("向COC7规则书专家提出一个具体规则书问题：确认候选神话元素在规则书中是否存在、出处与设定，核验故事中出现的技能检定、法术效果、怪物能力、机制细节等是否符合规则书事实；可多次调用"),
+		confirmAnchorTool("登记故事所依托的核心神话元素（COC7规则书中的正式全称）；必须在至少一次ask_lawyer核验之后调用，正式写作前必须登记；命中最近使用元素禁用列表会被拒绝"),
 		generateNPCNameTool(),
 		getWritingExampleTool(),
 	}
 
 	sessionID := scripterSessionID(ctx, room)
-	confirmedAnchor := strings.TrimSpace(initialAnchor)
+	anchors := newAnchorTracker(room, initialAnchor)
 	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
 		switch call.Name {
-		case toolNameTranslateAnchor:
-			var args translateAnchorArgs
-			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
-			}
-			text, conclusion := executeOneshotTranslateAnchor(ctx, room, args.Concept)
-			if conclusion != nil && !conclusion.Disabled && strings.TrimSpace(conclusion.SelectedAnchor) != "" {
-				confirmedAnchor = strings.TrimSpace(conclusion.SelectedAnchor)
-				alog.Debug("story loop anchor confirmed", "session", sessionID, "anchor", confirmedAnchor)
-			}
-			return toolOutcome{result: text}
 		case toolNameAskLawyer:
-			var args askLawyerArgs
-			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-				return toolOutcome{reject: "SYSTEM REJECT: ask_lawyer参数不是合法JSON，请重新调用。"}
+			return anchors.askLawyer(ctx, call)
+		case toolNameConfirmAnchor:
+			outcome := anchors.confirm(call)
+			if outcome.reject == "" {
+				alog.Debug("story loop anchor confirmed", "session", sessionID, "anchor", anchors.confirmed)
 			}
-			return toolOutcome{result: storyAskLawyer(ctx, room, args.Question)}
+			return outcome
 		case toolNameGenerateNPCName:
 			return dispatchGenerateNPCName(ctx, room, call)
 		case toolNameGetWritingExample:
 			return toolOutcome{result: executeGetWritingExample(ctx, room)}
 		default:
-			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/ask_lawyer/generate_npc_name/get_writing_example，不允许%s。", call.Name)}
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许ask_lawyer/confirm_anchor/generate_npc_name/get_writing_example，不允许%s。", call.Name)}
 		}
 	}
 
@@ -298,7 +292,7 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, conv *script
 				"SYSTEM REJECT: 正文过短（当前%d字，至少需要%d字）。必须输出修订后的完整故事文档全文，不得只给改动片段、摘要或用省略号/“其余部分不变”跳过未改动的章节。",
 				len([]rune(doc)), minDocRunes)
 		}
-		story := StoryOutput{Document: doc, MythosAnchor: confirmedAnchor}
+		story := StoryOutput{Document: doc, MythosAnchor: anchors.confirmed}
 		if issues := validateStoryDocument(story); len(issues) > 0 {
 			return false, fmt.Sprintf(
 				"SYSTEM REJECT: 故事文档校验失败: %s。不需要调用任何工具，直接在下一条回复中重新输出完整故事文档正文。",
@@ -327,10 +321,10 @@ func runStoryArchitectLoop(ctx context.Context, room *scripterRoom, conv *script
 	return *submitted, nil
 }
 
-// storyAskLawyer 是 story architect 阶段 ask_lawyer 工具的执行逻辑，供写作过程中
-// 随时核验技能检定、法术效果、怪物能力等规则书事实；与reward_agent/oneshot_translator
+// scripterAskLawyer 是 architect 阶段 ask_lawyer 工具的执行逻辑，供核验神话元素以及写作
+// 过程中随时核验技能检定、法术效果、怪物能力等规则书事实；与reward_agent/character
 // 的同名实现一致，各agent各自持有一份小包装，不额外抽共享层。
-func storyAskLawyer(ctx context.Context, room *scripterRoom, question string) string {
+func scripterAskLawyer(ctx context.Context, room *scripterRoom, question string) string {
 	sessionID := scripterSessionID(ctx, room)
 	question = strings.TrimSpace(question)
 	if question == "" {
@@ -658,7 +652,7 @@ func runStoryLogicReview(ctx context.Context, room *scripterRoom, storyDoc strin
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 				return toolOutcome{reject: "SYSTEM REJECT: ask_lawyer参数不是合法JSON，请重新调用。"}
 			}
-			return toolOutcome{result: storyAskLawyer(ctx, room, args.Question)}
+			return toolOutcome{result: scripterAskLawyer(ctx, room, args.Question)}
 		case toolNameReportIssues:
 			var args qaReviewResult
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {

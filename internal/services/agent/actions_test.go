@@ -84,7 +84,7 @@ func TestWriteActionNSFWFlagSticky(t *testing.T) {
 // TestActNPCActionNSFWRouting 验证actNPCAction.Execute端到端选中正确的NPC handle:
 // 房间NSFW开关和call.NSFW同时满足时才路由到npc_nsfw,否则一律回落默认NPC。
 func TestActNPCActionNSFWRouting(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	cases := []struct {
 		name     string

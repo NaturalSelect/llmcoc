@@ -1,10 +1,10 @@
-// scripter_oneshot.go — OneshotResult type, translator sub-agent, blacklist
+// scripter_oneshot.go — OneshotResult type, blacklist
 // helpers, and the repair/logic-review machinery shared by the story→compile
 // pipeline (see scripter_story.go / scripter_compile.go for the two
 // generation stages themselves).
 //
 // runOneshotArchitectLoop remains here because repairOneshotDraft reuses it
-// to patch an already-compiled ScenarioDraft (translate_anchor + submit),
+// to patch an already-compiled ScenarioDraft (ask_lawyer + submit),
 // independent of the story stage's own tool loop (runStoryArchitectLoop).
 package agent
 
@@ -358,7 +358,7 @@ const humanWritingRules = `- 出版体例：成稿是交给守密人直接使用
 // repairSystemPrompt 是结构修复/逻辑修复阶段的专用提示词：只按 must_fix 修补
 // previous_draft，不重新创作。历史上这里复用 oneshotSystemPrompt（完整创作指南 +
 // schema），每次修复都要重复发送约200行创作指令，与"最小改动"的修复指令相互冲突，
-// 还会无条件触发 translate_anchor → Translator→Lawyer 链条。
+// 还会无条件触发规则书核验。
 func repairSystemPrompt() string {
 	return `<role>COC7剧本修复器</role>
 <task>
@@ -368,12 +368,12 @@ func repairSystemPrompt() string {
 - 逐条针对must_fix修复到位；除修复所需外，不改动任何其他字段、人名、地名、数值、情节或文风
 - 不得更换已确认的神话元素（content.mythos_anchor）——它已由规则书翻译确认
 - 不得改变<diversity_constraints>中tone_tags的值
-- 仅当must_fix涉及神话元素本身时，才调用translate_anchor核验；否则不要调用
+- 仅当must_fix涉及神话元素本身时，才调用ask_lawyer核验；否则不要调用
 - 修复神话本质说明时，引用的法术/物品/怪物/机制名必须与must_fix或<previous_draft>中已确认的规则书元素一致，不得新造
 - setting/intro必须保持冷开场：中性日常，不剧透真相、不渲染恐怖；intro须以叙事散文呈现，先自然写出地点/具体年月日+时刻/要达成的那件事三项背景信息（must_fix指出缺失时按此要求补齐），再写出至少两处具体场景细节（不是空泛概括），禁止用【】或地点/时间/目标式标签另起一行罗列，事实性的三项取自<previous_draft>与故事既有事实，目标只写要达成的那件事本身、不写行动步骤
 </task>
 <tools>
-- translate_anchor：仅当must_fix涉及神话元素时，将一个创意概念翻译为COC7规则书中最匹配的具体元素
+- ask_lawyer：仅当must_fix涉及神话元素时，向COC7规则书专家提问，核验法术/物品/怪物/机制是否符合规则书事实
 - generate_npc_name：需要新增或替换NPC姓名时，从预置姓名池随机生成，不要自行编造
 - ready_to_submit：完成上述核验（或确认无需核验）后调用，确认准备好提交修复后的完整剧本；必须单独一轮调用。调用后系统会请你直接输出完整JSON本体
 </tools>
@@ -413,7 +413,7 @@ func repairSystemPrompt() string {
 // ---------------------------------------------------------------------------
 
 // runOneshotArchitectLoop 驱动修复阶段的两段式提交。第一段（runOneshotVerificationPhase）
-// 是原生工具循环：translate_anchor/generate_npc_name按需多次调用，以ready_to_submit（独占
+// 是原生工具循环：ask_lawyer/generate_npc_name按需多次调用，以ready_to_submit（独占
 // 一轮、空参数）收尾。第二段（runOneshotSubmitPhase）改为纯JsonChat直接输出完整JSON——
 // oneshotDraftJSONSchema十几个顶层字段、content又深层嵌套，原生tool calling单次调用维持
 // 这种结构时不稳定（同compileStoryToModule的既有结论：曾观测到必填字段留空或content被
@@ -430,30 +430,30 @@ func runOneshotArchitectLoop(ctx context.Context, room *scripterRoom, conv *scri
 }
 
 // readyToSubmitTool 是核验阶段的收尾信号工具（solo，空参数）：模型确认已完成必要的
-// translate_anchor/generate_npc_name核验（或确认本轮无需核验）后调用，驱动器随即返回，
+// ask_lawyer/generate_npc_name核验（或确认本轮无需核验）后调用，驱动器随即返回，
 // 交由 runOneshotSubmitPhase 发起JsonChat提交。
 func readyToSubmitTool() scripterTool {
 	return scripterTool{
 		solo: true,
 		def: llm.ToolDefinition{
 			Name:        toolNameReadyToSubmit,
-			Description: "确认已完成必要的translate_anchor/generate_npc_name核验（或确认本轮无需核验），准备提交修复后的完整剧本；必须单独一轮调用，无需参数",
+			Description: "确认已完成必要的ask_lawyer/generate_npc_name核验（或确认本轮无需核验），准备提交修复后的完整剧本；必须单独一轮调用，无需参数",
 			Parameters:  jsonSchemaObject(`{"type": "object", "properties": {}}`),
 		},
 	}
 }
 
-// runOneshotVerificationPhase 跑一次只含 translate_anchor/generate_npc_name/ready_to_submit
-// 的工具循环，把期间每次translate_anchor的结果文本拼接为findings返回，供
+// runOneshotVerificationPhase 跑一次只含 ask_lawyer/generate_npc_name/ready_to_submit
+// 的工具循环，把期间每次ask_lawyer的结果文本拼接为findings返回，供
 // runOneshotSubmitPhase的JsonChat提交带上核验结论（否则模型在纯JsonChat轮会"忘记"
-// 核验阶段问到的规则书元素）。没有调用过translate_anchor时findings为空串。
+// 核验阶段问到的规则书裁定）。没有调用过ask_lawyer时findings为空串。
 // NOTE: 核验阶段的原生工具往返（tool_calls/role=tool 消息）只落在 conv.branch() 分支
 // 上，不写回主链——主链之后要交给 JsonChat 提交，部分兼容端点在同一次请求里混入原生
 // tool_calls 历史与 response_format=json_object 会报错；核验学到的结论改以 findings
 // 文本形式追加进主链，跨轮依然可见。
 func runOneshotVerificationPhase(ctx context.Context, room *scripterRoom, conv *scripterConversation, stageName string) (string, error) {
 	tools := []scripterTool{
-		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；仅当must_fix涉及神话元素时才需要调用"),
+		askLawyerTool("向COC7规则书专家提出一个具体规则书问题，核验神话元素、法术效果、怪物能力等是否符合规则书事实；仅当must_fix涉及神话元素时才需要调用"),
 		generateNPCNameTool(),
 		readyToSubmitTool(),
 	}
@@ -461,12 +461,12 @@ func runOneshotVerificationPhase(ctx context.Context, room *scripterRoom, conv *
 	var findings []string
 	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
 		switch call.Name {
-		case toolNameTranslateAnchor:
-			var args translateAnchorArgs
+		case toolNameAskLawyer:
+			var args askLawyerArgs
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
+				return toolOutcome{reject: "SYSTEM REJECT: ask_lawyer参数不是合法JSON，请重新调用。"}
 			}
-			text, _ := executeOneshotTranslateAnchor(ctx, room, args.Concept)
+			text := scripterAskLawyer(ctx, room, args.Question)
 			findings = append(findings, text)
 			return toolOutcome{result: text}
 		case toolNameGenerateNPCName:
@@ -474,7 +474,7 @@ func runOneshotVerificationPhase(ctx context.Context, room *scripterRoom, conv *
 		case toolNameReadyToSubmit:
 			return toolOutcome{result: "已确认，请直接输出完整剧本JSON。", done: true}
 		default:
-			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/generate_npc_name/ready_to_submit，不允许%s。", call.Name)}
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许ask_lawyer/generate_npc_name/ready_to_submit，不允许%s。", call.Name)}
 		}
 	}
 
@@ -544,178 +544,11 @@ func runOneshotSubmitPhase(ctx context.Context, room *scripterRoom, conv *script
 }
 
 // ---------------------------------------------------------------------------
-// translate_anchor execution — calls translator sub-agent
-// ---------------------------------------------------------------------------
-
-// executeOneshotTranslateAnchor 由 oneshot architect repair 和 story architect
-// 两个循环共用；concept 直接来自各自 translate_anchor 工具调用的解码参数。
-// 除了给模型看的结果文本外，还把结构化结论一并返回：story architect 用它在
-// disabled=false时自动记下 selected_anchor，不再要求模型在提交故事时重复填写。
-func executeOneshotTranslateAnchor(ctx context.Context, room *scripterRoom, concept string) (string, *translatorConclusion) {
-	sessionID := scripterSessionID(ctx, room)
-	concept = strings.TrimSpace(concept)
-	if concept == "" {
-		return `<translate_anchor_result error="concept字段为空，无法翻译"/>`, nil
-	}
-	alog.Debug("oneshot translate anchor", "session", sessionID, "concept", truncateRunes(concept, 200))
-	conclusion, err := runOneshotTranslatorAgent(ctx, room, concept)
-	if err != nil {
-		alog.Error("oneshot translate anchor failed", "session", sessionID, "concept", truncateRunes(concept, 200), "err", err)
-		return fmt.Sprintf(`<translate_anchor_result concept=%q disabled="true">
-content: 查询失败（%s），可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。
-</translate_anchor_result>`, concept, err.Error()), nil
-	}
-	if conclusion == nil || strings.TrimSpace(conclusion.SelectedAnchor) == "" {
-		return fmt.Sprintf(`<translate_anchor_result concept=%q disabled="true">
-content: translator未返回可用结论，可尝试调整概念描述重新翻译，或转向人类法师、诅咒物品、古老地点等方向。
-</translate_anchor_result>`, concept), nil
-	}
-	return fmt.Sprintf(`<translate_anchor_result concept=%q disabled="%t">
-selected_anchor: %s
-content: %s
-</translate_anchor_result>`, concept, conclusion.Disabled, conclusion.SelectedAnchor, conclusion.Content), conclusion
-}
-
-// ---------------------------------------------------------------------------
-// Translator sub-agent (validates CoC element via lawyer/rulebook)
-// ---------------------------------------------------------------------------
-
-const oneshotTranslatorSystemPrompt = `<role>COC7规则书概念翻译专家</role>
-<task>收到一个创意概念，将它翻译为COC7规则书中最匹配、可在剧本中使用的具体元素（实体/典籍/法术/诅咒物品/机制）。通过 ask_lawyer 工具向规则书专家提问，依据裁定综合，最后用 respond 工具提交结论。你只负责如实报告规则书里查到了什么；候选是否命中最近使用元素禁用列表、要不要为此重新查、能不能将就用，都交给上层自行判断，你不必为此反复重试。</task>
-<rules>
-- 第一轮必须至少调用一次ask_lawyer；不得凭常识或记忆直接respond。
-- 用户消息中的<recently_used_mythos_anchors>是最近已经用过的元素：查询候选时优先绕开它们；但如果规则书里最贴切的候选恰好在这份名单里，直接如实提交，在content中说明命中了这份名单，不必为了避开它而无限重试或勉强凑一个不贴切的候选。
-- ask_lawyer问题要具体，优先确认候选元素是否在规则书中存在、出处、核心机制和使用边界。
-- 不把lawyer原文无筛选地倾倒给architect；必须总结成可执行的结论。
-- 不得编造规则书不存在的正式名称、页码、数值或能力。
-- 法术不允许任何变体，必须完全符合规则书描述。
-- 除非概念本身明确要求法术/仪式是唯一能承载的机制，否则优先把创意概念翻译为实体锚点（神话生物/旧日支配者眷属，或施法的人类角色本身），不要翻译成脱离施动者的法术条目本身。
-- 若最终仍需要翻译为法术，必须在content中提醒：该法术必须由一个具体的实体（人、神话生物等）施放，且该实体才是故事应锚定的真正核心，法术只是其手段而非谜团根源。
-- 翻译的结果必须直接来自规则书裁定，不能是基于规则书裁定的二次创作。
-- 不可以是推导链条，无论其是否合理：必须直接引用规则书中的明确条文或裁定。
-- 但推理链条的每一步都必须在规则书中有明确依据，不能凭常识或记忆自创。
-- 规则书里确实找不到贴切候选时，selected_anchor写无，在content中说明已尝试过什么方向、为什么都不合适，不要乱编凑数。
-</rules>`
-
-// translatorConclusion 是 translator respond 工具的结构化结论，
-// 字段与 respond 工具 schema 的属性一一对应。translator 只负责如实报告事实
-// （查到了什么、为什么、有什么要注意的，合并写进 Content 一段连贯文字），
-// 不负责判断candidate是否命中禁用列表——Disabled 由代码在收到 respond 后
-// 依据禁用列表计算，不是LLM自报字段，因此不参与JSON解码（见下方dispatch）。
-// 是否重试、要不要换个概念，这类决策交给上层调用方（Story Architect等）。
-type translatorConclusion struct {
-	SelectedAnchor string `json:"selected_anchor"`
-	Content        string `json:"content"`
-	Disabled       bool   `json:"-"`
-}
-
-// oneshotTranslatorRespondTool 是 translator 的 respond 工具定义（solo，终止本轮循环）。
-func oneshotTranslatorRespondTool() scripterTool {
-	return scripterTool{
-		solo: true,
-		def: llm.ToolDefinition{
-			Name:        toolNameRespond,
-			Description: "返回最终翻译结论并退出；必须在至少一次ask_lawyer之后调用；必须单独一轮调用",
-			Parameters: jsonSchemaObject(`{
-				"type": "object",
-				"properties": {
-					"selected_anchor": {"type": "string", "description": "规则书中最匹配的元素全称；确实没有可靠匹配时写无"},
-					"content": {"type": "string", "description": "写给architect的完整结论，一段连贯文字：来源与依据、此元素如何承载原概念、必须避免的未核验数值/能力/误用；若selected_anchor为无或候选命中了最近使用元素禁用列表，说明原因并给出保守的替代方向"}
-				},
-				"required": ["selected_anchor", "content"]
-			}`),
-		},
-	}
-}
-
-func runOneshotTranslatorAgent(ctx context.Context, room *scripterRoom, concept string) (*translatorConclusion, error) {
-	// NOTE: translator 独立 provider/session key，不复用 lawyer；fail-fast，不退回 lawyer。
-	if room.translator.provider == nil {
-		return nil, fmt.Errorf("translator provider unavailable")
-	}
-
-	msgs := []llm.ChatMessage{
-		{Role: "system", Content: room.translator.systemPrompt(oneshotTranslatorSystemPrompt)},
-		{Role: "user", Content: fmt.Sprintf(`<translate_anchor_request>
-concept: %s
-</translate_anchor_request>
-<recently_used_mythos_anchors>
-%s
-</recently_used_mythos_anchors>
-以上是最近已经用过的元素：查询候选时优先绕开；如果规则书里最贴切的候选恰好在这份名单里，如实提交并在content中说明，不必为了避开它而无限重试。`,
-			concept, formatMythosBlacklist(room.mythosBlacklist))},
-	}
-
-	tools := []scripterTool{
-		askLawyerTool("向COC7规则书专家提出一个具体规则书问题；可多次调用"),
-		oneshotTranslatorRespondTool(),
-	}
-
-	askedLawyer := false
-	var conclusion *translatorConclusion
-	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
-		switch call.Name {
-		case toolNameAskLawyer:
-			var args askLawyerArgs
-			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-				return toolOutcome{reject: "SYSTEM REJECT: ask_lawyer参数不是合法JSON，请重新调用。"}
-			}
-			askedLawyer = true
-			// NOTE: ask_lawyer 仍然走 room.lawyer，与 translator Chat 路由严格隔离。
-			return toolOutcome{result: oneshotTranslatorAskLawyer(ctx, room, args.Question)}
-		case toolNameRespond:
-			if !askedLawyer {
-				return toolOutcome{reject: "SYSTEM REJECT: respond前必须至少调用一次ask_lawyer。"}
-			}
-			var args translatorConclusion
-			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-				return toolOutcome{reject: "SYSTEM REJECT: respond参数不是合法JSON，请重新调用。"}
-			}
-			if strings.TrimSpace(args.SelectedAnchor) == "" || strings.TrimSpace(args.Content) == "" {
-				return toolOutcome{reject: "SYSTEM REJECT: respond的selected_anchor和content字段不能为空。"}
-			}
-			// NOTE: 是否命中禁用列表由代码判定，不要求LLM自报，也不因命中而拒绝重试——
-			// 判定结果随结论一起交给上层（Story Architect等）决定要不要换概念重查。
-			selected := strings.TrimSpace(args.SelectedAnchor)
-			args.Disabled = selected == "无" || oneshotFindForbiddenAnchor(selected, room.mythosBlacklist) != ""
-			conclusion = &args
-			return toolOutcome{result: "已收到，翻译结论已提交。", done: true}
-		default:
-			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: translator只允许ask_lawyer/respond，不允许%s。", call.Name)}
-		}
-	}
-
-	const maxRounds = 16
-	if err := runScripterToolLoop(ctx, room, room.translator, "oneshot_translator", msgs, tools, maxRounds, dispatch); err != nil {
-		return nil, err
-	}
-	return conclusion, nil
-}
-
-func oneshotTranslatorAskLawyer(ctx context.Context, room *scripterRoom, question string) string {
-	sessionID := scripterSessionID(ctx, room)
-	question = strings.TrimSpace(question)
-	if question == "" {
-		return `<ask_lawyer_result error="question字段为空，无法查询规则书"/>`
-	}
-	alog.Debug("oneshot translator ask_lawyer", "session", sessionID, "question", truncateRunes(question, 300))
-	if room.lawyer.provider == nil {
-		return fmt.Sprintf(`<ask_lawyer_result question=%q status="lawyer_unavailable">规则书专家不可用；不得声称已核验具体规则书元素。</ask_lawyer_result>`, question)
-	}
-	results := runLawyer(ctx, room.lawyer, question)
-	if len(results) == 0 {
-		return fmt.Sprintf(`<ask_lawyer_result question=%q status="no_result">规则书专家未返回可用裁定；应换一个更具体的候选继续提问，或在最终结论中标记no_result/uncertain。</ask_lawyer_result>`, question)
-	}
-	return fmt.Sprintf(`<ask_lawyer_result question=%q status="found">%s</ask_lawyer_result>`,
-		question, formatLawyerResults(results))
-}
-
-// ---------------------------------------------------------------------------
 // Blacklist helpers
 // ---------------------------------------------------------------------------
 
-// oneshotFindForbiddenAnchor 检查 selectedAnchor（respond 工具的结构化字段，
-// 可能带括号别名等修饰）是否命中禁用列表；返回命中的禁用元素，未命中返回空串。
+// oneshotFindForbiddenAnchor 检查候选锚点（可能带括号别名等修饰）是否命中禁用列表；
+// 返回命中的禁用元素，未命中返回空串。
 func oneshotFindForbiddenAnchor(selectedAnchor string, anchors []string) string {
 	selected := strings.TrimSpace(selectedAnchor)
 	if selected == "" || selected == "无" {
@@ -779,7 +612,7 @@ func oneshotRepairInstruction(issues []string, tagsBlacklist []string) string {
 <must_fix>
 %s
 </must_fix>
-请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags；若需修复tags，须避开recent_scenario_tags_blacklist中的所有标签。`,
+请先按需完成核验：仅当must_fix涉及神话元素本身时才调用ask_lawyer，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags；若需修复tags，须避开recent_scenario_tags_blacklist中的所有标签。`,
 		formatScenarioTagsBlacklist(tagsBlacklist),
 		strings.Join(issues, "\n"),
 	)
@@ -805,7 +638,7 @@ func repairOneshotDraft(ctx context.Context, room *scripterRoom, conv *scripterC
 <must_fix>
 %s
 </must_fix>
-请先按需完成核验：仅当must_fix涉及神话元素本身时才调用translate_anchor，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
+请先按需完成核验：仅当must_fix涉及神话元素本身时才调用ask_lawyer，需要新增/替换NPC姓名时调用generate_npc_name；确认无需核验或核验完成后，调用ready_to_submit。逐条针对must_fix修复到位，除修复所需外不要改动其他内容；不要更换已确认的神话元素（mythos_anchor）；不得改变diversity_constraints中的tone_tags；若需修复tags，须避开<recent_scenario_tags_blacklist>中的所有标签。`,
 			scenarioRequestBlock(room.req),
 			diversityConstraintsBlock(constraints),
 			string(prevJSON),

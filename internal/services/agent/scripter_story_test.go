@@ -1,7 +1,7 @@
 // NOTE: scripter_story_test.go 验证 runStoryArchitectLoop 的 ask_lawyer 工具分发：
 // story architect 在写作过程中调用 ask_lawyer 时应查询 lawyer provider，并把规则书
 // 裁定结果作为 tool 消息回传，供其在下一轮据此完成正文。
-// 禁止真实网络/真实LLM；复用 translator_test.go 中的 sequentialFakeProvider。
+// 禁止真实网络/真实LLM；复用 testhelpers_test.go 中的 sequentialFakeProvider。
 package agent
 
 import (
@@ -15,10 +15,10 @@ import (
 )
 
 // TestStoryArchitectLoop_AskLawyer 验证 story architect 调用 ask_lawyer 后，规则书裁定
-// 结果会经 storyAskLawyer 回传给 architect，且最终裸文本回复被采纳为故事文档。
-// initialAnchor 非空以跳过 translate_anchor，聚焦验证 ask_lawyer 这一条分发路径。
+// 结果会经 scripterAskLawyer 回传给 architect，且最终裸文本回复被采纳为故事文档。
+// initialAnchor 非空以跳过 confirm_anchor，聚焦验证 ask_lawyer 这一条分发路径。
 func TestStoryArchitectLoop_AskLawyer(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 
 	document := "# 导入\n## 调查地点\n### 守密人信息\n" + strings.Repeat("这是故事文档的正文内容，涵盖表层情境、KP内部真相、地点、NPC、线索、时间线与结局。", 20)
 	askArgs, _ := json.Marshal(map[string]string{"question": "食尸鬼的移动速度和负重规则是什么？"})

@@ -464,9 +464,9 @@ var _ llm.Provider = (*mocks.MockProvider)(nil)
 var _ llm.Provider = (*fakeImageProvider)(nil)
 var _ llm.ImageGenerator = (*fakeImageProvider)(nil)
 
-// TestAdminUpdateAgent_TranslatorAllowed 验证 PUT /admin/config/agents/translator
-// 不再被判为非法角色（白名单已包含 translator）。
-func TestAdminUpdateAgent_TranslatorAllowed(t *testing.T) {
+// TestAdminUpdateAgent_TranslatorRejected 验证已移除的 translator 角色不再被接受，
+// 避免管理员再写入无人读取的配置行。
+func TestAdminUpdateAgent_TranslatorRejected(t *testing.T) {
 	initTestDB(t)
 	r := adminConfigRouter()
 	w := httptest.NewRecorder()
@@ -476,41 +476,13 @@ func TestAdminUpdateAgent_TranslatorAllowed(t *testing.T) {
 		"temperature":    0.7,
 		"thinking_level": "low",
 	}))
-	if w.Code != http.StatusOK {
-		t.Fatalf("translator should be allowed, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("translator should be rejected, got %d: %s", w.Code, w.Body.String())
 	}
-}
-
-// TestAdminUpdateAgent_TranslatorDefaultParams 验证 PUT translator 写入后数据库中的默认参数正确。
-func TestAdminUpdateAgent_TranslatorDefaultParams(t *testing.T) {
-	initTestDB(t)
-	r := adminConfigRouter()
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq("PUT", "/admin/config/agents/translator", map[string]any{
-		"model_name":     "gpt-4o",
-		"max_tokens":     2000,
-		"temperature":    0.7,
-		"thinking_level": "low",
-		"is_active":      true,
-	}))
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var cfg models.AgentConfig
-	if err := models.DB.Where("role = ?", "translator").First(&cfg).Error; err != nil {
-		t.Fatalf("translator AgentConfig not found: %v", err)
-	}
-	if cfg.MaxTokens != 2000 {
-		t.Errorf("max_tokens = %d, want 2000", cfg.MaxTokens)
-	}
-	if cfg.Temperature != 0.7 {
-		t.Errorf("temperature = %v, want 0.7", cfg.Temperature)
-	}
-	if cfg.ThinkingLevel != "low" {
-		t.Errorf("thinking_level = %q, want low", cfg.ThinkingLevel)
-	}
-	if !cfg.IsActive {
-		t.Error("is_active should be true")
+	var count int64
+	models.DB.Model(&models.AgentConfig{}).Where("role = ?", "translator").Count(&count)
+	if count != 0 {
+		t.Errorf("translator AgentConfig rows = %d, want 0", count)
 	}
 }
 

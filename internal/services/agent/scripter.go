@@ -141,8 +141,6 @@ type scripterRoom struct {
 	architect agentHandle
 	qa        agentHandle
 	lawyer    agentHandle
-	// NOTE: translator 是独立的发散联想/资料转译 Agent，不复用 lawyer 的 provider/model。
-	translator agentHandle
 	// NOTE: compiler 负责把故事文本忠实编译为结构化ScenarioContent；未配置时 fallback 到 architect。
 	compiler        agentHandle
 	sessionID       string
@@ -208,15 +206,10 @@ func newScripterRoom(req ScenarioCreationRequest) (*scripterRoom, error) {
 	if err != nil {
 		return nil, err
 	}
-	// NOTE: translator 独立加载，不可用或禁用时 fail-fast，绝不退回 lawyer。
-	translator, err := loadSingleAgent(models.AgentRoleTranslator)
-	if err != nil {
-		return nil, fmt.Errorf("translator agent 加载失败: %w", err)
-	}
 	// NOTE: compiler 未配置或被禁用时不阻断房间创建，compileStoryToModule 会 fallback 到 architect。
 	compiler, _ := loadSingleAgent(models.AgentRoleCompiler)
 	return &scripterRoom{
-		architect: architect, qa: qa, lawyer: lawyer, translator: translator, compiler: compiler,
+		architect: architect, qa: qa, lawyer: lawyer, compiler: compiler,
 		req: normalizeScenarioCreationRequest(req),
 	}, nil
 }
@@ -901,7 +894,7 @@ func difficultySpec(difficulty string) string {
 			"- 想接近神话真相得主动去查，并且要付出一些代价"
 	}
 	return scale + "\n" + pacing + "\n" +
-		"- 威胁主体的神话位阶（下级/上级/眷属/旧日支配者）必须通过 translate_anchor 或 ask_lawyer 向规则书核验，不得凭印象判断；禁止自行发明规则书中不存在的神名、种族名或能力"
+		"- 威胁主体的神话位阶（下级/上级/眷属/旧日支配者）必须通过 ask_lawyer 向规则书核验，不得凭印象判断；禁止自行发明规则书中不存在的神名、种族名或能力"
 }
 
 // 地点与人物的数量不随剧本长度分档：与"篇幅"一项同一原则，数量由剧情实际需要决定，不为凑数硬写。

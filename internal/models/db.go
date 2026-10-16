@@ -169,7 +169,8 @@ func seedDefaultAgentConfigs() {
 
 	// Remove obsolete agent roles that no longer exist in the pipeline.
 	// NOTE: providence 已改名为 dramaturg，需清理老库中遗留的 providence 行，否则会在后台Agent列表里以裸role字符串显示。
-	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer", "anti_cheat", "providence"}).Delete(&AgentConfig{})
+	// translator 已移除（architect 直接用 ask_lawyer 核验锚点），同理清理老库遗留行。
+	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer", "anti_cheat", "providence", "translator"}).Delete(&AgentConfig{})
 
 	var provID *uint
 	var prov LLMProviderConfig
@@ -201,8 +202,6 @@ func seedDefaultAgentConfigs() {
 		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleEvaluator, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleGrowth, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
-		// NOTE: Translator 负责发散联想、世界知识和资料转译；独立配置，建议配置世界知识丰富、发散能力较好的模型。
-		{Role: AgentRoleTranslator, ProviderConfigID: provID, ModelName: model, MaxTokens: 2000, Temperature: 0.7, ThinkingLevel: "low", IsActive: true},
 		// NOTE: Compiler 负责把故事文本忠实编译为结构化ScenarioContent；低温度以减少编译时的擅自发挥。
 		// MaxTokens=4000 实测会被单次submit_compiled_scenario工具调用（scenes/npcs/clues/endings等
 		// 十余个字段一次性生成）打满导致stop_reason=max_tokens截断，调大到8000留出余量。

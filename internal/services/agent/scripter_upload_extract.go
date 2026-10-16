@@ -1,6 +1,6 @@
 // scripter_upload_extract.go — 管理员上传故事的"锚点提取"阶段：不改写故事文档本身，
-// 只让 LLM 阅读已完成的文档，识别其中承载恐怖内核的神话元素，通过 translate_anchor
-// 工具校验为COC7规则书中真实存在的元素。
+// 只让 LLM 阅读已完成的文档，识别其中承载恐怖内核的神话元素，通过 ask_lawyer 向规则书
+// 专家核验后用 confirm_anchor 登记。
 //
 // mythos_anchor 本身是一个简短的结构化字段，适合用工具调用提交（不同于 scripter_story.go
 // 的自由文本故事文档），所以这里保留独立的 submit_extraction 工具，而不复用
@@ -24,13 +24,14 @@ func extractAnchorSystemPrompt() string {
 <task>
 <story_document>是一份已经写定的完整COC7剧本故事文档，其中的真相、线索、人物、场景与结局均已确定。你的任务只是阅读理解，绝不改写、删减、重组或补充文档中的任何文字。
 
-你需要识别文档中真正承载恐怖内核的神话/超自然元素（旧日支配者本体/眷属/神话物品/神话知识等），通过 translate_anchor 工具将其翻译并校验为COC7规则书中的正式名称；translate_anchor返回disabled=true时（规则书里没有可靠匹配，或候选命中了最近使用元素禁用列表），改在文档中寻找其他承载恐怖内核的元素重新查。
+你需要识别文档中真正承载恐怖内核的神话/超自然元素（旧日支配者本体/眷属/神话物品/神话知识等），先通过 ask_lawyer 向规则书专家核验它在COC7规则书中的正式名称、出处与设定，再用 confirm_anchor 登记正式全称。提问要具体，不得凭常识或记忆直接登记，不得编造规则书不存在的名称；规则书里没有可靠匹配，或 confirm_anchor 因命中最近使用元素禁用列表被拒绝时，改在文档中寻找其他承载恐怖内核的元素重新核验。
 
-完成识别后调用 submit_extraction 提交结果。不需要复述或改写原文档。
+完成登记后调用 submit_extraction 提交结果。不需要复述或改写原文档。
 </task>
 <tools>
-- translate_anchor：将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次
-- submit_extraction：提交识别结果；只有在translate_anchor确认元素后才调用；必须单独一轮调用
+- ask_lawyer：向COC7规则书专家提出具体规则书问题，确认候选元素的正式名称、出处与设定；可多次调用
+- confirm_anchor：登记核验过的神话元素（规则书正式全称）；必须在至少一次ask_lawyer之后调用，提交前必须至少登记一次
+- submit_extraction：提交识别结果；只有在confirm_anchor登记成功后才调用；必须单独一轮调用
 </tools>`
 }
 
@@ -40,20 +41,21 @@ func extractAnchorSystemPrompt() string {
 func extractAnchorFromDocument(ctx context.Context, room *scripterRoom, document string) (StoryOutput, error) {
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: room.architect.systemPrompt(extractAnchorSystemPrompt())},
-		{Role: "user", Content: fmt.Sprintf("<story_document>\n%s\n</story_document>\n\n请阅读以上故事文档，识别核心神话元素并通过translate_anchor校验，然后提交submit_extraction。", document)},
+		{Role: "user", Content: fmt.Sprintf("<story_document>\n%s\n</story_document>\n\n请阅读以上故事文档，识别核心神话元素，用ask_lawyer核验并用confirm_anchor登记，然后提交submit_extraction。", document)},
 	}
 
 	tools := []scripterTool{
-		translateAnchorTool("将一个创意概念翻译为COC7规则书中最匹配的具体元素；提交前必须至少调用一次"),
+		askLawyerTool("向COC7规则书专家提出一个具体规则书问题，确认候选神话元素在规则书中的正式名称、出处与设定；可多次调用"),
+		confirmAnchorTool("登记核验过的神话元素（COC7规则书正式全称）；必须在至少一次ask_lawyer之后调用，提交前必须至少登记一次；命中最近使用元素禁用列表会被拒绝"),
 		{
 			solo: true,
 			def: llm.ToolDefinition{
 				Name:        toolNameSubmitExtraction,
-				Description: "提交识别结果；只有在translate_anchor确认元素后才调用；必须单独一轮调用",
+				Description: "提交识别结果；只有在confirm_anchor登记成功后才调用；必须单独一轮调用",
 				Parameters: jsonSchemaObject(`{
 					"type": "object",
 					"properties": {
-						"mythos_anchor": {"type": "string", "description": "translate_anchor确认的COC7元素全称"}
+						"mythos_anchor": {"type": "string", "description": "confirm_anchor登记的COC7元素全称"}
 					},
 					"required": ["mythos_anchor"]
 				}`),
@@ -61,16 +63,14 @@ func extractAnchorFromDocument(ctx context.Context, room *scripterRoom, document
 		},
 	}
 
+	anchors := newAnchorTracker(room, "")
 	var submitted *StoryOutput
 	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
 		switch call.Name {
-		case toolNameTranslateAnchor:
-			var args translateAnchorArgs
-			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-				return toolOutcome{reject: "SYSTEM REJECT: translate_anchor参数不是合法JSON，请重新调用。"}
-			}
-			text, _ := executeOneshotTranslateAnchor(ctx, room, args.Concept)
-			return toolOutcome{result: text}
+		case toolNameAskLawyer:
+			return anchors.askLawyer(ctx, call)
+		case toolNameConfirmAnchor:
+			return anchors.confirm(call)
 		case toolNameSubmitExtraction:
 			var args struct {
 				MythosAnchor string `json:"mythos_anchor"`
@@ -78,13 +78,16 @@ func extractAnchorFromDocument(ctx context.Context, room *scripterRoom, document
 			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 				return toolOutcome{reject: "SYSTEM REJECT: submit_extraction参数不是合法JSON，请重新调用。"}
 			}
-			if strings.TrimSpace(args.MythosAnchor) == "" {
-				return toolOutcome{reject: "SYSTEM REJECT: mythos_anchor不能为空，请先确认translate_anchor返回disabled=false再提交。"}
+			if anchors.confirmed == "" {
+				return toolOutcome{reject: "SYSTEM REJECT: 尚未登记任何神话元素，请先用ask_lawyer核验并调用confirm_anchor登记，再提交。"}
 			}
-			submitted = &StoryOutput{MythosAnchor: args.MythosAnchor}
+			if strings.TrimSpace(args.MythosAnchor) == "" {
+				return toolOutcome{reject: "SYSTEM REJECT: mythos_anchor不能为空，请填写confirm_anchor登记成功的元素全称。"}
+			}
+			submitted = &StoryOutput{MythosAnchor: strings.TrimSpace(args.MythosAnchor)}
 			return toolOutcome{result: "已收到，提取结果已提交。", done: true}
 		default:
-			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许translate_anchor/submit_extraction，不允许%s。", call.Name)}
+			return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 此阶段只允许ask_lawyer/confirm_anchor/submit_extraction，不允许%s。", call.Name)}
 		}
 	}
 

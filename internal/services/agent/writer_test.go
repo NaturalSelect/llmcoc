@@ -236,7 +236,7 @@ func TestWriterRefusalGate_ForwardsImmediatelyAfterDecision(t *testing.T) {
 // ── appendWriter (非流式) ─────────────────────────────────────────────────────
 
 func TestAppendWriter_RetriesOnEmptyThenSucceeds(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 	prov := &writerFakeProvider{responses: []string{"", "他推开了门。"}}
 	h := newWriterTestHandle(prov)
 	state := newTestWriterState(1)
@@ -258,7 +258,7 @@ func TestAppendWriter_RetriesOnEmptyThenSucceeds(t *testing.T) {
 }
 
 func TestAppendWriter_RetriesOnRefusalThenSucceeds(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 	prov := &writerFakeProvider{responses: []string{
 		"I cannot fulfill this request. blocked by policy",
 		"她小心翼翼地翻开了那本古书。",
@@ -283,7 +283,7 @@ func TestAppendWriter_RetriesOnRefusalThenSucceeds(t *testing.T) {
 }
 
 func TestAppendWriter_RetriesOnChineseRefusalThenSucceeds(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 	prov := &writerFakeProvider{responses: []string{
 		"我无法完成您的请求。这违反了相关政策",
 		"她小心翼翼地翻开了那本古书。",
@@ -308,7 +308,7 @@ func TestAppendWriter_RetriesOnChineseRefusalThenSucceeds(t *testing.T) {
 }
 
 func TestAppendWriter_AllAttemptsRejected_ReturnsErrorAndSkipsHistory(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 	prov := &writerFakeProvider{} // 序列为空,next() 恒返回 ""
 	h := newWriterTestHandle(prov)
 	state := newTestWriterState(1)
@@ -332,7 +332,7 @@ func TestAppendWriter_AllAttemptsRejected_ReturnsErrorAndSkipsHistory(t *testing
 // ── appendWriterStream (流式) ──────────────────────────────────────────────────
 
 func TestAppendWriterStream_SuppressesRefusalThenSucceeds(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 	prov := &writerFakeProvider{
 		chunkSize: 1, // 逐字符喂给gate,充分覆盖累积判定路径
 		responses: []string{
@@ -363,7 +363,7 @@ func TestAppendWriterStream_SuppressesRefusalThenSucceeds(t *testing.T) {
 }
 
 func TestAppendWriterStream_SuppressesChineseRefusalThenSucceeds(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 	prov := &writerFakeProvider{
 		chunkSize: 1, // 逐字符喂给gate,充分覆盖多字节前缀的累积判定路径
 		responses: []string{
@@ -394,7 +394,7 @@ func TestAppendWriterStream_SuppressesChineseRefusalThenSucceeds(t *testing.T) {
 }
 
 func TestAppendWriterStream_EmptyThenSucceeds(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 	prov := &writerFakeProvider{
 		chunkSize: 4,
 		responses: []string{"", "调查员点亮了手中的煤油灯。"},
@@ -416,7 +416,7 @@ func TestAppendWriterStream_EmptyThenSucceeds(t *testing.T) {
 }
 
 func TestAppendWriterStream_AllAttemptsRejected_ReturnsErrorAndForwardsNothing(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 	prov := &writerFakeProvider{chunkSize: 1} // 序列为空,next() 恒返回 ""
 	h := newWriterTestHandle(prov)
 	state := newTestWriterState(1)
@@ -564,7 +564,7 @@ func TestWriterContextWindow(t *testing.T) {
 // TestBuildWriterHeadStableAcrossNSFWMode 验证system prompt(head)不再随每轮nsfwMode
 // 变化——只取决于房间级EnableNSFW,保证Writer的prompt cache前缀在NSFW场景切换时不断裂。
 func TestBuildWriterHeadStableAcrossNSFWMode(t *testing.T) {
-	initTranslatorTestDB(t)
+	initSiteSettingTestDB(t)
 	h := newWriterTestHandle(&writerFakeProvider{})
 	gctx := GameContext{Session: models.GameSession{ID: 1, EnableNSFW: true}}
 
