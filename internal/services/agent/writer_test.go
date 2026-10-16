@@ -141,9 +141,6 @@ func TestIsWriterResponseRejected(t *testing.T) {
 		{"另一种中文拒绝前缀", "很抱歉，我无法根据指令生成相关内容。", true},
 		{"另一种中文拒绝前缀不完整不算拒绝", "很抱", false},
 		{"正常中文正文", "他推开了吱呀作响的木门。", false},
-		{"thinking块之后是拒绝前缀", "Thinking...\n> reasoning here\n\nI cannot fulfill this request.", true},
-		{"thinking块之后是中文拒绝前缀", "Thinking...\n> reasoning here\n\n我无法完成您的请求。", true},
-		{"thinking块之后是正常正文", "Thinking...\n> reasoning here\n\n他走进了房间。", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

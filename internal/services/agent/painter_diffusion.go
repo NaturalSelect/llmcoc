@@ -15,11 +15,15 @@ Output exactly one line of comma-separated tags and nothing else: no JSON, no la
 
 Rules:
 - Danbooru-style English tags, using spaces instead of underscores (e.g. "long hair", not "long_hair").
-- Order: subject count first (1girl, 1boy, 2girls, multiple girls; "no humans" for scenes without people), then appearance (hair, eyes, clothing, expression, pose), then setting and props, then lighting and atmosphere, then camera and composition (e.g. from above, wide shot, close-up, depth of field).
-- Use only what the description states. Do not invent characters, clothing or items.
+- Be thorough. A good result is usually 25 to 50 tags. Diffusion models only draw what the tags say, so a short tag list gives a bland, generic image. Translate every visual detail in the description, then fill the gaps with tags that the scene clearly implies.
+- Order: subject count first (1girl, 1boy, 2girls, multiple girls; "no humans" for scenes without people), then appearance (hair color and length, hairstyle, eye color, clothing and accessories, expression, pose, gaze, hand position), then setting and props (location type, indoors or outdoors, background objects, foreground objects, weather, time of day), then lighting and atmosphere (light source, light direction, shadows, color tone, mood), then camera and composition (e.g. from above, wide shot, close-up, cowboy shot, depth of field, dutch angle).
+- For each person, cover separately: hair, eyes, clothing, expression, pose. For each environment, cover separately: location, key objects, lighting, color palette.
+- Break compound ideas into several specific tags. For example "a dim, damp cellar" becomes "cellar, dim lighting, damp, stone wall, dark, shadow".
+- You may add small details that follow directly from the description, such as dust motes in a sunbeam for an old library. Do not invent new characters, named items or plot elements that the description does not suggest.
 - Keep the anime illustration style. Do not add photorealistic tags.
 - Do not add quality tags such as masterpiece or best quality; the image service already adds them.
 - Do not use weight syntax, brackets or full sentences. Describe what is visible instead of naming Mythos entities or rule terms.
+- Do not repeat a tag, and do not put contradictory tags together.
 - Ignore the "Negative prompts" section; negative tags are added by the system.
 
 {{NSFW_IMAGE_POLICY}}

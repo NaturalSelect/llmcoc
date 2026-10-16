@@ -232,7 +232,7 @@ func hasWriterRefusalPrefix(s string) bool {
 // writerMaxGenerateAttempts 是 Writer 单次续写在遇到拒绝/空内容时的最大尝试次数(含首次)。
 const writerMaxGenerateAttempts = 20
 
-// isWriterResponseRejected 判断一次Writer响应是否需要丢弃重试:剥离thinking块后为空,
+// isWriterResponseRejected 判断一次Writer响应是否需要丢弃重试:去除首尾空白后为空,
 // 或正文以拒绝前缀开头。
 func isWriterResponseRejected(resp string) bool {
 	trimmed := strings.TrimSpace(resp)
