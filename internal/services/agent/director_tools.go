@@ -474,7 +474,7 @@ func generateImageTool() scripterTool {
 要点列出应避免出现的元素，如时代穿帮物、文字水印、比例失调、过度美化等。
 没有内容的段落直接省略该标题，保留的段落一律用"* "开头的要点分行罗列，不要写成大段文字。
 【风格规则】统一二次元(ACG/动漫)插画审美，不是写实摄影；Camera段仍用摄影语言(取景/景深/构图)增强临场感——即"二次元插画,但用镜头语言构图"。纯环境/痕迹类空镜同样保持二次元插画质感。
-【NSFW规则】可选参数nsfw(布尔,默认false)：本次画面若包含裸露、性暗示或露骨性描写等NSFW内容，必须如实设为true；不含这类内容或不确定时省略/设为false。管理员未开启NSFW配图时，nsfw=true的调用会被直接拒绝且不会生成图片，与本会话是否允许NSFW文字内容是两个独立开关。
+【NSFW规则】可选参数nsfw(布尔,默认false)：本次画面若包含裸露、性暗示或露骨性描写等NSFW内容，必须如实设为true；不含这类内容或不确定时省略/设为false。未配置并启用NSFW配图代理(painter_nsfw)时，nsfw=true的调用会被直接拒绝且不会生成图片，与本会话是否允许NSFW文字内容是两个独立开关。
 【未知感规则】配图是玩家可见通道，同样受[UNKNOWN]约束。尚未被合法鉴定的神话实体、怪物与异常现象，禁止画出可辨认的正面全貌——正面肖像等于提前把答案交给玩家。这类对象只画它留下的痕迹与效果、事后现场、遮挡与局部(背光剪影、水下轮廓、门缝里的一部分)、它经过后的空环境，或目击者的反应；image_prompt里也不要写出它的正式名称、种族名与规则术语，用画面本身描述。已被完全鉴定或已正面遭遇过的对象不受此限制。
 【批次规则】generate_image可以与write/response同批次；返回结果只表示图片生成已排队，KP不需要也不能读取图片内容。
 调用示例：{"image_prompt":"### Scene\nAnime-style illustration of a dim Victorian study past midnight, sickly greenish gaslight tone.\n### Subject\n* An elderly butler standing rigid beside the desk, startled expression, anime-style linework and shading\n* Wearing a black tailcoat, holding a candle\n### Environment\n* Towering bookshelves with cracked leather spines\n* Cluttered mahogany desk buried in scattered papers\n### Lighting\n* Single candle as key light, deep long shadows\n### Camera\n* Eye-level wide shot, slightly tilted angle\n### Negative prompts\n* No modern objects or readable text\n* No photorealistic/live-action rendering","aspect":"landscape","nsfw":false}`,

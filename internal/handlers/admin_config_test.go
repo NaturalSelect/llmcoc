@@ -624,6 +624,57 @@ func TestAdminPingProvider_DiffusionImagePassesOptions(t *testing.T) {
 	}
 }
 
+// TestAdminUpdateAgent_PainterNSFWRoleAccepted 覆盖 painter_nsfw 是合法角色,且 diffusion_mode 同样可落库。
+func TestAdminUpdateAgent_PainterNSFWRoleAccepted(t *testing.T) {
+	initTestDB(t)
+	r := adminConfigRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/admin/config/agents/painter_nsfw", map[string]any{
+		"model_name":     "nai-diffusion-4-5-full",
+		"diffusion_mode": true,
+		"is_active":      true,
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT painter_nsfw want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var cfg models.AgentConfig
+	if err := models.DB.Where("role = ?", "painter_nsfw").First(&cfg).Error; err != nil {
+		t.Fatalf("painter_nsfw AgentConfig not found: %v", err)
+	}
+	if !cfg.DiffusionMode || cfg.ModelName != "nai-diffusion-4-5-full" {
+		t.Fatalf("stored config = %+v", cfg)
+	}
+}
+
+func TestAdminPingProvider_PainterNSFWUsesImageMode(t *testing.T) {
+	initTestDB(t)
+	pid := seedProvider(t, "Painter")
+
+	ctrl := gomock.NewController(t)
+	imageProv := &fakeImageProvider{base64Data: "ZmFrZS1pbWFnZQ==", mimeType: "image/png"}
+	mockFac := mocks.NewMockProviderFactory(ctrl)
+	mockFac.EXPECT().NewProvider(gomock.Any(), "dall-e-3", 0, float32(0), false, "none", 0, false).Return(imageProv)
+
+	r := gin.New()
+	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
+		adminPingProviderWithFactory(c, mockFac)
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/admin/config/providers/%d/ping", pid), map[string]any{
+		"model_name": "dall-e-3",
+		"role":       "painter_nsfw",
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !imageProv.called || imageProv.chatCalled {
+		t.Fatalf("painter_nsfw ping must use image generation, called=%v chatCalled=%v", imageProv.called, imageProv.chatCalled)
+	}
+}
+
 func TestAdminUpdateAgent_ImageViaChatRoundTrip(t *testing.T) {
 	initTestDB(t)
 	r := adminConfigRouter()

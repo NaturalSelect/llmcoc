@@ -20,14 +20,12 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 	}
 	aspect := normalizeImageAspect(call.Aspect)
 
-	// NOTE: nsfw=true 的配图请求受管理员全局开关控制,与会话级 enable_nsfw(文字层面)相互独立。
-	if call.NSFW && strings.TrimSpace(models.GetSiteSetting("allow_nsfw_images", "true")) != "true" {
-		debugf("tool", "session=%d generate_image rejected: nsfw images disabled by admin prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
-		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation rejected: NSFW image generation is disabled by admin"}}
-	}
-
-	handle, ok := actx.Handles[models.AgentRolePainter]
-	if !ok || !handle.isEnabled() {
+	handle, ok := pickPainterHandle(actx.Handles, call.NSFW)
+	if !ok {
+		if call.NSFW {
+			debugf("tool", "session=%d generate_image rejected: painter_nsfw disabled prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
+			return []ToolResult{{Action: ToolGenerateImage, Result: "image generation rejected: NSFW image generation is not enabled"}}
+		}
 		debugf("tool", "session=%d generate_image unavailable: painter disabled prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
 		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation unavailable"}}
 	}
@@ -36,10 +34,24 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation unavailable"}}
 	}
 	if actx.PendingImages != nil {
-		*actx.PendingImages = append(*actx.PendingImages, ImagePromptRequest{Prompt: imagePrompt, Aspect: aspect})
+		*actx.PendingImages = append(*actx.PendingImages, ImagePromptRequest{Prompt: imagePrompt, Aspect: aspect, NSFW: call.NSFW})
 	}
-	debugf("tool", "session=%d generate_image queued prompt_len=%d aspect=%s prompt=%q", actx.Sid, len([]rune(imagePrompt)), aspect, imagePrompt)
+	debugf("tool", "session=%d generate_image queued prompt_len=%d aspect=%s nsfw=%v prompt=%q", actx.Sid, len([]rune(imagePrompt)), aspect, call.NSFW, imagePrompt)
 	return []ToolResult{{Action: ToolGenerateImage, Result: "image generation queued"}}
+}
+
+// pickPainterHandle 选择本次配图使用的 Painter:nsfw 请求只路由到 painter_nsfw,
+// 它未配置或未启用时返回 false,不回落默认 Painter,避免成人向画面被送进受限的图片模型。
+func pickPainterHandle(handles map[models.AgentRole]agentHandle, nsfw bool) (agentHandle, bool) {
+	h, ok := handles[painterRoleFor(nsfw)]
+	return h, ok && h.isEnabled()
+}
+
+func painterRoleFor(nsfw bool) models.AgentRole {
+	if nsfw {
+		return models.AgentRolePainterNSFW
+	}
+	return models.AgentRolePainter
 }
 
 // normalizeImageAspect 校验/归一化 Director 传入的 aspect 参数;非法或未识别值一律
@@ -124,25 +136,27 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 		debugf("Painter", "session=%d load agents error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
 		return "", err
 	}
-	handle, ok := handles[models.AgentRolePainter]
-	if !ok || !handle.isEnabled() {
-		debugf("Painter", "session=%d unavailable: painter disabled elapsed=%.0fms", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000)
-		return "", fmt.Errorf("painter agent 未配置或未启用")
+	handle, ok := pickPainterHandle(handles, request.NSFW)
+	if !ok {
+		debugf("Painter", "session=%d unavailable: painter disabled nsfw=%v elapsed=%.0fms", gctx.Session.ID, request.NSFW, float64(time.Since(start).Microseconds())/1000)
+		return "", fmt.Errorf("%s agent 未配置或未启用", painterRoleFor(request.NSFW))
 	}
 	generator, ok := handle.provider.(llm.ImageGenerator)
 	if !ok {
 		debugf("Painter", "session=%d unavailable: provider lacks image generation elapsed=%.0fms", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000)
-		return "", fmt.Errorf("当前 Painter provider 不支持图片生成")
+		return "", fmt.Errorf("当前 %s provider 不支持图片生成", painterRoleFor(request.NSFW))
 	}
 	aspect := normalizeImageAspect(request.Aspect)
-	debugf("Painter", "session=%d start prompt_len=%d aspect=%s prompt=%q", gctx.Session.ID, len([]rune(prompt)), aspect, prompt)
+	// NOTE: 被标记 NSFW 的请求本身就是成人向画面,分级政策和负面标签必须按请求而非仅按房间开关渲染。
+	allowNSFW := request.NSFW || gctx.Session.EnableNSFW
+	debugf("Painter", "session=%d start prompt_len=%d aspect=%s nsfw=%v prompt=%q", gctx.Session.ID, len([]rune(prompt)), aspect, request.NSFW, prompt)
 	opts := llm.ImageOptions{Aspect: llm.ImageAspect(aspect)}
 	if handle.config != nil && handle.config.DiffusionMode {
-		translator, _, err := pickWriterHandle(handles, gctx.Session.EnableNSFW)
+		translator, _, err := pickWriterHandle(handles, allowNSFW)
 		if err != nil {
 			return "", fmt.Errorf("扩散模型模式需要可用的 Writer 翻译提示词: %w", err)
 		}
-		translated, err := translateToDiffusionPrompt(withWriterGameSessionID(ctx, gctx), translator, fmt.Sprintf("%v", gctx.Session.ID), prompt, gctx.Session.EnableNSFW)
+		translated, err := translateToDiffusionPrompt(withWriterGameSessionID(ctx, gctx), translator, fmt.Sprintf("%v", gctx.Session.ID), prompt, allowNSFW)
 		if err != nil {
 			debugf("Painter", "session=%d diffusion translate error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
 			return "", err
@@ -152,7 +166,7 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 		opts.Diffusion = true
 		opts.NegativePrompt = translated.NegativePrompt
 	} else {
-		prompt = fmt.Sprintf("%v\n%v", prompt, renderNSFW(imageSysPrompt, gctx.Session.EnableNSFW))
+		prompt = fmt.Sprintf("%v\n%v", prompt, renderNSFW(imageSysPrompt, allowNSFW))
 		prompt = fmt.Sprintf("<system-reminder>\n%s\n</system-reminder>", prompt)
 	}
 	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, opts)

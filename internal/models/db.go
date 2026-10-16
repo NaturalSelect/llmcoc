@@ -106,10 +106,6 @@ func seedDefaultSiteSettings() {
 		"max_character_drafts":         "3",
 		// NOTE: 全局 NSFW 总开关（区别于房间级 enable_nsfw）；默认允许，保持升级前后行为一致。
 		"allow_nsfw": "true",
-		// NOTE: 全局 NSFW 配图开关；仅管理员可读写(走 /api/admin/config/settings)。
-		// 控制 generate_image 工具里被标记为 nsfw=true 的调用是否放行，与文字层面的
-		// enable_nsfw/allow_nsfw 相互独立。默认允许，保持升级前后行为一致。
-		"allow_nsfw_images": "true",
 		// NOTE: 默认平衡调整规则，与 models.DefaultBalanceRules 保持同一来源；
 		// 已有该 key（含空字符串）时绝不覆盖。
 		"balance_rules": DefaultBalanceRules,
@@ -200,6 +196,8 @@ func seedDefaultAgentConfigs() {
 		// NOTE: npc_nsfw 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时自动回落默认 NPC。
 		{Role: AgentRoleNPCNSFW, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: false, WithJailbreak: true},
 		{Role: AgentRolePainter, ProviderConfigID: provID, ModelName: "dall-e-3", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
+		// NOTE: painter_nsfw 默认关闭,需要管理员单独绑定 provider 才会放行 nsfw=true 的配图;未启用时这类请求被拒绝。
+		{Role: AgentRolePainterNSFW, ProviderConfigID: provID, ModelName: "dall-e-3", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
 		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleEvaluator, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleGrowth, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},

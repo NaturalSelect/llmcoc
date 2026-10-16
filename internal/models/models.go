@@ -670,7 +670,10 @@ const (
 	// 标记为色情内容时才路由过去，可绑定独立的provider/模型，未配置或未启用时自动回落默认NPC。
 	AgentRoleNPCNSFW AgentRole = "npc_nsfw"
 	AgentRolePainter AgentRole = "painter"
-	AgentRoleParser  AgentRole = "parser"
+	// NOTE: AgentRolePainterNSFW 是可选的成人向配图 Agent；Director 标记 nsfw=true 的 generate_image 只路由到它，
+	// 未启用时这类请求直接被拒绝，不回落默认 Painter。它取代了原先的管理员「允许 NSFW 配图」全局开关。
+	AgentRolePainterNSFW AgentRole = "painter_nsfw"
+	AgentRoleParser      AgentRole = "parser"
 	// NOTE: AgentRoleTranslator 负责发散联想、世界知识和资料转译；独立于Lawyer，不复用其provider/model。
 	AgentRoleTranslator AgentRole = "translator"
 	// NOTE: AgentRoleCompiler 负责把故事阶段产出的纯文本剧本编译为结构化ScenarioContent；

@@ -230,6 +230,8 @@ window.COC.admin = {
                             // NOTE: npc_nsfw 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用，默认关闭。
                             npc_nsfw: { max_tokens: 600, temperature: 0.9, is_active: false },
                             painter: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
+                            // NOTE: painter_nsfw 仅在 Director 把配图标记为 nsfw=true 时启用，默认关闭；未启用时这类配图请求会被拒绝。
+                            painter_nsfw: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
                             evaluator: { max_tokens: 1200, temperature: 0.5 },
                             growth: { max_tokens: 1000, temperature: 0.4 },
                             architect: { max_tokens: 4000, temperature: 0.7 },
@@ -403,7 +405,7 @@ window.COC.admin = {
                         }
 
                         const role = ag.role || '';
-                        const isPainter = role === 'painter';
+                        const isPainter = role === 'painter' || role === 'painter_nsfw';
                         const loadingKey = `${role}:${providerID}`;
                         this.agentPingLoading = loadingKey;
                         try {
@@ -479,7 +481,6 @@ window.COC.admin = {
                         settings.forEach(s => map[s.key] = s.value);
                         this.siteSettings.require_invite_code = map.require_invite_code === 'true';
                         this.siteSettings.allow_nsfw = map.allow_nsfw !== 'false';
-                        this.siteSettings.allow_nsfw_images = map.allow_nsfw_images !== 'false';
                         this.siteSettings.initial_coins = parseInt(map.initial_coins) || 600;
                         this.siteSettings.initial_card_slots = parseInt(map.initial_card_slots) || 3;
                         this.siteSettings.regenerate_appearance_cost = parseInt(map.regenerate_appearance_cost) || 100;
@@ -514,14 +515,6 @@ window.COC.admin = {
                         try {
                             await this.api('PUT', '/api/admin/config/settings/allow_nsfw', { value: newVal });
                             this.siteSettings.allow_nsfw = newVal === 'true';
-                            this.showToast('设置已更新');
-                        } catch (e) { this.showToast(e.message, 'error'); }
-                    },
-                    async toggleNSFWImagesSetting() {
-                        const newVal = this.siteSettings.allow_nsfw_images ? 'false' : 'true';
-                        try {
-                            await this.api('PUT', '/api/admin/config/settings/allow_nsfw_images', { value: newVal });
-                            this.siteSettings.allow_nsfw_images = newVal === 'true';
                             this.showToast('设置已更新');
                         } catch (e) { this.showToast(e.message, 'error'); }
                     },
@@ -1035,7 +1028,7 @@ window.COC.admin = {
                     agentLabel(role) {
                         return {
                             director: '🎬 Director', writer: '✍️ Writer', writer_nsfw: '🔞 NSFW Writer', lawyer: '⚖️ Lawyer',
-                            npc: '🎭 NPC', npc_nsfw: '🔞 NSFW NPC', painter: '🎨 Painter', evaluator: '📊 Evaluator', growth: '🌱 Growth',
+                            npc: '🎭 NPC', npc_nsfw: '🔞 NSFW NPC', painter: '🎨 Painter', painter_nsfw: '🔞 NSFW Painter', evaluator: '📊 Evaluator', growth: '🌱 Growth',
                             architect: '🏗️ Architect', qa_guard: '🔍 QA Guard',
                             parser: '🔧 Parser',
                             // NOTE: translator — 翻译/资料转译
@@ -1054,6 +1047,7 @@ window.COC.admin = {
                             npc: 'NPC扮演 — 给出场景NPC的行动与对话',
                             npc_nsfw: '成人向NPC互动 — 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用；未配置或关闭时自动回落默认 NPC（默认关闭）',
                             painter: '画图代理 — 按需生成场景图片（默认关闭，不落库）',
+                            painter_nsfw: '成人向画图 — Director 把配图标记为 nsfw=true 时只路由到它；未启用时这类配图请求会被直接拒绝，不回落默认 Painter（默认关闭）',
                             evaluator: '成长评估 — 分析本场表现建议奖励',
                             growth: '成长应用 — 将评估结果写入角色卡',
                             architect: '模组设计 — 生成大纲并转化为完整JSON模组',
@@ -1076,6 +1070,7 @@ window.COC.admin = {
                             npc: '留空使用内置 NPC 提示词',
                             npc_nsfw: '为成人向NPC互动单独绑定更宽松的 provider/模型；未启用时自动使用默认 NPC（默认关闭）',
                             painter: '配置 OpenAI 兼容图片模型，如 dall-e-3（默认关闭）',
+                            painter_nsfw: '为成人向配图单独绑定更宽松的图片模型；未启用时 nsfw=true 的配图会被拒绝（默认关闭）',
                             evaluator: '留空使用内置 Evaluator 提示词',
                             growth: '留空使用内置 Growth 提示词',
                             architect: '留空使用内置 Architect 提示词（大纲+JSON生成）',
