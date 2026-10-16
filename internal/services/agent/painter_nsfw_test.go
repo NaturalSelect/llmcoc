@@ -157,7 +157,7 @@ func TestRunPainter_NSFWRequestWithoutPainterNSFWFails(t *testing.T) {
 
 func TestRunPainter_DiffusionNSFWRequestSkipsAllAgesNegativeTags(t *testing.T) {
 	const sessionID = 9203
-	writer := &sequentialFakeProvider{jsonResponses: []string{`{"prompt":"1girl","negative_prompt":"text"}`}}
+	writer := &chatFakeProvider{chatResponses: []string{"1girl"}}
 	nsfw := &recordingImageProvider{}
 	sessionAgents.Store(uint(sessionID), map[models.AgentRole]agentHandle{
 		models.AgentRoleWriter:      newDiffusionTranslatorHandle(writer),
@@ -169,8 +169,8 @@ func TestRunPainter_DiffusionNSFWRequestSkipsAllAgesNegativeTags(t *testing.T) {
 	if _, err := RunPainter(context.Background(), gctx, ImagePromptRequest{Prompt: "a scene", NSFW: true}); err != nil {
 		t.Fatalf("RunPainter error: %v", err)
 	}
-	if nsfw.opts.NegativePrompt != "text" {
-		t.Errorf("negative = %q, want the translator output untouched for NSFW requests", nsfw.opts.NegativePrompt)
+	if nsfw.opts.NegativePrompt != diffusionBaseNegativePrompt {
+		t.Errorf("negative = %q, want only the fixed base negative (no all-ages tags) for NSFW requests", nsfw.opts.NegativePrompt)
 	}
 	if !nsfw.opts.Diffusion {
 		t.Errorf("painter_nsfw with diffusion_mode must use the diffusion path, opts = %+v", nsfw.opts)
