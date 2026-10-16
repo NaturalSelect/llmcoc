@@ -553,6 +553,77 @@ func TestAdminUpdateAgent_ThinkingBudgetTokens(t *testing.T) {
 	}
 }
 
+// TestAdminUpdateAgent_DiffusionModeRoundTrip 覆盖 diffusion_mode 在创建分支与更新分支都能落库，
+// 以及与 image_via_chat 同时开启时被拒绝且不落库。
+func TestAdminUpdateAgent_DiffusionModeRoundTrip(t *testing.T) {
+	initTestDB(t)
+	r := adminConfigRouter()
+
+	put := func(body map[string]any) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, jsonReq("PUT", "/admin/config/agents/painter", body))
+		return w
+	}
+	storedDiffusion := func() bool {
+		var cfg models.AgentConfig
+		if err := models.DB.Where("role = ?", "painter").First(&cfg).Error; err != nil {
+			t.Fatalf("painter AgentConfig not found: %v", err)
+		}
+		return cfg.DiffusionMode
+	}
+
+	if w := put(map[string]any{"model_name": "nai-diffusion-4-5-full", "diffusion_mode": true, "is_active": true}); w.Code != http.StatusOK {
+		t.Fatalf("create PUT want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !storedDiffusion() {
+		t.Fatal("DB: DiffusionMode = false after create, want true")
+	}
+
+	if w := put(map[string]any{"model_name": "nai-diffusion-4-5-full", "diffusion_mode": false, "is_active": true}); w.Code != http.StatusOK {
+		t.Fatalf("update PUT want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if storedDiffusion() {
+		t.Fatal("DB: DiffusionMode = true after update, want false")
+	}
+
+	w := put(map[string]any{"model_name": "x", "diffusion_mode": true, "image_via_chat": true, "is_active": true})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("both switches want 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if storedDiffusion() {
+		t.Fatal("DB: rejected request must not persist diffusion_mode")
+	}
+}
+
+func TestAdminPingProvider_DiffusionImagePassesOptions(t *testing.T) {
+	initTestDB(t)
+	pid := seedProvider(t, "Painter")
+
+	ctrl := gomock.NewController(t)
+	imageProv := &fakeImageProvider{base64Data: "ZmFrZS1pbWFnZQ==", mimeType: "image/png"}
+	mockFac := mocks.NewMockProviderFactory(ctrl)
+	mockFac.EXPECT().NewProvider(gomock.Any(), "nai-diffusion-4-5-full", 0, float32(0), false, "none", 0, false).Return(imageProv)
+
+	r := gin.New()
+	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
+		adminPingProviderWithFactory(c, mockFac)
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/admin/config/providers/%d/ping", pid), map[string]any{
+		"model_name":     "nai-diffusion-4-5-full",
+		"role":           "painter",
+		"diffusion_mode": true,
+	}))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !imageProv.opts.Diffusion {
+		t.Fatalf("GenerateImage opts = %+v, want Diffusion=true", imageProv.opts)
+	}
+}
+
 func TestAdminUpdateAgent_ImageViaChatRoundTrip(t *testing.T) {
 	initTestDB(t)
 	r := adminConfigRouter()

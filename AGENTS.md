@@ -70,7 +70,7 @@
 - Lawyer：`internal/services/agent/lawyer.go`，负责规则资料检索和裁定。
 - Dramaturg：`internal/services/agent/dramaturg.go`，Director 按需通过 `consult_dramaturg` 工具调用咨询的剧构顾问，比对模组大纲/时间线/线索给出节奏与走向建议；拥有独立于 Director/Writer 的历史线（`game_sessions.dramaturg_history`），仅接收经脱敏处理的 progress_note，不触达玩家原始数据；可选顾问，不配置 Provider/Model 时工具不出现在列表中，Director 自行按 `[ACTIVE-PACING]` 判断节奏。
 - NPC：`internal/services/agent/npc.go`，负责临时 NPC 独立行动与记忆。
-- Painter：`internal/services/agent/painter.go`，负责配图生成。
+- Painter：`internal/services/agent/painter.go`，负责配图生成；Painter 配置开启「扩散模型模式」（`diffusion_mode`）时，由 `painter_diffusion.go` 先用 Writer 把画面描述翻译成标签式提示词和负面提示词，再调用 `/images/generations`（面向经 new-api 接入的 NovelAI）。
 - Editor：`internal/services/agent/editor.go`，负责文本润色与编辑。
 - Evaluator / Growth：`internal/services/agent/evaluator.go`、`internal/services/agent/growth.go`，负责结算评价和成长。
 - EndSession：`internal/services/agent/endsession.go`，负责会话收尾与总结。

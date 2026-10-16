@@ -709,6 +709,10 @@ type AgentConfig struct {
 	// 部分画图模型/中转网关只能通过 Chat 接口调用，图片数据在响应的 delta.images[].image_url.url
 	// 字段中以 data URL 形式返回（仅 Painter 角色使用）。
 	ImageViaChat bool `gorm:"default:false" json:"image_via_chat"`
+	// DiffusionMode 为 true 时 Painter 按扩散模型(如经 new-api 接入的 NovelAI)出图：先由 Writer
+	// 把导演的自然语言画面描述翻译成标签式提示词，再调用 /images/generations（仅 Painter 角色使用，
+	// 与 ImageViaChat 互斥）。
+	DiffusionMode bool `gorm:"default:false" json:"diffusion_mode"`
 	// ContextWindow 是该 Agent 所用模型的上下文窗口 token 数上限，供需要按阈值整体
 	// 裁剪历史的 Agent(目前为 Director、Writer、Writer NSFW)判断何时该 trim。
 	// Director 为 0 表示不 trim；Writer/Writer NSFW 为 0 时回落 DefaultWriterContextWindow。

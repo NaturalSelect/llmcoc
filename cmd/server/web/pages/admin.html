@@ -166,8 +166,16 @@
                                 <label x-show="ag.role === 'painter'"
                                     class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer mb-2.5 font-ui">
                                     <input type="checkbox" x-model="ag.image_via_chat"
+                                        :disabled="ag.diffusion_mode"
                                         class="accent-amber-600" />
                                     <span>画图走 Chat 接口（部分画图模型/中转网关只支持 /chat/completions 调用）</span>
+                                </label>
+                                <label x-show="ag.role === 'painter'"
+                                    class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer mb-2.5 font-ui">
+                                    <input type="checkbox" x-model="ag.diffusion_mode"
+                                        :disabled="ag.image_via_chat"
+                                        class="accent-amber-600" />
+                                    <span>扩散模型模式（如 new-api 接入的 NovelAI：先由 Writer 把画面描述翻译成标签式提示词和负面提示词，再调用 /images/generations；需启用 Writer）</span>
                                 </label>
                                 <label class="flex items-center gap-2 text-xs text-amber-600 cursor-pointer mb-2.5 font-ui">
                                     <input type="checkbox" x-model="ag.with_jailbreak"

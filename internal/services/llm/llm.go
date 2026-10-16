@@ -130,6 +130,9 @@ const (
 // ImageOptions 承载图片生成的可选参数;零值等价于当前默认行为(方图)。
 type ImageOptions struct {
 	Aspect ImageAspect
+	// NOTE: Diffusion 为 true 时按扩散模型(如经 new-api 接入的 NovelAI)的约定出图：使用其合法分辨率、不发 quality，并透传 NegativePrompt。
+	Diffusion      bool
+	NegativePrompt string
 }
 
 type ImageGenerator interface {

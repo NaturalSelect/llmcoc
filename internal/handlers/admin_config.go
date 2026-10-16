@@ -243,6 +243,18 @@ func AdminUpdateAgent(c *gin.Context) {
 			imageViaChat = b
 		}
 	}
+	// NOTE: 解析 diffusion_mode 开关,开启后 painter 先翻译成标签式提示词再调用 /images/generations;
+	// 与 image_via_chat 互斥,因为 Chat 接口出图不会携带扩散模型的尺寸与负面提示词参数。
+	diffusionMode := false
+	if v, ok := raw["diffusion_mode"]; ok {
+		if b, ok := v.(bool); ok {
+			diffusionMode = b
+		}
+	}
+	if diffusionMode && imageViaChat {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "扩散模型模式与「画图走 Chat 接口」不能同时开启"})
+		return
+	}
 	// NOTE: 解析 with_jailbreak 开关,用于在该 Agent 系统提示词外包裹越狱提示词
 	withJailbreak := false
 	if v, ok := raw["with_jailbreak"]; ok {
@@ -259,6 +271,7 @@ func AdminUpdateAgent(c *gin.Context) {
 		"temperature":            temperature,
 		"disable_temperature":    disableTemperature,
 		"image_via_chat":         imageViaChat,
+		"diffusion_mode":         diffusionMode,
 		"with_jailbreak":         withJailbreak,
 		"thinking_level":         thinkingLevel,
 		"thinking_budget_tokens": thinkingBudgetTokens,
@@ -284,6 +297,7 @@ func AdminUpdateAgent(c *gin.Context) {
 			Temperature:          temperature,
 			DisableTemperature:   disableTemperature,
 			ImageViaChat:         imageViaChat,
+			DiffusionMode:        diffusionMode,
 			WithJailbreak:        withJailbreak,
 			ThinkingLevel:        thinkingLevel,
 			ThinkingBudgetTokens: thinkingBudgetTokens,
@@ -334,10 +348,11 @@ func AdminPingProvider(c *gin.Context) {
 }
 
 type pingProviderRequest struct {
-	ModelName    string `json:"model_name"`
-	Mode         string `json:"mode"`
-	Role         string `json:"role"`
-	ImageViaChat bool   `json:"image_via_chat"`
+	ModelName     string `json:"model_name"`
+	Mode          string `json:"mode"`
+	Role          string `json:"role"`
+	ImageViaChat  bool   `json:"image_via_chat"`
+	DiffusionMode bool   `json:"diffusion_mode"`
 }
 
 func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
@@ -358,7 +373,7 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 	req.Mode = strings.ToLower(strings.TrimSpace(req.Mode))
 	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
 	if req.Mode == "image" || req.Role == string(models.AgentRolePainter) {
-		adminPingImageProvider(c, factory, &p, req.ModelName, req.ImageViaChat)
+		adminPingImageProvider(c, factory, &p, req.ModelName, req.ImageViaChat, req.DiffusionMode)
 		return
 	}
 	if req.ModelName == "" {
@@ -382,7 +397,7 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 	c.JSON(http.StatusOK, gin.H{"ok": true, "mode": "chat", "latency_ms": latencyMs})
 }
 
-func adminPingImageProvider(c *gin.Context, factory ProviderFactory, p *models.LLMProviderConfig, modelName string, imageViaChat bool) {
+func adminPingImageProvider(c *gin.Context, factory ProviderFactory, p *models.LLMProviderConfig, modelName string, imageViaChat, diffusionMode bool) {
 	if modelName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "mode": "image", "error": "请先填写模型名称"})
 		return
@@ -399,7 +414,7 @@ func adminPingImageProvider(c *gin.Context, factory ProviderFactory, p *models.L
 	defer cancel()
 
 	start := time.Now()
-	base64Data, _, err := generator.GenerateImage(ctx, "A simple black and white test icon", llm.ImageOptions{})
+	base64Data, _, err := generator.GenerateImage(ctx, "A simple black and white test icon", llm.ImageOptions{Diffusion: diffusionMode})
 	latencyMs := time.Since(start).Milliseconds()
 	if err != nil {
 		adminConfigLog.Error("ping provider image failed", "id", p.ID, "err", err)

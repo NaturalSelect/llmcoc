@@ -136,9 +136,26 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 	}
 	aspect := normalizeImageAspect(request.Aspect)
 	debugf("Painter", "session=%d start prompt_len=%d aspect=%s prompt=%q", gctx.Session.ID, len([]rune(prompt)), aspect, prompt)
-	prompt = fmt.Sprintf("%v\n%v", prompt, renderNSFW(imageSysPrompt, gctx.Session.EnableNSFW))
-	prompt = fmt.Sprintf("<system-reminder>\n%s\n</system-reminder>", prompt)
-	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, llm.ImageOptions{Aspect: llm.ImageAspect(aspect)})
+	opts := llm.ImageOptions{Aspect: llm.ImageAspect(aspect)}
+	if handle.config != nil && handle.config.DiffusionMode {
+		translator, _, err := pickWriterHandle(handles, gctx.Session.EnableNSFW)
+		if err != nil {
+			return "", fmt.Errorf("扩散模型模式需要可用的 Writer 翻译提示词: %w", err)
+		}
+		translated, err := translateToDiffusionPrompt(withWriterGameSessionID(ctx, gctx), translator, fmt.Sprintf("%v", gctx.Session.ID), prompt, gctx.Session.EnableNSFW)
+		if err != nil {
+			debugf("Painter", "session=%d diffusion translate error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
+			return "", err
+		}
+		debugf("Painter", "session=%d diffusion prompt=%q negative=%q", gctx.Session.ID, translated.Prompt, translated.NegativePrompt)
+		prompt = translated.Prompt
+		opts.Diffusion = true
+		opts.NegativePrompt = translated.NegativePrompt
+	} else {
+		prompt = fmt.Sprintf("%v\n%v", prompt, renderNSFW(imageSysPrompt, gctx.Session.EnableNSFW))
+		prompt = fmt.Sprintf("<system-reminder>\n%s\n</system-reminder>", prompt)
+	}
+	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, opts)
 	if err != nil {
 		debugf("Painter", "session=%d error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
 		return "", err

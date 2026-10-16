@@ -99,6 +99,37 @@ func imageSizeForModel(model string, aspect ImageAspect) openai.ImageGeneratePar
 	return openai.ImageGenerateParamsSize1024x1024
 }
 
+// NOTE: 扩散模型(NovelAI)分辨率边长须为 64 的倍数且总像素不超过 1024x1024，否则 new-api 直接拒绝并被重试循环放大。
+func imageSizeForDiffusion(aspect ImageAspect) openai.ImageGenerateParamsSize {
+	switch aspect {
+	case ImageAspectLandscape:
+		return "1216x832"
+	case ImageAspectPortrait:
+		return "832x1216"
+	}
+	return openai.ImageGenerateParamsSize1024x1024
+}
+
+func buildImageParams(model, prompt string, opts ImageOptions) openai.ImageGenerateParams {
+	params := openai.ImageGenerateParams{
+		Model:          model,
+		Prompt:         prompt,
+		N:              param.NewOpt(int64(1)),
+		ResponseFormat: openai.ImageGenerateParamsResponseFormatB64JSON,
+	}
+	if !opts.Diffusion {
+		params.Quality = imageQualityForModel(model)
+		params.Size = imageSizeForModel(model, opts.Aspect)
+		return params
+	}
+	params.Size = imageSizeForDiffusion(opts.Aspect)
+	if opts.NegativePrompt != "" {
+		// NOTE: negative_prompt 不是 OpenAI 标准字段，new-api 的 NovelAI 渠道从请求体顶层读取它。
+		params.SetExtraFields(map[string]any{"negative_prompt": opts.NegativePrompt})
+	}
+	return params
+}
+
 func (p *openAIProvider) generateImage(ctx context.Context, prompt string, opts ImageOptions) (string, string, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
@@ -113,14 +144,7 @@ func (p *openAIProvider) generateImage(ctx context.Context, prompt string, opts 
 		return p.generateImageViaChat(ctx, model, prompt)
 	}
 
-	resp, err := p.client.Images.Generate(ctx, openai.ImageGenerateParams{
-		Model:          model,
-		Prompt:         prompt,
-		N:              param.NewOpt(int64(1)),
-		Quality:        imageQualityForModel(model),
-		Size:           imageSizeForModel(model, opts.Aspect),
-		ResponseFormat: openai.ImageGenerateParamsResponseFormatB64JSON,
-	})
+	resp, err := p.client.Images.Generate(ctx, buildImageParams(model, prompt, opts))
 	if err != nil {
 		return "", "", fmt.Errorf("LLM image error: %w", err)
 	}

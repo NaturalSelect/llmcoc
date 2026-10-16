@@ -260,6 +260,7 @@ window.COC.admin = {
                                 temperature: d.temperature,
                                 disable_temperature: d.disable_temperature || false,
                                 image_via_chat: d.image_via_chat || false,
+                                diffusion_mode: d.diffusion_mode || false,
                                 with_jailbreak: d.with_jailbreak || false,
                                 thinking_level: d.thinking_level || '',
                                 thinking_budget_tokens: d.thinking_budget_tokens || 0,
@@ -410,6 +411,7 @@ window.COC.admin = {
                             if (isPainter) {
                                 payload.mode = 'image';
                                 payload.image_via_chat = ag.image_via_chat || false;
+                                payload.diffusion_mode = ag.diffusion_mode || false;
                             }
                             const r = await this.api('POST', '/api/admin/config/providers/' + providerID + '/ping', payload);
                             if (isPainter) {
@@ -434,6 +436,7 @@ window.COC.admin = {
                                 temperature: ag.temperature,
                                 disable_temperature: ag.disable_temperature || false,
                                 image_via_chat: ag.image_via_chat || false,
+                                diffusion_mode: ag.diffusion_mode || false,
                                 with_jailbreak: ag.with_jailbreak || false,
                                 system_prompt: ag.system_prompt,
                                 thinking_level: ag.thinking_level || '',
