@@ -1,87 +1,86 @@
-# LLM-COC 项目索引
+# LLM-COC
 
-本文件只做协作入口和项目索引。业务细节以当前代码、`README.md` 和 `docs/business-flow.md` 为准。
+Go + Gin + GORM/SQLite 的 COC7 多人跑团服务端，内置前端与多 Agent LLM 管线。业务细节以代码、`README.md`、`docs/business-flow.md`（账号/人物卡/模组/房间/商城/后台流程）为准；本文件只记录读代码前值得先知道的事。
 
-## 常用命令
+## 命令
 
-- 启动：`./start.sh`（`--debug` 详细日志，`--dev` 直接 `go run`）；另见 `start_bg.sh`。
-- 构建：`go build -o ./bin/llmcoc ./cmd/server`。
-- 测试：`go test ./...`；单个包 `go test ./internal/handlers`；单个测试 `go test -run TestXxx ./internal/handlers`。
-- 仓库无 Makefile、无 CI、无前端构建步骤；前端改动改完即生效（静态文件内嵌，需重启服务）。
+```bash
+./start.sh                 # go build -o ./bin/llmcoc 后运行；自动 source .env
+./start.sh --debug         # GIN_MODE=debug + LOG_LEVEL=debug
+./start.sh --dev           # go run ./cmd/server
+./start_bg.sh [flags]      # nohup 后台运行，输出到 run.log（run.log 未被 gitignore）
 
-## 架构要点（读代码前先知道）
+go vet ./...                              # CI 第一步
+go test -race -count=1 ./...              # CI 实际使用的测试命令
+go test -run TestXxx ./internal/handlers  # 单个测试
+```
 
-- 前端通过 `//go:embed web` 内嵌进二进制（`cmd/server/main.go`）；SPA 路由由 NoRoute 兜底返回 `index.html`，无独立前端工程。
-- Gzip 中间件排除 SSE 流（`/api/sessions/:id/chat`、剧本生成/编译接口）；新增流式接口时需同步排除，否则前端收不到流。
-- 数据库为 SQLite（`data/llmcoc.db`），首次启动自动建表；不会自动创建管理员，需手动 `sqlite3 ... update users set role='admin'`（见 README）。
-- 规则资料文件（`COC_kp.md`、`COC_spell.md`、`COC_monster.md`）路径由环境变量 `RULEBOOK_PATH` / `SPELLBOOK_PATH` / `MONSTERBOOK_PATH` 控制，三本全部加载成功才会启用 Lawyer 规则缓存。
-- 项目自带后台脚本可能正在运行：改代码前先 `git status` 看差异，测试前确认 8080 端口没有旧进程占用。
+- CI 只有 `.github/workflows/test.yml`（vet + test，Go 版本取自 `go.mod`）。无 Makefile、无 lint 配置、无前端构建。
+- 测试不依赖网络、真实 LLM 或外部服务。
+- 项目目录里可能已有服务进程在跑（占用 8080、持有 `data/llmcoc.db`）：测试/启动前先确认端口，改代码前先 `git status`。
+- `data/`、`bin/`、`tmp/`、`.env`、`config.local.yaml` 被 gitignore。`data/` 含 SQLite 库、`lawyer_cache.json`、`images/`。
 
-## 先读什么
+## 配置与初始化
 
-- `README.md`：项目定位、启动方式、环境变量、初始化行为、API 概览。
-- `docs/business-flow.md`：账号、人物卡、模组、房间跑团、Agent、商城、管理后台等业务流程。
-- `config.yaml`：本地默认服务、数据库、JWT、商城配置。
-- `COC_kp.md`、`COC_spell.md`、`COC_monster.md`：规则、法术、怪物资料来源（运行时加载）。
-- `combat.md`、`chase.md`：战斗和追逐相关规则资料。
+- `config.yaml` 只含 `server` / `database` / `jwt` 三段（`internal/config/config.go`）。README 里出现的 `shop:` 段并不存在于结构体；初始金币、卡槽等是数据库里的 `SiteSetting`（`models/db.go` 的 `seedDefaultSiteSettings`，后台可改）。
+- 实际读取的环境变量：`CONFIG_PATH`、`JWT_SECRET`、`GIN_MODE`、`LOG_LEVEL`（默认 debug）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_PROVIDER` / `LLM_MODEL`（仅在库里没有 Provider 时用于播种默认 Provider 和各 Agent 默认模型）、`RULEBOOK_PATH` / `SPELLBOOK_PATH` / `MONSTERBOOK_PATH`、`LAWYER_CACHE_PATH`、`LLMCOC_IMAGE_DIR`、`LLMCOC_IMAGE_QUALITY`。
+- 文档里提到但代码未读取：`AGENT_DEBUG`（README）、`DB_PATH`（start.sh 注释）。不要依赖它们。
+- 所有播种都是「缺失才创建」：改 `seedDefaultAgentConfigs` / `seedDefaultSiteSettings` 里的默认值不会影响已有数据库。下线 Agent 角色必须把旧角色名加进 `seedDefaultAgentConfigs` 里的 `DELETE ... WHERE role IN` 清理列表，否则老库会残留。
+- 只有 `AutoMigrate`，没有迁移文件。新增列需要回填旧数据时，参照 `with_jailbreak`：迁移前用 `Migrator().HasColumn` 记下列是否存在，迁移后回填。新增模型要加进 `InitDB` 的 AutoMigrate 列表。
+- 管理员不会自动创建：注册后用 `sqlite3 data/llmcoc.db "update users set role='admin' where username='...'"`。
+- `scenarios/` 目录不在仓库中。`handlers.SeedScenarios("scenarios")` 在目录缺失或库里已有模组时静默返回。
 
-## 代码索引
+## 架构
 
-- `cmd/server/main.go`：服务入口、初始化流程、路由注册、内嵌前端。
-- `cmd/server/web/index.html`：单页前端主模板。
-- `cmd/server/web/pages/admin.html`：管理后台模板。
-- `cmd/server/web/js/app.js`：前端核心状态、鉴权、导航、通用 API。
-- `cmd/server/web/js/game.js`：游戏页聊天、SSE、消息刷新。
-- `cmd/server/web/js/sessions.js`：房间列表、创建、加入、开始、结束。
-- `cmd/server/web/js/admin.js`：后台用户、Provider、Agent、模组、商城、公告、设置、缓存管理。
-- `cmd/server/web/js/dashboard.js`：首页和人物卡相关前端逻辑。
-- `cmd/server/web/js/shop.js`：商城和购买逻辑。
-- `cmd/server/web/js/init.js`：前端初始化与启动逻辑。
-- `cmd/server/web/css/style.css`：前端主题和通用样式。
-- `internal/config`：配置加载。
-- `internal/models`：GORM 模型、数据库初始化、JSON 字段、模组数据兼容。
-- `internal/middleware`：JWT 鉴权、管理员权限、封号检查。
-- `internal/handlers`：HTTP handler 和接口测试（测试辅助见 `testhelpers_test.go`，mock 在 `mocks/`）。
-- `internal/services/game`：骰子、属性、伤害、疯狂等 COC 机制。
-- `internal/services/rulebook`：规则资料加载、检索、常量读取。
-- `internal/services/llm`：LLM Provider 抽象和 OpenAI 兼容实现。
-- `internal/services/agent`：跑团 Agent、模组生成 Agent、规则缓存、结算成长。
-- `internal/services/imagestore`：图片压缩与存储清理。
+### 入口与前端
+- `cmd/server/main.go` 完成：加载配置 → `models.InitDB` → 播种 → 加载三本规则资料并算哈希 → 启动统计持久化/图片清理 → 注册路由 → 优雅退出时保存 Lawyer 缓存。
+- 前端是 `cmd/server/web` 下的静态文件，通过 `//go:embed web` 打进二进制，没有独立工程；改前端后需要重启（或重新 build）才生效。`web/js/vendor/` 是手工放入的第三方库。未命中的路由由 `NoRoute` 回落到 `index.html`。
+- gzip 中间件按路径正则排除了 SSE 接口：`/api/sessions/:id/chat`、`/api/scenarios/generate`、`/api/scenarios/compile-story`。新增流式接口必须同步加进 `main.go` 的排除列表，否则前端收不到逐段推流。HTTP `WriteTimeout` 为 30 分钟，是为了长时间 AI 生成。
+- 路由全部在 `main.go` 里手写；`BanCheck` 中间件只挂在部分分组上，新增分组时注意是否需要。
 
-## 关键业务入口
+### 一次玩家回合的数据流
+1. `handlers/session.go` 的 `SessionHandlers.ChatStream`：校验本轮玩家行动，写 `SessionTurnAction`，占用会话处理锁，构造 `agent.GameContext`，在 goroutine 中调用 `Runner.Run`，同时每 600ms 推一次 `thinking` SSE。传给 `Run` 的是 `context.Background()`，客户端断开不会中止回合。
+2. `agent.Run`（`orchestrator.go`）用 `activeSessions` 保证同一会话同时只跑一个回合；`getCachedAgents` 读取 Agent 配置；构造 Director 提示词与上下文后进入 `runToolLoop`（`scripter_toolloop.go`，模组生成管线共用）。
+3. Director 通过工具调用驱动流程：`decodeDirectorToolCall` 解码 → `actionRegistry[...].Execute`（`actions.go`）落地到业务状态 → 结果作为 `tool` 消息回传，直到 `response` / `end_game`。`check_rule` 与按 NPC 的 `act_npc` 在 `directorBatchDispatch` 中并发，其余顺序执行。
+4. 回合结束：`cm.Commit` 持久化转录；返回 `RunOutput`（含 Writer 指令、配图提示）。处理器随后保存消息，再各自异步启动 Writer 流式叙事（`RunWriterStream`）和 Painter（`RunPainter`），它们会回写助手消息内容。
+- 玩家可见正文由 Writer 产生，Director 只给指令；规则裁定由 Lawyer 负责；NPC 有独立行动与记忆。
 
-- 账号与权限：`internal/handlers/auth.go`、`internal/handlers/admin.go`、`internal/handlers/admin_invite.go`。
-- 人物卡：`internal/handlers/character.go`、`internal/handlers/character_draft.go`、`internal/services/agent/character.go`。
-- 模组：`internal/handlers/scenario.go`、`internal/models/scenario_module.go`、`internal/services/agent/scripter*.go`。
-- 房间与聊天：`internal/handlers/session.go`。
-- 商城与经济：`internal/handlers/shop.go`、`internal/handlers/admin.go`。
-- 公告：`internal/handlers/announcement.go`（首页公开读取接口与后台 CRUD）。
-- 图片：`internal/handlers/image.go`、`internal/services/imagestore`。
-- LLM Provider 和 Agent 配置：`internal/handlers/admin_config.go`、`internal/models/db.go`。
-- 规则缓存后台接口：`internal/handlers/admin_config.go`、`internal/services/agent/lawyer.go`、`internal/services/agent/cache.go`。
+### Agent 角色配置
+- 角色常量在 `models/models.go`（`AgentRole*`），配置行在表 `agent_configs`，每个角色绑定 Provider + 模型 + 温度 + token 上限 + 思考等级，由后台编辑。
+- `batchLoadAgents`（`orchestrator.go`）加载角色；`director`、`lawyer`、`npc` 缺失或未绑定可用 Provider 会直接报错，其余为可选，未启用时降级：
+  - `dramaturg` 未启用：`consult_dramaturg` 工具不会出现在 Director 工具列表里。
+  - `writer_nsfw` / `npc_nsfw` 未启用：回落到基础 Writer / NPC。
+  - `painter_nsfw` 未启用：`nsfw=true` 的配图请求被直接拒绝，**不会**回落到 Painter。
+  - `diffusion_translator` 仅在 Painter 开启 `diffusion_mode` 时才被调用。
+- 每会话的 Agent 句柄会缓存（`sessionAgents`），后台改配置后靠 `ClearAllCachedAgents` 失效，会话结束时 `deleteCachedAgents`。
+- 新增角色要同步改：`models/models.go`（常量）、`models/db.go`（`required` 播种列表）、`batchLoadAgents` 的角色列表、`cmd/server/web/js/admin.js`（角色名/描述/默认值，两处）、`models/db_agent_seed_test.go`。
 
-## Agent 索引
+### 新增 Director 工具要改的地方
+`types.go`（`ToolCallType` 常量和 `ToolCall` 字段）→ `director_tools.go`（`XxxTool()` 定义 + 加入 `directorTools` + `decodeDirectorToolCall` 分支）→ `actions.go`（`actionRegistry` 登记，并按需加入 `noSideEffectActions` / `responseCompatibleActions`）→ `director_dispatch.go`（`directorBatchPolicy` 的批次规则）。`directorTools(dramaturgEnabled)` 每轮发送同一份完整列表（唯一的条件项是 dramaturg 是否启用），这是为了保持提示词缓存前缀稳定（见提交 1b395d7）；不要按回合状态裁剪工具列表。Director 历史同理：发送版即归档版，不要在归档时再裁剪。
 
-- Runner：`internal/services/agent/runner.go`，跑团会话执行入口与调度。
-- Director：`internal/services/agent/director.go`（工具定义见 `director_tools.go`，分发见 `director_dispatch.go`），负责读取局势并输出工具调用。
-- Orchestrator：`internal/services/agent/orchestrator.go`，负责执行 Director 工具循环。
-- Actions：`internal/services/agent/actions.go`，负责工具调用到业务状态的落地。
-- Writer：`internal/services/agent/writer.go`，负责玩家可见叙事正文。
-- Lawyer：`internal/services/agent/lawyer.go`，负责规则资料检索和裁定。
-- Dramaturg：`internal/services/agent/dramaturg.go`，Director 按需通过 `consult_dramaturg` 工具调用咨询的剧构顾问，比对模组大纲/时间线/线索给出节奏与走向建议；拥有独立于 Director/Writer 的历史线（`game_sessions.dramaturg_history`），仅接收经脱敏处理的 progress_note，不触达玩家原始数据；可选顾问，不配置 Provider/Model 时工具不出现在列表中，Director 自行按 `[ACTIVE-PACING]` 判断节奏。
-- NPC：`internal/services/agent/npc.go`，负责临时 NPC 独立行动与记忆。
-- Painter：`internal/services/agent/painter.go`，负责配图生成；Painter 配置开启「扩散模型模式」（`diffusion_mode`）时，由 `painter_diffusion.go` 先用 `diffusion_translator` Agent 把画面描述翻译成标签式正面提示词（负面提示词是固定常量，全年龄会话额外追加分级标签），再调用 `/images/generations`（面向经 new-api 接入的 NovelAI）。
-- Painter NSFW：角色 `painter_nsfw`，由 `painter.go` 的 `pickPainterHandle` 路由；Director 把 `generate_image` 标记 `nsfw=true` 时只走它，未启用则直接拒绝、不回落默认 Painter。它取代了原先的管理员站点设置 `allow_nsfw_images`（已移除）。
-- Editor：`internal/services/agent/editor.go`，负责文本润色与编辑。
-- Evaluator / Growth：`internal/services/agent/evaluator.go`、`internal/services/agent/growth.go`，负责结算评价和成长。
-- EndSession：`internal/services/agent/endsession.go`，负责会话收尾与总结。
-- Scripter：`internal/services/agent/scripter*.go`（十余个文件，含生成管线、上传解析、编译、校验、奖励等），负责 AI 模组生成。
-- 共享类型与日志：`types.go`、`logger.go`。
+### Lawyer 规则缓存
+- `COC_kp.md`、`COC_spell.md`、`COC_monster.md` 各有 1–2MB，启动时加载并计算 SHA-256；不要整文件读取它们。
+- 三本全部哈希并加载成功才会启用缓存持久化（`data/lawyer_cache.json`，可由 `LAWYER_CACHE_PATH` 覆盖）。缓存文件里的哈希与当前资料不一致时整体丢弃，所以改这三份 md 会使缓存失效。缓存只在优雅退出时落盘，统计每 30 秒落库。
+- `agent` 包的全局状态（`lawyerCache` 4GB 预算 LRU、`sessionAgents`、`activeSessions`）在包导入时创建，且几乎所有函数都依赖全局 `models.DB` 已初始化。
 
-## 协作注意
+### 图片
+Painter 默认走 OpenAI 兼容图片接口；开启 `diffusion_mode` 时先由 `diffusion_translator` 把画面描述翻成标签式正面提示词，再调用 `/images/generations`。负面提示词是固定常量，全年龄会话额外追加分级标签（`painter_diffusion.go`）。图片落盘与定期清理在 `services/imagestore`（默认目录是数据库文件同级的 `images/`）。
 
-- 代码注释使用中文，解释必要原因即可。
-- 修复问题要从根因处理；不确定产品语义时先确认。
-- 变更说明写清楚原逻辑、改了什么、为什么改。
-- 涉及英文提示词时，同时给出中文含义。
-- 遇到未预期改动或多人协作冲突，先看差异；无法判断时问用户。
+## 代码约定
+
+- 注释用中文，只写必要原因；每条注释以 `// NOTE:` / `// FIXME:` / `// TODO:` 开头，文件头通常有一段 `// NOTE:` 说明。涉及英文提示词时，同时给出中文含义。
+- 提示词是各 Agent 文件里的 Go 字符串常量（如 `kpSystemPrompt`、`writerDefaultPrompt`），以中文为主。`{{NSFW_...}}` 占位符由 `renderNSFW` 填充。
+- 日志用 `logging.For("component")` 取得 slog logger（包级变量）。`logging` 包在 `init()` 里设置默认 handler，未迁移的 `log.Printf` 也会走同一输出。
+- 可空 JSON 列用 `models.JSONField[T]`。
+
+## 测试
+
+- 都是包内测试（`package handlers` / `package agent`），直接操作全局 `models.DB`，不要用 `t.Parallel`。
+- `handlers`：`testhelpers_test.go` 提供 `jsonReq`、`withAuth`（向 gin 上下文注入 user_id/username/role，绕过 JWT）、`seedUser` / `seedCard` / `seedScenario` / `seedProvider` / `seedShopItem`。`init()` 里已设 `gin.TestMode`。
+- `agent`：`testhelpers_test.go` 的 `initSiteSettingTestDB` 把全局 `models.DB` 换成内存 SQLite（`t.Cleanup` 还原）；`sequentialFakeProvider` 按顺序返回预设的 LLM 响应并记录调用；`fakeToolCall` 构造工具调用。
+- gomock 的 mock 在 `internal/handlers/mocks/`，没有 `go:generate`，重新生成的 `mockgen` 命令写在各文件头部注释里。
+
+## 已知陷阱
+
+- `Dockerfile` 使用 `golang:1.23-alpine`，而 `go.mod` 要求 Go 1.26.5，且 `COPY scenarios/` 指向仓库里不存在的目录；`docker-compose.yml` 也挂载 `./scenarios`。这些我没有实际构建验证，改 Docker 相关内容前先确认。镜像以 `CGO_ENABLED=1` 构建（SQLite）。
+- 修复问题要从根因处理；不确定产品语义时先确认；遇到未预期的改动或他人改动先看差异，无法判断时问用户。
