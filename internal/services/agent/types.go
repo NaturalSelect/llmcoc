@@ -30,6 +30,27 @@ type GameContext struct {
 	PendingActions []PlayerAction
 	// Progress 用于把KP主流程的真实阶段推给上层SSE;为空时静默。
 	Progress func(string)
+	// KPFloor 非空表示本段由KP主动发起而不是玩家回应触发:opening(开场)/continue(KP上一段
+	// 没有点名,服务端自动续跑)/host_continue(房主要求KP继续)。为空表示由玩家回应触发。
+	KPFloor string
+	// AskedQuestion 是KP上一段点名时提出的问题,玩家回应段用它还原"这是在回答什么"。
+	AskedQuestion string
+	// SkippedNames 只在host_continue时填充:被点名但没有回应、本段被跳过的调查员名。
+	SkippedNames []string
+}
+
+// KPFloor 取值。
+const (
+	KPFloorOpening      = "opening"
+	KPFloorContinue     = "continue"
+	KPFloorHostContinue = "host_continue"
+)
+
+// AskResult 是KP通过ask_players交出发言权的结果。
+type AskResult struct {
+	UserIDs  []uint
+	Names    []string
+	Question string
 }
 
 // PlayerAction 是一个玩家在当前回合提交的行动。
@@ -74,6 +95,7 @@ const (
 	ToolGenerateImage          ToolCallType = "generate_image"            // NOTE: 生成即时场景图片
 	ToolDescribeCharacters     ToolCallType = "describe_characters"       // NOTE: 获取调查员可见外貌描写
 	ToolResponse               ToolCallType = "response"                  // 结束本轮并给出回复
+	ToolAskPlayers             ToolCallType = "ask_players"               // 点名调查员并交出发言权,结束本段
 	ToolReport                 ToolCallType = "report"                    // 向管理系统自首
 
 	ToolStartCombat ToolCallType = "start_combat" // 开始一场战斗,建立DEX行动顺序
@@ -144,6 +166,7 @@ type ToolCall struct {
 	Report            string                  `json:"report"`             // report: agent self-report
 	Ack               []string                `json:"ack"`                // response: 对玩家动作的正式确认
 	HideSecret        bool                    `json:"hide_secret"`        // npc_act: 是否隐藏NPC反应中的敏感信息(如HP变化), 由KP根据当前情境决定
+	Targets           []string                `json:"targets"`            // ask_players: 被点名的调查员名,["all"]表示全体存活调查员
 }
 
 // ToolResult wraps the result of executing one ToolCall.
@@ -176,6 +199,7 @@ type RunOutput struct {
 	ImagePrompts      []ImagePromptRequest // NOTE: 本轮KP主流程排队的画图请求;生成后的data URL由handler持久化到消息内容。
 	DirectorElapsedMs int64                // Director工具调用循环的总耗时(毫秒),不含Writer/画图等异步阶段
 	DirectorSteps     int                  // Director工具调用循环实际执行的轮数
+	Ask               *AskResult           // KP点名结果;为nil表示KP保留发言权(服务端自动再跑一段)
 }
 
 // ── Dice types ────────────────────────────────────────────────────────────────

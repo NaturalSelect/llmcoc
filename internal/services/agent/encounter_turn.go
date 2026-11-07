@@ -29,11 +29,22 @@ type TurnCollection struct {
 	Batched bool
 	Label   string
 	Order   []EncounterActor
+	// Spotlight=true表示UserIDs来自KP的点名而不是DEX批次/全员;Question是点名时的提问。
+	Spotlight bool
+	Question  string
 }
 
 // BuildTurnCollection 是"这一轮该收集谁"的唯一真相来源,由ChatStream、GetChatStatus、
-// orchestrator.run()共用。战斗/追逐未激活时没有DEX顺序可言,退回全员收集。
+// orchestrator.run()共用。Spotlight非nil时以KP点名为准(Order/Label仍按遭遇状态计算,
+// 只用于展示);Spotlight为nil的老房间,战斗/追逐未激活时没有DEX顺序可言,退回全员收集。
 func BuildTurnCollection(session models.GameSession) TurnCollection {
+	if sp := session.Spotlight.Data; sp != nil {
+		return buildSpotlightTurnCollection(sp, session)
+	}
+	return buildEncounterTurnCollection(session)
+}
+
+func buildEncounterTurnCollection(session models.GameSession) TurnCollection {
 	if cs := session.CombatState.Data; cs != nil && cs.Active {
 		return buildCombatTurnCollection(cs, session)
 	}
@@ -41,6 +52,26 @@ func BuildTurnCollection(session models.GameSession) TurnCollection {
 		return buildChaseTurnCollection(chs, session)
 	}
 	return TurnCollection{UserIDs: activePlayerIDList(session.Players)}
+}
+
+// buildSpotlightTurnCollection 只保留仍存活的被点名玩家;点名之后才死亡的玩家不再被等待。
+// UserIDs为空表示KP持有发言权,此时没有任何玩家可以发言。
+func buildSpotlightTurnCollection(sp *models.SpotlightState, session models.GameSession) TurnCollection {
+	alive := map[uint]bool{}
+	for _, id := range activePlayerIDList(session.Players) {
+		alive[id] = true
+	}
+	ids := make([]uint, 0, len(sp.UserIDs))
+	for _, id := range sp.UserIDs {
+		if alive[id] {
+			ids = append(ids, id)
+		}
+	}
+	tc := TurnCollection{UserIDs: ids, Spotlight: true, Question: sp.Question}
+	if enc := buildEncounterTurnCollection(session); enc.Label != "" {
+		tc.Label, tc.Order = enc.Label, enc.Order
+	}
+	return tc
 }
 
 // activePlayerIDList 返回房间内全体存活玩家的UserID(角色卡WoundState!=dead),

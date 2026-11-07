@@ -104,6 +104,8 @@ func seedDefaultSiteSettings() {
 		// NOTE: dramaturg_history_max_tokens 专用于剧构顾问自己的进度对话历史。
 		"dramaturg_history_max_tokens": "100000",
 		"max_character_drafts":         "3",
+		// NOTE: KP 连续没有点名时服务端自动再跑一段的上限，超过后对全体存活玩家开放发言。
+		"kp_auto_continue_max": "2",
 		// NOTE: 全局 NSFW 总开关（区别于房间级 enable_nsfw）；默认允许，保持升级前后行为一致。
 		"allow_nsfw": "true",
 		// NOTE: 默认平衡调整规则，与 models.DefaultBalanceRules 保持同一来源；

@@ -428,13 +428,15 @@ type GameSession struct {
 	DramaturgHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
 	CombatState      JSONField[*CombatState] `gorm:"type:text" json:"-"`
 	ChaseState       JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
-	KPHint           string                  `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
-	Introspection    string                  `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
-	CreatedAt        time.Time               `json:"created_at"`
-	UpdatedAt        time.Time               `json:"updated_at"`
-	Scenario         Scenario                `gorm:"foreignKey:ScenarioID" json:"scenario"`
-	Creator          User                    `gorm:"foreignKey:CreatedBy" json:"creator"`
-	Players          []SessionPlayer         `gorm:"foreignKey:SessionID" json:"players"`
+	// NOTE: Spotlight 为 nil 表示老房间，沿用玩家驱动的旧回合逻辑；非 nil 时由 KP 通过点名控制谁可以发言。
+	Spotlight     JSONField[*SpotlightState] `gorm:"type:text" json:"-"`
+	KPHint        string                     `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
+	Introspection string                     `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
+	CreatedAt     time.Time                  `json:"created_at"`
+	UpdatedAt     time.Time                  `json:"updated_at"`
+	Scenario      Scenario                   `gorm:"foreignKey:ScenarioID" json:"scenario"`
+	Creator       User                       `gorm:"foreignKey:CreatedBy" json:"creator"`
+	Players       []SessionPlayer            `gorm:"foreignKey:SessionID" json:"players"`
 }
 
 // SessionNPC is a temporary NPC card created during a session (e.g. monsters, minor NPCs).
@@ -601,6 +603,15 @@ type CombatParticipant struct {
 	APDebt               int    `json:"ap_debt"`               // 下轮行动点扣除(寻找掩体等动作欠债)
 	PendingClarification bool   `json:"pending_clarification"` // 是否卡在"待澄清暂停"(反应意图无法从已提交内容推断)
 	PendingQuestion      string `json:"pending_question"`      // 待澄清暂停时要问玩家的问题
+}
+
+// SpotlightState 记录 KP 当前把发言权交给了谁。
+// UserIDs 为空表示 KP 仍持有发言权，等待服务端再跑一段；非空表示等这些玩家回应。
+type SpotlightState struct {
+	UserIDs       []uint   `json:"user_ids"`
+	Names         []string `json:"names"`
+	Question      string   `json:"question"`
+	AutoContinues int      `json:"auto_continues"` // 连续没有点名的 KP 段数，点名后清零
 }
 
 // CombatState holds the full cross-round state of an ongoing combat encounter.

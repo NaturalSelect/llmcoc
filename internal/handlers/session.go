@@ -420,7 +420,11 @@ func StartSession(c *gin.Context) {
 		return
 	}
 
-	models.DB.Model(&session).Update("status", models.SessionStatusPlaying)
+	// NOTE: 新开局的房间由 KP 驱动：空 Spotlight 表示 KP 持有发言权，开场段由房主调用 kp-turn 触发。
+	models.DB.Model(&session).Updates(map[string]any{
+		"status":    models.SessionStatusPlaying,
+		"spotlight": models.JSONField[*models.SpotlightState]{Data: &models.SpotlightState{}},
+	})
 
 	// KP intro message：直接展示 content.intro 原文（已是完整叙事散文），不再拼接
 	// content.setting（那是模组列表页用的简介文案，混进对局消息会造成文风断层）。
@@ -799,6 +803,17 @@ type chatStatusResponse struct {
 	StartedAt         *time.Time     `json:"started_at"`
 	SubmittedAt       *time.Time     `json:"submitted_at"`
 	Waiting           waitingPayload `json:"waiting"`
+	Spotlight         *spotlightInfo `json:"spotlight"`
+	CanKPContinue     bool           `json:"can_kp_continue"`
+}
+
+// spotlightInfo 是 chat-status 里的 KP 点名状态；老房间(Spotlight 为空)时整体为 null。
+type spotlightInfo struct {
+	UserIDs  []uint   `json:"user_ids"`
+	Names    []string `json:"names"`
+	Question string   `json:"question"`
+	KPFloor  bool     `json:"kp_floor"`
+	AskedMe  bool     `json:"asked_me"`
 }
 
 func setChatSSEHeaders(c *gin.Context) {
@@ -864,6 +879,42 @@ func (h *SessionHandlers) GetChatStatus(c *gin.Context) {
 		submittedAt = &at
 	}
 
+	var spotlight *spotlightInfo
+	canKPContinue := false
+	if collect.Spotlight {
+		names := make([]string, 0, len(collect.UserIDs))
+		named := make(map[uint]bool, len(collect.UserIDs))
+		for _, id := range collect.UserIDs {
+			named[id] = true
+		}
+		for _, p := range session.Players {
+			if named[p.UserID] {
+				names = append(names, sessionPlayerDisplayName(p))
+			}
+		}
+		ids := collect.UserIDs
+		if ids == nil {
+			ids = []uint{}
+		}
+		spotlight = &spotlightInfo{
+			UserIDs:  ids,
+			Names:    names,
+			Question: collect.Question,
+			KPFloor:  len(ids) == 0,
+			AskedMe:  named[userID],
+		}
+		if !processing {
+			switch {
+			case spotlight.KPFloor:
+				phase = "kp_floor"
+			case spotlight.AskedMe && !submitted:
+				phase = "awaiting_me"
+			}
+		}
+		canKPContinue = !processing && session.Status == models.SessionStatusPlaying &&
+			(session.CreatedBy == userID || isAdminUser(c, userID))
+	}
+
 	c.JSON(http.StatusOK, chatStatusResponse{
 		Phase:             phase,
 		Processing:        processing,
@@ -872,6 +923,8 @@ func (h *SessionHandlers) GetChatStatus(c *gin.Context) {
 		StartedAt:         startedAt,
 		SubmittedAt:       submittedAt,
 		Waiting:           wPayload,
+		Spotlight:         spotlight,
+		CanKPContinue:     canKPContinue,
 	})
 }
 
@@ -991,6 +1044,16 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	activePlayerIDs := activeTurnPlayerIDs(session.Players)
 	activePlayerCount := len(activePlayerIDs)
 	isActiveTurnPlayer := activePlayerIDs[userID]
+	// NOTE: Spotlight 房间由 KP 点名决定谁能发言，不论单人还是多人房，没被点名的提交一律拒绝。
+	if collect.Spotlight && !turnCollectionIncludesUser(collect, userID) {
+		chatLog.Warn("chat rejected: not named by KP", "session", sessionID, "user", username)
+		setChatSSEHeaders(c)
+		c.SSEvent("error", spotlightRejectReason(session, collect))
+		c.Writer.Flush()
+		c.SSEvent("done", "")
+		c.Writer.Flush()
+		return
+	}
 	if playerCount > 1 {
 		if activePlayerCount > 0 && (!isTrackedPlayer || !isActiveTurnPlayer) {
 			chatLog.Warn("chat rejected dead or non-player input", "session", sessionID, "user", username)
@@ -1164,24 +1227,16 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 
 	setChatSSEHeaders(c)
 
-	// ── Load recent history for agent context ─────────────────────────────────
-	var recentMsgs []models.Message
-	models.DB.Where("session_id = ? AND role != ?", sessionID, models.MessageRoleSystem).
-		Order("created_at DESC").
-		Find(&recentMsgs)
-	stripMessageImageDataURLTags(recentMsgs)
-	// Reverse to chronological order.
-	for i, j := 0, len(recentMsgs)-1; i < j; i, j = i+1, j-1 {
-		recentMsgs[i], recentMsgs[j] = recentMsgs[j], recentMsgs[i]
-	}
-
 	gctx := agent.GameContext{
 		Session:        session,
-		History:        recentMsgs,
+		History:        loadAgentHistory(session.ID),
 		UserInput:      content,
 		UserName:       playerDisplayName,
 		UserInputAdmin: user.Role == models.RoleAdmin,
 		PendingActions: pendingActions,
+	}
+	if collect.Spotlight {
+		gctx.AskedQuestion = collect.Question
 	}
 	if !beginSessionProcessing(session.ID) {
 		c.SSEvent("error", "当前房间正在处理上一条消息，请稍候")
@@ -1190,225 +1245,18 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		c.Writer.Flush()
 		return
 	}
-	processingOwned := true
-	defer func() {
-		if processingOwned {
-			finishSessionProcessing(session.ID)
-		}
-	}()
 
 	// NOTE: 行动收集完成后立即释放短临界区；长耗时任务由 processing 状态防止重复进入。
 	lock.Unlock()
 	lockReleased = true
 
-	// ── Run agent pipeline ────────────────────────────────────────────────────
-	chatLog.Debug("chat pipeline start", "session", sessionID, "user", username, "round", session.TurnRound)
-	pipelineStart := time.Now()
-	sendProgress := func(text string) {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return
-		}
-		c.SSEvent("progress", text)
-		c.Writer.Flush()
-	}
-	sendProgress("已收到行动,正在整理本轮信息")
-
-	// Run the synchronous agent pipeline in a goroutine so we can send
-	// "thinking" heartbeats while it executes.
-	type runResult struct {
-		output agent.RunOutput
-		err    error
-	}
-	resultCh := make(chan runResult, 1)
-	progressCh := make(chan string, 256)
-	gctx.Progress = func(text string) {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return
-		}
-		select {
-		case progressCh <- text:
-		default:
-		}
-	}
-	go func() {
-		// NOTE: 后台运行由流水线内部检查context取消,断线后仍可完成主流程落库。
-		out, err := h.Runner.Run(context.Background(), gctx)
-		resultCh <- runResult{output: out, err: err}
-	}()
-
-	// Send periodic thinking events while pipeline runs.
-	ticker := time.NewTicker(600 * time.Millisecond)
-	var output agent.RunOutput
-loop:
-	for {
-		select {
-		case res := <-resultCh:
-			ticker.Stop()
-			if res.err != nil {
-				chatLog.Error("chat pipeline failed", "session", sessionID, "user", username, "elapsed_ms", float64(time.Since(pipelineStart).Milliseconds()), "err", res.err)
-				c.SSEvent("error", res.err.Error())
-				c.Writer.Flush()
-				return
-			}
-			output = res.output
-			// 排空 progressCh 中剩余的消息，避免丢失
-		drainLoop:
-			for {
-				select {
-				case progress := <-progressCh:
-					sendProgress(progress)
-				default:
-					break drainLoop
-				}
-			}
-			break loop
-		case progress := <-progressCh:
-			sendProgress(progress)
-		case <-ticker.C:
-			c.SSEvent("thinking", "")
-			c.Writer.Flush()
-		case <-c.Request.Context().Done():
-			ticker.Stop()
-			// 客户端断开后仍等待KP主流程结束,保证刷新/轮询能看到主流程结果。
-			res := <-resultCh
-			if res.err == nil {
-				assistantMsg, err := saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, res.output)
-				if err != nil {
-					chatLog.Error("chat save after disconnect failed", "session", sessionID, "user", username, "err", err)
-				} else {
-					finishSessionProcessing(session.ID)
-					processingOwned = false
-					if assistantMsg != nil {
-						h.startWriterJob(assistantMsg.ID, gctx, res.output, nil)
-						if len(res.output.ImagePrompts) > 0 {
-							h.startPainterJob(assistantMsg.ID, gctx, res.output.ImagePrompts[0], nil)
-						}
-					}
-				}
-			}
-			return
-		}
-	}
-
-	sseChunk := func(eventType, text string) {
-		runes := []rune(text)
-		for i := 0; i < len(runes); {
-			end := i + 4
-			if end > len(runes) {
-				end = len(runes)
-			}
-			c.SSEvent(eventType, string(runes[i:end]))
-			c.Writer.Flush()
-			i = end
-		}
-	}
-
-	assistantMsg, err := saveChatMessages(sessionID, userID, playerDisplayName, content, turnActions, output)
-	if err != nil {
-		chatLog.Error("chat save failed", "session", sessionID, "user", username, "err", err)
-		c.SSEvent("error", "保存消息失败")
-		c.Writer.Flush()
-		return
-	}
-	sendProgress("KP主流程已保存")
-	finishSessionProcessing(session.ID)
-	processingOwned = false
-
-	// NOTE: KP主流程结果已落库，立即解除输入锁；Writer/Painter 继续异步更新当前消息。
-	if output.KPReply != "" {
-		sseChunk("narration", output.KPReply)
-	}
-	if assistantMsg != nil {
-		c.SSEvent("kp_done", gin.H{
-			"message_id":  assistantMsg.ID,
-			"created_at":  assistantMsg.CreatedAt,
-			"has_writer":  output.WriterText != "" || output.WriterDirection != "",
-			"writer_done": output.WriterText != "" && output.WriterDirection == "",
-		})
-	} else {
-		c.SSEvent("kp_done", gin.H{})
-	}
-	c.Writer.Flush()
-
-	var writerCh <-chan writerJobResult
-	if assistantMsg != nil {
-		writerClientDone := make(chan struct{})
-		defer close(writerClientDone)
-		writerCh = h.startWriterJob(assistantMsg.ID, gctx, output, writerClientDone)
-	}
-	var painterCh <-chan painterJobResult
-	if len(output.ImagePrompts) > 0 {
-		imageRequest := output.ImagePrompts[0]
-		chatLog.Debug("chat painter queued", "session", sessionID, "user", username, "prompt_len", len([]rune(imageRequest.Prompt)), "prompt", chatTruncate(imageRequest.Prompt, 200))
-		painterClientDone := make(chan struct{})
-		defer close(painterClientDone)
-		assistantMessageID := uint(0)
-		if assistantMsg != nil {
-			assistantMessageID = assistantMsg.ID
-		}
-		painterCh = h.startPainterJob(assistantMessageID, gctx, imageRequest, painterClientDone)
-	}
-
-	streamedWriter := output.WriterText
-	if streamedWriter != "" {
-		sendProgress("叙事正文生成中")
-		sseChunk("token", streamedWriter)
-	}
-	if writerCh != nil || painterCh != nil {
-		if writerCh != nil {
-			sendProgress("叙事正文生成中")
-		} else {
-			sendProgress("场景图像生成中")
-		}
-		for writerCh != nil || painterCh != nil {
-			select {
-			case wr, ok := <-writerCh:
-				if !ok {
-					writerCh = nil
-					continue
-				}
-				if wr.token != "" {
-					streamedWriter += wr.token
-					c.SSEvent("token", wr.token)
-					c.Writer.Flush()
-				}
-				if !wr.done {
-					continue
-				}
-				if wr.text != "" {
-					streamedWriter = wr.text
-				}
-				if wr.err != nil {
-					chatLog.Error("chat writer async failed", "session", sessionID, "user", username, "err", wr.err)
-				}
-				writerCh = nil
-			case pr, ok := <-painterCh:
-				if !ok {
-					painterCh = nil
-					continue
-				}
-				if pr.err != nil {
-					chatLog.Error("chat painter async failed", "session", sessionID, "user", username, "err", pr.err)
-					painterCh = nil
-					continue
-				}
-				if pr.dataURL != "" {
-					c.SSEvent("image", pr.dataURL)
-					c.Writer.Flush()
-				}
-				painterCh = nil
-			case <-c.Request.Context().Done():
-				return
-			}
-		}
-	}
-
-	fullReply := buildAssistantContent(streamedWriter, output.KPReply)
-	chatLog.Debug("chat done", "session", sessionID, "user", username, "tokens", len([]rune(fullReply)), "elapsed_ms", float64(time.Since(pipelineStart).Milliseconds()))
-	c.SSEvent("done", "")
-	c.Writer.Flush()
+	h.driveKP(c, kpSegment{
+		gctx:        gctx,
+		userID:      userID,
+		displayName: playerDisplayName,
+		content:     content,
+		turnActions: turnActions,
+	})
 }
 
 type writerJobResult struct {
@@ -1843,7 +1691,7 @@ func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content 
 					return err
 				}
 			}
-		} else {
+		} else if content != "" {
 			uid := userID
 			if err := tx.Create(&models.Message{
 				SessionID: uint(sessionID),

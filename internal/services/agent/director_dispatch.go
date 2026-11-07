@@ -44,11 +44,13 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		respStr := ""
 		for _, call := range calls {
 			action := ToolCallType(call.Name)
-			if action == ToolResponse || action == ToolEndGame {
+			if action == ToolResponse || action == ToolEndGame || action == ToolAskPlayers {
 				hasResponse = true
 				if tc, err := decodeDirectorToolCall(call); err == nil {
 					if tc.Reply != "" {
 						respStr = tc.Reply
+					} else if tc.Question != "" {
+						respStr = tc.Question
 					} else {
 						respStr = tc.EndSummary
 					}
@@ -244,7 +246,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 				}
 				if !hasPending && len(unresolved) > 0 {
 					emitProgress("KP正在补全战斗轮结算")
-					return fmt.Sprintf("SYSTEM REJECT: 本战斗轮还有参战者未行动(%s)，不能调用response/end_game收尾。请按<combat_state>顺序对当前行动者继续调用combat_act，全员行动完后端会自动进入下一轮再允许response。", strings.Join(unresolved, "、"))
+					return fmt.Sprintf("SYSTEM REJECT: 本战斗轮还有参战者未行动(%s)，不能调用response/ask_players/end_game收尾。请继续对这些参战者调用combat_act(顺序只是建议，NPC可直接裁定，调查员需已有本轮声明)；全员行动完后端会自动进入下一轮再允许收尾。", strings.Join(unresolved, "、"))
 				}
 			}
 			if chaseActive && !hasEndChase && !*roundClosed {
@@ -260,7 +262,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 				}
 				if !hasPending && len(unresolved) > 0 {
 					emitProgress("KP正在补全追逐轮结算")
-					return fmt.Sprintf("SYSTEM REJECT: 本追逐轮还有参与者未行动(%s)，不能调用response/end_game收尾。请按<chase_state>顺序对当前行动者继续调用chase_act，全员行动完后端会自动进入下一轮再允许response。", strings.Join(unresolved, "、"))
+					return fmt.Sprintf("SYSTEM REJECT: 本追逐轮还有参与者未行动(%s)，不能调用response/ask_players/end_game收尾。请继续对这些参与者调用chase_act(顺序只是建议，NPC可直接裁定，调查员需已有本轮声明)；全员行动完后端会自动进入下一轮再允许收尾。", strings.Join(unresolved, "、"))
 				}
 			}
 		}
@@ -390,6 +392,7 @@ type directorDispatchState struct {
 	wroteNarrative      *bool
 	writerNSFW          *bool
 	diceMsg             *string
+	ask                 **AskResult
 	needsWriterFallback *bool
 	emitProgress        func(string)
 }
@@ -441,6 +444,7 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			WroteNarrative:     st.wroteNarrative,
 			WriterNSFW:         st.writerNSFW,
 			DiceMsg:            st.diceMsg,
+			Ask:                st.ask,
 		}
 
 		decoded := make([]ToolCall, len(calls))

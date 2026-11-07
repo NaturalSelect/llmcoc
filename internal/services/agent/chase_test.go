@@ -89,19 +89,42 @@ func TestChaseActionPoints_Formula(t *testing.T) {
 	}
 }
 
-func TestApplyChaseAct_OrderEnforced(t *testing.T) {
+func TestApplyChaseAct_OutOfOrderAccepted(t *testing.T) {
 	chs := &models.ChaseState{
 		Active: true, Round: 1, ActorIndex: 0, MinMOV: 5,
 		Participants: []models.ChaseParticipant{
-			{Name: "甲", DEX: 80, MOV: 8},
-			{Name: "乙", DEX: 50, MOV: 6},
+			{Name: "甲", DEX: 80, MOV: 8, IsNPC: true},
+			{Name: "乙", DEX: 50, MOV: 6, IsNPC: true},
 		},
 	}
 	actx := newEncounterTestActx(nil, nil)
 	roundClosed := false
 	result := applyChaseAct(chs, ToolCall{ChaseActorName: "乙", ChaseAction: &ChaseActionDetail{Type: "move"}}, actx, &roundClosed)
-	if !strings.Contains(result, "SYSTEM REJECT") || !strings.Contains(result, "甲") {
-		t.Errorf("result = %q, want SYSTEM REJECT naming 甲 as the correct next actor", result)
+	if strings.Contains(result, "SYSTEM REJECT") {
+		t.Fatalf("result = %q, DEX顺序只是建议,乱序结算应被接受", result)
+	}
+	if !chs.Participants[1].HasActed || chs.Participants[0].HasActed {
+		t.Error("只有被结算的乙应置HasActed")
+	}
+}
+
+func TestApplyChaseAct_OutOfOrderStillNeedsDeclaration(t *testing.T) {
+	players := []models.SessionPlayer{encounterTestPC(1, "甲", 80, 10, "none"), encounterTestPC(2, "乙", 50, 10, "none")}
+	chs := &models.ChaseState{
+		Active: true, Round: 1, ActorIndex: 0, MinMOV: 5,
+		Participants: []models.ChaseParticipant{
+			{Name: "甲", DEX: 80, MOV: 8, UserID: 1},
+			{Name: "乙", DEX: 50, MOV: 6, UserID: 2},
+		},
+	}
+	actx := newEncounterTestActxNoDeclarations(players, nil)
+	roundClosed := false
+	result := applyChaseAct(chs, ToolCall{ChaseActorName: "乙", ChaseAction: &ChaseActionDetail{Type: "move"}}, actx, &roundClosed)
+	if !strings.Contains(result, "SYSTEM REJECT") || !strings.Contains(result, "ask_players") {
+		t.Errorf("result = %q, want 乱序但没有声明时仍被拒并提示ask_players", result)
+	}
+	if chs.Participants[1].HasActed {
+		t.Error("被拒时不应更改HasActed")
 	}
 }
 

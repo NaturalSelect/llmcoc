@@ -133,7 +133,7 @@ func TestBuildCombatState_MissingPCFails(t *testing.T) {
 	}
 }
 
-func TestApplyCombatAct_OrderEnforced(t *testing.T) {
+func TestApplyCombatAct_OutOfOrderAccepted(t *testing.T) {
 	cs := &models.CombatState{
 		Active: true, Round: 1, ActorIndex: 0,
 		Participants: []models.CombatParticipant{
@@ -145,11 +145,54 @@ func TestApplyCombatAct_OrderEnforced(t *testing.T) {
 	roundClosed := false
 	call := ToolCall{CombatActorName: "乙", CombatAction: &CombatActionDetail{Type: "attack"}}
 	result := applyCombatAct(cs, call, actx, &roundClosed)
-	if !strings.Contains(result, "SYSTEM REJECT") || !strings.Contains(result, "甲") {
-		t.Errorf("result = %q, want SYSTEM REJECT naming 甲 as the correct next actor", result)
+	if strings.Contains(result, "SYSTEM REJECT") {
+		t.Fatalf("result = %q, DEX顺序只是建议,乱序结算应被接受", result)
 	}
-	if cs.Participants[0].HasActed {
-		t.Error("乱序调用被拒时不应更改任何参战者的HasActed")
+	if !cs.Participants[1].HasActed || cs.Participants[0].HasActed {
+		t.Error("只有被结算的乙应置HasActed")
+	}
+	if cs.ActorIndex != 0 {
+		t.Errorf("ActorIndex = %d, want 0(建议的下一位是仍未行动的甲)", cs.ActorIndex)
+	}
+}
+
+func TestApplyCombatAct_OutOfOrderStillNeedsDeclaration(t *testing.T) {
+	players := []models.SessionPlayer{encounterTestPC(1, "甲", 80, 10, "none"), encounterTestPC(2, "乙", 50, 10, "none")}
+	cs := &models.CombatState{
+		Active: true, Round: 1, ActorIndex: 0,
+		Participants: []models.CombatParticipant{
+			{Name: "甲", DEX: 80, UserID: 1},
+			{Name: "乙", DEX: 50, UserID: 2},
+		},
+	}
+	actx := newEncounterTestActxNoDeclarations(players, nil)
+	roundClosed := false
+	result := applyCombatAct(cs, ToolCall{CombatActorName: "乙", CombatAction: &CombatActionDetail{Type: "attack"}}, actx, &roundClosed)
+	if !strings.Contains(result, "SYSTEM REJECT") || !strings.Contains(result, "ask_players") {
+		t.Errorf("result = %q, want 乱序但没有声明时仍被拒并提示ask_players", result)
+	}
+	if cs.Participants[1].HasActed {
+		t.Error("被拒时不应更改HasActed")
+	}
+}
+
+func TestApplyCombatAct_RejectsActedUnknownAndDead(t *testing.T) {
+	players := []models.SessionPlayer{encounterTestPC(1, "甲", 80, 10, "dead")}
+	cs := &models.CombatState{
+		Active: true, Round: 1, ActorIndex: 0,
+		Participants: []models.CombatParticipant{
+			{Name: "甲", DEX: 80, UserID: 1},
+			{Name: "乙", DEX: 50, IsNPC: true, HasActed: true},
+			{Name: "丙", DEX: 40, IsNPC: true},
+		},
+	}
+	actx := newEncounterTestActx(players, nil)
+	for _, name := range []string{"乙", "不存在", "甲"} {
+		roundClosed := false
+		result := applyCombatAct(cs, ToolCall{CombatActorName: name, CombatAction: &CombatActionDetail{Type: "attack"}}, actx, &roundClosed)
+		if !strings.Contains(result, "SYSTEM REJECT") || !strings.Contains(result, "丙") {
+			t.Errorf("actor=%s result = %q, want SYSTEM REJECT并列出可结算的丙", name, result)
+		}
 	}
 }
 

@@ -134,16 +134,30 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall, actx ActionContext, ro
 	}
 
 	actorName := strings.TrimSpace(call.ChaseActorName)
-	current := &chs.Participants[chs.ActorIndex]
-	if actorName != current.Name {
-		return fmt.Sprintf("SYSTEM REJECT: 追逐轮行动顺序由后端强制,当前应轮到 %s(DEX%d) 行动,而不是 %s。请按<chase_state>给出的顺序调用chase_act。",
-			current.Name, current.DEX, actorName)
+	// DEX顺序只是建议:KP可以结算任何本轮未行动的存活参与者,选中者成为当前行动者。
+	actorIdx := -1
+	for i, p := range chs.Participants {
+		if p.Name == actorName {
+			actorIdx = i
+			break
+		}
 	}
+	if actorIdx < 0 {
+		return fmt.Sprintf("SYSTEM REJECT: 追逐中没有参与者 %s。可结算的参与者:%s。", actorName, pendingChaseActors(chs, actx))
+	}
+	if chs.Participants[actorIdx].HasActed {
+		return fmt.Sprintf("SYSTEM REJECT: %s 本轮已经行动过。可结算的参与者:%s。", actorName, pendingChaseActors(chs, actx))
+	}
+	if !isCharacterAlive(actorName, chs.Participants[actorIdx].IsNPC, actx.GCtx.Session.Players, *actx.TempNPCs) {
+		return fmt.Sprintf("SYSTEM REJECT: %s 已经出局,不能行动。可结算的参与者:%s。", actorName, pendingChaseActors(chs, actx))
+	}
+	chs.ActorIndex = actorIdx
+	current := &chs.Participants[actorIdx]
 
-	// 声明可见性闸门(D3):轮到的是PC但本轮还没提交行动声明时拒绝推进——按批次收集后,
-	// 这种情况意味着该PC所在的批次还没交齐,不应该靠Director瞎编一个行动替玩家决定。
+	// 声明可见性闸门(D3):要结算的是PC但本轮还没提交行动声明时拒绝推进——不应该靠
+	// Director瞎编一个行动替玩家决定;需要声明就用ask_players点名该PC。
 	if !current.IsNPC && !hasDeclaration(actx.GCtx.PendingActions, current.UserID, current.Name) {
-		return fmt.Sprintf("SYSTEM REJECT: 当前行动者 %s 本轮尚未提交行动声明,请立即调用response收尾,在回复中点名等待%s行动。",
+		return fmt.Sprintf("SYSTEM REJECT: 调查员 %s 本轮尚未提交行动声明,不能替其结算。请改为结算其他参与者,或调用ask_players点名%s声明行动。",
 			current.Name, current.Name)
 	}
 
@@ -169,8 +183,8 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall, actx ActionContext, ro
 		}
 		target.PendingClarification = true
 		target.PendingQuestion = question
-		return fmt.Sprintf("【%s的攻击暂停】等待%s澄清反应方式。请立即调用response,在reply中问出:%q,不要继续处理后续参战者。",
-			actorName, target.Name, question)
+		return fmt.Sprintf("【%s的攻击暂停】等待%s澄清反应方式。请立即调用ask_players点名%s,question问出:%q,不要继续处理后续参战者。",
+			actorName, target.Name, target.Name, question)
 	}
 
 	// 成功结算,清空自己和目标身上残留的待澄清标记(续接场景)。
@@ -256,12 +270,27 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall, actx ActionContext, ro
 	} else {
 		chs.ActorIndex = next
 		nextP := chs.Participants[next]
-		sb.WriteString(fmt.Sprintf(" 下一行动者:%s(DEX%d)。", nextP.Name, nextP.DEX))
+		sb.WriteString(fmt.Sprintf(" 建议的下一行动者:%s(DEX%d)。", nextP.Name, nextP.DEX))
 		if !nextP.IsNPC && !hasDeclaration(actx.GCtx.PendingActions, nextP.UserID, nextP.Name) {
-			sb.WriteString(fmt.Sprintf("%s本轮尚未提交行动声明,推进到此为止,请立即调用response收尾并在回复中点名等待%s行动。", nextP.Name, nextP.Name))
+			sb.WriteString(fmt.Sprintf("%s本轮尚未提交行动声明,不能替其结算;请先结算其他已有声明的参与者,没有可结算者时调用ask_players点名%s声明行动。", nextP.Name, nextP.Name))
 		}
 	}
 	return sb.String()
+}
+
+// pendingChaseActors 列出本轮还没行动的存活参与者,供拒绝文案提示KP可以选谁。
+func pendingChaseActors(chs *models.ChaseState, actx ActionContext) string {
+	var names []string
+	for _, p := range chs.Participants {
+		if p.HasActed || !isCharacterAlive(p.Name, p.IsNPC, actx.GCtx.Session.Players, *actx.TempNPCs) {
+			continue
+		}
+		names = append(names, p.Name)
+	}
+	if len(names) == 0 {
+		return "无"
+	}
+	return strings.Join(names, "、")
 }
 
 // chaseOrderSummary returns a compact DEX-order string for the KP result message.
@@ -342,7 +371,7 @@ func chaseStateBrief(chs *models.ChaseState, gctx GameContext, tempNPCs []models
 	if len(pending) > 0 {
 		sb.WriteString(" 待澄清: " + strings.Join(pending, "；") + "。")
 	}
-	sb.WriteString("\n轮次、行动顺序与行动点由后端维护,不要自行记忆;每次只对当前行动者调用一次chase_act(一次性报告其本轮全部行动),推进到下一个尚未提交声明的调查员为止即用response收尾并在回复中点名等待该调查员;全员行动完后端自动进入下一轮。</chase_state>")
+	sb.WriteString("\n轮次与行动点由后端维护,不要自行记忆;`→`和DEX顺序只是建议,你可以结算任何本轮未行动的参与者(NPC由你直接裁定,调查员必须已有本轮声明才能结算),每次对一名参与者调用一次chase_act(一次性报告其本轮全部行动);需要某位调查员声明行动时用ask_players点名他;全员行动完后端自动进入下一轮。</chase_state>")
 	return sb.String()
 }
 
@@ -366,7 +395,7 @@ func (startChaseAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	saveChaseState(actx.Sid, &chs)
 	first := chs.Participants[0]
 	return []ToolResult{{Action: ToolStartChase, Result: fmt.Sprintf(
-		"追逐开始,行动顺序(DEX降序): %s。下一步:请对当前行动者 %s 调用chase_act。",
+		"追逐开始,行动顺序(DEX降序,仅供参考): %s。下一步:请对本轮要结算的参与者(建议从 %s 开始)调用chase_act。",
 		chaseOrderSummary(chs.Participants), first.Name)}}
 }
 

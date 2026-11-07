@@ -47,6 +47,7 @@ func directorTools(dramaturgEnabled bool) []scripterTool {
 		queryNPCCardTool(),
 		updateNPCCardTool(),
 		responseTool(),
+		askPlayersTool(),
 		updateSessionMemoryTool(),
 		updateLocationTool(),
 		updateNPCLocationTool(),
@@ -603,6 +604,28 @@ func responseTool() scripterTool {
 	}
 }
 
+func askPlayersTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolAskPlayers),
+			Description: `点名一名或多名调查员，把发言权交给他们并结束本段 KP 决策。question 是对被点名者说的话(口语化，1-2句，写清楚需要他们决定或回应什么)；targets 是被点名的调查员名数组，["all"]表示全体存活调查员。
+本段结束后，只有被点名的玩家可以发言，其他玩家的输入会被后端拒绝，直到被点名者全部回应。场景需要调查员做决定、声明行动或回答 NPC 的问题时必须使用本工具。
+不需要玩家决定时(如过场、NPC 独白、时间推进)不要点名，只调用 response 发布叙述，后端会再给你一段 <kp_floor> 让你继续推进。
+战斗/追逐中有调查员处于待澄清暂停时，该调查员会被自动并入 targets。
+【批次规则】与 response 相同：可与 write 和状态更新工具同批，但查询/掷骰/act_npc 类工具的结果必须先在更早的一轮读到。ask_players 的 question 就是本段对玩家的回复，不需要再额外调用 response。
+调用示例：{"targets":["调查员名"],"question":"门后传来抓挠声，你打算怎么办？"}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"targets": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "被点名的调查员名；[\"all\"]表示全体存活调查员"},
+					"question": {"type": "string", "description": "对被点名者说的话，口语化，1-2句，不使用编号列表"}
+				},
+				"required": ["targets", "question"]
+			}`),
+		},
+	}
+}
+
 func updateSessionMemoryTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
@@ -731,7 +754,7 @@ func startCombatTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolStartCombat),
-			Description: `开始一场战斗，由后端建立DEX(敏捷)行动顺序并维护轮次，之后必须按<combat_state>给出的顺序逐个调用combat_act，不要自行记忆轮次或行动顺序。combat_participants列出全部参战者(调查员+NPC)。
+			Description: `开始一场战斗，由后端建立DEX(敏捷)行动顺序并维护轮次，之后调用combat_act逐个结算参战者。DEX顺序只是建议，你可以结算任何本轮未行动的参战者，不要自行记忆轮次。combat_participants列出全部参战者(调查员+NPC)。
 【数值权威】调查员的dex/hp字段会被后端忽略并直接从角色卡读取，无需查询也无需真实填写；NPC的dex优先取该NPC卡上的真实值，找不到时才使用你填写的值。combat_skill仅用于DEX相同时的次级排序(填格斗/闪避等实际战斗技能值)，DEX相同且未提供combat_skill时按你的列表顺序排列。
 【批次规则】本工具必须单独成批(可与report同批)，不能与其他任何工具(含自身重复调用)同批——建立的顺序需要先被你读到，才能开始调用combat_act。
 调用示例：{"combat_participants":[{"name":"约翰","is_npc":false},{"name":"食尸鬼","is_npc":true,"dex":70,"combat_skill":60,"hp":15}]}`,
@@ -764,9 +787,9 @@ func combatActTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolCombatAct),
-			Description: `结算战斗轮中一名参战者的行动。combat_actor_name必须等于<combat_state>里当前指针指向的行动者，顺序由后端强制，乱序/超前调用会被拒绝并告知正确的下一行动者；不要自己猜测或提前处理还未轮到的参战者。
+			Description: `结算战斗轮中一名参战者的行动。combat_actor_name可以是任何本轮未行动的存活参战者，<combat_state>里的顺序只是建议；已行动或已阵亡者会被拒绝。要结算的是调查员时，该调查员必须已有本轮行动声明，否则会被拒绝——需要声明就调用ask_players点名他，不要替玩家编造行动。
 combat_action.type: attack(攻击)/dodge(闪避,置对方已闪避标记)/fight_back(反击,置对方已反击标记)/aim(瞄准,下轮攻击获得奖励骰)/take_cover(寻找掩体,下轮扣AP)/maneuver(战技)/other。dodge/fight_back用于记录target这次选择了哪种反应(用于寡不敌众判定)，target_name填被攻击方。
-【needs_clarification】唯一合法用途：被攻击方是调查员，且其本轮已提交意图完全无法推断出闪避/反击倾向时，置为true并在clarify_question写出要问玩家的话(如"你选择闪避还是反击？")。这会暂停本战斗轮(不推进顺序)，你必须紧接着调用response直接问该玩家，不要猜测/代选，也不要继续处理后续参战者。禁止对NPC使用——NPC的反应由你直接决定。能从玩家本轮已提交的意图合理推断倾向时(如"我打算硬拼""我尽量躲开")不得使用本信号，直接按推断结果结算。
+【needs_clarification】唯一合法用途：被攻击方是调查员，且其本轮已提交意图完全无法推断出闪避/反击倾向时，置为true并在clarify_question写出要问玩家的话(如"你选择闪避还是反击？")。这会暂停本战斗轮(不推进顺序)，你必须紧接着调用ask_players点名该玩家直接问他，不要猜测/代选，也不要继续处理后续参战者。禁止对NPC使用——NPC的反应由你直接决定。能从玩家本轮已提交的意图合理推断倾向时(如"我打算硬拼""我尽量躲开")不得使用本信号，直接按推断结果结算。
 真正的攻击命中/伤害仍须走roll_dice+check_rule+update_characters等常规流程，combat_act本身只负责顺序推进与状态标记，不计算成败。
 【批次规则】本工具必须单独成批(可与report同批)，结果需先被你读到才能继续下一步。
 调用示例：{"combat_actor_name":"约翰","combat_action":{"type":"attack","target_name":"食尸鬼","weapon_name":"左轮手枪"}}`,
@@ -815,7 +838,7 @@ func startChaseTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolStartChase),
-			Description: `开始一场追逐，由后端建立DEX(敏捷)行动顺序并维护轮次与行动点，之后必须按<chase_state>给出的顺序逐个调用chase_act，不要自行记忆轮次、顺序或行动点。chase_participants列出全部参与者(追逐者+逃离者)。
+			Description: `开始一场追逐，由后端建立DEX(敏捷)行动顺序并维护轮次与行动点，之后调用chase_act逐个结算参与者。DEX顺序只是建议，你可以结算任何本轮未行动的参与者，不要自行记忆轮次或行动点。chase_participants列出全部参与者(追逐者+逃离者)。
 【数值权威】调查员的dex字段会被后端忽略并直接从角色卡读取；mov必须填写速度检定后的调整值(检定结果，而非角色卡基础MOV)。DEX相同者请先做一次敏捷对抗检定，按对抗结果的先后顺序在列表中排列。location是起始地点索引(数字越大越靠前/越接近逃离方向)，is_pursuer标记该角色是追逐者还是逃离者。
 【批次规则】本工具必须单独成批(可与report同批)，不能与其他任何工具同批——建立的顺序需要先被你读到，才能开始调用chase_act。
 调用示例：{"chase_participants":[{"name":"哈维","is_npc":false,"mov":5,"location":0,"is_pursuer":false},{"name":"愤怒的农夫","is_npc":true,"dex":50,"mov":6,"location":-2,"is_pursuer":true}]}`,
@@ -849,10 +872,10 @@ func chaseActTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolChaseAct),
-			Description: `结算追逐轮中一名参与者本轮的全部行动。chase_actor_name必须等于<chase_state>里当前指针指向的行动者，顺序由后端强制，乱序/超前调用会被拒绝并告知正确的下一行动者。
+			Description: `结算追逐轮中一名参与者本轮的全部行动。chase_actor_name可以是任何本轮未行动的存活参与者，<chase_state>里的顺序只是建议；已行动或已出局者会被拒绝。要结算的是调查员时，该调查员必须已有本轮行动声明，否则会被拒绝——需要声明就调用ask_players点名他，不要替玩家编造行动。
 一次调用需报告该参与者本轮全部行动点的完整使用结果(移动了几格、路上是否闯过险境/障碍、是否与人冲突)，而不是每花一点行动点就调用一次。
 chase_action.type: move(单纯移动)/hazard(闯险境)/obstacle(遇到或破坏障碍,需给出obstacle_name/obstacle_hp/obstacle_max_hp/obstacle_between)/conflict(与他人发生冲突/攻击)/other。move_delta是本次调用净移动的地点数(正数=靠近追逐者方向，负数=拉开距离)，任意type都可以附带move_delta。
-【needs_clarification】唯一合法用途：conflict类型下被攻击方是调查员，且其本轮已提交意图完全无法推断闪避/反击倾向时使用，语义与combat_act相同——置true会暂停本追逐轮，你必须紧接着调用response直接问该玩家。险境中"谨慎行动花行动点换奖励骰"还是"鲁莽硬闯"属于行动者自己回合的选择，未声明时按不额外花行动点、不买奖励骰处理，不得用needs_clarification代替。
+【needs_clarification】唯一合法用途：conflict类型下被攻击方是调查员，且其本轮已提交意图完全无法推断闪避/反击倾向时使用，语义与combat_act相同——置true会暂停本追逐轮，你必须紧接着调用ask_players点名该玩家直接问他。险境中"谨慎行动花行动点换奖励骰"还是"鲁莽硬闯"属于行动者自己回合的选择，未声明时按不额外花行动点、不买奖励骰处理，不得用needs_clarification代替。
 【批次规则】本工具必须单独成批(可与report同批)。
 调用示例：{"chase_actor_name":"哈维","chase_action":{"type":"hazard","move_delta":1,"ap_debt_next":0}}`,
 			Parameters: jsonSchemaObject(`{

@@ -28,6 +28,8 @@ type ActionContext struct {
 	WroteNarrative     *bool
 	WriterNSFW         *bool
 	DiceMsg            *string
+	// Ask 由ask_players写入;run结束时为nil表示KP保留发言权。
+	Ask **AskResult
 
 	// Combat/Chase 是本次run()持有的活战斗/追逐状态(nil=未激活);战斗/追逐工具
 	// 执行器通过它们读写、并允许置nil(start_*建立/end_*清空)。二者互斥。
@@ -62,6 +64,7 @@ var noSideEffectActions = map[ToolCallType]bool{
 // 这些动作不需要把结果再交给KP阅读后才能结束回合。
 var responseCompatibleActions = map[ToolCallType]bool{
 	ToolResponse:               true,
+	ToolAskPlayers:             true,
 	ToolEndGame:                true,
 	ToolWrite:                  true,
 	ToolHint:                   true,
@@ -119,6 +122,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolHint:                   hintAction{},
 	ToolGenerateImage:          generateImageAction{},
 	ToolResponse:               responseAction{},
+	ToolAskPlayers:             askPlayersAction{},
 	ToolReport:                 reportAction{},
 
 	ToolStartCombat: startCombatAction{},
@@ -550,6 +554,133 @@ func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	debugf("tool", "session=%d response narration=%s", actx.Sid, call.Reply)
 	return nil
+}
+
+// askPlayersAction 把名字解析成玩家并交出发言权;任一名字不存在或角色已死整批拒绝,
+// 让Director用正确的名字重发,避免静默点错人把房间卡死。
+type askPlayersAction struct{}
+
+func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	reject := func(msg string) []ToolResult {
+		return []ToolResult{{Action: ToolAskPlayers, Result: "SYSTEM REJECT: " + msg}}
+	}
+	question := strings.TrimSpace(call.Question)
+	if question == "" {
+		return reject("ask_players.question 不能为空，请写明需要被点名者决定或回应什么。")
+	}
+
+	players := actx.GCtx.Session.Players
+	alive := func(p models.SessionPlayer) bool {
+		return isCharacterAlive(p.CharacterCard.Name, false, players, nil)
+	}
+	var aliveNames []string
+	for _, p := range players {
+		if alive(p) {
+			aliveNames = append(aliveNames, p.CharacterCard.Name)
+		}
+	}
+
+	seen := map[uint]bool{}
+	var ids []uint
+	var names []string
+	add := func(p models.SessionPlayer) {
+		if seen[p.UserID] {
+			return
+		}
+		seen[p.UserID] = true
+		ids = append(ids, p.UserID)
+		names = append(names, p.CharacterCard.Name)
+	}
+
+	var unknown, dead []string
+	for _, target := range call.Targets {
+		target = strings.TrimSpace(target)
+		if target == "" {
+			continue
+		}
+		if strings.EqualFold(target, "all") {
+			for _, p := range players {
+				if alive(p) {
+					add(p)
+				}
+			}
+			continue
+		}
+		found := false
+		for _, p := range players {
+			if p.CharacterCard.Name != target {
+				continue
+			}
+			found = true
+			if alive(p) {
+				add(p)
+			} else {
+				dead = append(dead, target)
+			}
+			break
+		}
+		if !found {
+			unknown = append(unknown, target)
+		}
+	}
+	if len(unknown) > 0 || len(dead) > 0 {
+		var parts []string
+		if len(unknown) > 0 {
+			parts = append(parts, fmt.Sprintf("找不到调查员 %s", strings.Join(unknown, "、")))
+		}
+		if len(dead) > 0 {
+			parts = append(parts, fmt.Sprintf("调查员 %s 已死亡", strings.Join(dead, "、")))
+		}
+		return reject(fmt.Sprintf("%s。targets 必须是存活调查员的角色名(当前存活：%s)或 [\"all\"]，请修正后重发。", strings.Join(parts, "；"), strings.Join(aliveNames, "、")))
+	}
+
+	// 遭遇中卡在待澄清暂停的PC必须被点名，否则冻结的攻击方永远等不到回答。
+	var merged []string
+	mergePending := func(name string, isNPC, pending bool, userID uint) {
+		if isNPC || !pending {
+			return
+		}
+		for _, p := range players {
+			if (userID != 0 && p.UserID == userID) || p.CharacterCard.Name == name {
+				if alive(p) && !seen[p.UserID] {
+					add(p)
+					merged = append(merged, p.CharacterCard.Name)
+				}
+				return
+			}
+		}
+	}
+	if actx.Combat != nil && *actx.Combat != nil && (*actx.Combat).Active {
+		for _, p := range (*actx.Combat).Participants {
+			mergePending(p.Name, p.IsNPC, p.PendingClarification, p.UserID)
+		}
+	}
+	if actx.Chase != nil && *actx.Chase != nil && (*actx.Chase).Active {
+		for _, p := range (*actx.Chase).Participants {
+			mergePending(p.Name, p.IsNPC, p.PendingClarification, p.UserID)
+		}
+	}
+
+	if len(ids) == 0 {
+		return reject(fmt.Sprintf("ask_players.targets 没有解析出任何存活调查员，请填写角色名(当前存活：%s)或 [\"all\"]。", strings.Join(aliveNames, "、")))
+	}
+
+	*actx.HasEnd = true
+	if actx.Ask != nil {
+		*actx.Ask = &AskResult{UserIDs: ids, Names: names, Question: question}
+	}
+	if *actx.KPNarration != "" {
+		*actx.KPNarration += "\n" + question
+	} else {
+		*actx.KPNarration = question
+	}
+	debugf("tool", "session=%d ask_players targets=%v question=%s", actx.Sid, names, question)
+
+	result := fmt.Sprintf("已点名：%s。本段结束，等待他们回应。", strings.Join(names, "、"))
+	if len(merged) > 0 {
+		result += fmt.Sprintf("(%s 正处于待澄清暂停，已自动并入点名对象。)", strings.Join(merged, "、"))
+	}
+	return []ToolResult{{Action: ToolAskPlayers, Result: result}}
 }
 
 type responseOptionsPayload struct {

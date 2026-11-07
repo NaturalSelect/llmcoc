@@ -542,6 +542,11 @@
                                             x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
                                             @click="startSession()" class="btn btn-green text-xs">▶ 开始</button>
                                         <button
+                                            x-show="canKPContinue && !streaming && currentSession?.status==='playing'"
+                                            @click="hostContinueKP()" :disabled="connectionRecovering"
+                                            title="跳过未回应的玩家，让 KP 继续推进剧情"
+                                            class="btn btn-amber text-xs">让 KP 继续</button>
+                                        <button
                                             x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
                                             @click="endSession()" :disabled="endingSession"
                                             class="btn btn-red text-xs">结束</button>
@@ -577,6 +582,10 @@
                                                 x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
                                                 @click="moreMenuOpen = false; startSession()" class="game-menu-item">▶
                                                 开始</button>
+                                            <button role="menuitem"
+                                                x-show="canKPContinue && !streaming && currentSession?.status==='playing'"
+                                                @click="moreMenuOpen = false; hostContinueKP()"
+                                                :disabled="connectionRecovering" class="game-menu-item">让 KP 继续</button>
                                             <button role="menuitem"
                                                 x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
                                                 @click="moreMenuOpen = false; endSession()" :disabled="endingSession"
@@ -714,6 +723,10 @@
                                                 <template x-if="!msg.writer_text && !msg.narration_text">
                                                     <div>
                                                         <p class="narrative" x-text="stripAckContent(msg.content)"></p>
+                                                        <p x-show="msg._writer_streaming && !stripAckContent(msg.content).trim()"
+                                                            class="narrative cursor text-amber-200/60">
+                                                            叙事正文生成中…
+                                                        </p>
                                                         <template x-if="msg.images && msg.images.length">
                                                             <div class="mt-3 grid gap-2">
                                                                 <template x-for="(img, idx) in msg.images" :key="idx">
@@ -842,6 +855,18 @@
                                     </p>
                                 </div>
 
+                                <!-- KP 点名横幅（仅 KP 驱动房间；老房间 spotlight 为 null 不显示） -->
+                                <div x-show="spotlightActive() && !streaming && !waitingForPlayers && !connectionRecovering"
+                                    class="msg msg-sys fade-up border"
+                                    :class="spotlight?.asked_me ? 'border-amber-500/70' : 'border-[#1a2d4a]'"
+                                    :style="spotlight?.asked_me ? 'opacity:1' : ''">
+                                    <p class="text-xs italic font-ui"
+                                        :class="spotlight?.asked_me ? 'text-amber-300 font-bold' : 'text-blue-300/70'">
+                                        <span x-text="spotlight?.asked_me ? '👉' : (spotlight?.kp_floor ? '🎭' : '⏳')"></span>
+                                        <span x-text="spotlightBannerText()"></span>
+                                    </p>
+                                </div>
+
                                 <!-- 连接恢复中 -->
                                 <div x-show="connectionRecovering" class="msg msg-sys fade-up border border-[#1a2a3a]">
                                     <p class="text-blue-400/60 text-xs italic font-ui">
@@ -859,7 +884,7 @@
                                     </div>
                                     <div class="response-suggestions-list" x-show="!collapsed">
                                         <button type="button" class="response-suggestion" @click="insertDialogueQuotes()"
-                                            :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || connectionRecovering"
+                                            :disabled="!canSpeak()"
                                             title="插入台词括号；选中文字时会直接包住选中内容">「」台词</button>
                                         <template x-for="(opt, idx) in (activeResponseSuggestions()?.options || [])"
                                             :key="idx">
@@ -870,15 +895,17 @@
                                 </div>
                                 <div class="flex flex-col sm:flex-row gap-2">
                                     <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()" id="chatInputBox"
-                                        placeholder="以角色身份写下你的行动或台词，如：我推开门，「有人在吗？」 (Ctrl+Enter 发送)" rows="2"
-                                        :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || connectionRecovering"
+                                        :placeholder="chatPlaceholder()" rows="2"
+                                        :disabled="!canSpeak()"
                                         class="inp game-chat-input flex-1 resize-none bg-chat focus:border-amber-700 transition-colors"
                                         style="line-height:1.5"></textarea>
                                     <button @click="sendChat()"
-                                        :disabled="currentSession?.status !== 'playing' || streaming || waitingForPlayers || connectionRecovering || !chatInput.trim()"
+                                        :disabled="!canSpeak() || !chatInput.trim()"
                                         class="btn btn-amber self-stretch sm:self-end px-5 py-2 h-auto sm:h-[48px] min-h-[40px] shadow-lg min-w-[80px] flex items-center justify-center">
                                         <span
-                                            x-show="!streaming && !waitingForPlayers && !connectionRecovering">发送</span>
+                                            x-show="!streaming && !waitingForPlayers && !connectionRecovering && !spotlightBlocked()">发送</span>
+                                        <span
+                                            x-show="!streaming && !waitingForPlayers && !connectionRecovering && spotlightBlocked()">等待点名</span>
                                         <span x-show="streaming && !waitingForPlayers && !connectionRecovering"
                                             class="flex gap-1 items-center">
                                             <span class="dot" style="width:4px; height:4px"></span>

@@ -195,16 +195,30 @@ func applyCombatAct(cs *models.CombatState, call ToolCall, actx ActionContext, r
 	}
 
 	actorName := strings.TrimSpace(call.CombatActorName)
-	current := &cs.Participants[cs.ActorIndex]
-	if actorName != current.Name {
-		return fmt.Sprintf("SYSTEM REJECT: 战斗轮行动顺序由后端强制,当前应轮到 %s(DEX%d) 行动,而不是 %s。请按<combat_state>给出的顺序调用combat_act。",
-			current.Name, current.DEX, actorName)
+	// DEX顺序只是建议:KP可以结算任何本轮未行动的存活参战者,选中者成为当前行动者。
+	actorIdx := -1
+	for i, p := range cs.Participants {
+		if p.Name == actorName {
+			actorIdx = i
+			break
+		}
 	}
+	if actorIdx < 0 {
+		return fmt.Sprintf("SYSTEM REJECT: 战斗中没有参战者 %s。可结算的参战者:%s。", actorName, pendingCombatActors(cs, actx))
+	}
+	if cs.Participants[actorIdx].HasActed {
+		return fmt.Sprintf("SYSTEM REJECT: %s 本轮已经行动过。可结算的参战者:%s。", actorName, pendingCombatActors(cs, actx))
+	}
+	if !isCharacterAlive(actorName, cs.Participants[actorIdx].IsNPC, actx.GCtx.Session.Players, *actx.TempNPCs) {
+		return fmt.Sprintf("SYSTEM REJECT: %s 已经阵亡,不能行动。可结算的参战者:%s。", actorName, pendingCombatActors(cs, actx))
+	}
+	cs.ActorIndex = actorIdx
+	current := &cs.Participants[actorIdx]
 
-	// 声明可见性闸门(D3):轮到的是PC但本轮还没提交行动声明时拒绝推进——按批次收集后,
-	// 这种情况意味着该PC所在的批次还没交齐,不应该靠Director瞎编一个行动替玩家决定。
+	// 声明可见性闸门(D3):要结算的是PC但本轮还没提交行动声明时拒绝推进——不应该靠
+	// Director瞎编一个行动替玩家决定;需要声明就用ask_players点名该PC。
 	if !current.IsNPC && !hasDeclaration(actx.GCtx.PendingActions, current.UserID, current.Name) {
-		return fmt.Sprintf("SYSTEM REJECT: 当前行动者 %s 本轮尚未提交行动声明,请立即调用response收尾,在回复中点名等待%s行动。",
+		return fmt.Sprintf("SYSTEM REJECT: 调查员 %s 本轮尚未提交行动声明,不能替其结算。请改为结算其他参战者,或调用ask_players点名%s声明行动。",
 			current.Name, current.Name)
 	}
 
@@ -226,8 +240,8 @@ func applyCombatAct(cs *models.CombatState, call ToolCall, actx ActionContext, r
 		}
 		target.PendingClarification = true
 		target.PendingQuestion = question
-		return fmt.Sprintf("【%s的攻击暂停】等待%s澄清反应方式。请立即调用response,在reply中问出:%q,不要继续处理后续参战者。",
-			actorName, target.Name, question)
+		return fmt.Sprintf("【%s的攻击暂停】等待%s澄清反应方式。请立即调用ask_players点名%s,question问出:%q,不要继续处理后续参战者。",
+			actorName, target.Name, target.Name, question)
 	}
 
 	// 成功结算,清空自己和目标身上残留的待澄清标记(续接场景)。
@@ -290,12 +304,27 @@ func applyCombatAct(cs *models.CombatState, call ToolCall, actx ActionContext, r
 	} else {
 		cs.ActorIndex = next
 		nextP := cs.Participants[next]
-		sb.WriteString(fmt.Sprintf(" 下一行动者:%s(DEX%d)。", nextP.Name, nextP.DEX))
+		sb.WriteString(fmt.Sprintf(" 建议的下一行动者:%s(DEX%d)。", nextP.Name, nextP.DEX))
 		if !nextP.IsNPC && !hasDeclaration(actx.GCtx.PendingActions, nextP.UserID, nextP.Name) {
-			sb.WriteString(fmt.Sprintf("%s本轮尚未提交行动声明,推进到此为止,请立即调用response收尾并在回复中点名等待%s行动。", nextP.Name, nextP.Name))
+			sb.WriteString(fmt.Sprintf("%s本轮尚未提交行动声明,不能替其结算;请先结算其他已有声明的参战者,没有可结算者时调用ask_players点名%s声明行动。", nextP.Name, nextP.Name))
 		}
 	}
 	return sb.String()
+}
+
+// pendingCombatActors 列出本轮还没行动的存活参战者,供拒绝文案提示KP可以选谁。
+func pendingCombatActors(cs *models.CombatState, actx ActionContext) string {
+	var names []string
+	for _, p := range cs.Participants {
+		if p.HasActed || !isCharacterAlive(p.Name, p.IsNPC, actx.GCtx.Session.Players, *actx.TempNPCs) {
+			continue
+		}
+		names = append(names, p.Name)
+	}
+	if len(names) == 0 {
+		return "无"
+	}
+	return strings.Join(names, "、")
 }
 
 // combatOrderSummary returns a compact DEX-order string for the KP result message.
@@ -387,7 +416,7 @@ func combatStateBrief(cs *models.CombatState, gctx GameContext, tempNPCs []model
 	if len(pending) > 0 {
 		sb.WriteString(" 待澄清: " + strings.Join(pending, "；") + "。")
 	}
-	sb.WriteString("\n轮次与行动顺序由后端维护,不要自行记忆;每次只对当前行动者调用一次combat_act,推进到下一个尚未提交声明的调查员为止即用response收尾并在回复中点名等待该调查员;全员行动完后端自动进入下一轮。</combat_state>")
+	sb.WriteString("\n轮次由后端维护,不要自行记忆;`→`和DEX顺序只是建议,你可以结算任何本轮未行动的参战者(NPC由你直接裁定,调查员必须已有本轮声明才能结算);需要某位调查员声明行动时用ask_players点名他;全员行动完后端自动进入下一轮。</combat_state>")
 	return sb.String()
 }
 
@@ -411,7 +440,7 @@ func (startCombatAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 	saveCombatState(actx.Sid, &cs)
 	first := cs.Participants[0]
 	return []ToolResult{{Action: ToolStartCombat, Result: fmt.Sprintf(
-		"战斗开始,行动顺序(DEX降序): %s。下一步:请对当前行动者 %s 调用combat_act。",
+		"战斗开始,行动顺序(DEX降序,仅供参考): %s。下一步:请对本轮要结算的参战者(建议从 %s 开始)调用combat_act。",
 		combatOrderSummary(cs.Participants), first.Name)}}
 }
 

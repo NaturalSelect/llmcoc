@@ -1,0 +1,231 @@
+// NOTE: ask_players_test.go 验证KP点名工具:名字解析、拒绝分支、批次规则与kp_floor渲染。
+package agent
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/llm"
+)
+
+func askTestPlayers() []models.SessionPlayer {
+	return []models.SessionPlayer{
+		{UserID: 1, CharacterCard: models.CharacterCard{Name: "甲"}},
+		{UserID: 2, CharacterCard: models.CharacterCard{Name: "乙"}},
+		{UserID: 3, CharacterCard: models.CharacterCard{Name: "丙", WoundState: "dead"}},
+	}
+}
+
+func TestAskPlayersResolvesNames(t *testing.T) {
+	hasEnd := false
+	narration := ""
+	var ask *AskResult
+	var combat *models.CombatState
+	var chase *models.ChaseState
+	actx := ActionContext{
+		GCtx:        &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+		HasEnd:      &hasEnd,
+		KPNarration: &narration,
+		Ask:         &ask,
+		Combat:      &combat,
+		Chase:       &chase,
+	}
+
+	results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"乙"}, Question: "你怎么办？"}, actx)
+	if len(results) != 1 || strings.HasPrefix(results[0].Result, "SYSTEM REJECT") {
+		t.Fatalf("点名存活调查员应成功, got %+v", results)
+	}
+	if !hasEnd {
+		t.Error("成功点名应置位HasEnd")
+	}
+	if ask == nil || len(ask.UserIDs) != 1 || ask.UserIDs[0] != 2 || ask.Names[0] != "乙" || ask.Question != "你怎么办？" {
+		t.Errorf("Ask = %+v", ask)
+	}
+	if narration != "你怎么办？" {
+		t.Errorf("问题文本应写入KPNarration, got %q", narration)
+	}
+}
+
+func TestAskPlayersAllSkipsDeadAndDedups(t *testing.T) {
+	hasEnd := false
+	narration := ""
+	var ask *AskResult
+	var combat *models.CombatState
+	var chase *models.ChaseState
+	actx := ActionContext{
+		GCtx:        &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+		HasEnd:      &hasEnd,
+		KPNarration: &narration,
+		Ask:         &ask,
+		Combat:      &combat,
+		Chase:       &chase,
+	}
+
+	askPlayersAction{}.Execute(ToolCall{Targets: []string{"all", "甲"}, Question: "各位怎么办？"}, actx)
+	if ask == nil || len(ask.UserIDs) != 2 || ask.UserIDs[0] != 1 || ask.UserIDs[1] != 2 {
+		t.Errorf("all应展开为存活玩家且去重, got %+v", ask)
+	}
+}
+
+func TestAskPlayersRejectsUnknownAndDead(t *testing.T) {
+	cases := []struct {
+		name    string
+		targets []string
+		want    string
+	}{
+		{"未知角色", []string{"不存在"}, "找不到调查员"},
+		{"已死角色", []string{"丙"}, "已死亡"},
+		{"部分错误整批拒绝", []string{"甲", "不存在"}, "找不到调查员"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			hasEnd := false
+			narration := ""
+			var ask *AskResult
+			var combat *models.CombatState
+			var chase *models.ChaseState
+			actx := ActionContext{
+				GCtx:        &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+				HasEnd:      &hasEnd,
+				KPNarration: &narration,
+				Ask:         &ask,
+				Combat:      &combat,
+				Chase:       &chase,
+			}
+			results := askPlayersAction{}.Execute(ToolCall{Targets: tc.targets, Question: "怎么办？"}, actx)
+			if len(results) != 1 || !strings.HasPrefix(results[0].Result, "SYSTEM REJECT") || !strings.Contains(results[0].Result, tc.want) {
+				t.Fatalf("应拒绝并包含%q, got %+v", tc.want, results)
+			}
+			if hasEnd || ask != nil || narration != "" {
+				t.Errorf("拒绝时不应产生副作用: hasEnd=%v ask=%+v narration=%q", hasEnd, ask, narration)
+			}
+		})
+	}
+}
+
+func TestAskPlayersRejectsEmptyQuestion(t *testing.T) {
+	hasEnd := false
+	narration := ""
+	var ask *AskResult
+	var combat *models.CombatState
+	var chase *models.ChaseState
+	actx := ActionContext{
+		GCtx:        &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+		HasEnd:      &hasEnd,
+		KPNarration: &narration,
+		Ask:         &ask,
+		Combat:      &combat,
+		Chase:       &chase,
+	}
+	results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"甲"}, Question: "  "}, actx)
+	if len(results) != 1 || !strings.HasPrefix(results[0].Result, "SYSTEM REJECT") || hasEnd {
+		t.Fatalf("空问题应被拒绝, got %+v hasEnd=%v", results, hasEnd)
+	}
+}
+
+func TestAskPlayersMergesPendingClarification(t *testing.T) {
+	hasEnd := false
+	narration := ""
+	var ask *AskResult
+	combat := &models.CombatState{Active: true, Participants: []models.CombatParticipant{
+		{Name: "乙", UserID: 2, PendingClarification: true},
+		{Name: "哥布林", IsNPC: true},
+	}}
+	var chase *models.ChaseState
+	actx := ActionContext{
+		GCtx:        &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+		HasEnd:      &hasEnd,
+		KPNarration: &narration,
+		Ask:         &ask,
+		Combat:      &combat,
+		Chase:       &chase,
+	}
+
+	results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"甲"}, Question: "你们怎么办？"}, actx)
+	if ask == nil || len(ask.UserIDs) != 2 || ask.UserIDs[1] != 2 {
+		t.Fatalf("待澄清的乙应自动并入, got %+v", ask)
+	}
+	if !strings.Contains(results[0].Result, "已自动并入") {
+		t.Errorf("结果应说明自动并入, got %q", results[0].Result)
+	}
+}
+
+func TestDirectorBatchPolicyAskPlayers(t *testing.T) {
+	t.Run("ask_players可与write和状态更新同批", func(t *testing.T) {
+		imageDone := false
+		reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
+			policyCall("write", `{"direction":"雨夜"}`),
+			policyCall("update_location", `{"character_name":"甲","new_location":"门厅"}`),
+			policyCall("ask_players", `{"targets":["甲"],"question":"你怎么办？"}`),
+		})
+		if reject != "" {
+			t.Errorf("应放行, got %s", reject)
+		}
+	})
+
+	t.Run("ask_players与查询类工具同批被拒", func(t *testing.T) {
+		imageDone := false
+		reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
+			policyCall("query_character", `{"character_name":"甲"}`),
+			policyCall("ask_players", `{"targets":["甲"],"question":"你怎么办？"}`),
+		})
+		if reject == "" {
+			t.Error("ask_players不应与query_character同批")
+		}
+	})
+
+	t.Run("空question被视为空回复", func(t *testing.T) {
+		imageDone := false
+		reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
+			policyCall("ask_players", `{"targets":["甲"],"question":""}`),
+		})
+		if !strings.Contains(reject, "empty response") {
+			t.Errorf("want empty response reject, got %q", reject)
+		}
+	})
+}
+
+func TestKPFloorRendering(t *testing.T) {
+	t.Run("opening不渲染intent", func(t *testing.T) {
+		out := buildKPCurrentActionBlock(GameContext{KPFloor: KPFloorOpening})
+		if !strings.Contains(out, "<kp_floor reason='opening'>") || strings.Contains(out, "<intent") {
+			t.Errorf("got %q", out)
+		}
+	})
+
+	t.Run("host_continue列出被跳过者", func(t *testing.T) {
+		out := buildKPCurrentActionBlock(GameContext{KPFloor: KPFloorHostContinue, SkippedNames: []string{"乙", "丙"}})
+		if !strings.Contains(out, "乙、丙") {
+			t.Errorf("got %q", out)
+		}
+	})
+
+	t.Run("host_continue带已提交声明时保留声明", func(t *testing.T) {
+		out := buildKPCurrentActionBlock(GameContext{
+			KPFloor:        KPFloorHostContinue,
+			PendingActions: []PlayerAction{{UserID: 1, PlayerName: "甲", Content: "我推门"}},
+			UserName:       "甲",
+			UserInput:      "我推门",
+		})
+		if !strings.Contains(out, "<kp_floor") || !strings.Contains(out, "我推门") {
+			t.Errorf("got %q", out)
+		}
+	})
+
+	t.Run("回应段在有提问时先输出asked", func(t *testing.T) {
+		out := buildKPCurrentActionBlock(GameContext{AskedQuestion: "你怎么办？", UserName: "甲", UserInput: "我推门"})
+		askedIdx := strings.Index(out, "<asked>你怎么办？</asked>")
+		intentIdx := strings.Index(out, "<intent")
+		if askedIdx < 0 || intentIdx < 0 || askedIdx > intentIdx {
+			t.Errorf("asked应在intent之前, got %q", out)
+		}
+	})
+
+	t.Run("无KPFloor无提问时渲染不变", func(t *testing.T) {
+		out := buildKPCurrentActionBlock(GameContext{UserName: "甲", UserInput: "我推门"})
+		if strings.Contains(out, "kp_floor") || strings.Contains(out, "asked") || !strings.Contains(out, "<intent") {
+			t.Errorf("got %q", out)
+		}
+	})
+}

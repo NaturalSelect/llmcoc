@@ -174,6 +174,7 @@ func main() {
 	// 故这里用路径正则显式排除，双保险。
 	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPathsRegexs([]string{
 		`^/api/sessions/[^/]+/chat$`,
+		`^/api/sessions/[^/]+/kp-turn$`,
 		`^/api/scenarios/generate$`,
 		`^/api/scenarios/compile-story$`,
 	})))
@@ -261,6 +262,7 @@ func main() {
 		sessions.GET("/:id/messages", handlers.GetMessages)
 		sessions.GET("/:id/chat-status", sh.GetChatStatus)
 		sessions.POST("/:id/chat", sh.ChatStream)
+		sessions.POST("/:id/kp-turn", sh.KPTurn)
 	}
 
 	// Shop

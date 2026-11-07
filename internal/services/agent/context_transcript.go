@@ -248,7 +248,8 @@ func renderDirectorTurnResult(msgs []models.TranscriptMsg) string {
 		}
 	}
 
-	var reply, direction, endSummary string
+	var reply, direction, endSummary, askQuestion string
+	var askTargets []string
 	var options, ack []string
 	for _, m := range msgs {
 		for _, tc := range m.ToolCalls {
@@ -259,6 +260,10 @@ func renderDirectorTurnResult(msgs []models.TranscriptMsg) string {
 			case ToolResponse:
 				if parsed, err := decodeDirectorToolCall(llm.ToolCall{ID: tc.ID, Name: tc.Name, Arguments: tc.Arguments}); err == nil {
 					reply, options, ack = parsed.Reply, parsed.Options, parsed.Ack
+				}
+			case ToolAskPlayers:
+				if parsed, err := decodeDirectorToolCall(llm.ToolCall{ID: tc.ID, Name: tc.Name, Arguments: tc.Arguments}); err == nil {
+					askQuestion, askTargets = parsed.Question, parsed.Targets
 				}
 			case ToolWrite:
 				if parsed, err := decodeDirectorToolCall(llm.ToolCall{ID: tc.ID, Name: tc.Name, Arguments: tc.Arguments}); err == nil {
@@ -272,7 +277,7 @@ func renderDirectorTurnResult(msgs []models.TranscriptMsg) string {
 		}
 	}
 
-	if reply == "" && direction == "" && endSummary == "" {
+	if reply == "" && direction == "" && endSummary == "" && askQuestion == "" {
 		return "<turn_result>（本轮未产生结果）</turn_result>"
 	}
 	var b strings.Builder
@@ -288,6 +293,9 @@ func renderDirectorTurnResult(msgs []models.TranscriptMsg) string {
 			b.WriteString("<ack>" + strings.Join(ack, ";") + "</ack>\n")
 		}
 		b.WriteString("</response>\n")
+	}
+	if askQuestion != "" {
+		b.WriteString("<ask_players targets='" + strings.Join(askTargets, ",") + "'>" + askQuestion + "</ask_players>\n")
 	}
 	if direction != "" {
 		b.WriteString("<write>" + direction + "</write>\n")

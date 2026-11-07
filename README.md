@@ -162,7 +162,9 @@ sqlite3 data/llmcoc.db "update users set role='admin' where username='your_usern
   - `POST /sessions/:id/start`
   - `POST /sessions/:id/end`
   - `GET /sessions/:id/messages`
-  - `POST /sessions/:id/chat`
+  - `POST /sessions/:id/chat`（SSE，被 KP 点名的玩家提交行动）
+  - `POST /sessions/:id/kp-turn`（SSE，房主或管理员让 KP 先手开场或继续推进）
+  - `GET /sessions/:id/chat-status`
 - 商店：
   - `GET /shop/items`
   - `POST /shop/purchase`

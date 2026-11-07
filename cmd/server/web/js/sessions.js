@@ -192,7 +192,33 @@ window.COC.sessions = {
                             this.messages = this.normalizeMessages((await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []);
                             this.$nextTick(() => this.scrollChat(true));
                             this.showToast('游戏已开始！');
-                        } catch (e) { this.showToast(e.message, 'error'); }
+                        } catch (e) {
+                            this.showToast(e.message, 'error');
+                            return;
+                        }
+                        await this._openSceneAfterStart();
+                    },
+
+                    // NOTE: 新开局的房间由 KP 驱动，开场白需要房主主动触发一次 kp-turn（服务端自行判断是否为开场）。
+                    // 失败不致命：房主仍可通过「让 KP 继续」重试。这里不 await 整条 SSE，避免阻塞开始按钮的后续逻辑。
+                    async _openSceneAfterStart() {
+                        const sessionID = this.currentSession?.id;
+                        if (!sessionID || this.page !== 'game') return;
+                        let status = null;
+                        try {
+                            status = await this.api('GET', '/api/sessions/' + sessionID + '/chat-status');
+                        } catch (_) { }
+                        if (status) {
+                            // 服务端已经在处理（别处已触发过开场）：只跟随状态，不重复触发。
+                            if (this.applyChatStatus(status)) {
+                                this.pollChatStatus();
+                                return;
+                            }
+                            // 老房间（spotlight 为 null）没有 kp-turn 语义。
+                            if (!status.spotlight) return;
+                        }
+                        if (this.currentSession?.id !== sessionID || this.page !== 'game') return;
+                        this.requestKPTurn().catch(() => { });
                     },
 
                     async endSession() {

@@ -253,6 +253,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	writerNSFW := false
 
 	diceMsg := ""
+	var ask *AskResult
 	imageGeneratedThisTurn := false
 	// NOTE: consult_dramaturg 是 Director 按需调用的可选工具，闸门语义与
 	// imageGeneratedThisTurn 一致：跨越本次 run() 内的多轮 ChatWithTools 调用。
@@ -273,6 +274,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		wroteNarrative:      &wroteNarrative,
 		writerNSFW:          &writerNSFW,
 		diceMsg:             &diceMsg,
+		ask:                 &ask,
 		needsWriterFallback: &needsWriterFallback,
 		emitProgress:        emitProgress,
 	}
@@ -346,6 +348,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		ImagePrompts:      pendingImages,
 		DirectorElapsedMs: directorElapsedMs,
 		DirectorSteps:     round,
+		Ask:               ask,
 	}, nil
 }
 
@@ -469,6 +472,8 @@ func progressToolLabel(action ToolCallType) string {
 		return "整理白字素材"
 	case ToolResponse:
 		return "生成KP主回复"
+	case ToolAskPlayers:
+		return "点名调查员"
 	case ToolEndGame:
 		return "结算结局"
 	case ToolUpdateSessionMemory, ToolUpdateNPCSessionMemory, ToolHint:

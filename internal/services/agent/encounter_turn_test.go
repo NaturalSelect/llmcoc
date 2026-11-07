@@ -284,3 +284,95 @@ func TestBuildTurnCollection_Chase_ClarifyingBatchTakesPriority(t *testing.T) {
 		t.Errorf("got = %+v, want批次仅含被问话的调查员", got)
 	}
 }
+
+func TestBuildTurnCollection_Spotlight_OverridesAllPlayers(t *testing.T) {
+	// models.DB 保持nil:Spotlight非空且无遭遇时不应触碰DB。
+	session := models.GameSession{
+		ID: 1,
+		Players: []models.SessionPlayer{
+			encounterTestPC(1, "甲", 80, 10, "none"),
+			encounterTestPC(2, "乙", 60, 10, "none"),
+		},
+		Spotlight: models.JSONField[*models.SpotlightState]{Data: &models.SpotlightState{
+			UserIDs: []uint{2}, Names: []string{"乙"}, Question: "你怎么办？",
+		}},
+	}
+	got := BuildTurnCollection(session)
+	if !got.Spotlight || got.Question != "你怎么办？" {
+		t.Errorf("Spotlight=%v Question=%q", got.Spotlight, got.Question)
+	}
+	if len(got.UserIDs) != 1 || got.UserIDs[0] != 2 {
+		t.Errorf("UserIDs = %v, want [2](只收被点名者)", got.UserIDs)
+	}
+}
+
+func TestBuildTurnCollection_Spotlight_FiltersDead(t *testing.T) {
+	session := models.GameSession{
+		ID: 1,
+		Players: []models.SessionPlayer{
+			encounterTestPC(1, "甲", 80, 10, "none"),
+			encounterTestPC(2, "乙", 60, 10, "dead"),
+		},
+		Spotlight: models.JSONField[*models.SpotlightState]{Data: &models.SpotlightState{
+			UserIDs: []uint{1, 2},
+		}},
+	}
+	got := BuildTurnCollection(session)
+	if len(got.UserIDs) != 1 || got.UserIDs[0] != 1 {
+		t.Errorf("UserIDs = %v, want [1](点名后死亡者不再被等待)", got.UserIDs)
+	}
+}
+
+func TestBuildTurnCollection_Spotlight_EmptyMeansKPHoldsFloor(t *testing.T) {
+	session := models.GameSession{
+		ID:        1,
+		Players:   []models.SessionPlayer{encounterTestPC(1, "甲", 80, 10, "none")},
+		Spotlight: models.JSONField[*models.SpotlightState]{Data: &models.SpotlightState{}},
+	}
+	got := BuildTurnCollection(session)
+	if !got.Spotlight || len(got.UserIDs) != 0 {
+		t.Errorf("Spotlight=%v UserIDs=%v, want true 与空集合", got.Spotlight, got.UserIDs)
+	}
+}
+
+func TestBuildTurnCollection_Spotlight_KeepsEncounterOrderForDisplay(t *testing.T) {
+	initAgentTestDB(t)
+	session := models.GameSession{
+		ID: 1,
+		Players: []models.SessionPlayer{
+			encounterTestPC(1, "甲", 90, 10, "none"),
+			encounterTestPC(2, "乙", 85, 10, "none"),
+		},
+		CombatState: models.JSONField[*models.CombatState]{Data: &models.CombatState{
+			Active: true, Round: 2, ActorIndex: 0,
+			Participants: []models.CombatParticipant{
+				{Name: "甲", UserID: 1, DEX: 90},
+				{Name: "乙", UserID: 2, DEX: 85},
+			},
+		}},
+		Spotlight: models.JSONField[*models.SpotlightState]{Data: &models.SpotlightState{
+			UserIDs: []uint{2},
+		}},
+	}
+	got := BuildTurnCollection(session)
+	if len(got.UserIDs) != 1 || got.UserIDs[0] != 2 {
+		t.Errorf("UserIDs = %v, want [2](点名优先于DEX批次)", got.UserIDs)
+	}
+	if got.Label != "战斗 第2轮" || len(got.Order) != 2 {
+		t.Errorf("Label=%q Order=%d, want 保留遭遇展示信息", got.Label, len(got.Order))
+	}
+}
+
+func TestBuildTurnCollection_NilSpotlightKeepsLegacyBehavior(t *testing.T) {
+	session := models.GameSession{
+		ID: 1,
+		Players: []models.SessionPlayer{
+			encounterTestPC(1, "甲", 80, 10, "none"),
+			encounterTestPC(2, "乙", 60, 10, "none"),
+		},
+	}
+	got := BuildTurnCollection(session)
+	if got.Spotlight || len(got.UserIDs) != 2 {
+		t.Errorf("Spotlight=%v UserIDs=%v, want false 与全体存活玩家", got.Spotlight, got.UserIDs)
+	}
+}

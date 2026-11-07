@@ -121,6 +121,10 @@ window.COC.core = function() {
 
                     // Multi-player waiting
                     waitingForPlayers: false,
+                    // NOTE: KP 驱动房间的点名状态（null = 老房间，沿用旧逻辑）：
+                    // { user_ids, names, question, kp_floor, asked_me }；canKPContinue 仅房主/管理员为 true。
+                    spotlight: null,
+                    canKPContinue: false,
                     waitingInfo: { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] },
                     // 游戏页角色状态条：HP/SAN 下降时的一次性高亮标记
                     hudFlash: { hp: false, san: false },
@@ -315,6 +319,7 @@ window.COC.core = function() {
                             this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] };
                             this.waitingSince = null;
                             this.connectionRecovering = false;
+                            this.spotlight = null; this.canKPContinue = false;
                         }
                         this.page = p;
                         if (p === 'dashboard') this.loadAnnouncements().catch(() => {});
@@ -340,6 +345,7 @@ window.COC.core = function() {
                         this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] };
                         this.waitingSince = null;
                         this.connectionRecovering = false;
+                        this.spotlight = null; this.canKPContinue = false;
                         try {
                             const [session, msgs, chatStatus] = await Promise.all([
                                 this.api('GET', '/api/sessions/' + id),
