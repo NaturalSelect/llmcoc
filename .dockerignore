@@ -1,0 +1,10 @@
+.git
+.github
+.angela
+data
+bin
+tmp
+.env
+config.local.yaml
+angela.json
+run.log

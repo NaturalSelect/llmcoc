@@ -81,9 +81,13 @@ shop:
 
 ### 4. Docker 启动
 
+在项目根目录创建 `.env`（至少设置 `JWT_SECRET`，首次启动建议同时设置 `LLM_API_KEY`），然后拉取 CI 构建的镜像并启动：
+
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
+
+镜像地址为 `ghcr.io/naturalselect/llmcoc:latest`，每次推送 `main` 分支会自动重新构建。需要本地构建时使用 `docker compose up -d --build`。
 
 ## 环境变量
 

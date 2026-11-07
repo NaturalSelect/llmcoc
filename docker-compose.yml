@@ -1,7 +1,6 @@
-version: "3.9"
-
 services:
   llmcoc:
+    image: ghcr.io/naturalselect/llmcoc:latest
     build: .
     container_name: llmcoc
     restart: unless-stopped
@@ -9,16 +8,14 @@ services:
       - "8080:8080"
     volumes:
       - coc_data:/app/data
-      - ./config.yaml:/app/config.yaml:ro
-      - ./scenarios:/app/scenarios:ro
     environment:
-      - GIN_MODE=release
-      # Override any config.yaml value via env:
-      # - LLM_API_KEY=sk-...
-      # - LLM_BASE_URL=https://api.openai.com/v1
-      # - LLM_MODEL=gpt-4o
-      # - JWT_SECRET=your-very-long-secret
+      GIN_MODE: release
+      JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET}
+      # 仅在数据库里还没有 Provider 时用于播种默认 Provider 和各 Agent 默认模型
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      LLM_MODEL: ${LLM_MODEL:-}
 
 volumes:
   coc_data:
-    driver: local
