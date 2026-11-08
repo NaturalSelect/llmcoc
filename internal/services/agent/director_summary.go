@@ -133,7 +133,7 @@ func renderUnitOutputs(msgs []models.TranscriptMsg) string {
 				if err == nil && parsed.Direction != "" {
 					fmt.Fprintf(&b, "[叙事方向] %s\n", parsed.Direction)
 				}
-			case ToolResponse:
+			case ToolNarrate, ToolLegacyResponse:
 				if err == nil && parsed.Reply != "" {
 					fmt.Fprintf(&b, "[KP回复] %s\n", parsed.Reply)
 				}
@@ -176,7 +176,7 @@ func turnHasToolCalls(t models.TranscriptTurn) bool {
 }
 
 // beatBoundaryAt 报告在 turns[:b] 与 turns[b:] 之间切开是否落在"拍"的边界上（1<=b<=len(turns)）。
-// 一拍是两条 kp/ask 消息之间的所有单元，总结只能整拍整拍地处理，否则同一拍的 write 与 response 会被拆开。
+// 一拍是两条 kp/ask 消息之间的所有单元，总结只能整拍整拍地处理，否则同一拍的 write 与 narrate 会被拆开。
 func beatBoundaryAt(turns []models.TranscriptTurn, b int) bool {
 	if b < 1 || b > len(turns) {
 		return false
@@ -188,7 +188,7 @@ func beatBoundaryAt(turns []models.TranscriptTurn, b int) bool {
 	return turnClosesBeat(prev)
 }
 
-// turnClosesBeat 报告单元里是否有未被 SYSTEM REJECT 的 response/ask_players/end_game，即这个单元收尾了一拍。
+// turnClosesBeat 报告单元里是否有未被 SYSTEM REJECT 的 narrate/ask_players/end_game，即这个单元收尾了一拍。
 func turnClosesBeat(t models.TranscriptTurn) bool {
 	results := make(map[string]string)
 	for _, m := range t.Messages {
@@ -199,7 +199,7 @@ func turnClosesBeat(t models.TranscriptTurn) bool {
 	for _, m := range t.Messages {
 		for _, tc := range m.ToolCalls {
 			switch ToolCallType(tc.Name) {
-			case ToolResponse, ToolAskPlayers, ToolEndGame:
+			case ToolNarrate, ToolLegacyResponse, ToolAskPlayers, ToolEndGame:
 				if !strings.HasPrefix(results[tc.ID], summaryRejectToken) {
 					return true
 				}

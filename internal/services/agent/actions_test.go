@@ -84,14 +84,14 @@ func TestResponseActionPublishesOneKPOutputAndKeepsFloor(t *testing.T) {
 	streak := 0
 	actx := ActionContext{GCtx: &GameContext{}, Outbox: &outbox, HasEnd: &hasEnd, KPStreak: &streak}
 
-	results := responseAction{}.Execute(ToolCall{
+	results := narrateAction{}.Execute(ToolCall{
 		Reply:   "门开了。",
 		Options: []string{"我走进去", "我走进去", "「谁在那里？」", "第三条被截断"},
 		Ack:     []string{"确认动作", " "},
 	}, actx)
 
 	if hasEnd {
-		t.Error("response不应结束周期(HasEnd必须保持false)")
+		t.Error("narrate不应结束周期(HasEnd必须保持false)")
 	}
 	if len(outbox) != 1 || outbox[0].Kind != OutputKP || outbox[0].Text != "门开了。" {
 		t.Fatalf("outbox = %+v, want one kp output", outbox)
@@ -116,13 +116,13 @@ func TestResponseActionPublishesOneKPOutputAndKeepsFloor(t *testing.T) {
 func TestResponseActionRemindsAfterConsecutiveKPMessages(t *testing.T) {
 	var outbox []Output
 	hasEnd := false
-	streak := responseKPStreakReminder - 1
+	streak := narrateKPStreakReminder - 1
 	actx := ActionContext{GCtx: &GameContext{}, Outbox: &outbox, HasEnd: &hasEnd, KPStreak: &streak}
 
-	results := responseAction{}.Execute(ToolCall{Reply: "又一条"}, actx)
+	results := narrateAction{}.Execute(ToolCall{Reply: "又一条"}, actx)
 
 	if len(results) != 1 || !strings.Contains(results[0].Result, "ask_players") || !strings.Contains(results[0].Result, "提醒") {
-		t.Errorf("连续第%d条应附节奏提醒, got %+v", responseKPStreakReminder, results)
+		t.Errorf("连续第%d条应附节奏提醒, got %+v", narrateKPStreakReminder, results)
 	}
 }
 

@@ -265,7 +265,7 @@ func (g *loopGuard) afterDispatch(_ int, calls []llm.ToolCall, msgs []llm.ChatMe
 		return nil, ErrLoopDetected
 	case n == loopGuardWarnAt:
 		reminder := fmt.Sprintf(
-			"<system-reminder>你已经是第 %d 次发出完全相同的工具调用（%s），并得到相同的结果或拒绝。不要继续重复：请阅读上面的工具结果并修正参数；信息已经足够时，直接用 response 回复，或用 ask_players 点名调查员。再重复将被强制终止这次发言。</system-reminder>",
+			"<system-reminder>你已经是第 %d 次发出完全相同的工具调用（%s），并得到相同的结果或拒绝。不要继续重复：请阅读上面的工具结果并修正参数；信息已经足够时，直接用 narrate 回复，或用 ask_players 点名调查员。再重复将被强制终止这次发言。</system-reminder>",
 			n, strings.Join(distinctCallNames(calls), "、"))
 		return append(msgs, llm.ChatMessage{Role: "user", Content: reminder}), nil
 	}

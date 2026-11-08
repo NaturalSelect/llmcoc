@@ -185,10 +185,10 @@ func nextCombatActorIndex(cs *models.CombatState, gctx GameContext, tempNPCs []m
 
 // applyCombatAct 结算战斗轮中一名行动者的行动,并推进/翻页ActorIndex/Round。
 // roundClosed 是本次run()内的一次性闸门(D2):一次run内战斗轮最多完整推进一轮,
-// 翻页后立即置位,同一run内后续combat_act一律拒绝,逼Director用response收尾。
+// 翻页后立即置位,同一run内后续combat_act一律拒绝,逼Director用narrate收尾。
 func applyCombatAct(cs *models.CombatState, call ToolCall, actx ActionContext, roundClosed *bool) string {
 	if *roundClosed {
-		return "SYSTEM REJECT: 本会话轮的战斗轮已经结算完毕,请立即调用response收尾,不要继续调用combat_act。"
+		return "SYSTEM REJECT: 本会话轮的战斗轮已经结算完毕,请立即调用narrate收尾,不要继续调用combat_act。"
 	}
 	if len(cs.Participants) == 0 {
 		return "错误:当前没有战斗参与者"
@@ -300,7 +300,7 @@ func applyCombatAct(cs *models.CombatState, call ToolCall, actx ActionContext, r
 		}
 		cs.ActorIndex = 0
 		*roundClosed = true
-		sb.WriteString(fmt.Sprintf(" 本轮全员行动完毕,进入第%d轮;本会话轮的战斗结算已完成,请调用response收尾。", cs.Round))
+		sb.WriteString(fmt.Sprintf(" 本轮全员行动完毕,进入第%d轮;本会话轮的战斗结算已完成,请调用narrate收尾。", cs.Round))
 	} else {
 		cs.ActorIndex = next
 		nextP := cs.Participants[next]

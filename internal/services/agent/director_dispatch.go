@@ -34,7 +34,7 @@ func directorActNPCCompatible(action ToolCallType) bool {
 // combat/chase/roundClosed 是 run() 持有的战斗/追逐状态与"本轮是否已推进过一个
 // 战斗/追逐回合"标记，用于战斗/追逐轮次的批次校验(见下方 ENCOUNTER SEQUENCING)。
 // pendingActions 是本次run收到的玩家声明集合，用于RULE 5判断"未行动者是否可推进"
-// ——按批次收集后，不在当前批次的PC不会有声明，不能因为它们未行动就卡住response。
+// ——按批次收集后，不在当前批次的PC不会有声明，不能因为它们未行动就卡住narrate。
 // emitProgress 用于在拒绝分支保留原有的 SSE 提示文案。
 // dramaturgConsultedThisTurn 与 imageGeneratedThisTurn 同理，保留"每回合最多咨询一次
 // 剧构顾问"的限制。
@@ -43,16 +43,16 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		hasResponse := false
 		hasNonCompatible := false
 		respStr := ""
-		responseCalls, askCalls := 0, 0
+		narrateCalls, askCalls := 0, 0
 		for _, call := range calls {
 			action := ToolCallType(call.Name)
 			switch action {
-			case ToolResponse:
-				responseCalls++
+			case ToolNarrate:
+				narrateCalls++
 			case ToolAskPlayers:
 				askCalls++
 			}
-			if action == ToolResponse || action == ToolEndGame || action == ToolAskPlayers {
+			if action == ToolNarrate || action == ToolEndGame || action == ToolAskPlayers {
 				hasResponse = true
 				if tc, err := decodeDirectorToolCall(call); err == nil {
 					if tc.Reply != "" {
@@ -64,21 +64,21 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 					}
 				}
 			}
-			if !responseCompatibleActions[action] {
+			if !narrateCompatibleActions[action] {
 				hasNonCompatible = true
 			}
 		}
 		if hasResponse && hasNonCompatible {
 			emitProgress("KP正在修正工具调用顺序")
-			return "SYSTEM REJECT: your entire batch was rejected. response/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call response/end_game after reading the results. Write and state-update tools may stay in the same batch as response."
+			return "SYSTEM REJECT: your entire batch was rejected. narrate/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call narrate/end_game after reading the results. Write and state-update tools may stay in the same batch as narrate."
 		}
 		if hasResponse && respStr == "" {
 			emitProgress("KP正在补全主流程回复")
-			return "SYSTEM REJECT: empty response"
+			return "SYSTEM REJECT: empty reply"
 		}
-		if responseCalls > 1 || askCalls > 1 {
+		if narrateCalls > 1 || askCalls > 1 {
 			emitProgress("KP正在合并重复回复")
-			return "SYSTEM REJECT: 同一轮最多只能有一个 response 和一个 ask_players。每个 response 都会立即成为一条独立的玩家可见消息：把要说的话合并成一条，或者分成相邻的两轮发出。"
+			return "SYSTEM REJECT: 同一轮最多只能有一个 narrate 和一个 ask_players。每个 narrate 都会立即成为一条独立的玩家可见消息：把要说的话合并成一条，或者分成相邻的两轮发出。"
 		}
 
 		actNPCPresent := false
@@ -234,7 +234,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		// 处于待澄清暂停，则整批拒绝并列出还差谁未结算；不在当前批次里的PC(还没
 		// 提交声明)不计入未行动者——按批次收集后，它们本来就不该在这次run里被推
 		// 进，不能因为它们未行动就卡住收尾。有待澄清暂停时放行(模型需要紧接着用
-		// ask_players去问)。response 不受限：它只发布一条消息、不交出发言权，
+		// ask_players去问)。narrate 不受限：它只发布一条消息、不交出发言权，
 		// 战斗中每结算一个参与者就可以发一条战况。
 		hasHandover := false
 		for _, call := range calls {
@@ -317,9 +317,9 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 
-		// OPTIONS-CAP：response.options 固定 0-2 条，宁可给0条也不要泄露。
+		// OPTIONS-CAP：narrate.options 固定 0-2 条，宁可给0条也不要泄露。
 		for _, call := range calls {
-			if ToolCallType(call.Name) != ToolResponse {
+			if ToolCallType(call.Name) != ToolNarrate {
 				continue
 			}
 			tc, err := decodeDirectorToolCall(call)
@@ -328,7 +328,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 			if len(tc.Options) > 2 {
 				emitProgress("KP正在修正工具调用顺序")
-				return fmt.Sprintf("SYSTEM REJECT: response.options 有 %d 条，超过上限2条。宁可给0条也不要泄露，删减到最多2条最合适的行动入口。", len(tc.Options))
+				return fmt.Sprintf("SYSTEM REJECT: narrate.options 有 %d 条，超过上限2条。宁可给0条也不要泄露，删减到最多2条最合适的行动入口。", len(tc.Options))
 			}
 		}
 
@@ -416,7 +416,7 @@ type directorDispatchState struct {
 // 唯一对应的 tool 消息内容。旧协议里多个 ToolResult 会被聚合进同一条组合消息按
 // Action 类型分流(如 query_character/query_npc_card 单独放进 XML 块)；原生协议下
 // 每个 tool_call 都有自己独立的 tool 消息，不再需要那层聚合/分流包装，直接把结果
-// 文本原样返回即可。没有返回值的工具(write/response/hint/end_game等)必须给出非空
+// 文本原样返回即可。没有返回值的工具(write/narrate/hint/end_game等)必须给出非空
 // 占位内容，避免产出空 tool 消息。
 func joinToolResults(results []ToolResult) string {
 	if len(results) == 0 {

@@ -52,14 +52,14 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - 路由全部在 `main.go` 里手写；`BanCheck` 中间件只挂在部分分组上，新增分组时注意是否需要。
 
 ### 一段 KP 叙事的数据流
-整局由 KP（Director）驱动，玩家只在被点名时才有发言权。一次 `agent.Run` 就是一个「周期」（floor）：KP 在一个 ReAct 循环里自由调用工具，没有续跑次数上限，只有 `ask_players` / `end_game` 会正常结束周期；`response` 只是发布一拍消息，不结束周期。
+整局由 KP（Director）驱动，玩家只在被点名时才有发言权。一次 `agent.Run` 就是一个「周期」（floor）：KP 在一个 ReAct 循环里自由调用工具，没有续跑次数上限，只有 `ask_players` / `end_game` 会正常结束周期；`narrate` 只是发布一拍消息，不结束周期。
 `GameSession.Spotlight` 记录发言权：`UserIDs` 为空（含 NULL，不再兼容旧的玩家驱动房间）是 KP 持有发言权；非空是等这些玩家回应；`Stop` 非空表示上个周期被强制结束（`host_stop` / `loop` / `stall` / `error` / `context`），此时玩家提交会被拒绝，要房主点「继续」。
 1. 入口有两个：`handlers/session.go` 的 `ChatStream`（玩家回应：校验是否被点名，写 `SessionTurnAction`，点名对象到齐后才开周期）和 `handlers/session_kp.go` 的 `KPTurn`（房主/管理员触发开场或继续）。两者都立即返回 202，周期在后台跑；`KPStop` 让房主/管理员硬打断，返回 202 或 409。
 2. `startFloor` 先占用会话处理锁，在事务里写玩家消息，登记到 `activeFloors`（kp-stop 和关机靠它取消 ctx），再广播 `floor_start`。`runFloor` 用 `context.WithCancelCause` 跑 `Runner.Run`，上下文已满时自动总结并续跑一次（续跑没有产出任何消息就不再续）。`finishFloor` 先落库新发言权、释放处理锁，之后才广播 `spotlight` / `floor_end`，否则被点名者立刻发言会撞上 409。进程关闭时 `StopAllFloors` 取消全部周期并最多等 10 秒。
 3. `agent.Run`（`orchestrator.go`）用 `activeSessions` 保证同一会话同时只跑一个周期；`getCachedAgents` 读取 Agent 配置；构造 Director 提示词与上下文（主动周期渲染 `<kp_floor>`，玩家回应周期在有提问时渲染 `<asked>`）后进入 `runToolLoop`（`scripter_toolloop.go`，模组生成管线共用，`maxRounds <= 0` 表示不限轮数）。
 4. Director 通过工具调用驱动流程：`decodeDirectorToolCall` 解码 → `actionRegistry[...].Execute`（`actions.go`）落地到业务状态，产出的玩家可见内容以 `Output` 追加到 outbox → 结果作为 `tool` 消息回传。`check_rule` 与按 NPC 的 `act_npc` 在 `directorBatchDispatch` 中并发，其余顺序执行。
 5. 每轮工具结果追加完后触发 `afterDispatch`（`floorRun`，`floor_run.go`）：先把 outbox 经 `gctx.Publish` 发布并落库转录检查点，再做防循环判定，最后判断是否要强制结束。强制结束的原因对应 `RunOutput.Stop`：`ErrLoopDetected`（同一批调用在 10 轮窗口内第 3 次追加提醒、第 5 次中止）→ `loop`；连续 `MaxKpRound`（战斗/追逐 `MaxKpRoundEncounter`）轮没有任何玩家可见消息 → `stall`；周期中途上下文逼近窗口时先就地总结再继续同一个周期，只有当前周期本身就超窗口或总结失败才 `ErrContextFull` → `context`；`ErrHostStop` → `host_stop`；其余错误 → `error`。
-6. `publishRound`（`session_kp.go`）把一轮的每个 `Output` 落成独立消息：`write` → `writer`（pending，进 FIFO 队列）、`generate_image` → `image`（pending，每张图独立并发的 Painter）、`response` / `end_game` → `kp`、`ask_players` → `ask`。落库后广播 `message_new`，Writer 与 Painter 异步补全后广播 `message_update`。Writer 队列（`writer_queue.go`）按会话 FIFO，每条消息一次 `RunWriterStream`，不会被 kp-stop 取消，也不会阻塞周期结束。
+6. `publishRound`（`session_kp.go`）把一轮的每个 `Output` 落成独立消息：`write` → `writer`（pending，进 FIFO 队列）、`generate_image` → `image`（pending，每张图独立并发的 Painter）、`narrate` / `end_game` → `kp`、`ask_players` → `ask`。落库后广播 `message_new`，Writer 与 Painter 异步补全后广播 `message_update`。Writer 队列（`writer_queue.go`）按会话 FIFO，每条消息一次 `RunWriterStream`，不会被 kp-stop 取消，也不会阻塞周期结束。
 7. 上下文压缩只有一级：LLM 总结（`director_summary.go`）。历史单元原样累积，不做确定性剥离或丢弃，因为单元里有已经生效的结算。总结在周期开始前（`MaybeCompact`）和周期中途上下文逼近窗口时（`CompactInFloor`，总结完继续同一个周期，玩家看不到额外的周期起止）触发，把较早的拍连同已有总结合并成最前面的 `<story_so_far>` 单元。切点只落在拍的边界上（两条 kp/ask 消息之间），当前周期的单元永远不被总结。发给 LLM 的房间聊天记录由 `message_render.go` 按 `Kind` 统一渲染，结束结算用 `LoadEndGameMessages`。
 - 战斗/追逐中 DEX 顺序只是建议：`applyCombatAct` / `applyChaseAct` 接受任何本轮未行动且存活的参与者，PC 没有声明仍然不能结算。
 - 玩家可见正文由 Writer 产生，Director 只给指令；规则裁定由 Lawyer 负责；NPC 有独立行动与记忆。
@@ -75,7 +75,7 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - 新增角色要同步改：`models/models.go`（常量）、`models/db.go`（`required` 播种列表）、`batchLoadAgents` 的角色列表、`frontend/src/components/admin/agents/agentRoles.ts`（`ROLE_DEFAULTS` 默认值，以及名称/描述/占位提示三张表，共四处）、`models/db_agent_seed_test.go`。
 
 ### 新增 Director 工具要改的地方
-`types.go`（`ToolCallType` 常量和 `ToolCall` 字段）→ `director_tools.go`（`XxxTool()` 定义 + 加入 `directorTools` + `decodeDirectorToolCall` 分支）→ `actions.go`（`actionRegistry` 登记，并按需加入 `noSideEffectActions` / `responseCompatibleActions`）→ `director_dispatch.go`（`directorBatchPolicy` 的批次规则；`response` / `ask_players` / `end_game` 是回复类工具，不能和需要先读结果的工具同批，其中只有 `ask_players` / `end_game` 结束周期）。`directorTools(dramaturgEnabled)` 每轮发送同一份完整列表（唯一的条件项是 dramaturg 是否启用），这是为了保持提示词缓存前缀稳定（见提交 1b395d7）；不要按回合状态裁剪工具列表。Director 历史同理：发送版即归档版，不要在归档时再裁剪。
+`types.go`（`ToolCallType` 常量和 `ToolCall` 字段）→ `director_tools.go`（`XxxTool()` 定义 + 加入 `directorTools` + `decodeDirectorToolCall` 分支）→ `actions.go`（`actionRegistry` 登记，并按需加入 `noSideEffectActions` / `narrateCompatibleActions`）→ `director_dispatch.go`（`directorBatchPolicy` 的批次规则；`narrate` / `ask_players` / `end_game` 是回复类工具，不能和需要先读结果的工具同批，其中只有 `ask_players` / `end_game` 结束周期）。`directorTools(dramaturgEnabled)` 每轮发送同一份完整列表（唯一的条件项是 dramaturg 是否启用），这是为了保持提示词缓存前缀稳定（见提交 1b395d7）；不要按回合状态裁剪工具列表。Director 历史同理：发送版即归档版，不要在归档时再裁剪。
 
 ### Lawyer 规则缓存
 - `COC_kp.md`、`COC_spell.md`、`COC_monster.md` 各有 1–2MB，启动时加载并计算 SHA-256；不要整文件读取它们。

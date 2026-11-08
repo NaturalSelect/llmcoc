@@ -127,7 +127,7 @@ func nextChaseActorIndex(chs *models.ChaseState, gctx GameContext, tempNPCs []mo
 // roundClosed 是本次run()内的一次性闸门(D2),语义与combat.go的applyCombatAct一致。
 func applyChaseAct(chs *models.ChaseState, call ToolCall, actx ActionContext, roundClosed *bool) string {
 	if *roundClosed {
-		return "SYSTEM REJECT: 本会话轮的追逐轮已经结算完毕,请立即调用response收尾,不要继续调用chase_act。"
+		return "SYSTEM REJECT: 本会话轮的追逐轮已经结算完毕,请立即调用narrate收尾,不要继续调用chase_act。"
 	}
 	if len(chs.Participants) == 0 {
 		return "错误:当前没有追逐参与者"
@@ -266,7 +266,7 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall, actx ActionContext, ro
 		}
 		chs.ActorIndex = 0
 		*roundClosed = true
-		sb.WriteString(fmt.Sprintf(" 本轮全员行动完毕,进入第%d轮;本会话轮的追逐结算已完成,请调用response收尾。", chs.Round))
+		sb.WriteString(fmt.Sprintf(" 本轮全员行动完毕,进入第%d轮;本会话轮的追逐结算已完成,请调用narrate收尾。", chs.Round))
 	} else {
 		chs.ActorIndex = next
 		nextP := chs.Participants[next]

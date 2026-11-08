@@ -48,7 +48,7 @@ func (p *summaryChatProvider) ChatWithTools(context.Context, string, []llm.ChatM
 
 var _ llm.Provider = (*summaryChatProvider)(nil)
 
-// summaryTestTurns 构造 n 个 floor，每个 floor 一个单元：opening + response + ask_players。
+// summaryTestTurns 构造 n 个 floor，每个 floor 一个单元：opening + narrate + ask_players。
 func summaryTestTurns(n int) []models.TranscriptTurn {
 	var turns []models.TranscriptTurn
 	for f := 1; f <= n; f++ {
@@ -58,7 +58,7 @@ func summaryTestTurns(n int) []models.TranscriptTurn {
 				{Role: "user", Content: fmt.Sprintf("<player_turn floor=%d>行动%d</player_turn>", f, f)},
 				{Role: "assistant", ToolCalls: []models.TranscriptToolCall{
 					{ID: fmt.Sprintf("u%d", f), Name: "update_characters", Arguments: `{}`},
-					{ID: fmt.Sprintf("r%d", f), Name: "response", Arguments: fmt.Sprintf(`{"reply":"回复%d"}`, f)},
+					{ID: fmt.Sprintf("r%d", f), Name: "narrate", Arguments: fmt.Sprintf(`{"reply":"回复%d"}`, f)},
 				}},
 				{Role: "tool", ToolCallID: fmt.Sprintf("u%d", f), Content: fmt.Sprintf("HP变化%d", f)},
 				{Role: "tool", ToolCallID: fmt.Sprintf("r%d", f), Content: "已发给玩家"},
@@ -222,7 +222,7 @@ func TestMaybeCompact_FailureKeepsHistoryUnchanged(t *testing.T) {
 	}
 }
 
-// 同一拍里的 write 单元和 response 单元只能一起被总结，或者一起被保留。
+// 同一拍里的 write 单元和 narrate 单元只能一起被总结，或者一起被保留。
 func TestCompactHistory_NeverSplitsABeat(t *testing.T) {
 	initAgentTestDB(t)
 	mk := func(floor, unit int, tool, args string) models.TranscriptTurn {
@@ -233,9 +233,9 @@ func TestCompactHistory_NeverSplitsABeat(t *testing.T) {
 	}
 	turns := []models.TranscriptTurn{
 		mk(1, 1, "write", `{"direction":"拍1叙事"}`),
-		mk(1, 2, "response", `{"reply":"拍1回复"}`),
+		mk(1, 2, "narrate", `{"reply":"拍1回复"}`),
 		mk(1, 3, "write", `{"direction":"拍2叙事"}`),
-		mk(1, 4, "response", `{"reply":"拍2回复"}`),
+		mk(1, 4, "narrate", `{"reply":"拍2回复"}`),
 	}
 	cm := newSummaryTestManager(turns, 1_000, 0)
 
@@ -252,7 +252,7 @@ func TestCompactHistory_NeverSplitsABeat(t *testing.T) {
 		t.Errorf("拍1 应整体被总结:\n%s", gotInput)
 	}
 	if strings.Contains(gotInput, "拍2叙事") {
-		t.Errorf("limit=3 时切点不能落在拍2 的 write 与 response 之间:\n%s", gotInput)
+		t.Errorf("limit=3 时切点不能落在拍2 的 write 与 narrate 之间:\n%s", gotInput)
 	}
 	if len(cm.data.Turns) != 3 || cm.data.Turns[0].Kind != "summary" || cm.data.Turns[1].Unit != 3 {
 		t.Errorf("应为 总结 + 拍2 的两个单元: %+v", cm.data.Turns)
@@ -263,7 +263,7 @@ func TestCompactHistory_RejectedResponseIsNotABoundary(t *testing.T) {
 	initAgentTestDB(t)
 	turns := []models.TranscriptTurn{
 		{Floor: 1, Unit: 1, Messages: []models.TranscriptMsg{
-			{Role: "assistant", ToolCalls: []models.TranscriptToolCall{{ID: "r", Name: "response", Arguments: `{"reply":"x"}`}}},
+			{Role: "assistant", ToolCalls: []models.TranscriptToolCall{{ID: "r", Name: "narrate", Arguments: `{"reply":"x"}`}}},
 			{Role: "tool", ToolCallID: "r", Content: "SYSTEM REJECT: empty"},
 		}},
 		{Floor: 1, Unit: 2, Messages: []models.TranscriptMsg{
@@ -273,7 +273,7 @@ func TestCompactHistory_RejectedResponseIsNotABoundary(t *testing.T) {
 	}
 	cm := newSummaryTestManager(turns, 1_000, 0)
 	changed, err := cm.compactHistory(context.Background(), func(context.Context, string) (string, error) {
-		t.Fatal("被拒绝的 response 不是拍边界，limit=1 内没有可切的位置")
+		t.Fatal("被拒绝的 narrate 不是拍边界，limit=1 内没有可切的位置")
 		return "", nil
 	}, 1, 1, 0)
 	if err != nil || changed {
@@ -281,6 +281,18 @@ func TestCompactHistory_RejectedResponseIsNotABoundary(t *testing.T) {
 	}
 }
 
+func TestLegacyResponseCallStillClosesBeat(t *testing.T) {
+	unit := models.TranscriptTurn{Floor: 1, Unit: 1, Messages: []models.TranscriptMsg{
+		{Role: "assistant", ToolCalls: []models.TranscriptToolCall{{ID: "r", Name: "response", Arguments: `{"reply":"旧名回复"}`}}},
+		{Role: "tool", ToolCallID: "r", Content: "已发给玩家"},
+	}}
+	if !turnClosesBeat(unit) {
+		t.Error("老会话里名为 response 的调用仍应视为收尾了一拍")
+	}
+	if got := renderUnitOutputs(unit.Messages); !strings.Contains(got, "[KP回复] 旧名回复") {
+		t.Errorf("老会话的 response 调用应被总结为 KP 回复, got %q", got)
+	}
+}
 func TestDirectorSummarizer_RetriesAndExtractsTag(t *testing.T) {
 	prov := &summaryChatProvider{
 		errs:    []error{errors.New("timeout"), nil, nil},
@@ -336,7 +348,7 @@ func TestRenderFloorsForSummary_SkipsRejectedAndTrimmedMarkers(t *testing.T) {
 			{Role: "user", Content: "<system-reminder>开场的第二条提醒，不该进入总结</system-reminder>"},
 			{Role: "user", Content: `<trimmed_tool_calls rounds="1" calls="1">query_clues×1</trimmed_tool_calls>`},
 			{Role: "assistant", ToolCalls: []models.TranscriptToolCall{
-				{ID: "a", Name: "response", Arguments: `{"reply":"被拒绝的回复"}`},
+				{ID: "a", Name: "narrate", Arguments: `{"reply":"被拒绝的回复"}`},
 				{ID: "b", Name: "write", Arguments: `{"direction":"走廊很暗"}`},
 				{ID: "c", Name: "ask_players", Arguments: `{"targets":["张三"],"question":"你怎么做？"}`},
 				{ID: "d", Name: "roll_dice", Arguments: `{}`},

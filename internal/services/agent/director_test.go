@@ -116,17 +116,17 @@ func TestKPSystemPromptCarriesUnknownToneCharter(t *testing.T) {
 		}
 	}
 
-	// options 的完整禁止清单已下沉到 response 工具的 options schema（单一权威来源）。
-	optionsSchema := string(responseTool().def.Parameters)
+	// options 的完整禁止清单已下沉到 narrate 工具的 options schema（单一权威来源）。
+	optionsSchema := string(narrateTool().def.Parameters)
 	for _, want := range []string{"评价性副词", "宁可给0条也不要泄露"} {
 		if !strings.Contains(optionsSchema, want) {
-			t.Errorf("response options schema should contain %q", want)
+			t.Errorf("narrate options schema should contain %q", want)
 		}
 	}
 }
 
 // TestPlayerInputAndOptionsAreRP 验证"玩家输入应当是RP"的要求写进了系统提示词，
-// 且 response.options 被要求写成第一人称RP(行动或台词)，而不是没有主语的指令短语。
+// 且 narrate.options 被要求写成第一人称RP(行动或台词)，而不是没有主语的指令短语。
 func TestPlayerInputAndOptionsAreRP(t *testing.T) {
 	if !strings.Contains(kpSystemPrompt, "[PLAYER-INPUT-RP]") {
 		t.Error("kp system prompt should define the [PLAYER-INPUT-RP] rule")
@@ -145,30 +145,30 @@ func TestPlayerInputAndOptionsAreRP(t *testing.T) {
 		}
 	}
 
-	tool := responseTool()
+	tool := narrateTool()
 	if !strings.Contains(tool.def.Description, "RP") {
-		t.Error("response tool description should say options are RP")
+		t.Error("narrate tool description should say options are RP")
 	}
 	schema := string(tool.def.Parameters)
 	for _, want := range []string{"每条必须是RP", "第一人称", "「」", "我+动作+对象"} {
 		if !strings.Contains(schema, want) {
-			t.Errorf("response options schema should contain %q", want)
+			t.Errorf("narrate options schema should contain %q", want)
 		}
 	}
 	if strings.Contains(schema, "动词+对象") {
-		t.Error("response options schema should not keep the stale verb+object wording")
+		t.Error("narrate options schema should not keep the stale verb+object wording")
 	}
 	if !strings.Contains(kpTurnReminder, "[PLAYER-INPUT-RP]") {
 		t.Error("turn reminder should reference [PLAYER-INPUT-RP] for the options self-check")
 	}
 }
 
-// TestWriteToolAlignsWithResponse 验证 write 被定义为 response.reply 的 RP 化衍生，
+// TestWriteToolAlignsWithResponse 验证 write 被定义为 narrate.reply 的 RP 化衍生，
 // 且两者内容不得分叉的约束写在 write 工具说明（单一权威来源），系统提示词只做交叉引用。
 func TestWriteToolAlignsWithResponse(t *testing.T) {
 	desc := writeTool().def.Description
 	for _, want := range []string{
-		"与response对齐",
+		"与narrate对齐",
 		"RP",
 		"不得出现reply里没有的事件",
 		"以reply为准",
@@ -179,8 +179,8 @@ func TestWriteToolAlignsWithResponse(t *testing.T) {
 	}
 
 	// 系统提示词里保留一句指针，避免模型只在选工具时才看到这条约束。
-	if !strings.Contains(kpSystemPrompt, "write是response.reply的RP化衍生") {
-		t.Error("kp system prompt should cross-reference the write/response alignment rule")
+	if !strings.Contains(kpSystemPrompt, "write是narrate.reply的RP化衍生") {
+		t.Error("kp system prompt should cross-reference the write/narrate alignment rule")
 	}
 }
 
@@ -380,33 +380,33 @@ func TestDirectorEncouragedToGenerateImages(t *testing.T) {
 		t.Error("turn checklist should prompt the director to consider generate_image every turn")
 	}
 	desc := generateImageTool().def.Description
-	for _, want := range []string{"每一拍(两条response/ask_players消息之间)最多一张", "空镜不需要 describe_characters"} {
+	for _, want := range []string{"每一拍(两条narrate/ask_players消息之间)最多一张", "空镜不需要 describe_characters"} {
 		if !strings.Contains(desc, want) {
 			t.Errorf("generate_image description should contain %q", want)
 		}
 	}
 }
 
-// TestResponseToolOptionsDescriptionConsistent 验证 response 工具的 Description 与 options 参数 schema 数量表述一致，且 schema 仍是合法 JSON。
+// TestResponseToolOptionsDescriptionConsistent 验证 narrate 工具的 Description 与 options 参数 schema 数量表述一致，且 schema 仍是合法 JSON。
 func TestResponseToolOptionsDescriptionConsistent(t *testing.T) {
-	tool := responseTool()
+	tool := narrateTool()
 	desc := tool.def.Description
 	params := string(tool.def.Parameters)
 
 	for _, want := range []string{"0-2条", "[OPTIONS]"} {
 		if !strings.Contains(desc, want) {
-			t.Errorf("response tool description should contain %q", want)
+			t.Errorf("narrate tool description should contain %q", want)
 		}
 	}
 	if strings.Contains(desc, "给出2个") {
-		t.Error("response tool description should not keep the stale '给出2个' wording")
+		t.Error("narrate tool description should not keep the stale '给出2个' wording")
 	}
 
 	if !strings.Contains(params, "宁可给0条也不要泄露") {
-		t.Error("response tool options schema should contain '宁可给0条也不要泄露'")
+		t.Error("narrate tool options schema should contain '宁可给0条也不要泄露'")
 	}
 	if !json.Valid(tool.def.Parameters) {
-		t.Error("response tool Parameters should remain valid JSON")
+		t.Error("narrate tool Parameters should remain valid JSON")
 	}
 }
 
@@ -581,7 +581,7 @@ func TestDirectorBatchPolicyItemNameFormat(t *testing.T) {
 	}
 }
 
-// TestDirectorBatchPolicyOptionsCap 验证 response.options 超过2条被拒，0-2条放行。
+// TestDirectorBatchPolicyOptionsCap 验证 narrate.options 超过2条被拒，0-2条放行。
 func TestDirectorBatchPolicyOptionsCap(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -597,7 +597,7 @@ func TestDirectorBatchPolicyOptionsCap(t *testing.T) {
 			imageDone := false
 			args := fmt.Sprintf(`{"reply":"测试回复","options":%s}`, tc.options)
 			reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
-				policyCall("response", args),
+				policyCall("narrate", args),
 			})
 			if tc.wantReject && reject == "" {
 				t.Error("batch should have been rejected but was accepted")
@@ -666,7 +666,7 @@ func TestDirectorBatchPolicyDupSettlementInBatch(t *testing.T) {
 
 // TestDirectorBatchPolicyEncounterSequencing 覆盖6d新增的5条战斗/追逐批次规则:
 // 独占成批、无激活状态时拒绝推进/结束、战斗与追逐互斥、advance_time互斥、
-// response完整性前置(可推进者未结算拒绝/剩余全无声明PC放行/待澄清放行/
+// narrate完整性前置(可推进者未结算拒绝/剩余全无声明PC放行/待澄清放行/
 // roundClosed放行/end_combat同批放行)。
 func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	freshCombat := func() *models.CombatState {
@@ -784,35 +784,35 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 		}
 	})
 
-	t.Run("可推进者未结算时response放行(只发布一条消息、不交出发言权)", func(t *testing.T) {
+	t.Run("可推进者未结算时narrate放行(只发布一条消息、不交出发言权)", func(t *testing.T) {
 		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
 		declared := []PlayerAction{{PlayerName: "甲", Content: "攻击"}, {PlayerName: "乙", Content: "闪避"}}
 		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, declared, func(string) {})([]llm.ToolCall{
-			policyCall("response", `{"reply":"战斗继续"}`),
+			policyCall("narrate", `{"reply":"战斗继续"}`),
 		})
 		if reject != "" {
-			t.Errorf("response不交出发言权,战斗中应放行,got reject: %s", reject)
+			t.Errorf("narrate不交出发言权,战斗中应放行,got reject: %s", reject)
 		}
 	})
 
-	t.Run("剩余全是未提交声明的PC时response放行", func(t *testing.T) {
+	t.Run("剩余全是未提交声明的PC时narrate放行", func(t *testing.T) {
 		imageDone := false
 		dramaturgDone := false
 		actedCombat := freshCombat()
 		actedCombat.Participants[0].HasActed = true // 甲已行动(当前批次内唯一成员)
 		combat, chase, roundClosed := actedCombat, (*models.ChaseState)(nil), false
-		// pendingActions为nil:乙不在当前批次,本轮未提交任何声明,不应卡住response。
+		// pendingActions为nil:乙不在当前批次,本轮未提交任何声明,不应卡住narrate。
 		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
-			policyCall("response", `{"reply":"甲行动完毕,轮到乙,但乙尚未到批次"}`),
+			policyCall("narrate", `{"reply":"甲行动完毕,轮到乙,但乙尚未到批次"}`),
 		})
 		if reject != "" {
-			t.Errorf("剩余全是未提交声明的PC时response应放行,got reject: %s", reject)
+			t.Errorf("剩余全是未提交声明的PC时narrate应放行,got reject: %s", reject)
 		}
 	})
 
-	t.Run("存在待澄清时response放行", func(t *testing.T) {
+	t.Run("存在待澄清时narrate放行", func(t *testing.T) {
 		imageDone := false
 		dramaturgDone := false
 		pendingCombat := freshCombat()
@@ -820,35 +820,35 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 		pendingCombat.Participants[1].PendingQuestion = "闪避还是反击？"
 		combat, chase, roundClosed := pendingCombat, (*models.ChaseState)(nil), false
 		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
-			policyCall("response", `{"reply":"你被攻击了,闪避还是反击？"}`),
+			policyCall("narrate", `{"reply":"你被攻击了,闪避还是反击？"}`),
 		})
 		if reject != "" {
-			t.Errorf("存在PendingClarification时response应放行,got reject: %s", reject)
+			t.Errorf("存在PendingClarification时narrate应放行,got reject: %s", reject)
 		}
 	})
 
-	t.Run("roundClosed为true时response放行", func(t *testing.T) {
+	t.Run("roundClosed为true时narrate放行", func(t *testing.T) {
 		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), true
 		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
-			policyCall("response", `{"reply":"本轮战斗结束"}`),
+			policyCall("narrate", `{"reply":"本轮战斗结束"}`),
 		})
 		if reject != "" {
-			t.Errorf("roundClosed=true时response应放行,got reject: %s", reject)
+			t.Errorf("roundClosed=true时narrate应放行,got reject: %s", reject)
 		}
 	})
 
-	t.Run("end_combat与response同批放行(即使未结算完毕)", func(t *testing.T) {
+	t.Run("end_combat与narrate同批放行(即使未结算完毕)", func(t *testing.T) {
 		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
 		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("end_combat", `{"combat_end_reason":"敌人逃离"}`),
-			policyCall("response", `{"reply":"战斗结束,敌人逃走了"}`),
+			policyCall("narrate", `{"reply":"战斗结束,敌人逃走了"}`),
 		})
 		if reject != "" {
-			t.Errorf("end_combat+response应放行,got reject: %s", reject)
+			t.Errorf("end_combat+narrate应放行,got reject: %s", reject)
 		}
 	})
 }

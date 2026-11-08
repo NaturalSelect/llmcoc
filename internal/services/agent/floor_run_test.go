@@ -129,7 +129,7 @@ func equalKinds(a, b []OutputKind) bool {
 	return true
 }
 
-// TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk 验证 write → response → write+generate_image → ask_players
+// TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk 验证 write → narrate → write+generate_image → ask_players
 // 的序列：每个产生消息的轮各 Publish 一次，周期只在 ask_players 后结束，transcript 按单元落库。
 func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 	const sid = 201
@@ -139,7 +139,7 @@ func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 		case 1:
 			return toolRound(floorCall("c1", "write", map[string]any{"direction": "雾气从港口漫上来"})), nil
 		case 2:
-			return toolRound(floorCall("c2", "response", map[string]any{"reply": "你听见远处的钟声。"})), nil
+			return toolRound(floorCall("c2", "narrate", map[string]any{"reply": "你听见远处的钟声。"})), nil
 		case 3:
 			return toolRound(
 				floorCall("c3a", "write", map[string]any{"direction": "灯塔的光扫过海面"}),
@@ -200,7 +200,7 @@ func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 		t.Errorf("只有write的轮不关闭一拍，不应携带耗时/轮数, got %+v", published[0])
 	}
 	if published[1].Steps != 2 {
-		t.Errorf("kp 消息的 Steps = %d, want 2(write轮+response轮)", published[1].Steps)
+		t.Errorf("kp 消息的 Steps = %d, want 2(write轮+narrate轮)", published[1].Steps)
 	}
 	if published[3].Steps != 2 {
 		t.Errorf("ask 消息的 Steps = %d, want 2(write+image轮、ask轮)", published[3].Steps)
@@ -220,7 +220,7 @@ func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 	}
 }
 
-// TestFloor_RoundOutputsOrderedWriterImageKPAsk 验证同一轮 [ask_players, response, generate_image, write]
+// TestFloor_RoundOutputsOrderedWriterImageKPAsk 验证同一轮 [ask_players, narrate, generate_image, write]
 // 被整理成 writer → image → kp → ask。
 func TestFloor_RoundOutputsOrderedWriterImageKPAsk(t *testing.T) {
 	const sid = 202
@@ -228,7 +228,7 @@ func TestFloor_RoundOutputsOrderedWriterImageKPAsk(t *testing.T) {
 	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
 		return toolRound(
 			floorCall("a", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "你呢？"}),
-			floorCall("b", "response", map[string]any{"reply": "门开了。"}),
+			floorCall("b", "narrate", map[string]any{"reply": "门开了。"}),
 			floorCall("c", "generate_image", map[string]any{"image_prompt": "an opening door"}),
 			floorCall("d", "write", map[string]any{"direction": "门缓缓打开"}),
 		), nil
@@ -292,7 +292,7 @@ func TestFloor_FallbackWriterWhenVisibleActionWithoutWrite(t *testing.T) {
 		case 1:
 			return toolRound(floorCall("d", "roll_dice", map[string]any{"character": "甲", "what": "侦查", "dice_expr": "1d100"})), nil
 		case 2:
-			return toolRound(floorCall("r", "response", map[string]any{"reply": "你发现了一道划痕。"})), nil
+			return toolRound(floorCall("r", "narrate", map[string]any{"reply": "你发现了一道划痕。"})), nil
 		default:
 			return toolRound(floorCall("ask", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "然后呢？"})), nil
 		}
@@ -335,7 +335,7 @@ func TestFloor_ImageQuotaResetsEachBeat(t *testing.T) {
 			return toolRound(floorCall("i2", "generate_image", map[string]any{"image_prompt": "the same harbor again"})), nil
 		case 3:
 			secondImageResult = toolResultFor(msgs, "i2")
-			return toolRound(floorCall("r1", "response", map[string]any{"reply": "海风很冷。"})), nil
+			return toolRound(floorCall("r1", "narrate", map[string]any{"reply": "海风很冷。"})), nil
 		case 4:
 			return toolRound(floorCall("i3", "generate_image", map[string]any{"image_prompt": "a new beat, a new image"})), nil
 		default:
@@ -385,7 +385,7 @@ func TestFloor_CancelKeepsPublishedMessagesAndCommitsTail(t *testing.T) {
 	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
 		switch n {
 		case 1:
-			return toolRound(floorCall("r1", "response", map[string]any{"reply": "你站在门前。"})), nil
+			return toolRound(floorCall("r1", "narrate", map[string]any{"reply": "你站在门前。"})), nil
 		case 2:
 			return toolRound(floorCall("q1", "query_clues", map[string]any{})), nil
 		default:
@@ -412,7 +412,7 @@ func TestFloor_CancelKeepsPublishedMessagesAndCommitsTail(t *testing.T) {
 
 	data := loadTranscript(t, sid, "director")
 	if len(data.Turns) < 2 {
-		t.Fatalf("应至少有 response 单元和尾部单元, got %d", len(data.Turns))
+		t.Fatalf("应至少有 narrate 单元和尾部单元, got %d", len(data.Turns))
 	}
 	if data.Turns[len(data.Turns)-1].Kind != "tail" {
 		t.Errorf("最后一个单元应是尾部(tail), got %q", data.Turns[len(data.Turns)-1].Kind)
@@ -501,7 +501,7 @@ func TestFloor_PublishErrorStopsWithStopError(t *testing.T) {
 	const sid = 210
 	newFloorSession(t, sid)
 	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
-		return toolRound(floorCall("r", "response", map[string]any{"reply": "你好。"})), nil
+		return toolRound(floorCall("r", "narrate", map[string]any{"reply": "你好。"})), nil
 	}}
 	setFloorHandles(t, sid, prov, false)
 
@@ -519,13 +519,13 @@ func TestFloor_PublishErrorStopsWithStopError(t *testing.T) {
 	}
 }
 
-// TestFloor_ResponseKeepsFloorUntilAsk 验证 response 不结束周期：KP 在 response 之后继续被调用。
+// TestFloor_ResponseKeepsFloorUntilAsk 验证 narrate 不结束周期：KP 在 narrate 之后继续被调用。
 func TestFloor_ResponseKeepsFloorUntilAsk(t *testing.T) {
 	const sid = 211
 	newFloorSession(t, sid)
 	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
 		if n <= 3 {
-			return toolRound(floorCall(fmt.Sprintf("r%d", n), "response", map[string]any{"reply": fmt.Sprintf("第%d段叙述", n)})), nil
+			return toolRound(floorCall(fmt.Sprintf("r%d", n), "narrate", map[string]any{"reply": fmt.Sprintf("第%d段叙述", n)})), nil
 		}
 		return toolRound(floorCall("ask", "ask_players", map[string]any{"targets": []string{"all"}, "question": "你们呢？"})), nil
 	}}
@@ -537,7 +537,7 @@ func TestFloor_ResponseKeepsFloorUntilAsk(t *testing.T) {
 		t.Fatalf("run(): %v", err)
 	}
 	if got := prov.callCount(); got != 4 {
-		t.Fatalf("provider 调用次数 = %d, want 4(3次response之后仍继续)", got)
+		t.Fatalf("provider 调用次数 = %d, want 4(3次narrate之后仍继续)", got)
 	}
 	if out.Messages != 4 || out.Ask == nil {
 		t.Errorf("want 4条消息且有点名, got Messages=%d Ask=%+v", out.Messages, out.Ask)
@@ -570,14 +570,14 @@ func TestFloor_EndGameMarksEnded(t *testing.T) {
 	}
 }
 
-// seedFloorHistory 往 session 的 director transcript 里预置 n 个已完成的周期，每个周期一拍：write + response。
+// seedFloorHistory 往 session 的 director transcript 里预置 n 个已完成的周期，每个周期一拍：write + narrate。
 func seedFloorHistory(sid uint, n int) {
 	cm := LoadContext(sid, "director", nil, ContextOptions{})
 	for f := 1; f <= n; f++ {
 		msgs := cm.Build(llm.ChatMessage{Role: "user", Content: fmt.Sprintf("<player_turn floor=%d>旧行动%d</player_turn>", f, f)})
 		msgs = append(msgs,
 			ckAssistant(ckCall(fmt.Sprintf("hw%d", f), "write", fmt.Sprintf(`{"direction":"旧叙事%d"}`, f))), ckTool(fmt.Sprintf("hw%d", f), "已记录"),
-			ckAssistant(ckCall(fmt.Sprintf("hr%d", f), "response", fmt.Sprintf(`{"reply":"旧回复%d"}`, f))), ckTool(fmt.Sprintf("hr%d", f), "已发给玩家"))
+			ckAssistant(ckCall(fmt.Sprintf("hr%d", f), "narrate", fmt.Sprintf(`{"reply":"旧回复%d"}`, f))), ckTool(fmt.Sprintf("hr%d", f), "已发给玩家"))
 		cm.Checkpoint(1, msgs)
 	}
 }
@@ -600,7 +600,7 @@ func TestFloor_MidFloorCompactContinuesSameFloor(t *testing.T) {
 			}, nil
 		case 2:
 			return llm.ToolChatResult{
-				ToolCalls: []llm.ToolCall{floorCall("r1", "response", map[string]any{"reply": "总结之后的回复。"})},
+				ToolCalls: []llm.ToolCall{floorCall("r1", "narrate", map[string]any{"reply": "总结之后的回复。"})},
 				Usage:     llm.Usage{PromptTokens: 100},
 			}, nil
 		default:
@@ -634,7 +634,7 @@ func TestFloor_MidFloorCompactContinuesSameFloor(t *testing.T) {
 		t.Errorf("总结输入应含旧周期、不含本周期:\n%s", in)
 	}
 	if out.Messages != 2 {
-		t.Errorf("Messages = %d, want 2(response + ask)", out.Messages)
+		t.Errorf("Messages = %d, want 2(narrate + ask)", out.Messages)
 	}
 
 	// 总结发生在第 1 轮之后：第 2、3 次调用收到的 msgs 以 head + 总结开头，且仍含本周期的 opening 和备注轮。

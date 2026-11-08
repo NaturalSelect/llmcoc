@@ -180,8 +180,8 @@ func TestDirectorBatchPolicyAskPlayers(t *testing.T) {
 		reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
 			policyCall("ask_players", `{"targets":["甲"],"question":""}`),
 		})
-		if !strings.Contains(reject, "empty response") {
-			t.Errorf("want empty response reject, got %q", reject)
+		if !strings.Contains(reject, "empty reply") {
+			t.Errorf("want empty reply reject, got %q", reject)
 		}
 	})
 }

@@ -25,20 +25,20 @@ func makeTranscriptTurn(seq, round, runeCount int) models.TranscriptTurn {
 
 // makeDirectorTurn 构造一个 Director 风格的历史轮：opening 两条 user 消息(第1条是
 // state+<player_turn>，第2条模拟<system-reminder>) + 一条带 ToolCalls 的 assistant
-// 消息(并列调用roll_dice与response) + 两条对应的tool结果消息，用于压缩策略相关测试。
-// rejected=true 时 response 对应的 tool 结果换成"SYSTEM REJECT"前缀，模拟该次调用
+// 消息(并列调用roll_dice与narrate) + 两条对应的tool结果消息，用于压缩策略相关测试。
+// rejected=true 时 narrate 对应的 tool 结果换成"SYSTEM REJECT"前缀，模拟该次调用
 // 被批次策略拒绝、其参数不应被采纳进压缩后的结果。
 func makeDirectorTurn(seq, round int, reply string, rejected bool) models.TranscriptTurn {
 	responseResult := "已执行。"
 	if rejected {
-		responseResult = "SYSTEM REJECT: response.options 有 3 条，超过上限2条。"
+		responseResult = "SYSTEM REJECT: narrate.options 有 3 条，超过上限2条。"
 	}
 	return models.TranscriptTurn{Seq: seq, Round: round, Messages: []models.TranscriptMsg{
 		{Role: "user", Content: fmt.Sprintf("<player_turn seq=%d>行动</player_turn>", seq)},
 		{Role: "user", Content: "<system-reminder>更小seq的player_turn仅供参考</system-reminder>"},
 		{Role: "assistant", ToolCalls: []models.TranscriptToolCall{
 			{ID: "c1", Name: "roll_dice", Arguments: `{"dice":"1d100"}`},
-			{ID: "c2", Name: "response", Arguments: fmt.Sprintf(`{"reply":%q}`, reply)},
+			{ID: "c2", Name: "narrate", Arguments: fmt.Sprintf(`{"reply":%q}`, reply)},
 		}},
 		{Role: "tool", ToolCallID: "c1", Content: "掷出57"},
 		{Role: "tool", ToolCallID: "c2", Content: responseResult},

@@ -37,7 +37,7 @@ func TestCheckpoint_AppendsUnitsWithFloorAndUnitNumbers(t *testing.T) {
 		t.Fatalf("NextFloor() = %d, want 1", cm.NextFloor())
 	}
 	msgs := cm.Build(llm.ChatMessage{Role: "user", Content: "<player_turn floor=1>开场</player_turn>"})
-	msgs = append(msgs, ckAssistant(ckCall("a", "write", `{"direction":"d1"}`), ckCall("b", "response", `{"reply":"r1"}`)),
+	msgs = append(msgs, ckAssistant(ckCall("a", "write", `{"direction":"d1"}`), ckCall("b", "narrate", `{"reply":"r1"}`)),
 		ckTool("a", "已记录"), ckTool("b", "已发给玩家"))
 	cm.Checkpoint(1, msgs)
 
@@ -76,7 +76,7 @@ func TestCheckpoint_NextFloorPrefixIsByteIdenticalToLastSent(t *testing.T) {
 	cm1 := LoadContext(sid, "director", head, ContextOptions{})
 	msgs := cm1.Build(llm.ChatMessage{Role: "user", Content: "<player_turn floor=1>开场</player_turn>"})
 	msgs = append(msgs, llm.ChatMessage{
-		Role: "assistant", ToolCalls: []llm.ToolCall{ckCall("a", "response", `{"reply":"r1"}`)},
+		Role: "assistant", ToolCalls: []llm.ToolCall{ckCall("a", "narrate", `{"reply":"r1"}`)},
 		ReasoningBlocks: []llm.ReasoningBlock{{Type: "thinking", Text: "t", Signature: "sig"}},
 	}, ckTool("a", "已发给玩家"))
 	cm1.Checkpoint(1, msgs)
@@ -108,7 +108,7 @@ func TestCommitTail_KeepsOnlyCompleteRoundsAfterLastCheckpoint(t *testing.T) {
 	const sid = uint(34)
 	cm := LoadContext(sid, "director", ckHead(), ContextOptions{})
 	msgs := cm.Build(llm.ChatMessage{Role: "user", Content: "open"})
-	msgs = append(msgs, ckAssistant(ckCall("a", "response", `{"reply":"r"}`)), ckTool("a", "已发给玩家"))
+	msgs = append(msgs, ckAssistant(ckCall("a", "narrate", `{"reply":"r"}`)), ckTool("a", "已发给玩家"))
 	cm.Checkpoint(1, msgs)
 
 	// 尾巴：一轮完整的结算 + 一轮被取消、tool 结果不齐的调用
@@ -164,7 +164,7 @@ func TestCommitTail_DoesNotDoubleCountAfterCheckpoint(t *testing.T) {
 	const sid = uint(36)
 	cm := LoadContext(sid, "director", ckHead(), ContextOptions{})
 	msgs := cm.Build(llm.ChatMessage{Role: "user", Content: "open"})
-	msgs = append(msgs, ckAssistant(ckCall("a", "response", `{"reply":"r"}`)), ckTool("a", "已发给玩家"))
+	msgs = append(msgs, ckAssistant(ckCall("a", "narrate", `{"reply":"r"}`)), ckTool("a", "已发给玩家"))
 	cm.Checkpoint(1, msgs)
 	cm.CommitTail(1, msgs) // 没有任何新消息
 	data := loadTranscript(t, sid, "director")
@@ -196,7 +196,7 @@ func TestCompletedTailEnd(t *testing.T) {
 	}
 }
 
-// ckBeat 往 msgs 追加一拍：一个 write 单元和一个 response 单元，并各自 Checkpoint。
+// ckBeat 往 msgs 追加一拍：一个 write 单元和一个 narrate 单元，并各自 Checkpoint。
 func ckBeat(cm *ContextManager, msgs []llm.ChatMessage, tag string) []llm.ChatMessage {
 	msgs = append(msgs,
 		ckAssistant(ckCall("q"+tag, "query_clues", `{}`)), ckTool("q"+tag, "线索"+tag),
@@ -204,7 +204,7 @@ func ckBeat(cm *ContextManager, msgs []llm.ChatMessage, tag string) []llm.ChatMe
 	cm.Checkpoint(1, msgs)
 	msgs = append(msgs,
 		ckAssistant(ckCall("u"+tag, "update_characters", `{}`)), ckTool("u"+tag, "HP变化"+tag),
-		ckAssistant(ckCall("p"+tag, "response", `{"reply":"r`+tag+`"}`)), ckTool("p"+tag, "已发给玩家"))
+		ckAssistant(ckCall("p"+tag, "narrate", `{"reply":"r`+tag+`"}`)), ckTool("p"+tag, "已发给玩家"))
 	cm.Checkpoint(1, msgs)
 	return msgs
 }
@@ -348,23 +348,23 @@ func TestBeatBoundaryAt(t *testing.T) {
 		}
 		return turn
 	}
-	rejected := unit(1, "response")
+	rejected := unit(1, "narrate")
 	rejected.Messages[1].Content = "SYSTEM REJECT: empty"
 
 	turns := []models.TranscriptTurn{
-		unit(1, "write"),    // 0: 拍中间
-		unit(1, "response"), // 1: 收尾
-		unit(1, "write"),    // 2: 拍中间
-		rejected,            // 3: 被拒绝的 response 不算收尾
-		unit(1, "write"),    // 4: 同一周期的后续单元
-		unit(2, "write"),    // 5: 换了周期
+		unit(1, "write"),   // 0: 拍中间
+		unit(1, "narrate"), // 1: 收尾
+		unit(1, "write"),   // 2: 拍中间
+		rejected,           // 3: 被拒绝的 narrate 不算收尾
+		unit(1, "write"),   // 4: 同一周期的后续单元
+		unit(2, "write"),   // 5: 换了周期
 	}
 	// b 表示在 turns[b-1] 与 turns[b] 之间切开
 	cases := map[int]bool{
-		1: false, // write 后面还要接 response
-		2: true,  // response 收尾了一拍
+		1: false, // write 后面还要接 narrate
+		2: true,  // narrate 收尾了一拍
 		3: false, // write 后面还要接回复
-		4: false, // 被拒绝的 response 不算，且后面还是同一周期
+		4: false, // 被拒绝的 narrate 不算，且后面还是同一周期
 		5: true,  // 换周期必然是边界
 		6: true,  // 末尾
 	}

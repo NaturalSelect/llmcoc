@@ -99,9 +99,11 @@ const (
 	ToolHint                   ToolCallType = "hint"                      // KP写入当前场景高密度提示
 	ToolGenerateImage          ToolCallType = "generate_image"            // NOTE: 生成即时场景图片
 	ToolDescribeCharacters     ToolCallType = "describe_characters"       // NOTE: 获取调查员可见外貌描写
-	ToolResponse               ToolCallType = "response"                  // 发布一条KP消息,不交出发言权
-	ToolAskPlayers             ToolCallType = "ask_players"               // 点名调查员并交出发言权,结束本周期
-	ToolReport                 ToolCallType = "report"                    // 向管理系统自首
+	ToolNarrate                ToolCallType = "narrate"                   // 发布一条KP消息,不交出发言权
+	// NOTE: ToolLegacyResponse 是 narrate 的旧名，只用于读懂老会话已归档的 Director 历史，不在工具列表里。
+	ToolLegacyResponse ToolCallType = "response"
+	ToolAskPlayers     ToolCallType = "ask_players" // 点名调查员并交出发言权,结束本周期
+	ToolReport         ToolCallType = "report"      // 向管理系统自首
 
 	ToolStartCombat ToolCallType = "start_combat" // 开始一场战斗,建立DEX行动顺序
 	ToolCombatAct   ToolCallType = "combat_act"   // 结算战斗轮中一名参战者的行动
@@ -149,13 +151,13 @@ type ToolCall struct {
 	Aspect        string                 `json:"aspect"`         // NOTE: generate_image: 画面方向 landscape|portrait|square(可选,默认square)
 	NSFW          bool                   `json:"nsfw"`           // NOTE: generate_image: 该配图是否含裸露/性暗示等NSFW内容(可选,默认false);painter_nsfw未启用时,标记为true的调用会被拒绝。write: 该段描述是否含色情/性描写内容(可选,默认false),仅在房间NSFW开关开启时生效。act_npc: 该次互动是否含色情/性描写内容(可选,默认false),仅在房间NSFW开关开启时生效
 	Characters    []string               `json:"characters"`     // NOTE: describe_characters 参数;兼容旧 generate_image JSON,但生成图片时忽略
-	Options       []string               `json:"options"`        // response: 推荐给玩家的可行行动
-	Reply         string                 `json:"reply"`          // response: KP对玩家说的话(必填)
+	Options       []string               `json:"options"`        // narrate: 推荐给玩家的可行行动
+	Reply         string                 `json:"reply"`          // narrate: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
 	// NOTE: Win 使用指针以区分 false（失败）与缺失/null（未填写）。
 	// Director 必须显式填写 true 或 false；缺失时 endGameAction.Execute 拒绝并返回错误。
 	Win     *bool  `json:"win"`     // end_game: 是否胜利(必填,true=胜/false=败)
-	Context string `json:"context"` // response: 剧本推进到此处的完整上下文
+	Context string `json:"context"` // narrate: 剧本推进到此处的完整上下文
 
 	// ── Combat fields ─────────────────────────────────────────────────────────
 	CombatParticipants []CombatParticipantInput `json:"combat_participants"` // start_combat: 参与者列表
@@ -169,7 +171,7 @@ type ToolCall struct {
 	ChaseAction       *ChaseActionDetail      `json:"chase_action"`       // chase_act: 行动详情
 	ChaseEndReason    string                  `json:"chase_end_reason"`   // end_chase: 追逐结束原因
 	Report            string                  `json:"report"`             // report: agent self-report
-	Ack               []string                `json:"ack"`                // response: 对玩家动作的正式确认
+	Ack               []string                `json:"ack"`                // narrate: 对玩家动作的正式确认
 	HideSecret        bool                    `json:"hide_secret"`        // npc_act: 是否隐藏NPC反应中的敏感信息(如HP变化), 由KP根据当前情境决定
 	Targets           []string                `json:"targets"`            // ask_players: 被点名的调查员名,["all"]表示全体存活调查员
 }
@@ -200,7 +202,7 @@ type OutputKind string
 const (
 	OutputWriter OutputKind = "writer" // write:交给 Writer 展开成白字正文
 	OutputImage  OutputKind = "image"  // generate_image:交给 Painter 出图
-	OutputKP     OutputKind = "kp"     // response/end_game:KP 的回复
+	OutputKP     OutputKind = "kp"     // narrate/end_game:KP 的回复
 	OutputAsk    OutputKind = "ask"    // ask_players:点名并交出发言权
 )
 
@@ -377,7 +379,7 @@ type CombatActionDetail struct {
 	APDebtNext int    `json:"ap_debt_next"` // 下轮扣除的AP(如寻找掩体)
 
 	// NeedsClarification: 被攻击方是调查员,且其本轮已提交的意图无法推断出闪避/反击倾向时使用。
-	// 置位后本战斗轮在当前行动者处暂停(不推进ActorIndex/Round),Director应立即调用response
+	// 置位后本战斗轮在当前行动者处暂停(不推进ActorIndex/Round),Director应立即调用narrate
 	// 通过ClarifyQuestion向该玩家提问,禁止代选默认值。
 	NeedsClarification bool   `json:"needs_clarification"`
 	ClarifyQuestion    string `json:"clarify_question"` // 待澄清时向玩家提出的问题

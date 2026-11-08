@@ -147,7 +147,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | `player` | 玩家本轮声明的行动 |
 | `writer` | KP 的一次 `write`：由 Writer 展开的白字正文 |
 | `image` | KP 的一次 `generate_image`：Painter 出的配图 |
-| `kp` | KP 的一次 `response` 或 `end_game` 的回复 |
+| `kp` | KP 的一次 `narrate` 或 `end_game` 的回复 |
 | `ask` | KP 的一次 `ask_players`：点名并交出发言权 |
 | `system` | 复活提示，复活时经 `message_new` 送达。加入、离开的系统提示不会推送，也不出现在 `GET /messages` 里，客户端以 `session` 事件刷新成员列表 |
 

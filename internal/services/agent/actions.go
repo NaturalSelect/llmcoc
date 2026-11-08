@@ -21,7 +21,7 @@ type ActionContext struct {
 	// 工具执行器写入、调度循环读取的可变状态。
 	HasEnd             *bool
 	TimeAdvancedInTurn *bool
-	// Outbox 收集本轮产生玩家可见消息的调用(write/generate_image/response/ask_players/end_game),
+	// Outbox 收集本轮产生玩家可见消息的调用(write/generate_image/narrate/ask_players/end_game),
 	// 一个调用一个 Output;轮末由 floorRun 整理顺序后发布。
 	Outbox   *[]Output
 	DiceMsg  *string
@@ -32,7 +32,7 @@ type ActionContext struct {
 	// Combat/Chase 是本次run()持有的活战斗/追逐状态(nil=未激活);战斗/追逐工具
 	// 执行器通过它们读写、并允许置nil(start_*建立/end_*清空)。二者互斥。
 	// RoundClosed是run内一次性闸门(D2):一次run最多完整推进一个战斗/追逐轮,
-	// 翻页后置位,同一run内后续combat_act/chase_act一律拒绝,逼Director用response收尾。
+	// 翻页后置位,同一run内后续combat_act/chase_act一律拒绝,逼Director用narrate收尾。
 	Combat      **models.CombatState
 	Chase       **models.ChaseState
 	RoundClosed *bool
@@ -55,13 +55,13 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolQueryNPCCard:       true,
 	ToolDescribeCharacters: true,
 	ToolGenerateImage:      true,
-	ToolActNPC:             true, // returns NPC reaction that must be read before response
+	ToolActNPC:             true, // returns NPC reaction that must be read before narrate
 }
 
-// responseCompatibleActions 表示可与response/end_game同批执行的动作。
+// narrateCompatibleActions 表示可与narrate/end_game同批执行的动作。
 // 这些动作不需要把结果再交给KP阅读后才能结束回合。
-var responseCompatibleActions = map[ToolCallType]bool{
-	ToolResponse:               true,
+var narrateCompatibleActions = map[ToolCallType]bool{
+	ToolNarrate:                true,
 	ToolAskPlayers:             true,
 	ToolEndGame:                true,
 	ToolWrite:                  true,
@@ -119,7 +119,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolUpdateArmor:            updateArmorAction{},
 	ToolHint:                   hintAction{},
 	ToolGenerateImage:          generateImageAction{},
-	ToolResponse:               responseAction{},
+	ToolNarrate:                narrateAction{},
 	ToolAskPlayers:             askPlayersAction{},
 	ToolReport:                 reportAction{},
 
@@ -531,14 +531,14 @@ func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	return []ToolResult{{Action: ToolWrite, Result: "已作为一条独立的玩家可见消息发布（正文由 Writer 展开）。你仍持有发言权。"}}
 }
 
-// responseKPStreakReminder 是连续发布这么多条 kp 消息仍没有点名时附在 response 结果后的提醒(只提醒,不强制)。
-const responseKPStreakReminder = 4
+// narrateKPStreakReminder 是连续发布这么多条 kp 消息仍没有点名时附在 narrate 结果后的提醒(只提醒,不强制)。
+const narrateKPStreakReminder = 4
 
-type responseAction struct{}
+type narrateAction struct{}
 
-func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+func (narrateAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	out := Output{Kind: OutputKP, Text: strings.TrimSpace(call.Reply)}
-	if payload, ok := normalizeResponseOptionsPayload(call); ok {
+	if payload, ok := normalizeNarrateOptionsPayload(call); ok {
 		out.Options = payload.Options
 	}
 	for _, a := range call.Ack {
@@ -547,16 +547,16 @@ func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		}
 	}
 	*actx.Outbox = append(*actx.Outbox, out)
-	debugf("tool", "session=%d response reply=%s", actx.Sid, out.Text)
+	debugf("tool", "session=%d narrate reply=%s", actx.Sid, out.Text)
 
 	result := "已发给玩家。你仍持有发言权：继续推进，或用 ask_players 点名调查员交出发言权，或用 end_game 结束游戏。"
 	if actx.KPStreak != nil {
 		*actx.KPStreak++
-		if *actx.KPStreak >= responseKPStreakReminder {
+		if *actx.KPStreak >= narrateKPStreakReminder {
 			result += fmt.Sprintf("\n提醒：你已连续发布 %d 条回复而没有点名任何调查员。场景需要调查员做决定、声明行动或回答时，请用 ask_players 点名交出发言权，不要继续独自推进。", *actx.KPStreak)
 		}
 	}
-	return []ToolResult{{Action: ToolResponse, Result: result}}
+	return []ToolResult{{Action: ToolNarrate, Result: result}}
 }
 
 // askPlayersAction 把名字解析成玩家并交出发言权;任一名字不存在或角色已死整批拒绝,
@@ -686,13 +686,13 @@ func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	return []ToolResult{{Action: ToolAskPlayers, Result: result}}
 }
 
-type responseOptionsPayload struct {
+type narrateOptionsPayload struct {
 	Options []string `json:"options"`
 }
 
-func normalizeResponseOptionsPayload(call ToolCall) (responseOptionsPayload, bool) {
+func normalizeNarrateOptionsPayload(call ToolCall) (narrateOptionsPayload, bool) {
 	if len(call.Options) == 0 {
-		return responseOptionsPayload{}, false
+		return narrateOptionsPayload{}, false
 	}
 
 	options := make([]string, 0, len(call.Options))
@@ -709,10 +709,10 @@ func normalizeResponseOptionsPayload(call ToolCall) (responseOptionsPayload, boo
 		}
 	}
 	if len(options) == 0 {
-		return responseOptionsPayload{}, false
+		return narrateOptionsPayload{}, false
 	}
 
-	return responseOptionsPayload{
+	return narrateOptionsPayload{
 		Options: options,
 	}, true
 }

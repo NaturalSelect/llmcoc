@@ -303,7 +303,7 @@ func progressToolLabel(action ToolCallType) string {
 		return "推进追逐轮"
 	case ToolWrite:
 		return "整理白字素材"
-	case ToolResponse:
+	case ToolNarrate:
 		return "生成KP主回复"
 	case ToolAskPlayers:
 		return "点名调查员"

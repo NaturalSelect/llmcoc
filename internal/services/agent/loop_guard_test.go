@@ -274,7 +274,7 @@ func TestLoopGuard_ReadOnlyCachedRepeatsStillCountTowardsLoop(t *testing.T) {
 
 func TestLoopGuard_RejectedBatchRepeatsAreCounted(t *testing.T) {
 	g := newLoopGuard()
-	calls := []llm.ToolCall{fakeToolCall("a", "update_characters", `{"hp":1}`), fakeToolCall("b", "response", `{"reply":"x"}`)}
+	calls := []llm.ToolCall{fakeToolCall("a", "update_characters", `{"hp":1}`), fakeToolCall("b", "narrate", `{"reply":"x"}`)}
 	var msgs []llm.ChatMessage
 	var err error
 	for i := 1; i <= 5; i++ {
