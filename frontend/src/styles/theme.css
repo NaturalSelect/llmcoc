@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-paper: #f2e8d5;
+  --color-paper-deep: #e6d7b8;
+  --color-paper-edge: #cdb98f;
+  --color-ink: #2a2118;
+  --color-ink-soft: #5c4a36;
+  --color-ink-faint: #8a7658;
+  --color-seal: #8b2a1f;
+  --color-ledger: #2f4a5a;
+  --color-moss: #4f6a3a;
+  --font-serif: 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
+  --font-type: 'Courier Prime', 'Courier New', ui-monospace, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-serif);
+    /* NOTE: 纸张纹理只用 CSS 渐变，不放图片；两层极淡的径向渐变模拟纸面不均匀的老化 */
+    background-image:
+      radial-gradient(ellipse at 20% 10%, rgb(255 255 255 / 0.35), transparent 55%),
+      radial-gradient(ellipse at 90% 90%, rgb(139 90 43 / 0.08), transparent 50%);
+    background-attachment: fixed;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-seal) 25%, transparent);
+  }
+}

@@ -8,3 +8,5 @@ tmp
 config.local.yaml
 angela.json
 run.log
+frontend/node_modules
+cmd/server/dist/app

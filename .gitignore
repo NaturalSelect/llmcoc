@@ -4,3 +4,5 @@
 config.local.yaml
 tmp/
 angela.json
+/frontend/node_modules/
+/cmd/server/dist/app/

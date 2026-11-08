@@ -1,0 +1,208 @@
+// @vitest-environment jsdom
+// NOTE: 挂载真实的 GameView，用假的 fetch 和 WebSocket 走一遍：进房、hello、快照、点名问题卡、提交、房主按钮、离开关闭连接
+import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory } from 'vue-router'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { createAppRouter } from '@/router'
+import { useAuthStore } from '@/stores/auth'
+import { useUiStore } from '@/stores/ui'
+import GameView from './GameView.vue'
+
+class FakeWS {
+  static all: FakeWS[] = []
+  onmessage: ((ev: MessageEvent) => void) | null = null
+  onclose: (() => void) | null = null
+  readyState = 1
+  closed = false
+  constructor(readonly url: string) {
+    FakeWS.all.push(this)
+  }
+  close() {
+    this.closed = true
+    this.readyState = 3
+  }
+  recv(seq: number, type: string, data: Record<string, unknown> = {}) {
+    this.onmessage?.({ data: JSON.stringify({ seq, type, data }) } as MessageEvent)
+  }
+}
+
+const SPOT_ME = { user_ids: [2], names: ['爱丽丝'], question: '你要怎么做？', kp_floor: false, asked_me: true, stop: '' }
+
+const kpMessage = {
+  id: 1,
+  role: 'assistant',
+  kind: 'kp',
+  status: 'done',
+  content: '雨夜里，门廊的灯忽明忽暗。',
+  floor: 1,
+  meta: { options: ['推门进去', '绕到后院'] },
+}
+
+function json(body: unknown, status = 200) {
+  return { ok: status < 400, status, json: async () => body } as Response
+}
+
+interface Setup {
+  hostId?: number
+  spotlight?: Record<string, unknown>
+}
+
+async function setup({ hostId = 1, spotlight = SPOT_ME }: Setup = {}) {
+  const fetchCalls: Array<{ method: string; path: string }> = []
+  const session = {
+    id: 7,
+    name: '雾港旧宅',
+    status: 'playing',
+    created_by: hostId,
+    scenario: { name: '旧宅疑云' },
+    players: [{ user_id: 2, user: { username: 'alice' }, character_card: { id: 5, name: '爱丽丝', occupation: '记者', stats: { hp: 9, max_hp: 10, san: 40, max_san: 50, mp: 8, max_mp: 8 } } }],
+  }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (path: string, init?: RequestInit) => {
+      const method = init?.method || 'GET'
+      fetchCalls.push({ method, path })
+      if (path === '/api/sessions/7') return json(session)
+      if (path === '/api/sessions/7/messages') return json([kpMessage])
+      if (path === '/api/sessions/7/chat-status') {
+        return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
+      }
+      if (path === '/api/sessions/7/chat') return json({}, 202)
+      return json({})
+    }),
+  )
+  vi.stubGlobal('WebSocket', FakeWS)
+
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  localStorage.setItem('coc_token', 'tok')
+  const auth = useAuthStore()
+  auth.user = { id: 2, username: 'alice', role: 'user' }
+  auth.meLoaded = true
+  auth.shopCosts = { end_session_cost: 200 }
+
+  const router = createAppRouter(createMemoryHistory())
+  await router.push('/sessions/7')
+  await router.isReady()
+
+  const wrapper = mount(GameView, { global: { plugins: [pinia, router] }, attachTo: document.body })
+  await flushPromises()
+  const ws = FakeWS.all[FakeWS.all.length - 1]
+  ws.recv(0, 'hello', { epoch: 'E1', seq: 3 })
+  await flushPromises()
+  return { wrapper, ws, router, fetchCalls }
+}
+
+beforeEach(() => {
+  FakeWS.all = []
+  document.body.innerHTML = ''
+  localStorage.clear()
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('GameView', () => {
+  test('进房后渲染头部、状态条、历史消息和问题卡；连接带 token', async () => {
+    const { wrapper, ws } = await setup()
+    expect(ws.url).toContain('/api/sessions/7/ws?token=tok')
+
+    const text = wrapper.text()
+    expect(text).toContain('雾港旧宅')
+    expect(text).toContain('旧宅疑云')
+    expect(text).toContain('游戏中')
+    expect(text).toContain('爱丽丝')
+    expect(text).toContain('雨夜里，门廊的灯忽明忽暗。')
+    expect(text).toContain('KP 向你提问')
+    expect(text).toContain('你要怎么做？')
+    expect(text).toContain('推门进去')
+    expect(wrapper.find('[role="status"]').text()).toContain('KP 在等你回应')
+    wrapper.unmount()
+  })
+
+  test('勾选推荐行动并提交：按表单发送，成功后收成「已提交」摘要', async () => {
+    const { wrapper, fetchCalls } = await setup()
+    const option = wrapper.findAll('button').find((b) => b.text().includes('绕到后院'))!
+    await option.trigger('click')
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('小心点')
+    const submit = wrapper.findAll('button').find((b) => b.text() === '提交')!
+    expect(submit.attributes('disabled')).toBeUndefined()
+    await submit.trigger('click')
+    await flushPromises()
+
+    expect(fetchCalls).toContainEqual({ method: 'POST', path: '/api/sessions/7/chat' })
+    expect(wrapper.text()).toContain('已提交你的行动')
+    expect(wrapper.text()).toContain('绕到后院')
+    expect(wrapper.find('textarea').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('没有选择也没有输入时提交按钮不可用', async () => {
+    const { wrapper } = await setup()
+    const submit = wrapper.findAll('button').find((b) => b.text() === '提交')!
+    expect(submit.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  test('没被点名时没有输入框；房主在 KP 空闲时能看到继续按钮', async () => {
+    const kpSpotlight = { user_ids: [], names: [], question: '', kp_floor: true, asked_me: false, stop: '' }
+    const { wrapper } = await setup({ hostId: 2, spotlight: kpSpotlight })
+    expect(wrapper.find('textarea').exists()).toBe(false)
+    expect(wrapper.text()).toContain('让 KP 继续')
+    wrapper.unmount()
+  })
+
+  test('非房主看不到继续按钮；非房主非管理员在头部看不到结束按钮', async () => {
+    const { wrapper } = await setup({ hostId: 1 })
+    expect(wrapper.text()).not.toContain('让 KP 继续')
+    expect(wrapper.text()).not.toContain('结束')
+    wrapper.unmount()
+  })
+
+  test('房主点结束：金额写进确认框，取消则不请求', async () => {
+    const { wrapper, fetchCalls } = await setup({ hostId: 2 })
+    const ui = useUiStore()
+    const end = wrapper.findAll('header button').find((b) => b.text() === '结束')!
+    await end.trigger('click')
+    expect(ui.confirmState?.message).toBe('确认结束游戏？将消耗200金币，系统将进行成长评估。')
+    ui.resolveConfirm(false)
+    await flushPromises()
+    expect(fetchCalls.some((c) => c.path.endsWith('/end'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('调查员列表能打开并标出自己', async () => {
+    const { wrapper } = await setup()
+    const ui = useUiStore()
+    const list = wrapper.findAll('header button').find((b) => b.text() === '调查员')!
+    await list.trigger('click')
+    expect(document.body.textContent).toContain('调查员状态')
+    expect(document.body.textContent).toContain('YOU')
+    expect(ui.toasts).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  test('点「我的角色」打开人物卡详情弹窗，关闭后收起', async () => {
+    const { wrapper } = await setup()
+    const mine = wrapper.findAll('header button').find((b) => b.text() === '我的角色')!
+    await mine.trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('记者')
+    const close = [...document.body.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭')
+    expect(close).toBeTruthy()
+    close!.click()
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  test('离开页面时关闭 WebSocket', async () => {
+    const { wrapper, ws } = await setup()
+    expect(ws.closed).toBe(false)
+    wrapper.unmount()
+    expect(ws.closed).toBe(true)
+  })
+})

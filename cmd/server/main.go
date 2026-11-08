@@ -30,8 +30,8 @@ import (
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
-//go:embed web
-var webFS embed.FS
+//go:embed all:dist
+var distFS embed.FS
 
 var log = logging.For("main")
 
@@ -327,35 +327,13 @@ func main() {
 	}
 
 	// ─── Frontend (embedded) ─────────────────────────────────────────────────
-	sub, err := fs.Sub(webFS, "web")
+	// NOTE: dist/app 由 frontend/ 的 Vite 构建生成（不入库）；all: 前缀保证只有 .gitkeep 时也能编译，此时页面返回 503 提示
+	sub, err := fs.Sub(distFS, "dist/app")
 	if err != nil {
-		log.Error("failed to sub web FS", "err", err)
+		log.Error("failed to sub dist FS", "err", err)
 		os.Exit(1)
 	}
-	r.NoRoute(func(c *gin.Context) {
-		// Serve index.html for SPA routes, static files otherwise
-		path := c.Request.URL.Path
-		if path == "/" || path == "" {
-			// index.html 是 SPA 入口，禁止长缓存，避免用户长期停留在旧版本
-			c.Header("Cache-Control", "no-cache")
-			data, _ := fs.ReadFile(sub, "index.html")
-			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
-			return
-		}
-		// Try to serve static file
-		file, err := sub.Open(path[1:]) // strip leading /
-		if err != nil {
-			// SPA fallback
-			c.Header("Cache-Control", "no-cache")
-			data, _ := fs.ReadFile(sub, "index.html")
-			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
-			return
-		}
-		file.Close()
-		// 静态资源（JS/CSS 等）短期缓存，减少更新后用户看到旧版本的时间窗口
-		c.Header("Cache-Control", "public, max-age=3600")
-		c.FileFromFS(path[1:], http.FS(sub))
-	})
+	r.NoRoute(frontendHandler(sub))
 
 	addr := fmt.Sprintf("%s:%d", config.Global.Server.Host, config.Global.Server.Port)
 	log.Info("llm-coc server starting", "addr", addr)

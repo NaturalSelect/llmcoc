@@ -71,7 +71,7 @@ LLM-COC 是一个房间制 COC7 在线跑团服务。核心用户是玩家和管
 1. 玩家选择模组创建房间，可设置最大玩家数和房间密码。
 2. 其他玩家选择自己的人物卡加入房间；一张人物卡同一时间只能参与一个未结束房间。
 3. 房主开始游戏后，房间状态从 `lobby` 变为 `playing`，系统把发言权交给 KP（`Spotlight` 写入空状态）。
-4. 前端进入游戏页后加载房间详情和消息记录，并定时刷新；房主端随即调用 `POST /sessions/:id/kp-turn`，由 KP 先手跑开场段，不等玩家发言。
+4. 前端进入游戏页后先建立房间 WebSocket（`GET /sessions/:id/ws`），连上后拉取房间详情、消息记录和 chat-status 作为快照，之后所有进展都由推送驱动，没有定时刷新；房主端随即调用 `POST /sessions/:id/kp-turn`，由 KP 先手跑开场段，不等玩家发言。
 5. 整局由 KP 驱动，发言权只有两种状态（`Spotlight` 为 NULL 的旧房间不再兼容，按 KP 持有处理）：
    - KP 持有发言权：没有任何玩家可以发言，提交会被拒绝（409）并提示「KP 正在推进剧情」。如果上一个周期被强制结束（`Spotlight.Stop` 非空），提示改为「KP 已暂停，请等待房主让 KP 继续」。
    - KP 点名了若干调查员：只有被点名者可以提交，其他人被拒绝（403）并提示「KP 正在等待 X 回应：问题」。被点名者全部提交后才开始下一个周期。
@@ -89,7 +89,7 @@ LLM-COC 是一个房间制 COC7 在线跑团服务。核心用户是玩家和管
 12. 房主或管理员可结束游戏；结束时扣除金币，运行评价和成长结算。
 13. 管理员可以复活已结束房间，系统写入复活系统消息。
 
-主要实现位于 `internal/handlers/session.go` 和 `cmd/server/web/js/game.js`。
+主要实现位于 `internal/handlers/session.go`，前端对应 `frontend/src/game/roomController.ts` 和 `frontend/src/game/roomState.ts`。
 
 ## Agent 跑团流程
 
@@ -129,7 +129,7 @@ Agent 管线负责把玩家行动转成规则裁定、状态变化和叙事输�
 
 ## 管理后台流程
 
-管理后台是现有控制面，前端模板位于 `cmd/server/web/pages/admin.html`：
+管理后台是现有控制面，前端位于 `frontend/src/views/admin/`（路由 `/admin/:tab`，每个 tab 一个组件）：
 
 1. 用户管理：查看用户、充值、切换管理员、封号和解封。
 2. LLM Provider：创建、编辑、删除、Ping 测试。
@@ -157,7 +157,7 @@ Agent 管线负责把玩家行动转成规则裁定、状态变化和叙事输�
 修改业务流程时至少检查这些位置：
 
 - API 是否需要更新 README 的路由概览。
-- 前端是否需要同步更新 `cmd/server/web/js` 和 `cmd/server/web/pages/admin.html`。
+- 前端是否需要同步更新 `frontend/src`（页面在 `views/`，后台 tab 在 `views/admin/`，实时房间逻辑在 `game/`）。
 - 数据模型是否需要兼容旧 JSON 字段或旧数据库行。
 - Agent 工具是否需要更新 Director 提示词、工具结构、工具执行器和测试。
 - 多人回合逻辑是否会影响等待、断线重连和消息持久化。

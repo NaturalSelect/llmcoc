@@ -5,21 +5,29 @@ Go + Gin + GORM/SQLite 的 COC7 多人跑团服务端，内置前端与多 Agent
 ## 命令
 
 ```bash
-./start.sh                 # go build -o ./bin/llmcoc 后运行；自动 source .env
+./start.sh                 # 先构建前端（frontend/ → cmd/server/dist/app），再 go build -o ./bin/llmcoc 后运行；自动 source .env
 ./start.sh --debug         # LOG_LEVEL=debug
 ./start.sh --dev           # go run ./cmd/server
+./start.sh --no-web        # 跳过前端构建，复用已有的 cmd/server/dist/app
 ./start_bg.sh [flags]      # nohup 后台运行，输出到 run.log（run.log 未被 gitignore）
 
 go vet ./...                              # CI 第一步
 go test -race -count=1 ./...              # CI 实际使用的测试命令
-node --test cmd/server/webtest/*.test.js  # 前端状态模块测试，CI 在 Go 测试之后也会跑（Node 22）
 go test -run TestXxx ./internal/handlers  # 单个测试
+
+cd frontend
+npm ci                     # 安装依赖（Node ^20.19 或 >=22.12，CI 用 22）
+npm run dev                # Vite 开发服务器（5173），/api 和 WebSocket 代理到 localhost:8080
+npm run typecheck          # vue-tsc
+npm test                   # vitest
+npm run build              # 产物输出到 ../cmd/server/dist/app
 ```
 
-- CI 只有 `.github/workflows/test.yml`（vet + test，Go 版本取自 `go.mod`）。无 Makefile、无 lint 配置、无前端构建。
+- CI 只有 `.github/workflows/test.yml`：前端 install/typecheck/test/build，然后 Go vet + test，最后 `go build` 确认带真实产物也能编译（Go 版本取自 `go.mod`）。无 Makefile、无 lint 配置。
 - 测试不依赖网络、真实 LLM 或外部服务。
 - 项目目录里可能已有服务进程在跑（占用 8080、持有 `data/llmcoc.db`）：测试/启动前先确认端口，改代码前先 `git status`。
-- `data/`、`bin/`、`tmp/`、`.env`、`config.local.yaml` 被 gitignore。`data/` 含 SQLite 库、`lawyer_cache.json`、`images/`。
+- `data/`、`bin/`、`tmp/`、`.env`、`config.local.yaml`、`frontend/node_modules/`、`cmd/server/dist/app/` 被 gitignore。`data/` 含 SQLite 库、`lawyer_cache.json`、`images/`。
+- 本机 `~/.npm` 缓存目录若属主是 root，npm 会报权限错误：给 npm 命令加 `NPM_CONFIG_CACHE=/tmp/llmcoc-npm-cache`。
 
 ## 配置与初始化
 
@@ -36,9 +44,10 @@ go test -run TestXxx ./internal/handlers  # 单个测试
 
 ### 入口与前端
 - `cmd/server/main.go` 完成：加载配置 → `models.InitDB` → 播种 → 加载三本规则资料并算哈希 → 启动统计持久化/图片清理 → 注册路由 → 优雅退出时保存 Lawyer 缓存。
-- 前端是 `cmd/server/web` 下的静态文件，通过 `//go:embed web` 打进二进制，没有独立工程；改前端后需要重启（或重新 build）才生效。`web/js/vendor/` 是手工放入的第三方库。未命中的路由由 `NoRoute` 回落到 `index.html`。
+- 前端是仓库根目录 `frontend/` 下的 Vue 3 + TypeScript + Vite + Tailwind v4 + Pinia + Vue Router 工程。`npm run build` 把产物输出到 `cmd/server/dist/app/`（不入库，`dist/.gitkeep` 保证目录存在），`main.go` 用 `//go:embed all:dist` 嵌入，`frontend.go` 的 `frontendHandler` 挂在 `NoRoute` 上：真实文件按路径返回（`assets/*` 带内容哈希，缓存一年），目录和不存在的路径回落到 `index.html`（`no-cache`），没有 `index.html`（没构建前端）时返回 503 和构建提示。改前端后需要重新 build 并重启（或用 `npm run dev` 热更新）。
+- 前端用 history 路由，地址即页面：`/login`、`/`、`/sessions`、`/sessions/:id`（游戏页）、`/shop`、`/admin/:tab?`。路由守卫在 `src/router.ts`，token 仍存 `localStorage['coc_token']`；任何带 token 的请求返回 401 都由 `main.ts` 里注册的处理函数统一登出并跳回登录页。
 - gzip 中间件按路径正则排除了流式接口：房间 WebSocket `/api/sessions/:id/ws`，以及 SSE 的 `/api/scenarios/generate`、`/api/scenarios/compile-story`。`/chat`、`/kp-turn`、`/kp-stop` 已改为立即返回 202 的普通 JSON 接口，不再在排除列表里。新增流式接口必须同步加进 `main.go` 的排除列表。HTTP `WriteTimeout` 为 30 分钟，是为了长时间 AI 生成。
-- 房间所有进展（新消息、writer 流式文字、点名、等待进度、周期起止、房间状态变化）都经 `GET /api/sessions/:id/ws` 推送，协议见 `docs/realtime-protocol.md`。游戏页没有任何轮询：`web/js/game.js` 负责连接、重连退避、命令和模板辅助，状态归约全在 `web/js/room_state.js`（纯逻辑，不依赖 DOM、Alpine 和网络）。游戏页没有常驻输入框：玩家只在被点名时看到问题卡（推荐行动可多选，外加自由输入，提交后收成一行摘要，断线时置灰但保留内容），房间状态和房主的继续/打断按钮在底部状态栏。两个模块的测试都在 `cmd/server/webtest/`（`game.test.js` 用假的 WebSocket、fetch 和定时器在 vm 里加载 `game.js`），必须放在 embed 目录之外，否则会被打进二进制。游戏页的模板和样式还没有在真实浏览器里人工验证。
+- 房间所有进展（新消息、writer 流式文字、点名、等待进度、周期起止、房间状态变化）都经 `GET /api/sessions/:id/ws` 推送，协议见 `docs/realtime-protocol.md`。游戏页没有任何轮询：`frontend/src/game/roomController.ts` 负责连接、重连退避、探测、快照和房主命令（WebSocket、定时器是私有字段，实例用 `markRaw`，不能放进 reactive/Pinia），状态归约全在 `frontend/src/game/roomState.ts`（纯逻辑，不依赖 DOM、Vue 组件和网络，函数原地修改传入的 room，所以必须传 `reactive()` 代理本身）；问题卡、状态栏文案、消息辅助分别是 `ask.ts`、`banner.ts`、`messages.ts` 里的纯函数。游戏页没有常驻输入框：玩家只在被点名时看到问题卡（推荐行动可多选，外加自由输入，提交后收成一行摘要，断线时置灰但保留内容），房间状态和房主的继续/打断按钮在底部状态栏。这些模块的测试与源码同目录（`*.test.ts`，vitest；`roomController.test.ts` 用假的 WebSocket 和假定时器），`GameView.test.ts` 会挂载整个游戏页。所有页面的模板和样式（游戏页、首页、大厅、商城、后台）都还没有在真实浏览器里人工验证。
 - 路由全部在 `main.go` 里手写；`BanCheck` 中间件只挂在部分分组上，新增分组时注意是否需要。
 
 ### 一段 KP 叙事的数据流
@@ -62,7 +71,7 @@ go test -run TestXxx ./internal/handlers  # 单个测试
   - `painter_nsfw` 未启用：`nsfw=true` 的配图请求被直接拒绝，**不会**回落到 Painter。
   - `diffusion_translator` 仅在 Painter 开启 `diffusion_mode` 时才被调用。
 - 每会话的 Agent 句柄会缓存（`sessionAgents`），后台改配置后靠 `ClearAllCachedAgents` 失效，会话结束时 `deleteCachedAgents`。
-- 新增角色要同步改：`models/models.go`（常量）、`models/db.go`（`required` 播种列表）、`batchLoadAgents` 的角色列表、`cmd/server/web/js/admin.js`（角色名/描述/默认值，两处）、`models/db_agent_seed_test.go`。
+- 新增角色要同步改：`models/models.go`（常量）、`models/db.go`（`required` 播种列表）、`batchLoadAgents` 的角色列表、`frontend/src/components/admin/agents/agentRoles.ts`（`ROLE_DEFAULTS` 默认值，以及名称/描述/占位提示三张表，共四处）、`models/db_agent_seed_test.go`。
 
 ### 新增 Director 工具要改的地方
 `types.go`（`ToolCallType` 常量和 `ToolCall` 字段）→ `director_tools.go`（`XxxTool()` 定义 + 加入 `directorTools` + `decodeDirectorToolCall` 分支）→ `actions.go`（`actionRegistry` 登记，并按需加入 `noSideEffectActions` / `responseCompatibleActions`）→ `director_dispatch.go`（`directorBatchPolicy` 的批次规则；`response` / `ask_players` / `end_game` 是回复类工具，不能和需要先读结果的工具同批，其中只有 `ask_players` / `end_game` 结束周期）。`directorTools(dramaturgEnabled)` 每轮发送同一份完整列表（唯一的条件项是 dramaturg 是否启用），这是为了保持提示词缓存前缀稳定（见提交 1b395d7）；不要按回合状态裁剪工具列表。Director 历史同理：发送版即归档版，不要在归档时再裁剪。

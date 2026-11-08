@@ -1,0 +1,79 @@
+import type { AgentFormState } from '@/api/adminTypesCore'
+import { agentLabel } from './agentRoles'
+
+// NOTE: 保存/测试模型的请求体构造，字段与旧 admin.js 的 saveAgent / pingAgentModel 逐项一致
+
+export function isPainterRole(role: string): boolean {
+  return role === 'painter' || role === 'painter_nsfw'
+}
+
+// NOTE: 只有这三个角色会按上下文窗口整体裁剪历史，其余角色不显示该输入框
+export function hasContextWindow(role: string): boolean {
+  return role === 'director' || role === 'writer' || role === 'writer_nsfw'
+}
+
+export function buildSavePayload(ag: AgentFormState) {
+  return {
+    provider_config_id: ag.provider_config_id || null,
+    model_name: ag.model_name,
+    max_tokens: ag.max_tokens,
+    context_window: ag.context_window || 0,
+    temperature: ag.temperature,
+    disable_temperature: ag.disable_temperature || false,
+    image_via_chat: ag.image_via_chat || false,
+    diffusion_mode: ag.diffusion_mode || false,
+    with_jailbreak: ag.with_jailbreak || false,
+    system_prompt: ag.system_prompt,
+    thinking_level: ag.thinking_level || '',
+    thinking_budget_tokens: ag.thinking_budget_tokens || 0,
+    is_active: ag.is_active,
+  }
+}
+
+export function savedMessage(role: string): string {
+  return agentLabel(role) + ' 配置已保存'
+}
+
+export function pingLoadingKey(ag: Pick<AgentFormState, 'role' | 'provider_config_id'>): string {
+  return ag.role + ':' + Number(ag.provider_config_id || 0)
+}
+
+export interface PingPayload {
+  model_name: string
+  role: string
+  mode?: 'image'
+  image_via_chat?: boolean
+  diffusion_mode?: boolean
+}
+
+export type PingPlan =
+  | { ok: false; error: string }
+  | { ok: true; providerId: number; role: string; isPainter: boolean; key: string; payload: PingPayload }
+
+export function planPing(ag: AgentFormState): PingPlan {
+  const providerId = ag.provider_config_id ? Number(ag.provider_config_id) : 0
+  const modelName = (ag.model_name || '').trim()
+  if (!providerId) return { ok: false, error: '请先选择 Provider' }
+  if (!modelName) return { ok: false, error: '请先填写模型名称' }
+
+  const role = ag.role || ''
+  const isPainter = isPainterRole(role)
+  const payload: PingPayload = { model_name: modelName, role }
+  if (isPainter) {
+    payload.mode = 'image'
+    payload.image_via_chat = ag.image_via_chat || false
+    payload.diffusion_mode = ag.diffusion_mode || false
+  }
+  return { ok: true, providerId, role, isPainter, key: `${role}:${providerId}`, payload }
+}
+
+export function pingSuccessMessage(role: string, latencyMs: number): string {
+  return isPainterRole(role)
+    ? `Painter 图片模型连通正常，延迟 ${latencyMs} ms`
+    : `${agentLabel(role)} 模型连通正常，延迟 ${latencyMs} ms`
+}
+
+export function pingFailureMessage(role: string, reason: string): string {
+  const prefix = isPainterRole(role) ? 'Painter 图片模型测试失败：' : `${agentLabel(role)} 模型测试失败：`
+  return prefix + reason
+}

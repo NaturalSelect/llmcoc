@@ -1,0 +1,224 @@
+<script setup lang="ts">
+import { reactive, ref, watch } from 'vue'
+import type { CharacterCardFull, RegenField } from '@/api/characterTypes'
+import BaseModal from '@/components/base/BaseModal.vue'
+import { useAuthStore } from '@/stores/auth'
+import { useCharactersStore } from '@/stores/characters'
+import { useUiStore } from '@/stores/ui'
+import { characterApi } from './characterApi'
+import CharacterSection from './CharacterSection.vue'
+import CharacterVitals from './CharacterVitals.vue'
+import ChipList from './ChipList.vue'
+import EntryList from './EntryList.vue'
+import RegenBlock from './RegenBlock.vue'
+import { useConfirmGuard } from './useConfirmGuard'
+import {
+  REGEN_SPECS,
+  detailSubtitle,
+  errMessage,
+  mergeUpdatedCard,
+  regenConfirmMessage,
+  regenCost,
+  sortedSkills,
+  type Entry,
+  type RegenSpec,
+} from './characterLogic'
+
+// NOTE: 旧前端的 charDetail 弹窗同时被首页、房间调查员列表、游戏页菜单打开；这里只依赖 card 属性，
+// 其他页面传入人物卡即可复用（操作结果会同步到全局 characters store）
+const props = defineProps<{ open: boolean; card: CharacterCardFull | null }>()
+const emit = defineEmits<{ close: [] }>()
+
+const auth = useAuthStore()
+const chars = useCharactersStore()
+const ui = useUiStore()
+const guard = useConfirmGuard()
+const onClose = guard.guardClose(() => emit('close'))
+
+const current = ref<CharacterCardFull | null>(null)
+const busy = ref(false)
+const guidance = reactive<Record<RegenField, string>>({ appearance: '', backstory: '', traits: '' })
+const regenBusy = reactive<Record<RegenField, boolean>>({ appearance: false, backstory: false, traits: false })
+
+watch(
+  () => [props.open, props.card] as const,
+  ([open, card]) => {
+    if (!open) return
+    current.value = card
+    guidance.appearance = guidance.backstory = guidance.traits = ''
+  },
+  { immediate: true },
+)
+
+// NOTE: 请求期间弹窗可能已关闭或换了另一张卡：结果总是同步进 store，只有仍在展示同一张卡时才更新弹窗
+function latestCard(id: number | undefined, fallback: CharacterCardFull): CharacterCardFull {
+  if (current.value && current.value.id === id) return current.value
+  return (chars.characters.find((c) => c.id === id) as CharacterCardFull | undefined) ?? fallback
+}
+
+function applyUpdate(updated: CharacterCardFull): void {
+  const prev = latestCard(updated.id, updated)
+  const merged = mergeUpdatedCard(prev, updated)
+  chars.syncCharacter(merged)
+  if (current.value && current.value.id === updated.id) current.value = merged
+}
+
+async function mutate(action: () => Promise<CharacterCardFull>, done: string): Promise<void> {
+  busy.value = true
+  try {
+    applyUpdate(await action())
+    ui.toast(done)
+  } catch (e) {
+    ui.toast(errMessage(e), 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function regen(spec: RegenSpec): Promise<void> {
+  const card = current.value
+  if (!card?.id) return
+  const cost = regenCost(auth.shopCosts, spec)
+  if (!(await guard.confirm(regenConfirmMessage(spec, cost, card.name), { confirmText: '重新生成' }))) return
+  regenBusy[spec.field] = true
+  try {
+    const r = await characterApi.regenerate(card.id, spec.field, guidance[spec.field].trim())
+    if (auth.user && typeof r.coins === 'number') auth.user.coins = r.coins
+    applyUpdate({ ...latestCard(card.id, card), [spec.field]: r[spec.field] })
+    ui.toast(spec.doneToast)
+  } catch (e) {
+    ui.toast(errMessage(e), 'error')
+  } finally {
+    regenBusy[spec.field] = false
+  }
+}
+
+function deposit(item: string): Promise<void> | void {
+  const id = current.value?.id
+  if (!id || !item) return
+  return mutate(async () => (await characterApi.deposit(id, item)).character_card, '已存入仓库')
+}
+
+function discard(item: string): Promise<void> | void {
+  const id = current.value?.id
+  if (!id || !item) return
+  return mutate(() => characterApi.removeInventoryItem(id, item), '已从物品栏移除')
+}
+
+async function forgetSpell(spell: string): Promise<void> {
+  const id = current.value?.id
+  if (!id || !spell) return
+  if (!(await guard.confirm(`确定要遗忘法术「${spell}」吗？遗忘后克苏鲁神话技能-1，理智上限将相应提升，此操作不可撤销。`, { danger: true, confirmText: '遗忘' }))) return
+  await mutate(() => characterApi.forgetSpell(id, spell), '已遗忘法术')
+}
+
+async function removeRelation(name: string | undefined): Promise<void> {
+  const id = current.value?.id
+  if (!id || !name) return
+  if (!(await guard.confirm(`确定要删除与「${name}」的社会关系吗？此操作不可撤销。`, { danger: true, confirmText: '删除' }))) return
+  await mutate(() => characterApi.removeSocialRelation(id, name), '已删除社会关系')
+}
+
+async function removeAsset(name: string | undefined): Promise<void> {
+  const id = current.value?.id
+  if (!id || !name) return
+  if (!(await guard.confirm(`确定要删除资产「${name}」吗？此操作不可撤销。`, { danger: true, confirmText: '删除' }))) return
+  await mutate(() => characterApi.removeAsset(id, name), '已删除资产')
+}
+
+function relationEntries(card: CharacterCardFull): Entry[] {
+  return (card.social_relations ?? []).map((r) => ({
+    title: r?.name || '未命名关系',
+    lines: [`关系：${r?.relationship || '—'}`, ...(r?.note ? [r.note] : [])],
+    key: r?.name,
+  }))
+}
+
+function assetEntries(card: CharacterCardFull): Entry[] {
+  return (card.assets ?? []).map((a) => ({
+    title: a?.name || '未命名资产',
+    lines: [`类别：${a?.category || '—'}`, ...(a?.note ? [a.note] : [])],
+    key: a?.name,
+  }))
+}
+</script>
+
+<template>
+  <BaseModal :open="open" :title="current?.name ?? ''" max-width="max-w-2xl" @close="onClose">
+    <template v-if="current">
+      <p class="-mt-2 mb-4 font-type text-sm text-ink-faint">{{ detailSubtitle(current) }}</p>
+
+      <CharacterVitals :card="current" />
+
+      <CharacterSection title="技能（完整）">
+        <div class="mb-2 font-type text-xs text-ink-faint">总计 {{ Object.keys(current.skills ?? {}).length }} 项</div>
+        <ul class="grid max-h-56 grid-cols-2 gap-1 overflow-y-auto pr-1 sm:grid-cols-3">
+          <li
+            v-for="[skill, val] in sortedSkills(current.skills)"
+            :key="skill"
+            class="flex justify-between rounded-sm bg-paper-deep/50 px-2 py-1 font-type text-xs"
+          >
+            <span class="mr-1 truncate text-ink-soft">{{ skill }}</span>
+            <span class="shrink-0 font-bold text-ink">{{ val }}</span>
+          </li>
+        </ul>
+      </CharacterSection>
+
+      <CharacterSection title="物品栏">
+        <p class="mb-2 text-xs text-ink-faint">点击物品右侧按钮可直接丢弃或存入账号仓库。</p>
+        <p v-if="current.in_session" class="mb-2 text-xs text-seal" role="status">该人物卡正在游戏中，无法存取仓库。</p>
+        <ChipList :items="current.inventory ?? []">
+          <template #actions="{ item }">
+            <button
+              type="button"
+              class="leading-none text-ledger transition hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="current.in_session || busy"
+              @click="deposit(item)"
+            >
+              存入仓库
+            </button>
+            <button type="button" class="leading-none text-seal transition hover:underline disabled:opacity-40" :disabled="busy" @click="discard(item)">丢弃</button>
+          </template>
+        </ChipList>
+      </CharacterSection>
+
+      <CharacterSection title="法术">
+        <ChipList :items="current.spells ?? []" tone="ledger">
+          <template #actions="{ item }">
+            <button type="button" class="leading-none text-seal transition hover:underline disabled:opacity-40" :disabled="busy" @click="forgetSpell(item)">遗忘</button>
+          </template>
+        </ChipList>
+      </CharacterSection>
+
+      <CharacterSection title="已知神话存在">
+        <ChipList :items="current.seen_monsters ?? []" tone="seal" />
+      </CharacterSection>
+
+      <CharacterSection title="社会关系">
+        <EntryList :entries="relationEntries(current)" :busy="busy" @remove="removeRelation" />
+      </CharacterSection>
+
+      <CharacterSection title="资产">
+        <EntryList :entries="assetEntries(current)" :busy="busy" @remove="removeAsset" />
+      </CharacterSection>
+
+      <template v-for="spec in REGEN_SPECS" :key="spec.field">
+        <RegenBlock
+          v-if="current[spec.field]"
+          v-model:guidance="guidance[spec.field]"
+          :spec="spec"
+          :text="current[spec.field] ?? ''"
+          :cost="regenCost(auth.shopCosts, spec)"
+          :coins="auth.user?.coins ?? 0"
+          :busy="regenBusy[spec.field]"
+          @regen="regen(spec)"
+        />
+      </template>
+
+      <CharacterSection class="mt-4" title="创建/更新时间">
+        <p class="font-type text-xs text-ink-soft">created_at: {{ current.created_at || '' }}</p>
+        <p class="font-type text-xs text-ink-soft">updated_at: {{ current.updated_at || '' }}</p>
+      </CharacterSection>
+    </template>
+  </BaseModal>
+</template>

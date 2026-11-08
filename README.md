@@ -25,13 +25,14 @@
 - JWT（`github.com/golang-jwt/jwt/v5`）
 - LLM SDK（`charm.land/fantasy`，统一封装 OpenAI 兼容与 Anthropic 的对话接口）
 - 图片生成 SDK（`github.com/openai/openai-go/v3`）
-- 前端：嵌入式单页页面（`cmd/server/web/index.html`）
+- 前端：Vue 3 + TypeScript + Vite + Tailwind CSS 单页应用（源码在 `frontend/`，构建产物嵌入二进制）
 
 ## 快速开始
 
 ### 1. 准备环境
 
 - Go 1.26+
+- Node.js 20.19+ 或 22.12+（构建前端用；只跑 `go test` 或用 `--no-web` 复用已有产物时不需要）
 - 可选：Docker / Docker Compose
 
 ### 2. 配置
@@ -76,6 +77,10 @@ shop:
 ```bash
 ./start.sh --dev
 ```
+
+脚本会先构建前端（没有 `frontend/node_modules` 时先 `npm ci`），产物输出到 `cmd/server/dist/app` 并由 Go 二进制嵌入；已有产物、只想重启后端时加 `--no-web` 跳过。没有构建产物时页面会返回 503 并提示构建命令。
+
+前端热更新开发：先用 `./start.sh --dev --no-web` 起后端，再在 `frontend/` 下执行 `npm run dev`，打开 `http://localhost:5173`（`/api` 和 WebSocket 会代理到 8080）。
 
 服务默认监听：`http://0.0.0.0:8080`
 
@@ -199,16 +204,24 @@ sqlite3 data/llmcoc.db "update users set role='admin' where username='your_usern
 go test ./...
 ```
 
-构建服务：
+构建服务（需先构建前端）：
 
 ```bash
+(cd frontend && npm ci && npm run build)
 go build -o ./bin/llmcoc ./cmd/server
+```
+
+前端检查：
+
+```bash
+cd frontend && npm run typecheck && npm test
 ```
 
 ## 项目结构
 
 ```text
-cmd/server            # 程序入口与嵌入前端
+cmd/server            # 程序入口与嵌入前端（dist/app 为前端构建产物，不入库）
+frontend              # Vue 前端源码与测试
 internal/config       # 配置加载
 internal/models       # 数据模型与数据库初始化
 internal/handlers     # HTTP 处理器
