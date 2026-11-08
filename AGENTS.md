@@ -6,7 +6,7 @@ Go + Gin + GORM/SQLite 的 COC7 多人跑团服务端，内置前端与多 Agent
 
 ```bash
 ./start.sh                 # go build -o ./bin/llmcoc 后运行；自动 source .env
-./start.sh --debug         # GIN_MODE=debug + LOG_LEVEL=debug
+./start.sh --debug         # LOG_LEVEL=debug
 ./start.sh --dev           # go run ./cmd/server
 ./start_bg.sh [flags]      # nohup 后台运行，输出到 run.log（run.log 未被 gitignore）
 
@@ -24,8 +24,8 @@ go test -run TestXxx ./internal/handlers  # 单个测试
 ## 配置与初始化
 
 - `config.yaml` 只含 `server` / `database` / `jwt` 三段（`internal/config/config.go`）。README 里出现的 `shop:` 段并不存在于结构体；初始金币、卡槽等是数据库里的 `SiteSetting`（`models/db.go` 的 `seedDefaultSiteSettings`，后台可改）。
-- 实际读取的环境变量：`CONFIG_PATH`、`JWT_SECRET`、`GIN_MODE`、`LOG_LEVEL`（默认 debug）、`RULEBOOK_PATH` / `SPELLBOOK_PATH` / `MONSTERBOOK_PATH`、`LAWYER_CACHE_PATH`、`LLMCOC_IMAGE_DIR`、`LLMCOC_IMAGE_QUALITY`。
-- 文档里提到但代码未读取：`AGENT_DEBUG`（README）、`DB_PATH`（start.sh 注释）。不要依赖它们。
+- 实际读取的环境变量：`CONFIG_PATH`、`JWT_SECRET`、`LOG_LEVEL`（默认 debug，日志级别的唯一开关；Gin 固定 release 模式）、`RULEBOOK_PATH` / `SPELLBOOK_PATH` / `MONSTERBOOK_PATH`、`LAWYER_CACHE_PATH`、`LLMCOC_IMAGE_DIR`、`LLMCOC_IMAGE_QUALITY`。
+- 文档里提到但代码未读取：`DB_PATH`（start.sh 注释）。不要依赖它们。
 - 不再从环境变量播种 LLM Provider：库里没有 Provider 时各 Agent 的 Provider 为空，需在后台手动添加并绑定；Agent 默认模型固定为 `gpt-4o`。
 - 所有播种都是「缺失才创建」：改 `seedDefaultAgentConfigs` / `seedDefaultSiteSettings` 里的默认值不会影响已有数据库。下线 Agent 角色必须把旧角色名加进 `seedDefaultAgentConfigs` 里的 `DELETE ... WHERE role IN` 清理列表，否则老库会残留。
 - 只有 `AutoMigrate`，没有迁移文件。新增列需要回填旧数据时，参照 `with_jailbreak`：迁移前用 `Migrator().HasColumn` 记下列是否存在，迁移后回填。新增模型要加进 `InitDB` 的 AutoMigrate 列表。

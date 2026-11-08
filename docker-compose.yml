@@ -9,7 +9,6 @@ services:
     volumes:
       - coc_data:/app/data
     environment:
-      GIN_MODE: release
       JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET}
 
 volumes:

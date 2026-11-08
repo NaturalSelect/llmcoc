@@ -3,12 +3,11 @@
 #
 # Usage:
 #   ./start.sh             # production mode
-#   ./start.sh --debug     # enable verbose agent + LLM logging, Gin debug mode
+#   ./start.sh --debug     # enable verbose agent + LLM logging (LOG_LEVEL=debug)
 #   ./start.sh --dev       # go run instead of build (re-compiles on each start)
 #
 # Environment variables (can also be set in .env):
 #   CONFIG_PATH   — Path to config.yaml (default: ./config.yaml)
-#   GIN_MODE      — "release" or "debug" (overridden by --debug flag)
 #   LOG_LEVEL     — "debug"|"info"|"warn"|"error" 日志级别 (default: debug；--debug/--dev 强制 debug)
 #   DB_PATH       — SQLite database path (overrides config.yaml database.path)
 
@@ -27,7 +26,6 @@ fi
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 : "${CONFIG_PATH:=./config.yaml}"
-: "${GIN_MODE:=release}"
 : "${LOG_LEVEL:=debug}"
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
@@ -38,14 +36,12 @@ for arg in "$@"; do
   case "$arg" in
     --debug)
       DEBUG=1
-      GIN_MODE="debug"
       LOG_LEVEL="debug"
-      echo "[start.sh] Debug mode enabled (LOG_LEVEL=debug, GIN_MODE=debug)"
+      echo "[start.sh] Debug mode enabled (LOG_LEVEL=debug)"
       ;;
     --dev)
       DEBUG=1
       MODE="dev"
-      GIN_MODE="debug"
       LOG_LEVEL="debug"
       echo "[start.sh] Dev mode: using 'go run'"
       ;;
@@ -60,7 +56,6 @@ for arg in "$@"; do
   esac
 done
 
-export GIN_MODE
 export LOG_LEVEL
 export CONFIG_PATH
 
@@ -77,6 +72,6 @@ else
   mkdir -p bin
   echo "[start.sh] Building binary → $BINARY"
   go build -o "$BINARY" ./cmd/server
-  echo "[start.sh] Starting server (CONFIG_PATH=$CONFIG_PATH, GIN_MODE=$GIN_MODE)"
+  echo "[start.sh] Starting server (CONFIG_PATH=$CONFIG_PATH, LOG_LEVEL=$LOG_LEVEL)"
   exec "$BINARY"
 fi

@@ -94,8 +94,7 @@ docker compose up -d
 启动脚本会自动加载项目根目录 `.env`（若存在）。
 
 - `CONFIG_PATH`：配置文件路径（默认 `./config.yaml`）
-- `GIN_MODE`：`release` 或 `debug`
-- `AGENT_DEBUG`：`1/true/yes` 开启 Agent/LLM 调试日志
+- `LOG_LEVEL`：日志级别，可选 `debug` / `info` / `warn` / `error`（默认 `debug`，`start.sh --debug` 也会强制为 `debug`）
 - `JWT_SECRET`：覆盖 `config.yaml` 中的 JWT 密钥
 - `RULEBOOK_PATH`：规则书路径（默认 `COC_kp.md`）
 

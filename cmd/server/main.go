@@ -140,9 +140,7 @@ func main() {
 	imagestore.StartCleanup(cleanupCtx, imagestore.DefaultStore(), 14*24*time.Hour, 24*time.Hour)
 
 	// Create Gin engine
-	if os.Getenv("GIN_MODE") == "" {
-		gin.SetMode(gin.ReleaseMode)
-	}
+	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
 		// WARN-level behavior: only keep client/server error request logs.
