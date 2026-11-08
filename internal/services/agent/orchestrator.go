@@ -339,13 +339,26 @@ func formatSingleDiceResult(r DiceCheckResult) string {
 	return fmt.Sprintf("%v鉴定: %v %v%v", r.What, r.Roll, level, hidden)
 }
 
-// formatNPCAction formats an NPCAction as an unverified roleplay result for the KP.
+// formatNPCAction 把 AI 玩家的声明渲染成给 KP 的 tool 结果：标明未裁定，空字段省略。
 func formatNPCAction(a NPCAction) string {
-	result := "【未验证NPC反应】" + a.NPCName + ":" + a.Action
-	if a.Dialogue != "" {
-		result += fmt.Sprintf("(对话:\"%s\")", a.Dialogue)
+	var sb strings.Builder
+	sb.WriteString("【NPC玩家声明·未裁定】" + a.NPCName)
+	if s := strings.TrimSpace(a.Intent); s != "" {
+		sb.WriteString(" 意图:" + s)
 	}
-	return result
+	if s := strings.TrimSpace(a.Action); s != "" {
+		sb.WriteString(" 动作:" + s)
+	}
+	if s := strings.TrimSpace(a.Dialogue); s != "" {
+		sb.WriteString(fmt.Sprintf(" 台词:\"%s\"", s))
+	}
+	if s := strings.TrimSpace(a.Check); s != "" {
+		sb.WriteString(" 申请检定:" + s)
+	}
+	if s := strings.TrimSpace(a.OOC); s != "" {
+		sb.WriteString(" 场外(仅KP可见):" + s)
+	}
+	return sb.String()
 }
 
 // executeSingleDiceCheck wraps executeDiceChecks for a single check.

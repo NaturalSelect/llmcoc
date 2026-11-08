@@ -196,7 +196,7 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		question = call.NPCCtx
 	}
 	if strings.TrimSpace(call.KPDirective) != "" {
-		question = question + "\n【KP剧情指令(最高优先级，不得透露给玩家)】" + call.KPDirective
+		question = question + "\n【KP私下给你的指令(最高优先级，其他玩家看不到)】" + call.KPDirective
 	}
 	debugf("tool", "session=%d act_npc npc=%q question=%s nsfw=%v", actx.Sid, call.NPCName, question, call.NSFW)
 	doneNPC := timedDebug("NPC", "session=%d npc=%s", actx.Sid, call.NPCName)

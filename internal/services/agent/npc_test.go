@@ -111,8 +111,8 @@ func TestBuildNPCHeadStableAcrossNSFWMode(t *testing.T) {
 func TestBuildNPCOpeningNSFWSuffix(t *testing.T) {
 	gctx := GameContext{Session: models.GameSession{ID: 1, EnableNSFW: true}}
 
-	openingOff := buildNPCOpening(gctx, "他有什么反应？", false)
-	openingOn := buildNPCOpening(gctx, "他有什么反应？", true)
+	openingOff := buildNPCOpening(gctx, "", "", "他有什么反应？", false)
+	openingOn := buildNPCOpening(gctx, "", "", "他有什么反应？", true)
 
 	if strings.Contains(openingOff.Content, "explicit_scene_requirements") {
 		t.Error("非NSFW模式的opening不应包含explicit_scene_requirements后缀")

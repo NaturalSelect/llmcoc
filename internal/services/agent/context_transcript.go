@@ -275,6 +275,15 @@ func (c *ContextManager) NextFloor() int {
 	return c.data.NextFloor
 }
 
+// SeenMessageID 返回 NPC 已读过的最后一条公开消息 ID；SetSeenMessageID 只改内存，由下一次 Commit 落库。
+func (c *ContextManager) SeenMessageID() uint {
+	return c.data.SeenMessageID
+}
+
+func (c *ContextManager) SetSeenMessageID(id uint) {
+	c.data.SeenMessageID = id
+}
+
 // IsEmpty 报告 transcript 是否还没有任何已提交的历史轮，供调用方判断是否需要把旧数据
 // (如老会话按纯文本 transcript 存的历史)播种为 seq=0 的一轮，且只在为空时播种一次。
 func (c *ContextManager) IsEmpty() bool {

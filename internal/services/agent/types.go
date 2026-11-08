@@ -288,11 +288,15 @@ type CharacterUpdate struct {
 
 // ── NPC types ─────────────────────────────────────────────────────────────────
 
-// NPCAction is the output for one NPC's turn.
+// NPCAction 是扮演 NPC 的 AI 玩家的一份声明：只是意图，由 KP 决定是否检定并裁定。
 type NPCAction struct {
 	NPCName  string `json:"npc_name"`
+	Intent   string `json:"intent"`
 	Action   string `json:"action"`
 	Dialogue string `json:"dialogue"`
+	// NOTE: Check 是 AI 玩家申请的检定("技能名:目的")，OOC 是只给 KP 看的场外话，两者都不得进入玩家可见内容。
+	Check string `json:"check"`
+	OOC   string `json:"ooc"`
 }
 
 // NPCCard is the input schema for create_npc(char_card).
