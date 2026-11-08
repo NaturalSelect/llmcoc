@@ -463,7 +463,7 @@ func generateImageTool() scripterTool {
 			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略；每一拍(两条response/ask_players消息之间)最多一张，挑最有画面价值的瞬间；每次调用都会成为一条独立的配图消息。若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词；纯环境、物件、痕迹的空镜不需要 describe_characters，可以直接与write/response同轮发出，不要因为查外貌要多走一轮就放弃配图。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
 【格式规则】image_prompt必须用英文撰写，并按以下Markdown分段模板组织，不要写成一段流水账描述：
 ### Scene
-一句话概括场景类型与整体氛围/色调。
+一句话概括这一格的场景类型、此刻发生的事与整体氛围/色调。
 ### Subject
 仅当画面有可辨认的角色/生物主体时才写此段，用要点列出gender expression、age、ethnicity、body type、pose、clothing等视觉要点(角色外貌须来自describe_characters的结果，不可编造)；纯环境空镜或无主体特写省略本段。
 ### Environment
@@ -471,15 +471,33 @@ func generateImageTool() scripterTool {
 ### Lighting
 要点列出光源、光质、色调，契合场景年代与氛围。
 ### Camera
-要点列出取景与镜头提示，如视角、取景范围、景深倾向、构图裁切等，用于控制画面呈现方式，不必是精确的真实相机参数。
+要点列出漫画分镜式的取景与镜头提示，如景别(远景/中景/特写)、视角(平视/仰视/俯视/过肩)、构图裁切、画面焦点等，用于控制这一格的呈现方式，不必是精确的真实相机参数。
 ### Negative prompts
 要点列出应避免出现的元素，如时代穿帮物、文字水印、比例失调、过度美化等。
 没有内容的段落直接省略该标题，保留的段落一律用"* "开头的要点分行罗列，不要写成大段文字。
-【风格规则】统一二次元(ACG/动漫)插画审美，不是写实摄影；Camera段仍用摄影语言(取景/景深/构图)增强临场感——即"二次元插画,但用镜头语言构图"。纯环境/痕迹类空镜同样保持二次元插画质感。
+【风格规则】每张配图是一部连续漫画里的一格，不是孤立的插画。统一日式漫画画风(粗细有变化的墨线、赛璐璐上色、网点式阴影)，该画风由绘图代理统一附加，image_prompt里不必重复描述画风，只写这一格的内容。纯环境/痕迹类空镜同样按漫画格来画。
+【分镜规则】一张图只画一个瞬间、一个单格：不要要求多格拼版、分栏或画面边框，不要要求对话气泡、拟声词或任何可读文字(画面里的文字会变成乱码，台词留给write)。Camera段用分镜的镜头语言选景别，并随剧情节奏变化：相邻两格不要重复同一景别和构图，每一格都应推进剧情(新的动作、新的反应、新的发现)，而不是换个角度重画上一格。
+【连续性规则】读者会把相邻的配图连起来当漫画读。同一角色在每一格里必须保持同一套外貌：发型发色、瞳色、服装和显眼配饰逐项沿用describe_characters的结果和你前几格image_prompt里的写法，不要擅自换衣服或改发色(除非剧情里确实发生了改变)；同一地点沿用已经出现过的标志性陈设和布局；人物的左右位置与视线方向在连续的几格里保持一致。
 【NSFW规则】可选参数nsfw(布尔,默认false)：本次画面若包含裸露、性暗示或露骨性描写等NSFW内容，必须如实设为true；不含这类内容或不确定时省略/设为false。未配置并启用NSFW配图代理(painter_nsfw)时，nsfw=true的调用会被直接拒绝且不会生成图片，与本会话是否允许NSFW文字内容是两个独立开关。
 【未知感规则】配图是玩家可见通道，同样受[UNKNOWN]约束。尚未被合法鉴定的神话实体、怪物与异常现象，禁止画出可辨认的正面全貌——正面肖像等于提前把答案交给玩家。这类对象只画它留下的痕迹与效果、事后现场、遮挡与局部(背光剪影、水下轮廓、门缝里的一部分)、它经过后的空环境，或目击者的反应；image_prompt里也不要写出它的正式名称、种族名与规则术语，用画面本身描述。已被完全鉴定或已正面遭遇过的对象不受此限制。
 【批次规则】generate_image可以与write/response同批次；返回结果只表示图片生成已排队，KP不需要也不能读取图片内容。
-调用示例：{"image_prompt":"### Scene\nAnime-style illustration of a dim Victorian study past midnight, sickly greenish gaslight tone.\n### Subject\n* An elderly butler standing rigid beside the desk, startled expression, anime-style linework and shading\n* Wearing a black tailcoat, holding a candle\n### Environment\n* Towering bookshelves with cracked leather spines\n* Cluttered mahogany desk buried in scattered papers\n### Lighting\n* Single candle as key light, deep long shadows\n### Camera\n* Eye-level wide shot, slightly tilted angle\n### Negative prompts\n* No modern objects or readable text\n* No photorealistic/live-action rendering","aspect":"landscape","nsfw":false}`,
+调用示例：{"image_prompt":"### Scene
+A dim Victorian study past midnight; the candle flame bends toward the door and the butler freezes. Sickly greenish gaslight tone.
+### Subject
+* An elderly butler standing rigid beside the desk, startled expression, same grey side-parted hair as in earlier panels
+* Wearing a black tailcoat, holding a candle
+### Environment
+* Towering bookshelves with cracked leather spines
+* Cluttered mahogany desk buried in scattered papers
+### Lighting
+* Single candle as key light, deep long shadows
+### Camera
+* Medium shot from a low angle, slightly tilted, focus on the butler's face and the bending flame
+### Negative prompts
+* No modern objects
+* No speech bubbles, captions or readable text
+* No multi-panel layout or panel borders
+* No photorealistic/live-action rendering","aspect":"landscape","nsfw":false}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {

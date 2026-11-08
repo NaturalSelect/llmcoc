@@ -345,6 +345,31 @@ func TestGenerateImageToolBlocksUnidentifiedEntityPortrait(t *testing.T) {
 	}
 }
 
+// TestGenerateImageToolDescribesComicPanels 验证配图被约束成连续漫画的单格：分镜、禁文字和拼版、角色与场景前后一致。
+func TestGenerateImageToolDescribesComicPanels(t *testing.T) {
+	desc := generateImageTool().def.Description
+
+	for _, want := range []string{
+		"连续漫画里的一格",
+		"【分镜规则】",
+		"对话气泡",
+		"多格拼版",
+		"【连续性规则】",
+		"发型发色",
+		"No speech bubbles",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("generate_image description should contain %q", want)
+		}
+	}
+	if strings.Contains(desc, "统一二次元(ACG/动漫)插画审美") {
+		t.Error("generate_image description should no longer ask for generic anime illustration")
+	}
+	if !strings.Contains(kpSystemPrompt, "配图是一部连续漫画的分格") {
+		t.Error("kp system prompt should tell the director that images form a continuous comic")
+	}
+}
+
 // TestDirectorEncouragedToGenerateImages 验证"主动配图"的鼓励同时出现在系统提示词、每轮清单
 // 和 generate_image 工具说明里，且空镜可以跳过 describe_characters。
 func TestDirectorEncouragedToGenerateImages(t *testing.T) {

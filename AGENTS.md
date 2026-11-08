@@ -72,7 +72,7 @@ go test -run TestXxx ./internal/handlers  # 单个测试
 - `agent` 包的全局状态（`lawyerCache` 4GB 预算 LRU、`sessionAgents`、`activeSessions`）在包导入时创建，且几乎所有函数都依赖全局 `models.DB` 已初始化。
 
 ### 图片
-Painter 默认走 OpenAI 兼容图片接口；开启 `diffusion_mode` 时先由 `diffusion_translator` 把画面描述翻成标签式正面提示词，再调用 `/images/generations`。负面提示词是固定常量，全年龄会话额外追加分级标签（`painter_diffusion.go`）。图片落盘与定期清理在 `services/imagestore`（默认目录是数据库文件同级的 `images/`）。
+Painter 默认走 OpenAI 兼容图片接口；开启 `diffusion_mode` 时先由 `diffusion_translator` 把画面描述翻成标签式正面提示词，再调用 `/images/generations`。负面提示词是固定常量，全年龄会话额外追加分级标签（`painter_diffusion.go`）。配图按「连续漫画的单格」出：画风（日式漫画）由 `painter.go` 的 `imageSysPrompt` 和扩散翻译提示词统一附加，Director 的 `image_prompt` 只写这一格的内容；`generate_image` 工具说明里的分镜规则和连续性规则要求景别随剧情变化、不画气泡和文字、角色外貌与场景跨图一致，没有额外的角色外貌存储，一致性靠 Director 沿用前几格的写法。图片落盘与定期清理在 `services/imagestore`（默认目录是数据库文件同级的 `images/`）。
 
 ## 代码约定
 

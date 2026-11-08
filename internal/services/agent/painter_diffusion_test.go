@@ -94,6 +94,38 @@ func TestTranslateToDiffusionPrompt_UsesPlainChatNotJSON(t *testing.T) {
 	}
 }
 
+func TestDiffusionPromptsAskForSingleMangaPanel(t *testing.T) {
+	for _, want := range []string{"manga", "single panel", "speech bubble", "Consistency matters"} {
+		if !strings.Contains(diffusionPromptSystemPrompt, want) {
+			t.Errorf("translator prompt should contain %q", want)
+		}
+	}
+	for _, want := range []string{"speech bubble", "panel border", "photorealistic"} {
+		if !strings.Contains(diffusionBaseNegativePrompt, want) {
+			t.Errorf("base negative should contain %q", want)
+		}
+	}
+	// NOTE: 分级标签只能出现在全年龄追加的那一段，新增的漫画负面标签不能带上它们，否则 NSFW 请求会被挡掉。
+	if strings.Contains(diffusionBaseNegativePrompt, "nsfw") || strings.Contains(diffusionBaseNegativePrompt, "nude") {
+		t.Error("base negative must stay free of rating tags")
+	}
+}
+
+func TestImageSysPromptAsksForSingleMangaPanel(t *testing.T) {
+	rendered := renderNSFW(imageSysPrompt, false)
+	for _, want := range []string{"Japanese manga", "Single Panel", "no speech bubbles", "Consistency", nsfwImagePolicyOff} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("painter prompt should contain %q", want)
+		}
+	}
+	if strings.Contains(rendered, "{{") {
+		t.Errorf("painter prompt still has unrendered placeholder: %q", rendered)
+	}
+	if strings.Contains(rendered, "warm and dreamy") {
+		t.Error("painter prompt should no longer ask for a soft dreamy palette")
+	}
+}
+
 func TestDiffusionNegativePromptFor(t *testing.T) {
 	if got := diffusionNegativePromptFor(true); got != diffusionBaseNegativePrompt {
 		t.Errorf("NSFW negative = %q, want the fixed base negative %q", got, diffusionBaseNegativePrompt)

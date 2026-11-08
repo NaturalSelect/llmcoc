@@ -108,11 +108,13 @@ func (describeCharactersAction) Execute(call ToolCall, actx ActionContext) []Too
 const imageSysPrompt = `
 <system>
 	<global_config>
-	- **Composition:** Design a well-balanced composition based on the described scene and characters, highlighting the main characters and key elements.
-	- **Color Palette:** Use soft colors to create a warm and dreamy atmosphere.
-	- **Lighting and Shadows:** Pay attention to the play of light and shadow to enhance depth and dimensionality.
-	- **Background Details:** Add appropriate background details according to the scene description to enrich the image.
-	- **Character Expressions and Poses:** Design suitable expressions and actions based on the characters' personalities and emotions to bring them to life.
+	- **Art Style:** Japanese manga. Draw the image as a single panel from a continuous comic: bold ink linework with varied line weight, flat cel-shaded colors in a restrained palette that fits the scene's mood, and screentone-style hatching for shadows. Do not render photorealistically.
+	- **Single Panel:** Show exactly one moment in one frame. No multi-panel page layout, no panel borders, no speech bubbles, no captions, no sound effects, no readable text of any kind.
+	- **Consistency:** The reader flips through many panels in a row. Keep each character's face, hair, outfit and signature accessories exactly as described, and keep recurring locations recognizable, so the same person and place look the same from panel to panel.
+	- **Composition:** Frame the shot like a manga storyboard: choose the shot size and angle that the camera notes ask for, put the key action or emotion in the focal point, and leave breathing room around it.
+	- **Lighting and Shadows:** Use strong, graphic contrast between light and shadow to carry mood and depth.
+	- **Background Details:** Add appropriate background details according to the scene description, drawn with the same linework as the characters.
+	- **Character Expressions and Poses:** Design clear, expressive faces and poses that read at a glance and show what the character feels in this moment.
 	{{NSFW_IMAGE_POLICY}}
 	</global_config>
 
