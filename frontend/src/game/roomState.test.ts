@@ -319,63 +319,76 @@ describe('roomState', () => {
     expect(room.messages.length).toBe(0)
   })
 
-  test('writer 流：live 下看到 message_new 之后才接收 token', () => {
+  test('writer 流：message_new 之前到达的 token 也先记下，已有终态的消息不再接收', () => {
     const room = liveRoom()
-    feed(room, F(0, 'writer_token', { message_id: 7, text: '早' }))
-    expect(room.streams[7]).toBeUndefined()
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '早' }))
+    expect(room.streams[7]).toStrictEqual({ text: '早' })
 
     feed(room, F(11, 'message_new', { message: writer(7) }))
-    expect(room.streams[7]).toStrictEqual({ text: '', live: true, broken: false })
-    feed(room, F(0, 'writer_token', { message_id: 7, text: '雨' }))
-    expect(room.streams[7].text).toBe('雨')
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 1, text: '雨' }))
+    expect(room.streams[7].text).toBe('早雨')
+
+    feed(room, F(12, 'message_update', { id: 7, status: 'done', content: '早雨。' }))
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 2, text: '晚' }))
+    expect(room.streams[7]).toBeUndefined()
   })
 
-  test('writer 流：helloPending 下的 message_new 同样开启 live 流', () => {
+  test('writer 流：按偏移拼接，重叠部分覆盖、重复帧忽略、跳过的帧等补发', () => {
     const room = liveRoom()
-    RS.markDisconnected(room)
-    RS.onHello(room, { epoch: 'e1', seq: 12 })
-    expect(room.conn).toBe('helloPending')
-    RS.applyFrame(room, F(11, 'message_new', { message: writer(7) }))
-    expect(room.streams[7].live).toBe(true)
+    feed(room, F(11, 'message_new', { message: writer(7) }))
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '雨夜' }))
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 2, text: '，钟' }))
+    expect(room.streams[7].text).toBe('雨夜，钟')
+
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 2, text: '，钟' }))
+    expect(room.streams[7].text).toBe('雨夜，钟')
+
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 9, text: '丢了前面' }))
+    expect(room.streams[7].text).toBe('雨夜，钟')
+
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '雨夜，钟声响了' }))
+    expect(room.streams[7].text).toBe('雨夜，钟声响了')
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 4, text: '声响了。' }))
+    expect(room.streams[7].text).toBe('雨夜，钟声响了。')
   })
 
-  test('writer 流：快照里加载的 pending writer 不接收 token', () => {
+  test('writer 流：快照期间收到的全文补发不会被快照清掉，之后的增量接着拼', () => {
     const room = RS.newRoom({ sessionId: 1, userId: 3 })
     RS.onHello(room, { epoch: 'e1', seq: 5 })
-    RS.applySnapshot(room, snap({ messages: [writer(7, { content: '前半' })] }))
-    expect(room.streams[7]).toStrictEqual({ text: '', live: false, broken: false })
-    feed(room, F(0, 'writer_token', { message_id: 7, text: '雨' }))
-    expect(room.streams[7].text).toBe('')
+    expect(feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '前半' })).verdict).toBe('apply')
+    RS.applySnapshot(room, snap({ messages: [writer(7)] }))
+    expect(room.streams[7].text).toBe('前半')
+
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 2, text: '后半' }))
+    expect(room.streams[7].text).toBe('前半后半')
 
     feed(room, F(6, 'message_update', { id: 7, status: 'done', content: '完整正文' }))
     expect(room.byId[7].content).toBe('完整正文')
     expect(room.streams[7]).toBeUndefined()
   })
 
-  test('writer 流：快照期间缓冲的 message_new 不会得到 live 流', () => {
+  test('writer 流：快照里已经完成的 writer 会清掉残留的流', () => {
     const room = RS.newRoom({ sessionId: 1, userId: 3 })
     RS.onHello(room, { epoch: 'e1', seq: 5 })
-    RS.acceptFrame(room, F(6, 'message_new', { message: writer(8) }))
-    RS.applySnapshot(room, snap())
-    expect(room.streams[8].live).toBe(false)
-    feed(room, F(0, 'writer_token', { message_id: 8, text: '雨' }))
-    expect(room.streams[8].text).toBe('')
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '半截' }))
+    RS.applySnapshot(room, snap({ messages: [writer(7, { status: 'done', content: '全文' })] }))
+    expect(room.streams[7]).toBeUndefined()
   })
 
-  test('writer 流：断线后 broken，保留已收文本但忽略后续 token，message_update 覆盖', () => {
+  test('writer 流：断线重连后由全文补发接上，message_update 覆盖', () => {
     const room = liveRoom()
     feed(room, F(11, 'message_new', { message: writer(7) }))
-    feed(room, F(0, 'writer_token', { message_id: 7, text: '雨' }))
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '雨' }))
     room.kpStatus = 'KP 正在思考…'
 
     RS.markDisconnected(room)
     expect(room.conn).toBe('reconnecting')
     expect(room.kpStatus).toBe('')
-    expect(room.streams[7]).toStrictEqual({ text: '雨', live: true, broken: true })
+    expect(room.streams[7]).toStrictEqual({ text: '雨' })
 
     RS.onHello(room, { epoch: 'e1', seq: 12 })
-    RS.applyFrame(room, F(0, 'writer_token', { message_id: 7, text: '夜' }))
-    expect(room.streams[7].text).toBe('雨')
+    RS.applyFrame(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '雨夜里' }))
+    expect(room.streams[7].text).toBe('雨夜里')
 
     feed(room, F(12, 'message_update', { id: 7, status: 'done', content: '雨夜' }))
     expect(room.byId[7].content).toBe('雨夜')
@@ -570,7 +583,7 @@ describe('roomState', () => {
     expect(room.spotlight.askedMe).toBe(true)
     expect(room.spotlight.userIds).toStrictEqual([4])
     expect(room.waiting).toStrictEqual({ pending: 1, total: 2, submittedNames: ['爱丽丝'], pendingNames: ['鲍勃'] })
-    expect(Object.keys(room.streams)).toStrictEqual(['7'])
+    expect(Object.keys(room.streams)).toStrictEqual([])
     expect(room.lastSeq).toBe(30)
   })
 
@@ -615,7 +628,7 @@ describe('roomState', () => {
     expect(RS.onHello(room, { epoch: 'e1', seq: 7 })).toStrictEqual([])
   })
 
-  test('markDisconnected：所有 stream 标记 broken，kpStatus 清空，conn=reconnecting', () => {
+  test('markDisconnected：保留流式正文，kpStatus 清空，conn=reconnecting', () => {
     const room = liveRoom()
     feed(room, F(11, 'message_new', { message: writer(1) }))
     feed(room, F(12, 'message_new', { message: writer(2) }))
@@ -624,8 +637,8 @@ describe('roomState', () => {
     RS.markDisconnected(room)
     expect(room.conn).toBe('reconnecting')
     expect(room.kpStatus).toBe('')
-    expect(room.streams[1]).toStrictEqual({ text: 'a', live: true, broken: true })
-    expect(room.streams[2]).toStrictEqual({ text: '', live: true, broken: true })
+    expect(room.streams[1]).toStrictEqual({ text: 'a' })
+    expect(room.streams[2]).toBeUndefined()
     expect(room.lastSeq).toBe(12)
   })
 

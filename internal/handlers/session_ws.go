@@ -115,6 +115,10 @@ func (h *SessionHandlers) WS(c *gin.Context) {
 	} else {
 		initial = append(initial, replay...)
 	}
+	// NOTE: 订阅之后再取正在生成的 writer 全文：之后的增量帧都带偏移，客户端按偏移拼接，与这份全文重叠也不会重复。
+	if ev, ok := writerCatchUp(uint(sessionID)); ok {
+		initial = append(initial, ev)
+	}
 	wsLog.Debug("ws connected", "session", sessionID, "user", userID, "since", since,
 		"resync", resync, "replay", len(replay), "seq", sub.startSeq)
 

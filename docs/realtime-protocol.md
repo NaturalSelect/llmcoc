@@ -157,7 +157,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | 值 | 含义 |
 | --- | --- |
 | `done` | 已就绪。除下面两种情况外的消息都是它 |
-| `pending` | `writer` 与 `image` 先以此状态落库，等异步补全 |
+| `pending` | `writer` 与 `image` 先以此状态落库，等异步补全。同一周期里之后的 `kp` / `ask` 会等已发布的 `writer` 全部结束才发布，`image` 不等 |
 | `failed` | 生成失败，原因在 `meta.error` |
 
 `floor` 是所属周期编号，`system` 消息为 0。`meta` 是结构化附加信息，字段都可省略，只有下表列出的消息类型会带对应字段：
@@ -315,10 +315,12 @@ KP 当前状态的提示文案，用于"KP 正在思考…"这类状态栏。
 
 #### `writer_token`
 
-Writer 流式输出的一小段文字，追加到对应消息末尾。
+Writer 流式输出的一段文字。服务端每 100ms 合并一次，不是逐 token 推送。
 
 ```json
-{"message_id": 123, "text": "雨"}
+{"message_id": 123, "offset": 40, "text": "雨夜，钟声响了"}
 ```
 
-断线期间的 `writer_token` 会丢失。以后到达的 `message_update`（带 `content` 终态全文）或重新拉取的 `/messages` 会给出完整内容，客户端以它们为准覆盖本地拼接的内容。
+- `offset`：`text` 在这条消息正文里的起始位置，单位是 UTF-16 码元（与 JS 字符串下标一致）。客户端用 `本地文本.slice(0, offset) + text` 合并；`offset` 大于本地长度说明中间有帧丢了，丢弃该帧。
+- 建立连接时如果房间里有 writer 正在生成，服务端在 `hello`（和补发/`resync`）之后紧跟一帧 `offset=0` 的已生成全文，重连或中途进房的客户端由它接上流式正文。这帧可能先于快照到达，客户端在快照期间也要接收它。
+- 同一条消息的最后一帧先于它的 `message_update` 发出。`message_update` 的 `content` 是终态全文，客户端以它为准覆盖本地拼接的内容。

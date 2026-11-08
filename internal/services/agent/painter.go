@@ -106,18 +106,15 @@ func (describeCharactersAction) Execute(call ToolCall, actx ActionContext) []Too
 }
 
 const imageSysPrompt = `
-<system>
-	<global_config>
-	- **Art Style:** Japanese manga. Draw the image as a single panel from a continuous Japanese manga: bold ink linework with varied line weight, flat cel-shaded colors in a restrained palette that fits the scene's mood, and screentone-style hatching for shadows. Do not render photorealistically.
-	- **Single Panel:** Show exactly one moment in one frame. No multi-panel page layout, no panel borders, no speech bubbles, no captions, no sound effects, no readable text of any kind.
-	- **Consistency:** The reader flips through many panels in a row. Keep each character's face, hair, outfit and signature accessories exactly as described, and keep recurring locations recognizable, so the same person and place look the same from panel to panel.
-	- **Composition:** Frame the shot like a Japanese manga storyboard: choose the shot size and angle that the camera notes ask for, put the key action or emotion in the focal point, and leave breathing room around it.
-	- **Lighting and Shadows:** Use strong, graphic contrast between light and shadow to carry mood and depth.
-	- **Background Details:** Add appropriate background details according to the scene description, drawn with the same linework as the characters.
-	- **Character Expressions and Poses:** Design clear, expressive faces and poses that read at a glance and show what the character feels in this moment.
-	{{NSFW_IMAGE_POLICY}}
-	</global_config>
-</system>
+画面要求：
+- 画风：日式漫画。画成连续日式漫画中的单独一格：粗细有变化的墨线，配色克制的赛璐璐平涂，用网点式排线表现阴影，不要画成写实风格。
+- 单格：只画一个瞬间、一个画面。不要多格拼版，不要画面边框，不要对话气泡、旁白框和拟声词，不要出现任何可读文字。
+- 一致性：读者会连续翻阅很多格。人物的脸、发型、服装和标志性配饰要严格按描述保持不变，反复出现的场景要能认出来，让同一个人、同一个地方在不同格里看起来一致。
+- 构图：像日式漫画分镜一样取景，按镜头提示选择景别和角度，把关键动作或情绪放在视觉焦点，四周留出呼吸空间。
+- 光影：用强烈的明暗对比表现氛围和纵深。
+- 背景：按画面描述补充合适的背景细节，线条风格与人物一致。
+- 表情与姿态：表情和姿态要清晰、有表现力，一眼就能看出人物此刻的情绪。
+{{NSFW_IMAGE_POLICY}}
 `
 
 // NOTE: 根据排队请求生成图片data URL;handler负责把结果持久化到助手消息。

@@ -357,52 +357,106 @@ func equalKinds(a, b []models.MessageKind) bool {
 	return true
 }
 
-func TestFloor_DirectorDoesNotWaitForWriter(t *testing.T) {
+func TestFloor_BeatWaitsForQueuedWriters(t *testing.T) {
 	initTestDB(t)
 	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
 
 	writerStarted, releaseWriter := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	runner := &fakeRunner{}
-	runner.writer = func(_ context.Context, _ agent.GameContext, direction string, _ bool, _ func(string)) (string, error) {
+	runner.writer = func(_ context.Context, _ agent.GameContext, direction string, _ bool, onToken func(string)) (string, error) {
 		once.Do(func() { close(writerStarted) })
 		<-releaseWriter
-		return "迟到的正文", nil
+		onToken("正文")
+		return "正文", nil
 	}
+	secondRound := make(chan struct{})
 	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		// NOTE: 只有 writer 的一轮不等，Director 可以接着调用工具。
 		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{{Kind: agent.OutputWriter, Text: "第一拍"}}})
-		<-writerStarted
-		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{{Kind: agent.OutputKP, Text: "第二拍"}}})
-		return agent.RunOutput{Messages: 2, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}}, nil
+		close(secondRound)
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{
+			{Kind: agent.OutputWriter, Text: "门后"},
+			{Kind: agent.OutputAsk, Text: "你要开门吗？", Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}},
+		}})
+		return agent.RunOutput{Messages: 3, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}}, nil
 	}
 	h := NewSessionHandlers(runner)
 	tap := tapRoom(t, sessionID)
 
 	decodeChatAccepted(t, postKPTurn(hostRouter(t, h, sessionID), sessionID))
-	tap.waitCount("floor_end", 1)
-
-	if _, running := getSessionProcessing(sessionID); running {
-		t.Error("a stuck writer must not hold the room")
+	<-secondRound
+	<-writerStarted
+	tap.waitCount("message_new", 2)
+	// NOTE: 等待期间只有两条 writer 对玩家可见，ask 还没落库。
+	tap.waitCount("kp_status", 1)
+	if msgs := loadMessages(t, sessionID); len(msgs) != 2 || msgs[0].Kind != models.MessageKindWriter || msgs[1].Kind != models.MessageKindWriter {
+		t.Fatalf("before writers finish, stored = %v", messageKinds(msgs))
 	}
-	msgs := loadMessages(t, sessionID)
-	if len(msgs) != 2 || msgs[0].Status != models.MessageStatusPending || msgs[0].Content != "" {
-		t.Fatalf("writer message should still be pending: %+v", msgs)
+	if _, running := getSessionProcessing(sessionID); !running {
+		t.Error("floor must still hold the room while waiting for writers")
 	}
-
-	// 房间已经空闲：被点名的玩家可以立刻回应，不用等 Writer。
-	runner.run = askRun("继续", []uint{user1ID}, []string{"爱丽丝"})
-	r := makeTestRouter(h, user1ID, "mp_user1")
-	decodeChatAccepted(t, postChat(r, sessionID, "我继续"))
-	tap.waitCount("floor_end", 2)
 
 	close(releaseWriter)
-	tap.waitCount("message_update", 1)
-	msgs = loadMessages(t, sessionID)
-	if msgs[0].Status != models.MessageStatusDone || msgs[0].Content != "迟到的正文" {
-		t.Errorf("writer message after release = %+v", msgs[0])
+	tap.waitCount("floor_end", 1)
+
+	var order []string
+	for _, ev := range tap.got {
+		switch ev.Type {
+		case "message_new":
+			order = append(order, "new:"+string(eventMessage(ev).Kind))
+		case "message_update":
+			order = append(order, "update")
+		}
 	}
-	if reason := eventField(tap.ofType("floor_end")[1], "reason"); reason != "ask" {
-		t.Errorf("second floor_end reason = %v", reason)
+	want := "[new:writer new:writer update update new:ask]"
+	if got := fmt.Sprint(order); got != want {
+		t.Errorf("event order = %s, want %s", got, want)
+	}
+	for _, m := range loadMessages(t, sessionID)[:2] {
+		if m.Status != models.MessageStatusDone {
+			t.Errorf("writer %d status = %s", m.ID, m.Status)
+		}
+	}
+}
+
+func TestFloor_HostStopReleasesBeatWaitingForWriter(t *testing.T) {
+	initTestDB(t)
+	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+
+	releaseWriter := make(chan struct{})
+	runner := &fakeRunner{}
+	runner.writer = func(context.Context, agent.GameContext, string, bool, func(string)) (string, error) {
+		<-releaseWriter
+		return "迟到的正文", nil
+	}
+	runner.run = func(ctx context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{
+			{Kind: agent.OutputWriter, Text: "描述"},
+			{Kind: agent.OutputKP, Text: "你听见脸步声。"},
+		}})
+		return agent.RunOutput{Messages: 2, Stop: agent.StopHostStop}, context.Cause(ctx)
+	}
+	h := NewSessionHandlers(runner)
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, h, sessionID), sessionID))
+	tap.waitCount("kp_status", 1)
+	if w := postKPStop(hostRouter(t, h, sessionID), sessionID); w.Code != http.StatusAccepted {
+		t.Fatalf("kp-stop = %d: %s", w.Code, w.Body.String())
+	}
+	tap.waitCount("floor_end", 1)
+
+	msgs := loadMessages(t, sessionID)
+	if len(msgs) != 2 || msgs[0].Status != models.MessageStatusPending || msgs[1].Kind != models.MessageKindKP {
+		t.Fatalf("after host stop, stored = %+v", msgs)
+	}
+
+	// NOTE: 打断不取消 Writer，它仍然会写完。
+	close(releaseWriter)
+	tap.waitCount("message_update", 1)
+	if m := loadMessages(t, sessionID)[0]; m.Status != models.MessageStatusDone || m.Content != "迟到的正文" {
+		t.Errorf("writer after release = %+v", m)
 	}
 }
 
@@ -435,7 +489,11 @@ func TestFloor_WriterQueueKeepsOrderAcrossRounds(t *testing.T) {
 	}
 	var tokens []string
 	for _, ev := range tap.ofType("writer_token") {
-		tokens = append(tokens, ev.Data.(map[string]any)["text"].(string))
+		tok := ev.Data.(writerTokenEvent)
+		if tok.Offset != 0 {
+			t.Errorf("token %+v: first flush of a message must start at offset 0", tok)
+		}
+		tokens = append(tokens, tok.Text)
 		if ev.Seq != 0 {
 			t.Error("writer_token must be an ephemeral event")
 		}

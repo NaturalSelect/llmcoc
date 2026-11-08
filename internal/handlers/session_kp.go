@@ -446,7 +446,7 @@ func (h *SessionHandlers) runOneFloor(ctx context.Context, af *activeFloor, seg 
 			hubFor(sessionID).Ephemeral("kp_status", gin.H{"text": text})
 		}
 	}
-	gctx.Publish = func(ro agent.RoundOutputs) error { return h.publishRound(af, ro) }
+	gctx.Publish = func(ro agent.RoundOutputs) error { return h.publishRound(ctx, af, ro) }
 
 	start := time.Now()
 	out, err := h.Runner.Run(ctx, gctx)
@@ -515,34 +515,88 @@ func (h *SessionHandlers) finishFloor(af *activeFloor, out agent.RunOutput) {
 	publishSessionChanged(sessionID, status, "cards")
 }
 
-// publishRound 是注入给 Director 的 gctx.Publish：同步把一轮产生的消息落库并广播，再把 writer/image 消息交给异步任务。
+// roundItem 是一轮里待落库的一条消息和产生它的 Output(事件消息没有 Output)。
+type roundItem struct {
+	msg  models.Message
+	item agent.Output
+}
+
+// publishRound 是注入给 Director 的 gctx.Publish：同步把一轮产生的消息落库并广播，writer/image 消息交给后台任务补全。
+// kp/ask 要等会话里已入队的 writer 全部写完才落库广播：玩家先读到叙事，再看到 KP 的话和提问。
+// 等待期间 Director 停在这一轮；周期被取消(房主打断、关机)时不再等，直接发布。
 // 落库失败时返回 err，周期随之以 StopError 结束。
-func (h *SessionHandlers) publishRound(af *activeFloor, ro agent.RoundOutputs) error {
+func (h *SessionHandlers) publishRound(ctx context.Context, af *activeFloor, ro agent.RoundOutputs) error {
 	sessionID := af.sessionID
-	type pending struct {
-		msg  models.Message
-		item agent.Output
-	}
-	items := make([]pending, 0, len(ro.Items)+1)
+	var first, beats []roundItem
 	// NOTE: 事件消息先落库，id 比同轮其他消息小，前端按 id 排序时就排在这一轮叙事前面。
 	if msg, ok := roundEventMessage(sessionID, ro); ok {
-		items = append(items, pending{msg: msg})
+		first = append(first, roundItem{msg: msg})
 	}
 	for _, it := range ro.Items {
 		msg, ok := roundMessage(sessionID, ro, it)
 		if !ok {
 			continue
 		}
-		items = append(items, pending{msg: msg, item: it})
 		if msg.Kind == models.MessageKindKP || msg.Kind == models.MessageKindAsk {
+			beats = append(beats, roundItem{msg: msg, item: it})
 			// NOTE: 耗时和轮数只属于这一轮的第一条 kp/ask，后面的不重复记。
 			ro.Steps = 0
+			continue
 		}
+		first = append(first, roundItem{msg: msg, item: it})
 	}
+
+	if err := h.saveAndBroadcast(sessionID, first, ro); err != nil {
+		return err
+	}
+	if len(beats) == 0 {
+		if eventsTouchCards(ro.Events) {
+			publishCardsChanged(sessionID)
+		}
+		return nil
+	}
+	waitWritersForBeat(ctx, sessionID)
+	if err := h.saveAndBroadcast(sessionID, beats, ro); err != nil {
+		return err
+	}
+	af.beats.Add(int32(len(beats)))
+	// NOTE: 每一拍结算后人物卡（HP/SAN 等）可能已变化，通知客户端刷新。
+	publishCardsChanged(sessionID)
+	return nil
+}
+
+// waitWritersForBeat 等会话里已入队的 writer 全部结束；ctx 取消时提前返回。
+func waitWritersForBeat(ctx context.Context, sessionID uint) {
+	done := writersDone(sessionID)
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+		return
+	default:
+	}
+	hubFor(sessionID).Ephemeral("kp_status", gin.H{"text": "正在撰写叙事"})
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+}
+
+// publishCardsChanged 通知客户端刷新人物卡。end_game 的工具在发布前已把房间改成 ended，所以状态从库里读，不能写死 playing。
+func publishCardsChanged(sessionID uint) {
+	var status models.SessionStatus
+	if err := models.DB.Model(&models.GameSession{}).Where("id = ?", sessionID).Select("status").Scan(&status).Error; err != nil || status == "" {
+		status = models.SessionStatusPlaying
+	}
+	publishSessionChanged(sessionID, status, "cards")
+}
+
+// saveAndBroadcast 在一个事务里落库这批消息，再逐条广播 message_new，并把 writer/image 交给后台任务。
+func (h *SessionHandlers) saveAndBroadcast(sessionID uint, items []roundItem, ro agent.RoundOutputs) error {
 	if len(items) == 0 {
 		return nil
 	}
-
 	err := models.DB.Transaction(func(tx *gorm.DB) error {
 		for i := range items {
 			if err := tx.Create(&items[i].msg).Error; err != nil {
@@ -556,7 +610,6 @@ func (h *SessionHandlers) publishRound(af *activeFloor, ro agent.RoundOutputs) e
 	}
 
 	hub := hubFor(sessionID)
-	beatPublished := false
 	for _, p := range items {
 		hub.Publish("message_new", gin.H{"message": newMessageResponse(p.msg)})
 		switch p.msg.Kind {
@@ -564,19 +617,7 @@ func (h *SessionHandlers) publishRound(af *activeFloor, ro agent.RoundOutputs) e
 			h.enqueueWriter(sessionID, writerTask{messageID: p.msg.ID, gctx: ro.WriterCtx, direction: strings.TrimSpace(p.item.Text), nsfw: p.item.NSFW})
 		case models.MessageKindImage:
 			go h.runPainterTask(p.msg.ID, ro.WriterCtx, *p.item.Image)
-		case models.MessageKindKP, models.MessageKindAsk:
-			af.beats.Add(1)
-			beatPublished = true
 		}
-	}
-	if beatPublished || eventsTouchCards(ro.Events) {
-		// NOTE: 每一拍结算后人物卡（HP/SAN 等）可能已变化，通知客户端刷新；end_game 的工具在发布前
-		// 已把房间改成 ended，所以状态从库里读，不能写死 playing。
-		var status models.SessionStatus
-		if err := models.DB.Model(&models.GameSession{}).Where("id = ?", sessionID).Select("status").Scan(&status).Error; err != nil || status == "" {
-			status = models.SessionStatusPlaying
-		}
-		publishSessionChanged(sessionID, status, "cards")
 	}
 	return nil
 }

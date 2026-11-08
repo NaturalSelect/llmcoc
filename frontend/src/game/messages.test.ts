@@ -39,7 +39,7 @@ describe('messages', () => {
 
   test('writerText：pending 用流式文本，其余用落库正文', () => {
     const room = RS.newRoom({ sessionId: 1, userId: 2 })
-    room.streams[5] = { text: '雨落', live: true, broken: false }
+    room.streams[5] = { text: '雨落' }
     expect(writerText(room, { id: 5, kind: 'writer', status: 'pending', content: '' })).toBe('雨落')
     expect(writerText(room, { id: 6, kind: 'writer', status: 'pending', content: '' })).toBe('')
     expect(writerText(room, { id: 5, kind: 'writer', status: 'done', content: '雨落下了。' })).toBe('雨落下了。')

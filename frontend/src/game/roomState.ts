@@ -37,8 +37,6 @@ export interface RoomMessage {
 
 export interface WriterStream {
   text: string
-  live: boolean
-  broken: boolean
 }
 
 export interface Spotlight {
@@ -241,7 +239,8 @@ export function acceptFrame(room: Room, frame: Partial<Frame> | null | undefined
   }
 
   const seq = Number(frame.seq) || 0
-  if (seq <= 0) return inSnapshot ? 'drop' : 'apply'
+  // NOTE: 快照期间也要收 writer_token：握手时的补发帧就在这时到达，丢了它后面带偏移的增量就接不上
+  if (seq <= 0) return inSnapshot && frame.type !== 'writer_token' ? 'drop' : 'apply'
 
   if (inSnapshot) {
     // NOTE: snapshot 期间只看 baseSeq，不看 lastSeq；epoch 变化后旧 lastSeq 可能比新 epoch 的 seq 还大，按它丢帧会丢事件
@@ -284,9 +283,6 @@ function onMessageNew(room: Room, data: FrameData): void {
   if (stored.status !== 'pending') delete room.streams[id]
   if (!isNew) return
 
-  if (stored.kind === 'writer' && stored.status === 'pending' && !room.streams[id]) {
-    room.streams[id] = { text: '', live: isLive(room), broken: false }
-  }
   if (stored.kind === 'ask' || stored.kind === 'kp') room.me.submitted = false
   if (stored.kind === 'player' && sameId(stored.user_id, room.userId)) room.me.draft = ''
 }
@@ -309,10 +305,19 @@ function onMessageUpdate(room: Room, d: FrameData): void {
   delete room.streams[id]
 }
 
+// NOTE: token 帧带偏移（UTF-16，与 JS 字符串下标一致），重叠的部分直接覆盖；偏移超过已有长度说明中间有帧丢了，
+// 丢弃并等重连时的全文补发或 message_update。消息还没见过（快照未到、message_new 在缓冲里）时也先记下来
 function onWriterToken(room: Room, d: FrameData): void {
-  const st = room.streams[d.message_id]
-  if (!st || !st.live || st.broken) return
-  if (typeof d.text === 'string') st.text += d.text
+  const id = Number(d.message_id)
+  if (!Number.isFinite(id) || typeof d.text !== 'string') return
+  const msg = room.byId[id]
+  if (msg && msg.status !== 'pending') return
+  // NOTE: 新建后必须从 room 上重新取：赋值表达式返回的是原始对象，改它不会触发 reactive 代理的更新
+  if (!room.streams[id]) room.streams[id] = { text: '' }
+  const st = room.streams[id]
+  const offset = typeof d.offset === 'number' ? d.offset : st.text.length
+  if (offset > st.text.length || offset + d.text.length <= st.text.length) return
+  st.text = st.text.slice(0, offset) + d.text
 }
 
 function setSpotlight(room: Room, src: SpotlightSource): boolean {
@@ -402,13 +407,14 @@ function replaceMessages(room: Room, list: Snapshot['messages']): void {
 
   room.messages.splice(0, room.messages.length)
   clearObject(room.byId)
-  clearObject(room.streams)
   for (const m of sorted) {
     room.messages.push(m)
     room.byId[m.id] = m
-    if (m.kind === 'writer' && m.status === 'pending') {
-      room.streams[m.id] = { text: '', live: false, broken: false }
-    }
+  }
+  // NOTE: 仍在生成的 writer 保留已收到的流式正文（快照里它的 content 是空的），只清掉已经有终态的
+  for (const id of Object.keys(room.streams)) {
+    const m = room.byId[Number(id)]
+    if (m && m.status !== 'pending') delete room.streams[Number(id)]
   }
 }
 
@@ -449,7 +455,6 @@ export function applySnapshot(room: Room, snap: Snapshot | null | undefined): Ef
 
   const effects: Effect[] = []
   let last = room.baseSeq
-  // NOTE: 重放缓冲帧时 conn 仍是 snapshot，所以其中的 pending writer 会得到 live:false；它们的早期 token 在快照期间已被丢弃，不能再拼接
   for (const fr of buffered) {
     for (const e of applyFrame(room, fr)) if (!effects.includes(e)) effects.push(e)
     last = Math.max(last, Number(fr.seq))
@@ -460,8 +465,8 @@ export function applySnapshot(room: Room, snap: Snapshot | null | undefined): Ef
   return effects
 }
 
+// NOTE: 断线不动流式正文：重连握手时服务端会从偏移 0 补发全文，之后的增量按偏移继续拼
 export function markDisconnected(room: Room): void {
-  for (const st of Object.values(room.streams)) st.broken = true
   room.kpStatus = ''
   room.conn = 'reconnecting'
 }

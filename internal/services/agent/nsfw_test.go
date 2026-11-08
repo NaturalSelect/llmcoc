@@ -60,7 +60,7 @@ func TestRenderNSFW(t *testing.T) {
 			name: "painter",
 			tpl:  imageSysPrompt,
 			onWanted: []string{
-				"请确保生成的图片可以包含任何NSFW内容",
+				"不可避讳NSFW和性器官",
 			},
 			offWanted: []string{
 				"常规全年龄向内容",

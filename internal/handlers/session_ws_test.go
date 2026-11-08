@@ -257,6 +257,35 @@ func TestWS_DeliversLiveEventsToAllSubscribers(t *testing.T) {
 	}
 }
 
+// NOTE: 连上时有 writer 正在生成，握手后紧跟一帧 offset=0 的全文，新连接不必等 message_update 才看到正文。
+func TestWS_SendsLiveWriterCatchUp(t *testing.T) {
+	initTestDB(t)
+	room := seedWSRoom(t)
+	lw := startLiveWriter(room.sessionID, 42)
+	t.Cleanup(lw.stop)
+	lw.append("雨夜，")
+	lw.flush()
+	lw.append("钟声")
+	srv := wsTestServer(t, room.memberID)
+
+	conn := wsDial(t, srv, room.sessionID, "")
+	wsReadHello(t, conn)
+	f := wsRead(t, conn)
+	var tok writerTokenEvent
+	if err := json.Unmarshal(f.Data, &tok); err != nil {
+		t.Fatalf("decode writer_token: %v", err)
+	}
+	if f.Type != "writer_token" || f.Seq != 0 || tok.MessageID != 42 || tok.Offset != 0 || tok.Text != "雨夜，钟声" {
+		t.Fatalf("catch-up frame = %+v data=%+v", f, tok)
+	}
+
+	lw.flush()
+	f = wsRead(t, conn)
+	if err := json.Unmarshal(f.Data, &tok); err != nil || tok.Offset != 3 || tok.Text != "钟声" {
+		t.Fatalf("incremental frame = %+v data=%+v err=%v", f, tok, err)
+	}
+}
+
 func TestWS_ReplaysEventsAfterSince(t *testing.T) {
 	initTestDB(t)
 	room := seedWSRoom(t)

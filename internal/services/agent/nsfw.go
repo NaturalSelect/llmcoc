@@ -48,7 +48,7 @@ const (
 	nsfwNPCDesiresOn  = `求生欲、求知欲、表现欲、舒适欲、社交欲和性欲`
 	nsfwNPCDesiresOff = `求生欲、求知欲、表现欲、舒适欲和社交欲`
 
-	nsfwImagePolicyOn  = `- NSFW内容：不可避讳NSFW和性器官, 积极画出这些内容。`
+	nsfwImagePolicyOn  = `- NSFW内容: 不可避讳NSFW和性器官, 必须画出这些内容。`
 	nsfwImagePolicyOff = `- 内容分级：请保持画面为常规全年龄向内容,不含裸露、性暗示或露骨描写。`
 )
 

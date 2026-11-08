@@ -95,7 +95,7 @@ func TestTranslateToDiffusionPrompt_UsesPlainChatNotJSON(t *testing.T) {
 }
 
 func TestDiffusionPromptsAskForSingleMangaPanel(t *testing.T) {
-	for _, want := range []string{"manga", "single panel", "speech bubble", "Consistency matters"} {
+	for _, want := range []string{"日式漫画", "单独一格", "speech bubble", "一致性很重要", "只输出一行"} {
 		if !strings.Contains(diffusionPromptSystemPrompt, want) {
 			t.Errorf("translator prompt should contain %q", want)
 		}
@@ -113,13 +113,16 @@ func TestDiffusionPromptsAskForSingleMangaPanel(t *testing.T) {
 
 func TestImageSysPromptAsksForSingleMangaPanel(t *testing.T) {
 	rendered := renderNSFW(imageSysPrompt, false)
-	for _, want := range []string{"Japanese manga", "Single Panel", "no speech bubbles", "Consistency", nsfwImagePolicyOff} {
+	for _, want := range []string{"日式漫画", "单格", "不要对话气泡", "一致性", nsfwImagePolicyOff} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("painter prompt should contain %q", want)
 		}
 	}
 	if strings.Contains(rendered, "{{") {
 		t.Errorf("painter prompt still has unrendered placeholder: %q", rendered)
+	}
+	if strings.Contains(rendered, "<system>") || strings.Contains(rendered, "<global_config>") || strings.Contains(rendered, "**") {
+		t.Errorf("painter prompt should be plain text without XML tags or markdown: %q", rendered)
 	}
 	if strings.Contains(rendered, "warm and dreamy") {
 		t.Error("painter prompt should no longer ask for a soft dreamy palette")
@@ -245,7 +248,7 @@ func TestRunPainter_DiffusionModeOffKeepsSingleStage(t *testing.T) {
 	if len(writer.chatKeys) != 0 {
 		t.Errorf("Writer must not be called when diffusion mode is off, got %v", writer.chatKeys)
 	}
-	if !strings.HasPrefix(painter.prompt, "a lighthouse\n") || !strings.Contains(painter.prompt, "Japanese manga") || painter.opts.Diffusion {
+	if !strings.HasPrefix(painter.prompt, "a lighthouse\n") || !strings.Contains(painter.prompt, "日式漫画") || painter.opts.Diffusion {
 		t.Errorf("legacy path changed: prompt=%q opts=%+v", painter.prompt, painter.opts)
 	}
 	if strings.Contains(painter.prompt, "system-reminder") {

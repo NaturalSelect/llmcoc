@@ -315,6 +315,21 @@ describe('RoomController', () => {
     expect(h.room().messages.length).toBe(n)
   })
 
+  test('重连时 writer 还在生成：握手补发的全文接上流式正文，之后的增量继续拼', async () => {
+    const h = harness()
+    await h.enter()
+    h.frame(4, 'message_new', { message: { id: 11, kind: 'writer', status: 'pending', floor: 2, content: '' } })
+    h.frame(0, 'writer_token', { message_id: 11, offset: 0, text: '半' })
+
+    h.ws().drop()
+    h.reconnect()
+    h.ws().recv({ seq: 0, type: 'hello', data: { epoch: 'E1', seq: 4 } })
+    h.frame(0, 'writer_token', { message_id: 11, offset: 0, text: '半截正文' })
+    expect(writerText(h.room(), h.room().byId[11])).toBe('半截正文')
+    h.frame(0, 'writer_token', { message_id: 11, offset: 4, text: '还在写' })
+    expect(writerText(h.room(), h.room().byId[11])).toBe('半截正文还在写')
+  })
+
   test('序号出现缺口：丢弃游标并重连，不带 since', async () => {
     const h = harness()
     await h.enter()
