@@ -552,10 +552,35 @@ const (
 	MessageKindPlayer MessageKind = "player" // 玩家本轮声明的行动
 	MessageKindWriter MessageKind = "writer" // KP 的一次 write：由 Writer 展开的白字正文
 	MessageKindImage  MessageKind = "image"  // KP 的一次 generate_image：Painter 出的配图
-	MessageKindKP     MessageKind = "kp"     // KP 的一次 response 或 end_game 的回复
+	MessageKindKP     MessageKind = "kp"     // KP 的一次 narrate 或 end_game 的回复
 	MessageKindAsk    MessageKind = "ask"    // KP 的一次 ask_players：点名并交出发言权
 	MessageKindSystem MessageKind = "system" // 加入/离开/复活等系统提示
+	MessageKindEvent  MessageKind = "event"  // KP 一轮工具结算产生的玩家可见事件(骰子/属性/物品/疯狂/场景)
 )
+
+// GameEvent 是一次玩家可见的工具结算，只存玩家能看到的信息；字段按 Type 取用，其余留空。
+// NOTE: 暗骰只有 Type+Hidden，不存技能、点数和角色，避免玩家从接口里读到。NPC 的变化不产生事件。
+type GameEvent struct {
+	Type      string `json:"type"`                // dice|stat|wound|item|madness|location|time|combat|chase
+	Character string `json:"character,omitempty"` // 调查员名；NPC、暗骰留空
+	Skill     string `json:"skill,omitempty"`     // dice: 检定名；stat 且 field=skill 时为技能名
+	Roll      int    `json:"roll,omitempty"`      // dice
+	Level     string `json:"level,omitempty"`     // dice: 难度
+	Hidden    bool   `json:"hidden,omitempty"`    // dice: 暗骰
+	Field     string `json:"field,omitempty"`     // stat: hp/max_hp/san/max_san/mp/max_mp/pow/cthulhu_mythos/armor/str…edu/skill
+	From      *int   `json:"from,omitempty"`      // stat 变化前；用指针保留 0
+	To        *int   `json:"to,omitempty"`        // stat 变化后(钳制后的实际值)
+	State     string `json:"state,omitempty"`     // wound: none|major|dying|dead|unconscious|conscious；madness: temporary|indefinite|permanent|none
+	Category  string `json:"category,omitempty"`  // item: inventory|spell|asset|relation|monster
+	Op        string `json:"op,omitempty"`        // item: add|remove|change；combat/chase: start|end|round
+	Name      string `json:"name,omitempty"`      // item 条目
+	Detail    string `json:"detail,omitempty"`    // item: 补充说明，如数量变化
+	Symptom   string `json:"symptom,omitempty"`   // madness
+	Duration  int    `json:"duration,omitempty"`  // madness
+	Location  string `json:"location,omitempty"`  // location
+	Time      string `json:"time,omitempty"`      // time: 游戏内时间点
+	Round     int    `json:"round,omitempty"`     // combat/chase op=round
+}
 
 // MessageStatus 表示一条消息的正文是否已经就绪：writer/image 先以 pending 落库，异步补全后变 done 或 failed。
 type MessageStatus string
@@ -574,14 +599,15 @@ type AskMeta struct {
 
 // MessageMeta 是 kp/ask/writer 消息的结构化附加信息，正文里不再内嵌 options/dice 之类的标签。
 type MessageMeta struct {
-	Options   []string `json:"options,omitempty"` // ask: 玩家询问时 KP 给的推荐行动
-	Dice      string   `json:"dice,omitempty"`
-	TimePoint string   `json:"time_point,omitempty"`
-	Ask       *AskMeta `json:"ask,omitempty"`
-	Ended     bool     `json:"ended,omitempty"`
-	Auto      bool     `json:"auto,omitempty"` // writer 由后端兜底自动补出
-	NSFW      bool     `json:"nsfw,omitempty"`
-	Error     string   `json:"error,omitempty"` // status=failed 时的原因
+	Options   []string    `json:"options,omitempty"` // ask: 玩家询问时 KP 给的推荐行动
+	Dice      string      `json:"dice,omitempty"`    // 旧数据：骰子挂在 kp/ask 上，新消息改用 event
+	TimePoint string      `json:"time_point,omitempty"`
+	Ask       *AskMeta    `json:"ask,omitempty"`
+	Ended     bool        `json:"ended,omitempty"`
+	Auto      bool        `json:"auto,omitempty"` // writer 由后端兜底自动补出
+	NSFW      bool        `json:"nsfw,omitempty"`
+	Error     string      `json:"error,omitempty"`  // status=failed 时的原因
+	Events    []GameEvent `json:"events,omitempty"` // event: 本轮工具事件，按调用顺序
 }
 
 // NOTE: Message records a single chat message sent within a game session.

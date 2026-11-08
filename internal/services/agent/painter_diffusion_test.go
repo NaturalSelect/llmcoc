@@ -142,7 +142,7 @@ func TestDiffusionNegativePromptFor(t *testing.T) {
 func TestTranslateToDiffusionPrompt_MessageShape(t *testing.T) {
 	prov := &chatFakeProvider{chatResponses: []string{"1girl"}}
 
-	if _, err := translateToDiffusionPrompt(context.Background(), newDiffusionTranslatorHandle(prov), "42", "### Scene\nA lighthouse.", false); err != nil {
+	if _, err := translateToDiffusionPrompt(context.Background(), newDiffusionTranslatorHandle(prov), "42", "A lighthouse.", false); err != nil {
 		t.Fatalf("translate error: %v", err)
 	}
 	if len(prov.chatKeys) != 1 || prov.chatKeys[0] != "42:diffusion_translator" {
@@ -152,7 +152,7 @@ func TestTranslateToDiffusionPrompt_MessageShape(t *testing.T) {
 	if len(msgs) != 2 || msgs[0].Role != "system" || msgs[1].Role != "user" {
 		t.Fatalf("unexpected messages: %+v", msgs)
 	}
-	if msgs[1].Content != "### Scene\nA lighthouse." {
+	if msgs[1].Content != "A lighthouse." {
 		t.Errorf("user content = %q, want the scene prompt verbatim", msgs[1].Content)
 	}
 	if strings.Contains(msgs[0].Content, "{{") {
@@ -200,7 +200,7 @@ func TestRunPainter_DiffusionModeTranslatesThenGenerates(t *testing.T) {
 	storePainterHandles(t, sessionID, true, newDiffusionTranslatorHandle(writer), painter)
 
 	gctx := GameContext{Session: models.GameSession{ID: sessionID}}
-	dataURL, err := RunPainter(context.Background(), gctx, ImagePromptRequest{Prompt: "### Scene\nA foggy lighthouse.", Aspect: "portrait"})
+	dataURL, err := RunPainter(context.Background(), gctx, ImagePromptRequest{Prompt: "A foggy lighthouse.", Aspect: "portrait"})
 	if err != nil {
 		t.Fatalf("RunPainter error: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestRunPainter_DiffusionModeTranslatesThenGenerates(t *testing.T) {
 	if painter.opts != wantOpts {
 		t.Errorf("opts = %+v, want %+v", painter.opts, wantOpts)
 	}
-	if len(writer.chatMessages) != 1 || writer.chatMessages[0][1].Content != "### Scene\nA foggy lighthouse." {
+	if len(writer.chatMessages) != 1 || writer.chatMessages[0][1].Content != "A foggy lighthouse." {
 		t.Errorf("translator must receive the Director prompt verbatim, got %+v", writer.chatMessages)
 	}
 }
@@ -245,7 +245,10 @@ func TestRunPainter_DiffusionModeOffKeepsSingleStage(t *testing.T) {
 	if len(writer.chatKeys) != 0 {
 		t.Errorf("Writer must not be called when diffusion mode is off, got %v", writer.chatKeys)
 	}
-	if !strings.HasPrefix(painter.prompt, "<system-reminder>") || painter.opts.Diffusion {
+	if !strings.HasPrefix(painter.prompt, "a lighthouse\n") || !strings.Contains(painter.prompt, "Japanese manga") || painter.opts.Diffusion {
 		t.Errorf("legacy path changed: prompt=%q opts=%+v", painter.prompt, painter.opts)
+	}
+	if strings.Contains(painter.prompt, "system-reminder") {
+		t.Errorf("image prompt must not carry system-reminder noise: %q", painter.prompt)
 	}
 }

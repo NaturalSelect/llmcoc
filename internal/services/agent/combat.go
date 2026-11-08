@@ -441,7 +441,9 @@ func (startCombatAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 	first := cs.Participants[0]
 	return []ToolResult{{Action: ToolStartCombat, Result: fmt.Sprintf(
 		"战斗开始,行动顺序(DEX降序,仅供参考): %s。下一步:请对本轮要结算的参战者(建议从 %s 开始)调用combat_act。",
-		combatOrderSummary(cs.Participants), first.Name)}}
+		combatOrderSummary(cs.Participants), first.Name),
+		Events: []models.GameEvent{{Type: "combat", Op: "start"}},
+	}}
 }
 
 type combatActAction struct{}
@@ -452,9 +454,14 @@ func (combatActAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	if cs == nil {
 		return []ToolResult{{Action: ToolCombatAct, Result: "SYSTEM REJECT: 当前没有进行中的战斗,请先调用start_combat。"}}
 	}
+	round := cs.Round
 	result := applyCombatAct(cs, call, actx, actx.RoundClosed)
 	saveCombatState(actx.Sid, cs)
-	return []ToolResult{{Action: ToolCombatAct, Result: result}}
+	var events []models.GameEvent
+	if cs.Round > round {
+		events = []models.GameEvent{{Type: "combat", Op: "round", Round: cs.Round}}
+	}
+	return []ToolResult{{Action: ToolCombatAct, Result: result, Events: events}}
 }
 
 type endCombatAction struct{}
@@ -470,5 +477,5 @@ func (endCombatAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	*actx.Combat = nil
 	saveCombatState(actx.Sid, nil)
-	return []ToolResult{{Action: ToolEndCombat, Result: "战斗已结束:" + reason}}
+	return []ToolResult{{Action: ToolEndCombat, Result: "战斗已结束:" + reason, Events: []models.GameEvent{{Type: "combat", Op: "end"}}}}
 }

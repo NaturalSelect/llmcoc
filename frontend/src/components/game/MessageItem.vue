@@ -1,6 +1,28 @@
 <script setup lang="ts">
-import { Clock, Dices, Hand, Timer } from '@lucide/vue'
+import {
+  Activity,
+  BookOpen,
+  Brain,
+  Clock,
+  Coins,
+  Dices,
+  EyeOff,
+  Footprints,
+  Hand,
+  HeartPulse,
+  MapPin,
+  Package,
+  Shield,
+  Skull,
+  Sparkles,
+  Swords,
+  Timer,
+  Users,
+} from '@lucide/vue'
 import { computed } from 'vue'
+import type { Component } from 'vue'
+import { describeEvent, eventsOf } from '@/game/events'
+import type { EventIcon, EventTone } from '@/game/events'
 import {
   askNames,
   diceOf,
@@ -29,6 +51,36 @@ const error = computed(() => messageError(props.msg))
 const names = computed(() => askNames(props.msg))
 const dice = computed(() => diceOf(props.msg))
 const images = computed(() => (props.msg.status === 'done' ? props.msg.images || [] : []))
+const events = computed(() => (kind.value === 'event' ? eventsOf(props.msg).map(describeEvent) : []))
+
+const EVENT_ICONS: Record<EventIcon, Component> = {
+  dice: Dices,
+  hidden: EyeOff,
+  hp: HeartPulse,
+  san: Brain,
+  mp: Sparkles,
+  stat: Activity,
+  armor: Shield,
+  wound: Skull,
+  item: Package,
+  spell: BookOpen,
+  monster: Skull,
+  relation: Users,
+  asset: Coins,
+  madness: Brain,
+  location: MapPin,
+  time: Clock,
+  combat: Swords,
+  chase: Footprints,
+}
+
+const EVENT_TONES: Record<EventTone, string> = {
+  plain: 'text-fg-subtle',
+  hp: 'text-hp',
+  san: 'text-san',
+  mp: 'text-mp',
+  danger: 'text-danger',
+}
 </script>
 
 <template>
@@ -52,6 +104,16 @@ const images = computed(() => (props.msg.status === 'done' ? props.msg.images ||
       </div>
       <p class="whitespace-pre-wrap text-sm leading-relaxed text-fg">{{ msg.content }}</p>
     </div>
+
+    <!-- KP 工具结算：紧凑的一行一条，不带表头，不判成败(成败由 KP 在叙事里说) -->
+    <ul v-else-if="kind === 'event'" class="space-y-1 text-xs text-fg-muted" aria-label="KP 结算">
+      <li v-for="(ev, idx) in events" :key="idx" class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+        <component :is="EVENT_ICONS[ev.icon]" :size="16" :stroke-width="1.75" class="shrink-0" :class="EVENT_TONES[ev.tone]" />
+        <span :class="ev.tone === 'danger' ? 'text-danger' : ''">{{ ev.text }}</span>
+        <b v-if="ev.value" class="font-semibold tabular-nums" :class="ev.tone === 'plain' ? 'text-accent' : EVENT_TONES[ev.tone]">{{ ev.value }}</b>
+        <span v-if="ev.note" class="text-fg-subtle">{{ ev.note }}</span>
+      </li>
+    </ul>
 
     <template v-else>
       <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-subtle">

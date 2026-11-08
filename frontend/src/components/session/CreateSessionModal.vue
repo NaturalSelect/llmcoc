@@ -112,13 +112,10 @@ async function submit() {
         <PaginationBar v-model:page="scenarioPage" :total-pages="scenarios.totalPages" :total="scenarios.total" />
       </div>
 
-      <div v-if="selected" class="space-y-2 rounded-lg bg-surface-2 p-3">
+      <div v-if="selected" class="max-h-72 space-y-2 overflow-y-auto rounded-lg bg-surface-2 p-3">
         <p class="text-sm text-fg-muted">难度：<span>{{ difficultyLabel(selected.difficulty) }}</span></p>
-        <p v-if="scenarioContent(selected).setting" class="max-h-40 overflow-y-auto whitespace-pre-wrap font-prose text-prose text-fg-muted">
+        <p v-if="scenarioContent(selected).setting" class="whitespace-pre-wrap font-prose text-prose text-fg-muted">
           {{ scenarioContent(selected).setting }}
-        </p>
-        <p v-if="scenarioContent(selected).intro" class="max-h-40 overflow-y-auto whitespace-pre-wrap font-prose text-prose italic text-fg">
-          {{ scenarioContent(selected).intro }}
         </p>
       </div>
 

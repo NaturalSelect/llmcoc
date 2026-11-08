@@ -1,4 +1,5 @@
 // NOTE: 消息列表渲染辅助，全部是纯函数；CSS 类名等样式决定留给组件
+import { lastEventTime } from './events'
 import * as RS from './roomState'
 import type { Room, RoomMessage, TimePoint } from './roomState'
 
@@ -37,10 +38,12 @@ export function timeOf(msg: RoomMessage | null | undefined): TimePoint | null {
   return RS.parseTimePoint(msg?.meta?.time_point)
 }
 
+// NOTE: advance_time 的事件比下一条 kp/ask 先到，游戏时钟要随它立即更新
 export function currentGameTime(room: Room | null): TimePoint | null {
   const list = room?.messages || []
   for (let i = list.length - 1; i >= 0; i--) {
-    const tp = list[i]?.meta?.time_point
+    const msg = list[i]
+    const tp = msgKind(msg) === 'event' ? lastEventTime(msg) : msg?.meta?.time_point
     if (tp) return RS.parseTimePoint(tp)
   }
   return null

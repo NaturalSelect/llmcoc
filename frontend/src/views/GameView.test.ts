@@ -48,6 +48,23 @@ const askMessage = {
   meta: { options: ['推门进去', '绕到后院'], ask: { user_ids: [2], names: ['爱丽丝'] } },
 }
 
+const eventMessage = {
+  id: 3,
+  role: 'assistant',
+  kind: 'event',
+  status: 'done',
+  content: '',
+  floor: 1,
+  username: 'KP',
+  meta: {
+    events: [
+      { type: 'dice', character: '爱丽丝', skill: '侦查', roll: 45, level: '困难' },
+      { type: 'dice', hidden: true },
+      { type: 'stat', character: '爱丽丝', field: 'hp', from: 10, to: 9 },
+    ],
+  },
+}
+
 function json(body: unknown, status = 200) {
   return { ok: status < 400, status, json: async () => body } as Response
 }
@@ -73,7 +90,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME }: Setup = {}) {
       const method = init?.method || 'GET'
       fetchCalls.push({ method, path })
       if (path === '/api/sessions/7') return json(session)
-      if (path === '/api/sessions/7/messages') return json([kpMessage, askMessage])
+      if (path === '/api/sessions/7/messages') return json([kpMessage, eventMessage, askMessage])
       if (path === '/api/sessions/7/chat-status') {
         return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
       }
@@ -128,6 +145,16 @@ describe('GameView', () => {
     expect(text).toContain('你要怎么做？')
     expect(text).toContain('推门进去')
     expect(wrapper.find('[role="status"]').text()).toContain('KP 在等你回应')
+    wrapper.unmount()
+  })
+
+  test('工具事件渲染成紧凑列表：公开骰、暗骰、属性变化，没有 KP 表头', async () => {
+    const { wrapper } = await setup()
+    const list = wrapper.find('ul[aria-label="KP 结算"]')
+    expect(list.exists()).toBe(true)
+    const rows = list.findAll('li').map((li) => li.findAll('span, b').map((n) => n.text()).join(' '))
+    expect(rows).toStrictEqual(['爱丽丝 侦查 45 难度 困难', 'KP 暗骰了一次', '爱丽丝 HP 10 → 9'])
+    expect(list.element.closest('article')?.querySelector('.font-medium')).toBeNull()
     wrapper.unmount()
   })
 

@@ -32,7 +32,7 @@ type floorRun struct {
 
 	// 以下状态由工具执行器/批次策略通过指针读写，生命周期是整个周期。
 	outbox          []Output
-	diceMsg         string
+	events          []models.GameEvent // 本轮尚未发布的工具事件
 	kpStreak        int
 	ask             *AskResult
 	roundClosed     bool
@@ -92,6 +92,9 @@ func (f *floorRun) afterDispatch(round int, calls []llm.ToolCall, msgs []llm.Cha
 			return nil, err
 		}
 	} else {
+		if err := f.publishEvents(round); err != nil {
+			return nil, err
+		}
 		f.idleRounds++
 	}
 
@@ -178,25 +181,19 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 	closesBeat := len(kps) > 0 || len(asks) > 0
 	if closesBeat {
 		timePoint := formatGameTime(f.gctx.Session.TurnRound, scenarioStartSlot(f.gctx.Session))
-		dice := strings.TrimSuffix(f.diceMsg, "; ")
 		for i := range items {
 			if items[i].Kind != OutputKP && items[i].Kind != OutputAsk {
 				continue
 			}
 			items[i].TimePoint = timePoint
-			if dice != "" {
-				items[i].Dice = dice
-				dice = ""
-			}
 			if items[i].Ended {
 				f.ended = true
 			}
 		}
-		f.diceMsg = ""
 	}
 
 	if f.gctx.Publish != nil {
-		ro := RoundOutputs{Floor: f.floor, Round: round, Items: items, WriterCtx: snapshotGameContext(*f.gctx)}
+		ro := RoundOutputs{Floor: f.floor, Round: round, Items: items, Events: f.events, WriterCtx: snapshotGameContext(*f.gctx)}
 		if closesBeat {
 			ro.ElapsedMs = time.Since(f.beatStart).Milliseconds()
 			ro.Steps = f.beatRounds
@@ -205,6 +202,7 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 			return fmt.Errorf("publish round outputs: %w", err)
 		}
 	}
+	f.events = nil
 	f.published += len(items)
 	f.cm.Checkpoint(f.gctx.Session.TurnRound, msgs)
 	f.guard.markMessagesProduced()
@@ -218,6 +216,24 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 		f.beatHasWriter = false
 	} else if len(writers) > 0 {
 		f.beatHasWriter = true
+	}
+	return nil
+}
+
+// publishEvents 发布只有工具事件、没有消息的一轮。
+// NOTE: 这种轮次不算"产生了消息"：不写检查点、不重置停滞计数、不计入 published。
+func (f *floorRun) publishEvents(round int) error {
+	if len(f.events) == 0 {
+		return nil
+	}
+	events := f.events
+	f.events = nil
+	if f.gctx.Publish == nil {
+		return nil
+	}
+	ro := RoundOutputs{Floor: f.floor, Round: round, Events: events, WriterCtx: snapshotGameContext(*f.gctx)}
+	if err := f.gctx.Publish(ro); err != nil {
+		return fmt.Errorf("publish round events: %w", err)
 	}
 	return nil
 }
@@ -290,7 +306,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		chase:              &fr.chase,
 		roundClosed:        &fr.roundClosed,
 		outbox:             &fr.outbox,
-		diceMsg:            &fr.diceMsg,
+		events:             &fr.events,
 		kpStreak:           &fr.kpStreak,
 		ask:                &fr.ask,
 		emitProgress:       emitProgress,

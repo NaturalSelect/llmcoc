@@ -36,6 +36,11 @@
   :root {
     color-scheme: dark;
   }
+  /* NOTE: 原生滚动条带箭头按钮且很粗，和深色主题不搭；统一成细滚动条，局部用 scrollbar-width: none 的地方不受影响 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
   html,
   body,
   #app {

@@ -523,7 +523,11 @@ func (h *SessionHandlers) publishRound(af *activeFloor, ro agent.RoundOutputs) e
 		msg  models.Message
 		item agent.Output
 	}
-	items := make([]pending, 0, len(ro.Items))
+	items := make([]pending, 0, len(ro.Items)+1)
+	// NOTE: 事件消息先落库，id 比同轮其他消息小，前端按 id 排序时就排在这一轮叙事前面。
+	if msg, ok := roundEventMessage(sessionID, ro); ok {
+		items = append(items, pending{msg: msg})
+	}
 	for _, it := range ro.Items {
 		msg, ok := roundMessage(sessionID, ro, it)
 		if !ok {
@@ -565,7 +569,7 @@ func (h *SessionHandlers) publishRound(af *activeFloor, ro agent.RoundOutputs) e
 			beatPublished = true
 		}
 	}
-	if beatPublished {
+	if beatPublished || eventsTouchCards(ro.Events) {
 		// NOTE: 每一拍结算后人物卡（HP/SAN 等）可能已变化，通知客户端刷新；end_game 的工具在发布前
 		// 已把房间改成 ended，所以状态从库里读，不能写死 playing。
 		var status models.SessionStatus
@@ -605,12 +609,12 @@ func roundMessage(sessionID uint, ro agent.RoundOutputs, it agent.Output) (model
 	case agent.OutputKP:
 		msg.Kind = models.MessageKindKP
 		msg.Content = strings.TrimSpace(it.Text)
-		meta.Dice, meta.TimePoint, meta.Ended = it.Dice, it.TimePoint, it.Ended
+		meta.TimePoint, meta.Ended = it.TimePoint, it.Ended
 		setDirectorTiming(&msg, ro)
 	case agent.OutputAsk:
 		msg.Kind = models.MessageKindAsk
 		msg.Content = strings.TrimSpace(it.Text)
-		meta.Dice, meta.TimePoint, meta.Options = it.Dice, it.TimePoint, it.Options
+		meta.TimePoint, meta.Options = it.TimePoint, it.Options
 		if it.Ask != nil {
 			meta.Ask = &models.AskMeta{UserIDs: it.Ask.UserIDs, Names: it.Ask.Names}
 		}
@@ -620,6 +624,32 @@ func roundMessage(sessionID uint, ro agent.RoundOutputs, it agent.Output) (model
 	}
 	msg.Meta = models.JSONField[*models.MessageMeta]{Data: meta}
 	return msg, true
+}
+
+// roundEventMessage 把一轮的工具事件打包成一条 event 消息；没有事件时返回 false。
+func roundEventMessage(sessionID uint, ro agent.RoundOutputs) (models.Message, bool) {
+	if len(ro.Events) == 0 {
+		return models.Message{}, false
+	}
+	return models.Message{
+		SessionID: sessionID,
+		Role:      models.MessageRoleAssistant,
+		Kind:      models.MessageKindEvent,
+		Status:    models.MessageStatusDone,
+		Floor:     ro.Floor,
+		Username:  "KP",
+		Meta:      models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{Events: ro.Events}},
+	}, true
+}
+
+// eventsTouchCards 判断事件里是否有会改变人物卡或房间状态的结算(骰子和时间推进不算)。
+func eventsTouchCards(events []models.GameEvent) bool {
+	for _, ev := range events {
+		if ev.Type != "dice" && ev.Type != "time" {
+			return true
+		}
+	}
+	return false
 }
 
 // setDirectorTiming 把从上一条 kp/ask 到这一条的耗时与轮数记在消息上；一轮里有多条 kp/ask 时只记在第一条。

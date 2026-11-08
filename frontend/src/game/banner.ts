@@ -23,8 +23,9 @@ export interface SubmitPlayer {
   user?: { username?: string } | null
 }
 
+// NOTE: 工具事件不算开场，与后端 hasKPStarted 只看 player/writer/kp/ask 保持一致
 export function hasKPStarted(room: Room | null): boolean {
-  return !!room && room.messages.some((m) => (m.floor ?? 0) > 0)
+  return !!room && room.messages.some((m) => (m.floor ?? 0) > 0 && m.kind !== 'event')
 }
 
 export function continueLabel(room: Room | null): string {

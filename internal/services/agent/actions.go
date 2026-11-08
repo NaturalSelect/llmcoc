@@ -24,7 +24,6 @@ type ActionContext struct {
 	// Outbox 收集本轮产生玩家可见消息的调用(write/generate_image/narrate/ask_players/end_game),
 	// 一个调用一个 Output;轮末由 floorRun 整理顺序后发布。
 	Outbox   *[]Output
-	DiceMsg  *string
 	KPStreak *int // 本周期内连续发布的 kp 消息数,ask_players 之前不清零,用于节奏提醒
 	// Ask 由ask_players写入;周期自然结束于点名时非nil。
 	Ask **AskResult
@@ -182,10 +181,11 @@ func (rollDiceAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	if dcr.Roll == 0 {
 		return []ToolResult{{Action: ToolRollDice, Result: fmt.Sprintf("不支持的表达式: %v", call.Dice.DiceExpr)}}
 	}
-	if !dcr.Hidden {
-		*actx.DiceMsg += fmt.Sprintf("%s; ", formatSingleDiceResult(dcr))
-	}
-	return []ToolResult{{Action: ToolRollDice, Result: formatSingleDiceResult(dcr)}}
+	return []ToolResult{{
+		Action: ToolRollDice,
+		Result: formatSingleDiceResult(dcr),
+		Events: []models.GameEvent{diceEvent(dcr, actx.GCtx.Session.Players)},
+	}}
 }
 
 type actNPCAction struct{}
@@ -278,15 +278,20 @@ func (updateCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolR
 
 	// All parsed successfully — apply.
 	day := gameDay(actx.GCtx.Session.TurnRound, scenarioStartSlot(actx.GCtx.Session))
+	var events []models.GameEvent
 	for _, p := range pending {
 		if p.isPlayer {
-			applyCharacterUpdate(p.upd, actx.GCtx.Session.Players, day)
+			players := actx.GCtx.Session.Players
+			idx := investigatorIndex(players, p.upd.CharacterName)
+			before := players[idx].CharacterCard
+			applyCharacterUpdate(p.upd, players, day)
+			events = append(events, cardStatEvents(before, players[idx].CharacterCard)...)
 		} else {
 			p.upd.IsNPC = true
 			applyNPCUpdate(p.upd, actx.GCtx.Session.ID, *actx.TempNPCs, actx.GCtx.Session.Scenario.Content.Data.NPCs)
 		}
 	}
-	return []ToolResult{{Action: ToolUpdateCharacters, Result: "已更新:" + strings.Join(call.Changes, "、") + "; 如果减少了SAN注意检查疯狂条件"}}
+	return []ToolResult{{Action: ToolUpdateCharacters, Result: "已更新:" + strings.Join(call.Changes, "、") + "; 如果减少了SAN注意检查疯狂条件", Events: events}}
 }
 
 type manageInventoryAction struct{}
@@ -297,36 +302,55 @@ func (manageInventoryAction) Execute(call ToolCall, actx ActionContext) []ToolRe
 		// Assemble canonical "Name(Desc, xN)" from structured fields.
 		item = buildInventoryItem(call.ItemName, call.ItemDesc, max(1, call.ItemCount))
 	}
-	result := manageInventory(actx.GCtx.Session.Players, call.CharacterName, call.Operate, item)
-	return []ToolResult{{Action: ToolManageInventory, Result: result}}
+	var result string
+	players := actx.GCtx.Session.Players
+	events := listChangeEvents(players, call.CharacterName, "inventory",
+		func(p models.SessionPlayer) []listEntry { return inventoryEntries(p.CharacterCard) },
+		func() { result = manageInventory(players, call.CharacterName, call.Operate, item) })
+	return []ToolResult{{Action: ToolManageInventory, Result: result, Events: events}}
 }
 
 type recordMonsterAction struct{}
 
 func (recordMonsterAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	result := manageSeenMonster(actx.GCtx.Session.Players, call.CharacterName, call.Operate, call.Monster)
-	return []ToolResult{{Action: ToolRecordMonster, Result: result}}
+	var result string
+	players := actx.GCtx.Session.Players
+	events := listChangeEvents(players, call.CharacterName, "monster",
+		func(p models.SessionPlayer) []listEntry { return stringEntries(p.CharacterCard.SeenMonsters.Data) },
+		func() { result = manageSeenMonster(players, call.CharacterName, call.Operate, call.Monster) })
+	return []ToolResult{{Action: ToolRecordMonster, Result: result, Events: events}}
 }
 
 type manageSpellAction struct{}
 
 func (manageSpellAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	result := manageSpell(actx.GCtx.Session.Players, call.CharacterName, call.Operate, call.Spell)
-	return []ToolResult{{Action: ToolManageSpell, Result: result}}
+	var result string
+	players := actx.GCtx.Session.Players
+	events := listChangeEvents(players, call.CharacterName, "spell",
+		func(p models.SessionPlayer) []listEntry { return stringEntries(p.CharacterCard.Spells.Data) },
+		func() { result = manageSpell(players, call.CharacterName, call.Operate, call.Spell) })
+	return []ToolResult{{Action: ToolManageSpell, Result: result, Events: events}}
 }
 
 type manageRelationAction struct{}
 
 func (manageRelationAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	result := manageSocialRelation(actx.GCtx.Session.Players, call.CharacterName, call.Operate, call.Relation)
-	return []ToolResult{{Action: ToolManageRelation, Result: result}}
+	var result string
+	players := actx.GCtx.Session.Players
+	events := listChangeEvents(players, call.CharacterName, "relation", relationEntries,
+		func() { result = manageSocialRelation(players, call.CharacterName, call.Operate, call.Relation) })
+	return []ToolResult{{Action: ToolManageRelation, Result: result, Events: events}}
 }
 
 type manageAssetAction struct{}
 
 func (manageAssetAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	result := manageAsset(actx.GCtx.Session.Players, call.CharacterName, call.Operate, call.Asset)
-	return []ToolResult{{Action: ToolManageAsset, Result: result}}
+	var result string
+	players := actx.GCtx.Session.Players
+	events := listChangeEvents(players, call.CharacterName, "asset",
+		func(p models.SessionPlayer) []listEntry { return assetEntries(p.CharacterCard) },
+		func() { result = manageAsset(players, call.CharacterName, call.Operate, call.Asset) })
+	return []ToolResult{{Action: ToolManageAsset, Result: result, Events: events}}
 }
 
 type updateSessionMemoryAction struct{}
@@ -369,7 +393,11 @@ func (updateLocationAction) Execute(call ToolCall, actx ActionContext) []ToolRes
 		if actx.GCtx.Session.Players[i].CharacterCard.Name == who {
 			actx.GCtx.Session.Players[i].Location = loc
 			models.DB.Model(&actx.GCtx.Session.Players[i]).Update("location", loc)
-			return []ToolResult{{Action: ToolUpdateLocation, Result: fmt.Sprintf("%s 当前位置已更新为: %s", who, loc)}}
+			return []ToolResult{{
+				Action: ToolUpdateLocation,
+				Result: fmt.Sprintf("%s 当前位置已更新为: %s", who, loc),
+				Events: []models.GameEvent{{Type: "location", Character: who, Location: loc}},
+			}}
 		}
 	}
 	return []ToolResult{{Action: ToolUpdateLocation, Result: fmt.Sprintf("找不到名为 %s 的调查员", who)}}
@@ -408,9 +436,14 @@ func (updateArmorAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 	debugf("tool", "session=%d update_armor char=%q armor=%d", actx.Sid, who, val)
 	for i := range actx.GCtx.Session.Players {
 		if actx.GCtx.Session.Players[i].CharacterCard.Name == who {
+			old := actx.GCtx.Session.Players[i].Armor
 			actx.GCtx.Session.Players[i].Armor = val
 			models.DB.Model(&actx.GCtx.Session.Players[i]).Update("armor", val)
-			return []ToolResult{{Action: ToolUpdateArmor, Result: fmt.Sprintf("%s 护甲已更新为 %d点", who, val)}}
+			var events []models.GameEvent
+			if old != val {
+				events = []models.GameEvent{statEvent(who, "armor", old, val)}
+			}
+			return []ToolResult{{Action: ToolUpdateArmor, Result: fmt.Sprintf("%s 护甲已更新为 %d点", who, val), Events: events}}
 		}
 	}
 	return []ToolResult{{Action: ToolUpdateArmor, Result: fmt.Sprintf("找不到名为 %s 的调查员", who)}}
@@ -718,9 +751,11 @@ func (advanceTimeAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 		reason = "时间推进"
 	}
 	alog.Debug("advance time", "session", actx.GCtx.Session.ID, "rounds", rounds, "reason", reason, "game_time", formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session)))
+	// NOTE: 事件不带 reason：那是 KP 自己写的文字，可能透露剧情。
 	return []ToolResult{{
 		Action: ToolAdvanceTime,
 		Result: fmt.Sprintf("时间推进%d回合(每轮=30分钟)(%s),当前时间:%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session))),
+		Events: []models.GameEvent{{Type: "time", Time: formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session))}},
 	}}
 }
 
@@ -753,6 +788,7 @@ func (manageMadnessAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 			return []ToolResult{{
 				Action: ToolManageMadness,
 				Result: fmt.Sprintf("%s疯狂状态已撤销", card.Name),
+				Events: []models.GameEvent{{Type: "madness", Character: card.Name, State: "none"}},
 			}}
 		case "trigger", "add":
 			madnessType := strings.ToLower(strings.TrimSpace(call.MadnessType))
@@ -782,6 +818,7 @@ func (manageMadnessAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 			return []ToolResult{{
 				Action: ToolManageMadness,
 				Result: fmt.Sprintf("%s%s(%s,持续%d):%s", card.Name, stateLabel, symptomTable, symptom.Duration, symptom.Description),
+				Events: []models.GameEvent{{Type: "madness", Character: card.Name, State: madnessType, Symptom: symptom.Description, Duration: symptom.Duration}},
 			}}
 		default:
 			return []ToolResult{{

@@ -350,13 +350,12 @@ func TestGenerateImageToolDescribesComicPanels(t *testing.T) {
 	desc := generateImageTool().def.Description
 
 	for _, want := range []string{
-		"连续漫画里的一格",
+		"连续日式ACG漫画里的一格",
 		"【分镜规则】",
 		"对话气泡",
 		"多格拼版",
 		"【连续性规则】",
 		"发型发色",
-		"No speech bubbles",
 	} {
 		if !strings.Contains(desc, want) {
 			t.Errorf("generate_image description should contain %q", want)
@@ -365,7 +364,7 @@ func TestGenerateImageToolDescribesComicPanels(t *testing.T) {
 	if strings.Contains(desc, "统一二次元(ACG/动漫)插画审美") {
 		t.Error("generate_image description should no longer ask for generic anime illustration")
 	}
-	if !strings.Contains(kpSystemPrompt, "配图是一部连续漫画的分格") {
+	if !strings.Contains(kpSystemPrompt, "配图是一部连续日式ACG漫画的分格") {
 		t.Error("kp system prompt should tell the director that images form a continuous comic")
 	}
 }
@@ -516,7 +515,7 @@ func TestDirectorBatchPolicyImageCharacterSequencing(t *testing.T) {
 	imageDone := false
 	reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
 		policyCall("describe_characters", `{"characters":["约翰"]}`),
-		policyCall("generate_image", `{"image_prompt":"### Scene\nA dim study"}`),
+		policyCall("generate_image", `{"image_prompt":"A dim study"}`),
 	})
 	if reject == "" {
 		t.Fatal("describe_characters + generate_image should be rejected")
@@ -527,7 +526,7 @@ func TestDirectorBatchPolicyImageCharacterSequencing(t *testing.T) {
 
 	// 拆成两轮后画图应当仍然可用。
 	if reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
-		policyCall("generate_image", `{"image_prompt":"### Scene\nA dim study"}`),
+		policyCall("generate_image", `{"image_prompt":"A dim study"}`),
 	}); reject != "" {
 		t.Errorf("generate_image alone should be accepted, got: %s", reject)
 	}

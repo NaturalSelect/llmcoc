@@ -177,8 +177,9 @@ type ToolCall struct {
 
 // ToolResult wraps the result of executing one ToolCall.
 type ToolResult struct {
-	Action ToolCallType `json:"action"`
-	Result string       `json:"result"`
+	Action ToolCallType       `json:"action"`
+	Result string             `json:"result"`
+	Events []models.GameEvent `json:"-"` // 玩家可见的结算事件,不回传给 Director
 }
 
 // NOTE: ImagePromptRequest carries the Director's final visual prompt and optional
@@ -212,7 +213,6 @@ type Output struct {
 	NSFW      bool                // writer、image 各自单独标记
 	Image     *ImagePromptRequest // image
 	Options   []string            // ask: 玩家询问时才给的推荐行动
-	Dice      string              // kp/ask: 本拍累积的公开骰子结果
 	TimePoint string              // kp/ask: 发布时的游戏内时间
 	Ask       *AskResult          // ask
 	Ended     bool                // end_game
@@ -225,8 +225,9 @@ type RoundOutputs struct {
 	Floor     int
 	Round     int
 	Items     []Output
-	ElapsedMs int64 // 从上一条 kp/ask 到这一条的耗时,仅本轮含 kp/ask 时有值
-	Steps     int   // 从上一条 kp/ask 到这一条经过的轮数,同上
+	Events    []models.GameEvent // 本轮工具事件,按调用顺序;发布时排在 Items 之前
+	ElapsedMs int64              // 从上一条 kp/ask 到这一条的耗时,仅本轮含 kp/ask 时有值
+	Steps     int                // 从上一条 kp/ask 到这一条经过的轮数,同上
 	// WriterCtx 是本轮结束时 GameContext 的拷贝(Session.Players 也已拷贝,Progress/Publish 置空):
 	// Writer、Painter 异步读取它,Director 继续原地修改原 gctx 时不会产生数据竞争。
 	WriterCtx GameContext

@@ -396,7 +396,9 @@ func (startChaseAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	first := chs.Participants[0]
 	return []ToolResult{{Action: ToolStartChase, Result: fmt.Sprintf(
 		"追逐开始,行动顺序(DEX降序,仅供参考): %s。下一步:请对本轮要结算的参与者(建议从 %s 开始)调用chase_act。",
-		chaseOrderSummary(chs.Participants), first.Name)}}
+		chaseOrderSummary(chs.Participants), first.Name),
+		Events: []models.GameEvent{{Type: "chase", Op: "start"}},
+	}}
 }
 
 type chaseActAction struct{}
@@ -407,9 +409,14 @@ func (chaseActAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	if chs == nil {
 		return []ToolResult{{Action: ToolChaseAct, Result: "SYSTEM REJECT: 当前没有进行中的追逐,请先调用start_chase。"}}
 	}
+	round := chs.Round
 	result := applyChaseAct(chs, call, actx, actx.RoundClosed)
 	saveChaseState(actx.Sid, chs)
-	return []ToolResult{{Action: ToolChaseAct, Result: result}}
+	var events []models.GameEvent
+	if chs.Round > round {
+		events = []models.GameEvent{{Type: "chase", Op: "round", Round: chs.Round}}
+	}
+	return []ToolResult{{Action: ToolChaseAct, Result: result, Events: events}}
 }
 
 type endChaseAction struct{}
@@ -425,5 +432,5 @@ func (endChaseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	*actx.Chase = nil
 	saveChaseState(actx.Sid, nil)
-	return []ToolResult{{Action: ToolEndChase, Result: "追逐已结束:" + reason}}
+	return []ToolResult{{Action: ToolEndChase, Result: "追逐已结束:" + reason, Events: []models.GameEvent{{Type: "chase", Op: "end"}}}}
 }

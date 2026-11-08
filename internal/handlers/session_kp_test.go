@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -186,6 +187,67 @@ func TestKPTurn_Rejections(t *testing.T) {
 
 // ── floor: multi-round publishing ────────────────────────────────────────────
 
+func TestFloor_PublishesToolEventsBeforeRoundMessages(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+
+	from, to := 10, 7
+	roundEvents := []models.GameEvent{
+		{Type: "dice", Character: "爱丽丝", Skill: "侦查", Roll: 45, Level: "困难"},
+		{Type: "dice", Hidden: true},
+	}
+	statEvents := []models.GameEvent{{Type: "stat", Character: "爱丽丝", Field: "hp", From: &from, To: &to}}
+	runner := &fakeRunner{}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 1, Events: statEvents})
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 2, Events: roundEvents, Items: []agent.Output{
+			{Kind: agent.OutputKP, Text: "你发现了脚印。"},
+		}})
+		return agent.RunOutput{Messages: 1, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}, Question: "怎么办？"}}, nil
+	}
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
+	tap.waitCount("floor_end", 1)
+	tap.waitCount("session", 3)
+
+	// NOTE: 只有属性事件的一轮也要通知刷新人物卡；事件消息排在同轮 kp 之前。
+	got := fmt.Sprint(tap.persistentTypes())
+	want := "[spotlight floor_start message_new session message_new message_new session spotlight floor_end session]"
+	if got != want {
+		t.Fatalf("events = %s, want %s", got, want)
+	}
+
+	msgs := loadMessages(t, sessionID)
+	wantKinds := []models.MessageKind{models.MessageKindEvent, models.MessageKindEvent, models.MessageKindKP}
+	if !equalKinds(messageKinds(msgs), wantKinds) {
+		t.Fatalf("stored kinds = %v, want %v", messageKinds(msgs), wantKinds)
+	}
+	for _, m := range msgs[:2] {
+		if m.Role != models.MessageRoleAssistant || m.Status != models.MessageStatusDone || m.Floor != 1 || m.Content != "" {
+			t.Errorf("event message %d = role %s status %s floor %d content %q", m.ID, m.Role, m.Status, m.Floor, m.Content)
+		}
+	}
+	if meta := msgs[0].Meta.Data; meta == nil || len(meta.Events) != 1 || *meta.Events[0].From != 10 || *meta.Events[0].To != 7 {
+		t.Errorf("stat event meta = %+v", meta)
+	}
+	if meta := msgs[1].Meta.Data; meta == nil || len(meta.Events) != 2 || meta.Events[0].Roll != 45 || meta.Events[1] != (models.GameEvent{Type: "dice", Hidden: true}) {
+		t.Errorf("dice event meta = %+v", meta)
+	}
+}
+
+func TestRoundEventMessage_SkipsRoundsWithoutEvents(t *testing.T) {
+	if _, ok := roundEventMessage(1, agent.RoundOutputs{Items: []agent.Output{{Kind: agent.OutputKP, Text: "x"}}}); ok {
+		t.Fatal("round without events produced an event message")
+	}
+	if eventsTouchCards([]models.GameEvent{{Type: "dice"}, {Type: "time"}}) {
+		t.Error("dice/time events should not refresh cards")
+	}
+	if !eventsTouchCards([]models.GameEvent{{Type: "dice"}, {Type: "item"}}) {
+		t.Error("item event should refresh cards")
+	}
+}
+
 func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	initTestDB(t)
 	t.Cleanup(imagestore.SetDefaultDir(t.TempDir()))
@@ -196,7 +258,7 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 2, Steps: 2, ElapsedMs: 1200, Items: []agent.Output{
 			{Kind: agent.OutputWriter, Text: "描述走廊", NSFW: true},
 			{Kind: agent.OutputImage, Image: &agent.ImagePromptRequest{Prompt: "a dim corridor"}},
-			{Kind: agent.OutputKP, Text: "你站在走廊里。", Dice: "侦查 45/60 成功", TimePoint: "第1天 08:00"},
+			{Kind: agent.OutputKP, Text: "你站在走廊里。", TimePoint: "第1天 08:00"},
 		}})
 		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 3, Steps: 1, ElapsedMs: 10, Items: []agent.Output{
 			{Kind: agent.OutputWriter, Text: "描述门后"},
@@ -238,7 +300,7 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	if msgs[2].Content != "你站在走廊里。" || strings.Contains(msgs[2].Content, "KP:") {
 		t.Errorf("kp content = %q, want the plain reply", msgs[2].Content)
 	}
-	if meta := msgs[2].Meta.Data; meta == nil || meta.Dice != "侦查 45/60 成功" || meta.TimePoint != "第1天 08:00" || len(meta.Options) != 0 {
+	if meta := msgs[2].Meta.Data; meta == nil || meta.Dice != "" || meta.TimePoint != "第1天 08:00" || len(meta.Options) != 0 {
 		t.Errorf("kp meta = %+v", meta)
 	}
 	if meta := msgs[0].Meta.Data; meta == nil || !meta.NSFW {

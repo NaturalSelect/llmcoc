@@ -23,6 +23,8 @@ func messageSpeaker(m models.Message) string {
 		return "KP"
 	case models.MessageKindAsk:
 		return "KP点名"
+	case models.MessageKindEvent:
+		return "骰子"
 	}
 	if m.Role == models.MessageRoleUser {
 		return playerSpeaker(m)
@@ -37,8 +39,12 @@ func playerSpeaker(m models.Message) string {
 	return "玩家"
 }
 
-// renderableMessage 报告一条消息是否应该进入给 LLM 的日志：配图没有文字，失败或还没写完的 writer 没有正文。
+// renderableMessage 报告一条消息是否应该进入给 LLM 的日志：配图没有文字，失败或还没写完的 writer 没有正文，
+// event 消息只有含公开骰时才渲染(属性等状态本来就在提示词里)。
 func renderableMessage(m models.Message) bool {
+	if m.Kind == models.MessageKindEvent {
+		return publicDiceLine(m) != ""
+	}
 	if m.Kind == models.MessageKindImage {
 		return false
 	}
@@ -48,13 +54,37 @@ func renderableMessage(m models.Message) bool {
 	return strings.TrimSpace(m.Content) != ""
 }
 
-// renderMessageLine 渲染一条消息为 "[说话者]: 内容"，kp/ask 消息的骰子结果附在末尾，让结算类 LLM 看得到公开检定。
+// renderMessageLine 渲染一条消息为 "[说话者]: 内容"。event 消息只渲染公开骰；旧 kp/ask 消息的骰子结果附在末尾，
+// 让结算类 LLM 看得到公开检定。
 func renderMessageLine(m models.Message) string {
+	if m.Kind == models.MessageKindEvent {
+		return fmt.Sprintf("[%s]: %s", messageSpeaker(m), publicDiceLine(m))
+	}
 	line := fmt.Sprintf("[%s]: %s", messageSpeaker(m), strings.TrimSpace(m.Content))
 	if meta := m.Meta.Data; meta != nil && meta.Dice != "" {
 		line += fmt.Sprintf(" (骰子: %s)", meta.Dice)
 	}
 	return line
+}
+
+// publicDiceLine 把 event 消息里的公开骰拼成一行，没有公开骰时返回空串。
+func publicDiceLine(m models.Message) string {
+	meta := m.Meta.Data
+	if meta == nil {
+		return ""
+	}
+	var parts []string
+	for _, ev := range meta.Events {
+		if ev.Type != "dice" || ev.Hidden {
+			continue
+		}
+		s := strings.TrimSpace(formatSingleDiceResult(DiceCheckResult{DiceCheck: DiceCheck{What: ev.Skill, Level: ev.Level}, Roll: ev.Roll}))
+		if ev.Character != "" {
+			s = ev.Character + " " + s
+		}
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, "; ")
 }
 
 // BuildSessionChatLog 把消息列表渲染成逐行聊天记录，跳过配图与没有正文的消息。

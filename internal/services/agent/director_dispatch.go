@@ -406,7 +406,7 @@ type directorDispatchState struct {
 	chase              **models.ChaseState
 	roundClosed        *bool
 	outbox             *[]Output
-	diceMsg            *string
+	events             *[]models.GameEvent
 	kpStreak           *int
 	ask                **AskResult
 	emitProgress       func(string)
@@ -454,7 +454,6 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			Chase:              st.chase,
 			RoundClosed:        st.roundClosed,
 			Outbox:             st.outbox,
-			DiceMsg:            st.diceMsg,
 			KPStreak:           st.kpStreak,
 			Ask:                st.ask,
 		}
@@ -582,6 +581,12 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 				continue
 			}
 			outcomes[i] = toolOutcome{result: joinToolResults(resultSlots[i]), done: hasEnd}
+			// NOTE: 事件只在调度主 goroutine 里按调用下标汇总，顺序即调用顺序，没执行的调用不产生事件。
+			if st.events != nil {
+				for _, r := range resultSlots[i] {
+					*st.events = append(*st.events, r.Events...)
+				}
+			}
 		}
 		return outcomes
 	}

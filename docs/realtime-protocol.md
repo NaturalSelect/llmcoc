@@ -150,6 +150,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | `kp` | KP 的一次 `narrate` 或 `end_game` 的回复 |
 | `ask` | KP 的一次 `ask_players`：点名并交出发言权 |
 | `system` | 复活提示，复活时经 `message_new` 送达。加入、离开的系统提示不会推送，也不出现在 `GET /messages` 里，客户端以 `session` 事件刷新成员列表 |
+| `event` | KP 一轮工具调用里玩家可见的结算(骰子、属性、物品、疯狂、场景)。`content` 为空，内容在 `meta.events`。每轮工具执行完就发布，不等这一拍的叙事，`id` 排在同轮其他消息之前 |
 
 `status`（正文是否就绪）：
 
@@ -164,13 +165,27 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | 字段 | 出现在 | 说明 |
 | --- | --- | --- |
 | `options` | `ask` | 推荐行动，KP 只在被点名的玩家问过建议时才给，最多 2 条 |
-| `dice` | `kp`、`ask` | 本拍的骰子结果文字 |
+| `dice` | `kp`、`ask` | 旧数据：本拍的骰子结果文字。新消息不再带它，骰子改由 `event` 消息给出 |
 | `time_point` | `kp`、`ask` | 剧中时间点 |
 | `ask` | `ask` | `{"user_ids": [...], "names": [...]}`，被点名的玩家 |
 | `ended` | `kp` | 为 true 表示这条回复同时结束了游戏 |
 | `auto` | `writer` | 由后端兜底自动补出，不是 KP 显式调用 |
 | `nsfw` | `writer`、`image` | 该消息按成人内容生成 |
 | `error` | `writer`、`image` | `status=failed` 时的失败原因 |
+| `events` | `event` | 本轮的结算事件数组，按调用顺序，见下表 |
+
+`meta.events` 的每一项都有 `type`，其余字段按 `type` 取用、都可省略。只有调查员的变化会产生事件，NPC 的属性、位置和卡片变化不会；公开骰的对象不是调查员时不带 `character`。骰子事件不判成败，成败由 KP 在叙事里说。
+
+| `type` | 字段 | 说明 |
+| --- | --- | --- |
+| `dice` | `character`、`skill`、`roll`、`level` | 一次公开骰。暗骰只有 `{"type":"dice","hidden":true}`，不存技能、点数和角色 |
+| `stat` | `character`、`field`、`from`、`to`，`field=skill` 时加 `skill` | 数值变化，`to` 是钳制后的实际值。`field` 取 `hp`/`max_hp`/`san`/`max_san`/`mp`/`max_mp`/`pow`/`cthulhu_mythos`/`armor`/`str`/`con`/`siz`/`dex`/`app`/`int`/`edu` |
+| `wound` | `character`、`state` | 伤势转换：`none`/`major`/`dying`/`dead`/`unconscious`/`conscious` |
+| `item` | `character`、`category`、`op`、`name`、`detail` | `category` 取 `inventory`/`spell`/`monster`/`relation`/`asset`；`op` 取 `add`/`remove`/`change`，`change` 时 `detail` 是“旧 → 新” |
+| `madness` | `character`、`state`、`symptom`、`duration` | `state` 取 `temporary`/`indefinite`/`permanent`，解除时为 `none` |
+| `location` | `character`、`location` | 调查员移动到新地点 |
+| `time` | `time` | 推进后的剧中时间点，格式同 `time_point`，不带推进理由 |
+| `combat` / `chase` | `op`、`round` | `op` 取 `start`/`end`/`round`，`round` 时带新的轮次。不带参与者和结束理由 |
 
 #### `message_update`
 
@@ -250,7 +265,7 @@ KP 这一个周期结束。
 {"floor": 3, "reason": "ask", "messages": 5}
 ```
 
-`messages` 是这个周期发布的消息条数（数字，不是消息列表）；具体消息已经通过 `message_new` 逐条送达。
+`messages` 是这个周期发布的消息条数（数字，不是消息列表），不含 `event` 消息；具体消息已经通过 `message_new` 逐条送达。
 
 `reason`：
 
@@ -284,7 +299,7 @@ KP 这一个周期结束。
 | `start` | 房主开局 | 开局不再附带 `message_new` |
 | `end` | 房主或管理员结束游戏，或管理员批量结束 | 房间状态改成 `ended` 之后，结算开始之前 |
 | `revive` | 管理员复活房间 | 复活提示的 `message_new` 之后 |
-| `cards` | 人物卡可能已变化 | 每发布一条 `kp` / `ask` 消息之后，以及每个周期的 `floor_end` 之后 |
+| `cards` | 人物卡可能已变化 | 每发布一条 `kp` / `ask` 消息之后，每发布一条含骰子和时间以外事件的 `event` 消息之后，以及每个周期的 `floor_end` 之后 |
 
 `cards` 在一拍内可能连发多次，客户端应当对重拉请求做防抖。`status` 以事件为准：`end_game` 结束的房间，周期内和 `floor_end` 之后的 `session` 都是 `ended`。
 

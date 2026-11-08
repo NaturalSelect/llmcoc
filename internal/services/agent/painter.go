@@ -71,7 +71,7 @@ type describeCharactersAction struct{}
 func (describeCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	names := sanitizeImageCharacters(call.Characters)
 	if len(names) == 0 {
-		return []ToolResult{{Action: ToolDescribeCharacters, Result: "No character names were provided."}}
+		return []ToolResult{{Action: ToolDescribeCharacters, Result: "没有提供角色名。"}}
 	}
 	if actx.GCtx == nil {
 		return []ToolResult{{Action: ToolDescribeCharacters, Result: fallbackMissingCharacterVisualDescription(names)}}
@@ -108,17 +108,15 @@ func (describeCharactersAction) Execute(call ToolCall, actx ActionContext) []Too
 const imageSysPrompt = `
 <system>
 	<global_config>
-	- **Art Style:** Japanese manga. Draw the image as a single panel from a continuous comic: bold ink linework with varied line weight, flat cel-shaded colors in a restrained palette that fits the scene's mood, and screentone-style hatching for shadows. Do not render photorealistically.
+	- **Art Style:** Japanese manga. Draw the image as a single panel from a continuous Japanese manga: bold ink linework with varied line weight, flat cel-shaded colors in a restrained palette that fits the scene's mood, and screentone-style hatching for shadows. Do not render photorealistically.
 	- **Single Panel:** Show exactly one moment in one frame. No multi-panel page layout, no panel borders, no speech bubbles, no captions, no sound effects, no readable text of any kind.
 	- **Consistency:** The reader flips through many panels in a row. Keep each character's face, hair, outfit and signature accessories exactly as described, and keep recurring locations recognizable, so the same person and place look the same from panel to panel.
-	- **Composition:** Frame the shot like a manga storyboard: choose the shot size and angle that the camera notes ask for, put the key action or emotion in the focal point, and leave breathing room around it.
+	- **Composition:** Frame the shot like a Japanese manga storyboard: choose the shot size and angle that the camera notes ask for, put the key action or emotion in the focal point, and leave breathing room around it.
 	- **Lighting and Shadows:** Use strong, graphic contrast between light and shadow to carry mood and depth.
 	- **Background Details:** Add appropriate background details according to the scene description, drawn with the same linework as the characters.
 	- **Character Expressions and Poses:** Design clear, expressive faces and poses that read at a glance and show what the character feels in this moment.
 	{{NSFW_IMAGE_POLICY}}
 	</global_config>
-
-	User messages may contain '<system-reminder>' tags appended by plugins. They carry automated nudges from the system, not user input: apply what is relevant to the current turn, ignore the rest, and never mention or quote the tag to the user.
 </system>
 `
 
@@ -168,7 +166,6 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 		debugf("Painter", "session=%d diffusion prompt=%q negative=%q", gctx.Session.ID, prompt, opts.NegativePrompt)
 	} else {
 		prompt = fmt.Sprintf("%v\n%v", prompt, renderNSFW(imageSysPrompt, allowNSFW))
-		prompt = fmt.Sprintf("<system-reminder>\n%s\n</system-reminder>", prompt)
 	}
 	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, opts)
 	if err != nil {
@@ -246,14 +243,13 @@ func findImagePromptCharacterCard(name string, players []models.SessionPlayer, u
 	return models.CharacterCard{}, false
 }
 
-const imagePromptCharacterVisualSystemPrompt = `You are the Writer agent preparing character appearance notes for an image generation model.
-Chinese intent: 将角色卡外貌转换为简短英文视觉外貌描写,不泄露隐藏信息或规则信息。
+const imagePromptCharacterVisualSystemPrompt = `你是 Writer 代理，负责为配图整理角色外貌素材。
 
-Output only concise English visual descriptions, as one paragraph or a short bullet list.
-Use only the provided card data. Do not invent clothing, equipment, secrets, injuries, powers, personality traits, item properties, mythos names, rules, lore, titles, hidden inscriptions, or parenthetical metadata.
-Focus on visible body/face/hair/clothing/posture and concrete visual cues; inventory is not a carried-items list, so mention only clearly worn or currently held visible accessories and omit all uncertain items.
+只输出简洁的中文外貌描写，一段话或几条短要点即可。
+只能使用提供的角色卡数据，不要编造服饰、装备、秘密、伤势、能力、性格、物品属性、神话名称、规则、背景设定、头衔、隐藏铭文或括号里的元数据。
+聚焦可见的身体、面部、发型、服饰、姿态等具体视觉特征；物品栏不是随身物品清单，只提及明确穿戴或手持的可见饰品，凡不确定的物品一律省略。
 
-You only generate a pure appearance description, without any other attributes.
+只输出纯外貌描写，不要附带其他属性。
 `
 
 func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHandle, scenePrompt string, sessionID string, cards []models.CharacterCard) (string, error) {
@@ -281,24 +277,26 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 
 func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []models.CharacterCard) string {
 	var sb strings.Builder
-	sb.WriteString("Task: Convert the following player character card data into concise English visual descriptions for image generation. The Director will decide whether and how to incorporate this text into a later natural-language image prompt. Use the scene image prompt, if present, only to choose which visible appearance features matter. Use appearance as the main source; inventory is optional visible-item hints only, not a carried list. Omit item properties, mythos/lore names, rules, titles, hidden inscriptions, parenthetical metadata, and anything not clearly visible/worn/held. Chinese intent: 为Director提供英文外貌素材,由Director自行写入后续image_prompt。\n\n")
-	sb.WriteString("Scene image prompt: ")
-	sb.WriteString(compactPromptText(scenePrompt))
-	sb.WriteString("\n\n")
+	sb.WriteString("任务：把下列玩家角色卡数据整理成简洁的中文外貌描写，供配图使用。Director 会把这段文字直接写进后续的 image_prompt。外貌以 Appearance 为主要来源；物品栏只作为可见物品的参考，不是随身清单。省略物品属性、神话/背景设定名称、规则、头衔、隐藏铭文、括号里的元数据，以及一切不明确可见、穿戴或手持的内容。\n\n")
+	if scene := compactPromptText(scenePrompt); scene != "" {
+		sb.WriteString("画面描述（仅用于挑选相关的外貌特征）：")
+		sb.WriteString(scene)
+		sb.WriteString("\n\n")
+	}
 	for i, card := range cards {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
-		sb.WriteString("Character card:\n")
-		sb.WriteString("Name: ")
+		sb.WriteString("角色卡：\n")
+		sb.WriteString("姓名：")
 		sb.WriteString(compactPromptText(card.Name))
-		sb.WriteString("\nAppearance: ")
+		sb.WriteString("\n外貌：")
 		appearance := compactPromptText(card.Appearance)
 		if appearance == "" {
-			appearance = "(not provided)"
+			appearance = "（未提供）"
 		}
 		sb.WriteString(appearance)
-		sb.WriteString("\nInventory:\n")
+		sb.WriteString("\n物品栏：\n")
 		wroteItem := false
 		for _, item := range card.Inventory.Data {
 			item = compactPromptText(item)
@@ -311,7 +309,7 @@ func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []model
 			sb.WriteString("\n")
 		}
 		if !wroteItem {
-			sb.WriteString("- (none)\n")
+			sb.WriteString("- （无）\n")
 		}
 	}
 	return sb.String()
@@ -322,20 +320,20 @@ func fallbackCharacterVisualDescriptions(cards []models.CharacterCard) string {
 	for _, card := range cards {
 		name := compactPromptText(card.Name)
 		if name == "" {
-			name = "Unnamed investigator"
+			name = "未命名调查员"
 		}
 		appearance := compactPromptText(card.Appearance)
 		if appearance == "" {
-			lines = append(lines, fmt.Sprintf("%s: no recorded visual appearance details.", name))
+			lines = append(lines, fmt.Sprintf("%s：角色卡没有记录外貌细节。", name))
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("%s: visible appearance from the character card: %s", name, appearance))
+		lines = append(lines, fmt.Sprintf("%s：角色卡记录的外貌为：%s", name, appearance))
 	}
 	return strings.Join(lines, "\n")
 }
 
 func fallbackMissingCharacterVisualDescription(names []string) string {
-	return "No matching investigator character cards were found for: " + strings.Join(names, ", ") + "."
+	return "没有找到匹配的调查员角色卡：" + strings.Join(names, "、") + "。"
 }
 
 func compactPromptText(text string) string {

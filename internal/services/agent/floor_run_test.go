@@ -673,3 +673,77 @@ func TestFloor_MidFloorCompactContinuesSameFloor(t *testing.T) {
 		t.Errorf("本周期的单元应仍用 floor 4 落库: %+v", last)
 	}
 }
+
+// TestFloor_ToolEventsPublishImmediatelyWithoutCountingAsMessages 验证：只有工具事件的一轮会立刻单独发布，
+// 但不算产生消息；事件按调用顺序排列，暗骰只带 hidden。
+func TestFloor_ToolEventsPublishImmediatelyWithoutCountingAsMessages(t *testing.T) {
+	const sid = 230
+	newFloorSession(t, sid)
+	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
+		switch n {
+		case 1:
+			return toolRound(
+				floorCall("d1", "roll_dice", map[string]any{"dice": map[string]any{"character": "甲", "what": "侦查", "dice_expr": "1d100", "level": "困难"}}),
+				floorCall("d2", "roll_dice", map[string]any{"dice": map[string]any{"character": "甲", "what": "聆听", "dice_expr": "1d100", "hidden": true}}),
+				floorCall("u1", "update_characters", map[string]any{"changes": []string{"HP -3(甲)"}}),
+			), nil
+		case 2:
+			return toolRound(floorCall("r", "narrate", map[string]any{"reply": "你被划伤了。"})), nil
+		default:
+			return toolRound(floorCall("ask", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "然后呢？"})), nil
+		}
+	}}
+	setFloorHandles(t, sid, prov, false)
+
+	var published []RoundOutputs
+	gctx := floorGctx(sid, &published)
+	gctx.Session.Players[0].CharacterCard.Stats.Data = models.CharacterStats{HP: 10, MaxHP: 10}
+	out, err := run(context.Background(), gctx)
+	if err != nil {
+		t.Fatalf("run(): %v", err)
+	}
+	if len(published) < 2 {
+		t.Fatalf("published = %+v, want an events-only round first", published)
+	}
+	first := published[0]
+	if len(first.Items) != 0 || len(first.Events) != 3 {
+		t.Fatalf("first publish items=%v events=%+v", outputKinds(first.Items), first.Events)
+	}
+	if ev := first.Events[0]; ev.Type != "dice" || ev.Character != "甲" || ev.Skill != "侦查" || ev.Level != "困难" || ev.Roll == 0 || ev.Hidden {
+		t.Errorf("public dice event = %+v", ev)
+	}
+	if ev := first.Events[1]; ev != (models.GameEvent{Type: "dice", Hidden: true}) {
+		t.Errorf("hidden dice event = %+v, want only type+hidden", ev)
+	}
+	if ev := first.Events[2]; ev.Type != "stat" || ev.Field != "hp" || *ev.From != 10 || *ev.To != 7 {
+		t.Errorf("hp event = %+v", ev)
+	}
+	if second := published[1]; len(second.Events) != 0 || !equalKinds(outputKinds(second.Items), []OutputKind{OutputWriter, OutputKP}) {
+		t.Errorf("second publish items=%v events=%+v", outputKinds(second.Items), second.Events)
+	}
+	if out.Messages != 3 {
+		t.Errorf("Messages = %d, want 3 (auto writer + kp + ask, events not counted)", out.Messages)
+	}
+}
+
+// TestFloor_EventsOnlyRoundsStillStall 验证只有事件的轮次不重置停滞计数。
+func TestFloor_EventsOnlyRoundsStillStall(t *testing.T) {
+	const sid = 231
+	newFloorSession(t, sid)
+	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
+		return toolRound(floorCall(fmt.Sprintf("l%d", n), "update_location", map[string]any{"character_name": "甲", "new_location": fmt.Sprintf("房间%d", n)})), nil
+	}}
+	setFloorHandles(t, sid, prov, false)
+
+	var published []RoundOutputs
+	out, err := run(context.Background(), floorGctx(sid, &published))
+	if err != nil {
+		t.Fatalf("run(): %v", err)
+	}
+	if out.Stop != StopStall || out.Messages != 0 {
+		t.Fatalf("Stop=%q Messages=%d, want stall with no messages", out.Stop, out.Messages)
+	}
+	if len(published) == 0 || len(published[0].Items) != 0 || published[0].Events[0].Location != "房间1" {
+		t.Errorf("events-only rounds should still publish, got %+v", published)
+	}
+}

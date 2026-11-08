@@ -66,6 +66,19 @@ describe('messages', () => {
     expect(currentGameTime(null)).toBeNull()
   })
 
+  test('currentGameTime：event 消息里的时间推进立即生效', () => {
+    const room = RS.newRoom({ sessionId: 1, userId: 2 })
+    room.messages.push({ id: 1, kind: 'kp', meta: { time_point: '第1天 08:00' } })
+    room.messages.push({ id: 2, kind: 'event', meta: { events: [{ type: 'dice', roll: 3 }] } })
+    expect(currentGameTime(room)?.label).toBe('第1天 08:00')
+    room.messages.push({
+      id: 3,
+      kind: 'event',
+      meta: { events: [{ type: 'time', time: '第1天 09:00(距开局已过1h00m)' }, { type: 'time', time: '第1天 10:00(距开局已过2h00m)' }] },
+    })
+    expect(currentGameTime(room)?.label).toBe('第1天 10:00')
+  })
+
   test('meta 收窄：点名、结束标记、错误、决策耗时', () => {
     expect(askNames({ id: 1, meta: { ask: { names: ['艾米', 3] } } })).toStrictEqual(['艾米', '3'])
     expect(askNames({ id: 1, meta: { ask: {} } })).toStrictEqual([])
