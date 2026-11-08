@@ -20,9 +20,10 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 	}
 	aspect := normalizeImageAspect(call.Aspect)
 
-	handle, ok := pickPainterHandle(actx.Handles, call.NSFW)
+	nsfw := actx.GCtx.Session.EnableNSFW && call.NSFW
+	handle, ok := pickPainterHandle(actx.Handles, nsfw)
 	if !ok {
-		if call.NSFW {
+		if nsfw {
 			debugf("tool", "session=%d generate_image rejected: painter_nsfw disabled prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
 			return []ToolResult{{Action: ToolGenerateImage, Result: "image generation rejected: NSFW image generation is not enabled"}}
 		}
@@ -33,9 +34,9 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 		debugf("tool", "session=%d generate_image unavailable: provider lacks image generation prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
 		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation unavailable"}}
 	}
-	req := ImagePromptRequest{Prompt: imagePrompt, Aspect: aspect, NSFW: call.NSFW}
-	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputImage, Image: &req, NSFW: call.NSFW})
-	debugf("tool", "session=%d generate_image queued prompt_len=%d aspect=%s nsfw=%v prompt=%q", actx.Sid, len([]rune(imagePrompt)), aspect, call.NSFW, imagePrompt)
+	req := ImagePromptRequest{Prompt: imagePrompt, Aspect: aspect, NSFW: nsfw}
+	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputImage, Image: &req, NSFW: nsfw})
+	debugf("tool", "session=%d generate_image queued prompt_len=%d aspect=%s nsfw=%v prompt=%q", actx.Sid, len([]rune(imagePrompt)), aspect, nsfw, imagePrompt)
 	return []ToolResult{{Action: ToolGenerateImage, Result: "image generation queued"}}
 }
 
@@ -141,8 +142,8 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 		return "", fmt.Errorf("当前 %s provider 不支持图片生成", painterRoleFor(request.NSFW))
 	}
 	aspect := normalizeImageAspect(request.Aspect)
-	// NOTE: 被标记 NSFW 的请求本身就是成人向画面,分级政策和负面标签必须按请求而非仅按房间开关渲染。
-	allowNSFW := request.NSFW && gctx.Session.EnableNSFW
+	// NOTE: request.NSFW 已在 generateImageAction 经房间开关过滤,这里只按请求渲染分级,不能再并房间开关,否则房间开启时普通配图也会被画成 NSFW。
+	allowNSFW := request.NSFW
 	debugf("Painter", "session=%d start prompt_len=%d aspect=%s nsfw=%v prompt=%q", gctx.Session.ID, len([]rune(prompt)), aspect, request.NSFW, prompt)
 	opts := llm.ImageOptions{Aspect: llm.ImageAspect(aspect)}
 	if handle.config != nil && handle.config.DiffusionMode {

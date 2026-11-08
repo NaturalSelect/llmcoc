@@ -34,21 +34,21 @@ const diffusionPromptSystemPrompt = `你是扩散画图模型(NovelAI 风格，�
 // NOTE: 扩散模型的负面提示词固定不变，不让 LLM 生成：通用的画质/水印类负面标签不随画面变化。
 const diffusionBaseNegativePrompt = "lowres, bad anatomy, bad hands, extra digits, fewer digits, cropped, jpeg artifacts, signature, watermark, username, text, blurry, speech bubble, english text, panel border, multiple views, realistic, photorealistic"
 
-// NOTE: 会话关闭 NSFW 时强制追加到负面提示词，扩散模型对自然语言分级约束不敏感，必须落到标签层面。
+// NOTE: 非 NSFW 的配图强制追加到负面提示词，扩散模型对自然语言分级约束不敏感，必须落到标签层面。
 const allAgesNegativeTags = "nsfw, nude, sexually suggestive"
 
-// diffusionNegativePromptFor 返回本次出图使用的负面提示词；全年龄请求在固定负面标签前追加分级标签。
-func diffusionNegativePromptFor(enableNSFW bool) string {
-	if enableNSFW {
+// diffusionNegativePromptFor 返回本次出图使用的负面提示词；非 NSFW 的配图在固定负面标签前追加分级标签。
+func diffusionNegativePromptFor(nsfw bool) string {
+	if nsfw {
 		return diffusionBaseNegativePrompt
 	}
 	return allAgesNegativeTags + ", " + diffusionBaseNegativePrompt
 }
 
-// translateToDiffusionPrompt 用 diffusion_translator 把 Director 的自然语言画面描述翻译成扩散模型的标签式正面提示词。
-func translateToDiffusionPrompt(ctx context.Context, translator agentHandle, sessionID string, scenePrompt string, enableNSFW bool) (string, error) {
+// translateToDiffusionPrompt 用 diffusion_translator 把 Director 的自然语言画面描述翻译成扩散模型的标签式正面提示词；nsfw 按本次配图请求渲染分级政策。
+func translateToDiffusionPrompt(ctx context.Context, translator agentHandle, sessionID string, scenePrompt string, nsfw bool) (string, error) {
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: translator.systemPrompt(renderNSFW(diffusionPromptSystemPrompt, enableNSFW))},
+		{Role: "system", Content: translator.systemPrompt(renderNSFW(diffusionPromptSystemPrompt, nsfw))},
 		{Role: "user", Content: scenePrompt},
 	}
 	resp, err := translator.provider.Chat(ctx, translator.cacheKey(sessionID), msgs)
