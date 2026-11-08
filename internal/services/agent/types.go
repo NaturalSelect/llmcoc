@@ -147,7 +147,7 @@ type ToolCall struct {
 	NewLocation   string                 `json:"new_location"`   // update_location/update_npc_location: 新位置名称
 	ArmorValue    int                    `json:"armor_value"`    // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint"`           // hit: KP当前场景高密度提示
-	ImagePrompt   string                 `json:"image_prompt"`   // NOTE: generate_image: 英文自然语言画图描述
+	ImagePrompt   string                 `json:"image_prompt"`   // NOTE: generate_image: 中文画面描述,要求写全所有细节
 	Aspect        string                 `json:"aspect"`         // NOTE: generate_image: 画面方向 landscape|portrait|square(可选,默认square)
 	NSFW          bool                   `json:"nsfw"`           // NOTE: generate_image: 该配图是否含裸露/性暗示等NSFW内容(必填);painter_nsfw未启用时,标记为true的调用会被拒绝。write: 该段描述是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效。act_npc: 该次互动是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效。describe_characters: 后续配图是否为NSFW画面,决定外貌描写是否交给NSFW Writer(必填),仅在房间NSFW开关开启时生效
 	Characters    []string               `json:"characters"`     // NOTE: describe_characters 参数;兼容旧 generate_image JSON,但生成图片时忽略

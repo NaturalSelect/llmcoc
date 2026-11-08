@@ -369,20 +369,47 @@ func TestGenerateImageToolDescribesComicPanels(t *testing.T) {
 	}
 }
 
-// TestDirectorEncouragedToGenerateImages 验证"主动配图"的鼓励同时出现在系统提示词、每轮清单
-// 和 generate_image 工具说明里，且空镜可以跳过 describe_characters。
-func TestDirectorEncouragedToGenerateImages(t *testing.T) {
-	if !strings.Contains(kpSystemPrompt, "配图是可选工具，但应当主动使用") {
-		t.Error("kp system prompt should encourage proactive image generation")
+// TestGenerateImageToolDemandsFullDetail 验证 image_prompt 要求写全所有细节,不再要求简短。
+func TestGenerateImageToolDemandsFullDetail(t *testing.T) {
+	tool := generateImageTool().def
+	for _, want := range []string{"越详细越好", "不要省略", "长度不限", "不能写\"同上\""} {
+		if !strings.Contains(tool.Description, want) {
+			t.Errorf("generate_image description should contain %q", want)
+		}
 	}
-	if !strings.Contains(kpTurnReminder, "是否值得配图") || !strings.Contains(kpTurnReminder, "generate_image") {
+	for _, stale := range []string{"两三句话", "简洁的自然语言", "不要分段"} {
+		if strings.Contains(tool.Description, stale) || strings.Contains(string(tool.Parameters), stale) {
+			t.Errorf("generate_image definition should no longer ask for a short prompt, found %q", stale)
+		}
+	}
+	if !strings.Contains(string(tool.Parameters), "越详细越好") {
+		t.Error("image_prompt parameter description should ask for full detail")
+	}
+	if !strings.Contains(kpSystemPrompt, "image_prompt要把这一格的所有细节写全，越详细越好，不要省略") {
+		t.Error("kp system prompt should ask the director to write every detail into image_prompt")
+	}
+}
+
+// TestDirectorEncouragedToGenerateImages 验证"主动配图"的鼓励同时出现在系统提示词、每轮清单
+// 和 generate_image / write 工具说明里:每次 write 都建议同拍配图,空镜可以跳过 describe_characters。
+func TestDirectorEncouragedToGenerateImages(t *testing.T) {
+	if !strings.Contains(kpSystemPrompt, "每次调用write，都建议在同一拍内配一张图") {
+		t.Error("kp system prompt should encourage pairing every write with an image")
+	}
+	if !strings.Contains(kpTurnReminder, "这一拍是否配图") || !strings.Contains(kpTurnReminder, "generate_image") {
 		t.Error("turn checklist should prompt the director to consider generate_image every turn")
 	}
+	if !strings.Contains(kpTurnReminder, "调用了write，就建议同拍配一张generate_image") {
+		t.Error("turn checklist should suggest pairing write with generate_image")
+	}
 	desc := generateImageTool().def.Description
-	for _, want := range []string{"每一拍(两条narrate/ask_players消息之间)最多一张", "空镜不需要 describe_characters"} {
+	for _, want := range []string{"每次调用write，都建议在同一拍内配一张图", "每一拍(两条narrate/ask_players消息之间)最多一张", "空镜不需要 describe_characters"} {
 		if !strings.Contains(desc, want) {
 			t.Errorf("generate_image description should contain %q", want)
 		}
+	}
+	if !strings.Contains(writeTool().def.Description, "【配图建议】") {
+		t.Error("write description should suggest pairing each write with an image")
 	}
 }
 

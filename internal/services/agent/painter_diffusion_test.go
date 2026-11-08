@@ -95,10 +95,13 @@ func TestTranslateToDiffusionPrompt_UsesPlainChatNotJSON(t *testing.T) {
 }
 
 func TestDiffusionPromptsAskForSingleMangaPanel(t *testing.T) {
-	for _, want := range []string{"日式漫画", "单独一格", "speech bubble", "一致性很重要", "只输出一行"} {
+	for _, want := range []string{"日式漫画", "单独一格", "speech bubble", "一致性很重要", "只输出一行", "细节一个都不要丢"} {
 		if !strings.Contains(diffusionPromptSystemPrompt, want) {
 			t.Errorf("translator prompt should contain %q", want)
 		}
+	}
+	if strings.Contains(diffusionPromptSystemPrompt, "25 到 50") {
+		t.Error("translator prompt should not cap the tag count for detailed descriptions")
 	}
 	for _, want := range []string{"speech bubble", "panel border", "photorealistic"} {
 		if !strings.Contains(diffusionBaseNegativePrompt, want) {

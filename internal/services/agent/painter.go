@@ -240,7 +240,7 @@ func findImagePromptCharacterCard(name string, players []models.SessionPlayer, u
 
 const imagePromptCharacterVisualSystemPrompt = `你是 Writer 代理，负责为配图整理角色外貌素材。
 
-只输出简洁的中文外貌描写，一段话或几条短要点即可。
+只输出中文外貌描写，把角色卡里能看到的外貌细节写全，不要遗漏，一段话或几条要点即可。
 只能使用提供的角色卡数据，不要编造服饰、装备、秘密、伤势、能力、性格、物品属性、神话名称、规则、背景设定、头衔、隐藏铭文或括号里的元数据。
 聚焦可见的身体、面部、发型、服饰、姿态等具体视觉特征；物品栏不是随身物品清单，只提及明确穿戴或手持的可见饰品，凡不确定的物品一律省略。
 
@@ -273,7 +273,7 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 
 func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []models.CharacterCard) string {
 	var sb strings.Builder
-	sb.WriteString("任务：把下列玩家角色卡数据整理成简洁的中文外貌描写，供配图使用。Director 会把这段文字直接写进后续的 image_prompt。外貌以 Appearance 为主要来源；物品栏只作为可见物品的参考，不是随身清单。省略物品属性、神话/背景设定名称、规则、头衔、隐藏铭文、括号里的元数据，以及一切不明确可见、穿戴或手持的内容。\n\n")
+	sb.WriteString("任务：把下列玩家角色卡数据整理成完整的中文外貌描写，供配图使用，角色卡里可见的外貌细节不要遗漏。Director 会把这段文字直接写进后续的 image_prompt。外貌以 Appearance 为主要来源；物品栏只作为可见物品的参考，不是随身清单。省略物品属性、神话/背景设定名称、规则、头衔、隐藏铭文、括号里的元数据，以及一切不明确可见、穿戴或手持的内容。\n\n")
 	if scene := compactPromptText(scenePrompt); scene != "" {
 		sb.WriteString("画面描述（仅用于挑选相关的外貌特征）：")
 		sb.WriteString(scene)
