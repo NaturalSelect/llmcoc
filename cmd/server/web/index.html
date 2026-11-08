@@ -746,10 +746,7 @@
                                             </div>
                                         </template>
 
-                                        <!-- 开场白与系统提示 -->
-                                        <template x-if="msgKind(msg) === 'intro'">
-                                            <p class="narrative" x-text="msg.content"></p>
-                                        </template>
+                                        <!-- 系统提示 -->
                                         <template x-if="msgKind(msg) === 'system'">
                                             <p class="action text-blue-300/70 text-xs italic" x-text="msg.content"></p>
                                         </template>
@@ -1565,6 +1562,9 @@
                     </div>
                     <div x-show="selectedScenario" x-text="selectedScenario?.content?.setting"
                         class="text-xs text-amber-600 px-1 leading-relaxed border-l-2 border-amber-900/50 pl-2 font-ui"
+                        style="white-space:pre-wrap"></div>
+                    <div x-show="selectedScenario?.content?.intro" x-text="selectedScenario?.content?.intro"
+                        class="text-xs text-amber-300 px-1 leading-relaxed border-l-2 border-amber-900/50 pl-2 font-ui italic"
                         style="white-space:pre-wrap"></div>
                     <div class="grid grid-cols-2 gap-2">
                         <div>

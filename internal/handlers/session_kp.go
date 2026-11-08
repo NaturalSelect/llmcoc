@@ -263,7 +263,7 @@ func buildKPSegment(session models.GameSession, kpFloor string, all []models.Ses
 	return kpSegment{gctx: gctx, turnActions: turnActions}
 }
 
-// hasKPStarted 报告房间里是否已经出现过玩家或 KP 的消息：只有开局介绍时，KP 主动周期是开场。
+// hasKPStarted 报告房间里是否已经出现过玩家或 KP 的消息：没有时，KP 主动周期是开场。
 func hasKPStarted(sessionID uint) bool {
 	var n int64
 	models.DB.Model(&models.Message{}).

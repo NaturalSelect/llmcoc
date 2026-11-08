@@ -59,7 +59,6 @@ function harness({ isHost = false, spotlight = SPOT_ME, waiting = WAITING_ME, me
   }
 
   const session = { id: 7, status: 'playing', created_by: isHost ? 2 : 1, players: [{ user_id: 2, character_card: { name: '爱丽丝', stats: { hp: 10, san: 50 } } }] };
-  const intro = [{ id: 1, kind: 'intro', status: 'done', floor: 0, content: '开场', role: 'assistant' }];
   const app = Object.assign({
     token: 'tok en', user: { id: 2, role: 'user' }, page: 'sessions', currentSession: null, room: null,
     chatInput: '', askPick: [], askEditing: false, hudFlash: {}, _hudLastStats: null,
@@ -71,7 +70,7 @@ function harness({ isHost = false, spotlight = SPOT_ME, waiting = WAITING_ME, me
     async api(method, p) {
       calls.push(method + ' ' + p);
       if (p === '/api/sessions/7') return plain(session);
-      if (p === '/api/sessions/7/messages') return plain(messages || intro);
+      if (p === '/api/sessions/7/messages') return plain(messages || []);
       if (p === '/api/sessions/7/chat-status') {
         return { kp_running: false, submitted: false, floor: null, spotlight: plain(spotlight), waiting: plain(waiting) };
       }
@@ -106,7 +105,7 @@ test('进房：URL 带 token，首次不带 since/epoch；hello 之前不能发�
 });
 
 test('进房：快照到达前没有问题卡，之后显示并带上提问', async () => {
-  const h = harness();
+  const h = harness({ messages: [{ id: 1, kind: 'kp', status: 'done', floor: 1, content: '开场', role: 'assistant' }] });
   await h.app.enterRoom(7);
   assert.equal(h.app.askView(), '');
   h.ws().recv({ seq: 0, type: 'hello', data: { epoch: 'E1', seq: 3 } });

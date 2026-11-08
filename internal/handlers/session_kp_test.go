@@ -32,7 +32,7 @@ func hostRouter(t *testing.T, h *SessionHandlers, sessionID uint) *gin.Engine {
 
 // ── session start ────────────────────────────────────────────────────────────
 
-func TestStartSession_WritesEmptySpotlightAndIntroKind(t *testing.T) {
+func TestStartSession_WritesEmptySpotlightAndNoMessage(t *testing.T) {
 	initTestDB(t)
 	sessID, ownerID := setupLobbySession(t)
 	cardID := seedCard(t, ownerID, "Card")
@@ -47,9 +47,8 @@ func TestStartSession_WritesEmptySpotlightAndIntroKind(t *testing.T) {
 	if sp := loadSpotlight(t, sessID); sp == nil || len(sp.UserIDs) != 0 || sp.Stop != "" {
 		t.Errorf("spotlight = %+v, want empty (KP holds the floor)", sp)
 	}
-	msgs := loadMessages(t, sessID)
-	if len(msgs) != 1 || msgs[0].Kind != models.MessageKindIntro || msgs[0].Status != models.MessageStatusDone {
-		t.Fatalf("intro message = %+v", msgs)
+	if msgs := loadMessages(t, sessID); len(msgs) != 0 {
+		t.Fatalf("start must not write any message, got %+v", msgs)
 	}
 }
 
@@ -85,10 +84,9 @@ func TestNextSpotlight(t *testing.T) {
 
 // ── KPTurn ───────────────────────────────────────────────────────────────────
 
-func TestKPTurn_OpeningWithNullSpotlightIgnoresIntroMessage(t *testing.T) {
+func TestKPTurn_OpeningWithNullSpotlight(t *testing.T) {
 	initTestDB(t)
 	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃") // Spotlight 为 NULL：按 KP 持有处理
-	models.DB.Create(&models.Message{SessionID: sessionID, Role: models.MessageRoleAssistant, Kind: models.MessageKindIntro, Content: "介绍", Username: "KP"})
 
 	runner := &fakeRunner{run: askRun("q", []uint{1}, []string{"爱丽丝"})}
 	h := NewSessionHandlers(runner)

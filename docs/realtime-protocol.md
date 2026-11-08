@@ -149,7 +149,6 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | `image` | KP 的一次 `generate_image`：Painter 出的配图 |
 | `kp` | KP 的一次 `response` 或 `end_game` 的回复 |
 | `ask` | KP 的一次 `ask_players`：点名并交出发言权 |
-| `intro` | 开局的剧本介绍，开局时经 `message_new` 送达 |
 | `system` | 复活提示，复活时经 `message_new` 送达。加入、离开的系统提示不会推送，也不出现在 `GET /messages` 里，客户端以 `session` 事件刷新成员列表 |
 
 `status`（正文是否就绪）：
@@ -160,7 +159,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | `pending` | `writer` 与 `image` 先以此状态落库，等异步补全 |
 | `failed` | 生成失败，原因在 `meta.error` |
 
-`floor` 是所属周期编号，`intro` / `system` 消息为 0。`meta` 是结构化附加信息，字段都可省略，只有下表列出的消息类型会带对应字段：
+`floor` 是所属周期编号，`system` 消息为 0。`meta` 是结构化附加信息，字段都可省略，只有下表列出的消息类型会带对应字段：
 
 | 字段 | 出现在 | 说明 |
 | --- | --- | --- |
@@ -283,7 +282,7 @@ KP 这一个周期结束。
 | --- | --- | --- |
 | `join` | 有人加入大厅 | 加入成功后 |
 | `leave` | 有人离开大厅 | 离开成功后。最后一人离开导致房间解散时不发 |
-| `start` | 房主开局 | 开场白的 `message_new` 之后 |
+| `start` | 房主开局 | 开局不再附带 `message_new` |
 | `end` | 房主或管理员结束游戏，或管理员批量结束 | 房间状态改成 `ended` 之后，结算开始之前 |
 | `revive` | 管理员复活房间 | 复活提示的 `message_new` 之后 |
 | `cards` | 人物卡可能已变化 | 每发布一条 `kp` / `ask` 消息之后，以及每个周期的 `floor_end` 之后 |

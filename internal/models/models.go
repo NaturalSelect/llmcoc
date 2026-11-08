@@ -551,7 +551,6 @@ const (
 	MessageKindImage  MessageKind = "image"  // KP 的一次 generate_image：Painter 出的配图
 	MessageKindKP     MessageKind = "kp"     // KP 的一次 response 或 end_game 的回复
 	MessageKindAsk    MessageKind = "ask"    // KP 的一次 ask_players：点名并交出发言权
-	MessageKindIntro  MessageKind = "intro"  // 开局的剧本介绍
 	MessageKindSystem MessageKind = "system" // 加入/离开/复活等系统提示
 )
 

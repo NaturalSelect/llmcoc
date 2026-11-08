@@ -23,8 +23,6 @@ func messageSpeaker(m models.Message) string {
 		return "KP"
 	case models.MessageKindAsk:
 		return "KP点名"
-	case models.MessageKindIntro:
-		return "剧本介绍"
 	}
 	if m.Role == models.MessageRoleUser {
 		return playerSpeaker(m)

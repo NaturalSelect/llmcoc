@@ -1,7 +1,7 @@
 package handlers
 
 // NOTE: 房间状态变化（加入/离开/开局/结束/复活/每一拍结算）要通过 session 事件推给客户端，
-// 开局的开场白和复活提示还要补发 message_new；这里用 tapRoom 订阅 hub 断言。
+// 开局和复活都要通过 session 事件推给客户端，复活提示还要补发 message_new；这里用 tapRoom 订阅 hub 断言。
 
 import (
 	"context"
@@ -78,7 +78,7 @@ func TestSessionEvents_LeaveThatDisbandsRoomPublishesNothing(t *testing.T) {
 	}
 }
 
-func TestSessionEvents_StartPublishesIntroThenSession(t *testing.T) {
+func TestSessionEvents_StartPublishesOnlySession(t *testing.T) {
 	initTestDB(t)
 	sessID, ownerID := setupLobbySession(t)
 	cardID := seedCard(t, ownerID, "Card")
@@ -92,12 +92,8 @@ func TestSessionEvents_StartPublishesIntroThenSession(t *testing.T) {
 	}
 	tap.waitCount("session", 1)
 
-	if got := fmt.Sprint(tap.persistentTypes()); got != "[message_new session]" {
-		t.Fatalf("events = %s, want [message_new session]", got)
-	}
-	msg := eventMessage(tap.ofType("message_new")[0])
-	if msg.Kind != models.MessageKindIntro || msg.Status != models.MessageStatusDone || msg.Content == "" {
-		t.Errorf("intro event message = %+v", msg)
+	if got := fmt.Sprint(tap.persistentTypes()); got != "[session]" {
+		t.Fatalf("events = %s, want [session]", got)
 	}
 	if status, reason := sessionEventStatus(t, tap.ofType("session")[0]); status != models.SessionStatusPlaying || reason != "start" {
 		t.Errorf("start event = %v/%v, want playing/start", status, reason)

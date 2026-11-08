@@ -189,11 +189,11 @@ window.COC.sessions = {
                             this.showToast(e.message, 'error');
                             return;
                         }
-                        // NOTE: 开场白和状态变化经 WebSocket 的 message_new / session 事件送达，不需要手工刷新。
+                        // NOTE: 状态变化经 WebSocket 的 session 事件送达，不需要手工刷新。
                         await this._openSceneAfterStart();
                     },
 
-                    // NOTE: 新开局的房间由 KP 驱动，开场白需要房主主动触发一次 kp-turn（服务端自行判断是否为开场）。
+                    // NOTE: 新开局的房间由 KP 驱动，开场需要房主主动触发一次 kp-turn（服务端自行判断是否为开场）。
                     // 失败不致命：房主仍可通过「让 KP 开场/继续」重试。
                     async _openSceneAfterStart() {
                         const room = this.room;
