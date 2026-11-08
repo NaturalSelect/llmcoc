@@ -52,6 +52,8 @@ window.COC = window.COC || {};
             this.currentSession = session;
             this.room = room;
             this.chatInput = '';
+            this.askPick = [];
+            this.askEditing = false;
             this.hudFlash = { hp: false, san: false };
             this._hudLastStats = null;
             this._syncHudFlash(this.myCurrentCard());
@@ -293,6 +295,12 @@ window.COC = window.COC || {};
                 const m = room.byId[frame.data?.message?.id];
                 if (m) m._new = true;
             }
+            // NOTE: 周期一开始，上一个问题就已经收口；残留的勾选和草稿不能带到下一次点名。
+            if (frame.type === 'floor_start') {
+                this.askPick = [];
+                this.askEditing = false;
+                this.chatInput = '';
+            }
             if (frame.type === 'message_new' || frame.type === 'message_update' || frame.type === 'writer_token') {
                 this._queueScroll();
             }
@@ -328,7 +336,7 @@ window.COC = window.COC || {};
         async sendChat() {
             const room = this.room;
             if (!room) return false;
-            const text = String(this.chatInput).trim();
+            const text = this.askAnswer();
             if (!text || !RS.gates(room).canSpeak) return false;
             if ([...text].length > CHAT_MAX_CHARS) {
                 this.showToast('消息过长（最多 ' + CHAT_MAX_CHARS + ' 字）', 'error');
@@ -357,6 +365,8 @@ window.COC = window.COC || {};
                 room.me.submitted = true;
                 room.me.draft = text;
                 this.chatInput = '';
+                this.askPick = [];
+                this.askEditing = false;
                 return true;
             }
             this.showToast(data.error || '发送失败', 'error');
@@ -368,15 +378,72 @@ window.COC = window.COC || {};
             return false;
         },
 
+        // 点名问题卡有两种形态：'card' 作答中，'done' 已提交后收成一行摘要；不在发言时返回空串。
+        askView() {
+            const room = this.room;
+            if (!room || !RS.gates(room).canSpeak) return '';
+            return room.me.submitted && !this.askEditing ? 'done' : 'card';
+        },
+
+        askTag() {
+            const names = this.room?.spotlight.names || [];
+            return names.length > 1 ? 'KP 点名：' + names.join('、') + '，请各自回应' : 'KP 向你提问';
+        },
+
+        // 推荐行动取最近一条 KP 回复里的选项；之后出现过玩家行动就不再推荐。
+        askOptions() {
+            const room = this.room;
+            if (!room || !RS.gates(room).canSpeak) return [];
+            for (let i = room.messages.length - 1; i >= 0; i--) {
+                const msg = room.messages[i];
+                if (msg.kind === 'player') return [];
+                if (msg.kind !== 'kp') continue;
+                const options = msg.meta?.options;
+                if (!Array.isArray(options)) return [];
+                return options.map((o) => String(o || '').trim()).filter(Boolean);
+            }
+            return [];
+        },
+
+        askPicked(option) {
+            return this.askPick.includes(option);
+        },
+
+        askToggle(option) {
+            if (!this.gates().canSpeak) return;
+            const i = this.askPick.indexOf(option);
+            if (i >= 0) this.askPick.splice(i, 1);
+            else this.askPick.push(option);
+        },
+
+        // 勾选的推荐行动按选项顺序在前，自己写的内容在后，一起作为这次回应。
+        askAnswer() {
+            const picked = this.askOptions().filter((o) => this.askPick.includes(o));
+            const custom = String(this.chatInput || '').trim();
+            return (custom ? [...picked, custom] : picked).join('\n').trim();
+        },
+
+        askCharCount() {
+            return [...this.askAnswer()].length;
+        },
+
         // 把已提交的内容放回输入框，再次提交时服务端会覆盖之前的内容。
         editSubmitted() {
             const room = this.room;
-            if (!room || !room.me.draft) return;
-            this.chatInput = room.me.draft;
+            if (!room || !RS.gates(room).canSpeak) return;
+            this.askEditing = true;
+            this.askPick = [];
+            this.chatInput = room.me.draft || '';
             this.$nextTick(() => {
-                const input = document.getElementById('chatInputBox');
+                const input = document.getElementById('askInputBox');
                 if (input) input.focus();
             });
+        },
+
+        cancelEdit() {
+            this.askEditing = false;
+            this.askPick = [];
+            this.chatInput = '';
         },
 
         // 房主点击「让 KP 继续」：有被点名但未回应的玩家时先确认。
@@ -439,60 +506,38 @@ window.COC = window.COC || {};
         // ═══════════════════════════════════════════════════════
         // 横幅、占位符与按钮文案
         // ═══════════════════════════════════════════════════════
-        // tone: warn 连接问题 | me 轮到我 | info 其他进行中状态 | idle 不显示横幅，只给占位符用
+        // tone: warn 连接问题 | me 轮到我 | info 其他进行中状态 | idle 没有进行中的事
+        // busy: KP 正在工作或在等人，状态栏圆点据此呼吸
         roomBanner() {
             const room = this.room;
-            if (!room) return { icon: '', text: '', tone: 'idle' };
+            if (!room) return { text: '', tone: 'idle', busy: false };
             const g = RS.gates(room);
             if (!g.live) {
                 const text = room.conn === 'reconnecting' ? '连接中断，正在重连…'
                     : room.conn === 'snapshot' ? '正在同步房间状态…' : '正在连接…';
-                return { icon: '🔄', text, tone: 'warn' };
+                return { text, tone: 'warn', busy: true };
             }
-            if (room.status === 'ended') return { icon: '', text: '游戏已结束', tone: 'idle' };
-            if (room.status !== 'playing') return { icon: '', text: '等待房主开始游戏', tone: 'idle' };
+            if (room.status === 'ended') return { text: '游戏已结束', tone: 'idle', busy: false };
+            if (room.status !== 'playing') return { text: '等待房主开始游戏', tone: 'idle', busy: false };
             const sp = room.spotlight;
-            if (room.floor.running) return { icon: '🎭', text: room.kpStatus || 'KP 正在推进剧情…', tone: 'info' };
-            if (room.floor.starting) return { icon: '🎭', text: 'KP 正在启动…', tone: 'info' };
+            if (room.floor.running) return { text: room.kpStatus || 'KP 正在推进剧情…', tone: 'info', busy: true };
+            if (room.floor.starting) return { text: 'KP 正在启动…', tone: 'info', busy: true };
             if (sp.stop) {
                 const why = STOP_TEXT[sp.stop] || sp.stop;
-                return { icon: '⏸', text: 'KP 已暂停：' + why + '，等待房主让 KP 继续', tone: 'info' };
+                return { text: 'KP 已暂停：' + why + '，等待房主让 KP 继续', tone: 'info', busy: false };
             }
             const names = (sp.names || []).join('、');
             if (sp.askedMe) {
-                if (!room.me.submitted) {
-                    return { icon: '👉', text: sp.question ? 'KP 在等你回应：' + sp.question : 'KP 在等你回应，请写下你的行动', tone: 'me' };
-                }
+                if (!room.me.submitted) return { text: 'KP 在等你回应', tone: 'me', busy: false };
                 const waitFor = (room.waiting.pendingNames || []).join('、');
-                return { icon: '⏳', text: waitFor ? '已提交行动，还在等 ' + waitFor : '已提交行动，等待 KP', tone: 'info' };
+                return { text: waitFor ? '已提交行动，还在等 ' + waitFor : '已提交行动，等待 KP', tone: 'info', busy: true };
             }
             if (sp.userIds.length > 0) {
                 const w = room.waiting;
                 const progress = w.total > 1 ? '（' + (w.total - w.pending) + '/' + w.total + ' 已提交）' : '';
-                return { icon: '⏳', text: 'KP 在等 ' + (names || '玩家') + ' 回应' + progress, tone: 'info' };
+                return { text: 'KP 在等 ' + (names || '玩家') + ' 回应' + progress, tone: 'info', busy: true };
             }
-            return { icon: '🎭', text: this.hasKPStarted() ? '等待房主让 KP 继续' : '等待房主让 KP 开场', tone: 'info' };
-        },
-
-        chatPlaceholder() {
-            const normal = '以角色身份写下你的行动或台词，如：我推开门，「有人在吗？」 (Ctrl+Enter 发送)';
-            const room = this.room;
-            if (!room) return normal;
-            if (RS.gates(room).canSpeak) {
-                return room.spotlight.question ? 'KP 问你：' + room.spotlight.question + '（Ctrl+Enter 发送）' : normal;
-            }
-            return this.roomBanner().text || normal;
-        },
-
-        sendLabel() {
-            const room = this.room;
-            if (!room) return '发送';
-            const g = RS.gates(room);
-            if (g.canSpeak) return room.me.submitted ? '重新提交' : '发送';
-            if (!g.live) return '连接中';
-            if (room.status !== 'playing') return '不可发言';
-            if (room.floor.running) return 'KP 发言中';
-            return '等待点名';
+            return { text: this.hasKPStarted() ? '等待房主让 KP 继续' : '等待房主让 KP 开场', tone: 'info', busy: false };
         },
 
         hasKPStarted() {
@@ -518,10 +563,6 @@ window.COC = window.COC || {};
             if ((this.room.waiting.submittedNames || []).some((n) => String(n).trim() === name)) return 'submitted';
             if ((this.room.waiting.pendingNames || []).some((n) => String(n).trim() === name)) return 'pending';
             return null;
-        },
-
-        chatCharCount() {
-            return [...String(this.chatInput || '')].length;
         },
 
         // ═══════════════════════════════════════════════════════
@@ -588,34 +629,9 @@ window.COC = window.COC || {};
                 .trim();
         },
 
-        // 只在被点名时给出推荐行动，取最近一条 KP 回复里的选项；之后出现过我自己的行动就不再推荐。
-        activeResponseSuggestions() {
-            const room = this.room;
-            if (!room || !RS.gates(room).canSpeak) return null;
-            for (let i = room.messages.length - 1; i >= 0; i--) {
-                const msg = room.messages[i];
-                if (msg.kind === 'player') return null;
-                if (msg.kind !== 'kp') continue;
-                const options = msg.meta?.options;
-                return Array.isArray(options) && options.length > 0 ? { options } : null;
-            }
-            return null;
-        },
-
-        appendResponseSuggestion(option) {
-            const text = String(option || '').trim();
-            if (!text || !this.gates().canSpeak) return;
-            const current = String(this.chatInput || '').trimEnd();
-            this.chatInput = current ? `${current}\n${text}` : text;
-            this.$nextTick(() => {
-                const input = document.getElementById('chatInputBox');
-                if (input) input.focus();
-            });
-        },
-
         // NOTE: 在光标处插入「」并把光标放进括号内；有选中文字时直接包住选中内容。
         insertDialogueQuotes() {
-            const input = document.getElementById('chatInputBox');
+            const input = document.getElementById('askInputBox');
             if (!input || input.disabled) return;
             const value = String(this.chatInput || '');
             const start = input.selectionStart ?? value.length;

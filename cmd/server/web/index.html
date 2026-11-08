@@ -542,16 +542,6 @@
                                             x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
                                             @click="startSession()" class="btn btn-green text-xs">▶ 开始</button>
                                         <button
-                                            x-show="gates().canContinue"
-                                            @click="hostContinueKP()"
-                                            title="跳过未回应的玩家，让 KP 继续推进剧情"
-                                            class="btn btn-amber text-xs" x-text="continueLabel()"></button>
-                                        <button
-                                            x-show="gates().canStop"
-                                            @click="hostStop()"
-                                            title="打断 KP 当前的发言，本周期已发布的内容会保留"
-                                            class="btn btn-red text-xs">打断 KP</button>
-                                        <button
                                             x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
                                             @click="endSession()" :disabled="endingSession"
                                             class="btn btn-red text-xs">结束</button>
@@ -587,14 +577,6 @@
                                                 x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
                                                 @click="moreMenuOpen = false; startSession()" class="game-menu-item">▶
                                                 开始</button>
-                                            <button role="menuitem"
-                                                x-show="gates().canContinue"
-                                                @click="moreMenuOpen = false; hostContinueKP()"
-                                                class="game-menu-item" x-text="continueLabel()"></button>
-                                            <button role="menuitem"
-                                                x-show="gates().canStop"
-                                                @click="moreMenuOpen = false; hostStop()"
-                                                class="game-menu-item">打断 KP</button>
                                             <button role="menuitem"
                                                 x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
                                                 @click="moreMenuOpen = false; endSession()" :disabled="endingSession"
@@ -794,63 +776,78 @@
                                         </div>
                                     </div>
                                 </div>
-
-                                <!-- 状态横幅：连接状态 / KP 在推进 / 轮到谁 / KP 已暂停 -->
-                                <div x-show="roomBanner().tone !== 'idle'" class="msg msg-sys fade-up border"
-                                    :class="roomBanner().tone === 'me' ? 'border-amber-500/70' : roomBanner().tone === 'warn' ? 'border-[#1a2a3a]' : 'border-[#1a2d4a]'"
-                                    :style="roomBanner().tone === 'me' ? 'opacity:1' : ''">
-                                    <p class="text-xs italic font-ui"
-                                        :class="roomBanner().tone === 'me' ? 'text-amber-300 font-bold' : roomBanner().tone === 'warn' ? 'text-blue-400/60' : 'text-blue-300/70'">
-                                        <span x-text="roomBanner().icon"></span>
-                                        <span x-text="roomBanner().text"></span>
-                                    </p>
-                                </div>
                             </div>
 
-                            <!-- 输入区 -->
-                            <div class="card border-t p-3 border-base shrink-0">
-                                <!-- 已提交的行动：点名的人没到齐时，行动先留在服务端，周期开始后才出现在消息列表里 -->
-                                <div x-show="room?.me.submitted && room?.me.draft"
-                                    class="mb-2 rounded border border-[#1a2d4a] bg-[#0d1117] px-3 py-2 text-xs font-ui">
+                            <!-- 点名问题卡：被点名且还没提交时占据输入区，其余时间没有输入框 -->
+                            <template x-if="askView() === 'card'">
+                                <div class="ask-card" x-init="$nextTick(() => scrollChat(true))">
+                                    <div class="ask-card-tag">
+                                        <span>👉</span>
+                                        <span x-text="askTag()"></span>
+                                    </div>
+                                    <p class="ask-card-question"
+                                        x-text="room.spotlight.question || '请写下你的行动'"></p>
+                                    <template x-if="askOptions().length > 0">
+                                        <div>
+                                            <p class="ask-card-note">推荐行动，可多选，也可以只写自己的</p>
+                                            <div class="ask-options">
+                                                <template x-for="(opt, idx) in askOptions()" :key="idx">
+                                                    <button type="button" class="ask-option"
+                                                        :class="askPicked(opt) ? 'is-on' : ''"
+                                                        :aria-pressed="askPicked(opt) ? 'true' : 'false'"
+                                                        @click="askToggle(opt)">
+                                                        <span class="ask-option-mark">✓</span>
+                                                        <span x-text="opt"></span>
+                                                    </button>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()" id="askInputBox"
+                                        :placeholder="askOptions().length ? '补充或自己写下行动 (Ctrl+Enter 提交)' : '以角色身份写下你的行动或台词，如：我推开门，「有人在吗？」 (Ctrl+Enter 提交)'"
+                                        rows="2"
+                                        class="inp game-chat-input w-full resize-none bg-chat focus:border-amber-700 transition-colors"
+                                        style="line-height:1.5"></textarea>
+                                    <div class="ask-card-foot">
+                                        <button type="button" class="ask-card-tool" @click="insertDialogueQuotes()"
+                                            title="插入台词括号；选中文字时会直接包住选中内容">「」台词</button>
+                                        <button type="button" class="ask-card-tool"
+                                            x-show="askEditing && room?.me.submitted" @click="cancelEdit()">取消修改</button>
+                                        <span class="ml-auto text-[10px] font-mono text-amber-800"
+                                            :class="askCharCount() > 2000 ? 'text-red-400' : ''"
+                                            x-show="askCharCount() > 0" x-text="askCharCount() + '/2000'"></span>
+                                        <button type="button" @click="sendChat()"
+                                            :disabled="!askAnswer() || askCharCount() > 2000"
+                                            class="btn btn-amber px-5 min-h-[36px]"
+                                            x-text="room?.me.submitted ? '重新提交' : '提交'"></button>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <!-- 已提交：问题卡收成一行摘要。点名的人没到齐时，行动先留在服务端，周期开始后才出现在消息列表里 -->
+                            <template x-if="askView() === 'done'">
+                                <div class="ask-done">
                                     <div class="flex items-center justify-between gap-2">
-                                        <span class="text-blue-300/80">已提交，等待其他调查员</span>
+                                        <span class="text-blue-300/80">✓ 已提交你的行动</span>
                                         <button type="button" class="text-amber-500 hover:text-amber-300 shrink-0"
                                             @click="editSubmitted()">修改</button>
                                     </div>
-                                    <p class="mt-1 text-green-200/80 whitespace-pre-wrap break-words"
-                                        x-text="room?.me.draft"></p>
+                                    <p class="ask-done-text" x-show="room?.me.draft" x-text="room?.me.draft"></p>
                                 </div>
-                                <div class="response-suggestions" x-data="{ collapsed: true }">
-                                    <div class="response-suggestions-head" @click="collapsed = !collapsed">
-                                        <span x-text="collapsed ? '▶' : '▼'" class="toggle-arrow"></span>
-                                        推荐行动
-                                    </div>
-                                    <div class="response-suggestions-list" x-show="!collapsed">
-                                        <button type="button" class="response-suggestion" @click="insertDialogueQuotes()"
-                                            :disabled="!gates().canSpeak"
-                                            title="插入台词括号；选中文字时会直接包住选中内容">「」台词</button>
-                                        <template x-for="(opt, idx) in (activeResponseSuggestions()?.options || [])"
-                                            :key="idx">
-                                            <button type="button" class="response-suggestion"
-                                                @click="appendResponseSuggestion(opt)" x-text="opt"></button>
-                                        </template>
-                                    </div>
-                                </div>
-                                <div class="flex flex-col sm:flex-row gap-2">
-                                    <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()" id="chatInputBox"
-                                        :placeholder="chatPlaceholder()" rows="2"
-                                        :disabled="!gates().canSpeak"
-                                        class="inp game-chat-input flex-1 resize-none bg-chat focus:border-amber-700 transition-colors"
-                                        style="line-height:1.5"></textarea>
-                                    <div class="flex sm:flex-col items-end gap-1 self-stretch sm:self-end">
-                                        <span class="text-[10px] font-mono text-amber-800"
-                                            :class="chatCharCount() > 2000 ? 'text-red-400' : ''"
-                                            x-show="chatInput" x-text="chatCharCount() + '/2000'"></span>
-                                        <button @click="sendChat()"
-                                            :disabled="!gates().canSpeak || !chatInput.trim() || chatCharCount() > 2000"
-                                            class="btn btn-amber flex-1 sm:flex-none px-5 py-2 h-auto sm:h-[48px] min-h-[40px] shadow-lg min-w-[80px] flex items-center justify-center"
-                                            x-text="sendLabel()"></button>
-                                    </div>
+                            </template>
+
+                            <!-- 底部状态栏：房间状态 + 房主控制 -->
+                            <div class="status-dock" x-show="!!room" :data-tone="roomBanner().tone"
+                                :data-busy="roomBanner().busy ? 'true' : 'false'" role="status" aria-live="polite">
+                                <span class="status-dock-dot"></span>
+                                <span class="status-dock-text" x-text="roomBanner().text"></span>
+                                <div class="status-dock-actions">
+                                    <button type="button" x-show="gates().canContinue" @click="hostContinueKP()"
+                                        title="跳过未回应的玩家，让 KP 继续推进剧情"
+                                        class="btn btn-amber text-xs" x-text="continueLabel()"></button>
+                                    <button type="button" x-show="gates().canStop" @click="hostStop()"
+                                        title="打断 KP 当前的发言，本周期已发布的内容会保留"
+                                        class="btn btn-red text-xs">打断 KP</button>
                                 </div>
                             </div>
                         </div>
