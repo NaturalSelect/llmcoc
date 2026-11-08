@@ -22,7 +22,7 @@ import (
 )
 
 // directorHistoryFakeProvider 只实现ChatWithTools:每次调用都记录收到的msgs快照,
-// 返回一个终止性的response工具调用(reply/tool_call_id里嵌入调用序号,便于断言
+// 返回一个终止性的ask_players工具调用(question/tool_call_id里嵌入调用序号,便于断言
 // 区分是哪一轮产生的),并附带用例配置好的usage/reasoning,用于驱动阈值判断与
 // reasoning透传断言。failFirstCall非nil时下一次调用直接返回该error,不产生任何
 // assistant消息,用于模拟round<=1硬失败。summaryReply非空时Chat(总结调用)返回它,
@@ -190,7 +190,7 @@ func TestRun_DirectorContextPrefixStableAcrossTurns(t *testing.T) {
 	}
 
 	// ④CacheBreakpoint只打在head末尾(system+scenario的scenario消息)与上一轮末尾
-	// (turn1归档的最后一条消息,即response对应的tool结果消息)。head长度固定为2
+	// (turn1归档的最后一条消息,即ask_players对应的tool结果消息)。head长度固定为2
 	// (见buildKPHead:system+scenario);turn1归档的历史长度为4
 	// (buildKPTurnOpening的2条opening消息 + assistant + tool结果)。
 	const headLen = 2

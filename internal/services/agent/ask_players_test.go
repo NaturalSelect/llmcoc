@@ -218,6 +218,18 @@ func TestKPFloorRendering(t *testing.T) {
 		if !strings.Contains(out, "<kp_floor reason='opening'>") || strings.Contains(out, "<intent") {
 			t.Errorf("got %q", out)
 		}
+		for _, want := range []string{"必须先用narrate发布一段旁白", "不需要先调用write", "[UNKNOWN]", "不替调查员说话"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("opening floor should contain %q, got %q", want, out)
+			}
+		}
+	})
+
+	t.Run("非opening不要求旁白开场", func(t *testing.T) {
+		out := buildKPCurrentActionBlock(GameContext{KPFloor: KPFloorHostContinue})
+		if strings.Contains(out, "旁白") {
+			t.Errorf("host_continue must not ask for an opening narration: %q", out)
+		}
 	})
 
 	t.Run("host_continue列出被跳过者", func(t *testing.T) {

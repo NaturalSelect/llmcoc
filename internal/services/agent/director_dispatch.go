@@ -70,10 +70,10 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		}
 		if hasResponse && hasNonCompatible {
 			emitProgress("KP正在修正工具调用顺序")
-			return "SYSTEM REJECT: your entire batch was rejected. narrate/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call narrate/end_game after reading the results. Write and state-update tools may stay in the same batch as narrate."
+			return "SYSTEM REJECT: your entire batch was rejected. narrate/ask_players/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call narrate/ask_players/end_game after reading the results. Write and state-update tools may stay in the same batch as narrate."
 		}
 		if hasResponse && respStr == "" {
-			emitProgress("KP正在补全主流程回复")
+			emitProgress("KP正在补全消息内容")
 			return "SYSTEM REJECT: empty reply"
 		}
 		if narrateCalls > 1 || askCalls > 1 {

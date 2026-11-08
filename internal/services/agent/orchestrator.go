@@ -220,7 +220,7 @@ func fallbackWriterDirection(kpReply string) string {
 	if reply == "" {
 		return ""
 	}
-	return "根据以下KP主流程回复生成白字描述,只展开已经发生的可见事实和环境/NPC反应,停在玩家选择点,不要替玩家决定后续行动:\n" + reply
+	return "根据以下KP消息生成白字描述,只展开已经发生的可见事实和环境/NPC反应,停在玩家选择点,不要替玩家决定后续行动:\n" + reply
 }
 
 func cleanPlayerVisibleText(text string) string {

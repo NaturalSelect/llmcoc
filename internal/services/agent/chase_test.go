@@ -278,7 +278,7 @@ func TestApplyChaseAct_D2GateBlocksSecondRoundSameRun(t *testing.T) {
 
 	result := applyChaseAct(chs, ToolCall{ChaseActorName: "逃亡者", ChaseAction: &ChaseActionDetail{Type: "move", MoveDelta: 1}}, actx, &roundClosed)
 	if !strings.HasPrefix(result, "SYSTEM REJECT") || !strings.Contains(result, "结算完毕") {
-		t.Errorf("result = %q, want SYSTEM REJECT要求response收尾(D2:一次run最多推进一轮)", result)
+		t.Errorf("result = %q, want SYSTEM REJECT要求改用narrate交代战况或ask_players点名(D2:一次run最多推进一轮)", result)
 	}
 	if chs.Round != 2 {
 		t.Errorf("Round = %d, want 2(D2拒绝后不应继续推进)", chs.Round)

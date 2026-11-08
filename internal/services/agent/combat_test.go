@@ -400,7 +400,7 @@ func TestApplyCombatAct_D2GateBlocksSecondRoundSameRun(t *testing.T) {
 
 	result := applyCombatAct(cs, ToolCall{CombatActorName: "甲", CombatAction: &CombatActionDetail{Type: "attack"}}, actx, &roundClosed)
 	if !strings.HasPrefix(result, "SYSTEM REJECT") || !strings.Contains(result, "结算完毕") {
-		t.Errorf("result = %q, want SYSTEM REJECT要求response收尾(D2:一次run最多推进一轮)", result)
+		t.Errorf("result = %q, want SYSTEM REJECT要求改用narrate交代战况或ask_players点名(D2:一次run最多推进一轮)", result)
 	}
 	if cs.Round != 2 {
 		t.Errorf("Round = %d, want 2(D2拒绝后不应继续推进)", cs.Round)

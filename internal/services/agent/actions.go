@@ -31,7 +31,7 @@ type ActionContext struct {
 	// Combat/Chase 是本次run()持有的活战斗/追逐状态(nil=未激活);战斗/追逐工具
 	// 执行器通过它们读写、并允许置nil(start_*建立/end_*清空)。二者互斥。
 	// RoundClosed是run内一次性闸门(D2):一次run最多完整推进一个战斗/追逐轮,
-	// 翻页后置位,同一run内后续combat_act/chase_act一律拒绝,逼Director用narrate收尾。
+	// 翻页后置位,同一run内后续combat_act/chase_act一律拒绝,逼Director转去交代战况或点名。
 	Combat      **models.CombatState
 	Chase       **models.ChaseState
 	RoundClosed *bool
