@@ -29,14 +29,21 @@ func ListScenarios(c *gin.Context) {
 		return
 	}
 
+	countQuery := models.DB.Model(&models.Scenario{}).Where("is_active = ?", true)
+	listQuery := models.DB.Where("is_active = ?", true)
+	if !isAdminUser(c, c.GetUint("user_id")) {
+		countQuery = countQuery.Where("admin_only = ?", false)
+		listQuery = listQuery.Where("admin_only = ?", false)
+	}
+
 	var total int64
-	if err := models.DB.Model(&models.Scenario{}).Where("is_active = ?", true).Count(&total).Error; err != nil {
+	if err := countQuery.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询剧本总数失败"})
 		return
 	}
 
 	scenarios := make([]models.Scenario, 0)
-	if err := models.DB.Where("is_active = ?", true).
+	if err := listQuery.
 		Order("created_at DESC, id DESC").
 		Limit(pageSize).
 		Offset((page - 1) * pageSize).
@@ -98,8 +105,9 @@ func DeleteScenario(c *gin.Context) {
 }
 
 // ClearScenarios soft-deletes all currently active scenarios by setting is_active = false.
+// NOTE: 仅管理员可用的内置调试模组不在清空范围内，否则清空后调试房间要等重启才能恢复。
 func ClearScenarios(c *gin.Context) {
-	result := models.DB.Model(&models.Scenario{}).Where("is_active = ?", true).Update("is_active", false)
+	result := models.DB.Model(&models.Scenario{}).Where("is_active = ? AND admin_only = ?", true, false).Update("is_active", false)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "清空失败"})
 		return
@@ -581,7 +589,7 @@ func DownloadScenarioTemplate(c *gin.Context) {
 // SeedScenarios loads scenario JSON files from the scenarios directory
 func SeedScenarios(dir string) {
 	var existing int64
-	models.DB.Model(&models.Scenario{}).Count(&existing)
+	models.DB.Model(&models.Scenario{}).Where("admin_only = ?", false).Count(&existing)
 	if existing > 0 {
 		return
 	}
@@ -625,6 +633,36 @@ func SeedScenarios(dir string) {
 			Data:     models.JSONField[json.RawMessage]{Data: json.RawMessage(payload)},
 		}
 		models.DB.Create(&scenario)
+	}
+}
+
+// debugScenarioName 是内置空白调试模组的名称，名称唯一，用它识别该模组。
+const debugScenarioName = "调试房间（空白模组）"
+
+// SeedDebugScenario 确保内置的空白调试模组存在、处于启用状态且仅管理员可用。
+// 与 SeedScenarios 不同，它每次启动都执行，所以必须排在 SeedScenarios 之后，否则后者会因库里已有模组而跳过导入。
+func SeedDebugScenario() {
+	var found []models.Scenario
+	if err := models.DB.Where("name = ?", debugScenarioName).Limit(1).Find(&found).Error; err != nil {
+		scenarioLog.Error("query debug scenario failed", "err", err)
+		return
+	}
+	if len(found) == 0 {
+		scenario := models.Scenario{
+			Name:        debugScenarioName,
+			Description: "仅管理员可创建和加入的空白模组，用于调试，不含任何剧情、场景、NPC 和线索。",
+			IsActive:    true,
+			AdminOnly:   true,
+		}
+		if err := models.DB.Create(&scenario).Error; err != nil {
+			scenarioLog.Error("create debug scenario failed", "err", err)
+		}
+		return
+	}
+	if s := found[0]; !s.IsActive || !s.AdminOnly {
+		if err := models.DB.Model(&s).Updates(map[string]any{"is_active": true, "admin_only": true}).Error; err != nil {
+			scenarioLog.Error("restore debug scenario failed", "err", err)
+		}
 	}
 }
 

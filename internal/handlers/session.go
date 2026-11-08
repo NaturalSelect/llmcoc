@@ -94,27 +94,43 @@ func newMessageResponses(messages []models.Message) []messageResponse {
 	return responses
 }
 
+// hideAdminOnlySessions 让非管理员的房间查询排除仅管理员可用模组的房间。
+func hideAdminOnlySessions(db *gorm.DB) *gorm.DB {
+	return db.Where("scenario_id NOT IN (?)",
+		models.DB.Model(&models.Scenario{}).Select("id").Where("admin_only = ?", true))
+}
+
 func ListSessions(c *gin.Context) {
 	page, pageSize, ok := parseAdminPagination(c)
 	if !ok {
 		return
 	}
 
+	admin := isAdminUser(c, c.GetUint("user_id"))
+
+	countQuery := models.DB.Model(&models.GameSession{}).
+		Where("status IN ?", []string{"lobby", "playing"})
+	if !admin {
+		countQuery = hideAdminOnlySessions(countQuery)
+	}
 	var total int64
-	if err := models.DB.Model(&models.GameSession{}).
-		Where("status IN ?", []string{"lobby", "playing"}).
-		Count(&total).Error; err != nil {
+	if err := countQuery.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询活跃房间总数失败"})
 		return
 	}
 
-	sessions := make([]models.GameSession, 0)
-	if err := models.DB.
+	listQuery := models.DB.
 		Preload("Scenario").
 		Preload("Creator").
 		Preload("Players.User").
 		Preload("Players.CharacterCard").
-		Where("status IN ?", []string{"lobby", "playing"}).
+		Where("status IN ?", []string{"lobby", "playing"})
+	if !admin {
+		listQuery = hideAdminOnlySessions(listQuery)
+	}
+
+	sessions := make([]models.GameSession, 0)
+	if err := listQuery.
 		Order("created_at DESC").
 		Limit(pageSize).
 		Offset((page - 1) * pageSize).
@@ -191,6 +207,10 @@ func CreateSession(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "剧本不存在"})
 		return
 	}
+	if scenario.AdminOnly && !isAdminUser(c, userID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "该剧本仅管理员可创建房间"})
+		return
+	}
 
 	if req.MaxPlayers == 0 {
 		req.MaxPlayers = scenario.MaxPlayers
@@ -251,8 +271,12 @@ func JoinSession(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 
 	var session models.GameSession
-	if err := models.DB.Preload("Players").First(&session, sessionID).Error; err != nil {
+	if err := models.DB.Preload("Scenario").Preload("Players").First(&session, sessionID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+	if session.Scenario.AdminOnly && !isAdminUser(c, userID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "该房间仅管理员可加入"})
 		return
 	}
 	if session.Status != models.SessionStatusLobby {

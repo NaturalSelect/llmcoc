@@ -54,6 +54,7 @@ func main() {
 
 	// Seed scenarios from scenarios/ directory
 	handlers.SeedScenarios("scenarios")
+	handlers.SeedDebugScenario()
 
 	// Seed default shop items
 	handlers.SeedShopItems()

@@ -290,9 +290,11 @@ type Scenario struct {
 	ID   uint   `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name string `gorm:"not null;size:200;uniqueIndex" json:"name"`
 	// Data stores the module JSON payload directly (name is stored separately).
-	Data      JSONField[json.RawMessage] `gorm:"column:content;type:text;not null" json:"data"`
-	IsActive  bool                       `gorm:"default:true" json:"is_active"`
-	CreatedAt time.Time                  `json:"created_at"`
+	Data     JSONField[json.RawMessage] `gorm:"column:content;type:text;not null" json:"data"`
+	IsActive bool                       `gorm:"default:true" json:"is_active"`
+	// NOTE: AdminOnly 的模组只有管理员能创建/加入房间，对普通用户不出现在模组列表和房间列表里（调试模组使用）。
+	AdminOnly bool      `gorm:"not null;default:false" json:"admin_only"`
+	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time                  `json:"updated_at"`
 
 	// Derived fields are decoded from Data for API compatibility.
