@@ -86,7 +86,7 @@ LLM-COC 是一个房间制 COC7 在线跑团服务。核心用户是玩家和管
 9. `/chat`、`/kp-turn`、`/kp-stop` 都立即返回 202。KP 的全部进展通过房间 WebSocket（`GET /sessions/:id/ws`）广播给每个在线的人，事件与断线重连规则见 `docs/realtime-protocol.md`。
 10. 战斗和追逐中，DEX 顺序只是建议，KP 可以点名任何还没行动的参与者；PC 必须先提交声明才能结算。
 11. Agent 的每次产出落成独立消息：Writer 叙事（`writer`）、配图（`image`）、KP 回复（`kp`）、点名（`ask`），带 `kind`、`status`、`floor`、`meta` 字段。writer 与 image 先以 `pending` 落库，异步补全后变 `done` 或 `failed`。Writer 按会话排队依次生成；KP 只发 write 的那一轮不等它，但之后要发布 KP 回复或点名时，会先等已发布的 Writer 全部写完，保证玩家先读到叙事再被提问。kp-stop 会立刻结束这次等待，已发布的 Writer 消息仍会写完。客户端断线后，服务端仍会跑完周期并落库。
-12. 房主或管理员可结束游戏；结束时扣除金币，运行评价和成长结算。
+12. 房主或管理员可结束游戏；结束时扣除金币，只发基础奖励并恢复角色状态，没有评分和成长。KP 通过 `end_game` 自然结束时在 `settlement` 里给每位调查员评分并报告用过的技能，金币按评分折算，胜利时对报告的技能做成长检定。
 13. 管理员可以复活已结束房间，系统写入复活系统消息。
 
 主要实现位于 `internal/handlers/session.go`，前端对应 `frontend/src/game/roomController.ts` 和 `frontend/src/game/roomState.ts`。
@@ -123,7 +123,7 @@ Agent 管线负责把玩家行动转成规则裁定、状态变化和叙事输�
 3. 购买成功后扣除金币，写入交易记录，并按商品类型更新用户或人物卡。
 4. 管理员可以创建和删除商品。
 5. 管理员可以给用户充值金币。
-6. 结束游戏时每名玩家消耗固定金币，并触发结算流程。
+6. 结束游戏时每名玩家消耗固定金币，并触发结算流程。结算发放的奖励金币：基础 20，其余由 KP 的评分决定（评分/2），手动结束没有评分。
 
 主要实现位于 `internal/handlers/shop.go`、`internal/handlers/admin.go` 和 `internal/handlers/session.go`。
 

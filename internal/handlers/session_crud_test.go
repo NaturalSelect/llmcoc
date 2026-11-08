@@ -763,8 +763,7 @@ func TestEndSession_AlreadyEnded(t *testing.T) {
 }
 
 // TestEndSession_Owner_Succeeds_WinFalse 验证房主手动结束时接口返回 200。
-// NOTE: HTTP 手动结束由后端固定传 win=false；无 LLM 时 RunEndSession 使用 fallback 结算，
-// growth.characters 为空，证明跳过了成长路径。
+// NOTE: HTTP 手动结束由后端固定传 win=false 且不带评分；响应只含 message，不再带 evaluation/growth。
 func TestEndSession_Owner_Succeeds_WinFalse(t *testing.T) {
 	initTestDB(t)
 	// NOTE: 给予足够金币以通过 end_session_cost(200) 检查。
@@ -791,10 +790,9 @@ func TestEndSession_Owner_Succeeds_WinFalse(t *testing.T) {
 		t.Errorf("message = %q, want '游戏已结束...'", msg)
 	}
 
-	// NOTE: win=false 跳过 RunGrowth，growth.characters 应为空（零值）。
-	if growth, ok := resp["growth"].(map[string]any); ok {
-		if chars, ok := growth["characters"].([]any); ok && len(chars) != 0 {
-			t.Errorf("win=false: growth.characters should be empty, got %d", len(chars))
+	for _, key := range []string{"evaluation", "growth"} {
+		if _, ok := resp[key]; ok {
+			t.Errorf("response should not contain %q", key)
 		}
 	}
 

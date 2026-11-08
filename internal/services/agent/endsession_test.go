@@ -1,4 +1,4 @@
-// NOTE: 测试 RunEndSession 和 endGameAction 的 win 参数行为。
+// NOTE: 测试 RunEndSession、结算校验和 endGameAction 的 win/settlement 行为。
 package agent
 
 import (
@@ -65,7 +65,88 @@ func TestToolCallWin_True(t *testing.T) {
 	}
 }
 
-// ── endGameAction.Execute win=nil 早返回：无状态/HasEnd/消息等副作用 ───────────
+// TestToolCallSettlement_Decodes 验证 settlement 能解出评分、点评和技能，且缺失 score 时指针为 nil。
+func TestToolCallSettlement_Decodes(t *testing.T) {
+	var call ToolCall
+	raw := `{"action":"end_game","win":true,"settlement":[
+		{"character_name":"甲","score":85,"comment":"沉着","skills":["侦查","图书馆使用"]},
+		{"character_name":"乙"}]}`
+	if err := json.Unmarshal([]byte(raw), &call); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(call.Settlement) != 2 {
+		t.Fatalf("settlement len = %d, want 2", len(call.Settlement))
+	}
+	a, b := call.Settlement[0], call.Settlement[1]
+	if a.CharacterName != "甲" || a.Score == nil || *a.Score != 85 || a.Comment != "沉着" || len(a.Skills) != 2 {
+		t.Errorf("first entry decoded wrong: %+v", a)
+	}
+	if b.Score != nil {
+		t.Errorf("missing score should decode to nil, got *%d", *b.Score)
+	}
+}
+
+// ── 结算校验 ───────────────────────────────────────────────────────────────────
+
+func settlementPlayers(names ...string) []models.SessionPlayer {
+	players := make([]models.SessionPlayer, len(names))
+	for i, n := range names {
+		players[i].CharacterCard.Name = n
+	}
+	return players
+}
+
+// TestValidateSettlement 验证结算必须恰好覆盖全部调查员，且每条都有 0-100 的评分。
+func TestValidateSettlement(t *testing.T) {
+	players := settlementPlayers("甲", "乙")
+	tests := []struct {
+		name       string
+		settlement []PlayerSettlement
+		wantReject string
+	}{
+		{"完整", []PlayerSettlement{{CharacterName: "甲", Score: intPtr(80)}, {CharacterName: "乙", Score: intPtr(0)}}, ""},
+		{"边界100分", []PlayerSettlement{{CharacterName: "甲", Score: intPtr(100)}, {CharacterName: "乙", Score: intPtr(1)}}, ""},
+		{"空结算", nil, "缺少调查员 甲、乙"},
+		{"缺人", []PlayerSettlement{{CharacterName: "甲", Score: intPtr(80)}}, "缺少调查员 乙"},
+		{"名字对不上", []PlayerSettlement{{CharacterName: "甲", Score: intPtr(80)}, {CharacterName: "丙", Score: intPtr(80)}}, `"丙" 不是本局调查员`},
+		{"重复", []PlayerSettlement{{CharacterName: "甲", Score: intPtr(80)}, {CharacterName: "甲", Score: intPtr(70)}, {CharacterName: "乙", Score: intPtr(60)}}, `"甲" 重复`},
+		{"缺评分", []PlayerSettlement{{CharacterName: "甲"}, {CharacterName: "乙", Score: intPtr(60)}}, `"甲" 的 score`},
+		{"评分过高", []PlayerSettlement{{CharacterName: "甲", Score: intPtr(101)}, {CharacterName: "乙", Score: intPtr(60)}}, `"甲" 的 score`},
+		{"评分为负", []PlayerSettlement{{CharacterName: "甲", Score: intPtr(-1)}, {CharacterName: "乙", Score: intPtr(60)}}, `"甲" 的 score`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validateSettlement(players, tt.settlement)
+			if tt.wantReject == "" {
+				if got != "" {
+					t.Fatalf("want pass, got %q", got)
+				}
+				return
+			}
+			if !strings.HasPrefix(got, "SYSTEM REJECT") || !strings.Contains(got, tt.wantReject) {
+				t.Errorf("got %q, want SYSTEM REJECT containing %q", got, tt.wantReject)
+			}
+		})
+	}
+}
+
+// ── endGameAction.Execute 早返回：无状态/HasEnd/消息等副作用 ───────────────────
+
+func newEndGameActionContext(sessionID uint, players []models.SessionPlayer, hasEnd *bool, outbox *[]Output) ActionContext {
+	return ActionContext{
+		Ctx: context.Background(),
+		GCtx: &GameContext{
+			Session: models.GameSession{
+				ID:      sessionID,
+				Status:  models.SessionStatusPlaying,
+				Players: players,
+			},
+		},
+		Sid:    sessionID,
+		HasEnd: hasEnd,
+		Outbox: outbox,
+	}
+}
 
 // TestEndGameAction_WinNil_NoSideEffect 验证 call.Win==nil 时：
 //   - 返回包含 "win" 关键字的错误 ToolResult
@@ -75,24 +156,12 @@ func TestToolCallWin_True(t *testing.T) {
 func TestEndGameAction_WinNil_NoSideEffect(t *testing.T) {
 	hasEnd := false
 	var outbox []Output
-	actx := ActionContext{
-		Ctx: context.Background(),
-		GCtx: &GameContext{
-			Session: models.GameSession{
-				ID:     999,
-				Status: models.SessionStatusPlaying,
-			},
-		},
-		Sid:    999,
-		HasEnd: &hasEnd,
-		Outbox: &outbox,
-	}
+	actx := newEndGameActionContext(999, nil, &hasEnd, &outbox)
 	// NOTE: Win 为 nil（缺失）
 	call := ToolCall{Action: ToolEndGame, EndSummary: "测试结局"}
 
 	results := endGameAction{}.Execute(call, actx)
 
-	// NOTE: 应返回一条错误 ToolResult。
 	if len(results) != 1 {
 		t.Fatalf("want 1 result for nil win, got %d", len(results))
 	}
@@ -102,60 +171,54 @@ func TestEndGameAction_WinNil_NoSideEffect(t *testing.T) {
 	if !strings.Contains(results[0].Result, "win") {
 		t.Errorf("error message should mention 'win', got %q", results[0].Result)
 	}
-	// NOTE: HasEnd 必须不被设置。
 	if hasEnd {
 		t.Error("HasEnd must not be set when win is nil")
 	}
-	// NOTE: session 状态不能变为 ended。
 	if actx.GCtx.Session.Status == models.SessionStatusEnded {
 		t.Error("session.Status must not change to ended when win is nil")
 	}
-	// NOTE: 不能产生任何玩家可见输出。
 	if len(outbox) != 0 {
 		t.Errorf("outbox should be empty when win is nil, got %+v", outbox)
 	}
 }
 
-// TestEndGameAction_WinFalse_Accepted 验证 win=false 时 Execute 不返回 nil win 错误。
-// NOTE: 此测试不需要真实 DB，只验证 win 校验逻辑不会错误拒绝 false 值。
-func TestEndGameAction_WinFalse_Accepted(t *testing.T) {
-	winFalse := false
-	hasEnd := false
-	var outbox []Output
-	actx := ActionContext{
-		Ctx: context.Background(),
-		GCtx: &GameContext{
-			Session: models.GameSession{
-				ID:     998,
-				Status: models.SessionStatusPlaying,
-			},
-		},
-		Sid:    998,
-		HasEnd: &hasEnd,
-		Outbox: &outbox,
+// TestEndGameAction_InvalidSettlement_NoSideEffect 验证结算不合格时被拒绝，且游戏不会结束。
+// NOTE: 会话里预置了 Players，所以校验之前不会碰数据库。
+func TestEndGameAction_InvalidSettlement_NoSideEffect(t *testing.T) {
+	for _, win := range []bool{true, false} {
+		hasEnd := false
+		var outbox []Output
+		actx := newEndGameActionContext(998, settlementPlayers("甲", "乙"), &hasEnd, &outbox)
+		w := win
+		call := ToolCall{
+			Action:     ToolEndGame,
+			Win:        &w,
+			EndSummary: "测试结局",
+			Settlement: []PlayerSettlement{{CharacterName: "甲", Score: intPtr(80)}},
+		}
+
+		results := endGameAction{}.Execute(call, actx)
+
+		if len(results) != 1 || !strings.HasPrefix(results[0].Result, "SYSTEM REJECT") || !strings.Contains(results[0].Result, "乙") {
+			t.Fatalf("win=%v: results = %+v, want one SYSTEM REJECT naming the missing 乙", win, results)
+		}
+		if hasEnd {
+			t.Errorf("win=%v: HasEnd must not be set when settlement is rejected", win)
+		}
+		if actx.GCtx.Session.Status == models.SessionStatusEnded {
+			t.Errorf("win=%v: session must not end when settlement is rejected", win)
+		}
+		if len(outbox) != 0 {
+			t.Errorf("win=%v: outbox should stay empty, got %+v", win, outbox)
+		}
 	}
-	call := ToolCall{Action: ToolEndGame, Win: &winFalse}
-
-	// NOTE: Execute 将继续执行并访问 DB，DB 为 nil 会 panic。
-	// 我们只验证 win=false 不会被"缺失 win"逻辑拒绝——即 HasEnd 会被尝试设置。
-	// 通过 recover 捕获后续 DB panic，只关注 HasEnd 是否在 panic 前被设置。
-	func() {
-		defer func() { recover() }() // 捕获因 nil DB 引发的 panic
-		endGameAction{}.Execute(call, actx)
-	}()
-
-	// NOTE: win=false 通过了 nil 检查，HasEnd 在 DB 访问前已被...
-	// 实际上 HasEnd 在 DB 访问之后才被设置，所以 panic 会在 HasEnd 之前发生。
-	// 因此我们只能验证不返回"缺失 win"的 ToolResult。
-	// 此测试主要依赖 TestEndGameAction_WinNil_NoSideEffect 的对照。
-	_ = hasEnd
 }
 
 // ── RunEndSession 行为测试（内存 SQLite，无真实 LLM）─────────────────────────────
 
 // initEndSessionTestDB 为 RunEndSession 测试建立含 User/CharacterCard/GameEvaluation
 // 的内存 SQLite 库。LLM 相关表（AgentConfig 等）不迁移，使 loadSingleAgent 返回错误，
-// 从而触发 fallbackEvaluation 和 RunGrowth 空返回——无需真实 LLM。
+// 从而让关系提升跳过——无需真实 LLM。
 func initEndSessionTestDB(t *testing.T) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
@@ -173,8 +236,6 @@ func initEndSessionTestDB(t *testing.T) {
 		&models.User{},
 		&models.CharacterCard{},
 		&models.GameEvaluation{},
-		// NOTE: SessionGrowthMark 迁移以避免 win=true 时 RunGrowth Delete 的 SQLite 错误。
-		&models.SessionGrowthMark{},
 	); err != nil {
 		t.Fatalf("auto-migrate: %v", err)
 	}
@@ -239,7 +300,7 @@ func TestRunEndSession_WinFalse_SkipsPOW(t *testing.T) {
 	}, nil)
 
 	sess := makeTestSession(10, uid, *card)
-	if _, err := RunEndSession(context.Background(), sess, nil, false); err != nil {
+	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(win=false): %v", err)
 	}
 
@@ -261,7 +322,7 @@ func TestRunEndSession_WinTrue_POWGrows(t *testing.T) {
 	}, nil)
 
 	sess := makeTestSession(11, uid, *card)
-	if _, err := RunEndSession(context.Background(), sess, nil, true); err != nil {
+	if err := RunEndSession(context.Background(), sess, nil, true, nil); err != nil {
 		t.Fatalf("RunEndSession(win=true): %v", err)
 	}
 
@@ -272,26 +333,76 @@ func TestRunEndSession_WinTrue_POWGrows(t *testing.T) {
 	}
 }
 
-// TestRunEndSession_WinFalse_CoinsAwarded 验证 win=false 时仍执行 Evaluator 并发放金币。
-// NOTE: 无 LLM 时 fallbackEvaluation 给每人 20 基础金币。
-func TestRunEndSession_WinFalse_CoinsAwarded(t *testing.T) {
+// TestRunEndSession_CoinsFollowSettlementScore 验证金币 = 20 基础 + 评分/2 加成，胜负都发，
+// 评分越界时按 0-100 截断，没有结算(手动结束)时只发基础金币。
+func TestRunEndSession_CoinsFollowSettlementScore(t *testing.T) {
+	tests := []struct {
+		name       string
+		win        bool
+		settlement []PlayerSettlement
+		wantCoins  int
+	}{
+		{"胜利80分", true, []PlayerSettlement{{CharacterName: "CoinChar", Score: intPtr(80)}}, 60},
+		{"失败也按评分发", false, []PlayerSettlement{{CharacterName: "CoinChar", Score: intPtr(80)}}, 60},
+		{"满分", true, []PlayerSettlement{{CharacterName: "CoinChar", Score: intPtr(100)}}, 70},
+		{"0分只有基础", true, []PlayerSettlement{{CharacterName: "CoinChar", Score: intPtr(0)}}, 20},
+		{"评分过高被截断", false, []PlayerSettlement{{CharacterName: "CoinChar", Score: intPtr(500)}}, 70},
+		{"没有结算只有基础", false, nil, 20},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			initEndSessionTestDB(t)
+			uid := newEndSessionUser(t, "coinstest")
+			card := newEndSessionCard(t, "CoinChar", models.CharacterStats{
+				MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 99, SAN: 50,
+			}, nil)
+
+			sess := makeTestSession(uint(100+i), uid, *card)
+			if err := RunEndSession(context.Background(), sess, nil, tt.win, tt.settlement); err != nil {
+				t.Fatalf("RunEndSession: %v", err)
+			}
+
+			var user models.User
+			models.DB.First(&user, uid)
+			if user.Coins != tt.wantCoins {
+				t.Errorf("coins = %d, want %d", user.Coins, tt.wantCoins)
+			}
+		})
+	}
+}
+
+// TestRunEndSession_PersistsEvaluation 验证有结算时写入评价记录，手动结束(无结算)时不写。
+func TestRunEndSession_PersistsEvaluation(t *testing.T) {
 	initEndSessionTestDB(t)
 
-	uid := newEndSessionUser(t, "coinstest")
-	card := newEndSessionCard(t, "CoinChar", models.CharacterStats{
+	uid := newEndSessionUser(t, "evaltest")
+	card := newEndSessionCard(t, "EvalChar", models.CharacterStats{
 		MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 99, SAN: 50,
 	}, nil)
-
-	sess := makeTestSession(12, uid, *card)
-	if _, err := RunEndSession(context.Background(), sess, nil, false); err != nil {
-		t.Fatalf("RunEndSession(win=false): %v", err)
+	sess := makeTestSession(30, uid, *card)
+	settlement := []PlayerSettlement{{CharacterName: "EvalChar", Score: intPtr(90), Comment: "表现出色"}}
+	if err := RunEndSession(context.Background(), sess, nil, true, settlement); err != nil {
+		t.Fatalf("RunEndSession: %v", err)
 	}
 
-	var user models.User
-	models.DB.First(&user, uid)
-	// NOTE: fallbackEvaluation 给 20 base_coins；win=false 也应发放。
-	if user.Coins != 20 {
-		t.Errorf("win=false: coins = %d, want 20 (fallback base coins)", user.Coins)
+	var eval models.GameEvaluation
+	if err := models.DB.Where("session_id = ?", 30).First(&eval).Error; err != nil {
+		t.Fatalf("evaluation not saved: %v", err)
+	}
+	got := eval.Content.Data.Players
+	if len(got) != 1 || got[0].CharacterName != "EvalChar" || got[0].Score != 90 || got[0].Comment != "表现出色" ||
+		got[0].BaseCoins != 20 || got[0].BonusCoins != 45 {
+		t.Errorf("saved players = %+v, want EvalChar score 90 comment 表现出色 base 20 bonus 45", got)
+	}
+
+	sess = makeTestSession(31, uid, *card)
+	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
+		t.Fatalf("RunEndSession(manual): %v", err)
+	}
+	var count int64
+	models.DB.Model(&models.GameEvaluation{}).Where("session_id = ?", 31).Count(&count)
+	if count != 0 {
+		t.Errorf("manual end should not save an evaluation, got %d rows", count)
 	}
 }
 
@@ -303,12 +414,11 @@ func TestRunEndSession_WinFalse_DeadCardDeactivated(t *testing.T) {
 	card := newEndSessionCard(t, "DeadChar", models.CharacterStats{
 		MaxHP: 10, HP: 0, MaxMP: 10, MP: 5, MaxSAN: 99, SAN: 30, POW: 50,
 	}, nil)
-	// NOTE: 模拟死亡状态
 	card.WoundState = "dead"
 	models.DB.Save(card)
 
 	sess := makeTestSession(13, uid, *card)
-	if _, err := RunEndSession(context.Background(), sess, nil, false); err != nil {
+	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(win=false, dead): %v", err)
 	}
 
@@ -329,7 +439,7 @@ func TestRunEndSession_WinFalse_LivingCardRestored(t *testing.T) {
 	}, nil)
 
 	sess := makeTestSession(14, uid, *card)
-	if _, err := RunEndSession(context.Background(), sess, nil, false); err != nil {
+	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(win=false, living): %v", err)
 	}
 
@@ -343,34 +453,95 @@ func TestRunEndSession_WinFalse_LivingCardRestored(t *testing.T) {
 	}
 }
 
-// TestRunEndSession_WinFalse_SkillsUnchanged 验证 win=false 时技能不被修改。
-// NOTE: 即使 win=true 时 LLM 也不可用（fallback 空成长），此测试主要确保 win=false 代码路径
-// 不调用技能成长逻辑，且技能值保持原样。
+// TestRunEndSession_WinFalse_SkillsUnchanged 验证 win=false 时即使 Director 报了技能，技能也不被修改。
 func TestRunEndSession_WinFalse_SkillsUnchanged(t *testing.T) {
 	initEndSessionTestDB(t)
 
 	uid := newEndSessionUser(t, "skilltest")
 	card := newEndSessionCard(t, "SkillChar", models.CharacterStats{
 		MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 99, SAN: 50, POW: 50,
-	}, map[string]int{"侦查": 60, "图书馆使用": 40})
+	}, map[string]int{"侦查": 1, "图书馆使用": 1})
 
 	sess := makeTestSession(15, uid, *card)
-	if _, err := RunEndSession(context.Background(), sess, nil, false); err != nil {
+	settlement := []PlayerSettlement{{CharacterName: "SkillChar", Score: intPtr(60), Skills: []string{"侦查", "图书馆使用"}}}
+	if err := RunEndSession(context.Background(), sess, nil, false, settlement); err != nil {
 		t.Fatalf("RunEndSession(win=false): %v", err)
 	}
 
 	var updated models.CharacterCard
 	models.DB.First(&updated, card.ID)
-	if updated.Skills.Data["侦查"] != 60 {
-		t.Errorf("win=false: 侦查 = %d, want 60 (no growth)", updated.Skills.Data["侦查"])
+	if updated.Skills.Data["侦查"] != 1 {
+		t.Errorf("win=false: 侦查 = %d, want 1 (no growth)", updated.Skills.Data["侦查"])
 	}
-	if updated.Skills.Data["图书馆使用"] != 40 {
-		t.Errorf("win=false: 图书馆使用 = %d, want 40 (no growth)", updated.Skills.Data["图书馆使用"])
+	if updated.Skills.Data["图书馆使用"] != 1 {
+		t.Errorf("win=false: 图书馆使用 = %d, want 1 (no growth)", updated.Skills.Data["图书馆使用"])
+	}
+}
+
+// TestRunEndSession_WinTrue_AppliesReportedSkillGrowth 验证 win=true 时只有 Director 报的技能参与成长，
+// 其余技能不变，且不可成长的技能和卡上没有的技能被忽略。
+// NOTE: 技能值 1 时成长检定只有 1% 概率不通过，所以循环多次直到成长出现，其余断言是确定的。
+func TestRunEndSession_WinTrue_AppliesReportedSkillGrowth(t *testing.T) {
+	initEndSessionTestDB(t)
+
+	uid := newEndSessionUser(t, "growthtest")
+	card := newEndSessionCard(t, "GrowthChar", models.CharacterStats{
+		MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 99, SAN: 50, POW: 50,
+	}, map[string]int{"侦查": 1, "图书馆使用": 40, "克苏鲁神话": 1, "信用评级": 1})
+	settlement := []PlayerSettlement{{
+		CharacterName: "GrowthChar",
+		Score:         intPtr(70),
+		Skills:        []string{"侦查", "克苏鲁神话", "信用评级", "不存在的技能"},
+	}}
+
+	grew := false
+	for i := 0; i < 200 && !grew; i++ {
+		card.Skills.Data["侦查"] = 1
+		models.DB.Save(card)
+		sess := makeTestSession(uint(40+i), uid, *card)
+		if err := RunEndSession(context.Background(), sess, nil, true, settlement); err != nil {
+			t.Fatalf("RunEndSession(win=true): %v", err)
+		}
+		var updated models.CharacterCard
+		models.DB.First(&updated, card.ID)
+		skills := updated.Skills.Data
+
+		if v := skills["侦查"]; v > 1 {
+			grew = true
+			if v < 2 || v > 4 {
+				t.Fatalf("侦查 = %d, want growth of 1-3 from 1", v)
+			}
+		}
+		if skills["图书馆使用"] != 40 {
+			t.Fatalf("图书馆使用 = %d, want 40 (not reported)", skills["图书馆使用"])
+		}
+		if skills["克苏鲁神话"] != 1 || skills["信用评级"] != 1 {
+			t.Fatalf("克苏鲁神话/信用评级 must not grow, got %d/%d", skills["克苏鲁神话"], skills["信用评级"])
+		}
+		if _, ok := skills["不存在的技能"]; ok {
+			t.Fatal("skills not on the card must not be added")
+		}
+	}
+	if !grew {
+		t.Error("侦查 never grew in 200 tries")
+	}
+}
+
+// TestApplySkillGrowth_CapsAtNinetyNine 验证成长不超过 99，且已满 99 的技能不变。
+func TestApplySkillGrowth_CapsAtNinetyNine(t *testing.T) {
+	for i := 0; i < 300; i++ {
+		card := &models.CharacterCard{Skills: models.JSONField[map[string]int]{Data: map[string]int{"高": 98, "满": 99}}}
+		applySkillGrowth(card, []string{"高", "满", "高"})
+		if card.Skills.Data["高"] < 98 || card.Skills.Data["高"] > 99 {
+			t.Fatalf("高 = %d, want 98 or 99", card.Skills.Data["高"])
+		}
+		if card.Skills.Data["满"] != 99 {
+			t.Fatalf("满 = %d, want 99", card.Skills.Data["满"])
+		}
 	}
 }
 
 // TestRunEndSession_WinTrue_NoRegression 验证 win=true 时存活角色正常结算且 HP 被恢复。
-// NOTE: LLM 不可用时技能/背景不变（fallback），但 HP/MP 恢复和 POW 增长仍执行。
 func TestRunEndSession_WinTrue_NoRegression(t *testing.T) {
 	initEndSessionTestDB(t)
 
@@ -380,45 +551,17 @@ func TestRunEndSession_WinTrue_NoRegression(t *testing.T) {
 	}, map[string]int{"侦查": 30})
 
 	sess := makeTestSession(16, uid, *card)
-	result, err := RunEndSession(context.Background(), sess, nil, true)
-	if err != nil {
+	if err := RunEndSession(context.Background(), sess, nil, true, nil); err != nil {
 		t.Fatalf("RunEndSession(win=true): %v", err)
 	}
 
 	var updated models.CharacterCard
 	models.DB.First(&updated, card.ID)
-
-	// NOTE: HP/MP 应恢复至满值。
 	if updated.Stats.Data.HP != 10 {
 		t.Errorf("win=true: HP = %d, want 10", updated.Stats.Data.HP)
 	}
 	if updated.Stats.Data.MP != 8 {
 		t.Errorf("win=true: MP = %d, want 8", updated.Stats.Data.MP)
-	}
-	// NOTE: Evaluator 结果应非空（fallback 给了 summary）。
-	if result.Evaluation.Summary == "" {
-		t.Error("win=true: evaluation summary should not be empty")
-	}
-}
-
-// TestRunEndSession_WinFalse_GrowthResultEmpty 验证 win=false 时 EndSessionResult.Growth 为空。
-func TestRunEndSession_WinFalse_GrowthResultEmpty(t *testing.T) {
-	initEndSessionTestDB(t)
-
-	uid := newEndSessionUser(t, "growthempty")
-	card := newEndSessionCard(t, "GrowthChar", models.CharacterStats{
-		MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 99, SAN: 50, POW: 50,
-	}, nil)
-
-	sess := makeTestSession(17, uid, *card)
-	result, err := RunEndSession(context.Background(), sess, nil, false)
-	if err != nil {
-		t.Fatalf("RunEndSession(win=false): %v", err)
-	}
-
-	// NOTE: win=false 跳过 RunGrowth，Growth 结果必须为零值。
-	if len(result.Growth.Characters) != 0 {
-		t.Errorf("win=false: growth.characters should be empty, got %d", len(result.Growth.Characters))
 	}
 }
 
@@ -455,7 +598,7 @@ func TestRunEndSession_RelationPromotion_ExistingUpdatesApplyWithoutAI(t *testin
 		}},
 	}
 
-	if _, err := RunEndSession(context.Background(), sess, nil, false); err != nil {
+	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(win=false): %v", err)
 	}
 
@@ -503,7 +646,7 @@ func TestRunEndSession_RelationPromotion_DeadCharacterSkipped(t *testing.T) {
 		}},
 	}
 
-	if _, err := RunEndSession(context.Background(), sess, nil, false); err != nil {
+	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(win=false, dead): %v", err)
 	}
 

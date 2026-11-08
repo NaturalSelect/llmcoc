@@ -42,7 +42,7 @@ func TestRoleFromCacheKey(t *testing.T) {
 		"sess:writer":          "writer",
 		"sess:npc:张三":          "npc",
 		"sess:lawyer:q1":       "lawyer",
-		"nosession:evaluator":  "evaluator",
+		"nosession:writer":     "writer",
 		"admin:ping":           "ping",
 		"":                     "unknown",
 		"no-colon-here":        "unknown",

@@ -880,14 +880,20 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	win := *call.Win
 
-	var results []ToolResult
-	if call.EndSummary != "" {
-		results = append(results, ToolResult{Action: ToolEndGame, Result: "剧本结局:" + call.EndSummary})
-	}
+	// NOTE: 结算必须在任何副作用之前校验，不合格时让 Director 补全后重发，游戏不会结束。
 	if len(actx.GCtx.Session.Players) == 0 {
 		models.DB.Preload("CharacterCard").
 			Where("session_id = ?", actx.GCtx.Session.ID).
 			Find(&actx.GCtx.Session.Players)
+	}
+	if reject := validateSettlement(actx.GCtx.Session.Players, call.Settlement); reject != "" {
+		debugf("tool", "session=%d end_game rejected: %s", actx.Sid, reject)
+		return []ToolResult{{Action: ToolEndGame, Result: reject}}
+	}
+
+	var results []ToolResult
+	if call.EndSummary != "" {
+		results = append(results, ToolResult{Action: ToolEndGame, Result: "剧本结局:" + call.EndSummary})
 	}
 	models.DB.Model(&models.GameSession{}).
 		Where("id = ?", actx.GCtx.Session.ID).
@@ -910,8 +916,7 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 
 	msgs := LoadEndGameMessages(actx.GCtx.Session.ID)
 	sessionSnap := actx.GCtx.Session
-	// NOTE: 将 win 透传给 RunEndSession，控制是否执行成长类结算。
-	if _, err := RunEndSession(actx.Ctx, &sessionSnap, msgs, win); err != nil {
+	if err := RunEndSession(actx.Ctx, &sessionSnap, msgs, win, call.Settlement); err != nil {
 		debugf("tool", "session=%d RunEndSession error: %v", actx.GCtx.Session.ID, err)
 	}
 	return results

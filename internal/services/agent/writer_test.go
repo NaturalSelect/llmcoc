@@ -121,7 +121,6 @@ func committedTurns(state *WriterState) []models.TranscriptTurn {
 	return state.cm.data.Turns
 }
 
-
 // ── isWriterResponseRejected ─────────────────────────────────────────────────
 
 func TestIsWriterResponseRejected(t *testing.T) {
@@ -674,59 +673,6 @@ func TestRunWriter_ContextPrefixStableAcrossTurns(t *testing.T) {
 		if m.CacheBreakpoint != want {
 			t.Errorf("turn2Msgs[%d].CacheBreakpoint=%v, want %v", i, m.CacheBreakpoint, want)
 		}
-	}
-}
-
-// ── loadWriterTranscriptHistory (endsession角色成长读取路径) ──────────────────
-
-// TestLoadWriterTranscriptHistory_ReadsFromTranscript 验证endsession.go的角色成长
-// 读取路径已经改为从AgentTranscript(writer)取历史,而不是旧的GameSession.WriterHistory列。
-func TestLoadWriterTranscriptHistory_ReadsFromTranscript(t *testing.T) {
-	initAgentTestDB(t)
-	const sessionID = 301
-	rec := models.AgentTranscript{
-		SessionID: sessionID,
-		AgentKey:  writerAgentKey,
-		Version:   contextTranscriptVersion,
-		Data: models.JSONField[models.TranscriptData]{Data: models.TranscriptData{
-			NextSeq: 1,
-			Turns: []models.TranscriptTurn{{
-				Seq: 0,
-				Messages: []models.TranscriptMsg{
-					{Role: "user", Content: "继续描述场景一"},
-					{Role: "assistant", Content: "他推开了门。"},
-				},
-			}},
-		}},
-	}
-	if err := models.DB.Create(&rec).Error; err != nil {
-		t.Fatalf("create transcript: %v", err)
-	}
-
-	got := loadWriterTranscriptHistory(sessionID)
-	want := []models.ChatMsg{
-		{Role: "user", Content: "继续描述场景一"},
-		{Role: "assistant", Content: "他推开了门。"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("loadWriterTranscriptHistory = %+v, want %+v", got, want)
-	}
-}
-
-// TestLoadWriterTranscriptHistory_FallsBackToLegacyColumn 验证还没有AgentTranscript
-// 记录的老会话(比如结束前从未触发过Writer)时,回落读取旧的GameSession.WriterHistory列。
-func TestLoadWriterTranscriptHistory_FallsBackToLegacyColumn(t *testing.T) {
-	initAgentTestDB(t)
-	const sessionID = 302
-	legacy := []models.ChatMsg{{Role: "user", Content: "旧数据"}, {Role: "assistant", Content: "旧回复"}}
-	session := models.GameSession{ID: sessionID, WriterHistory: models.JSONField[[]models.ChatMsg]{Data: legacy}}
-	if err := models.DB.Create(&session).Error; err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	got := loadWriterTranscriptHistory(sessionID)
-	if !reflect.DeepEqual(got, legacy) {
-		t.Errorf("loadWriterTranscriptHistory = %+v, want %+v", got, legacy)
 	}
 }
 

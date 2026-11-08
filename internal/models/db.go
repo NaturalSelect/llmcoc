@@ -63,7 +63,6 @@ func InitDB() error {
 		&LLMProviderConfig{},
 		&AgentConfig{},
 		&GameEvaluation{},
-		&SessionGrowthMark{},
 		&SiteSetting{},
 		&InviteCode{},
 		&Announcement{},
@@ -149,7 +148,8 @@ func seedDefaultAgentConfigs() {
 	// Remove obsolete agent roles that no longer exist in the pipeline.
 	// NOTE: providence 已改名为 dramaturg，需清理老库中遗留的 providence 行，否则会在后台Agent列表里以裸role字符串显示。
 	// translator 已移除（architect 直接用 ask_lawyer 核验锚点），同理清理老库遗留行。
-	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer", "anti_cheat", "providence", "translator"}).Delete(&AgentConfig{})
+	// evaluator / growth 已移除（评分和技能提升改由 Director 在 end_game 里填写），同理清理老库遗留行。
+	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer", "anti_cheat", "providence", "translator", "evaluator", "growth"}).Delete(&AgentConfig{})
 
 	var provID *uint
 	var prov LLMProviderConfig
@@ -178,8 +178,6 @@ func seedDefaultAgentConfigs() {
 		// NOTE: diffusion_translator 只输出一行标签,低温度减少擅自添加画面元素;仅在 Painter 开启 diffusion_mode 时才会被调用。
 		{Role: AgentRoleDiffusionTranslator, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.3, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
-		{Role: AgentRoleEvaluator, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
-		{Role: AgentRoleGrowth, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		// NOTE: Compiler 负责把故事文本忠实编译为结构化ScenarioContent；低温度以减少编译时的擅自发挥。
 		// MaxTokens=4000 实测会被单次submit_compiled_scenario工具调用（scenes/npcs/clues/endings等
 		// 十余个字段一次性生成）打满导致stop_reason=max_tokens截断，调大到8000留出余量。

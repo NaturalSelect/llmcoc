@@ -53,6 +53,26 @@ func TestSeedDefaultAgentConfigs_RemovesTranslator(t *testing.T) {
 	}
 }
 
+func TestSeedDefaultAgentConfigs_RemovesEvaluatorAndGrowth(t *testing.T) {
+	db := openSeedTestDB(t)
+
+	for _, role := range []string{"evaluator", "growth"} {
+		if err := db.Create(&AgentConfig{Role: AgentRole(role), ModelName: "gpt-4o", IsActive: true}).Error; err != nil {
+			t.Fatalf("seed legacy %s row: %v", role, err)
+		}
+	}
+
+	seedDefaultAgentConfigs()
+
+	for _, role := range []string{"evaluator", "growth"} {
+		var count int64
+		db.Model(&AgentConfig{}).Where("role = ?", role).Count(&count)
+		if count != 0 {
+			t.Errorf("%s rows after seed = %d, want 0", role, count)
+		}
+	}
+}
+
 func TestSeedDefaultAgentConfigs_SeedsDiffusionTranslator(t *testing.T) {
 	db := openSeedTestDB(t)
 

@@ -3,6 +3,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -17,132 +18,130 @@ const imageRefTagOpenPrefix = "<image_ref"
 
 var imageRefTagPattern = regexp.MustCompile(`(?is)<image_ref\b[^>]*(?:/>|>\s*</image_ref>)`)
 
-// EndSessionResult bundles the evaluation and growth results from RunEndSession.
-type EndSessionResult struct {
-	Evaluation EvaluationResult
-	Growth     GrowthResult
+// NOTE: 每位调查员固定拿基础金币，评分再按 0–100 折算成 0–50 的加成。
+const settlementBaseCoins = 20
+
+// NOTE: 克苏鲁神话和信用评级不靠使用成长，Director 填了也忽略。
+var growthExcludedSkills = map[string]bool{"克苏鲁神话": true, "信用评级": true}
+
+// NOTE: 没有结算条目(手动结束)时 score 视为 0，只发基础金币。
+func (s PlayerSettlement) score() int {
+	if s.Score == nil {
+		return 0
+	}
+	return clamp(*s.Score, 0, 100)
 }
 
-// RunEndSession executes the full end-of-session settlement:
-//  1. Runs the Evaluator agent to score players and suggest rewards.
-//  2. 若 win=true：运行 Growth 计算技能成长，并对每个存活角色运行背景演变。
-//     若 win=false：跳过技能成长、POW 增长及背景演变（失败无角色成长）。
-//  3. 运行 RunRelationPromotion（胜负均执行），判断本局新结识的候选关系(tier1)是否
-//     值得写进人物卡(tier2)；人物卡已有关系的更新/移除不需要 AI 判断，直接生效。
-//  4. Applies coins, madness cleanup, card teardown (dead), and state restore
-//     in a single DB transaction. If win=true also applies skill growth, POW,
-//     and backstory evolution.
-//
-// It is called by both the EndSession HTTP handler and ToolEndGame (async).
-// The session must have Players and CharacterCard pre-loaded.
-// NOTE: win 参数由调用方传入；HTTP 手动结束固定传 false，Director end_game 显式填写。
-func RunEndSession(ctx context.Context, session *models.GameSession, messages []models.Message, win bool) (EndSessionResult, error) {
-	defer deleteCachedAgents(session.ID)
-	stripMessageImageDataURLTags(messages)
-	// ── Evaluator ────────────────────────────────────────────────────────────
-	evalResult, err := RunEvaluator(ctx, session, messages)
-	if err != nil {
-		// RunEvaluator already falls back internally; this branch is a safety net.
-		evalResult = fallbackEvaluation(session)
+// NOTE: 返回空串表示通过，否则是写给 Director 的拒绝原因；通过时 settlement 恰好覆盖 players。
+func validateSettlement(players []models.SessionPlayer, settlement []PlayerSettlement) string {
+	names := make([]string, 0, len(players))
+	known := make(map[string]bool, len(players))
+	for _, p := range players {
+		names = append(names, p.CharacterCard.Name)
+		known[p.CharacterCard.Name] = true
 	}
 
-	// ── Growth & Evolution（仅 win=true 时执行）───────────────────────────────
-	var growthResult GrowthResult
-	type evolutionEntry struct {
-		cardIdx      int
-		newBackstory string
-	}
-	var evolutions []evolutionEntry
-
-	if win {
-		// NOTE: win=true：执行技能成长检验。
-		growthResult, _ = RunGrowth(ctx, session, messages)
-
-		// NOTE: win=true：对每个存活角色执行背景演变（writer agent，best-effort）。
-		writerHistory := loadWriterTranscriptHistory(session.ID) // []models.ChatMsg
-		for i := range session.Players {
-			card := &session.Players[i].CharacterCard
-			if card.WoundState == "dead" || card.Stats.Data.HP <= 0 {
-				continue // dead investigators do not get an evolution
-			}
-			evo, evoErr := RunCharacterEvolution(ctx, card, writerHistory)
-			if evoErr != nil {
-				alog.Warn("character evolution skipped", "character", card.Name, "err", evoErr)
-				continue
-			}
-			evolutions = append(evolutions, evolutionEntry{
-				cardIdx:      i,
-				newBackstory: evo.NewBackstory,
-			})
+	seen := make(map[string]bool, len(settlement))
+	var problems []string
+	for _, s := range settlement {
+		switch {
+		case !known[s.CharacterName]:
+			problems = append(problems, fmt.Sprintf("%q 不是本局调查员", s.CharacterName))
+		case seen[s.CharacterName]:
+			problems = append(problems, fmt.Sprintf("%q 重复", s.CharacterName))
+		case s.Score == nil || *s.Score < 0 || *s.Score > 100:
+			problems = append(problems, fmt.Sprintf("%q 的 score 必须是 0-100 的整数", s.CharacterName))
+		}
+		if known[s.CharacterName] {
+			seen[s.CharacterName] = true
 		}
 	}
-	// NOTE: win=false：跳过 RunGrowth / RunCharacterEvolution，growthResult 保持零值。
+	var missing []string
+	for _, name := range names {
+		if !seen[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		problems = append(problems, "缺少调查员 "+strings.Join(missing, "、"))
+	}
+	if len(problems) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("SYSTEM REJECT: end_game.settlement 不合格：%s。settlement 必须为本局每位调查员(包括已死亡或疯狂的，当前：%s)各写一条，character_name 用角色卡真实姓名，score 为 0-100 的整数。请修正后重发，游戏尚未结束。",
+		strings.Join(problems, "；"), strings.Join(names, "、"))
+}
 
-	// ── 社交关系提升（tier1 会话关系 → tier2 人物卡，胜负均执行）──────────────────
-	// NOTE: 本局新结识的关系先存在 session 里，避免浅层关系挤占人物卡；
-	// 结算时才由 AI 判断哪些值得长期写入人物卡（已有关系的更新/移除不需要 AI 判断，直接生效）。
+// NOTE: 对 Director 报告用过的技能逐个做成长检定：d100 大于当前值才成长，上限 99。
+// 不在人物卡上的技能和不可成长的技能直接忽略。
+func applySkillGrowth(card *models.CharacterCard, skills []string) {
+	data := card.Skills.Data
+	done := make(map[string]bool, len(skills))
+	for _, skill := range skills {
+		current, onCard := data[skill]
+		if !onCard || done[skill] || growthExcludedSkills[skill] {
+			continue
+		}
+		done[skill] = true
+		if current >= 99 {
+			continue
+		}
+		base := max(current, 1)
+		if game.RollD100() <= base {
+			continue
+		}
+		gain, _ := game.Roll(1, 3)
+		data[skill] = min(base+gain, 99)
+		debugf("growth", "character %s skill %s %d -> %d", card.Name, skill, current, data[skill])
+	}
+}
+
+// RunEndSession 执行结算：发金币、胜利时做成长、清疯狂、撕卡、恢复存活角色，并合并社交关系。
+// 评分和用过的技能来自 Director 在 end_game 里填写的 settlement；手动结束传 nil，只发基础金币。
+// 调用方保证 session 已预加载 Players 和 CharacterCard。
+func RunEndSession(ctx context.Context, session *models.GameSession, messages []models.Message, win bool, settlement []PlayerSettlement) error {
+	defer deleteCachedAgents(session.ID)
+	stripMessageImageDataURLTags(messages)
+
+	// NOTE: 本局新结识的关系先存在 session 里，结算时才由 AI 判断哪些值得长期写入人物卡
+	// （已有关系的更新/移除不需要 AI 判断，直接生效），胜负均执行。
 	relationPromotions := RunRelationPromotion(ctx, session, messages)
 
-	// Build lookup maps for fast access.
-	evalByChar := make(map[string]PlayerEvaluation, len(evalResult.Players))
-	for _, pe := range evalResult.Players {
-		evalByChar[pe.CharacterName] = pe
-	}
-	growthByChar := make(map[string]CharacterGrowth, len(growthResult.Characters))
-	for _, cg := range growthResult.Characters {
-		growthByChar[cg.CharacterName] = cg
-	}
-	evoByIdx := make(map[int]evolutionEntry, len(evolutions))
-	for _, e := range evolutions {
-		evoByIdx[e.cardIdx] = e
+	settlementByChar := make(map[string]PlayerSettlement, len(settlement))
+	for _, s := range settlement {
+		settlementByChar[s.CharacterName] = s
 	}
 
-	// ── DB transaction ───────────────────────────────────────────────────────
 	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		var evalContent models.EvaluationContent
 		for i := range session.Players {
 			player := &session.Players[i]
 			card := &player.CharacterCard
 
-			// Award coins（win=true/false 均执行）.
-			if pe, ok := evalByChar[card.Name]; ok {
-				award := pe.BaseCoins + pe.BonusCoins
-				if award > 0 {
-					if err := tx.Model(&models.User{}).
-						Where("id = ?", player.UserID).
-						Update("coins", gorm.Expr("coins + ?", award)).Error; err != nil {
-						return err
-					}
-					debugf("award", "player %d (%s) awarded %d coins (base %d + bonus %d)", player.ID, card.Name, award, pe.BaseCoins, pe.BonusCoins)
-				}
-			} else {
-				// Fallback: 20 base coins even without an evaluation entry.
-				if err := tx.Model(&models.User{}).
-					Where("id = ?", player.UserID).
-					Update("coins", gorm.Expr("coins + ?", 20)).Error; err != nil {
-					return err
-				}
-				debugf("award", "player %d (%s) awarded fallback 20 coins (no evaluation entry)", player.ID, card.Name)
+			s, hasSettlement := settlementByChar[card.Name]
+			bonus := 0
+			if hasSettlement {
+				bonus = s.score() / 2
+				evalContent.Players = append(evalContent.Players, models.PlayerEvalContent{
+					CharacterName: card.Name,
+					Comment:       s.Comment,
+					Score:         s.score(),
+					BaseCoins:     settlementBaseCoins,
+					BonusCoins:    bonus,
+				})
 			}
+			award := settlementBaseCoins + bonus
+			if err := tx.Model(&models.User{}).
+				Where("id = ?", player.UserID).
+				Update("coins", gorm.Expr("coins + ?", award)).Error; err != nil {
+				return err
+			}
+			debugf("award", "player %d (%s) awarded %d coins (base %d + bonus %d)", player.ID, card.Name, award, settlementBaseCoins, bonus)
 
+			// NOTE: 失败没有角色成长：技能成长和 POW 增长只在 win=true 时执行。
 			if win {
-				// NOTE: win=true：应用技能成长（上限99）。
-				if cg, ok := growthByChar[card.Name]; ok && len(cg.SkillChanges) > 0 {
-					skills := card.Skills.Data
-					if skills == nil {
-						skills = make(map[string]int)
-					}
-					for _, sc := range cg.SkillChanges {
-						current := skills[sc.Skill]
-						newVal := current + sc.Delta
-						if newVal > 99 {
-							newVal = 99
-						}
-						skills[sc.Skill] = newVal
-					}
-					card.Skills.Data = skills
-				}
+				applySkillGrowth(card, s.Skills)
 
-				// NOTE: win=true：执行 POW 增长检验。
 				limit := card.Stats.Data.POW % 100
 				if game.RollD100() > limit {
 					point := 5 - card.Stats.Data.POW/100
@@ -151,58 +150,37 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 						card.Stats.Data.POW = clamp(card.Stats.Data.POW+total, 0, 500)
 					}
 				}
-
-				// NOTE: win=true：应用背景演变。
-				if e, ok := evoByIdx[i]; ok {
-					if e.newBackstory != "" {
-						card.Backstory = e.newBackstory
-					}
-				}
 			}
-			// NOTE: win=false：不执行技能成长、POW 增长、背景演变。
 
-			// End-of-session cleanup: clear temporary/indefinite madness,
-			// while preserving permanent madness（win=true/false 均执行）.
+			// NOTE: 清疯狂保留永久性疯狂。
 			ResetMadnessAfterSession(card)
 
-			// 撕卡（win=true/false 均执行）:dead investigators are soft-deleted (IsActive = false).
+			// 撕卡:死亡的调查员失活。
 			if card.WoundState == "dead" || card.Stats.Data.HP <= 0 {
 				card.IsActive = false
 			} else {
-				// 社交关系提升（win=true/false 均执行）：已死亡角色不合并，卡即将被撕。
+				// 已死亡角色不合并关系，卡即将被撕。
 				card.SocialRelations.Data = mergeSessionRelations(card.SocialRelations.Data, player.SessionRelations.Data, relationPromotions[card.Name])
 
-				card.Stats.Data.HP = card.Stats.Data.MaxHP // Heal to full HP at session end for living investigators.
-				card.Stats.Data.MP = card.Stats.Data.MaxMP // Restore MP as well.
+				card.Stats.Data.HP = card.Stats.Data.MaxHP
+				card.Stats.Data.MP = card.Stats.Data.MaxMP
 				if card.Stats.Data.SAN > 0 {
 					card.Stats.Data.SAN = clamp(card.Stats.Data.SAN+game.RollDiceExpr("3D6"), card.Stats.Data.SAN, card.Stats.Data.MaxSAN)
 				}
-				card.WoundState = "none" // Clear wounds for the next session.
+				card.WoundState = "none"
 				card.IsUnconscious = false
 			}
 
-			// Always save the character card to persist all in-game changes.
 			if err := tx.Save(card).Error; err != nil {
 				return err
 			}
 		}
 
-		// Persist evaluation record (upsert by session_id)（win=true/false 均执行）.
-		evalContent := models.EvaluationContent{
-			Summary: evalResult.Summary,
+		// NOTE: 手动结束没有评分，不写评价记录。
+		if len(evalContent.Players) == 0 {
+			return nil
 		}
-		for _, pe := range evalResult.Players {
-			evalContent.Players = append(evalContent.Players, models.PlayerEvalContent{
-				CharacterName: pe.CharacterName,
-				Comment:       pe.Comment,
-				Score:         pe.Score,
-				BaseCoins:     pe.BaseCoins,
-				BonusCoins:    pe.BonusCoins,
-			})
-		}
-		gameEval := models.GameEvaluation{
-			SessionID: session.ID,
-		}
+		gameEval := models.GameEvaluation{SessionID: session.ID}
 		gameEval.Content.Data = evalContent
 		return tx.
 			Where(models.GameEvaluation{SessionID: session.ID}).
@@ -213,7 +191,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 	if txErr != nil {
 		alog.Error("end session transaction failed", "session", session.ID, "err", txErr)
 	}
-	return EndSessionResult{Evaluation: evalResult, Growth: growthResult}, txErr
+	return txErr
 }
 
 func stripMessageImageDataURLTags(messages []models.Message) {

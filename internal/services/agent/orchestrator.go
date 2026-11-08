@@ -87,6 +87,28 @@ func newAgentHandleFromConfig(cfg *models.AgentConfig, temperatureOverride *floa
 	return agentHandle{provider: p, config: cfg, enabled: true}, nil
 }
 
+// loadSingleAgent loads an enabled agentHandle for the given role from the database.
+func loadSingleAgent(role models.AgentRole) (agentHandle, error) {
+	var cfg models.AgentConfig
+	err := models.DB.Preload("ProviderConfig").
+		Where("role = ?", role).
+		First(&cfg).Error
+	if err != nil {
+		return agentHandle{}, fmt.Errorf("agent %q 未配置,请在管理面板配置 LLM provider", role)
+	}
+	// NOTE: 诊断日志——用于确认后台保存的 MaxTokens 是否真的被本次加载读到，
+	// 排查"后台改了值但生成时仍用旧值"这类问题。
+	alog.Debug("load single agent", "role", role, "max_tokens", cfg.MaxTokens, "model", cfg.ModelName)
+	h, err := newAgentHandleFromConfig(&cfg, nil)
+	if err != nil {
+		return agentHandle{}, err
+	}
+	if !h.isEnabled() {
+		return agentHandle{}, fmt.Errorf("agent %q 已禁用,请在管理面板启用", role)
+	}
+	return h, nil
+}
+
 // batchLoadAgents fetches all AgentConfigs in a single DB query.
 // Disabled optional agents are returned as disabled handles; disabled required
 // agents still fail fast so the core pipeline does not run with nil providers.

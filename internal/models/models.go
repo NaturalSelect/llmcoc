@@ -501,16 +501,6 @@ type SessionTurnAction struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-// SessionGrowthMark records a successful skill check during a session.
-// At session end these marks are used to run COC classic growth checks.
-// A skill appears at most once per character per session (duplicates are ignored).
-type SessionGrowthMark struct {
-	ID            uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	SessionID     uint   `gorm:"not null;index" json:"session_id"`
-	CharacterName string `gorm:"not null;size:100" json:"character_name"`
-	Skill         string `gorm:"not null;size:100" json:"skill"`
-}
-
 type SessionPlayer struct {
 	ID              uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	SessionID       uint      `gorm:"not null;index" json:"session_id"`
@@ -758,8 +748,6 @@ const (
 	// NOTE: AgentRoleWriterNSFW 是可选的成人向叙事 Agent；仅当房间开启NSFW且本轮被标记为
 	// 色情内容时才路由过去，可绑定独立的provider/模型，未配置或未启用时自动回落默认Writer。
 	AgentRoleWriterNSFW AgentRole = "writer_nsfw"
-	AgentRoleEvaluator  AgentRole = "evaluator"
-	AgentRoleGrowth     AgentRole = "growth"
 	AgentRoleLawyer     AgentRole = "lawyer"
 	AgentRoleNPC        AgentRole = "npc"
 	// NOTE: AgentRoleNPCNSFW 是可选的成人向NPC互动 Agent；仅当房间开启NSFW且本次act_npc调用被
@@ -831,7 +819,7 @@ type AgentConfig struct {
 	ProviderConfig       *LLMProviderConfig `gorm:"foreignKey:ProviderConfigID" json:"provider_config"`
 }
 
-// GameEvaluation stores the end-of-session LLM evaluation result.
+// GameEvaluation stores the end-of-session settlement the Director filled in through end_game.
 type GameEvaluation struct {
 	ID        uint                         `gorm:"primaryKey;autoIncrement" json:"id"`
 	SessionID uint                         `gorm:"not null;uniqueIndex" json:"session_id"`
@@ -839,10 +827,8 @@ type GameEvaluation struct {
 	CreatedAt time.Time                    `json:"created_at"`
 }
 
-// EvaluationContent mirrors agent.EvaluationResult but lives in models
-// to avoid an import cycle (models ← agent ← models).
+// NOTE: 老记录里残留的 summary 字段读取时会被忽略。
 type EvaluationContent struct {
-	Summary string              `json:"summary"`
 	Players []PlayerEvalContent `json:"players"`
 }
 

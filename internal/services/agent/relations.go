@@ -174,7 +174,7 @@ func RunRelationPromotion(ctx context.Context, session *models.GameSession, mess
 		return nil
 	}
 
-	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
+	handle, err := loadSingleAgent(models.AgentRoleWriter)
 	if err != nil {
 		alog.Warn("relation promotion agent unavailable, skipping", "err", err)
 		return nil
@@ -206,10 +206,10 @@ func RunRelationPromotion(ctx context.Context, session *models.GameSession, mess
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: handle.systemPrompt(relationPromotionPrompt)},
 		{Role: "user", Content: charInfo.String()},
-		{Role: "user", Content: "聊天记录:\n" + buildSessionChatLog(messages)},
+		{Role: "user", Content: "聊天记录:\n" + BuildSessionChatLog(messages)},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, fmt.Sprintf("%v:evaluator", session.ID), msgs)
+	resp, err := handle.provider.JsonChat(ctx, fmt.Sprintf("%v:writer", session.ID), msgs)
 	if err != nil {
 		alog.Error("relation promotion LLM call failed, skipping", "err", err)
 		return nil

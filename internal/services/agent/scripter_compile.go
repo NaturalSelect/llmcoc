@@ -6,7 +6,7 @@
 // nested arrays) is too large/deep for a single native tool_use call to stay
 // reliable — models intermittently drop required top-level fields or
 // serialize a nested object field as a string. Plain JsonChat + RepairJSON
-// mirrors the proven pattern already used by character.go/npc.go/evaluator.go
+// mirrors the proven pattern already used by character.go/npc.go
 // for the same reason; structural/logic issues found afterwards are still
 // patched by the existing repairOneshotDraft loop.
 package agent
@@ -102,7 +102,7 @@ const compilerSchemaTemplate = `{
 // tool calling）：目标结构字段多、content 内嵌7个数组，模型在单次原生工具调用里维持这种
 // 深度嵌套时曾观测到两类失败——必填顶层字段（如name）留空、或把content整体序列化成字符串
 // 而非原生对象。JsonChat 是这个代码库里同类"大段结构化JSON"生成的既有做法（character.go/
-// npc.go/evaluator.go 等都这样做），JSON语法错误交给 RepairJSON（复用 AgentRoleParser
+// npc.go 等都这样做），JSON语法错误交给 RepairJSON（复用 AgentRoleParser
 // 的既有修复循环），内容层面的必填校验（name/reward_concept）失败时则把上次输出连同具体的
 // 修正要求重新发回去，让compiler带着上下文重新生成一次。
 // 第二个返回值是 compiler 从故事文档中提炼的 reward_concept（可能为空），供调用方决定是否

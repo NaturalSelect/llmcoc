@@ -72,12 +72,12 @@ func appearanceRespondTool() scripterTool {
 	}
 }
 
-// RegenerateAppearance uses the Evaluator agent to produce a fresh appearance description
+// RegenerateAppearance uses the Writer agent to produce a fresh appearance description
 // for an existing character. It queries the rulebook via the Lawyer agent (ask_lawyer tool)
 // so the description is grounded in the actual attribute-value meanings, not guesswork.
 // guidance 为玩家提供的可选外貌指导（如发色、疤痕、穿搭风格等），会拼入 prompt 供 LLM 参考。
 func RegenerateAppearance(ctx context.Context, card *models.CharacterCard, guidance string) (string, error) {
-	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
+	handle, err := loadSingleAgent(models.AgentRoleWriter)
 	if err != nil {
 		return "", err
 	}
@@ -178,7 +178,7 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard, guida
 // RegenerateBackstory uses the Writer agent to produce a fresh backstory
 // for an existing character. guidance为可选的玩家补充要求。
 func RegenerateBackstory(ctx context.Context, card *models.CharacterCard, guidance string) (string, error) {
-	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
+	handle, err := loadSingleAgent(models.AgentRoleWriter)
 	if err != nil {
 		return "", err
 	}
@@ -220,7 +220,7 @@ func RegenerateBackstory(ctx context.Context, card *models.CharacterCard, guidan
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, "nosession:evaluator", msgs)
+	resp, err := handle.provider.JsonChat(ctx, "nosession:writer", msgs)
 	if err != nil {
 		return "", err
 	}
@@ -240,7 +240,7 @@ func RegenerateBackstory(ctx context.Context, card *models.CharacterCard, guidan
 // RegenerateTraits uses the Writer agent to produce fresh personality traits
 // for an existing character. guidance为可选的玩家补充要求。
 func RegenerateTraits(ctx context.Context, card *models.CharacterCard, guidance string) (string, error) {
-	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
+	handle, err := loadSingleAgent(models.AgentRoleWriter)
 	if err != nil {
 		return "", err
 	}
@@ -287,7 +287,7 @@ func RegenerateTraits(ctx context.Context, card *models.CharacterCard, guidance 
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, "nosession:evaluator", msgs)
+	resp, err := handle.provider.JsonChat(ctx, "nosession:writer", msgs)
 	if err != nil {
 		return "", err
 	}
@@ -357,7 +357,7 @@ func generateCharacterRespondTool() scripterTool {
 // Lawyer agent (ask_lawyer tool) so the appearance is grounded in the actual
 // attribute-value meanings, not guesswork.
 func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*GeneratedCharacter, error) {
-	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
+	handle, err := loadSingleAgent(models.AgentRoleWriter)
 	if err != nil {
 		return nil, err
 	}
@@ -461,10 +461,10 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 	return &out, nil
 }
 
-// AdjustSkills uses the Evaluator agent to redistribute skill points to fit the
+// AdjustSkills uses the Writer agent to redistribute skill points to fit the
 // character's occupation and background.
 func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, error) {
-	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
+	handle, err := loadSingleAgent(models.AgentRoleWriter)
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +526,7 @@ func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, err
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := handle.provider.JsonChat(ctx, "nosession:evaluator", msgs)
+	resp, err := handle.provider.JsonChat(ctx, "nosession:writer", msgs)
 	if err != nil {
 		return nil, err
 	}

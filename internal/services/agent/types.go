@@ -157,8 +157,9 @@ type ToolCall struct {
 	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
 	// NOTE: Win 使用指针以区分 false（失败）与缺失/null（未填写）。
 	// Director 必须显式填写 true 或 false；缺失时 endGameAction.Execute 拒绝并返回错误。
-	Win     *bool  `json:"win"`     // end_game: 是否胜利(必填,true=胜/false=败)
-	Context string `json:"context"` // narrate: 剧本推进到此处的完整上下文
+	Win        *bool              `json:"win"`        // end_game: 是否胜利(必填,true=胜/false=败)
+	Settlement []PlayerSettlement `json:"settlement"` // end_game: 每位调查员的评分与技能提升(必填,覆盖全部调查员)
+	Context    string             `json:"context"`    // narrate: 剧本推进到此处的完整上下文
 
 	// ── Combat fields ─────────────────────────────────────────────────────────
 	CombatParticipants []CombatParticipantInput `json:"combat_participants"` // start_combat: 参与者列表
@@ -327,41 +328,15 @@ type LawyerResult struct {
 	RuleText string `json:"rule_text"`
 }
 
-// ── Evaluation types ─────────────────────────────────────────────────────────
+// ── Settlement types ─────────────────────────────────────────────────────────
 
-// PlayerEvaluation holds the per-player evaluation returned by the Evaluator agent.
-type PlayerEvaluation struct {
-	CharacterName string `json:"character_name"`
-	Comment       string `json:"comment"`
-	Score         int    `json:"score"`      // 0–100
-	BaseCoins     int    `json:"base_coins"` // 基础奖励(固定 20)
-	BonusCoins    int    `json:"bonus_coins"`
-}
-
-// EvaluationResult is the full output from the Evaluator agent.
-type EvaluationResult struct {
-	Summary string             `json:"summary"`
-	Players []PlayerEvaluation `json:"players"`
-}
-
-// ── Growth types ─────────────────────────────────────────────────────────────
-
-// SkillChange represents a single skill value change for a character.
-type SkillChange struct {
-	Skill string `json:"skill"`
-	Delta int    `json:"delta"` // 正整数,1-10
-}
-
-// CharacterGrowth holds the growth outcome for one character.
-type CharacterGrowth struct {
-	CharacterName     string        `json:"character_name"`
-	SkillChanges      []SkillChange `json:"skill_changes"`
-	GrowthDescription string        `json:"growth_description"`
-}
-
-// GrowthResult is the full output from the Growth agent.
-type GrowthResult struct {
-	Characters []CharacterGrowth `json:"characters"`
+// PlayerSettlement 是 Director 在 end_game 里为一位调查员填写的结算。
+// NOTE: Score 用指针区分「没填」和「0分」，缺失时 validateSettlement 拒绝。
+type PlayerSettlement struct {
+	CharacterName string   `json:"character_name"`
+	Score         *int     `json:"score"`   // 0–100
+	Comment       string   `json:"comment"` // 对该调查员本局表现的点评(可选)
+	Skills        []string `json:"skills"`  // 本局实际运用过的技能名,仅 win=true 时参与成长检定
 }
 
 // ── Combat input types ────────────────────────────────────────────────────────

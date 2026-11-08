@@ -63,6 +63,8 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 7. 上下文压缩只有一级：LLM 总结（`director_summary.go`）。历史单元原样累积，不做确定性剥离或丢弃，因为单元里有已经生效的结算。总结在周期开始前（`MaybeCompact`）和周期中途上下文逼近窗口时（`CompactInFloor`，总结完继续同一个周期，玩家看不到额外的周期起止）触发，把较早的拍连同已有总结合并成最前面的 `<story_so_far>` 单元。切点只落在拍的边界上（两条 kp/ask 消息之间），当前周期的单元永远不被总结。发给 LLM 的房间聊天记录由 `message_render.go` 按 `Kind` 统一渲染，结束结算用 `LoadEndGameMessages`。
 - 战斗/追逐中 DEX 顺序只是建议：`applyCombatAct` / `applyChaseAct` 接受任何本轮未行动且存活的参与者，PC 没有声明仍然不能结算。
 - 玩家可见正文由 Writer 产生，Director 只给指令；规则裁定由 Lawyer 负责；NPC 有独立行动与记忆。
+- 结局结算由 Director 在 `end_game` 里完成，没有独立的 Evaluator / Growth Agent。`settlement` 必填，必须为每位调查员（含死亡者）各写一条 `score`（0–100）和本局用过的技能；`validateSettlement`（`endsession.go`）在任何副作用之前校验，缺人、重名、名字对不上或评分越界都会以 `SYSTEM REJECT` 打回，游戏不会结束。`RunEndSession` 按评分折算金币（基础 20 + 评分/2），`win=true` 时才对 Director 报的技能做成长检定并做 POW 增长；HTTP 手动结束和管理员批量结束传 `nil` 结算，只发基础金币、不写评价记录。结束时不再生成 summary，也没有背景演变。
+- 人物卡生成/重生成、技能调整和结算时的关系提升借用 Writer 角色的 Provider（`loadSingleAgent(AgentRoleWriter)`），不再有单独配置项。
 
 ### Agent 角色配置
 - 角色常量在 `models/models.go`（`AgentRole*`），配置行在表 `agent_configs`，每个角色绑定 Provider + 模型 + 温度 + token 上限 + 思考等级，由后台编辑。

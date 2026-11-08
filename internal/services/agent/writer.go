@@ -3,7 +3,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -182,22 +181,6 @@ func loadLegacyWriterHistory(gctx GameContext) []llm.ChatMessage {
 		return chatMsgsToLLM(session.WriterHistory.Data)
 	}
 	return chatMsgsToLLM(gctx.Session.WriterHistory.Data)
-}
-
-// loadWriterTranscriptHistory 读取AgentTranscript(writer)里已提交的全部历史轮，展平成
-// 供角色成长(RunCharacterEvolution)复用的[]models.ChatMsg；找不到记录时(如老会话结束
-// 前从未触发过Writer)回落旧的GameSession.WriterHistory列，兼容还没迁移过的数据。
-func loadWriterTranscriptHistory(sessionID uint) []models.ChatMsg {
-	var rec models.AgentTranscript
-	if err := models.DB.Where("session_id = ? AND agent_key = ?", sessionID, writerAgentKey).
-		First(&rec).Error; err == nil && rec.Version == contextTranscriptVersion && len(rec.Data.Data.Turns) > 0 {
-		return llmToChatMsgs(flattenTranscriptTurns(rec.Data.Data.Turns))
-	}
-	var session models.GameSession
-	if err := models.DB.Select("id", "writer_history").First(&session, sessionID).Error; err == nil {
-		return session.WriterHistory.Data
-	}
-	return nil
 }
 
 // writerRefusalPrefixes 命中其中任一前缀视为模型拒绝生成正文,与空内容一样需要丢弃重试。
@@ -519,87 +502,4 @@ func writerHistoryRuneCount(history []llm.ChatMessage) int {
 		runeCount += len([]rune(msg.Content))
 	}
 	return runeCount
-}
-
-const characterEvolutionPrompt = `你是无限流故事的角色成长编辑。根据角色原有的个人经历、性格特征,以及本次冒险的叙事经历,更新角色的个人经历,体现冒险对角色的影响和成长。
-
-要求:
-- 保留角色的核心身份,但反映冒险带来的变化
-- 个人经历可以追加新的经历
-- 篇幅与原有内容相近,不要过度冗长,一般仅追加一两句话即可,如果过长请考虑总结
-- 总篇幅在200字以内
-- 仅输出JSON,不要任何额外文字:
-{"new_backstory": "更新后的个人经历(200字以内)"}
-`
-
-// CharacterEvolutionResult is the writer agent output for a single character's evolution.
-type CharacterEvolutionResult struct {
-	NewBackstory string `json:"new_backstory"`
-}
-
-var evolutionExample = func() string {
-	data, err := json.Marshal(CharacterEvolutionResult{})
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}()
-
-// RunCharacterEvolution uses the Writer agent to generate an updated backstory and traits
-// for the given character card, based on the session's WriterHistory.
-// The full WriterHistory is reused as conversation context (all messages are already cached
-// by the provider from the game session). Only the final evolution request is a new message.
-// Returns an error if the Writer agent is not configured or the LLM call fails.
-func RunCharacterEvolution(ctx context.Context, card *models.CharacterCard, writerHistory []models.ChatMsg) (CharacterEvolutionResult, error) {
-	if len(writerHistory) == 0 {
-		return CharacterEvolutionResult{NewBackstory: card.Backstory}, nil
-	}
-
-	handle, err := loadSingleAgent(models.AgentRoleEvaluator)
-	if err != nil {
-		return CharacterEvolutionResult{}, fmt.Errorf("evaluator agent 未配置: %w", err)
-	}
-
-	// Copy WriterHistory as-is — all messages hit the provider's prompt cache.
-	msgs := make([]llm.ChatMessage, 0, len(writerHistory)+2)
-	msgs = append(msgs, llm.ChatMessage{
-		Role:    "system",
-		Content: handle.systemPrompt(characterEvolutionPrompt),
-	})
-	for _, m := range writerHistory {
-		msgs = append(msgs, llm.ChatMessage{Role: m.Role, Content: m.Content})
-	}
-	// Append the evolution request as the only new (non-cached) message.
-	msgs = append(msgs, llm.ChatMessage{
-		Role: "user",
-		Content: fmt.Sprintf(
-			"根据以上叙事,更新角色【%s】的背景故事(100字)。\n原背景故事:%s\n\n仅输出JSON:{\"new_backstory\": \"...\"}",
-			card.Name, card.Backstory,
-		),
-	})
-
-	resp, err := handle.provider.Chat(ctx, handle.cacheKey(sessionIDFromContextValue(ctx)), msgs)
-	if err != nil {
-		return CharacterEvolutionResult{}, fmt.Errorf("character evolution LLM error: %w", err)
-	}
-
-	var result CharacterEvolutionResult
-	if err := json.Unmarshal([]byte(resp), &result); err != nil {
-		for i := 0; i < 30; i++ {
-			resp, err = RepairJSON(ctx, resp, err, evolutionExample)
-			if err == nil {
-				err = json.Unmarshal([]byte(resp), &result)
-				if err == nil {
-					break
-				}
-			}
-			alog.Warn("character evolution JSON parse retry", "character", card.Name, "attempt", i+1, "err", err)
-		}
-		if err != nil {
-			alog.Error("character evolution JSON parse failed", "character", card.Name, "err", err)
-			return CharacterEvolutionResult{}, fmt.Errorf("character evolution JSON parse error: %w", err)
-		}
-	}
-
-	return result, nil
 }

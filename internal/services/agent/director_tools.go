@@ -390,15 +390,31 @@ func endGameTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolEndGame),
 			Description: `结束本次冒险(整个游戏会话，不可撤回，而非仅结束本轮)。只有当<endings>中至少一个结局的Trigger已经确认满足时才能调用；未满足时调用是硬错误。win 必须明确给出 true(触发[结局]/胜利)或 false(触发[失败结局]/团灭等)，end_summary 必须写明具体触发了哪个结局、其Trigger条件是如何被满足的。
+settlement 是本局的结算，必须为每位调查员(包括已死亡或疯狂的)各写一条，缺人、重名或名字对不上都会被拒绝，游戏不会结束。每条包含：character_name(角色卡真实姓名)；score(0-100整数，综合角色扮演质量、探索贡献、线索发现、生存情况；金币奖励由后端按score折算)；comment(对该调查员本局表现的点评，50字以内，可省略)；skills(该调查员本局实际运用过的技能名，无论成败，只能写角色卡上已有的技能，不要写克苏鲁神话和信用评级；只有win=true时才会据此做技能成长检定，win=false时可留空)。
 【批次硬规则】end_game可以与write/update_session_memory/update_*/manage_*/record_monster/advance_time等收尾状态更新同批次；但不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/generate_npc_name/act_npc同批——这些工具的结果必须先在更早的一轮读到，才能在之后的一轮调用end_game。
-调用示例：{"win":true,"end_summary":"触发结局[封印成功]：调查员完成封印仪式，邪神无法降临，胜利结束冒险"}`,
+调用示例：{"win":true,"end_summary":"触发结局[封印成功]：调查员完成封印仪式，邪神无法降临，胜利结束冒险","settlement":[{"character_name":"约翰","score":85,"comment":"冷静地组织了封印仪式","skills":["侦查","图书馆使用"]},{"character_name":"玛丽","score":70,"skills":["心理学"]}]}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"win": {"type": "boolean", "description": "是否胜利结束"},
-					"end_summary": {"type": "string", "description": "结局总结(必填)：须说明触发的具体结局名称及其Trigger条件如何被满足"}
+					"end_summary": {"type": "string", "description": "结局总结(必填)：须说明触发的具体结局名称及其Trigger条件如何被满足"},
+					"settlement": {
+						"type": "array",
+						"minItems": 1,
+						"items": {
+							"type": "object",
+							"properties": {
+								"character_name": {"type": "string", "description": "调查员角色卡上的真实姓名"},
+								"score": {"type": "integer", "minimum": 0, "maximum": 100, "description": "本局表现评分0-100"},
+								"comment": {"type": "string", "description": "对该调查员本局表现的点评(50字以内,可省略)"},
+								"skills": {"type": "array", "items": {"type": "string"}, "description": "本局实际运用过的技能名(仅win=true时用于技能成长,win=false可留空)"}
+							},
+							"required": ["character_name", "score"]
+						},
+						"description": "每位调查员(含已死亡或疯狂者)的结算,一人一条"
+					}
 				},
-				"required": ["win", "end_summary"]
+				"required": ["win", "end_summary", "settlement"]
 			}`),
 		},
 	}

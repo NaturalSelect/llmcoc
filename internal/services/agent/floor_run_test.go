@@ -549,7 +549,10 @@ func TestFloor_EndGameMarksEnded(t *testing.T) {
 	const sid = 212
 	newFloorSession(t, sid)
 	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
-		return toolRound(floorCall("e", "end_game", map[string]any{"reply": "故事落幕。", "win": true, "end_summary": "触发了结局"})), nil
+		return toolRound(floorCall("e", "end_game", map[string]any{
+			"reply": "故事落幕。", "win": true, "end_summary": "触发了结局",
+			"settlement": []map[string]any{{"character_name": "甲", "score": 80, "skills": []string{"侦查"}}},
+		})), nil
 	}}
 	setFloorHandles(t, sid, prov, false)
 

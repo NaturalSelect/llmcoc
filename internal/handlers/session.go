@@ -1307,29 +1307,21 @@ func EndSession(c *gin.Context) {
 	models.DB.Model(&session).Update("status", models.SessionStatusEnded)
 	publishSessionChanged(session.ID, models.SessionStatusEnded, "end")
 
-	// Load recent messages as context for evaluator and growth agents
+	// Load recent messages as context for relation promotion
 	messages := agent.LoadEndGameMessages(uint(sessionID))
 	stripMessageImageDataURLTags(messages)
 
-	// NOTE: HTTP 手动结束由后端固定传 win=false（失败无角色成长），不解析客户端胜负。
-	result, txErr := agent.RunEndSession(context.Background(), &session, messages, false)
+	// NOTE: HTTP 手动结束没有 Director 填写的结算，固定传 win=false 且不带评分，只发基础金币。
+	txErr := agent.RunEndSession(context.Background(), &session, messages, false, nil)
 
 	removeSessionLock(session.ID)
 
 	if txErr != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"message":    "游戏已结束(奖励结算失败,请联系管理员)",
-			"evaluation": result.Evaluation,
-			"growth":     result.Growth,
-		})
+		c.JSON(http.StatusOK, gin.H{"message": "游戏已结束(奖励结算失败,请联系管理员)"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":    "游戏已结束",
-		"evaluation": result.Evaluation,
-		"growth":     result.Growth,
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "游戏已结束"})
 }
 
 // AdminEndAllSessions 一键强制结束所有运行中(lobby/playing)的房间，供后端升级后清理与
@@ -1364,7 +1356,7 @@ func AdminEndAllSessions(c *gin.Context) {
 		messages := agent.LoadEndGameMessages(session.ID)
 		stripMessageImageDataURLTags(messages)
 
-		_, txErr := agent.RunEndSession(context.Background(), session, messages, false)
+		txErr := agent.RunEndSession(context.Background(), session, messages, false, nil)
 		removeSessionLock(session.ID)
 
 		results = append(results, endAllResult{SessionID: session.ID, Name: session.Name, Settled: txErr == nil})
