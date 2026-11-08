@@ -142,7 +142,7 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 	}
 	aspect := normalizeImageAspect(request.Aspect)
 	// NOTE: 被标记 NSFW 的请求本身就是成人向画面,分级政策和负面标签必须按请求而非仅按房间开关渲染。
-	allowNSFW := request.NSFW || gctx.Session.EnableNSFW
+	allowNSFW := request.NSFW && gctx.Session.EnableNSFW
 	debugf("Painter", "session=%d start prompt_len=%d aspect=%s nsfw=%v prompt=%q", gctx.Session.ID, len([]rune(prompt)), aspect, request.NSFW, prompt)
 	opts := llm.ImageOptions{Aspect: llm.ImageAspect(aspect)}
 	if handle.config != nil && handle.config.DiffusionMode {
