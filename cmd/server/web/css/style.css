@@ -472,6 +472,31 @@ select.inp option {
     font-size: 0.6875rem;
 }
 
+.ask-card-lock {
+    margin-bottom: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--alert-error-border);
+    border-radius: var(--radius);
+    background: var(--alert-error-bg);
+    color: var(--alert-error-text);
+    font-size: 0.6875rem;
+}
+
+.ask-card.is-locked {
+    border-top-color: var(--red-border);
+}
+
+.ask-card.is-locked .ask-options,
+.ask-card.is-locked .game-chat-input {
+    opacity: 0.55;
+}
+
+.ask-option:disabled,
+.ask-card-tool:disabled {
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 .ask-options {
     display: flex;
     flex-direction: column;
@@ -1274,28 +1299,6 @@ select.inp option {
     background: var(--text-faint);
 }
 
-/* ── Draggable Panel (mobile floating buttons) ───────────── */
-.drag-panel {
-    right: 16px;
-    bottom: 24px;
-    touch-action: none;
-    user-select: none;
-    -webkit-user-select: none;
-}
-
-.drag-panel.dragging {
-    opacity: 0.92;
-    z-index: 60;
-}
-
-.drag-panel.drag-idle {
-    transition: all 0.3s ease-out;
-}
-
-.drag-btn {
-    pointer-events: auto;
-}
-
 /* ── Toast ───────────────────────────────────────────────── */
 .toast-container {
     position: fixed;
@@ -1418,14 +1421,6 @@ select.inp option {
 }
 
 /* ── 响应式 ──────────────────────────────────────────────── */
-/* Desktop: non-draggable, keep fixed position */
-@media (min-width: 768px) {
-    .drag-panel {
-        right: 16px !important;
-        bottom: 24px !important;
-    }
-}
-
 /* NOTE: 320-375px 超窄屏幕下输入区最小可点击高度保障 */
 @media (max-width: 375px) {
     .game-chat-input {

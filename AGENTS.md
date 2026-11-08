@@ -37,7 +37,7 @@ go test -run TestXxx ./internal/handlers  # 单个测试
 - `cmd/server/main.go` 完成：加载配置 → `models.InitDB` → 播种 → 加载三本规则资料并算哈希 → 启动统计持久化/图片清理 → 注册路由 → 优雅退出时保存 Lawyer 缓存。
 - 前端是 `cmd/server/web` 下的静态文件，通过 `//go:embed web` 打进二进制，没有独立工程；改前端后需要重启（或重新 build）才生效。`web/js/vendor/` 是手工放入的第三方库。未命中的路由由 `NoRoute` 回落到 `index.html`。
 - gzip 中间件按路径正则排除了流式接口：房间 WebSocket `/api/sessions/:id/ws`，以及 SSE 的 `/api/scenarios/generate`、`/api/scenarios/compile-story`。`/chat`、`/kp-turn`、`/kp-stop` 已改为立即返回 202 的普通 JSON 接口，不再在排除列表里。新增流式接口必须同步加进 `main.go` 的排除列表。HTTP `WriteTimeout` 为 30 分钟，是为了长时间 AI 生成。
-- 房间所有进展（新消息、writer 流式文字、点名、等待进度、周期起止、房间状态变化）都经 `GET /api/sessions/:id/ws` 推送，协议见 `docs/realtime-protocol.md`。游戏页没有任何轮询：`web/js/game.js` 负责连接、重连退避、命令和模板辅助，状态归约全在 `web/js/room_state.js`（纯逻辑，不依赖 DOM、Alpine 和网络）。`room_state.js` 的测试在 `cmd/server/webtest/`，必须放在 embed 目录之外，否则会被打进二进制。游戏页已在浏览器外用假的 WebSocket 和 fetch 跑过，但还没有在真实浏览器里人工验证。
+- 房间所有进展（新消息、writer 流式文字、点名、等待进度、周期起止、房间状态变化）都经 `GET /api/sessions/:id/ws` 推送，协议见 `docs/realtime-protocol.md`。游戏页没有任何轮询：`web/js/game.js` 负责连接、重连退避、命令和模板辅助，状态归约全在 `web/js/room_state.js`（纯逻辑，不依赖 DOM、Alpine 和网络）。游戏页没有常驻输入框：玩家只在被点名时看到问题卡（推荐行动可多选，外加自由输入，提交后收成一行摘要，断线时置灰但保留内容），房间状态和房主的继续/打断按钮在底部状态栏。两个模块的测试都在 `cmd/server/webtest/`（`game.test.js` 用假的 WebSocket、fetch 和定时器在 vm 里加载 `game.js`），必须放在 embed 目录之外，否则会被打进二进制。游戏页的模板和样式还没有在真实浏览器里人工验证。
 - 路由全部在 `main.go` 里手写；`BanCheck` 中间件只挂在部分分组上，新增分组时注意是否需要。
 
 ### 一段 KP 叙事的数据流

@@ -378,11 +378,27 @@ window.COC = window.COC || {};
             return false;
         },
 
-        // 点名问题卡有两种形态：'card' 作答中，'done' 已提交后收成一行摘要；不在发言时返回空串。
-        askView() {
+        // NOTE: 只看「被点名且 KP 没在发言」，不看连接：断线时卡片和已写的内容保留，只是提交被 askLocked() 挡住。
+        _askOpen() {
             const room = this.room;
-            if (!room || !RS.gates(room).canSpeak) return '';
-            return room.me.submitted && !this.askEditing ? 'done' : 'card';
+            return !!room && room.status === 'playing' && !room.floor.running && !!room.spotlight.askedMe;
+        },
+
+        // 点名问题卡有两种形态：'card' 作答中，'done' 已提交后收成一行摘要；没有被点名时返回空串。
+        askView() {
+            if (!this._askOpen()) return '';
+            return this.room.me.submitted && !this.askEditing ? 'done' : 'card';
+        },
+
+        askLocked() {
+            return this._askOpen() && !this.gates().canSpeak;
+        },
+
+        askLockNote() {
+            if (!this.askLocked()) return '';
+            return this.room.conn === 'reconnecting'
+                ? '连接中断，已保留你写的内容，恢复后即可提交'
+                : '正在同步房间状态，稍后即可提交';
         },
 
         askTag() {
@@ -392,8 +408,8 @@ window.COC = window.COC || {};
 
         // 推荐行动取最近一条 KP 回复里的选项；之后出现过玩家行动就不再推荐。
         askOptions() {
+            if (!this._askOpen()) return [];
             const room = this.room;
-            if (!room || !RS.gates(room).canSpeak) return [];
             for (let i = room.messages.length - 1; i >= 0; i--) {
                 const msg = room.messages[i];
                 if (msg.kind === 'player') return [];
@@ -410,7 +426,7 @@ window.COC = window.COC || {};
         },
 
         askToggle(option) {
-            if (!this.gates().canSpeak) return;
+            if (this.askView() !== 'card' || this.askLocked()) return;
             const i = this.askPick.indexOf(option);
             if (i >= 0) this.askPick.splice(i, 1);
             else this.askPick.push(option);
@@ -430,7 +446,7 @@ window.COC = window.COC || {};
         // 把已提交的内容放回输入框，再次提交时服务端会覆盖之前的内容。
         editSubmitted() {
             const room = this.room;
-            if (!room || !RS.gates(room).canSpeak) return;
+            if (!this._askOpen()) return;
             this.askEditing = true;
             this.askPick = [];
             this.chatInput = room.me.draft || '';
@@ -682,124 +698,3 @@ window.COC = window.COC || {};
         },
     };
 })();
-
-// ═══════════════════════════════════════════════════════════════
-// DraggablePanel — Alpine component for mobile drag
-// ═══════════════════════════════════════════════════════════════
-window.draggablePanel = function() {
-    const STORAGE_KEY = 'coc_drag_panel_pos';
-    const DRAG_THRESHOLD = 8;
-
-    function loadPosition() {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const p = JSON.parse(saved);
-                if (typeof p.right === 'number' && typeof p.bottom === 'number') {
-                    return p;
-                }
-            }
-        } catch (_) {}
-        return { right: 16, bottom: 24 };
-    }
-
-    function savePosition(pos) {
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pos)); } catch (_) {}
-    }
-
-    function clamp(val, min, max) {
-        return Math.max(min, Math.min(max, val));
-    }
-
-    return {
-        pos: loadPosition(),
-        isDragging: false,
-        wasDragged: false,
-        dragStartX: 0,
-        dragStartY: 0,
-        dragStartRight: 0,
-        dragStartBottom: 0,
-        movedDistance: 0,
-
-        initDrag(el) {
-            this.pos = loadPosition();
-        },
-
-        onTouchStart(e) {
-            if (window.innerWidth >= 768) return;
-            if (!e.touches || !e.touches.length) return;
-            const t = e.touches[0];
-            this.dragStartX = t.clientX;
-            this.dragStartY = t.clientY;
-            this.dragStartRight = this.pos.right;
-            this.dragStartBottom = this.pos.bottom;
-            this.isDragging = true;
-            this.wasDragged = false;
-            this.movedDistance = 0;
-        },
-
-        onTouchMove(e) {
-            if (!this.isDragging || !e.touches || !e.touches.length) return;
-            const t = e.touches[0];
-            const dx = this.dragStartX - t.clientX;
-            const dy = this.dragStartY - t.clientY;
-            this.movedDistance = Math.abs(dx) + Math.abs(dy);
-            if (this.movedDistance > DRAG_THRESHOLD) {
-                this.wasDragged = true;
-            }
-            const vw = window.innerWidth;
-            const vh = window.innerHeight;
-            const panelW = 60;
-            const panelH = 110;
-            this.pos = {
-                right: clamp(this.dragStartRight + dx, 0, vw - panelW),
-                bottom: clamp(this.dragStartBottom + dy, 0, vh - panelH),
-            };
-        },
-
-        onTouchEnd(e) {
-            this.isDragging = false;
-            savePosition(this.pos);
-            const self = this;
-            setTimeout(function() { self.wasDragged = false; }, 150);
-        },
-
-        onMouseDown(e) {
-            if (window.innerWidth >= 768) return;
-            this.dragStartX = e.clientX;
-            this.dragStartY = e.clientY;
-            this.dragStartRight = this.pos.right;
-            this.dragStartBottom = this.pos.bottom;
-            this.isDragging = true;
-            this.wasDragged = false;
-            this.movedDistance = 0;
-
-            const self = this;
-            function onMove(ev) {
-                const dx = self.dragStartX - ev.clientX;
-                const dy = self.dragStartY - ev.clientY;
-                self.movedDistance = Math.abs(dx) + Math.abs(dy);
-                if (self.movedDistance > DRAG_THRESHOLD) {
-                    self.wasDragged = true;
-                }
-                const vw = window.innerWidth;
-                const vh = window.innerHeight;
-                const panelW = 60;
-                const panelH = 110;
-                self.pos = {
-                    right: clamp(self.dragStartRight + dx, 0, vw - panelW),
-                    bottom: clamp(self.dragStartBottom + dy, 0, vh - panelH),
-                };
-            }
-            function onUp() {
-                self.isDragging = false;
-                savePosition(self.pos);
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-                setTimeout(function() { self.wasDragged = false; }, 150);
-            }
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
-        },
-    };
-};

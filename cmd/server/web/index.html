@@ -533,6 +533,8 @@
 
                                     <!-- 桌面端操作按钮（sm+）——原有操作按钮，响应式隐藏 -->
                                     <div class="hidden sm:flex items-center gap-1.5 shrink-0">
+                                        <button @click="modal='investigatorList'"
+                                            class="btn btn-ghost text-xs">调查员</button>
                                         <button @click="openCurrentSessionCharDetail()"
                                             class="btn btn-ghost text-xs">我的角色</button>
                                         <button x-show="currentSession?.status==='lobby' && isInSession(currentSession)"
@@ -566,6 +568,9 @@
                                             x-transition:leave-start="opacity-100 translate-y-0"
                                             x-transition:leave-end="opacity-0 -translate-y-1"
                                             class="absolute right-0 top-full mt-1 min-w-[6.5rem] py-1 rounded border border-base bg-[#1a1814] shadow-xl z-50">
+                                            <button role="menuitem"
+                                                @click="moreMenuOpen = false; modal='investigatorList'"
+                                                class="game-menu-item">调查员</button>
                                             <button role="menuitem"
                                                 @click="moreMenuOpen = false; openCurrentSessionCharDetail()"
                                                 class="game-menu-item">我的角色</button>
@@ -780,13 +785,15 @@
 
                             <!-- 点名问题卡：被点名且还没提交时占据输入区，其余时间没有输入框 -->
                             <template x-if="askView() === 'card'">
-                                <div class="ask-card" x-init="$nextTick(() => scrollChat(true))">
+                                <div class="ask-card" :class="askLocked() ? 'is-locked' : ''"
+                                    x-init="$nextTick(() => scrollChat(true))">
                                     <div class="ask-card-tag">
                                         <span>👉</span>
                                         <span x-text="askTag()"></span>
                                     </div>
                                     <p class="ask-card-question"
                                         x-text="room.spotlight.question || '请写下你的行动'"></p>
+                                    <p class="ask-card-lock" x-show="askLocked()" x-text="askLockNote()"></p>
                                     <template x-if="askOptions().length > 0">
                                         <div>
                                             <p class="ask-card-note">推荐行动，可多选，也可以只写自己的</p>
@@ -795,6 +802,7 @@
                                                     <button type="button" class="ask-option"
                                                         :class="askPicked(opt) ? 'is-on' : ''"
                                                         :aria-pressed="askPicked(opt) ? 'true' : 'false'"
+                                                        :disabled="askLocked()"
                                                         @click="askToggle(opt)">
                                                         <span class="ask-option-mark">✓</span>
                                                         <span x-text="opt"></span>
@@ -805,11 +813,12 @@
                                     </template>
                                     <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()" id="askInputBox"
                                         :placeholder="askOptions().length ? '补充或自己写下行动 (Ctrl+Enter 提交)' : '以角色身份写下你的行动或台词，如：我推开门，「有人在吗？」 (Ctrl+Enter 提交)'"
-                                        rows="2"
+                                        rows="2" :disabled="askLocked()"
                                         class="inp game-chat-input w-full resize-none bg-chat focus:border-amber-700 transition-colors"
                                         style="line-height:1.5"></textarea>
                                     <div class="ask-card-foot">
                                         <button type="button" class="ask-card-tool" @click="insertDialogueQuotes()"
+                                            :disabled="askLocked()"
                                             title="插入台词括号；选中文字时会直接包住选中内容">「」台词</button>
                                         <button type="button" class="ask-card-tool"
                                             x-show="askEditing && room?.me.submitted" @click="cancelEdit()">取消修改</button>
@@ -817,7 +826,7 @@
                                             :class="askCharCount() > 2000 ? 'text-red-400' : ''"
                                             x-show="askCharCount() > 0" x-text="askCharCount() + '/2000'"></span>
                                         <button type="button" @click="sendChat()"
-                                            :disabled="!askAnswer() || askCharCount() > 2000"
+                                            :disabled="askLocked() || !askAnswer() || askCharCount() > 2000"
                                             class="btn btn-amber px-5 min-h-[36px]"
                                             x-text="room?.me.submitted ? '重新提交' : '提交'"></button>
                                     </div>
@@ -853,25 +862,6 @@
                         </div>
                     </div>
 
-                    <!-- 玩家侧边栏（移除，改为悬浮模态框） -->
-                </div>
-            </div>
-
-            <!-- Floating Buttons (draggable on mobile) -->
-            <div x-show="page === 'game' && !!currentSession" x-data="draggablePanel()" x-init="initDrag($el)"
-                @touchstart.passive="onTouchStart($event)" @touchmove.prevent="onTouchMove($event)"
-                @touchend="onTouchEnd($event)" @mousedown="onMouseDown($event)" class="drag-panel fixed z-40"
-                :class="isDragging ? 'dragging' : 'drag-idle'"
-                :style="'right:' + pos.right + 'px; bottom:' + pos.bottom + 'px; transition:' + (isDragging ? 'none' : 'all 0.3s ease-out')">
-                <div class="flex flex-col gap-2 items-end">
-                    <button @click="if(!wasDragged) modal='investigatorList'"
-                        class="btn btn-amber shadow-lg rounded-full w-11 h-11 flex items-center justify-center text-lg drag-btn">
-                        👥
-                    </button>
-                    <button @click="if(!wasDragged) openCurrentSessionCharDetail()"
-                        class="btn btn-amber shadow-lg rounded-full w-11 h-11 flex items-center justify-center text-lg drag-btn">
-                        📜
-                    </button>
                 </div>
             </div>
 
