@@ -6,10 +6,10 @@ const props = withDefaults(
     label: string
     value: number
     max: number
-    tone?: 'seal' | 'ledger' | 'moss'
+    tone?: 'hp' | 'san' | 'mp'
     flash?: boolean
   }>(),
-  { tone: 'seal', flash: false },
+  { tone: 'hp', flash: false },
 )
 
 // NOTE: 与旧前端 statPercent 一致：max 非正返回 0，结果夹在 0 到 100 之间
@@ -21,10 +21,10 @@ const percent = computed(() => {
 </script>
 
 <template>
-  <div class="flex items-center gap-2 font-type text-xs" :class="flash ? 'stat-flash' : ''">
-    <span class="w-8 shrink-0 text-ink-soft">{{ label }}</span>
+  <div class="flex items-center gap-2 rounded-md text-xs" :class="flash ? 'stat-flash' : ''">
+    <span class="w-8 shrink-0 text-fg-muted">{{ label }}</span>
     <div
-      class="h-1.5 flex-1 overflow-hidden rounded-full bg-paper-edge"
+      class="h-2 flex-1 overflow-hidden rounded-full bg-surface-3"
       role="progressbar"
       :aria-valuenow="value"
       :aria-valuemax="max"
@@ -32,11 +32,11 @@ const percent = computed(() => {
     >
       <div
         class="h-full rounded-full transition-all"
-        :class="{ 'bg-seal': tone === 'seal', 'bg-ledger': tone === 'ledger', 'bg-moss': tone === 'moss' }"
+        :class="{ 'bg-hp': tone === 'hp', 'bg-san': tone === 'san', 'bg-mp': tone === 'mp' }"
         :style="{ width: percent + '%' }"
       />
     </div>
-    <span class="w-14 shrink-0 text-right text-ink">{{ value }}/{{ max }}</span>
+    <span class="w-14 shrink-0 text-right tabular-nums text-fg">{{ value }}/{{ max }}</span>
   </div>
 </template>
 
@@ -47,7 +47,7 @@ const percent = computed(() => {
 @keyframes statFlash {
   0%,
   60% {
-    background: color-mix(in srgb, var(--color-seal) 25%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 25%, transparent);
   }
   100% {
     background: transparent;

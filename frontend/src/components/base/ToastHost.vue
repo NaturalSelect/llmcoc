@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { CircleAlert, CircleCheck } from '@lucide/vue'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
@@ -11,11 +12,13 @@ const ui = useUiStore()
         <div
           v-for="t in ui.toasts"
           :key="t.id"
-          class="pointer-events-auto max-w-sm rounded-sm border px-4 py-2 font-serif text-sm shadow-lg"
-          :class="t.type === 'error' ? 'border-seal bg-paper text-seal' : 'border-moss bg-paper text-moss'"
+          class="pointer-events-auto flex max-w-sm items-start gap-2 rounded-xl border bg-surface-2 px-4 py-3 text-sm text-fg shadow-panel"
+          :class="t.type === 'error' ? 'border-danger/50' : 'border-success/50'"
           role="status"
         >
-          {{ t.message }}
+          <CircleAlert v-if="t.type === 'error'" :size="16" :stroke-width="1.75" class="mt-0.5 shrink-0 text-danger" />
+          <CircleCheck v-else :size="16" :stroke-width="1.75" class="mt-0.5 shrink-0 text-success" />
+          <span>{{ t.message }}</span>
         </div>
       </TransitionGroup>
     </div>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { RefreshCw } from '@lucide/vue'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import { regenTitle, type RegenSpec } from './characterLogic'
 
 defineProps<{ spec: RegenSpec; text: string; cost: number; coins: number; busy: boolean }>()
@@ -9,20 +11,18 @@ const emit = defineEmits<{ regen: [] }>()
 </script>
 
 <template>
-  <section class="mb-3">
-    <div class="mb-1 flex items-center gap-2">
-      <h3 class="font-type text-xs font-bold uppercase tracking-wider text-ink-soft">{{ spec.heading }}</h3>
-      <BaseButton
-        class="px-2! py-0.5! text-xs!"
-        :disabled="busy || coins < cost"
-        :title="regenTitle(spec, cost, coins)"
-        @click="emit('regen')"
-      >
+  <section class="mb-5">
+    <div class="mb-2 flex items-center justify-between gap-2">
+      <SectionHeading>{{ spec.heading }}</SectionHeading>
+      <BaseButton size="sm" variant="secondary" :loading="busy" :disabled="busy || coins < cost" :title="regenTitle(spec, cost, coins)" @click="emit('regen')">
         <template v-if="busy">生成中…</template>
-        <template v-else>重新生成 -{{ cost }}</template>
+        <template v-else>
+          <RefreshCw :size="16" :stroke-width="1.75" />
+          重新生成 -{{ cost }}
+        </template>
       </BaseButton>
     </div>
-    <p class="text-sm leading-relaxed text-ink-soft">{{ text }}</p>
-    <BaseInput v-model="guidance" maxlength="200" class="mt-1.5 text-xs!" :placeholder="spec.placeholder" :aria-label="`${spec.heading}指导`" />
+    <p class="font-prose text-prose text-fg">{{ text }}</p>
+    <BaseInput v-model="guidance" maxlength="200" class="mt-3" :placeholder="spec.placeholder" :aria-label="`${spec.heading}指导`" />
   </section>
 </template>

@@ -1,6 +1,6 @@
 {
   "extends": "@vue/tsconfig/tsconfig.json",
-  "include": ["vite.config.ts"],
+  "include": ["vite.config.ts", "src/styles/contrast.test.ts", "src/styles/designRules.test.ts"],
   "compilerOptions": {
     "lib": ["ES2023"],
     "types": ["node"]

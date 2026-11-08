@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Trash2 } from '@lucide/vue'
 import { onMounted, ref } from 'vue'
 import type { InviteCode } from '@/api/adminTypesContent'
 import { api } from '@/api/client'
@@ -7,7 +8,9 @@ import { errorMessage, usePagedList } from '@/components/admin/scenarios/pagedLi
 import { useToastRun } from '@/components/admin/scenarios/useToastRun'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
+import EmptyState from '@/components/base/EmptyState.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import StampBadge from '@/components/base/StampBadge.vue'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
@@ -53,34 +56,35 @@ async function remove(id: number) {
       @refresh="run(() => list.load(list.page.value))"
     >
       <template #before>
-        <BaseInput
-          v-model.number="count"
-          type="number"
-          min="1"
-          max="100"
-          placeholder="数量"
-          aria-label="生成数量"
-          class="!w-20 !px-2 !py-1 text-center !text-xs"
-        />
-        <BaseButton class="!px-2.5 !py-1 !text-xs" @click="generate">批量生成</BaseButton>
+        <div class="w-20">
+          <BaseInput
+            v-model.number="count"
+            type="number"
+            min="1"
+            max="100"
+            placeholder="数量"
+            aria-label="生成数量"
+            class="text-center tabular-nums"
+          />
+        </div>
+        <BaseButton size="sm" @click="generate">批量生成</BaseButton>
       </template>
     </PagerHeader>
 
-    <p v-if="list.items.value.length === 0" class="text-xs text-ink-faint">暂无邀请码</p>
-    <ul class="space-y-2">
-      <li
-        v-for="ic in list.items.value"
-        :key="ic.id"
-        class="flex items-center justify-between border-b border-paper-edge pb-2 text-xs"
-      >
-        <div class="flex items-center gap-3">
-          <code class="font-type tracking-wider text-ink">{{ ic.code }}</code>
-          <span v-if="!ic.used_by" class="text-moss">未使用</span>
-          <span v-else class="text-ink-faint">已使用 · {{ ic.used_user?.username || '用户#' + ic.used_by }}</span>
+    <EmptyState v-if="list.items.value.length === 0">暂无邀请码</EmptyState>
+    <ul v-else class="space-y-2">
+      <li v-for="ic in list.items.value" :key="ic.id" class="flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2">
+        <div class="flex min-w-0 flex-wrap items-center gap-3">
+          <code class="font-mono text-sm tracking-wider text-fg">{{ ic.code }}</code>
+          <StampBadge v-if="!ic.used_by" tone="moss">未使用</StampBadge>
+          <span v-else class="text-xs text-fg-subtle">已使用 · {{ ic.used_user?.username || '用户#' + ic.used_by }}</span>
         </div>
-        <div class="flex items-center gap-2">
-          <span class="text-ink-faint">{{ new Date(ic.created_at).toLocaleDateString() }}</span>
-          <button v-if="!ic.used_by" type="button" class="text-seal transition hover:underline" @click="remove(ic.id)">删除</button>
+        <div class="flex shrink-0 items-center gap-3">
+          <span class="text-xs tabular-nums text-fg-subtle">{{ new Date(ic.created_at).toLocaleDateString() }}</span>
+          <BaseButton v-if="!ic.used_by" variant="danger" size="sm" @click="remove(ic.id)">
+            <Trash2 :size="16" :stroke-width="1.75" />
+            删除
+          </BaseButton>
         </div>
       </li>
     </ul>

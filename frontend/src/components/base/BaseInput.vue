@@ -14,6 +14,6 @@ const [model, modifiers] = defineModel<string | number | null | undefined>({
 <template>
   <input
     v-model="model"
-    class="w-full rounded-sm border border-paper-edge bg-paper-deep/60 px-3 py-2 font-serif text-ink outline-none transition placeholder:text-ink-faint focus:border-seal disabled:cursor-not-allowed disabled:opacity-60"
+    class="h-10 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-fg outline-none transition placeholder:text-fg-subtle focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
   />
 </template>

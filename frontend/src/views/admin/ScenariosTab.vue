@@ -80,7 +80,7 @@ async function clearAll() {
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+  <div class="space-y-5">
     <ScenarioListPanel
       :items="list.items.value"
       :page="list.page.value"

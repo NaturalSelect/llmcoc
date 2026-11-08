@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { reactive, ref, useId, watch } from 'vue'
+import { Check } from '@lucide/vue'
+import { computed, reactive, ref, useId, watch } from 'vue'
 import { api } from '@/api/client'
 import type { Scenario } from '@/api/scenarioTypes'
 import type { CreateSessionForm, LobbySession } from '@/api/sessionTypes'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
+import FormField from '@/components/base/FormField.vue'
+import PaginationBar from '@/components/base/PaginationBar.vue'
 import { scenarioContent } from '@/components/scenario/scenarioFormat'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
@@ -33,6 +36,14 @@ async function loadScenarios(page?: number) {
     ui.toast(errorMessage(e), 'error')
   }
 }
+
+// NOTE: PaginationBar 用 v-model:page 给出目标页码；这里直接按页码重新拉取，页码本身仍由分页列表维护
+const scenarioPage = computed({
+  get: () => scenarios.page,
+  set: (target: number) => {
+    void loadScenarios(target)
+  },
+})
 
 // 每次打开都重置表单并回到第一页
 watch(
@@ -74,77 +85,54 @@ async function submit() {
       <BaseInput v-model="form.name" placeholder="房间名称（默认使用剧本名）" aria-label="房间名称" maxlength="200" />
 
       <div>
-        <span :id="pickerLabelId" class="mb-1 block font-type text-xs tracking-wide text-ink-soft">选择剧本 *</span>
+        <span :id="pickerLabelId" class="mb-1.5 block text-sm text-fg-muted">选择剧本 *</span>
         <div
           role="group"
           :aria-labelledby="pickerLabelId"
           :aria-busy="scenarios.loading"
-          class="max-h-56 space-y-1 overflow-y-auto rounded-sm border border-paper-edge bg-paper-deep/30 p-1.5"
+          class="max-h-56 space-y-1 overflow-y-auto rounded-lg bg-surface-2 p-1.5"
         >
-          <p v-if="!scenarios.loading && scenarios.items.length === 0" class="p-2 font-type text-xs text-ink-faint">暂无剧本</p>
+          <p v-if="!scenarios.loading && scenarios.items.length === 0" class="p-2 text-sm text-fg-subtle">暂无剧本</p>
           <button
             v-for="s in scenarios.items"
             :key="s.id"
             type="button"
             :aria-pressed="form.scenario_id === s.id"
-            class="block w-full rounded-sm border p-2 text-left transition focus-visible:outline-2 focus-visible:outline-ledger"
-            :class="form.scenario_id === s.id ? 'border-seal bg-seal/10' : 'border-transparent hover:bg-paper-deep'"
+            class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition focus-visible:outline-2 focus-visible:outline-accent"
+            :class="form.scenario_id === s.id ? 'bg-accent/15' : 'hover:bg-surface-3'"
             @click="pick(s)"
           >
-            <span class="block font-serif text-sm text-ink">{{ scenarioOptionLabel(s) }}</span>
-            <span class="mt-0.5 block font-type text-[11px] text-ink-faint">{{ difficultyLabel(s.difficulty) }}</span>
+            <span class="min-w-0">
+              <span class="block text-sm text-fg">{{ scenarioOptionLabel(s) }}</span>
+              <span class="mt-0.5 block text-xs text-fg-subtle">{{ difficultyLabel(s.difficulty) }}</span>
+            </span>
+            <Check v-if="form.scenario_id === s.id" :size="16" :stroke-width="1.75" class="shrink-0 text-accent" />
           </button>
         </div>
-        <div v-if="scenarios.totalPages > 1" class="mt-1.5 flex items-center justify-between font-type text-xs text-ink-faint">
-          <button
-            type="button"
-            class="rounded-sm border border-paper-edge px-2 py-1 text-ink-soft transition hover:bg-paper-deep disabled:cursor-not-allowed disabled:opacity-40"
-            :disabled="scenarios.page <= 1"
-            @click="scenarios.prev().catch((e) => ui.toast(errorMessage(e), 'error'))"
-          >
-            上一页
-          </button>
-          <span>第 {{ scenarios.page }} / {{ scenarios.totalPages }} 页 · 共 {{ scenarios.total }} 个</span>
-          <button
-            type="button"
-            class="rounded-sm border border-paper-edge px-2 py-1 text-ink-soft transition hover:bg-paper-deep disabled:cursor-not-allowed disabled:opacity-40"
-            :disabled="scenarios.page >= scenarios.totalPages"
-            @click="scenarios.next().catch((e) => ui.toast(errorMessage(e), 'error'))"
-          >
-            下一页
-          </button>
-        </div>
+        <PaginationBar v-model:page="scenarioPage" :total-pages="scenarios.totalPages" :total="scenarios.total" />
       </div>
 
-      <div v-if="selected" class="space-y-2">
-        <p class="font-type text-xs text-ink-soft">难度：<span>{{ difficultyLabel(selected.difficulty) }}</span></p>
-        <p
-          v-if="scenarioContent(selected).setting"
-          class="whitespace-pre-wrap border-l-2 border-seal/50 pl-2 font-serif text-xs leading-relaxed text-ink-soft"
-        >
+      <div v-if="selected" class="space-y-2 rounded-lg bg-surface-2 p-3">
+        <p class="text-sm text-fg-muted">难度：<span>{{ difficultyLabel(selected.difficulty) }}</span></p>
+        <p v-if="scenarioContent(selected).setting" class="max-h-40 overflow-y-auto whitespace-pre-wrap font-prose text-prose text-fg-muted">
           {{ scenarioContent(selected).setting }}
         </p>
-        <p
-          v-if="scenarioContent(selected).intro"
-          class="whitespace-pre-wrap border-l-2 border-seal/50 pl-2 font-serif text-xs italic leading-relaxed text-ink"
-        >
+        <p v-if="scenarioContent(selected).intro" class="max-h-40 overflow-y-auto whitespace-pre-wrap font-prose text-prose italic text-fg">
           {{ scenarioContent(selected).intro }}
         </p>
       </div>
 
       <div class="grid grid-cols-2 gap-3">
-        <label class="block">
-          <span class="mb-1 block font-type text-xs tracking-wide text-ink-soft">最大玩家数</span>
-          <BaseInput v-model.number="form.max_players" type="number" min="1" max="8" />
-        </label>
-        <label class="block">
-          <span class="mb-1 block font-type text-xs tracking-wide text-ink-soft">密码（可选）</span>
+        <FormField label="最大玩家数">
+          <BaseInput v-model.number="form.max_players" type="number" min="1" max="8" class="tabular-nums" />
+        </FormField>
+        <FormField label="密码（可选）">
           <BaseInput v-model="form.password" type="text" placeholder="留空则公开" autocomplete="off" />
-        </label>
+        </FormField>
       </div>
 
-      <label v-if="auth.publicSettings.allowNSFW" class="flex items-center gap-2 font-type text-xs text-ink-soft">
-        <input v-model="form.enable_nsfw" type="checkbox" class="accent-seal" />
+      <label v-if="auth.publicSettings.allowNSFW" class="flex items-center gap-2 text-sm text-fg-muted">
+        <input v-model="form.enable_nsfw" type="checkbox" class="accent-accent" />
         启用 NSFW 内容（创建后不可修改）
       </label>
 

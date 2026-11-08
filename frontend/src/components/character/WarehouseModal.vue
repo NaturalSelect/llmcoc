@@ -5,6 +5,7 @@ import BaseButton from '@/components/base/BaseButton.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
 import FormField from '@/components/base/FormField.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import { useCharactersStore } from '@/stores/characters'
 import { useUiStore } from '@/stores/ui'
 import { characterApi } from './characterApi'
@@ -84,8 +85,8 @@ async function discard(item: string): Promise<void> {
 
 <template>
   <BaseModal :open="open" title="账号仓库" max-width="max-w-md" @close="onClose">
-    <div class="space-y-3">
-      <p class="text-xs text-ink-faint">物品可在同账号的不同人物卡之间流通，正在游戏中的人物卡无法存取。</p>
+    <div class="space-y-4">
+      <p class="text-xs text-fg-subtle">物品可在同账号的不同人物卡之间流通，正在游戏中的人物卡无法存取。</p>
 
       <FormField label="取出到人物卡">
         <BaseSelect v-model="targetId">
@@ -93,26 +94,33 @@ async function discard(item: string): Promise<void> {
           <option v-for="c in usable" :key="c.id" :value="c.id">{{ warehouseOptionLabel(c) }}</option>
         </BaseSelect>
       </FormField>
-      <p v-if="!usable.length" class="-mt-2 text-[11px] text-ink-faint">所有人物卡都在游戏中，暂时无法取出物品。</p>
+      <p v-if="!usable.length" class="-mt-2 text-xs text-warning">所有人物卡都在游戏中，暂时无法取出物品。</p>
 
-      <div>
-        <div class="mb-1 font-type text-xs text-ink-soft">仓库物品</div>
-        <div v-if="loading" class="text-xs text-ink-faint" role="status">加载中…</div>
+      <section>
+        <SectionHeading class="mb-2" :count="loading ? undefined : items.length">仓库物品</SectionHeading>
+        <div v-if="loading" class="text-xs text-fg-subtle" role="status">加载中…</div>
         <ChipList v-else-if="items.length" :items="items">
           <template #actions="{ item }">
             <button
               type="button"
-              class="leading-none text-ledger transition hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+              class="rounded-full px-2 py-0.5 text-xs text-info transition hover:bg-info/15 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="!targetId || busy"
               @click="withdraw(item)"
             >
               取出
             </button>
-            <button type="button" class="leading-none text-seal transition hover:underline disabled:opacity-40" :disabled="busy" @click="discard(item)">丢弃</button>
+            <button
+              type="button"
+              class="rounded-full px-2 py-0.5 text-xs text-danger transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="busy"
+              @click="discard(item)"
+            >
+              丢弃
+            </button>
           </template>
         </ChipList>
-        <p v-else class="text-xs text-ink-faint">仓库空空如也。</p>
-      </div>
+        <p v-else class="text-xs text-fg-subtle">仓库空空如也。</p>
+      </section>
 
       <div class="flex gap-2 pt-1">
         <BaseButton variant="ghost" class="flex-1" @click="emit('close')">关闭</BaseButton>

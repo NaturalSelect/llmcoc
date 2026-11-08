@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Coins, Skull, Sparkles, Trash2 } from '@lucide/vue'
 import type { CharacterCardFull } from '@/api/characterTypes'
 import BaseButton from '@/components/base/BaseButton.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
@@ -10,21 +11,33 @@ const emit = defineEmits<{ open: [card: CharacterCardFull]; delete: [card: Chara
 </script>
 
 <template>
-  <PaperCard tag="article" class="border-seal/40!">
-    <div class="mb-2 flex items-start justify-between gap-2">
-      <div class="min-w-0 flex-1">
-        <h3 class="font-serif font-bold">
-          <button type="button" class="text-left text-ink-soft transition hover:text-seal" @click="emit('open', card)">{{ card.name }}</button>
-        </h3>
-        <p class="mt-0.5 font-type text-xs text-ink-faint">{{ deadSubtitle(card) }}</p>
+  <PaperCard tag="article">
+    <div class="flex items-start gap-3">
+      <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-3 text-fg-subtle" aria-hidden="true">
+        <Skull :size="16" :stroke-width="1.75" />
       </div>
-      <StampBadge tone="seal" class="shrink-0">已阵亡</StampBadge>
+      <div class="min-w-0 flex-1">
+        <h3 class="truncate text-sm font-semibold">
+          <button type="button" class="max-w-full truncate text-left text-fg-muted transition hover:text-fg" @click="emit('open', card)">{{ card.name }}</button>
+        </h3>
+        <p class="mt-0.5 truncate text-xs text-fg-subtle">{{ deadSubtitle(card) }}</p>
+      </div>
+      <StampBadge tone="danger" class="shrink-0">已阵亡</StampBadge>
     </div>
-    <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-      <span class="font-type text-xs text-ink-soft">复活费用：<b class="text-seal">{{ cost }}</b> 金币</span>
+    <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <span class="inline-flex items-center gap-1.5 text-xs text-fg-muted">
+        <Coins :size="16" :stroke-width="1.75" class="text-accent" />
+        <span>复活费用：<b class="font-semibold tabular-nums text-accent">{{ cost }}</b> 金币</span>
+      </span>
       <div class="flex gap-2">
-        <BaseButton variant="danger" class="px-2! py-1! text-xs!" @click="emit('delete', card)">🗑 彻底删除</BaseButton>
-        <BaseButton class="px-2! py-1! text-xs!" :disabled="coins < cost || reviving" @click="emit('revive', card)">✨ 复活</BaseButton>
+        <BaseButton variant="danger" size="sm" @click="emit('delete', card)">
+          <Trash2 :size="16" :stroke-width="1.75" />
+          彻底删除
+        </BaseButton>
+        <BaseButton variant="success" size="sm" :disabled="coins < cost || reviving" @click="emit('revive', card)">
+          <Sparkles :size="16" :stroke-width="1.75" />
+          复活
+        </BaseButton>
       </div>
     </div>
   </PaperCard>

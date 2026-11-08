@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { postForm } from '@/api/client'
 import BaseButton from '@/components/base/BaseButton.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import { useUiStore } from '@/stores/ui'
 import { errorMessage } from './pagedList'
 
@@ -41,18 +42,20 @@ async function upload() {
 
 <template>
   <PaperCard>
-    <h3 class="mb-4 font-type text-sm font-bold tracking-wide text-seal">上传模组 JSON</h3>
-    <p class="mb-2 text-xs text-ink-faint">支持单个 JSON 文件上传。</p>
-    <input
-      ref="input"
-      type="file"
-      accept="application/json,.json"
-      aria-label="选择模组 JSON 文件"
-      class="mb-3 block w-full rounded-sm border border-paper-edge bg-paper-deep/60 px-3 py-2 font-serif text-sm text-ink file:mr-3 file:rounded-sm file:border-0 file:bg-paper-edge file:px-2 file:py-1 file:font-type file:text-xs file:text-ink"
-      @change="onPicked"
-    />
-    <BaseButton :disabled="!file" :loading="uploading" @click="upload">
-      {{ uploading ? '导入中…' : '上传并导入' }}
-    </BaseButton>
+    <SectionHeading>上传模组 JSON</SectionHeading>
+    <p class="mt-1 text-sm text-fg-muted">支持单个 JSON 文件上传。</p>
+    <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <input
+        ref="input"
+        type="file"
+        accept="application/json,.json"
+        aria-label="选择模组 JSON 文件"
+        class="block w-full min-w-0 rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-fg file:mr-3 file:rounded-lg file:border-0 file:bg-surface-3 file:px-2 file:py-1 file:text-xs file:text-fg"
+        @change="onPicked"
+      />
+      <BaseButton class="shrink-0" :disabled="!file" :loading="uploading" @click="upload">
+        {{ uploading ? '导入中…' : '上传并导入' }}
+      </BaseButton>
+    </div>
   </PaperCard>
 </template>

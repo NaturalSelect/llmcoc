@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { Plus, Star } from '@lucide/vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { LobbySession } from '@/api/sessionTypes'
 import BaseButton from '@/components/base/BaseButton.vue'
+import PageHeader from '@/components/base/PageHeader.vue'
 import TabBar from '@/components/base/TabBar.vue'
 import CreateSessionModal from '@/components/session/CreateSessionModal.vue'
 import JoinSessionModal from '@/components/session/JoinSessionModal.vue'
@@ -91,13 +93,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-4xl p-5">
-    <header class="mb-4 flex items-end justify-between border-b border-paper-edge pb-2">
-      <h2 class="font-serif text-xl font-bold text-ink">跑团大厅</h2>
-      <BaseButton @click="createOpen = true">+ 创建房间</BaseButton>
-    </header>
+  <div class="mx-auto w-full max-w-5xl space-y-5 p-5">
+    <PageHeader title="跑团大厅">
+      <template #actions>
+        <BaseButton @click="createOpen = true"><Plus :size="16" :stroke-width="1.75" />创建房间</BaseButton>
+      </template>
+    </PageHeader>
 
-    <TabBar v-model="tab" :tabs="TABS" class="mb-4" />
+    <TabBar v-model="tab" :tabs="TABS" />
 
     <div v-show="tab === 'lobby'" role="tabpanel" aria-label="活跃房间">
       <SessionListPanel
@@ -106,7 +109,6 @@ onMounted(() => {
         :page="lobby.page"
         :total-pages="lobby.totalPages"
         :total="lobby.total"
-        empty-icon="🏚"
         empty-text="暂无活跃房间，来创建一个吧！"
         @prev="lobby.prev().catch(fail)"
         @next="lobby.next().catch(fail)"
@@ -114,17 +116,17 @@ onMounted(() => {
         <template #item="{ item: s }">
           <SessionCard :session="s">
             <template #actions>
-              <BaseButton v-if="s.status === 'lobby' && !isInSession(s, auth.user?.id)" class="!px-3 !py-1.5" @click="openJoin(s)">加入</BaseButton>
+              <BaseButton v-if="s.status === 'lobby' && !isInSession(s, auth.user?.id)" size="sm" @click="openJoin(s)">加入</BaseButton>
               <BaseButton
                 v-if="s.status === 'lobby' && isInSession(s, auth.user?.id)"
+                size="sm"
                 variant="danger"
-                class="!px-3 !py-1.5"
                 :disabled="actions.leaving.value"
                 @click="leave(s)"
               >
                 退出
               </BaseButton>
-              <BaseButton variant="ghost" class="!px-3 !py-1.5" @click="enter(s.id)">进入</BaseButton>
+              <BaseButton size="sm" variant="ghost" @click="enter(s.id)">进入</BaseButton>
             </template>
           </SessionCard>
         </template>
@@ -138,7 +140,6 @@ onMounted(() => {
         :page="history.page"
         :total-pages="history.totalPages"
         :total="history.total"
-        empty-icon="📜"
         empty-text="还没有参与过已结束的房间"
         @prev="history.prev().catch(fail)"
         @next="history.next().catch(fail)"
@@ -146,9 +147,9 @@ onMounted(() => {
         <template #item="{ item: s }">
           <SessionCard :session="s" variant="archive">
             <template #actions>
-              <BaseButton variant="ghost" class="!px-3 !py-1.5" @click="enter(s.id)">查看记录</BaseButton>
-              <BaseButton variant="ghost" class="!px-3 !py-1.5" @click="addFavorite(s.id)">☆ 收藏</BaseButton>
-              <BaseButton v-if="auth.isAdmin" variant="success" class="!px-3 !py-1.5" :disabled="actions.reviving.value" @click="revive(s)">复活</BaseButton>
+              <BaseButton size="sm" variant="ghost" @click="enter(s.id)">查看记录</BaseButton>
+              <BaseButton size="sm" variant="ghost" @click="addFavorite(s.id)"><Star :size="16" :stroke-width="1.75" />收藏</BaseButton>
+              <BaseButton v-if="auth.isAdmin" size="sm" variant="success" :disabled="actions.reviving.value" @click="revive(s)">复活</BaseButton>
             </template>
           </SessionCard>
         </template>
@@ -162,7 +163,6 @@ onMounted(() => {
         :page="favorites.page"
         :total-pages="favorites.totalPages"
         :total="favorites.total"
-        empty-icon="🌟"
         empty-text="还没有收藏任何房间"
         @prev="favorites.prev().catch(fail)"
         @next="favorites.next().catch(fail)"
@@ -170,9 +170,9 @@ onMounted(() => {
         <template #item="{ item: s }">
           <SessionCard :session="s" variant="archive">
             <template #actions>
-              <BaseButton variant="ghost" class="!px-3 !py-1.5" @click="enter(s.id)">查看记录</BaseButton>
-              <BaseButton class="!px-3 !py-1.5" @click="removeFavorite(s.id)">★ 取消收藏</BaseButton>
-              <BaseButton v-if="auth.isAdmin" variant="success" class="!px-3 !py-1.5" :disabled="actions.reviving.value" @click="revive(s)">复活</BaseButton>
+              <BaseButton size="sm" variant="ghost" @click="enter(s.id)">查看记录</BaseButton>
+              <BaseButton size="sm" variant="secondary" @click="removeFavorite(s.id)"><Star :size="16" :stroke-width="1.75" class="fill-accent text-accent" />取消收藏</BaseButton>
+              <BaseButton v-if="auth.isAdmin" size="sm" variant="success" :disabled="actions.reviving.value" @click="revive(s)">复活</BaseButton>
             </template>
           </SessionCard>
         </template>

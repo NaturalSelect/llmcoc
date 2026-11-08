@@ -5,23 +5,23 @@ defineEmits<{ toggle: [] }>()
 </script>
 
 <template>
-  <div class="flex items-center justify-between gap-3">
-    <div>
-      <span class="block text-sm text-ink">{{ label }}</span>
-      <span v-if="description" class="text-xs text-ink-faint">{{ description }}</span>
+  <div class="flex items-center justify-between gap-4">
+    <div class="min-w-0">
+      <span class="block text-sm text-fg">{{ label }}</span>
+      <span v-if="description" class="mt-0.5 block text-xs text-fg-subtle">{{ description }}</span>
     </div>
     <button
       type="button"
       role="switch"
       :aria-checked="modelValue"
       :aria-label="label"
-      class="relative h-6 w-12 shrink-0 rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ledger"
-      :class="modelValue ? 'border-seal bg-seal' : 'border-paper-edge bg-paper-edge'"
+      class="relative h-6 w-11 shrink-0 rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      :class="modelValue ? 'border-accent bg-accent' : 'border-line-strong bg-surface-3'"
       @click="$emit('toggle')"
     >
       <span
-        class="absolute top-0.5 left-0.5 h-4.5 w-4.5 rounded-full bg-paper shadow transition-transform"
-        :class="modelValue ? 'translate-x-6' : ''"
+        class="absolute top-0.5 left-0.5 size-4.5 rounded-full shadow transition-transform"
+        :class="modelValue ? 'translate-x-5 bg-accent-fg' : 'bg-fg-muted'"
       />
     </button>
   </div>

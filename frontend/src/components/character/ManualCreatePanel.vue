@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { ArrowRight, Dices } from '@lucide/vue'
 import type { RollDraft, SkillBudget } from '@/api/characterTypes'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
@@ -122,28 +123,39 @@ async function finalize(): Promise<void> {
 </script>
 
 <template>
-  <div class="space-y-4" role="tabpanel">
-    <ol class="flex items-center gap-2 font-type text-xs">
+  <div class="space-y-5" role="tabpanel">
+    <ol class="flex flex-wrap items-center gap-2 text-sm">
       <template v-for="(label, i) in STEPS" :key="label">
-        <li :class="step >= i + 1 ? 'text-seal' : 'text-ink-faint'" :aria-current="step === i + 1 ? 'step' : undefined">{{ label }}</li>
-        <li v-if="i < STEPS.length - 1" class="text-ink-faint" aria-hidden="true">→</li>
+        <li
+          class="rounded-full px-3 py-1 tabular-nums"
+          :class="step === i + 1 ? 'bg-accent/15 font-medium text-accent' : step > i + 1 ? 'bg-surface-3 text-fg-muted' : 'text-fg-subtle'"
+          :aria-current="step === i + 1 ? 'step' : undefined"
+        >
+          {{ label }}
+        </li>
+        <li v-if="i < STEPS.length - 1" class="text-fg-subtle" aria-hidden="true">
+          <ArrowRight :size="16" :stroke-width="1.75" />
+        </li>
       </template>
     </ol>
 
-    <div v-show="step === 1" class="space-y-3 rounded-sm border border-paper-edge bg-paper-deep/30 p-4">
-      <p class="text-sm text-ink-soft">规则车卡会先在服务器掷骰并锁定属性，草稿15分钟内有效且只能使用一次。</p>
-      <div class="grid grid-cols-3 items-end gap-2">
+    <div v-show="step === 1" class="space-y-4 rounded-xl bg-surface-2 p-4">
+      <p class="text-sm text-fg-muted">规则车卡会先在服务器掷骰并锁定属性，草稿15分钟内有效且只能使用一次。</p>
+      <div class="grid grid-cols-3 items-end gap-3">
         <FormField class="col-span-2" :label="`年龄（${MIN_AGE}-${MAX_AGE}）`">
           <BaseInput v-model.number="form.age" type="number" :min="MIN_AGE" :max="MAX_AGE" />
         </FormField>
-        <BaseButton :disabled="loading" @click="roll">{{ loading ? '掷骰中…' : '服务器掷骰' }}</BaseButton>
+        <BaseButton :loading="loading" @click="roll">
+          <Dices v-if="!loading" :size="16" :stroke-width="1.75" />
+          {{ loading ? '掷骰中…' : '服务器掷骰' }}
+        </BaseButton>
       </div>
     </div>
 
     <DraftSummary v-if="draft" :draft="draft" />
 
-    <div v-show="step === 2" class="space-y-3 rounded-sm border border-paper-edge bg-paper-deep/30 p-4">
-      <div class="grid grid-cols-2 gap-2">
+    <div v-show="step === 2" class="space-y-3 rounded-xl bg-surface-2 p-4">
+      <div class="grid grid-cols-2 gap-3">
         <BaseInput v-model="form.name" placeholder="姓名 *" aria-label="姓名" />
         <BaseSelect v-model="form.gender" aria-label="性别">
           <option value="">性别 *</option>
@@ -151,29 +163,29 @@ async function finalize(): Promise<void> {
           <option value="女">女</option>
         </BaseSelect>
       </div>
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-3 gap-3">
         <BaseInput v-model="form.occupation" placeholder="职业" aria-label="职业" />
         <BaseInput v-model="form.birthplace" placeholder="出生地" aria-label="出生地" />
         <BaseInput v-model="form.residence" placeholder="现居地" aria-label="现居地" />
       </div>
       <BaseTextarea v-model="form.creation_hint" rows="4" placeholder="角色构思（可选）：如家族背景、性格倾向、希望的氛围等" aria-label="角色构思" />
-      <p class="text-xs text-ink-faint">AI会根据提示词、姓名、性别、职业和已锁定属性生成背景故事、外貌与性格特征。</p>
-      <div class="flex gap-2">
+      <p class="text-xs text-fg-subtle">AI会根据提示词、姓名、性别、职业和已锁定属性生成背景故事、外貌与性格特征。</p>
+      <div class="flex gap-2 pt-1">
         <BaseButton variant="ghost" class="flex-1" @click="step = 1">重新投掷</BaseButton>
         <BaseButton class="flex-1" :disabled="!canContinue" @click="step = 3">下一步：分配技能</BaseButton>
       </div>
     </div>
 
-    <div v-show="step === 3" class="space-y-3 rounded-sm border border-paper-edge bg-paper-deep/30 p-4">
+    <div v-show="step === 3" class="space-y-3 rounded-xl bg-surface-2 p-4">
       <div class="flex items-center justify-between text-sm">
-        <span class="text-ink-soft">技能点：职业 {{ budget.occupation || 0 }} + 兴趣 {{ budget.interest || 0 }}</span>
-        <span class="font-type" :class="remaining < 0 ? 'text-seal' : 'text-ink'" role="status">剩余 {{ remaining }}</span>
+        <span class="text-fg-muted">技能点：职业 {{ budget.occupation || 0 }} + 兴趣 {{ budget.interest || 0 }}</span>
+        <span class="font-semibold tabular-nums" :class="remaining < 0 ? 'text-danger' : 'text-fg'" role="status">剩余 {{ remaining }}</span>
       </div>
-      <p class="text-xs text-ink-faint">技能最终值不能低于基础值且最高90；母语和闪避由服务器强制计算，克苏鲁神话不可分配。</p>
+      <p class="text-xs text-fg-subtle">技能最终值不能低于基础值且最高90；母语和闪避由服务器强制计算，克苏鲁神话不可分配。</p>
       <div class="grid max-h-72 grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
-        <div v-for="(name, i) in names" :key="name" class="flex items-center gap-2 text-xs">
-          <label :for="`skill-input-${i}`" class="w-28 truncate text-ink-soft">{{ name }}</label>
-          <span class="w-12 font-type text-ink-faint">基础 {{ defaults[name] ?? 0 }}</span>
+        <div v-for="(name, i) in names" :key="name" class="flex items-center gap-2 text-sm">
+          <label :for="`skill-input-${i}`" class="w-28 shrink-0 truncate text-fg-muted">{{ name }}</label>
+          <span class="w-16 shrink-0 text-xs tabular-nums text-fg-subtle">基础 {{ defaults[name] ?? 0 }}</span>
           <BaseInput
             :id="`skill-input-${i}`"
             v-model.number="skills[name]"
@@ -181,16 +193,16 @@ async function finalize(): Promise<void> {
             :min="defaults[name] ?? 0"
             :max="MAX_SKILL"
             :disabled="name === NATIVE_SKILL || name === DODGE_SKILL"
-            class="flex-1 py-1! text-center font-type"
+            class="flex-1 text-center tabular-nums"
             @blur="clamp(name)"
             @keydown.enter.prevent="commit(name, $event)"
           />
         </div>
       </div>
-      <p class="text-xs text-ink-faint">目前前端提供通用技能清单；职业点与兴趣点合并为总预算，最终以服务器校验为准。</p>
+      <p class="text-xs text-fg-subtle">目前前端提供通用技能清单；职业点与兴趣点合并为总预算，最终以服务器校验为准。</p>
       <div class="flex gap-2 pt-1">
         <BaseButton variant="ghost" class="flex-1" @click="step = 2">返回资料</BaseButton>
-        <BaseButton class="flex-1" :disabled="loading || remaining < 0" @click="finalize">
+        <BaseButton class="flex-1" :loading="loading" :disabled="remaining < 0" @click="finalize">
           {{ loading ? 'AI生成中…' : '确认创建并生成背景' }}
         </BaseButton>
       </div>

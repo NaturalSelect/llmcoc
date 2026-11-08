@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SiteSettings } from '@/api/adminTypesContent'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import SettingSwitch from './SettingSwitch.vue'
 import type { ToggleKey } from './useSiteSettings'
 
@@ -9,14 +10,14 @@ defineEmits<{ toggle: [key: ToggleKey] }>()
 </script>
 
 <template>
-  <PaperCard class="max-w-md">
-    <h3 class="mb-4 font-type text-sm font-bold tracking-wide text-seal">站点设置</h3>
-    <SettingSwitch
-      :model-value="settings.require_invite_code"
-      label="注册需要邀请码"
-      @toggle="$emit('toggle', 'require_invite_code')"
-    />
-    <div class="mt-4 border-t border-paper-edge pt-4">
+  <PaperCard>
+    <SectionHeading>站点设置</SectionHeading>
+    <div class="mt-4 space-y-4">
+      <SettingSwitch
+        :model-value="settings.require_invite_code"
+        label="注册需要邀请码"
+        @toggle="$emit('toggle', 'require_invite_code')"
+      />
       <SettingSwitch
         :model-value="settings.allow_nsfw"
         label="允许创建 NSFW 房间"

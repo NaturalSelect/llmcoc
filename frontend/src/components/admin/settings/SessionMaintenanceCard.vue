@@ -1,19 +1,24 @@
 <script setup lang="ts">
+import { Power } from '@lucide/vue'
 import BaseButton from '@/components/base/BaseButton.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 
 defineEmits<{ endAll: [] }>()
 </script>
 
 <template>
-  <PaperCard class="max-w-md">
-    <h3 class="mb-4 font-type text-sm font-bold tracking-wide text-seal">房间维护</h3>
-    <div class="flex items-center justify-between gap-3">
-      <div>
-        <span class="block text-sm text-ink">强制结束所有运行中房间</span>
-        <span class="text-xs text-ink-faint">用于后端升级后清理与新版本不兼容的存量房间；不收取结束游戏费用，仅做基础结算与角色恢复</span>
+  <PaperCard>
+    <SectionHeading>房间维护</SectionHeading>
+    <div class="mt-4 flex items-center justify-between gap-4">
+      <div class="min-w-0">
+        <span class="block text-sm text-fg">强制结束所有运行中房间</span>
+        <span class="mt-0.5 block text-xs text-fg-subtle">用于后端升级后清理与新版本不兼容的存量房间；不收取结束游戏费用，仅做基础结算与角色恢复</span>
       </div>
-      <BaseButton variant="danger" class="shrink-0 !px-2.5 !py-1 !text-xs" @click="$emit('endAll')">一键结束</BaseButton>
+      <BaseButton variant="danger" size="sm" class="shrink-0" @click="$emit('endAll')">
+        <Power :size="16" :stroke-width="1.75" />
+        一键结束
+      </BaseButton>
     </div>
   </PaperCard>
 </template>

@@ -27,7 +27,7 @@ watch(
 
 <template>
   <BaseModal :open="open" title="创建调查员" max-width="max-w-4xl" @close="emit('close')">
-    <TabBar v-model="mode" :tabs="TABS" class="mb-4" />
+    <TabBar v-model="mode" :tabs="TABS" class="mb-5" />
     <ManualCreatePanel v-show="mode === 'manual'" :active="mode === 'manual'" @close="emit('close')" />
     <AiCreatePanel v-show="mode === 'ai'" @close="emit('close')" />
   </BaseModal>

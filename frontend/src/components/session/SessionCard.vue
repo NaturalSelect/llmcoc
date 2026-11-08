@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Lock, Users } from '@lucide/vue'
 import { computed } from 'vue'
 import type { LobbySession } from '@/api/sessionTypes'
 import PaperCard from '@/components/base/PaperCard.vue'
@@ -14,37 +15,42 @@ const status = computed(() => (props.variant === 'archive' ? 'ended' : props.ses
 </script>
 
 <template>
-  <PaperCard hover>
-    <div class="flex items-start gap-4">
-      <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-2">
-          <h3 class="font-serif text-base font-bold text-ink">{{ session.name }}</h3>
-          <StampBadge :tone="statusTone(status)">{{ statusLabel(status) }}</StampBadge>
-          <span v-if="variant === 'lobby' && session.has_password" role="img" aria-label="有密码" class="text-xs">🔒</span>
-        </div>
-        <p class="mt-1 font-type text-xs text-ink-soft">
-          剧本：<span class="text-seal">{{ session.scenario?.name }}</span>
-        </p>
-        <p class="mt-0.5 font-type text-xs text-ink-faint">
-          房主：<span>{{ session.creator?.username }}</span>
-          <template v-if="variant === 'lobby'"> · 玩家：<span>{{ playerCountLabel(session) }}</span></template>
-          <template v-else> · 玩家：<span>{{ players.length }}</span> 位 · 结束于：<span>{{ fmtDate(session.updated_at) }}</span></template>
-        </p>
-        <ul v-if="players.length" class="mt-2 flex flex-wrap gap-1.5" aria-label="玩家">
-          <li
-            v-for="p in players"
-            :key="p.id ?? p.user_id"
-            class="rounded-sm border border-paper-edge bg-paper-deep/60 px-2 py-0.5 font-type text-xs text-ink-soft"
-          >
-            <span>{{ p.user?.username }}</span>
-            <span class="text-ink-faint"> — </span>
-            <span>{{ p.character_card?.name }}</span>
-          </li>
-        </ul>
+  <PaperCard hover class="flex h-full flex-col gap-3">
+    <div class="min-w-0">
+      <div class="flex flex-wrap items-center gap-2">
+        <h3 class="min-w-0 break-words text-base font-semibold text-fg">{{ session.name }}</h3>
+        <StampBadge :tone="statusTone(status)">{{ statusLabel(status) }}</StampBadge>
+        <span v-if="variant === 'lobby' && session.has_password" role="img" aria-label="有密码" class="inline-flex text-fg-subtle">
+          <Lock :size="16" :stroke-width="1.75" />
+        </span>
       </div>
-      <div class="flex shrink-0 flex-col gap-1.5">
-        <slot name="actions" />
-      </div>
+      <p class="mt-1.5 text-sm text-fg-muted">
+        剧本：<span class="text-accent">{{ session.scenario?.name }}</span>
+      </p>
+      <p class="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-subtle">
+        <span>房主：<span>{{ session.creator?.username }}</span></span>
+        <span v-if="variant === 'lobby'" class="inline-flex items-center gap-1.5 tabular-nums">
+          <Users :size="16" :stroke-width="1.75" />玩家：<span>{{ playerCountLabel(session) }}</span>
+        </span>
+        <template v-else>
+          <span class="inline-flex items-center gap-1.5 tabular-nums">
+            <Users :size="16" :stroke-width="1.75" />玩家：<span>{{ players.length }}</span> 位
+          </span>
+          <span class="tabular-nums">结束于：<span>{{ fmtDate(session.updated_at) }}</span></span>
+        </template>
+      </p>
+    </div>
+
+    <ul v-if="players.length" class="flex flex-wrap gap-1.5" aria-label="玩家">
+      <li v-for="p in players" :key="p.id ?? p.user_id" class="rounded-full bg-surface-3 px-2.5 py-0.5 text-xs text-fg-muted">
+        <span>{{ p.user?.username }}</span>
+        <span class="text-fg-subtle"> — </span>
+        <span>{{ p.character_card?.name }}</span>
+      </li>
+    </ul>
+
+    <div v-if="$slots.actions" class="mt-auto flex flex-wrap items-center gap-2 pt-1">
+      <slot name="actions" />
     </div>
   </PaperCard>
 </template>

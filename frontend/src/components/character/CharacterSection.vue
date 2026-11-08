@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import SectionHeading from '@/components/base/SectionHeading.vue'
+
 defineProps<{ title: string }>()
 </script>
 
 <template>
-  <section class="mb-4">
-    <h3 class="mb-2 font-type text-xs font-bold uppercase tracking-wider text-ink-soft">{{ title }}</h3>
+  <section class="mb-5">
+    <SectionHeading class="mb-2">{{ title }}</SectionHeading>
     <slot />
   </section>
 </template>

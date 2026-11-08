@@ -149,7 +149,7 @@ describe('ProvidersTab', () => {
     const w = mount(ProvidersTab, { attachTo: document.body })
     await flushPromises()
     expect(w.text()).toContain('（OpenAI 默认端点）')
-    expect(w.text()).toContain('✓ API Key 已配置')
+    expect(w.text()).toContain('API Key 已配置')
     expect(w.text()).toContain('已停用')
     await btn(w, '编辑').trigger('click')
     await flushPromises()

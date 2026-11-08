@@ -40,7 +40,7 @@ const content = computed(() => scenarioContent(props.scenario))
       <ScenarioKeeperAppendix v-if="content.keeper_appendix" :appendix="content.keeper_appendix" />
       <ScenarioMechanics v-if="content.mechanics?.length" :mechanics="content.mechanics" />
     </template>
-    <div class="mt-2 flex justify-end">
+    <div class="mt-4 flex justify-end">
       <BaseButton variant="ghost" @click="emit('close')">关闭</BaseButton>
     </div>
   </BaseModal>

@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { Search } from '@lucide/vue'
 import { ref } from 'vue'
 import type { SessionContext } from '@/api/adminTypesCore'
 import { api } from '@/api/client'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import { errMsg } from '@/components/admin/shared/errMsg'
 import { useUiStore } from '@/stores/ui'
 import { agentSummaryText, recentStatsNewestFirst, turnStatLeft, turnStatRight } from './cacheFormat'
@@ -41,29 +43,29 @@ async function load() {
 
 <template>
   <PaperCard tag="section" aria-labelledby="session-ctx-title" class="max-w-xl">
-    <h3 id="session-ctx-title" class="mb-2 font-type text-sm font-bold tracking-widest text-seal">会话上下文</h3>
-    <p class="mb-3 text-xs text-ink-faint">
+    <SectionHeading id="session-ctx-title" class="mb-2">会话上下文</SectionHeading>
+    <p class="mb-4 text-xs leading-relaxed text-fg-subtle">
       按会话ID查看每个agent(director/writer/dramaturg/npc:*)已提交的历史轮数、估算字符数与最近若干轮的缓存命中统计，用于核对某个具体会话的prompt cache前缀是否稳定命中。
     </p>
-    <div class="mb-3 flex gap-2">
-      <BaseInput v-model="sessionId" type="text" placeholder="会话ID" aria-label="会话ID" class="flex-1 !text-sm" @keydown.enter="load" />
-      <BaseButton variant="ghost" class="!px-3 !py-1 !text-xs" :disabled="loading" @click="load">查询</BaseButton>
+    <div class="mb-4 flex gap-2">
+      <BaseInput v-model="sessionId" type="text" placeholder="会话ID" aria-label="会话ID" class="flex-1" @keydown.enter="load" />
+      <BaseButton variant="ghost" :disabled="loading" @click="load"><Search :size="16" :stroke-width="1.75" />查询</BaseButton>
     </div>
 
-    <p v-if="loading" class="text-sm text-ink-faint" role="status">查询中…</p>
+    <p v-if="loading" class="text-sm text-fg-subtle" role="status">查询中…</p>
     <template v-else-if="context">
-      <p v-if="!(context.agents ?? []).length" class="text-sm text-ink-faint">该会话暂无已持久化的上下文记录</p>
+      <p v-if="!(context.agents ?? []).length" class="text-sm text-fg-subtle">该会话暂无已持久化的上下文记录</p>
       <div v-else class="space-y-3">
-        <div v-for="agent in context.agents" :key="agent.agent_key" class="rounded-sm border border-paper-edge bg-paper-deep/50 p-2">
-          <div class="mb-1 flex flex-wrap items-center justify-between gap-x-3 text-xs">
-            <span class="font-type font-bold text-ink">{{ agent.agent_key }}</span>
-            <span class="text-ink-soft">{{ agentSummaryText(agent) }}</span>
+        <div v-for="agent in context.agents" :key="agent.agent_key" class="rounded-lg bg-surface-2 p-3">
+          <div class="mb-2 flex flex-wrap items-center justify-between gap-x-3 text-sm">
+            <span class="font-mono text-fg">{{ agent.agent_key }}</span>
+            <span class="text-xs tabular-nums text-fg-muted">{{ agentSummaryText(agent) }}</span>
           </div>
-          <ul class="space-y-0.5">
+          <ul class="space-y-1">
             <li
               v-for="stat in recentStatsNewestFirst(agent.recent_stats)"
               :key="agent.agent_key + '-' + stat.seq"
-              class="flex flex-wrap items-center justify-between gap-x-3 font-type text-[11px] text-ink-faint"
+              class="flex flex-wrap items-center justify-between gap-x-3 font-mono text-xs tabular-nums text-fg-subtle"
             >
               <span>{{ turnStatLeft(stat) }}</span>
               <span>{{ turnStatRight(stat) }}</span>

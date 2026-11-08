@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { FastForward, OctagonX } from '@lucide/vue'
 import { computed } from 'vue'
+import BaseButton from '@/components/base/BaseButton.vue'
 import { continueLabel, roomBanner } from '@/game/banner'
 import * as RS from '@/game/roomState'
 import type { Room } from '@/game/roomState'
@@ -13,17 +15,17 @@ const gates = computed(() => RS.gates(props.room))
 const toneClass = computed(
   () =>
     ({
-      warn: 'text-seal',
-      me: 'font-semibold text-seal',
-      info: 'text-ledger',
-      idle: 'text-ink-soft',
+      warn: 'text-warning',
+      me: 'font-medium text-accent',
+      info: 'text-info',
+      idle: 'text-fg-muted',
     })[banner.value.tone],
 )
 </script>
 
 <template>
   <div
-    class="flex shrink-0 items-center gap-2 border-t border-paper-edge bg-paper-deep px-3 py-2"
+    class="flex items-center gap-3 rounded-xl bg-surface-2 px-4 py-2.5"
     :data-tone="banner.tone"
     :data-busy="banner.busy ? 'true' : 'false'"
     role="status"
@@ -31,25 +33,15 @@ const toneClass = computed(
   >
     <span class="size-2 shrink-0 rounded-full bg-current" :class="[toneClass, banner.busy ? 'dot-pulse' : '']" aria-hidden="true" />
     <span class="line-clamp-2 min-w-0 flex-1 text-sm" :class="toneClass">{{ banner.text }}</span>
-    <div class="flex shrink-0 items-center gap-1.5">
-      <button
-        v-if="gates.canContinue"
-        type="button"
-        class="rounded-sm border border-seal bg-seal px-3 py-1 text-xs text-paper transition hover:bg-seal/90"
-        title="跳过未回应的玩家，让 KP 继续推进剧情"
-        @click="emit('continue')"
-      >
+    <div class="flex shrink-0 items-center gap-2">
+      <BaseButton v-if="gates.canContinue" size="sm" title="跳过未回应的玩家，让 KP 继续推进剧情" @click="emit('continue')">
+        <FastForward :size="16" :stroke-width="1.75" />
         {{ continueLabel(room) }}
-      </button>
-      <button
-        v-if="gates.canStop"
-        type="button"
-        class="rounded-sm border border-seal px-3 py-1 text-xs text-seal transition hover:bg-seal/10"
-        title="打断 KP 当前的发言，本周期已发布的内容会保留"
-        @click="emit('stop')"
-      >
+      </BaseButton>
+      <BaseButton v-if="gates.canStop" variant="danger" size="sm" title="打断 KP 当前的发言，本周期已发布的内容会保留" @click="emit('stop')">
+        <OctagonX :size="16" :stroke-width="1.75" />
         打断 KP
-      </button>
+      </BaseButton>
     </div>
   </div>
 </template>

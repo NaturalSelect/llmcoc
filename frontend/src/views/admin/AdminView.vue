@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import PageHeader from '@/components/base/PageHeader.vue'
 import TabBar from '@/components/base/TabBar.vue'
 import { ADMIN_TABS, resolveAdminTab } from './adminTabs'
 import type { AdminTabKey } from './adminTabs'
@@ -28,8 +29,11 @@ const active = computed<AdminTabKey>({
 
 <template>
   <div class="mx-auto w-full max-w-6xl p-5">
-    <h2 class="mb-4 font-serif text-xl font-bold text-seal">管理后台</h2>
-    <TabBar v-model="active" :tabs="[...ADMIN_TABS]" class="mb-5" />
+    <PageHeader title="管理后台" />
+    <!-- NOTE: 滚动容器是 App 的 main，sticky 吸在它的顶部；底色必须不透明，否则内容会从标签栏下面透出来 -->
+    <div class="sticky top-0 z-10 -mx-5 mt-4 mb-5 bg-bg px-5">
+      <TabBar v-model="active" :tabs="[...ADMIN_TABS]" />
+    </div>
     <component :is="panels[active]" :key="active" />
   </div>
 </template>

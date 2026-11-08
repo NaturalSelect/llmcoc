@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { RollDraft } from '@/api/characterTypes'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import { fmtDate } from '@/utils/format'
 import StatCell from './StatCell.vue'
 
@@ -9,15 +10,15 @@ const PRIMARY = ['STR', 'CON', 'SIZ', 'DEX', 'APP', 'INT', 'POW', 'EDU'] as cons
 </script>
 
 <template>
-  <div class="space-y-3 rounded-sm border border-paper-edge bg-paper-deep/30 p-4">
-    <div class="flex justify-between font-type text-xs text-ink-faint">
-      <span>已锁定属性</span>
-      <span>{{ draft.expires_at ? '过期时间：' + fmtDate(draft.expires_at) : '' }}</span>
+  <div class="space-y-3">
+    <div class="flex items-center justify-between gap-2">
+      <SectionHeading>已锁定属性</SectionHeading>
+      <span class="text-xs tabular-nums text-fg-subtle">{{ draft.expires_at ? '过期时间：' + fmtDate(draft.expires_at) : '' }}</span>
     </div>
     <div class="grid grid-cols-4 gap-2 md:grid-cols-8">
       <StatCell v-for="k in PRIMARY" :key="k" :label="k" :value="draft.stats?.[k.toLowerCase()] as number | undefined" />
     </div>
-    <div class="grid grid-cols-3 gap-2 text-xs md:grid-cols-6">
+    <div class="grid grid-cols-3 gap-2 md:grid-cols-6">
       <StatCell label="Luck" :value="draft.stats?.luck" />
       <StatCell label="HP" :value="`${draft.stats?.hp}/${draft.stats?.max_hp}`" />
       <StatCell label="MP" :value="`${draft.stats?.mp}/${draft.stats?.max_mp}`" />
@@ -25,7 +26,7 @@ const PRIMARY = ['STR', 'CON', 'SIZ', 'DEX', 'APP', 'INT', 'POW', 'EDU'] as cons
       <StatCell label="MOV" :value="draft.stats?.mov" />
       <StatCell label="DB/Build" :value="`${draft.stats?.db || '0'}/${draft.stats?.build ?? 0}`" />
     </div>
-    <ul class="space-y-1 font-type text-xs text-ink-faint">
+    <ul class="space-y-1 text-xs text-fg-subtle">
       <li v-for="(line, i) in draft.raw_rolls?.age_log || []" :key="i">· {{ line }}</li>
     </ul>
   </div>

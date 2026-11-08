@@ -48,7 +48,7 @@ async function submit() {
 
 <template>
   <BaseModal :open="open" title="加入房间" max-width="max-w-sm" @close="emit('close')">
-    <p class="mb-4 font-type text-xs text-ink-soft">{{ session?.name }}</p>
+    <p class="mb-4 text-sm text-fg-muted">{{ session?.name }}</p>
     <form class="space-y-3" @submit.prevent="submit">
       <BaseSelect v-model="form.character_card_id" aria-label="选择携带的人物卡">
         <option value="">选择携带的人物卡 *</option>

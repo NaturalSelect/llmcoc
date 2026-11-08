@@ -74,7 +74,7 @@ describe('ScenarioGeneratePanel', () => {
     const text = wrapper.text()
     expect(text).toContain('已提交生成请求，等待服务器响应…')
     expect(text).toContain('排队中')
-    expect(text).toContain('● 后台有 1 个生成任务运行/排队中')
+    expect(text).toContain('后台有 1 个生成任务运行/排队中')
 
     expect(signals[0].aborted).toBe(false)
     wrapper.unmount()

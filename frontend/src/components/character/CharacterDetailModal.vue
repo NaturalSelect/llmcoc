@@ -146,38 +146,45 @@ function assetEntries(card: CharacterCardFull): Entry[] {
 <template>
   <BaseModal :open="open" :title="current?.name ?? ''" max-width="max-w-2xl" @close="onClose">
     <template v-if="current">
-      <p class="-mt-2 mb-4 font-type text-sm text-ink-faint">{{ detailSubtitle(current) }}</p>
+      <p class="mb-5 text-sm text-fg-muted">{{ detailSubtitle(current) }}</p>
 
-      <CharacterVitals :card="current" />
+      <CharacterVitals :card="current" class="mb-5" />
 
       <CharacterSection title="技能（完整）">
-        <div class="mb-2 font-type text-xs text-ink-faint">总计 {{ Object.keys(current.skills ?? {}).length }} 项</div>
-        <ul class="grid max-h-56 grid-cols-2 gap-1 overflow-y-auto pr-1 sm:grid-cols-3">
+        <div class="mb-2 text-xs tabular-nums text-fg-subtle">总计 {{ Object.keys(current.skills ?? {}).length }} 项</div>
+        <ul class="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
           <li
             v-for="[skill, val] in sortedSkills(current.skills)"
             :key="skill"
-            class="flex justify-between rounded-sm bg-paper-deep/50 px-2 py-1 font-type text-xs"
+            class="flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs"
           >
-            <span class="mr-1 truncate text-ink-soft">{{ skill }}</span>
-            <span class="shrink-0 font-bold text-ink">{{ val }}</span>
+            <span class="truncate text-fg-muted">{{ skill }}</span>
+            <span class="shrink-0 font-semibold tabular-nums text-fg">{{ val }}</span>
           </li>
         </ul>
       </CharacterSection>
 
       <CharacterSection title="物品栏">
-        <p class="mb-2 text-xs text-ink-faint">点击物品右侧按钮可直接丢弃或存入账号仓库。</p>
-        <p v-if="current.in_session" class="mb-2 text-xs text-seal" role="status">该人物卡正在游戏中，无法存取仓库。</p>
+        <p class="mb-2 text-xs text-fg-subtle">点击物品右侧按钮可直接丢弃或存入账号仓库。</p>
+        <p v-if="current.in_session" class="mb-2 text-xs text-warning" role="status">该人物卡正在游戏中，无法存取仓库。</p>
         <ChipList :items="current.inventory ?? []">
           <template #actions="{ item }">
             <button
               type="button"
-              class="leading-none text-ledger transition hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+              class="rounded-full px-2 py-0.5 text-xs text-info transition hover:bg-info/15 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="current.in_session || busy"
               @click="deposit(item)"
             >
               存入仓库
             </button>
-            <button type="button" class="leading-none text-seal transition hover:underline disabled:opacity-40" :disabled="busy" @click="discard(item)">丢弃</button>
+            <button
+              type="button"
+              class="rounded-full px-2 py-0.5 text-xs text-danger transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="busy"
+              @click="discard(item)"
+            >
+              丢弃
+            </button>
           </template>
         </ChipList>
       </CharacterSection>
@@ -185,7 +192,14 @@ function assetEntries(card: CharacterCardFull): Entry[] {
       <CharacterSection title="法术">
         <ChipList :items="current.spells ?? []" tone="ledger">
           <template #actions="{ item }">
-            <button type="button" class="leading-none text-seal transition hover:underline disabled:opacity-40" :disabled="busy" @click="forgetSpell(item)">遗忘</button>
+            <button
+              type="button"
+              class="rounded-full px-2 py-0.5 text-xs text-danger transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="busy"
+              @click="forgetSpell(item)"
+            >
+              遗忘
+            </button>
           </template>
         </ChipList>
       </CharacterSection>
@@ -215,9 +229,9 @@ function assetEntries(card: CharacterCardFull): Entry[] {
         />
       </template>
 
-      <CharacterSection class="mt-4" title="创建/更新时间">
-        <p class="font-type text-xs text-ink-soft">created_at: {{ current.created_at || '' }}</p>
-        <p class="font-type text-xs text-ink-soft">updated_at: {{ current.updated_at || '' }}</p>
+      <CharacterSection title="创建/更新时间">
+        <p class="font-mono text-xs text-fg-muted">created_at: {{ current.created_at || '' }}</p>
+        <p class="font-mono text-xs text-fg-muted">updated_at: {{ current.updated_at || '' }}</p>
       </CharacterSection>
     </template>
   </BaseModal>

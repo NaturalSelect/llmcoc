@@ -6,7 +6,7 @@ const model = defineModel<unknown>()
 <template>
   <select
     v-model="model"
-    class="w-full rounded-sm border border-paper-edge bg-paper-deep/60 px-3 py-2 font-serif text-ink outline-none transition focus:border-seal disabled:cursor-not-allowed disabled:opacity-60"
+    class="h-10 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-fg outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
   >
     <slot />
   </select>

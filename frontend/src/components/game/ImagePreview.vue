@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Minus, Plus, X } from '@lucide/vue'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import type { PreviewState } from '@/game/imagePreview'
 import { initialPreview, pinchTo, toggleZoom, touchDist, zoomBy } from '@/game/imagePreview'
@@ -74,19 +75,48 @@ function onTouchEnd(e: TouchEvent) {
 
 <template>
   <Teleport to="body">
-    <div v-if="src" class="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden bg-ink/85" role="dialog" aria-modal="true" aria-label="图片预览" @click="emit('close')">
-      <button type="button" class="absolute right-4 top-4 z-10 size-9 rounded-full bg-paper/90 text-ink" aria-label="关闭预览" @click.stop="emit('close')">✕</button>
-      <div class="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-paper/90 px-3 py-1 font-type text-sm text-ink" @click.stop>
-        <button type="button" class="size-7" aria-label="缩小" @click="view = zoomBy(view, -0.5)">−</button>
-        <span class="w-12 text-center">{{ Math.round(view.scale * 100) }}%</span>
-        <button type="button" class="size-7" aria-label="放大" @click="view = zoomBy(view, 0.5)">＋</button>
-        <button v-if="view.scale !== 1" type="button" class="px-1" aria-label="重置缩放" @click="view = initialPreview()">1:1</button>
+    <div v-if="src" class="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden bg-bg/90" role="dialog" aria-modal="true" aria-label="图片预览" @click="emit('close')">
+      <button
+        type="button"
+        class="absolute right-4 top-4 z-10 inline-flex size-10 items-center justify-center rounded-full border border-line bg-surface-2 text-fg transition hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        aria-label="关闭预览"
+        @click.stop="emit('close')"
+      >
+        <X :size="16" :stroke-width="1.75" />
+      </button>
+      <div class="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-surface-2 px-2 py-1 text-sm text-fg shadow-panel" @click.stop>
+        <button
+          type="button"
+          class="inline-flex size-8 items-center justify-center rounded-full transition hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent"
+          aria-label="缩小"
+          @click="view = zoomBy(view, -0.5)"
+        >
+          <Minus :size="16" :stroke-width="1.75" />
+        </button>
+        <span class="w-12 text-center tabular-nums">{{ Math.round(view.scale * 100) }}%</span>
+        <button
+          type="button"
+          class="inline-flex size-8 items-center justify-center rounded-full transition hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent"
+          aria-label="放大"
+          @click="view = zoomBy(view, 0.5)"
+        >
+          <Plus :size="16" :stroke-width="1.75" />
+        </button>
+        <button
+          v-if="view.scale !== 1"
+          type="button"
+          class="h-8 rounded-full px-2.5 text-xs tabular-nums text-fg-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+          aria-label="重置缩放"
+          @click="view = initialPreview()"
+        >
+          1:1
+        </button>
       </div>
       <img
         :src="src"
         alt="图片预览"
         draggable="false"
-        class="max-h-[92vh] max-w-[96vw] select-none object-contain"
+        class="max-h-[92vh] max-w-[96vw] select-none rounded-xl object-contain"
         :class="view.scale > 1 ? 'cursor-grab' : 'cursor-zoom-in'"
         :style="{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`, touchAction: 'none' }"
         @click.stop

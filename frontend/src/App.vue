@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { BookOpen, Coins, LayoutDashboard, LogOut, ShieldCheck, ShoppingBag, Swords } from '@lucide/vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCharactersStore } from '@/stores/characters'
@@ -16,11 +17,11 @@ const fullHeight = computed(() => !!route.meta.fullHeight)
 
 const links = computed(() => {
   const base = [
-    { to: '/', label: '首页', active: route.name === 'dashboard' },
-    { to: '/sessions', label: '跑团大厅', active: route.name === 'sessions' || route.name === 'game' },
-    { to: '/shop', label: '商城', active: route.name === 'shop' },
+    { to: '/', label: '首页', icon: LayoutDashboard, active: route.name === 'dashboard' },
+    { to: '/sessions', label: '跑团大厅', icon: Swords, active: route.name === 'sessions' || route.name === 'game' },
+    { to: '/shop', label: '商城', icon: ShoppingBag, active: route.name === 'shop' },
   ]
-  return auth.isAdmin ? [...base, { to: '/admin', label: '管理', active: route.name === 'admin' }] : base
+  return auth.isAdmin ? [...base, { to: '/admin', label: '管理', icon: ShieldCheck, active: route.name === 'admin' }] : base
 })
 
 async function logout() {
@@ -31,27 +32,43 @@ async function logout() {
 </script>
 
 <template>
-  <div v-if="showShell" class="flex h-dvh flex-col overflow-hidden bg-paper text-ink">
-    <nav class="z-40 flex shrink-0 items-center justify-between gap-2 border-b border-paper-edge bg-paper-deep px-3 py-2.5 sm:px-4">
+  <div v-if="showShell" class="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
+    <nav class="z-40 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/80 px-3 backdrop-blur sm:px-4">
       <div class="nav-scroll flex min-w-0 flex-1 items-center gap-1">
-        <RouterLink to="/" class="mr-1 shrink-0 font-type text-base font-bold tracking-widest text-seal sm:mr-2">COC</RouterLink>
+        <RouterLink to="/" class="mr-2 flex shrink-0 items-center gap-2 font-semibold tracking-wide text-fg">
+          <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-accent/15 text-accent">
+            <BookOpen :size="16" :stroke-width="1.75" />
+          </span>
+          <span class="hidden sm:inline">LLM-COC</span>
+        </RouterLink>
         <RouterLink
           v-for="l in links"
           :key="l.to"
           :to="l.to"
-          class="shrink-0 rounded-sm px-2.5 py-1 font-serif text-sm transition"
-          :class="l.active ? 'bg-paper text-seal underline decoration-seal decoration-2 underline-offset-4' : 'text-ink-soft hover:text-ink'"
+          :data-active="l.active ? 'true' : undefined"
+          class="flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm transition"
+          :class="l.active ? 'bg-surface-3 font-medium text-fg' : 'text-fg-muted hover:bg-surface-2 hover:text-fg'"
         >
+          <component :is="l.icon" :size="16" :stroke-width="1.75" />
           {{ l.label }}
         </RouterLink>
       </div>
-      <div class="flex shrink-0 items-center gap-2.5 font-type text-xs sm:gap-3">
-        <span class="whitespace-nowrap text-ink-soft">金币 <b class="text-seal">{{ auth.user?.coins ?? 0 }}</b></span>
-        <span class="hidden whitespace-nowrap text-ink-soft sm:inline">
-          人物卡 <b class="text-ink">{{ chars.characters.length }}</b>/{{ auth.user?.card_slots ?? 3 }}
+      <div class="flex shrink-0 items-center gap-2 text-sm sm:gap-3">
+        <span class="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-surface-2 px-2.5 py-1 text-fg-muted">
+          <Coins :size="14" :stroke-width="1.75" class="text-accent" />
+          <b class="font-semibold tabular-nums text-accent">{{ auth.user?.coins ?? 0 }}</b>
         </span>
-        <span class="hidden text-ink md:inline">{{ auth.user?.username }}</span>
-        <button type="button" class="text-ink-faint transition hover:text-seal" @click="logout">退出</button>
+        <span class="hidden whitespace-nowrap text-fg-muted sm:inline">
+          人物卡 <b class="font-medium tabular-nums text-fg">{{ chars.characters.length }}</b>/{{ auth.user?.card_slots ?? 3 }}
+        </span>
+        <span class="hidden text-fg md:inline">{{ auth.user?.username }}</span>
+        <button
+          type="button"
+          class="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-fg-muted transition hover:bg-surface-2 hover:text-fg"
+          @click="logout"
+        >
+          <LogOut :size="15" :stroke-width="1.75" />退出
+        </button>
       </div>
     </nav>
     <main class="min-h-0 flex-1" :class="fullHeight ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'">

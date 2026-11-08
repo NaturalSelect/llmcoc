@@ -1,13 +1,17 @@
 <script setup lang="ts">
+import { Coins } from '@lucide/vue'
 import { onMounted, ref } from 'vue'
 import { api } from '@/api/client'
 import type { Page } from '@/api/pagination'
 import type { PurchaseResult, ShopItem, ShopTransaction } from '@/api/shopTypes'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
+import EmptyState from '@/components/base/EmptyState.vue'
 import FormField from '@/components/base/FormField.vue'
+import PageHeader from '@/components/base/PageHeader.vue'
 import PaginationBar from '@/components/base/PaginationBar.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import Skeleton from '@/components/base/Skeleton.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -113,13 +117,17 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-4xl p-5">
-    <header class="mb-5 flex items-end justify-between border-b border-paper-edge pb-2">
-      <h2 class="font-serif text-xl font-bold text-ink">商城</h2>
-      <span class="font-type text-sm text-ink-soft">当前金币：<b class="text-seal">{{ auth.user?.coins ?? 0 }}</b></span>
-    </header>
+  <div class="mx-auto w-full max-w-4xl space-y-5 p-5">
+    <PageHeader title="商城">
+      <template #actions>
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-sm text-fg-muted">
+          <Coins :size="16" :stroke-width="1.75" class="text-accent" />
+          当前金币：<b class="font-semibold tabular-nums text-accent">{{ auth.user?.coins ?? 0 }}</b>
+        </span>
+      </template>
+    </PageHeader>
 
-    <PaperCard class="mb-4">
+    <PaperCard>
       <FormField label="装备/武器/配件/复活 目标人物卡">
         <BaseSelect v-model="targetId">
           <option value="">请选择人物卡（金币与卡槽商品不需要）</option>
@@ -130,7 +138,7 @@ onMounted(async () => {
       </FormField>
     </PaperCard>
 
-    <div v-if="loading && items.length === 0" class="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
+    <div v-if="loading && items.length === 0" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
       <PaperCard v-for="i in 6" :key="i" class="space-y-2">
         <Skeleton class="h-5 w-12" />
         <Skeleton class="h-4 w-1/2" />
@@ -140,42 +148,43 @@ onMounted(async () => {
       </PaperCard>
     </div>
 
-    <div v-else class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <PaperCard v-for="item in items" :key="item.id" hover class="flex flex-col">
         <div class="mb-3"><StampBadge tone="ledger">{{ itemTypeLabel(item.item_type) }}</StampBadge></div>
-        <h3 class="mb-1 font-serif font-bold text-ink">{{ item.name }}</h3>
-        <p class="mb-4 flex-1 text-xs leading-relaxed text-ink-soft">{{ item.description }}</p>
-        <div class="flex items-center justify-between">
-          <span class="font-type font-bold text-seal">{{ item.price }} 金币</span>
-          <BaseButton :disabled="(auth.user?.coins ?? 0) < item.price || purchasing" @click="purchase(item)">购买</BaseButton>
+        <h3 class="mb-1 text-base font-semibold text-fg">{{ item.name }}</h3>
+        <p class="mb-4 flex-1 text-sm leading-relaxed text-fg-muted">{{ item.description }}</p>
+        <div class="flex items-center justify-between gap-3">
+          <span class="inline-flex items-center gap-1.5 text-sm font-semibold tabular-nums text-accent">
+            <Coins :size="16" :stroke-width="1.75" />
+            {{ item.price }} 金币
+          </span>
+          <BaseButton size="sm" :disabled="(auth.user?.coins ?? 0) < item.price || purchasing" @click="purchase(item)">购买</BaseButton>
         </div>
       </PaperCard>
-      <p v-if="!loading && items.length === 0" class="col-span-full py-8 text-center text-sm text-ink-faint">暂无商品</p>
+      <EmptyState v-if="!loading && items.length === 0" class="col-span-full">暂无商品</EmptyState>
     </div>
 
-    <div v-if="items.length > 0" class="mb-8 text-center font-type text-xs text-ink-faint">
-      共 {{ itemTotal }} 个
+    <div v-if="items.length > 0" class="flex flex-col items-center">
+      <p class="text-xs tabular-nums text-fg-subtle">共 {{ itemTotal }} 个</p>
       <PaginationBar :page="itemPage" :total-pages="itemPages" @update:page="changeItemPage" />
     </div>
 
-    <section>
-      <h3 class="mb-3 font-serif text-base font-bold text-ink">购买记录</h3>
-      <ul class="space-y-1.5">
-        <li
-          v-for="t in transactions"
-          :key="t.id"
-          class="flex items-center justify-between rounded-sm border border-paper-edge bg-paper px-3 py-2 font-type text-xs"
-        >
-          <span class="text-ink">{{ t.shop_item?.name }}</span>
-          <span class="text-seal">-{{ t.coins_spent }} 金币</span>
-          <span class="text-ink-faint">{{ fmtDate(t.created_at) }}</span>
-        </li>
-      </ul>
-      <p v-if="transactions.length === 0" class="text-xs text-ink-faint">暂无购买记录</p>
-      <div v-else class="mt-2 text-center font-type text-xs text-ink-faint">
-        共 {{ txTotal }} 条
-        <PaginationBar :page="txPage" :total-pages="txPages" @update:page="changeTxPage" />
-      </div>
+    <section class="space-y-3">
+      <SectionHeading>购买记录</SectionHeading>
+      <EmptyState v-if="transactions.length === 0">暂无购买记录</EmptyState>
+      <template v-else>
+        <ul class="divide-y divide-line rounded-xl border border-line bg-surface">
+          <li v-for="t in transactions" :key="t.id" class="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+            <span class="min-w-0 flex-1 truncate text-fg">{{ t.shop_item?.name }}</span>
+            <span class="shrink-0 tabular-nums text-accent">-{{ t.coins_spent }} 金币</span>
+            <span class="w-36 shrink-0 text-right text-xs tabular-nums text-fg-subtle">{{ fmtDate(t.created_at) }}</span>
+          </li>
+        </ul>
+        <div class="flex flex-col items-center">
+          <p class="text-xs tabular-nums text-fg-subtle">共 {{ txTotal }} 条</p>
+          <PaginationBar :page="txPage" :total-pages="txPages" @update:page="changeTxPage" />
+        </div>
+      </template>
     </section>
   </div>
 </template>

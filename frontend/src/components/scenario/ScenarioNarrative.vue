@@ -8,21 +8,21 @@ defineProps<{ content: ScenarioContentView }>()
 
 <template>
   <ScenarioSection v-if="content.setting" title="背景设定">
-    <p class="pl-3 font-serif text-sm leading-[1.7] text-ink">{{ content.setting }}</p>
+    <p class="whitespace-pre-wrap font-prose text-prose text-fg">{{ content.setting }}</p>
   </ScenarioSection>
 
   <ScenarioSection v-if="content.intro" title="开场叙事">
-    <p class="pl-3 font-serif text-sm italic leading-[1.7] text-ink-soft">{{ content.intro }}</p>
+    <p class="whitespace-pre-wrap font-prose text-prose italic text-fg-muted">{{ content.intro }}</p>
   </ScenarioSection>
 
   <ScenarioSection v-if="content.map_description" title="地图说明">
-    <div class="whitespace-pre-wrap rounded-sm border border-paper-edge bg-paper-deep/50 p-2.5 font-serif text-sm leading-relaxed text-ink">
+    <div class="whitespace-pre-wrap rounded-lg bg-surface-2 p-3 text-sm leading-relaxed text-fg">
       {{ content.map_description }}
     </div>
   </ScenarioSection>
 
   <ScenarioSection v-if="content.playthrough_outline" title="游玩大纲">
-    <div class="whitespace-pre-wrap rounded-sm border border-paper-edge bg-paper-deep/50 p-2.5 font-serif text-sm leading-relaxed text-ink">
+    <div class="whitespace-pre-wrap rounded-lg bg-surface-2 p-3 text-sm leading-relaxed text-fg">
       {{ content.playthrough_outline }}
     </div>
   </ScenarioSection>

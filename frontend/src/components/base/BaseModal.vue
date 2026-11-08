@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { X } from '@lucide/vue'
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 const props = withDefaults(
@@ -44,7 +45,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
   <Teleport to="body">
     <div
       v-if="open"
-      class="fixed inset-0 flex items-center justify-center bg-ink/60 p-4"
+      class="fixed inset-0 flex items-center justify-center bg-bg/80 p-4 backdrop-blur-sm"
       :style="{ zIndex }"
       @click.self="emit('close')"
     >
@@ -54,12 +55,19 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
         role="dialog"
         aria-modal="true"
         :aria-label="title || undefined"
-        class="max-h-[90vh] w-full overflow-y-auto rounded-sm border border-paper-edge bg-paper shadow-xl outline-none"
+        class="max-h-[90vh] w-full overflow-y-auto rounded-xl border border-line bg-surface shadow-panel outline-none"
         :class="maxWidth"
       >
-        <header v-if="title" class="flex items-center justify-between border-b border-paper-edge px-5 py-3">
-          <h2 class="font-serif text-base font-bold text-ink">{{ title }}</h2>
-          <button type="button" class="text-ink-faint transition hover:text-seal" aria-label="关闭" @click="emit('close')">✕</button>
+        <header v-if="title" class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <h2 class="text-base font-semibold text-fg">{{ title }}</h2>
+          <button
+            type="button"
+            class="rounded-md p-1 text-fg-subtle transition hover:bg-surface-3 hover:text-fg"
+            aria-label="关闭"
+            @click="emit('close')"
+          >
+            <X :size="18" :stroke-width="1.75" />
+          </button>
         </header>
         <div class="p-5">
           <slot />

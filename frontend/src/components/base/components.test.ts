@@ -174,7 +174,7 @@ describe('App 外壳', () => {
   test('管理员顶栏有管理入口；当前页链接高亮', async () => {
     const { wrapper } = await mountApp('/shop', { id: 1, username: 'root', role: 'admin' })
     expect(wrapper.find('nav').text()).toContain('管理')
-    const active = wrapper.findAll('nav a').filter((a) => a.classes().includes('text-seal'))
+    const active = wrapper.findAll('nav a').filter((a) => a.attributes('data-active') === 'true')
     expect(active.map((a) => a.text())).toContain('商城')
   })
 
@@ -196,7 +196,7 @@ describe('App 外壳', () => {
     expect(document.body.textContent).toContain('保存成功')
     expect(document.body.textContent).toContain('确定删除？')
     const confirmBtn = [...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === '删除')!
-    expect(confirmBtn.className).toContain('bg-seal')
+    expect(confirmBtn.getAttribute('data-variant')).toBe('danger')
     confirmBtn.click()
     expect(await pending).toBe(true)
     wrapper.unmount()

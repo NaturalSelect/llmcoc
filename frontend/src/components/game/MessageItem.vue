@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Clock, Dices, Hand, Timer } from '@lucide/vue'
 import { computed } from 'vue'
 import {
   askNames,
@@ -28,80 +29,102 @@ const error = computed(() => messageError(props.msg))
 const names = computed(() => askNames(props.msg))
 const dice = computed(() => diceOf(props.msg))
 const images = computed(() => (props.msg.status === 'done' ? props.msg.images || [] : []))
-
-const frame = computed(() => {
-  if (kind.value === 'player') return mine.value ? 'border-moss bg-moss/10' : 'border-moss/60 bg-paper-deep/40'
-  if (kind.value === 'system') return 'border-ledger/60 bg-ledger/5'
-  return 'border-seal/70 bg-paper'
-})
-const labelTone = computed(() => (kind.value === 'player' ? 'text-moss' : kind.value === 'system' ? 'text-ledger' : 'text-seal'))
 </script>
 
 <template>
-  <article class="msg rounded-sm border border-l-4 border-paper-edge px-3 py-2 shadow-sm" :class="[frame, msg._new ? 'fade-up' : '']">
-    <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-paper-edge/70 pb-1 font-type text-xs">
-      <span class="font-bold" :class="labelTone">{{ msgLabel(msg) }}</span>
-      <span class="text-ink-faint">{{ fmtTime(msg.created_at as string | undefined) }}</span>
-      <span
-        v-if="timing"
-        class="text-ink-faint"
-        title="KP决策耗时(不含叙事生成),Director工具调用循环轮数及平均每步延迟"
-      >
-        ⏱ {{ fmtDuration(timing.elapsedMs) }} · {{ timing.steps }} 步 · 均 {{ fmtStepAvg(timing.elapsedMs, timing.steps) }}/步
-      </span>
-      <span v-if="time" class="ml-auto text-ink-soft" :title="time.elapsed || undefined">🕯 {{ time.label }}</span>
+  <article :class="msg._new ? 'fade-up' : ''">
+    <!-- NOTE: 叙事类消息（writer / kp / ask / 旧数据）是无框的连续正文；系统消息居中且两侧用发丝线，不抢叙事的视线 -->
+    <div v-if="kind === 'system'" class="flex items-center gap-3 text-xs text-fg-subtle">
+      <span class="h-px flex-1 bg-line" aria-hidden="true" />
+      <p class="max-w-[85%] whitespace-pre-wrap text-center">{{ msg.content }}</p>
+      <span class="h-px flex-1 bg-line" aria-hidden="true" />
     </div>
 
-    <p v-if="kind === 'player'" class="whitespace-pre-wrap text-sm leading-relaxed text-ink">{{ msg.content }}</p>
-
-    <div v-else-if="kind === 'writer'">
-      <p v-if="msg.status === 'failed'" class="text-sm text-seal/80">叙事生成失败<template v-if="error">：{{ error }}</template></p>
-      <template v-else>
-        <p v-if="text.trim()" class="narrative whitespace-pre-wrap leading-loose text-ink" :class="msg.status === 'pending' ? 'cursor' : ''">{{ text }}</p>
-        <p v-else-if="msg.status === 'pending'" class="narrative cursor text-ink-faint">叙事正文生成中…</p>
-      </template>
-    </div>
-
-    <div v-else-if="kind === 'image'">
-      <p v-if="msg.status === 'pending'" class="narrative cursor text-ink-faint">配图生成中…</p>
-      <p v-else-if="msg.status === 'failed'" class="text-sm text-seal/80">配图失败<template v-if="error">：{{ error }}</template></p>
-      <div v-if="images.length" class="grid gap-2">
-        <img
-          v-for="(img, idx) in images"
-          :key="idx"
-          :src="img"
-          alt="KP生成的场景图"
-          loading="lazy"
-          decoding="async"
-          class="max-h-96 max-w-full cursor-zoom-in rounded-sm border border-paper-edge bg-ink/5 object-contain transition-opacity hover:opacity-90"
-          @click="emit('preview', img)"
-        />
-      </div>
-    </div>
-
-    <div v-else-if="kind === 'kp' || kind === 'ask'">
-      <p class="whitespace-pre-wrap leading-loose text-ink">{{ msg.content }}</p>
-      <p v-if="kind === 'ask' && names.length" class="mt-1.5 font-type text-xs font-bold text-seal">👉 KP 点名：{{ names.join('、') }}</p>
-      <p v-if="isEndedMessage(msg)" class="mt-1.5 font-type text-xs font-bold text-seal">— 游戏结束 —</p>
-      <div v-if="dice.length" class="mt-2 flex flex-wrap gap-1.5">
-        <span
-          v-for="(d, idx) in dice"
-          :key="idx"
-          class="inline-flex items-center gap-1.5 rounded-sm border border-paper-edge bg-paper-deep/60 px-2 py-0.5 font-type text-xs text-ink"
-        >
-          <template v-if="'raw' in d">{{ d.raw }}</template>
-          <template v-else>
-            <span :title="d.what || undefined">🎲 {{ d.what || '骰点' }}{{ d.hidden ? '（暗骰）' : '' }}</span>
-            <b class="text-seal">{{ d.roll }}</b>
-            <span v-if="d.level" class="text-ink-faint">难度 {{ d.level }}</span>
-          </template>
+    <!-- 玩家发言：安静的气泡，不用彩色边框 -->
+    <div v-else-if="kind === 'player'" class="w-fit max-w-full rounded-xl bg-surface-2 px-4 py-3 sm:max-w-[85%]" :class="mine ? 'ml-auto' : ''">
+      <div class="mb-1 flex flex-wrap items-baseline gap-x-2">
+        <span class="text-sm font-medium text-accent">{{ msgLabel(msg) }}</span>
+        <span class="text-xs tabular-nums text-fg-subtle">{{ fmtTime(msg.created_at as string | undefined) }}</span>
+        <span v-if="time" class="ml-auto inline-flex items-center gap-1 text-xs tabular-nums text-fg-subtle" :title="time.elapsed || undefined">
+          <Clock :size="16" :stroke-width="1.75" class="shrink-0" />
+          {{ time.label }}
         </span>
       </div>
+      <p class="whitespace-pre-wrap text-sm leading-relaxed text-fg">{{ msg.content }}</p>
     </div>
 
-    <p v-else-if="kind === 'system'" class="whitespace-pre-wrap text-xs italic text-ledger">{{ msg.content }}</p>
+    <template v-else>
+      <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-subtle">
+        <span class="font-medium">{{ msgLabel(msg) }}</span>
+        <span class="tabular-nums">{{ fmtTime(msg.created_at as string | undefined) }}</span>
+        <span
+          v-if="timing"
+          class="inline-flex items-center gap-1 tabular-nums"
+          title="KP决策耗时(不含叙事生成),Director工具调用循环轮数及平均每步延迟"
+        >
+          <Timer :size="16" :stroke-width="1.75" class="shrink-0" />
+          {{ fmtDuration(timing.elapsedMs) }} · {{ timing.steps }} 步 · 均 {{ fmtStepAvg(timing.elapsedMs, timing.steps) }}/步
+        </span>
+        <span v-if="time" class="ml-auto inline-flex items-center gap-1 tabular-nums" :title="time.elapsed || undefined">
+          <Clock :size="16" :stroke-width="1.75" class="shrink-0" />
+          {{ time.label }}
+        </span>
+      </div>
 
-    <p v-else class="narrative whitespace-pre-wrap leading-loose text-ink">{{ stripLegacyTags(msg.content) }}</p>
+      <div v-if="kind === 'writer'">
+        <p v-if="msg.status === 'failed'" class="text-sm text-danger">叙事生成失败<template v-if="error">：{{ error }}</template></p>
+        <template v-else>
+          <p v-if="text.trim()" class="whitespace-pre-wrap font-prose text-prose text-fg" :class="msg.status === 'pending' ? 'cursor' : ''">{{ text }}</p>
+          <p v-else-if="msg.status === 'pending'" class="cursor font-prose text-prose text-fg-subtle">叙事正文生成中…</p>
+        </template>
+      </div>
+
+      <div v-else-if="kind === 'image'">
+        <p v-if="msg.status === 'pending'" class="cursor text-sm text-fg-subtle">配图生成中…</p>
+        <p v-else-if="msg.status === 'failed'" class="text-sm text-danger">配图失败<template v-if="error">：{{ error }}</template></p>
+        <div v-if="images.length" class="grid gap-3">
+          <img
+            v-for="(img, idx) in images"
+            :key="idx"
+            :src="img"
+            alt="KP生成的场景图"
+            loading="lazy"
+            decoding="async"
+            class="w-full max-w-full cursor-zoom-in rounded-xl bg-surface-2 object-contain transition-opacity hover:opacity-90"
+            @click="emit('preview', img)"
+          />
+        </div>
+      </div>
+
+      <div v-else-if="kind === 'kp' || kind === 'ask'">
+        <p class="whitespace-pre-wrap font-prose text-prose text-fg">{{ msg.content }}</p>
+        <p
+          v-if="kind === 'ask' && names.length"
+          class="mt-3 inline-flex items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-1 text-xs font-medium text-accent"
+        >
+          <Hand :size="16" :stroke-width="1.75" class="shrink-0" />
+          点名：{{ names.join('、') }}
+        </p>
+        <p v-if="isEndedMessage(msg)" class="mt-3 text-sm font-medium text-accent">— 游戏结束 —</p>
+        <div v-if="dice.length" class="mt-3 flex flex-wrap gap-2">
+          <span
+            v-for="(d, idx) in dice"
+            :key="idx"
+            class="inline-flex items-center gap-1.5 rounded-full bg-surface-3 px-2.5 py-1 text-xs tabular-nums text-fg"
+          >
+            <Dices :size="16" :stroke-width="1.75" class="shrink-0 text-fg-subtle" />
+            <template v-if="'raw' in d">{{ d.raw }}</template>
+            <template v-else>
+              <span :title="d.what || undefined">{{ d.what || '骰点' }}{{ d.hidden ? '（暗骰）' : '' }}</span>
+              <b class="font-semibold text-accent">{{ d.roll }}</b>
+              <span v-if="d.level" class="text-fg-subtle">难度 {{ d.level }}</span>
+            </template>
+          </span>
+        </div>
+      </div>
+
+      <p v-else class="whitespace-pre-wrap font-prose text-prose text-fg">{{ stripLegacyTags(msg.content) }}</p>
+    </template>
   </article>
 </template>
 

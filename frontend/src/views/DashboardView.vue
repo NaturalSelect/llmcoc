@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Skull, Warehouse } from '@lucide/vue'
 import type { Announcement, CharacterCardFull, RecentSession } from '@/api/characterTypes'
 import BaseButton from '@/components/base/BaseButton.vue'
+import EmptyState from '@/components/base/EmptyState.vue'
+import PageHeader from '@/components/base/PageHeader.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import Skeleton from '@/components/base/Skeleton.vue'
 import AnnouncementList from '@/components/character/AnnouncementList.vue'
 import CharacterCardTile from '@/components/character/CharacterCardTile.vue'
@@ -128,24 +132,29 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl p-5">
-    <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
-      <section class="lg:col-span-2" aria-labelledby="characters-title">
-        <header class="mb-4 flex items-center justify-between border-b border-paper-edge pb-2">
-          <h2 id="characters-title" class="font-serif text-lg font-bold text-ink">我的调查员</h2>
-          <div class="flex items-center gap-2">
-            <BaseButton variant="ghost" @click="warehouseOpen = true">仓库</BaseButton>
-            <BaseButton @click="createOpen = true">+ 创建角色</BaseButton>
-          </div>
-        </header>
+  <div class="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
+    <PageHeader title="我的调查员">
+      <template #actions>
+        <BaseButton variant="secondary" @click="warehouseOpen = true">
+          <Warehouse :size="16" :stroke-width="1.75" />
+          仓库
+        </BaseButton>
+        <BaseButton @click="createOpen = true">+ 创建角色</BaseButton>
+      </template>
+    </PageHeader>
 
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <section class="space-y-6 lg:col-span-2" aria-label="我的调查员">
         <div v-if="showSkeleton" class="grid grid-cols-1 gap-3 md:grid-cols-2" aria-busy="true">
           <PaperCard v-for="i in 4" :key="i">
-            <Skeleton class="mb-3 h-4 w-1/2" />
-            <div class="mb-3 grid grid-cols-4 gap-1">
-              <Skeleton v-for="j in 4" :key="j" class="h-11" />
+            <div class="mb-4 flex items-center gap-3">
+              <Skeleton class="h-11 w-11 rounded-full" />
+              <Skeleton class="h-4 w-1/2" />
             </div>
-            <div class="space-y-1.5">
+            <div class="mb-3 grid grid-cols-4 gap-2">
+              <Skeleton v-for="j in 4" :key="j" class="h-12" />
+            </div>
+            <div class="space-y-2">
               <Skeleton class="h-2 w-full" />
               <Skeleton class="h-2 w-full" />
               <Skeleton class="h-2 w-2/3" />
@@ -153,17 +162,17 @@ onMounted(() => {
           </PaperCard>
         </div>
 
-        <PaperCard v-if="showEmpty" class="p-8! text-center text-ink-soft">
-          <p class="mb-3 text-3xl">📜</p>
-          <p class="text-sm">还没有调查员档案，创建第一张人物卡开始冒险！</p>
-        </PaperCard>
+        <EmptyState v-if="showEmpty">还没有调查员档案，创建第一张人物卡开始冒险！</EmptyState>
 
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div v-if="cards.length > 0" class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <CharacterCardTile v-for="c in cards" :key="c.id" :card="c" @open="openDetail" @delete="deleteCard" />
         </div>
 
-        <section v-if="deadCards.length > 0" class="mt-6" aria-labelledby="dead-title">
-          <h3 id="dead-title" class="mb-3 font-type text-sm font-bold text-seal">⚰ 已阵亡的调查员</h3>
+        <section v-if="deadCards.length > 0" aria-labelledby="dead-title">
+          <SectionHeading id="dead-title" class="mb-3" :count="deadCards.length">
+            <Skull :size="16" :stroke-width="1.75" class="text-fg-subtle" />
+            已阵亡的调查员
+          </SectionHeading>
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
             <DeadCharacterCard
               v-for="c in deadCards"
@@ -180,7 +189,7 @@ onMounted(() => {
         </section>
       </section>
 
-      <aside>
+      <aside class="space-y-6">
         <AnnouncementList :announcements="announcements" />
         <RecentSessions
           :sessions="sessions"

@@ -1,20 +1,41 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-paper: #f2e8d5;
-  --color-paper-deep: #e6d7b8;
-  --color-paper-edge: #cdb98f;
-  --color-ink: #2a2118;
-  --color-ink-soft: #5c4a36;
-  --color-ink-faint: #8a7658;
-  --color-seal: #8b2a1f;
-  --color-ledger: #2f4a5a;
-  --color-moss: #4f6a3a;
-  --font-serif: 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
-  --font-type: 'Courier Prime', 'Courier New', ui-monospace, monospace;
+  --color-bg: #0e1013;
+  --color-surface: #161a1f;
+  --color-surface-2: #1d2228;
+  --color-surface-3: #262c33;
+  --color-line: #2a3038;
+  --color-line-strong: #3a424c;
+  --color-fg: #e8e6e1;
+  --color-fg-muted: #b0b5bc;
+  --color-fg-subtle: #8a919a;
+  --color-accent: #d9a54a;
+  --color-accent-strong: #e8b75c;
+  --color-accent-fg: #1a1306;
+  --color-danger: #e5534b;
+  --color-success: #57ab5a;
+  --color-info: #539bf5;
+  --color-warning: #d29922;
+  --color-hp: #e5534b;
+  --color-san: #a371f7;
+  --color-mp: #539bf5;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif;
+  /* NOTE: 故意不放 SimSun/宋体：没有中文衬线字体的 Windows 退回微软雅黑，比宋体的点阵渲染好看 */
+  --font-prose: 'Noto Serif CJK SC', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', var(--font-sans);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-prose: 1.0625rem;
+  --text-prose--line-height: 1.9;
+
+  --shadow-panel: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.7);
 }
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
   html,
   body,
   #app {
@@ -22,16 +43,75 @@
   }
   body {
     margin: 0;
-    background-color: var(--color-paper);
-    color: var(--color-ink);
-    font-family: var(--font-serif);
-    /* NOTE: 纸张纹理只用 CSS 渐变，不放图片；两层极淡的径向渐变模拟纸面不均匀的老化 */
-    background-image:
-      radial-gradient(ellipse at 20% 10%, rgb(255 255 255 / 0.35), transparent 55%),
-      radial-gradient(ellipse at 90% 90%, rgb(139 90 43 / 0.08), transparent 50%);
-    background-attachment: fixed;
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   ::selection {
-    background: color-mix(in srgb, var(--color-seal) 25%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
+}
+
+@layer components {
+  /* NOTE: Tailwind preflight 会清空标题和列表的默认样式，后台写的 Markdown 渲染出的标签需要重新排版；公告列表和公告编辑预览共用 */
+  .announcement-md,
+  .announcement-preview {
+    line-height: 1.7;
+    color: var(--color-fg-muted);
+  }
+  :is(.announcement-md, .announcement-preview) > * + * {
+    margin-top: 0.5em;
+  }
+  :is(.announcement-md, .announcement-preview) :is(h1, h2, h3) {
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+  :is(.announcement-md, .announcement-preview) h1 {
+    font-size: 1.0625rem;
+  }
+  :is(.announcement-md, .announcement-preview) h2 {
+    font-size: 1rem;
+  }
+  :is(.announcement-md, .announcement-preview) h3 {
+    font-size: 0.9375rem;
+  }
+  :is(.announcement-md, .announcement-preview) ul {
+    list-style: disc;
+    padding-left: 1.25em;
+  }
+  :is(.announcement-md, .announcement-preview) ol {
+    list-style: decimal;
+    padding-left: 1.25em;
+  }
+  :is(.announcement-md, .announcement-preview) a {
+    color: var(--color-info);
+    text-decoration: underline;
+  }
+  :is(.announcement-md, .announcement-preview) code {
+    background: var(--color-surface-3);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+  }
+  :is(.announcement-md, .announcement-preview) pre {
+    background: var(--color-surface-3);
+    padding: 0.5em 0.75em;
+    border-radius: 8px;
+    overflow-x: auto;
+  }
+  :is(.announcement-md, .announcement-preview) pre code {
+    background: none;
+    padding: 0;
+  }
+  :is(.announcement-md, .announcement-preview) blockquote {
+    border-left: 2px solid var(--color-line-strong);
+    padding-left: 0.75em;
+    color: var(--color-fg-subtle);
+  }
+  :is(.announcement-md, .announcement-preview) img {
+    max-width: 100%;
   }
 }

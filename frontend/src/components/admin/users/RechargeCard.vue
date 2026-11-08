@@ -5,6 +5,7 @@ import { api } from '@/api/client'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import { useUiStore } from '@/stores/ui'
 import { errMsg } from '../shared/errMsg'
 
@@ -31,8 +32,8 @@ async function submit() {
 
 <template>
   <PaperCard tag="section" aria-labelledby="recharge-title" class="self-start">
-    <h3 id="recharge-title" class="mb-4 border-b border-paper-edge pb-2 font-type text-sm font-bold tracking-widest text-seal">充值金币</h3>
-    <div class="space-y-2.5">
+    <SectionHeading id="recharge-title" class="mb-4">充值金币</SectionHeading>
+    <div class="space-y-3">
       <BaseInput v-model.number="form.user_id" type="number" placeholder="用户 ID" aria-label="用户 ID" />
       <BaseInput v-model.number="form.amount" type="number" placeholder="充值数量" aria-label="充值数量" />
       <BaseInput v-model="form.note" placeholder="备注（可选）" aria-label="备注" />

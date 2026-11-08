@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import { Hourglass } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, postForm } from '@/api/client'
 import { getToken } from '@/api/token'
 import type { CharacterCardFull } from '@/api/characterTypes'
 import type { CharacterCard, Session, SessionPlayer } from '@/api/types'
+import StampBadge from '@/components/base/StampBadge.vue'
 import CharacterDetailModal from '@/components/character/CharacterDetailModal.vue'
 import AskCard from '@/components/game/AskCard.vue'
 import GameHeader from '@/components/game/GameHeader.vue'
 import GameHud from '@/components/game/GameHud.vue'
+import GameSidebar from '@/components/game/GameSidebar.vue'
 import ImagePreview from '@/components/game/ImagePreview.vue'
 import InvestigatorListModal from '@/components/game/InvestigatorListModal.vue'
 import MessageItem from '@/components/game/MessageItem.vue'
@@ -230,31 +233,51 @@ defineExpose({ viewCard })
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 overflow-hidden bg-paper">
-    <div class="mx-auto flex min-h-0 w-full max-w-3xl flex-col overflow-hidden xl:max-w-4xl">
-      <GameHeader v-if="session" :session="session" :user="user" :busy="busy" @action="onAction" />
-      <GameHud v-if="card" :card="card" :flash="hudFlash" :time="gameTime" />
+  <div class="flex min-h-0 flex-1 overflow-hidden bg-bg">
+    <div class="mx-auto flex min-h-0 w-full max-w-7xl">
+      <section class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <GameHeader v-if="session" :session="session" :user="user" :busy="busy" @action="onAction" />
+        <GameHud v-if="card" class="lg:hidden" :card="card" :flash="hudFlash" :time="gameTime" />
 
-      <div ref="chatBox" class="min-h-0 flex-1 space-y-3 overflow-y-auto bg-paper-deep/30 p-3" role="log" aria-live="off">
-        <template v-if="room">
-          <MessageItem v-for="m in room.messages" :key="m.id" :msg="m" :room="room" @preview="previewSrc = $event" />
+        <div ref="chatBox" class="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="off">
+          <div class="mx-auto max-w-3xl space-y-6 px-4 py-6">
+            <template v-if="room">
+              <MessageItem v-for="m in room.messages" :key="m.id" :msg="m" :room="room" @preview="previewSrc = $event" />
 
-          <div v-if="waiting" class="rounded-sm border border-ledger/50 bg-ledger/5 px-3 py-2">
-            <p class="text-xs italic text-ledger">⏳ 等待其他调查员提交行动…</p>
-            <div v-if="room.waiting.submittedNames.length" class="mt-1.5 flex flex-wrap items-center gap-1">
-              <span class="shrink-0 text-[10px] text-ink-faint">已提交：</span>
-              <span v-for="n in room.waiting.submittedNames" :key="n" class="rounded-sm border border-moss px-1.5 font-type text-[11px] text-moss">{{ n }}</span>
-            </div>
-            <div v-if="room.waiting.pendingNames.length" class="mt-1 flex flex-wrap items-center gap-1">
-              <span class="shrink-0 text-[10px] text-ink-faint">待提交：</span>
-              <span v-for="n in room.waiting.pendingNames" :key="n" class="rounded-sm border border-ink-faint px-1.5 font-type text-[11px] text-ink-faint">{{ n }}</span>
-            </div>
+              <div v-if="waiting" class="space-y-2 rounded-xl bg-surface-2 px-4 py-3">
+                <p class="flex items-center gap-2 text-sm text-fg-muted">
+                  <Hourglass :size="16" :stroke-width="1.75" class="shrink-0" />
+                  等待其他调查员提交行动…
+                </p>
+                <div v-if="room.waiting.submittedNames.length" class="flex flex-wrap items-center gap-1.5">
+                  <span class="shrink-0 text-xs text-fg-subtle">已提交：</span>
+                  <StampBadge v-for="n in room.waiting.submittedNames" :key="n" tone="moss">{{ n }}</StampBadge>
+                </div>
+                <div v-if="room.waiting.pendingNames.length" class="flex flex-wrap items-center gap-1.5">
+                  <span class="shrink-0 text-xs text-fg-subtle">待提交：</span>
+                  <StampBadge v-for="n in room.waiting.pendingNames" :key="n" tone="faint">{{ n }}</StampBadge>
+                </div>
+              </div>
+            </template>
           </div>
-        </template>
-      </div>
+        </div>
 
-      <AskCard v-if="room" :room="room" :draft="draft" @submit="submit" />
-      <StatusDock v-if="room" :room="room" @continue="controller.hostContinue()" @stop="controller.hostStop()" />
+        <div v-if="room" class="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-3 px-4 pb-4">
+          <AskCard :room="room" :draft="draft" @submit="submit" />
+          <StatusDock :room="room" @continue="controller.hostContinue()" @stop="controller.hostStop()" />
+        </div>
+      </section>
+
+      <GameSidebar
+        class="hidden w-80 shrink-0 flex-col overflow-y-auto border-l border-line bg-surface lg:flex"
+        :session="session"
+        :room="room"
+        :card="card"
+        :flash="hudFlash"
+        :time="gameTime"
+        :user-id="auth.user?.id"
+        @select="onSelectPlayer"
+      />
     </div>
 
     <InvestigatorListModal

@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { RefreshCw } from '@lucide/vue'
 import { onMounted, ref } from 'vue'
 import type { AgentConfigRow, AgentFormState, ProviderConfig } from '@/api/adminTypesCore'
 import { api } from '@/api/client'
 import AgentCard from '@/components/admin/agents/AgentCard.vue'
 import { buildAgentForms } from '@/components/admin/agents/agentRoles'
 import { errMsg } from '@/components/admin/shared/errMsg'
+import BaseButton from '@/components/base/BaseButton.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
@@ -40,16 +43,16 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="space-y-3">
-    <div class="flex items-center justify-between">
-      <h3 class="font-type text-sm font-bold tracking-widest text-seal">Agent 配置</h3>
-      <button type="button" class="font-type text-xs text-ink-faint transition hover:text-seal" @click="refresh">刷新</button>
+  <div class="space-y-4">
+    <div class="flex items-center justify-between gap-3">
+      <SectionHeading>Agent 配置</SectionHeading>
+      <BaseButton variant="ghost" size="sm" @click="refresh"><RefreshCw :size="16" :stroke-width="1.75" />刷新</BaseButton>
     </div>
-    <p class="text-xs text-ink-faint">留空的系统提示词将使用内置默认提示词。</p>
+    <p class="text-sm text-fg-subtle">留空的系统提示词将使用内置默认提示词。</p>
 
-    <div class="space-y-3">
+    <div class="space-y-4">
       <AgentCard v-for="f in forms" :key="`${generation}-${f.id}`" :initial="f" :providers="providers" />
-      <p v-if="forms.length === 0" class="text-sm text-ink-faint" role="status">加载中…</p>
+      <p v-if="forms.length === 0" class="text-sm text-fg-subtle" role="status">加载中…</p>
     </div>
   </div>
 </template>

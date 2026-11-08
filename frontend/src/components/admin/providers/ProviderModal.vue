@@ -76,8 +76,8 @@ async function save() {
         :placeholder="editing ? '新 API Key（留空保留原值）' : 'API Key'"
         aria-label="API Key"
       />
-      <label class="flex cursor-pointer items-center gap-2 text-xs text-ink-soft">
-        <input v-model="form.is_active" type="checkbox" class="accent-seal" /> 启用
+      <label class="flex cursor-pointer items-center gap-2 text-sm text-fg-muted">
+        <input v-model="form.is_active" type="checkbox" class="accent-accent" /> 启用
       </label>
       <div class="flex gap-2 pt-1">
         <BaseButton variant="ghost" class="flex-1" @click="emit('close')">取消</BaseButton>

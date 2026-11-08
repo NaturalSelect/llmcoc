@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
+import { Sparkles } from '@lucide/vue'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
@@ -32,9 +33,9 @@ async function generate(): Promise<void> {
 </script>
 
 <template>
-  <div class="mx-auto max-w-sm space-y-3" role="tabpanel">
+  <div class="mx-auto max-w-md space-y-4" role="tabpanel">
     <BaseInput v-model="form.name" placeholder="姓名 *" aria-label="姓名" />
-    <div class="grid grid-cols-2 gap-2">
+    <div class="grid grid-cols-2 gap-3">
       <FormField label="性别">
         <BaseSelect v-model="form.gender">
           <option value="">请指定</option>
@@ -51,8 +52,9 @@ async function generate(): Promise<void> {
     <BaseTextarea v-model="form.background" rows="3" placeholder="背景提示（可选）" aria-label="背景提示" />
     <div class="flex gap-2 pt-1">
       <BaseButton variant="ghost" class="flex-1" @click="emit('close')">取消</BaseButton>
-      <BaseButton class="flex-1" :disabled="loading || !form.name.trim()" @click="generate">
-        {{ loading ? '生成中…' : '✨ AI 生成' }}
+      <BaseButton class="flex-1" :loading="loading" :disabled="!form.name.trim()" @click="generate">
+        <Sparkles v-if="!loading" :size="16" :stroke-width="1.75" />
+        {{ loading ? '生成中…' : 'AI 生成' }}
       </BaseButton>
     </div>
   </div>

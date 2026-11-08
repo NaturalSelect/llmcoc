@@ -22,24 +22,26 @@ watch(
   },
 )
 
-const preClass =
-  'max-h-[65vh] overflow-auto rounded-sm border border-paper-edge bg-paper-deep/50 p-3 font-type text-[11px] leading-[1.55] whitespace-pre-wrap text-ink'
-const emptyClass = 'rounded-sm border border-paper-edge bg-paper-deep/40 p-4 text-sm text-ink-faint'
+// NOTE: 故事原文是正文，用 prose 字体；LLM 对话记录是日志，用等宽小字
+const storyClass =
+  'max-h-[65vh] overflow-auto rounded-lg bg-bg p-4 font-prose text-sm leading-relaxed whitespace-pre-wrap text-fg'
+const logClass = 'max-h-[65vh] overflow-auto rounded-lg bg-bg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-muted'
+const emptyClass = 'rounded-lg bg-surface-2 p-4 text-sm text-fg-muted'
 </script>
 
 <template>
   <BaseModal :open="open" title="LLM 生成记录" max-width="max-w-4xl" @close="emit('close')">
-    <p class="mb-4 font-type text-xs text-ink-faint">{{ log?.scenario_name || '未命名模组' }}</p>
-    <p v-if="loading" class="py-8 text-center text-sm text-ink-faint">加载中…</p>
+    <p class="mb-4 text-sm text-fg-muted">{{ log?.scenario_name || '未命名模组' }}</p>
+    <p v-if="loading" class="py-8 text-center text-sm text-fg-subtle">加载中…</p>
     <div v-else>
       <TabBar v-model="tab" :tabs="tabs" class="mb-4" />
       <div v-if="tab === 'story'">
         <div v-if="!log?.has_story" :class="emptyClass">该模组没有保存故事原文，可能是改动前生成的旧模组。</div>
-        <pre v-else :class="preClass">{{ log?.story_document || '' }}</pre>
+        <pre v-else :class="storyClass">{{ log?.story_document || '' }}</pre>
       </div>
       <div v-else>
         <div v-if="!log?.has_log" :class="emptyClass">该模组没有 AI 生成对话记录，可能是手动创建或上传导入的模组。</div>
-        <pre v-else :class="preClass">{{ log?.log_text || '' }}</pre>
+        <pre v-else :class="logClass">{{ log?.log_text || '' }}</pre>
       </div>
     </div>
     <div class="mt-4 flex justify-end">

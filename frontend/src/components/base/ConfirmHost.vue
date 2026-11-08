@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import BaseButton from '@/components/base/BaseButton.vue'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
@@ -16,42 +17,30 @@ function onKey(e: KeyboardEvent) {
   <Teleport to="body">
     <div
       v-if="state"
-      class="fixed inset-0 z-[60] flex items-center justify-center bg-ink/60 p-4"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-bg/80 p-4 backdrop-blur-sm"
       @click.self="ui.resolveConfirm(false)"
       @keydown="onKey"
     >
       <div
-        class="w-full max-w-sm rounded-sm border border-paper-edge bg-paper p-6 shadow-xl"
+        class="w-full max-w-sm rounded-xl border border-line bg-surface p-6 shadow-panel"
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
       >
-        <h2 id="confirm-title" class="font-type text-sm tracking-widest text-ink-soft">确认操作</h2>
-        <p class="mt-3 whitespace-pre-wrap font-serif leading-relaxed text-ink">{{ state.message }}</p>
+        <h2 id="confirm-title" class="text-sm font-medium text-fg-muted">确认操作</h2>
+        <p class="mt-3 whitespace-pre-wrap leading-relaxed text-fg">{{ state.message }}</p>
         <input
           v-if="state.withInput"
           v-model="state.inputValue"
-          class="mt-3 w-full rounded-sm border border-paper-edge bg-paper-deep px-3 py-2 font-serif text-ink outline-none focus:border-seal"
+          class="mt-3 h-10 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-fg outline-none placeholder:text-fg-subtle focus:border-accent focus:ring-2 focus:ring-accent/30"
           :placeholder="state.inputPlaceholder"
           autofocus
         />
         <div class="mt-5 flex gap-2">
-          <button
-            type="button"
-            class="flex-1 rounded-sm border border-paper-edge px-3 py-2 font-serif text-ink-soft transition hover:bg-paper-deep"
-            @click="ui.resolveConfirm(false)"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            class="flex-1 rounded-sm px-3 py-2 font-serif text-paper transition hover:opacity-90"
-            :class="state.danger ? 'bg-seal' : 'bg-ledger'"
-            autofocus
-            @click="ui.resolveConfirm(true)"
-          >
+          <BaseButton variant="ghost" class="flex-1" @click="ui.resolveConfirm(false)">取消</BaseButton>
+          <BaseButton :variant="state.danger ? 'danger' : 'primary'" class="flex-1" autofocus @click="ui.resolveConfirm(true)">
             {{ state.confirmText }}
-          </button>
+          </BaseButton>
         </div>
       </div>
     </div>

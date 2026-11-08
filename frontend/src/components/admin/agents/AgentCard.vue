@@ -65,14 +65,16 @@ const pinging = () => pingingKey.value === pingLoadingKey(form)
 </script>
 
 <template>
-  <PaperCard tag="article" :aria-label="agentLabel(form.role)">
-    <header class="mb-3 flex flex-wrap items-center gap-2">
-      <h4 class="font-serif text-sm font-bold text-ink">{{ agentLabel(form.role) }}</h4>
-      <span class="text-xs text-ink-faint">{{ agentDesc(form.role) }}</span>
-      <StampBadge v-if="!form.is_active" tone="seal" class="ml-auto">已停用</StampBadge>
+  <PaperCard tag="article" :aria-label="agentLabel(form.role)" class="space-y-4">
+    <!-- NOTE: 「启用」复选框必须留在卡片底部：测试按 DOM 顺序取复选框下标（0 关温度、1 走 Chat、2 扩散模式），放到头部会打乱 -->
+    <header class="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <h4 class="text-base font-semibold text-fg">{{ agentLabel(form.role) }}</h4>
+      <span class="text-sm text-fg-subtle">{{ agentDesc(form.role) }}</span>
+      <span v-if="form.model_name" class="font-mono text-xs text-fg-muted">{{ form.model_name }}</span>
+      <StampBadge v-if="!form.is_active" tone="danger" class="ml-auto">已停用</StampBadge>
     </header>
 
-    <div class="mb-2.5 grid grid-cols-1 gap-2.5 md:grid-cols-3">
+    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
       <FormField label="提供商">
         <BaseSelect v-model="form.provider_config_id">
           <option value="">使用全局配置</option>
@@ -82,14 +84,12 @@ const pinging = () => pingingKey.value === pingLoadingKey(form)
       <FormField label="模型名称">
         <BaseInput v-model="form.model_name" placeholder="如 gpt-4o" />
       </FormField>
-      <div class="grid grid-cols-2 gap-2">
-        <FormField label="MaxTokens">
-          <BaseInput v-model.number="form.max_tokens" type="number" />
-        </FormField>
-        <FormField label="Temp">
-          <BaseInput v-model.number="form.temperature" type="number" step="0.1" min="0" max="2" :disabled="form.disable_temperature" />
-        </FormField>
-      </div>
+      <FormField label="MaxTokens">
+        <BaseInput v-model.number="form.max_tokens" type="number" />
+      </FormField>
+      <FormField label="Temp">
+        <BaseInput v-model.number="form.temperature" type="number" step="0.1" min="0" max="2" :disabled="form.disable_temperature" />
+      </FormField>
       <FormField v-if="hasContextWindow(form.role)" label="上下文窗口（token，按模型实际值填写）">
         <BaseInput
           v-model.number="form.context_window"
@@ -98,38 +98,6 @@ const pinging = () => pingingKey.value === pingLoadingKey(form)
           :placeholder="form.role === 'director' ? '0 = 不整体裁剪历史' : '0 = 使用默认 300000'"
         />
       </FormField>
-    </div>
-
-    <div class="mb-2.5 space-y-2 text-xs text-ink-soft">
-      <label class="flex cursor-pointer items-start gap-2">
-        <input v-model="form.disable_temperature" type="checkbox" class="mt-0.5 accent-seal" />
-        <span>关闭 Temperature（不支持温度参数的模型，如 o1/o3）</span>
-      </label>
-      <template v-if="isPainterRole(form.role)">
-        <label class="flex cursor-pointer items-start gap-2">
-          <input v-model="form.image_via_chat" type="checkbox" class="mt-0.5 accent-seal" :disabled="form.diffusion_mode" />
-          <span>画图走 Chat 接口（部分画图模型/中转网关只支持 /chat/completions 调用）</span>
-        </label>
-        <label class="flex cursor-pointer items-start gap-2">
-          <input v-model="form.diffusion_mode" type="checkbox" class="mt-0.5 accent-seal" :disabled="form.image_via_chat" />
-          <span>
-            扩散模型模式（如 new-api 接入的 NovelAI：先由 Diffusion Translator 把画面描述翻译成标签式提示词（负面提示词为固定内容），再调用 /images/generations；需启用 Diffusion Translator）
-          </span>
-        </label>
-      </template>
-      <label class="flex cursor-pointer items-start gap-2">
-        <input v-model="form.with_jailbreak" type="checkbox" class="mt-0.5 accent-seal" />
-        <span>启用越狱提示词（在该 Agent 提示词外包裹破限内容，降低模型因审查拒绝创作黑暗/成人向剧情的概率）</span>
-      </label>
-    </div>
-
-    <div class="mb-2.5">
-      <FormField label="System Prompt（留空使用默认）">
-        <BaseTextarea v-model="form.system_prompt" rows="3" class="!resize-none font-mono text-xs" :placeholder="agentDefaultHint(form.role)" />
-      </FormField>
-    </div>
-
-    <div class="mb-2.5">
       <FormField label="推理强度">
         <BaseSelect v-model="form.thinking_level">
           <option value="">默认（high）</option>
@@ -141,9 +109,6 @@ const pinging = () => pingingKey.value === pingLoadingKey(form)
           <option value="max">最高</option>
         </BaseSelect>
       </FormField>
-    </div>
-
-    <div class="mb-3">
       <FormField label="思考预算（token，Anthropic 专用）">
         <BaseInput
           v-model.number="form.thinking_budget_tokens"
@@ -154,14 +119,41 @@ const pinging = () => pingingKey.value === pingLoadingKey(form)
       </FormField>
     </div>
 
-    <div class="flex items-center gap-3">
-      <label class="flex cursor-pointer items-center gap-2 text-xs text-ink-soft">
-        <input v-model="form.is_active" type="checkbox" class="accent-seal" /> 启用
+    <div class="space-y-2 rounded-lg bg-surface-2 p-3 text-sm text-fg-muted">
+      <label class="flex cursor-pointer items-start gap-2">
+        <input v-model="form.disable_temperature" type="checkbox" class="mt-1 accent-accent" />
+        <span>关闭 Temperature（不支持温度参数的模型，如 o1/o3）</span>
       </label>
-      <BaseButton variant="ghost" class="ml-auto !px-3 !py-1 !text-xs" :disabled="pinging()" @click="ping">
+      <template v-if="isPainterRole(form.role)">
+        <label class="flex cursor-pointer items-start gap-2">
+          <input v-model="form.image_via_chat" type="checkbox" class="mt-1 accent-accent" :disabled="form.diffusion_mode" />
+          <span>画图走 Chat 接口（部分画图模型/中转网关只支持 /chat/completions 调用）</span>
+        </label>
+        <label class="flex cursor-pointer items-start gap-2">
+          <input v-model="form.diffusion_mode" type="checkbox" class="mt-1 accent-accent" :disabled="form.image_via_chat" />
+          <span>
+            扩散模型模式（如 new-api 接入的 NovelAI：先由 Diffusion Translator 把画面描述翻译成标签式提示词（负面提示词为固定内容），再调用 /images/generations；需启用 Diffusion Translator）
+          </span>
+        </label>
+      </template>
+      <label class="flex cursor-pointer items-start gap-2">
+        <input v-model="form.with_jailbreak" type="checkbox" class="mt-1 accent-accent" />
+        <span>启用越狱提示词（在该 Agent 提示词外包裹破限内容，降低模型因审查拒绝创作黑暗/成人向剧情的概率）</span>
+      </label>
+    </div>
+
+    <FormField label="System Prompt（留空使用默认）">
+      <BaseTextarea v-model="form.system_prompt" rows="3" :placeholder="agentDefaultHint(form.role)" />
+    </FormField>
+
+    <div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+      <label class="flex cursor-pointer items-center gap-2 text-sm text-fg-muted">
+        <input v-model="form.is_active" type="checkbox" class="accent-accent" /> 启用
+      </label>
+      <BaseButton variant="ghost" size="sm" class="ml-auto" :disabled="pinging()" @click="ping">
         {{ pinging() ? '测试中…' : '测试模型' }}
       </BaseButton>
-      <BaseButton class="!px-3 !py-1 !text-xs" :loading="saving" @click="save">保存配置</BaseButton>
+      <BaseButton size="sm" :loading="saving" @click="save">保存配置</BaseButton>
     </div>
   </PaperCard>
 </template>

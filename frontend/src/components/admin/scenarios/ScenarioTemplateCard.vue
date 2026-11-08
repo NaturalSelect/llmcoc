@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { Download } from '@lucide/vue'
 import { getToken } from '@/api/token'
 import BaseButton from '@/components/base/BaseButton.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import { useUiStore } from '@/stores/ui'
 import { errorMessage } from './pagedList'
 
@@ -37,8 +39,15 @@ async function download() {
 
 <template>
   <PaperCard>
-    <h3 class="mb-4 font-type text-sm font-bold tracking-wide text-seal">下载模组模板</h3>
-    <p class="mb-3 text-xs text-ink-faint">下载标准 JSON 模板，填写后可用于导入模组。</p>
-    <BaseButton @click="download">下载模板</BaseButton>
+    <div class="flex items-center justify-between gap-4">
+      <div class="min-w-0">
+        <SectionHeading>下载模组模板</SectionHeading>
+        <p class="mt-1 text-sm text-fg-muted">下载标准 JSON 模板，填写后可用于导入模组。</p>
+      </div>
+      <BaseButton variant="secondary" class="shrink-0" @click="download">
+        <Download :size="16" :stroke-width="1.75" />
+        下载模板
+      </BaseButton>
+    </div>
   </PaperCard>
 </template>

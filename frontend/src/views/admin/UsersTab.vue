@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { ChevronLeft, ChevronRight, Coins, RefreshCw } from '@lucide/vue'
 import { onMounted, ref } from 'vue'
 import type { AdminUser } from '@/api/adminTypesCore'
 import { api } from '@/api/client'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
+import EmptyState from '@/components/base/EmptyState.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import AdminInventoryModal from '@/components/admin/users/AdminInventoryModal.vue'
 import RechargeCard from '@/components/admin/users/RechargeCard.vue'
@@ -102,53 +105,67 @@ onMounted(() => safeLoad())
   <div class="grid grid-cols-1 gap-5 lg:grid-cols-[22rem_minmax(0,1fr)]">
     <RechargeCard @recharged="safeLoad()" />
 
-    <PaperCard tag="section" aria-labelledby="user-list-title">
+    <PaperCard tag="section" aria-labelledby="user-list-title" class="min-w-0">
       <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h3 id="user-list-title" class="font-type text-sm font-bold tracking-widest text-seal">用户列表</h3>
-          <p class="mt-1 font-type text-xs text-ink-faint">共 {{ total }} 个 · 第 {{ page }} / {{ totalPages }} 页</p>
+          <SectionHeading id="user-list-title">用户列表</SectionHeading>
+          <p class="mt-1 text-xs tabular-nums text-fg-subtle">共 {{ total }} 个 · 第 {{ page }} / {{ totalPages }} 页</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <label for="admin-user-page-size" class="font-type text-xs text-ink-soft">每页</label>
-          <BaseSelect id="admin-user-page-size" :model-value="pageSize" class="!w-20 !py-1 !text-xs" @update:model-value="changePageSize">
-            <option v-for="n in PAGE_SIZE_OPTIONS" :key="n" :value="n">{{ n }}</option>
-          </BaseSelect>
-          <BaseButton variant="ghost" class="!px-3 !py-1 !text-xs" :disabled="page <= 1" @click="goPage(page - 1)">上一页</BaseButton>
-          <BaseButton variant="ghost" class="!px-3 !py-1 !text-xs" :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</BaseButton>
-          <BaseButton variant="ghost" class="!px-3 !py-1 !text-xs" @click="safeLoad(page)">刷新</BaseButton>
+          <label for="admin-user-page-size" class="text-xs text-fg-muted">每页</label>
+          <!-- NOTE: BaseSelect 没有 size 属性，用外层容器把高度压到与 sm 按钮一致（h-8） -->
+          <div class="w-20 [&_select]:h-8">
+            <BaseSelect id="admin-user-page-size" :model-value="pageSize" @update:model-value="changePageSize">
+              <option v-for="n in PAGE_SIZE_OPTIONS" :key="n" :value="n">{{ n }}</option>
+            </BaseSelect>
+          </div>
+          <BaseButton variant="ghost" size="sm" :disabled="page <= 1" @click="goPage(page - 1)">
+            <ChevronLeft :size="16" :stroke-width="1.75" />上一页
+          </BaseButton>
+          <BaseButton variant="ghost" size="sm" :disabled="page >= totalPages" @click="goPage(page + 1)">
+            下一页<ChevronRight :size="16" :stroke-width="1.75" />
+          </BaseButton>
+          <BaseButton variant="ghost" size="sm" @click="safeLoad(page)">
+            <RefreshCw :size="16" :stroke-width="1.75" />刷新
+          </BaseButton>
         </div>
       </div>
 
-      <ul class="space-y-2">
-        <li
-          v-for="u in users"
-          :key="u.id"
-          class="flex flex-wrap items-center justify-between gap-2 border-b border-paper-edge/70 pb-2 text-xs"
-        >
-          <div class="min-w-0 flex-1">
-            <span class="font-bold text-ink">#{{ u.id }} {{ u.username }}</span>
-            <span class="ml-1.5 inline-block max-w-[16rem] truncate align-bottom text-ink-faint">{{ u.email }}</span>
-          </div>
-          <div class="flex shrink-0 flex-wrap items-center gap-2">
-            <span class="font-type text-ink-soft">💰{{ u.coins }}</span>
-            <StampBadge :tone="u.role === 'admin' ? 'seal' : 'faint'">{{ u.role }}</StampBadge>
-            <StampBadge v-if="u.is_banned" tone="seal">已封</StampBadge>
-            <button type="button" class="text-ink-faint transition hover:text-seal" @click="toggleAdmin(u)">切换权限</button>
-            <button
-              type="button"
-              class="transition"
-              :class="u.is_banned ? 'text-moss hover:text-ink' : 'text-seal/70 hover:text-seal'"
-              @click="toggleBan(u)"
-            >
-              {{ u.is_banned ? '解封' : '封号' }}
-            </button>
-            <button type="button" class="text-ink-faint transition hover:text-seal" @click="inventoryUser = { id: u.id, username: u.username }">
-              背包
-            </button>
-          </div>
-        </li>
-        <li v-if="users.length === 0" class="py-4 text-center text-ink-faint">暂无用户</li>
-      </ul>
+      <EmptyState v-if="users.length === 0">暂无用户</EmptyState>
+      <template v-else>
+        <div class="hidden gap-3 px-1 pb-2 text-xs text-fg-subtle md:grid md:grid-cols-[minmax(0,1fr)_4.5rem_8rem_16rem]">
+          <span>用户</span>
+          <span>金币</span>
+          <span>角色</span>
+          <span class="text-right">操作</span>
+        </div>
+        <ul class="divide-y divide-line border-t border-line">
+          <li
+            v-for="u in users"
+            :key="u.id"
+            class="flex flex-wrap items-center gap-x-3 gap-y-2 px-1 py-3 text-sm md:grid md:grid-cols-[minmax(0,1fr)_4.5rem_8rem_16rem]"
+          >
+            <div class="min-w-0 flex-1 md:flex-none">
+              <div class="truncate font-medium text-fg">#{{ u.id }} {{ u.username }}</div>
+              <div class="truncate text-xs text-fg-subtle">{{ u.email }}</div>
+            </div>
+            <span class="inline-flex items-center gap-1 tabular-nums text-fg-muted">
+              <Coins :size="16" :stroke-width="1.75" class="text-accent" />{{ u.coins }}
+            </span>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <StampBadge :tone="u.role === 'admin' ? 'seal' : 'faint'">{{ u.role }}</StampBadge>
+              <StampBadge v-if="u.is_banned" tone="danger">已封</StampBadge>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 md:justify-end">
+              <BaseButton variant="ghost" size="sm" @click="toggleAdmin(u)">切换权限</BaseButton>
+              <BaseButton :variant="u.is_banned ? 'success' : 'danger'" size="sm" @click="toggleBan(u)">
+                {{ u.is_banned ? '解封' : '封号' }}
+              </BaseButton>
+              <BaseButton variant="ghost" size="sm" @click="inventoryUser = { id: u.id, username: u.username }">背包</BaseButton>
+            </div>
+          </li>
+        </ul>
+      </template>
     </PaperCard>
 
     <AdminInventoryModal :user="inventoryUser" @close="inventoryUser = null" />

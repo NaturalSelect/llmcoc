@@ -30,7 +30,7 @@ async function remove(item: AdminShopItem) {
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+  <div class="space-y-5">
     <ShopCreateCard :created="() => list.load(1)" />
     <ShopItemList
       :items="list.items.value"

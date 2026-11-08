@@ -10,10 +10,10 @@ const tags = computed(() => splitTags(props.scenario.tags))
 </script>
 
 <template>
-  <div class="mb-4 flex flex-wrap items-center gap-1.5">
+  <div class="mb-5 flex flex-wrap items-center gap-2">
     <ScenarioChip tone="ledger">{{ difficultyLabel(scenario.difficulty) }}</ScenarioChip>
-    <span class="font-type text-[11px] text-ink-soft">{{ playersLabel(scenario.min_players, scenario.max_players) }}</span>
-    <span v-if="scenario.author" class="font-type text-[11px] text-ink-faint">作者: {{ scenario.author }}</span>
+    <span class="text-sm tabular-nums text-fg-muted">{{ playersLabel(scenario.min_players, scenario.max_players) }}</span>
+    <span v-if="scenario.author" class="text-sm text-fg-subtle">作者: {{ scenario.author }}</span>
     <ScenarioChip v-for="tag in tags" :key="tag">{{ tag }}</ScenarioChip>
   </div>
 </template>

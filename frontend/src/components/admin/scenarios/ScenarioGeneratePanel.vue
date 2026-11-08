@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { LoaderCircle } from '@lucide/vue'
 import { onBeforeUnmount, reactive, ref } from 'vue'
 import type { ScenarioGenForm } from '@/api/adminTypesContent'
 import { streamSSE } from '@/api/sse'
@@ -8,6 +9,7 @@ import BaseSelect from '@/components/base/BaseSelect.vue'
 import BaseTextarea from '@/components/base/BaseTextarea.vue'
 import FormField from '@/components/base/FormField.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import { useUiStore } from '@/stores/ui'
 import { errorMessage } from './pagedList'
 import { createGenerationHandler, formatLogLine, summarizeBatchDone } from './scenarioStream'
@@ -84,7 +86,7 @@ async function generate() {
   } catch (e) {
     if (ctrl.signal.aborted) return
     const msg = errorMessage(e)
-    log('❌ ' + (msg || '生成失败'))
+    log(msg || '生成失败')
     ui.toast(msg, 'error')
   } finally {
     controllers.delete(ctrl)
@@ -94,9 +96,9 @@ async function generate() {
 </script>
 
 <template>
-  <PaperCard class="lg:col-span-2">
-    <h3 class="mb-4 font-type text-sm font-bold tracking-wide text-seal">AI 生成模组</h3>
-    <p class="mb-3 text-xs text-ink-faint">
+  <PaperCard>
+    <SectionHeading>AI 生成模组</SectionHeading>
+    <p class="mt-1 mb-4 text-sm text-fg-muted">
       流水线：约束构建 → 正文生成（多轮工具调用）→ 自动修复 → QA/逻辑审查 → 奖励设计。生成过程流式显示，耗时数分钟；中途关闭页面不影响后台生成与入库。
     </p>
     <div class="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -123,7 +125,6 @@ async function generate() {
         <BaseTextarea
           v-model="form.brief"
           rows="2"
-          class="resize-none"
           placeholder="例如：调查员受雇寻找失踪的渔夫，背后隐藏着古老渔村的祭祀秘密…"
         />
       </FormField>
@@ -148,12 +149,15 @@ async function generate() {
       </FormField>
     </div>
 
-    <BaseButton @click="generate">
-      {{ Number(form.count) > 1 ? '批量生成 ' + form.count + ' 个并入库' : '生成并入库' }}
-    </BaseButton>
-    <p v-if="activeCount > 0" class="mt-1 text-[11px] text-seal">
-      ● 后台有 {{ activeCount }} 个生成任务运行/排队中，可继续调整参数或再次提交，无需等待。
-    </p>
+    <div class="flex flex-wrap items-center gap-3">
+      <BaseButton @click="generate">
+        {{ Number(form.count) > 1 ? '批量生成 ' + form.count + ' 个并入库' : '生成并入库' }}
+      </BaseButton>
+      <p v-if="activeCount > 0" class="flex items-center gap-1.5 text-xs text-accent">
+        <LoaderCircle :size="14" :stroke-width="1.75" class="shrink-0 animate-spin" />
+        后台有 {{ activeCount }} 个生成任务运行/排队中，可继续调整参数或再次提交，无需等待。
+      </p>
+    </div>
     <StreamLogBox
       v-if="activeCount > 0 || logs.length"
       title="生成进度"

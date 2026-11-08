@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { Pencil, Trash2 } from '@lucide/vue'
 import type { Announcement } from '@/api/adminTypesContent'
 import { api } from '@/api/client'
 import { announcementStatusLabel, levelLabel } from '@/components/admin/announcements/announcementLogic'
@@ -8,6 +9,7 @@ import PagerHeader from '@/components/admin/scenarios/PagerHeader.vue'
 import { errorMessage, usePagedList } from '@/components/admin/scenarios/pagedList'
 import { useToastRun } from '@/components/admin/scenarios/useToastRun'
 import BaseButton from '@/components/base/BaseButton.vue'
+import EmptyState from '@/components/base/EmptyState.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import { useUiStore } from '@/stores/ui'
@@ -48,11 +50,11 @@ async function remove(id: number) {
   }
 }
 
-// NOTE: 新主题里没有独立的警告色，用朱砂加粗区分警告与重要
-function levelClass(level: string): string {
-  if (level === 'important') return 'text-seal'
-  if (level === 'warning') return 'font-bold text-seal'
-  return 'text-ink-faint'
+// NOTE: 等级用徽章色区分：警告用 danger，重要用 accent，普通用中性色
+function levelTone(level: string): 'danger' | 'seal' | 'faint' {
+  if (level === 'warning') return 'danger'
+  if (level === 'important') return 'seal'
+  return 'faint'
 }
 </script>
 
@@ -70,29 +72,32 @@ function levelClass(level: string): string {
         @refresh="run(() => list.load(list.page.value))"
       >
         <template #before>
-          <BaseButton class="!px-2.5 !py-1 !text-xs" @click="openCreate">+ 新建公告</BaseButton>
+          <!-- NOTE: 按钮文字里的 + 是现有测试按文本查找的一部分，不能换成图标 -->
+          <BaseButton size="sm" @click="openCreate">+ 新建公告</BaseButton>
         </template>
       </PagerHeader>
 
-      <p v-if="list.items.value.length === 0" class="text-xs text-ink-faint">暂无公告</p>
-      <ul class="space-y-2">
-        <li
-          v-for="a in list.items.value"
-          :key="a.id"
-          class="flex items-center justify-between gap-3 border-b border-paper-edge pb-2 text-xs"
-        >
+      <EmptyState v-if="list.items.value.length === 0">暂无公告</EmptyState>
+      <ul v-else class="space-y-2">
+        <li v-for="a in list.items.value" :key="a.id" class="flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2">
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="truncate font-semibold text-ink">{{ a.title }}</span>
-              <span :class="levelClass(a.level)">{{ levelLabel(a.level) }}</span>
+              <span class="truncate text-sm font-medium text-fg">{{ a.title }}</span>
+              <StampBadge :tone="levelTone(a.level)">{{ levelLabel(a.level) }}</StampBadge>
               <StampBadge v-if="a.is_pinned" tone="seal">置顶</StampBadge>
-              <span class="text-ink-faint">{{ announcementStatusLabel(a) }}</span>
+              <span class="text-xs text-fg-subtle">{{ announcementStatusLabel(a) }}</span>
             </div>
-            <p class="mt-0.5 text-ink-faint">{{ new Date(a.created_at).toLocaleString() }}</p>
+            <p class="mt-0.5 text-xs tabular-nums text-fg-subtle">{{ new Date(a.created_at).toLocaleString() }}</p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            <button type="button" class="text-ledger transition hover:underline" @click="openEdit(a)">编辑</button>
-            <button type="button" class="text-seal transition hover:underline" @click="remove(a.id)">删除</button>
+            <BaseButton variant="ghost" size="sm" @click="openEdit(a)">
+              <Pencil :size="16" :stroke-width="1.75" />
+              编辑
+            </BaseButton>
+            <BaseButton variant="danger" size="sm" @click="remove(a.id)">
+              <Trash2 :size="16" :stroke-width="1.75" />
+              删除
+            </BaseButton>
           </div>
         </li>
       </ul>

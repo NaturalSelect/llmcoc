@@ -95,8 +95,8 @@ async function submit() {
 <template>
   <BaseModal :open="user !== null" :title="title" max-width="max-w-md" @close="emit('close')">
     <div class="space-y-3">
-      <p v-if="loading && !cards.length" class="text-xs text-ink-faint" role="status">加载角色卡中…</p>
-      <p v-else-if="!loading && !cards.length" class="text-xs text-ink-faint">该用户暂无角色卡。</p>
+      <p v-if="loading && !cards.length" class="text-sm text-fg-subtle" role="status">加载角色卡中…</p>
+      <p v-else-if="!loading && !cards.length" class="text-sm text-fg-subtle">该用户暂无角色卡。</p>
 
       <FormField v-if="cards.length" label="选择角色卡">
         <BaseSelect v-model="selectedId">
@@ -106,13 +106,13 @@ async function submit() {
       </FormField>
 
       <div v-if="selected">
-        <span class="mb-1 block font-type text-xs tracking-wide text-ink-soft">当前背包</span>
+        <span class="mb-1.5 block text-sm text-fg-muted">当前背包</span>
         <ul v-if="inventory.length" class="flex flex-wrap gap-1.5">
-          <li v-for="(item, idx) in inventory" :key="idx" class="rounded-sm border border-paper-edge bg-paper-deep/60 px-2 py-1 text-xs text-ink">
+          <li v-for="(item, idx) in inventory" :key="idx" class="rounded-lg bg-surface-2 px-2.5 py-1 text-xs text-fg">
             {{ item }}
           </li>
         </ul>
-        <p v-else class="text-xs text-ink-faint">—（空）</p>
+        <p v-else class="text-sm text-fg-subtle">—（空）</p>
       </div>
 
       <FormField v-if="selected" label="新增物品" hint="可按「名称(描述, x数量)」约定填写；整串会作为一件物品写入背包。">

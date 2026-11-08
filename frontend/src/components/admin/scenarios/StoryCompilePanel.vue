@@ -5,6 +5,7 @@ import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import FormField from '@/components/base/FormField.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
+import SectionHeading from '@/components/base/SectionHeading.vue'
 import { useUiStore } from '@/stores/ui'
 import { errorMessage } from './pagedList'
 import { createCompileHandler, formatLogLine, summarizeCompile, validateStoryFile } from './scenarioStream'
@@ -73,7 +74,7 @@ async function compile() {
   } catch (e) {
     if (ctrl.signal.aborted) return
     const msg = errorMessage(e)
-    log('❌ ' + (msg || '编译失败'))
+    log(msg || '编译失败')
     ui.toast(msg, 'error')
   } finally {
     if (controller === ctrl) controller = null
@@ -83,9 +84,9 @@ async function compile() {
 </script>
 
 <template>
-  <PaperCard class="lg:col-span-2">
-    <h3 class="mb-4 font-type text-sm font-bold tracking-wide text-seal">上传故事编译模组</h3>
-    <p class="mb-3 text-xs text-ink-faint">
+  <PaperCard>
+    <SectionHeading>上传故事编译模组</SectionHeading>
+    <p class="mt-1 mb-4 text-sm text-fg-muted">
       上传一个 Markdown 故事文档，跳过 AI 故事创作阶段：系统会自动从文档中识别神话锚点与通关奖励概念，再走编译 → 自动修复 → 逻辑审查 → 奖励设计（可选）→ 规范化流水线。生成过程流式显示；中途关闭页面不影响后台生成与入库。
     </p>
     <div class="mb-3">
@@ -97,7 +98,7 @@ async function compile() {
           ref="fileInput"
           type="file"
           accept=".md,.markdown,.txt,text/markdown,text/plain"
-          class="block w-full rounded-sm border border-paper-edge bg-paper-deep/60 px-3 py-2 font-serif text-sm text-ink file:mr-3 file:rounded-sm file:border-0 file:bg-paper-edge file:px-2 file:py-1 file:font-type file:text-xs file:text-ink"
+          class="block w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-fg file:mr-3 file:rounded-lg file:border-0 file:bg-surface-3 file:px-2 file:py-1 file:text-xs file:text-fg"
         />
       </FormField>
     </div>

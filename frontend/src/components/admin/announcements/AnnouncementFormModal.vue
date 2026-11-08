@@ -71,17 +71,16 @@ async function save() {
         placeholder="支持 Markdown 语法"
         rows="8"
         aria-label="公告内容"
-        class="resize-none font-type text-xs"
       />
       <div>
-        <div class="mb-1 font-type text-[10px] font-bold tracking-wider text-ink-soft uppercase">预览</div>
+        <div class="mb-1.5 text-sm text-fg-muted">预览</div>
         <!-- NOTE: renderMarkdown 经过 DOMPurify 清洗，是唯一允许 v-html 的来源 -->
         <div
-          class="announcement-preview max-h-40 overflow-y-auto rounded-sm border border-paper-edge bg-paper-deep/40 p-3 text-sm text-ink"
+          class="announcement-preview max-h-40 overflow-y-auto rounded-lg bg-surface-2 p-3 text-sm"
           v-html="preview"
         />
       </div>
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
         <FormField label="开始时间（留空立即生效）">
           <BaseInput v-model="form.starts_at" type="datetime-local" />
         </FormField>
@@ -90,78 +89,17 @@ async function save() {
         </FormField>
       </div>
       <div class="flex items-center gap-4">
-        <label class="flex cursor-pointer items-center gap-2 text-xs text-ink-soft">
-          <input v-model="form.is_pinned" type="checkbox" class="accent-seal" /> 置顶
+        <label class="flex cursor-pointer items-center gap-2 text-sm text-fg-muted">
+          <input v-model="form.is_pinned" type="checkbox" class="accent-accent" /> 置顶
         </label>
-        <label class="flex cursor-pointer items-center gap-2 text-xs text-ink-soft">
-          <input v-model="form.is_active" type="checkbox" class="accent-seal" /> 启用
+        <label class="flex cursor-pointer items-center gap-2 text-sm text-fg-muted">
+          <input v-model="form.is_active" type="checkbox" class="accent-accent" /> 启用
         </label>
       </div>
-      <div class="flex gap-2 pt-1">
-        <BaseButton variant="ghost" class="flex-1" @click="emit('close')">取消</BaseButton>
-        <BaseButton type="submit" class="flex-1" :loading="saving">保存</BaseButton>
+      <div class="flex justify-end gap-2 pt-1">
+        <BaseButton variant="ghost" @click="emit('close')">取消</BaseButton>
+        <BaseButton type="submit" :loading="saving">保存</BaseButton>
       </div>
     </form>
   </BaseModal>
 </template>
-
-<style scoped>
-/* NOTE: Tailwind preflight 会清空标题/列表的默认样式，Markdown 预览需要重新排版（对应旧 .announcement-md） */
-.announcement-preview {
-  line-height: 1.6;
-}
-.announcement-preview > :deep(* + *) {
-  margin-top: 0.5em;
-}
-.announcement-preview :deep(h1),
-.announcement-preview :deep(h2),
-.announcement-preview :deep(h3) {
-  font-weight: 700;
-}
-.announcement-preview :deep(h1) {
-  font-size: 1.05rem;
-}
-.announcement-preview :deep(h2) {
-  font-size: 1rem;
-}
-.announcement-preview :deep(h3) {
-  font-size: 0.9rem;
-}
-.announcement-preview :deep(ul) {
-  list-style: disc;
-  padding-left: 1.25em;
-}
-.announcement-preview :deep(ol) {
-  list-style: decimal;
-  padding-left: 1.25em;
-}
-.announcement-preview :deep(a) {
-  color: var(--color-seal);
-  text-decoration: underline;
-}
-.announcement-preview :deep(code) {
-  background: var(--color-paper-deep);
-  padding: 1px 4px;
-  border-radius: 2px;
-  font-family: var(--font-type);
-  font-size: 0.85em;
-}
-.announcement-preview :deep(pre) {
-  background: var(--color-paper-deep);
-  padding: 0.5em 0.75em;
-  border-radius: 2px;
-  overflow-x: auto;
-}
-.announcement-preview :deep(pre code) {
-  background: none;
-  padding: 0;
-}
-.announcement-preview :deep(blockquote) {
-  border-left: 2px solid var(--color-paper-edge);
-  padding-left: 0.75em;
-  color: var(--color-ink-soft);
-}
-.announcement-preview :deep(img) {
-  max-width: 100%;
-}
-</style>

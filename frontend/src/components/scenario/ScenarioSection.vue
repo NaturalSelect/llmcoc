@@ -1,13 +1,15 @@
 <script setup lang="ts">
+import SectionHeading from '@/components/base/SectionHeading.vue'
+
 defineProps<{ title: string; note?: string }>()
 </script>
 
 <template>
-  <section class="mb-5">
-    <h3 class="mb-2 flex items-baseline gap-1.5 font-type text-xs font-bold tracking-wide text-seal">
-      <span aria-hidden="true">▍</span>{{ title }}
-      <span v-if="note" class="text-[10px] font-normal text-ink-faint">{{ note }}</span>
-    </h3>
+  <section class="mb-6">
+    <div class="mb-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <SectionHeading>{{ title }}</SectionHeading>
+      <span v-if="note" class="text-xs text-fg-subtle">{{ note }}</span>
+    </div>
     <slot />
   </section>
 </template>

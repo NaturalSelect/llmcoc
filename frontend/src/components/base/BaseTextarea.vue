@@ -9,6 +9,6 @@ const [model, modifiers] = defineModel<string | null | undefined>({
 <template>
   <textarea
     v-model="model"
-    class="w-full resize-y rounded-sm border border-paper-edge bg-paper-deep/60 px-3 py-2 font-serif leading-relaxed text-ink outline-none transition placeholder:text-ink-faint focus:border-seal disabled:cursor-not-allowed disabled:opacity-60"
+    class="min-h-20 w-full resize-y rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm leading-relaxed text-fg outline-none transition placeholder:text-fg-subtle focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
   />
 </template>
