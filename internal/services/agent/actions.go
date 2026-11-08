@@ -538,14 +538,6 @@ type narrateAction struct{}
 
 func (narrateAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	out := Output{Kind: OutputKP, Text: strings.TrimSpace(call.Reply)}
-	if payload, ok := normalizeNarrateOptionsPayload(call); ok {
-		out.Options = payload.Options
-	}
-	for _, a := range call.Ack {
-		if a = strings.TrimSpace(a); a != "" {
-			out.Ack = append(out.Ack, a)
-		}
-	}
 	*actx.Outbox = append(*actx.Outbox, out)
 	debugf("tool", "session=%d narrate reply=%s", actx.Sid, out.Text)
 
@@ -673,7 +665,7 @@ func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	if actx.Ask != nil {
 		*actx.Ask = ask
 	}
-	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputAsk, Text: question, Ask: ask})
+	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputAsk, Text: question, Ask: ask, Options: normalizeAskOptions(call.Options)})
 	if actx.KPStreak != nil {
 		*actx.KPStreak = 0
 	}
@@ -686,18 +678,11 @@ func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	return []ToolResult{{Action: ToolAskPlayers, Result: result}}
 }
 
-type narrateOptionsPayload struct {
-	Options []string `json:"options"`
-}
-
-func normalizeNarrateOptionsPayload(call ToolCall) (narrateOptionsPayload, bool) {
-	if len(call.Options) == 0 {
-		return narrateOptionsPayload{}, false
-	}
-
-	options := make([]string, 0, len(call.Options))
+// normalizeAskOptions 去空、去重并截到最多 2 条推荐行动；没有时返回 nil。
+func normalizeAskOptions(raw []string) []string {
+	var options []string
 	seen := map[string]bool{}
-	for _, opt := range call.Options {
+	for _, opt := range raw {
 		opt = strings.TrimSpace(opt)
 		if opt == "" || seen[opt] {
 			continue
@@ -708,13 +693,7 @@ func normalizeNarrateOptionsPayload(call ToolCall) (narrateOptionsPayload, bool)
 			break
 		}
 	}
-	if len(options) == 0 {
-		return narrateOptionsPayload{}, false
-	}
-
-	return narrateOptionsPayload{
-		Options: options,
-	}, true
+	return options
 }
 
 // ── Time action ───────────────────────────────────────────────────────────────

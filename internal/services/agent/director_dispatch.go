@@ -317,9 +317,9 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 
-		// OPTIONS-CAP：narrate.options 固定 0-2 条，宁可给0条也不要泄露。
+		// OPTIONS-CAP：ask_players.options 最多 2 条，宁可给 0 条也不要泄露。
 		for _, call := range calls {
-			if ToolCallType(call.Name) != ToolNarrate {
+			if ToolCallType(call.Name) != ToolAskPlayers {
 				continue
 			}
 			tc, err := decodeDirectorToolCall(call)
@@ -328,7 +328,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 			if len(tc.Options) > 2 {
 				emitProgress("KP正在修正工具调用顺序")
-				return fmt.Sprintf("SYSTEM REJECT: narrate.options 有 %d 条，超过上限2条。宁可给0条也不要泄露，删减到最多2条最合适的行动入口。", len(tc.Options))
+				return fmt.Sprintf("SYSTEM REJECT: ask_players.options 有 %d 条，超过上限2条。宁可给0条也不要泄露，删减到最多2条最合适的行动入口。", len(tc.Options))
 			}
 		}
 

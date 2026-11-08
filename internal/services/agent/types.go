@@ -151,7 +151,7 @@ type ToolCall struct {
 	Aspect        string                 `json:"aspect"`         // NOTE: generate_image: 画面方向 landscape|portrait|square(可选,默认square)
 	NSFW          bool                   `json:"nsfw"`           // NOTE: generate_image: 该配图是否含裸露/性暗示等NSFW内容(可选,默认false);painter_nsfw未启用时,标记为true的调用会被拒绝。write: 该段描述是否含色情/性描写内容(可选,默认false),仅在房间NSFW开关开启时生效。act_npc: 该次互动是否含色情/性描写内容(可选,默认false),仅在房间NSFW开关开启时生效
 	Characters    []string               `json:"characters"`     // NOTE: describe_characters 参数;兼容旧 generate_image JSON,但生成图片时忽略
-	Options       []string               `json:"options"`        // narrate: 推荐给玩家的可行行动
+	Options       []string               `json:"options"`        // ask_players: 玩家询问时才给的推荐行动(可选,0-2条)
 	Reply         string                 `json:"reply"`          // narrate: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
 	// NOTE: Win 使用指针以区分 false（失败）与缺失/null（未填写）。
@@ -171,7 +171,6 @@ type ToolCall struct {
 	ChaseAction       *ChaseActionDetail      `json:"chase_action"`       // chase_act: 行动详情
 	ChaseEndReason    string                  `json:"chase_end_reason"`   // end_chase: 追逐结束原因
 	Report            string                  `json:"report"`             // report: agent self-report
-	Ack               []string                `json:"ack"`                // narrate: 对玩家动作的正式确认
 	HideSecret        bool                    `json:"hide_secret"`        // npc_act: 是否隐藏NPC反应中的敏感信息(如HP变化), 由KP根据当前情境决定
 	Targets           []string                `json:"targets"`            // ask_players: 被点名的调查员名,["all"]表示全体存活调查员
 }
@@ -212,8 +211,7 @@ type Output struct {
 	Text      string              // writer: direction(交给Writer,不是正文); kp: reply或结束语; ask: question
 	NSFW      bool                // writer、image 各自单独标记
 	Image     *ImagePromptRequest // image
-	Options   []string            // kp: 推荐行动
-	Ack       []string            // kp: 对玩家动作的确认
+	Options   []string            // ask: 玩家询问时才给的推荐行动
 	Dice      string              // kp/ask: 本拍累积的公开骰子结果
 	TimePoint string              // kp/ask: 发布时的游戏内时间
 	Ask       *AskResult          // ask

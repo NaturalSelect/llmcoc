@@ -605,13 +605,12 @@ func roundMessage(sessionID uint, ro agent.RoundOutputs, it agent.Output) (model
 	case agent.OutputKP:
 		msg.Kind = models.MessageKindKP
 		msg.Content = strings.TrimSpace(it.Text)
-		meta.Options, meta.Ack = it.Options, it.Ack
 		meta.Dice, meta.TimePoint, meta.Ended = it.Dice, it.TimePoint, it.Ended
 		setDirectorTiming(&msg, ro)
 	case agent.OutputAsk:
 		msg.Kind = models.MessageKindAsk
 		msg.Content = strings.TrimSpace(it.Text)
-		meta.Dice, meta.TimePoint = it.Dice, it.TimePoint
+		meta.Dice, meta.TimePoint, meta.Options = it.Dice, it.TimePoint, it.Options
 		if it.Ask != nil {
 			meta.Ask = &models.AskMeta{UserIDs: it.Ask.UserIDs, Names: it.Ask.Names}
 		}

@@ -32,27 +32,27 @@ function askingRoom(): Room {
   return room
 }
 
-const kp = (id: number, options: unknown[]): RoomMessage => ({ id, kind: 'kp', status: 'done', meta: { options } })
+const ask = (id: number, options: unknown[]): RoomMessage => ({ id, kind: 'ask', status: 'done', meta: { options } })
 
 describe('ask', () => {
-  test('推荐行动取最近一条 KP 回复的选项，空白选项被丢弃，玩家行动之后不再推荐', () => {
+  test('推荐行动取最近一条点名消息的选项，空白选项被丢弃，玩家行动之后不再推荐', () => {
     const room = askingRoom()
     expect(askOptions(room)).toStrictEqual([])
 
-    room.messages.push(kp(200, ['查看地板', ' ', '敲门']))
+    room.messages.push(ask(200, ['查看地板', ' ', '敲门']))
     expect(askOptions(room)).toStrictEqual(['查看地板', '敲门'])
 
     room.messages.push({ id: 201, kind: 'player', status: 'done', user_id: 2 })
     expect(askOptions(room)).toStrictEqual([])
 
     room.messages.pop()
-    room.messages.push({ id: 202, kind: 'kp', status: 'done', meta: {} })
+    room.messages.push({ id: 202, kind: 'ask', status: 'done', meta: {} })
     expect(askOptions(room)).toStrictEqual([])
   })
 
   test('没有被点名或周期运行中时没有选项也没有问题卡', () => {
     const room = askingRoom()
-    room.messages.push(kp(200, ['敲门']))
+    room.messages.push(ask(200, ['敲门']))
     room.floor.running = true
     expect(askOptions(room)).toStrictEqual([])
     expect(askView(room, createAskDraft())).toBe('')
@@ -65,7 +65,7 @@ describe('ask', () => {
 
   test('勾选的推荐行动按选项顺序在前，自己写的在后，不在选项里的勾选被忽略', () => {
     const room = askingRoom()
-    room.messages.push(kp(200, ['查看地板', '敲门']))
+    room.messages.push(ask(200, ['查看地板', '敲门']))
     const draft = createAskDraft()
 
     toggleOption(room, draft, '敲门')
@@ -117,7 +117,7 @@ describe('ask', () => {
 
   test('断线或同步快照时锁定：勾选不变，提示文案区分原因', () => {
     const room = askingRoom()
-    room.messages.push(kp(200, ['敲门']))
+    room.messages.push(ask(200, ['敲门']))
     const draft = createAskDraft()
     expect(askLocked(room)).toBe(false)
     expect(askLockNote(room)).toBe('')

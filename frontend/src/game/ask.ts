@@ -54,13 +54,13 @@ export function askTag(room: Room | null): string {
   return names.length > 1 ? 'KP 点名：' + names.join('、') + '，请各自回应' : 'KP 向你提问'
 }
 
-// 推荐行动取最近一条 KP 回复里的选项；之后出现过玩家行动就不再推荐
+// 推荐行动取最近一条点名消息里的选项（KP 只在玩家问过建议时才给）；之后出现过玩家行动就不再推荐
 export function askOptions(room: Room | null): string[] {
   if (!askOpen(room)) return []
   for (let i = room.messages.length - 1; i >= 0; i--) {
     const msg = room.messages[i]
     if (msg.kind === 'player') return []
-    if (msg.kind !== 'kp') continue
+    if (msg.kind !== 'ask') continue
     const options = msg.meta?.options
     if (!Array.isArray(options)) return []
     return options.map((o) => String(o || '').trim()).filter(Boolean)

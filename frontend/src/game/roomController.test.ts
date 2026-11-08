@@ -247,7 +247,7 @@ describe('RoomController', () => {
     const h = harness()
     await h.enter()
     const draft = createAskDraft()
-    h.room().messages.push({ id: 200, kind: 'kp', status: 'done', meta: { options: ['敲门'] } })
+    h.room().messages.push({ id: 200, kind: 'ask', status: 'done', meta: { options: ['敲门'] } })
     draft.input = '我先写着'
     draft.pick = ['敲门']
 

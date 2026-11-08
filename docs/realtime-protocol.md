@@ -163,8 +163,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 
 | 字段 | 出现在 | 说明 |
 | --- | --- | --- |
-| `options` | `kp` | KP 给出的行动选项 |
-| `ack` | `kp` | 对玩家声明的确认文字 |
+| `options` | `ask` | 推荐行动，KP 只在被点名的玩家问过建议时才给，最多 2 条 |
 | `dice` | `kp`、`ask` | 本拍的骰子结果文字 |
 | `time_point` | `kp`、`ask` | 剧中时间点 |
 | `ask` | `ask` | `{"user_ids": [...], "names": [...]}`，被点名的玩家 |

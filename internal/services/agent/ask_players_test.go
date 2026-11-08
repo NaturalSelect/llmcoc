@@ -45,6 +45,32 @@ func TestAskPlayersResolvesNames(t *testing.T) {
 	if len(outbox) != 1 || outbox[0].Kind != OutputAsk || outbox[0].Text != "你怎么办？" || outbox[0].Ask == nil {
 		t.Errorf("成功点名应产生一条ask输出, got %+v", outbox)
 	}
+	if outbox[0].Options != nil {
+		t.Errorf("没给 options 时不应带推荐行动, got %v", outbox[0].Options)
+	}
+}
+
+func TestAskPlayersCarriesNormalizedOptions(t *testing.T) {
+	hasEnd := false
+	var outbox []Output
+	var ask *AskResult
+	actx := ActionContext{
+		GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+		HasEnd: &hasEnd,
+		Outbox: &outbox,
+		Ask:    &ask,
+	}
+	askPlayersAction{}.Execute(ToolCall{
+		Targets:  []string{"乙"},
+		Question: "你怎么办？",
+		Options:  []string{"我走进去", " ", "我走进去", "「谁在那里？」", "第三条被截断"},
+	}, actx)
+	if len(outbox) != 1 {
+		t.Fatalf("outbox = %+v", outbox)
+	}
+	if got := outbox[0].Options; len(got) != 2 || got[0] != "我走进去" || got[1] != "「谁在那里？」" {
+		t.Errorf("Options = %v, want 去空去重并截到2条", got)
+	}
 }
 
 func TestAskPlayersAllSkipsDeadAndDedups(t *testing.T) {

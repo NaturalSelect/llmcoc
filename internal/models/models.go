@@ -572,10 +572,9 @@ type AskMeta struct {
 	Names   []string `json:"names"`
 }
 
-// MessageMeta 是 kp/ask/writer 消息的结构化附加信息，正文里不再内嵌 options/ack/dice 之类的标签。
+// MessageMeta 是 kp/ask/writer 消息的结构化附加信息，正文里不再内嵌 options/dice 之类的标签。
 type MessageMeta struct {
-	Options   []string `json:"options,omitempty"`
-	Ack       []string `json:"ack,omitempty"`
+	Options   []string `json:"options,omitempty"` // ask: 玩家询问时 KP 给的推荐行动
 	Dice      string   `json:"dice,omitempty"`
 	TimePoint string   `json:"time_point,omitempty"`
 	Ask       *AskMeta `json:"ask,omitempty"`

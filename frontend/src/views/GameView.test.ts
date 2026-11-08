@@ -36,7 +36,16 @@ const kpMessage = {
   status: 'done',
   content: '雨夜里，门廊的灯忽明忽暗。',
   floor: 1,
-  meta: { options: ['推门进去', '绕到后院'] },
+}
+
+const askMessage = {
+  id: 2,
+  role: 'assistant',
+  kind: 'ask',
+  status: 'done',
+  content: '你要怎么做？',
+  floor: 1,
+  meta: { options: ['推门进去', '绕到后院'], ask: { user_ids: [2], names: ['爱丽丝'] } },
 }
 
 function json(body: unknown, status = 200) {
@@ -64,7 +73,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME }: Setup = {}) {
       const method = init?.method || 'GET'
       fetchCalls.push({ method, path })
       if (path === '/api/sessions/7') return json(session)
-      if (path === '/api/sessions/7/messages') return json([kpMessage])
+      if (path === '/api/sessions/7/messages') return json([kpMessage, askMessage])
       if (path === '/api/sessions/7/chat-status') {
         return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
       }

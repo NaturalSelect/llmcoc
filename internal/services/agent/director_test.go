@@ -116,17 +116,17 @@ func TestKPSystemPromptCarriesUnknownToneCharter(t *testing.T) {
 		}
 	}
 
-	// options 的完整禁止清单已下沉到 narrate 工具的 options schema（单一权威来源）。
-	optionsSchema := string(narrateTool().def.Parameters)
+	// options 的完整禁止清单在 ask_players 工具的 options schema 里（单一权威来源）。
+	optionsSchema := string(askPlayersTool().def.Parameters)
 	for _, want := range []string{"评价性副词", "宁可给0条也不要泄露"} {
 		if !strings.Contains(optionsSchema, want) {
-			t.Errorf("narrate options schema should contain %q", want)
+			t.Errorf("ask_players options schema should contain %q", want)
 		}
 	}
 }
 
 // TestPlayerInputAndOptionsAreRP 验证"玩家输入应当是RP"的要求写进了系统提示词，
-// 且 narrate.options 被要求写成第一人称RP(行动或台词)，而不是没有主语的指令短语。
+// 且 ask_players.options 被要求写成第一人称RP(行动或台词)，而不是没有主语的指令短语。
 func TestPlayerInputAndOptionsAreRP(t *testing.T) {
 	if !strings.Contains(kpSystemPrompt, "[PLAYER-INPUT-RP]") {
 		t.Error("kp system prompt should define the [PLAYER-INPUT-RP] rule")
@@ -145,18 +145,18 @@ func TestPlayerInputAndOptionsAreRP(t *testing.T) {
 		}
 	}
 
-	tool := narrateTool()
+	tool := askPlayersTool()
 	if !strings.Contains(tool.def.Description, "RP") {
-		t.Error("narrate tool description should say options are RP")
+		t.Error("ask_players tool description should say options are RP")
 	}
 	schema := string(tool.def.Parameters)
 	for _, want := range []string{"每条必须是RP", "第一人称", "「」", "我+动作+对象"} {
 		if !strings.Contains(schema, want) {
-			t.Errorf("narrate options schema should contain %q", want)
+			t.Errorf("ask_players options schema should contain %q", want)
 		}
 	}
 	if strings.Contains(schema, "动词+对象") {
-		t.Error("narrate options schema should not keep the stale verb+object wording")
+		t.Error("ask_players options schema should not keep the stale verb+object wording")
 	}
 	if !strings.Contains(kpTurnReminder, "[PLAYER-INPUT-RP]") {
 		t.Error("turn reminder should reference [PLAYER-INPUT-RP] for the options self-check")
@@ -387,26 +387,41 @@ func TestDirectorEncouragedToGenerateImages(t *testing.T) {
 	}
 }
 
-// TestResponseToolOptionsDescriptionConsistent 验证 narrate 工具的 Description 与 options 参数 schema 数量表述一致，且 schema 仍是合法 JSON。
-func TestResponseToolOptionsDescriptionConsistent(t *testing.T) {
-	tool := narrateTool()
-	desc := tool.def.Description
-	params := string(tool.def.Parameters)
-
-	for _, want := range []string{"0-2条", "[OPTIONS]"} {
+// TestAskPlayersOptionsAreOptInAndNarrateHasOnlyReply 验证推荐行动只挂在 ask_players 上且默认不给，narrate 只剩 reply，两份 schema 都是合法 JSON。
+func TestAskPlayersOptionsAreOptInAndNarrateHasOnlyReply(t *testing.T) {
+	ask := askPlayersTool()
+	desc := ask.def.Description
+	params := string(ask.def.Parameters)
+	for _, want := range []string{"0-2条", "[OPTIONS]", "默认不给"} {
 		if !strings.Contains(desc, want) {
-			t.Errorf("narrate tool description should contain %q", want)
+			t.Errorf("ask_players tool description should contain %q", want)
 		}
 	}
-	if strings.Contains(desc, "给出2个") {
-		t.Error("narrate tool description should not keep the stale '给出2个' wording")
+	for _, want := range []string{"宁可给0条也不要泄露", "默认留空"} {
+		if !strings.Contains(params, want) {
+			t.Errorf("ask_players options schema should contain %q", want)
+		}
+	}
+	if !json.Valid(ask.def.Parameters) {
+		t.Error("ask_players tool Parameters should remain valid JSON")
 	}
 
-	if !strings.Contains(params, "宁可给0条也不要泄露") {
-		t.Error("narrate tool options schema should contain '宁可给0条也不要泄露'")
+	narrate := narrateTool()
+	if !json.Valid(narrate.def.Parameters) {
+		t.Fatal("narrate tool Parameters should remain valid JSON")
 	}
-	if !json.Valid(tool.def.Parameters) {
-		t.Error("narrate tool Parameters should remain valid JSON")
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	_ = json.Unmarshal(narrate.def.Parameters, &schema)
+	if len(schema.Properties) != 1 || schema.Properties["reply"] == nil {
+		t.Errorf("narrate 应只有 reply 一个参数, got %v", schema.Properties)
+	}
+	if strings.Contains(narrate.def.Description, "options") || strings.Contains(narrate.def.Description, "ack") {
+		t.Error("narrate tool description should no longer mention options or ack")
+	}
+	if strings.Contains(kpSystemPrompt, "narrate.options") || strings.Contains(kpSystemPrompt, "ack") {
+		t.Error("kp system prompt should no longer reference narrate.options or ack")
 	}
 }
 
@@ -581,7 +596,7 @@ func TestDirectorBatchPolicyItemNameFormat(t *testing.T) {
 	}
 }
 
-// TestDirectorBatchPolicyOptionsCap 验证 narrate.options 超过2条被拒，0-2条放行。
+// TestDirectorBatchPolicyOptionsCap 验证 ask_players.options 超过2条被拒，0-2条放行。
 func TestDirectorBatchPolicyOptionsCap(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -595,9 +610,9 @@ func TestDirectorBatchPolicyOptionsCap(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			imageDone := false
-			args := fmt.Sprintf(`{"reply":"测试回复","options":%s}`, tc.options)
+			args := fmt.Sprintf(`{"targets":["all"],"question":"怎么办？","options":%s}`, tc.options)
 			reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
-				policyCall("narrate", args),
+				policyCall("ask_players", args),
 			})
 			if tc.wantReject && reject == "" {
 				t.Error("batch should have been rejected but was accepted")

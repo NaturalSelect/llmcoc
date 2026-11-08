@@ -84,26 +84,13 @@ func TestResponseActionPublishesOneKPOutputAndKeepsFloor(t *testing.T) {
 	streak := 0
 	actx := ActionContext{GCtx: &GameContext{}, Outbox: &outbox, HasEnd: &hasEnd, KPStreak: &streak}
 
-	results := narrateAction{}.Execute(ToolCall{
-		Reply:   "门开了。",
-		Options: []string{"我走进去", "我走进去", "「谁在那里？」", "第三条被截断"},
-		Ack:     []string{"确认动作", " "},
-	}, actx)
+	results := narrateAction{}.Execute(ToolCall{Reply: "门开了。"}, actx)
 
 	if hasEnd {
 		t.Error("narrate不应结束周期(HasEnd必须保持false)")
 	}
-	if len(outbox) != 1 || outbox[0].Kind != OutputKP || outbox[0].Text != "门开了。" {
-		t.Fatalf("outbox = %+v, want one kp output", outbox)
-	}
-	if got := outbox[0].Options; len(got) != 2 || got[0] != "我走进去" || got[1] != "「谁在那里？」" {
-		t.Errorf("Options = %v, want 去重并截到2条", got)
-	}
-	if got := outbox[0].Ack; len(got) != 1 || got[0] != "确认动作" {
-		t.Errorf("Ack = %v, want 只保留非空项", got)
-	}
-	if strings.Contains(outbox[0].Text, "<response_options>") || strings.Contains(outbox[0].Text, "<ack>") {
-		t.Errorf("reply正文不应再内嵌标签: %q", outbox[0].Text)
+	if len(outbox) != 1 || outbox[0].Kind != OutputKP || outbox[0].Text != "门开了。" || len(outbox[0].Options) != 0 {
+		t.Fatalf("outbox = %+v, want one kp output without options", outbox)
 	}
 	if len(results) != 1 || !strings.Contains(results[0].Result, "仍持有发言权") {
 		t.Errorf("results = %+v, want 提示仍持有发言权", results)

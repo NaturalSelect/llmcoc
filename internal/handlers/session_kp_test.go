@@ -196,11 +196,11 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 2, Steps: 2, ElapsedMs: 1200, Items: []agent.Output{
 			{Kind: agent.OutputWriter, Text: "描述走廊", NSFW: true},
 			{Kind: agent.OutputImage, Image: &agent.ImagePromptRequest{Prompt: "a dim corridor"}},
-			{Kind: agent.OutputKP, Text: "你站在走廊里。", Options: []string{"向前走"}, Ack: []string{"已记录"}, Dice: "侦查 45/60 成功", TimePoint: "第1天 08:00"},
+			{Kind: agent.OutputKP, Text: "你站在走廊里。", Dice: "侦查 45/60 成功", TimePoint: "第1天 08:00"},
 		}})
 		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 3, Steps: 1, ElapsedMs: 10, Items: []agent.Output{
 			{Kind: agent.OutputWriter, Text: "描述门后"},
-			{Kind: agent.OutputAsk, Text: "你要开门吗？", Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}, Question: "你要开门吗？"}},
+			{Kind: agent.OutputAsk, Text: "你要开门吗？", Options: []string{"我推开门"}, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}, Question: "你要开门吗？"}},
 		}})
 		return agent.RunOutput{Messages: 5, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}, Question: "你要开门吗？"}}, nil
 	}
@@ -238,8 +238,7 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	if msgs[2].Content != "你站在走廊里。" || strings.Contains(msgs[2].Content, "KP:") {
 		t.Errorf("kp content = %q, want the plain reply", msgs[2].Content)
 	}
-	if meta := msgs[2].Meta.Data; meta == nil || meta.Dice != "侦查 45/60 成功" || meta.TimePoint != "第1天 08:00" ||
-		len(meta.Options) != 1 || len(meta.Ack) != 1 {
+	if meta := msgs[2].Meta.Data; meta == nil || meta.Dice != "侦查 45/60 成功" || meta.TimePoint != "第1天 08:00" || len(meta.Options) != 0 {
 		t.Errorf("kp meta = %+v", meta)
 	}
 	if meta := msgs[0].Meta.Data; meta == nil || !meta.NSFW {
@@ -248,7 +247,8 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	if meta := msgs[3].Meta.Data; meta == nil || meta.NSFW {
 		t.Errorf("second writer meta = %+v, want sfw", meta)
 	}
-	if meta := msgs[4].Meta.Data; meta == nil || meta.Ask == nil || len(meta.Ask.UserIDs) != 1 || meta.Ask.Names[0] != "爱丽丝" {
+	if meta := msgs[4].Meta.Data; meta == nil || meta.Ask == nil || len(meta.Ask.UserIDs) != 1 || meta.Ask.Names[0] != "爱丽丝" ||
+		len(meta.Options) != 1 || meta.Options[0] != "我推开门" {
 		t.Errorf("ask meta = %+v", meta)
 	}
 	if msgs[2].DirectorSteps == nil || *msgs[2].DirectorSteps != 2 || *msgs[2].DirectorElapsedMs != 1200 {
