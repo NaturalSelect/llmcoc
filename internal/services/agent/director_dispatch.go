@@ -70,7 +70,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		}
 		if hasResponse && hasNonCompatible {
 			emitProgress("KP正在修正工具调用顺序")
-			return "SYSTEM REJECT: your entire batch was rejected. narrate/ask_players/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call narrate/ask_players/end_game after reading the results. Write and state-update tools may stay in the same batch as narrate."
+			return "SYSTEM REJECT: your entire batch was rejected. narrate/ask_players/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/generate_npc_name/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call narrate/ask_players/end_game after reading the results. Write and state-update tools may stay in the same batch as narrate."
 		}
 		if hasResponse && respStr == "" {
 			emitProgress("KP正在补全消息内容")
@@ -157,6 +157,22 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		if hasDescribe && hasImage {
 			emitProgress("KP正在修正工具调用顺序")
 			return "SYSTEM REJECT: describe_characters 与 generate_image 不能同批——提交时外貌描写还没返回，image_prompt 里的角色外貌只能是编造。请本轮只发 describe_characters，读到结果后再在下一轮画图。"
+		}
+
+		// NAME SEQUENCING：姓名要先读到才能写进 create_npc 的 char_card.name，同批只能靠编造。
+		hasGenerateName := false
+		hasCreateNPC := false
+		for _, call := range calls {
+			switch ToolCallType(call.Name) {
+			case ToolGenerateNPCName:
+				hasGenerateName = true
+			case ToolCreateNPC:
+				hasCreateNPC = true
+			}
+		}
+		if hasGenerateName && hasCreateNPC {
+			emitProgress("KP正在修正工具调用顺序")
+			return "SYSTEM REJECT: generate_npc_name 与 create_npc 不能同批——提交时姓名还没返回，char_card.name 只能是编造。请本轮只发 generate_npc_name，读到姓名后再在下一轮 create_npc。"
 		}
 
 		// ENCOUNTER SEQUENCING：战斗/追逐轮次的批次校验。

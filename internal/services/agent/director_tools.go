@@ -27,6 +27,7 @@ func directorTools(dramaturgEnabled bool) []scripterTool {
 	tools := []scripterTool{
 		checkRuleTool(),
 		rollDiceTool(),
+		directorGenerateNPCNameTool(),
 		createNPCTool(),
 		destroyNPCTool(),
 		actNPCTool(),
@@ -142,6 +143,14 @@ func rollDiceTool() scripterTool {
 			}`),
 		},
 	}
+}
+
+// NOTE: directorGenerateNPCNameTool 复用 Scripter 的 generate_npc_name 定义，只追加 Director 场景下的用法约束。
+func directorGenerateNPCNameTool() scripterTool {
+	tool := generateNPCNameTool()
+	tool.def.Description += `
+【用法】给任何临场新登场的NPC起名时必须先调用本工具，不要自行编造姓名；culture按故事发生的地点与时代选择，count>1时可从候选里挑最贴合人物身份的一个。本工具只返回姓名、不创建NPC，也不会发放已被调查员或在场NPC占用的姓名：读到结果后，在之后的一轮用create_npc建卡，不能与create_npc同批。`
+	return tool
 }
 
 func createNPCTool() scripterTool {
@@ -381,7 +390,7 @@ func endGameTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolEndGame),
 			Description: `结束本次冒险(整个游戏会话，不可撤回，而非仅结束本轮)。只有当<endings>中至少一个结局的Trigger已经确认满足时才能调用；未满足时调用是硬错误。win 必须明确给出 true(触发[结局]/胜利)或 false(触发[失败结局]/团灭等)，end_summary 必须写明具体触发了哪个结局、其Trigger条件是如何被满足的。
-【批次硬规则】end_game可以与write/update_session_memory/update_*/manage_*/record_monster/advance_time等收尾状态更新同批次；但不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/act_npc同批——这些工具的结果必须先在更早的一轮读到，才能在之后的一轮调用end_game。
+【批次硬规则】end_game可以与write/update_session_memory/update_*/manage_*/record_monster/advance_time等收尾状态更新同批次；但不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/generate_npc_name/act_npc同批——这些工具的结果必须先在更早的一轮读到，才能在之后的一轮调用end_game。
 调用示例：{"win":true,"end_summary":"触发结局[封印成功]：调查员完成封印仪式，邪神无法降临，胜利结束冒险"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",

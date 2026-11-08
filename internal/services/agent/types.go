@@ -75,6 +75,7 @@ const (
 	ToolCheckRule              ToolCallType = "check_rule"                // 查阅规则书
 	ToolRollDice               ToolCallType = "roll_dice"                 // 骰子检定
 	ToolCreateNPC              ToolCallType = "create_npc"                // 创建临时NPC
+	ToolGenerateNPCName        ToolCallType = "generate_npc_name"         // NOTE: 随机生成NPC姓名
 	ToolDestroyNPC             ToolCallType = "destroy_npc"               // 销毁临时NPC
 	ToolActNPC                 ToolCallType = "act_npc"                   // 与指定NPC对话并获取反应
 	ToolUpdateCharacters       ToolCallType = "update_characters"         // 更新角色状态
@@ -173,6 +174,10 @@ type ToolCall struct {
 	Report            string                  `json:"report"`             // report: agent self-report
 	HideSecret        bool                    `json:"hide_secret"`        // npc_act: 是否隐藏NPC反应中的敏感信息(如HP变化), 由KP根据当前情境决定
 	Targets           []string                `json:"targets"`            // ask_players: 被点名的调查员名,["all"]表示全体存活调查员
+
+	Culture string `json:"culture"`
+	Gender  string `json:"gender"`
+	Count   int    `json:"count"`
 }
 
 // ToolResult wraps the result of executing one ToolCall.

@@ -300,15 +300,10 @@ type generateNPCNameArgs struct {
 	Count   int    `json:"count"`
 }
 
-// dispatchGenerateNPCName 是 generate_npc_name 工具的通用执行逻辑，供 Story
-// Architect 与 Oneshot Architect 两个工具循环共用：解析参数、取名、登记到
-// room.usedNPCNames、格式化为工具结果文案。western 走确定性姓名池，
-// chinese/japanese 优先走 LLM 现场创作，失败时回退静态兜底池。
-func dispatchGenerateNPCName(ctx context.Context, room *scripterRoom, call llm.ToolCall) toolOutcome {
-	var args generateNPCNameArgs
-	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-		return toolOutcome{reject: "SYSTEM REJECT: generate_npc_name参数不是合法JSON，请重新调用。"}
-	}
+// NOTE: pickNPCNames 校验 generate_npc_name 的参数并取名，供 Scripter 与 Director 共用。
+// western 走确定性姓名池，chinese/japanese 优先用 handle 让 LLM 现场创作，
+// 失败时回退静态兜底池；used 中的姓名（小写归一化）不会再次发放。
+func pickNPCNames(ctx context.Context, handle agentHandle, sessionID string, args generateNPCNameArgs, used map[string]bool) ([]string, error) {
 	culture := strings.ToLower(strings.TrimSpace(args.Culture))
 	gender := strings.ToLower(strings.TrimSpace(args.Gender))
 	count := args.Count
@@ -319,33 +314,46 @@ func dispatchGenerateNPCName(ctx context.Context, room *scripterRoom, call llm.T
 		count = 5
 	}
 	if gender != "male" && gender != "female" {
-		return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 未知gender=%q，可选值：%s", args.Gender, strings.Join(validNPCNameGenders(), "/"))}
+		return nil, fmt.Errorf("未知gender=%q，可选值：%s", args.Gender, strings.Join(validNPCNameGenders(), "/"))
 	}
 
-	used := room.usedNPCNames
-	sessionID := scripterSessionID(ctx, room)
-
-	var names []string
-	var err error
 	switch culture {
 	case "chinese", "japanese":
-		names, err = generateLocalizedNPCNames(ctx, room.architect, sessionID, culture, gender, count, used)
+		return generateLocalizedNPCNames(ctx, handle, sessionID, culture, gender, count, used)
 	case "western":
-		names, err = pickWesternNames(gender, count, used)
+		return pickWesternNames(gender, count, used)
 	default:
-		return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 未知culture=%q，可选值：%s", args.Culture, strings.Join(validNPCNameCultures(), "/"))}
+		return nil, fmt.Errorf("未知culture=%q，可选值：%s", args.Culture, strings.Join(validNPCNameCultures(), "/"))
 	}
-	if err != nil {
-		return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: %s", err.Error())}
-	}
+}
 
-	markNPCNamesUsed(used, names...)
+// NOTE: formatNPCNames 把取到的姓名格式化为 generate_npc_name 的工具结果文案。
+func formatNPCNames(names []string) string {
 	if len(names) == 1 {
-		return toolOutcome{result: fmt.Sprintf("随机姓名: %s", names[0])}
+		return fmt.Sprintf("随机姓名: %s", names[0])
 	}
 	parts := make([]string, len(names))
 	for i, name := range names {
 		parts[i] = fmt.Sprintf("%d. %s", i+1, name)
 	}
-	return toolOutcome{result: fmt.Sprintf("随机姓名(%d个候选): %s", len(names), strings.Join(parts, " "))}
+	return fmt.Sprintf("随机姓名(%d个候选): %s", len(names), strings.Join(parts, " "))
+}
+
+// dispatchGenerateNPCName 是 generate_npc_name 工具的通用执行逻辑，供 Story
+// Architect 与 Oneshot Architect 两个工具循环共用：解析参数、取名、登记到
+// room.usedNPCNames、格式化为工具结果文案。
+func dispatchGenerateNPCName(ctx context.Context, room *scripterRoom, call llm.ToolCall) toolOutcome {
+	var args generateNPCNameArgs
+	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+		return toolOutcome{reject: "SYSTEM REJECT: generate_npc_name参数不是合法JSON，请重新调用。"}
+	}
+
+	used := room.usedNPCNames
+	names, err := pickNPCNames(ctx, room.architect, scripterSessionID(ctx, room), args, used)
+	if err != nil {
+		return toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: %s", err.Error())}
+	}
+
+	markNPCNamesUsed(used, names...)
+	return toolOutcome{result: formatNPCNames(names)}
 }

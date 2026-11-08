@@ -277,7 +277,7 @@ func progressToolLabel(action ToolCallType) string {
 		return "查询规则"
 	case ToolRollDice:
 		return "掷骰检定"
-	case ToolCreateNPC, ToolDestroyNPC:
+	case ToolGenerateNPCName, ToolCreateNPC, ToolDestroyNPC:
 		return "处理NPC登场"
 	case ToolActNPC:
 		return "处理NPC行动"

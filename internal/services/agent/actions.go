@@ -55,6 +55,7 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolDescribeCharacters: true,
 	ToolGenerateImage:      true,
 	ToolActNPC:             true, // returns NPC reaction that must be read before narrate
+	ToolGenerateNPCName:    true,
 }
 
 // narrateCompatibleActions 表示可与narrate/end_game同批执行的动作。
@@ -95,6 +96,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolRollDice:               rollDiceAction{},
 	ToolActNPC:                 actNPCAction{},
 	ToolCreateNPC:              createNPCAction{},
+	ToolGenerateNPCName:        generateNPCNameAction{},
 	ToolDestroyNPC:             destroyNPCAction{},
 	ToolUpdateCharacters:       updateCharactersAction{},
 	ToolManageInventory:        manageInventoryAction{},
@@ -238,6 +240,36 @@ func (destroyNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	*actx.TempNPCs = nil
 	models.DB.Where("session_id = ?", actx.GCtx.Session.ID).Find(actx.TempNPCs)
 	return []ToolResult{{Action: call.Action, Result: result}}
+}
+
+// NOTE: generate_npc_name 只返回姓名、不落库；已被调查员、临时NPC和模组NPC占用的姓名不会再发放。
+// 中日文姓名由 NPC 角色的模型现场创作，失败时回退静态姓名池。
+type generateNPCNameAction struct{}
+
+func (generateNPCNameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	args := generateNPCNameArgs{Culture: call.Culture, Gender: call.Gender, Count: call.Count}
+	used := sessionTakenNames(actx.GCtx, *actx.TempNPCs)
+	names, err := pickNPCNames(actx.Ctx, actx.Handles[models.AgentRoleNPC], fmt.Sprint(actx.Sid), args, used)
+	if err != nil {
+		return []ToolResult{{Action: ToolGenerateNPCName, Result: "SYSTEM REJECT: " + err.Error()}}
+	}
+	debugf("tool", "session=%d generate_npc_name culture=%s gender=%s names=%v", actx.Sid, call.Culture, call.Gender, names)
+	return []ToolResult{{Action: ToolGenerateNPCName, Result: formatNPCNames(names)}}
+}
+
+// NOTE: sessionTakenNames 汇总本局已占用的姓名（小写归一化）：调查员、临时NPC、模组NPC。
+func sessionTakenNames(gctx *GameContext, tempNPCs []models.SessionNPC) map[string]bool {
+	used := map[string]bool{}
+	for _, p := range gctx.Session.Players {
+		markNPCNamesUsed(used, p.CharacterCard.Name)
+	}
+	for _, npc := range tempNPCs {
+		markNPCNamesUsed(used, npc.Name)
+	}
+	for _, npc := range gctx.Session.Scenario.Content.Data.NPCs {
+		markNPCNamesUsed(used, npc.Name)
+	}
+	return used
 }
 
 // ── Character state actions ───────────────────────────────────────────────────
