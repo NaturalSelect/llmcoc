@@ -485,6 +485,11 @@ func floorEndPayload(floor int, out agent.RunOutput) gin.H {
 	return gin.H{"floor": floor, "reason": floorEndReason(out), "messages": out.Messages}
 }
 
+// NOTE: session 事件只是信号，客户端收到后重新拉取 GET /api/sessions/:id；reason 说明触发原因。
+func publishSessionChanged(sessionID uint, status models.SessionStatus, reason string) {
+	hubFor(sessionID).Publish("session", gin.H{"status": status, "reason": reason})
+}
+
 // finishFloor 写入新的发言权、释放 processing，之后才广播：客户端看到 spotlight 点了自己就会立刻发言，
 // 此时 processing 必须已经释放，否则会被 409 拒绝。
 func (h *SessionHandlers) finishFloor(af *activeFloor, out agent.RunOutput) {
@@ -501,6 +506,13 @@ func (h *SessionHandlers) finishFloor(af *activeFloor, out agent.RunOutput) {
 		hub.Publish("spotlight", spotlightEventPayload(spot))
 	}
 	hub.Publish("floor_end", floorEndPayload(int(af.floor.Load()), out))
+
+	// NOTE: end_game 在周期内已把房间改成 ended；周期结束后再发一次，客户端据此刷新状态和人物卡。
+	status := models.SessionStatusPlaying
+	if out.Ended {
+		status = models.SessionStatusEnded
+	}
+	publishSessionChanged(sessionID, status, "cards")
 }
 
 // publishRound 是注入给 Director 的 gctx.Publish：同步把一轮产生的消息落库并广播，再把 writer/image 消息交给异步任务。
@@ -540,6 +552,7 @@ func (h *SessionHandlers) publishRound(af *activeFloor, ro agent.RoundOutputs) e
 	}
 
 	hub := hubFor(sessionID)
+	beatPublished := false
 	for _, p := range items {
 		hub.Publish("message_new", gin.H{"message": newMessageResponse(p.msg)})
 		switch p.msg.Kind {
@@ -549,7 +562,17 @@ func (h *SessionHandlers) publishRound(af *activeFloor, ro agent.RoundOutputs) e
 			go h.runPainterTask(p.msg.ID, ro.WriterCtx, *p.item.Image)
 		case models.MessageKindKP, models.MessageKindAsk:
 			af.beats.Add(1)
+			beatPublished = true
 		}
+	}
+	if beatPublished {
+		// NOTE: 每一拍结算后人物卡（HP/SAN 等）可能已变化，通知客户端刷新；end_game 的工具在发布前
+		// 已把房间改成 ended，所以状态从库里读，不能写死 playing。
+		var status models.SessionStatus
+		if err := models.DB.Model(&models.GameSession{}).Where("id = ?", sessionID).Select("status").Scan(&status).Error; err != nil || status == "" {
+			status = models.SessionStatusPlaying
+		}
+		publishSessionChanged(sessionID, status, "cards")
 	}
 	return nil
 }

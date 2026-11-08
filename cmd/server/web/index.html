@@ -542,10 +542,15 @@
                                             x-show="currentSession?.created_by === user?.id && currentSession?.status==='lobby'"
                                             @click="startSession()" class="btn btn-green text-xs">▶ 开始</button>
                                         <button
-                                            x-show="canKPContinue && !streaming && currentSession?.status==='playing'"
-                                            @click="hostContinueKP()" :disabled="connectionRecovering"
+                                            x-show="gates().canContinue"
+                                            @click="hostContinueKP()"
                                             title="跳过未回应的玩家，让 KP 继续推进剧情"
-                                            class="btn btn-amber text-xs">让 KP 继续</button>
+                                            class="btn btn-amber text-xs" x-text="continueLabel()"></button>
+                                        <button
+                                            x-show="gates().canStop"
+                                            @click="hostStop()"
+                                            title="打断 KP 当前的发言，本周期已发布的内容会保留"
+                                            class="btn btn-red text-xs">打断 KP</button>
                                         <button
                                             x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
                                             @click="endSession()" :disabled="endingSession"
@@ -583,9 +588,13 @@
                                                 @click="moreMenuOpen = false; startSession()" class="game-menu-item">▶
                                                 开始</button>
                                             <button role="menuitem"
-                                                x-show="canKPContinue && !streaming && currentSession?.status==='playing'"
+                                                x-show="gates().canContinue"
                                                 @click="moreMenuOpen = false; hostContinueKP()"
-                                                :disabled="connectionRecovering" class="game-menu-item">让 KP 继续</button>
+                                                class="game-menu-item" x-text="continueLabel()"></button>
+                                            <button role="menuitem"
+                                                x-show="gates().canStop"
+                                                @click="moreMenuOpen = false; hostStop()"
+                                                class="game-menu-item">打断 KP</button>
                                             <button role="menuitem"
                                                 x-show="(currentSession?.created_by === user?.id || user?.role==='admin') && currentSession?.status==='playing'"
                                                 @click="moreMenuOpen = false; endSession()" :disabled="endingSession"
@@ -650,103 +659,94 @@
                                     x-text="'🕯 ' + (currentGameTime()?.label || '')"></span>
                             </div>
 
-                            <!-- 消息区域（可滚动） -->
+                            <!-- 消息区域（可滚动）：每条消息一块，按 kind 平铺渲染 -->
                             <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar bg-chat min-h-0"
                                 id="chatBox">
-                                <template x-for="msg in messages" :key="msg.id">
-                                    <div class="msg shadow-sm border border-inset"
-                                        :class="(msg._new ? 'fade-up ' : '') + (msg.role==='assistant' ? 'msg-kp' : msg.role==='user' ? ('msg-user' + (isMyMessage(msg) ? ' msg-user-self' : '')) : 'msg-sys')">
+                                <template x-for="msg in (room?.messages || [])" :key="msg.id">
+                                    <div class="msg shadow-sm border border-inset" :class="msgClass(msg)">
 
                                         <div class="flex flex-wrap items-center gap-2 mb-1.5 border-b border-base pb-1">
                                             <span class="msg-avatar"
-                                                :class="msg.role==='assistant'?'msg-avatar-kp':msg.role==='user'?'msg-avatar-user':'msg-avatar-sys'"
-                                                x-text="msg.role==='assistant'?'🎭':msg.role==='system'?'⚙':'👤'"></span>
+                                                :class="msgKind(msg)==='player'?'msg-avatar-user':msgKind(msg)==='system'?'msg-avatar-sys':'msg-avatar-kp'"
+                                                x-text="msgKind(msg)==='player'?'👤':msgKind(msg)==='system'?'⚙':'🎭'"></span>
                                             <span class="text-[0.8rem] font-bold font-mono"
-                                                :class="msg.role==='assistant'?'text-red-400':msg.role==='user'?'text-green-400':'text-blue-400'"
-                                                x-text="msg.role==='assistant'?'KP':msg.role==='system'?'系统':(msg.username||'玩家')">
-                                            </span>
+                                                :class="msgKind(msg)==='player'?'text-green-400':msgKind(msg)==='system'?'text-blue-400':'text-red-400'"
+                                                x-text="msgLabel(msg)"></span>
                                             <span class="text-xs text-amber-700 font-mono"
                                                 x-text="fmtTime(msg.created_at)"></span>
                                             <span class="text-xs text-amber-700 font-mono"
-                                                x-show="msg.role==='assistant' && msg.director_elapsed_ms"
+                                                x-show="msg.director_elapsed_ms"
                                                 title="KP决策耗时(不含叙事生成),Director工具调用循环轮数及平均每步延迟"
                                                 x-text="'⏱ ' + fmtDuration(msg.director_elapsed_ms) + ' · ' + msg.director_steps + ' 步 · 均 ' + fmtStepAvg(msg.director_elapsed_ms, msg.director_steps) + '/步'"></span>
-                                            <span class="time-chip ml-auto" x-show="msg.time_point"
-                                                :title="msg.time_point?.elapsed || ''"
-                                                x-text="'🕯 ' + (msg.time_point?.label || '')"></span>
+                                            <span class="time-chip ml-auto" x-show="timeOf(msg)"
+                                                :title="timeOf(msg)?.elapsed || ''"
+                                                x-text="'🕯 ' + (timeOf(msg)?.label || '')"></span>
                                         </div>
 
-                                        <template x-if="msg.role === 'assistant'">
+                                        <!-- 玩家行动 -->
+                                        <template x-if="msgKind(msg) === 'player'">
+                                            <p class="action text-green-200/90" x-text="msg.content"></p>
+                                        </template>
+
+                                        <!-- Writer 叙事正文：pending 时显示流式收到的部分 -->
+                                        <template x-if="msgKind(msg) === 'writer'">
                                             <div class="narrative-container">
-                                                <template x-if="msg.writer_text || msg.narration_text">
+                                                <template x-if="msg.status === 'failed'">
+                                                    <p class="narration text-red-300/80">
+                                                        叙事生成失败<span x-show="msg.meta?.error" x-text="'：' + msg.meta?.error"></span>
+                                                    </p>
+                                                </template>
+                                                <template x-if="msg.status !== 'failed'">
                                                     <div>
-                                                        <p x-show="stripAckContent(msg.writer_text).trim()"
-                                                            class="narrative"
-                                                            :class="(msg._writer_streaming ? 'cursor' : '')"
-                                                            x-text="stripAckContent(msg.writer_text)">
-                                                        </p>
-                                                        <p x-show="msg._writer_streaming && !stripAckContent(msg.writer_text).trim()"
+                                                        <p x-show="writerText(msg).trim()" class="narrative"
+                                                            :class="msg.status === 'pending' ? 'cursor' : ''"
+                                                            x-text="writerText(msg)"></p>
+                                                        <p x-show="msg.status === 'pending' && !writerText(msg).trim()"
                                                             class="narrative cursor text-amber-200/60">
                                                             叙事正文生成中…
                                                         </p>
-                                                        <template x-if="msg.images && msg.images.length">
-                                                            <div class="mt-3 grid gap-2">
-                                                                <template x-for="(img, idx) in msg.images" :key="idx">
-                                                                    <img :src="img" alt="KP生成的场景图" loading="lazy"
-                                                                        decoding="async" @click="openImagePreview(img)"
-                                                                        class="chat-image rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20 cursor-zoom-in hover:opacity-90 transition-opacity">
-                                                                </template>
-                                                            </div>
-                                                        </template>
-                                                        <template x-if="stripAckContent(msg.narration_text).trim()">
-                                                            <div class="narration-block"
-                                                                :class="hasLeadingContent ? 'narrative-after-kp' : ''"
-                                                                x-data="{
-                                                                    manualCollapsed: null,
-                                                                    get hasLeadingContent() {
-                                                                        return !!(stripAckContent(msg.writer_text).trim() || msg._writer_streaming || (msg.images && msg.images.length));
-                                                                    },
-                                                                    get collapsed() {
-                                                                        return this.manualCollapsed ?? this.hasLeadingContent;
-                                                                    }
-                                                                }">
-                                                                <div class="narration-toggle" @click="manualCollapsed = !collapsed">
-                                                                    <span x-text="collapsed ? '▶' : '▼'" class="toggle-arrow"></span>
-                                                                    KP 旁白
-                                                                </div>
-                                                                <p class="narration" x-show="!collapsed"
-                                                                    x-text="'KP：' + stripAckContent(msg.narration_text)"></p>
-                                                            </div>
-                                                        </template>
                                                     </div>
                                                 </template>
-                                                <template x-if="!msg.writer_text && !msg.narration_text">
-                                                    <div>
-                                                        <p class="narrative" x-text="stripAckContent(msg.content)"></p>
-                                                        <p x-show="msg._writer_streaming && !stripAckContent(msg.content).trim()"
-                                                            class="narrative cursor text-amber-200/60">
-                                                            叙事正文生成中…
-                                                        </p>
-                                                        <template x-if="msg.images && msg.images.length">
-                                                            <div class="mt-3 grid gap-2">
-                                                                <template x-for="(img, idx) in msg.images" :key="idx">
-                                                                    <img :src="img" alt="KP生成的场景图" loading="lazy"
-                                                                        decoding="async" @click="openImagePreview(img)"
-                                                                        class="chat-image rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20 cursor-zoom-in hover:opacity-90 transition-opacity">
-                                                                </template>
-                                                            </div>
-                                                        </template>
-                                                    </div>
-                                                </template>
-                                                <template x-if="msg.dice_results && msg.dice_results.length">
+                                            </div>
+                                        </template>
+
+                                        <!-- 配图 -->
+                                        <template x-if="msgKind(msg) === 'image'">
+                                            <div>
+                                                <p x-show="msg.status === 'pending'"
+                                                    class="narrative cursor text-amber-200/60">配图生成中…</p>
+                                                <p x-show="msg.status === 'failed'" class="narration text-red-300/80">
+                                                    配图失败<span x-show="msg.meta?.error" x-text="'：' + msg.meta?.error"></span>
+                                                </p>
+                                                <div x-show="msg.status === 'done' && msg.images && msg.images.length"
+                                                    class="grid gap-2">
+                                                    <template x-for="(img, idx) in (msg.images || [])" :key="idx">
+                                                        <img :src="img" alt="KP生成的场景图" loading="lazy"
+                                                            decoding="async" @click="openImagePreview(img)"
+                                                            class="chat-image rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20 cursor-zoom-in hover:opacity-90 transition-opacity">
+                                                    </template>
+                                                </div>
+                                            </div>
+                                        </template>
+
+                                        <!-- KP 回复与点名 -->
+                                        <template x-if="msgKind(msg) === 'kp' || msgKind(msg) === 'ask'">
+                                            <div class="narrative-container">
+                                                <p class="narration" x-text="msg.content"></p>
+                                                <p x-show="msgKind(msg) === 'ask' && (msg.meta?.ask?.names || []).length"
+                                                    class="mt-1.5 text-xs font-bold text-amber-300 font-ui"
+                                                    x-text="'👉 KP 点名：' + (msg.meta?.ask?.names || []).join('、')"></p>
+                                                <p x-show="msg.meta?.ended"
+                                                    class="mt-1.5 text-xs font-bold text-red-400 font-ui">— 游戏结束 —</p>
+                                                <template x-if="diceOf(msg).length">
                                                     <div class="dice-strip">
-                                                        <template x-for="(dice, idx) in msg.dice_results" :key="idx">
+                                                        <template x-for="(dice, idx) in diceOf(msg)" :key="idx">
                                                             <span class="dice-chip">
                                                                 <span class="dice-chip-raw" x-show="dice.raw"
                                                                     x-text="dice.raw"></span>
                                                                 <span class="dice-chip-what" x-show="!dice.raw"
                                                                     :title="dice.what || ''"
-                                                                    x-text="'🎲 ' + (dice.what || '骰点')"></span>
+                                                                    x-text="'🎲 ' + (dice.what || '骰点') + (dice.hidden ? '（暗骰）' : '')"></span>
                                                                 <span class="dice-chip-roll" x-show="!dice.raw"
                                                                     x-text="dice.roll"></span>
                                                                 <span class="dice-chip-level"
@@ -759,124 +759,67 @@
                                             </div>
                                         </template>
 
-                                        <template x-if="msg.role !== 'assistant'">
-                                            <p class="action"
-                                                :class="msg.role==='system'?'text-blue-300/70 text-xs italic':'text-green-200/90'"
-                                                x-text="msg.content"></p>
+                                        <!-- 开场白与系统提示 -->
+                                        <template x-if="msgKind(msg) === 'intro'">
+                                            <p class="narrative" x-text="msg.content"></p>
+                                        </template>
+                                        <template x-if="msgKind(msg) === 'system'">
+                                            <p class="action text-blue-300/70 text-xs italic" x-text="msg.content"></p>
+                                        </template>
+
+                                        <!-- 没有 kind 的旧数据：只清掉混在正文里的内部标签 -->
+                                        <template x-if="msgKind(msg) === 'legacy'">
+                                            <p class="narrative" x-text="stripLegacyTags(msg.content)"></p>
                                         </template>
                                     </div>
                                 </template>
 
-                                <!-- Streaming block -->
-                                <div x-show="streaming" class="msg msg-kp fade-up shadow-sm border border-[#3a1515]">
-                                    <div class="flex flex-wrap items-center gap-2 mb-1.5 border-b border-[#3a1515] pb-1">
-                                        <span class="msg-avatar msg-avatar-kp">🎭</span>
-                                        <span class="text-[0.8rem] font-bold text-red-400 font-mono">KP</span>
-                                        <span class="text-xs text-red-900 font-mono">正在回应…</span>
-                                        <span class="time-chip ml-auto" x-show="extractTimePoint(narrationBuffer)"
-                                            :title="extractTimePoint(narrationBuffer)?.elapsed || ''"
-                                            x-text="'🕯 ' + (extractTimePoint(narrationBuffer)?.label || '')"></span>
-                                    </div>
-
-                                    <div x-show="!stripAckContent(writerBuffer).trim() && !stripAckContent(narrationBuffer).trim()"
-                                        class="flex items-center gap-3 py-1">
-                                        <div class="flex gap-1">
-                                            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-                                        </div>
-                                        <span class="text-xs text-red-900 italic font-ui"
-                                            x-text="progressText || 'Agent 团队运行中，请稍候…'"></span>
-                                    </div>
-
-                                    <p x-show="stripAckContent(writerBuffer).trim()" class="narrative" :class="'cursor'"
-                                        x-text="stripAckContent(writerBuffer)"></p>
-                                    <div x-show="imageBuffer && imageBuffer.length" class="mt-3 grid gap-2">
-                                        <template x-for="(img, idx) in imageBuffer" :key="idx">
-                                            <img :src="img" alt="KP生成的场景图" loading="lazy" decoding="async"
-                                                @click="openImagePreview(img)"
-                                                class="chat-image rounded-lg border border-red-900/40 max-h-96 max-w-full object-contain bg-black/20 cursor-zoom-in hover:opacity-90 transition-opacity">
-                                        </template>
-                                    </div>
-                                    <p x-show="stripAckContent(narrationBuffer).trim()"
-                                        class="narration narrative-after-kp cursor"
-                                        x-text="'KP：' + stripAckContent(narrationBuffer)">
-                                    </p>
-                                    <div x-show="extractDiceResults(narrationBuffer).length" class="dice-strip">
-                                        <template x-for="(dice, idx) in extractDiceResults(narrationBuffer)"
-                                            :key="idx">
-                                            <span class="dice-chip">
-                                                <span class="dice-chip-raw" x-show="dice.raw"
-                                                    x-text="dice.raw"></span>
-                                                <span class="dice-chip-what" x-show="!dice.raw"
-                                                    :title="dice.what || ''"
-                                                    x-text="'🎲 ' + (dice.what || '骰点')"></span>
-                                                <span class="dice-chip-roll" x-show="!dice.raw"
-                                                    x-text="dice.roll"></span>
-                                                <span class="dice-chip-level" x-show="!dice.raw && dice.level"
-                                                    x-text="'难度 ' + dice.level"></span>
-                                            </span>
-                                        </template>
-                                    </div>
-                                </div>
-
-                                <!-- Waiting for other players -->
-                                <div x-show="waitingForPlayers && !connectionRecovering"
-                                    class="msg msg-sys fade-up border border-[#1a2d4a]">
-                                    <!-- NOTE: 战斗/追逐激活时显示轮次与当前批次行动者(DEX相邻时可能多人同批) -->
-                                    <p x-show="waitingInfo.encounter_label"
-                                        class="text-amber-300/80 text-xs italic font-ui mb-1">⚔️
-                                        <span x-text="waitingInfo.encounter_label"></span> — 等待<span
-                                            x-text="encounterBatchActorNames()"></span>行动</p>
-                                    <!-- NOTE: 服务端返回姓名列表时显示 badges，否则回退"还差 N 人" -->
-                                    <div x-show="(waitingInfo.submitted_names || []).length > 0 || (waitingInfo.pending_names || []).length > 0"
-                                        class="space-y-1.5">
-                                        <p class="text-blue-300/70 text-xs italic font-ui">⏳
-                                            等待其他调查员提交行动…</p>
-                                        <div x-show="(waitingInfo.submitted_names || []).length > 0"
+                                <!-- 等待其他玩家提交行动 -->
+                                <div x-show="showWaiting()" class="msg msg-sys fade-up border border-[#1a2d4a]">
+                                    <div class="space-y-1.5">
+                                        <p class="text-blue-300/70 text-xs italic font-ui">⏳ 等待其他调查员提交行动…</p>
+                                        <div x-show="(room?.waiting.submittedNames || []).length > 0"
                                             class="flex flex-wrap gap-1 items-center">
                                             <span class="text-[10px] text-green-800 shrink-0 font-ui">已提交：</span>
-                                            <template x-for="name in (waitingInfo.submitted_names || [])" :key="name">
-                                                <span class="waiting-badge waiting-badge-submitted"
-                                                    x-text="name"></span>
+                                            <template x-for="name in (room?.waiting.submittedNames || [])" :key="name">
+                                                <span class="waiting-badge waiting-badge-submitted" x-text="name"></span>
                                             </template>
                                         </div>
-                                        <div x-show="(waitingInfo.pending_names || []).length > 0"
+                                        <div x-show="(room?.waiting.pendingNames || []).length > 0"
                                             class="flex flex-wrap gap-1 items-center">
                                             <span class="text-[10px] text-amber-900 shrink-0 font-ui">待提交：</span>
-                                            <template x-for="name in (waitingInfo.pending_names || [])" :key="name">
+                                            <template x-for="name in (room?.waiting.pendingNames || [])" :key="name">
                                                 <span class="waiting-badge waiting-badge-pending" x-text="name"></span>
                                             </template>
                                         </div>
                                     </div>
-                                    <!-- 姓名列表为空时回退计数格式 -->
-                                    <p x-show="!(waitingInfo.submitted_names || []).length && !(waitingInfo.pending_names || []).length"
-                                        class="text-blue-300/70 text-xs italic font-ui">
-                                        ⏳ 已提交行动，等待其他调查员…（还差
-                                        <span class="font-bold text-blue-400" x-text="waitingInfo.pending"></span> 人）
-                                    </p>
                                 </div>
 
-                                <!-- KP 点名横幅（仅 KP 驱动房间；老房间 spotlight 为 null 不显示） -->
-                                <div x-show="spotlightActive() && !streaming && !waitingForPlayers && !connectionRecovering"
-                                    class="msg msg-sys fade-up border"
-                                    :class="spotlight?.asked_me ? 'border-amber-500/70' : 'border-[#1a2d4a]'"
-                                    :style="spotlight?.asked_me ? 'opacity:1' : ''">
+                                <!-- 状态横幅：连接状态 / KP 在推进 / 轮到谁 / KP 已暂停 -->
+                                <div x-show="roomBanner().tone !== 'idle'" class="msg msg-sys fade-up border"
+                                    :class="roomBanner().tone === 'me' ? 'border-amber-500/70' : roomBanner().tone === 'warn' ? 'border-[#1a2a3a]' : 'border-[#1a2d4a]'"
+                                    :style="roomBanner().tone === 'me' ? 'opacity:1' : ''">
                                     <p class="text-xs italic font-ui"
-                                        :class="spotlight?.asked_me ? 'text-amber-300 font-bold' : 'text-blue-300/70'">
-                                        <span x-text="spotlight?.asked_me ? '👉' : (spotlight?.kp_floor ? '🎭' : '⏳')"></span>
-                                        <span x-text="spotlightBannerText()"></span>
-                                    </p>
-                                </div>
-
-                                <!-- 连接恢复中 -->
-                                <div x-show="connectionRecovering" class="msg msg-sys fade-up border border-[#1a2a3a]">
-                                    <p class="text-blue-400/60 text-xs italic font-ui">
-                                        🔄 连接已中断，正在恢复… 请稍候
+                                        :class="roomBanner().tone === 'me' ? 'text-amber-300 font-bold' : roomBanner().tone === 'warn' ? 'text-blue-400/60' : 'text-blue-300/70'">
+                                        <span x-text="roomBanner().icon"></span>
+                                        <span x-text="roomBanner().text"></span>
                                     </p>
                                 </div>
                             </div>
 
                             <!-- 输入区 -->
                             <div class="card border-t p-3 border-base shrink-0">
+                                <!-- 已提交的行动：点名的人没到齐时，行动先留在服务端，周期开始后才出现在消息列表里 -->
+                                <div x-show="room?.me.submitted && room?.me.draft"
+                                    class="mb-2 rounded border border-[#1a2d4a] bg-[#0d1117] px-3 py-2 text-xs font-ui">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="text-blue-300/80">已提交，等待其他调查员</span>
+                                        <button type="button" class="text-amber-500 hover:text-amber-300 shrink-0"
+                                            @click="editSubmitted()">修改</button>
+                                    </div>
+                                    <p class="mt-1 text-green-200/80 whitespace-pre-wrap break-words"
+                                        x-text="room?.me.draft"></p>
+                                </div>
                                 <div class="response-suggestions" x-data="{ collapsed: true }">
                                     <div class="response-suggestions-head" @click="collapsed = !collapsed">
                                         <span x-text="collapsed ? '▶' : '▼'" class="toggle-arrow"></span>
@@ -884,7 +827,7 @@
                                     </div>
                                     <div class="response-suggestions-list" x-show="!collapsed">
                                         <button type="button" class="response-suggestion" @click="insertDialogueQuotes()"
-                                            :disabled="!canSpeak()"
+                                            :disabled="!gates().canSpeak"
                                             title="插入台词括号；选中文字时会直接包住选中内容">「」台词</button>
                                         <template x-for="(opt, idx) in (activeResponseSuggestions()?.options || [])"
                                             :key="idx">
@@ -896,25 +839,18 @@
                                 <div class="flex flex-col sm:flex-row gap-2">
                                     <textarea x-model="chatInput" @keydown.ctrl.enter="sendChat()" id="chatInputBox"
                                         :placeholder="chatPlaceholder()" rows="2"
-                                        :disabled="!canSpeak()"
+                                        :disabled="!gates().canSpeak"
                                         class="inp game-chat-input flex-1 resize-none bg-chat focus:border-amber-700 transition-colors"
                                         style="line-height:1.5"></textarea>
-                                    <button @click="sendChat()"
-                                        :disabled="!canSpeak() || !chatInput.trim()"
-                                        class="btn btn-amber self-stretch sm:self-end px-5 py-2 h-auto sm:h-[48px] min-h-[40px] shadow-lg min-w-[80px] flex items-center justify-center">
-                                        <span
-                                            x-show="!streaming && !waitingForPlayers && !connectionRecovering && !spotlightBlocked()">发送</span>
-                                        <span
-                                            x-show="!streaming && !waitingForPlayers && !connectionRecovering && spotlightBlocked()">等待点名</span>
-                                        <span x-show="streaming && !waitingForPlayers && !connectionRecovering"
-                                            class="flex gap-1 items-center">
-                                            <span class="dot" style="width:4px; height:4px"></span>
-                                            <span class="dot" style="width:4px; height:4px"></span>
-                                            <span class="dot" style="width:4px; height:4px"></span>
-                                        </span>
-                                        <span x-show="waitingForPlayers && !connectionRecovering">等待中</span>
-                                        <span x-show="connectionRecovering">恢复中</span>
-                                    </button>
+                                    <div class="flex sm:flex-col items-end gap-1 self-stretch sm:self-end">
+                                        <span class="text-[10px] font-mono text-amber-800"
+                                            :class="chatCharCount() > 2000 ? 'text-red-400' : ''"
+                                            x-show="chatInput" x-text="chatCharCount() + '/2000'"></span>
+                                        <button @click="sendChat()"
+                                            :disabled="!gates().canSpeak || !chatInput.trim() || chatCharCount() > 2000"
+                                            class="btn btn-amber flex-1 sm:flex-none px-5 py-2 h-auto sm:h-[48px] min-h-[40px] shadow-lg min-w-[80px] flex items-center justify-center"
+                                            x-text="sendLabel()"></button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2244,7 +2180,7 @@
                                     <div class="flex items-center gap-1.5 flex-wrap">
                                         <p class="text-sm font-bold text-amber-200 truncate font-ui"
                                             x-text="p.character_card?.name || p.user?.username"></p>
-                                        <!-- NOTE: waitingForPlayers 时显示本轮提交状态 badge -->
+                                        <!-- NOTE: 点名的人没到齐时显示本轮提交状态标记 -->
                                         <span x-show="playerTurnSubmitState(p) === 'submitted'"
                                             class="waiting-badge waiting-badge-submitted shrink-0">已提交</span>
                                         <span x-show="playerTurnSubmitState(p) === 'pending'"
@@ -2453,6 +2389,7 @@
         <script defer src="./js/app.js"></script>
         <script defer src="./js/dashboard.js"></script>
         <script defer src="./js/sessions.js"></script>
+        <script defer src="./js/room_state.js"></script>
         <script defer src="./js/game.js"></script>
         <script defer src="./js/shop.js"></script>
         <script defer src="./js/admin.js"></script>

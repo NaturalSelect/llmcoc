@@ -380,6 +380,12 @@ func TestChatStream_EmptyAndOversizedContent(t *testing.T) {
 	if w := postChat(r, sessionID, strings.Repeat("a", 2001)); w.Code != http.StatusBadRequest {
 		t.Errorf("oversized content: want 400, got %d", w.Code)
 	}
+	if w := postChat(r, sessionID, strings.Repeat("平", 2001)); w.Code != http.StatusBadRequest {
+		t.Errorf("2001 multibyte chars: want 400, got %d", w.Code)
+	}
+	if w := postChat(r, sessionID, strings.Repeat("平", 2000)); w.Code == http.StatusBadRequest {
+		t.Errorf("2000 multibyte chars must not be rejected as too long: %s", w.Body.String())
+	}
 }
 
 func TestChatStream_KPHoldsFloorRejectsWith409(t *testing.T) {

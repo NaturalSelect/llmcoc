@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/logging"
@@ -330,6 +331,7 @@ func JoinSession(c *gin.Context) {
 		Username:  "系统",
 	}
 	models.DB.Create(&joinMsg)
+	publishSessionChanged(uint(sessionID), models.SessionStatusLobby, "join")
 
 	c.JSON(http.StatusOK, gin.H{"message": "加入成功"})
 }
@@ -404,6 +406,7 @@ func LeaveSession(c *gin.Context) {
 		return
 	}
 
+	publishSessionChanged(uint(sessionID), models.SessionStatusLobby, "leave")
 	c.JSON(http.StatusOK, gin.H{"message": "退出房间成功"})
 }
 
@@ -454,6 +457,8 @@ func StartSession(c *gin.Context) {
 		Username:  "KP",
 	}
 	models.DB.Create(&introMsg)
+	hubFor(session.ID).Publish("message_new", gin.H{"message": newMessageResponse(introMsg)})
+	publishSessionChanged(session.ID, models.SessionStatusPlaying, "start")
 
 	c.JSON(http.StatusOK, gin.H{"message": "游戏已开始"})
 }
@@ -495,11 +500,12 @@ func ReviveSession(c *gin.Context) {
 		username = "管理员"
 	}
 
+	var reviveMsg models.Message
 	if err := models.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&session).Update("status", models.SessionStatusPlaying).Error; err != nil {
 			return err
 		}
-		msg := models.Message{
+		reviveMsg = models.Message{
 			SessionID: session.ID,
 			Role:      models.MessageRoleSystem,
 			Kind:      models.MessageKindSystem,
@@ -507,12 +513,14 @@ func ReviveSession(c *gin.Context) {
 			Content:   fmt.Sprintf("管理员「%s」复活了房间，游戏继续。", username),
 			Username:  "系统",
 		}
-		return tx.Create(&msg).Error
+		return tx.Create(&reviveMsg).Error
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "复活房间失败"})
 		return
 	}
 
+	hubFor(session.ID).Publish("message_new", gin.H{"message": newMessageResponse(reviveMsg)})
+	publishSessionChanged(session.ID, models.SessionStatusPlaying, "revive")
 	c.JSON(http.StatusOK, gin.H{"message": "房间已复活"})
 }
 
@@ -936,7 +944,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能为空"})
 		return
 	}
-	if len(content) > 2000 {
+	if utf8.RuneCountInString(content) > 2000 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息过长(最多2000字)"})
 		return
 	}
@@ -1313,6 +1321,7 @@ func EndSession(c *gin.Context) {
 	}
 
 	models.DB.Model(&session).Update("status", models.SessionStatusEnded)
+	publishSessionChanged(session.ID, models.SessionStatusEnded, "end")
 
 	// Load recent messages as context for evaluator and growth agents
 	messages := agent.LoadEndGameMessages(uint(sessionID))
@@ -1366,6 +1375,7 @@ func AdminEndAllSessions(c *gin.Context) {
 	for i := range sessions {
 		session := &sessions[i]
 		models.DB.Model(session).Update("status", models.SessionStatusEnded)
+		publishSessionChanged(session.ID, models.SessionStatusEnded, "end")
 
 		messages := agent.LoadEndGameMessages(session.ID)
 		stripMessageImageDataURLTags(messages)

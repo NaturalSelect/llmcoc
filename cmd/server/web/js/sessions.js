@@ -151,10 +151,7 @@ window.COC.sessions = {
                             await this.api('POST', '/api/sessions/' + this.joinTargetSession.id + '/join', this.joinForm);
                             this.modal = null; this.showToast('加入成功！');
                             await this.loadSessions();
-                            // If there's an active game session, refresh its players list immediately
-                            if (this.currentSession?.id) {
-                                await this.refreshCurrentSession(true);
-                            }
+                            // NOTE: 当前房间的成员列表由 session 事件驱动刷新，这里不再手工重拉。
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.loading = false;
                     },
@@ -169,7 +166,6 @@ window.COC.sessions = {
                             await this.loadSessions();
                             if (this.currentSession?.id === session.id) {
                                 this.currentSession = null;
-                                this.messages = [];
                                 this.goTo('sessions');
                             }
                         } catch (e) {
@@ -188,37 +184,21 @@ window.COC.sessions = {
                     async startSession() {
                         try {
                             await this.api('POST', '/api/sessions/' + this.currentSession.id + '/start');
-                            await this.refreshCurrentSession(true);
-                            this.messages = this.normalizeMessages((await this.api('GET', '/api/sessions/' + this.currentSession.id + '/messages')) || []);
-                            this.$nextTick(() => this.scrollChat(true));
                             this.showToast('游戏已开始！');
                         } catch (e) {
                             this.showToast(e.message, 'error');
                             return;
                         }
+                        // NOTE: 开场白和状态变化经 WebSocket 的 message_new / session 事件送达，不需要手工刷新。
                         await this._openSceneAfterStart();
                     },
 
                     // NOTE: 新开局的房间由 KP 驱动，开场白需要房主主动触发一次 kp-turn（服务端自行判断是否为开场）。
-                    // 失败不致命：房主仍可通过「让 KP 继续」重试。这里不 await 整条 SSE，避免阻塞开始按钮的后续逻辑。
+                    // 失败不致命：房主仍可通过「让 KP 开场/继续」重试。
                     async _openSceneAfterStart() {
-                        const sessionID = this.currentSession?.id;
-                        if (!sessionID || this.page !== 'game') return;
-                        let status = null;
-                        try {
-                            status = await this.api('GET', '/api/sessions/' + sessionID + '/chat-status');
-                        } catch (_) { }
-                        if (status) {
-                            // 服务端已经在处理（别处已触发过开场）：只跟随状态，不重复触发。
-                            if (this.applyChatStatus(status)) {
-                                this.pollChatStatus();
-                                return;
-                            }
-                            // 老房间（spotlight 为 null）没有 kp-turn 语义。
-                            if (!status.spotlight) return;
-                        }
-                        if (this.currentSession?.id !== sessionID || this.page !== 'game') return;
-                        this.requestKPTurn().catch(() => { });
+                        const room = this.room;
+                        if (!room || this.page !== 'game') return;
+                        await this._postKPTurn(room, { quiet: true });
                     },
 
                     async endSession() {
@@ -231,7 +211,6 @@ window.COC.sessions = {
                         this.endingSession = true;
                         try {
                             const r = await this.api('POST', '/api/sessions/' + this.currentSession.id + '/end');
-                            await this.refreshCurrentSession(true);
                             this.showToast(r.message || '游戏已结束，角色成长已结算。');
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.endingSession = false;
@@ -244,11 +223,6 @@ window.COC.sessions = {
                         try {
                             const r = await this.api('POST', '/api/sessions/' + session.id + '/revive');
                             await Promise.all([this.loadSessions(), this.loadMyHistory(), this.loadMyFavorites()]);
-                            if (this.currentSession?.id === session.id) {
-                                await this.refreshCurrentSession(true);
-                                this.messages = this.normalizeMessages((await this.api('GET', '/api/sessions/' + session.id + '/messages')) || []);
-                                this.$nextTick(() => this.scrollChat(true));
-                            }
                             this.showToast(r.message || '房间已复活');
                         } catch (e) { this.showToast(e.message, 'error'); }
                         this.revivingSession = false;

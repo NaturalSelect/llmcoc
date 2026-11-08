@@ -28,3 +28,10 @@ jobs:
 
       - name: Test
         run: go test -race -count=1 ./...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Frontend unit tests
+        run: node --test cmd/server/webtest/*.test.js

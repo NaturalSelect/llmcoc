@@ -115,6 +115,8 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 
 首次连接（不带 `since`）也会收到缓冲内的持久事件（最多 256 条），这些消息和 `GET /messages` 的内容会重叠。推荐顺序：**先建立 WebSocket，再拉 `/messages`**（避免两者之间漏事件），并让所有事件处理按 `message.id` 幂等（有则更新，无则插入）。同理，重连后同一条消息可能既被 `/messages` 返回又被补发，也靠幂等去重。
 
+首次连接的客户端也可以直接丢弃 `seq <= hello.seq` 的补发事件：它们发生在快照之前，已经包含在随后拉取的全量数据里。快照期间到达的 `seq > hello.seq` 的事件先缓冲，快照应用后再依次应用。
+
 ### 其他说明
 
 - 同一用户开多个标签页是多个独立订阅，互不影响。
@@ -147,8 +149,8 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | `image` | KP 的一次 `generate_image`：Painter 出的配图 |
 | `kp` | KP 的一次 `response` 或 `end_game` 的回复 |
 | `ask` | KP 的一次 `ask_players`：点名并交出发言权 |
-| `intro` | 开局的剧本介绍 |
-| `system` | 加入、离开、复活等系统提示 |
+| `intro` | 开局的剧本介绍，开局时经 `message_new` 送达 |
+| `system` | 复活提示，复活时经 `message_new` 送达。加入、离开的系统提示不会推送，也不出现在 `GET /messages` 里，客户端以 `session` 事件刷新成员列表 |
 
 `status`（正文是否就绪）：
 
@@ -266,6 +268,27 @@ KP 这一个周期结束。
 | `done` | 周期正常跑完但既没有点名也没有结束游戏（兜底值） |
 
 除 `ask` 和 `end_game` 外，其余 `reason` 都表示发言权回到了 KP。客户端对未知的 `reason` 应按"此周期已结束"处理，不要报错。
+
+#### `session`
+
+房间状态或成员发生变化的信号。它不携带房间数据，客户端收到后重新请求 `GET /api/sessions/:id` 即可。
+
+```json
+{"status": "playing", "reason": "cards"}
+```
+
+`status` 是事件发出时房间的状态（`lobby` / `playing` / `ended`），`reason`：
+
+| 值 | 含义 | 发出时机 |
+| --- | --- | --- |
+| `join` | 有人加入大厅 | 加入成功后 |
+| `leave` | 有人离开大厅 | 离开成功后。最后一人离开导致房间解散时不发 |
+| `start` | 房主开局 | 开场白的 `message_new` 之后 |
+| `end` | 房主或管理员结束游戏，或管理员批量结束 | 房间状态改成 `ended` 之后，结算开始之前 |
+| `revive` | 管理员复活房间 | 复活提示的 `message_new` 之后 |
+| `cards` | 人物卡可能已变化 | 每发布一条 `kp` / `ask` 消息之后，以及每个周期的 `floor_end` 之后 |
+
+`cards` 在一拍内可能连发多次，客户端应当对重拉请求做防抖。`status` 以事件为准：`end_game` 结束的房间，周期内和 `floor_end` 之后的 `session` 都是 `ended`。
 
 ### 临时事件（`seq = 0`）
 

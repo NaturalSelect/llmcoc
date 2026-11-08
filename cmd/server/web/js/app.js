@@ -97,45 +97,16 @@ window.COC.core = function() {
 
                     // ── Game state ────────────────────────────────────────────────────────
                     currentSession: null,
-                    messages: [],
+                    // NOTE: 房间实时状态（消息、发言权、等待进度、连接状态）全在 room 里，由 room_state.js 归约；
+                    // 进房间时新建，离开时置空。WebSocket 句柄和定时器在 game.js 的模块级变量里，不放进响应式状态。
+                    room: null,
                     chatInput: '',
                     endingSession: false,
                     leavingSession: false,
                     revivingSession: false,
-                    sessionRefreshTimer: null,
-                    refreshingSession: false,
-                    refreshingMessages: false,
-                    refreshingChatStatus: false,
-                    chatStatusPollTimer: null,
-                    waitingSince: null,
-
-                    // NOTE: SSE流式状态
-                    streaming: false,
-                    activeStreamID: null,
-                    writerBuffer: '',   // 兼容旧token事件,新白字直接写入对应消息
-                    narrationBuffer: '',   // 当前KP主流程回复
-                    imageBuffer: [],   // NOTE: 当前SSE临时图片,刷新后不保留
-                    progressText: '',   // 当前后端真实处理阶段
-                    // NOTE: 连接恢复状态（SSE断线后轮询恢复期间为true）
-                    connectionRecovering: false,
-
-                    // Multi-player waiting
-                    waitingForPlayers: false,
-                    // NOTE: KP 驱动房间的点名状态（null = 老房间，沿用旧逻辑）：
-                    // { user_ids, names, question, kp_floor, asked_me }；canKPContinue 仅房主/管理员为 true。
-                    spotlight: null,
-                    canKPContinue: false,
-                    waitingInfo: { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] },
                     // 游戏页角色状态条：HP/SAN 下降时的一次性高亮标记
                     hudFlash: { hp: false, san: false },
                     _hudLastStats: null,
-                    preSendMessageCount: -1, // snapshot of messages.length before local user push
-                    refreshIntervals: {
-                        gameAuto: 5000,
-                        waitingPoll: 4000,
-                        recoveryPoll: 4000,
-                    },
-
                         // ── Shop ──────────────────────────────────────────────────────────────
                         purchasing: false,
                         shopTargetCharacterId: '',
@@ -298,8 +269,7 @@ window.COC.core = function() {
                     },
 
                     logout() {
-                        this.stopGameAutoRefresh();
-                        this.stopChatStatusPolling();
+                        this.leaveRoom();
                         this.token = ''; localStorage.removeItem('coc_token');
                         this.user = null; this.page = 'auth';
                     },
@@ -312,15 +282,7 @@ window.COC.core = function() {
                     // Navigation
                     // ══════════════════════════════════════════════════════════════════════
                     goTo(p) {
-                        if (this.page === 'game') {
-                            this.stopGameAutoRefresh();
-                            this.stopChatStatusPolling();
-                            this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.imageBuffer = []; this.progressText = '';
-                            this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] };
-                            this.waitingSince = null;
-                            this.connectionRecovering = false;
-                            this.spotlight = null; this.canKPContinue = false;
-                        }
+                        if (this.page === 'game') this.leaveRoom();
                         this.page = p;
                         if (p === 'dashboard') this.loadAnnouncements().catch(() => {});
                         if (p === 'sessions') {
@@ -340,27 +302,7 @@ window.COC.core = function() {
                     },
 
                     async goToSession(id) {
-                        this.stopChatStatusPolling();
-                        this.streaming = false; this.activeStreamID = null; this.writerBuffer = ''; this.narrationBuffer = ''; this.imageBuffer = []; this.progressText = '';
-                        this.waitingForPlayers = false; this.waitingInfo = { pending: 0, total: 0, submitted_names: [], pending_names: [], batched: false, batch_user_ids: [], encounter_label: '', encounter_order: [] };
-                        this.waitingSince = null;
-                        this.connectionRecovering = false;
-                        this.spotlight = null; this.canKPContinue = false;
-                        try {
-                            const [session, msgs, chatStatus] = await Promise.all([
-                                this.api('GET', '/api/sessions/' + id),
-                                this.api('GET', '/api/sessions/' + id + '/messages'),
-                                this.api('GET', '/api/sessions/' + id + '/chat-status'),
-                            ]);
-                            this.currentSession = session;
-                            this.messages = this.normalizeMessages(msgs || []);
-                            this.page = 'game';
-                            this.startGameAutoRefresh();
-                            if (this.applyChatStatus(chatStatus)) {
-                                this.pollChatStatus();
-                            }
-                            this.$nextTick(() => this.scrollChat(true));
-                        } catch (e) { this.showToast(e.message, 'error'); }
+                        await this.enterRoom(id);
                     },
 
                     // ═══════════════════════════════════════════════════════
@@ -516,7 +458,9 @@ window.COC.core = function() {
                         const data = await resp.json().catch(() => ({}));
                         if (!resp.ok) {
                             const details = Array.isArray(data.details) ? '：' + data.details.join('；') : '';
-                            throw new Error((data.error || `HTTP ${resp.status}`) + details);
+                            const err = new Error((data.error || `HTTP ${resp.status}`) + details);
+                            err.status = resp.status;
+                            throw err;
                         }
                         return data;
                     },
