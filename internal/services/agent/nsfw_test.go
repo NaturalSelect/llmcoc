@@ -66,6 +66,16 @@ func TestRenderNSFW(t *testing.T) {
 				"常规全年龄向内容",
 			},
 		},
+		{
+			name: "appearance",
+			tpl:  imagePromptCharacterVisualSystemPrompt,
+			onWanted: []string{
+				"不要回避身体细节",
+			},
+			offWanted: []string{
+				"常规全年龄向的外貌描写",
+			},
+		},
 	}
 
 	for _, tt := range tests {

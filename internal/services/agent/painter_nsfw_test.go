@@ -105,6 +105,89 @@ func TestGenerateImageActionNSFWRouting(t *testing.T) {
 
 func handlePtr(h agentHandle) *agentHandle { return &h }
 
+// TestDescribeCharactersActionNSFWRouting 验证外貌查询只在房间NSFW开关和call.NSFW同时满足、
+// 且writer_nsfw可用时才路由到NSFW Writer并带上NSFW外貌政策,其余情况回落默认Writer。
+func TestDescribeCharactersActionNSFWRouting(t *testing.T) {
+	cases := []struct {
+		name       string
+		roomNSFW   bool
+		callNSFW   bool
+		nsfwHandle bool
+		nsfwActive bool
+		wantNSFW   bool
+		wantPolicy string
+		leakPolicy string
+	}{
+		{name: "房间开启且call标记nsfw则用NSFW Writer", roomNSFW: true, callNSFW: true, nsfwHandle: true, nsfwActive: true, wantNSFW: true, wantPolicy: "不要回避身体细节", leakPolicy: "常规全年龄向的外貌描写"},
+		{name: "房间关闭时即使call标记nsfw也用默认Writer", roomNSFW: false, callNSFW: true, nsfwHandle: true, nsfwActive: true, wantPolicy: "常规全年龄向的外貌描写", leakPolicy: "不要回避身体细节"},
+		{name: "房间开启但call未标记nsfw则用默认Writer", roomNSFW: true, callNSFW: false, nsfwHandle: true, nsfwActive: true, wantPolicy: "常规全年龄向的外貌描写", leakPolicy: "不要回避身体细节"},
+		{name: "writer_nsfw未配置则回落默认Writer", roomNSFW: true, callNSFW: true, wantPolicy: "常规全年龄向的外貌描写", leakPolicy: "不要回避身体细节"},
+		{name: "writer_nsfw被禁用则回落默认Writer", roomNSFW: true, callNSFW: true, nsfwHandle: true, wantPolicy: "常规全年龄向的外貌描写", leakPolicy: "不要回避身体细节"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defaultProv := &writerFakeProvider{responses: []string{"默认Writer的外貌"}}
+			nsfwProv := &writerFakeProvider{responses: []string{"NSFW Writer的外貌"}}
+			handles := map[models.AgentRole]agentHandle{
+				models.AgentRoleWriter: newWriterTestHandle(defaultProv),
+			}
+			if tc.nsfwHandle {
+				handles[models.AgentRoleWriterNSFW] = newWriterNSFWTestHandle(nsfwProv, tc.nsfwActive)
+			}
+			gctx := &GameContext{Session: models.GameSession{
+				ID:         9301,
+				EnableNSFW: tc.roomNSFW,
+				Players:    []models.SessionPlayer{{CharacterCard: models.CharacterCard{Name: "约翰", Appearance: "黑发青年"}}},
+			}}
+			actx := ActionContext{Ctx: context.Background(), GCtx: gctx, Handles: handles}
+
+			results := describeCharactersAction{}.Execute(ToolCall{Characters: []string{"约翰"}, NSFW: tc.callNSFW}, actx)
+			if len(results) != 1 {
+				t.Fatalf("want 1 result, got %d", len(results))
+			}
+
+			used, other := defaultProv, nsfwProv
+			wantResult := "默认Writer的外貌"
+			if tc.wantNSFW {
+				used, other = nsfwProv, defaultProv
+				wantResult = "NSFW Writer的外貌"
+			}
+			if results[0].Result != wantResult {
+				t.Errorf("Result = %q, want %q", results[0].Result, wantResult)
+			}
+			if used.callCount() != 1 || other.callCount() != 0 {
+				t.Fatalf("calls: used=%d other=%d, want 1/0", used.callCount(), other.callCount())
+			}
+			system := used.msgsAt(0)[0].Content
+			if !strings.Contains(system, tc.wantPolicy) {
+				t.Errorf("system prompt missing %q:\n%s", tc.wantPolicy, system)
+			}
+			if strings.Contains(system, tc.leakPolicy) {
+				t.Errorf("system prompt leaked %q", tc.leakPolicy)
+			}
+			if strings.Contains(system, "{{NSFW") {
+				t.Errorf("system prompt leaked placeholder:\n%s", system)
+			}
+		})
+	}
+}
+
+// TestDescribeCharactersActionWriterUnavailable 验证没有可用Writer时退回角色卡原文外貌。
+func TestDescribeCharactersActionWriterUnavailable(t *testing.T) {
+	gctx := &GameContext{Session: models.GameSession{
+		ID:         9302,
+		EnableNSFW: true,
+		Players:    []models.SessionPlayer{{CharacterCard: models.CharacterCard{Name: "约翰", Appearance: "黑发青年"}}},
+	}}
+	actx := ActionContext{Ctx: context.Background(), GCtx: gctx, Handles: map[models.AgentRole]agentHandle{}}
+
+	results := describeCharactersAction{}.Execute(ToolCall{Characters: []string{"约翰"}, NSFW: true}, actx)
+	if len(results) != 1 || !strings.Contains(results[0].Result, "黑发青年") {
+		t.Fatalf("results = %+v, want fallback containing appearance", results)
+	}
+}
+
 func TestRunPainter_NSFWRequestUsesPainterNSFWProvider(t *testing.T) {
 	const sessionID = 9201
 	normal := &recordingImageProvider{}

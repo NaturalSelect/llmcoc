@@ -82,26 +82,24 @@ func (describeCharactersAction) Execute(call ToolCall, actx ActionContext) []Too
 	}
 
 	description := ""
-	writerHandle := actx.Handles[models.AgentRoleWriter]
-	if writerHandle.isEnabled() {
+	nsfw := actx.GCtx.Session.EnableNSFW && call.NSFW
+	writerHandle, nsfwMode, err := pickWriterHandle(actx.Handles, nsfw)
+	if err == nil {
 		ctx := actx.Ctx
 		if ctx == nil {
 			ctx = context.Background()
 		}
 		ctx = withWriterGameSessionID(ctx, *actx.GCtx)
-		var err error
-		description, err = writeImagePromptCharacterVisualDescription(ctx, writerHandle, "", fmt.Sprintf("%v", actx.GCtx.Session.ID), cards)
-		if err != nil {
-			debugf("tool", "session=%d describe_characters writer fallback matched_character_count=%d err=%v", actx.Sid, len(cards), err)
-		}
-	} else {
-		debugf("tool", "session=%d describe_characters writer fallback matched_character_count=%d err=%v", actx.Sid, len(cards), fmt.Errorf("writer agent unavailable"))
+		description, err = writeImagePromptCharacterVisualDescription(ctx, writerHandle, "", fmt.Sprintf("%v", actx.GCtx.Session.ID), cards, nsfwMode)
+	}
+	if err != nil {
+		debugf("tool", "session=%d describe_characters writer fallback matched_character_count=%d err=%v", actx.Sid, len(cards), err)
 	}
 	description = strings.TrimSpace(description)
 	if description == "" {
 		description = fallbackCharacterVisualDescriptions(cards)
 	}
-	debugf("tool", "session=%d describe_characters result_len=%d requested_count=%d matched_character_count=%d", actx.Sid, len([]rune(description)), len(names), len(cards))
+	debugf("tool", "session=%d describe_characters result_len=%d requested_count=%d matched_character_count=%d nsfw=%v", actx.Sid, len([]rune(description)), len(names), len(cards), nsfwMode)
 	return []ToolResult{{Action: ToolDescribeCharacters, Result: description}}
 }
 
@@ -247,14 +245,15 @@ const imagePromptCharacterVisualSystemPrompt = `你是 Writer 代理，负责为
 聚焦可见的身体、面部、发型、服饰、姿态等具体视觉特征；物品栏不是随身物品清单，只提及明确穿戴或手持的可见饰品，凡不确定的物品一律省略。
 
 只输出纯外貌描写，不要附带其他属性。
+{{NSFW_APPEARANCE_POLICY}}
 `
 
-func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHandle, scenePrompt string, sessionID string, cards []models.CharacterCard) (string, error) {
+func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHandle, scenePrompt string, sessionID string, cards []models.CharacterCard, nsfw bool) (string, error) {
 	if !h.isEnabled() {
 		return "", fmt.Errorf("writer agent unavailable")
 	}
 	msgs := []llm.ChatMessage{
-		{Role: "system", Content: h.systemPrompt(imagePromptCharacterVisualSystemPrompt)},
+		{Role: "system", Content: h.systemPrompt(renderNSFW(imagePromptCharacterVisualSystemPrompt, nsfw))},
 		{Role: "user", Content: buildImagePromptCharacterVisualUserPrompt(scenePrompt, cards)},
 	}
 	// NOTE: 独立缓存key(sessionID:painter),不再借用Writer的"sessionID:writer",避免

@@ -449,11 +449,13 @@ func describeCharactersTool() scripterTool {
 			Name: string(ToolDescribeCharacters),
 			Description: `查询一个或多个角色(调查员/NPC)的外貌描述，用于后续 generate_image 组织画面提示词。
 【批次规则】describe_characters是no-sideeffect查询工具，不能与generate_image同批；下一轮读取结果后再把外貌细节写进image_prompt。
-调用示例：{"characters":["约翰","艾琳"]}`,
+【nsfw参数】后续配图会是nsfw=true的NSFW画面时，查外貌也设为true，外貌描写会交给NSFW Writer，不再回避身体细节；仅在房间已开启NSFW开关时生效，房间未开启NSFW或未配置NSFW Writer时按普通外貌描写处理。
+调用示例：{"characters":["约翰","艾琳"],"nsfw":false}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"characters": {"type": "array", "items": {"type": "string"}, "description": "要查询外貌描述的角色名列表"}
+					"characters": {"type": "array", "items": {"type": "string"}, "description": "要查询外貌描述的角色名列表"},
+					"nsfw": {"type": "boolean", "description": "后续配图是否为NSFW画面,外貌描写是否需要包含身体细节(可选,默认false);仅在房间NSFW开关开启时生效"}
 				},
 				"required": ["characters"]
 			}`),

@@ -12,6 +12,7 @@ const (
 	tokenNSFWNPCConfig      = "{{NSFW_NPC_CONFIG}}"
 	tokenNSFWNPCDesires     = "{{NSFW_NPC_DESIRES}}"
 	tokenNSFWImagePolicy    = "{{NSFW_IMAGE_POLICY}}"
+	tokenNSFWAppearance     = "{{NSFW_APPEARANCE_POLICY}}"
 )
 
 // on 版本必须与改造前的提示词原文逐字节一致(含 tab 缩进),保证开关开启时行为不变。
@@ -50,6 +51,10 @@ const (
 
 	nsfwImagePolicyOn  = `- NSFW内容: 不可避讳NSFW和性器官, 必须画出这些内容。`
 	nsfwImagePolicyOff = `- 内容分级：请保持画面为常规全年龄向内容,不含裸露、性暗示或露骨描写。`
+
+	// 外貌素材交给 Writer 写文字,与绘图分级分开:开启时允许依据角色卡补全身体细节,关闭时保持全年龄向。
+	nsfwAppearancePolicyOn  = `本次配图是NSFW画面,不要回避身体细节:可依据角色卡的体型与外貌合理补全裸体时的身体特征,包括胸部、臀部和性器官的外观。此条优先于上面“不要编造”的限制,仅限身体细节。`
+	nsfwAppearancePolicyOff = `保持常规全年龄向的外貌描写,不写裸露、性暗示或露骨的身体细节。`
 )
 
 // renderNSFW 按房间 NSFW 开关渲染提示词模板;模板中未出现的占位符自然不生效。
@@ -62,6 +67,7 @@ func renderNSFW(tpl string, enabled bool) string {
 		tokenNSFWNPCConfig, pickNSFW(enabled, nsfwNPCConfigOn, nsfwNPCConfigOff),
 		tokenNSFWNPCDesires, pickNSFW(enabled, nsfwNPCDesiresOn, nsfwNPCDesiresOff),
 		tokenNSFWImagePolicy, pickNSFW(enabled, nsfwImagePolicyOn, nsfwImagePolicyOff),
+		tokenNSFWAppearance, pickNSFW(enabled, nsfwAppearancePolicyOn, nsfwAppearancePolicyOff),
 	)
 	return replacer.Replace(tpl)
 }
