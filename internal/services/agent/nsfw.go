@@ -2,8 +2,8 @@ package agent
 
 import "strings"
 
-// NOTE: 各 agent 系统提示词中的 NSFW 片段统一收敛为占位符,
-// 由 renderNSFW 按房间的 EnableNSFW 开关渲染,便于集中审计开关关闭时改了哪些话。
+// NOTE: 各 agent 系统提示词中的 NSFW 片段统一收敛为占位符,由 renderNSFW 渲染,便于集中审计开关关闭时改了哪些话。
+// Director 按房间的 EnableNSFW 渲染;Writer、NPC、配图按本次调用的 nsfw 标记渲染,该标记已经过房间开关过滤。
 const (
 	tokenNSFWGlobalConfig   = "{{NSFW_GLOBAL_CONFIG}}"
 	tokenNSFWDirectiveFlags = "{{NSFW_DIRECTIVE_FLAGS}}"
@@ -57,7 +57,7 @@ const (
 	nsfwAppearancePolicyOff = `保持常规全年龄向的外貌描写,不写裸露、性暗示或露骨的身体细节。`
 )
 
-// renderNSFW 按房间 NSFW 开关渲染提示词模板;模板中未出现的占位符自然不生效。
+// renderNSFW 按 enabled 渲染提示词模板;模板中未出现的占位符自然不生效。
 func renderNSFW(tpl string, enabled bool) string {
 	replacer := strings.NewReplacer(
 		tokenNSFWGlobalConfig, pickNSFW(enabled, nsfwGlobalConfigOn, nsfwGlobalConfigOff),

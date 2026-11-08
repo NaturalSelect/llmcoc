@@ -162,7 +162,7 @@ func loadWriterState(gctx GameContext, nsfw bool) (agentHandle, bool, *WriterSta
 		return agentHandle{}, false, nil, err
 	}
 
-	head := buildWriterHead(writerHandle, gctx)
+	head := buildWriterHead(writerHandle, nsfwMode)
 	cm := LoadContext(gctx.Session.ID, writerAgentKey, head, ContextOptions{Window: writerContextWindow(writerHandle)})
 	// 老会话transcript为空但GameSession.WriterHistory列有旧数据时，把旧的扁平历史当作
 	// seq=0的一轮种子先提交进去，只执行一次，之后像普通历史轮一样被trim掉。
@@ -403,12 +403,12 @@ func siteSettingInt(key string, fallback int) int {
 	return v
 }
 
-// buildWriterHead 构造Writer本次调用固定不变的前缀:仅system prompt。NSFW专属的
-// explicit_scene_requirements 不再拼进本函数,而是在buildWriterOpening中拼进本轮
-// user消息尾部——这样system prompt在本会话内(EnableNSFW不变)始终字节相同,prompt
-// cache前缀才能跨轮稳定命中。
-func buildWriterHead(h agentHandle, gctx GameContext) []llm.ChatMessage {
-	prompt := renderNSFW(writerDefaultPrompt, gctx.Session.EnableNSFW)
+// buildWriterHead 构造Writer本次调用固定不变的前缀:仅system prompt。基础提示词按本次
+// 调用的nsfwMode渲染(nsfwMode由所选handle决定,同一handle下system prompt始终字节相同);
+// NSFW专属的explicit_scene_requirements不拼进这里,而是在buildWriterOpening中拼进本轮
+// user消息尾部。房间开启NSFW但本次write标记为false时,必须仍用全年龄提示词。
+func buildWriterHead(h agentHandle, nsfwMode bool) []llm.ChatMessage {
+	prompt := renderNSFW(writerDefaultPrompt, nsfwMode)
 	return []llm.ChatMessage{{
 		Role:    "system",
 		Content: h.systemPrompt(prompt),

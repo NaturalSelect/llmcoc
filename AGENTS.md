@@ -69,7 +69,8 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - `batchLoadAgents`（`orchestrator.go`）加载角色；`director`、`lawyer`、`npc` 缺失或未绑定可用 Provider 会直接报错，其余为可选，未启用时降级：
   - `dramaturg` 未启用：`consult_dramaturg` 工具不会出现在 Director 工具列表里。
   - `writer_nsfw` / `npc_nsfw` 未启用：回落到基础 Writer / NPC。
-  - `painter_nsfw` 未启用：`nsfw=true` 的配图请求被直接拒绝，**不会**回落到 Painter。
+  - `painter_nsfw` 未启用：`nsfw=true` 的配图请求被直接拒绝，**不会**回落到 Painter。房间 NSFW 开关关闭时，`write` / `act_npc` / `describe_characters` / `generate_image` 的 `nsfw=true` 一律被忽略，按普通请求处理。
+  - Writer / NPC / 配图的 NSFW 提示词按本次调用的 `nsfw` 标记渲染（该标记已经过房间开关过滤），不是按房间开关；只有 Director 的系统提示词按房间开关渲染。
   - `diffusion_translator` 仅在 Painter 开启 `diffusion_mode` 时才被调用。
 - 每会话的 Agent 句柄会缓存（`sessionAgents`），后台改配置后靠 `ClearAllCachedAgents` 失效，会话结束时 `deleteCachedAgents`。
 - 新增角色要同步改：`models/models.go`（常量）、`models/db.go`（`required` 播种列表）、`batchLoadAgents` 的角色列表、`frontend/src/components/admin/agents/agentRoles.ts`（`ROLE_DEFAULTS` 默认值，以及名称/描述/占位提示三张表，共四处）、`models/db_agent_seed_test.go`。
@@ -83,7 +84,7 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - `agent` 包的全局状态（`lawyerCache` 4GB 预算 LRU、`sessionAgents`、`activeSessions`）在包导入时创建，且几乎所有函数都依赖全局 `models.DB` 已初始化。
 
 ### 图片
-Painter 默认走 OpenAI 兼容图片接口；开启 `diffusion_mode` 时先由 `diffusion_translator` 把画面描述翻成标签式正面提示词，再调用 `/images/generations`。负面提示词是固定常量，全年龄会话额外追加分级标签（`painter_diffusion.go`）。配图按「连续漫画的单格」出：画风（日式ACG漫画）由 `painter.go` 的 `imageSysPrompt` 和扩散翻译提示词统一附加，Director 的 `image_prompt` 只写这一格的内容；`generate_image` 工具说明里的分镜规则和连续性规则要求景别随剧情变化、不画气泡和文字、角色外貌与场景跨图一致，没有额外的角色外貌存储，一致性靠 Director 沿用前几格的写法。图片落盘与定期清理在 `services/imagestore`（默认目录是数据库文件同级的 `images/`）。
+Painter 默认走 OpenAI 兼容图片接口；开启 `diffusion_mode` 时先由 `diffusion_translator` 把画面描述翻成标签式正面提示词，再调用 `/images/generations`。负面提示词是固定常量，`nsfw=false` 的配图额外追加分级标签（`painter_diffusion.go`）。配图按「连续漫画的单格」出：画风（日式ACG漫画）由 `painter.go` 的 `imageSysPrompt` 和扩散翻译提示词统一附加，Director 的 `image_prompt` 只写这一格的内容；`generate_image` 工具说明里的分镜规则和连续性规则要求景别随剧情变化、不画气泡和文字、角色外貌与场景跨图一致，没有额外的角色外貌存储，一致性靠 Director 沿用前几格的写法。图片落盘与定期清理在 `services/imagestore`（默认目录是数据库文件同级的 `images/`）。
 
 ## 代码约定
 

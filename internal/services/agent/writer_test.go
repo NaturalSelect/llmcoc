@@ -558,21 +558,52 @@ func TestWriterContextWindow(t *testing.T) {
 
 // ── buildWriterHead/buildWriterOpening NSFW后缀 ──────────────────────────────
 
-// TestBuildWriterHeadStableAcrossNSFWMode 验证system prompt(head)不再随每轮nsfwMode
-// 变化——只取决于房间级EnableNSFW,保证Writer的prompt cache前缀在NSFW场景切换时不断裂。
-func TestBuildWriterHeadStableAcrossNSFWMode(t *testing.T) {
+// TestBuildWriterHeadFollowsNSFWMode 验证system prompt(head)按本次调用的nsfwMode渲染,
+// 而不是房间级EnableNSFW:房间开启NSFW但本次write标记为false时,默认Writer必须拿到全年龄提示词。
+func TestBuildWriterHeadFollowsNSFWMode(t *testing.T) {
 	initSiteSettingTestDB(t)
 	h := newWriterTestHandle(&writerFakeProvider{})
-	gctx := GameContext{Session: models.GameSession{ID: 1, EnableNSFW: true}}
 
-	head := buildWriterHead(h, gctx)
-	sysContent := head[0].Content
+	on := buildWriterHead(h, true)[0].Content
+	off := buildWriterHead(h, false)[0].Content
 
-	if strings.Contains(sysContent, "explicit_scene_requirements") {
-		t.Error("system prompt不应再包含explicit_scene_requirements,该后缀现在应拼进本轮user消息尾部")
+	for _, sys := range []string{on, off} {
+		if strings.Contains(sys, "explicit_scene_requirements") {
+			t.Error("system prompt不应包含explicit_scene_requirements,该后缀应拼进本轮user消息尾部")
+		}
+		if strings.Contains(sys, "{{NSFW") {
+			t.Errorf("system prompt leaked placeholder:\n%s", sys)
+		}
 	}
-	if !strings.Contains(sysContent, "官能小说风格") {
-		t.Error("房间EnableNSFW已开启时,system prompt应渲染NSFW开态的基础提示词")
+	if !strings.Contains(on, "官能小说风格") || strings.Contains(on, "洛氏小说风格") {
+		t.Error("nsfwMode=true时应渲染NSFW开态的基础提示词")
+	}
+	if !strings.Contains(off, "洛氏小说风格") || strings.Contains(off, "官能小说风格") {
+		t.Error("nsfwMode=false时应渲染全年龄的基础提示词,即使房间已开启NSFW")
+	}
+}
+
+// TestRunWriter_RoomNSFWNonNSFWCallUsesAllAgesPrompt 验证房间开启NSFW、本次write标记为
+// false时,实际发给默认Writer的system prompt是全年龄版本。
+func TestRunWriter_RoomNSFWNonNSFWCallUsesAllAgesPrompt(t *testing.T) {
+	initAgentTestDB(t)
+	const sessionID = 202
+	if err := models.DB.Create(&models.GameSession{ID: sessionID, EnableNSFW: true}).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	prov := &writerFakeProvider{responses: []string{"他推开了门。"}}
+	sessionAgents.Store(uint(sessionID), map[models.AgentRole]agentHandle{
+		models.AgentRoleWriter: newWriterTestHandle(prov),
+	})
+	t.Cleanup(func() { deleteCachedAgents(sessionID) })
+
+	gctx := GameContext{Session: models.GameSession{ID: sessionID, EnableNSFW: true}}
+	if _, err := RunWriter(context.Background(), gctx, "推门", false); err != nil {
+		t.Fatalf("RunWriter: %v", err)
+	}
+	system := prov.msgsAt(0)[0].Content
+	if !strings.Contains(system, "洛氏小说风格") || strings.Contains(system, "官能小说风格") {
+		t.Errorf("room NSFW + nsfw=false must render the all-ages Writer prompt, got:\n%s", system)
 	}
 }
 

@@ -286,12 +286,13 @@ var npcExample = func() string {
 	return string(data)
 }()
 
-// buildNPCHead 构造NPC本次调用固定不变的前缀:系统提示词(仅按房间EnableNSFW渲染基础
-// 提示词,不含只在本次调用生效的explicit_scene_requirements后缀)+NPC人设简介。人设
-// 会随剧情变化(受伤/死亡/态度调整等)而不是绝对静态,但相对每轮都要发的情境/note,
+// buildNPCHead 构造NPC本次调用固定不变的前缀:系统提示词(按本次调用的nsfwMode渲染基础
+// 提示词,不含explicit_scene_requirements后缀)+NPC人设简介。nsfwMode由所选handle决定,
+// 同一handle下head字节稳定;房间开启NSFW但本次act_npc标记为false时仍用全年龄提示词。
+// 人设会随剧情变化(受伤/死亡/态度调整等)而不是绝对静态,但相对每轮都要发的情境/note,
 // 明显更接近可以放进head的稳定背景资料。
-func buildNPCHead(h agentHandle, gctx GameContext, npcProfile string) []llm.ChatMessage {
-	prompt := renderNSFW(npcDefaultPrompt, gctx.Session.EnableNSFW)
+func buildNPCHead(h agentHandle, nsfwMode bool, npcProfile string) []llm.ChatMessage {
+	prompt := renderNSFW(npcDefaultPrompt, nsfwMode)
 	return []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(prompt)},
 		{Role: "user", Content: "你需要扮演该NPC:\n" + npcProfile},
@@ -299,8 +300,8 @@ func buildNPCHead(h agentHandle, gctx GameContext, npcProfile string) []llm.Chat
 }
 
 // buildNPCOpening 组装本轮发给NPC的唯一一条user消息:场景卡+新的牌桌记录+KP的提问+行为注意事项。
-// nsfwMode为true时,explicit_scene_requirements后缀拼进这里,保证head(含system)跨NSFW/非NSFW调用字节稳定。
-func buildNPCOpening(gctx GameContext, scene, tableLog, question string, nsfwMode bool) llm.ChatMessage {
+// nsfwMode为true时,explicit_scene_requirements后缀拼进这里;欲望列表也按nsfwMode渲染。
+func buildNPCOpening(scene, tableLog, question string, nsfwMode bool) llm.ChatMessage {
 	sb := strings.Builder{}
 	if scene != "" {
 		sb.WriteString("<scene>\n")
@@ -316,7 +317,7 @@ func buildNPCOpening(gctx GameContext, scene, tableLog, question string, nsfwMod
 	sb.WriteString(question)
 	sb.WriteString("\n</kp_says>\n")
 	sb.WriteString("<note>\n")
-	sb.WriteString(renderNSFW("在符合NPC人设和当前处境的前提下, 表现NPC的{{NSFW_NPC_DESIRES}}等多维度真情实感\n", gctx.Session.EnableNSFW))
+	sb.WriteString(renderNSFW("在符合NPC人设和当前处境的前提下, 表现NPC的{{NSFW_NPC_DESIRES}}等多维度真情实感\n", nsfwMode))
 	if nsfwMode {
 		sb.WriteString("请重点表现人物的色情欲望和性癖主动发起色情互动，体现男性对女性的欲望和凝视\n")
 		sb.WriteString("不要省略性交而是主动描写，描写可能出现的玩法和姿势\n")
@@ -355,7 +356,7 @@ func runNPC(
 
 	// Each NPC owns an independent transcript in this session (agentKey="npc:<name>").
 	agentKey := npcAgentKey(npcName)
-	head := buildNPCHead(h, gctx, npcProfile)
+	head := buildNPCHead(h, nsfwMode, npcProfile)
 	cm := LoadContext(gctx.Session.ID, agentKey, head, ContextOptions{Window: npcHistoryWindowTokens})
 	// 老会话transcript为空但SessionNPC.AgentCtx/SessionNPCMemory有旧数据时,把旧存档
 	// 当作seq=0的一轮先提交进去,只执行一次,之后像普通历史轮一样被trim掉。
@@ -367,7 +368,7 @@ func runNPC(
 
 	tableLog, seen := loadNPCTableLog(gctx.Session.ID, cm.SeenMessageID())
 	scene := buildNPCScene(gctx, npcName, tempNPCs)
-	opening := buildNPCOpening(gctx, scene, tableLog, question, nsfwMode)
+	opening := buildNPCOpening(scene, tableLog, question, nsfwMode)
 	msgs := cm.Build(opening)
 	// NOTE: NPC走JsonChat,拿不到返回值里的Usage;通过WithUsageSink把usage送进cm,
 	// 既用于后台展示的逐轮缓存统计,也让cm感知超阈值需要trim时同步更新msgs。

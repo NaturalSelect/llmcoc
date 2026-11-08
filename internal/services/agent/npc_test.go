@@ -87,38 +87,51 @@ func TestPickNPCHandle(t *testing.T) {
 
 // ── buildNPCHead/buildNPCOpening NSFW后缀 ──────────────────────────────────────
 
-// TestBuildNPCHeadStableAcrossNSFWMode 验证head(system prompt+人设)不再随每轮call的
-// nsfwMode变化——只有本次调用的nsfwMode才决定是否追加explicit_scene_requirements,
-// 且该后缀现在挪进了opening,保证head跨NSFW/非NSFW调用保持字节稳定。
-func TestBuildNPCHeadStableAcrossNSFWMode(t *testing.T) {
+// TestBuildNPCHeadFollowsNSFWMode 验证head(system prompt+人设)按本次调用的nsfwMode渲染,
+// 而不是房间级EnableNSFW;explicit_scene_requirements后缀只在opening里出现。
+func TestBuildNPCHeadFollowsNSFWMode(t *testing.T) {
 	prov := &sequentialFakeProvider{}
 	h := newNPCTestHandle(prov, true)
-	gctx := GameContext{Session: models.GameSession{ID: 1, EnableNSFW: true}}
 
-	head := buildNPCHead(h, gctx, "姓名:线人")
-	sysContent := head[0].Content
+	on := buildNPCHead(h, true, "姓名:线人")[0].Content
+	off := buildNPCHead(h, false, "姓名:线人")[0].Content
 
-	if strings.Contains(sysContent, "explicit_scene_requirements") {
-		t.Error("system prompt不应再包含explicit_scene_requirements,该后缀现在应拼进本轮opening")
+	for _, sys := range []string{on, off} {
+		if strings.Contains(sys, "explicit_scene_requirements") {
+			t.Error("system prompt不应包含explicit_scene_requirements,该后缀应拼进本轮opening")
+		}
+		if !strings.Contains(sys, "npc_agent") {
+			t.Error("system prompt应包含NPC基础提示词")
+		}
+		if strings.Contains(sys, "{{NSFW") {
+			t.Errorf("system prompt leaked placeholder:\n%s", sys)
+		}
 	}
-	if !strings.Contains(sysContent, "npc_agent") {
-		t.Error("system prompt应包含NPC基础提示词")
+	if !strings.Contains(on, nsfwNPCConfigOn) || strings.Contains(on, nsfwNPCConfigOff) {
+		t.Error("nsfwMode=true时应渲染NSFW开态的NPC配置")
+	}
+	if !strings.Contains(off, nsfwNPCConfigOff) || strings.Contains(off, nsfwNPCConfigOn) {
+		t.Error("nsfwMode=false时应渲染全年龄的NPC配置")
 	}
 }
 
-// TestBuildNPCOpeningNSFWSuffix 验证explicit_scene_requirements后缀现在拼在本轮
-// opening(user消息)尾部,而不是system prompt里。
+// TestBuildNPCOpeningNSFWSuffix 验证explicit_scene_requirements后缀和欲望列表都只按本次
+// nsfwMode渲染在opening(user消息)里,而不是system prompt里。
 func TestBuildNPCOpeningNSFWSuffix(t *testing.T) {
-	gctx := GameContext{Session: models.GameSession{ID: 1, EnableNSFW: true}}
-
-	openingOff := buildNPCOpening(gctx, "", "", "他有什么反应？", false)
-	openingOn := buildNPCOpening(gctx, "", "", "他有什么反应？", true)
+	openingOff := buildNPCOpening("", "", "他有什么反应？", false)
+	openingOn := buildNPCOpening("", "", "他有什么反应？", true)
 
 	if strings.Contains(openingOff.Content, "explicit_scene_requirements") {
 		t.Error("非NSFW模式的opening不应包含explicit_scene_requirements后缀")
 	}
 	if !strings.Contains(openingOn.Content, "explicit_scene_requirements") {
 		t.Error("NSFW模式的opening应包含explicit_scene_requirements后缀")
+	}
+	if !strings.Contains(openingOff.Content, nsfwNPCDesiresOff) || strings.Contains(openingOff.Content, "性欲") {
+		t.Errorf("非NSFW模式的欲望列表不应包含性欲, got %q", openingOff.Content)
+	}
+	if !strings.Contains(openingOn.Content, nsfwNPCDesiresOn) {
+		t.Errorf("NSFW模式的欲望列表应包含性欲, got %q", openingOn.Content)
 	}
 }
 
