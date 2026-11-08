@@ -82,22 +82,22 @@ func TestGenerateImageActionNSFWRouting(t *testing.T) {
 			if tc.painterNSFW != nil {
 				handles[models.AgentRolePainterNSFW] = *tc.painterNSFW
 			}
-			pending := []ImagePromptRequest{}
-			actx := ActionContext{Handles: handles, PendingImages: &pending}
+			var outbox []Output
+			actx := ActionContext{Handles: handles, Outbox: &outbox}
 
 			results := generateImageAction{}.Execute(ToolCall{ImagePrompt: "a foggy lighthouse", Aspect: "portrait", NSFW: tc.nsfwCall}, actx)
 			if len(results) != 1 || !strings.Contains(results[0].Result, tc.wantResult) {
 				t.Fatalf("results = %+v, want result containing %q", results, tc.wantResult)
 			}
 			if tc.wantQueued {
-				if len(pending) != 1 {
-					t.Fatalf("pending = %+v, want exactly one queued request", pending)
+				if len(outbox) != 1 || outbox[0].Kind != OutputImage || outbox[0].Image == nil {
+					t.Fatalf("outbox = %+v, want exactly one image output", outbox)
 				}
-				if pending[0].NSFW != tc.nsfwCall || pending[0].Aspect != "portrait" {
-					t.Errorf("queued request = %+v, want NSFW=%v aspect=portrait", pending[0], tc.nsfwCall)
+				if req := outbox[0].Image; req.NSFW != tc.nsfwCall || req.Aspect != "portrait" || outbox[0].NSFW != tc.nsfwCall {
+					t.Errorf("queued request = %+v, want NSFW=%v aspect=portrait", outbox[0], tc.nsfwCall)
 				}
-			} else if len(pending) != 0 {
-				t.Errorf("pending = %+v, want nothing queued", pending)
+			} else if len(outbox) != 0 {
+				t.Errorf("outbox = %+v, want nothing queued", outbox)
 			}
 		})
 	}

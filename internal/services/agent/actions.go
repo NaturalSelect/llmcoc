@@ -3,7 +3,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -22,13 +21,12 @@ type ActionContext struct {
 	// 工具执行器写入、调度循环读取的可变状态。
 	HasEnd             *bool
 	TimeAdvancedInTurn *bool
-	KPNarration        *string
-	PendingWrite       *string
-	PendingImages      *[]ImagePromptRequest
-	WroteNarrative     *bool
-	WriterNSFW         *bool
-	DiceMsg            *string
-	// Ask 由ask_players写入;run结束时为nil表示KP保留发言权。
+	// Outbox 收集本轮产生玩家可见消息的调用(write/generate_image/response/ask_players/end_game),
+	// 一个调用一个 Output;轮末由 floorRun 整理顺序后发布。
+	Outbox   *[]Output
+	DiceMsg  *string
+	KPStreak *int // 本周期内连续发布的 kp 消息数,ask_players 之前不清零,用于节奏提醒
+	// Ask 由ask_players写入;周期自然结束于点名时非nil。
 	Ask **AskResult
 
 	// Combat/Chase 是本次run()持有的活战斗/追逐状态(nil=未激活);战斗/追逐工具
@@ -523,37 +521,42 @@ func (queryCharacterAction) Execute(call ToolCall, actx ActionContext) []ToolRes
 type writeAction struct{}
 
 func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	*actx.PendingWrite += call.Direction + "\n"
-	if actx.WroteNarrative != nil {
-		*actx.WroteNarrative = true
+	direction := strings.TrimSpace(call.Direction)
+	if direction == "" {
+		return []ToolResult{{Action: ToolWrite, Result: "SYSTEM REJECT: write.direction 不能为空，请写明这一段要展开的场景、动作和感官细节。"}}
 	}
-	// 本轮任一write标记nsfw即整轮走NSFW Writer:Writer每轮只调用一次,粒度只能到轮。
-	if actx.WriterNSFW != nil && actx.GCtx.Session.EnableNSFW && call.NSFW {
-		*actx.WriterNSFW = true
-	}
-	debugf("tool", "session=%d write direction=%s nsfw=%v", actx.Sid, call.Direction, call.NSFW)
-	return nil
+	nsfw := actx.GCtx.Session.EnableNSFW && call.NSFW
+	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputWriter, Text: direction, NSFW: nsfw})
+	debugf("tool", "session=%d write direction=%s nsfw=%v", actx.Sid, direction, nsfw)
+	return []ToolResult{{Action: ToolWrite, Result: "已作为一条独立的玩家可见消息发布（正文由 Writer 展开）。你仍持有发言权。"}}
 }
+
+// responseKPStreakReminder 是连续发布这么多条 kp 消息仍没有点名时附在 response 结果后的提醒(只提醒,不强制)。
+const responseKPStreakReminder = 4
 
 type responseAction struct{}
 
 func (responseAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	*actx.HasEnd = true
+	out := Output{Kind: OutputKP, Text: strings.TrimSpace(call.Reply)}
 	if payload, ok := normalizeResponseOptionsPayload(call); ok {
-		if data, err := json.Marshal(payload); err == nil {
-			call.Reply += "\n<response_options>" + string(data) + "</response_options>"
+		out.Options = payload.Options
+	}
+	for _, a := range call.Ack {
+		if a = strings.TrimSpace(a); a != "" {
+			out.Ack = append(out.Ack, a)
 		}
 	}
-	if len(call.Ack) > 0 {
-		call.Reply += "\n<ack>" + strings.Join(call.Ack, ";") + "</ack>"
+	*actx.Outbox = append(*actx.Outbox, out)
+	debugf("tool", "session=%d response reply=%s", actx.Sid, out.Text)
+
+	result := "已发给玩家。你仍持有发言权：继续推进，或用 ask_players 点名调查员交出发言权，或用 end_game 结束游戏。"
+	if actx.KPStreak != nil {
+		*actx.KPStreak++
+		if *actx.KPStreak >= responseKPStreakReminder {
+			result += fmt.Sprintf("\n提醒：你已连续发布 %d 条回复而没有点名任何调查员。场景需要调查员做决定、声明行动或回答时，请用 ask_players 点名交出发言权，不要继续独自推进。", *actx.KPStreak)
+		}
 	}
-	if *actx.KPNarration != "" {
-		*actx.KPNarration = call.Reply + "\n" + *actx.KPNarration
-	} else {
-		*actx.KPNarration = call.Reply
-	}
-	debugf("tool", "session=%d response narration=%s", actx.Sid, call.Reply)
-	return nil
+	return []ToolResult{{Action: ToolResponse, Result: result}}
 }
 
 // askPlayersAction 把名字解析成玩家并交出发言权;任一名字不存在或角色已死整批拒绝,
@@ -666,17 +669,17 @@ func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	}
 
 	*actx.HasEnd = true
+	ask := &AskResult{UserIDs: ids, Names: names, Question: question}
 	if actx.Ask != nil {
-		*actx.Ask = &AskResult{UserIDs: ids, Names: names, Question: question}
+		*actx.Ask = ask
 	}
-	if *actx.KPNarration != "" {
-		*actx.KPNarration += "\n" + question
-	} else {
-		*actx.KPNarration = question
+	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputAsk, Text: question, Ask: ask})
+	if actx.KPStreak != nil {
+		*actx.KPStreak = 0
 	}
 	debugf("tool", "session=%d ask_players targets=%v question=%s", actx.Sid, names, question)
 
-	result := fmt.Sprintf("已点名：%s。本段结束，等待他们回应。", strings.Join(names, "、"))
+	result := fmt.Sprintf("已点名：%s。发言权已交出，本周期结束，等待他们回应。", strings.Join(names, "、"))
 	if len(merged) > 0 {
 		result += fmt.Sprintf("(%s 正处于待澄清暂停，已自动并入点名对象。)", strings.Join(merged, "、"))
 	}
@@ -853,19 +856,11 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	} else {
 		closing = "本次冒险到此结束,感谢各位调查员。"
 	}
-	// Preserve any narration already set by earlier actions in the same batch.
-	if *actx.KPNarration != "" {
-		*actx.KPNarration = closing + "\n" + *actx.KPNarration
-	} else {
-		*actx.KPNarration = closing
-	}
+	// NOTE: 先把结束语放进 outbox，再跑结算；结算失败不影响游戏已经结束这一事实。
+	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputKP, Text: closing, Ended: true})
 	debugf("tool", "session=%d end_game summary=%s win=%v", actx.Sid, call.EndSummary, win)
 
-	var msgs []models.Message
-	models.DB.Where("session_id = ? AND role != ?", actx.GCtx.Session.ID, models.MessageRoleSystem).
-		Order("created_at ASC").
-		Limit(150).
-		Find(&msgs)
+	msgs := LoadEndGameMessages(actx.GCtx.Session.ID)
 	sessionSnap := actx.GCtx.Session
 	// NOTE: 将 win 透传给 RunEndSession，控制是否执行成长类结算。
 	if _, err := RunEndSession(actx.Ctx, &sessionSnap, msgs, win); err != nil {

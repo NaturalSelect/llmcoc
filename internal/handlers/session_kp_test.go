@@ -3,274 +3,109 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/llmcoc/server/internal/handlers/mocks"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
-	"go.uber.org/mock/gomock"
+	"github.com/llmcoc/server/internal/services/imagestore"
 )
 
-func kpRouter(h *SessionHandlers, userID uint, username string) *gin.Engine {
-	r := gin.New()
-	r.Use(withAuth(userID, username, "user"))
-	r.GET("/sessions/:id/chat-status", h.GetChatStatus)
-	r.POST("/sessions/:id/chat", h.ChatStream)
-	r.POST("/sessions/:id/kp-turn", h.KPTurn)
-	return r
-}
-
-func setSpotlight(t *testing.T, sessionID uint, sp *models.SpotlightState) {
+func publish(t *testing.T, gctx agent.GameContext, ro agent.RoundOutputs) {
 	t.Helper()
-	if err := models.DB.Model(&models.GameSession{}).Where("id = ?", sessionID).
-		Update("spotlight", models.JSONField[*models.SpotlightState]{Data: sp}).Error; err != nil {
-		t.Fatalf("set spotlight: %v", err)
+	ro.WriterCtx = gctx
+	if err := gctx.Publish(ro); err != nil {
+		t.Errorf("Publish: %v", err)
 	}
 }
 
-func loadSpotlight(t *testing.T, sessionID uint) *models.SpotlightState {
+func hostRouter(t *testing.T, h *SessionHandlers, sessionID uint) *gin.Engine {
 	t.Helper()
-	var s models.GameSession
-	if err := models.DB.First(&s, sessionID).Error; err != nil {
-		t.Fatalf("load session: %v", err)
-	}
-	return s.Spotlight.Data
+	return makeTestRouter(h, sessionCreator(t, sessionID), "creator_mp")
 }
 
-func sessionCreator(t *testing.T, sessionID uint) uint {
-	t.Helper()
-	var s models.GameSession
-	if err := models.DB.First(&s, sessionID).Error; err != nil {
-		t.Fatalf("load session: %v", err)
-	}
-	return s.CreatedBy
-}
+// ── session start ────────────────────────────────────────────────────────────
 
-func postKPTurn(r *gin.Engine, sessionID uint) *httptest.ResponseRecorder {
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq(http.MethodPost, fmt.Sprintf("/sessions/%d/kp-turn", sessionID), nil))
-	return w
-}
-
-func countMessages(sessionID uint, role models.MessageRole) int64 {
-	var n int64
-	models.DB.Model(&models.Message{}).Where("session_id = ? AND role = ?", sessionID, role).Count(&n)
-	return n
-}
-
-func TestStartSession_WritesEmptySpotlight(t *testing.T) {
+func TestStartSession_WritesEmptySpotlightAndIntroKind(t *testing.T) {
 	initTestDB(t)
 	sessID, ownerID := setupLobbySession(t)
 	cardID := seedCard(t, ownerID, "Card")
 	models.DB.Create(&models.SessionPlayer{SessionID: sessID, UserID: ownerID, CharacterCardID: cardID})
 
-	r := sessionCRUDRouter(ownerID, "owner", "user")
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/start", sessID), nil))
+	sessionCRUDRouter(ownerID, "owner", "user").ServeHTTP(w, jsonReq("POST", "/sessions/"+itoa(sessID)+"/start", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	sp := loadSpotlight(t, sessID)
-	if sp == nil {
-		t.Fatal("spotlight must be non-nil after start so the KP drives the room")
-	}
-	if len(sp.UserIDs) != 0 || sp.AutoContinues != 0 {
+	if sp := loadSpotlight(t, sessID); sp == nil || len(sp.UserIDs) != 0 || sp.Stop != "" {
 		t.Errorf("spotlight = %+v, want empty (KP holds the floor)", sp)
 	}
+	msgs := loadMessages(t, sessID)
+	if len(msgs) != 1 || msgs[0].Kind != models.MessageKindIntro || msgs[0].Status != models.MessageStatusDone {
+		t.Fatalf("intro message = %+v", msgs)
+	}
 }
 
-func TestChatStream_Spotlight_UnnamedPlayerRejected(t *testing.T) {
-	initTestDB(t)
-	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-	setSpotlight(t, sessionID, &models.SpotlightState{
-		UserIDs: []uint{user2ID}, Names: []string{"鲍勃"}, Question: "你打算怎么开门？",
+// ── nextSpotlight ────────────────────────────────────────────────────────────
+
+func TestNextSpotlight(t *testing.T) {
+	t.Run("点名后交给被点名的人", func(t *testing.T) {
+		next := nextSpotlight(agent.RunOutput{Ask: &agent.AskResult{UserIDs: []uint{3}, Names: []string{"丙"}, Question: "q"}})
+		if len(next.UserIDs) != 1 || next.UserIDs[0] != 3 || next.Question != "q" || next.Stop != "" {
+			t.Errorf("got %+v", next)
+		}
 	})
-
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl)) // 不设期望：任何 Run 调用都会让测试失败
-	w := httptest.NewRecorder()
-	kpRouter(h, user1ID, "mp_user1").ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我抢着说话"))
-
-	events := parseSSE(w.Body.String())
-	if len(events["error"]) == 0 {
-		t.Fatalf("expected error event; body:\n%s", w.Body.String())
-	}
-	msg := events["error"][0]
-	if !strings.Contains(msg, "KP 正在等待 鲍勃 回应") || !strings.Contains(msg, "你打算怎么开门？") {
-		t.Errorf("reject message = %q", msg)
-	}
-	if n := countMessages(sessionID, models.MessageRoleUser); n != 0 {
-		t.Errorf("rejected input must not be persisted, got %d user messages", n)
-	}
-	var actions int64
-	models.DB.Model(&models.SessionTurnAction{}).Where("session_id = ?", sessionID).Count(&actions)
-	if actions != 0 {
-		t.Errorf("rejected input must not create a turn action, got %d", actions)
-	}
-}
-
-func TestChatStream_Spotlight_KPHoldsFloorRejectsEveryone(t *testing.T) {
-	initTestDB(t)
-	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-	setSpotlight(t, sessionID, &models.SpotlightState{})
-
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	w := httptest.NewRecorder()
-	kpRouter(h, user1ID, "mp_user1").ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我先说"))
-
-	events := parseSSE(w.Body.String())
-	if len(events["error"]) == 0 || !strings.Contains(events["error"][0], "KP 正在推进剧情") {
-		t.Fatalf("want KP-is-driving rejection, body:\n%s", w.Body.String())
-	}
-}
-
-func TestChatStream_Spotlight_NamedPlayerTriggersRunAndPassesQuestion(t *testing.T) {
-	initTestDB(t)
-	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-	setSpotlight(t, sessionID, &models.SpotlightState{
-		UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}, Question: "你听见了什么？",
+	t.Run("被强制结束时 KP 持有并记录原因", func(t *testing.T) {
+		for _, stop := range []agent.StopReason{agent.StopHostStop, agent.StopLoop, agent.StopStall, agent.StopError, agent.StopContext} {
+			next := nextSpotlight(agent.RunOutput{Stop: stop})
+			if len(next.UserIDs) != 0 || next.Stop != string(stop) {
+				t.Errorf("stop %q: got %+v", stop, next)
+			}
+		}
 	})
-
-	var got agent.GameContext
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
-			got = gctx
-			return agent.RunOutput{
-				KPReply: "门缝里透出微光。鲍勃，你怎么办？",
-				Ask:     &agent.AskResult{UserIDs: []uint{user2ID}, Names: []string{"鲍勃"}, Question: "鲍勃，你怎么办？"},
-			}, nil
-		})
-
-	h := NewSessionHandlers(runner)
-	w := httptest.NewRecorder()
-	kpRouter(h, user1ID, "mp_user1").ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我贴着门听"))
-
-	if got.AskedQuestion != "你听见了什么？" {
-		t.Errorf("AskedQuestion = %q", got.AskedQuestion)
-	}
-	if got.KPFloor != "" || got.UserInput != "我贴着门听" {
-		t.Errorf("player-response segment must carry input and no KP floor: floor=%q input=%q", got.KPFloor, got.UserInput)
-	}
-
-	sp := loadSpotlight(t, sessionID)
-	if sp == nil || len(sp.UserIDs) != 1 || sp.UserIDs[0] != user2ID || sp.Question != "鲍勃，你怎么办？" || sp.AutoContinues != 0 {
-		t.Fatalf("spotlight after ask = %+v", sp)
-	}
-
-	events := parseSSE(w.Body.String())
-	if len(events["spotlight"]) != 1 || len(events["kp_done"]) != 1 || len(events["done"]) != 1 {
-		t.Fatalf("want one spotlight/kp_done/done, got body:\n%s", w.Body.String())
-	}
-	var payload struct {
-		UserIDs  []uint `json:"user_ids"`
-		Question string `json:"question"`
-		KPFloor  bool   `json:"kp_floor"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(events["spotlight"][0])), &payload); err != nil {
-		t.Fatalf("spotlight payload invalid: %v", err)
-	}
-	if len(payload.UserIDs) != 1 || payload.UserIDs[0] != user2ID || payload.KPFloor {
-		t.Errorf("spotlight payload = %+v", payload)
-	}
-
-	if _, processing := getSessionProcessing(sessionID); processing {
-		t.Error("processing must be released after an ask")
-	}
+	t.Run("既没点名也没有 Stop 时 KP 持有", func(t *testing.T) {
+		if next := nextSpotlight(agent.RunOutput{}); len(next.UserIDs) != 0 || next.Stop != "" {
+			t.Errorf("got %+v", next)
+		}
+	})
+	t.Run("点名优先于 Stop", func(t *testing.T) {
+		next := nextSpotlight(agent.RunOutput{Stop: agent.StopLoop, Ask: &agent.AskResult{UserIDs: []uint{1}}})
+		if len(next.UserIDs) != 1 || next.Stop != "" {
+			t.Errorf("got %+v", next)
+		}
+	})
 }
 
-func TestKPTurn_AutoContinuesUntilLimitThenOpensToAll(t *testing.T) {
+// ── KPTurn ───────────────────────────────────────────────────────────────────
+
+func TestKPTurn_OpeningWithNullSpotlightIgnoresIntroMessage(t *testing.T) {
 	initTestDB(t)
-	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-	setSpotlight(t, sessionID, &models.SpotlightState{})
-	if err := models.SetSiteSetting("kp_auto_continue_max", "1"); err != nil {
-		t.Fatalf("set site setting: %v", err)
-	}
+	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃") // Spotlight 为 NULL：按 KP 持有处理
+	models.DB.Create(&models.Message{SessionID: sessionID, Role: models.MessageRoleAssistant, Kind: models.MessageKindIntro, Content: "介绍", Username: "KP"})
 
-	var floors []string
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Times(2).
-		DoAndReturn(func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
-			floors = append(floors, gctx.KPFloor)
-			return agent.RunOutput{KPReply: fmt.Sprintf("第%d段旁白", len(floors))}, nil
-		})
-
+	runner := &fakeRunner{run: askRun("q", []uint{1}, []string{"爱丽丝"})}
 	h := NewSessionHandlers(runner)
-	creatorID := sessionCreator(t, sessionID)
-	w := postKPTurn(kpRouter(h, creatorID, "creator_mp"), sessionID)
+	tap := tapRoom(t, sessionID)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	w := postKPTurn(hostRouter(t, h, sessionID), sessionID)
+	if body := decodeChatAccepted(t, w); !body.FloorStarted {
+		t.Fatalf("body: %s", w.Body.String())
 	}
-	if len(floors) != 2 || floors[0] != agent.KPFloorOpening || floors[1] != agent.KPFloorContinue {
-		t.Fatalf("KP floors = %v, want [opening continue]", floors)
-	}
+	tap.waitCount("floor_end", 1)
 
-	events := parseSSE(w.Body.String())
-	if len(events["kp_done"]) != 2 || len(events["spotlight"]) != 2 || len(events["done"]) != 1 {
-		t.Fatalf("want 2 kp_done, 2 spotlight, 1 done; body:\n%s", w.Body.String())
+	got := runner.runCalls()[0]
+	if got.KPFloor != agent.KPFloorOpening || len(got.PendingActions) != 0 {
+		t.Errorf("opening context: floor=%q pending=%v", got.KPFloor, got.PendingActions)
 	}
-
-	sp := loadSpotlight(t, sessionID)
-	if sp == nil || len(sp.UserIDs) != 2 {
-		t.Fatalf("limit exceeded must open the floor to every living player, got %+v", sp)
-	}
-	open := map[uint]bool{sp.UserIDs[0]: true, sp.UserIDs[1]: true}
-	if !open[user1ID] || !open[user2ID] {
-		t.Errorf("spotlight users = %v, want both players", sp.UserIDs)
-	}
-
-	if n := countMessages(sessionID, models.MessageRoleAssistant); n != 2 {
-		t.Errorf("assistant messages = %d, want 2", n)
-	}
-	if n := countMessages(sessionID, models.MessageRoleUser); n != 0 {
-		t.Errorf("KP-initiated segments must not write user messages, got %d", n)
-	}
-	if _, processing := getSessionProcessing(sessionID); processing {
-		t.Error("processing must be released when the driver finishes")
-	}
-}
-
-func TestKPTurn_ClientDisconnectStillFinishesAllSegments(t *testing.T) {
-	initTestDB(t)
-	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-	setSpotlight(t, sessionID, &models.SpotlightState{})
-	if err := models.SetSiteSetting("kp_auto_continue_max", "1"); err != nil {
-		t.Fatalf("set site setting: %v", err)
-	}
-
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Times(2).
-		Return(agent.RunOutput{KPReply: "旁白"}, nil)
-
-	h := NewSessionHandlers(runner)
-	creatorID := sessionCreator(t, sessionID)
-	r := kpRouter(h, creatorID, "creator_mp")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	req := jsonReq(http.MethodPost, fmt.Sprintf("/sessions/%d/kp-turn", sessionID), nil).WithContext(ctx)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if n := countMessages(sessionID, models.MessageRoleAssistant); n != 2 {
-		t.Errorf("assistant messages = %d, want 2 even though the client is gone", n)
-	}
-	if strings.Contains(w.Body.String(), "event:") {
-		t.Errorf("nothing should be written to a disconnected client, got:\n%s", w.Body.String())
-	}
-	if _, processing := getSessionProcessing(sessionID); processing {
-		t.Error("processing must be released after a disconnect")
+	if reason := eventField(tap.ofType("floor_start")[0], "reason"); reason != agent.KPFloorOpening {
+		t.Errorf("floor_start reason = %v", reason)
 	}
 }
 
@@ -278,199 +113,633 @@ func TestKPTurn_HostContinueSkipsUnresponsiveAndKeepsSubmitted(t *testing.T) {
 	initTestDB(t)
 	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
 	setSpotlight(t, sessionID, &models.SpotlightState{
-		UserIDs: []uint{user1ID, user2ID}, Names: []string{"爱丽丝", "鲍勃"}, Question: "你们怎么办？",
+		UserIDs: []uint{user1ID, user2ID}, Names: []string{"爱丽丝", "鲍勃"}, Question: "你们怎么办？", Stop: "loop",
 	})
-	// 已经有过玩家发言，所以不是开场。
 	uid := user1ID
-	models.DB.Create(&models.Message{SessionID: sessionID, UserID: &uid, Role: models.MessageRoleUser, Content: "早先的行动", Username: "爱丽丝"})
+	models.DB.Create(&models.Message{SessionID: sessionID, UserID: &uid, Role: models.MessageRoleUser, Kind: models.MessageKindPlayer, Content: "早先的行动", Username: "爱丽丝"})
 	models.DB.Create(&models.SessionTurnAction{SessionID: sessionID, Round: 1, UserID: user1ID, Username: "爱丽丝", ActionSummary: "我推门"})
 
-	var got agent.GameContext
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
-			got = gctx
-			return agent.RunOutput{
-				KPReply: "门开了。",
-				Ask:     &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}, Question: "你看到什么？"},
-			}, nil
-		})
-
+	runner := &fakeRunner{run: askRun("你看到什么？", []uint{user1ID}, []string{"爱丽丝"})}
 	h := NewSessionHandlers(runner)
-	creatorID := sessionCreator(t, sessionID)
-	w := postKPTurn(kpRouter(h, creatorID, "creator_mp"), sessionID)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
-	}
+	tap := tapRoom(t, sessionID)
 
-	if got.KPFloor != agent.KPFloorHostContinue {
-		t.Errorf("KPFloor = %q, want host_continue", got.KPFloor)
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, h, sessionID), sessionID))
+	tap.waitCount("floor_end", 1)
+
+	got := runner.runCalls()[0]
+	if got.KPFloor != agent.KPFloorHostContinue || got.LastStop != agent.StopLoop {
+		t.Errorf("floor=%q lastStop=%q, want host_continue/loop", got.KPFloor, got.LastStop)
 	}
 	if len(got.SkippedNames) != 1 || got.SkippedNames[0] != "鲍勃" {
 		t.Errorf("SkippedNames = %v, want [鲍勃]", got.SkippedNames)
 	}
 	if len(got.PendingActions) != 1 || got.PendingActions[0].Content != "我推门" {
-		t.Errorf("PendingActions = %+v, want Alice's submitted action", got.PendingActions)
+		t.Errorf("PendingActions = %+v", got.PendingActions)
+	}
+	if n := countMessages(sessionID, models.MessageRoleUser); n != 2 {
+		t.Errorf("user messages = %d, want the earlier one plus the submitted declaration", n)
 	}
 }
 
 func TestKPTurn_OnlyHostOrAdmin(t *testing.T) {
 	initTestDB(t)
 	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-	setSpotlight(t, sessionID, &models.SpotlightState{})
+	runner := &fakeRunner{}
+	h := NewSessionHandlers(runner)
 
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	w := postKPTurn(kpRouter(h, user1ID, "mp_user1"), sessionID)
-	if w.Code != http.StatusForbidden {
+	if w := postKPTurn(makeTestRouter(h, user1ID, "mp_user1"), sessionID); w.Code != http.StatusForbidden {
 		t.Fatalf("non-host player got %d, want 403", w.Code)
 	}
-}
+	if len(runner.runCalls()) != 0 {
+		t.Fatal("a rejected request must not start a floor")
+	}
 
-func TestKPTurn_AdminAllowed(t *testing.T) {
-	initTestDB(t)
-	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-	setSpotlight(t, sessionID, &models.SpotlightState{})
 	adminID := seedUser(t, "root", models.RoleAdmin, 0, 3)
-
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).
-		Return(agent.RunOutput{KPReply: "开场", Ask: &agent.AskResult{UserIDs: []uint{1}, Names: []string{"爱丽丝"}, Question: "q"}}, nil)
-
-	h := NewSessionHandlers(runner)
-	r := gin.New()
-	r.Use(withAuth(adminID, "root", "admin"))
-	r.POST("/sessions/:id/kp-turn", h.KPTurn)
-	w := postKPTurn(r, sessionID)
-	if w.Code != http.StatusOK {
+	runner.run = askRun("q", []uint{user1ID}, []string{"爱丽丝"})
+	tap := tapRoom(t, sessionID)
+	if w := postKPTurn(roomRouter(h, adminID, "root", "admin"), sessionID); w.Code != http.StatusAccepted {
 		t.Fatalf("admin got %d: %s", w.Code, w.Body.String())
 	}
+	tap.waitCount("floor_end", 1)
 }
 
-func TestKPTurn_LegacyRoomRejected(t *testing.T) {
-	initTestDB(t)
-	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃") // Spotlight 为 NULL
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	creatorID := sessionCreator(t, sessionID)
-	w := postKPTurn(kpRouter(h, creatorID, "creator_mp"), sessionID)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("legacy room got %d, want 400", w.Code)
-	}
-}
-
-func TestKPTurn_ConflictWhileProcessing(t *testing.T) {
+func TestKPTurn_Rejections(t *testing.T) {
 	initTestDB(t)
 	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-	setSpotlight(t, sessionID, &models.SpotlightState{})
+	h := NewSessionHandlers(&fakeRunner{})
+	r := hostRouter(t, h, sessionID)
+
+	if w := postKPTurn(r, 9999); w.Code != http.StatusNotFound {
+		t.Errorf("missing room got %d, want 404", w.Code)
+	}
 	if !beginSessionProcessing(sessionID) {
 		t.Fatal("beginSessionProcessing failed")
 	}
+	if w := postKPTurn(r, sessionID); w.Code != http.StatusConflict {
+		t.Errorf("while processing got %d, want 409", w.Code)
+	}
+	finishSessionProcessing(sessionID)
 
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	creatorID := sessionCreator(t, sessionID)
-	w := postKPTurn(kpRouter(h, creatorID, "creator_mp"), sessionID)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("got %d, want 409", w.Code)
+	models.DB.Model(&models.GameSession{}).Where("id = ?", sessionID).Update("status", models.SessionStatusLobby)
+	if w := postKPTurn(r, sessionID); w.Code != http.StatusBadRequest {
+		t.Errorf("lobby room got %d, want 400", w.Code)
 	}
 }
 
-func TestGetChatStatus_SpotlightPhases(t *testing.T) {
+// ── floor: multi-round publishing ────────────────────────────────────────────
+
+func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	initTestDB(t)
-	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-	creatorID := sessionCreator(t, sessionID)
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
+	t.Cleanup(imagestore.SetDefaultDir(t.TempDir()))
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
 
-	status := func(userID uint, name string) chatStatusResponse {
-		w := httptest.NewRecorder()
-		kpRouter(h, userID, name).ServeHTTP(w, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
-		if w.Code != http.StatusOK {
-			t.Fatalf("status code = %d", w.Code)
+	runner := &fakeRunner{}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 2, Steps: 2, ElapsedMs: 1200, Items: []agent.Output{
+			{Kind: agent.OutputWriter, Text: "描述走廊", NSFW: true},
+			{Kind: agent.OutputImage, Image: &agent.ImagePromptRequest{Prompt: "a dim corridor"}},
+			{Kind: agent.OutputKP, Text: "你站在走廊里。", Options: []string{"向前走"}, Ack: []string{"已记录"}, Dice: "侦查 45/60 成功", TimePoint: "第1天 08:00"},
+		}})
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 3, Steps: 1, ElapsedMs: 10, Items: []agent.Output{
+			{Kind: agent.OutputWriter, Text: "描述门后"},
+			{Kind: agent.OutputAsk, Text: "你要开门吗？", Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}, Question: "你要开门吗？"}},
+		}})
+		return agent.RunOutput{Messages: 5, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}, Question: "你要开门吗？"}}, nil
+	}
+	h := NewSessionHandlers(runner)
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, h, sessionID), sessionID))
+	tap.waitCount("message_update", 3)
+	tap.waitCount("floor_end", 1)
+
+	var news []models.MessageKind
+	for _, ev := range tap.ofType("message_new") {
+		news = append(news, eventMessage(ev).Kind)
+	}
+	wantKinds := []models.MessageKind{models.MessageKindWriter, models.MessageKindImage, models.MessageKindKP, models.MessageKindWriter, models.MessageKindAsk}
+	if !equalKinds(news, wantKinds) {
+		t.Fatalf("message_new kinds = %v, want %v", news, wantKinds)
+	}
+
+	msgs := loadMessages(t, sessionID)
+	if !equalKinds(messageKinds(msgs), wantKinds) {
+		t.Fatalf("stored kinds = %v, want %v", messageKinds(msgs), wantKinds)
+	}
+	for _, m := range msgs {
+		if m.Floor != 1 || m.Status != models.MessageStatusDone || m.Role != models.MessageRoleAssistant {
+			t.Errorf("message %d: floor=%d status=%s role=%s", m.ID, m.Floor, m.Status, m.Role)
 		}
-		return decodeChatStatus(t, w.Body.String())
+	}
+	if msgs[0].Content != "正文:描述走廊" || msgs[3].Content != "正文:描述门后" {
+		t.Errorf("writer contents = %q, %q", msgs[0].Content, msgs[3].Content)
+	}
+	if refs := extractImageRefs(msgs[1].Content); len(refs) != 1 || refs[0].MIME != "image/png" {
+		t.Errorf("image message content = %q", msgs[1].Content)
+	}
+	if msgs[2].Content != "你站在走廊里。" || strings.Contains(msgs[2].Content, "KP:") {
+		t.Errorf("kp content = %q, want the plain reply", msgs[2].Content)
+	}
+	if meta := msgs[2].Meta.Data; meta == nil || meta.Dice != "侦查 45/60 成功" || meta.TimePoint != "第1天 08:00" ||
+		len(meta.Options) != 1 || len(meta.Ack) != 1 {
+		t.Errorf("kp meta = %+v", meta)
+	}
+	if meta := msgs[0].Meta.Data; meta == nil || !meta.NSFW {
+		t.Errorf("first writer meta = %+v, want nsfw", meta)
+	}
+	if meta := msgs[3].Meta.Data; meta == nil || meta.NSFW {
+		t.Errorf("second writer meta = %+v, want sfw", meta)
+	}
+	if meta := msgs[4].Meta.Data; meta == nil || meta.Ask == nil || len(meta.Ask.UserIDs) != 1 || meta.Ask.Names[0] != "爱丽丝" {
+		t.Errorf("ask meta = %+v", meta)
+	}
+	if msgs[2].DirectorSteps == nil || *msgs[2].DirectorSteps != 2 || *msgs[2].DirectorElapsedMs != 1200 {
+		t.Errorf("kp director metrics = %v/%v", msgs[2].DirectorSteps, msgs[2].DirectorElapsedMs)
+	}
+	if msgs[4].DirectorSteps == nil || *msgs[4].DirectorSteps != 1 {
+		t.Errorf("ask director steps = %v", msgs[4].DirectorSteps)
+	}
+	if msgs[0].DirectorSteps != nil || msgs[1].DirectorSteps != nil {
+		t.Error("writer/image messages must not carry director metrics")
 	}
 
-	legacy := status(user1ID, "mp_user1")
-	if legacy.Spotlight != nil || legacy.CanKPContinue {
-		t.Errorf("legacy room must report no spotlight: %+v", legacy)
+	if got := runner.writerDirections(); len(got) != 2 || got[0] != "描述走廊" || got[1] != "描述门后" {
+		t.Errorf("writer directions = %v, want FIFO order", got)
+	}
+	if runner.maxWriterConcurrency() != 1 {
+		t.Errorf("writers ran concurrently: %d", runner.maxWriterConcurrency())
+	}
+	if flags := runner.nsfwFlags; len(flags) != 2 || !flags[0] || flags[1] {
+		t.Errorf("nsfw flags = %v, want [true false]", flags)
+	}
+	if runner.writerCtxs[0].Session.ID != sessionID {
+		t.Error("writer must receive the round's game context")
 	}
 
-	setSpotlight(t, sessionID, &models.SpotlightState{})
-	floor := status(user1ID, "mp_user1")
-	if floor.Phase != "kp_floor" || floor.Spotlight == nil || !floor.Spotlight.KPFloor {
-		t.Errorf("empty spotlight: %+v", floor)
+	sp := loadSpotlight(t, sessionID)
+	if sp == nil || len(sp.UserIDs) != 1 || sp.UserIDs[0] != user1ID {
+		t.Errorf("spotlight = %+v", sp)
 	}
-	if floor.CanKPContinue {
-		t.Error("a plain player must not get the continue button")
-	}
-	if !status(creatorID, "creator_mp").CanKPContinue {
-		t.Error("the host must be able to continue the KP")
-	}
-
-	setSpotlight(t, sessionID, &models.SpotlightState{
-		UserIDs: []uint{user2ID}, Names: []string{"鲍勃"}, Question: "你怎么办？",
-	})
-	asked := status(user2ID, "mp_user2")
-	if asked.Phase != "awaiting_me" || asked.Spotlight == nil || !asked.Spotlight.AskedMe || asked.Spotlight.Question != "你怎么办？" {
-		t.Errorf("named player: %+v", asked)
-	}
-	other := status(user1ID, "mp_user1")
-	if other.Phase == "awaiting_me" || other.Spotlight == nil || other.Spotlight.AskedMe {
-		t.Errorf("unnamed player: %+v", other)
-	}
-	if len(other.Spotlight.Names) != 1 || other.Spotlight.Names[0] != "鲍勃" {
-		t.Errorf("spotlight names = %v", other.Spotlight.Names)
+	if got := eventField(tap.ofType("floor_end")[0], "messages"); got != 5 {
+		t.Errorf("floor_end messages = %v, want 5", got)
 	}
 }
 
-func TestNextSpotlight(t *testing.T) {
-	players := []models.SessionPlayer{
-		{UserID: 1, CharacterCard: models.CharacterCard{Name: "甲"}},
-		{UserID: 2, CharacterCard: models.CharacterCard{Name: "乙", WoundState: "dead"}},
-		{UserID: 3, CharacterCard: models.CharacterCard{Name: "丙"}},
+func equalKinds(a, b []models.MessageKind) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestFloor_DirectorDoesNotWaitForWriter(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+
+	writerStarted, releaseWriter := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	runner := &fakeRunner{}
+	runner.writer = func(_ context.Context, _ agent.GameContext, direction string, _ bool, _ func(string)) (string, error) {
+		once.Do(func() { close(writerStarted) })
+		<-releaseWriter
+		return "迟到的正文", nil
+	}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{{Kind: agent.OutputWriter, Text: "第一拍"}}})
+		<-writerStarted
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{{Kind: agent.OutputKP, Text: "第二拍"}}})
+		return agent.RunOutput{Messages: 2, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}}, nil
+	}
+	h := NewSessionHandlers(runner)
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, h, sessionID), sessionID))
+	tap.waitCount("floor_end", 1)
+
+	if _, running := getSessionProcessing(sessionID); running {
+		t.Error("a stuck writer must not hold the room")
+	}
+	msgs := loadMessages(t, sessionID)
+	if len(msgs) != 2 || msgs[0].Status != models.MessageStatusPending || msgs[0].Content != "" {
+		t.Fatalf("writer message should still be pending: %+v", msgs)
 	}
 
-	t.Run("点名后清零并交出发言权", func(t *testing.T) {
-		prev := &models.SpotlightState{AutoContinues: 2}
-		next, retain := nextSpotlight(prev, &agent.AskResult{UserIDs: []uint{3}, Names: []string{"丙"}, Question: "q"}, players, 2)
-		if retain || next.AutoContinues != 0 || len(next.UserIDs) != 1 || next.UserIDs[0] != 3 || next.Question != "q" {
-			t.Errorf("got %+v retain=%v", next, retain)
+	// 房间已经空闲：被点名的玩家可以立刻回应，不用等 Writer。
+	runner.run = askRun("继续", []uint{user1ID}, []string{"爱丽丝"})
+	r := makeTestRouter(h, user1ID, "mp_user1")
+	decodeChatAccepted(t, postChat(r, sessionID, "我继续"))
+	tap.waitCount("floor_end", 2)
+
+	close(releaseWriter)
+	tap.waitCount("message_update", 1)
+	msgs = loadMessages(t, sessionID)
+	if msgs[0].Status != models.MessageStatusDone || msgs[0].Content != "迟到的正文" {
+		t.Errorf("writer message after release = %+v", msgs[0])
+	}
+	if reason := eventField(tap.ofType("floor_end")[1], "reason"); reason != "ask" {
+		t.Errorf("second floor_end reason = %v", reason)
+	}
+}
+
+func TestFloor_WriterQueueKeepsOrderAcrossRounds(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+
+	release := make(chan struct{})
+	runner := &fakeRunner{}
+	runner.writer = func(_ context.Context, _ agent.GameContext, direction string, _ bool, onToken func(string)) (string, error) {
+		<-release
+		onToken("[" + direction + "]")
+		return "[" + direction + "]", nil
+	}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		for _, d := range []string{"一", "二", "三"} {
+			publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{{Kind: agent.OutputWriter, Text: d}}})
 		}
+		return agent.RunOutput{Messages: 3, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}}, nil
+	}
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
+	tap.waitCount("floor_end", 1)
+	close(release)
+	tap.waitCount("message_update", 3)
+
+	if got := runner.writerDirections(); strings.Join(got, "") != "一二三" {
+		t.Errorf("writer order = %v", got)
+	}
+	var tokens []string
+	for _, ev := range tap.ofType("writer_token") {
+		tokens = append(tokens, ev.Data.(map[string]any)["text"].(string))
+		if ev.Seq != 0 {
+			t.Error("writer_token must be an ephemeral event")
+		}
+	}
+	if strings.Join(tokens, "") != "[一][二][三]" {
+		t.Errorf("tokens = %v", tokens)
+	}
+	for i, m := range loadMessages(t, sessionID) {
+		if m.Status != models.MessageStatusDone || m.Content != "["+[]string{"一", "二", "三"}[i]+"]" {
+			t.Errorf("message %d = %+v", i, m)
+		}
+	}
+}
+
+func TestFloor_WriterFailureMarksMessageFailed(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	runner := &fakeRunner{}
+	runner.writer = func(context.Context, agent.GameContext, string, bool, func(string)) (string, error) {
+		return "", errors.New("writer provider down")
+	}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{{Kind: agent.OutputWriter, Text: "描述"}}})
+		return agent.RunOutput{Messages: 1, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}}, nil
+	}
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
+	tap.waitCount("message_update", 1)
+	tap.waitCount("floor_end", 1)
+
+	m := loadMessages(t, sessionID)[0]
+	if m.Status != models.MessageStatusFailed || m.Content != "" || m.Meta.Data == nil || m.Meta.Data.Error != writerFailedText {
+		t.Fatalf("failed writer message = %+v meta=%+v", m, m.Meta.Data)
+	}
+	update := tap.ofType("message_update")[0].Data.(messageUpdateEvent)
+	if update.Status != models.MessageStatusFailed || update.Error != writerFailedText {
+		t.Errorf("message_update = %+v", update)
+	}
+}
+
+func TestFloor_PainterFailureMarksImageFailed(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	runner := &fakeRunner{}
+	runner.painter = func(context.Context, agent.GameContext, agent.ImagePromptRequest) (string, error) {
+		return "", errors.New("image gateway 502")
+	}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{
+			{Kind: agent.OutputImage, Image: &agent.ImagePromptRequest{Prompt: "a lighthouse"}},
+			{Kind: agent.OutputKP, Text: "灯塔亮着。"},
+		}})
+		return agent.RunOutput{Messages: 2, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}}, nil
+	}
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
+	tap.waitCount("message_update", 1)
+	tap.waitCount("floor_end", 1)
+
+	msgs := loadMessages(t, sessionID)
+	if msgs[0].Kind != models.MessageKindImage || msgs[0].Status != models.MessageStatusFailed || msgs[0].Content != "" {
+		t.Fatalf("image message = %+v", msgs[0])
+	}
+	if msgs[1].Status != models.MessageStatusDone {
+		t.Errorf("the kp message must not be affected: %+v", msgs[1])
+	}
+	update := tap.ofType("message_update")[0].Data.(messageUpdateEvent)
+	if update.Status != models.MessageStatusFailed || update.Error != painterFailedText || len(update.Images) != 0 {
+		t.Errorf("message_update = %+v", update)
+	}
+}
+
+func TestFloor_ImageUpdateCarriesStoredURL(t *testing.T) {
+	initTestDB(t)
+	t.Cleanup(imagestore.SetDefaultDir(t.TempDir()))
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	runner := &fakeRunner{}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{{Kind: agent.OutputImage, Image: &agent.ImagePromptRequest{Prompt: "p"}}}})
+		return agent.RunOutput{Messages: 1, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}}, nil
+	}
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
+	tap.waitCount("message_update", 1)
+	tap.waitCount("floor_end", 1)
+
+	update := tap.ofType("message_update")[0].Data.(messageUpdateEvent)
+	refs := extractImageRefs(loadMessages(t, sessionID)[0].Content)
+	if update.Status != models.MessageStatusDone || len(update.Images) != 1 || len(refs) != 1 || update.Images[0] != imagestore.URL(refs[0].Hash) {
+		t.Fatalf("update = %+v refs = %+v", update, refs)
+	}
+	if strings.HasPrefix(update.Images[0], "data:") {
+		t.Error("image updates must carry the stored URL, not a data URL")
+	}
+}
+
+func TestFloor_PublishErrorEndsFloorWithError(t *testing.T) {
+	initTestDB(t)
+	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	var publishErr error
+	runner := &fakeRunner{}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		if err := models.DB.Migrator().DropTable(&models.Message{}); err != nil {
+			t.Errorf("drop table: %v", err)
+		}
+		publishErr = gctx.Publish(agent.RoundOutputs{Floor: 1, WriterCtx: gctx, Items: []agent.Output{{Kind: agent.OutputKP, Text: "无法落库"}}})
+		return agent.RunOutput{Stop: agent.StopError}, publishErr
+	}
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
+	tap.waitCount("floor_end", 1)
+
+	if publishErr == nil {
+		t.Fatal("Publish must report the save failure to the Director")
+	}
+	if len(tap.ofType("message_new")) != 0 {
+		t.Error("nothing may be broadcast when the save failed")
+	}
+	if sp := loadSpotlight(t, sessionID); sp == nil || sp.Stop != "error" || len(sp.UserIDs) != 0 {
+		t.Errorf("spotlight = %+v", sp)
+	}
+}
+
+func TestFloor_EndedRoomKeepsSpotlight(t *testing.T) {
+	initTestDB(t)
+	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	setSpotlight(t, sessionID, &models.SpotlightState{})
+	runner := &fakeRunner{}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{{Kind: agent.OutputKP, Text: "全剧终。", Ended: true}}})
+		models.DB.Model(&models.GameSession{}).Where("id = ?", sessionID).Update("status", models.SessionStatusEnded)
+		return agent.RunOutput{Messages: 1, Ended: true}, nil
+	}
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
+	tap.waitCount("floor_end", 1)
+
+	if reason := eventField(tap.ofType("floor_end")[0], "reason"); reason != "end_game" {
+		t.Errorf("floor_end reason = %v", reason)
+	}
+	if len(tap.ofType("spotlight")) != 1 {
+		t.Errorf("an ended room must not get a new spotlight event, got %d", len(tap.ofType("spotlight")))
+	}
+	if meta := loadMessages(t, sessionID)[0].Meta.Data; meta == nil || !meta.Ended {
+		t.Errorf("end message meta = %+v", meta)
+	}
+}
+
+// ── floor: stop, resume, shutdown ────────────────────────────────────────────
+
+func TestKPStop_InterruptsFloorAndKPHolds(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	started := make(chan struct{})
+	runner := &fakeRunner{}
+	runner.run = func(ctx context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		if gctx.KPFloor != agent.KPFloorOpening {
+			return agent.RunOutput{Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}}, nil
+		}
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{{Kind: agent.OutputKP, Text: "先说一句。"}}})
+		close(started)
+		<-ctx.Done()
+		if !errors.Is(context.Cause(ctx), agent.ErrHostStop) {
+			t.Errorf("cancel cause = %v, want ErrHostStop", context.Cause(ctx))
+		}
+		return agent.RunOutput{Messages: 1, Stop: agent.StopHostStop}, nil
+	}
+	h := NewSessionHandlers(runner)
+	host := hostRouter(t, h, sessionID)
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(host, sessionID))
+	<-started
+
+	if w := postKPStop(makeTestRouter(h, user1ID, "mp_user1"), sessionID); w.Code != http.StatusForbidden {
+		t.Fatalf("player kp-stop got %d, want 403", w.Code)
+	}
+	running := getChatStatus(t, host, sessionID)
+	if !running.CanKPStop || running.CanKPContinue || running.Floor == nil || running.Floor.Beats != 1 {
+		t.Errorf("host status while running = %+v floor=%+v", running, running.Floor)
+	}
+
+	if w := postKPStop(host, sessionID); w.Code != http.StatusAccepted {
+		t.Fatalf("kp-stop got %d: %s", w.Code, w.Body.String())
+	}
+	tap.waitCount("floor_end", 1)
+
+	if reason := eventField(tap.ofType("floor_end")[0], "reason"); reason != "host_stop" {
+		t.Errorf("floor_end reason = %v", reason)
+	}
+	sp := loadSpotlight(t, sessionID)
+	if sp == nil || len(sp.UserIDs) != 0 || sp.Stop != "host_stop" {
+		t.Fatalf("spotlight = %+v, want KP holding with stop=host_stop", sp)
+	}
+	if n := len(loadMessages(t, sessionID)); n != 1 {
+		t.Errorf("already published messages must survive the interrupt, got %d", n)
+	}
+	if _, active := activeFloors.m[sessionID]; active {
+		t.Error("the floor must be unregistered after it ends")
+	}
+	if w := postKPStop(host, sessionID); w.Code != http.StatusConflict {
+		t.Errorf("kp-stop with no floor got %d, want 409", w.Code)
+	}
+	if w := postKPStop(host, 9999); w.Code != http.StatusNotFound {
+		t.Errorf("kp-stop on a missing room got %d, want 404", w.Code)
+	}
+
+	paused := getChatStatus(t, host, sessionID)
+	if paused.Phase != "kp_floor" || paused.Spotlight.Stop != "host_stop" || !paused.CanKPContinue {
+		t.Errorf("paused status = %+v", paused)
+	}
+	decodeChatAccepted(t, postKPTurn(host, sessionID))
+	tap.waitCount("floor_end", 2)
+	if got := runner.runCalls()[1]; got.KPFloor != agent.KPFloorHostContinue || got.LastStop != agent.StopHostStop {
+		t.Errorf("continue after stop: floor=%q lastStop=%q", got.KPFloor, got.LastStop)
+	}
+}
+
+func TestFloor_ContextFullResumesWithNewFloor(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	runner := &fakeRunner{}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		if gctx.KPFloor == agent.KPFloorResume {
+			publish(t, gctx, agent.RoundOutputs{Floor: 2, Items: []agent.Output{{Kind: agent.OutputKP, Text: "续写。"}}})
+			return agent.RunOutput{Messages: 1, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}}, nil
+		}
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{{Kind: agent.OutputKP, Text: "开场。"}}})
+		return agent.RunOutput{Messages: 1, Stop: agent.StopContext}, nil
+	}
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
+	tap.waitCount("floor_end", 2)
+
+	if runs := runner.runCalls(); len(runs) != 2 || runs[1].KPFloor != agent.KPFloorResume {
+		t.Fatalf("runs = %d, second floor = %q", len(runs), runs[len(runs)-1].KPFloor)
+	}
+	var reasons, ends []any
+	for _, ev := range tap.ofType("floor_start") {
+		reasons = append(reasons, eventField(ev, "reason"))
+	}
+	for _, ev := range tap.ofType("floor_end") {
+		ends = append(ends, eventField(ev, "reason"))
+	}
+	if len(reasons) != 2 || reasons[0] != agent.KPFloorOpening || reasons[1] != agent.KPFloorResume {
+		t.Errorf("floor_start reasons = %v", reasons)
+	}
+	if len(ends) != 2 || ends[0] != "context" || ends[1] != "ask" {
+		t.Errorf("floor_end reasons = %v", ends)
+	}
+	if len(tap.ofType("spotlight")) != 2 {
+		t.Errorf("only the first start and the final ask may change the spotlight, got %d events", len(tap.ofType("spotlight")))
+	}
+	if sp := loadSpotlight(t, sessionID); sp == nil || len(sp.UserIDs) != 1 || sp.Stop != "" {
+		t.Errorf("final spotlight = %+v", sp)
+	}
+}
+
+func TestFloor_ResumeThatMakesNoProgressDoesNotLoop(t *testing.T) {
+	initTestDB(t)
+	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	runner := &fakeRunner{run: func(context.Context, agent.GameContext) (agent.RunOutput, error) {
+		return agent.RunOutput{Stop: agent.StopContext}, nil
+	}}
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
+	tap.waitCount("floor_end", 2)
+
+	if n := len(runner.runCalls()); n != 2 {
+		t.Fatalf("Run called %d times, want the opening plus exactly one resume", n)
+	}
+	if sp := loadSpotlight(t, sessionID); sp == nil || sp.Stop != "context" || len(sp.UserIDs) != 0 {
+		t.Errorf("spotlight = %+v, want KP holding with stop=context", sp)
+	}
+}
+
+func TestStopAllFloors_CancelsAndWaitsForFloors(t *testing.T) {
+	initTestDB(t)
+	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	started := make(chan struct{})
+	var cause error
+	runner := &fakeRunner{}
+	runner.run = func(ctx context.Context, _ agent.GameContext) (agent.RunOutput, error) {
+		close(started)
+		<-ctx.Done()
+		cause = context.Cause(ctx)
+		return agent.RunOutput{Stop: agent.StopError}, errors.New("cancelled")
+	}
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
+	<-started
+
+	done := make(chan struct{})
+	go func() {
+		StopAllFloors()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StopAllFloors did not return")
+	}
+
+	if !errors.Is(cause, errServerShutdown) {
+		t.Errorf("cancel cause = %v, want errServerShutdown", cause)
+	}
+	if sp := loadSpotlight(t, sessionID); sp == nil || sp.Stop != "error" {
+		t.Errorf("spotlight = %+v, want stop=error", sp)
+	}
+	tap.waitCount("floor_end", 1)
+	if _, running := getSessionProcessing(sessionID); running {
+		t.Error("processing must be released")
+	}
+}
+
+// ── message responses ────────────────────────────────────────────────────────
+
+func TestGetMessages_ReturnsKindStatusFloorAndMeta(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	models.DB.Create(&models.Message{
+		SessionID: sessionID, Role: models.MessageRoleAssistant, Kind: models.MessageKindKP, Status: models.MessageStatusDone,
+		Floor: 3, Content: "门开了。", Username: "KP",
+		Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{Options: []string{"进去"}, Dice: "侦查 成功"}},
+	})
+	models.DB.Create(&models.Message{
+		SessionID: sessionID, Role: models.MessageRoleAssistant, Kind: models.MessageKindWriter, Status: models.MessageStatusPending,
+		Floor: 3, Content: "", Username: "KP",
 	})
 
-	t.Run("没有点名且未超限时 KP 保留发言权", func(t *testing.T) {
-		next, retain := nextSpotlight(&models.SpotlightState{AutoContinues: 1}, nil, players, 2)
-		if !retain || next.AutoContinues != 2 || len(next.UserIDs) != 0 {
-			t.Errorf("got %+v retain=%v", next, retain)
-		}
-	})
-
-	t.Run("超限后对全体存活玩家开放，跳过死者", func(t *testing.T) {
-		next, retain := nextSpotlight(&models.SpotlightState{AutoContinues: 2}, nil, players, 2)
-		if retain || len(next.UserIDs) != 2 || next.UserIDs[0] != 1 || next.UserIDs[1] != 3 {
-			t.Errorf("got %+v retain=%v", next, retain)
-		}
-		if next.AutoContinues != 0 {
-			t.Errorf("opened floor should reset the counter, got %d", next.AutoContinues)
-		}
-	})
-
-	t.Run("上限为0时第一段没点名就直接开放", func(t *testing.T) {
-		next, retain := nextSpotlight(&models.SpotlightState{}, nil, players, 0)
-		if retain || len(next.UserIDs) != 2 {
-			t.Errorf("got %+v retain=%v", next, retain)
-		}
-	})
-
-	t.Run("无人存活时不开放也不续跑", func(t *testing.T) {
-		dead := []models.SessionPlayer{{UserID: 1, CharacterCard: models.CharacterCard{Name: "甲", WoundState: "dead"}}}
-		next, retain := nextSpotlight(&models.SpotlightState{AutoContinues: 5}, nil, dead, 2)
-		if retain || len(next.UserIDs) != 0 {
-			t.Errorf("got %+v retain=%v", next, retain)
-		}
-	})
+	w := httptest.NewRecorder()
+	roomRouter(NewSessionHandlers(nil), userID, "tester", "user").ServeHTTP(w, jsonReq(http.MethodGet, "/sessions/"+itoa(sessionID)+"/messages", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	var got []struct {
+		Kind    string `json:"kind"`
+		Status  string `json:"status"`
+		Floor   int    `json:"floor"`
+		Content string `json:"content"`
+		Meta    *struct {
+			Options []string `json:"options"`
+			Dice    string   `json:"dice"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, w.Body.String())
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d messages", len(got))
+	}
+	if got[0].Kind != "kp" || got[0].Status != "done" || got[0].Floor != 3 || got[0].Meta == nil ||
+		got[0].Meta.Dice != "侦查 成功" || len(got[0].Meta.Options) != 1 {
+		t.Errorf("kp message = %+v", got[0])
+	}
+	if got[1].Kind != "writer" || got[1].Status != "pending" || got[1].Meta != nil {
+		t.Errorf("pending writer message = %+v", got[1])
+	}
 }

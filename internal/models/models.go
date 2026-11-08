@@ -353,17 +353,26 @@ type AgentTranscript struct {
 // 轮内工具调用)都不会拆散某一轮内部 tool_call 与对应 tool 结果的配对。Stats 只保留最近
 // 若干条供后台按会话展示缓存命中率，是纯审计数据，不参与 trim 等业务判断。
 type TranscriptData struct {
-	NextSeq int              `json:"next_seq"`
-	Turns   []TranscriptTurn `json:"turns"`
-	Stats   []TurnCacheStat  `json:"stats"`
+	NextSeq int `json:"next_seq"`
+	// NextFloor 是 Director 下一次发言权周期（floor）的编号，只有 Director 使用；
+	// 一个 floor 内可以落多个发布单元，各自占用一个 Seq。
+	NextFloor int              `json:"next_floor,omitempty"`
+	Turns     []TranscriptTurn `json:"turns"`
+	Stats     []TurnCacheStat  `json:"stats"`
 }
 
-// TranscriptTurn 是一次调用(一个回合)产生的完整原生消息链。Compacted 标记该轮是否已被
-// Director 专用的"剥离轮内工具调用"策略永久改写过(见 agent 包 compactDirectorTurn)——
-// 压缩后的轮不再重复压缩，也不会再被当作可以整轮丢弃的对象。
+// TranscriptTurn 是一次调用(一个回合)产生的完整原生消息链。Compacted 现在只标记 LLM 总结出来的
+// summary 单元，以及旧版本被"剥离轮内工具调用"策略改写过的老数据；新代码不再读取它，也不再剥离单元。
+//
+// Director 的一个 floor 会按"发布单元"落成多条 TranscriptTurn：Floor 是所属周期编号，Unit 是
+// 周期内的单元序号，Kind 为空表示正常单元，"tail" 是周期结束时最后一个单元之后已完整的轮，
+// "summary" 是 LLM 总结出的历史摘要。Writer/NPC/Dramaturg 不使用这三个字段。
 type TranscriptTurn struct {
 	Seq       int             `json:"seq"`
 	Round     int             `json:"round"`
+	Floor     int             `json:"floor,omitempty"`
+	Unit      int             `json:"unit,omitempty"`
+	Kind      string          `json:"kind,omitempty"`
 	Compacted bool            `json:"compacted,omitempty"`
 	Messages  []TranscriptMsg `json:"messages"`
 }
@@ -407,6 +416,9 @@ type TurnCacheStat struct {
 	OutputTokens        int64 `json:"output_tokens"`
 	TrimmedTurns        int   `json:"trimmed_turns"`
 	CompactedTurns      int   `json:"compacted_turns,omitempty"`
+	// LastContextTokens 是该单元最后一次调用的上下文用量（prompt+output），供下一个 floor
+	// 开始时估算是否需要总结；PromptTokens 是单元内多次调用的累加，不能用于估算。
+	LastContextTokens int64 `json:"last_context_tokens,omitempty"`
 }
 
 // NOTE: GameSession tracks an active or completed run of a scenario with players.
@@ -428,7 +440,7 @@ type GameSession struct {
 	DramaturgHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
 	CombatState      JSONField[*CombatState] `gorm:"type:text" json:"-"`
 	ChaseState       JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
-	// NOTE: Spotlight 为 nil 表示老房间，沿用玩家驱动的旧回合逻辑；非 nil 时由 KP 通过点名控制谁可以发言。
+	// NOTE: Spotlight 记录发言权：nil 与 UserIDs 为空都表示 KP 持有；非空表示等这些玩家回应。
 	Spotlight     JSONField[*SpotlightState] `gorm:"type:text" json:"-"`
 	KPHint        string                     `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
 	Introspection string                     `gorm:"type:text" json:"-"` // KP自写的当前场景推理过程
@@ -530,18 +542,64 @@ const (
 	MessageRoleSystem    MessageRole = "system"
 )
 
+// MessageKind 区分一条消息在房间里的角色，前端据此分别展示。
+type MessageKind string
+
+const (
+	MessageKindPlayer MessageKind = "player" // 玩家本轮声明的行动
+	MessageKindWriter MessageKind = "writer" // KP 的一次 write：由 Writer 展开的白字正文
+	MessageKindImage  MessageKind = "image"  // KP 的一次 generate_image：Painter 出的配图
+	MessageKindKP     MessageKind = "kp"     // KP 的一次 response 或 end_game 的回复
+	MessageKindAsk    MessageKind = "ask"    // KP 的一次 ask_players：点名并交出发言权
+	MessageKindIntro  MessageKind = "intro"  // 开局的剧本介绍
+	MessageKindSystem MessageKind = "system" // 加入/离开/复活等系统提示
+)
+
+// MessageStatus 表示一条消息的正文是否已经就绪：writer/image 先以 pending 落库，异步补全后变 done 或 failed。
+type MessageStatus string
+
+const (
+	MessageStatusDone    MessageStatus = "done"
+	MessageStatusPending MessageStatus = "pending"
+	MessageStatusFailed  MessageStatus = "failed"
+)
+
+// AskMeta 记录 ask 消息点名了谁。
+type AskMeta struct {
+	UserIDs []uint   `json:"user_ids"`
+	Names   []string `json:"names"`
+}
+
+// MessageMeta 是 kp/ask/writer 消息的结构化附加信息，正文里不再内嵌 options/ack/dice 之类的标签。
+type MessageMeta struct {
+	Options   []string `json:"options,omitempty"`
+	Ack       []string `json:"ack,omitempty"`
+	Dice      string   `json:"dice,omitempty"`
+	TimePoint string   `json:"time_point,omitempty"`
+	Ask       *AskMeta `json:"ask,omitempty"`
+	Ended     bool     `json:"ended,omitempty"`
+	Auto      bool     `json:"auto,omitempty"` // writer 由后端兜底自动补出
+	NSFW      bool     `json:"nsfw,omitempty"`
+	Error     string   `json:"error,omitempty"` // status=failed 时的原因
+}
+
 // NOTE: Message records a single chat message sent within a game session.
+// Kind/Status/Floor/Meta 是 KP 周期化之后新增的列：一次工具调用对应一条消息。
 type Message struct {
-	ID                uint        `gorm:"primaryKey;autoIncrement" json:"id"`
-	SessionID         uint        `gorm:"not null;index" json:"session_id"`
-	UserID            *uint       `json:"user_id"`
-	Role              MessageRole `gorm:"not null" json:"role"`
-	Content           string      `gorm:"type:text;not null" json:"content"`
-	Username          string      `gorm:"size:50" json:"username"`
-	DirectorElapsedMs *int64      `json:"director_elapsed_ms"` // Director工具调用循环总耗时(毫秒),仅assistant消息有值
-	DirectorSteps     *int        `json:"director_steps"`      // Director工具调用循环执行轮数,仅assistant消息有值
-	CreatedAt         time.Time   `json:"created_at"`
-	User              *User       `gorm:"foreignKey:UserID" json:"-"`
+	ID                uint                    `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID         uint                    `gorm:"not null;index" json:"session_id"`
+	UserID            *uint                   `json:"user_id"`
+	Role              MessageRole             `gorm:"not null" json:"role"`
+	Kind              MessageKind             `gorm:"size:16" json:"kind"`
+	Status            MessageStatus           `gorm:"size:16" json:"status"`
+	Floor             int                     `gorm:"index" json:"floor"`
+	Content           string                  `gorm:"type:text;not null" json:"content"`
+	Meta              JSONField[*MessageMeta] `gorm:"type:text" json:"-"`
+	Username          string                  `gorm:"size:50" json:"username"`
+	DirectorElapsedMs *int64                  `json:"director_elapsed_ms"` // 从上一条 kp/ask 到这一条的 Director 耗时(毫秒),仅 kp/ask 消息有值
+	DirectorSteps     *int                    `json:"director_steps"`      // 同上区间内的工具调用轮数,仅 kp/ask 消息有值
+	CreatedAt         time.Time               `json:"created_at"`
+	User              *User                   `gorm:"foreignKey:UserID" json:"-"`
 }
 
 type ItemType string
@@ -606,12 +664,12 @@ type CombatParticipant struct {
 }
 
 // SpotlightState 记录 KP 当前把发言权交给了谁。
-// UserIDs 为空表示 KP 仍持有发言权，等待服务端再跑一段；非空表示等这些玩家回应。
+// UserIDs 为空表示 KP 持有发言权(正在跑，或被打断/出错后等房主点"让 KP 继续")；非空表示等这些玩家回应。
 type SpotlightState struct {
-	UserIDs       []uint   `json:"user_ids"`
-	Names         []string `json:"names"`
-	Question      string   `json:"question"`
-	AutoContinues int      `json:"auto_continues"` // 连续没有点名的 KP 段数，点名后清零
+	UserIDs  []uint   `json:"user_ids"`
+	Names    []string `json:"names"`
+	Question string   `json:"question"`
+	Stop     string   `json:"stop,omitempty"` // KP 持有发言权时，上一个周期被强制结束的原因(host_stop/loop/stall/error/context)
 }
 
 // CombatState holds the full cross-round state of an ongoing combat encounter.

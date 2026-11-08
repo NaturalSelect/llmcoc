@@ -169,12 +169,11 @@ func main() {
 	}))
 
 	// Gzip 压缩前端静态资源与常规 API 响应。
-	// NOTE: 必须排除 SSE 流式接口（聊天、模组生成），否则 gzip 缓冲会破坏逐段推流。
+	// NOTE: 必须排除 SSE 流式接口（模组生成）和 WebSocket 升级接口，否则 gzip 缓冲会破坏逐段推流或握手。
 	// gin-contrib/gzip 本身也会在请求 Accept 含 text/event-stream 时跳过，但前端 fetch 未显式带该头，
-	// 故这里用路径正则显式排除，双保险。
+	// 故这里用路径正则显式排除，双保险。聊天的 /chat、/kp-turn、/kp-stop 已是立即返回的 JSON，不需要排除。
 	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPathsRegexs([]string{
-		`^/api/sessions/[^/]+/chat$`,
-		`^/api/sessions/[^/]+/kp-turn$`,
+		`^/api/sessions/[^/]+/ws$`,
 		`^/api/scenarios/generate$`,
 		`^/api/scenarios/compile-story$`,
 	})))
@@ -263,6 +262,8 @@ func main() {
 		sessions.GET("/:id/chat-status", sh.GetChatStatus)
 		sessions.POST("/:id/chat", sh.ChatStream)
 		sessions.POST("/:id/kp-turn", sh.KPTurn)
+	sessions.POST("/:id/kp-stop", sh.KPStop)
+		sessions.GET("/:id/ws", sh.WS)
 	}
 
 	// Shop
@@ -385,6 +386,8 @@ func main() {
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			log.Error("server shutdown failed", "err", err)
 		}
+		// NOTE: 周期跑在后台 goroutine 里，Shutdown 不会等它们；要先取消并等它们落库尾部，再保存缓存和统计。
+		handlers.StopAllFloors()
 		if stopStatsPersistence != nil {
 			stopStatsPersistence()
 		}

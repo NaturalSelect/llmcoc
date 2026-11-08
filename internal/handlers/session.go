@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -47,16 +46,20 @@ type JoinSessionReq struct {
 }
 
 type messageResponse struct {
-	ID                uint               `json:"id"`
-	SessionID         uint               `json:"session_id"`
-	UserID            *uint              `json:"user_id"`
-	Role              models.MessageRole `json:"role"`
-	Content           string             `json:"content"`
-	Username          string             `json:"username"`
-	CreatedAt         time.Time          `json:"created_at"`
-	Images            []string           `json:"images"`
-	DirectorElapsedMs *int64             `json:"director_elapsed_ms"`
-	DirectorSteps     *int               `json:"director_steps"`
+	ID                uint                 `json:"id"`
+	SessionID         uint                 `json:"session_id"`
+	UserID            *uint                `json:"user_id"`
+	Role              models.MessageRole   `json:"role"`
+	Kind              models.MessageKind   `json:"kind"`
+	Status            models.MessageStatus `json:"status"`
+	Floor             int                  `json:"floor"`
+	Content           string               `json:"content"`
+	Meta              *models.MessageMeta  `json:"meta"`
+	Username          string               `json:"username"`
+	CreatedAt         time.Time            `json:"created_at"`
+	Images            []string             `json:"images"`
+	DirectorElapsedMs *int64               `json:"director_elapsed_ms"`
+	DirectorSteps     *int                 `json:"director_steps"`
 }
 
 func newMessageResponse(msg models.Message) messageResponse {
@@ -69,7 +72,11 @@ func newMessageResponse(msg models.Message) messageResponse {
 		SessionID:         msg.SessionID,
 		UserID:            msg.UserID,
 		Role:              msg.Role,
+		Kind:              msg.Kind,
+		Status:            msg.Status,
+		Floor:             msg.Floor,
 		Content:           stripInternalImageTags(msg.Content),
+		Meta:              msg.Meta.Data,
 		Username:          msg.Username,
 		CreatedAt:         msg.CreatedAt,
 		Images:            images,
@@ -227,6 +234,8 @@ func CreateSession(c *gin.Context) {
 	systemMsg := models.Message{
 		SessionID: session.ID,
 		Role:      models.MessageRoleSystem,
+		Kind:      models.MessageKindSystem,
+		Status:    models.MessageStatusDone,
 		Content:   fmt.Sprintf("房间「%s」已创建,等待玩家加入。剧本:%s", session.Name, scenario.Name),
 		Username:  "系统",
 	}
@@ -315,6 +324,8 @@ func JoinSession(c *gin.Context) {
 	joinMsg := models.Message{
 		SessionID: uint(sessionID),
 		Role:      models.MessageRoleSystem,
+		Kind:      models.MessageKindSystem,
+		Status:    models.MessageStatusDone,
 		Content:   fmt.Sprintf("「%s」以调查员「%s」的身份加入了房间。", username, card.Name),
 		Username:  "系统",
 	}
@@ -377,6 +388,8 @@ func LeaveSession(c *gin.Context) {
 		leaveMsg := models.Message{
 			SessionID: uint(sessionID),
 			Role:      models.MessageRoleSystem,
+			Kind:      models.MessageKindSystem,
+			Status:    models.MessageStatusDone,
 			Content:   fmt.Sprintf("「%s」退出了房间。", username),
 			Username:  "系统",
 		}
@@ -435,6 +448,8 @@ func StartSession(c *gin.Context) {
 	introMsg := models.Message{
 		SessionID: session.ID,
 		Role:      models.MessageRoleAssistant,
+		Kind:      models.MessageKindIntro,
+		Status:    models.MessageStatusDone,
 		Content:   intro,
 		Username:  "KP",
 	}
@@ -487,6 +502,8 @@ func ReviveSession(c *gin.Context) {
 		msg := models.Message{
 			SessionID: session.ID,
 			Role:      models.MessageRoleSystem,
+			Kind:      models.MessageKindSystem,
+			Status:    models.MessageStatusDone,
 			Content:   fmt.Sprintf("管理员「%s」复活了房间，游戏继续。", username),
 			Username:  "系统",
 		}
@@ -499,16 +516,9 @@ func ReviveSession(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "房间已复活"})
 }
 
-func GetMessages(c *gin.Context) {
-	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	userID := c.GetUint("user_id")
-
-	var session models.GameSession
-	if err := models.DB.Preload("Players").First(&session, sessionID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
-		return
-	}
-
+// NOTE: 查看权限：无密码房间所有登录用户可看；有密码房间只允许成员和管理员。session 必须已 Preload("Players")，
+// GetMessages 与 WebSocket 订阅共用这一判断，避免两处口径漂移。
+func canViewSession(session *models.GameSession, userID uint) bool {
 	isAdmin := false
 	var user models.User
 	if err := models.DB.First(&user, userID).Error; err == nil {
@@ -524,10 +534,26 @@ func GetMessages(c *gin.Context) {
 			}
 		}
 		if !contain && !isAdmin {
-			messages := []messageResponse{}
-			c.JSON(http.StatusOK, messages)
-			return
+			return false
 		}
+	}
+	return true
+}
+
+func GetMessages(c *gin.Context) {
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID := c.GetUint("user_id")
+
+	var session models.GameSession
+	if err := models.DB.Preload("Players").First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+
+	if !canViewSession(&session, userID) {
+		messages := []messageResponse{}
+		c.JSON(http.StatusOK, messages)
+		return
 	}
 
 	var messages []models.Message
@@ -572,59 +598,24 @@ func getSessionProcessing(sessionID uint) (sessionProcessingState, bool) {
 	return state, ok
 }
 
-// activeTurnPlayerIDs 返回房间内全体存活玩家(角色卡WoundState!=dead)的UserID集合，
-// 用于判断"发言者本人是否存活"——与agent.BuildTurnCollection的批次收集集合是两回
-// 事：遭遇激活时批次可能只含存活玩家的子集，但死亡玩家永远不该被允许发言，这条判
-// 断必须独立于批次存在。
-func activeTurnPlayerIDs(players []models.SessionPlayer) map[uint]bool {
-	ids := make(map[uint]bool, len(players))
-	for _, p := range players {
-		if p.CharacterCard.WoundState == "dead" {
-			continue
-		}
-		ids[p.UserID] = true
-	}
-	return ids
+// setChatSSEHeaders 设置 SSE 响应头；聊天已改走 WebSocket，现在只有模组生成这类流式接口还在用。
+func setChatSSEHeaders(c *gin.Context) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
 }
 
+// lastKPReplyTime 返回 KP 最近一条 kp/ask 消息的时间：只有在它之后新建的玩家声明才需要落成玩家消息。
 func lastKPReplyTime(sessionID uint) (time.Time, bool) {
-	var lastKP models.Message
-	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).
-		Order("created_at DESC").
-		First(&lastKP).Error; err != nil {
+	var last models.Message
+	if err := models.DB.
+		Where("session_id = ? AND kind IN ?", sessionID, []models.MessageKind{models.MessageKindKP, models.MessageKindAsk}).
+		Order("created_at DESC, id DESC").
+		First(&last).Error; err != nil {
 		return time.Time{}, false
 	}
-	return lastKP.CreatedAt, true
-}
-
-// countSubmittedTurnPlayers 统计collectUserIDs里已有多少人本轮提交过SessionTurnAction。
-// collectUserIDs 来自 agent.BuildTurnCollection：非遭遇场景是全体存活玩家，遭遇激活
-// 时是当前DEX批次，二者均已是[]uint，无需再靠map/mapKeys桥接。
-func countSubmittedTurnPlayers(db *gorm.DB, sessionID uint, round int, collectUserIDs []uint) int64 {
-	if len(collectUserIDs) == 0 {
-		return 0
-	}
-	var rows []struct{ UserID uint }
-	db.Model(&models.SessionTurnAction{}).
-		Select("user_id").
-		Where("session_id = ? AND round = ? AND user_id IN ?", sessionID, round, collectUserIDs).
-		Group("user_id").Find(&rows)
-	return int64(len(rows))
-}
-
-// turnActionsCoverBatch 校验turnActions是否覆盖了batchUserIDs里的每一个人。会话锁已
-// 保证同一房间的ChatStream调用串行执行，这里只是"最后一人提交"之后的防御性复核。
-func turnActionsCoverBatch(turnActions []models.SessionTurnAction, batchUserIDs []uint) bool {
-	present := make(map[uint]bool, len(turnActions))
-	for _, ta := range turnActions {
-		present[ta.UserID] = true
-	}
-	for _, id := range batchUserIDs {
-		if !present[id] {
-			return false
-		}
-	}
-	return true
+	return last.CreatedAt, true
 }
 
 // loadLatestTurnActions 按 players 的房间顺序(而非DB返回序)加载每个玩家本轮最新一条
@@ -644,8 +635,8 @@ func loadLatestTurnActions(sessionID uint, round int, players []models.SessionPl
 	return turnActions
 }
 
-// filterTurnActionsSince 只保留cutoff之后新建/更新的记录，供saveChatMessages把"跨run
-// 保留、之前已经落过聊天记录"的旧声明排除在外，避免同一条声明被重复写入transcript。
+// filterTurnActionsSince 只保留cutoff之后新建/更新的记录，把"跨run保留、之前已经落过玩家消息"
+// 的旧声明排除在外，避免同一条声明被重复写成玩家消息。
 func filterTurnActionsSince(actions []models.SessionTurnAction, cutoff time.Time) []models.SessionTurnAction {
 	filtered := make([]models.SessionTurnAction, 0, len(actions))
 	for _, a := range actions {
@@ -656,20 +647,13 @@ func filterTurnActionsSince(actions []models.SessionTurnAction, cutoff time.Time
 	return filtered
 }
 
-// waitingPayload 是"等待其他玩家"SSE 事件/chat-status 的 JSON 结构。
+// waitingPayload 是"等待被点名玩家到齐"的 waiting 事件/chat-status 的 JSON 结构。
 // submitted_names/pending_names 按房间 Players 顺序排列，前端可直接展示 badges。
-// batched=true 时 batch_user_ids 是遭遇激活时当前DEX批次的玩家UserID列表；
-// encounter_order 覆盖遭遇全部参与者(含NPC、已行动、未行动)，供前端渲染完整队列；
-// 无激活遭遇时 batched=false、encounter_label/encounter_order 为零值。
 type waitingPayload struct {
-	Pending        int                    `json:"pending"`
-	Total          int                    `json:"total"`
-	SubmittedNames []string               `json:"submitted_names"`
-	PendingNames   []string               `json:"pending_names"`
-	Batched        bool                   `json:"batched"`
-	BatchUserIDs   []uint                 `json:"batch_user_ids"`
-	EncounterLabel string                 `json:"encounter_label"`
-	EncounterOrder []agent.EncounterActor `json:"encounter_order"`
+	Pending        int      `json:"pending"`
+	Total          int      `json:"total"`
+	SubmittedNames []string `json:"submitted_names"`
+	PendingNames   []string `json:"pending_names"`
 }
 
 // sessionPlayerDisplayName 返回玩家的显示名：优先角色名（trim 后非空），回退用户名。
@@ -684,18 +668,13 @@ func sessionPlayerDisplayName(p models.SessionPlayer) string {
 	return "玩家"
 }
 
-// buildWaitingSSEPayload 查询collect.UserIDs里已提交行动的玩家集合，按房间 Players
-// 顺序生成已提交/待提交姓名列表，并透传批次与DEX序信息供前端渲染完整收集队列。
-// 若查询失败则返回 error，由调用方决定是否降级。
-func buildWaitingSSEPayload(db *gorm.DB, session models.GameSession, collect agent.TurnCollection) (waitingPayload, error) {
+// buildWaitingPayload 查询collect.UserIDs里已提交行动的玩家集合，按房间 Players
+// 顺序生成已提交/待提交姓名列表。查询失败时返回 error，由调用方决定如何降级。
+func buildWaitingPayload(db *gorm.DB, session models.GameSession, collect agent.TurnCollection) (waitingPayload, error) {
 	ids := collect.UserIDs
 	total := len(ids)
 	if total == 0 {
-		return waitingPayload{
-			SubmittedNames: []string{}, PendingNames: []string{},
-			Batched: collect.Batched, BatchUserIDs: collect.UserIDs,
-			EncounterLabel: collect.Label, EncounterOrder: collect.Order,
-		}, nil
+		return waitingPayload{SubmittedNames: []string{}, PendingNames: []string{}}, nil
 	}
 
 	var rows []struct{ UserID uint }
@@ -715,54 +694,28 @@ func buildWaitingSSEPayload(db *gorm.DB, session models.GameSession, collect age
 		idSet[id] = true
 	}
 
-	submitted := len(rows)
-	pending := total - submitted
-	if pending < 0 {
-		pending = 0
-	}
-
 	// NOTE: 按房间 Players 顺序遍历，保证姓名列表顺序稳定
-	submittedNames := make([]string, 0, submitted)
-	pendingNames := make([]string, 0, pending)
+	submittedNames := make([]string, 0, len(rows))
+	pendingNames := make([]string, 0, total)
 	for _, p := range session.Players {
 		if !idSet[p.UserID] {
 			continue
 		}
-		name := sessionPlayerDisplayName(p)
 		if submittedSet[p.UserID] {
-			submittedNames = append(submittedNames, name)
+			submittedNames = append(submittedNames, sessionPlayerDisplayName(p))
 		} else {
-			pendingNames = append(pendingNames, name)
+			pendingNames = append(pendingNames, sessionPlayerDisplayName(p))
 		}
 	}
 
-	return waitingPayload{
-		Pending:        pending,
-		Total:          total,
-		SubmittedNames: submittedNames,
-		PendingNames:   pendingNames,
-		Batched:        collect.Batched,
-		BatchUserIDs:   collect.UserIDs,
-		EncounterLabel: collect.Label,
-		EncounterOrder: collect.Order,
-	}, nil
-}
-
-// sendWaitingSSE 序列化 waitingPayload 并发送 "waiting" SSE 事件。
-// 使用 encoding/json 确保特殊字符正确转义，序列化失败时降级为最小安全 JSON。
-func sendWaitingSSE(c *gin.Context, payload waitingPayload) {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		// NOTE: 极端异常：降级为最小安全 JSON，保持 pending/total 兼容旧客户端
-		data = []byte(fmt.Sprintf(`{"pending":%d,"total":%d,"submitted_names":[],"pending_names":[]}`,
-			payload.Pending, payload.Total))
+	pending := total - len(rows)
+	if pending < 0 {
+		pending = 0
 	}
-	c.SSEvent("waiting", string(data))
-	c.Writer.Flush()
+	return waitingPayload{Pending: pending, Total: total, SubmittedNames: submittedNames, PendingNames: pendingNames}, nil
 }
 
-// turnCollectionIncludesUser 判断userID是否在collect.UserIDs(本次应收集的批次/全员
-// 集合)里。
+// turnCollectionIncludesUser 判断userID是否在collect.UserIDs(KP 当前点名且仍存活的玩家)里。
 func turnCollectionIncludesUser(collect agent.TurnCollection, userID uint) bool {
 	for _, id := range collect.UserIDs {
 		if id == userID {
@@ -772,55 +725,36 @@ func turnCollectionIncludesUser(collect agent.TurnCollection, userID uint) bool 
 	return false
 }
 
-// turnCollectionRejectReason 解释遭遇按批次收集时，一名存活玩家为什么此刻不能提交：
-// 完全不在collect.Order里(D7旁观锁定，未参与这场战斗/追逐)，或在Order里但不在当前
-// 批次(还没轮到，报出当前批次成员姓名)。只应在collect.Batched时调用。
-func turnCollectionRejectReason(collect agent.TurnCollection, userID uint) string {
-	var batchNames []string
-	inOrder := false
-	for _, a := range collect.Order {
-		if a.UserID == userID && !a.IsNPC {
-			inOrder = true
-		}
-		if a.InBatch {
-			batchNames = append(batchNames, a.Name)
-		}
-	}
-	if !inOrder {
-		return "战斗/追逐进行中，你未参与本场遭遇，暂时无法提交行动"
-	}
-	if len(batchNames) == 0 {
-		return "还没轮到你行动，请稍候"
-	}
-	return fmt.Sprintf("还没轮到你行动，当前轮到 %s，请稍候", strings.Join(batchNames, "、"))
-}
-
 type chatStatusResponse struct {
+	// Phase: idle(房间不在进行中) | kp_running(KP 正在发言) | kp_floor(KP 持有发言权但没在跑，等房主继续)
+	// | awaiting_me(KP 在等我回应) | waiting(KP 在等被点名的玩家)。
 	Phase             string         `json:"phase"`
-	Processing        bool           `json:"processing"`
+	KPRunning         bool           `json:"kp_running"`
 	WaitingForPlayers bool           `json:"waiting_for_players"`
 	Submitted         bool           `json:"submitted"`
-	StartedAt         *time.Time     `json:"started_at"`
 	SubmittedAt       *time.Time     `json:"submitted_at"`
 	Waiting           waitingPayload `json:"waiting"`
-	Spotlight         *spotlightInfo `json:"spotlight"`
+	Spotlight         spotlightInfo  `json:"spotlight"`
+	Floor             *floorInfo     `json:"floor"`
 	CanKPContinue     bool           `json:"can_kp_continue"`
+	CanKPStop         bool           `json:"can_kp_stop"`
 }
 
-// spotlightInfo 是 chat-status 里的 KP 点名状态；老房间(Spotlight 为空)时整体为 null。
+// spotlightInfo 是 chat-status 里的发言权状态；KPFloor 为 true 表示 KP 持有，Stop 是上一个周期被强制结束的原因。
 type spotlightInfo struct {
 	UserIDs  []uint   `json:"user_ids"`
 	Names    []string `json:"names"`
 	Question string   `json:"question"`
 	KPFloor  bool     `json:"kp_floor"`
 	AskedMe  bool     `json:"asked_me"`
+	Stop     string   `json:"stop"`
 }
 
-func setChatSSEHeaders(c *gin.Context) {
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
+// floorInfo 描述正在进行的 KP 周期；Beats 是它已经发布的 kp/ask 消息条数。
+type floorInfo struct {
+	Floor     int       `json:"floor"`
+	StartedAt time.Time `json:"started_at"`
+	Beats     int       `json:"beats"`
 }
 
 // GetChatStatus 返回当前用户可恢复的聊天状态。
@@ -841,37 +775,45 @@ func (h *SessionHandlers) GetChatStatus(c *gin.Context) {
 		return
 	}
 
-	processingState, processing := getSessionProcessing(session.ID)
+	_, running := getSessionProcessing(session.ID)
 	collect := agent.BuildTurnCollection(session)
-	wPayload, err := buildWaitingSSEPayload(models.DB, session, collect)
+	waiting, err := buildWaitingPayload(models.DB, session, collect)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询本轮状态失败"})
 		return
 	}
 
+	named := make(map[uint]bool, len(collect.UserIDs))
+	names := make([]string, 0, len(collect.UserIDs))
+	for _, id := range collect.UserIDs {
+		named[id] = true
+	}
+	for _, p := range session.Players {
+		if named[p.UserID] {
+			names = append(names, sessionPlayerDisplayName(p))
+		}
+	}
+	ids := collect.UserIDs
+	if ids == nil {
+		ids = []uint{}
+	}
+	stop := ""
+	if sp := session.Spotlight.Data; sp != nil {
+		stop = sp.Stop
+	}
+
 	var submittedAction models.SessionTurnAction
 	submitted := false
-	if turnCollectionIncludesUser(collect, userID) {
-		if err := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID).
-			Order("created_at DESC, id DESC").First(&submittedAction).Error; err == nil {
+	if named[userID] {
+		err := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID).
+			Order("created_at DESC, id DESC").First(&submittedAction).Error
+		switch {
+		case err == nil:
 			submitted = true
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		case !errors.Is(err, gorm.ErrRecordNotFound):
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询行动提交状态失败"})
 			return
 		}
-	}
-
-	submittedCount := wPayload.Total - wPayload.Pending
-	waitingForPlayers := session.Status == models.SessionStatusPlaying && len(session.Players) > 1 && wPayload.Total > 1 && submittedCount > 0 && wPayload.Pending > 0
-	phase := "idle"
-	if waitingForPlayers {
-		phase = "waiting"
-	}
-	var startedAt *time.Time
-	if processing {
-		phase = "processing"
-		started := processingState.StartedAt
-		startedAt = &started
 	}
 	var submittedAt *time.Time
 	if submitted {
@@ -879,110 +821,112 @@ func (h *SessionHandlers) GetChatStatus(c *gin.Context) {
 		submittedAt = &at
 	}
 
-	var spotlight *spotlightInfo
-	canKPContinue := false
-	if collect.Spotlight {
-		names := make([]string, 0, len(collect.UserIDs))
-		named := make(map[uint]bool, len(collect.UserIDs))
-		for _, id := range collect.UserIDs {
-			named[id] = true
-		}
-		for _, p := range session.Players {
-			if named[p.UserID] {
-				names = append(names, sessionPlayerDisplayName(p))
-			}
-		}
-		ids := collect.UserIDs
-		if ids == nil {
-			ids = []uint{}
-		}
-		spotlight = &spotlightInfo{
+	playing := session.Status == models.SessionStatusPlaying
+	phase := "idle"
+	switch {
+	case !playing:
+	case running:
+		phase = "kp_running"
+	case len(ids) == 0:
+		phase = "kp_floor"
+	case named[userID] && !submitted:
+		phase = "awaiting_me"
+	default:
+		phase = "waiting"
+	}
+
+	var floor *floorInfo
+	if af := getActiveFloor(session.ID); af != nil && running {
+		floor = &floorInfo{Floor: int(af.floor.Load()), StartedAt: af.startedAt, Beats: int(af.beats.Load())}
+	}
+	isHost := playing && (session.CreatedBy == userID || isAdminUser(c, userID))
+
+	submittedCount := waiting.Total - waiting.Pending
+	c.JSON(http.StatusOK, chatStatusResponse{
+		Phase:             phase,
+		KPRunning:         running,
+		WaitingForPlayers: playing && !running && waiting.Total > 1 && submittedCount > 0 && waiting.Pending > 0,
+		Submitted:         submitted,
+		SubmittedAt:       submittedAt,
+		Waiting:           waiting,
+		Spotlight: spotlightInfo{
 			UserIDs:  ids,
 			Names:    names,
 			Question: collect.Question,
 			KPFloor:  len(ids) == 0,
 			AskedMe:  named[userID],
-		}
-		if !processing {
-			switch {
-			case spotlight.KPFloor:
-				phase = "kp_floor"
-			case spotlight.AskedMe && !submitted:
-				phase = "awaiting_me"
-			}
-		}
-		canKPContinue = !processing && session.Status == models.SessionStatusPlaying &&
-			(session.CreatedBy == userID || isAdminUser(c, userID))
-	}
-
-	c.JSON(http.StatusOK, chatStatusResponse{
-		Phase:             phase,
-		Processing:        processing,
-		WaitingForPlayers: waitingForPlayers,
-		Submitted:         submitted,
-		StartedAt:         startedAt,
-		SubmittedAt:       submittedAt,
-		Waiting:           wPayload,
-		Spotlight:         spotlight,
-		CanKPContinue:     canKPContinue,
+			Stop:     stop,
+		},
+		Floor:         floor,
+		CanKPContinue: isHost && !running,
+		CanKPStop:     isHost && running,
 	})
 }
 
-// ChatStream handles SSE streaming for game chat using the multi-agent pipeline.
+// saveTurnAction 记录或更新玩家本轮的声明：同一轮重复提交只保留最新一条。
+func saveTurnAction(session models.GameSession, userID uint, displayName, content string) error {
+	return models.DB.Transaction(func(tx *gorm.DB) error {
+		var existing models.SessionTurnAction
+		err := tx.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID).
+			First(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Create(&models.SessionTurnAction{
+				SessionID:     session.ID,
+				Round:         session.TurnRound,
+				UserID:        userID,
+				Username:      displayName,
+				ActionSummary: content,
+			}).Error
+		}
+		if err != nil {
+			return err
+		}
+		return tx.Model(&existing).Updates(map[string]any{
+			"username":       displayName,
+			"action_summary": content,
+			"created_at":     time.Now().UTC(),
+		}).Error
+	})
+}
+
+// ChatStream 接收被 KP 点名的玩家的回应，立即返回 202；KP 的进展通过房间的 WebSocket 推送。
 //
-// NOTE: This is the core gameplay loop endpoint. It handles receiving player actions,
-// coordinating multi-player turns, invoking the agent pipeline, and streaming
-// the Keeper's narrative responses back to the clients via Server-Sent Events.
-//
-// Multi-player turn flow:
-//  1. Each non-dead investigator submits their action; it is saved to DB and recorded in SessionTurnAction.
-//  2. Dead investigators do not block the round. If revived later, they are counted again from the next round.
-//  3. If not all active investigators have acted yet, the handler sends a "waiting" SSE event and returns.
-//     The player's frontend then polls /messages to pick up the KP response when it arrives.
-//  4. Once the last active investigator submits, all pending actions are collected and the agent pipeline
-//     runs once, producing a single KP response for the entire round.
+// 流程：
+//  1. 只有被点名且存活的玩家可以提交；其他人被拒绝(KP 持有发言权时 409，没被点名时 403)。
+//  2. 声明写入 SessionTurnAction，同一轮重复提交只保留最新一条。
+//  3. 被点名的人没到齐：广播 waiting，返回 floor_started=false。
+//  4. 到齐：开始一个 KP 周期，返回 floor_started=true。
 func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID := c.GetUint("user_id")
 	username := c.GetString("username")
 
-	var session models.GameSession
-	if err := models.DB.
-		Preload("Scenario").
-		Preload("Players.User").
-		Preload("Players.CharacterCard").
-		First(&session, sessionID).Error; err != nil {
+	lock := getSessionLock(uint(sessionID))
+	lock.Lock()
+	defer lock.Unlock()
+
+	session, err := loadSessionForFloor(uint(sessionID))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
-	}
-
-	var user models.User
-	models.DB.First(&user, userID)
-
-	// Use character card name as the display name; fall back to account username.
-	playerDisplayName := username
-	for _, p := range session.Players {
-		if p.UserID == userID && p.CharacterCard.Name != "" {
-			playerDisplayName = p.CharacterCard.Name
-			break
-		}
 	}
 	if session.Status != models.SessionStatusPlaying {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏尚未开始"})
 		return
 	}
 
-	// Spectator check: only creators or joined players can speak.
 	isPlayer := false
+	displayName := username
 	for _, p := range session.Players {
 		if p.UserID == userID {
 			isPlayer = true
+			if p.CharacterCard.Name != "" {
+				displayName = p.CharacterCard.Name
+			}
 			break
 		}
 	}
-	isCreator := session.CreatedBy == userID
-
-	if !isPlayer && !isCreator {
+	if !isPlayer && session.CreatedBy != userID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "观战模式下无法发言"})
 		return
 	}
@@ -996,282 +940,56 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息过长(最多2000字)"})
 		return
 	}
-	if _, processing := getSessionProcessing(uint(sessionID)); processing {
-		c.JSON(http.StatusConflict, gin.H{"error": "当前房间正在处理上一条消息，请稍候"})
-		return
-	}
-
-	lock := getSessionLock(uint(sessionID))
-	lock.Lock()
-	lockReleased := false
-	defer func() {
-		if !lockReleased {
-			lock.Unlock()
-		}
-	}()
-
-	if err := models.DB.
-		Preload("Scenario").
-		Preload("Players.User").
-		Preload("Players.CharacterCard").
-		First(&session, sessionID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
-		return
-	}
-	if _, processing := getSessionProcessing(session.ID); processing {
-		c.JSON(http.StatusConflict, gin.H{"error": "当前房间正在处理上一条消息，请稍候"})
+	if _, running := getSessionProcessing(session.ID); running {
+		c.JSON(http.StatusConflict, gin.H{"error": "KP 正在发言，请稍候"})
 		return
 	}
 
 	chatLog.Debug("chat request", "session", sessionID, "user", username, "content_len", len([]rune(content)), "round", session.TurnRound)
 
-	// ── Multi-player turn-collection ────────────────────────────────────────
-	playerCount := len(session.Players)
-
-	// Determine whether the sender is a tracked player (vs. creator-only / spectator).
-	isTrackedPlayer := false
-	for _, p := range session.Players {
-		if p.UserID == userID {
-			isTrackedPlayer = true
-			break
-		}
-	}
-
-	var pendingActions []agent.PlayerAction
-	var turnActions []models.SessionTurnAction
-
 	collect := agent.BuildTurnCollection(session)
-	activePlayerIDs := activeTurnPlayerIDs(session.Players)
-	activePlayerCount := len(activePlayerIDs)
-	isActiveTurnPlayer := activePlayerIDs[userID]
-	// NOTE: Spotlight 房间由 KP 点名决定谁能发言，不论单人还是多人房，没被点名的提交一律拒绝。
-	if collect.Spotlight && !turnCollectionIncludesUser(collect, userID) {
+	if !turnCollectionIncludesUser(collect, userID) {
 		chatLog.Warn("chat rejected: not named by KP", "session", sessionID, "user", username)
-		setChatSSEHeaders(c)
-		c.SSEvent("error", spotlightRejectReason(session, collect))
-		c.Writer.Flush()
-		c.SSEvent("done", "")
-		c.Writer.Flush()
-		return
-	}
-	if playerCount > 1 {
-		if activePlayerCount > 0 && (!isTrackedPlayer || !isActiveTurnPlayer) {
-			chatLog.Warn("chat rejected dead or non-player input", "session", sessionID, "user", username)
-			setChatSSEHeaders(c)
-			c.SSEvent("error", "当前仍有存活调查员，只有非死亡玩家可以提交本轮行动")
-			c.Writer.Flush()
-			c.SSEvent("done", "")
-			c.Writer.Flush()
-			return
+		status := http.StatusForbidden
+		if len(collect.UserIDs) == 0 {
+			status = http.StatusConflict
 		}
-		if activePlayerCount == 0 && !isTrackedPlayer {
-			chatLog.Warn("chat rejected non-player input after party wipe", "session", sessionID, "user", username)
-			setChatSSEHeaders(c)
-			c.SSEvent("error", "所有调查员均已死亡时，只有房间内玩家可以推进剧情")
-			c.Writer.Flush()
-			c.SSEvent("done", "")
-			c.Writer.Flush()
-			return
-		}
-		// D7: 遭遇激活时按DEX批次收集——存活且受追踪的玩家如果不在当前批次里，要么是
-		// 旁观者(未参与这场战斗/追逐)，要么是还没轮到，均拒绝提交，不静默吞掉输入。
-		if isTrackedPlayer && isActiveTurnPlayer && collect.Batched && !turnCollectionIncludesUser(collect, userID) {
-			chatLog.Warn("chat rejected: not in current encounter batch", "session", sessionID, "user", username)
-			setChatSSEHeaders(c)
-			c.SSEvent("error", turnCollectionRejectReason(collect, userID))
-			c.Writer.Flush()
-			c.SSEvent("done", "")
-			c.Writer.Flush()
-			return
-		}
-	}
-
-	if playerCount > 1 && isTrackedPlayer && isActiveTurnPlayer {
-		// Use a DB transaction so that record + count is atomic, preventing the
-		// race where two simultaneous last-submitters both try to run the agent.
-		batchUserIDs := collect.UserIDs
-		var isLastToSubmit bool
-		err := models.DB.Transaction(func(tx *gorm.DB) error {
-			var existing models.SessionTurnAction
-			err := tx.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID).
-				First(&existing).Error
-			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				if err := tx.Create(&models.SessionTurnAction{
-					SessionID:     session.ID,
-					Round:         session.TurnRound,
-					UserID:        userID,
-					Username:      playerDisplayName,
-					ActionSummary: content,
-				}).Error; err != nil {
-					return err
-				}
-			} else if err := tx.Model(&existing).Updates(map[string]any{
-				"username":       playerDisplayName,
-				"action_summary": content,
-				"created_at":     time.Now().UTC(),
-			}).Error; err != nil {
-				return err
-			}
-			submitted := countSubmittedTurnPlayers(tx, session.ID, session.TurnRound, batchUserIDs)
-			isLastToSubmit = submitted >= int64(len(batchUserIDs))
-			return nil
-		})
-		if err != nil {
-			chatLog.Error("chat transaction failed", "session", sessionID, "user", username, "err", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
-			return
-		}
-
-		if !isLastToSubmit {
-			setChatSSEHeaders(c)
-			// NOTE: 构建含已提交/待提交姓名及批次信息的等待载荷，查询失败时降级为计数格式
-			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, collect)
-			if wErr != nil {
-				chatLog.Error("chat waiting payload failed", "session", sessionID, "user", username, "err", wErr)
-				submitted := countSubmittedTurnPlayers(models.DB, session.ID, session.TurnRound, batchUserIDs)
-				wPayload = waitingPayload{
-					Pending:        len(batchUserIDs) - int(submitted),
-					Total:          len(batchUserIDs),
-					SubmittedNames: []string{},
-					PendingNames:   []string{},
-				}
-			}
-			chatLog.Debug("chat waiting pending", "session", sessionID, "user", username, "pending", wPayload.Pending, "total", wPayload.Total)
-			sendWaitingSSE(c, wPayload)
-			c.SSEvent("done", "")
-			c.Writer.Flush()
-			return
-		}
-
-		// Last to submit: load every player's latest unconsumed declaration for the KP
-		// prompt——不只是当前批次，还包含D4精确清理跨run保留下来的、之前批次未被消费
-		// 的声明(被冻结的攻击方、还没轮到的参战者)，否则声明可见性闸门会看不到它们。
-		turnActions = loadLatestTurnActions(session.ID, session.TurnRound, session.Players)
-		if !turnActionsCoverBatch(turnActions, batchUserIDs) {
-			setChatSSEHeaders(c)
-			// NOTE: 构建含已提交/待提交姓名的等待载荷，查询失败时降级为计数格式
-			wPayload, wErr := buildWaitingSSEPayload(models.DB, session, collect)
-			if wErr != nil {
-				chatLog.Error("chat waiting payload failed", "session", sessionID, "user", username, "err", wErr)
-				wPayload = waitingPayload{
-					Pending:        len(batchUserIDs),
-					Total:          len(batchUserIDs),
-					SubmittedNames: []string{},
-					PendingNames:   []string{},
-				}
-			}
-			chatLog.Debug("chat waiting after load pending", "session", sessionID, "user", username, "pending", wPayload.Pending, "total", wPayload.Total)
-			sendWaitingSSE(c, wPayload)
-			c.SSEvent("done", "")
-			c.Writer.Flush()
-			return
-		}
-		for _, ta := range turnActions {
-			var user models.User
-			models.DB.First(&user, ta.UserID)
-			pendingActions = append(pendingActions, agent.PlayerAction{
-				UserID:     ta.UserID,
-				IsAdmin:    user.Role == models.RoleAdmin,
-				PlayerName: ta.Username,
-				Content:    ta.ActionSummary,
-			})
-		}
-	} else {
-		// Single-player or creator/spectator: keep only the latest action for this round.
-		var existing models.SessionTurnAction
-		err := models.DB.Where("session_id = ? AND round = ? AND user_id = ?", session.ID, session.TurnRound, userID).
-			First(&existing).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
-			return
-		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			err = models.DB.Create(&models.SessionTurnAction{
-				SessionID:     session.ID,
-				Round:         session.TurnRound,
-				UserID:        userID,
-				Username:      playerDisplayName,
-				ActionSummary: content,
-			}).Error
-		} else {
-			err = models.DB.Model(&existing).Updates(map[string]any{
-				"username":       playerDisplayName,
-				"action_summary": content,
-				"created_at":     time.Now().UTC(),
-			}).Error
-		}
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
-			return
-		}
-		// D6: 单人房/创建者兜底路径不经过loadLatestTurnActions，需要手动补一条自己的
-		// 声明，否则战斗/追逐激活时声明可见性闸门会把这个PC拒死。
-		pendingActions = append(pendingActions, agent.PlayerAction{
-			UserID:     userID,
-			IsAdmin:    user.Role == models.RoleAdmin,
-			PlayerName: playerDisplayName,
-			Content:    content,
-		})
-	}
-
-	// D4: 跨run保留的旧声明不该被重复落成聊天记录；只把本次KP回复之后新建/更新的
-	// 记录转成消息，此前已经落过消息的保留行仍用于pendingActions但不重复入库。
-	if len(turnActions) > 0 {
-		if cutoff, ok := lastKPReplyTime(session.ID); ok {
-			turnActions = filterTurnActionsSince(turnActions, cutoff)
-		}
-	}
-
-	setChatSSEHeaders(c)
-
-	gctx := agent.GameContext{
-		Session:        session,
-		History:        loadAgentHistory(session.ID),
-		UserInput:      content,
-		UserName:       playerDisplayName,
-		UserInputAdmin: user.Role == models.RoleAdmin,
-		PendingActions: pendingActions,
-	}
-	if collect.Spotlight {
-		gctx.AskedQuestion = collect.Question
-	}
-	if !beginSessionProcessing(session.ID) {
-		c.SSEvent("error", "当前房间正在处理上一条消息，请稍候")
-		c.Writer.Flush()
-		c.SSEvent("done", "")
-		c.Writer.Flush()
+		c.JSON(status, gin.H{"error": spotlightRejectReason(session, collect)})
 		return
 	}
 
-	// NOTE: 行动收集完成后立即释放短临界区；长耗时任务由 processing 状态防止重复进入。
-	lock.Unlock()
-	lockReleased = true
+	if err := saveTurnAction(session, userID, displayName, content); err != nil {
+		chatLog.Error("chat save turn action failed", "session", sessionID, "user", username, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
+		return
+	}
 
-	h.driveKP(c, kpSegment{
-		gctx:        gctx,
-		userID:      userID,
-		displayName: playerDisplayName,
-		content:     content,
-		turnActions: turnActions,
-	})
+	waiting, err := buildWaitingPayload(models.DB, session, collect)
+	if err != nil {
+		chatLog.Error("chat waiting payload failed", "session", sessionID, "user", username, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询本轮状态失败"})
+		return
+	}
+	if waiting.Pending > 0 {
+		chatLog.Debug("chat waiting pending", "session", sessionID, "user", username, "pending", waiting.Pending, "total", waiting.Total)
+		hubFor(session.ID).Publish("waiting", waiting)
+		c.JSON(http.StatusAccepted, gin.H{"floor_started": false, "waiting": waiting})
+		return
+	}
+
+	// NOTE: 读出每个玩家本轮最新、尚未被消费的声明，而不只是被点名的人：跨周期保留下来的战斗/追逐声明
+	// 也要让 Director 的声明可见性闸门看到。
+	seg := buildKPSegment(session, "", loadLatestTurnActions(session.ID, session.TurnRound, session.Players))
+	switch err := h.startFloor(seg); {
+	case errors.Is(err, errFloorBusy):
+		c.JSON(http.StatusConflict, gin.H{"error": "KP 正在发言，请稍候"})
+	case err != nil:
+		chatLog.Error("chat start floor failed", "session", sessionID, "user", username, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "启动 KP 失败"})
+	default:
+		c.JSON(http.StatusAccepted, gin.H{"floor_started": true, "waiting": waiting})
+	}
 }
-
-type writerJobResult struct {
-	token string
-	text  string
-	done  bool
-	err   error
-}
-
-type painterJobResult struct {
-	dataURL string
-	err     error
-}
-
-const writerPendingTag = "<writer_pending>true</writer_pending>"
 
 const imageDataURLStartTag = "<image_data_url>"
 const imageDataURLTagOpenPrefix = "<image_data_url"
@@ -1280,168 +998,6 @@ const imageRefTagName = "image_ref"
 
 var imageRefTagPattern = regexp.MustCompile(`(?is)<image_ref\b[^>]*(?:/>|>\s*</image_ref>)`)
 var imageRefAttrPattern = regexp.MustCompile(`(?is)\b(hash|mime)\s*=\s*(?:"([^"]*)"|'([^']*)')`)
-
-const assistantMessageUpdateRetries = 3
-
-const painterJobTimeout = 600 * time.Second
-
-func (h *SessionHandlers) startWriterJob(messageID uint, gctx agent.GameContext, output agent.RunOutput, clientDone <-chan struct{}) <-chan writerJobResult {
-	direction := strings.TrimSpace(output.WriterDirection)
-	if messageID == 0 || direction == "" || strings.TrimSpace(output.WriterText) != "" {
-		return nil
-	}
-	var ch chan writerJobResult
-	if clientDone != nil {
-		ch = make(chan writerJobResult, 128)
-	}
-	go func() {
-		if ch != nil {
-			defer close(ch)
-		}
-		send := func(result writerJobResult) {
-			if ch == nil {
-				return
-			}
-			select {
-			case ch <- result:
-			case <-clientDone:
-			}
-		}
-		text, err := h.Runner.RunWriterStream(context.Background(), gctx, direction, output.WriterNSFW, func(token string) {
-			if token == "" {
-				return
-			}
-			send(writerJobResult{token: token})
-		})
-		// Writer结束时即使没有生成正文,也要重写消息以清除刷新恢复用的pending标记。
-		dbErr := updateAssistantMessageWriter(messageID, output.KPReply, text)
-		if err == nil {
-			err = dbErr
-		} else if dbErr != nil {
-			chatLog.Error("chat writer message update failed", "err", dbErr)
-		}
-		send(writerJobResult{text: text, done: true, err: err})
-	}()
-	return ch
-}
-
-func (h *SessionHandlers) startPainterJob(messageID uint, gctx agent.GameContext, request agent.ImagePromptRequest, clientDone <-chan struct{}) <-chan painterJobResult {
-	request.Prompt = strings.TrimSpace(request.Prompt)
-	prompt := request.Prompt
-	if prompt == "" {
-		return nil
-	}
-	var ch chan painterJobResult
-	if clientDone != nil {
-		ch = make(chan painterJobResult, 1)
-	}
-	go func() {
-		if ch != nil {
-			defer close(ch)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), painterJobTimeout)
-		defer cancel()
-		start := time.Now()
-		chatLog.Debug("chat painter async start", "session", gctx.Session.ID, "prompt_len", len([]rune(prompt)), "prompt", chatTruncate(prompt, 200))
-		if clientDone != nil && messageID == 0 {
-			go func() {
-				select {
-				case <-clientDone:
-					cancel()
-				case <-ctx.Done():
-				}
-			}()
-		}
-		dataURL, err := h.Runner.RunPainter(ctx, gctx, request)
-		if err == nil {
-			dataURL = strings.TrimSpace(dataURL)
-			if dataURL == "" || !strings.HasPrefix(dataURL, "data:image/") {
-				err = fmt.Errorf("painter returned invalid image data")
-			}
-		}
-		if err == nil && messageID != 0 {
-			if dbErr := appendAssistantMessageImage(messageID, dataURL); dbErr != nil {
-				err = fmt.Errorf("persist painter image: %w", dbErr)
-			}
-		}
-		if err != nil {
-			chatLog.Error("chat painter async failed", "session", gctx.Session.ID, "elapsed_ms", float64(time.Since(start).Microseconds())/1000, "err", err)
-		} else {
-			chatLog.Debug("chat painter async success", "session", gctx.Session.ID, "elapsed_ms", float64(time.Since(start).Microseconds())/1000)
-		}
-		result := painterJobResult{dataURL: dataURL, err: err}
-		if ch == nil {
-			return
-		}
-		select {
-		case ch <- result:
-		case <-clientDone:
-		}
-	}()
-	return ch
-}
-
-func updateAssistantMessageWriter(messageID uint, kpReply, writerText string) error {
-	baseContent := buildAssistantContent(writerText, kpReply)
-	for attempt := 0; attempt < assistantMessageUpdateRetries; attempt++ {
-		var msg models.Message
-		if err := models.DB.Select("id", "content").First(&msg, messageID).Error; err != nil {
-			return err
-		}
-		content := appendInternalImageTags(baseContent, extractImageRefs(msg.Content), extractImageDataURLs(msg.Content))
-		if strings.TrimSpace(content) == "" {
-			return nil
-		}
-		if content == msg.Content {
-			return nil
-		}
-		res := models.DB.Model(&models.Message{}).
-			Where("id = ? AND content = ?", messageID, msg.Content).
-			Update("content", content)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected > 0 {
-			return nil
-		}
-	}
-	return fmt.Errorf("assistant message %d content changed while updating writer", messageID)
-}
-
-func appendAssistantMessageImage(messageID uint, dataURL string) error {
-	dataURL = strings.TrimSpace(dataURL)
-	if messageID == 0 {
-		return nil
-	}
-	ref, err := imagestore.DefaultStore().SaveDataURL(dataURL)
-	if err != nil {
-		return err
-	}
-	imageRef := storedImageRef{Hash: ref.Hash, MIME: ref.MIME}
-	for attempt := 0; attempt < assistantMessageUpdateRetries; attempt++ {
-		var msg models.Message
-		if err := models.DB.Select("id", "content").First(&msg, messageID).Error; err != nil {
-			return err
-		}
-		if imageRefExists(msg.Content, imageRef.Hash) {
-			return nil
-		}
-		content := appendInternalImageTags(msg.Content, []storedImageRef{imageRef}, nil)
-		if content == msg.Content {
-			return nil
-		}
-		res := models.DB.Model(&models.Message{}).
-			Where("id = ? AND content = ?", messageID, msg.Content).
-			Update("content", content)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected > 0 {
-			return nil
-		}
-	}
-	return fmt.Errorf("assistant message %d content changed while appending image", messageID)
-}
 
 func isValidImageDataURL(dataURL string) bool {
 	return strings.HasPrefix(strings.TrimSpace(dataURL), "data:image/")
@@ -1644,85 +1200,6 @@ func appendInternalImageTags(content string, refs []storedImageRef, dataURLs []s
 	return content
 }
 
-func buildAssistantContent(writerText, kpReply string) string {
-	fullReply := strings.TrimSpace(writerText)
-	if strings.TrimSpace(kpReply) == "" {
-		return fullReply
-	}
-	narration := strings.TrimSpace(kpReply)
-	narration = strings.TrimPrefix(narration, "KP:")
-	narration = strings.TrimPrefix(narration, "KP：")
-	narration = "KP:" + strings.TrimSpace(narration)
-	if fullReply != "" {
-		fullReply += "\n\n"
-	}
-	return fullReply + narration
-}
-
-func appendWriterPendingMarker(content string, pending bool) string {
-	if !pending || strings.TrimSpace(content) == "" {
-		return content
-	}
-	return strings.TrimSpace(content) + "\n" + writerPendingTag
-}
-
-// saveChatMessages 保存玩家消息和KP主流程回复,并返回可被Writer后续补写的消息。
-func saveChatMessages(sessionID uint64, userID uint, playerDisplayName, content string,
-	turnActions []models.SessionTurnAction, output agent.RunOutput) (*models.Message, error) {
-	fullReply := buildAssistantContent(output.WriterText, output.KPReply)
-	if fullReply == "" {
-		return nil, nil
-	}
-	fullReply = appendWriterPendingMarker(fullReply,
-		strings.TrimSpace(output.WriterDirection) != "" && strings.TrimSpace(output.WriterText) == "")
-	chatLog.Debug("chat saving messages", "session", sessionID, "user", playerDisplayName, "content_len", len([]rune(content)), "reply_len", len([]rune(fullReply)), "turn_actions", len(turnActions))
-	var assistantMsg models.Message
-	err := models.DB.Transaction(func(tx *gorm.DB) error {
-		if len(turnActions) > 0 {
-			for _, ta := range turnActions {
-				uid := ta.UserID
-				if err := tx.Create(&models.Message{
-					SessionID: uint(sessionID),
-					UserID:    &uid,
-					Role:      models.MessageRoleUser,
-					Content:   ta.ActionSummary,
-					Username:  ta.Username,
-				}).Error; err != nil {
-					return err
-				}
-			}
-		} else if content != "" {
-			uid := userID
-			if err := tx.Create(&models.Message{
-				SessionID: uint(sessionID),
-				UserID:    &uid,
-				Role:      models.MessageRoleUser,
-				Content:   content,
-				Username:  playerDisplayName,
-			}).Error; err != nil {
-				return err
-			}
-		}
-		assistantMsg = models.Message{
-			SessionID: uint(sessionID),
-			Role:      models.MessageRoleAssistant,
-			Content:   fullReply,
-			Username:  "KP",
-		}
-		if output.DirectorSteps > 0 {
-			elapsed := output.DirectorElapsedMs
-			steps := output.DirectorSteps
-			assistantMsg.DirectorElapsedMs = &elapsed
-			assistantMsg.DirectorSteps = &steps
-		}
-		return tx.Create(&assistantMsg).Error
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &assistantMsg, nil
-}
-
 // chatTruncate truncates s to at most maxLen runes, appending "…" when trimmed.
 func chatTruncate(s string, maxLen int) string {
 	runes := []rune(s)
@@ -1838,11 +1315,7 @@ func EndSession(c *gin.Context) {
 	models.DB.Model(&session).Update("status", models.SessionStatusEnded)
 
 	// Load recent messages as context for evaluator and growth agents
-	var messages []models.Message
-	models.DB.Where("session_id = ? AND role != ?", sessionID, models.MessageRoleSystem).
-		Order("created_at ASC").
-		Limit(150).
-		Find(&messages)
+	messages := agent.LoadEndGameMessages(uint(sessionID))
 	stripMessageImageDataURLTags(messages)
 
 	// NOTE: HTTP 手动结束由后端固定传 win=false（失败无角色成长），不解析客户端胜负。
@@ -1894,11 +1367,7 @@ func AdminEndAllSessions(c *gin.Context) {
 		session := &sessions[i]
 		models.DB.Model(session).Update("status", models.SessionStatusEnded)
 
-		var messages []models.Message
-		models.DB.Where("session_id = ? AND role != ?", session.ID, models.MessageRoleSystem).
-			Order("created_at ASC").
-			Limit(150).
-			Find(&messages)
+		messages := agent.LoadEndGameMessages(session.ID)
 		stripMessageImageDataURLTags(messages)
 
 		_, txErr := agent.RunEndSession(context.Background(), session, messages, false)

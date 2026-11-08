@@ -72,16 +72,20 @@ LLM-COC 是一个房间制 COC7 在线跑团服务。核心用户是玩家和管
 2. 其他玩家选择自己的人物卡加入房间；一张人物卡同一时间只能参与一个未结束房间。
 3. 房主开始游戏后，房间状态从 `lobby` 变为 `playing`，系统写入剧本介绍消息，并把发言权交给 KP（`Spotlight` 写入空状态）。
 4. 前端进入游戏页后加载房间详情和消息记录，并定时刷新；房主端随即调用 `POST /sessions/:id/kp-turn`，由 KP 先手跑开场段，不等玩家发言。
-5. 整局由 KP 驱动，发言权只有三种状态：
-   - KP 持有发言权：没有任何玩家可以发言，提交会被拒绝并提示「KP 正在推进剧情」。
-   - KP 点名了若干调查员：只有被点名者可以提交，其他人被拒绝并提示「KP 正在等待 X 回应：问题」。被点名者全部提交后才运行下一段。
-   - 老房间（`Spotlight` 为 NULL）：沿用旧的玩家驱动回合，所有存活调查员提交后运行一次。
-6. 一段 KP 叙事以 `ask_players`（点名并交出发言权）、只调 `response`（KP 保留发言权）或 `end_game` 结束。KP 保留发言权时，服务端在同一条 SSE 流里等这一段 Writer 结束后自动再跑一段。
-7. 连续不点名的自动续跑次数受站点设置 `kp_auto_continue_max` 限制（默认 2）。超过上限后发言权对全体存活调查员开放。
+5. 整局由 KP 驱动，发言权只有两种状态（`Spotlight` 为 NULL 的旧房间不再兼容，按 KP 持有处理）：
+   - KP 持有发言权：没有任何玩家可以发言，提交会被拒绝（409）并提示「KP 正在推进剧情」。如果上一个周期被强制结束（`Spotlight.Stop` 非空），提示改为「KP 已暂停，请等待房主让 KP 继续」。
+   - KP 点名了若干调查员：只有被点名者可以提交，其他人被拒绝（403）并提示「KP 正在等待 X 回应：问题」。被点名者全部提交后才开始下一个周期。
+6. KP 的一次发言权周期（floor）是一次 ReAct 循环：KP 可以反复调用工具，一个周期里可以产生多条叙事、多张配图、多条回复，没有续跑次数上限。只有 `ask_players`（点名并交出发言权）和 `end_game` 会正常结束周期；`response` 只发布一条 KP 消息，周期继续。
+7. 周期也可能被强制结束，发言权回到 KP 并记录原因，等房主继续：
+   - `host_stop`：房主或管理员调用 `POST /sessions/:id/kp-stop` 打断。
+   - `loop`：同一批工具调用在滑动窗口内重复过多（第 3 次提醒，第 5 次中止）。
+   - `stall`：连续多轮没有产生任何玩家可见消息。
+   - `error`：LLM 调用或消息发布失败，或服务关闭。
+   - `context`：上下文过长。这一种服务端会先总结再自动续跑一次；续跑仍没有产出才转为暂停。
 8. 房主或管理员可以随时调用 `kp-turn` 让 KP 继续：未回应的被点名者会被跳过，已提交的声明仍会交给 KP。
-9. 后端通过 SSE 返回 `progress`、`thinking`、`narration`、`kp_done`、`spotlight`、`token`、`image`、`waiting`、`error`、`done` 等事件。一条流里可能有多个 `kp_done`，每个 `kp_done` 对应一条新的 KP 消息，其后的 `token` 属于这条消息。
+9. `/chat`、`/kp-turn`、`/kp-stop` 都立即返回 202。KP 的全部进展通过房间 WebSocket（`GET /sessions/:id/ws`）广播给每个在线的人，事件与断线重连规则见 `docs/realtime-protocol.md`。
 10. 战斗和追逐中，DEX 顺序只是建议，KP 可以点名任何还没行动的参与者；PC 必须先提交声明才能结算。
-11. Agent 产出的 Writer 叙事和 KP 直接回复合并保存为消息，供断线重连和其他玩家轮询读取。客户端断线后，服务端仍会把后续各段跑完并落库。
+11. Agent 的每次产出落成独立消息：Writer 叙事（`writer`）、配图（`image`）、KP 回复（`kp`）、点名（`ask`），带 `kind`、`status`、`floor`、`meta` 字段。writer 与 image 先以 `pending` 落库，异步补全后变 `done` 或 `failed`。Writer 按会话排队依次生成，不阻塞 KP；kp-stop 只打断 KP，已发布的 Writer 消息仍会写完。客户端断线后，服务端仍会跑完周期并落库。
 12. 房主或管理员可结束游戏；结束时扣除金币，运行评价和成长结算。
 13. 管理员可以复活已结束房间，系统写入复活系统消息。
 
@@ -91,19 +95,21 @@ LLM-COC 是一个房间制 COC7 在线跑团服务。核心用户是玩家和管
 
 Agent 管线负责把玩家行动转成规则裁定、状态变化和叙事输出：
 
-1. ChatStream 或 KPTurn 构造 `GameContext`，交给 `driveKP` 循环。玩家回应段带当前输入、多人待处理行动和 KP 上一次的提问；KP 主动段（开场、自动续跑、房主继续）不带玩家输入，改带 `KPFloor`。
-2. Director 读取剧本、当前状态和玩家行动（KP 主动段读取 `<kp_floor>`），输出 JSON 工具调用数组。
-3. 后端按工具注册表执行工具，工具结果作为下一轮输入返回给 Director。
+1. ChatStream 或 KPTurn 构造 `GameContext`，启动一个周期。玩家回应周期带当前输入、多人待处理行动和 KP 上一次的提问；KP 主动周期（开场、房主继续、上下文总结后续跑）不带玩家输入，改带 `KPFloor`（`opening` / `host_continue` / `resume`）。
+2. Director 读取剧本、当前状态和玩家行动（KP 主动周期读取 `<kp_floor>`），输出 JSON 工具调用数组。
+3. 后端按工具注册表执行工具，工具结果作为下一轮输入返回给 Director。每轮结束后，本轮产生的玩家可见内容立刻发布为消息并保存转录检查点，不必等周期结束。
 4. Lawyer 只负责查 COC 规则、法术和怪物资料，并可使用规则缓存。
 5. NPC Agent 负责临时 NPC 的行动和对话，并维护独立记忆。
 6. Writer 根据 Director 的叙事指令生成玩家可见正文。
-7. Director 调用 `ask_players`、`response` 或 `end_game` 后，本段结束。`ask_players` 把发言权交给被点名的调查员；只调 `response` 表示 KP 保留发言权。`driveKP` 据此更新 `Spotlight`，并在 KP 保留发言权时等 Writer 结束后再跑下一段。
-8. Writer 历史、NPC 状态、线索、位置、背包、伤亡、疯狂等状态按各自模型持久化。
+7. Director 调用 `ask_players` 或 `end_game` 后，周期结束。`ask_players` 把发言权交给被点名的调查员，周期因其他原因被强制结束时发言权回到 KP 并记录原因。服务端据此更新 `Spotlight` 后才广播 `spotlight` 与 `floor_end`。
+8. 防循环：同一批工具调用在最近 10 轮内重复出现，第 3 次给 KP 追加提醒，第 5 次中止周期；只读调用的重复结果走缓存，跨轮的重复结算会被去重。
+9. 上下文压缩只有一级：LLM 总结。历史单元原样累积，周期开始前或周期中途上下文逼近窗口时，把较早的拍总结成最前面的一个摘要单元。切点只落在拍的边界上，当前周期的内容永远不被总结；周期中途总结完会继续同一个周期。
+10. Writer 历史、NPC 状态、线索、位置、背包、伤亡、疯狂等状态按各自模型持久化。
 
 重点边界：
 
 - LLM API 推送给后端的是模型输出或工具调用 JSON。
-- 后端给前端推送的流式输出是 SSE 事件。
+- 后端给前端推送的实时进展是房间 WebSocket 事件，命令接口只返回 202。
 - Writer 叙事正文和 KP 直接回复在前端用不同样式展示。
 
 主要实现位于 `internal/services/agent/orchestrator.go`、`internal/services/agent/actions.go`、`internal/services/agent/director.go`、`internal/services/agent/writer.go`、`internal/services/agent/lawyer.go` 和 `internal/services/agent/npc.go`。

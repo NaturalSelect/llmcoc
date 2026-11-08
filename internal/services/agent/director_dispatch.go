@@ -28,8 +28,9 @@ func directorActNPCCompatible(action ToolCallType) bool {
 }
 
 // directorBatchPolicy 构造 Director 原生工具循环的整批校验策略。
-// imageGeneratedThisTurn 由 run() 持有并跨轮次共享，用于保留"每回合最多生成一张
-// 图片"的限制(这条限制跨越多轮 ChatWithTools 调用，必须用闭包捕获的指针维持)。
+// imageGeneratedThisTurn 由 run() 持有并跨轮次共享，用于保留"每拍(两条 kp/ask 消息之间)
+// 最多生成一张图片"的限制(这条限制跨越多轮 ChatWithTools 调用，必须用闭包捕获的指针维持，
+// 每拍结束时由 floorRun 重置)。
 // combat/chase/roundClosed 是 run() 持有的战斗/追逐状态与"本轮是否已推进过一个
 // 战斗/追逐回合"标记，用于战斗/追逐轮次的批次校验(见下方 ENCOUNTER SEQUENCING)。
 // pendingActions 是本次run收到的玩家声明集合，用于RULE 5判断"未行动者是否可推进"
@@ -42,8 +43,15 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		hasResponse := false
 		hasNonCompatible := false
 		respStr := ""
+		responseCalls, askCalls := 0, 0
 		for _, call := range calls {
 			action := ToolCallType(call.Name)
+			switch action {
+			case ToolResponse:
+				responseCalls++
+			case ToolAskPlayers:
+				askCalls++
+			}
 			if action == ToolResponse || action == ToolEndGame || action == ToolAskPlayers {
 				hasResponse = true
 				if tc, err := decodeDirectorToolCall(call); err == nil {
@@ -67,6 +75,10 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		if hasResponse && respStr == "" {
 			emitProgress("KP正在补全主流程回复")
 			return "SYSTEM REJECT: empty response"
+		}
+		if responseCalls > 1 || askCalls > 1 {
+			emitProgress("KP正在合并重复回复")
+			return "SYSTEM REJECT: 同一轮最多只能有一个 response 和一个 ask_players。每个 response 都会立即成为一条独立的玩家可见消息：把要说的话合并成一条，或者分成相邻的两轮发出。"
 		}
 
 		actNPCPresent := false
@@ -217,13 +229,20 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 
-		// RULE 5: response/end_game 完整性前置——战斗/追逐激活且本批未把它结束时，
+		// RULE 5: ask_players/end_game 完整性前置——战斗/追逐激活且本批未把它结束时，
 		// 若本回合还有"可推进"的未行动者(NPC，或已提交声明的PC)、且没有任何参战者
 		// 处于待澄清暂停，则整批拒绝并列出还差谁未结算；不在当前批次里的PC(还没
 		// 提交声明)不计入未行动者——按批次收集后，它们本来就不该在这次run里被推
 		// 进，不能因为它们未行动就卡住收尾。有待澄清暂停时放行(模型需要紧接着用
-		// response去问)。
-		if hasResponse {
+		// ask_players去问)。response 不受限：它只发布一条消息、不交出发言权，
+		// 战斗中每结算一个参与者就可以发一条战况。
+		hasHandover := false
+		for _, call := range calls {
+			if a := ToolCallType(call.Name); a == ToolAskPlayers || a == ToolEndGame {
+				hasHandover = true
+			}
+		}
+		if hasHandover {
 			hasEndCombat, hasEndChase := false, false
 			for _, call := range calls {
 				switch ToolCallType(call.Name) {
@@ -246,7 +265,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 				}
 				if !hasPending && len(unresolved) > 0 {
 					emitProgress("KP正在补全战斗轮结算")
-					return fmt.Sprintf("SYSTEM REJECT: 本战斗轮还有参战者未行动(%s)，不能调用response/ask_players/end_game收尾。请继续对这些参战者调用combat_act(顺序只是建议，NPC可直接裁定，调查员需已有本轮声明)；全员行动完后端会自动进入下一轮再允许收尾。", strings.Join(unresolved, "、"))
+					return fmt.Sprintf("SYSTEM REJECT: 本战斗轮还有参战者未行动(%s)，不能调用ask_players/end_game收尾。请继续对这些参战者调用combat_act(顺序只是建议，NPC可直接裁定，调查员需已有本轮声明)；全员行动完后端会自动进入下一轮再允许收尾。", strings.Join(unresolved, "、"))
 				}
 			}
 			if chaseActive && !hasEndChase && !*roundClosed {
@@ -262,7 +281,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 				}
 				if !hasPending && len(unresolved) > 0 {
 					emitProgress("KP正在补全追逐轮结算")
-					return fmt.Sprintf("SYSTEM REJECT: 本追逐轮还有参与者未行动(%s)，不能调用response/ask_players/end_game收尾。请继续对这些参与者调用chase_act(顺序只是建议，NPC可直接裁定，调查员需已有本轮声明)；全员行动完后端会自动进入下一轮再允许收尾。", strings.Join(unresolved, "、"))
+					return fmt.Sprintf("SYSTEM REJECT: 本追逐轮还有参与者未行动(%s)，不能调用ask_players/end_game收尾。请继续对这些参与者调用chase_act(顺序只是建议，NPC可直接裁定，调查员需已有本轮声明)；全员行动完后端会自动进入下一轮再允许收尾。", strings.Join(unresolved, "、"))
 				}
 			}
 		}
@@ -378,23 +397,19 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 // "最多推进一个战斗/追逐回合"的门闩，同时供 directorBatchPolicy 判断本回合是否
 // 已经结算完毕。
 type directorDispatchState struct {
-	sid                 uint
-	gctx                *GameContext
-	handles             map[models.AgentRole]agentHandle
-	tempNPCs            *[]models.SessionNPC
-	timeAdvancedInTurn  *bool
-	combat              **models.CombatState
-	chase               **models.ChaseState
-	roundClosed         *bool
-	kpNarration         *string
-	pendingWrite        *string
-	pendingImages       *[]ImagePromptRequest
-	wroteNarrative      *bool
-	writerNSFW          *bool
-	diceMsg             *string
-	ask                 **AskResult
-	needsWriterFallback *bool
-	emitProgress        func(string)
+	sid                uint
+	gctx               *GameContext
+	handles            map[models.AgentRole]agentHandle
+	tempNPCs           *[]models.SessionNPC
+	timeAdvancedInTurn *bool
+	combat             **models.CombatState
+	chase              **models.ChaseState
+	roundClosed        *bool
+	outbox             *[]Output
+	diceMsg            *string
+	kpStreak           *int
+	ask                **AskResult
+	emitProgress       func(string)
 }
 
 // joinToolResults 把一次 Action.Execute 的 []ToolResult 折成原生协议里一个 tool_call
@@ -438,12 +453,9 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			Combat:             st.combat,
 			Chase:              st.chase,
 			RoundClosed:        st.roundClosed,
-			KPNarration:        st.kpNarration,
-			PendingWrite:       st.pendingWrite,
-			PendingImages:      st.pendingImages,
-			WroteNarrative:     st.wroteNarrative,
-			WriterNSFW:         st.writerNSFW,
+			Outbox:             st.outbox,
 			DiceMsg:            st.diceMsg,
+			KPStreak:           st.kpStreak,
 			Ask:                st.ask,
 		}
 
@@ -499,6 +511,9 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			results []ToolResult
 		}
 		resultSlots := make([][]ToolResult, len(calls))
+		// NOTE: ran 记录哪些调用真正执行过；ctx 在批内被取消时，没跑到的调用必须回报"未执行"，
+		// 否则 transcript 会留下"已执行"的假记录，KP 之后会以为那些结算已经生效。
+		ran := make([]bool, len(calls))
 		ch := make(chan slotResult, len(calls))
 		var wg sync.WaitGroup
 		asyncIdx := map[int]bool{}
@@ -512,6 +527,7 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 					if handler, ok := actionRegistry[decoded[idx].Action]; ok {
 						results = handler.Execute(decoded[idx], actx)
 					}
+					ran[idx] = true
 					ch <- slotResult{idx: idx, results: results}
 				}
 			}(indices)
@@ -531,6 +547,7 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 				if handler, ok := actionRegistry[c.Action]; ok {
 					ch <- slotResult{idx: idx, results: handler.Execute(c, actx)}
 				}
+				ran[idx] = true
 			}(i, tc)
 		}
 
@@ -545,6 +562,7 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			if handler, ok := actionRegistry[tc.Action]; ok {
 				resultSlots[i] = handler.Execute(tc, actx)
 			}
+			ran[i] = true
 		}
 
 		wg.Wait()
@@ -559,8 +577,9 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 				outcomes[i] = toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 参数解析失败: %v", decodeErr[i])}
 				continue
 			}
-			if visibleActionNeedsWriter(decoded[i].Action) {
-				*st.needsWriterFallback = true
+			if !ran[i] {
+				outcomes[i] = toolOutcome{reject: "SYSTEM REJECT: 本周期已被中断，该调用没有执行。"}
+				continue
 			}
 			outcomes[i] = toolOutcome{result: joinToolResults(resultSlots[i]), done: hasEnd}
 		}

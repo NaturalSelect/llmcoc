@@ -1,10 +1,10 @@
-// NOTE: orchestrator_director_history_test.go 用一个只返回终止性response调用的假
+// NOTE: orchestrator_director_history_test.go 用一个只返回终止性ask_players调用的假
 // Provider,端到端跑run()两轮,验证Director跨轮ContextManager(context_transcript.go)
 // 的核心回归行为:①下一轮第1次调用收到的msgs,以上一轮最后一次调用的msgs+其assistant
 // 输出为逐字段相同的前缀(发送版=归档版,prompt cache前缀跨轮稳定);②reasoning在下一轮
-// 仍然原样保留;③超阈值时最旧一轮被压缩(剥离tool_call/tool结果、保留首条消息与本轮
-// 结果)而不是整轮丢弃;④CacheBreakpoint只打在head末尾和上一轮末尾;⑤round<=1硬失败
-// 不落库,transcript保持不变。不涉及真实游戏业务逻辑,response之外的工具都不会被调用。
+// 仍然原样保留;③超阈值时较早的拍被LLM总结成<story_so_far>单元,而不是被确定性剥离或
+// 整轮丢弃;④CacheBreakpoint只打在head末尾和上一轮末尾;⑤round<=1硬失败
+// 不落库,transcript保持不变。不涉及真实游戏业务逻辑,ask_players之外的工具都不会被调用。
 package agent
 
 import (
@@ -25,18 +25,24 @@ import (
 // 返回一个终止性的response工具调用(reply/tool_call_id里嵌入调用序号,便于断言
 // 区分是哪一轮产生的),并附带用例配置好的usage/reasoning,用于驱动阈值判断与
 // reasoning透传断言。failFirstCall非nil时下一次调用直接返回该error,不产生任何
-// assistant消息,用于模拟round<=1硬失败。
+// assistant消息,用于模拟round<=1硬失败。summaryReply非空时Chat(总结调用)返回它,
+// 并记录收到的总结输入。
 type directorHistoryFakeProvider struct {
 	mu              sync.Mutex
 	calls           [][]llm.ChatMessage
+	summaryCalls    [][]llm.ChatMessage
+	summaryReply    string
 	usage           llm.Usage
 	reasoningBlocks []llm.ReasoningBlock
 	reasoning       string
 	failFirstCall   error
 }
 
-func (p *directorHistoryFakeProvider) Chat(context.Context, string, []llm.ChatMessage) (string, error) {
-	return "", nil
+func (p *directorHistoryFakeProvider) Chat(_ context.Context, _ string, msgs []llm.ChatMessage) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.summaryCalls = append(p.summaryCalls, append([]llm.ChatMessage(nil), msgs...))
+	return p.summaryReply, nil
 }
 
 func (p *directorHistoryFakeProvider) ChatStream(context.Context, string, []llm.ChatMessage) (<-chan string, <-chan error, error) {
@@ -50,9 +56,9 @@ func (p *directorHistoryFakeProvider) JsonChat(context.Context, string, []llm.Ch
 // resultFor 构造第n次调用(1-indexed)应该返回的ToolChatResult;测试断言复用同一个
 // 方法构造期望值,避免与ChatWithTools内部拼装逻辑重复一份容易失步的字符串格式化。
 func (p *directorHistoryFakeProvider) resultFor(n int) llm.ToolChatResult {
-	args, _ := json.Marshal(map[string]string{"reply": fmt.Sprintf("KP回复第%d次调用", n)})
+	args, _ := json.Marshal(map[string]any{"targets": []string{"甲"}, "question": fmt.Sprintf("KP回复第%d次调用", n)})
 	return llm.ToolChatResult{
-		ToolCalls:       []llm.ToolCall{{ID: fmt.Sprintf("call-%d", n), Name: string(ToolResponse), Arguments: string(args)}},
+		ToolCalls:       []llm.ToolCall{{ID: fmt.Sprintf("call-%d", n), Name: string(ToolAskPlayers), Arguments: string(args)}},
 		ReasoningBlocks: p.reasoningBlocks,
 		Reasoning:       p.reasoning,
 		Usage:           p.usage,
@@ -92,7 +98,11 @@ var _ llm.Provider = (*directorHistoryFakeProvider)(nil)
 // gctx.Session.TurnRound,也是持久化后TranscriptTurn.Round的取值。
 func newDirectorRunGctx(sessionID uint, round int, userInput string) GameContext {
 	return GameContext{
-		Session:   models.GameSession{ID: sessionID, TurnRound: round},
+		Session: models.GameSession{
+			ID:        sessionID,
+			TurnRound: round,
+			Players:   []models.SessionPlayer{{UserID: 1, CharacterCard: models.CharacterCard{Name: "甲"}}},
+		},
 		UserInput: userInput,
 		UserName:  "玩家甲",
 	}
@@ -142,7 +152,7 @@ func TestRun_DirectorContextPrefixStableAcrossTurns(t *testing.T) {
 		t.Fatalf("run() turn2: %v", err)
 	}
 	if got := prov.callCount(); got != 2 {
-		t.Fatalf("provider call count = %d, want 2(每轮1次工具调用即以response结束)", got)
+		t.Fatalf("provider call count = %d, want 2(每轮1次工具调用即以ask_players结束)", got)
 	}
 
 	turn1Msgs := prov.msgsAt(0)
@@ -193,79 +203,69 @@ func TestRun_DirectorContextPrefixStableAcrossTurns(t *testing.T) {
 	}
 }
 
-// TestRun_DirectorCompactsOldTurnWhenOverThreshold 验证③:超过Window阈值时，
-// ContextManager从最旧的已提交历史轮开始压缩(剥离轮内tool_call/tool结果、只保留
-// 首条消息与本轮最终结果)，永不整轮丢弃——Director自己上一轮的response产出(reply)
-// 必须在压缩后仍然可见，不能像Writer/Dramaturg/NPC那样被整轮抹掉。
-func TestRun_DirectorCompactsOldTurnWhenOverThreshold(t *testing.T) {
+// TestRun_DirectorSummarizesOldBeatsWhenOverThreshold 验证③:超过Window阈值时，下一个周期开始前
+// 较早的单元被LLM总结成一个<story_so_far>单元放在最前面，而不是被确定性剥离或整轮丢弃。
+// 保留下来的单元原样不变，周期里发给模型的第1次调用以head+总结+保留单元为前缀。
+func TestRun_DirectorSummarizesOldBeatsWhenOverThreshold(t *testing.T) {
 	initAgentTestDB(t)
 	const sessionID = 102
 	if err := models.DB.Create(&models.GameSession{ID: sessionID}).Error; err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	// window很小、usage人为设很高,每一轮都必然越过阈值,逼出"压缩最旧一轮"。
-	prov := &directorHistoryFakeProvider{usage: llm.Usage{PromptTokens: 900}}
+	// window很小、usage人为设很高,每个周期开始前都必然越过阈值。
+	prov := &directorHistoryFakeProvider{usage: llm.Usage{PromptTokens: 900}, summaryReply: "<summary>前两个周期发生了很多事</summary>"}
 	setDirectorFakeHandle(t, sessionID, prov, 1000)
 
-	if _, err := run(context.Background(), newDirectorRunGctx(sessionID, 1, "第一轮输入")); err != nil {
-		t.Fatalf("run() turn1: %v", err)
-	}
-	afterTurn1 := loadTranscript(t, sessionID, "director")
-	if len(afterTurn1.Turns) != 1 {
-		t.Fatalf("只有1轮时不应压缩(compactTranscriptTurns对len<=1直接跳过),got %d轮", len(afterTurn1.Turns))
-	}
-
-	if _, err := run(context.Background(), newDirectorRunGctx(sessionID, 2, "第二轮输入")); err != nil {
-		t.Fatalf("run() turn2: %v", err)
-	}
-	afterTurn2 := loadTranscript(t, sessionID, "director")
-	turns := afterTurn2.Turns
-	if len(turns) != 2 {
-		t.Fatalf("超阈值后应压缩最旧一轮、不整轮丢弃,got %d轮: %+v", len(turns), turns)
-	}
-
-	turn1 := turns[0]
-	if turn1.Round != 1 || !turn1.Compacted {
-		t.Fatalf("第1轮应被标记为已压缩, got %+v", turn1)
-	}
-	if len(turn1.Messages) != 3 {
-		t.Fatalf("压缩后的轮应只剩[opening首条][标记][结果]共3条消息, got %d条: %+v", len(turn1.Messages), turn1.Messages)
-	}
-	for _, m := range turn1.Messages {
-		if len(m.ToolCalls) != 0 {
-			t.Errorf("压缩后的轮不应残留任何ToolCalls, got %+v", m)
+	for round := 1; round <= 2; round++ {
+		if _, err := run(context.Background(), newDirectorRunGctx(sessionID, round, fmt.Sprintf("第%d轮输入", round))); err != nil {
+			t.Fatalf("run() turn%d: %v", round, err)
 		}
 	}
-	if !strings.Contains(turn1.Messages[1].Content, `rounds="1" calls="1"`) || !strings.Contains(turn1.Messages[1].Content, "response×1") {
-		t.Errorf("压缩标记内容不对, got %q", turn1.Messages[1].Content)
-	}
-	if !strings.Contains(turn1.Messages[2].Content, "KP回复第1次调用") {
-		t.Errorf("压缩后的结果应保留第1轮response的reply, got %q", turn1.Messages[2].Content)
-	}
-
-	turn2 := turns[1]
-	if turn2.Round != 2 || turn2.Compacted {
-		t.Fatalf("第2轮应原样保留、未被压缩, got %+v", turn2)
-	}
-
-	// 第3轮:验证压缩后的前缀跨轮稳定——第1次调用收到的msgs必须以head+压缩后的
-	// 两轮历史展开为逐字段相同的前缀(CacheBreakpoint除外)。
+	// NOTE: 周期开始前才检查是否需要总结，所以第2个周期开始前历史只有1个单元，这时可以总结但不会少于1个单元；
+	// 无论总结发生在第2个还是第3个周期之前，下面的断言只看第3个周期结束后的最终形态。
 	if _, err := run(context.Background(), newDirectorRunGctx(sessionID, 3, "第三轮输入")); err != nil {
 		t.Fatalf("run() turn3: %v", err)
 	}
-	turn3FirstCallMsgs := prov.msgsAt(2)
-	wantHistory := flattenTranscriptTurns(turns)
-	const headLen = 2
-	if len(turn3FirstCallMsgs) < headLen+len(wantHistory) {
-		t.Fatalf("turn3收到的msgs长度%d应不小于head+压缩后历史长度%d", len(turn3FirstCallMsgs), headLen+len(wantHistory))
+
+	turns := loadTranscript(t, sessionID, "director").Turns
+	if len(prov.summaryCalls) == 0 {
+		t.Fatalf("超阈值时应调用总结")
 	}
-	for i, want := range wantHistory {
-		got := turn3FirstCallMsgs[headLen+i]
-		got.CacheBreakpoint = false
-		want.CacheBreakpoint = false
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("turn3Msgs[%d]与压缩后历史不一致:\ngot  %+v\nwant %+v", headLen+i, got, want)
+	if turns[0].Kind != "summary" || !strings.Contains(turns[0].Messages[0].Content, "前两个周期发生了很多事") {
+		t.Fatalf("历史最前面应是总结单元, got %+v", turns[0])
+	}
+	if !strings.HasPrefix(turns[0].Messages[0].Content, "<story_so_far floors=") {
+		t.Errorf("总结应以<story_so_far>包裹: %q", turns[0].Messages[0].Content)
+	}
+	if countKind(turns, "summary") != 1 {
+		t.Errorf("总结单元应只有1个: %+v", turns)
+	}
+	last := turns[len(turns)-1]
+	if last.Round != 3 || last.Compacted {
+		t.Errorf("最近一个周期的单元应原样保留, got %+v", last)
+	}
+	for _, turn := range turns[1:] {
+		if turn.Compacted {
+			t.Errorf("总结之后保留的单元不应被改写, got %+v", turn)
 		}
+		for _, m := range turn.Messages {
+			if strings.Contains(m.Content, "<trimmed_tool_calls") {
+				t.Errorf("不应再生成剥离标记, got %q", m.Content)
+			}
+		}
+	}
+
+	// 总结输入只含玩家输入块和KP产出,不含opening的第二条提醒。
+	in := prov.summaryCalls[0][1].Content
+	if !strings.Contains(in, "第1轮输入") || strings.Contains(in, "<system-reminder>") {
+		t.Errorf("总结输入应含玩家输入且不含system-reminder:\n%s", in)
+	}
+
+	// 第3个周期第1次调用收到的msgs以head+当时的历史为前缀。
+	sent := prov.msgsAt(prov.callCount() - 1)
+	const headLen = 2
+	if len(sent) <= headLen || !strings.HasPrefix(sent[headLen].Content, "<story_so_far") {
+		t.Fatalf("head之后应紧跟总结: %+v", sent[:min(len(sent), headLen+1)])
 	}
 }
 

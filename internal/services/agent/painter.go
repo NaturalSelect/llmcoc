@@ -33,9 +33,8 @@ func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 		debugf("tool", "session=%d generate_image unavailable: provider lacks image generation prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
 		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation unavailable"}}
 	}
-	if actx.PendingImages != nil {
-		*actx.PendingImages = append(*actx.PendingImages, ImagePromptRequest{Prompt: imagePrompt, Aspect: aspect, NSFW: call.NSFW})
-	}
+	req := ImagePromptRequest{Prompt: imagePrompt, Aspect: aspect, NSFW: call.NSFW}
+	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputImage, Image: &req, NSFW: call.NSFW})
 	debugf("tool", "session=%d generate_image queued prompt_len=%d aspect=%s nsfw=%v prompt=%q", actx.Sid, len([]rune(imagePrompt)), aspect, call.NSFW, imagePrompt)
 	return []ToolResult{{Action: ToolGenerateImage, Result: "image generation queued"}}
 }

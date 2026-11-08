@@ -1,85 +1,141 @@
 package handlers
 
+// NOTE: KP 发言权周期（floor）的驱动。一次 Runner.Run 就是一个周期：KP 在里面任意多轮调用工具，每一轮产生的消息
+// 通过 gctx.Publish 同步落库并广播，只有 ask_players / end_game 自然结束周期。命令（/chat、/kp-turn、/kp-stop）
+// 都是立即返回的 REST 接口，进展全部走房间的 WebSocket。一个周期从开始到结束始终占着 processing，期间所有输入都被拒绝。
+
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
+	"gorm.io/gorm"
 )
 
-// NOTE: KP 自动续跑期间一直占着 processing，Writer 卡死会让整个房间无法输入，所以只在续跑时给 Writer 设等待上限。
-const kpWriterWaitTimeout = 3 * time.Minute
+// floorShutdownWait 是进程关闭时等待在跑的周期收尾（落库 CommitTail、写发言权）的上限。
+const floorShutdownWait = 10 * time.Second
 
-// kpSegment 是 KP 驱动器要跑的一段。玩家回应段带用户输入；KP 主动段(开场/续跑/房主继续)不带 content。
+var errFloorBusy = errors.New("room is already running a floor")
+
+var errServerShutdown = errors.New("server shutting down")
+
+// kpSegment 是一个周期的输入。玩家回应周期带本轮提交的行动；KP 主动周期(开场/房主继续/续跑)不带或只带跨轮保留的声明。
 type kpSegment struct {
-	gctx        agent.GameContext
-	userID      uint
-	displayName string
-	content     string
+	gctx agent.GameContext
+	// turnActions 是需要落成玩家消息的声明(已排除上一条 KP 消息之前就落过消息的旧声明)。
 	turnActions []models.SessionTurnAction
 }
 
-func kpAutoContinueMax() int {
-	n := siteSettingInt("kp_auto_continue_max", 2)
-	if n < 0 {
-		return 0
+// reason 是 floor_start 事件里的触发原因。
+func (s kpSegment) reason() string {
+	if s.gctx.KPFloor == "" {
+		return "player"
 	}
-	return n
+	return s.gctx.KPFloor
 }
 
-// nextSpotlight 计算一段 KP 主流程结束后的发言权。retain=true 表示 KP 仍持有发言权，服务端应自动再跑一段。
-func nextSpotlight(prev *models.SpotlightState, ask *agent.AskResult, players []models.SessionPlayer, maxAuto int) (next *models.SpotlightState, retain bool) {
-	if ask != nil {
-		return &models.SpotlightState{UserIDs: ask.UserIDs, Names: ask.Names, Question: ask.Question}, false
+// activeFloor 是一个正在跑的周期，kp-stop 和关机通过它取消 ctx。
+type activeFloor struct {
+	sessionID uint
+	startedAt time.Time
+	cancel    context.CancelCauseFunc
+	done      chan struct{}
+	floor     atomic.Int32
+	beats     atomic.Int32 // 已经发布的 kp/ask 消息数
+}
+
+var activeFloors = struct {
+	mu sync.Mutex
+	m  map[uint]*activeFloor
+}{m: make(map[uint]*activeFloor)}
+
+func registerFloor(af *activeFloor) {
+	activeFloors.mu.Lock()
+	defer activeFloors.mu.Unlock()
+	activeFloors.m[af.sessionID] = af
+}
+
+// unregisterFloor 只移除自己：新周期可能已经在同一会话上登记了。
+func unregisterFloor(af *activeFloor) {
+	activeFloors.mu.Lock()
+	defer activeFloors.mu.Unlock()
+	if activeFloors.m[af.sessionID] == af {
+		delete(activeFloors.m, af.sessionID)
 	}
-	n := 1
-	if prev != nil {
-		n = prev.AutoContinues + 1
+}
+
+func getActiveFloor(sessionID uint) *activeFloor {
+	activeFloors.mu.Lock()
+	defer activeFloors.mu.Unlock()
+	return activeFloors.m[sessionID]
+}
+
+// cancelFloor 取消会话正在跑的周期，返回当时是否有周期在跑。
+func cancelFloor(sessionID uint, cause error) bool {
+	af := getActiveFloor(sessionID)
+	if af == nil {
+		return false
 	}
-	if n <= maxAuto {
-		return &models.SpotlightState{AutoContinues: n}, true
+	af.cancel(cause)
+	return true
+}
+
+// StopAllFloors 在进程关闭时调用：取消所有在跑的周期（以 StopError 结束并落库尾部），等它们收尾或超时。
+func StopAllFloors() {
+	activeFloors.mu.Lock()
+	floors := make([]*activeFloor, 0, len(activeFloors.m))
+	for _, af := range activeFloors.m {
+		floors = append(floors, af)
 	}
-	open := &models.SpotlightState{}
-	for _, p := range players {
-		if p.CharacterCard.WoundState == "dead" {
-			continue
+	activeFloors.mu.Unlock()
+
+	for _, af := range floors {
+		af.cancel(errServerShutdown)
+	}
+	deadline := time.After(floorShutdownWait)
+	for _, af := range floors {
+		select {
+		case <-af.done:
+		case <-deadline:
+			chatLog.Warn("floor did not stop before shutdown deadline", "session", af.sessionID)
+			return
 		}
-		open.UserIDs = append(open.UserIDs, p.UserID)
-		open.Names = append(open.Names, sessionPlayerDisplayName(p))
 	}
-	// NOTE: 没有任何存活玩家可以开放时保留计数，由房主用"让 KP 继续"推进，避免无人可点名时反复续跑。
-	if len(open.UserIDs) == 0 {
-		open.AutoContinues = n
-	}
-	return open, false
 }
 
-// advanceSpotlight 把一段 KP 主流程的结果写进 Spotlight。老房间(Spotlight 为空)和已结束的房间保持原样，返回 nil。
-func advanceSpotlight(sessionID uint, output agent.RunOutput) (*models.SpotlightState, bool, error) {
-	var session models.GameSession
-	if err := models.DB.
-		Preload("Players.User").
-		Preload("Players.CharacterCard").
-		First(&session, sessionID).Error; err != nil {
-		return nil, false, err
+// nextSpotlight 计算一个周期结束后的发言权：KP 点名了人就交给他们，否则 KP 继续持有并记下被强制结束的原因。
+func nextSpotlight(out agent.RunOutput) *models.SpotlightState {
+	if out.Ask != nil {
+		return &models.SpotlightState{UserIDs: out.Ask.UserIDs, Names: out.Ask.Names, Question: out.Ask.Question}
 	}
-	prev := session.Spotlight.Data
-	if prev == nil || session.Status != models.SessionStatusPlaying {
-		return nil, false, nil
+	return &models.SpotlightState{Stop: string(out.Stop)}
+}
+
+// advanceSpotlight 把一个周期的结果写进 Spotlight。已经结束的房间保持原样，返回 nil。
+func advanceSpotlight(sessionID uint, out agent.RunOutput) (*models.SpotlightState, error) {
+	var status models.SessionStatus
+	if err := models.DB.Model(&models.GameSession{}).Where("id = ?", sessionID).Select("status").Scan(&status).Error; err != nil {
+		return nil, err
 	}
-	next, retain := nextSpotlight(prev, output.Ask, session.Players, kpAutoContinueMax())
+	if status != models.SessionStatusPlaying {
+		return nil, nil
+	}
+	next := nextSpotlight(out)
 	if err := models.DB.Model(&models.GameSession{}).
 		Where("id = ?", sessionID).
 		Update("spotlight", models.JSONField[*models.SpotlightState]{Data: next}).Error; err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	return next, retain, nil
+	return next, nil
 }
 
 func spotlightEventPayload(sp *models.SpotlightState) gin.H {
@@ -91,12 +147,15 @@ func spotlightEventPayload(sp *models.SpotlightState) gin.H {
 	if names == nil {
 		names = []string{}
 	}
-	return gin.H{"user_ids": ids, "names": names, "question": sp.Question, "kp_floor": len(ids) == 0}
+	return gin.H{"user_ids": ids, "names": names, "question": sp.Question, "kp_floor": len(ids) == 0, "stop": sp.Stop}
 }
 
-// spotlightRejectReason 解释 Spotlight 房间里没被点名的玩家为什么此刻不能发言。
+// spotlightRejectReason 解释没被点名的玩家为什么此刻不能发言。
 func spotlightRejectReason(session models.GameSession, collect agent.TurnCollection) string {
 	if len(collect.UserIDs) == 0 {
+		if sp := session.Spotlight.Data; sp != nil && sp.Stop != "" {
+			return "KP 已暂停，请等待房主让 KP 继续"
+		}
 		return "KP 正在推进剧情，请稍候"
 	}
 	named := make(map[uint]bool, len(collect.UserIDs))
@@ -131,7 +190,7 @@ func isAdminUser(c *gin.Context, userID uint) bool {
 func loadAgentHistory(sessionID uint) []models.Message {
 	var msgs []models.Message
 	models.DB.Where("session_id = ? AND role != ?", sessionID, models.MessageRoleSystem).
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		Find(&msgs)
 	stripMessageImageDataURLTags(msgs)
 	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
@@ -140,7 +199,7 @@ func loadAgentHistory(sessionID uint) []models.Message {
 	return msgs
 }
 
-// buildPendingActions 把本轮已提交的行动转成喂给 Director 的 PlayerAction。
+// buildPendingActions 把已提交的行动转成喂给 Director 的 PlayerAction。
 func buildPendingActions(turnActions []models.SessionTurnAction) []agent.PlayerAction {
 	actions := make([]agent.PlayerAction, 0, len(turnActions))
 	for _, ta := range turnActions {
@@ -156,56 +215,47 @@ func buildPendingActions(turnActions []models.SessionTurnAction) []agent.PlayerA
 	return actions
 }
 
-// loadKPFloorContext 为 KP 自动续跑的下一段重新读取房间状态：上一段的工具调用已经改写了战斗、角色和时间。
-func loadKPFloorContext(sessionID uint, floor string) (agent.GameContext, error) {
-	var session models.GameSession
-	if err := models.DB.
-		Preload("Scenario").
-		Preload("Players.User").
-		Preload("Players.CharacterCard").
-		First(&session, sessionID).Error; err != nil {
-		return agent.GameContext{}, err
-	}
-	return agent.GameContext{Session: session, History: loadAgentHistory(sessionID), KPFloor: floor}, nil
-}
-
-// buildKPTurnSegment 构造房主/管理员触发的 KP 主动段：还没有任何 KP 段跑过时是开场，否则是房主继续。
-func buildKPTurnSegment(session models.GameSession) kpSegment {
-	gctx := agent.GameContext{Session: session, History: loadAgentHistory(session.ID), KPFloor: agent.KPFloorHostContinue}
-
-	// NOTE: StartSession 会写一条剧本介绍助手消息，所以"只有介绍、没有玩家发言"才算还没开场。
-	var kpCount, userCount int64
-	models.DB.Model(&models.Message{}).
-		Where("session_id = ? AND role = ?", session.ID, models.MessageRoleAssistant).Count(&kpCount)
-	models.DB.Model(&models.Message{}).
-		Where("session_id = ? AND role = ?", session.ID, models.MessageRoleUser).Count(&userCount)
-	if kpCount <= 1 && userCount == 0 {
-		gctx.KPFloor = agent.KPFloorOpening
+// buildKPSegment 构造一个周期的输入。kpFloor 为空是玩家回应周期；all 是每个玩家本轮最新的声明。
+// 开场周期没有任何玩家输入。
+func buildKPSegment(session models.GameSession, kpFloor string, all []models.SessionTurnAction) kpSegment {
+	gctx := agent.GameContext{Session: session, History: loadAgentHistory(session.ID), KPFloor: kpFloor}
+	if kpFloor == agent.KPFloorOpening {
 		return kpSegment{gctx: gctx}
 	}
 
-	collect := agent.BuildTurnCollection(session)
-	all := loadLatestTurnActions(session.ID, session.TurnRound, session.Players)
 	gctx.PendingActions = buildPendingActions(all)
 	if len(gctx.PendingActions) == 1 {
 		only := gctx.PendingActions[0]
 		gctx.UserInput, gctx.UserName, gctx.UserInputAdmin = only.Content, only.PlayerName, only.IsAdmin
 	}
 
-	submitted := make(map[uint]bool, len(all))
-	for _, ta := range all {
-		submitted[ta.UserID] = true
-	}
-	named := make(map[uint]bool, len(collect.UserIDs))
-	for _, id := range collect.UserIDs {
-		named[id] = true
-	}
-	for _, p := range session.Players {
-		if named[p.UserID] && !submitted[p.UserID] {
-			gctx.SkippedNames = append(gctx.SkippedNames, sessionPlayerDisplayName(p))
+	collect := agent.BuildTurnCollection(session)
+	switch kpFloor {
+	case "":
+		gctx.AskedQuestion = collect.Question
+	case agent.KPFloorHostContinue:
+		submitted := make(map[uint]bool, len(all))
+		for _, ta := range all {
+			submitted[ta.UserID] = true
+		}
+		named := make(map[uint]bool, len(collect.UserIDs))
+		for _, id := range collect.UserIDs {
+			named[id] = true
+		}
+		for _, p := range session.Players {
+			if named[p.UserID] && !submitted[p.UserID] {
+				gctx.SkippedNames = append(gctx.SkippedNames, sessionPlayerDisplayName(p))
+			}
+		}
+		if sp := session.Spotlight.Data; sp != nil {
+			gctx.LastStop = agent.StopReason(sp.Stop)
 		}
 	}
 
+	// NOTE: 续跑周期不重复落玩家消息：这些声明在被消费它们的上一个周期开头已经落过。
+	if kpFloor == agent.KPFloorResume {
+		return kpSegment{gctx: gctx}
+	}
 	turnActions := all
 	if cutoff, ok := lastKPReplyTime(session.ID); ok {
 		turnActions = filterTurnActionsSince(all, cutoff)
@@ -213,26 +263,37 @@ func buildKPTurnSegment(session models.GameSession) kpSegment {
 	return kpSegment{gctx: gctx, turnActions: turnActions}
 }
 
-// KPTurn 让房主或管理员触发一段 KP 主动叙事：开场，或不再等待未回应的被点名玩家。
+// hasKPStarted 报告房间里是否已经出现过玩家或 KP 的消息：只有开局介绍时，KP 主动周期是开场。
+func hasKPStarted(sessionID uint) bool {
+	var n int64
+	models.DB.Model(&models.Message{}).
+		Where("session_id = ? AND kind IN ?", sessionID,
+			[]models.MessageKind{models.MessageKindPlayer, models.MessageKindWriter, models.MessageKindKP, models.MessageKindAsk}).
+		Count(&n)
+	return n > 0
+}
+
+func loadSessionForFloor(sessionID uint) (models.GameSession, error) {
+	var session models.GameSession
+	err := models.DB.
+		Preload("Scenario").
+		Preload("Players.User").
+		Preload("Players.CharacterCard").
+		First(&session, sessionID).Error
+	return session, err
+}
+
+// KPTurn 让房主或管理员触发一个 KP 主动周期：开场，或不再等待未回应的被点名玩家。立即返回 202。
 func (h *SessionHandlers) KPTurn(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID := c.GetUint("user_id")
 
 	lock := getSessionLock(uint(sessionID))
 	lock.Lock()
-	unlocked := false
-	defer func() {
-		if !unlocked {
-			lock.Unlock()
-		}
-	}()
+	defer lock.Unlock()
 
-	var session models.GameSession
-	if err := models.DB.
-		Preload("Scenario").
-		Preload("Players.User").
-		Preload("Players.CharacterCard").
-		First(&session, sessionID).Error; err != nil {
+	session, err := loadSessionForFloor(uint(sessionID))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
 	}
@@ -244,255 +305,306 @@ func (h *SessionHandlers) KPTurn(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏尚未开始"})
 		return
 	}
-	if session.Spotlight.Data == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该房间由玩家驱动，不支持让 KP 主动推进"})
+	if _, running := getSessionProcessing(session.ID); running {
+		c.JSON(http.StatusConflict, gin.H{"error": "KP 正在发言，请稍候"})
 		return
 	}
-	seg := buildKPTurnSegment(session)
-	if !beginSessionProcessing(session.ID) {
-		c.JSON(http.StatusConflict, gin.H{"error": "当前房间正在处理上一条消息，请稍候"})
-		return
+
+	var seg kpSegment
+	if hasKPStarted(session.ID) {
+		all := loadLatestTurnActions(session.ID, session.TurnRound, session.Players)
+		seg = buildKPSegment(session, agent.KPFloorHostContinue, all)
+	} else {
+		seg = buildKPSegment(session, agent.KPFloorOpening, nil)
 	}
-	lock.Unlock()
-	unlocked = true
 
 	chatLog.Debug("kp turn", "session", sessionID, "user", userID, "floor", seg.gctx.KPFloor)
-	setChatSSEHeaders(c)
-	h.driveKP(c, seg)
-}
-
-// runKPSegment 在 goroutine 里跑一段 Director，同时每 600ms 推一次 thinking，并转发真实进度。
-func (h *SessionHandlers) runKPSegment(gctx agent.GameContext, send func(string, any)) (agent.RunOutput, error) {
-	type runResult struct {
-		output agent.RunOutput
-		err    error
-	}
-	resultCh := make(chan runResult, 1)
-	progressCh := make(chan string, 256)
-	gctx.Progress = func(text string) {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return
-		}
-		select {
-		case progressCh <- text:
-		default:
-		}
-	}
-	go func() {
-		// NOTE: 后台运行由流水线内部检查context取消,断线后仍可完成主流程落库。
-		out, err := h.Runner.Run(context.Background(), gctx)
-		resultCh <- runResult{output: out, err: err}
-	}()
-
-	ticker := time.NewTicker(600 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case res := <-resultCh:
-			for {
-				select {
-				case progress := <-progressCh:
-					send("progress", progress)
-				default:
-					return res.output, res.err
-				}
-			}
-		case progress := <-progressCh:
-			send("progress", progress)
-		case <-ticker.C:
-			send("thinking", "")
-		}
+	switch err := h.startFloor(seg); {
+	case errors.Is(err, errFloorBusy):
+		c.JSON(http.StatusConflict, gin.H{"error": "KP 正在发言，请稍候"})
+	case err != nil:
+		chatLog.Error("kp turn start failed", "session", sessionID, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "启动 KP 失败"})
+	default:
+		c.JSON(http.StatusAccepted, gin.H{"floor_started": true, "reason": seg.reason()})
 	}
 }
 
-// driveKP 驱动 KP 主流程：跑一段、落库、更新发言权、推流；KP 仍持有发言权时等这一段 Writer 结束后自动再跑一段。
-// 调用方必须已经成功 beginSessionProcessing；processing 的释放由 driveKP 负责。
-// 客户端断开后循环照常跑完并落库，只是不再写 SSE。
-func (h *SessionHandlers) driveKP(c *gin.Context, seg kpSegment) {
+// KPStop 让房主或管理员硬打断 KP 正在进行的周期。立即返回 202，周期收尾后会推送 floor_end(host_stop)。
+func (h *SessionHandlers) KPStop(c *gin.Context) {
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID := c.GetUint("user_id")
+
+	var session models.GameSession
+	if err := models.DB.Select("id", "created_by").First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+	if session.CreatedBy != userID && !isAdminUser(c, userID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "只有房主或管理员可以打断 KP"})
+		return
+	}
+	if !cancelFloor(session.ID, agent.ErrHostStop) {
+		c.JSON(http.StatusConflict, gin.H{"error": "KP 当前没有在发言"})
+		return
+	}
+	chatLog.Info("kp stop requested", "session", sessionID, "user", userID)
+	c.JSON(http.StatusAccepted, gin.H{"message": "已通知 KP 停止"})
+}
+
+// startFloor 开始一个周期：占用 processing，把本轮声明落成玩家消息并把发言权收回 KP，然后在后台跑 Director。
+// 调用方应持有会话锁。processing 的释放由周期收尾负责。
+func (h *SessionHandlers) startFloor(seg kpSegment) error {
 	sessionID := seg.gctx.Session.ID
-	processingOwned := true
-	defer func() {
-		if processingOwned {
-			finishSessionProcessing(sessionID)
-		}
-	}()
-	// NOTE: 任何一次返回都会关闭它，让还在后台跑的 Writer/Painter 不再阻塞在已结束的推流上。
-	driverDone := make(chan struct{})
-	defer close(driverDone)
-
-	clientCtx := c.Request.Context()
-	send := func(event string, data any) {
-		if clientCtx.Err() != nil {
-			return
-		}
-		c.SSEvent(event, data)
-		c.Writer.Flush()
+	if !beginSessionProcessing(sessionID) {
+		return errFloorBusy
 	}
-	sendChunks := func(event, text string) {
-		runes := []rune(text)
-		for i := 0; i < len(runes); {
-			end := i + 4
-			if end > len(runes) {
-				end = len(runes)
+	floor := agent.NextDirectorFloor(sessionID)
+	players, err := persistFloorStart(sessionID, floor, seg.turnActions)
+	if err != nil {
+		finishSessionProcessing(sessionID)
+		return err
+	}
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	af := &activeFloor{sessionID: sessionID, startedAt: time.Now(), cancel: cancel, done: make(chan struct{})}
+	af.floor.Store(int32(floor))
+	// NOTE: 先登记再广播：客户端收到 floor_start 立刻调用 kp-stop 时，周期必须已经可以被取消。
+	registerFloor(af)
+
+	hub := hubFor(sessionID)
+	for _, m := range players {
+		hub.Publish("message_new", gin.H{"message": newMessageResponse(m)})
+	}
+	hub.Publish("spotlight", spotlightEventPayload(&models.SpotlightState{}))
+	hub.Publish("floor_start", gin.H{"floor": floor, "reason": seg.reason()})
+
+	go h.runFloor(ctx, af, seg)
+	return nil
+}
+
+// persistFloorStart 在一个事务里把玩家声明落成消息，并把发言权收回 KP。
+func persistFloorStart(sessionID uint, floor int, turnActions []models.SessionTurnAction) ([]models.Message, error) {
+	msgs := make([]models.Message, 0, len(turnActions))
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		for _, ta := range turnActions {
+			uid := ta.UserID
+			m := models.Message{
+				SessionID: sessionID,
+				UserID:    &uid,
+				Role:      models.MessageRoleUser,
+				Kind:      models.MessageKindPlayer,
+				Status:    models.MessageStatusDone,
+				Floor:     floor,
+				Content:   ta.ActionSummary,
+				Username:  ta.Username,
 			}
-			send(event, string(runes[i:end]))
-			i = end
+			if err := tx.Create(&m).Error; err != nil {
+				return err
+			}
+			msgs = append(msgs, m)
 		}
-	}
+		return tx.Model(&models.GameSession{}).Where("id = ?", sessionID).
+			Update("spotlight", models.JSONField[*models.SpotlightState]{Data: &models.SpotlightState{}}).Error
+	})
+	return msgs, err
+}
 
+// runFloor 在后台跑一个周期；上下文已满时自动总结后续跑新周期，直到自然结束、被强制结束或续跑没有进展。
+func (h *SessionHandlers) runFloor(ctx context.Context, af *activeFloor, seg kpSegment) {
+	defer close(af.done)
+	defer af.cancel(nil)
+	sessionID := af.sessionID
+
+	var out agent.RunOutput
 	for {
-		gctx := seg.gctx
-		pipelineStart := time.Now()
-		chatLog.Debug("chat pipeline start", "session", sessionID, "user", seg.displayName, "floor", gctx.KPFloor, "round", gctx.Session.TurnRound)
-		if gctx.KPFloor == "" {
-			send("progress", "已收到行动,正在整理本轮信息")
-		} else {
-			send("progress", "KP正在推进剧情")
+		out = h.runOneFloor(ctx, af, seg)
+		if !shouldResume(ctx, seg, out) {
+			break
 		}
+		hubFor(sessionID).Publish("floor_end", floorEndPayload(int(af.floor.Load()), out))
 
-		output, err := h.runKPSegment(gctx, send)
+		session, err := loadSessionForFloor(sessionID)
 		if err != nil {
-			chatLog.Error("chat pipeline failed", "session", sessionID, "user", seg.displayName, "elapsed_ms", float64(time.Since(pipelineStart).Milliseconds()), "err", err)
-			send("error", err.Error())
-			return
+			chatLog.Error("kp resume context failed", "session", sessionID, "err", err)
+			out.Stop = agent.StopError
+			break
 		}
-
-		assistantMsg, err := saveChatMessages(uint64(sessionID), seg.userID, seg.displayName, seg.content, seg.turnActions, output)
-		if err != nil {
-			chatLog.Error("chat save failed", "session", sessionID, "user", seg.displayName, "err", err)
-			send("error", "保存消息失败")
-			return
-		}
-		spot, retain, err := advanceSpotlight(sessionID, output)
-		if err != nil {
-			chatLog.Error("chat spotlight update failed", "session", sessionID, "err", err)
-			retain = false
-		}
-		send("progress", "KP主流程已保存")
-		// NOTE: KP主流程结果已落库，立即解除输入锁；Writer/Painter 继续异步更新当前消息。KP 要自动续跑时保持锁，直到下一段开始。
-		if !retain {
-			finishSessionProcessing(sessionID)
-			processingOwned = false
-		}
-
-		if output.KPReply != "" {
-			sendChunks("narration", output.KPReply)
-		}
-		if assistantMsg != nil {
-			send("kp_done", gin.H{
-				"message_id":  assistantMsg.ID,
-				"created_at":  assistantMsg.CreatedAt,
-				"has_writer":  output.WriterText != "" || output.WriterDirection != "",
-				"writer_done": output.WriterText != "" && output.WriterDirection == "",
-			})
-		} else {
-			send("kp_done", gin.H{})
-		}
-		if spot != nil {
-			send("spotlight", spotlightEventPayload(spot))
-		}
-
-		var writerCh <-chan writerJobResult
-		if assistantMsg != nil {
-			writerCh = h.startWriterJob(assistantMsg.ID, gctx, output, driverDone)
-		}
-		var painterCh <-chan painterJobResult
-		if len(output.ImagePrompts) > 0 {
-			imageRequest := output.ImagePrompts[0]
-			chatLog.Debug("chat painter queued", "session", sessionID, "user", seg.displayName, "prompt_len", len([]rune(imageRequest.Prompt)), "prompt", chatTruncate(imageRequest.Prompt, 200))
-			messageID := uint(0)
-			if assistantMsg != nil {
-				messageID = assistantMsg.ID
-			}
-			if retain {
-				// NOTE: 续跑时不等配图：图片只落库挂到这条消息上，前端后续刷新消息列表时可见，避免 image 事件被前端挂到下一段消息上。
-				h.startPainterJob(messageID, gctx, imageRequest, nil)
-			} else {
-				painterCh = h.startPainterJob(messageID, gctx, imageRequest, driverDone)
-			}
-		}
-
-		streamedWriter := output.WriterText
-		if streamedWriter != "" {
-			send("progress", "叙事正文生成中")
-			sendChunks("token", streamedWriter)
-		}
-		if writerCh != nil {
-			send("progress", "叙事正文生成中")
-		} else if painterCh != nil {
-			send("progress", "场景图像生成中")
-		}
-		clientGone := clientCtx.Done()
-		var waitTimeout <-chan time.Time
-		var timer *time.Timer
-		if retain {
-			timer = time.NewTimer(kpWriterWaitTimeout)
-			waitTimeout = timer.C
-		}
-		for writerCh != nil || painterCh != nil {
-			select {
-			case wr, ok := <-writerCh:
-				if !ok {
-					writerCh = nil
-					continue
-				}
-				if wr.token != "" {
-					streamedWriter += wr.token
-					send("token", wr.token)
-				}
-				if !wr.done {
-					continue
-				}
-				if wr.text != "" {
-					streamedWriter = wr.text
-				}
-				if wr.err != nil {
-					chatLog.Error("chat writer async failed", "session", sessionID, "user", seg.displayName, "err", wr.err)
-				}
-				writerCh = nil
-			case pr, ok := <-painterCh:
-				if !ok {
-					painterCh = nil
-					continue
-				}
-				if pr.err != nil {
-					chatLog.Error("chat painter async failed", "session", sessionID, "user", seg.displayName, "err", pr.err)
-					painterCh = nil
-					continue
-				}
-				if pr.dataURL != "" {
-					send("image", pr.dataURL)
-				}
-				painterCh = nil
-			case <-clientGone:
-				if !retain {
-					return
-				}
-				clientGone = nil
-			case <-waitTimeout:
-				chatLog.Warn("kp writer wait timed out, continuing", "session", sessionID)
-				writerCh = nil
-				waitTimeout = nil
-			}
-		}
-		if timer != nil {
-			timer.Stop()
-		}
-
-		if !retain {
-			fullReply := buildAssistantContent(streamedWriter, output.KPReply)
-			chatLog.Debug("chat done", "session", sessionID, "user", seg.displayName, "tokens", len([]rune(fullReply)), "elapsed_ms", float64(time.Since(pipelineStart).Milliseconds()))
-			send("done", "")
-			return
-		}
-
-		next, err := loadKPFloorContext(sessionID, agent.KPFloorContinue)
-		if err != nil {
-			chatLog.Error("kp continue context failed", "session", sessionID, "err", err)
-			send("error", "加载房间状态失败")
-			return
-		}
-		seg = kpSegment{gctx: next}
+		seg = buildKPSegment(session, agent.KPFloorResume, loadLatestTurnActions(sessionID, session.TurnRound, session.Players))
+		floor := agent.NextDirectorFloor(sessionID)
+		af.floor.Store(int32(floor))
+		hubFor(sessionID).Publish("floor_start", gin.H{"floor": floor, "reason": seg.reason()})
 	}
+	h.finishFloor(af, out)
+}
+
+func (h *SessionHandlers) runOneFloor(ctx context.Context, af *activeFloor, seg kpSegment) agent.RunOutput {
+	sessionID := af.sessionID
+	gctx := seg.gctx
+	gctx.Progress = func(text string) {
+		if text = strings.TrimSpace(text); text != "" {
+			hubFor(sessionID).Ephemeral("kp_status", gin.H{"text": text})
+		}
+	}
+	gctx.Publish = func(ro agent.RoundOutputs) error { return h.publishRound(af, ro) }
+
+	start := time.Now()
+	out, err := h.Runner.Run(ctx, gctx)
+	if err != nil {
+		chatLog.Error("kp floor failed", "session", sessionID, "elapsed_ms", float64(time.Since(start).Milliseconds()), "err", err)
+		if out.Stop == agent.StopNone {
+			out.Stop = agent.StopError
+		}
+	}
+	chatLog.Debug("kp floor done", "session", sessionID, "stop", out.Stop, "messages", out.Messages,
+		"elapsed_ms", float64(time.Since(start).Milliseconds()))
+	return out
+}
+
+// shouldResume 判断上下文已满的周期是否应该自动续跑：续跑周期如果一条消息都没产生就又溢出，说明总结也救不了，不再续跑。
+func shouldResume(ctx context.Context, seg kpSegment, out agent.RunOutput) bool {
+	if out.Stop != agent.StopContext || ctx.Err() != nil {
+		return false
+	}
+	return !(seg.gctx.KPFloor == agent.KPFloorResume && out.Messages == 0)
+}
+
+func floorEndReason(out agent.RunOutput) string {
+	switch {
+	case out.Ended:
+		return "end_game"
+	case out.Ask != nil:
+		return "ask"
+	case out.Stop != agent.StopNone:
+		return string(out.Stop)
+	}
+	return "done"
+}
+
+func floorEndPayload(floor int, out agent.RunOutput) gin.H {
+	return gin.H{"floor": floor, "reason": floorEndReason(out), "messages": out.Messages}
+}
+
+// finishFloor 写入新的发言权、释放 processing，之后才广播：客户端看到 spotlight 点了自己就会立刻发言，
+// 此时 processing 必须已经释放，否则会被 409 拒绝。
+func (h *SessionHandlers) finishFloor(af *activeFloor, out agent.RunOutput) {
+	sessionID := af.sessionID
+	spot, err := advanceSpotlight(sessionID, out)
+	if err != nil {
+		chatLog.Error("kp spotlight update failed", "session", sessionID, "err", err)
+	}
+	unregisterFloor(af)
+	finishSessionProcessing(sessionID)
+
+	hub := hubFor(sessionID)
+	if spot != nil {
+		hub.Publish("spotlight", spotlightEventPayload(spot))
+	}
+	hub.Publish("floor_end", floorEndPayload(int(af.floor.Load()), out))
+}
+
+// publishRound 是注入给 Director 的 gctx.Publish：同步把一轮产生的消息落库并广播，再把 writer/image 消息交给异步任务。
+// 落库失败时返回 err，周期随之以 StopError 结束。
+func (h *SessionHandlers) publishRound(af *activeFloor, ro agent.RoundOutputs) error {
+	sessionID := af.sessionID
+	type pending struct {
+		msg  models.Message
+		item agent.Output
+	}
+	items := make([]pending, 0, len(ro.Items))
+	for _, it := range ro.Items {
+		msg, ok := roundMessage(sessionID, ro, it)
+		if !ok {
+			continue
+		}
+		items = append(items, pending{msg: msg, item: it})
+		if msg.Kind == models.MessageKindKP || msg.Kind == models.MessageKindAsk {
+			// NOTE: 耗时和轮数只属于这一轮的第一条 kp/ask，后面的不重复记。
+			ro.Steps = 0
+		}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		for i := range items {
+			if err := tx.Create(&items[i].msg).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("save round messages: %w", err)
+	}
+
+	hub := hubFor(sessionID)
+	for _, p := range items {
+		hub.Publish("message_new", gin.H{"message": newMessageResponse(p.msg)})
+		switch p.msg.Kind {
+		case models.MessageKindWriter:
+			h.enqueueWriter(sessionID, writerTask{messageID: p.msg.ID, gctx: ro.WriterCtx, direction: strings.TrimSpace(p.item.Text), nsfw: p.item.NSFW})
+		case models.MessageKindImage:
+			go h.runPainterTask(p.msg.ID, ro.WriterCtx, *p.item.Image)
+		case models.MessageKindKP, models.MessageKindAsk:
+			af.beats.Add(1)
+		}
+	}
+	return nil
+}
+
+// roundMessage 把一次产生消息的工具调用变成一条待落库的消息；没有内容可发的调用返回 false。
+func roundMessage(sessionID uint, ro agent.RoundOutputs, it agent.Output) (models.Message, bool) {
+	msg := models.Message{
+		SessionID: sessionID,
+		Role:      models.MessageRoleAssistant,
+		Status:    models.MessageStatusDone,
+		Floor:     ro.Floor,
+		Username:  "KP",
+	}
+	meta := &models.MessageMeta{}
+	switch it.Kind {
+	case agent.OutputWriter:
+		if strings.TrimSpace(it.Text) == "" {
+			return msg, false
+		}
+		msg.Kind = models.MessageKindWriter
+		msg.Status = models.MessageStatusPending
+		meta.NSFW, meta.Auto = it.NSFW, it.Auto
+	case agent.OutputImage:
+		if it.Image == nil || strings.TrimSpace(it.Image.Prompt) == "" {
+			return msg, false
+		}
+		msg.Kind = models.MessageKindImage
+		msg.Status = models.MessageStatusPending
+		meta.NSFW = it.NSFW || it.Image.NSFW
+	case agent.OutputKP:
+		msg.Kind = models.MessageKindKP
+		msg.Content = strings.TrimSpace(it.Text)
+		meta.Options, meta.Ack = it.Options, it.Ack
+		meta.Dice, meta.TimePoint, meta.Ended = it.Dice, it.TimePoint, it.Ended
+		setDirectorTiming(&msg, ro)
+	case agent.OutputAsk:
+		msg.Kind = models.MessageKindAsk
+		msg.Content = strings.TrimSpace(it.Text)
+		meta.Dice, meta.TimePoint = it.Dice, it.TimePoint
+		if it.Ask != nil {
+			meta.Ask = &models.AskMeta{UserIDs: it.Ask.UserIDs, Names: it.Ask.Names}
+		}
+		setDirectorTiming(&msg, ro)
+	default:
+		return msg, false
+	}
+	msg.Meta = models.JSONField[*models.MessageMeta]{Data: meta}
+	return msg, true
+}
+
+// setDirectorTiming 把从上一条 kp/ask 到这一条的耗时与轮数记在消息上；一轮里有多条 kp/ask 时只记在第一条。
+func setDirectorTiming(msg *models.Message, ro agent.RoundOutputs) {
+	if ro.Steps <= 0 {
+		return
+	}
+	elapsed, steps := ro.ElapsedMs, ro.Steps
+	msg.DirectorElapsedMs, msg.DirectorSteps = &elapsed, &steps
 }

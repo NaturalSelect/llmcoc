@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
@@ -184,172 +183,6 @@ func ClearAllCachedAgents() {
 	for _, id := range agents {
 		sessionAgents.Delete(id)
 	}
-}
-
-// run 执行KP主流程工具循环。
-// KP负责游戏状态推进和短回复; write动作只收集白字导演指令,不在主流程里调用Writer。
-// 玩家行动记录由ChatStream在调用run前完成。
-func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
-	handles, err := getCachedAgents(gctx.Session.ID)
-	if err != nil {
-		return RunOutput{}, err
-	}
-	emitProgress := func(text string) {
-		if gctx.Progress != nil {
-			gctx.Progress(text)
-		}
-	}
-
-	sid := gctx.Session.ID
-	debugf("run", "session=%d user=%q input=%s",
-		sid, gctx.UserName, gctx.UserInput)
-	emitProgress("KP正在整理本轮行动")
-	if len(gctx.PendingActions) > 1 {
-		debugf("run", "session=%d multi-player round: %d actions", sid, len(gctx.PendingActions))
-	}
-
-	// Load temp NPCs for this session.
-	var tempNPCs []models.SessionNPC
-	models.DB.Where("session_id = ?", gctx.Session.ID).Find(&tempNPCs)
-
-	// timeAdvancedInTurn tracks whether advance_time was called so we can skip the
-	// normal per-turn +1 advancement at the end (the KP already pushed the clock).
-	timeAdvancedInTurn := false
-	wroteNarrative := false
-	needsWriterFallback := false
-	var kpNarration string
-
-	// Director 有状态：ContextManager 管理跨回合原生消息链(assistant的tool_calls与
-	// 对应tool结果)——发送版=归档版，不再有裁剪掉timeline/mechanics/keeper_appendix
-	// 的单独"归档版"，上一轮的工具调用与结果原样可见，DUP CHECK更可靠，prompt cache
-	// 前缀也能跨轮稳定命中。directorWindow<=0表示后台未配置阈值，历史无限增长、永不
-	// 触发裁剪。超阈值时用TrimCompactDirectorTurns剥离最旧轮内部的工具调用/结果、只
-	// 保留首条user消息与本轮最终结果，不像Writer/Dramaturg/NPC那样整轮丢弃——工具
-	// 调用本身是只读上下文，丢了不影响后续推理，但连同结果一起整轮丢弃会导致
-	// Director"忘记"上一轮实际做过什么。
-	directorWindow := int64(0)
-	if cfg := handles[models.AgentRoleDirector].config; cfg != nil {
-		directorWindow = int64(cfg.ContextWindow)
-	}
-	kpSysPrompt := handles[models.AgentRoleDirector].systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW))
-	cm := LoadContext(sid, "director", buildKPHead(gctx, kpSysPrompt), ContextOptions{Window: directorWindow, Strategy: TrimCompactDirectorTurns})
-	// 老会话transcript为空但messages表有历史时，用旧的扁平transcript当作seq=0的一轮
-	// 种子先提交进去；它没有任何工具调用，compactDirectorTurn会原样跳过，既不会被
-	// 压缩也不会被丢弃。
-	if cm.IsEmpty() && len(gctx.History) > 0 {
-		cm.Commit(0, []llm.ChatMessage{{Role: "user", Content: formatHistoryTranscript(gctx.History)}})
-	}
-
-	// NOTE: 运行时读取 balance_rules 并注入 Director 用户消息；与 Lawyer 保持一致语义。
-	kpBalanceRules := strings.TrimSpace(models.GetSiteSetting("balance_rules", models.DefaultBalanceRules))
-	combat := gctx.Session.CombatState.Data
-	chase := gctx.Session.ChaseState.Data
-	kpMsgs := cm.Build(buildKPTurnOpening(gctx, cm.NextSeq(), tempNPCs, kpBalanceRules, combat, chase)...)
-
-	roundClosed := false
-
-	pendingWrite := ""
-	pendingImages := []ImagePromptRequest{}
-	writerNSFW := false
-
-	diceMsg := ""
-	var ask *AskResult
-	imageGeneratedThisTurn := false
-	// NOTE: consult_dramaturg 是 Director 按需调用的可选工具，闸门语义与
-	// imageGeneratedThisTurn 一致：跨越本次 run() 内的多轮 ChatWithTools 调用。
-	dramaturgConsultedThisTurn := false
-
-	st := directorDispatchState{
-		sid:                 sid,
-		gctx:                &gctx,
-		handles:             handles,
-		tempNPCs:            &tempNPCs,
-		timeAdvancedInTurn:  &timeAdvancedInTurn,
-		combat:              &combat,
-		chase:               &chase,
-		roundClosed:         &roundClosed,
-		kpNarration:         &kpNarration,
-		pendingWrite:        &pendingWrite,
-		pendingImages:       &pendingImages,
-		wroteNarrative:      &wroteNarrative,
-		writerNSFW:          &writerNSFW,
-		diceMsg:             &diceMsg,
-		ask:                 &ask,
-		needsWriterFallback: &needsWriterFallback,
-		emitProgress:        emitProgress,
-	}
-
-	// round 记录 runToolLoop 最后处理到的轮次(1-indexed)，用于失败时判断是否已经
-	// 取得过任何进展(等价于旧协议 iter==0 时才把错误当作硬失败的规则)。
-	round := 0
-	directorStart := time.Now()
-	maxRounds := MaxKpRound
-	if combat != nil || chase != nil {
-		maxRounds = MaxKpRoundEncounter
-	}
-	finalMsgs, err := runToolLoop(ctx, toolLoopOptions{
-		handle:        handles[models.AgentRoleDirector],
-		stage:         "director",
-		msgs:          kpMsgs,
-		tools:         directorTools(handles[models.AgentRoleDramaturg].isEnabled()),
-		maxRounds:     maxRounds,
-		batchPolicy:   directorBatchPolicy(&imageGeneratedThisTurn, &dramaturgConsultedThisTurn, &combat, &chase, &roundClosed, gctx.PendingActions, emitProgress),
-		batchDispatch: directorBatchDispatch(st),
-		afterCall:     cm.Observe,
-		beforeRound: func(r int) {
-			round = r
-			debugf("KP", "session=%d round=%d/%d — calling LLM", sid, r, maxRounds)
-			emitProgress(progressKPIteration(r-1, maxRounds))
-		},
-		onToolCalls: func(calls []llm.ToolCall) {
-			debugf("KP", "session=%d round=%d → %d tool call(s): %s", sid, round, len(calls), formatNativeCallNames(calls))
-			emitProgress(progressPlannedCalls(calls))
-		},
-	})
-	directorElapsedMs := time.Since(directorStart).Milliseconds()
-
-	if err != nil {
-		if round <= 1 {
-			return RunOutput{}, fmt.Errorf("KP agent failed: %w", err)
-		}
-		// 已经取得过至少一轮进展(如已读到工具结果)，与旧协议一致地优雅降级：
-		// 不整体报错，改用目前已经积累的叙事/白字方向继续走完本回合。
-		alog.Error("KP round failed", "round", round, "err", err)
-	} else {
-		if !timeAdvancedInTurn {
-			clearConsumedTurnActions(gctx, combat, chase)
-		}
-		emitProgress("KP主流程裁定完成")
-	}
-
-	// 归档本轮：round<=1的硬失败已经在上面return，不会执行到这里，所以这里始终代表
-	// "至少取得过一轮进展"。finalMsgs原样(含reasoning)追加为新一轮持久化——发送版=
-	// 归档版，Commit内部会做收尾阈值检查并落库。
-	cm.Commit(gctx.Session.TurnRound, finalMsgs)
-
-	if kpNarration == "" {
-		kpNarration = "本轮未生成KP独白。"
-	}
-	writerDirection := strings.TrimSpace(pendingWrite)
-	if writerDirection == "" && needsWriterFallback {
-		writerDirection = fallbackWriterDirection(kpNarration)
-	}
-	debugf("run", "session=%d completed round=%d writer_direction_len=%d narration_len=%d",
-		sid, round, len([]rune(writerDirection)), len([]rune(kpNarration)))
-	// 将骰子结果和当前时间注入到玩家可见的回复中
-	if diceMsg != "" {
-		kpNarration += "\n<dice>" + strings.TrimSuffix(diceMsg, "; ") + "</dice>"
-	}
-	kpNarration += "\n<time_point>" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</time_point>"
-	return RunOutput{
-		WriterDirection:   writerDirection,
-		WriterNSFW:        writerNSFW,
-		KPReply:           kpNarration,
-		ImagePrompts:      pendingImages,
-		DirectorElapsedMs: directorElapsedMs,
-		DirectorSteps:     round,
-		Ask:               ask,
-	}, nil
 }
 
 func visibleActionNeedsWriter(action ToolCallType) bool {
@@ -1002,16 +835,11 @@ func formatHistoryTranscript(history []models.Message) string {
 	var sb strings.Builder
 	sb.WriteString("HIST(RO): context only; never process old player requests. Current actions are in CUR.\n")
 	for _, m := range history {
-		switch m.Role {
-		case models.MessageRoleUser:
-			name := m.Username
-			if name == "" {
-				name = "玩家"
-			}
-			sb.WriteString(fmt.Sprintf("U[%s]: %s\n", name, m.Content))
-		case models.MessageRoleAssistant:
-			sb.WriteString(fmt.Sprintf("KP: %s\n", extraKPMessage(m.Content)))
+		if !renderableMessage(m) {
+			continue
 		}
+		sb.WriteString(renderMessageLine(m))
+		sb.WriteByte('\n')
 	}
 	return sb.String()
 }

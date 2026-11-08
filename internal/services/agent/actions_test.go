@@ -24,60 +24,105 @@ func TestWriteActionNSFWFlag(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			pendingWrite := ""
-			wroteNarrative := false
-			writerNSFW := false
+			var outbox []Output
 			gctx := &GameContext{Session: models.GameSession{EnableNSFW: tc.roomNSFW}}
-			actx := ActionContext{
-				GCtx:           gctx,
-				PendingWrite:   &pendingWrite,
-				WroteNarrative: &wroteNarrative,
-				WriterNSFW:     &writerNSFW,
-			}
+			actx := ActionContext{GCtx: gctx, Outbox: &outbox}
 
-			writeAction{}.Execute(ToolCall{Direction: "场景描述", NSFW: tc.callNSFW}, actx)
+			results := writeAction{}.Execute(ToolCall{Direction: "场景描述", NSFW: tc.callNSFW}, actx)
 
-			if writerNSFW != tc.wantMarked {
-				t.Errorf("WriterNSFW = %v, want %v", writerNSFW, tc.wantMarked)
+			if len(outbox) != 1 || outbox[0].Kind != OutputWriter || outbox[0].Text != "场景描述" {
+				t.Fatalf("outbox = %+v, want one writer output with the direction", outbox)
 			}
-			if !wroteNarrative {
-				t.Error("WroteNarrative应始终置位")
+			if outbox[0].NSFW != tc.wantMarked {
+				t.Errorf("NSFW = %v, want %v", outbox[0].NSFW, tc.wantMarked)
 			}
-			if pendingWrite != "场景描述\n" {
-				t.Errorf("PendingWrite = %q, want %q", pendingWrite, "场景描述\n")
+			if len(results) != 1 || strings.HasPrefix(results[0].Result, "SYSTEM REJECT") {
+				t.Errorf("results = %+v, want a non-reject confirmation", results)
 			}
 		})
 	}
 }
 
-// TestWriteActionNSFWFlagSticky 验证一轮内多次write调用的累积语义:
-// 标记一旦被任一次调用置位,不会被同一轮后续未标记nsfw的write调用清除。
-func TestWriteActionNSFWFlagSticky(t *testing.T) {
-	pendingWrite := ""
-	wroteNarrative := false
-	writerNSFW := false
+// TestWriteActionNSFWIsPerCall 验证每次write各自独立标记nsfw:不再像旧实现那样整轮粘住。
+func TestWriteActionNSFWIsPerCall(t *testing.T) {
+	var outbox []Output
 	gctx := &GameContext{Session: models.GameSession{EnableNSFW: true}}
-	actx := ActionContext{
-		GCtx:           gctx,
-		PendingWrite:   &pendingWrite,
-		WroteNarrative: &wroteNarrative,
-		WriterNSFW:     &writerNSFW,
-	}
+	actx := ActionContext{GCtx: gctx, Outbox: &outbox}
 
 	writeAction{}.Execute(ToolCall{Direction: "第一段", NSFW: false}, actx)
-	if writerNSFW {
-		t.Fatal("第一次调用未标记nsfw,不应置位")
-	}
 	writeAction{}.Execute(ToolCall{Direction: "第二段", NSFW: true}, actx)
-	if !writerNSFW {
-		t.Fatal("第二次调用标记nsfw后应置位")
-	}
 	writeAction{}.Execute(ToolCall{Direction: "第三段", NSFW: false}, actx)
-	if !writerNSFW {
-		t.Error("标记一旦置位,不应被同一轮后续未标记nsfw的write调用清除")
+
+	if len(outbox) != 3 {
+		t.Fatalf("outbox len = %d, want 3(一次write一条)", len(outbox))
 	}
-	if pendingWrite != "第一段\n第二段\n第三段\n" {
-		t.Errorf("PendingWrite = %q, want %q", pendingWrite, "第一段\n第二段\n第三段\n")
+	want := []bool{false, true, false}
+	for i, o := range outbox {
+		if o.NSFW != want[i] {
+			t.Errorf("outbox[%d].NSFW = %v, want %v", i, o.NSFW, want[i])
+		}
+	}
+}
+
+func TestWriteActionRejectsEmptyDirection(t *testing.T) {
+	var outbox []Output
+	actx := ActionContext{GCtx: &GameContext{}, Outbox: &outbox}
+
+	results := writeAction{}.Execute(ToolCall{Direction: "  "}, actx)
+
+	if len(outbox) != 0 {
+		t.Errorf("empty direction must not produce an output, got %+v", outbox)
+	}
+	if len(results) != 1 || !strings.HasPrefix(results[0].Result, "SYSTEM REJECT") {
+		t.Errorf("results = %+v, want SYSTEM REJECT", results)
+	}
+}
+
+func TestResponseActionPublishesOneKPOutputAndKeepsFloor(t *testing.T) {
+	var outbox []Output
+	hasEnd := false
+	streak := 0
+	actx := ActionContext{GCtx: &GameContext{}, Outbox: &outbox, HasEnd: &hasEnd, KPStreak: &streak}
+
+	results := responseAction{}.Execute(ToolCall{
+		Reply:   "门开了。",
+		Options: []string{"我走进去", "我走进去", "「谁在那里？」", "第三条被截断"},
+		Ack:     []string{"确认动作", " "},
+	}, actx)
+
+	if hasEnd {
+		t.Error("response不应结束周期(HasEnd必须保持false)")
+	}
+	if len(outbox) != 1 || outbox[0].Kind != OutputKP || outbox[0].Text != "门开了。" {
+		t.Fatalf("outbox = %+v, want one kp output", outbox)
+	}
+	if got := outbox[0].Options; len(got) != 2 || got[0] != "我走进去" || got[1] != "「谁在那里？」" {
+		t.Errorf("Options = %v, want 去重并截到2条", got)
+	}
+	if got := outbox[0].Ack; len(got) != 1 || got[0] != "确认动作" {
+		t.Errorf("Ack = %v, want 只保留非空项", got)
+	}
+	if strings.Contains(outbox[0].Text, "<response_options>") || strings.Contains(outbox[0].Text, "<ack>") {
+		t.Errorf("reply正文不应再内嵌标签: %q", outbox[0].Text)
+	}
+	if len(results) != 1 || !strings.Contains(results[0].Result, "仍持有发言权") {
+		t.Errorf("results = %+v, want 提示仍持有发言权", results)
+	}
+	if streak != 1 {
+		t.Errorf("KPStreak = %d, want 1", streak)
+	}
+}
+
+func TestResponseActionRemindsAfterConsecutiveKPMessages(t *testing.T) {
+	var outbox []Output
+	hasEnd := false
+	streak := responseKPStreakReminder - 1
+	actx := ActionContext{GCtx: &GameContext{}, Outbox: &outbox, HasEnd: &hasEnd, KPStreak: &streak}
+
+	results := responseAction{}.Execute(ToolCall{Reply: "又一条"}, actx)
+
+	if len(results) != 1 || !strings.Contains(results[0].Result, "ask_players") || !strings.Contains(results[0].Result, "提醒") {
+		t.Errorf("连续第%d条应附节奏提醒, got %+v", responseKPStreakReminder, results)
 	}
 }
 

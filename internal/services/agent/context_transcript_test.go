@@ -255,156 +255,30 @@ func TestTrimTranscriptTurns_SingleTurnNeverTrimmed(t *testing.T) {
 	}
 }
 
-// ── compactDirectorTurn：单轮压缩 ─────────────────────────────────────────────
-
-func TestCompactDirectorTurn_SkipsTurnWithoutToolCalls(t *testing.T) {
-	// 老会话按旧扁平transcript播种的seq=0种子轮：只有一条纯文本user消息，没有任何
-	// ToolCalls，不应该被判定为"可压缩"——否则会把玩家的历史文本误当作可丢弃的
-	// 工具调用中间产物。
-	turn := models.TranscriptTurn{Seq: 0, Round: 0, Messages: []models.TranscriptMsg{
-		{Role: "user", Content: "老会话的扁平历史文本，没有任何工具调用"},
-	}}
-	if _, ok := compactDirectorTurn(turn); ok {
-		t.Errorf("没有ToolCalls的轮不应被判定为可压缩")
-	}
-}
-
-func TestCompactDirectorTurn_ExtractsResultAndStripsToolCalls(t *testing.T) {
-	turn := makeDirectorTurn(0, 1, "第1轮回复", false)
-	got, ok := compactDirectorTurn(turn)
-	if !ok {
-		t.Fatalf("有ToolCalls的轮应可压缩")
-	}
-	if !got.Compacted {
-		t.Errorf("压缩后应标记Compacted=true")
-	}
-	if got.Seq != turn.Seq || got.Round != turn.Round {
-		t.Errorf("Seq/Round不应改变: got %+v, want Seq=%d Round=%d", got, turn.Seq, turn.Round)
-	}
-	if len(got.Messages) != 3 {
-		t.Fatalf("压缩后应只剩[首条][标记][结果]共3条消息, got %d条: %+v", len(got.Messages), got.Messages)
-	}
-	if got.Messages[0].Content != turn.Messages[0].Content {
-		t.Errorf("首条消息应原样保留opening的第1条: got %q, want %q", got.Messages[0].Content, turn.Messages[0].Content)
-	}
-	if got.Messages[0].Role != "user" || len(got.Messages[0].ToolCalls) != 0 {
-		t.Errorf("首条消息不应携带ToolCalls: %+v", got.Messages[0])
-	}
-	for i, m := range got.Messages {
-		if len(m.ToolCalls) != 0 {
-			t.Errorf("压缩后消息[%d]不应残留任何ToolCalls: %+v", i, m)
+// assertValidToolSequence 校验一段消息的角色顺序对 tool calling 协议合法：
+// 每个 tool 消息都对应前面某个 assistant 的 tool_call，每个 assistant 的 tool_call 在下一条
+// 非 tool 消息之前都拿到了结果。
+func assertValidToolSequence(t *testing.T, msgs []models.TranscriptMsg) {
+	t.Helper()
+	pending := map[string]bool{}
+	for i, m := range msgs {
+		switch m.Role {
+		case "tool":
+			if !pending[m.ToolCallID] {
+				t.Fatalf("msgs[%d] 是孤立的 tool 消息(id=%s): %+v", i, m.ToolCallID, msgs)
+			}
+			delete(pending, m.ToolCallID)
+		default:
+			if len(pending) > 0 {
+				t.Fatalf("msgs[%d] 之前仍有未回执的 tool_call %v: %+v", i, pending, msgs)
+			}
+			for _, tc := range m.ToolCalls {
+				pending[tc.ID] = true
+			}
 		}
 	}
-	if !strings.Contains(got.Messages[1].Content, `<trimmed_tool_calls rounds="1" calls="2">`) {
-		t.Errorf("标记应记录1轮共2次调用: got %q", got.Messages[1].Content)
-	}
-	if !strings.Contains(got.Messages[1].Content, "roll_dice×1") || !strings.Contains(got.Messages[1].Content, "response×1") {
-		t.Errorf("标记应按工具名分别计数: got %q", got.Messages[1].Content)
-	}
-	if got.Messages[2].Role != "assistant" || !strings.Contains(got.Messages[2].Content, "第1轮回复") {
-		t.Errorf("结果应保留response的reply: got %+v", got.Messages[2])
-	}
-}
-
-func TestCompactDirectorTurn_RejectedResponseNotAdoptedButStillCounted(t *testing.T) {
-	turn := makeDirectorTurn(0, 1, "被拒绝的回复", true)
-	got, ok := compactDirectorTurn(turn)
-	if !ok {
-		t.Fatalf("有ToolCalls的轮应可压缩")
-	}
-	if strings.Contains(got.Messages[2].Content, "被拒绝的回复") {
-		t.Errorf("被SYSTEM REJECT拒绝的response不应进入结果: got %q", got.Messages[2].Content)
-	}
-	if got.Messages[2].Content != "<turn_result>（本轮未产生结果）</turn_result>" {
-		t.Errorf("没有其他生效结果时应输出占位说明: got %q", got.Messages[2].Content)
-	}
-	if !strings.Contains(got.Messages[1].Content, `calls="2"`) {
-		t.Errorf("被拒绝的调用仍应计入标记的调用总数: got %q", got.Messages[1].Content)
-	}
-}
-
-func TestCompactDirectorTurn_NoResultPlaceholderWhenNoTerminalCall(t *testing.T) {
-	// 只调用了roll_dice、没有response/write/end_game(如round<=1硬失败提前中断)：
-	// 三个字段都提取不到值，应输出占位说明而不是空字符串或崩溃。
-	turn := models.TranscriptTurn{Seq: 0, Round: 1, Messages: []models.TranscriptMsg{
-		{Role: "user", Content: "<player_turn seq=0>行动</player_turn>"},
-		{Role: "assistant", ToolCalls: []models.TranscriptToolCall{
-			{ID: "c1", Name: "roll_dice", Arguments: `{"dice":"1d100"}`},
-		}},
-		{Role: "tool", ToolCallID: "c1", Content: "掷出57"},
-	}}
-	got, ok := compactDirectorTurn(turn)
-	if !ok {
-		t.Fatalf("有ToolCalls的轮应可压缩")
-	}
-	if got.Messages[2].Content != "<turn_result>（本轮未产生结果）</turn_result>" {
-		t.Errorf("没有终止性工具调用时应输出占位说明: got %q", got.Messages[2].Content)
-	}
-	if !strings.Contains(got.Messages[1].Content, `calls="1"`) || !strings.Contains(got.Messages[1].Content, "roll_dice×1") {
-		t.Errorf("标记应仍然统计roll_dice: got %q", got.Messages[1].Content)
-	}
-}
-
-// ── compactTranscriptTurns：整体压缩循环 ──────────────────────────────────────
-
-func TestCompactTranscriptTurns_NoCompactBelowLowWater(t *testing.T) {
-	turns := []models.TranscriptTurn{
-		makeDirectorTurn(0, 1, "回复1", false),
-		makeDirectorTurn(1, 2, "回复2", false),
-	}
-	// usedTokens/totalRunes都很小，远低于lowWater(window的一半)，不应压缩。
-	got, n := compactTranscriptTurns(turns, 100_000, 1_000, 1_000)
-	if n != 0 {
-		t.Fatalf("n = %d, want 0", n)
-	}
-	if !reflect.DeepEqual(got, turns) {
-		t.Errorf("未超阈值时应原样返回: got %+v, want %+v", got, turns)
-	}
-}
-
-func TestCompactTranscriptTurns_CompactsOldestButNeverDropsOrTouchesLastTurn(t *testing.T) {
-	turns := []models.TranscriptTurn{
-		makeDirectorTurn(0, 1, "第1轮回复", false),
-		makeDirectorTurn(1, 2, "第2轮回复", false),
-		makeDirectorTurn(2, 3, "第3轮回复", false),
-	}
-	original := append([]models.TranscriptTurn(nil), turns...)
-	// window=1、usedTokens远大于totalRunes：tokensPerRune被拉得很大，estimated长期
-	// 停留在远高于lowWater(0.5)的水平，不依赖具体字符数计算即可确定性地让循环处理
-	// 完所有"非最后一轮"的下标(i=0,1)，只是不会丢弃任何一轮(压缩策略的核心区别)。
-	got, n := compactTranscriptTurns(turns, 1, 1_000_000, 1_000)
-	if n != 2 {
-		t.Fatalf("n = %d, want 2(两个非最后一轮都应被压缩)", n)
-	}
-	if !reflect.DeepEqual(turns, original) {
-		t.Errorf("compactTranscriptTurns不应修改入参切片本身")
-	}
-	if len(got) != 3 {
-		t.Fatalf("压缩策略不应改变轮数, got %d轮: %+v", len(got), got)
-	}
-	if !got[0].Compacted || !got[1].Compacted {
-		t.Errorf("最旧的两轮都应被标记为已压缩: %+v", got)
-	}
-	if got[2].Compacted || !reflect.DeepEqual(got[2], turns[2]) {
-		t.Errorf("最后一轮永远原样保留、不应被压缩: %+v", got[2])
-	}
-}
-
-func TestCompactTranscriptTurns_IdempotentOnAlreadyCompactedTurns(t *testing.T) {
-	turns := []models.TranscriptTurn{
-		makeDirectorTurn(0, 1, "第1轮回复", false),
-		makeDirectorTurn(1, 2, "第2轮回复", false),
-	}
-	once, n1 := compactTranscriptTurns(turns, 1, 1_000_000, 1_000)
-	if n1 == 0 {
-		t.Fatalf("第1次调用应至少压缩1轮")
-	}
-	twice, n2 := compactTranscriptTurns(once, 1, 1_000_000, 1_000)
-	if n2 != 0 {
-		t.Errorf("对已压缩过的轮不应重复压缩, n2 = %d", n2)
-	}
-	if !reflect.DeepEqual(once, twice) {
-		t.Errorf("重复调用不应改变结果:\nonce  = %+v\ntwice = %+v", once, twice)
+	if len(pending) > 0 {
+		t.Fatalf("结尾仍有未回执的 tool_call %v: %+v", pending, msgs)
 	}
 }
 
@@ -649,11 +523,9 @@ func TestContextManager_WindowTrimFallsBackToRunesWithoutUsage(t *testing.T) {
 	}
 }
 
-// TestContextManager_Observe_CompactStrategyRebuildsHistory 验证Observe按
-// ContextOptions.Strategy分派到compactTranscriptTurns、并正确重建历史消息段——与
-// TrimDropTurns不同，压缩不会减少轮数，只会改变轮内消息条数，所以[headLen:headLen+
-// historyLen]必须整段重新展开，不能像丢弃整轮那样简单地在旧msgs上做前缀切割。
-func TestContextManager_Observe_CompactStrategyRebuildsHistory(t *testing.T) {
+// TestContextManager_Observe_SummarizeStrategyReportsFullButKeepsHistory 验证 TrimSummarize 下
+// Observe 超阈值时只报告上下文已满，不改动历史，也不改写 msgs——压缩只能由 LLM 总结完成。
+func TestContextManager_Observe_SummarizeStrategyReportsFullButKeepsHistory(t *testing.T) {
 	turn1 := makeDirectorTurn(0, 1, "第1轮回复", false)
 	turn2 := makeDirectorTurn(1, 2, "第2轮回复", false)
 	turn3 := makeDirectorTurn(2, 3, "第3轮回复", false)
@@ -661,52 +533,87 @@ func TestContextManager_Observe_CompactStrategyRebuildsHistory(t *testing.T) {
 		sessionID: 1,
 		agentKey:  "director",
 		head:      []llm.ChatMessage{{Role: "system", Content: "sys"}},
-		opts:      ContextOptions{Window: 1, Strategy: TrimCompactDirectorTurns},
+		opts:      ContextOptions{Window: 1, Strategy: TrimSummarize},
 		data: models.TranscriptData{
 			NextSeq: 3,
 			Turns:   []models.TranscriptTurn{turn1, turn2, turn3},
 		},
 	}
+	original := append([]models.TranscriptTurn(nil), cm.data.Turns...)
 	opening := llm.ChatMessage{Role: "user", Content: "本轮opening"}
 	msgs := cm.Build(opening)
-	// window=1时任何非零usage都会越过阈值；usedTokens远大于总字符数，与
-	// TestCompactTranscriptTurns_CompactsOldestButNeverDropsOrTouchesLastTurn同样的
-	// 手法，确定性地让循环处理完两个非最后一轮的下标。
-	out := cm.Observe(llm.Usage{PromptTokens: 1_000_000}, msgs)
+	before := append([]llm.ChatMessage(nil), msgs...)
+	histLen, turnStart := cm.historyLen, cm.turnStart
 
-	if cm.stat.CompactedTurns != 2 {
-		t.Fatalf("stat.CompactedTurns = %d, want 2", cm.stat.CompactedTurns)
+	out, full := cm.observe(llm.Usage{PromptTokens: 1_000_000}, msgs)
+
+	if !full {
+		t.Errorf("window=1 且用量超阈值时应报告已满")
 	}
-	if len(cm.data.Turns) != 3 {
-		t.Fatalf("压缩策略不应丢弃任何轮, got %d轮", len(cm.data.Turns))
+	if !reflect.DeepEqual(cm.data.Turns, original) {
+		t.Errorf("TrimSummarize 不应改动历史: %+v", cm.data.Turns)
 	}
-	if !cm.data.Turns[0].Compacted || !cm.data.Turns[1].Compacted {
-		t.Fatalf("最旧的两轮都应被压缩: %+v", cm.data.Turns)
+	if !msgsEqualIgnoringBreakpoint(out, before) {
+		t.Errorf("TrimSummarize 不应改写 msgs:\ngot  %+v\nwant %+v", out, before)
 	}
-	if cm.data.Turns[2].Compacted {
-		t.Fatalf("最后一轮永远不应被压缩: %+v", cm.data.Turns[2])
+	if cm.historyLen != histLen || cm.turnStart != turnStart {
+		t.Errorf("偏移量不应变化: historyLen=%d->%d turnStart=%d->%d", histLen, cm.historyLen, turnStart, cm.turnStart)
 	}
+	if cm.stat.CompactedTurns != 0 || cm.stat.TrimmedTurns != 0 {
+		t.Errorf("不应记录任何压缩/丢弃: %+v", cm.stat)
+	}
+}
+
+// TestContextManager_Rebuild_ReplacesHistoryAndKeepsTail 验证 rebuild 把历史前缀整段重新展开，
+// 本轮 msgs[turnStart:] 原样保留，并在新历史末尾补打断点。
+func TestContextManager_Rebuild_ReplacesHistoryAndKeepsTail(t *testing.T) {
+	turn1 := makeDirectorTurn(0, 1, "第1轮回复", false)
+	turn2 := makeDirectorTurn(1, 2, "第2轮回复", false)
+	cm := &ContextManager{
+		sessionID: 1,
+		agentKey:  "director",
+		head:      []llm.ChatMessage{{Role: "system", Content: "sys"}},
+		opts:      ContextOptions{Window: 100_000, Strategy: TrimSummarize},
+		data:      models.TranscriptData{NextSeq: 2, Turns: []models.TranscriptTurn{turn1, turn2}},
+	}
+	opening := llm.ChatMessage{Role: "user", Content: "本轮opening"}
+	msgs := cm.Build(opening)
+
+	cm.data.Turns = cm.data.Turns[1:]
+	cm.historyTurns = len(cm.data.Turns)
+	out := cm.rebuild(msgs)
 
 	wantHist := flattenTranscriptTurns(cm.data.Turns)
-	if cm.historyLen != len(wantHist) {
-		t.Errorf("historyLen = %d, want %d", cm.historyLen, len(wantHist))
+	want := append(append([]llm.ChatMessage{}, cm.head...), wantHist...)
+	want = append(want, opening)
+	if !msgsEqualIgnoringBreakpoint(out, want) {
+		t.Errorf("rebuild 结果错误:\ngot  %+v\nwant %+v", out, want)
 	}
-	if cm.turnStart != cm.headLen+len(wantHist) {
-		t.Errorf("turnStart = %d, want %d", cm.turnStart, cm.headLen+len(wantHist))
-	}
-	wantOut := append(append([]llm.ChatMessage{}, cm.head...), wantHist...)
-	wantOut = append(wantOut, opening)
-	if !msgsEqualIgnoringBreakpoint(out, wantOut) {
-		t.Errorf("out应等于head+压缩后历史展开+opening:\ngot  %+v\nwant %+v", out, wantOut)
-	}
-	if !out[cm.headLen-1].CacheBreakpoint {
-		t.Errorf("head末尾应打断点")
+	if cm.historyLen != len(wantHist) || cm.turnStart != cm.headLen+len(wantHist) {
+		t.Errorf("偏移量未更新: historyLen=%d turnStart=%d", cm.historyLen, cm.turnStart)
 	}
 	if !out[cm.headLen+len(wantHist)-1].CacheBreakpoint {
-		t.Errorf("压缩后历史末尾应打断点")
+		t.Errorf("新历史末尾应打断点")
 	}
 	if out[len(out)-1].CacheBreakpoint {
-		t.Errorf("本轮opening不应携带断点(由llm层自动追加)")
+		t.Errorf("本轮 opening 不应携带断点")
+	}
+}
+
+// TestContextManager_CurrentFloorStart 验证本周期起点跳过总结单元，且只认当前 floor。
+func TestContextManager_CurrentFloorStart(t *testing.T) {
+	cm := &ContextManager{floor: 3, data: models.TranscriptData{Turns: []models.TranscriptTurn{
+		{Kind: "summary"},
+		{Floor: 2},
+		{Floor: 3, Unit: 1},
+		{Floor: 3, Unit: 2},
+	}}}
+	if got := cm.currentFloorStart(); got != 2 {
+		t.Errorf("currentFloorStart = %d, want 2", got)
+	}
+	cm.floor = 4
+	if got := cm.currentFloorStart(); got != 4 {
+		t.Errorf("本周期还没有单元时应返回 len=4, got %d", got)
 	}
 }
 

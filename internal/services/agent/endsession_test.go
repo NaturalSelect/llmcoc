@@ -74,7 +74,7 @@ func TestToolCallWin_True(t *testing.T) {
 //   - 在返回错误之前没有任何状态修改
 func TestEndGameAction_WinNil_NoSideEffect(t *testing.T) {
 	hasEnd := false
-	narration := ""
+	var outbox []Output
 	actx := ActionContext{
 		Ctx: context.Background(),
 		GCtx: &GameContext{
@@ -83,9 +83,9 @@ func TestEndGameAction_WinNil_NoSideEffect(t *testing.T) {
 				Status: models.SessionStatusPlaying,
 			},
 		},
-		Sid:         999,
-		HasEnd:      &hasEnd,
-		KPNarration: &narration,
+		Sid:    999,
+		HasEnd: &hasEnd,
+		Outbox: &outbox,
 	}
 	// NOTE: Win 为 nil（缺失）
 	call := ToolCall{Action: ToolEndGame, EndSummary: "测试结局"}
@@ -110,9 +110,9 @@ func TestEndGameAction_WinNil_NoSideEffect(t *testing.T) {
 	if actx.GCtx.Session.Status == models.SessionStatusEnded {
 		t.Error("session.Status must not change to ended when win is nil")
 	}
-	// NOTE: KPNarration 不能被写入结局文字。
-	if narration != "" {
-		t.Errorf("KPNarration should be empty when win is nil, got %q", narration)
+	// NOTE: 不能产生任何玩家可见输出。
+	if len(outbox) != 0 {
+		t.Errorf("outbox should be empty when win is nil, got %+v", outbox)
 	}
 }
 
@@ -121,7 +121,7 @@ func TestEndGameAction_WinNil_NoSideEffect(t *testing.T) {
 func TestEndGameAction_WinFalse_Accepted(t *testing.T) {
 	winFalse := false
 	hasEnd := false
-	narration := ""
+	var outbox []Output
 	actx := ActionContext{
 		Ctx: context.Background(),
 		GCtx: &GameContext{
@@ -130,9 +130,9 @@ func TestEndGameAction_WinFalse_Accepted(t *testing.T) {
 				Status: models.SessionStatusPlaying,
 			},
 		},
-		Sid:         998,
-		HasEnd:      &hasEnd,
-		KPNarration: &narration,
+		Sid:    998,
+		HasEnd: &hasEnd,
+		Outbox: &outbox,
 	}
 	call := ToolCall{Action: ToolEndGame, Win: &winFalse}
 
@@ -144,7 +144,7 @@ func TestEndGameAction_WinFalse_Accepted(t *testing.T) {
 		endGameAction{}.Execute(call, actx)
 	}()
 
-	// NOTE: win=false 通过了 nil 检查，HasEnd 在 DB 访问前已被... 
+	// NOTE: win=false 通过了 nil 检查，HasEnd 在 DB 访问前已被...
 	// 实际上 HasEnd 在 DB 访问之后才被设置，所以 panic 会在 HasEnd 之前发生。
 	// 因此我们只能验证不返回"缺失 win"的 ToolResult。
 	// 此测试主要依赖 TestEndGameAction_WinNil_NoSideEffect 的对照。
@@ -448,9 +448,9 @@ func TestRunEndSession_RelationPromotion_ExistingUpdatesApplyWithoutAI(t *testin
 			UserID:        uid,
 			CharacterCard: *card,
 			SessionRelations: models.JSONField[[]models.SessionRelation]{Data: []models.SessionRelation{
-				{SocialRelation: models.SocialRelation{Name: "A", Relationship: "盟友", Note: "新备注"}}, // tier2已有,本局更新
+				{SocialRelation: models.SocialRelation{Name: "A", Relationship: "盟友", Note: "新备注"}},   // tier2已有,本局更新
 				{SocialRelation: models.SocialRelation{Name: "B", Relationship: "路人", Note: "只打过照面"}}, // tier2没有,新候选
-				{SocialRelation: models.SocialRelation{Name: "C"}, Removed: true},                    // tier2已有,本局移除
+				{SocialRelation: models.SocialRelation{Name: "C"}, Removed: true},                     // tier2已有,本局移除
 			}},
 		}},
 	}

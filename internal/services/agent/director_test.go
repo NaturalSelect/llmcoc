@@ -298,8 +298,8 @@ func TestBuildKPTurnOpening_SendVersionEqualsArchiveVersion(t *testing.T) {
 		t.Fatalf("两条消息都应是user角色: %+v", msgs)
 	}
 
-	if !strings.Contains(msgs[0].Content, "<player_turn seq=2>") {
-		t.Errorf("第1条应携带<player_turn seq=2>, got %q", msgs[0].Content)
+	if !strings.Contains(msgs[0].Content, "<player_turn floor=2>") {
+		t.Errorf("第1条应携带<player_turn floor=2>, got %q", msgs[0].Content)
 	}
 	if !strings.Contains(msgs[0].Content, "</player_turn>") {
 		t.Error("第1条应闭合</player_turn>")
@@ -355,7 +355,7 @@ func TestDirectorEncouragedToGenerateImages(t *testing.T) {
 		t.Error("turn checklist should prompt the director to consider generate_image every turn")
 	}
 	desc := generateImageTool().def.Description
-	for _, want := range []string{"每个玩家回合最多一张", "空镜不需要 describe_characters"} {
+	for _, want := range []string{"每一拍(两条response/ask_players消息之间)最多一张", "空镜不需要 describe_characters"} {
 		if !strings.Contains(desc, want) {
 			t.Errorf("generate_image description should contain %q", want)
 		}
@@ -739,20 +739,36 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 		}
 	})
 
-	t.Run("可推进者未结算时response被拒并列出未行动者", func(t *testing.T) {
+	t.Run("可推进者未结算时ask_players和end_game被拒并列出未行动者", func(t *testing.T) {
+		// 甲乙均已提交本轮声明(在当前批次内),因此未行动即视为可推进,应挡住交出发言权的收尾工具。
+		declared := []PlayerAction{{PlayerName: "甲", Content: "攻击"}, {PlayerName: "乙", Content: "闪避"}}
+		for _, call := range []llm.ToolCall{
+			policyCall("ask_players", `{"targets":["甲"],"question":"你怎么办?"}`),
+			policyCall("end_game", `{"reply":"结束"}`),
+		} {
+			imageDone := false
+			dramaturgDone := false
+			combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
+			reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, declared, func(string) {})([]llm.ToolCall{call})
+			if reject == "" {
+				t.Fatalf("还有已声明但未行动的可推进参战者时%s应被拒", call.Name)
+			}
+			if !strings.Contains(reject, "乙") {
+				t.Errorf("%s reject = %q, want 提及还未行动的乙", call.Name, reject)
+			}
+		}
+	})
+
+	t.Run("可推进者未结算时response放行(只发布一条消息、不交出发言权)", func(t *testing.T) {
 		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		// 甲乙均已提交本轮声明(在当前批次内),因此未行动即视为可推进,应挡住response。
 		declared := []PlayerAction{{PlayerName: "甲", Content: "攻击"}, {PlayerName: "乙", Content: "闪避"}}
 		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, declared, func(string) {})([]llm.ToolCall{
 			policyCall("response", `{"reply":"战斗继续"}`),
 		})
-		if reject == "" {
-			t.Fatal("还有已声明但未行动的可推进参战者时response应被拒")
-		}
-		if !strings.Contains(reject, "乙") {
-			t.Errorf("reject = %q, want 提及还未行动的乙", reject)
+		if reject != "" {
+			t.Errorf("response不交出发言权,战斗中应放行,got reject: %s", reject)
 		}
 	})
 

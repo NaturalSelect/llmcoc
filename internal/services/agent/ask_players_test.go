@@ -19,17 +19,17 @@ func askTestPlayers() []models.SessionPlayer {
 
 func TestAskPlayersResolvesNames(t *testing.T) {
 	hasEnd := false
-	narration := ""
+	var outbox []Output
 	var ask *AskResult
 	var combat *models.CombatState
 	var chase *models.ChaseState
 	actx := ActionContext{
-		GCtx:        &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
-		HasEnd:      &hasEnd,
-		KPNarration: &narration,
-		Ask:         &ask,
-		Combat:      &combat,
-		Chase:       &chase,
+		GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+		HasEnd: &hasEnd,
+		Outbox: &outbox,
+		Ask:    &ask,
+		Combat: &combat,
+		Chase:  &chase,
 	}
 
 	results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"乙"}, Question: "你怎么办？"}, actx)
@@ -42,24 +42,24 @@ func TestAskPlayersResolvesNames(t *testing.T) {
 	if ask == nil || len(ask.UserIDs) != 1 || ask.UserIDs[0] != 2 || ask.Names[0] != "乙" || ask.Question != "你怎么办？" {
 		t.Errorf("Ask = %+v", ask)
 	}
-	if narration != "你怎么办？" {
-		t.Errorf("问题文本应写入KPNarration, got %q", narration)
+	if len(outbox) != 1 || outbox[0].Kind != OutputAsk || outbox[0].Text != "你怎么办？" || outbox[0].Ask == nil {
+		t.Errorf("成功点名应产生一条ask输出, got %+v", outbox)
 	}
 }
 
 func TestAskPlayersAllSkipsDeadAndDedups(t *testing.T) {
 	hasEnd := false
-	narration := ""
+	var outbox []Output
 	var ask *AskResult
 	var combat *models.CombatState
 	var chase *models.ChaseState
 	actx := ActionContext{
-		GCtx:        &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
-		HasEnd:      &hasEnd,
-		KPNarration: &narration,
-		Ask:         &ask,
-		Combat:      &combat,
-		Chase:       &chase,
+		GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+		HasEnd: &hasEnd,
+		Outbox: &outbox,
+		Ask:    &ask,
+		Combat: &combat,
+		Chase:  &chase,
 	}
 
 	askPlayersAction{}.Execute(ToolCall{Targets: []string{"all", "甲"}, Question: "各位怎么办？"}, actx)
@@ -81,24 +81,24 @@ func TestAskPlayersRejectsUnknownAndDead(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			hasEnd := false
-			narration := ""
+			var outbox []Output
 			var ask *AskResult
 			var combat *models.CombatState
 			var chase *models.ChaseState
 			actx := ActionContext{
-				GCtx:        &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
-				HasEnd:      &hasEnd,
-				KPNarration: &narration,
-				Ask:         &ask,
-				Combat:      &combat,
-				Chase:       &chase,
+				GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+				HasEnd: &hasEnd,
+				Outbox: &outbox,
+				Ask:    &ask,
+				Combat: &combat,
+				Chase:  &chase,
 			}
 			results := askPlayersAction{}.Execute(ToolCall{Targets: tc.targets, Question: "怎么办？"}, actx)
 			if len(results) != 1 || !strings.HasPrefix(results[0].Result, "SYSTEM REJECT") || !strings.Contains(results[0].Result, tc.want) {
 				t.Fatalf("应拒绝并包含%q, got %+v", tc.want, results)
 			}
-			if hasEnd || ask != nil || narration != "" {
-				t.Errorf("拒绝时不应产生副作用: hasEnd=%v ask=%+v narration=%q", hasEnd, ask, narration)
+			if hasEnd || ask != nil || len(outbox) != 0 {
+				t.Errorf("拒绝时不应产生副作用: hasEnd=%v ask=%+v outbox=%+v", hasEnd, ask, outbox)
 			}
 		})
 	}
@@ -106,17 +106,17 @@ func TestAskPlayersRejectsUnknownAndDead(t *testing.T) {
 
 func TestAskPlayersRejectsEmptyQuestion(t *testing.T) {
 	hasEnd := false
-	narration := ""
+	var outbox []Output
 	var ask *AskResult
 	var combat *models.CombatState
 	var chase *models.ChaseState
 	actx := ActionContext{
-		GCtx:        &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
-		HasEnd:      &hasEnd,
-		KPNarration: &narration,
-		Ask:         &ask,
-		Combat:      &combat,
-		Chase:       &chase,
+		GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+		HasEnd: &hasEnd,
+		Outbox: &outbox,
+		Ask:    &ask,
+		Combat: &combat,
+		Chase:  &chase,
 	}
 	results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"甲"}, Question: "  "}, actx)
 	if len(results) != 1 || !strings.HasPrefix(results[0].Result, "SYSTEM REJECT") || hasEnd {
@@ -126,7 +126,7 @@ func TestAskPlayersRejectsEmptyQuestion(t *testing.T) {
 
 func TestAskPlayersMergesPendingClarification(t *testing.T) {
 	hasEnd := false
-	narration := ""
+	var outbox []Output
 	var ask *AskResult
 	combat := &models.CombatState{Active: true, Participants: []models.CombatParticipant{
 		{Name: "乙", UserID: 2, PendingClarification: true},
@@ -134,12 +134,12 @@ func TestAskPlayersMergesPendingClarification(t *testing.T) {
 	}}
 	var chase *models.ChaseState
 	actx := ActionContext{
-		GCtx:        &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
-		HasEnd:      &hasEnd,
-		KPNarration: &narration,
-		Ask:         &ask,
-		Combat:      &combat,
-		Chase:       &chase,
+		GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+		HasEnd: &hasEnd,
+		Outbox: &outbox,
+		Ask:    &ask,
+		Combat: &combat,
+		Chase:  &chase,
 	}
 
 	results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"甲"}, Question: "你们怎么办？"}, actx)

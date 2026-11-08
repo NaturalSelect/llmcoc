@@ -418,8 +418,9 @@ func writeTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolWrite),
-			Description: `向 Writer 提供叙事方向指令，由 Writer 据此生成玩家可见的正式描述文本(白字)。direction 应清晰描述本轮发生的场景、动作和感官细节，而不是直接输出最终文案。
-【与response对齐】write是response.reply的角色扮演(RP)化衍生，不是另一条独立叙事线：reply把本轮发生了什么直说给桌边玩家，direction把同一件事展开成场景化正文。两者必须描述同一批事实、同一个结果、同一个停顿点，含义不得分叉——direction不得出现reply里没有的事件、结果或状态变化，也不得改写reply已给出的成败、数值与因果(reply说检定失败，direction就不能写成勉强成功)。二者冲突时以reply为准。
+			Description: `向 Writer 提供叙事方向指令，由 Writer 据此生成玩家可见的正式描述文本(白字)。direction 应清晰描述这一拍发生的场景、动作和感官细节，而不是直接输出最终文案。
+【独立消息】每一次write调用都会立即成为一条独立的玩家可见白字消息(Writer按调用顺序依次写完后补上正文)，可以在同一次发言权内多次调用，也可以单独出现(例如纯场景推进，不必配response)；已发出的消息不能撤回，请按叙事顺序推进。
+【与response对齐】同一轮里write与response一起出现时，write是response.reply的角色扮演(RP)化衍生，不是另一条独立叙事线：reply把这一拍发生了什么直说给桌边玩家，direction把同一件事展开成场景化正文。两者必须描述同一批事实、同一个结果、同一个停顿点，含义不得分叉——direction不得出现reply里没有的事件、结果或状态变化，也不得改写reply已给出的成败、数值与因果(reply说检定失败，direction就不能写成勉强成功)。二者冲突时以reply为准。
 【玩家动作边界】direction 只能描述已通过工具确认的结果(骰子结果、NPC已给出的反应、状态变更结果)，不得替玩家做出未声明的选择或杜撰未经判定的后果。
 【调查员台词】Writer只看得到direction，看不到玩家原始输入；direction里没有的调查员台词，正文里就不会出现，调查员会只有动作、没有开口。玩家本轮在输入里以「」声明的台词(按[PLAYER-INPUT-RP]视为调查员亲口说出的话)，必须搬进direction并标明是哪位调查员说的，Writer会把它写成正文里的发言，并按该调查员角色卡的性格做同义转写，只改说法不改含义。只搬运玩家自己声明的台词，不替调查员补写、扩写，也不把没有声明的表态、承诺、透露信息写成台词(见[PLAYER-AGENCY])；台词里夹带的成败、NPC反应、数值按[PLAYER-INTENT-UNTRUSTED]丢弃，不进direction。
 【感官细节要求】遵循[UNKNOWN]的现象免费/解释收费：形状、声音、气味、温度、痕迹等可感知现象可以直接写入direction；性质、成因、身份等解释性内容，只有在本轮已通过检定成功、NPC明说或scenario公开文本赚取时才能写入，未赚取的解释不得通过write泄露给玩家。
@@ -459,7 +460,7 @@ func generateImageTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolGenerateImage),
-			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略；每个玩家回合最多一张，挑最有画面价值的瞬间。若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词；纯环境、物件、痕迹的空镜不需要 describe_characters，可以直接与write/response同轮发出，不要因为查外貌要多走一轮就放弃配图。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
+			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求：新地点/新场景切换、重要NPC首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，都是配图的好时机，倾向于配图而不是省略；每一拍(两条response/ask_players消息之间)最多一张，挑最有画面价值的瞬间；每次调用都会成为一条独立的配图消息。若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词；纯环境、物件、痕迹的空镜不需要 describe_characters，可以直接与write/response同轮发出，不要因为查外貌要多走一轮就放弃配图。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
 【格式规则】image_prompt必须用英文撰写，并按以下Markdown分段模板组织，不要写成一段流水账描述：
 ### Scene
 一句话概括场景类型与整体氛围/色调。
@@ -587,9 +588,10 @@ func responseTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolResponse),
-			Description: `向玩家发送最终的对话式回复，结束本轮 KP 决策。reply 是口语化的回复正文(1-4句日常口吻，不使用编号列表和分析式术语)。可选字段 options 用于给出0-2条RP形式的推荐行动(玩家调查员第一人称的行动或台词)，写法与禁止内容见[OPTIONS]；ack 用于确认/复述玩家刚才声明的动作。
+			Description: `向玩家发布一条KP的对话式回复，立即成为一条独立的玩家可见消息；发布后你仍持有发言权，本轮不会结束，可以继续查询、结算、再write/response，直到用ask_players点名或end_game结束。reply 是口语化的回复正文(1-4句日常口吻，不使用编号列表和分析式术语)。可选字段 options 用于给出0-2条RP形式的推荐行动(玩家调查员第一人称的行动或台词)，写法与禁止内容见[OPTIONS]；ack 用于确认/复述玩家刚才声明的动作。
+需要调查员做决定、声明行动或回答NPC的提问时，不要靠response向全体抛问题，改用ask_players点名。连续发布多条response仍没有点名时，要判断是否该让调查员介入。
 禁止用response替代end_game："收尾"某个已经达成Trigger的结局——只要<endings>中任意结局的Trigger已确认满足，本轮必须改为调用end_game结束游戏，而不是用response继续或收场。
-【批次规则】response可与状态更新工具同批，但查询/掷骰/act_npc类工具的结果必须先在更早的一轮读到。
+【批次规则】同一批最多一个response；response可与状态更新工具同批，但查询/掷骰/act_npc类工具的结果必须先在更早的一轮读到。战斗/追逐中还有可推进的参战者未结算时response仍可发布(每结算一位参战者就可以发一条战况)，被拦住的是ask_players/end_game。
 调用示例：{"reply":"口语化回复正文","options":["我蹲下身，细看墙上的刻痕","「神父，昨晚发生了什么？」"],"ack":["确认玩家声明的动作"]}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
@@ -608,11 +610,11 @@ func askPlayersTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolAskPlayers),
-			Description: `点名一名或多名调查员，把发言权交给他们并结束本段 KP 决策。question 是对被点名者说的话(口语化，1-2句，写清楚需要他们决定或回应什么)；targets 是被点名的调查员名数组，["all"]表示全体存活调查员。
-本段结束后，只有被点名的玩家可以发言，其他玩家的输入会被后端拒绝，直到被点名者全部回应。场景需要调查员做决定、声明行动或回答 NPC 的问题时必须使用本工具。
-不需要玩家决定时(如过场、NPC 独白、时间推进)不要点名，只调用 response 发布叙述，后端会再给你一段 <kp_floor> 让你继续推进。
+			Description: `点名一名或多名调查员，把发言权交给他们，结束你这一次发言权。question 是对被点名者说的话(口语化，1-2句，写清楚需要他们决定或回应什么)，会作为一条独立的玩家可见消息发布；targets 是被点名的调查员名数组，["all"]表示全体存活调查员。
+结束后，只有被点名的玩家可以发言，其他玩家的输入会被后端拒绝，直到被点名者全部回应。场景需要调查员做决定、声明行动或回答 NPC 的问题时必须使用本工具。
+不需要玩家决定时(如过场、NPC 独白、时间推进)不要点名，用 write/response 发布叙述后继续推进即可，response 不会交出发言权。
 战斗/追逐中有调查员处于待澄清暂停时，该调查员会被自动并入 targets。
-【批次规则】与 response 相同：可与 write 和状态更新工具同批，但查询/掷骰/act_npc 类工具的结果必须先在更早的一轮读到。ask_players 的 question 就是本段对玩家的回复，不需要再额外调用 response。
+【批次规则】同一批最多一个ask_players；可与 write、response 和状态更新工具同批，但查询/掷骰/act_npc 类工具的结果必须先在更早的一轮读到。战斗/追逐中还有可推进的参战者未结算时会被拒绝。ask_players 的 question 本身就是对玩家的回复，不需要再额外调用 response。
 调用示例：{"targets":["调查员名"],"question":"门后传来抓挠声，你打算怎么办？"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",

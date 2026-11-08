@@ -162,8 +162,10 @@ sqlite3 data/llmcoc.db "update users set role='admin' where username='your_usern
   - `POST /sessions/:id/start`
   - `POST /sessions/:id/end`
   - `GET /sessions/:id/messages`
-  - `POST /sessions/:id/chat`（SSE，被 KP 点名的玩家提交行动）
-  - `POST /sessions/:id/kp-turn`（SSE，房主或管理员让 KP 先手开场或继续推进）
+  - `POST /sessions/:id/chat`（被 KP 点名的玩家提交行动，返回 202，进展走 WebSocket）
+  - `POST /sessions/:id/kp-turn`（房主或管理员让 KP 先手开场或继续推进，返回 202）
+  - `POST /sessions/:id/kp-stop`（房主或管理员打断 KP 正在进行的周期，返回 202；没有周期在跑返回 409）
+  - `GET /sessions/:id/ws`（房间实时推送，协议见 `docs/realtime-protocol.md`）
   - `GET /sessions/:id/chat-status`
 - 商店：
   - `GET /shop/items`

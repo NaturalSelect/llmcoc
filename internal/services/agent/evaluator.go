@@ -42,17 +42,7 @@ func RunEvaluator(ctx context.Context, session *models.GameSession, messages []m
 	}
 
 	// Build a condensed chat log
-	var logBuilder strings.Builder
-	for _, m := range messages {
-		role := "KP"
-		if m.Role == models.MessageRoleUser {
-			role = m.Username
-			if role == "" {
-				role = "玩家"
-			}
-		}
-		logBuilder.WriteString(fmt.Sprintf("[%s]: %s\n", role, m.Content))
-	}
+	chatLog := BuildSessionChatLog(messages)
 
 	// Player summary (names + HP/SAN at end of game)
 	var playerInfo strings.Builder
@@ -70,7 +60,7 @@ func RunEvaluator(ctx context.Context, session *models.GameSession, messages []m
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: handle.systemPrompt(evaluatorDefaultPrompt)},
 		{Role: "user", Content: fmt.Sprintf("剧本:%s\n\n%s", session.Scenario.Name, playerInfo.String())},
-		{Role: "user", Content: "聊天记录:\n" + logBuilder.String()},
+		{Role: "user", Content: "聊天记录:\n" + chatLog},
 	}
 
 	resp, err := handle.provider.JsonChat(ctx, fmt.Sprintf("%v:evaluator", session.ID), msgs)

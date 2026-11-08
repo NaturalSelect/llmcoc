@@ -107,6 +107,11 @@ type toolLoopOptions struct {
 	// Steps[len-1].Usage 的位置，是阶段2迁移前的等价实现。
 	afterCall func(usage llm.Usage, msgs []llm.ChatMessage) []llm.ChatMessage
 
+	// afterDispatch 非 nil 时，在本轮全部 tool 结果追加进 msgs 之后调用一次；整批被拒绝的轮
+	// 也会调用（rejected=true）。终止工具所在的轮同样会调用，先于循环返回。
+	// 返回值替换 msgs（返回 nil 视为不变）；err 非 nil 时循环立即以该 err 结束，msgs 仍保持完整。
+	afterDispatch func(round int, calls []llm.ToolCall, msgs []llm.ChatMessage, rejected bool) ([]llm.ChatMessage, error)
+
 	// onPlainText 非 nil 时，若本轮模型未返回任何 tool_calls，不再计入 emptyRounds
 	// 失败探测，改由它判定这段纯文本是否构成"自然完成"：done=true 时驱动器立即
 	// 成功返回（调用方已在闭包中捕获结果）；done=false 时 retryMsg 作为下一轮 user
@@ -211,8 +216,26 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, 
 		cacheKey = handle.cacheKey(sessionID)
 	}
 
+	// NOTE: afterDispatch 可能整体替换 msgs（追加提醒或裁剪前缀）。已记录日志的前缀长度需要同步：
+	// 追加时原值仍然正确；变短时按末尾"尚未记录"的消息数量回推，避免下一轮切片越界。
+	applyAfterDispatch := func(round int, calls []llm.ToolCall, rejected bool) error {
+		if opts.afterDispatch == nil {
+			return nil
+		}
+		unlogged := len(msgs) - loggedCount
+		next, err := opts.afterDispatch(round, calls, msgs, rejected)
+		if next != nil {
+			if len(next) < len(msgs) {
+				loggedCount = max(0, len(next)-unlogged)
+			}
+			msgs = next
+		}
+		return err
+	}
+
 	emptyRounds := 0
-	for round := 1; round <= opts.maxRounds; round++ {
+	// NOTE: maxRounds<=0 表示不限轮数，由调用方的 afterDispatch / ctx 负责终止。
+	for round := 1; opts.maxRounds <= 0 || round <= opts.maxRounds; round++ {
 		if ctx.Err() != nil {
 			return msgs, ctx.Err()
 		}
@@ -290,6 +313,9 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, 
 			for _, call := range result.ToolCalls {
 				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: rejectMsg})
 			}
+			if err := applyAfterDispatch(round, result.ToolCalls, true); err != nil {
+				return msgs, err
+			}
 			continue
 		}
 
@@ -351,6 +377,9 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, 
 		}
 		if opts.afterRound != nil {
 			opts.afterRound()
+		}
+		if err := applyAfterDispatch(round, result.ToolCalls, false); err != nil {
+			return msgs, err
 		}
 		if done {
 			return msgs, nil

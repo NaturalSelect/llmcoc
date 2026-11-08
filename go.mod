@@ -10,6 +10,7 @@ require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-playground/validator/v10 v10.23.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/openai/openai-go/v3 v3.50.0
 	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.54.0

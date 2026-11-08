@@ -28,11 +28,16 @@ type GameContext struct {
 	UserInputAdmin bool // true if the user input is from the admin (KP), false for regular players
 	// PendingActions 保存本轮已收集的玩家行动;多人房间只在所有人提交后填充。
 	PendingActions []PlayerAction
-	// Progress 用于把KP主流程的真实阶段推给上层SSE;为空时静默。
+	// Progress 用于把KP主流程的真实阶段推给上层;为空时静默。
 	Progress func(string)
-	// KPFloor 非空表示本段由KP主动发起而不是玩家回应触发:opening(开场)/continue(KP上一段
-	// 没有点名,服务端自动续跑)/host_continue(房主要求KP继续)。为空表示由玩家回应触发。
+	// Publish 由handler注入:Director 每一轮产生玩家可见消息后同步调用,handler 负责落库并广播;
+	// 返回 err 时本周期以 StopError 结束。nil 时输出只计数、不外发(测试用)。
+	Publish func(RoundOutputs) error
+	// KPFloor 非空表示本周期由KP主动发起而不是玩家回应触发:opening(开场)/host_continue(房主
+	// 要求KP继续)/resume(上下文已满,总结后续跑)。为空表示由玩家回应触发。
 	KPFloor string
+	// LastStop 是上一个周期被强制结束的原因,host_continue 时写进 <kp_floor>,让KP知道为什么被叫回来。
+	LastStop StopReason
 	// AskedQuestion 是KP上一段点名时提出的问题,玩家回应段用它还原"这是在回答什么"。
 	AskedQuestion string
 	// SkippedNames 只在host_continue时填充:被点名但没有回应、本段被跳过的调查员名。
@@ -42,8 +47,8 @@ type GameContext struct {
 // KPFloor 取值。
 const (
 	KPFloorOpening      = "opening"
-	KPFloorContinue     = "continue"
 	KPFloorHostContinue = "host_continue"
+	KPFloorResume       = "resume"
 )
 
 // AskResult 是KP通过ask_players交出发言权的结果。
@@ -94,8 +99,8 @@ const (
 	ToolHint                   ToolCallType = "hint"                      // KP写入当前场景高密度提示
 	ToolGenerateImage          ToolCallType = "generate_image"            // NOTE: 生成即时场景图片
 	ToolDescribeCharacters     ToolCallType = "describe_characters"       // NOTE: 获取调查员可见外貌描写
-	ToolResponse               ToolCallType = "response"                  // 结束本轮并给出回复
-	ToolAskPlayers             ToolCallType = "ask_players"               // 点名调查员并交出发言权,结束本段
+	ToolResponse               ToolCallType = "response"                  // 发布一条KP消息,不交出发言权
+	ToolAskPlayers             ToolCallType = "ask_players"               // 点名调查员并交出发言权,结束本周期
 	ToolReport                 ToolCallType = "report"                    // 向管理系统自首
 
 	ToolStartCombat ToolCallType = "start_combat" // 开始一场战斗,建立DEX行动顺序
@@ -189,17 +194,65 @@ type WriterState struct {
 	Buffer string          // 本次生成的白字描述
 }
 
-// RunOutput 是一次KP主流程的结构化结果。
-// KPReply 是游戏主流程输出; WriterDirection 只用于之后异步生成白字描述。
+// OutputKind 区分一次工具调用产生的玩家可见消息种类。
+type OutputKind string
+
+const (
+	OutputWriter OutputKind = "writer" // write:交给 Writer 展开成白字正文
+	OutputImage  OutputKind = "image"  // generate_image:交给 Painter 出图
+	OutputKP     OutputKind = "kp"     // response/end_game:KP 的回复
+	OutputAsk    OutputKind = "ask"    // ask_players:点名并交出发言权
+)
+
+// Output 是一次产生玩家可见消息的工具调用的结果,一个 Output 对应一条消息。
+type Output struct {
+	Kind      OutputKind
+	Text      string              // writer: direction(交给Writer,不是正文); kp: reply或结束语; ask: question
+	NSFW      bool                // writer、image 各自单独标记
+	Image     *ImagePromptRequest // image
+	Options   []string            // kp: 推荐行动
+	Ack       []string            // kp: 对玩家动作的确认
+	Dice      string              // kp/ask: 本拍累积的公开骰子结果
+	TimePoint string              // kp/ask: 发布时的游戏内时间
+	Ask       *AskResult          // ask
+	Ended     bool                // end_game
+	Auto      bool                // writer 由 fallbackWriterDirection 自动补出
+}
+
+// RoundOutputs 是 Director 一轮工具调用产生的全部消息,按 writer → image → kp → ask 排好序
+// (同类保持调用顺序)。handler 在 Publish 里同步落库并广播。
+type RoundOutputs struct {
+	Floor     int
+	Round     int
+	Items     []Output
+	ElapsedMs int64 // 从上一条 kp/ask 到这一条的耗时,仅本轮含 kp/ask 时有值
+	Steps     int   // 从上一条 kp/ask 到这一条经过的轮数,同上
+	// WriterCtx 是本轮结束时 GameContext 的拷贝(Session.Players 也已拷贝,Progress/Publish 置空):
+	// Writer、Painter 异步读取它,Director 继续原地修改原 gctx 时不会产生数据竞争。
+	WriterCtx GameContext
+}
+
+// StopReason 说明一个发言权周期为什么没有以 ask_players/end_game 自然结束。
+type StopReason string
+
+const (
+	StopNone     StopReason = ""
+	StopHostStop StopReason = "host_stop" // 房主打断
+	StopLoop     StopReason = "loop"      // 防循环中止
+	StopStall    StopReason = "stall"     // 长时间没有产生任何玩家可见消息
+	StopError    StopReason = "error"     // LLM/发布出错
+	StopContext  StopReason = "context"   // 上下文已满,需要总结后续跑
+)
+
+// RunOutput 是一个发言权周期(floor)的结构化结果。
+// err != nil 当且仅当 Stop == StopError;其余强制结束(打断、防循环、停滞、上下文已满)err 为 nil。
 type RunOutput struct {
-	WriterText        string               // 已生成的白字描述,主要用于测试或兼容旧调用
-	WriterDirection   string               // Writer后续生成描述所需的导演指令
-	WriterNSFW        bool                 // 本轮write被标记为色情内容(且房间NSFW已开),决定Writer路由到writer_nsfw
-	KPReply           string               // KP对玩家的主流程回复
-	ImagePrompts      []ImagePromptRequest // NOTE: 本轮KP主流程排队的画图请求;生成后的data URL由handler持久化到消息内容。
-	DirectorElapsedMs int64                // Director工具调用循环的总耗时(毫秒),不含Writer/画图等异步阶段
-	DirectorSteps     int                  // Director工具调用循环实际执行的轮数
-	Ask               *AskResult           // KP点名结果;为nil表示KP保留发言权(服务端自动再跑一段)
+	Messages          int        // 本周期已经通过 Publish 发布的消息条数
+	Ask               *AskResult // KP点名结果;为nil且Ended为false表示周期被强制结束(KP仍持有发言权)
+	Ended             bool       // end_game 已执行,房间结束
+	Stop              StopReason // 强制结束的原因;自然结束为空
+	DirectorElapsedMs int64      // Director工具调用循环的总耗时(毫秒),不含Writer/画图等异步阶段
+	DirectorSteps     int        // Director工具调用循环实际执行的轮数
 }
 
 // ── Dice types ────────────────────────────────────────────────────────────────

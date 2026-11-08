@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,11 +14,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/llmcoc/server/internal/handlers/mocks"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
-	"github.com/llmcoc/server/internal/services/imagestore"
-	"go.uber.org/mock/gomock"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -77,7 +74,7 @@ func initTestDB(t *testing.T) {
 }
 
 // seedPlayingSession creates a scenario, user, playing session, character and
-// session player, and returns their IDs.
+// session player, and returns their IDs. Spotlight 留空(NULL)，等同 KP 持有发言权。
 func seedPlayingSession(t *testing.T) (sessionID, userID uint) {
 	t.Helper()
 
@@ -139,98 +136,65 @@ func seedPlayingSession(t *testing.T) (sessionID, userID uint) {
 	return session.ID, user.ID
 }
 
-// makeTestRouter builds a Gin engine with the chat route and auth values injected.
-func makeTestRouter(h *SessionHandlers, userID uint, username string) *gin.Engine {
-	gin.SetMode(gin.TestMode)
+// seedTwoPlayerSession 创建含两名活跃玩家的游戏房间，返回 sessionID、两个 userID 及角色名。
+// 房主是另一个不在房间里的账号 creator_mp。Spotlight 留空(NULL)。
+func seedTwoPlayerSession(t *testing.T, charName1, charName2 string) (sessionID, user1ID, user2ID uint) {
+	t.Helper()
+	scenarioID := seedScenario(t, "multi-scenario")
+
+	creator := models.User{Username: "creator_mp", Email: "creator_mp@t.com", PasswordHash: "x", CardSlots: 3}
+	if err := models.DB.Create(&creator).Error; err != nil {
+		t.Fatalf("create creator: %v", err)
+	}
+	session := models.GameSession{
+		Name:       "Multi Room",
+		ScenarioID: scenarioID,
+		Status:     models.SessionStatusPlaying,
+		MaxPlayers: 4,
+		CreatedBy:  creator.ID,
+		TurnRound:  1,
+	}
+	if err := models.DB.Create(&session).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	u1 := models.User{Username: "mp_user1", Email: "mp1@t.com", PasswordHash: "x", CardSlots: 3}
+	models.DB.Create(&u1)
+	c1 := models.CharacterCard{
+		UserID: u1.ID, Name: charName1, IsActive: true,
+		Stats:  models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, HP: 10, MaxHP: 10}},
+		Skills: models.JSONField[map[string]int]{Data: map[string]int{}},
+	}
+	models.DB.Create(&c1)
+	models.DB.Create(&models.SessionPlayer{SessionID: session.ID, UserID: u1.ID, CharacterCardID: c1.ID, JoinedAt: time.Now()})
+
+	u2 := models.User{Username: "mp_user2", Email: "mp2@t.com", PasswordHash: "x", CardSlots: 3}
+	models.DB.Create(&u2)
+	c2 := models.CharacterCard{
+		UserID: u2.ID, Name: charName2, IsActive: true,
+		Stats:  models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, HP: 10, MaxHP: 10}},
+		Skills: models.JSONField[map[string]int]{Data: map[string]int{}},
+	}
+	models.DB.Create(&c2)
+	models.DB.Create(&models.SessionPlayer{SessionID: session.ID, UserID: u2.ID, CharacterCardID: c2.ID, JoinedAt: time.Now()})
+
+	return session.ID, u1.ID, u2.ID
+}
+
+// roomRouter 构造带房间命令接口的路由，并注入登录身份。
+func roomRouter(h *SessionHandlers, userID uint, username, role string) *gin.Engine {
 	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		c.Set("user_id", userID)
-		c.Set("username", username)
-		c.Next()
-	})
+	r.Use(withAuth(userID, username, role))
 	r.GET("/sessions/:id/chat-status", h.GetChatStatus)
+	r.GET("/sessions/:id/messages", GetMessages)
 	r.POST("/sessions/:id/chat", h.ChatStream)
+	r.POST("/sessions/:id/kp-turn", h.KPTurn)
+	r.POST("/sessions/:id/kp-stop", h.KPStop)
 	return r
 }
 
-type blockingRunner struct {
-	started chan struct{}
-	release chan struct{}
-	output  agent.RunOutput
-}
-
-type blockingAuxRunner struct {
-	mu             sync.Mutex
-	runCount       int
-	writerStarted  chan struct{}
-	writerRelease  chan struct{}
-	painterStarted chan struct{}
-	painterRelease chan struct{}
-}
-
-func (r *blockingAuxRunner) Run(context.Context, agent.GameContext) (agent.RunOutput, error) {
-	r.mu.Lock()
-	r.runCount++
-	runCount := r.runCount
-	r.mu.Unlock()
-	if runCount == 1 {
-		return agent.RunOutput{
-			KPReply:         "你听见门后传来脚步声。",
-			WriterDirection: "描述门后的压迫感",
-			ImagePrompts:    []agent.ImagePromptRequest{{Prompt: "A dark wooden door"}},
-		}, nil
-	}
-	return agent.RunOutput{
-		KPReply:    "你继续向前探索。",
-		WriterText: "走廊尽头亮起微光。",
-	}, nil
-}
-
-func (*blockingAuxRunner) RunWriter(context.Context, agent.GameContext, string, bool) (string, error) {
-	return "", nil
-}
-
-func (r *blockingAuxRunner) RunWriterStream(_ context.Context, _ agent.GameContext, _ string, _ bool, onToken func(string)) (string, error) {
-	select {
-	case <-r.writerStarted:
-	default:
-		close(r.writerStarted)
-	}
-	<-r.writerRelease
-	onToken("门后的呼吸声越来越近。")
-	return "门后的呼吸声越来越近。", nil
-}
-
-func (r *blockingAuxRunner) RunPainter(context.Context, agent.GameContext, agent.ImagePromptRequest) (string, error) {
-	select {
-	case <-r.painterStarted:
-	default:
-		close(r.painterStarted)
-	}
-	<-r.painterRelease
-	return "data:image/png;base64,YWJj", nil
-}
-
-func (r *blockingRunner) Run(context.Context, agent.GameContext) (agent.RunOutput, error) {
-	select {
-	case <-r.started:
-	default:
-		close(r.started)
-	}
-	<-r.release
-	return r.output, nil
-}
-
-func (*blockingRunner) RunWriter(context.Context, agent.GameContext, string, bool) (string, error) {
-	return "", nil
-}
-
-func (*blockingRunner) RunWriterStream(context.Context, agent.GameContext, string, bool, func(string)) (string, error) {
-	return "", nil
-}
-
-func (*blockingRunner) RunPainter(context.Context, agent.GameContext, agent.ImagePromptRequest) (string, error) {
-	return "", nil
+func makeTestRouter(h *SessionHandlers, userID uint, username string) *gin.Engine {
+	return roomRouter(h, userID, username, "user")
 }
 
 func decodeChatStatus(t *testing.T, body string) chatStatusResponse {
@@ -242,52 +206,113 @@ func decodeChatStatus(t *testing.T, body string) chatStatusResponse {
 	return status
 }
 
-type parsedSSEEvent struct {
-	name string
-	data string
-}
-
-func parseSSEEvents(body string) []parsedSSEEvent {
-	var events []parsedSSEEvent
-	scanner := bufio.NewScanner(strings.NewReader(body))
-	var curEvent string
-	for scanner.Scan() {
-		line := scanner.Text()
-		switch {
-		case strings.HasPrefix(line, "event:"):
-			curEvent = strings.TrimPrefix(line, "event:")
-		case strings.HasPrefix(line, "data:"):
-			data := strings.TrimPrefix(line, "data:")
-			events = append(events, parsedSSEEvent{name: curEvent, data: data})
-		}
-	}
-	return events
-}
-
-func firstSSEEventIndex(events []parsedSSEEvent, name string) int {
-	for i, event := range events {
-		if event.name == name {
-			return i
-		}
-	}
-	return -1
-}
-
-// parseSSE 按事件类型聚合SSE响应数据。
-func parseSSE(body string) map[string][]string {
-	events := map[string][]string{}
-	for _, event := range parseSSEEvents(body) {
-		events[event.name] = append(events[event.name], event.data)
-	}
-	return events
-}
-
 // formPost builds an application/x-www-form-urlencoded POST request.
 func formPost(path, content string) *http.Request {
 	body := strings.NewReader("content=" + url.QueryEscape(content))
 	req, _ := http.NewRequest(http.MethodPost, path, body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return req
+}
+
+func postChat(r *gin.Engine, sessionID uint, content string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), content))
+	return w
+}
+
+func postKPTurn(r *gin.Engine, sessionID uint) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq(http.MethodPost, fmt.Sprintf("/sessions/%d/kp-turn", sessionID), nil))
+	return w
+}
+
+func postKPStop(r *gin.Engine, sessionID uint) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq(http.MethodPost, fmt.Sprintf("/sessions/%d/kp-stop", sessionID), nil))
+	return w
+}
+
+func getChatStatus(t *testing.T, r *gin.Engine, sessionID uint) chatStatusResponse {
+	t.Helper()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("chat-status code = %d: %s", w.Code, w.Body.String())
+	}
+	return decodeChatStatus(t, w.Body.String())
+}
+
+type chatAccepted struct {
+	FloorStarted bool           `json:"floor_started"`
+	Waiting      waitingPayload `json:"waiting"`
+}
+
+func decodeChatAccepted(t *testing.T, w *httptest.ResponseRecorder) chatAccepted {
+	t.Helper()
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("chat status = %d, want 202: %s", w.Code, w.Body.String())
+	}
+	var body chatAccepted
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode chat response: %v\nbody: %s", err, w.Body.String())
+	}
+	return body
+}
+
+func setSpotlight(t *testing.T, sessionID uint, sp *models.SpotlightState) {
+	t.Helper()
+	if err := models.DB.Model(&models.GameSession{}).Where("id = ?", sessionID).
+		Update("spotlight", models.JSONField[*models.SpotlightState]{Data: sp}).Error; err != nil {
+		t.Fatalf("set spotlight: %v", err)
+	}
+}
+
+func loadSpotlight(t *testing.T, sessionID uint) *models.SpotlightState {
+	t.Helper()
+	var s models.GameSession
+	if err := models.DB.First(&s, sessionID).Error; err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	return s.Spotlight.Data
+}
+
+func sessionCreator(t *testing.T, sessionID uint) uint {
+	t.Helper()
+	var s models.GameSession
+	if err := models.DB.First(&s, sessionID).Error; err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	return s.CreatedBy
+}
+
+func loadMessages(t *testing.T, sessionID uint) []models.Message {
+	t.Helper()
+	var msgs []models.Message
+	if err := models.DB.Where("session_id = ?", sessionID).Order("id ASC").Find(&msgs).Error; err != nil {
+		t.Fatalf("load messages: %v", err)
+	}
+	return msgs
+}
+
+func messageKinds(msgs []models.Message) []models.MessageKind {
+	kinds := make([]models.MessageKind, len(msgs))
+	for i, m := range msgs {
+		kinds[i] = m.Kind
+	}
+	return kinds
+}
+
+func countMessages(sessionID uint, role models.MessageRole) int64 {
+	var n int64
+	models.DB.Model(&models.Message{}).Where("session_id = ? AND role = ?", sessionID, role).Count(&n)
+	return n
+}
+
+// askAndStop 是一个最小的 Run 替身：不发布任何消息，直接点名 userIDs。
+func askRun(question string, userIDs []uint, names []string) func(context.Context, agent.GameContext) (agent.RunOutput, error) {
+	return func(context.Context, agent.GameContext) (agent.RunOutput, error) {
+		return agent.RunOutput{Ask: &agent.AskResult{UserIDs: userIDs, Names: names, Question: question}}, nil
+	}
 }
 
 // ── pure unit tests ───────────────────────────────────────────────────────────
@@ -312,1068 +337,407 @@ func TestChatTruncate(t *testing.T) {
 	}
 }
 
-// ── handler integration tests (in-memory SQLite) ─────────────────────────────
+// ── ChatStream: rejections ───────────────────────────────────────────────────
 
 func TestChatStream_SessionNotFound(t *testing.T) {
 	initTestDB(t)
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	r := makeTestRouter(h, 1, "tester")
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost("/sessions/9999/chat", "hello"))
-
-	if w.Code != http.StatusNotFound {
+	r := makeTestRouter(NewSessionHandlers(&fakeRunner{}), 1, "tester")
+	if w := postChat(r, 9999, "hello"); w.Code != http.StatusNotFound {
 		t.Errorf("want 404, got %d", w.Code)
 	}
 }
 
 func TestChatStream_NotPlaying(t *testing.T) {
 	initTestDB(t)
-
 	scenarioID := seedScenario(t, "s")
 	user := models.User{Username: "u", Email: "u@u.com", PasswordHash: "x", CardSlots: 3}
 	models.DB.Create(&user)
-	session := models.GameSession{
-		Name: "r", ScenarioID: scenarioID,
-		Status: models.SessionStatusLobby, MaxPlayers: 4, CreatedBy: user.ID,
-	}
+	session := models.GameSession{Name: "r", ScenarioID: scenarioID, Status: models.SessionStatusLobby, MaxPlayers: 4, CreatedBy: user.ID}
 	models.DB.Create(&session)
 
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	r := makeTestRouter(h, user.ID, "u")
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", session.ID), "hello"))
-
-	if w.Code != http.StatusBadRequest {
+	r := makeTestRouter(NewSessionHandlers(&fakeRunner{}), user.ID, "u")
+	if w := postChat(r, session.ID, "hello"); w.Code != http.StatusBadRequest {
 		t.Errorf("want 400, got %d", w.Code)
 	}
 }
 
-func TestChatStream_UserNotInSession(t *testing.T) {
+func TestChatStream_SpectatorForbidden(t *testing.T) {
 	initTestDB(t)
 	sessionID, _ := seedPlayingSession(t)
-
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	r := makeTestRouter(h, 999, "stranger")
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "hello"))
-
-	if w.Code != http.StatusForbidden {
+	r := makeTestRouter(NewSessionHandlers(&fakeRunner{}), 999, "stranger")
+	if w := postChat(r, sessionID, "hello"); w.Code != http.StatusForbidden {
 		t.Errorf("want 403, got %d", w.Code)
 	}
 }
 
-func TestChatStream_EmptyContent(t *testing.T) {
+func TestChatStream_EmptyAndOversizedContent(t *testing.T) {
 	initTestDB(t)
 	sessionID, userID := seedPlayingSession(t)
-
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	r := makeTestRouter(h, userID, "tester")
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), ""))
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("want 400, got %d", w.Code)
+	r := makeTestRouter(NewSessionHandlers(&fakeRunner{}), userID, "tester")
+	if w := postChat(r, sessionID, ""); w.Code != http.StatusBadRequest {
+		t.Errorf("empty content: want 400, got %d", w.Code)
+	}
+	if w := postChat(r, sessionID, strings.Repeat("a", 2001)); w.Code != http.StatusBadRequest {
+		t.Errorf("oversized content: want 400, got %d", w.Code)
 	}
 }
 
-func TestChatStream_AgentError(t *testing.T) {
-	initTestDB(t)
-	sessionID, userID := seedPlayingSession(t)
-
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{}, fmt.Errorf("LLM timeout"))
-
-	h := NewSessionHandlers(runner)
-	r := makeTestRouter(h, userID, "tester")
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我去探索地下室"))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("SSE response must be 200, got %d", w.Code)
-	}
-	ct := w.Header().Get("Content-Type")
-	if !strings.Contains(ct, "text/event-stream") {
-		t.Errorf("Content-Type want text/event-stream, got %q", ct)
-	}
-	events := parseSSE(w.Body.String())
-	if len(events["error"]) == 0 {
-		t.Errorf("expected SSE error event; body:\n%s", w.Body.String())
-	}
-	if !strings.Contains(events["error"][0], "LLM timeout") {
-		t.Errorf("error event data want 'LLM timeout', got %q", events["error"][0])
-	}
-}
-
-func TestChatStream_RejectsSecondRequestWhileProcessing(t *testing.T) {
-	initTestDB(t)
-	sessionID, userID := seedPlayingSession(t)
-	runner := &blockingRunner{
-		started: make(chan struct{}),
-		release: make(chan struct{}),
-		output:  agent.RunOutput{WriterText: "处理完成"},
-	}
-	r := makeTestRouter(NewSessionHandlers(runner), userID, "tester")
-
-	firstDone := make(chan *httptest.ResponseRecorder, 1)
-	go func() {
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "第一条行动"))
-		firstDone <- w
-	}()
-
-	select {
-	case <-runner.started:
-	case <-time.After(time.Second):
-		t.Fatal("first request did not enter runner")
-	}
-
-	second := httptest.NewRecorder()
-	r.ServeHTTP(second, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "重复行动"))
-	if second.Code != http.StatusConflict {
-		t.Fatalf("second request status = %d, want 409; body: %s", second.Code, second.Body.String())
-	}
-
-	close(runner.release)
-	select {
-	case first := <-firstDone:
-		if first.Code != http.StatusOK {
-			t.Fatalf("first request status = %d", first.Code)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("first request did not finish")
-	}
-
-	var userMessageCount int64
-	models.DB.Model(&models.Message{}).
-		Where("session_id = ? AND role = ?", sessionID, models.MessageRoleUser).
-		Count(&userMessageCount)
-	if userMessageCount != 1 {
-		t.Fatalf("user message count = %d, want 1", userMessageCount)
-	}
-}
-
-func TestGetChatStatus_SinglePlayerProcessingRecoversAfterRefresh(t *testing.T) {
-	initTestDB(t)
-	sessionID, userID := seedPlayingSession(t)
-	runner := &blockingRunner{
-		started: make(chan struct{}),
-		release: make(chan struct{}),
-		output:  agent.RunOutput{WriterText: "处理完成"},
-	}
-	r := makeTestRouter(NewSessionHandlers(runner), userID, "tester")
-
-	requestDone := make(chan struct{})
-	go func() {
-		defer close(requestDone)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "调查门锁"))
-	}()
-	select {
-	case <-runner.started:
-	case <-time.After(time.Second):
-		t.Fatal("request did not enter runner")
-	}
-
-	statusRecorder := httptest.NewRecorder()
-	r.ServeHTTP(statusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
-	if statusRecorder.Code != http.StatusOK {
-		t.Fatalf("chat status code = %d", statusRecorder.Code)
-	}
-	status := decodeChatStatus(t, statusRecorder.Body.String())
-	if !status.Processing || status.Phase != "processing" || !status.Submitted {
-		t.Fatalf("unexpected processing status: %+v", status)
-	}
-	if status.StartedAt == nil || status.SubmittedAt == nil {
-		t.Fatalf("processing timestamps missing: %+v", status)
-	}
-
-	close(runner.release)
-	select {
-	case <-requestDone:
-	case <-time.After(time.Second):
-		t.Fatal("request did not finish")
-	}
-
-	idleRecorder := httptest.NewRecorder()
-	r.ServeHTTP(idleRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
-	idle := decodeChatStatus(t, idleRecorder.Body.String())
-	if idle.Processing || idle.Phase != "idle" {
-		t.Fatalf("status should return idle after completion: %+v", idle)
-	}
-}
-
-func TestChatStream_WriterAndPainterDoNotBlockNextMainProcessing(t *testing.T) {
-	initTestDB(t)
-	restore := imagestore.SetDefaultDir(t.TempDir())
-	t.Cleanup(restore)
-	sessionID, userID := seedPlayingSession(t)
-	runner := &blockingAuxRunner{
-		writerStarted:  make(chan struct{}),
-		writerRelease:  make(chan struct{}),
-		painterStarted: make(chan struct{}),
-		painterRelease: make(chan struct{}),
-	}
-	r := makeTestRouter(NewSessionHandlers(runner), userID, "tester")
-
-	firstDone := make(chan struct{})
-	go func() {
-		defer close(firstDone)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我推开门"))
-	}()
-	select {
-	case <-runner.writerStarted:
-	case <-time.After(time.Second):
-		t.Fatal("writer did not start")
-	}
-	select {
-	case <-runner.painterStarted:
-	case <-time.After(time.Second):
-		t.Fatal("painter did not start")
-	}
-
-	statusRecorder := httptest.NewRecorder()
-	r.ServeHTTP(statusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
-	status := decodeChatStatus(t, statusRecorder.Body.String())
-	if status.Processing || status.Phase != "idle" {
-		t.Fatalf("writer phase must not block main processing: %+v", status)
-	}
-	secondDone := make(chan *httptest.ResponseRecorder, 1)
-	go func() {
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我继续前进"))
-		secondDone <- w
-	}()
-	select {
-	case second := <-secondDone:
-		if second.Code != http.StatusOK {
-			t.Fatalf("second main processing status = %d; body: %s", second.Code, second.Body.String())
-		}
-		if len(parseSSE(second.Body.String())["done"]) == 0 {
-			t.Fatalf("second main processing did not complete; body: %s", second.Body.String())
-		}
-	case <-time.After(time.Second):
-		t.Fatal("second main processing was blocked by writer/painter")
-	}
-
-	close(runner.writerRelease)
-	close(runner.painterRelease)
-	select {
-	case <-firstDone:
-	case <-time.After(time.Second):
-		t.Fatal("first request did not finish after writer/painter release")
-	}
-}
-
-func TestChatStream_Success(t *testing.T) {
-	initTestDB(t)
-	sessionID, userID := seedPlayingSession(t)
-
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
-		WriterDirection: "描述古籍翻开后的异变",
-		KPReply:         "恐惧正在蔓延。",
-	}, nil)
-	runner.EXPECT().RunWriterStream(gomock.Any(), gomock.Any(), "描述古籍翻开后的异变", gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, gctx agent.GameContext, direction string, nsfw bool, onToken func(string)) (string, error) {
-			onToken("克苏鲁")
-			onToken("觉醒了")
-			return "克苏鲁觉醒了", nil
+func TestChatStream_KPHoldsFloorRejectsWith409(t *testing.T) {
+	for name, sp := range map[string]*models.SpotlightState{
+		"NULL 视为 KP 持有": nil,
+		"空 Spotlight":    {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			initTestDB(t)
+			sessionID, userID := seedPlayingSession(t)
+			if sp != nil {
+				setSpotlight(t, sessionID, sp)
+			}
+			runner := &fakeRunner{}
+			w := postChat(makeTestRouter(NewSessionHandlers(runner), userID, "tester"), sessionID, "我先说")
+			if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "KP 正在推进剧情") {
+				t.Fatalf("got %d: %s", w.Code, w.Body.String())
+			}
+			if len(runner.runCalls()) != 0 {
+				t.Error("rejected input must not start a floor")
+			}
+			var actions int64
+			models.DB.Model(&models.SessionTurnAction{}).Where("session_id = ?", sessionID).Count(&actions)
+			if actions != 0 {
+				t.Errorf("rejected input must not create a turn action, got %d", actions)
+			}
 		})
-
-	h := NewSessionHandlers(runner)
-	r := makeTestRouter(h, userID, "tester")
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我翻开古籍"))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-	events := parseSSE(w.Body.String())
-	eventOrder := parseSSEEvents(w.Body.String())
-	if len(events["progress"]) == 0 {
-		t.Fatalf("expected progress event; body:\n%s", w.Body.String())
-	}
-
-	// Concatenate token events (Writer text).
-	var gotWriter string
-	for _, tok := range events["token"] {
-		gotWriter += tok
-	}
-	if gotWriter != "克苏鲁觉醒了" {
-		t.Errorf("writer tokens = %q, want %q", gotWriter, "克苏鲁觉醒了")
-	}
-
-	// Concatenate narration events (KP narration).
-	var gotNarration string
-	for _, tok := range events["narration"] {
-		gotNarration += tok
-	}
-	if gotNarration != "恐惧正在蔓延。" {
-		t.Errorf("narration tokens = %q, want %q", gotNarration, "恐惧正在蔓延。")
-	}
-	narrationIdx := firstSSEEventIndex(eventOrder, "narration")
-	kpDoneIdx := firstSSEEventIndex(eventOrder, "kp_done")
-	tokenIdx := firstSSEEventIndex(eventOrder, "token")
-	if narrationIdx < 0 || kpDoneIdx < 0 || tokenIdx < 0 {
-		t.Fatalf("expected narration, kp_done and token events; body:\n%s", w.Body.String())
-	}
-	if !(narrationIdx < kpDoneIdx && kpDoneIdx < tokenIdx) {
-		t.Fatalf("SSE order want narration -> kp_done -> token, got narration=%d kp_done=%d token=%d", narrationIdx, kpDoneIdx, tokenIdx)
-	}
-
-	if len(events["done"]) == 0 {
-		t.Errorf("expected SSE done event; body:\n%s", w.Body.String())
-	}
-
-	var msg models.Message
-	err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).
-		Last(&msg).Error
-	if err != nil {
-		t.Fatalf("no assistant message persisted: %v", err)
-	}
-	// DB保存为writer+KP拼接格式,便于历史上下文读取KP段。
-	wantContent := "克苏鲁觉醒了\n\nKP:恐惧正在蔓延。"
-	if msg.Content != wantContent {
-		t.Errorf("persisted content = %q, want %q", msg.Content, wantContent)
 	}
 }
 
-func TestChatStream_ForwardsImageSSEAndPersistsImageRef(t *testing.T) {
+func TestChatStream_UnnamedPlayerRejectedWith403(t *testing.T) {
 	initTestDB(t)
-	restore := imagestore.SetDefaultDir(t.TempDir())
-	t.Cleanup(restore)
-	sessionID, userID := seedPlayingSession(t)
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{user2ID}, Names: []string{"鲍勃"}, Question: "你打算怎么开门？"})
 
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
-		KPReply:      "你看见灯塔门缝中透出冷光。",
-		ImagePrompts: []agent.ImagePromptRequest{{Prompt: "A foggy lighthouse"}},
-	}, nil)
-	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), agent.ImagePromptRequest{Prompt: "A foggy lighthouse"}).Return("data:image/png;base64,YWJj", nil)
-
-	h := NewSessionHandlers(runner)
-	r := makeTestRouter(h, userID, "tester")
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我走近灯塔"))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
+	runner := &fakeRunner{}
+	w := postChat(makeTestRouter(NewSessionHandlers(runner), user1ID, "mp_user1"), sessionID, "我抢着说话")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("got %d, want 403: %s", w.Code, w.Body.String())
 	}
-	events := parseSSE(w.Body.String())
-	if len(events["image"]) != 1 {
-		t.Fatalf("image event count mismatch: %d", len(events["image"]))
+	if !strings.Contains(w.Body.String(), "KP 正在等待 鲍勃 回应") || !strings.Contains(w.Body.String(), "你打算怎么开门？") {
+		t.Errorf("reject message = %s", w.Body.String())
 	}
-	if events["image"][0] != "data:image/png;base64,YWJj" {
-		t.Fatalf("image event should match painter result")
-	}
-
-	var msg models.Message
-	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).Last(&msg).Error; err != nil {
-		t.Fatalf("no assistant message persisted: %v", err)
-	}
-	if strings.Contains(msg.Content, "data:image") || strings.Contains(msg.Content, imageDataURLStartTag) {
-		t.Fatalf("persisted content should not contain raw image data: %q", msg.Content)
-	}
-	refs := extractImageRefs(msg.Content)
-	if len(refs) != 1 || refs[0].MIME != "image/png" {
-		t.Fatalf("persisted content missing image ref: %q", msg.Content)
-	}
-	if _, err := imagestore.DefaultStore().Resolve(refs[0].Hash); err != nil {
-		t.Fatalf("stored image not found: %v", err)
+	if len(runner.runCalls()) != 0 || countMessages(sessionID, models.MessageRoleUser) != 0 {
+		t.Error("rejected input must not run the KP or persist messages")
 	}
 }
 
-func TestChatStream_ImageSSEAfterKPDone(t *testing.T) {
+func TestChatStream_PausedKPAsksForHostContinue(t *testing.T) {
 	initTestDB(t)
-	restore := imagestore.SetDefaultDir(t.TempDir())
-	t.Cleanup(restore)
 	sessionID, userID := seedPlayingSession(t)
+	setSpotlight(t, sessionID, &models.SpotlightState{Stop: "host_stop"})
 
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{
-		KPReply:      "灯塔门缝中透出冷光。",
-		ImagePrompts: []agent.ImagePromptRequest{{Prompt: "A foggy lighthouse"}},
-	}, nil)
-	runner.EXPECT().RunPainter(gomock.Any(), gomock.Any(), agent.ImagePromptRequest{Prompt: "A foggy lighthouse"}).Return("data:image/png;base64,YWJj", nil)
+	w := postChat(makeTestRouter(NewSessionHandlers(&fakeRunner{}), userID, "tester"), sessionID, "我想说话")
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "KP 已暂停") {
+		t.Fatalf("got %d: %s", w.Code, w.Body.String())
+	}
+}
 
+// ── ChatStream: starting a floor ─────────────────────────────────────────────
+
+func TestChatStream_NamedPlayerStartsFloorAndPassesContext(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{userID}, Names: []string{"Test Char"}, Question: "你听见了什么？"})
+
+	runner := &fakeRunner{run: askRun("接下来呢？", []uint{userID}, []string{"Test Char"})}
+	tap := tapRoom(t, sessionID)
+
+	w := postChat(makeTestRouter(NewSessionHandlers(runner), userID, "tester"), sessionID, "我贴着门听")
+	if body := decodeChatAccepted(t, w); !body.FloorStarted {
+		t.Fatalf("floor_started = false, body: %s", w.Body.String())
+	}
+	tap.waitCount("floor_end", 1)
+
+	runs := runner.runCalls()
+	if len(runs) != 1 {
+		t.Fatalf("Run called %d times, want 1", len(runs))
+	}
+	got := runs[0]
+	if got.KPFloor != "" || got.UserInput != "我贴着门听" || got.UserName != "Test Char" || got.AskedQuestion != "你听见了什么？" {
+		t.Errorf("player floor context = floor %q input %q name %q asked %q", got.KPFloor, got.UserInput, got.UserName, got.AskedQuestion)
+	}
+	if len(got.PendingActions) != 1 || got.PendingActions[0].Content != "我贴着门听" {
+		t.Errorf("PendingActions = %+v", got.PendingActions)
+	}
+	if got.Publish == nil || got.Progress == nil {
+		t.Error("handler must inject Publish and Progress")
+	}
+
+	msgs := loadMessages(t, sessionID)
+	if len(msgs) != 1 || msgs[0].Kind != models.MessageKindPlayer || msgs[0].Status != models.MessageStatusDone ||
+		msgs[0].Floor != 1 || msgs[0].Content != "我贴着门听" || msgs[0].UserID == nil || *msgs[0].UserID != userID {
+		t.Fatalf("player message = %+v", msgs)
+	}
+
+	sp := loadSpotlight(t, sessionID)
+	if sp == nil || len(sp.UserIDs) != 1 || sp.UserIDs[0] != userID || sp.Question != "接下来呢？" || sp.Stop != "" {
+		t.Fatalf("spotlight after ask = %+v", sp)
+	}
+	want := []string{"message_new", "spotlight", "floor_start", "spotlight", "floor_end"}
+	if got := strings.Join(tap.persistentTypes(), ","); got != strings.Join(want, ",") {
+		t.Errorf("persistent events = %s, want %s", got, strings.Join(want, ","))
+	}
+	if reason := eventField(tap.ofType("floor_end")[0], "reason"); reason != "ask" {
+		t.Errorf("floor_end reason = %v, want ask", reason)
+	}
+	if _, running := getSessionProcessing(sessionID); running {
+		t.Error("processing must be released after the floor ends")
+	}
+}
+
+func TestChatStream_MultiPlayerWaitsForEveryNamedPlayer(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	setSpotlight(t, sessionID, &models.SpotlightState{
+		UserIDs: []uint{user1ID, user2ID}, Names: []string{"爱丽丝", "鲍勃"}, Question: "你们怎么办？",
+	})
+	runner := &fakeRunner{run: askRun("好的", []uint{user1ID}, []string{"爱丽丝"})}
 	h := NewSessionHandlers(runner)
-	r := makeTestRouter(h, userID, "tester")
+	tap := tapRoom(t, sessionID)
 
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我走近灯塔"))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
+	first := decodeChatAccepted(t, postChat(makeTestRouter(h, user1ID, "mp_user1"), sessionID, "我查探房间"))
+	if first.FloorStarted {
+		t.Fatal("first submitter must not start the floor")
 	}
-	order := parseSSEEvents(w.Body.String())
-	kpDoneIdx := firstSSEEventIndex(order, "kp_done")
-	imageIdx := firstSSEEventIndex(order, "image")
-	if kpDoneIdx < 0 || imageIdx < 0 {
-		t.Fatalf("expected kp_done and image events")
+	if first.Waiting.Pending != 1 || first.Waiting.Total != 2 ||
+		len(first.Waiting.SubmittedNames) != 1 || first.Waiting.SubmittedNames[0] != "爱丽丝" ||
+		len(first.Waiting.PendingNames) != 1 || first.Waiting.PendingNames[0] != "鲍勃" {
+		t.Errorf("waiting payload = %+v", first.Waiting)
 	}
-	if !(kpDoneIdx < imageIdx) {
-		t.Fatalf("image should be streamed after kp_done, got kp_done=%d image=%d", kpDoneIdx, imageIdx)
+	tap.waitCount("waiting", 1)
+	if len(runner.runCalls()) != 0 || countMessages(sessionID, models.MessageRoleUser) != 0 {
+		t.Fatal("nothing may run or be persisted before everyone named has submitted")
 	}
 
-	var msg models.Message
-	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).Last(&msg).Error; err != nil {
-		t.Fatalf("no assistant message persisted: %v", err)
+	status := getChatStatus(t, makeTestRouter(h, user1ID, "mp_user1"), sessionID)
+	if status.Phase != "waiting" || !status.WaitingForPlayers || !status.Submitted || status.KPRunning {
+		t.Errorf("submitted player status = %+v", status)
 	}
-	if strings.Contains(msg.Content, "data:image") || strings.Contains(msg.Content, imageDataURLStartTag) {
-		t.Fatalf("persisted content should not contain raw image data: %q", msg.Content)
+	other := getChatStatus(t, makeTestRouter(h, user2ID, "mp_user2"), sessionID)
+	if other.Phase != "awaiting_me" || other.Submitted {
+		t.Errorf("pending player status = %+v", other)
 	}
-	if refs := extractImageRefs(msg.Content); len(refs) != 1 {
-		t.Fatalf("persisted content missing image ref: %q", msg.Content)
+
+	second := decodeChatAccepted(t, postChat(makeTestRouter(h, user2ID, "mp_user2"), sessionID, "我检查窗户"))
+	if !second.FloorStarted {
+		t.Fatal("last submitter must start the floor")
+	}
+	tap.waitCount("floor_end", 1)
+
+	got := runner.runCalls()[0]
+	if len(got.PendingActions) != 2 || got.PendingActions[0].PlayerName != "爱丽丝" || got.PendingActions[1].PlayerName != "鲍勃" {
+		t.Errorf("PendingActions = %+v, want both players in room order", got.PendingActions)
+	}
+	if n := countMessages(sessionID, models.MessageRoleUser); n != 2 {
+		t.Errorf("player messages = %d, want 2", n)
+	}
+}
+
+func TestChatStream_ResubmitReplacesDeclaration(t *testing.T) {
+	initTestDB(t)
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{user1ID, user2ID}, Names: []string{"爱丽丝", "鲍勃"}})
+	h := NewSessionHandlers(&fakeRunner{})
+	r := makeTestRouter(h, user1ID, "mp_user1")
+
+	postChat(r, sessionID, "第一版")
+	postChat(r, sessionID, "第二版")
+
+	var actions []models.SessionTurnAction
+	models.DB.Where("session_id = ? AND user_id = ?", sessionID, user1ID).Find(&actions)
+	if len(actions) != 1 || actions[0].ActionSummary != "第二版" {
+		t.Fatalf("turn actions = %+v, want a single latest declaration", actions)
+	}
+}
+
+func TestChatStream_WaitingPayloadSpecialCharsAndUsernameFallback(t *testing.T) {
+	initTestDB(t)
+	specialName := `角色"特殊\名称<>&`
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, specialName, "")
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{user1ID, user2ID}, Names: []string{"a", "b"}})
+	h := NewSessionHandlers(&fakeRunner{})
+
+	w := postChat(makeTestRouter(h, user1ID, "mp_user1"), sessionID, "我查探房间")
+	body := decodeChatAccepted(t, w)
+	if len(body.Waiting.SubmittedNames) != 1 || body.Waiting.SubmittedNames[0] != specialName {
+		t.Errorf("submitted_names = %v, want special name round-tripped", body.Waiting.SubmittedNames)
+	}
+	if len(body.Waiting.PendingNames) != 1 || body.Waiting.PendingNames[0] != "mp_user2" {
+		t.Errorf("pending_names = %v, want username fallback", body.Waiting.PendingNames)
+	}
+}
+
+func TestChatStream_RejectsSecondRequestWhileFloorRunning(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{userID}, Names: []string{"Test Char"}})
+
+	started, release := make(chan struct{}), make(chan struct{})
+	runner := &fakeRunner{run: func(context.Context, agent.GameContext) (agent.RunOutput, error) {
+		close(started)
+		<-release
+		return agent.RunOutput{}, nil
+	}}
+	r := makeTestRouter(NewSessionHandlers(runner), userID, "tester")
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postChat(r, sessionID, "第一条行动"))
+	<-started
+
+	if w := postChat(r, sessionID, "重复行动"); w.Code != http.StatusConflict {
+		t.Fatalf("second request status = %d, want 409: %s", w.Code, w.Body.String())
+	}
+	status := getChatStatus(t, r, sessionID)
+	if !status.KPRunning || status.Phase != "kp_running" || status.Floor == nil || status.Floor.Floor != 1 {
+		t.Errorf("status while running = %+v", status)
+	}
+
+	close(release)
+	tap.waitCount("floor_end", 1)
+	if n := countMessages(sessionID, models.MessageRoleUser); n != 1 {
+		t.Fatalf("user message count = %d, want 1", n)
+	}
+}
+
+func TestChatStream_AgentErrorLeavesKPHoldingWithStop(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{userID}, Names: []string{"Test Char"}})
+
+	runner := &fakeRunner{run: func(context.Context, agent.GameContext) (agent.RunOutput, error) {
+		return agent.RunOutput{}, errors.New("LLM timeout")
+	}}
+	r := makeTestRouter(NewSessionHandlers(runner), userID, "tester")
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postChat(r, sessionID, "我去探索地下室"))
+	tap.waitCount("floor_end", 1)
+
+	if reason := eventField(tap.ofType("floor_end")[0], "reason"); reason != "error" {
+		t.Errorf("floor_end reason = %v, want error", reason)
+	}
+	sp := loadSpotlight(t, sessionID)
+	if sp == nil || len(sp.UserIDs) != 0 || sp.Stop != "error" {
+		t.Fatalf("spotlight = %+v, want KP holding with stop=error", sp)
+	}
+	status := getChatStatus(t, r, sessionID)
+	if status.Phase != "kp_floor" || status.Spotlight.Stop != "error" || !status.CanKPContinue {
+		t.Errorf("status = %+v", status)
+	}
+	if w := postChat(r, sessionID, "再试一次"); w.Code != http.StatusConflict {
+		t.Errorf("chat while paused = %d, want 409", w.Code)
 	}
 }
 
 func TestChatStream_StripsImageDataFromAgentHistory(t *testing.T) {
 	initTestDB(t)
 	sessionID, userID := seedPlayingSession(t)
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{userID}, Names: []string{"Test Char"}})
 	dataURL := "data:image/png;base64,OLD"
 	if err := models.DB.Create(&models.Message{
 		SessionID: sessionID,
 		Role:      models.MessageRoleAssistant,
+		Kind:      models.MessageKindKP,
 		Content:   "旧场景描述\n" + imageDataURLStartTag + dataURL + imageDataURLEndTag,
 		Username:  "KP",
 	}).Error; err != nil {
 		t.Fatalf("seed assistant message: %v", err)
 	}
 
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	var capturedHistory []models.Message
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
-			capturedHistory = append([]models.Message(nil), gctx.History...)
-			return agent.RunOutput{WriterText: "ok"}, nil
-		})
+	runner := &fakeRunner{run: askRun("q", []uint{userID}, []string{"Test Char"})}
+	tap := tapRoom(t, sessionID)
+	decodeChatAccepted(t, postChat(makeTestRouter(NewSessionHandlers(runner), userID, "tester"), sessionID, "继续调查"))
+	tap.waitCount("floor_end", 1)
 
-	h := NewSessionHandlers(runner)
-	r := makeTestRouter(h, userID, "tester")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "继续调查"))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-	if len(capturedHistory) == 0 {
+	history := runner.runCalls()[0].History
+	if len(history) == 0 {
 		t.Fatal("expected runner to receive history")
 	}
-	for _, msg := range capturedHistory {
-		if strings.Contains(msg.Content, imageDataURLStartTag) || strings.Contains(msg.Content, imageDataURLEndTag) || strings.Contains(msg.Content, "data:image") {
-			t.Fatalf("agent history should be stripped")
+	for _, msg := range history {
+		if strings.Contains(msg.Content, imageDataURLStartTag) || strings.Contains(msg.Content, "data:image") {
+			t.Fatalf("agent history should be stripped: %q", msg.Content)
 		}
 	}
-
 	var stored models.Message
 	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleAssistant).First(&stored).Error; err != nil {
 		t.Fatalf("reload stored assistant message: %v", err)
 	}
 	if !strings.Contains(stored.Content, imageDataURLStartTag+dataURL+imageDataURLEndTag) {
-		t.Fatalf("DB content should keep image data tag")
+		t.Fatal("DB content should keep the image data tag")
 	}
 }
 
-func TestSaveChatMessagesMarksWriterPending(t *testing.T) {
+// ── GetChatStatus ────────────────────────────────────────────────────────────
+
+func TestGetChatStatus_Phases(t *testing.T) {
 	initTestDB(t)
-	sessionID, userID := seedPlayingSession(t)
-
-	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, agent.RunOutput{
-		WriterDirection: "描述门锁上的痕迹",
-		KPReply:         "你注意到锁孔边缘有新鲜划痕。",
-	})
-	if err != nil {
-		t.Fatalf("save chat messages: %v", err)
-	}
-	if msg == nil {
-		t.Fatal("assistant message is nil")
-	}
-	if !strings.Contains(msg.Content, writerPendingTag) {
-		t.Fatalf("pending content missing marker: %q", msg.Content)
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	creatorID := sessionCreator(t, sessionID)
+	h := NewSessionHandlers(&fakeRunner{})
+	status := func(userID uint, name string) chatStatusResponse {
+		return getChatStatus(t, makeTestRouter(h, userID, name), sessionID)
 	}
 
-	if err := updateAssistantMessageWriter(msg.ID, "你注意到锁孔边缘有新鲜划痕。", "门锁泛着冷光。"); err != nil {
-		t.Fatalf("update writer: %v", err)
+	// NULL Spotlight 与空 Spotlight 一样：KP 持有，普通玩家没有继续按钮。
+	nullRoom := status(user1ID, "mp_user1")
+	if nullRoom.Phase != "kp_floor" || !nullRoom.Spotlight.KPFloor || nullRoom.CanKPContinue || nullRoom.CanKPStop {
+		t.Errorf("NULL spotlight: %+v", nullRoom)
 	}
-	var updated models.Message
-	if err := models.DB.First(&updated, msg.ID).Error; err != nil {
-		t.Fatalf("reload message: %v", err)
+	if host := status(creatorID, "creator_mp"); !host.CanKPContinue || host.CanKPStop {
+		t.Errorf("host while KP holds: %+v", host)
 	}
-	if strings.Contains(updated.Content, writerPendingTag) {
-		t.Fatalf("final content should remove pending marker: %q", updated.Content)
+
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{user2ID}, Names: []string{"鲍勃"}, Question: "你怎么办？"})
+	asked := status(user2ID, "mp_user2")
+	if asked.Phase != "awaiting_me" || !asked.Spotlight.AskedMe || asked.Spotlight.Question != "你怎么办？" || asked.Spotlight.KPFloor {
+		t.Errorf("named player: %+v", asked)
+	}
+	other := status(user1ID, "mp_user1")
+	if other.Phase != "waiting" || other.Spotlight.AskedMe || len(other.Spotlight.Names) != 1 || other.Spotlight.Names[0] != "鲍勃" {
+		t.Errorf("unnamed player: %+v", other)
+	}
+
+	setSpotlight(t, sessionID, &models.SpotlightState{Stop: "loop"})
+	if paused := status(user1ID, "mp_user1"); paused.Spotlight.Stop != "loop" || paused.Phase != "kp_floor" {
+		t.Errorf("paused room: %+v", paused)
+	}
+
+	models.DB.Model(&models.GameSession{}).Where("id = ?", sessionID).Update("status", models.SessionStatusEnded)
+	if ended := status(creatorID, "creator_mp"); ended.Phase != "idle" || ended.CanKPContinue || ended.CanKPStop {
+		t.Errorf("ended room: %+v", ended)
 	}
 }
 
-func TestSaveChatMessagesRecordsDirectorMetrics(t *testing.T) {
+func TestGetChatStatus_DeadNamedPlayerIsNotWaitedOn(t *testing.T) {
 	initTestDB(t)
-	sessionID, userID := seedPlayingSession(t)
+	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	models.DB.Model(&models.CharacterCard{}).Where("user_id = ?", user2ID).Update("wound_state", "dead")
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{user1ID, user2ID}, Names: []string{"爱丽丝", "鲍勃"}})
 
-	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, agent.RunOutput{
-		WriterDirection:   "描述门锁上的痕迹",
-		KPReply:           "你注意到锁孔边缘有新鲜划痕。",
-		DirectorElapsedMs: 1234,
-		DirectorSteps:     5,
-	})
-	if err != nil {
-		t.Fatalf("save chat messages: %v", err)
-	}
-	if msg == nil {
-		t.Fatal("assistant message is nil")
-	}
-	if msg.DirectorElapsedMs == nil || *msg.DirectorElapsedMs != 1234 {
-		t.Fatalf("assistant message director_elapsed_ms = %v, want 1234", msg.DirectorElapsedMs)
-	}
-	if msg.DirectorSteps == nil || *msg.DirectorSteps != 5 {
-		t.Fatalf("assistant message director_steps = %v, want 5", msg.DirectorSteps)
-	}
-
-	var userMsg models.Message
-	if err := models.DB.Where("session_id = ? AND role = ?", sessionID, models.MessageRoleUser).
-		Order("id DESC").First(&userMsg).Error; err != nil {
-		t.Fatalf("reload user message: %v", err)
-	}
-	if userMsg.DirectorElapsedMs != nil || userMsg.DirectorSteps != nil {
-		t.Fatalf("user message should have nil director metrics, got elapsed=%v steps=%v", userMsg.DirectorElapsedMs, userMsg.DirectorSteps)
-	}
-
-	resp := newMessageResponse(*msg)
-	if resp.DirectorElapsedMs == nil || *resp.DirectorElapsedMs != 1234 {
-		t.Fatalf("response director_elapsed_ms = %v, want 1234", resp.DirectorElapsedMs)
-	}
-	if resp.DirectorSteps == nil || *resp.DirectorSteps != 5 {
-		t.Fatalf("response director_steps = %v, want 5", resp.DirectorSteps)
+	h := NewSessionHandlers(&fakeRunner{})
+	status := getChatStatus(t, makeTestRouter(h, user1ID, "mp_user1"), sessionID)
+	if status.Waiting.Total != 1 || len(status.Spotlight.UserIDs) != 1 || status.Spotlight.UserIDs[0] != user1ID {
+		t.Errorf("dead player must be dropped from the collection: %+v", status)
 	}
 }
 
-func TestSaveChatMessagesZeroRunOutputLeavesDirectorMetricsNil(t *testing.T) {
-	initTestDB(t)
-	sessionID, userID := seedPlayingSession(t)
-
-	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, agent.RunOutput{
-		WriterDirection: "描述门锁上的痕迹",
-		KPReply:         "你注意到锁孔边缘有新鲜划痕。",
-	})
-	if err != nil {
-		t.Fatalf("save chat messages: %v", err)
-	}
-	if msg == nil {
-		t.Fatal("assistant message is nil")
-	}
-	if msg.DirectorElapsedMs != nil || msg.DirectorSteps != nil {
-		t.Fatalf("zero RunOutput should leave director metrics nil, got elapsed=%v steps=%v", msg.DirectorElapsedMs, msg.DirectorSteps)
-	}
-}
-
-func TestUpdateAssistantMessageWriterPreservesImageRef(t *testing.T) {
-	initTestDB(t)
-	restore := imagestore.SetDefaultDir(t.TempDir())
-	t.Cleanup(restore)
-	sessionID, userID := seedPlayingSession(t)
-
-	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, agent.RunOutput{
-		WriterDirection: "描述门锁上的痕迹",
-		KPReply:         "你注意到锁孔边缘有新鲜划痕。",
-	})
-	if err != nil {
-		t.Fatalf("save chat messages: %v", err)
-	}
-	if msg == nil {
-		t.Fatal("assistant message is nil")
-	}
-
-	dataURL := "data:image/png;base64,YWJj"
-	if err := appendAssistantMessageImage(msg.ID, dataURL); err != nil {
-		t.Fatalf("append image data url: %v", err)
-	}
-	if err := updateAssistantMessageWriter(msg.ID, "你注意到锁孔边缘有新鲜划痕。", "门锁泛着冷光。"); err != nil {
-		t.Fatalf("update writer: %v", err)
-	}
-
-	var updated models.Message
-	if err := models.DB.First(&updated, msg.ID).Error; err != nil {
-		t.Fatalf("reload message: %v", err)
-	}
-	if strings.Contains(updated.Content, writerPendingTag) {
-		t.Fatalf("final content should remove pending marker")
-	}
-	if strings.Contains(updated.Content, dataURL) || strings.Contains(updated.Content, imageDataURLStartTag) {
-		t.Fatalf("final content should not preserve raw image data: %q", updated.Content)
-	}
-	if refs := extractImageRefs(updated.Content); len(refs) != 1 || refs[0].MIME != "image/png" {
-		t.Fatalf("final content should contain one image ref: %q", updated.Content)
-	}
-}
-
-func TestStartWriterJobClearsPendingWhenWriterReturnsEmpty(t *testing.T) {
-	initTestDB(t)
-	sessionID, userID := seedPlayingSession(t)
-
-	output := agent.RunOutput{
-		WriterDirection: "描述门锁上的痕迹",
-		KPReply:         "你注意到锁孔边缘有新鲜划痕。",
-	}
-	msg, err := saveChatMessages(uint64(sessionID), userID, "Test Char", "我检查门锁", nil, output)
-	if err != nil {
-		t.Fatalf("save chat messages: %v", err)
-	}
-	if msg == nil || !strings.Contains(msg.Content, writerPendingTag) {
-		t.Fatalf("pending marker not saved: %#v", msg)
-	}
-
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().RunWriterStream(gomock.Any(), gomock.Any(), output.WriterDirection, gomock.Any(), gomock.Any()).
-		Return("", nil)
-	h := NewSessionHandlers(runner)
-	clientDone := make(chan struct{})
-	defer close(clientDone)
-	ch := h.startWriterJob(msg.ID, agent.GameContext{}, output, clientDone)
-	if ch == nil {
-		t.Fatal("writer job channel is nil")
-	}
-	for range ch {
-	}
-
-	var updated models.Message
-	if err := models.DB.First(&updated, msg.ID).Error; err != nil {
-		t.Fatalf("reload message: %v", err)
-	}
-	if strings.Contains(updated.Content, writerPendingTag) {
-		t.Fatalf("empty writer result should clear pending marker: %q", updated.Content)
-	}
-	if updated.Content != "KP:你注意到锁孔边缘有新鲜划痕。" {
-		t.Fatalf("content = %q", updated.Content)
-	}
-}
-
-func TestChatStream_UserMessagePersisted(t *testing.T) {
-	initTestDB(t)
-	sessionID, userID := seedPlayingSession(t)
-
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Return(agent.RunOutput{WriterText: "ok"}, nil)
-
-	h := NewSessionHandlers(runner)
-	r := makeTestRouter(h, userID, "tester")
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "玩家输入"))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-	var msg models.Message
-	err := models.DB.Where("session_id = ? AND role = ? AND username = ?",
-		sessionID, models.MessageRoleUser, "Test Char").First(&msg).Error
-	if err != nil {
-		t.Fatalf("user message not persisted: %v", err)
-	}
-	if msg.Content != "玩家输入" {
-		t.Errorf("user message content = %q, want %q", msg.Content, "玩家输入")
-	}
-}
-
-// seedTwoPlayerSession 创建含两名活跃玩家的游戏房间，返回 sessionID、两个 userID 及角色名。
-func seedTwoPlayerSession(t *testing.T, charName1, charName2 string) (sessionID, user1ID, user2ID uint) {
-	t.Helper()
-	scenarioID := seedScenario(t, "multi-scenario")
-
-	creator := models.User{Username: "creator_mp", Email: "creator_mp@t.com", PasswordHash: "x", CardSlots: 3}
-	if err := models.DB.Create(&creator).Error; err != nil {
-		t.Fatalf("create creator: %v", err)
-	}
-	session := models.GameSession{
-		Name:       "Multi Room",
-		ScenarioID: scenarioID,
-		Status:     models.SessionStatusPlaying,
-		MaxPlayers: 4,
-		CreatedBy:  creator.ID,
-		TurnRound:  1,
-	}
-	if err := models.DB.Create(&session).Error; err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	// 玩家1
-	u1 := models.User{Username: "mp_user1", Email: "mp1@t.com", PasswordHash: "x", CardSlots: 3}
-	models.DB.Create(&u1)
-	c1 := models.CharacterCard{
-		UserID: u1.ID, Name: charName1, IsActive: true,
-		Stats:  models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, HP: 10, MaxHP: 10}},
-		Skills: models.JSONField[map[string]int]{Data: map[string]int{}},
-	}
-	models.DB.Create(&c1)
-	models.DB.Create(&models.SessionPlayer{SessionID: session.ID, UserID: u1.ID, CharacterCardID: c1.ID, JoinedAt: time.Now()})
-
-	// 玩家2
-	u2 := models.User{Username: "mp_user2", Email: "mp2@t.com", PasswordHash: "x", CardSlots: 3}
-	models.DB.Create(&u2)
-	c2 := models.CharacterCard{
-		UserID: u2.ID, Name: charName2, IsActive: true,
-		Stats:  models.JSONField[models.CharacterStats]{Data: models.CharacterStats{CON: 50, SIZ: 50, HP: 10, MaxHP: 10}},
-		Skills: models.JSONField[map[string]int]{Data: map[string]int{}},
-	}
-	models.DB.Create(&c2)
-	models.DB.Create(&models.SessionPlayer{SessionID: session.ID, UserID: u2.ID, CharacterCardID: c2.ID, JoinedAt: time.Now()})
-
-	return session.ID, u1.ID, u2.ID
-}
-
-// TestChatStream_WaitingPayload_Fields 验证 waiting SSE 载荷含必要字段，
-// 并且已提交/待提交姓名分类准确（旧字段 pending/total 仍存在）。
-func TestChatStream_WaitingPayload_Fields(t *testing.T) {
+func TestBuildWaitingPayload_QueryFailureReturnsError(t *testing.T) {
 	initTestDB(t)
 	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	// 玩家1先提交，尚未满足全员到位，应收到 waiting SSE
-	r := makeTestRouter(h, user1ID, "mp_user1")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我查探房间"))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-	events := parseSSE(w.Body.String())
-	if len(events["waiting"]) == 0 {
-		t.Fatalf("expected waiting SSE event; body:\n%s", w.Body.String())
-	}
-
-	var payload struct {
-		Pending        int64    `json:"pending"`
-		Total          int64    `json:"total"`
-		SubmittedNames []string `json:"submitted_names"`
-		PendingNames   []string `json:"pending_names"`
-	}
-	rawData := strings.TrimSpace(events["waiting"][0])
-	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
-		t.Fatalf("waiting payload invalid JSON: %v\ndata: %s", err, rawData)
-	}
-
-	// 旧字段兼容
-	if payload.Total != 2 {
-		t.Errorf("total = %d, want 2", payload.Total)
-	}
-	if payload.Pending != 1 {
-		t.Errorf("pending = %d, want 1", payload.Pending)
-	}
-	// 新字段
-	if payload.SubmittedNames == nil {
-		t.Error("submitted_names is nil, want non-nil slice")
-	}
-	if payload.PendingNames == nil {
-		t.Error("pending_names is nil, want non-nil slice")
-	}
-	if len(payload.SubmittedNames) != 1 || payload.SubmittedNames[0] != "爱丽丝" {
-		t.Errorf("submitted_names = %v, want [\"爱丽丝\"]", payload.SubmittedNames)
-	}
-	if len(payload.PendingNames) != 1 || payload.PendingNames[0] != "鲍勃" {
-		t.Errorf("pending_names = %v, want [\"鲍勃\"]", payload.PendingNames)
-	}
-}
-
-func TestGetChatStatus_MultiplayerWaitingRecoversSubmittedPlayer(t *testing.T) {
-	initTestDB(t)
-	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	user1Router := makeTestRouter(h, user1ID, "mp_user1")
-	w := httptest.NewRecorder()
-	user1Router.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我查探房间"))
-	if w.Code != http.StatusOK {
-		t.Fatalf("first submit status = %d", w.Code)
-	}
-
-	user1StatusRecorder := httptest.NewRecorder()
-	user1Router.ServeHTTP(user1StatusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
-	user1Status := decodeChatStatus(t, user1StatusRecorder.Body.String())
-	if user1Status.Phase != "waiting" || !user1Status.WaitingForPlayers || !user1Status.Submitted || user1Status.Processing {
-		t.Fatalf("unexpected submitted player status: %+v", user1Status)
-	}
-	if user1Status.Waiting.Pending != 1 || user1Status.Waiting.Total != 2 {
-		t.Fatalf("unexpected waiting counts: %+v", user1Status.Waiting)
-	}
-
-	user2Router := makeTestRouter(h, user2ID, "mp_user2")
-	user2StatusRecorder := httptest.NewRecorder()
-	user2Router.ServeHTTP(user2StatusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
-	user2Status := decodeChatStatus(t, user2StatusRecorder.Body.String())
-	if user2Status.Phase != "waiting" || user2Status.Submitted || !user2Status.WaitingForPlayers {
-		t.Fatalf("unexpected pending player status: %+v", user2Status)
-	}
-}
-
-func TestGetChatStatus_MultiplayerProcessingAppliesToAllPlayers(t *testing.T) {
-	initTestDB(t)
-	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
-	runner := &blockingRunner{
-		started: make(chan struct{}),
-		release: make(chan struct{}),
-		output:  agent.RunOutput{WriterText: "本轮完成"},
-	}
-	h := NewSessionHandlers(runner)
-	user1Router := makeTestRouter(h, user1ID, "mp_user1")
-	user2Router := makeTestRouter(h, user2ID, "mp_user2")
-
-	first := httptest.NewRecorder()
-	user1Router.ServeHTTP(first, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我观察门口"))
-	if first.Code != http.StatusOK {
-		t.Fatalf("first submit status = %d", first.Code)
-	}
-
-	secondDone := make(chan struct{})
-	go func() {
-		defer close(secondDone)
-		w := httptest.NewRecorder()
-		user2Router.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我检查窗户"))
-	}()
-	select {
-	case <-runner.started:
-	case <-time.After(time.Second):
-		t.Fatal("multiplayer request did not enter runner")
-	}
-
-	for _, tc := range []struct {
-		name   string
-		router *gin.Engine
-	}{
-		{name: "first player", router: user1Router},
-		{name: "second player", router: user2Router},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			statusRecorder := httptest.NewRecorder()
-			tc.router.ServeHTTP(statusRecorder, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
-			status := decodeChatStatus(t, statusRecorder.Body.String())
-			if !status.Processing || status.Phase != "processing" || status.WaitingForPlayers {
-				t.Fatalf("unexpected multiplayer processing status: %+v", status)
-			}
-		})
-	}
-
-	close(runner.release)
-	select {
-	case <-secondDone:
-	case <-time.After(time.Second):
-		t.Fatal("multiplayer request did not finish")
-	}
-}
-
-// TestChatStream_WaitingPayload_SpecialCharsJSON 验证角色名含特殊字符时 JSON 仍合法。
-func TestChatStream_WaitingPayload_SpecialCharsJSON(t *testing.T) {
-	initTestDB(t)
-	specialName := `角色"特殊\名称<>&`
-	sessionID, user1ID, _ := seedTwoPlayerSession(t, specialName, "普通角色")
-
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	r := makeTestRouter(h, user1ID, "mp_user1")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "行动"))
-
-	events := parseSSE(w.Body.String())
-	if len(events["waiting"]) == 0 {
-		t.Fatalf("expected waiting SSE event")
-	}
-
-	rawData := strings.TrimSpace(events["waiting"][0])
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
-		t.Fatalf("waiting payload invalid JSON: %v\ndata: %s", err, rawData)
-	}
-
-	submittedNames, _ := payload["submitted_names"].([]any)
-	if len(submittedNames) != 1 {
-		t.Fatalf("submitted_names len = %d, want 1", len(submittedNames))
-	}
-	if submittedNames[0] != specialName {
-		t.Errorf("submitted_names[0] = %v, want %q", submittedNames[0], specialName)
-	}
-}
-
-// TestChatStream_WaitingPayload_UsernameFallback 验证角色名为空时回退使用用户名。
-func TestChatStream_WaitingPayload_UsernameFallback(t *testing.T) {
-	initTestDB(t)
-	// 玩家1 的角色名为空，期望回退为用户名 "mp_user1"
-	sessionID, user1ID, _ := seedTwoPlayerSession(t, "", "有名角色")
-
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-	r := makeTestRouter(h, user1ID, "mp_user1")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "行动"))
-
-	events := parseSSE(w.Body.String())
-	if len(events["waiting"]) == 0 {
-		t.Fatalf("expected waiting SSE event")
-	}
-
-	var payload struct {
-		SubmittedNames []string `json:"submitted_names"`
-	}
-	rawData := strings.TrimSpace(events["waiting"][0])
-	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
-		t.Fatalf("waiting payload invalid JSON: %v", err)
-	}
-
-	// 角色名为空，期望显示用户名
-	if len(payload.SubmittedNames) != 1 || payload.SubmittedNames[0] != "mp_user1" {
-		t.Errorf("submitted_names = %v, want [\"mp_user1\"]", payload.SubmittedNames)
-	}
-}
-
-// seedActiveCombat 把session的CombatState设为激活,participants按传入顺序即DEX序。
-func seedActiveCombat(t *testing.T, sessionID uint, participants []models.CombatParticipant) {
-	t.Helper()
 	var session models.GameSession
-	if err := models.DB.First(&session, sessionID).Error; err != nil {
-		t.Fatalf("load session: %v", err)
-	}
-	session.CombatState.Data = &models.CombatState{Active: true, Round: 1, ActorIndex: 0, Participants: participants}
-	if err := models.DB.Save(&session).Error; err != nil {
-		t.Fatalf("save combat state: %v", err)
-	}
-}
+	models.DB.Preload("Players.User").Preload("Players.CharacterCard").First(&session, sessionID)
 
-// TestChatStream_EncounterBatch_OutOfBatchPlayerRejected 验证D7:战斗按DEX批次收集时,
-// 不在当前批次里的存活玩家(乙,被NPC食尸鬼与甲隔开)提交会被拒绝,不写入
-// SessionTurnAction,也不会触发Runner——不能让批次外的输入被静默吞掉或误用。
-func TestChatStream_EncounterBatch_OutOfBatchPlayerRejected(t *testing.T) {
-	initTestDB(t)
-	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "甲", "乙")
-	seedActiveCombat(t, sessionID, []models.CombatParticipant{
-		{Name: "甲", DEX: 80, IsNPC: false, UserID: user1ID},
-		{Name: "食尸鬼", DEX: 50, IsNPC: true},
-		{Name: "乙", DEX: 30, IsNPC: false, UserID: user2ID},
-	})
-
-	ctrl := gomock.NewController(t)
-	// 不设置Run()期望：若批次外输入意外触发了Runner,gomock会让测试失败。
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-
-	r := makeTestRouter(h, user2ID, "mp_user2")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我也想行动"))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200(SSE通道), got %d", w.Code)
+	if err := models.DB.Migrator().DropTable(&models.SessionTurnAction{}); err != nil {
+		t.Fatalf("drop table: %v", err)
 	}
-	events := parseSSE(w.Body.String())
-	if len(events["error"]) == 0 {
-		t.Fatalf("expected error SSE event; body:\n%s", w.Body.String())
-	}
-	if len(events["waiting"]) != 0 {
-		t.Errorf("批次外玩家不应收到waiting事件; body:\n%s", w.Body.String())
-	}
-
-	var count int64
-	models.DB.Model(&models.SessionTurnAction{}).Where("session_id = ? AND user_id = ?", sessionID, user2ID).Count(&count)
-	if count != 0 {
-		t.Errorf("批次外玩家的SessionTurnAction行数 = %d, want 0", count)
-	}
-}
-
-// TestChatStream_EncounterBatch_SoleBatchMemberTriggersRunImmediately 验证D7:当前批次
-// 只有甲一人时(乙被NPC隔开在批次外),甲提交应立即触发Runner,不等待乙——批次收集的
-// 触发阈值是批次大小而不是全房存活玩家数。
-func TestChatStream_EncounterBatch_SoleBatchMemberTriggersRunImmediately(t *testing.T) {
-	initTestDB(t)
-	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "甲", "乙")
-	seedActiveCombat(t, sessionID, []models.CombatParticipant{
-		{Name: "甲", DEX: 80, IsNPC: false, UserID: user1ID},
-		{Name: "食尸鬼", DEX: 50, IsNPC: true},
-		{Name: "乙", DEX: 30, IsNPC: false, UserID: user2ID},
-	})
-
-	ctrl := gomock.NewController(t)
-	runner := mocks.NewMockAgentRunner(ctrl)
-	runner.EXPECT().Run(gomock.Any(), gomock.Any()).Times(1).Return(agent.RunOutput{WriterText: "甲出手了"}, nil)
-
-	h := NewSessionHandlers(runner)
-	r := makeTestRouter(h, user1ID, "mp_user1")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, formPost(fmt.Sprintf("/sessions/%d/chat", sessionID), "我攻击食尸鬼"))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-	events := parseSSE(w.Body.String())
-	if len(events["waiting"]) != 0 {
-		t.Fatalf("批次内唯一成员不应等待其他玩家; body:\n%s", w.Body.String())
-	}
-	if len(events["kp_done"]) == 0 {
-		t.Fatalf("expected kp_done event(Run应立即触发); body:\n%s", w.Body.String())
-	}
-}
-
-// TestGetChatStatus_EncounterBatch_PayloadReflectsBatchAndOrder 验证chat-status载荷
-// 里batched/batch_user_ids/encounter_order正确反映DEX批次与is_current/in_batch/
-// has_acted状态,供前端渲染收集队列。
-func TestGetChatStatus_EncounterBatch_PayloadReflectsBatchAndOrder(t *testing.T) {
-	initTestDB(t)
-	sessionID, user1ID, user2ID := seedTwoPlayerSession(t, "甲", "乙")
-	seedActiveCombat(t, sessionID, []models.CombatParticipant{
-		{Name: "甲", DEX: 80, IsNPC: false, UserID: user1ID},
-		{Name: "食尸鬼", DEX: 50, IsNPC: true},
-		{Name: "乙", DEX: 30, IsNPC: false, UserID: user2ID},
-	})
-
-	ctrl := gomock.NewController(t)
-	h := NewSessionHandlers(mocks.NewMockAgentRunner(ctrl))
-
-	r1 := makeTestRouter(h, user1ID, "mp_user1")
-	rec1 := httptest.NewRecorder()
-	r1.ServeHTTP(rec1, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
-	status1 := decodeChatStatus(t, rec1.Body.String())
-
-	if !status1.Waiting.Batched {
-		t.Fatalf("want Batched=true, got %+v", status1.Waiting)
-	}
-	if len(status1.Waiting.BatchUserIDs) != 1 || status1.Waiting.BatchUserIDs[0] != user1ID {
-		t.Errorf("BatchUserIDs = %v, want [%d]", status1.Waiting.BatchUserIDs, user1ID)
-	}
-	if status1.Submitted {
-		t.Errorf("甲尚未提交,Submitted应为false")
-	}
-
-	order := status1.Waiting.EncounterOrder
-	if len(order) != 3 {
-		t.Fatalf("EncounterOrder长度 = %d, want 3", len(order))
-	}
-	if order[0].Name != "甲" || !order[0].IsCurrent || !order[0].InBatch || order[0].HasActed || order[0].IsNPC {
-		t.Errorf("甲的EncounterActor = %+v, want IsCurrent+InBatch+非NPC+未行动", order[0])
-	}
-	if order[1].Name != "食尸鬼" || !order[1].IsNPC || order[1].InBatch {
-		t.Errorf("食尸鬼的EncounterActor = %+v, want IsNPC且不在批次", order[1])
-	}
-	if order[2].Name != "乙" || order[2].IsCurrent || order[2].InBatch || order[2].IsNPC {
-		t.Errorf("乙的EncounterActor = %+v, want 非当前非批次", order[2])
-	}
-
-	r2 := makeTestRouter(h, user2ID, "mp_user2")
-	rec2 := httptest.NewRecorder()
-	r2.ServeHTTP(rec2, jsonReq(http.MethodGet, fmt.Sprintf("/sessions/%d/chat-status", sessionID), nil))
-	status2 := decodeChatStatus(t, rec2.Body.String())
-	if status2.Submitted {
-		t.Errorf("乙不在当前批次,Submitted应为false")
+	if _, err := buildWaitingPayload(models.DB, session, agent.TurnCollection{UserIDs: []uint{user1ID}}); err == nil {
+		t.Fatal("expected a query error to be surfaced")
 	}
 }
