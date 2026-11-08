@@ -7,7 +7,6 @@
 #   ./start.sh --dev       # go run instead of build (re-compiles on each start)
 #
 # Environment variables (can also be set in .env):
-#   LLM_API_KEY   — API key for the LLM provider (overrides config.yaml api_key)
 #   CONFIG_PATH   — Path to config.yaml (default: ./config.yaml)
 #   GIN_MODE      — "release" or "debug" (overridden by --debug flag)
 #   LOG_LEVEL     — "debug"|"info"|"warn"|"error" 日志级别 (default: debug；--debug/--dev 强制 debug)

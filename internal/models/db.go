@@ -146,27 +146,6 @@ func seedDefaultShopItems() {
 }
 
 func seedDefaultAgentConfigs() {
-	// Create a default LLMProviderConfig from env vars if none exist yet
-	var provCount int64
-	DB.Model(&LLMProviderConfig{}).Count(&provCount)
-	if provCount == 0 {
-		apiKey := os.Getenv("LLM_API_KEY")
-		if apiKey != "" {
-			providerType := os.Getenv("LLM_PROVIDER")
-			if providerType == "" {
-				providerType = "openai"
-			}
-			defProv := LLMProviderConfig{
-				Name:     "默认",
-				Provider: providerType,
-				BaseURL:  os.Getenv("LLM_BASE_URL"),
-				APIKey:   apiKey,
-				IsActive: true,
-			}
-			DB.Create(&defProv)
-		}
-	}
-
 	// Remove obsolete agent roles that no longer exist in the pipeline.
 	// NOTE: providence 已改名为 dramaturg，需清理老库中遗留的 providence 行，否则会在后台Agent列表里以裸role字符串显示。
 	// translator 已移除（architect 直接用 ask_lawyer 核验锚点），同理清理老库遗留行。
@@ -179,10 +158,7 @@ func seedDefaultAgentConfigs() {
 		provID = &id
 	}
 
-	model := os.Getenv("LLM_MODEL")
-	if model == "" {
-		model = "gpt-4o"
-	}
+	const model = "gpt-4o"
 
 	// Ensure each active agent has a config row (upsert-style: create only if missing).
 	required := []AgentConfig{

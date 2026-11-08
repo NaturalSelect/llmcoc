@@ -11,11 +11,6 @@ services:
     environment:
       GIN_MODE: release
       JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET}
-      # 仅在数据库里还没有 Provider 时用于播种默认 Provider 和各 Agent 默认模型
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_BASE_URL: ${LLM_BASE_URL:-}
-      LLM_PROVIDER: ${LLM_PROVIDER:-}
-      LLM_MODEL: ${LLM_MODEL:-}
 
 volumes:
   coc_data:

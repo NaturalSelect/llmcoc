@@ -81,7 +81,7 @@ shop:
 
 ### 4. Docker 启动
 
-在项目根目录创建 `.env`（至少设置 `JWT_SECRET`，首次启动建议同时设置 `LLM_API_KEY`），然后拉取 CI 构建的镜像并启动：
+在项目根目录创建 `.env`（至少设置 `JWT_SECRET`），然后拉取 CI 构建的镜像并启动：
 
 ```bash
 docker compose up -d
@@ -96,10 +96,6 @@ docker compose up -d
 - `CONFIG_PATH`：配置文件路径（默认 `./config.yaml`）
 - `GIN_MODE`：`release` 或 `debug`
 - `AGENT_DEBUG`：`1/true/yes` 开启 Agent/LLM 调试日志
-- `LLM_API_KEY`：默认 LLM API Key（初始化 provider 时可使用）
-- `LLM_BASE_URL`：LLM 网关地址
-- `LLM_PROVIDER`：provider 类型（默认 `openai`）
-- `LLM_MODEL`：默认模型名（默认 `gpt-4o`）
 - `JWT_SECRET`：覆盖 `config.yaml` 中的 JWT 密钥
 - `RULEBOOK_PATH`：规则书路径（默认 `COC_kp.md`）
 
@@ -110,7 +106,7 @@ docker compose up -d
 - 初始化数据库并自动迁移表结构。
 - 从 `scenarios/` 目录导入剧本。
 - 写入默认商店商品。
-- 若数据库中没有 Provider，且设置了 `LLM_API_KEY`，会自动创建一个默认 LLM Provider。
+- 不会自动创建 LLM Provider，首次使用需在后台手动添加并绑定到各 Agent。
 - 自动补全所需 Agent 配置项（director、scripter、qa_guard 等）。
 
 ## 管理员账号说明
