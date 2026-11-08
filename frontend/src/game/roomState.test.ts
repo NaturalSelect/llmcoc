@@ -367,6 +367,33 @@ describe('roomState', () => {
     expect(room.streams[7]).toBeUndefined()
   })
 
+  test('writer 流：writer_reset 清掉半截正文，之后的 token 从 offset=0 重新拼', () => {
+    const room = liveRoom()
+    feed(room, F(11, 'message_new', { message: writer(7) }))
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '雨夜，钟' }))
+    expect(room.streams[7].text).toBe('雨夜，钟')
+
+    feed(room, F(0, 'writer_reset', { message_id: 7 }))
+    expect(room.streams[7]).toBeUndefined()
+
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '雨' }))
+    expect(room.streams[7].text).toBe('雨')
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 1, text: '夜里' }))
+    expect(room.streams[7].text).toBe('雨夜里')
+
+    feed(room, F(0, 'writer_reset', { message_id: 99 }))
+    feed(room, F(0, 'writer_reset', {}))
+    expect(room.streams[7].text).toBe('雨夜里')
+  })
+
+  test('writer 流：快照期间也接收 writer_reset，不会漏掉重试的信号', () => {
+    const room = RS.newRoom({ sessionId: 1, userId: 3 })
+    RS.onHello(room, { epoch: 'e1', seq: 5 })
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '半截' }))
+    expect(feed(room, F(0, 'writer_reset', { message_id: 7 })).verdict).toBe('apply')
+    expect(room.streams[7]).toBeUndefined()
+  })
+
   test('writer 流：快照里已经完成的 writer 会清掉残留的流', () => {
     const room = RS.newRoom({ sessionId: 1, userId: 3 })
     RS.onHello(room, { epoch: 'e1', seq: 5 })

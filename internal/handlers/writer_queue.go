@@ -59,6 +59,11 @@ type writerTokenEvent struct {
 	Text      string `json:"text"`
 }
 
+// writerResetEvent 是 writer_reset 事件的载荷：这条消息已广播的流式正文作废，客户端清掉本地拼接的内容。
+type writerResetEvent struct {
+	MessageID uint `json:"message_id"`
+}
+
 // liveWriter 是会话里正在生成的那条 writer 消息的已生成正文，供合并广播和新连接补发。
 type liveWriter struct {
 	mu        sync.Mutex
@@ -99,6 +104,16 @@ func (lw *liveWriter) append(token string) {
 	for _, r := range token {
 		lw.units += utf16.RuneLen(r)
 	}
+}
+
+// reset 丢弃已生成的正文并通知客户端：流中途断开后 Writer 会整段重新请求，半截正文不能和重试的正文拼在一起。
+func (lw *liveWriter) reset() {
+	lw.mu.Lock()
+	defer lw.mu.Unlock()
+	lw.text.Reset()
+	lw.units, lw.sentBytes, lw.sentUnits = 0, 0, 0
+	// NOTE: 持锁广播，和 flush 一样保证 reset 与前后的 writer_token 帧按顺序进入 hub。
+	hubFor(lw.sessionID).Ephemeral("writer_reset", writerResetEvent{MessageID: lw.messageID})
 }
 
 // flush 把还没广播的正文作为一帧 writer_token 发出去。
@@ -204,6 +219,7 @@ func (h *SessionHandlers) runWriterTask(sessionID uint, task writerTask) {
 			}
 		}
 	}()
+	ctx = agent.WithWriterRestart(ctx, lw.reset)
 	text, err := h.Runner.RunWriterStream(ctx, task.gctx, task.direction, task.nsfw, func(token string) {
 		if token != "" {
 			lw.append(token)

@@ -239,8 +239,8 @@ export function acceptFrame(room: Room, frame: Partial<Frame> | null | undefined
   }
 
   const seq = Number(frame.seq) || 0
-  // NOTE: 快照期间也要收 writer_token：握手时的补发帧就在这时到达，丢了它后面带偏移的增量就接不上
-  if (seq <= 0) return inSnapshot && frame.type !== 'writer_token' ? 'drop' : 'apply'
+  // NOTE: 快照期间也要收 writer_token / writer_reset：握手时的补发帧就在这时到达，丢了它后面带偏移的增量就接不上
+  if (seq <= 0) return inSnapshot && frame.type !== 'writer_token' && frame.type !== 'writer_reset' ? 'drop' : 'apply'
 
   if (inSnapshot) {
     // NOTE: snapshot 期间只看 baseSeq，不看 lastSeq；epoch 变化后旧 lastSeq 可能比新 epoch 的 seq 还大，按它丢帧会丢事件
@@ -320,6 +320,13 @@ function onWriterToken(room: Room, d: FrameData): void {
   st.text = st.text.slice(0, offset) + d.text
 }
 
+// NOTE: Writer 流中途断开后服务端会整段重新请求，已拼接的半截正文作废；之后的 writer_token 从 offset=0 重新开始
+function onWriterReset(room: Room, d: FrameData): void {
+  const id = Number(d.message_id)
+  if (!Number.isFinite(id)) return
+  delete room.streams[id]
+}
+
 function setSpotlight(room: Room, src: SpotlightSource): boolean {
   const ids = asArray<number | string>(src.user_ids)
   const askedMe = includesId(ids, room.userId)
@@ -365,6 +372,9 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
       break
     case 'writer_token':
       onWriterToken(room, d)
+      break
+    case 'writer_reset':
+      onWriterReset(room, d)
       break
     case 'spotlight':
       if (!setSpotlight(room, d)) room.me.submitted = false

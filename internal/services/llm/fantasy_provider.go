@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"iter"
 	"strings"
 	"time"
@@ -574,6 +575,12 @@ func isRetryableFantasyError(err error) bool {
 		return perr.IsRetryable() || retryCode4xx[perr.StatusCode]
 	}
 	return fantasy.IsTransportError(err)
+}
+
+// IsUnexpectedEOF 判断流式调用的错误是否是连接在响应完成前被对端关闭(EOF)。fantasy 把流中途断开、缺少结束标记
+// 和空闲超时都包装成以 io.ErrUnexpectedEOF 为 Cause 的 ProviderError；响应头之前被关闭时则是网络层原样返回的裸 EOF。
+func IsUnexpectedEOF(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 // chat 是 Chat/JsonChat/ChatWithTools 共用的内部实现：始终走 Stream 而非 Generate 并在内部

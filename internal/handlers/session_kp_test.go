@@ -508,6 +508,49 @@ func TestFloor_WriterQueueKeepsOrderAcrossRounds(t *testing.T) {
 	}
 }
 
+// NOTE: Writer 流中途断开重试：reset 广播 writer_reset 并清空已生成正文，之后的 token 从 offset=0 重新开始，新连接补发的也只有重试后的正文。
+func TestLiveWriter_ResetRestartsStreamFromOffsetZero(t *testing.T) {
+	initTestDB(t)
+	sessionID, _, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+	tap := tapRoom(t, sessionID)
+
+	lw := startLiveWriter(sessionID, 42)
+	t.Cleanup(lw.stop)
+	lw.append("半截")
+	lw.flush()
+	lw.reset()
+	if _, ok := writerCatchUp(sessionID); ok {
+		t.Error("catch-up after reset must have no text to replay")
+	}
+	lw.append("完整正文")
+	lw.flush()
+	if ev, ok := writerCatchUp(sessionID); !ok || ev.Data.(writerTokenEvent).Text != "完整正文" {
+		t.Errorf("catch-up after restart = %+v ok=%v, want only the retried text", ev, ok)
+	}
+
+	tap.waitCount("writer_token", 2)
+	tap.waitCount("writer_reset", 1)
+	var seq []string
+	for _, ev := range tap.got {
+		if ev.Seq != 0 {
+			t.Errorf("%s must be an ephemeral event", ev.Type)
+		}
+		switch ev.Type {
+		case "writer_token":
+			tok := ev.Data.(writerTokenEvent)
+			seq = append(seq, fmt.Sprintf("token@%d:%s", tok.Offset, tok.Text))
+		case "writer_reset":
+			if got := ev.Data.(writerResetEvent).MessageID; got != 42 {
+				t.Errorf("writer_reset message_id = %d, want 42", got)
+			}
+			seq = append(seq, "reset")
+		}
+	}
+	if got, want := fmt.Sprint(seq), "[token@0:半截 reset token@0:完整正文]"; got != want {
+		t.Errorf("stream events = %s, want %s", got, want)
+	}
+}
+
 func TestFloor_WriterFailureMarksMessageFailed(t *testing.T) {
 	initTestDB(t)
 	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")

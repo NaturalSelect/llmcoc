@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -185,6 +186,32 @@ func TestIsRetryableFantasyError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := isRetryableFantasyError(tt.err); got != tt.want {
 				t.Errorf("isRetryableFantasyError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+// ---------- IsUnexpectedEOF ----------
+
+func TestIsUnexpectedEOF(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"bare EOF before response headers", fmt.Errorf("LLM chat stream error: %w", &url.Error{Op: "Post", URL: "http://x/chat/completions", Err: io.EOF}), true},
+		{"fantasy incomplete-stream error", fmt.Errorf("LLM chat stream receive error: %w", fantasy.NewIncompleteStreamError()), true},
+		{"unexpected EOF wrapped as transport error", fmt.Errorf("LLM chat stream receive error: %w", fantasy.WrapTransportError(io.ErrUnexpectedEOF)), true},
+		{"idle timeout surfaces as unexpected EOF", fmt.Errorf("LLM chat stream receive error: %w", fantasy.WrapTransportError(&idleTimeoutError{idle: time.Minute})), true},
+		{"500 is retryable elsewhere but not EOF", &fantasy.ProviderError{StatusCode: 500}, false},
+		{"context canceled", context.Canceled, false},
+		{"plain unrelated error", errors.New("boom"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsUnexpectedEOF(tt.err); got != tt.want {
+				t.Errorf("IsUnexpectedEOF(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
 	}

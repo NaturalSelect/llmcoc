@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
@@ -212,8 +213,24 @@ func hasWriterRefusalPrefix(s string) bool {
 	return false
 }
 
-// writerMaxGenerateAttempts 是 Writer 单次续写在遇到拒绝/空内容时的最大尝试次数(含首次)。
+// writerMaxGenerateAttempts 是 Writer 单次续写在遇到拒绝/空内容/流中断时的最大尝试次数(含首次)。
 const writerMaxGenerateAttempts = 20
+
+// NOTE: 流中断后重新请求前的等待，避免对刚断开的网关立刻重试；测试里改小。
+var writerStreamRetryDelay = 2 * time.Second
+
+type writerRestartKey struct{}
+
+// NOTE: WithWriterRestart 挂一个回调，流式 Writer 丢弃半截正文重新请求前调用，上层据此撤回已广播的部分正文。
+func WithWriterRestart(ctx context.Context, fn func()) context.Context {
+	return context.WithValue(ctx, writerRestartKey{}, fn)
+}
+
+func notifyWriterRestart(ctx context.Context) {
+	if fn, _ := ctx.Value(writerRestartKey{}).(func()); fn != nil {
+		fn()
+	}
+}
 
 // isWriterResponseRejected 判断一次Writer响应是否需要丢弃重试:去除首尾空白后为空,
 // 或正文以拒绝前缀开头。
@@ -275,7 +292,19 @@ func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, 
 		var err error
 		text, err = streamWriterOnce(ctx, h, cacheKey, msgs, onToken)
 		if err != nil {
-			// 传输层错误：把已流出的部分正文写入缓冲(不进history),再把错误返回给上层。
+			// NOTE: 流在响应完成前被关闭(EOF)时，半截正文整段丢弃重新请求，不能和重试的正文拼在一起。
+			if llm.IsUnexpectedEOF(err) && ctx.Err() == nil && attempt < writerMaxGenerateAttempts {
+				alog.Warn("writer stream interrupted, retrying", "session", gctx.Session.ID, "attempt", attempt,
+					"max_attempts", writerMaxGenerateAttempts, "partial_len", len([]rune(text)), "err", err)
+				notifyWriterRestart(ctx)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(writerStreamRetryDelay):
+				}
+				continue
+			}
+			// 其他传输层错误：把已流出的部分正文写入缓冲(不进history),再把错误返回给上层。
 			appendWriterResponse(state, gctx, msgs, text, false)
 			return err
 		}

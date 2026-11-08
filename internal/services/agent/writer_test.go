@@ -4,11 +4,15 @@ package agent
 
 import (
 	"context"
+	"errors"
+	"io"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"charm.land/fantasy"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
 )
@@ -26,6 +30,8 @@ type writerFakeProvider struct {
 	calls     int
 	chunkSize int
 	sentMsgs  [][]llm.ChatMessage
+	// streamErrs[i] 非 nil 时，第 i 次 ChatStream 调用先流出 responses[i] 再带着这个错误结束，模拟流中途断开。
+	streamErrs []error
 }
 
 // next 返回下一个预设响应,并计入一次调用;序列耗尽后持续返回空字符串。
@@ -61,6 +67,12 @@ func (p *writerFakeProvider) Chat(_ context.Context, _ string, msgs []llm.ChatMe
 
 func (p *writerFakeProvider) ChatStream(_ context.Context, _ string, msgs []llm.ChatMessage) (<-chan string, <-chan error, error) {
 	text := p.next(msgs)
+	p.mu.Lock()
+	var streamErr error
+	if i := p.calls - 1; i < len(p.streamErrs) {
+		streamErr = p.streamErrs[i]
+	}
+	p.mu.Unlock()
 	chunk := p.chunkSize
 	if chunk <= 0 {
 		chunk = 1
@@ -77,7 +89,7 @@ func (p *writerFakeProvider) ChatStream(_ context.Context, _ string, msgs []llm.
 			}
 			tokenCh <- string(runes[i:end])
 		}
-		errCh <- nil
+		errCh <- streamErr
 	}()
 	return tokenCh, errCh, nil
 }
@@ -434,6 +446,168 @@ func TestAppendWriterStream_AllAttemptsRejected_ReturnsErrorAndForwardsNothing(t
 }
 
 // ── pickWriterHandle ──────────────────────────────────────────────────────────
+
+// 流中途 EOF:半截正文不进 Buffer 和 history,通知上层撤回已转发的部分,重新请求后只保留完整的那一份。
+func TestAppendWriterStream_MidStreamEOFDiscardsPartialAndRetries(t *testing.T) {
+	initSiteSettingTestDB(t)
+	old := writerStreamRetryDelay
+	writerStreamRetryDelay = 0
+	t.Cleanup(func() { writerStreamRetryDelay = old })
+
+	prov := &writerFakeProvider{
+		chunkSize:  2,
+		responses:  []string{"他缓缓地走向", "他缓缓地走向那扇门。"},
+		streamErrs: []error{fantasy.WrapTransportError(io.ErrUnexpectedEOF)},
+	}
+	h := newWriterTestHandle(prov)
+	state := newTestWriterState(1)
+	gctx := GameContext{Session: models.GameSession{ID: 1}}
+
+	var restarts int
+	var forwarded strings.Builder
+	ctx := WithWriterRestart(context.Background(), func() {
+		restarts++
+		forwarded.Reset()
+	})
+	err := appendWriterStream(ctx, h, state, "继续描述", gctx, false, func(tok string) {
+		forwarded.WriteString(tok)
+	})
+	if err != nil {
+		t.Fatalf("appendWriterStream error: %v", err)
+	}
+	if restarts != 1 {
+		t.Errorf("restart callback count = %d, want 1", restarts)
+	}
+	if forwarded.String() != "他缓缓地走向那扇门。" {
+		t.Errorf("forwarded after restart = %q, want only the complete text", forwarded.String())
+	}
+	if state.Buffer != "他缓缓地走向那扇门。" {
+		t.Errorf("Buffer = %q, want only the complete text without the partial", state.Buffer)
+	}
+	if got := prov.callCount(); got != 2 {
+		t.Errorf("provider call count = %d, want 2", got)
+	}
+	turns := committedTurns(state)
+	if len(turns) != 1 {
+		t.Fatalf("committed turns = %d, want 1 (the partial attempt must not be committed)", len(turns))
+	}
+}
+
+// 没有挂回调时(例如非队列路径)重试照常进行,不会 panic。
+func TestAppendWriterStream_MidStreamEOFWithoutRestartCallback(t *testing.T) {
+	initSiteSettingTestDB(t)
+	old := writerStreamRetryDelay
+	writerStreamRetryDelay = 0
+	t.Cleanup(func() { writerStreamRetryDelay = old })
+
+	prov := &writerFakeProvider{
+		chunkSize:  3,
+		responses:  []string{"半截", "完整的一段。"},
+		streamErrs: []error{io.ErrUnexpectedEOF},
+	}
+	h := newWriterTestHandle(prov)
+	state := newTestWriterState(1)
+	gctx := GameContext{Session: models.GameSession{ID: 1}}
+
+	if err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, false, func(string) {}); err != nil {
+		t.Fatalf("appendWriterStream error: %v", err)
+	}
+	if state.Buffer != "完整的一段。" {
+		t.Errorf("Buffer = %q, want %q", state.Buffer, "完整的一段。")
+	}
+}
+
+// EOF 一直不好时,用满尝试次数后把错误交给上层,已流出的部分正文保留在 Buffer 里。
+func TestAppendWriterStream_MidStreamEOFExhaustsAttempts(t *testing.T) {
+	initSiteSettingTestDB(t)
+	old := writerStreamRetryDelay
+	writerStreamRetryDelay = 0
+	t.Cleanup(func() { writerStreamRetryDelay = old })
+
+	errs := make([]error, writerMaxGenerateAttempts)
+	resps := make([]string, writerMaxGenerateAttempts)
+	for i := range errs {
+		errs[i] = io.ErrUnexpectedEOF
+		resps[i] = "半截"
+	}
+	prov := &writerFakeProvider{chunkSize: 3, responses: resps, streamErrs: errs}
+	h := newWriterTestHandle(prov)
+	state := newTestWriterState(1)
+	gctx := GameContext{Session: models.GameSession{ID: 1}}
+
+	var restarts int
+	ctx := WithWriterRestart(context.Background(), func() { restarts++ })
+	err := appendWriterStream(ctx, h, state, "继续描述", gctx, false, func(string) {})
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("err = %v, want unexpected EOF after exhausting attempts", err)
+	}
+	if got := prov.callCount(); got != writerMaxGenerateAttempts {
+		t.Errorf("provider call count = %d, want %d", got, writerMaxGenerateAttempts)
+	}
+	if restarts != writerMaxGenerateAttempts-1 {
+		t.Errorf("restart callback count = %d, want %d (no restart after the last attempt)", restarts, writerMaxGenerateAttempts-1)
+	}
+	if state.Buffer != "半截" {
+		t.Errorf("Buffer = %q, want the last partial text kept for the caller", state.Buffer)
+	}
+}
+
+// 非 EOF 的流错误不重试,保持原行为:部分正文进 Buffer,错误交给上层。
+func TestAppendWriterStream_NonEOFStreamErrorIsNotRetried(t *testing.T) {
+	initSiteSettingTestDB(t)
+	boom := errors.New("boom")
+	prov := &writerFakeProvider{
+		chunkSize:  3,
+		responses:  []string{"半截"},
+		streamErrs: []error{boom},
+	}
+	h := newWriterTestHandle(prov)
+	state := newTestWriterState(1)
+	gctx := GameContext{Session: models.GameSession{ID: 1}}
+
+	var restarts int
+	ctx := WithWriterRestart(context.Background(), func() { restarts++ })
+	err := appendWriterStream(ctx, h, state, "继续描述", gctx, false, func(string) {})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want boom", err)
+	}
+	if got := prov.callCount(); got != 1 {
+		t.Errorf("provider call count = %d, want 1", got)
+	}
+	if restarts != 0 {
+		t.Errorf("restart callback count = %d, want 0", restarts)
+	}
+	if state.Buffer != "半截" {
+		t.Errorf("Buffer = %q, want partial text kept", state.Buffer)
+	}
+}
+
+// 重试等待期间 ctx 被取消,立即返回 ctx 错误而不是继续请求。
+func TestAppendWriterStream_MidStreamEOFStopsOnContextCancel(t *testing.T) {
+	initSiteSettingTestDB(t)
+	old := writerStreamRetryDelay
+	writerStreamRetryDelay = time.Hour
+	t.Cleanup(func() { writerStreamRetryDelay = old })
+
+	prov := &writerFakeProvider{
+		chunkSize:  3,
+		responses:  []string{"半截", "不应该被请求"},
+		streamErrs: []error{io.ErrUnexpectedEOF},
+	}
+	h := newWriterTestHandle(prov)
+	state := newTestWriterState(1)
+	gctx := GameContext{Session: models.GameSession{ID: 1}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ctx = WithWriterRestart(ctx, cancel)
+	err := appendWriterStream(ctx, h, state, "继续描述", gctx, false, func(string) {})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if got := prov.callCount(); got != 1 {
+		t.Errorf("provider call count = %d, want 1 (no request after cancel)", got)
+	}
+}
 
 func TestPickWriterHandle(t *testing.T) {
 	prov := &writerFakeProvider{}
