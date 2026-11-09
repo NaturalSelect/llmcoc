@@ -40,12 +40,32 @@ const busy = ref(false)
 const guidance = reactive<Record<RegenField, string>>({ appearance: '', backstory: '', traits: '' })
 const regenBusy = reactive<Record<RegenField, boolean>>({ appearance: false, backstory: false, traits: false })
 
+let freshSeq = 0
+
+// NOTE: 传入的卡可能是列表或房间快照里的旧数据，所以打开时先显示它，再向服务端拉最新；
+// 请求期间如果换了卡或已有别的操作更新了卡，这次结果就丢弃。单卡接口不计算 in_session，沿用传入值
+async function refreshCard(card: CharacterCardFull | null): Promise<void> {
+  const id = card?.id
+  if (!id) return
+  const seq = ++freshSeq
+  try {
+    const fresh = await characterApi.get(id)
+    if (seq !== freshSeq || current.value?.id !== id) return
+    const merged = mergeUpdatedCard(current.value, fresh)
+    chars.syncCharacter(merged)
+    current.value = merged
+  } catch (e) {
+    if (seq === freshSeq) ui.toast(errMessage(e), 'error')
+  }
+}
+
 watch(
   () => [props.open, props.card] as const,
   ([open, card]) => {
     if (!open) return
     current.value = card
     guidance.appearance = guidance.backstory = guidance.traits = ''
+    void refreshCard(card)
   },
   { immediate: true },
 )
@@ -57,6 +77,7 @@ function latestCard(id: number | undefined, fallback: CharacterCardFull): Charac
 }
 
 function applyUpdate(updated: CharacterCardFull): void {
+  freshSeq++
   const prev = latestCard(updated.id, updated)
   const merged = mergeUpdatedCard(prev, updated)
   chars.syncCharacter(merged)

@@ -97,6 +97,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
         return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
       }
       if (path === '/api/sessions/7/chat') return json({}, 202)
+      if (path === '/api/characters/5') return json({ id: 5, name: '爱丽丝', occupation: '记者', inventory: ['最新的怀表'], stats: { hp: 3, max_hp: 10, san: 20, max_san: 50, mp: 8, max_mp: 8 } })
       return json({})
     }),
   )
@@ -243,11 +244,13 @@ describe('GameView', () => {
   })
 
   test('点「我的角色」打开人物卡详情弹窗，关闭后收起', async () => {
-    const { wrapper } = await setup()
+    const { wrapper, fetchCalls } = await setup()
     const mine = wrapper.findAll('header button').find((b) => b.text() === '我的角色')!
     await mine.trigger('click')
     await flushPromises()
     expect(document.body.textContent).toContain('记者')
+    expect(fetchCalls).toContainEqual({ method: 'GET', path: '/api/characters/5' })
+    expect(document.body.textContent).toContain('最新的怀表')
     const close = [...document.body.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭')
     expect(close).toBeTruthy()
     close!.click()

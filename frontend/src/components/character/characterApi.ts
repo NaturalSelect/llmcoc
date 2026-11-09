@@ -25,6 +25,7 @@ export const characterApi = {
   finalize: (payload: FinalizePayload) => api<CharacterCardFull>('POST', '/api/characters/finalize', payload),
   generate: (payload: GeneratePayload) => api<CharacterCardFull>('POST', '/api/characters/generate', payload),
 
+  get: (id: number) => api<CharacterCardFull>('GET', cardPath(id)),
   remove: (id: number) => api<{ message?: string }>('DELETE', cardPath(id)),
   removeDead: (id: number) => api<{ message?: string }>('DELETE', `${cardPath(id)}/dead`),
   revive: (id: number) => api<ReviveResponse>('POST', `${cardPath(id)}/revive`),

@@ -50,6 +50,8 @@ describe('characterApi 路径与请求体', () => {
   })
 
   test('删除、彻底删除、复活、掷骰、技能默认值', async () => {
+    await characterApi.get(5)
+    expect(lastCall()).toMatchObject({ path: '/api/characters/5', method: 'GET' })
     await characterApi.remove(5)
     expect(lastCall()).toMatchObject({ path: '/api/characters/5', method: 'DELETE' })
     await characterApi.removeDead(5)

@@ -62,6 +62,7 @@ beforeEach(() => {
   routes = {
     'GET /api/characters': () => ({ items: [structuredClone(alive)], total_pages: 1 }),
     'GET /api/characters/dead': () => ({ items: [structuredClone(dead)], total_pages: 1 }),
+    'GET /api/characters/1': () => structuredClone(alive),
     'GET /api/announcements': () => [{ id: 1, title: '维护通知', content: '**今晚** 维护', level: 'warning', is_pinned: true, created_at: '2026-01-01T00:00:00Z' }],
     'GET /api/sessions': () => ({ items: [{ id: 5, name: '雾中小镇', status: 'lobby', max_players: 4, scenario: { name: '迷雾' }, players: [{}] }] }),
     'GET /api/shop/costs': () => ({ revive_base_cost: 500, regenerate_traits_cost: 30 }),
