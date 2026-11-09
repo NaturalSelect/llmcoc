@@ -85,7 +85,7 @@ describe('joinableCharacters', () => {
 
 describe('创建房间表单', () => {
   test('默认值与旧前端一致', () => {
-    expect(emptyCreateForm()).toEqual({ name: '', scenario_id: '', max_players: 4, password: '', enable_nsfw: false })
+    expect(emptyCreateForm()).toEqual({ name: '', scenario_id: '', max_players: 4, password: '', enable_nsfw: false, evolve_backstory: false })
     expect(emptyJoinForm()).toEqual({ character_card_id: '', password: '' })
   })
 
@@ -119,7 +119,12 @@ describe('创建房间表单', () => {
 
   test('透传密码与 NSFW 开关；房间名去首尾空白', () => {
     const p = buildCreatePayload(form({ scenario_id: 3, name: ' 夜话 ', password: 'abc', enable_nsfw: true, max_players: 2 }), null)
-    expect(p).toEqual({ name: '夜话', scenario_id: 3, max_players: 2, password: 'abc', enable_nsfw: true })
+    expect(p).toEqual({ name: '夜话', scenario_id: 3, max_players: 2, password: 'abc', enable_nsfw: true, evolve_backstory: false })
+  })
+
+  test('透传经历改写开关，默认关闭', () => {
+    expect(buildCreatePayload(form({ scenario_id: 3, name: 'x', evolve_backstory: true }), null)?.evolve_backstory).toBe(true)
+    expect(buildCreatePayload(form({ scenario_id: 3, name: 'x' }), null)?.evolve_backstory).toBe(false)
   })
 
   test('最大玩家数被清空时传 0，由后端取剧本上限，不会把空串发给整型字段', () => {

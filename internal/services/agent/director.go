@@ -517,8 +517,8 @@ func buildKPHead(gctx GameContext, systemPrompt string) []llm.ChatMessage {
 `)
 	if content.Reward != nil {
 		r := content.Reward
-		scenarioSB.WriteString(fmt.Sprintf("<reward>调查员达成非失败结局时，通过manage_inventory(add)给予：[%s] %s — 效果：%s</reward>\n",
-			r.Type, r.Name, r.MechanicsNote))
+		scenarioSB.WriteString(fmt.Sprintf("<reward>调查员达成非失败结局时，通过manage_inventory(add)给予：%s（%s） — 效果：%s。item_desc会原样展示给玩家，只写外观与效果，不要带方括号形式的内部类型标记。</reward>\n",
+			r.Name, rewardTypeLabel(r.Type), r.MechanicsNote))
 	}
 	scenarioSB.WriteString("\n</scenario>\n")
 	msgs = append(msgs, llm.ChatMessage{

@@ -186,6 +186,8 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | `location` | `character`、`location` | 调查员移动到新地点 |
 | `time` | `time` | 推进后的剧中时间点，格式同 `time_point`，不带推进理由 |
 | `combat` / `chase` | `op`、`round` | `op` 取 `start`/`end`/`round`，`round` 时带新的轮次。不带参与者和结束理由 |
+| `coins` | `character`、`amount` | 结算发放的金币，只出现在结局那一轮 |
+| `backstory` | `character`、`detail` | 房间开启经历改写且胜利时，存活调查员改写后的个人经历全文 |
 
 #### `message_update`
 

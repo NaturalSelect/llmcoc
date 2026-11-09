@@ -22,6 +22,7 @@ export interface GameEvent {
   location?: string
   time?: string
   round?: number
+  amount?: number
 }
 
 export type EventIcon =
@@ -43,6 +44,8 @@ export type EventIcon =
   | 'time'
   | 'combat'
   | 'chase'
+  | 'coins'
+  | 'backstory'
 
 export type EventTone = 'plain' | 'hp' | 'san' | 'mp' | 'danger'
 
@@ -56,7 +59,7 @@ export interface EventView {
 }
 
 const STR_KEYS = ['type', 'character', 'skill', 'level', 'field', 'state', 'category', 'op', 'name', 'detail', 'symptom', 'location', 'time'] as const
-const NUM_KEYS = ['roll', 'from', 'to', 'duration', 'round'] as const
+const NUM_KEYS = ['roll', 'from', 'to', 'duration', 'round', 'amount'] as const
 
 // NOTE: meta.events 来自服务器 JSON，逐字段校验类型，丢掉不合法的条目
 export function eventsOf(msg: RoomMessage | null | undefined): GameEvent[] {
@@ -195,6 +198,10 @@ export function describeEvent(ev: GameEvent): EventView {
       return encounterView(ev, 'combat', '战斗')
     case 'chase':
       return encounterView(ev, 'chase', '追逐')
+    case 'coins':
+      return { icon: 'coins', tone: 'plain', text: who(ev) + '获得金币', value: '+' + (ev.amount ?? 0) }
+    case 'backstory':
+      return { icon: 'backstory', tone: 'plain', text: who(ev) + '个人经历有了新的篇章', note: ev.detail }
   }
   return { icon: 'stat', tone: 'plain', text: ev.type }
 }

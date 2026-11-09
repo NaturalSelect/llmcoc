@@ -235,6 +235,37 @@ func TestCreateSession_Success(t *testing.T) {
 	if created.EnableNSFW {
 		t.Errorf("EnableNSFW should default to false, got true")
 	}
+	if created.EvolveBackstory {
+		t.Errorf("EvolveBackstory should default to false, got true")
+	}
+}
+
+func TestCreateSession_EvolveBackstory(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	sid := seedScenario(t, "Growth Scenario")
+
+	r := sessionCRUDRouter(uid, "u", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/sessions", map[string]any{
+		"name":             "Growth Room",
+		"scenario_id":      sid,
+		"evolve_backstory": true,
+	}))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created models.GameSession
+	if err := models.DB.First(&created, "name = ?", "Growth Room").Error; err != nil {
+		t.Fatalf("session not persisted: %v", err)
+	}
+	if !created.EvolveBackstory {
+		t.Errorf("EvolveBackstory should persist true, got false")
+	}
+	if !strings.Contains(w.Body.String(), `"evolve_backstory":true`) {
+		t.Errorf("response should expose evolve_backstory=true, got %s", w.Body.String())
+	}
 }
 
 func TestCreateSession_EnableNSFW(t *testing.T) {

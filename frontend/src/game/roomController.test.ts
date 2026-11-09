@@ -454,7 +454,7 @@ describe('RoomController', () => {
 
     h.frame(5, 'floor_end', { floor: 1, reason: 'host_stop', messages: 0 })
     h.frame(6, 'spotlight', { user_ids: [], names: [], question: '', kp_floor: true, stop: 'host_stop' })
-    expect(roomBanner(room).text).toBe('KP 已暂停：房主打断，等待房主让 KP 继续')
+    expect(roomBanner(room).text).toBe('KP 已暂停：房主打断，请点击「让 KP 继续」')
     expect(roomBanner(room).busy).toBe(false)
     expect(askView(room, createAskDraft())).toBe('')
     expect(gates(room).canContinue).toBe(true)

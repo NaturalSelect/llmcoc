@@ -334,6 +334,8 @@ func (manageInventoryAction) Execute(call ToolCall, actx ActionContext) []ToolRe
 		// Assemble canonical "Name(Desc, xN)" from structured fields.
 		item = buildInventoryItem(call.ItemName, call.ItemDesc, max(1, call.ItemCount))
 	}
+	// NOTE: 物品描述会原样展示给玩家，模型有时会照抄提示词里的 [tome] 类型标记，这里统一去掉。
+	item = stripInternalTypeTags(item)
 	var result string
 	players := actx.GCtx.Session.Players
 	events := listChangeEvents(players, call.CharacterName, "inventory",
@@ -916,8 +918,12 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 
 	msgs := LoadEndGameMessages(actx.GCtx.Session.ID)
 	sessionSnap := actx.GCtx.Session
-	if err := RunEndSession(actx.Ctx, &sessionSnap, msgs, win, call.Settlement); err != nil {
+	events, err := RunEndSession(actx.Ctx, &sessionSnap, msgs, win, call.Settlement)
+	if err != nil {
 		debugf("tool", "session=%d RunEndSession error: %v", actx.GCtx.Session.ID, err)
+	}
+	if len(events) > 0 {
+		results = append(results, ToolResult{Action: ToolEndGame, Result: "结算已完成。", Events: events})
 	}
 	return results
 }

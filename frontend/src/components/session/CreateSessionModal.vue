@@ -22,6 +22,7 @@ const emit = defineEmits<{ close: []; created: [session: LobbySession] }>()
 const auth = useAuthStore()
 const ui = useUiStore()
 const pickerLabelId = useId()
+const formId = useId()
 
 const form = ref<CreateSessionForm>(emptyCreateForm())
 // NOTE: 选中的剧本单独缓存：翻页后选中项不在当前页列表里，名称/简介仍要能显示和作为默认房间名
@@ -81,7 +82,7 @@ async function submit() {
 
 <template>
   <BaseModal :open="open" title="创建房间" max-width="max-w-lg" @close="emit('close')">
-    <form class="space-y-4" @submit.prevent="submit">
+    <form :id="formId" class="space-y-4" @submit.prevent="submit">
       <BaseInput v-model="form.name" placeholder="房间名称（默认使用剧本名）" aria-label="房间名称" maxlength="200" />
 
       <div>
@@ -133,12 +134,25 @@ async function submit() {
         启用 NSFW 内容（创建后不可修改）
       </label>
 
-      <div class="flex gap-2 pt-1">
+      <label class="flex items-start gap-2 text-sm text-fg-muted">
+        <input v-model="form.evolve_backstory" type="checkbox" class="mt-0.5 accent-accent" />
+        <span>
+          通关后改写存活调查员的个人经历（创建后不可修改）
+          <span class="block text-xs text-fg-subtle">改写不可撤销，默认关闭；失败或阵亡的调查员不受影响。</span>
+        </span>
+      </label>
+    </form>
+
+    <template #footer>
+      <p class="mb-2.5 truncate text-sm" :class="selected ? 'text-fg' : 'text-fg-subtle'">
+        {{ selected ? '已选剧本：' + selected.name : '请先选择一个剧本' }}
+      </p>
+      <div class="flex gap-2">
         <BaseButton variant="ghost" class="flex-1" @click="emit('close')">取消</BaseButton>
-        <BaseButton type="submit" class="flex-1" :loading="submitting" :disabled="!form.scenario_id">
+        <BaseButton type="submit" :form="formId" class="flex-1" :loading="submitting" :disabled="!form.scenario_id">
           {{ submitting ? '创建中…' : '创建' }}
         </BaseButton>
       </div>
-    </form>
+    </template>
   </BaseModal>
 </template>

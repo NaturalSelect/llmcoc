@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
@@ -73,10 +74,11 @@ func validateSettlement(players []models.SessionPlayer, settlement []PlayerSettl
 }
 
 // NOTE: 对 Director 报告用过的技能逐个做成长检定：d100 大于当前值才成长，上限 99。
-// 不在人物卡上的技能和不可成长的技能直接忽略。
-func applySkillGrowth(card *models.CharacterCard, skills []string) {
+// 不在人物卡上的技能和不可成长的技能直接忽略；返回实际成长的技能事件。
+func applySkillGrowth(card *models.CharacterCard, skills []string) []models.GameEvent {
 	data := card.Skills.Data
 	done := make(map[string]bool, len(skills))
+	var events []models.GameEvent
 	for _, skill := range skills {
 		current, onCard := data[skill]
 		if !onCard || done[skill] || growthExcludedSkills[skill] {
@@ -93,30 +95,48 @@ func applySkillGrowth(card *models.CharacterCard, skills []string) {
 		gain, _ := game.Roll(1, 3)
 		data[skill] = min(base+gain, 99)
 		debugf("growth", "character %s skill %s %d -> %d", card.Name, skill, current, data[skill])
+		events = append(events, models.GameEvent{Type: "stat", Character: card.Name, Field: "skill", Skill: skill, From: intPtr(current), To: intPtr(data[skill])})
 	}
+	return events
 }
 
 // RunEndSession 执行结算：发金币、胜利时做成长、清疯狂、撕卡、恢复存活角色，并合并社交关系。
+// 房间开启 EvolveBackstory 且 win=true 时，还会改写存活调查员的个人经历。
 // 评分和用过的技能来自 Director 在 end_game 里填写的 settlement；手动结束传 nil，只发基础金币。
+// 返回玩家可见的结算事件（金币、技能成长、数值恢复、疯狂解除、经历改写），结算失败时为空。
 // 调用方保证 session 已预加载 Players 和 CharacterCard。
-func RunEndSession(ctx context.Context, session *models.GameSession, messages []models.Message, win bool, settlement []PlayerSettlement) error {
+func RunEndSession(ctx context.Context, session *models.GameSession, messages []models.Message, win bool, settlement []PlayerSettlement) ([]models.GameEvent, error) {
 	defer deleteCachedAgents(session.ID)
 	stripMessageImageDataURLTags(messages)
 
+	// NOTE: 背景演变与关系提升互不依赖，并行执行，避免结算多等一次 LLM 调用；两者都只读 session。
+	var evolved map[string]string
+	var wg sync.WaitGroup
+	if win && session.EvolveBackstory {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			evolved = backstoryEvolver(ctx, session, messages)
+		}()
+	}
 	// NOTE: 本局新结识的关系先存在 session 里，结算时才由 AI 判断哪些值得长期写入人物卡
 	// （已有关系的更新/移除不需要 AI 判断，直接生效），胜负均执行。
 	relationPromotions := RunRelationPromotion(ctx, session, messages)
+	wg.Wait()
 
 	settlementByChar := make(map[string]PlayerSettlement, len(settlement))
 	for _, s := range settlement {
 		settlementByChar[s.CharacterName] = s
 	}
 
+	var events []models.GameEvent
 	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
 		var evalContent models.EvaluationContent
 		for i := range session.Players {
 			player := &session.Players[i]
 			card := &player.CharacterCard
+			before := *card
+			hadMadness := card.MadnessState == "temporary" || card.MadnessState == "indefinite"
 
 			s, hasSettlement := settlementByChar[card.Name]
 			bonus := 0
@@ -137,10 +157,11 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 				return err
 			}
 			debugf("award", "player %d (%s) awarded %d coins (base %d + bonus %d)", player.ID, card.Name, award, settlementBaseCoins, bonus)
+			events = append(events, models.GameEvent{Type: "coins", Character: card.Name, Amount: award})
 
 			// NOTE: 失败没有角色成长：技能成长和 POW 增长只在 win=true 时执行。
 			if win {
-				applySkillGrowth(card, s.Skills)
+				events = append(events, applySkillGrowth(card, s.Skills)...)
 
 				limit := card.Stats.Data.POW % 100
 				if game.RollD100() > limit {
@@ -156,6 +177,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 			ResetMadnessAfterSession(card)
 
 			// 撕卡:死亡的调查员失活。
+			newBackstory := ""
 			if card.WoundState == "dead" || card.Stats.Data.HP <= 0 {
 				card.IsActive = false
 			} else {
@@ -169,6 +191,19 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 				}
 				card.WoundState = "none"
 				card.IsUnconscious = false
+
+				// NOTE: evolved 只在 win 且房间开启开关时才有内容，死亡的调查员不参与。
+				if newBackstory = evolved[card.Name]; newBackstory != "" {
+					card.Backstory = newBackstory
+				}
+			}
+
+			events = append(events, cardStatEvents(before, *card)...)
+			if hadMadness {
+				events = append(events, models.GameEvent{Type: "madness", Character: card.Name, State: "none"})
+			}
+			if newBackstory != "" {
+				events = append(events, models.GameEvent{Type: "backstory", Character: card.Name, Detail: newBackstory})
 			}
 
 			if err := tx.Save(card).Error; err != nil {
@@ -190,8 +225,9 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 
 	if txErr != nil {
 		alog.Error("end session transaction failed", "session", session.ID, "err", txErr)
+		return nil, txErr
 	}
-	return txErr
+	return events, nil
 }
 
 func stripMessageImageDataURLTags(messages []models.Message) {

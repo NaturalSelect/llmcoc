@@ -93,6 +93,28 @@ describe('roomBanner', () => {
     expect(continueLabel(room)).toBe('让 KP 继续')
     expect(hasKPStarted(null)).toBe(false)
   })
+
+  test('房主看到的是可点击的操作提示，而不是在等自己', () => {
+    const room = playingRoom()
+    room.isHost = true
+    expect(roomBanner(room)).toStrictEqual({ text: '请点击「让 KP 开场」', tone: 'me', busy: false })
+    room.messages.push({ id: 2, kind: 'kp', status: 'done', floor: 1 })
+    expect(roomBanner(room).text).toBe('请点击「让 KP 继续」')
+
+    room.spotlight.stop = 'loop'
+    expect(roomBanner(room).text).toBe('KP 已暂停：检测到重复操作，请点击「让 KP 继续」')
+
+    room.status = 'lobby'
+    expect(roomBanner(room)).toStrictEqual({ text: '人齐后点击上方「开始」启动游戏', tone: 'idle', busy: false })
+  })
+
+  test('房主被点名时仍优先提示回应', () => {
+    const room = playingRoom()
+    room.isHost = true
+    room.spotlight.askedMe = true
+    room.spotlight.userIds = [2]
+    expect(roomBanner(room).text).toBe('KP 在等你回应')
+  })
 })
 
 describe('showWaiting / playerTurnSubmitState', () => {

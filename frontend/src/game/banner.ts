@@ -56,13 +56,15 @@ export function roomBanner(room: Room | null): Banner {
     return { text, tone: 'warn', busy: true }
   }
   if (room.status === 'ended') return { text: '游戏已结束', tone: 'idle', busy: false }
-  if (room.status !== 'playing') return { text: '等待房主开始游戏', tone: 'idle', busy: false }
+  if (room.status !== 'playing') {
+    return { text: room.isHost ? '人齐后点击上方「开始」启动游戏' : '等待房主开始游戏', tone: 'idle', busy: false }
+  }
   const sp = room.spotlight
   if (room.floor.running) return { text: room.kpStatus || 'KP 正在推进剧情…', tone: 'info', busy: true }
   if (room.floor.starting) return { text: 'KP 正在启动…', tone: 'info', busy: true }
   if (sp.stop) {
     const why = STOP_TEXT[sp.stop] || sp.stop
-    return { text: 'KP 已暂停：' + why + '，等待房主让 KP 继续', tone: 'info', busy: false }
+    return { text: 'KP 已暂停：' + why + (room.isHost ? '，请点击「让 KP 继续」' : '，等待房主让 KP 继续'), tone: 'info', busy: false }
   }
   const names = (sp.names || []).join('、')
   if (sp.askedMe) {
@@ -79,6 +81,7 @@ export function roomBanner(room: Room | null): Banner {
     const progress = w.total > 1 ? '（' + (w.total - w.pending) + '/' + w.total + ' 已提交）' : ''
     return { text: 'KP 在等 ' + (names || '玩家') + ' 回应' + progress, tone: 'info', busy: true }
   }
+  if (room.isHost) return { text: `请点击「${continueLabel(room)}」`, tone: 'me', busy: false }
   return {
     text: hasKPStarted(room) ? '等待房主让 KP 继续' : '等待房主让 KP 开场',
     tone: 'info',

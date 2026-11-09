@@ -39,6 +39,8 @@ type CreateSessionReq struct {
 	MaxPlayers int    `json:"max_players"`
 	Password   string `json:"password"`
 	EnableNSFW bool   `json:"enable_nsfw"`
+	// NOTE: 胜利结算时是否改写存活调查员的个人经历。
+	EvolveBackstory bool `json:"evolve_backstory"`
 }
 
 type JoinSessionReq struct {
@@ -236,14 +238,15 @@ func CreateSession(c *gin.Context) {
 	}
 
 	session := models.GameSession{
-		Name:        req.Name,
-		ScenarioID:  req.ScenarioID,
-		Status:      models.SessionStatusLobby,
-		MaxPlayers:  req.MaxPlayers,
-		Password:    pwHash,
-		HasPassword: hasPassword,
-		EnableNSFW:  req.EnableNSFW,
-		CreatedBy:   userID,
+		Name:            req.Name,
+		ScenarioID:      req.ScenarioID,
+		Status:          models.SessionStatusLobby,
+		MaxPlayers:      req.MaxPlayers,
+		Password:        pwHash,
+		HasPassword:     hasPassword,
+		EnableNSFW:      req.EnableNSFW,
+		EvolveBackstory: req.EvolveBackstory,
+		CreatedBy:       userID,
 	}
 
 	if err := models.DB.Create(&session).Error; err != nil {
@@ -1336,7 +1339,7 @@ func EndSession(c *gin.Context) {
 	stripMessageImageDataURLTags(messages)
 
 	// NOTE: HTTP 手动结束没有 Director 填写的结算，固定传 win=false 且不带评分，只发基础金币。
-	txErr := agent.RunEndSession(context.Background(), &session, messages, false, nil)
+	_, txErr := agent.RunEndSession(context.Background(), &session, messages, false, nil)
 
 	removeSessionLock(session.ID)
 
@@ -1380,7 +1383,7 @@ func AdminEndAllSessions(c *gin.Context) {
 		messages := agent.LoadEndGameMessages(session.ID)
 		stripMessageImageDataURLTags(messages)
 
-		txErr := agent.RunEndSession(context.Background(), session, messages, false, nil)
+		_, txErr := agent.RunEndSession(context.Background(), session, messages, false, nil)
 		removeSessionLock(session.ID)
 
 		results = append(results, endAllResult{SessionID: session.ID, Name: session.Name, Settled: txErr == nil})

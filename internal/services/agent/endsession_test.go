@@ -300,7 +300,7 @@ func TestRunEndSession_WinFalse_SkipsPOW(t *testing.T) {
 	}, nil)
 
 	sess := makeTestSession(10, uid, *card)
-	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
+	if _, err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(win=false): %v", err)
 	}
 
@@ -322,7 +322,7 @@ func TestRunEndSession_WinTrue_POWGrows(t *testing.T) {
 	}, nil)
 
 	sess := makeTestSession(11, uid, *card)
-	if err := RunEndSession(context.Background(), sess, nil, true, nil); err != nil {
+	if _, err := RunEndSession(context.Background(), sess, nil, true, nil); err != nil {
 		t.Fatalf("RunEndSession(win=true): %v", err)
 	}
 
@@ -358,7 +358,7 @@ func TestRunEndSession_CoinsFollowSettlementScore(t *testing.T) {
 			}, nil)
 
 			sess := makeTestSession(uint(100+i), uid, *card)
-			if err := RunEndSession(context.Background(), sess, nil, tt.win, tt.settlement); err != nil {
+			if _, err := RunEndSession(context.Background(), sess, nil, tt.win, tt.settlement); err != nil {
 				t.Fatalf("RunEndSession: %v", err)
 			}
 
@@ -381,7 +381,7 @@ func TestRunEndSession_PersistsEvaluation(t *testing.T) {
 	}, nil)
 	sess := makeTestSession(30, uid, *card)
 	settlement := []PlayerSettlement{{CharacterName: "EvalChar", Score: intPtr(90), Comment: "表现出色"}}
-	if err := RunEndSession(context.Background(), sess, nil, true, settlement); err != nil {
+	if _, err := RunEndSession(context.Background(), sess, nil, true, settlement); err != nil {
 		t.Fatalf("RunEndSession: %v", err)
 	}
 
@@ -396,7 +396,7 @@ func TestRunEndSession_PersistsEvaluation(t *testing.T) {
 	}
 
 	sess = makeTestSession(31, uid, *card)
-	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
+	if _, err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(manual): %v", err)
 	}
 	var count int64
@@ -418,7 +418,7 @@ func TestRunEndSession_WinFalse_DeadCardDeactivated(t *testing.T) {
 	models.DB.Save(card)
 
 	sess := makeTestSession(13, uid, *card)
-	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
+	if _, err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(win=false, dead): %v", err)
 	}
 
@@ -439,7 +439,7 @@ func TestRunEndSession_WinFalse_LivingCardRestored(t *testing.T) {
 	}, nil)
 
 	sess := makeTestSession(14, uid, *card)
-	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
+	if _, err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(win=false, living): %v", err)
 	}
 
@@ -464,7 +464,7 @@ func TestRunEndSession_WinFalse_SkillsUnchanged(t *testing.T) {
 
 	sess := makeTestSession(15, uid, *card)
 	settlement := []PlayerSettlement{{CharacterName: "SkillChar", Score: intPtr(60), Skills: []string{"侦查", "图书馆使用"}}}
-	if err := RunEndSession(context.Background(), sess, nil, false, settlement); err != nil {
+	if _, err := RunEndSession(context.Background(), sess, nil, false, settlement); err != nil {
 		t.Fatalf("RunEndSession(win=false): %v", err)
 	}
 
@@ -499,7 +499,7 @@ func TestRunEndSession_WinTrue_AppliesReportedSkillGrowth(t *testing.T) {
 		card.Skills.Data["侦查"] = 1
 		models.DB.Save(card)
 		sess := makeTestSession(uint(40+i), uid, *card)
-		if err := RunEndSession(context.Background(), sess, nil, true, settlement); err != nil {
+		if _, err := RunEndSession(context.Background(), sess, nil, true, settlement); err != nil {
 			t.Fatalf("RunEndSession(win=true): %v", err)
 		}
 		var updated models.CharacterCard
@@ -551,7 +551,7 @@ func TestRunEndSession_WinTrue_NoRegression(t *testing.T) {
 	}, map[string]int{"侦查": 30})
 
 	sess := makeTestSession(16, uid, *card)
-	if err := RunEndSession(context.Background(), sess, nil, true, nil); err != nil {
+	if _, err := RunEndSession(context.Background(), sess, nil, true, nil); err != nil {
 		t.Fatalf("RunEndSession(win=true): %v", err)
 	}
 
@@ -598,7 +598,7 @@ func TestRunEndSession_RelationPromotion_ExistingUpdatesApplyWithoutAI(t *testin
 		}},
 	}
 
-	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
+	if _, err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(win=false): %v", err)
 	}
 
@@ -646,7 +646,7 @@ func TestRunEndSession_RelationPromotion_DeadCharacterSkipped(t *testing.T) {
 		}},
 	}
 
-	if err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
+	if _, err := RunEndSession(context.Background(), sess, nil, false, nil); err != nil {
 		t.Fatalf("RunEndSession(win=false, dead): %v", err)
 	}
 

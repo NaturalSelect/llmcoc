@@ -63,7 +63,8 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 7. 上下文压缩只有一级：LLM 总结（`director_summary.go`）。历史单元原样累积，不做确定性剥离或丢弃，因为单元里有已经生效的结算。总结在周期开始前（`MaybeCompact`）和周期中途上下文逼近窗口时（`CompactInFloor`，总结完继续同一个周期，玩家看不到额外的周期起止）触发，把较早的拍连同已有总结合并成最前面的 `<story_so_far>` 单元。切点只落在拍的边界上（两条 kp/ask 消息之间），当前周期的单元永远不被总结。发给 LLM 的房间聊天记录由 `message_render.go` 按 `Kind` 统一渲染，结束结算用 `LoadEndGameMessages`。
 - 战斗/追逐中 DEX 顺序只是建议：`applyCombatAct` / `applyChaseAct` 接受任何本轮未行动且存活的参与者，PC 没有声明仍然不能结算。
 - 玩家可见正文由 Writer 产生，Director 只给指令；规则裁定由 Lawyer 负责；NPC 有独立行动与记忆。
-- 结局结算由 Director 在 `end_game` 里完成，没有独立的 Evaluator / Growth Agent。`settlement` 必填，必须为每位调查员（含死亡者）各写一条 `score`（0–100）和本局用过的技能；`validateSettlement`（`endsession.go`）在任何副作用之前校验，缺人、重名、名字对不上或评分越界都会以 `SYSTEM REJECT` 打回，游戏不会结束。`RunEndSession` 按评分折算金币（基础 20 + 评分/2），`win=true` 时才对 Director 报的技能做成长检定并做 POW 增长；HTTP 手动结束和管理员批量结束传 `nil` 结算，只发基础金币、不写评价记录。结束时不再生成 summary，也没有背景演变。
+- 结局结算由 Director 在 `end_game` 里完成，没有独立的 Evaluator / Growth Agent。`settlement` 必填，必须为每位调查员（含死亡者）各写一条 `score`（0–100）和本局用过的技能；`validateSettlement`（`endsession.go`）在任何副作用之前校验，缺人、重名、名字对不上或评分越界都会以 `SYSTEM REJECT` 打回，游戏不会结束。`RunEndSession` 按评分折算金币（基础 20 + 评分/2），`win=true` 时才对 Director 报的技能做成长检定并做 POW 增长；HTTP 手动结束和管理员批量结束传 `nil` 结算，只发基础金币、不写评价记录。结束时不再生成 summary。`RunEndSession` 返回玩家可见的结算事件（`coins` 金币、技能成长、HP/MP/SAN 恢复、疯狂解除、`backstory` 经历改写），`end_game` 把它们作为 `ToolResult.Events` 发布成一条 `event` 消息，手动结束丢弃返回值。
+- 「个人经历演变」由房间创建时的 `GameSession.EvolveBackstory`（默认 false，之后不可改）控制：只有开关打开且 `win=true` 时，`RunEndSession` 才通过 `backstoryEvolver`（`backstory.go`，借用 Writer 的 Provider，一次调用覆盖全部存活调查员）改写个人经历，并与关系提升并行。尽力而为：LLM 或 JSON 失败时经历保持不变；`filterBackstories` 丢弃非存活调查员、空串、未变化和超过 300 字的改写；死亡者不参与。测试通过替换 `backstoryEvolver` 绕开数据库里的 Provider。
 - 人物卡生成/重生成、技能调整和结算时的关系提升借用 Writer 角色的 Provider（`loadSingleAgent(AgentRoleWriter)`），不再有单独配置项。
 
 ### Agent 角色配置

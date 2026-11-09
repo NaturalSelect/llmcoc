@@ -30,6 +30,7 @@ export interface LobbySession {
   max_players: number
   has_password?: boolean
   enable_nsfw?: boolean
+  evolve_backstory?: boolean
   created_by: number
   created_at?: string
   updated_at?: string
@@ -50,6 +51,7 @@ export interface CreateSessionForm {
   max_players: number | ''
   password: string
   enable_nsfw: boolean
+  evolve_backstory: boolean
 }
 
 export interface CreateSessionPayload {
@@ -58,6 +60,7 @@ export interface CreateSessionPayload {
   max_players: number
   password: string
   enable_nsfw: boolean
+  evolve_backstory: boolean
 }
 
 export interface JoinSessionForm {

@@ -39,7 +39,7 @@ export function scenarioOptionLabel(s: Scenario): string {
 }
 
 export function emptyCreateForm(): CreateSessionForm {
-  return { name: '', scenario_id: '', max_players: 4, password: '', enable_nsfw: false }
+  return { name: '', scenario_id: '', max_players: 4, password: '', enable_nsfw: false, evolve_backstory: false }
 }
 
 export function emptyJoinForm(): JoinSessionForm {
@@ -65,7 +65,14 @@ export function buildCreatePayload(form: CreateSessionForm, selected: Pick<Scena
   const name = form.name.trim() || selected?.name || ''
   if (!name) return null
   const max = typeof form.max_players === 'number' && Number.isFinite(form.max_players) ? form.max_players : 0
-  return { name, scenario_id: form.scenario_id, max_players: max, password: form.password, enable_nsfw: form.enable_nsfw }
+  return {
+    name,
+    scenario_id: form.scenario_id,
+    max_players: max,
+    password: form.password,
+    enable_nsfw: form.enable_nsfw,
+    evolve_backstory: form.evolve_backstory,
+  }
 }
 
 export function endSessionConfirmMessage(playerCount: number, costPerPlayer: number): string {

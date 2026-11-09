@@ -55,10 +55,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
         role="dialog"
         aria-modal="true"
         :aria-label="title || undefined"
-        class="max-h-[90vh] w-full overflow-y-auto rounded-xl border border-line bg-surface shadow-panel outline-none"
+        class="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-panel outline-none"
         :class="maxWidth"
       >
-        <header v-if="title" class="flex items-center justify-between border-b border-line px-5 py-3.5">
+        <header v-if="title" class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3.5">
           <h2 class="text-base font-semibold text-fg">{{ title }}</h2>
           <button
             type="button"
@@ -69,9 +69,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
             <X :size="18" :stroke-width="1.75" />
           </button>
         </header>
-        <div class="p-5">
+        <div class="min-h-0 flex-1 overflow-y-auto p-5">
           <slot />
         </div>
+        <footer v-if="$slots.footer" class="shrink-0 border-t border-line bg-surface px-5 py-3.5">
+          <slot name="footer" />
+        </footer>
       </div>
     </div>
   </Teleport>

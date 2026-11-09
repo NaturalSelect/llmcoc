@@ -445,6 +445,8 @@ type GameSession struct {
 	DramaturgHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
 	CombatState      JSONField[*CombatState] `gorm:"type:text" json:"-"`
 	ChaseState       JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
+	// NOTE: 房主创建时决定；开启后胜利结算会改写存活调查员的个人经历，改写不可撤销，所以默认关闭。
+	EvolveBackstory bool `gorm:"default:false" json:"evolve_backstory"`
 	// NOTE: Spotlight 记录发言权：nil 与 UserIDs 为空都表示 KP 持有；非空表示等这些玩家回应。
 	Spotlight     JSONField[*SpotlightState] `gorm:"type:text" json:"-"`
 	KPHint        string                     `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示
@@ -553,7 +555,7 @@ const (
 // GameEvent 是一次玩家可见的工具结算，只存玩家能看到的信息；字段按 Type 取用，其余留空。
 // NOTE: 暗骰只有 Type+Hidden，不存技能、点数和角色，避免玩家从接口里读到。NPC 的变化不产生事件。
 type GameEvent struct {
-	Type      string `json:"type"`                // dice|stat|wound|item|madness|location|time|combat|chase
+	Type      string `json:"type"`                // dice|stat|wound|item|madness|location|time|combat|chase|coins|backstory
 	Character string `json:"character,omitempty"` // 调查员名；NPC、暗骰留空
 	Skill     string `json:"skill,omitempty"`     // dice: 检定名；stat 且 field=skill 时为技能名
 	Roll      int    `json:"roll,omitempty"`      // dice
@@ -566,12 +568,13 @@ type GameEvent struct {
 	Category  string `json:"category,omitempty"`  // item: inventory|spell|asset|relation|monster
 	Op        string `json:"op,omitempty"`        // item: add|remove|change；combat/chase: start|end|round
 	Name      string `json:"name,omitempty"`      // item 条目
-	Detail    string `json:"detail,omitempty"`    // item: 补充说明，如数量变化
+	Detail    string `json:"detail,omitempty"`    // item: 补充说明，如数量变化；backstory: 改写后的个人经历
 	Symptom   string `json:"symptom,omitempty"`   // madness
 	Duration  int    `json:"duration,omitempty"`  // madness
 	Location  string `json:"location,omitempty"`  // location
 	Time      string `json:"time,omitempty"`      // time: 游戏内时间点
 	Round     int    `json:"round,omitempty"`     // combat/chase op=round
+	Amount    int    `json:"amount,omitempty"`    // coins: 本局结算发放的金币
 }
 
 // MessageStatus 表示一条消息的正文是否已经就绪：writer/image 先以 pending 落库，异步补全后变 done 或 failed。

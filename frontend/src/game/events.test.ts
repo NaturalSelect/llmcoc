@@ -73,4 +73,16 @@ describe('describeEvent', () => {
     expect(view({ type: 'combat', op: 'round', round: 2 })).toBe('战斗进入第 2 轮')
     expect(view({ type: 'chase', op: 'end' })).toBe('追逐结束')
   })
+
+  test('结算：金币与个人经历改写', () => {
+    expect(view({ type: 'coins', character: '甲', amount: 60 })).toBe('甲 获得金币 +60')
+    expect(describeEvent({ type: 'coins', amount: 20 }).icon).toBe('coins')
+    expect(view({ type: 'backstory', character: '甲', detail: '他从此怕黑。' })).toBe('甲 个人经历有了新的篇章 他从此怕黑。')
+    expect(describeEvent({ type: 'backstory', character: '甲' }).icon).toBe('backstory')
+  })
+
+  test('eventsOf 保留金币数量', () => {
+    const msg = { id: 1, kind: 'event', meta: { events: [{ type: 'coins', character: '甲', amount: 60 }] } }
+    expect(eventsOf(msg)).toStrictEqual([{ type: 'coins', character: '甲', amount: 60 }])
+  })
 })

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -26,6 +27,28 @@ const rewardAgentSystemPrompt = `<role>COC7通关奖励设计专家</role>
 - description必须说明物品与mythos_anchor的叙事关联。
 - 仔细思考，考虑设计一个有趣的奖励，避免过于平庸或过于强力的奖励；如果概念本身很弱，考虑在respond中设计一个更有趣的奖励来替代概念，但必须有规则书裁定作为支持。奖励设计要兼顾叙事和机制，避免纯叙事或纯数值提升。替换或深化概念时，仍须保留原概念中的叙事根据与mythos_anchor关联，不得改成与本剧本无关的规则书名物。
 </design_rules>`
+
+// rewardTypeLabel 把奖励类型的内部枚举译成玩家可读的中文，未知类型原样返回。
+func rewardTypeLabel(t string) string {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "tome":
+		return "神话典籍"
+	case "artifact":
+		return "神话物品"
+	}
+	return t
+}
+
+// internalTypeTagPattern 匹配 [tome]、[artifact] 这类给规则引擎看的类型标记。
+var internalTypeTagPattern = regexp.MustCompile(`(?i)\[\s*(tome|artifact)\s*\]\s*`)
+
+// stripInternalTypeTags 去掉玩家可见文案里的内部类型标记。
+func stripInternalTypeTags(s string) string {
+	if !strings.Contains(s, "[") {
+		return s
+	}
+	return strings.TrimSpace(internalTypeTagPattern.ReplaceAllString(s, ""))
+}
 
 // rewardAgentReward is the structured reward returned by respond.
 // No find_condition — completion rewards are given when a non-failure ending is reached.

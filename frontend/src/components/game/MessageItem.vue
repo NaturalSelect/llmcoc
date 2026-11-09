@@ -11,6 +11,7 @@ import {
   Hand,
   HeartPulse,
   MapPin,
+  NotebookPen,
   Package,
   Shield,
   Skull,
@@ -72,6 +73,8 @@ const EVENT_ICONS: Record<EventIcon, Component> = {
   time: Clock,
   combat: Swords,
   chase: Footprints,
+  coins: Coins,
+  backstory: NotebookPen,
 }
 
 const EVENT_TONES: Record<EventTone, string> = {

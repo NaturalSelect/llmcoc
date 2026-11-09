@@ -63,6 +63,26 @@ describe('BaseModal', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(wrapper.emitted('close')).toBeUndefined()
   })
+
+  test('内容区单独滚动，footer 插槽固定在滚动区之外；没有插槽时不渲染 footer', async () => {
+    const withFooter = mount(BaseModal, {
+      props: { open: true, title: '标题' },
+      slots: { default: '<p id="body">内容</p>', footer: '<button id="act">创建</button>' },
+      attachTo: document.body,
+    })
+    await nextTick()
+    const body = document.body.querySelector('#body')!.parentElement as HTMLElement
+    expect(body.className).toContain('overflow-y-auto')
+    const footer = document.body.querySelector('footer')
+    expect(footer?.querySelector('#act')).not.toBeNull()
+    expect(body.contains(footer)).toBe(false)
+    withFooter.unmount()
+
+    const plain = mount(BaseModal, { props: { open: true }, slots: { default: '<p>内容</p>' }, attachTo: document.body })
+    await nextTick()
+    expect(document.body.querySelector('footer')).toBeNull()
+    plain.unmount()
+  })
 })
 
 describe('StatBar', () => {
