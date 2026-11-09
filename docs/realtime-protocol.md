@@ -178,8 +178,8 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 
 | `type` | 字段 | 说明 |
 | --- | --- | --- |
-| `dice` | `character`、`skill`、`roll`、`level` | 一次公开骰。暗骰只有 `{"type":"dice","hidden":true}`，不存技能、点数和角色 |
-| `stat` | `character`、`field`、`from`、`to`，`field=skill` 时加 `skill` | 数值变化，`to` 是钳制后的实际值。`field` 取 `hp`/`max_hp`/`san`/`max_san`/`mp`/`max_mp`/`pow`/`cthulhu_mythos`/`armor`/`str`/`con`/`siz`/`dex`/`app`/`int`/`edu` |
+| `dice` | `character`、`skill`、`roll`、`level`，无 `skill` 时加 `expr` | 一次公开骰；没有检定名的骰子(伤害、损失)用 `expr` 说明掷的是什么。暗骰只有 `{"type":"dice","hidden":true}`，不存技能、点数和角色 |
+| `stat` | `character`、`field`、`from`、`to`，`field=skill` 时加 `skill`，可带 `detail` | 数值变化，`to` 是钳制后的实际值；结算时自动恢复的 HP/MP/SAN 带 `detail="结算恢复"`。`field` 取 `hp`/`max_hp`/`san`/`max_san`/`mp`/`max_mp`/`pow`/`cthulhu_mythos`/`armor`/`str`/`con`/`siz`/`dex`/`app`/`int`/`edu` |
 | `wound` | `character`、`state` | 伤势转换：`none`/`major`/`dying`/`dead`/`unconscious`/`conscious` |
 | `item` | `character`、`category`、`op`、`name`、`detail` | `category` 取 `inventory`/`spell`/`monster`/`relation`/`asset`；`op` 取 `add`/`remove`/`change`，`change` 时 `detail` 是“旧 → 新” |
 | `madness` | `character`、`state`、`symptom`、`duration` | `state` 取 `temporary`/`indefinite`/`permanent`，解除时为 `none` |

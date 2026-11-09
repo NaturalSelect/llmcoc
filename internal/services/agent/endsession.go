@@ -25,6 +25,9 @@ const settlementBaseCoins = 20
 // NOTE: 克苏鲁神话和信用评级不靠使用成长，Director 填了也忽略。
 var growthExcludedSkills = map[string]bool{"克苏鲁神话": true, "信用评级": true}
 
+// NOTE: 结算时自动恢复的数值：HP 与 MP 回满，SAN 恢复 3D6。
+var settlementRestoredFields = map[string]bool{"hp": true, "mp": true, "san": true}
+
 // NOTE: 没有结算条目(手动结束)时 score 视为 0，只发基础金币。
 func (s PlayerSettlement) score() int {
 	if s.Score == nil {
@@ -198,7 +201,14 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 				}
 			}
 
-			events = append(events, cardStatEvents(before, *card)...)
+			// NOTE: 结算时的回满是规则内的恢复，不是游戏中的损益，事件里写明原因，避免日志里最后一次 SAN 和卡面对不上。
+			statEvents := cardStatEvents(before, *card)
+			for i := range statEvents {
+				if statEvents[i].Type == "stat" && settlementRestoredFields[statEvents[i].Field] {
+					statEvents[i].Detail = "结算恢复"
+				}
+			}
+			events = append(events, statEvents...)
 			if hadMadness {
 				events = append(events, models.GameEvent{Type: "madness", Character: card.Name, State: "none"})
 			}

@@ -7,6 +7,7 @@ export interface GameEvent {
   character?: string
   skill?: string
   roll?: number
+  expr?: string
   level?: string
   hidden?: boolean
   field?: string
@@ -58,7 +59,7 @@ export interface EventView {
   note?: string
 }
 
-const STR_KEYS = ['type', 'character', 'skill', 'level', 'field', 'state', 'category', 'op', 'name', 'detail', 'symptom', 'location', 'time'] as const
+const STR_KEYS = ['type', 'character', 'skill', 'expr', 'level', 'field', 'state', 'category', 'op', 'name', 'detail', 'symptom', 'location', 'time'] as const
 const NUM_KEYS = ['roll', 'from', 'to', 'duration', 'round', 'amount'] as const
 
 // NOTE: meta.events 来自服务器 JSON，逐字段校验类型，丢掉不合法的条目
@@ -161,7 +162,7 @@ export function describeEvent(ev: GameEvent): EventView {
       return {
         icon: 'dice',
         tone: 'plain',
-        text: who(ev) + (ev.skill || '骰点'),
+        text: who(ev) + (ev.skill || (ev.expr ? `骰点 ${ev.expr}` : '骰点')),
         value: String(ev.roll ?? ''),
         note: ev.level ? '难度 ' + ev.level : undefined,
       }
@@ -172,6 +173,7 @@ export function describeEvent(ev: GameEvent): EventView {
         tone: statTone(ev.field),
         text: `${who(ev)}${label} ${ev.from ?? '?'} →`,
         value: String(ev.to ?? '?'),
+        note: ev.detail || undefined,
       }
     }
     case 'wound': {

@@ -63,8 +63,12 @@ describe('hud', () => {
     expect(playerCardAccess(mine, { id: 3, role: 'admin' })).toMatchObject({ ok: true })
 
     expect(ownCardAccess(s, { id: 1, role: 'user' })).toMatchObject({ ok: true })
-    expect(ownCardAccess(s, { id: 2, role: 'user' })).toStrictEqual({ ok: false, error: '未找到当前房间绑定的人物卡' })
-    expect(ownCardAccess(null, null)).toStrictEqual({ ok: false, error: '未找到当前房间绑定的人物卡' })
+    expect(ownCardAccess(s, { id: 2, role: 'user' })).toStrictEqual({ ok: false, error: '你没有以调查员身份参与本房间' })
+    expect(ownCardAccess(null, null)).toStrictEqual({ ok: false, error: '你没有以调查员身份参与本房间' })
+    expect(ownCardAccess(session({ status: 'lobby' }), { id: 3, role: 'user' })).toStrictEqual({
+      ok: false,
+      error: '你还没有携带人物卡加入本房间，请回到大厅点「加入」选择人物卡',
+    })
   })
 
   test('结束游戏确认文案与状态标签', () => {

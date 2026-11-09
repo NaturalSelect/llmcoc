@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { BookOpen, Coins, LayoutDashboard, LogOut, ShieldCheck, ShoppingBag, Swords } from '@lucide/vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -23,6 +23,15 @@ const links = computed(() => {
   ]
   return auth.isAdmin ? [...base, { to: '/admin', label: '管理', icon: ShieldCheck, active: route.name === 'admin' }] : base
 })
+
+// NOTE: 顶栏的人物卡计数读 store，而各页面只在自己需要时才加载；刷新后直达游戏页或后台时 store 为空，会显示 0
+watch(
+  () => auth.user?.id,
+  (id) => {
+    if (id) chars.loadCharacters().catch(() => {})
+  },
+  { immediate: true },
+)
 
 async function logout() {
   auth.logout()
@@ -58,7 +67,7 @@ async function logout() {
           <Coins :size="14" :stroke-width="1.75" class="text-accent" />
           <b class="font-semibold tabular-nums text-accent">{{ auth.user?.coins ?? 0 }}</b>
         </span>
-        <span class="hidden whitespace-nowrap text-fg-muted sm:inline">
+        <span class="hidden whitespace-nowrap text-fg-muted sm:inline" title="现有人物卡 / 卡槽上限，阵亡的人物卡不计入">
           人物卡 <b class="font-medium tabular-nums text-fg">{{ chars.characters.length }}</b>/{{ auth.user?.card_slots ?? 3 }}
         </span>
         <span class="hidden text-fg md:inline">{{ auth.user?.username }}</span>

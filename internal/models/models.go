@@ -559,6 +559,7 @@ type GameEvent struct {
 	Character string `json:"character,omitempty"` // 调查员名；NPC、暗骰留空
 	Skill     string `json:"skill,omitempty"`     // dice: 检定名；stat 且 field=skill 时为技能名
 	Roll      int    `json:"roll,omitempty"`      // dice
+	Expr      string `json:"expr,omitempty"`      // dice: 骰子表达式，只给没有检定名的公开骰(伤害等)用，说明掷的是什么
 	Level     string `json:"level,omitempty"`     // dice: 难度
 	Hidden    bool   `json:"hidden,omitempty"`    // dice: 暗骰
 	Field     string `json:"field,omitempty"`     // stat: hp/max_hp/san/max_san/mp/max_mp/pow/cthulhu_mythos/armor/str…edu/skill
@@ -568,7 +569,7 @@ type GameEvent struct {
 	Category  string `json:"category,omitempty"`  // item: inventory|spell|asset|relation|monster
 	Op        string `json:"op,omitempty"`        // item: add|remove|change；combat/chase: start|end|round
 	Name      string `json:"name,omitempty"`      // item 条目
-	Detail    string `json:"detail,omitempty"`    // item: 补充说明，如数量变化；backstory: 改写后的个人经历
+	Detail    string `json:"detail,omitempty"`    // item: 补充说明，如数量变化；backstory: 改写后的个人经历；stat: 变化原因，如结算恢复
 	Symptom   string `json:"symptom,omitempty"`   // madness
 	Duration  int    `json:"duration,omitempty"`  // madness
 	Location  string `json:"location,omitempty"`  // location

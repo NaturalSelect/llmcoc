@@ -137,7 +137,7 @@ const EVENT_TONES: Record<EventTone, string> = {
       </div>
 
       <div v-if="kind === 'writer'">
-        <p v-if="msg.status === 'failed'" class="text-sm text-danger">叙事生成失败<template v-if="error">：{{ error }}</template></p>
+        <p v-if="msg.status === 'failed'" class="text-sm text-danger">{{ error || '叙事生成失败' }}</p>
         <template v-else>
           <p v-if="text.trim()" class="whitespace-pre-wrap font-prose text-prose text-fg" :class="msg.status === 'pending' ? 'cursor' : ''">{{ text }}</p>
           <p v-else-if="msg.status === 'pending'" class="cursor font-prose text-prose text-fg-subtle">叙事正文生成中…</p>
@@ -145,7 +145,7 @@ const EVENT_TONES: Record<EventTone, string> = {
       </div>
 
       <div v-else-if="kind === 'image'">
-        <p v-if="msg.status === 'failed'" class="text-sm text-danger">配图失败<template v-if="error">：{{ error }}</template></p>
+        <p v-if="msg.status === 'failed'" class="text-sm text-danger">{{ error || '配图生成失败' }}</p>
         <div v-if="images.length" class="grid gap-3">
           <img
             v-for="(img, idx) in images"

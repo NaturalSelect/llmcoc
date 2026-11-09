@@ -37,6 +37,25 @@ func onlyResultEvents(t *testing.T, res []ToolResult) []models.GameEvent {
 	return res[0].Events
 }
 
+func TestDiceEvent_ExprOnlyWhenNoSkillName(t *testing.T) {
+	players := eventTestPlayers()
+
+	skill := diceEvent(DiceCheckResult{DiceCheck: DiceCheck{Character: "甲", What: "侦查", DiceExpr: "1D100"}, Roll: 33}, players)
+	if skill.Expr != "" || skill.Skill != "侦查" {
+		t.Errorf("skill check event = %+v, want skill name and no expr", skill)
+	}
+
+	damage := diceEvent(DiceCheckResult{DiceCheck: DiceCheck{Character: "甲", What: "  ", DiceExpr: " 1D3 "}, Roll: 1}, players)
+	if damage.Expr != "1D3" || damage.Roll != 1 || damage.Character != "甲" {
+		t.Errorf("damage event = %+v, want expr 1D3 for 甲", damage)
+	}
+
+	hidden := diceEvent(DiceCheckResult{DiceCheck: DiceCheck{Hidden: true, What: "", DiceExpr: "1D100"}, Roll: 7}, players)
+	if hidden.Expr != "" || hidden.Roll != 0 || !hidden.Hidden {
+		t.Errorf("hidden event = %+v, must not leak expr or roll", hidden)
+	}
+}
+
 func TestCardStatEvents_ClampedHPAndWoundTransitions(t *testing.T) {
 	before := eventTestPlayers()[0].CharacterCard
 	after := before

@@ -72,7 +72,10 @@ export function playerCardAccess(player: SessionPlayer, user: SessionUser | null
 
 export function ownCardAccess(session: Session | null, user: SessionUser | null): CardAccess {
   const card = myCard(session, user?.id)
-  return card ? { ok: true, card } : { ok: false, error: '未找到当前房间绑定的人物卡' }
+  if (card) return { ok: true, card }
+  // NOTE: 房主创建房间后不会自动加入，只有等待中的房间还能补上人物卡
+  const hint = session?.status === 'lobby' ? '你还没有携带人物卡加入本房间，请回到大厅点「加入」选择人物卡' : '你没有以调查员身份参与本房间'
+  return { ok: false, error: hint }
 }
 
 export function endSessionMessage(playerCount: number, costPerPlayer: number): string {

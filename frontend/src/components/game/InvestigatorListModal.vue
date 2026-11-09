@@ -13,7 +13,8 @@ const emit = defineEmits<{ close: []; select: [player: SessionPlayer] }>()
 
 <template>
   <BaseModal :open="open" title="调查员状态" max-width="max-w-md" @close="emit('close')">
-    <ul class="max-h-[60vh] space-y-2 overflow-y-auto">
+    <p v-if="!session?.players?.length" class="py-6 text-center text-sm text-fg-muted">还没有调查员加入，玩家需要携带人物卡加入房间。</p>
+    <ul v-else class="max-h-[60vh] space-y-2 overflow-y-auto">
       <li v-for="p in session?.players ?? []" :key="p.user_id">
         <button
           type="button"

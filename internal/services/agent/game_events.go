@@ -4,6 +4,7 @@ package agent
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/llmcoc/server/internal/models"
 )
@@ -28,11 +29,15 @@ func statEvent(name, field string, from, to int) models.GameEvent {
 }
 
 // diceEvent 生成一次骰子事件；暗骰只保留 hidden 标记，公开骰的对象不是调查员时不写角色名。
+// 没有检定名的骰子(伤害、损失等)带上表达式，否则玩家只看到一个孤零零的点数。
 func diceEvent(r DiceCheckResult, players []models.SessionPlayer) models.GameEvent {
 	if r.Hidden {
 		return models.GameEvent{Type: "dice", Hidden: true}
 	}
 	ev := models.GameEvent{Type: "dice", Skill: r.What, Roll: r.Roll, Level: r.Level}
+	if strings.TrimSpace(r.What) == "" {
+		ev.Expr = strings.TrimSpace(r.DiceExpr)
+	}
 	if investigatorIndex(players, r.Character) >= 0 {
 		ev.Character = r.Character
 	}

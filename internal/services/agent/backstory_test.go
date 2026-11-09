@@ -307,6 +307,14 @@ func TestRunEndSession_EmitsRestoreAndMadnessEvents(t *testing.T) {
 	if e, ok := fields["mp"]; !ok || *e.From != 1 || *e.To != 8 {
 		t.Errorf("mp event = %+v, want 1 -> 8", e)
 	}
+	for _, f := range []string{"hp", "mp", "san"} {
+		if e, ok := fields[f]; ok && e.Detail != "结算恢复" {
+			t.Errorf("%s event detail = %q, want 结算恢复", f, e.Detail)
+		}
+	}
+	if _, ok := fields["san"]; !ok {
+		t.Errorf("san event missing, want a restore event with reason (SAN 40 recovers 3D6)")
+	}
 	madness := eventsOfType(events, "madness")
 	if len(madness) != 1 || madness[0].Character != "负伤者" || madness[0].State != "none" {
 		t.Errorf("madness events = %+v, want one clearing 负伤者", madness)

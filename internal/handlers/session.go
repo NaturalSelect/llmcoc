@@ -459,7 +459,7 @@ func StartSession(c *gin.Context) {
 		return
 	}
 	if len(session.Players) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "至少需要一名玩家"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "房间里还没有调查员，请先携带人物卡加入房间（房主也需要加入）再开始"})
 		return
 	}
 

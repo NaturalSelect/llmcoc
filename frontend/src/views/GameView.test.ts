@@ -72,9 +72,11 @@ function json(body: unknown, status = 200) {
 interface Setup {
   hostId?: number
   spotlight?: Record<string, unknown>
+  extraMessages?: Array<Record<string, unknown>>
+  players?: Array<Record<string, unknown>>
 }
 
-async function setup({ hostId = 1, spotlight = SPOT_ME }: Setup = {}) {
+async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players }: Setup = {}) {
   const fetchCalls: Array<{ method: string; path: string }> = []
   const session = {
     id: 7,
@@ -82,7 +84,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME }: Setup = {}) {
     status: 'playing',
     created_by: hostId,
     scenario: { name: '旧宅疑云' },
-    players: [{ user_id: 2, user: { username: 'alice' }, character_card: { id: 5, name: '爱丽丝', occupation: '记者', stats: { hp: 9, max_hp: 10, san: 40, max_san: 50, mp: 8, max_mp: 8 } } }],
+    players: players ?? [{ user_id: 2, user: { username: 'alice' }, character_card: { id: 5, name: '爱丽丝', occupation: '记者', stats: { hp: 9, max_hp: 10, san: 40, max_san: 50, mp: 8, max_mp: 8 } } }],
   }
   vi.stubGlobal(
     'fetch',
@@ -90,7 +92,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME }: Setup = {}) {
       const method = init?.method || 'GET'
       fetchCalls.push({ method, path })
       if (path === '/api/sessions/7') return json(session)
-      if (path === '/api/sessions/7/messages') return json([kpMessage, eventMessage, askMessage])
+      if (path === '/api/sessions/7/messages') return json([kpMessage, eventMessage, askMessage, ...extraMessages])
       if (path === '/api/sessions/7/chat-status') {
         return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
       }
@@ -251,6 +253,36 @@ describe('GameView', () => {
     close!.click()
     await flushPromises()
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  test('生成失败的叙事和配图只显示服务端给出的原因，不再叠一层前缀', async () => {
+    const { wrapper } = await setup({
+      extraMessages: [
+        { id: 4, role: 'assistant', kind: 'writer', status: 'failed', content: '', floor: 1, meta: { error: '叙事生成失败' } },
+        { id: 5, role: 'assistant', kind: 'image', status: 'failed', content: '', floor: 1, meta: { error: '配图生成失败' } },
+        { id: 6, role: 'assistant', kind: 'writer', status: 'failed', content: '', floor: 1 },
+      ],
+    })
+    const text = wrapper.text()
+    expect(text).not.toContain('叙事生成失败：')
+    expect(text).not.toContain('配图失败：')
+    expect(text.match(/叙事生成失败/g)).toHaveLength(2)
+    expect(text.match(/配图生成失败/g)).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  test('房主没带人物卡进房：调查员列表给出空状态，点「我的角色」提示怎么加入', async () => {
+    const { wrapper } = await setup({ hostId: 2, players: [] })
+    const ui = useUiStore()
+    await wrapper.findAll('header button').find((b) => b.text() === '调查员')!.trigger('click')
+    expect(document.body.textContent).toContain('还没有调查员加入')
+    const close = [...document.body.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭')!
+    close.click()
+    await flushPromises()
+
+    await wrapper.findAll('header button').find((b) => b.text() === '我的角色')!.trigger('click')
+    expect(ui.toasts.some((t) => t.message.includes('没有以调查员身份参与'))).toBe(true)
     wrapper.unmount()
   })
 

@@ -12,7 +12,7 @@ describe('eventsOf', () => {
     const msg = {
       id: 1,
       kind: 'event',
-      meta: { events: [{ type: 'dice', roll: 45, skill: 7, hidden: 'yes' }, null, { roll: 3 }, 'x', { type: 'time', time: '第1天 09:00' }] },
+      meta: { events: [{ type: 'dice', roll: 45, skill: 7, expr: 3, hidden: 'yes' }, null, { roll: 3 }, 'x', { type: 'time', time: '第1天 09:00' }] },
     }
     expect(eventsOf(msg)).toStrictEqual([{ type: 'dice', roll: 45 }, { type: 'time', time: '第1天 09:00' }])
     expect(eventsOf({ id: 2, meta: { events: 'nope' } })).toStrictEqual([])
@@ -32,6 +32,13 @@ describe('describeEvent', () => {
     expect(describeEvent({ type: 'dice', hidden: true }).icon).toBe('hidden')
     expect(view({ type: 'dice', character: '甲', skill: '侦查', roll: 45, level: '困难' })).toBe('甲 侦查 45 难度 困难')
     expect(view({ type: 'dice', skill: '潜行', roll: 12 })).toBe('潜行 12')
+    expect(view({ type: 'dice', character: '甲', expr: '1D3', roll: 1 })).toBe('甲 骰点 1D3 1')
+    expect(view({ type: 'dice', roll: 1 })).toBe('骰点 1')
+  })
+
+  test('结算恢复的数值变化显示原因', () => {
+    expect(view({ type: 'stat', character: '甲', field: 'san', from: 75, to: 89, detail: '结算恢复' })).toBe('甲 SAN 75 → 89 结算恢复')
+    expect(view({ type: 'stat', character: '甲', field: 'san', from: 75, to: 74 })).toBe('甲 SAN 75 → 74')
   })
 
   test('属性与技能变化', () => {

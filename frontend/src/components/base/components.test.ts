@@ -191,6 +191,28 @@ describe('App 外壳', () => {
     expect(text).toMatch(/0\s*\/\s*5/)
   })
 
+  test('顶栏的人物卡数与当前页面无关：直达游戏页也会拉取人物卡', async () => {
+    const calls: string[] = []
+    localStorage.setItem('coc_token', 't')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url)
+        const body = url === '/api/auth/me' ? { id: 1, username: 'alice', role: 'user', card_slots: 3 } : url.startsWith('/api/characters') ? { items: [{ id: 1, name: '艾米' }], total_pages: 1 } : {}
+        return { ok: true, status: 200, json: async () => body } as Response
+      }),
+    )
+    vi.stubGlobal('WebSocket', class { close() {} })
+    setActivePinia(createPinia())
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/shop')
+    await router.isReady()
+    const wrapper = mount(App, { global: { plugins: [router] }, attachTo: document.body })
+    await vi.waitFor(() => expect(wrapper.find('nav').text()).toMatch(/1\s*\/\s*3/))
+    expect(calls.some((c) => c.startsWith('/api/characters'))).toBe(true)
+    wrapper.unmount()
+  })
+
   test('管理员顶栏有管理入口；当前页链接高亮', async () => {
     const { wrapper } = await mountApp('/shop', { id: 1, username: 'root', role: 'admin' })
     expect(wrapper.find('nav').text()).toContain('管理')
