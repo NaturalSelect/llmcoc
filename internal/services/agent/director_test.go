@@ -216,6 +216,12 @@ func TestProceduresBlockCoversComplexFlows(t *testing.T) {
 	if !strings.Contains(proc, "奖励骰与惩罚骰不适用于理智检定") {
 		t.Error("SAN cascade must keep the bonus/penalty die exclusion")
 	}
+	// NOTE: COC_kp.md:6245 —— 斜线左边是成功时的损失，不一定为0，成功也可能扣SAN。
+	for _, want := range []string{"斜线左边是检定成功时的损失", "左边不一定是0", "检定通过，但仍损失N点"} {
+		if !strings.Contains(proc, want) {
+			t.Errorf("SAN cascade must explain success loss, missing %q", want)
+		}
+	}
 	// COC_kp.md:5377-5379 —— 逃离者更快则当场脱离，不进入追逐轮。
 	if !strings.Contains(proc, "逃离者高于追逐者→当场逃脱") {
 		t.Error("chase flow must keep the early-escape branch")
