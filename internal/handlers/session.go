@@ -576,7 +576,9 @@ func GetMessages(c *gin.Context) {
 	}
 
 	var messages []models.Message
-	models.DB.Where("session_id = ? AND (role != ? OR content LIKE ?)", sessionID, models.MessageRoleSystem, "管理员「%」复活了房间，游戏继续。").
+	// NOTE: 还没画完的配图不返回，画完后由 message_new 推送；旧数据的 kind/status 可能为 NULL，所以要 COALESCE。
+	models.DB.Where("session_id = ? AND (role != ? OR content LIKE ?) AND NOT (COALESCE(kind, '') = ? AND COALESCE(status, '') = ?)",
+		sessionID, models.MessageRoleSystem, "管理员「%」复活了房间，游戏继续。", models.MessageKindImage, models.MessageStatusPending).
 		Order("created_at ASC, id ASC").
 		Find(&messages)
 	c.JSON(http.StatusOK, newMessageResponses(messages))

@@ -145,8 +145,7 @@ const EVENT_TONES: Record<EventTone, string> = {
       </div>
 
       <div v-else-if="kind === 'image'">
-        <p v-if="msg.status === 'pending'" class="cursor text-sm text-fg-subtle">配图生成中…</p>
-        <p v-else-if="msg.status === 'failed'" class="text-sm text-danger">配图失败<template v-if="error">：{{ error }}</template></p>
+        <p v-if="msg.status === 'failed'" class="text-sm text-danger">配图失败<template v-if="error">：{{ error }}</template></p>
         <div v-if="images.length" class="grid gap-3">
           <img
             v-for="(img, idx) in images"

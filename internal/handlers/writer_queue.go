@@ -2,6 +2,8 @@ package handlers
 
 // NOTE: Director 发布的 writer/image 消息先以 pending 落库，这里负责补全正文与配图。Director 的工具循环不等它们，
 // 但同一周期里之后的 kp/ask 消息要等 Writer 队列写完才发布（见 publishRound），玩家先读到叙事再被提问。
+// writer 落库即广播 message_new，再靠 message_update 补全；image 落库时不广播，画完后才以 message_new 推送，id 仍是落库时的，
+// 客户端按 id 排序，所以配图会回到它在叙事里的位置。
 // Writer 每个会话一个 FIFO 队列：一条 writer 消息对应一次 RunWriterStream，也就是 Writer transcript 的一轮，
 // 所以 Writer 的历史顺序等于消息顺序。Painter 不排队，每条 image 消息各自并发生成。
 // 房主打断（kp-stop）不会取消这里的任务，因为对应的消息已经对玩家可见。
@@ -16,6 +18,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/imagestore"
@@ -150,7 +153,6 @@ type messageUpdateEvent struct {
 	ID      uint                 `json:"id"`
 	Status  models.MessageStatus `json:"status"`
 	Content *string              `json:"content,omitempty"`
-	Images  []string             `json:"images,omitempty"`
 	Error   string               `json:"error,omitempty"`
 }
 
@@ -295,7 +297,8 @@ func (h *SessionHandlers) paint(ctx context.Context, gctx agent.GameContext, req
 	return storedImageRef{Hash: stored.Hash, MIME: stored.MIME}, nil
 }
 
-// finishImageMessage 把图片引用写进 image 消息并广播 message_update；err 非空时标记 failed。
+// finishImageMessage 把图片引用写进 image 消息，再以 message_new 推给房间：配图画完前客户端看不到这条消息。
+// err 非空时标记 failed，同样推送，客户端据此显示失败。
 func finishImageMessage(messageID uint, ref storedImageRef, runErr error) {
 	status := models.MessageStatusDone
 	errText := ""
@@ -314,11 +317,7 @@ func finishImageMessage(messageID uint, ref storedImageRef, runErr error) {
 		chatLog.Error("image message update failed", "message", messageID, "err", err)
 		return
 	}
-	event := messageUpdateEvent{ID: messageID, Status: status, Error: errText}
-	if runErr == nil {
-		event.Images = extractImageSources(msg.Content)
-	}
-	hubFor(msg.SessionID).Publish("message_update", event)
+	hubFor(msg.SessionID).Publish("message_new", gin.H{"message": newMessageResponse(msg)})
 }
 
 // settleMessage 读出消息、交给 apply 修改，再只回写 content/status/meta 三列，返回修改后的消息。

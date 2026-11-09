@@ -296,7 +296,6 @@ function onMessageUpdate(room: Room, d: FrameData): void {
       msg.status = d.status as MessageStatus
     }
     if (typeof d.content === 'string') msg.content = d.content
-    if (Array.isArray(d.images)) msg.images = d.images.slice()
     if (d.error) {
       if (!msg.meta || typeof msg.meta !== 'object') msg.meta = {}
       msg.meta.error = d.error

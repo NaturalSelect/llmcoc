@@ -289,7 +289,7 @@ describe('roomState', () => {
     expect(room.byId[20].content).toBe('新')
   })
 
-  test('message_update 的 content 覆盖本地流式文本，同时写入 images 和 error，并删除 stream', () => {
+  test('message_update 的 content 覆盖本地流式文本并删除 stream，error 写入 meta', () => {
     const room = liveRoom()
     feed(room, F(11, 'message_new', { message: writer(7) }))
     feed(room, F(0, 'writer_token', { message_id: 7, text: '雨' }))
@@ -301,15 +301,20 @@ describe('roomState', () => {
     expect(room.byId[7].status).toBe('done')
     expect(room.streams[7]).toBeUndefined()
 
-    feed(room, F(13, 'message_new', { message: msg(8, { kind: 'image', status: 'pending' }) }))
-    feed(room, F(14, 'message_update', { id: 8, status: 'done', images: ['/api/images/a.png'] }))
-    expect(room.byId[8].images).toStrictEqual(['/api/images/a.png'])
-
-    feed(room, F(15, 'message_new', { message: msg(9, { kind: 'image', status: 'pending', meta: { nsfw: true } }) }))
-    feed(room, F(16, 'message_update', { id: 9, status: 'failed', error: '额度不足' }))
+    feed(room, F(13, 'message_new', { message: writer(9, { meta: { nsfw: true } }) }))
+    feed(room, F(14, 'message_update', { id: 9, status: 'failed', error: '额度不足' }))
     expect(room.byId[9].status).toBe('failed')
     expect(room.byId[9].meta?.error).toBe('额度不足')
     expect(room.byId[9].meta?.nsfw).toBe(true)
+  })
+
+  test('配图画完才以 done 的 message_new 到达，按 id 回到叙事中的位置', () => {
+    const room = liveRoom()
+    feed(room, F(11, 'message_new', { message: msg(20, { content: '后来的 KP 回复' }) }))
+    feed(room, F(12, 'message_new', { message: msg(10, { kind: 'image', images: ['/api/images/a.png'] }) }))
+    expect(room.messages.map((m) => m.id)).toStrictEqual([10, 20])
+    expect(room.byId[10].status).toBe('done')
+    expect(room.byId[10].images).toStrictEqual(['/api/images/a.png'])
   })
 
   test('message_update 先于 message_new 到达时不报错也不残留 stream', () => {

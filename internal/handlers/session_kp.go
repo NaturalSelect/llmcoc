@@ -521,7 +521,7 @@ type roundItem struct {
 	item agent.Output
 }
 
-// publishRound 是注入给 Director 的 gctx.Publish：同步把一轮产生的消息落库并广播，writer/image 消息交给后台任务补全。
+// publishRound 是注入给 Director 的 gctx.Publish：同步把一轮产生的消息落库并广播，writer 交给后台任务补全，image 画完才广播。
 // kp/ask 要等会话里已入队的 writer 全部写完才落库广播：玩家先读到叙事，再看到 KP 的话和提问。
 // 等待期间 Director 停在这一轮；周期被取消(房主打断、关机)时不再等，直接发布。
 // 落库失败时返回 err，周期随之以 StopError 结束。
@@ -592,7 +592,7 @@ func publishCardsChanged(sessionID uint) {
 	publishSessionChanged(sessionID, status, "cards")
 }
 
-// saveAndBroadcast 在一个事务里落库这批消息，再逐条广播 message_new，并把 writer/image 交给后台任务。
+// saveAndBroadcast 在一个事务里落库这批消息，再逐条广播 message_new(image 除外)，并把 writer/image 交给后台任务。
 func (h *SessionHandlers) saveAndBroadcast(sessionID uint, items []roundItem, ro agent.RoundOutputs) error {
 	if len(items) == 0 {
 		return nil
@@ -611,12 +611,14 @@ func (h *SessionHandlers) saveAndBroadcast(sessionID uint, items []roundItem, ro
 
 	hub := hubFor(sessionID)
 	for _, p := range items {
-		hub.Publish("message_new", gin.H{"message": newMessageResponse(p.msg)})
-		switch p.msg.Kind {
-		case models.MessageKindWriter:
-			h.enqueueWriter(sessionID, writerTask{messageID: p.msg.ID, gctx: ro.WriterCtx, direction: strings.TrimSpace(p.item.Text), nsfw: p.item.NSFW})
-		case models.MessageKindImage:
+		if p.msg.Kind == models.MessageKindImage {
+			// NOTE: 配图画完才推送：这里只让行先占住 id 保证顺序，message_new 由 finishImageMessage 发出。
 			go h.runPainterTask(p.msg.ID, ro.WriterCtx, *p.item.Image)
+			continue
+		}
+		hub.Publish("message_new", gin.H{"message": newMessageResponse(p.msg)})
+		if p.msg.Kind == models.MessageKindWriter {
+			h.enqueueWriter(sessionID, writerTask{messageID: p.msg.ID, gctx: ro.WriterCtx, direction: strings.TrimSpace(p.item.Text), nsfw: p.item.NSFW})
 		}
 	}
 	return nil

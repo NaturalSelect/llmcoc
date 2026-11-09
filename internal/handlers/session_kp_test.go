@@ -270,18 +270,31 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	tap := tapRoom(t, sessionID)
 
 	decodeChatAccepted(t, postKPTurn(hostRouter(t, h, sessionID), sessionID))
-	tap.waitCount("message_update", 3)
+	tap.waitCount("message_new", 5)
+	tap.waitCount("message_update", 2)
 	tap.waitCount("floor_end", 1)
 
+	// NOTE: 配图画完才推送，它和同轮 kp 谁先到不确定，所以顺序只比较其余消息，配图单独数。
 	var news []models.MessageKind
+	images := 0
 	for _, ev := range tap.ofType("message_new") {
-		news = append(news, eventMessage(ev).Kind)
+		if m := eventMessage(ev); m.Kind == models.MessageKindImage {
+			images++
+			if m.Status != models.MessageStatusDone || len(m.Images) != 1 {
+				t.Errorf("pushed image message = %+v, want a finished image", m)
+			}
+		} else {
+			news = append(news, m.Kind)
+		}
 	}
-	wantKinds := []models.MessageKind{models.MessageKindWriter, models.MessageKindImage, models.MessageKindKP, models.MessageKindWriter, models.MessageKindAsk}
-	if !equalKinds(news, wantKinds) {
-		t.Fatalf("message_new kinds = %v, want %v", news, wantKinds)
+	if images != 1 {
+		t.Fatalf("image message_new count = %d, want 1", images)
+	}
+	if want := []models.MessageKind{models.MessageKindWriter, models.MessageKindKP, models.MessageKindWriter, models.MessageKindAsk}; !equalKinds(news, want) {
+		t.Fatalf("message_new kinds without image = %v, want %v", news, want)
 	}
 
+	wantKinds := []models.MessageKind{models.MessageKindWriter, models.MessageKindImage, models.MessageKindKP, models.MessageKindWriter, models.MessageKindAsk}
 	msgs := loadMessages(t, sessionID)
 	if !equalKinds(messageKinds(msgs), wantKinds) {
 		t.Fatalf("stored kinds = %v, want %v", messageKinds(msgs), wantKinds)
@@ -595,7 +608,7 @@ func TestFloor_PainterFailureMarksImageFailed(t *testing.T) {
 	tap := tapRoom(t, sessionID)
 
 	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
-	tap.waitCount("message_update", 1)
+	tap.waitCount("message_new", 2)
 	tap.waitCount("floor_end", 1)
 
 	msgs := loadMessages(t, sessionID)
@@ -605,13 +618,21 @@ func TestFloor_PainterFailureMarksImageFailed(t *testing.T) {
 	if msgs[1].Status != models.MessageStatusDone {
 		t.Errorf("the kp message must not be affected: %+v", msgs[1])
 	}
-	update := tap.ofType("message_update")[0].Data.(messageUpdateEvent)
-	if update.Status != models.MessageStatusFailed || update.Error != painterFailedText || len(update.Images) != 0 {
-		t.Errorf("message_update = %+v", update)
+	var pushed *messageResponse
+	for _, ev := range tap.ofType("message_new") {
+		if m := eventMessage(ev); m.Kind == models.MessageKindImage {
+			pushed = &m
+		}
+	}
+	if pushed == nil || pushed.Status != models.MessageStatusFailed || pushed.Meta == nil || pushed.Meta.Error != painterFailedText || len(pushed.Images) != 0 {
+		t.Errorf("pushed image message = %+v", pushed)
+	}
+	if n := len(tap.ofType("message_update")); n != 0 {
+		t.Errorf("image messages must not use message_update, got %d", n)
 	}
 }
 
-func TestFloor_ImageUpdateCarriesStoredURL(t *testing.T) {
+func TestFloor_ImageIsPushedWithStoredURL(t *testing.T) {
 	initTestDB(t)
 	t.Cleanup(imagestore.SetDefaultDir(t.TempDir()))
 	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
@@ -623,16 +644,68 @@ func TestFloor_ImageUpdateCarriesStoredURL(t *testing.T) {
 	tap := tapRoom(t, sessionID)
 
 	decodeChatAccepted(t, postKPTurn(hostRouter(t, NewSessionHandlers(runner), sessionID), sessionID))
-	tap.waitCount("message_update", 1)
+	tap.waitCount("message_new", 1)
 	tap.waitCount("floor_end", 1)
 
-	update := tap.ofType("message_update")[0].Data.(messageUpdateEvent)
+	pushed := eventMessage(tap.ofType("message_new")[0])
 	refs := extractImageRefs(loadMessages(t, sessionID)[0].Content)
-	if update.Status != models.MessageStatusDone || len(update.Images) != 1 || len(refs) != 1 || update.Images[0] != imagestore.URL(refs[0].Hash) {
-		t.Fatalf("update = %+v refs = %+v", update, refs)
+	if pushed.Kind != models.MessageKindImage || pushed.Status != models.MessageStatusDone || len(pushed.Images) != 1 || len(refs) != 1 || pushed.Images[0] != imagestore.URL(refs[0].Hash) {
+		t.Fatalf("pushed = %+v refs = %+v", pushed, refs)
 	}
-	if strings.HasPrefix(update.Images[0], "data:") {
-		t.Error("image updates must carry the stored URL, not a data URL")
+	if strings.HasPrefix(pushed.Images[0], "data:") {
+		t.Error("image messages must carry the stored URL, not a data URL")
+	}
+}
+
+func TestFloor_ImageIsHiddenUntilPainted(t *testing.T) {
+	initTestDB(t)
+	t.Cleanup(imagestore.SetDefaultDir(t.TempDir()))
+	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
+
+	releasePainter := make(chan struct{})
+	runner := &fakeRunner{}
+	runner.painter = func(context.Context, agent.GameContext, agent.ImagePromptRequest) (string, error) {
+		<-releasePainter
+		return testPNGDataURL, nil
+	}
+	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Items: []agent.Output{
+			{Kind: agent.OutputImage, Image: &agent.ImagePromptRequest{Prompt: "a lighthouse"}},
+			{Kind: agent.OutputKP, Text: "灯塔亮着。"},
+		}})
+		return agent.RunOutput{Messages: 2, Ask: &agent.AskResult{UserIDs: []uint{user1ID}, Names: []string{"爱丽丝"}}}, nil
+	}
+	h := NewSessionHandlers(runner)
+	tap := tapRoom(t, sessionID)
+
+	decodeChatAccepted(t, postKPTurn(hostRouter(t, h, sessionID), sessionID))
+	tap.waitCount("message_new", 1)
+	tap.waitCount("floor_end", 1)
+
+	if kinds := tap.ofType("message_new"); len(kinds) != 1 || eventMessage(kinds[0]).Kind != models.MessageKindKP {
+		t.Fatalf("before the image is painted only the kp message may be pushed, got %v", tap.types())
+	}
+	if msgs := loadMessages(t, sessionID); len(msgs) != 2 || msgs[0].Kind != models.MessageKindImage || msgs[0].Status != models.MessageStatusPending {
+		t.Fatalf("the image row must be stored as pending, got %+v", msgs)
+	}
+	w := httptest.NewRecorder()
+	roomRouter(h, sessionCreator(t, sessionID), "creator_mp", "user").ServeHTTP(w, jsonReq(http.MethodGet, "/sessions/"+itoa(sessionID)+"/messages", nil))
+	var listed []messageResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode messages: %v\n%s", err, w.Body.String())
+	}
+	if len(listed) != 1 || listed[0].Kind != models.MessageKindKP {
+		t.Fatalf("GET /messages must hide the unfinished image, got %+v", listed)
+	}
+
+	close(releasePainter)
+	tap.waitCount("message_new", 2)
+	pushed := eventMessage(tap.ofType("message_new")[1])
+	if pushed.Kind != models.MessageKindImage || pushed.Status != models.MessageStatusDone || len(pushed.Images) != 1 {
+		t.Fatalf("pushed after painting = %+v", pushed)
+	}
+	if first, kp := pushed.ID, eventMessage(tap.ofType("message_new")[0]).ID; first >= kp {
+		t.Errorf("image id %d must sort before the kp message id %d", first, kp)
 	}
 }
 
