@@ -174,7 +174,7 @@ type ToolCall struct {
 	ChaseEndReason    string                  `json:"chase_end_reason"`   // end_chase: 追逐结束原因
 	Report            string                  `json:"report"`             // report: agent self-report
 	HideSecret        bool                    `json:"hide_secret"`        // npc_act: 是否隐藏NPC反应中的敏感信息(如HP变化), 由KP根据当前情境决定
-	Targets           []string                `json:"targets"`            // ask_players: 被点名的调查员名,["all"]表示全体存活调查员
+	Targets           []string                `json:"targets"`            // ask_players: 被点名的调查员名,一次只能一个
 
 	Culture string `json:"culture"`
 	Gender  string `json:"gender"`

@@ -642,7 +642,7 @@ func TestDirectorBatchPolicyOptionsCap(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			imageDone := false
-			args := fmt.Sprintf(`{"targets":["all"],"question":"怎么办？","options":%s}`, tc.options)
+			args := fmt.Sprintf(`{"targets":["甲"],"question":"怎么办？","options":%s}`, tc.options)
 			reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
 				policyCall("ask_players", args),
 			})

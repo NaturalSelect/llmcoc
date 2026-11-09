@@ -527,7 +527,7 @@ func TestFloor_ResponseKeepsFloorUntilAsk(t *testing.T) {
 		if n <= 3 {
 			return toolRound(floorCall(fmt.Sprintf("r%d", n), "narrate", map[string]any{"reply": fmt.Sprintf("第%d段叙述", n)})), nil
 		}
-		return toolRound(floorCall("ask", "ask_players", map[string]any{"targets": []string{"all"}, "question": "你们呢？"})), nil
+		return toolRound(floorCall("ask", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "你们呢？"})), nil
 	}}
 	setFloorHandles(t, sid, prov, false)
 

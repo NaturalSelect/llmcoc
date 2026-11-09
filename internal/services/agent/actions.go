@@ -619,7 +619,7 @@ func (narrateAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 }
 
 // askPlayersAction 把名字解析成玩家并交出发言权;任一名字不存在或角色已死整批拒绝,
-// 让Director用正确的名字重发,避免静默点错人把房间卡死。
+// 让Director用正确的名字重发,避免静默点错人把房间卡死。一次只能点一个人。
 type askPlayersAction struct{}
 
 func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
@@ -660,14 +660,6 @@ func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 		if target == "" {
 			continue
 		}
-		if strings.EqualFold(target, "all") {
-			for _, p := range players {
-				if alive(p) {
-					add(p)
-				}
-			}
-			continue
-		}
 		found := false
 		for _, p := range players {
 			if p.CharacterCard.Name != target {
@@ -693,20 +685,26 @@ func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 		if len(dead) > 0 {
 			parts = append(parts, fmt.Sprintf("调查员 %s 已死亡", strings.Join(dead, "、")))
 		}
-		return reject(fmt.Sprintf("%s。targets 必须是存活调查员的角色名(当前存活：%s)或 [\"all\"]，请修正后重发。", strings.Join(parts, "；"), strings.Join(aliveNames, "、")))
+		return reject(fmt.Sprintf("%s。targets 必须是一位存活调查员的角色名(当前存活：%s)，请修正后重发。", strings.Join(parts, "；"), strings.Join(aliveNames, "、")))
+	}
+
+	if len(ids) > 1 {
+		return reject(fmt.Sprintf("一次只能点名一个人，targets 解析出了 %d 人(%s)。请选当前最该回应的一位重发，其他人等他回应后再点名。", len(ids), strings.Join(names, "、")))
 	}
 
 	// 遭遇中卡在待澄清暂停的PC必须被点名，否则冻结的攻击方永远等不到回答。
-	var merged []string
-	mergePending := func(name string, isNPC, pending bool, userID uint) {
-		if isNPC || !pending {
+	// 同时有多人待澄清时点其中任一位即可，其余的留到下个周期再问。
+	pendingIDs := map[uint]bool{}
+	var pendingNames []string
+	collectPending := func(name string, isNPC, isPending bool, userID uint) {
+		if isNPC || !isPending {
 			return
 		}
 		for _, p := range players {
 			if (userID != 0 && p.UserID == userID) || p.CharacterCard.Name == name {
-				if alive(p) && !seen[p.UserID] {
-					add(p)
-					merged = append(merged, p.CharacterCard.Name)
+				if alive(p) && !pendingIDs[p.UserID] {
+					pendingIDs[p.UserID] = true
+					pendingNames = append(pendingNames, p.CharacterCard.Name)
 				}
 				return
 			}
@@ -714,17 +712,20 @@ func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	}
 	if actx.Combat != nil && *actx.Combat != nil && (*actx.Combat).Active {
 		for _, p := range (*actx.Combat).Participants {
-			mergePending(p.Name, p.IsNPC, p.PendingClarification, p.UserID)
+			collectPending(p.Name, p.IsNPC, p.PendingClarification, p.UserID)
 		}
 	}
 	if actx.Chase != nil && *actx.Chase != nil && (*actx.Chase).Active {
 		for _, p := range (*actx.Chase).Participants {
-			mergePending(p.Name, p.IsNPC, p.PendingClarification, p.UserID)
+			collectPending(p.Name, p.IsNPC, p.PendingClarification, p.UserID)
 		}
+	}
+	if len(pendingNames) > 0 && (len(ids) == 0 || !pendingIDs[ids[0]]) {
+		return reject(fmt.Sprintf("战斗/追逐中调查员 %s 正处于待澄清暂停，本次必须点名其中一位(一次只能点一个人)，question 问出待澄清的问题。", strings.Join(pendingNames, "、")))
 	}
 
 	if len(ids) == 0 {
-		return reject(fmt.Sprintf("ask_players.targets 没有解析出任何存活调查员，请填写角色名(当前存活：%s)或 [\"all\"]。", strings.Join(aliveNames, "、")))
+		return reject(fmt.Sprintf("ask_players.targets 没有解析出任何存活调查员，请填写一位存活调查员的角色名(当前存活：%s)。", strings.Join(aliveNames, "、")))
 	}
 
 	*actx.HasEnd = true
@@ -738,10 +739,7 @@ func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	}
 	debugf("tool", "session=%d ask_players targets=%v question=%s", actx.Sid, names, question)
 
-	result := fmt.Sprintf("已点名：%s。发言权已交出，本周期结束，等待他们回应。", strings.Join(names, "、"))
-	if len(merged) > 0 {
-		result += fmt.Sprintf("(%s 正处于待澄清暂停，已自动并入点名对象。)", strings.Join(merged, "、"))
-	}
+	result := fmt.Sprintf("已点名：%s。发言权已交出，本周期结束，等待他回应。", names[0])
 	return []ToolResult{{Action: ToolAskPlayers, Result: result}}
 }
 

@@ -73,24 +73,52 @@ func TestAskPlayersCarriesNormalizedOptions(t *testing.T) {
 	}
 }
 
-func TestAskPlayersAllSkipsDeadAndDedups(t *testing.T) {
+func TestAskPlayersRejectsMultipleTargets(t *testing.T) {
+	cases := []struct {
+		name    string
+		targets []string
+	}{
+		{"两个存活角色", []string{"甲", "乙"}},
+		{"两个存活角色顶序颠倒", []string{"乙", "甲"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			hasEnd := false
+			var outbox []Output
+			var ask *AskResult
+			actx := ActionContext{
+				GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+				HasEnd: &hasEnd,
+				Outbox: &outbox,
+				Ask:    &ask,
+			}
+			results := askPlayersAction{}.Execute(ToolCall{Targets: tc.targets, Question: "各位怎么办？"}, actx)
+			if len(results) != 1 || !strings.HasPrefix(results[0].Result, "SYSTEM REJECT") || !strings.Contains(results[0].Result, "一次只能点名一个人") {
+				t.Fatalf("点名多人应被拒绝, got %+v", results)
+			}
+			if hasEnd || ask != nil || len(outbox) != 0 {
+				t.Errorf("拒绝时不应产生副作用: hasEnd=%v ask=%+v outbox=%+v", hasEnd, ask, outbox)
+			}
+		})
+	}
+}
+
+func TestAskPlayersDuplicateTargetCountsOnce(t *testing.T) {
 	hasEnd := false
 	var outbox []Output
 	var ask *AskResult
-	var combat *models.CombatState
-	var chase *models.ChaseState
 	actx := ActionContext{
 		GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
 		HasEnd: &hasEnd,
 		Outbox: &outbox,
 		Ask:    &ask,
-		Combat: &combat,
-		Chase:  &chase,
 	}
-
-	askPlayersAction{}.Execute(ToolCall{Targets: []string{"all", "甲"}, Question: "各位怎么办？"}, actx)
-	if ask == nil || len(ask.UserIDs) != 2 || ask.UserIDs[0] != 1 || ask.UserIDs[1] != 2 {
-		t.Errorf("all应展开为存活玩家且去重, got %+v", ask)
+	results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"甲", "甲"}, Question: "你怎么办？"}, actx)
+	if strings.HasPrefix(results[0].Result, "SYSTEM REJECT") {
+		t.Fatalf("重复的同一个人应视为一人, got %+v", results)
+	}
+	if ask == nil || len(ask.UserIDs) != 1 || ask.UserIDs[0] != 1 {
+		t.Errorf("Ask = %+v", ask)
 	}
 }
 
@@ -103,6 +131,7 @@ func TestAskPlayersRejectsUnknownAndDead(t *testing.T) {
 		{"未知角色", []string{"不存在"}, "找不到调查员"},
 		{"已死角色", []string{"丙"}, "已死亡"},
 		{"部分错误整批拒绝", []string{"甲", "不存在"}, "找不到调查员"},
+		{"all不再支持", []string{"all"}, "找不到调查员"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -150,31 +179,62 @@ func TestAskPlayersRejectsEmptyQuestion(t *testing.T) {
 	}
 }
 
-func TestAskPlayersMergesPendingClarification(t *testing.T) {
-	hasEnd := false
-	var outbox []Output
-	var ask *AskResult
-	combat := &models.CombatState{Active: true, Participants: []models.CombatParticipant{
-		{Name: "乙", UserID: 2, PendingClarification: true},
-		{Name: "哥布林", IsNPC: true},
-	}}
-	var chase *models.ChaseState
-	actx := ActionContext{
-		GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
-		HasEnd: &hasEnd,
-		Outbox: &outbox,
-		Ask:    &ask,
-		Combat: &combat,
-		Chase:  &chase,
+func TestAskPlayersPendingClarificationMustBeTargeted(t *testing.T) {
+	newCtx := func(combat *models.CombatState) (ActionContext, *bool, *[]Output, **AskResult) {
+		hasEnd := false
+		outbox := []Output{}
+		var ask *AskResult
+		var chase *models.ChaseState
+		return ActionContext{
+			GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+			HasEnd: &hasEnd,
+			Outbox: &outbox,
+			Ask:    &ask,
+			Combat: &combat,
+			Chase:  &chase,
+		}, &hasEnd, &outbox, &ask
+	}
+	pendingCombat := func() *models.CombatState {
+		return &models.CombatState{Active: true, Participants: []models.CombatParticipant{
+			{Name: "乙", UserID: 2, PendingClarification: true},
+			{Name: "哥布林", IsNPC: true},
+		}}
 	}
 
-	results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"甲"}, Question: "你们怎么办？"}, actx)
-	if ask == nil || len(ask.UserIDs) != 2 || ask.UserIDs[1] != 2 {
-		t.Fatalf("待澄清的乙应自动并入, got %+v", ask)
-	}
-	if !strings.Contains(results[0].Result, "已自动并入") {
-		t.Errorf("结果应说明自动并入, got %q", results[0].Result)
-	}
+	t.Run("点其他人被拒绝", func(t *testing.T) {
+		actx, hasEnd, outbox, ask := newCtx(pendingCombat())
+		results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"甲"}, Question: "你怎么办？"}, actx)
+		if !strings.HasPrefix(results[0].Result, "SYSTEM REJECT") || !strings.Contains(results[0].Result, "待澄清") {
+			t.Fatalf("待澄清期间点其他人应被拒绝, got %+v", results)
+		}
+		if *hasEnd || *ask != nil || len(*outbox) != 0 {
+			t.Errorf("拒绝时不应产生副作用")
+		}
+	})
+
+	t.Run("点待澄清者放行", func(t *testing.T) {
+		actx, _, _, ask := newCtx(pendingCombat())
+		results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"乙"}, Question: "闪避还是反击？"}, actx)
+		if strings.HasPrefix(results[0].Result, "SYSTEM REJECT") {
+			t.Fatalf("点名待澄清者应成功, got %+v", results)
+		}
+		if *ask == nil || len((*ask).UserIDs) != 1 || (*ask).UserIDs[0] != 2 {
+			t.Errorf("Ask = %+v", *ask)
+		}
+	})
+
+	t.Run("多人待澄清点其中任一位即可", func(t *testing.T) {
+		combat := pendingCombat()
+		combat.Participants = append(combat.Participants, models.CombatParticipant{Name: "甲", UserID: 1, PendingClarification: true})
+		actx, _, _, ask := newCtx(combat)
+		results := askPlayersAction{}.Execute(ToolCall{Targets: []string{"甲"}, Question: "闪避还是反击？"}, actx)
+		if strings.HasPrefix(results[0].Result, "SYSTEM REJECT") {
+			t.Fatalf("多人待澄清时点其中一位应成功, got %+v", results)
+		}
+		if *ask == nil || len((*ask).UserIDs) != 1 || (*ask).UserIDs[0] != 1 {
+			t.Errorf("Ask = %+v", *ask)
+		}
+	})
 }
 
 func TestDirectorBatchPolicyAskPlayers(t *testing.T) {
