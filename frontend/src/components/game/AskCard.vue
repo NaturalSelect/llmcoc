@@ -19,7 +19,8 @@ import {
 } from '@/game/ask'
 import type { Room } from '@/game/roomState'
 
-const props = defineProps<{ room: Room; draft: AskDraft }>()
+// NOTE: 卡片紧跟在点名消息下面时问题已经在上一条消息里，不再重复；放在消息流末尾兜底时才需要带上问题原文
+const props = defineProps<{ room: Room; draft: AskDraft; showQuestion?: boolean }>()
 const emit = defineEmits<{ submit: [text: string]; shown: [] }>()
 
 const input = ref<HTMLTextAreaElement | null>(null)
@@ -63,7 +64,7 @@ async function quotes() {
       <Hand :size="16" :stroke-width="1.75" class="shrink-0" />
       {{ askTag(room) }}
     </div>
-    <p class="line-clamp-3 whitespace-pre-wrap text-sm text-fg-muted">{{ room.spotlight.question || '请写下你的行动' }}</p>
+    <p v-if="showQuestion" class="line-clamp-3 whitespace-pre-wrap text-sm text-fg-muted">{{ room.spotlight.question || '请写下你的行动' }}</p>
     <p v-if="locked" class="text-xs text-fg-subtle">{{ askLockNote(room) }}</p>
 
     <div v-if="options.length > 0" class="space-y-2">

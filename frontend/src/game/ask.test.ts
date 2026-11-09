@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  askAnchor,
   askAnswer,
   askCharCount,
   askLocked,
@@ -61,6 +62,25 @@ describe('ask', () => {
     expect(askOptions(room)).toStrictEqual([])
     expect(askView(room, createAskDraft())).toBe('')
     expect(askView(null, createAskDraft())).toBe('')
+  })
+
+  test('问题卡挂在最近一条点名消息下面；玩家已发言、没被点名或没有点名消息时没有锚点', () => {
+    const room = askingRoom()
+    expect(askAnchor(room)).toBeNull()
+
+    room.messages.push(ask(200, []), { id: 201, kind: 'writer', status: 'done' }, ask(202, []), { id: 203, kind: 'event', status: 'done' })
+    expect(askAnchor(room)).toBe(202)
+
+    room.messages.push({ id: 204, kind: 'player', status: 'done', user_id: 2 })
+    expect(askAnchor(room)).toBeNull()
+    room.messages.pop()
+
+    room.floor.running = true
+    expect(askAnchor(room)).toBeNull()
+    room.floor.running = false
+    room.spotlight.askedMe = false
+    expect(askAnchor(room)).toBeNull()
+    expect(askAnchor(null)).toBeNull()
   })
 
   test('勾选的推荐行动按选项顺序在前，自己写的在后，不在选项里的勾选被忽略', () => {

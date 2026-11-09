@@ -16,7 +16,7 @@ import ImagePreview from '@/components/game/ImagePreview.vue'
 import InvestigatorListModal from '@/components/game/InvestigatorListModal.vue'
 import MessageItem from '@/components/game/MessageItem.vue'
 import StatusDock from '@/components/game/StatusDock.vue'
-import { askView, createAskDraft, resetAskDraft, resetDraftOnFrame } from '@/game/ask'
+import { askAnchor, askView, createAskDraft, resetAskDraft, resetDraftOnFrame } from '@/game/ask'
 import { showWaiting } from '@/game/banner'
 import { diffHud, endSessionMessage, myCard, NO_FLASH, ownCardAccess, playerCardAccess } from '@/game/hud'
 import type { HudFlash, HudSnapshot } from '@/game/hud'
@@ -99,6 +99,7 @@ const card = computed(() => myCard(session.value, auth.user?.id))
 const gameTime = computed(() => currentGameTime(room.value))
 const waiting = computed(() => showWaiting(room.value))
 const asking = computed(() => askView(room.value, draft))
+const askAt = computed(() => askAnchor(room.value))
 
 async function enter(id: number) {
   resetAskDraft(draft)
@@ -122,7 +123,7 @@ watch(
   },
 )
 
-// 问题卡出现时滚到底部，保证它不盖住最后一条消息
+// 问题卡出现时滚到底部，让挂在最新点名消息下面的卡片进入视野
 watch(asking, (v) => {
   if (v === 'card') void nextTick(() => scrollChat(true))
 })
@@ -242,7 +243,11 @@ defineExpose({ viewCard })
         <div ref="chatBox" class="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="off">
           <div class="mx-auto max-w-3xl space-y-6 px-4 py-6">
             <template v-if="room">
-              <MessageItem v-for="m in room.messages" :key="m.id" :msg="m" :room="room" @preview="previewSrc = $event" />
+              <template v-for="m in room.messages" :key="m.id">
+                <MessageItem :msg="m" :room="room" @preview="previewSrc = $event" />
+                <AskCard v-if="m.id === askAt" :room="room" :draft="draft" @submit="submit" />
+              </template>
+              <AskCard v-if="asking && askAt === null" :room="room" :draft="draft" show-question @submit="submit" />
 
               <div v-if="waiting" class="space-y-2 rounded-xl bg-surface-2 px-4 py-3">
                 <p class="flex items-center gap-2 text-sm text-fg-muted">
@@ -262,8 +267,7 @@ defineExpose({ viewCard })
           </div>
         </div>
 
-        <div v-if="room" class="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-3 px-4 pb-4">
-          <AskCard :room="room" :draft="draft" @submit="submit" />
+        <div v-if="room" class="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
           <StatusDock :room="room" @continue="controller.hostContinue()" @stop="controller.hostStop()" />
         </div>
       </section>

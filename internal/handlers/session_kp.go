@@ -521,13 +521,13 @@ type roundItem struct {
 	item agent.Output
 }
 
-// publishRound 是注入给 Director 的 gctx.Publish：同步把一轮产生的消息落库并广播，writer 交给后台任务补全，image 画完才广播。
+// publishRound 是注入给 Director 的 gctx.Publish：同步把一轮产生的消息落库并广播，writer 交给后台任务补全，image 画完才落库并广播。
 // kp/ask 要等会话里已入队的 writer 全部写完才落库广播：玩家先读到叙事，再看到 KP 的话和提问。
 // 等待期间 Director 停在这一轮；周期被取消(房主打断、关机)时不再等，直接发布。
 // 落库失败时返回 err，周期随之以 StopError 结束。
 func (h *SessionHandlers) publishRound(ctx context.Context, af *activeFloor, ro agent.RoundOutputs) error {
 	sessionID := af.sessionID
-	var first, beats []roundItem
+	var first, beats, images []roundItem
 	// NOTE: 事件消息先落库，id 比同轮其他消息小，前端按 id 排序时就排在这一轮叙事前面。
 	if msg, ok := roundEventMessage(sessionID, ro); ok {
 		first = append(first, roundItem{msg: msg})
@@ -537,17 +537,24 @@ func (h *SessionHandlers) publishRound(ctx context.Context, af *activeFloor, ro 
 		if !ok {
 			continue
 		}
-		if msg.Kind == models.MessageKindKP || msg.Kind == models.MessageKindAsk {
+		switch msg.Kind {
+		case models.MessageKindKP, models.MessageKindAsk:
 			beats = append(beats, roundItem{msg: msg, item: it})
 			// NOTE: 耗时和轮数只属于这一轮的第一条 kp/ask，后面的不重复记。
 			ro.Steps = 0
-			continue
+		case models.MessageKindImage:
+			images = append(images, roundItem{msg: msg, item: it})
+		default:
+			first = append(first, roundItem{msg: msg, item: it})
 		}
-		first = append(first, roundItem{msg: msg, item: it})
 	}
 
 	if err := h.saveAndBroadcast(sessionID, first, ro); err != nil {
 		return err
+	}
+	// NOTE: 配图不在这里落库：画完才落库并推送，id 和 created_at 就是到达顺序，前端按 id 排序时不会跳到已有消息上面。
+	for _, p := range images {
+		go h.runPainterTask(p.msg, ro.WriterCtx, *p.item.Image)
 	}
 	if len(beats) == 0 {
 		if eventsTouchCards(ro.Events) {
@@ -592,7 +599,7 @@ func publishCardsChanged(sessionID uint) {
 	publishSessionChanged(sessionID, status, "cards")
 }
 
-// saveAndBroadcast 在一个事务里落库这批消息，再逐条广播 message_new(image 除外)，并把 writer/image 交给后台任务。
+// saveAndBroadcast 在一个事务里落库这批消息，再逐条广播 message_new，并把 writer 交给后台任务。
 func (h *SessionHandlers) saveAndBroadcast(sessionID uint, items []roundItem, ro agent.RoundOutputs) error {
 	if len(items) == 0 {
 		return nil
@@ -611,11 +618,6 @@ func (h *SessionHandlers) saveAndBroadcast(sessionID uint, items []roundItem, ro
 
 	hub := hubFor(sessionID)
 	for _, p := range items {
-		if p.msg.Kind == models.MessageKindImage {
-			// NOTE: 配图画完才推送：这里只让行先占住 id 保证顺序，message_new 由 finishImageMessage 发出。
-			go h.runPainterTask(p.msg.ID, ro.WriterCtx, *p.item.Image)
-			continue
-		}
 		hub.Publish("message_new", gin.H{"message": newMessageResponse(p.msg)})
 		if p.msg.Kind == models.MessageKindWriter {
 			h.enqueueWriter(sessionID, writerTask{messageID: p.msg.ID, gctx: ro.WriterCtx, direction: strings.TrimSpace(p.item.Text), nsfw: p.item.NSFW})
@@ -647,7 +649,6 @@ func roundMessage(sessionID uint, ro agent.RoundOutputs, it agent.Output) (model
 			return msg, false
 		}
 		msg.Kind = models.MessageKindImage
-		msg.Status = models.MessageStatusPending
 		meta.NSFW = it.NSFW || it.Image.NSFW
 	case agent.OutputKP:
 		msg.Kind = models.MessageKindKP

@@ -183,6 +183,25 @@ describe('GameView', () => {
     wrapper.unmount()
   })
 
+  test('问题卡紧跟在点名消息后面，提交后的摘要也留在原位，不在底部状态栏里', async () => {
+    const { wrapper } = await setup()
+    const log = wrapper.find('[role="log"]')
+    const askArticle = log.findAll('article').find((a) => a.text().includes('点名：爱丽丝'))!
+    expect(askArticle).toBeDefined()
+    const card = log.find('section[aria-label="KP 点名"]')
+    expect(card.exists()).toBe(true)
+    expect(askArticle.element.nextElementSibling).toBe(card.element)
+    expect(card.text()).not.toContain('你要怎么做？')
+    expect(wrapper.find('[role="status"]').element.parentElement?.querySelector('section')).toBeNull()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('推门进去'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text() === '提交')!.trigger('click')
+    await flushPromises()
+    const done = log.findAll('section').find((s) => s.text().includes('已提交你的行动'))!
+    expect(askArticle.element.nextElementSibling).toBe(done.element)
+    wrapper.unmount()
+  })
+
   test('没被点名时没有输入框；房主在 KP 空闲时能看到继续按钮', async () => {
     const kpSpotlight = { user_ids: [], names: [], question: '', kp_floor: true, asked_me: false, stop: '' }
     const { wrapper } = await setup({ hostId: 2, spotlight: kpSpotlight })

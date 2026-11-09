@@ -38,6 +38,17 @@ export function askView(room: Room | null, draft: AskDraft): AskView {
   return room.me.submitted && !draft.editing ? 'done' : 'card'
 }
 
+// NOTE: 问题卡挂在最近一条点名消息下面；找不到点名消息，或它之后已有玩家发言时返回 null，由页面把卡片放到消息流末尾
+export function askAnchor(room: Room | null): number | null {
+  if (!askOpen(room)) return null
+  for (let i = room.messages.length - 1; i >= 0; i--) {
+    const msg = room.messages[i]
+    if (msg.kind === 'player') return null
+    if (msg.kind === 'ask') return msg.id
+  }
+  return null
+}
+
 export function askLocked(room: Room | null): boolean {
   return askOpen(room) && !RS.gates(room).canSpeak
 }

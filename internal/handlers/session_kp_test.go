@@ -274,7 +274,7 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	tap.waitCount("message_update", 2)
 	tap.waitCount("floor_end", 1)
 
-	// NOTE: 配图画完才推送，它和同轮 kp 谁先到不确定，所以顺序只比较其余消息，配图单独数。
+	// NOTE: 配图画完才落库和推送，它排在 kp 前还是后取决于画图耗时，所以顺序只比较其余消息，配图单独检查。
 	var news []models.MessageKind
 	images := 0
 	for _, ev := range tap.ofType("message_new") {
@@ -290,49 +290,58 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	if images != 1 {
 		t.Fatalf("image message_new count = %d, want 1", images)
 	}
-	if want := []models.MessageKind{models.MessageKindWriter, models.MessageKindKP, models.MessageKindWriter, models.MessageKindAsk}; !equalKinds(news, want) {
-		t.Fatalf("message_new kinds without image = %v, want %v", news, want)
+	wantKinds := []models.MessageKind{models.MessageKindWriter, models.MessageKindKP, models.MessageKindWriter, models.MessageKindAsk}
+	if !equalKinds(news, wantKinds) {
+		t.Fatalf("message_new kinds without image = %v, want %v", news, wantKinds)
 	}
 
-	wantKinds := []models.MessageKind{models.MessageKindWriter, models.MessageKindImage, models.MessageKindKP, models.MessageKindWriter, models.MessageKindAsk}
-	msgs := loadMessages(t, sessionID)
-	if !equalKinds(messageKinds(msgs), wantKinds) {
-		t.Fatalf("stored kinds = %v, want %v", messageKinds(msgs), wantKinds)
+	all := loadMessages(t, sessionID)
+	var msgs []models.Message
+	var image *models.Message
+	for i := range all {
+		if all[i].Kind == models.MessageKindImage {
+			image = &all[i]
+		} else {
+			msgs = append(msgs, all[i])
+		}
 	}
-	for _, m := range msgs {
+	if image == nil || !equalKinds(messageKinds(msgs), wantKinds) {
+		t.Fatalf("stored kinds = %v (image %v), want %v plus one image", messageKinds(msgs), image != nil, wantKinds)
+	}
+	for _, m := range all {
 		if m.Floor != 1 || m.Status != models.MessageStatusDone || m.Role != models.MessageRoleAssistant {
 			t.Errorf("message %d: floor=%d status=%s role=%s", m.ID, m.Floor, m.Status, m.Role)
 		}
 	}
-	if msgs[0].Content != "正文:描述走廊" || msgs[3].Content != "正文:描述门后" {
-		t.Errorf("writer contents = %q, %q", msgs[0].Content, msgs[3].Content)
+	if msgs[0].Content != "正文:描述走廊" || msgs[2].Content != "正文:描述门后" {
+		t.Errorf("writer contents = %q, %q", msgs[0].Content, msgs[2].Content)
 	}
-	if refs := extractImageRefs(msgs[1].Content); len(refs) != 1 || refs[0].MIME != "image/png" {
-		t.Errorf("image message content = %q", msgs[1].Content)
+	if refs := extractImageRefs(image.Content); len(refs) != 1 || refs[0].MIME != "image/png" {
+		t.Errorf("image message content = %q", image.Content)
 	}
-	if msgs[2].Content != "你站在走廊里。" || strings.Contains(msgs[2].Content, "KP:") {
-		t.Errorf("kp content = %q, want the plain reply", msgs[2].Content)
+	if msgs[1].Content != "你站在走廊里。" || strings.Contains(msgs[1].Content, "KP:") {
+		t.Errorf("kp content = %q, want the plain reply", msgs[1].Content)
 	}
-	if meta := msgs[2].Meta.Data; meta == nil || meta.Dice != "" || meta.TimePoint != "第1天 08:00" || len(meta.Options) != 0 {
+	if meta := msgs[1].Meta.Data; meta == nil || meta.Dice != "" || meta.TimePoint != "第1天 08:00" || len(meta.Options) != 0 {
 		t.Errorf("kp meta = %+v", meta)
 	}
 	if meta := msgs[0].Meta.Data; meta == nil || !meta.NSFW {
 		t.Errorf("first writer meta = %+v, want nsfw", meta)
 	}
-	if meta := msgs[3].Meta.Data; meta == nil || meta.NSFW {
+	if meta := msgs[2].Meta.Data; meta == nil || meta.NSFW {
 		t.Errorf("second writer meta = %+v, want sfw", meta)
 	}
-	if meta := msgs[4].Meta.Data; meta == nil || meta.Ask == nil || len(meta.Ask.UserIDs) != 1 || meta.Ask.Names[0] != "爱丽丝" ||
+	if meta := msgs[3].Meta.Data; meta == nil || meta.Ask == nil || len(meta.Ask.UserIDs) != 1 || meta.Ask.Names[0] != "爱丽丝" ||
 		len(meta.Options) != 1 || meta.Options[0] != "我推开门" {
 		t.Errorf("ask meta = %+v", meta)
 	}
-	if msgs[2].DirectorSteps == nil || *msgs[2].DirectorSteps != 2 || *msgs[2].DirectorElapsedMs != 1200 {
-		t.Errorf("kp director metrics = %v/%v", msgs[2].DirectorSteps, msgs[2].DirectorElapsedMs)
+	if msgs[1].DirectorSteps == nil || *msgs[1].DirectorSteps != 2 || *msgs[1].DirectorElapsedMs != 1200 {
+		t.Errorf("kp director metrics = %v/%v", msgs[1].DirectorSteps, msgs[1].DirectorElapsedMs)
 	}
-	if msgs[4].DirectorSteps == nil || *msgs[4].DirectorSteps != 1 {
-		t.Errorf("ask director steps = %v", msgs[4].DirectorSteps)
+	if msgs[3].DirectorSteps == nil || *msgs[3].DirectorSteps != 1 {
+		t.Errorf("ask director steps = %v", msgs[3].DirectorSteps)
 	}
-	if msgs[0].DirectorSteps != nil || msgs[1].DirectorSteps != nil {
+	if msgs[0].DirectorSteps != nil || image.DirectorSteps != nil {
 		t.Error("writer/image messages must not carry director metrics")
 	}
 
@@ -612,11 +621,20 @@ func TestFloor_PainterFailureMarksImageFailed(t *testing.T) {
 	tap.waitCount("floor_end", 1)
 
 	msgs := loadMessages(t, sessionID)
-	if msgs[0].Kind != models.MessageKindImage || msgs[0].Status != models.MessageStatusFailed || msgs[0].Content != "" {
-		t.Fatalf("image message = %+v", msgs[0])
+	var image, kp *models.Message
+	for i := range msgs {
+		switch msgs[i].Kind {
+		case models.MessageKindImage:
+			image = &msgs[i]
+		case models.MessageKindKP:
+			kp = &msgs[i]
+		}
 	}
-	if msgs[1].Status != models.MessageStatusDone {
-		t.Errorf("the kp message must not be affected: %+v", msgs[1])
+	if image == nil || image.Status != models.MessageStatusFailed || image.Content != "" {
+		t.Fatalf("image message = %+v", image)
+	}
+	if kp == nil || kp.Status != models.MessageStatusDone {
+		t.Errorf("the kp message must not be affected: %+v", kp)
 	}
 	var pushed *messageResponse
 	for _, ev := range tap.ofType("message_new") {
@@ -648,16 +666,25 @@ func TestFloor_ImageIsPushedWithStoredURL(t *testing.T) {
 	tap.waitCount("floor_end", 1)
 
 	pushed := eventMessage(tap.ofType("message_new")[0])
-	refs := extractImageRefs(loadMessages(t, sessionID)[0].Content)
-	if pushed.Kind != models.MessageKindImage || pushed.Status != models.MessageStatusDone || len(pushed.Images) != 1 || len(refs) != 1 || pushed.Images[0] != imagestore.URL(refs[0].Hash) {
-		t.Fatalf("pushed = %+v refs = %+v", pushed, refs)
+	if pushed.Kind != models.MessageKindImage || pushed.Status != models.MessageStatusDone || len(pushed.Images) != 1 {
+		t.Fatalf("pushed = %+v", pushed)
+	}
+	stored := loadMessages(t, sessionID)
+	if len(stored) != 1 || stored[0].ID != pushed.ID {
+		t.Fatalf("stored = %+v, want only the pushed image", stored)
+	}
+	refs := extractImageRefs(stored[0].Content)
+	if len(refs) != 1 || pushed.Images[0] != imagestore.URL(refs[0].Hash) {
+		t.Fatalf("pushed images = %v refs = %+v", pushed.Images, refs)
 	}
 	if strings.HasPrefix(pushed.Images[0], "data:") {
 		t.Error("image messages must carry the stored URL, not a data URL")
 	}
 }
 
-func TestFloor_ImageIsHiddenUntilPainted(t *testing.T) {
+// TestFloor_ImageArrivesInPushOrder 验证配图画得慢时：后发布的 kp 先到，配图画完后才落库，
+// 它的 id 比 kp 大，客户端按 id 排序时排在 kp 之后，和推送顺序一致。
+func TestFloor_ImageArrivesInPushOrder(t *testing.T) {
 	initTestDB(t)
 	t.Cleanup(imagestore.SetDefaultDir(t.TempDir()))
 	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
@@ -682,30 +709,25 @@ func TestFloor_ImageIsHiddenUntilPainted(t *testing.T) {
 	tap.waitCount("message_new", 1)
 	tap.waitCount("floor_end", 1)
 
-	if kinds := tap.ofType("message_new"); len(kinds) != 1 || eventMessage(kinds[0]).Kind != models.MessageKindKP {
+	if pushed := tap.ofType("message_new"); len(pushed) != 1 || eventMessage(pushed[0]).Kind != models.MessageKindKP {
 		t.Fatalf("before the image is painted only the kp message may be pushed, got %v", tap.types())
 	}
-	if msgs := loadMessages(t, sessionID); len(msgs) != 2 || msgs[0].Kind != models.MessageKindImage || msgs[0].Status != models.MessageStatusPending {
-		t.Fatalf("the image row must be stored as pending, got %+v", msgs)
-	}
-	w := httptest.NewRecorder()
-	roomRouter(h, sessionCreator(t, sessionID), "creator_mp", "user").ServeHTTP(w, jsonReq(http.MethodGet, "/sessions/"+itoa(sessionID)+"/messages", nil))
-	var listed []messageResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &listed); err != nil {
-		t.Fatalf("decode messages: %v\n%s", err, w.Body.String())
-	}
-	if len(listed) != 1 || listed[0].Kind != models.MessageKindKP {
-		t.Fatalf("GET /messages must hide the unfinished image, got %+v", listed)
+	if msgs := loadMessages(t, sessionID); len(msgs) != 1 || msgs[0].Kind != models.MessageKindKP {
+		t.Fatalf("an unfinished image must not be stored, got %v", messageKinds(msgs))
 	}
 
 	close(releasePainter)
 	tap.waitCount("message_new", 2)
-	pushed := eventMessage(tap.ofType("message_new")[1])
-	if pushed.Kind != models.MessageKindImage || pushed.Status != models.MessageStatusDone || len(pushed.Images) != 1 {
-		t.Fatalf("pushed after painting = %+v", pushed)
+	news := tap.ofType("message_new")
+	kp, image := eventMessage(news[0]), eventMessage(news[1])
+	if image.Kind != models.MessageKindImage || image.Status != models.MessageStatusDone || len(image.Images) != 1 {
+		t.Fatalf("pushed after painting = %+v", image)
 	}
-	if first, kp := pushed.ID, eventMessage(tap.ofType("message_new")[0]).ID; first >= kp {
-		t.Errorf("image id %d must sort before the kp message id %d", first, kp)
+	if image.ID <= kp.ID {
+		t.Errorf("image id %d must sort after the kp message id %d it arrived behind", image.ID, kp.ID)
+	}
+	if got := messageKinds(loadMessages(t, sessionID)); !equalKinds(got, []models.MessageKind{models.MessageKindKP, models.MessageKindImage}) {
+		t.Errorf("stored order = %v, want [kp image]", got)
 	}
 }
 

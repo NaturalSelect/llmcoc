@@ -308,13 +308,13 @@ describe('roomState', () => {
     expect(room.byId[9].meta?.nsfw).toBe(true)
   })
 
-  test('配图画完才以 done 的 message_new 到达，按 id 回到叙事中的位置', () => {
+  test('配图画完才以 done 的 message_new 到达，排在已有消息之后', () => {
     const room = liveRoom()
-    feed(room, F(11, 'message_new', { message: msg(20, { content: '后来的 KP 回复' }) }))
-    feed(room, F(12, 'message_new', { message: msg(10, { kind: 'image', images: ['/api/images/a.png'] }) }))
-    expect(room.messages.map((m) => m.id)).toStrictEqual([10, 20])
-    expect(room.byId[10].status).toBe('done')
-    expect(room.byId[10].images).toStrictEqual(['/api/images/a.png'])
+    feed(room, F(11, 'message_new', { message: msg(20, { content: '先到的 KP 回复' }) }))
+    feed(room, F(12, 'message_new', { message: msg(21, { kind: 'image', images: ['/api/images/a.png'] }) }))
+    expect(room.messages.map((m) => m.id)).toStrictEqual([20, 21])
+    expect(room.byId[21].status).toBe('done')
+    expect(room.byId[21].images).toStrictEqual(['/api/images/a.png'])
   })
 
   test('message_update 先于 message_new 到达时不报错也不残留 stream', () => {

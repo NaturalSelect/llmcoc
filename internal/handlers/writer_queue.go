@@ -1,9 +1,9 @@
 package handlers
 
-// NOTE: Director 发布的 writer/image 消息先以 pending 落库，这里负责补全正文与配图。Director 的工具循环不等它们，
+// NOTE: Director 发布的 writer 消息先以 pending 落库，这里负责补全正文；image 消息则画完才落库。Director 的工具循环不等它们，
 // 但同一周期里之后的 kp/ask 消息要等 Writer 队列写完才发布（见 publishRound），玩家先读到叙事再被提问。
-// writer 落库即广播 message_new，再靠 message_update 补全；image 落库时不广播，画完后才以 message_new 推送，id 仍是落库时的，
-// 客户端按 id 排序，所以配图会回到它在叙事里的位置。
+// writer 落库即广播 message_new，再靠 message_update 补全；image 画完才落库并以 message_new 推送，所以客户端看到的顺序就是推送顺序，
+// 配图排在画完那一刻已有的消息之后，不会跳到上面，GET /messages 里也不会有未画完的图。
 // Writer 每个会话一个 FIFO 队列：一条 writer 消息对应一次 RunWriterStream，也就是 Writer transcript 的一轮，
 // 所以 Writer 的历史顺序等于消息顺序。Painter 不排队，每条 image 消息各自并发生成。
 // 房主打断（kp-stop）不会取消这里的任务，因为对应的消息已经对玩家可见。
@@ -264,17 +264,17 @@ func finishWriterMessage(messageID uint, text string, runErr error) {
 	}
 }
 
-// runPainterTask 为一条 image 消息生成图片并回写；失败时消息标记 failed。
-func (h *SessionHandlers) runPainterTask(messageID uint, gctx agent.GameContext, request agent.ImagePromptRequest) {
+// runPainterTask 为一条还没落库的 image 消息生成图片；画完(或失败)后才由 finishImageMessage 落库并推送。
+func (h *SessionHandlers) runPainterTask(msg models.Message, gctx agent.GameContext, request agent.ImagePromptRequest) {
 	ctx, cancel := context.WithTimeout(context.Background(), painterJobTimeout)
 	defer cancel()
 	start := time.Now()
 	ref, err := h.paint(ctx, gctx, request)
 	if err != nil {
-		chatLog.Error("painter task failed", "session", gctx.Session.ID, "message", messageID,
+		chatLog.Error("painter task failed", "session", gctx.Session.ID,
 			"elapsed_ms", float64(time.Since(start).Milliseconds()), "err", err)
 	}
-	finishImageMessage(messageID, ref, err)
+	finishImageMessage(msg, ref, err)
 }
 
 func (h *SessionHandlers) paint(ctx context.Context, gctx agent.GameContext, request agent.ImagePromptRequest) (storedImageRef, error) {
@@ -297,24 +297,20 @@ func (h *SessionHandlers) paint(ctx context.Context, gctx agent.GameContext, req
 	return storedImageRef{Hash: stored.Hash, MIME: stored.MIME}, nil
 }
 
-// finishImageMessage 把图片引用写进 image 消息，再以 message_new 推给房间：配图画完前客户端看不到这条消息。
-// err 非空时标记 failed，同样推送，客户端据此显示失败。
-func finishImageMessage(messageID uint, ref storedImageRef, runErr error) {
-	status := models.MessageStatusDone
+// finishImageMessage 在画完后才把 image 消息落库并以 message_new 推给房间：id 和 created_at 是画完那一刻的，
+// 客户端按 id 排序时它排在已有消息之后，和推送顺序一致。err 非空时落成 failed，同样推送，客户端据此显示失败。
+func finishImageMessage(msg models.Message, ref storedImageRef, runErr error) {
+	msg.Status = models.MessageStatusDone
 	errText := ""
 	if runErr != nil {
-		status = models.MessageStatusFailed
+		msg.Status = models.MessageStatusFailed
 		errText = painterFailedText
+	} else {
+		msg.Content = appendInternalImageTags("", []storedImageRef{ref}, nil)
 	}
-	msg, err := settleMessage(messageID, func(m *models.Message) {
-		if runErr == nil {
-			m.Content = appendInternalImageTags("", []storedImageRef{ref}, nil)
-		}
-		m.Status = status
-		setMessageError(m, errText)
-	})
-	if err != nil {
-		chatLog.Error("image message update failed", "message", messageID, "err", err)
+	setMessageError(&msg, errText)
+	if err := models.DB.Create(&msg).Error; err != nil {
+		chatLog.Error("image message save failed", "session", msg.SessionID, "err", err)
 		return
 	}
 	hubFor(msg.SessionID).Publish("message_new", gin.H{"message": newMessageResponse(msg)})

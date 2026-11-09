@@ -146,7 +146,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | --- | --- |
 | `player` | 玩家本轮声明的行动 |
 | `writer` | KP 的一次 `write`：由 Writer 展开的白字正文 |
-| `image` | KP 的一次 `generate_image`：Painter 出的配图。画完（`done`，`images` 带落盘地址）或失败（`failed`）后才经 `message_new` 送达，`id` 是落库时分配的，按 `id` 排序会回到它在叙事里的位置，所以它可能晚于 `id` 更大的消息到达 |
+| `image` | KP 的一次 `generate_image`：Painter 出的配图。画完（`done`，`images` 带落盘地址）或失败（`failed`）后才落库，并经 `message_new` 送达，所以 `id` 是画完那一刻分配的，排在到达之前已有的所有消息之后 |
 | `kp` | KP 的一次 `narrate` 或 `end_game` 的回复 |
 | `ask` | KP 的一次 `ask_players`：点名并交出发言权 |
 | `system` | 复活提示，复活时经 `message_new` 送达。加入、离开的系统提示不会推送，也不出现在 `GET /messages` 里，客户端以 `session` 事件刷新成员列表 |
@@ -157,7 +157,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | 值 | 含义 |
 | --- | --- |
 | `done` | 已就绪。除下面两种情况外的消息都是它 |
-| `pending` | 只有 `writer` 会带它：先以此状态落库并广播，等异步补全。同一周期里之后的 `kp` / `ask` 会等已发布的 `writer` 全部结束才发布。`image` 不会以 `pending` 出现：画完之前不广播，`GET /messages` 也不返回 |
+| `pending` | 只有 `writer` 会带它：先以此状态落库并广播，等异步补全。同一周期里之后的 `kp` / `ask` 会等已发布的 `writer` 全部结束才发布。`image` 不会以 `pending` 出现：画完才落库和广播，`GET /messages` 里也没有未画完的图 |
 | `failed` | 生成失败，原因在 `meta.error` |
 
 `floor` 是所属周期编号，`system` 消息为 0。`meta` 是结构化附加信息，字段都可省略，只有下表列出的消息类型会带对应字段：
