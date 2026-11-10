@@ -97,7 +97,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
         return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
       }
       if (path === '/api/sessions/7/chat') return json({}, 202)
-      if (path === '/api/characters/5') return json({ id: 5, name: '爱丽丝', occupation: '记者', inventory: ['最新的怀表'], stats: { hp: 3, max_hp: 10, san: 20, max_san: 50, mp: 8, max_mp: 8 } })
+      if (path === '/api/characters/5') return json({ id: 5, name: '爱丽丝', occupation: '记者', inventory: [{ name: '最新的怀表', count: 1, type: 'misc' }], stats: { hp: 3, max_hp: 10, san: 20, max_san: 50, mp: 8, max_mp: 8 } })
       return json({})
     }),
   )

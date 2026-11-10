@@ -35,6 +35,47 @@ func TestRollDiceExpr(t *testing.T) {
 	}
 }
 
+func TestCheckResultLabel(t *testing.T) {
+	cases := []struct {
+		roll, skill int
+		difficulty  string
+		want        string
+	}{
+		{1, 63, "常规", "大成功"},
+		{1, 63, "极难", "大成功"},
+		{12, 63, "常规", "极难成功"},
+		{30, 63, "常规", "困难成功"},
+		{60, 63, "常规", "常规成功"},
+		{90, 63, "常规", "失败"},
+		{99, 63, "常规", "失败"},
+		{100, 63, "常规", "大失败"},
+		{96, 49, "常规", "大失败"},
+		{96, 50, "常规", "失败"},
+		{100, 90, "常规", "大失败"},
+		{40, 63, "困难", "失败"},
+		{31, 63, "困难", "困难成功"},
+		{12, 63, "极难", "极难成功"},
+		{13, 63, "极难", "失败"},
+		{60, 63, "", "常规成功"},
+	}
+	for _, tc := range cases {
+		if got := CheckResultLabel(tc.roll, tc.skill, tc.difficulty); got != tc.want {
+			t.Errorf("CheckResultLabel(%d, %d, %q) = %q, want %q", tc.roll, tc.skill, tc.difficulty, got, tc.want)
+		}
+	}
+}
+
+func TestCheckLevelMatchesSkillCheck(t *testing.T) {
+	for skill := 1; skill <= 99; skill += 7 {
+		for i := 0; i < 50; i++ {
+			res := SkillCheck(skill)
+			if got := CheckLevel(res.Value, skill); got != res.Level {
+				t.Fatalf("CheckLevel(%d, %d) = %q, SkillCheck gave %q", res.Value, skill, got, res.Level)
+			}
+		}
+	}
+}
+
 func TestSkillCheck(t *testing.T) {
 	// Test logical consistency of the result rather than mocking the roll
 	skillValue := 50

@@ -1,4 +1,4 @@
-import type { CharacterCardFull, RegenField } from '@/api/characterTypes'
+import type { CharacterCardFull, InventoryItem, InventoryItemType, RegenField } from '@/api/characterTypes'
 
 type Costs = Record<string, number> | null | undefined
 
@@ -63,6 +63,23 @@ export function madnessHeading(state: string | undefined): string {
 // NOTE: 按技能值从高到低；值相同保持原有顺序（Array.sort 稳定）
 export function sortedSkills(skills: Record<string, number> | null | undefined): Array<[string, number]> {
   return Object.entries(skills ?? {}).sort((a, b) => b[1] - a[1])
+}
+
+export const ITEM_TYPE_LABEL: Record<InventoryItemType, string> = {
+  equipment: '装备',
+  weapon: '武器',
+  accessory: '配件',
+  tome: '典籍',
+  artifact: '神器',
+  misc: '杂物',
+}
+
+// NOTE: 必须与后端 models.Item.Label() 完全一致：名称(描述, xN)，无描述且数量 1 只显示名称
+export function itemLabel(it: InventoryItem): string {
+  const parts: string[] = []
+  if (it.desc) parts.push(it.desc)
+  if (it.count > 1) parts.push(`x${it.count}`)
+  return parts.length ? `${it.name}(${parts.join(', ')})` : it.name
 }
 
 // NOTE: 仓库只允许操作启用且未进入房间的人物卡（后端对 in_session 的卡存取返回 409）

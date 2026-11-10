@@ -31,11 +31,11 @@ type User struct {
 	Coins        int    `gorm:"default:0;not null" json:"coins"`
 	CardSlots    int    `gorm:"default:3;not null" json:"card_slots"`
 	ReviveCount  int    `gorm:"default:0;not null" json:"revive_count"` // 累计复活次数，影响后续复活费用
-	// NOTE: 账号级仓库，物品格式与人物卡 Inventory 一致（裸字符串，如 "绷带(x3)"）。
+	// NOTE: 账号级仓库，物品格式与人物卡 Inventory 一致（结构化 Item，同名同描述合并数量）。
 	// 不加 gorm default，避免存量行 NULL->空串触发 JSONField.Scan 的 json.Unmarshal 报错。
-	Warehouse JSONField[[]string] `gorm:"type:text" json:"warehouse"`
-	CreatedAt time.Time           `json:"created_at"`
-	UpdatedAt time.Time           `json:"updated_at"`
+	Warehouse JSONField[[]Item] `gorm:"type:text" json:"warehouse"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
 }
 
 // COC 7th character attributes
@@ -151,7 +151,7 @@ type CharacterCard struct {
 	Backstory       string                      `gorm:"type:text" json:"backstory"`
 	Appearance      string                      `gorm:"type:text" json:"appearance"`
 	Traits          string                      `gorm:"type:text" json:"traits"`
-	Inventory       JSONField[[]string]         `gorm:"type:text" json:"inventory"`
+	Inventory       JSONField[[]Item]           `gorm:"type:text" json:"inventory"`
 	SocialRelations JSONField[[]SocialRelation] `gorm:"type:text" json:"social_relations"`
 	Assets          JSONField[[]Asset]          `gorm:"type:text" json:"assets"`
 	Spells          JSONField[[]string]         `gorm:"type:text" json:"spells"`
@@ -561,6 +561,8 @@ type GameEvent struct {
 	Roll      int    `json:"roll,omitempty"`      // dice
 	Expr      string `json:"expr,omitempty"`      // dice: 骰子表达式，只给没有检定名的公开骰(伤害等)用，说明掷的是什么
 	Level     string `json:"level,omitempty"`     // dice: 难度
+	Target    int    `json:"target,omitempty"`    // dice: 调查员该技能/属性的数值，查不到时留空
+	Result    string `json:"result,omitempty"`    // dice: 对照难度后的结论(大成功/极难成功/困难成功/常规成功/失败/大失败)，有 Target 时才有
 	Hidden    bool   `json:"hidden,omitempty"`    // dice: 暗骰
 	Field     string `json:"field,omitempty"`     // stat: hp/max_hp/san/max_san/mp/max_mp/pow/cthulhu_mythos/armor/str…edu/skill
 	From      *int   `json:"from,omitempty"`      // stat 变化前；用指针保留 0

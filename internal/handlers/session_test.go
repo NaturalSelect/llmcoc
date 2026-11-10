@@ -526,8 +526,11 @@ func TestChatStream_MultiPlayerWaitsForEveryNamedPlayer(t *testing.T) {
 	if status.Phase != "waiting" || !status.WaitingForPlayers || !status.Submitted || status.KPRunning {
 		t.Errorf("submitted player status = %+v", status)
 	}
+	if status.SubmittedContent != "我查探房间" {
+		t.Errorf("submitted_content = %q, want the declaration the player sent", status.SubmittedContent)
+	}
 	other := getChatStatus(t, makeTestRouter(h, user2ID, "mp_user2"), sessionID)
-	if other.Phase != "awaiting_me" || other.Submitted {
+	if other.Phase != "awaiting_me" || other.Submitted || other.SubmittedContent != "" {
 		t.Errorf("pending player status = %+v", other)
 	}
 

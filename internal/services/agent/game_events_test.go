@@ -12,10 +12,13 @@ func eventTestPlayers() []models.SessionPlayer {
 	return []models.SessionPlayer{{
 		UserID: 1,
 		CharacterCard: models.CharacterCard{
-			Name:      "甲",
-			Stats:     models.JSONField[models.CharacterStats]{Data: models.CharacterStats{HP: 10, MaxHP: 12, SAN: 50, MaxSAN: 99, MP: 8, MaxMP: 8, POW: 40}},
-			Skills:    models.JSONField[map[string]int]{Data: map[string]int{"侦查": 40}},
-			Inventory: models.JSONField[[]string]{Data: []string{"手电筒", "子弹(x6)"}},
+			Name:   "甲",
+			Stats:  models.JSONField[models.CharacterStats]{Data: models.CharacterStats{HP: 10, MaxHP: 12, SAN: 50, MaxSAN: 99, MP: 8, MaxMP: 8, POW: 40}},
+			Skills: models.JSONField[map[string]int]{Data: map[string]int{"侦查": 40}},
+			Inventory: models.JSONField[[]models.Item]{Data: []models.Item{
+				{Name: "手电筒", Count: 1, Type: models.ItemTypeMisc},
+				{Name: "子弹", Count: 6, Type: models.ItemTypeMisc},
+			}},
 		},
 	}}
 }
@@ -35,6 +38,55 @@ func onlyResultEvents(t *testing.T, res []ToolResult) []models.GameEvent {
 		t.Fatalf("results = %+v, want one", res)
 	}
 	return res[0].Events
+}
+
+func TestExecuteDiceChecks_FillsTargetAndResultForInvestigators(t *testing.T) {
+	players := eventTestPlayers()
+	stats := players[0].CharacterCard.Stats.Data
+	stats.STR = 60
+	players[0].CharacterCard.Stats.Data = stats
+
+	cases := []struct {
+		name   string
+		check  DiceCheck
+		target int
+		ok     bool
+	}{
+		{"技能", DiceCheck{Character: "甲", What: "侦查", DiceExpr: "1D100"}, 40, true},
+		{"带检定后缀", DiceCheck{Character: "甲", What: "侦查检定", DiceExpr: "1d100"}, 40, true},
+		{"属性", DiceCheck{Character: "甲", What: "力量", DiceExpr: "1D100"}, 60, true},
+		{"理智取当前SAN", DiceCheck{Character: "甲", What: "理智", DiceExpr: "1D100"}, 50, true},
+		{"卡上没有的技能", DiceCheck{Character: "甲", What: "潜行", DiceExpr: "1D100"}, 0, false},
+		{"NPC不查", DiceCheck{Character: "老板", What: "侦查", DiceExpr: "1D100"}, 0, false},
+		{"伤害骰不查", DiceCheck{Character: "甲", What: "侦查", DiceExpr: "1D6+2"}, 0, false},
+	}
+	for _, tc := range cases {
+		target, ok := d100CheckTarget(tc.check, players)
+		if target != tc.target || ok != tc.ok {
+			t.Errorf("%s: target = %d, ok = %v, want %d, %v", tc.name, target, ok, tc.target, tc.ok)
+		}
+	}
+
+	res := executeDiceChecks([]DiceCheck{{Character: "甲", What: "侦查", DiceExpr: "1D100"}}, players)
+	if len(res) != 1 || res[0].Target != 40 || res[0].Result == "" {
+		t.Fatalf("result = %+v, want target 40 with a verdict", res)
+	}
+	ev := diceEvent(res[0], players)
+	if ev.Target != 40 || ev.Result != res[0].Result {
+		t.Errorf("event = %+v, want target and result carried over", ev)
+	}
+
+	npc := executeDiceChecks([]DiceCheck{{Character: "老板", What: "侦查", DiceExpr: "1D100"}}, players)
+	if npc[0].Target != 0 || npc[0].Result != "" {
+		t.Errorf("npc result = %+v, must not carry target or verdict", npc[0])
+	}
+}
+
+func TestFormatSingleDiceResult_IncludesTargetAndVerdict(t *testing.T) {
+	got := formatSingleDiceResult(DiceCheckResult{DiceCheck: DiceCheck{What: "说服", Level: "困难"}, Roll: 30, Target: 63, Result: "困难成功"})
+	if got != "说服鉴定: 30 难度:困难 目标:63 结果:困难成功 " {
+		t.Errorf("got %q", got)
+	}
 }
 
 func TestDiceEvent_ExprOnlyWhenNoSkillName(t *testing.T) {

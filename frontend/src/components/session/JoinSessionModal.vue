@@ -20,11 +20,14 @@ const form = ref<JoinSessionForm>(emptyJoinForm())
 const joining = ref(false)
 const candidates = computed(() => joinableCharacters(chars.characters))
 
-// 每次打开都清空上次选择的人物卡和密码
+// 每次打开都清空上次选择的人物卡和密码；只有一张可用卡时直接选中
 watch(
   () => props.open,
   (open) => {
-    if (open) form.value = emptyJoinForm()
+    if (!open) return
+    form.value = emptyJoinForm()
+    const only = candidates.value.length === 1 ? candidates.value[0] : undefined
+    if (only?.id) form.value.character_card_id = only.id
   },
   { immediate: true },
 )

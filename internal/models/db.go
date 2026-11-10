@@ -79,6 +79,7 @@ func InitDB() error {
 			Update("with_jailbreak", true)
 	}
 
+	backfillLegacyItems()
 	seedDefaultData()
 	logging.For("models").Info("database initialized", "path", dbPath)
 	return nil

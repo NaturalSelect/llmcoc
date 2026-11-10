@@ -9,6 +9,8 @@ export interface GameEvent {
   roll?: number
   expr?: string
   level?: string
+  target?: number
+  result?: string
   hidden?: boolean
   field?: string
   from?: number
@@ -59,8 +61,8 @@ export interface EventView {
   note?: string
 }
 
-const STR_KEYS = ['type', 'character', 'skill', 'expr', 'level', 'field', 'state', 'category', 'op', 'name', 'detail', 'symptom', 'location', 'time'] as const
-const NUM_KEYS = ['roll', 'from', 'to', 'duration', 'round', 'amount'] as const
+const STR_KEYS = ['type', 'character', 'skill', 'expr', 'level', 'result', 'field', 'state', 'category', 'op', 'name', 'detail', 'symptom', 'location', 'time'] as const
+const NUM_KEYS = ['roll', 'target', 'from', 'to', 'duration', 'round', 'amount'] as const
 
 // NOTE: meta.events 来自服务器 JSON，逐字段校验类型，丢掉不合法的条目
 export function eventsOf(msg: RoomMessage | null | undefined): GameEvent[] {
@@ -157,15 +159,22 @@ function encounterView(ev: GameEvent, icon: 'combat' | 'chase', noun: string): E
 
 export function describeEvent(ev: GameEvent): EventView {
   switch (ev.type) {
-    case 'dice':
+    case 'dice': {
       if (ev.hidden) return { icon: 'hidden', tone: 'plain', text: 'KP 暗骰了一次' }
+      // NOTE: 有目标值时写成「技能 目标 N · 骰值 · 结论」；查不到目标值(NPC、伤害骰)时只显示骰值和难度
+      const hasTarget = typeof ev.target === 'number' && ev.target > 0
+      const notes: string[] = []
+      if (hasTarget) notes.push('目标 ' + ev.target)
+      if (ev.level) notes.push('难度 ' + ev.level)
+      if (hasTarget && ev.result) notes.push(ev.result)
       return {
         icon: 'dice',
         tone: 'plain',
-        text: who(ev) + (ev.skill || (ev.expr ? `骰点 ${ev.expr}` : '骰点')),
+        text: who(ev) + (ev.skill || (ev.expr ? `骰点 ${ev.expr}` : '骰点')) + (hasTarget ? ' 骰值' : ''),
         value: String(ev.roll ?? ''),
-        note: ev.level ? '难度 ' + ev.level : undefined,
+        note: notes.length ? notes.join(' · ') : undefined,
       }
+    }
     case 'stat': {
       const label = ev.field === 'skill' ? ev.skill || '技能' : FIELD_LABEL[ev.field || ''] || ev.field || '属性'
       return {
@@ -201,7 +210,7 @@ export function describeEvent(ev: GameEvent): EventView {
     case 'chase':
       return encounterView(ev, 'chase', '追逐')
     case 'coins':
-      return { icon: 'coins', tone: 'plain', text: who(ev) + '获得金币', value: '+' + (ev.amount ?? 0) }
+      return { icon: 'coins', tone: 'plain', text: who(ev) + '获得金币', value: '+' + (ev.amount ?? 0), note: ev.detail || undefined }
     case 'backstory':
       return { icon: 'backstory', tone: 'plain', text: who(ev) + '个人经历有了新的篇章', note: ev.detail }
   }

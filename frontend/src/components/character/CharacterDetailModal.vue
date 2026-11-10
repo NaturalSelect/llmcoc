@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
-import type { CharacterCardFull, RegenField } from '@/api/characterTypes'
+import { computed, reactive, ref, watch } from 'vue'
+import type { CharacterCardFull, InventoryItem, RegenField } from '@/api/characterTypes'
 import BaseModal from '@/components/base/BaseModal.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCharactersStore } from '@/stores/characters'
@@ -13,9 +13,11 @@ import EntryList from './EntryList.vue'
 import RegenBlock from './RegenBlock.vue'
 import { useConfirmGuard } from './useConfirmGuard'
 import {
+  ITEM_TYPE_LABEL,
   REGEN_SPECS,
   detailSubtitle,
   errMessage,
+  itemLabel,
   mergeUpdatedCard,
   regenConfirmMessage,
   regenCost,
@@ -36,6 +38,7 @@ const guard = useConfirmGuard()
 const onClose = guard.guardClose(() => emit('close'))
 
 const current = ref<CharacterCardFull | null>(null)
+const inventory = computed(() => current.value?.inventory ?? [])
 const busy = ref(false)
 const guidance = reactive<Record<RegenField, string>>({ appearance: '', backstory: '', traits: '' })
 const regenBusy = reactive<Record<RegenField, boolean>>({ appearance: false, backstory: false, traits: false })
@@ -114,16 +117,16 @@ async function regen(spec: RegenSpec): Promise<void> {
   }
 }
 
-function deposit(item: string): Promise<void> | void {
+function deposit(it: InventoryItem): Promise<void> | void {
   const id = current.value?.id
-  if (!id || !item) return
-  return mutate(async () => (await characterApi.deposit(id, item)).character_card, '已存入仓库')
+  if (!id) return
+  return mutate(async () => (await characterApi.deposit(id, it)).character_card, '已存入仓库')
 }
 
-function discard(item: string): Promise<void> | void {
+function discard(it: InventoryItem): Promise<void> | void {
   const id = current.value?.id
-  if (!id || !item) return
-  return mutate(() => characterApi.removeInventoryItem(id, item), '已从物品栏移除')
+  if (!id) return
+  return mutate(() => characterApi.removeInventoryItem(id, it), '已从物品栏移除')
 }
 
 async function forgetSpell(spell: string): Promise<void> {
@@ -188,13 +191,14 @@ function assetEntries(card: CharacterCardFull): Entry[] {
       <CharacterSection title="物品栏">
         <p class="mb-2 text-xs text-fg-subtle">点击物品右侧按钮可直接丢弃或存入账号仓库。</p>
         <p v-if="current.in_session" class="mb-2 text-xs text-warning" role="status">该人物卡正在游戏中，无法存取仓库。</p>
-        <ChipList :items="current.inventory ?? []">
-          <template #actions="{ item }">
+        <ChipList :items="inventory.map(itemLabel)">
+          <template #actions="{ index }">
+            <span v-if="inventory[index].type !== 'misc'" class="text-xs text-fg-subtle">{{ ITEM_TYPE_LABEL[inventory[index].type] }}</span>
             <button
               type="button"
               class="rounded-full px-2 py-0.5 text-xs text-info transition hover:bg-info/15 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="current.in_session || busy"
-              @click="deposit(item)"
+              @click="deposit(inventory[index])"
             >
               存入仓库
             </button>
@@ -202,7 +206,7 @@ function assetEntries(card: CharacterCardFull): Entry[] {
               type="button"
               class="rounded-full px-2 py-0.5 text-xs text-danger transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="busy"
-              @click="discard(item)"
+              @click="discard(inventory[index])"
             >
               丢弃
             </button>

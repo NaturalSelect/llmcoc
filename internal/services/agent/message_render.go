@@ -78,7 +78,7 @@ func publicDiceLine(m models.Message) string {
 		if ev.Type != "dice" || ev.Hidden {
 			continue
 		}
-		s := strings.TrimSpace(formatSingleDiceResult(DiceCheckResult{DiceCheck: DiceCheck{What: ev.Skill, Level: ev.Level}, Roll: ev.Roll}))
+		s := strings.TrimSpace(formatSingleDiceResult(DiceCheckResult{DiceCheck: DiceCheck{What: ev.Skill, Level: ev.Level}, Roll: ev.Roll, Target: ev.Target, Result: ev.Result}))
 		if ev.Character != "" {
 			s = ev.Character + " " + s
 		}

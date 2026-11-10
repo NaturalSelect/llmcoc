@@ -752,6 +752,7 @@ type chatStatusResponse struct {
 	WaitingForPlayers bool           `json:"waiting_for_players"`
 	Submitted         bool           `json:"submitted"`
 	SubmittedAt       *time.Time     `json:"submitted_at"`
+	SubmittedContent  string         `json:"submitted_content"` // NOTE: 本轮自己最近一次提交的原文，重连后前端靠它回填「修改」框；未提交为空串
 	Waiting           waitingPayload `json:"waiting"`
 	Spotlight         spotlightInfo  `json:"spotlight"`
 	Floor             *floorInfo     `json:"floor"`
@@ -867,6 +868,7 @@ func (h *SessionHandlers) GetChatStatus(c *gin.Context) {
 		WaitingForPlayers: playing && !running && waiting.Total > 1 && submittedCount > 0 && waiting.Pending > 0,
 		Submitted:         submitted,
 		SubmittedAt:       submittedAt,
+		SubmittedContent:  submittedAction.ActionSummary,
 		Waiting:           waiting,
 		Spotlight: spotlightInfo{
 			UserIDs:  ids,

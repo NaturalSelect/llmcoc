@@ -19,7 +19,7 @@ interface Call {
 let calls: Call[]
 let routes: Record<string, (call: Call) => unknown>
 
-const alive = { id: 1, user_id: 9, name: '艾米', occupation: '记者', age: 28, gender: '女', is_active: true, in_session: false, stats: { str: 50, con: 50, dex: 60, int: 70, hp: 8, max_hp: 10, san: 40, max_san: 60, mp: 5, max_mp: 12 }, skills: { 侦查: 60 }, inventory: ['绷带', '手电筒'], spells: ['束缚术'], backstory: '旧事', appearance: '高挑', traits: '冷静' }
+const alive = { id: 1, user_id: 9, name: '艾米', occupation: '记者', age: 28, gender: '女', is_active: true, in_session: false, stats: { str: 50, con: 50, dex: 60, int: 70, hp: 8, max_hp: 10, san: 40, max_san: 60, mp: 5, max_mp: 12 }, skills: { 侦查: 60 }, inventory: [{ name: '绷带', count: 1, type: 'misc' }, { name: '手电筒', desc: '黄铜', count: 1, type: 'equipment' }], spells: ['束缚术'], backstory: '旧事', appearance: '高挑', traits: '冷静' }
 const dead = { id: 2, user_id: 9, name: '鲍勃', occupation: '医生', is_active: false, stats: {} }
 
 function respond(body: unknown, status = 200) {
@@ -30,8 +30,8 @@ function install() {
   vi.stubGlobal('fetch', async (path: string, init: RequestInit = {}) => {
     const call: Call = { method: init.method as string, path, body: init.body ? JSON.parse(init.body as string) : undefined }
     calls.push(call)
-    const key = `${call.method} ${path.split('?')[0]}`
-    const handler = routes[key]
+    const key = `${call.method} ${path}`
+    const handler = routes[key] ?? routes[`${call.method} ${path.split('?')[0]}`]
     if (!handler) return respond({ error: `unrouted ${key}` }, 500)
     const out = handler(call)
     return out instanceof Response ? out : respond(out)
@@ -177,15 +177,19 @@ describe('DashboardView', () => {
   test('详情弹窗：丢弃物品请求路径经过编码，并同步 store；in_session 沿用列表值', async () => {
     useCharactersStore().characters = []
     routes['GET /api/characters'] = () => ({ items: [{ ...structuredClone(alive), in_session: true }], total_pages: 1 })
-    routes['DELETE /api/characters/1/inventory/%E7%BB%B7%E5%B8%A6'] = () => ({ ...alive, inventory: ['手电筒'], in_session: false })
+    routes['DELETE /api/characters/1/inventory/%E7%BB%B7%E5%B8%A6?desc='] = () => ({ ...alive, inventory: [alive.inventory[1]], in_session: false })
     wrapper = mountDashboard()
     await flushPromises()
     button('艾米')!.click()
     await nextTick()
     expect(text()).toContain('该人物卡正在游戏中，无法存取仓库。')
+    expect(text()).toContain('手电筒(黄铜)')
+    expect(text()).toContain('装备')
+    calls = []
     button('丢弃')!.click()
     await flushPromises()
-    expect(useCharactersStore().characters[0]).toMatchObject({ inventory: ['手电筒'], in_session: true })
+    expect(calls[0]).toMatchObject({ method: 'DELETE', path: '/api/characters/1/inventory/%E7%BB%B7%E5%B8%A6?desc=' })
+    expect(useCharactersStore().characters[0]).toMatchObject({ inventory: [alive.inventory[1]], in_session: true })
     expect(useUiStore().toasts.map((t) => t.message)).toContain('已从物品栏移除')
   })
 
@@ -205,28 +209,32 @@ describe('DashboardView', () => {
   })
 
   test('仓库：取出需要目标人物卡；丢弃经确认；无可用人物卡时给出提示', async () => {
-    routes['GET /api/warehouse'] = () => ({ warehouse: ['绷带', '地图'] })
-    routes['POST /api/warehouse/withdraw'] = () => ({ warehouse: ['地图'], character_card: { ...alive, inventory: ['绷带', '手电筒', '绷带'] } })
-    routes['DELETE /api/warehouse/items/%E5%9C%B0%E5%9B%BE'] = () => ({ warehouse: [] })
+    routes['GET /api/warehouse'] = () => ({ warehouse: [{ name: '绷带', count: 1, type: 'misc' }, { name: '地图', desc: '泛黄', count: 2, type: 'tome' }] })
+    routes['POST /api/warehouse/withdraw'] = () => ({
+      warehouse: [{ name: '地图', desc: '泛黄', count: 2, type: 'tome' }],
+      character_card: { ...alive, inventory: [{ name: '绷带', count: 2, type: 'misc' }, alive.inventory[1]] },
+    })
+    routes['DELETE /api/warehouse/items/%E5%9C%B0%E5%9B%BE?desc=%E6%B3%9B%E9%BB%84'] = () => ({ warehouse: [] })
     wrapper = mountDashboard()
     await flushPromises()
     button('仓库')!.click()
     await flushPromises()
     expect(text()).toContain('账号仓库')
-    expect(text()).toContain('地图')
+    expect(text()).toContain('地图(泛黄, x2)')
+    expect(text()).toContain('典籍')
 
     const select = document.body.querySelector('[role="dialog"] select') as HTMLSelectElement
     expect(select.value).toBe('1')
     calls = []
     ;[...document.body.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent?.trim() === '取出')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await flushPromises()
-    expect(calls[0]).toMatchObject({ path: '/api/warehouse/withdraw', body: { character_card_id: 1, item: '绷带' } })
+    expect(calls[0]).toMatchObject({ path: '/api/warehouse/withdraw', body: { character_card_id: 1, item: { name: '绷带', desc: '' } } })
     expect(text()).not.toContain('绷带 ')
     expect(useUiStore().toasts.map((t) => t.message)).toContain('已取出到人物卡')
 
     ;[...document.body.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent?.trim() === '丢弃')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await nextTick()
-    expect(text()).toContain('确定要丢弃仓库中的「地图」吗？此操作不可撤销。')
+    expect(text()).toContain('确定要丢弃仓库中的「地图(泛黄, x2)」吗？此操作不可撤销。')
     await confirmDialog(true)
     expect(text()).toContain('仓库空空如也。')
   })

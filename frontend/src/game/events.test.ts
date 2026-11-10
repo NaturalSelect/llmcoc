@@ -27,13 +27,18 @@ describe('eventsOf', () => {
 })
 
 describe('describeEvent', () => {
-  test('骰子：暗骰固定文案，公开骰只显示技能、点数、难度', () => {
+  test('骰子：暗骰固定文案，公开骰显示技能、点数、难度，查得到目标值时补目标与结论', () => {
     expect(view({ type: 'dice', hidden: true })).toBe('KP 暗骰了一次')
     expect(describeEvent({ type: 'dice', hidden: true }).icon).toBe('hidden')
     expect(view({ type: 'dice', character: '甲', skill: '侦查', roll: 45, level: '困难' })).toBe('甲 侦查 45 难度 困难')
     expect(view({ type: 'dice', skill: '潜行', roll: 12 })).toBe('潜行 12')
     expect(view({ type: 'dice', character: '甲', expr: '1D3', roll: 1 })).toBe('甲 骰点 1D3 1')
     expect(view({ type: 'dice', roll: 1 })).toBe('骰点 1')
+    expect(view({ type: 'dice', character: '甲', skill: '说服', roll: 90, target: 63, level: '常规', result: '失败' })).toBe(
+      '甲 说服 骰值 90 目标 63 · 难度 常规 · 失败',
+    )
+    expect(view({ type: 'dice', character: '甲', skill: '理智', roll: 27, target: 89, result: '常规成功' })).toBe('甲 理智 骰值 27 目标 89 · 常规成功')
+    expect(view({ type: 'dice', skill: '格斗', roll: 6, result: '大成功' })).toBe('格斗 6')
   })
 
   test('结算恢复的数值变化显示原因', () => {
@@ -83,6 +88,7 @@ describe('describeEvent', () => {
 
   test('结算：金币与个人经历改写', () => {
     expect(view({ type: 'coins', character: '甲', amount: 60 })).toBe('甲 获得金币 +60')
+    expect(view({ type: 'coins', character: '甲', amount: 60, detail: '基础 20 + 评分奖励 40' })).toBe('甲 获得金币 +60 基础 20 + 评分奖励 40')
     expect(describeEvent({ type: 'coins', amount: 20 }).icon).toBe('coins')
     expect(view({ type: 'backstory', character: '甲', detail: '他从此怕黑。' })).toBe('甲 个人经历有了新的篇章 他从此怕黑。')
     expect(describeEvent({ type: 'backstory', character: '甲' }).icon).toBe('backstory')

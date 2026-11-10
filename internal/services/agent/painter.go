@@ -295,8 +295,8 @@ func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []model
 		sb.WriteString(appearance)
 		sb.WriteString("\n物品栏：\n")
 		wroteItem := false
-		for _, item := range card.Inventory.Data {
-			item = compactPromptText(item)
+		for _, it := range card.Inventory.Data {
+			item := compactPromptText(it.Label())
 			if item == "" {
 				continue
 			}

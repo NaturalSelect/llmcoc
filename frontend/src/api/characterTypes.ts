@@ -36,6 +36,16 @@ export interface CharacterAsset {
   note?: string
 }
 
+export type InventoryItemType = 'equipment' | 'weapon' | 'accessory' | 'tome' | 'artifact' | 'misc'
+
+// NOTE: desc 为空时后端整个字段省略；同名同描述的物品合并成一条，count >= 1
+export interface InventoryItem {
+  name: string
+  desc?: string
+  count: number
+  type: InventoryItemType
+}
+
 export interface CharacterCardFull extends CharacterCard {
   user_id?: number
   race?: string
@@ -49,7 +59,7 @@ export interface CharacterCardFull extends CharacterCard {
   backstory?: string
   appearance?: string
   traits?: string
-  inventory?: string[] | null
+  inventory?: InventoryItem[] | null
   social_relations?: SocialRelation[] | null
   assets?: CharacterAsset[] | null
   spells?: string[] | null
@@ -134,7 +144,7 @@ export interface ReviveResponse {
 }
 
 export interface WarehouseResponse {
-  warehouse?: string[] | null
+  warehouse?: InventoryItem[] | null
 }
 
 export interface WarehouseTransferResponse extends WarehouseResponse {

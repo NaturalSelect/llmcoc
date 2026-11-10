@@ -37,6 +37,7 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - 不再从环境变量播种 LLM Provider：库里没有 Provider 时各 Agent 的 Provider 为空，需在后台手动添加并绑定；Agent 默认模型固定为 `gpt-4o`。
 - 所有播种都是「缺失才创建」：改 `seedDefaultAgentConfigs` / `seedDefaultSiteSettings` 里的默认值不会影响已有数据库。下线 Agent 角色必须把旧角色名加进 `seedDefaultAgentConfigs` 里的 `DELETE ... WHERE role IN` 清理列表，否则老库会残留。
 - 只有 `AutoMigrate`，没有迁移文件。新增列需要回填旧数据时，参照 `with_jailbreak`：迁移前用 `Migrator().HasColumn` 记下列是否存在，迁移后回填。新增模型要加进 `InitDB` 的 AutoMigrate 列表。
+- 人物卡 `Inventory` 和账号 `Warehouse` 存的是 `[]models.Item`（名称、描述、数量、类型）。库里历史上存的是 `"绷带(x3)"` 这样的字符串：`Item.UnmarshalJSON` 同时接受字符串和对象，`InitDB` 里的 `backfillLegacyItems` 把旧行改写成对象数组（可重复执行）。写入一律走 `models.AddItem` / `TakeItem`，堆叠键是名称加描述。回填后旧二进制读不了这两列，回滚只能恢复库备份。
 - 管理员不会自动创建：注册后用 `sqlite3 data/llmcoc.db "update users set role='admin' where username='...'"`。
 - `scenarios/` 目录不在仓库中。`handlers.SeedScenarios("scenarios")` 在目录缺失或库里已有模组时静默返回。
 

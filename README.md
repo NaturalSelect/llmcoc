@@ -142,9 +142,13 @@ sqlite3 data/llmcoc.db "update users set role='admin' where username='your_usern
   - `GET /characters/:id`
   - `PUT /characters/:id`
   - `DELETE /characters/:id`
-  - `GET /characters/:id/inventory`
-  - `POST /characters/:id/inventory`
-  - `DELETE /characters/:id/inventory/:item`
+  - `GET /characters/:id/inventory`：返回结构化物品数组 `[{name, desc, count, type}]`
+  - `POST /characters/:id/inventory`：请求体 `{"item": {"name", "desc", "count", "type"}}`，同名同描述的物品叠加数量
+  - `DELETE /characters/:id/inventory/:name?desc=&count=`：路径是物品名，`desc` 区分同名物品，`count` 缺省或为 0 表示整堆移除
+- 仓库（账号级，物品格式与物品栏一致）：
+  - `GET /warehouse`
+  - `POST /warehouse/deposit`、`POST /warehouse/withdraw`：请求体 `{"character_card_id", "item": {"name", "desc"}, "count"}`，`count` 缺省或为 0 表示整堆
+  - `DELETE /warehouse/items/:name?desc=&count=`
 - 剧本：
   - `GET /scenarios`
   - `GET /scenarios/:id`

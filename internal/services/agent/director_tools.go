@@ -274,17 +274,20 @@ func manageInventoryTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolManageInventory),
-			Description: `增加或移除调查员的物品。item_name 是物品基础名(禁止包含圆括号，状态/数量等附加信息放入 item_desc)，item_count 为物品数量(默认为1)。
+			Description: `增加、移除或更新调查员的物品。item_name 是物品基础名(禁止包含圆括号，状态/数量等附加信息放入 item_desc)，item_count 为物品数量(默认为1)。
 【物品名称规则】item_name 必须是纯物品名词，不得附带状态描述或数量后缀；例如应写"手电筒"而非"手电筒(没电)"或"手电筒x1"，状态信息写入 item_desc。
-调用示例：{"character_name":"角色名","operate":"add","item_name":"手电筒","item_desc":"电量充足","item_count":1}`,
+【operate】add：获得物品，同名同描述的物品会叠加数量；remove：失去物品，按 item_count 扣减数量(默认1)，持有数量不足时全部移除，若有多件同名物品(描述不同)必须用 item_desc 指定移除哪一件；update：只修改已有物品的状态描述(item_desc)和类型(item_type)，不改数量。物品状态变化(如电量耗尽、枪支上膛)必须用 update，不要用 add 重复添加。
+【item_type】equipment 基础装备、weapon 武器、accessory 配件、tome 神话典籍、artifact 神话物品、misc 其他杂物(默认)。
+调用示例：{"character_name":"角色名","operate":"add","item_name":"手电筒","item_desc":"电量充足","item_count":1,"item_type":"equipment"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"character_name": {"type": "string", "description": "角色名"},
-					"operate": {"type": "string", "enum": ["add", "remove"], "description": "增加或移除"},
+					"operate": {"type": "string", "enum": ["add", "remove", "update"], "description": "增加、移除或更新"},
 					"item_name": {"type": "string", "description": "物品基础名,禁止含圆括号"},
-					"item_desc": {"type": "string", "description": "物品状态描述(可选)"},
-					"item_count": {"type": "integer", "description": "物品数量(可选,默认1)"}
+					"item_desc": {"type": "string", "description": "物品状态描述(add/update 时写入,remove 时用于区分同名物品,可选)"},
+					"item_count": {"type": "integer", "description": "物品数量(可选,默认1,update 时忽略)"},
+					"item_type": {"type": "string", "enum": ["equipment", "weapon", "accessory", "tome", "artifact", "misc"], "description": "物品类型(可选,add 默认 misc,update 时省略表示不改类型)"}
 				},
 				"required": ["character_name", "operate", "item_name"]
 			}`),

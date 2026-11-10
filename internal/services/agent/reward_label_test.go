@@ -54,17 +54,17 @@ func TestManageInventoryAction_StripsInternalTypeTag(t *testing.T) {
 	if len(evs) != 1 || evs[0].Op != "add" {
 		t.Fatalf("events = %+v, want one add", evs)
 	}
-	var got string
+	var got models.Item
 	for _, it := range players[0].CharacterCard.Inventory.Data {
-		if strings.HasPrefix(it, "《航海星历表》手记") {
+		if it.Name == "《航海星历表》手记" {
 			got = it
 		}
 	}
-	if got == "" {
+	if got.Name == "" {
 		t.Fatalf("item not added, inventory = %v", players[0].CharacterCard.Inventory.Data)
 	}
-	if strings.Contains(got, "[tome]") {
-		t.Errorf("inventory item leaks internal tag: %q", got)
+	if strings.Contains(got.Label(), "[tome]") {
+		t.Errorf("inventory item leaks internal tag: %q", got.Label())
 	}
 	if strings.Contains(evs[0].Name+evs[0].Detail, "[tome]") {
 		t.Errorf("event leaks internal tag: %+v", evs[0])

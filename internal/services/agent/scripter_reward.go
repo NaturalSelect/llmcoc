@@ -39,6 +39,17 @@ func rewardTypeLabel(t string) string {
 	return t
 }
 
+// rewardItemType 把剧本奖励类型映射成物品栏的 item_type，未知类型归为 misc。
+func rewardItemType(t string) models.ItemType {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "tome":
+		return models.ItemTypeTome
+	case "artifact":
+		return models.ItemTypeArtifact
+	}
+	return models.ItemTypeMisc
+}
+
 // internalTypeTagPattern 匹配 [tome]、[artifact] 这类给规则引擎看的类型标记。
 var internalTypeTagPattern = regexp.MustCompile(`(?i)\[\s*(tome|artifact)\s*\]\s*`)
 

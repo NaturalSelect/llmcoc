@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { CharacterCardFull } from '@/api/characterTypes'
+import type { CharacterCardFull, InventoryItem } from '@/api/characterTypes'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
@@ -9,7 +9,7 @@ import SectionHeading from '@/components/base/SectionHeading.vue'
 import { useCharactersStore } from '@/stores/characters'
 import { useUiStore } from '@/stores/ui'
 import { characterApi } from './characterApi'
-import { errMessage, warehouseOptionLabel, warehouseUsableCharacters } from './characterLogic'
+import { ITEM_TYPE_LABEL, errMessage, itemLabel, warehouseOptionLabel, warehouseUsableCharacters } from './characterLogic'
 import ChipList from './ChipList.vue'
 import { useConfirmGuard } from './useConfirmGuard'
 
@@ -21,7 +21,7 @@ const ui = useUiStore()
 const guard = useConfirmGuard()
 const onClose = guard.guardClose(() => emit('close'))
 
-const items = ref<string[]>([])
+const items = ref<InventoryItem[]>([])
 const loading = ref(false)
 const busy = ref(false)
 const targetId = ref<number | ''>('')
@@ -49,15 +49,14 @@ watch(
   { immediate: true },
 )
 
-async function withdraw(item: string): Promise<void> {
-  if (!item) return
+async function withdraw(it: InventoryItem): Promise<void> {
   if (!targetId.value) {
     ui.toast('请先选择接收物品的人物卡', 'error')
     return
   }
   busy.value = true
   try {
-    const r = await characterApi.withdraw(targetId.value, item)
+    const r = await characterApi.withdraw(targetId.value, it)
     chars.syncCharacter(r.character_card)
     items.value = r.warehouse || []
     ui.toast('已取出到人物卡')
@@ -68,12 +67,11 @@ async function withdraw(item: string): Promise<void> {
   }
 }
 
-async function discard(item: string): Promise<void> {
-  if (!item) return
-  if (!(await guard.confirm(`确定要丢弃仓库中的「${item}」吗？此操作不可撤销。`, { danger: true, confirmText: '丢弃' }))) return
+async function discard(it: InventoryItem): Promise<void> {
+  if (!(await guard.confirm(`确定要丢弃仓库中的「${itemLabel(it)}」吗？此操作不可撤销。`, { danger: true, confirmText: '丢弃' }))) return
   busy.value = true
   try {
-    items.value = (await characterApi.discard(item)).warehouse || []
+    items.value = (await characterApi.discard(it)).warehouse || []
     ui.toast('已丢弃')
   } catch (e) {
     ui.toast(errMessage(e), 'error')
@@ -99,13 +97,14 @@ async function discard(item: string): Promise<void> {
       <section>
         <SectionHeading class="mb-2" :count="loading ? undefined : items.length">仓库物品</SectionHeading>
         <div v-if="loading" class="text-xs text-fg-subtle" role="status">加载中…</div>
-        <ChipList v-else-if="items.length" :items="items">
-          <template #actions="{ item }">
+        <ChipList v-else-if="items.length" :items="items.map(itemLabel)">
+          <template #actions="{ index }">
+            <span v-if="items[index].type !== 'misc'" class="text-xs text-fg-subtle">{{ ITEM_TYPE_LABEL[items[index].type] }}</span>
             <button
               type="button"
               class="rounded-full px-2 py-0.5 text-xs text-info transition hover:bg-info/15 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="!targetId || busy"
-              @click="withdraw(item)"
+              @click="withdraw(items[index])"
             >
               取出
             </button>
@@ -113,7 +112,7 @@ async function discard(item: string): Promise<void> {
               type="button"
               class="rounded-full px-2 py-0.5 text-xs text-danger transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="busy"
-              @click="discard(item)"
+              @click="discard(items[index])"
             >
               丢弃
             </button>

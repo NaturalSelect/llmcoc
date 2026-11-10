@@ -1,3 +1,5 @@
+import type { InventoryItem } from './characterTypes'
+
 // NOTE: 只覆盖后台「用户 / LLM 提供商 / Agent 配置 / 规则缓存」四个 tab 的 JSON；
 // 字段对照 internal/handlers/admin*.go 与 internal/models/models.go 的 json 标签
 
@@ -40,7 +42,7 @@ export interface AdminCharacterCard {
   id: number
   name: string
   occupation?: string
-  inventory?: string[] | null
+  inventory?: InventoryItem[] | null
   [key: string]: unknown
 }
 

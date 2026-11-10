@@ -35,7 +35,7 @@ const kpSystemPrompt = `
 		• describe_characters 与 generate_image：不能同轮，须先查外貌再画图。
 		• generate_npc_name 与 create_npc：不能同轮，须先拿到姓名再建卡。
 		• roll_dice.what：不得含数字，不得编码猜测的技能值(如"投掷(50)")。
-		• manage_inventory.item_name：不得含圆括号，状态放item_desc，数量放item_count。
+		• manage_inventory.item_name：不得含圆括号，状态放item_desc，数量放item_count；operate有add/remove/update三种，物品状态变化用update，不要用add重复添加。
 		• ask_players.options：默认不给，玩家问起时才给，最多2条，超出会被拒绝。
 		• 同一批次内对同一角色同一物品重复调用manage_inventory：判定为重复结算，会被拒绝。
 		• generate_image：每一拍(两条narrate/ask_players消息之间)最多调用一次，可以和write/narrate同轮。
@@ -390,7 +390,7 @@ const kpTurnReminder = `<turn_checklist>
 5. 调用工具前做 DUP CHECK：对照此前的工具结果与已发布的消息，确认本批次没有重复结算。
 6. 在场 NPC 由AI玩家扮演：用 act_npc 问他们的角色做什么，按玩家声明裁定；不要让他们无动于衷，NPC有自己想要的东西，会主动开口。
 7. 检定失败不是死路：按[FAIL-FORWARD]给出带代价的后果；搜索失败说"你没有找到任何东西"，不说"这里什么都没有"。
-8. 状态变更用对应的 update_*/manage_* 落地；物品栏是权威记录，获得必 add、失去必 remove。
+8. 状态变更用对应的 update_*/manage_* 落地；物品栏是权威记录，获得必 add、失去必 remove、状态变化必 update。
 9. 发布前自检：本轮的事实、裁定与下一个选择点是否都已交代清楚；每次write/narrate都是立即发出的独立消息，发出后不能收回，narrate也不会交出发言权。下一个选择点需要调查员做决定时，用ask_players点名交出发言权，而不是用narrate向全体抛问题；点名前想一想聚光灯是否该转向别人——见[SPOTLIGHT]。
 10. options默认不给，只在被点名的玩家问过建议时随ask_players给出；给的话逐字核对：每个地点/人物/物品名是否已出现在此前发给玩家的文本里，只存在于<scenario>不算；每条是否都是第一人称RP(我+动作，或「台词」)——见[OPTIONS]、[PLAYER-INPUT-RP]。
 11. 发布前检查这一拍是否配图：这一拍调用了write，就建议同拍配一张generate_image，让白字和画面成对出现(每拍最多一张，一拍内有多段write时挑最有画面价值的一段)；没有write的拍，有新地点/场景切换、重要NPC登场、关键转折、重要线索或道具、高张力瞬间时也配图。纯环境空镜可直接与write/narrate同轮发出。配图同样受[UNKNOWN]约束。
@@ -517,8 +517,8 @@ func buildKPHead(gctx GameContext, systemPrompt string) []llm.ChatMessage {
 `)
 	if content.Reward != nil {
 		r := content.Reward
-		scenarioSB.WriteString(fmt.Sprintf("<reward>调查员达成非失败结局时，通过manage_inventory(add)给予：%s（%s） — 效果：%s。item_desc会原样展示给玩家，只写外观与效果，不要带方括号形式的内部类型标记。</reward>\n",
-			r.Name, rewardTypeLabel(r.Type), r.MechanicsNote))
+		scenarioSB.WriteString(fmt.Sprintf("<reward>调查员达成非失败结局时，通过manage_inventory(add)给予：%s（%s） — 效果：%s。item_type=%s；item_desc会原样展示给玩家，只写外观与效果，不要带方括号形式的内部类型标记。</reward>\n",
+			r.Name, rewardTypeLabel(r.Type), r.MechanicsNote, rewardItemType(r.Type)))
 	}
 	scenarioSB.WriteString("\n</scenario>\n")
 	msgs = append(msgs, llm.ChatMessage{

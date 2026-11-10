@@ -92,13 +92,17 @@ func applySkillGrowth(card *models.CharacterCard, skills []string) []models.Game
 			continue
 		}
 		base := max(current, 1)
-		if game.RollD100() <= base {
+		roll := game.RollD100()
+		if roll <= base {
 			continue
 		}
 		gain, _ := game.Roll(1, 3)
 		data[skill] = min(base+gain, 99)
 		debugf("growth", "character %s skill %s %d -> %d", card.Name, skill, current, data[skill])
-		events = append(events, models.GameEvent{Type: "stat", Character: card.Name, Field: "skill", Skill: skill, From: intPtr(current), To: intPtr(data[skill])})
+		events = append(events, models.GameEvent{
+			Type: "stat", Character: card.Name, Field: "skill", Skill: skill, From: intPtr(current), To: intPtr(data[skill]),
+			Detail: fmt.Sprintf("成长检定 骰值 %d 高于当前值 %d，提升 %d", roll, base, data[skill]-current),
+		})
 	}
 	return events
 }
@@ -160,9 +164,13 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 				return err
 			}
 			debugf("award", "player %d (%s) awarded %d coins (base %d + bonus %d)", player.ID, card.Name, award, settlementBaseCoins, bonus)
-			events = append(events, models.GameEvent{Type: "coins", Character: card.Name, Amount: award})
+			events = append(events, models.GameEvent{
+				Type: "coins", Character: card.Name, Amount: award,
+				Detail: fmt.Sprintf("基础 %d + 评分奖励 %d", settlementBaseCoins, bonus),
+			})
 
 			// NOTE: 失败没有角色成长：技能成长和 POW 增长只在 win=true 时执行。
+			powGrowth := false
 			if win {
 				events = append(events, applySkillGrowth(card, s.Skills)...)
 
@@ -172,6 +180,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 					if point > 0 {
 						total, _ := game.Roll(1, point)
 						card.Stats.Data.POW = clamp(card.Stats.Data.POW+total, 0, 500)
+						powGrowth = true
 					}
 				}
 			}
@@ -204,8 +213,13 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 			// NOTE: 结算时的回满是规则内的恢复，不是游戏中的损益，事件里写明原因，避免日志里最后一次 SAN 和卡面对不上。
 			statEvents := cardStatEvents(before, *card)
 			for i := range statEvents {
-				if statEvents[i].Type == "stat" && settlementRestoredFields[statEvents[i].Field] {
+				if statEvents[i].Type != "stat" {
+					continue
+				}
+				if settlementRestoredFields[statEvents[i].Field] {
 					statEvents[i].Detail = "结算恢复"
+				} else if statEvents[i].Field == "pow" && powGrowth {
+					statEvents[i].Detail = "通关后意志增长检定通过"
 				}
 			}
 			events = append(events, statEvents...)

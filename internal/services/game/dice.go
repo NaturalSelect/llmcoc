@@ -36,6 +36,58 @@ type SkillCheckResult struct {
 	Message string `json:"message"`
 }
 
+// CheckLevel 按 COC7 规则给一次 D100 骰值定级，返回 critical / extreme / hard / success / fail / fumble。
+// NOTE: 阈值与 SkillCheck 一致；这里只定级，不掷骰，供已经掷出骰值的调用方使用。
+func CheckLevel(roll, skillValue int) string {
+	switch {
+	case roll == 1:
+		return "critical"
+	case roll <= skillValue/5:
+		return "extreme"
+	case roll <= skillValue/2:
+		return "hard"
+	case roll <= skillValue:
+		return "success"
+	case roll == 100 || (roll >= 96 && skillValue < 50):
+		return "fumble"
+	default:
+		return "fail"
+	}
+}
+
+// DifficultyTarget 把难度(常规/困难/极难)换算成需要掷到的上限，未知难度按常规。
+func DifficultyTarget(skillValue int, difficulty string) int {
+	switch strings.TrimSpace(difficulty) {
+	case "困难":
+		return skillValue / 2
+	case "极难":
+		return skillValue / 5
+	}
+	return skillValue
+}
+
+// CheckResultLabel 给一次已掷出的 D100 检定写结论：大成功、大失败不看难度，
+// 其余按难度换算后的上限判定，成功时标出实际达到的等级。
+func CheckResultLabel(roll, skillValue int, difficulty string) string {
+	level := CheckLevel(roll, skillValue)
+	switch level {
+	case "critical":
+		return "大成功"
+	case "fumble":
+		return "大失败"
+	}
+	if roll > DifficultyTarget(skillValue, difficulty) {
+		return "失败"
+	}
+	switch level {
+	case "extreme":
+		return "极难成功"
+	case "hard":
+		return "困难成功"
+	}
+	return "常规成功"
+}
+
 // SkillCheck performs a COC 7th edition D100 skill check
 func SkillCheck(skillValue int) SkillCheckResult {
 	roll := RollD100()

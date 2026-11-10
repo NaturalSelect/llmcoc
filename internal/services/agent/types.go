@@ -128,11 +128,12 @@ type ToolCall struct {
 	DestroyReason string                 `json:"destroy_reason"` // destroy_npc: dead|out_of_range|cleanup
 	Changes       []string               `json:"changes"`        // update_characters: 状态变化列表
 	CharacterName string                 `json:"character_name"` // manage_madness / query_character: 角色名称
-	Operate       string                 `json:"operate"`        // 通用操作: add/remove
-	Item          string                 `json:"item"`           // manage_inventory: 物品名称(仅保留兼容,优先使用 item_name+item_desc+item_count)
+	Operate       string                 `json:"operate"`        // 通用操作: add/remove(manage_inventory 另有 update)
+	Item          string                 `json:"item"`           // manage_inventory: 旧版整串物品(如 "绷带(x3)"),仅在 item_name 为空时按旧格式解析
 	ItemName      string                 `json:"item_name"`      // manage_inventory: 物品基础名称
-	ItemDesc      string                 `json:"item_desc"`      // manage_inventory: 物品状态描述(可选)
+	ItemDesc      string                 `json:"item_desc"`      // manage_inventory: 物品状态描述(add/update 时写入,remove 时用于区分同名物品)
 	ItemCount     int                    `json:"item_count"`     // manage_inventory: 物品数量(省略或0均视为1)
+	ItemType      models.ItemType        `json:"item_type"`      // manage_inventory: 物品类型(省略时 add 为 misc,update 不改类型)
 	Monster       string                 `json:"monster"`        // record_monster: 神话存在名称
 	Spell         string                 `json:"spell"`          // manage_spell: 法术名称
 	Relation      *models.SocialRelation `json:"relation"`       // manage_relation: 社会关系条目
@@ -277,6 +278,9 @@ type DiceCheck struct {
 type DiceCheckResult struct {
 	DiceCheck
 	Roll int `json:"roll"`
+	// NOTE: Target/Result 只在调查员的 D100 检定且人物卡上查得到数值时才有；NPC、查不到的技能、伤害骰都留空。
+	Target int    `json:"target,omitempty"`
+	Result string `json:"result,omitempty"` // 大成功/极难成功/困难成功/常规成功/失败/大失败，已按 Level 难度换算
 }
 
 // ── Character update types ────────────────────────────────────────────────────

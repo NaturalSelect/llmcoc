@@ -2,12 +2,14 @@
 import { describe, expect, test } from 'vitest'
 import type { CharacterCardFull } from '@/api/characterTypes'
 import {
+  ITEM_TYPE_LABEL,
   REGEN_SPECS,
   cardSubtitle,
   deadSubtitle,
   deleteDeadConfirmMessage,
   detailSubtitle,
   hasMadness,
+  itemLabel,
   madnessHeading,
   madnessLabel,
   mergeUpdatedCard,
@@ -90,6 +92,17 @@ describe('人物卡展示文案', () => {
 })
 
 describe('仓库', () => {
+  test('itemLabel 与后端 Label() 四种形态一致', () => {
+    expect(itemLabel({ name: '绷带', count: 1, type: 'misc' })).toBe('绷带')
+    expect(itemLabel({ name: '绷带', count: 3, type: 'misc' })).toBe('绷带(x3)')
+    expect(itemLabel({ name: '绷带', desc: '染血', count: 1, type: 'misc' })).toBe('绷带(染血)')
+    expect(itemLabel({ name: '绷带', desc: '染血', count: 3, type: 'misc' })).toBe('绷带(染血, x3)')
+    expect(itemLabel({ name: '绷带', desc: '', count: 1, type: 'misc' })).toBe('绷带')
+  })
+
+  test('物品类型中文名覆盖全部类型', () => {
+    expect(ITEM_TYPE_LABEL).toEqual({ equipment: '装备', weapon: '武器', accessory: '配件', tome: '典籍', artifact: '神器', misc: '杂物' })
+  })
   test('只允许启用且不在房间中的人物卡取出', () => {
     const list = [
       card({ id: 1, is_active: true }),
@@ -107,7 +120,7 @@ describe('仓库', () => {
   })
 
   test('服务端返回的整张卡保留列表里已知的 in_session', () => {
-    const updated = card({ in_session: false, inventory: ['绷带'] })
+    const updated = card({ in_session: false, inventory: [{ name: '绷带', count: 1, type: 'misc' }] })
     expect(mergeUpdatedCard(card({ in_session: true }), updated)).toEqual({ ...updated, in_session: true })
     expect(mergeUpdatedCard(card(), updated)).toBe(updated)
     expect(mergeUpdatedCard(null, updated)).toBe(updated)

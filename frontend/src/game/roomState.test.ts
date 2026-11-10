@@ -526,6 +526,20 @@ describe('roomState', () => {
     expect(room.floor.number).toBe(5)
   })
 
+  test('applyChatStatus：重连后用服务器记录的原文回填草稿，已有本地草稿不覆盖', () => {
+    const room = liveRoom({ userId: 3 })
+    RS.applyChatStatus(room, { submitted: true, submitted_content: '我推门', spotlight: {}, waiting: {} })
+    expect(room.me.draft).toBe('我推门')
+
+    room.me.draft = '我踹门'
+    RS.applyChatStatus(room, { submitted: true, submitted_content: '我推门', spotlight: {}, waiting: {} })
+    expect(room.me.draft).toBe('我踹门')
+
+    const fresh = liveRoom({ userId: 3 })
+    RS.applyChatStatus(fresh, { submitted: false, submitted_content: '', spotlight: {}, waiting: {} })
+    expect(fresh.me.draft).toBe('')
+  })
+
   test('floor_start 清空上一轮的等待进度', () => {
     const room = liveRoom({ userId: 3 })
     RS.applyFrame(room, F(11, 'waiting', { pending: 1, total: 2, submitted_names: ['爱丽丝'], pending_names: ['鲍勃'] }))

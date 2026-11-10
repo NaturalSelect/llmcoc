@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -358,7 +359,11 @@ func formatSingleDiceResult(r DiceCheckResult) string {
 	if r.Level != "" {
 		level = fmt.Sprintf("难度:%s ", r.Level)
 	}
-	return fmt.Sprintf("%v鉴定: %v %v%v", r.What, r.Roll, level, hidden)
+	verdict := ""
+	if r.Target > 0 && r.Result != "" {
+		verdict = fmt.Sprintf("目标:%d 结果:%s ", r.Target, r.Result)
+	}
+	return fmt.Sprintf("%v鉴定: %v %v%v%v", r.What, r.Roll, level, verdict, hidden)
 }
 
 // formatNPCAction 把 AI 玩家的声明渲染成给 KP 的 tool 结果：标明未裁定，空字段省略。
@@ -542,12 +547,44 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 	results := make([]DiceCheckResult, 0, len(checks))
 	for _, dc := range checks {
 		diceVal := game.RollDiceExpr(dc.DiceExpr)
-		results = append(results, DiceCheckResult{
-			DiceCheck: dc,
-			Roll:      diceVal,
-		})
+		res := DiceCheckResult{DiceCheck: dc, Roll: diceVal}
+		if target, ok := d100CheckTarget(dc, players); ok {
+			res.Target = target
+			res.Result = game.CheckResultLabel(diceVal, target, dc.Level)
+		}
+		results = append(results, res)
 	}
 	return results
+}
+
+// NOTE: 只给调查员的 1D100 检定查目标值：理智用当前 SAN，其余先查属性再查技能；
+// 名字对不上、NPC、伤害骰都查不到，返回 false，结论仍由 KP 自行对照。
+func d100CheckTarget(dc DiceCheck, players []models.SessionPlayer) (int, bool) {
+	if !strings.EqualFold(strings.TrimSpace(dc.DiceExpr), "1d100") {
+		return 0, false
+	}
+	what := strings.TrimSpace(dc.What)
+	for _, suffix := range []string{"检定", "鉴定"} {
+		what = strings.TrimSuffix(what, suffix)
+	}
+	if what == "" {
+		return 0, false
+	}
+	idx := investigatorIndex(players, dc.Character)
+	if idx < 0 {
+		return 0, false
+	}
+	card := &players[idx].CharacterCard
+	if what == "理智" || what == "SAN" {
+		return card.Stats.Data.SAN, true
+	}
+	if v, ok := mapSkillToStat(card, what); ok {
+		return v, true
+	}
+	if v, ok := card.Skills.Data[what]; ok {
+		return v, true
+	}
+	return 0, false
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -624,7 +661,7 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 			sb.WriteString(fmt.Sprintf(`<mythos skill="%d" max_san="%d"/>`, card.CthulhuMythosSkill, game.ComputeMaxSAN(card.CthulhuMythosSkill, card.Race == "" || card.Race == "人类")))
 		}
 		writeCompactMap(&sb, "skills", card.Skills.Data)
-		writeCompactList(&sb, "inv", card.Inventory.Data)
+		writeCompactInventory(&sb, card.Inventory.Data)
 		writeCompactList(&sb, "spells", card.Spells.Data)
 		writeCompactList(&sb, "seen", card.SeenMonsters.Data)
 		if rels := effectiveRelations(card.SocialRelations.Data, p.SessionRelations.Data); len(rels) > 0 {
@@ -703,6 +740,27 @@ func writeCompactText(sb *strings.Builder, tag, text string) {
 	sb.WriteString("</")
 	sb.WriteString(tag)
 	sb.WriteString(">")
+}
+
+func writeCompactInventory(sb *strings.Builder, items []models.Item) {
+	if len(items) == 0 {
+		return
+	}
+	sb.WriteString("<inv>")
+	for _, it := range items {
+		sb.WriteString(fmt.Sprintf("<item n=%q", it.Name))
+		if it.Desc != "" {
+			sb.WriteString(fmt.Sprintf(" desc=%q", it.Desc))
+		}
+		if it.Count > 1 {
+			sb.WriteString(fmt.Sprintf(` x="%d"`, it.Count))
+		}
+		if it.Type != "" && it.Type != models.ItemTypeMisc {
+			sb.WriteString(fmt.Sprintf(" type=%q", string(it.Type)))
+		}
+		sb.WriteString("/>")
+	}
+	sb.WriteString("</inv>")
 }
 
 func writeCompactList(sb *strings.Builder, tag string, items []string) {
@@ -897,124 +955,102 @@ func llmToChatMsgs(msgs []llm.ChatMessage) []models.ChatMsg {
 	return out
 }
 
-// parseInventoryItem parses an item string of the form "Name(Desc, xN)".
-// Both Desc and xN are optional.
-// hasQty is true only when xN is explicitly present in the string.
-func parseInventoryItem(item string) (baseName, desc string, qty int, hasQty bool) {
-	qty = 1
-	idx := strings.Index(item, "(")
-	if idx < 0 {
-		baseName = strings.TrimSpace(item)
-		return
-	}
-	baseName = strings.TrimSpace(item[:idx])
-	inner := strings.TrimSpace(item[idx+1:])
-	inner = strings.TrimSuffix(inner, ")")
-	inner = strings.TrimSpace(inner)
-	// Try ", xN" at the end (comma-separated desc + quantity).
-	if ci := strings.LastIndex(inner, ","); ci >= 0 {
-		tail := strings.TrimSpace(inner[ci+1:])
-		if strings.HasPrefix(tail, "x") || strings.HasPrefix(tail, "X") {
-			if n, err := strconv.Atoi(tail[1:]); err == nil && n >= 1 {
-				qty = n
-				hasQty = true
-				desc = strings.TrimSpace(inner[:ci])
-				return
-			}
+// inventoryCandidates 返回物品栏中名称相同的堆的下标；desc 非空时还要求描述完全相同。
+func inventoryCandidates(list []models.Item, name, desc string) []int {
+	var idx []int
+	for i, s := range list {
+		if s.Name != name || (desc != "" && s.Desc != desc) {
+			continue
 		}
+		idx = append(idx, i)
 	}
-	// Try bare "xN" with no desc.
-	if strings.HasPrefix(inner, "x") || strings.HasPrefix(inner, "X") {
-		if n, err := strconv.Atoi(inner[1:]); err == nil && n >= 1 {
-			qty = n
-			hasQty = true
-			return
-		}
-	}
-	// Desc only, xN omitted.
-	desc = inner
-	return
+	return idx
 }
 
-// buildInventoryItem reconstructs an item string from its components.
-func buildInventoryItem(baseName, desc string, qty int) string {
-	if desc == "" && qty == 1 {
-		return baseName
+func inventoryLabels(list []models.Item, idx []int) string {
+	labels := make([]string, 0, len(idx))
+	for _, i := range idx {
+		labels = append(labels, list[i].Label())
 	}
-	if desc == "" {
-		return fmt.Sprintf("%s(x%d)", baseName, qty)
-	}
-	if qty == 1 {
-		return fmt.Sprintf("%s(%s)", baseName, desc)
-	}
-	return fmt.Sprintf("%s(%s, x%d)", baseName, desc, qty)
+	return strings.Join(labels, "、")
 }
 
-// inventoryItemBaseName returns the base name of an item (part before '(').
-func inventoryItemBaseName(item string) string {
-	base, _, _, _ := parseInventoryItem(item)
-	return base
-}
-
-// upsertInventoryItem replaces an existing entry with the same base name, or appends.
-func upsertInventoryItem(list []string, baseName, newItem string) []string {
-	for i, item := range list {
-		if inventoryItemBaseName(item) == baseName {
-			list[i] = newItem
-			return list
-		}
-	}
-	return append(list, newItem)
-}
-
-func manageInventory(players []models.SessionPlayer, characterName, operate, item string) string {
-	if characterName == "" || item == "" {
+func manageInventory(players []models.SessionPlayer, characterName, operate string, it models.Item) string {
+	it.Name = strings.TrimSpace(it.Name)
+	it.Desc = strings.TrimSpace(it.Desc)
+	if characterName == "" || it.Name == "" {
 		return "物品操作失败:缺少角色名或物品名"
 	}
-	_, _, _, callerHasQty := parseInventoryItem(item)
-	baseName := inventoryItemBaseName(item)
+	if it.Type != "" && !models.IsInventoryItemType(it.Type) {
+		return fmt.Sprintf("物品操作失败:item_type=%q 无效，可选 equipment/weapon/accessory/tome/artifact/misc", it.Type)
+	}
 	for i := range players {
 		card := &players[i].CharacterCard
 		if card.Name != characterName {
 			continue
 		}
 		list := card.Inventory.Data
-		if operate == "remove" {
-			// Find the stored entry by base name.
-			foundIdx := -1
-			for j, stored := range list {
-				if inventoryItemBaseName(stored) == baseName {
-					foundIdx = j
-					break
-				}
-			}
-			if foundIdx < 0 {
-				return fmt.Sprintf("%s 物品栏中没有 %s", card.Name, baseName)
-			}
-			stored := list[foundIdx]
-			if !callerHasQty {
-				// xN omitted (bare name or Name(Desc)) → auto-decrement stored quantity by 1.
-				_, storedDesc, storedQty, _ := parseInventoryItem(stored)
-				if storedQty <= 1 {
-					card.Inventory.Data = append(list[:foundIdx], list[foundIdx+1:]...)
-					models.DB.Save(card)
-					return fmt.Sprintf("%s 失去物品:%s", card.Name, stored)
-				}
-				newItem := buildInventoryItem(baseName, storedDesc, storedQty-1)
-				list[foundIdx] = newItem
-				card.Inventory.Data = list
-				models.DB.Save(card)
-				return fmt.Sprintf("%s 物品数量减少:%s → %s", card.Name, stored, newItem)
-			}
-			// xN explicitly provided → remove the entry entirely.
-			card.Inventory.Data = append(list[:foundIdx], list[foundIdx+1:]...)
+		switch operate {
+		case "add":
+			it = models.NormalizeItem(it)
+			card.Inventory.Data = models.AddItem(list, it)
 			models.DB.Save(card)
-			return fmt.Sprintf("%s 失去物品:%s", card.Name, stored)
+			result := fmt.Sprintf("%s 获得物品:%s", card.Name, it.Label())
+			for _, s := range card.Inventory.Data {
+				if s.SameStack(it) && s.Count > it.Count {
+					result += fmt.Sprintf("，现共 %d 件", s.Count)
+				}
+			}
+			return result
+		case "remove":
+			cands := inventoryCandidates(list, it.Name, it.Desc)
+			if len(cands) == 0 {
+				return fmt.Sprintf("%s 物品栏中没有 %s", card.Name, models.Item{Name: it.Name, Desc: it.Desc}.Label())
+			}
+			if len(cands) > 1 {
+				return fmt.Sprintf("物品操作失败:%s 有多件同名物品(%s)，请用 item_desc 指定要移除哪一件，本次未修改任何物品", card.Name, inventoryLabels(list, cands))
+			}
+			stack := list[cands[0]]
+			count := max(1, it.Count)
+			out, _, _ := models.TakeItem(list, stack.Name, stack.Desc, count)
+			card.Inventory.Data = out
+			models.DB.Save(card)
+			switch {
+			case count < stack.Count:
+				left := stack
+				left.Count -= count
+				return fmt.Sprintf("%s 物品数量减少:%s → %s", card.Name, stack.Label(), left.Label())
+			case count == stack.Count:
+				return fmt.Sprintf("%s 失去物品:%s", card.Name, stack.Label())
+			default:
+				return fmt.Sprintf("%s 失去物品:%s(只有 %d 件，已全部移除)", card.Name, stack.Label(), stack.Count)
+			}
+		case "update":
+			if it.Desc == "" && it.Type == "" {
+				return "物品操作失败:update 需要提供 item_desc 或 item_type"
+			}
+			cands := inventoryCandidates(list, it.Name, "")
+			if len(cands) == 0 {
+				return fmt.Sprintf("%s 物品栏中没有 %s", card.Name, it.Name)
+			}
+			if len(cands) > 1 {
+				return fmt.Sprintf("物品操作失败:%s 有多件同名物品(%s)，update 无法确定修改哪一件，请先 remove 对应物品再 add，本次未修改任何物品", card.Name, inventoryLabels(list, cands))
+			}
+			updated := slices.Clone(list)
+			old := updated[cands[0]].Label()
+			if it.Desc != "" {
+				updated[cands[0]].Desc = it.Desc
+			}
+			if it.Type != "" {
+				updated[cands[0]].Type = it.Type
+			}
+			now := updated[cands[0]].Label()
+			card.Inventory.Data = models.MergeStacks(updated)
+			models.DB.Save(card)
+			return fmt.Sprintf("%s 物品更新:%s → %s", card.Name, old, now)
+		default:
+			return fmt.Sprintf("物品操作失败:未知的 operate=%q，只能是 add/remove/update", operate)
 		}
-		// add: replace existing same-base-name entry to prevent duplicate inflation.
-		card.Inventory.Data = upsertInventoryItem(list, baseName, item)
-		models.DB.Save(card)
-		return fmt.Sprintf("%s 获得物品:%s", card.Name, item)
 	}
 	return fmt.Sprintf("物品操作失败:未找到角色 %s", characterName)
 }

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -278,6 +279,9 @@ func TestRunEndSession_EmitsCoinsEvent(t *testing.T) {
 	if len(coins) != 1 || coins[0].Character != "领奖者" || coins[0].Amount != settlementBaseCoins+40 {
 		t.Errorf("coins events = %+v, want one for 领奖者 with %d coins", coins, settlementBaseCoins+40)
 	}
+	if want := fmt.Sprintf("基础 %d + 评分奖励 40", settlementBaseCoins); len(coins) == 1 && coins[0].Detail != want {
+		t.Errorf("coins detail = %q, want %q", coins[0].Detail, want)
+	}
 }
 
 func TestRunEndSession_EmitsRestoreAndMadnessEvents(t *testing.T) {
@@ -356,6 +360,9 @@ func TestRunEndSession_WinTrue_EmitsSkillGrowthEvent(t *testing.T) {
 			}
 			if e.Character != "成长者" || e.Skill != "侦查" || *e.From != 1 || *e.To < 2 || *e.To > 4 {
 				t.Fatalf("skill event = %+v, want 成长者 侦查 1 -> 2..4", e)
+			}
+			if !strings.HasPrefix(e.Detail, "成长检定 骰值 ") {
+				t.Fatalf("skill event detail = %q, want the growth roll recorded", e.Detail)
 			}
 			return
 		}

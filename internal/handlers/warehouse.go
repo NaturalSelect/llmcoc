@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -10,24 +11,25 @@ import (
 )
 
 // warehouseTransferReq 是仓库存入/取出接口的公共请求体。
+// Item 只用 Name 和 Desc 定位物品堆；Count 为 0 表示整堆，否则只转移该数量。
 type warehouseTransferReq struct {
-	CharacterCardID uint   `json:"character_card_id" binding:"required"`
-	Item            string `json:"item" binding:"required"`
+	CharacterCardID uint        `json:"character_card_id" binding:"required"`
+	Item            models.Item `json:"item"`
+	Count           int         `json:"count"`
 }
 
-// removeFirstItem 移除 list 中第一个与 item 完全匹配的元素，返回新列表及是否命中。
-// 仓库场景下同名物品可能有多条（例如两张卡各存入一条"绷带(x3)"），
-// 因此不能像 RemoveCharacterInventoryItem 那样一次性删除全部同名项，否则会造成物品凭空消失。
-func removeFirstItem(list []string, item string) ([]string, bool) {
-	for i, v := range list {
-		if v == item {
-			out := make([]string, 0, len(list)-1)
-			out = append(out, list[:i]...)
-			out = append(out, list[i+1:]...)
-			return out, true
+// itemQuery 从 DELETE 接口的 query 里读取 desc 和 count；count 缺省或为 0 表示整堆。
+func itemQuery(c *gin.Context) (desc string, count int, ok bool) {
+	desc = strings.TrimSpace(c.Query("desc"))
+	if raw := c.Query("count"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "数量无效"})
+			return "", 0, false
 		}
+		count = n
 	}
-	return list, false
+	return desc, count, true
 }
 
 // loadOwnedUnlockedCard 加载指定人物卡，校验其属于当前用户且未被未结束(lobby/playing)的房间占用。
@@ -55,7 +57,7 @@ func GetWarehouse(c *gin.Context) {
 	}
 	items := user.Warehouse.Data
 	if items == nil {
-		items = []string{}
+		items = []models.Item{}
 	}
 	c.JSON(http.StatusOK, gin.H{"warehouse": items})
 }
@@ -68,9 +70,13 @@ func DepositToWarehouse(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	item := strings.TrimSpace(req.Item)
-	if item == "" {
+	name := strings.TrimSpace(req.Item.Name)
+	if name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "物品名不能为空"})
+		return
+	}
+	if req.Count < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "数量无效"})
 		return
 	}
 
@@ -94,14 +100,14 @@ func DepositToWarehouse(c *gin.Context) {
 		return
 	}
 
-	newInv, hit := removeFirstItem(card.Inventory.Data, item)
+	newInv, taken, hit := models.TakeItem(card.Inventory.Data, name, req.Item.Desc, req.Count)
 	if !hit {
 		tx.Rollback()
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该物品不在人物卡物品栏中"})
 		return
 	}
-	card.Inventory = models.JSONField[[]string]{Data: newInv}
-	user.Warehouse = models.JSONField[[]string]{Data: append(user.Warehouse.Data, item)}
+	card.Inventory = models.JSONField[[]models.Item]{Data: newInv}
+	user.Warehouse = models.JSONField[[]models.Item]{Data: models.AddItem(user.Warehouse.Data, taken)}
 
 	if err := tx.Save(&card).Error; err != nil {
 		tx.Rollback()
@@ -134,9 +140,13 @@ func WithdrawFromWarehouse(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	item := strings.TrimSpace(req.Item)
-	if item == "" {
+	name := strings.TrimSpace(req.Item.Name)
+	if name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "物品名不能为空"})
+		return
+	}
+	if req.Count < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "数量无效"})
 		return
 	}
 
@@ -160,14 +170,14 @@ func WithdrawFromWarehouse(c *gin.Context) {
 		return
 	}
 
-	newWarehouse, hit := removeFirstItem(user.Warehouse.Data, item)
+	newWarehouse, taken, hit := models.TakeItem(user.Warehouse.Data, name, req.Item.Desc, req.Count)
 	if !hit {
 		tx.Rollback()
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该物品不在仓库中"})
 		return
 	}
-	user.Warehouse = models.JSONField[[]string]{Data: newWarehouse}
-	card.Inventory = models.JSONField[[]string]{Data: append(card.Inventory.Data, item)}
+	user.Warehouse = models.JSONField[[]models.Item]{Data: newWarehouse}
+	card.Inventory = models.JSONField[[]models.Item]{Data: models.AddItem(card.Inventory.Data, taken)}
 
 	if err := tx.Save(&card).Error; err != nil {
 		tx.Rollback()
@@ -192,13 +202,17 @@ func WithdrawFromWarehouse(c *gin.Context) {
 	})
 }
 
-// DiscardWarehouseItem 直接从账号仓库丢弃一件物品，不涉及人物卡，因此不做 session 占用校验，
-// 即使账号下所有人物卡都在游戏中，也允许整理仓库。
+// DiscardWarehouseItem 直接从账号仓库丢弃物品，不涉及人物卡，因此不做 session 占用校验，
+// 即使账号下所有人物卡都在游戏中，也允许整理仓库。路径参数是物品名，query 带 desc 和 count。
 func DiscardWarehouseItem(c *gin.Context) {
 	userID := c.GetUint("user_id")
-	item := strings.TrimSpace(strings.TrimPrefix(c.Param("item"), "/"))
-	if item == "" {
+	name := strings.TrimSpace(strings.TrimPrefix(c.Param("item"), "/"))
+	if name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "物品名不能为空"})
+		return
+	}
+	desc, count, ok := itemQuery(c)
+	if !ok {
 		return
 	}
 
@@ -208,12 +222,12 @@ func DiscardWarehouseItem(c *gin.Context) {
 		return
 	}
 
-	newWarehouse, hit := removeFirstItem(user.Warehouse.Data, item)
+	newWarehouse, _, hit := models.TakeItem(user.Warehouse.Data, name, desc, count)
 	if !hit {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该物品不在仓库中"})
 		return
 	}
-	user.Warehouse = models.JSONField[[]string]{Data: newWarehouse}
+	user.Warehouse = models.JSONField[[]models.Item]{Data: newWarehouse}
 
 	if err := models.DB.Save(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新仓库失败"})

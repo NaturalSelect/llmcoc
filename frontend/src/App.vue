@@ -14,6 +14,7 @@ const chars = useCharactersStore()
 
 const showShell = computed(() => !route.meta.public)
 const fullHeight = computed(() => !!route.meta.fullHeight)
+const inSessionCount = computed(() => chars.characters.filter((c) => c.in_session).length)
 
 const links = computed(() => {
   const base = [
@@ -67,8 +68,9 @@ async function logout() {
           <Coins :size="14" :stroke-width="1.75" class="text-accent" />
           <b class="font-semibold tabular-nums text-accent">{{ auth.user?.coins ?? 0 }}</b>
         </span>
-        <span class="hidden whitespace-nowrap text-fg-muted sm:inline" title="现有人物卡 / 卡槽上限，阵亡的人物卡不计入">
+        <span class="hidden whitespace-nowrap text-fg-muted sm:inline" title="现有人物卡 / 卡槽上限，阵亡的人物卡不计入；游戏中的人物卡仍占用卡槽">
           人物卡 <b class="font-medium tabular-nums text-fg">{{ chars.characters.length }}</b>/{{ auth.user?.card_slots ?? 3 }}
+          <template v-if="inSessionCount > 0">（{{ inSessionCount }} 张游戏中）</template>
         </span>
         <span class="hidden text-fg md:inline">{{ auth.user?.username }}</span>
         <button

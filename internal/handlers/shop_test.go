@@ -115,6 +115,48 @@ func TestPurchaseItem_Success_CardSlot(t *testing.T) {
 	}
 }
 
+// TestPurchaseItem_Equipment_StacksOnRepeat 验证装备带类型和描述进入物品栏，重复购买叠加数量而不是丢弃。
+func TestPurchaseItem_Equipment_StacksOnRepeat(t *testing.T) {
+	initTestDB(t)
+	iid := seedShopItem(t, "左轮手枪", 100, models.ItemTypeWeapon, 1)
+	if err := models.DB.Model(&models.ShopItem{}).Where("id = ?", iid).Update("description", ".38 口径").Error; err != nil {
+		t.Fatalf("set description: %v", err)
+	}
+	uid := seedUser(t, "buyer", "user", 500, 3)
+	cardID := seedCard(t, uid, "Card A")
+
+	r := shopRouter(uid)
+	buy := func() {
+		t.Helper()
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, jsonReq("POST", "/shop/purchase", map[string]any{
+			"item_id":           iid,
+			"character_card_id": cardID,
+		}))
+		if w.Code != http.StatusOK {
+			t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+		}
+	}
+
+	buy()
+	inv := cardInventory(t, cardID)
+	if len(inv) != 1 || inv[0].Name != "左轮手枪" || inv[0].Desc != ".38 口径" || inv[0].Count != 1 || inv[0].Type != models.ItemTypeWeapon {
+		t.Fatalf("after first purchase inventory = %+v", inv)
+	}
+
+	buy()
+	inv = cardInventory(t, cardID)
+	if len(inv) != 1 || inv[0].Count != 2 {
+		t.Fatalf("after second purchase inventory = %+v, want one stack of 2", inv)
+	}
+
+	var u models.User
+	models.DB.First(&u, uid)
+	if u.Coins != 300 {
+		t.Errorf("coins = %d, want 300", u.Coins)
+	}
+}
+
 func TestPurchaseItem_InsufficientCoins(t *testing.T) {
 	initTestDB(t)
 	iid := seedShopItem(t, "卡槽扩充", 100, models.ItemTypeCardSlot, 1)

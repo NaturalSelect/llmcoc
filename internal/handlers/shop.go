@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -144,26 +143,16 @@ func PurchaseItem(c *gin.Context) {
 			return
 		}
 
-		inv := card.Inventory.Data
-		exists := false
-		for _, v := range inv {
-			if v == item.Name {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			s := item.Name
-			if item.Description != "" {
-				s = fmt.Sprintf("%s(%s)", item.Name, item.Description)
-			}
-			inv = append(inv, s)
-			card.Inventory = models.JSONField[[]string]{Data: inv}
-			if err := tx.Save(&card).Error; err != nil {
-				tx.Rollback()
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "更新人物卡物品栏失败"})
-				return
-			}
+		card.Inventory = models.JSONField[[]models.Item]{Data: models.AddItem(card.Inventory.Data, models.Item{
+			Name:  item.Name,
+			Desc:  item.Description,
+			Count: 1,
+			Type:  item.ItemType,
+		})}
+		if err := tx.Save(&card).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新人物卡物品栏失败"})
+			return
 		}
 		updatedCard = &card
 	}

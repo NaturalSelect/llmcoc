@@ -108,6 +108,7 @@ export interface ChatStatus {
   kp_running?: boolean
   floor?: { floor?: number | string; [key: string]: unknown } | null
   submitted?: boolean
+  submitted_content?: string
   spotlight?: SpotlightSource
   waiting?: WaitingSource
 }
@@ -441,6 +442,8 @@ export function applyChatStatus(room: Room, cs: ChatStatus | null | undefined): 
   room.spotlight.askedMe = !!sp.asked_me || askedMe
   setWaiting(room, c.waiting || {})
   room.me.submitted = !!c.submitted
+  // NOTE: 刷新或重连后本地没有草稿，用服务器记录的原文回填；已有本地草稿（刚提交的）不覆盖
+  if (room.me.submitted && !room.me.draft && typeof c.submitted_content === 'string') room.me.draft = c.submitted_content
 }
 
 // NOTE: 调用方必须自行丢弃过期的快照响应（例如按连接代号比对），模块不判断一次拉取是否已过期

@@ -503,7 +503,7 @@ func DeleteCharacter(c *gin.Context) {
 }
 
 type manageInventoryReq struct {
-	Item string `json:"item" binding:"required"`
+	Item models.Item `json:"item" binding:"required"`
 }
 
 func GetCharacterInventory(c *gin.Context) {
@@ -553,28 +553,20 @@ func AddCharacterInventoryItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	item := strings.TrimSpace(req.Item)
-	if item == "" {
+	if strings.TrimSpace(req.Item.Name) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "物品名不能为空"})
 		return
 	}
+	item := models.NormalizeItem(req.Item)
 
-	list := card.Inventory.Data
-	for _, v := range list {
-		if v == item {
-			c.JSON(http.StatusOK, card)
-			return
-		}
-	}
-	list = append(list, item)
-	card.Inventory = models.JSONField[[]string]{Data: list}
+	card.Inventory = models.JSONField[[]models.Item]{Data: models.AddItem(card.Inventory.Data, item)}
 
 	if err := models.DB.Save(&card).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存物品栏失败"})
 		return
 	}
 	if card.UserID != userID {
-		characterLog.Info("admin add inventory", "admin_id", userID, "target_user", card.UserID, "card_id", card.ID, "item", item)
+		characterLog.Info("admin add inventory", "admin_id", userID, "target_user", card.UserID, "card_id", card.ID, "item", item.Label())
 	}
 	c.JSON(http.StatusOK, card)
 }
@@ -585,6 +577,10 @@ func RemoveCharacterInventoryItem(c *gin.Context) {
 	item := strings.TrimSpace(strings.TrimPrefix(c.Param("item"), "/"))
 	if item == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "物品名不能为空"})
+		return
+	}
+	desc, count, ok := itemQuery(c)
+	if !ok {
 		return
 	}
 
@@ -603,14 +599,12 @@ func RemoveCharacterInventoryItem(c *gin.Context) {
 		}
 	}
 
-	list := card.Inventory.Data
-	out := make([]string, 0, len(list))
-	for _, v := range list {
-		if v != item {
-			out = append(out, v)
-		}
+	out, _, hit := models.TakeItem(card.Inventory.Data, item, desc, count)
+	if !hit {
+		c.JSON(http.StatusNotFound, gin.H{"error": "该物品不在物品栏中"})
+		return
 	}
-	card.Inventory = models.JSONField[[]string]{Data: out}
+	card.Inventory = models.JSONField[[]models.Item]{Data: out}
 
 	if err := models.DB.Save(&card).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存物品栏失败"})
@@ -1204,7 +1198,7 @@ func ReviveCharacter(c *gin.Context) {
 	card.WoundState = "none"
 	card.IsUnconscious = false
 	card.IsActive = true
-	card.Inventory = models.JSONField[[]string]{Data: inv}
+	card.Inventory = models.JSONField[[]models.Item]{Data: inv}
 	card.Spells = models.JSONField[[]string]{Data: spells}
 
 	if err := tx.Save(&card).Error; err != nil {

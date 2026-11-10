@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -329,18 +330,25 @@ func (updateCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolR
 type manageInventoryAction struct{}
 
 func (manageInventoryAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	item := call.Item
+	var it models.Item
 	if call.ItemName != "" {
-		// Assemble canonical "Name(Desc, xN)" from structured fields.
-		item = buildInventoryItem(call.ItemName, call.ItemDesc, max(1, call.ItemCount))
+		it = models.Item{Name: call.ItemName, Desc: call.ItemDesc, Count: max(1, call.ItemCount), Type: call.ItemType}
+	} else {
+		it = models.ParseItemLabel(call.Item)
+		it.Type = call.ItemType
 	}
 	// NOTE: 物品描述会原样展示给玩家，模型有时会照抄提示词里的 [tome] 类型标记，这里统一去掉。
-	item = stripInternalTypeTags(item)
-	var result string
+	it.Name = stripInternalTypeTags(it.Name)
+	it.Desc = stripInternalTypeTags(it.Desc)
 	players := actx.GCtx.Session.Players
-	events := listChangeEvents(players, call.CharacterName, "inventory",
-		func(p models.SessionPlayer) []listEntry { return inventoryEntries(p.CharacterCard) },
-		func() { result = manageInventory(players, call.CharacterName, call.Operate, item) })
+	idx := investigatorIndex(players, call.CharacterName)
+	if idx < 0 {
+		result := manageInventory(players, call.CharacterName, call.Operate, it)
+		return []ToolResult{{Action: ToolManageInventory, Result: result}}
+	}
+	before := slices.Clone(players[idx].CharacterCard.Inventory.Data)
+	result := manageInventory(players, call.CharacterName, call.Operate, it)
+	events := inventoryDiffEvents(call.CharacterName, before, players[idx].CharacterCard.Inventory.Data)
 	return []ToolResult{{Action: ToolManageInventory, Result: result, Events: events}}
 }
 

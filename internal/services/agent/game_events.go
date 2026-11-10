@@ -4,6 +4,7 @@ package agent
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
@@ -34,7 +35,7 @@ func diceEvent(r DiceCheckResult, players []models.SessionPlayer) models.GameEve
 	if r.Hidden {
 		return models.GameEvent{Type: "dice", Hidden: true}
 	}
-	ev := models.GameEvent{Type: "dice", Skill: r.What, Roll: r.Roll, Level: r.Level}
+	ev := models.GameEvent{Type: "dice", Skill: r.What, Roll: r.Roll, Level: r.Level, Target: r.Target, Result: r.Result}
 	if strings.TrimSpace(r.What) == "" {
 		ev.Expr = strings.TrimSpace(r.DiceExpr)
 	}
@@ -129,12 +130,66 @@ func listDiffEvents(name, category string, before, after []listEntry) []models.G
 	return out
 }
 
-func inventoryEntries(card models.CharacterCard) []listEntry {
-	out := make([]listEntry, 0, len(card.Inventory.Data))
-	for _, it := range card.Inventory.Data {
-		out = append(out, listEntry{Key: inventoryItemBaseName(it), Label: it})
+// inventoryDiffEvents 按 Name+Desc 比对物品栏前后快照：数量变了是 change，新增 add，消失 remove；
+// 同一个名字恰好消失一堆又新增一堆(描述被改)视为一次 change。
+func inventoryDiffEvents(name string, before, after []models.Item) []models.GameEvent {
+	key := func(it models.Item) string { return it.Name + "\x00" + it.Desc }
+	old := make(map[string]models.Item, len(before))
+	for _, it := range before {
+		old[key(it)] = it
+	}
+	cur := make(map[string]bool, len(after))
+	for _, it := range after {
+		cur[key(it)] = true
+	}
+	ev := func(op, n, detail string) models.GameEvent {
+		return models.GameEvent{Type: "item", Character: name, Category: "inventory", Op: op, Name: n, Detail: detail}
+	}
+
+	var added, removed []models.Item
+	var out []models.GameEvent
+	for _, it := range after {
+		prev, ok := old[key(it)]
+		switch {
+		case !ok:
+			added = append(added, it)
+		case prev.Label() != it.Label():
+			out = append(out, ev("change", it.Name, fmt.Sprintf("%s → %s", prev.Label(), it.Label())))
+		}
+	}
+	for _, it := range before {
+		if !cur[key(it)] {
+			removed = append(removed, it)
+		}
+	}
+	for _, a := range added {
+		merged := false
+		for i, r := range removed {
+			if r.Name == a.Name && countName(added, a.Name) == 1 && countName(removed, a.Name) == 1 {
+				out = append(out, ev("change", a.Name, fmt.Sprintf("%s → %s", r.Label(), a.Label())))
+				removed = slices.Delete(removed, i, i+1)
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			out = append(out, ev("add", a.Label(), ""))
+		}
+	}
+	for _, r := range removed {
+		out = append(out, ev("remove", r.Label(), ""))
 	}
 	return out
+}
+
+func countName(list []models.Item, name string) int {
+	n := 0
+	for _, it := range list {
+		if it.Name == name {
+			n++
+		}
+	}
+	return n
 }
 
 func stringEntries(list []string) []listEntry {

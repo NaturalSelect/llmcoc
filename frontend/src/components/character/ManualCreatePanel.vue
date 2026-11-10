@@ -102,6 +102,15 @@ function commit(name: string, e: Event): void {
   ;(e.target as HTMLInputElement).blur()
 }
 
+function spent(name: string): number {
+  if (name === NATIVE_SKILL || name === DODGE_SKILL) return 0
+  return Math.max(0, Number(skills.value[name] ?? 0) - Number(defaults.value[name] ?? 0))
+}
+
+function resetSkills(): void {
+  skills.value = { ...defaults.value }
+}
+
 async function finalize(): Promise<void> {
   const d = draft.value
   const err = validateFinalize(d, form, remaining.value)
@@ -140,7 +149,7 @@ async function finalize(): Promise<void> {
     </ol>
 
     <div v-show="step === 1" class="space-y-4 rounded-xl bg-surface-2 p-4">
-      <p class="text-sm text-fg-muted">规则车卡会先在服务器掷骰并锁定属性，草稿15分钟内有效且只能使用一次。</p>
+      <p class="text-sm text-fg-muted">规则车卡会先在服务器掷骰并锁定属性，草稿24小时内有效且只能使用一次。</p>
       <div class="grid grid-cols-3 items-end gap-3">
         <FormField class="col-span-2" :label="`年龄（${MIN_AGE}-${MAX_AGE}）`">
           <BaseInput v-model.number="form.age" type="number" :min="MIN_AGE" :max="MAX_AGE" />
@@ -182,7 +191,7 @@ async function finalize(): Promise<void> {
         <span class="font-semibold tabular-nums" :class="remaining < 0 ? 'text-danger' : 'text-fg'" role="status">剩余 {{ remaining }}</span>
       </div>
       <p class="text-xs text-fg-subtle">技能最终值不能低于基础值且最高90；母语和闪避由服务器强制计算，克苏鲁神话不可分配。</p>
-      <div class="grid max-h-72 grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
+      <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
         <div v-for="(name, i) in names" :key="name" class="flex items-center gap-2 text-sm">
           <label :for="`skill-input-${i}`" class="w-28 shrink-0 truncate text-fg-muted">{{ name }}</label>
           <span class="w-16 shrink-0 text-xs tabular-nums text-fg-subtle">基础 {{ defaults[name] ?? 0 }}</span>
@@ -197,11 +206,16 @@ async function finalize(): Promise<void> {
             @blur="clamp(name)"
             @keydown.enter.prevent="commit(name, $event)"
           />
+          <span class="w-10 shrink-0 text-xs tabular-nums text-accent" :aria-label="spent(name) > 0 ? `本次加点 ${spent(name)}` : undefined">
+            {{ spent(name) > 0 ? '+' + spent(name) : '' }}
+          </span>
         </div>
       </div>
       <p class="text-xs text-fg-subtle">目前前端提供通用技能清单；职业点与兴趣点合并为总预算，最终以服务器校验为准。</p>
-      <div class="flex gap-2 pt-1">
-        <BaseButton variant="ghost" class="flex-1" @click="step = 2">返回资料</BaseButton>
+      <p v-if="remaining > 0" class="text-xs text-warning" role="status">还有 {{ remaining }} 点技能点未分配，创建后无法补点。</p>
+      <div class="sticky bottom-0 -mx-4 -mb-4 flex gap-2 rounded-b-xl border-t border-line bg-surface-2 px-4 py-3">
+        <BaseButton variant="ghost" @click="step = 2">返回资料</BaseButton>
+        <BaseButton variant="ghost" :disabled="remaining === budget.total" @click="resetSkills">重置分配</BaseButton>
         <BaseButton class="flex-1" :loading="loading" :disabled="remaining < 0" @click="finalize">
           {{ loading ? 'AI生成中…' : '确认创建并生成背景' }}
         </BaseButton>
