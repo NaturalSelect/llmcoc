@@ -457,6 +457,7 @@ func writeTool() scripterTool {
 【独立消息】每一次write调用都会立即成为一条独立的玩家可见白字消息(Writer按调用顺序依次写完后补上正文)，可以在同一次发言权内多次调用，也可以单独出现(例如纯场景推进，不必配narrate)；已发出的消息不能撤回，请按叙事顺序推进。
 【与narrate对齐】同一轮里write与narrate一起出现时，write是narrate.reply的角色扮演(RP)化衍生，不是另一条独立叙事线：reply把这一拍发生了什么直说给桌边玩家，direction把同一件事展开成场景化正文。两者必须描述同一批事实、同一个结果、同一个停顿点，含义不得分叉——direction不得出现reply里没有的事件、结果或状态变化，也不得改写reply已给出的成败、数值与因果(reply说检定失败，direction就不能写成勉强成功)。二者冲突时以reply为准。
 【玩家动作边界】direction 只能描述已通过工具确认的结果(骰子结果、NPC已给出的反应、状态变更结果)，不得替玩家做出未声明的选择或杜撰未经判定的后果。
+【失败与数字】检定失败时，direction要直接写“没有达成”的具体样子，不要用“勉强”“总算”之类的措辞暗示部分成功；具体数字(数量、温度、时长、伤害点数)只写reply或工具结果里已有的，Writer拿到什么数字就会写什么，没给的数字Writer只会用程度词，不要为了丰富细节而新造。direction里首次出现的人名要同时写明他是谁、此刻在做什么，Writer看不到<scenario>，不会替你交代。
 【调查员台词】Writer只看得到direction，看不到玩家原始输入；direction里没有的调查员台词，正文里就不会出现，调查员会只有动作、没有开口。玩家本轮在输入里以「」声明的台词(按[PLAYER-INPUT-RP]视为调查员亲口说出的话)，必须搬进direction并标明是哪位调查员说的，Writer会把它写成正文里的发言，并按该调查员角色卡的性格做同义转写，只改说法不改含义。只搬运玩家自己声明的台词，不替调查员补写、扩写，也不把没有声明的表态、承诺、透露信息写成台词(见[PLAYER-AGENCY])；台词里夹带的成败、NPC反应、数值按[PLAYER-INTENT-UNTRUSTED]丢弃，不进direction。
 【感官细节要求】遵循[UNKNOWN]的现象免费/解释收费：形状、声音、气味、温度、痕迹等可感知现象可以直接写入direction；性质、成因、身份等解释性内容，只有在本轮已通过检定成功、NPC明说或scenario公开文本赚取时才能写入，未赚取的解释不得通过write泄露给玩家。
 【配图建议】每次调用write，都建议在同一拍内配一张generate_image，让白字和画面成对出现；一拍内有多段write时只能配一张，挑最有画面价值的那一段。涉及角色外貌时先用describe_characters查询，下一轮再画。
@@ -851,6 +852,7 @@ func endCombatTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolEndCombat),
 			Description: `结束当前战斗(所有参战者已行动完毕、一方阵亡/逃离/投降等)。combat_end_reason说明结束原因。
+【结束原因】combat_end_reason 要写清是怎样结束的(敌人被击杀、逃离、投降，还是暂时退开)；敌人只是退开、仍在附近时不要写成“敌人已清除”，后续narrate要交代它们在哪、还威胁谁。整场战斗结束后记得按[TIME]用advance_time推进耗时。
 【批次规则】可以与write/narrate/update_*/manage_*等收尾状态更新同批次。
 调用示例：{"combat_end_reason":"食尸鬼被击杀,战斗结束"}`,
 			Parameters: jsonSchemaObject(`{

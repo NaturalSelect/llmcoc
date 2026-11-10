@@ -884,3 +884,21 @@ func TestWriteToolAsksDirectorToCarryInvestigatorSpeech(t *testing.T) {
 		t.Error("kp system prompt should exempt player-declared speech from the write no-fabrication rule")
 	}
 }
+
+// TestWriterPromptKeepsNarrativeConsistent 验证 Writer 提示词不让它编造精确数字、不把失败写成半成功、
+// 新人名要带出来历、时刻以导演指令为准。这几条对应测试反馈里正文与摘要数字矛盾、
+// 急救失败却写成“勉强止住血”、从未介绍过的人物突然出现、状态栏与叙述时间不一致。
+func TestWriterPromptKeepsNarrativeConsistent(t *testing.T) {
+	for _, want := range []string{
+		"具体数字只来自导演指令",
+		"指令没给就不要自己编",
+		"失败就写成失败",
+		"不得用“勉强”“总算”",
+		"人物首次出场要有交代",
+		"时刻与天色以导演指令为准",
+	} {
+		if !strings.Contains(writerDefaultPrompt, want) {
+			t.Errorf("writer prompt should contain %q", want)
+		}
+	}
+}

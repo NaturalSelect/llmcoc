@@ -948,3 +948,63 @@ func TestBuildKPHeadScenarioNPCRenderingIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestKPSystemPromptCarriesNarrativeConsistencyRules 验证叙事一致性相关的规则写进了 Director 提示词：
+// 失败不被写成半成功、急救每处伤一次、坠落要掷伤害、每次检定都交代、未登场人物不得提及、战斗耗时要推进。
+func TestKPSystemPromptCarriesNarrativeConsistencyRules(t *testing.T) {
+	for _, want := range []string{
+		// 失败如实叙述
+		"失败就按失败叙述",
+		"勉强",
+		// 急救与坠落（COC_kp.md 急救、伤害示例表）
+		"<proc>[急救与坠落]",
+		"同一处伤只能尝试一次急救",
+		"每坠落10英尺",
+		// 每次检定都交代、数字只有一个版本、状态变化讲来源
+		"每一次检定都交代",
+		"数字只有一个版本",
+		"状态变化讲来源",
+		"NPC出手的骰子必须在reply里点明是谁",
+		// 未登场人物
+		"[CAST-CONTINUITY]",
+		"Writer看不到<scenario>",
+		// 时间不只在赶路时流逝
+		"时间不只在赶路时流逝",
+		"不要逐战斗轮推进",
+		// 战斗收束：敌人只是暂退时不能让玩家以为危险解除
+		"就以为危险解除",
+	} {
+		if !strings.Contains(kpSystemPrompt, want) {
+			t.Errorf("kp system prompt should contain %q", want)
+		}
+	}
+
+	if !strings.Contains(kpTurnReminder, "[CAST-CONTINUITY]") {
+		t.Error("turn reminder should point back to the [CAST-CONTINUITY] rule defined in the system prompt")
+	}
+	for _, anchor := range []string{"[TIME]", "[KP-REPLY]", "[FAIL-FORWARD]"} {
+		if !strings.Contains(kpTurnReminder, anchor) {
+			t.Errorf("turn reminder should reference anchor %q", anchor)
+		}
+		if !strings.Contains(kpSystemPrompt, "<rule>"+anchor) && !strings.Contains(kpSystemPrompt, "<rule>[FREEDOM]"+anchor) {
+			t.Errorf("anchor %q referenced by turn reminder must be defined as a rule", anchor)
+		}
+	}
+}
+
+// TestKPToolDescriptionsCarryNarrativeConsistencyRules 验证 write 和 end_combat 的工具说明也带上了对应约束，
+// 因为 Director 选工具时看到的是工具说明，不一定回头读系统提示词。
+func TestKPToolDescriptionsCarryNarrativeConsistencyRules(t *testing.T) {
+	write := writeTool().def.Description
+	for _, want := range []string{"【失败与数字】", "没有达成", "Writer看不到<scenario>"} {
+		if !strings.Contains(write, want) {
+			t.Errorf("write tool description should contain %q", want)
+		}
+	}
+	endCombat := endCombatTool().def.Description
+	for _, want := range []string{"【结束原因】", "暂时退开", "advance_time"} {
+		if !strings.Contains(endCombat, want) {
+			t.Errorf("end_combat tool description should contain %q", want)
+		}
+	}
+}
