@@ -14,7 +14,7 @@ withDefaults(defineProps<{ items: string[]; tone?: 'ink' | 'ledger' | 'seal' }>(
         'text-accent': tone === 'seal',
       }"
     >
-      <span>{{ item }}</span>
+      <slot name="label" :item="item" :index="idx"><span>{{ item }}</span></slot>
       <slot name="actions" :item="item" :index="idx" />
     </li>
   </ul>

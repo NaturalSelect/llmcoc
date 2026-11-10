@@ -10,14 +10,13 @@ import CharacterSection from './CharacterSection.vue'
 import CharacterVitals from './CharacterVitals.vue'
 import ChipList from './ChipList.vue'
 import EntryList from './EntryList.vue'
+import ItemDetailTip from './ItemDetailTip.vue'
 import RegenBlock from './RegenBlock.vue'
 import { useConfirmGuard } from './useConfirmGuard'
 import {
-  ITEM_TYPE_LABEL,
   REGEN_SPECS,
   detailSubtitle,
   errMessage,
-  itemLabel,
   mergeUpdatedCard,
   regenConfirmMessage,
   regenCost,
@@ -189,11 +188,11 @@ function assetEntries(card: CharacterCardFull): Entry[] {
       </CharacterSection>
 
       <CharacterSection title="物品栏">
-        <p class="mb-2 text-xs text-fg-subtle">点击物品右侧按钮可直接丢弃或存入账号仓库。</p>
+        <p class="mb-2 text-xs text-fg-subtle">鼠标放到物品上或点击可查看详情；点击物品右侧按钮可直接丢弃或存入账号仓库。</p>
         <p v-if="current.in_session" class="mb-2 text-xs text-warning" role="status">该人物卡正在游戏中，无法存取仓库。</p>
-        <ChipList :items="inventory.map(itemLabel)">
+        <ChipList :items="inventory.map((it) => it.name)">
+          <template #label="{ index }"><ItemDetailTip :item="inventory[index]" /></template>
           <template #actions="{ index }">
-            <span v-if="inventory[index].type !== 'misc'" class="text-xs text-fg-subtle">{{ ITEM_TYPE_LABEL[inventory[index].type] }}</span>
             <button
               type="button"
               class="rounded-full px-2 py-0.5 text-xs text-info transition hover:bg-info/15 disabled:cursor-not-allowed disabled:opacity-40"

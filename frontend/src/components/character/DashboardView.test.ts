@@ -183,8 +183,17 @@ describe('DashboardView', () => {
     button('艾米')!.click()
     await nextTick()
     expect(text()).toContain('该人物卡正在游戏中，无法存取仓库。')
-    expect(text()).toContain('手电筒(黄铜)')
-    expect(text()).toContain('装备')
+    expect(text()).toContain('手电筒')
+    expect(text()).not.toContain('黄铜')
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull()
+    const flashlight = [...document.body.querySelectorAll('[role="dialog"] ul button')].find((b) => b.textContent?.trim() === '手电筒') as HTMLButtonElement
+    flashlight.dispatchEvent(new MouseEvent('mouseenter'))
+    await nextTick()
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain('黄铜')
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain('装备')
+    flashlight.dispatchEvent(new MouseEvent('mouseleave'))
+    await nextTick()
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull()
     calls = []
     button('丢弃')!.click()
     await flushPromises()
@@ -220,8 +229,8 @@ describe('DashboardView', () => {
     button('仓库')!.click()
     await flushPromises()
     expect(text()).toContain('账号仓库')
-    expect(text()).toContain('地图(泛黄, x2)')
-    expect(text()).toContain('典籍')
+    expect(text()).toContain('地图')
+    expect(text()).not.toContain('泛黄')
 
     const select = document.body.querySelector('[role="dialog"] select') as HTMLSelectElement
     expect(select.value).toBe('1')

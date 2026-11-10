@@ -9,8 +9,9 @@ import SectionHeading from '@/components/base/SectionHeading.vue'
 import { useCharactersStore } from '@/stores/characters'
 import { useUiStore } from '@/stores/ui'
 import { characterApi } from './characterApi'
-import { ITEM_TYPE_LABEL, errMessage, itemLabel, warehouseOptionLabel, warehouseUsableCharacters } from './characterLogic'
+import { errMessage, itemLabel, warehouseOptionLabel, warehouseUsableCharacters } from './characterLogic'
 import ChipList from './ChipList.vue'
+import ItemDetailTip from './ItemDetailTip.vue'
 import { useConfirmGuard } from './useConfirmGuard'
 
 const props = defineProps<{ open: boolean }>()
@@ -97,9 +98,9 @@ async function discard(it: InventoryItem): Promise<void> {
       <section>
         <SectionHeading class="mb-2" :count="loading ? undefined : items.length">仓库物品</SectionHeading>
         <div v-if="loading" class="text-xs text-fg-subtle" role="status">加载中…</div>
-        <ChipList v-else-if="items.length" :items="items.map(itemLabel)">
+        <ChipList v-else-if="items.length" :items="items.map((it) => it.name)">
+          <template #label="{ index }"><ItemDetailTip :item="items[index]" /></template>
           <template #actions="{ index }">
-            <span v-if="items[index].type !== 'misc'" class="text-xs text-fg-subtle">{{ ITEM_TYPE_LABEL[items[index].type] }}</span>
             <button
               type="button"
               class="rounded-full px-2 py-0.5 text-xs text-info transition hover:bg-info/15 disabled:cursor-not-allowed disabled:opacity-40"
