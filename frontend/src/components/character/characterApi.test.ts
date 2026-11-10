@@ -66,6 +66,22 @@ describe('characterApi 路径与请求体', () => {
     expect(lastCall()).toEqual({ path: '/api/warehouse/withdraw', method: 'POST', body: { character_card_id: 4, item: { name: '绷带', desc: '' }, count: 2 } })
   })
 
+  test('装备与卸下：PUT inventory/equip，请求体 item{name,desc} + equipped', async () => {
+    const stack: InventoryItem = { name: '手电筒', desc: '黄铜', count: 1, type: 'equipment' }
+    await characterApi.setEquipped(4, stack, true)
+    expect(lastCall()).toEqual({
+      path: '/api/characters/4/inventory/equip',
+      method: 'PUT',
+      body: { item: { name: '手电筒', desc: '黄铜' }, equipped: true },
+    })
+    await characterApi.setEquipped(4, { name: '绷带' }, false)
+    expect(lastCall()).toEqual({
+      path: '/api/characters/4/inventory/equip',
+      method: 'PUT',
+      body: { item: { name: '绷带', desc: '' }, equipped: false },
+    })
+  })
+
   test('删除、彻底删除、复活、掷骰、技能默认值', async () => {
     await characterApi.get(5)
     expect(lastCall()).toMatchObject({ path: '/api/characters/5', method: 'GET' })

@@ -107,6 +107,7 @@ func DepositToWarehouse(c *gin.Context) {
 		return
 	}
 	card.Inventory = models.JSONField[[]models.Item]{Data: newInv}
+	taken.Equipped = false
 	user.Warehouse = models.JSONField[[]models.Item]{Data: models.AddItem(user.Warehouse.Data, taken)}
 
 	if err := tx.Save(&card).Error; err != nil {

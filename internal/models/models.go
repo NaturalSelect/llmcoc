@@ -569,7 +569,7 @@ type GameEvent struct {
 	To        *int   `json:"to,omitempty"`        // stat 变化后(钳制后的实际值)
 	State     string `json:"state,omitempty"`     // wound: none|major|dying|dead|unconscious|conscious；madness: temporary|indefinite|permanent|none
 	Category  string `json:"category,omitempty"`  // item: inventory|spell|asset|relation|monster
-	Op        string `json:"op,omitempty"`        // item: add|remove|change；combat/chase: start|end|round
+	Op        string `json:"op,omitempty"`        // item: add|remove|change|equip|unequip；combat/chase: start|end|round
 	Name      string `json:"name,omitempty"`      // item 条目
 	Detail    string `json:"detail,omitempty"`    // item: 补充说明，如数量变化；backstory: 改写后的个人经历；stat: 变化原因，如结算恢复；dice: 奖励骰/惩罚骰的掷骰过程
 	Symptom   string `json:"symptom,omitempty"`   // madness

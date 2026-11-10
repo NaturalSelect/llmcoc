@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, test } from 'vitest'
-import type { CharacterCardFull } from '@/api/characterTypes'
+import type { CharacterCardFull, InventoryItem } from '@/api/characterTypes'
 import {
   ITEM_TYPE_LABEL,
   REGEN_SPECS,
@@ -19,6 +19,7 @@ import {
   reviveConfirmMessage,
   reviveCost,
   sortedSkills,
+  splitInventory,
   warehouseOptionLabel,
   warehouseUsableCharacters,
 } from './characterLogic'
@@ -88,6 +89,38 @@ describe('人物卡展示文案', () => {
     ])
     expect(sortedSkills(null)).toEqual([])
     expect(sortedSkills(undefined)).toEqual([])
+  })
+})
+
+describe('装备栏', () => {
+  const item = (name: string, equipped?: boolean): InventoryItem => ({ name, count: 1, type: 'misc', ...(equipped === undefined ? {} : { equipped }) })
+
+  test('空列表得到两个空数组', () => {
+    expect(splitInventory([])).toEqual({ equipped: [], carried: [] })
+  })
+
+  test('全部装备或全部未装备', () => {
+    const all = [item('甲', true), item('乙', true)]
+    expect(splitInventory(all)).toEqual({ equipped: all, carried: [] })
+    const none = [item('甲'), item('乙', false)]
+    expect(splitInventory(none)).toEqual({ equipped: [], carried: none })
+  })
+
+  test('混合时两侧各自保持原有顺序，返回的是原对象', () => {
+    const a = item('甲')
+    const b = item('乙', true)
+    const c = item('丙', false)
+    const d = item('丁', true)
+    const e = item('戊')
+    const r = splitInventory([a, b, c, d, e])
+    expect(r.equipped.map((i) => i.name)).toEqual(['乙', '丁'])
+    expect(r.carried.map((i) => i.name)).toEqual(['甲', '丙', '戊'])
+    expect(r.equipped[0]).toBe(b)
+    expect(r.carried[2]).toBe(e)
+  })
+
+  test('itemLabel 不显示装备状态', () => {
+    expect(itemLabel({ name: '手电筒', desc: '黄铜', count: 1, type: 'equipment', equipped: true })).toBe('手电筒(黄铜)')
   })
 })
 

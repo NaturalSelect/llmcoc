@@ -14,6 +14,7 @@ func inventoryRouter(userID uint, role string) *gin.Engine {
 	auth := withAuth(userID, "tester", role)
 	r.GET("/characters/:id/inventory", auth, GetCharacterInventory)
 	r.POST("/characters/:id/inventory", auth, AddCharacterInventoryItem)
+	r.PUT("/characters/:id/inventory/equip", auth, SetCharacterItemEquipped)
 	r.DELETE("/characters/:id/inventory/*item", auth, RemoveCharacterInventoryItem)
 	return r
 }
@@ -128,5 +129,92 @@ func TestInventory_OtherUsersCard_Forbidden(t *testing.T) {
 	r.ServeHTTP(w, jsonReq("DELETE", "/characters/"+itoa(cardID)+"/inventory/手电筒", nil))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("want 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSetItemEquipped_EquipAndUnequip(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	cardID := seedCard(t, uid, "Card A")
+	setCardInventory(t, cardID, []models.Item{stack("风衣", "", 1), stack("风衣", "破旧", 1)})
+	r := inventoryRouter(uid, "user")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/characters/"+itoa(cardID)+"/inventory/equip", map[string]any{
+		"item":     map[string]any{"name": "风衣", "desc": "破旧"},
+		"equipped": true,
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	inv := cardInventory(t, cardID)
+	if len(inv) != 2 || inv[0].Equipped || !inv[1].Equipped {
+		t.Fatalf("only the matching stack should be equipped, got %+v", inv)
+	}
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/characters/"+itoa(cardID)+"/inventory/equip", map[string]any{
+		"item":     map[string]any{"name": "风衣", "desc": "破旧"},
+		"equipped": false,
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if inv := cardInventory(t, cardID); inv[1].Equipped {
+		t.Fatalf("item should be unequipped, got %+v", inv)
+	}
+}
+
+func TestSetItemEquipped_NotFound(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	cardID := seedCard(t, uid, "Card A")
+	setCardInventory(t, cardID, []models.Item{stack("手电筒", "", 1)})
+	r := inventoryRouter(uid, "user")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/characters/"+itoa(cardID)+"/inventory/equip", map[string]any{
+		"item":     map[string]any{"name": "绷带"},
+		"equipped": true,
+	}))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSetItemEquipped_EmptyName(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	cardID := seedCard(t, uid, "Card A")
+	r := inventoryRouter(uid, "user")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/characters/"+itoa(cardID)+"/inventory/equip", map[string]any{
+		"item":     map[string]any{"name": "  "},
+		"equipped": true,
+	}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSetItemEquipped_OtherUsersCard_Forbidden(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	other := seedUser(t, "other", "user", 0, 3)
+	cardID := seedCard(t, other, "Not Yours")
+	setCardInventory(t, cardID, []models.Item{stack("手电筒", "", 1)})
+	r := inventoryRouter(uid, "user")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/characters/"+itoa(cardID)+"/inventory/equip", map[string]any{
+		"item":     map[string]any{"name": "手电筒"},
+		"equipped": true,
+	}))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d: %s", w.Code, w.Body.String())
+	}
+	if inv := cardInventory(t, cardID); inv[0].Equipped {
+		t.Fatalf("forbidden request must not change the card, got %+v", inv)
 	}
 }

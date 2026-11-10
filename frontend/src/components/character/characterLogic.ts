@@ -82,6 +82,14 @@ export function itemLabel(it: InventoryItem): string {
   return parts.length ? `${it.name}(${parts.join(', ')})` : it.name
 }
 
+// NOTE: 装备栏是物品栏里 equipped 为 true 的部分，两侧各自保持原有顺序
+export function splitInventory(items: readonly InventoryItem[]): { equipped: InventoryItem[]; carried: InventoryItem[] } {
+  const equipped: InventoryItem[] = []
+  const carried: InventoryItem[] = []
+  for (const it of items) (it.equipped === true ? equipped : carried).push(it)
+  return { equipped, carried }
+}
+
 // NOTE: 仓库只允许操作启用且未进入房间的人物卡（后端对 in_session 的卡存取返回 409）
 export function warehouseUsableCharacters(list: CharacterCardFull[]): CharacterCardFull[] {
   return list.filter((c) => c.is_active !== false && !c.in_session)

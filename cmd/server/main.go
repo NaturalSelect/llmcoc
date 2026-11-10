@@ -211,6 +211,7 @@ func main() {
 		chars.DELETE("/:id/dead", handlers.DeleteDeadCharacter)
 		chars.GET("/:id/inventory", handlers.GetCharacterInventory)
 		chars.POST("/:id/inventory", handlers.AddCharacterInventoryItem)
+		chars.PUT("/:id/inventory/equip", handlers.SetCharacterItemEquipped)
 		chars.DELETE("/:id/inventory/*item", handlers.RemoveCharacterInventoryItem)
 		chars.DELETE("/:id/social-relations/:name", handlers.RemoveCharacterSocialRelation)
 		chars.DELETE("/:id/assets/:name", handlers.RemoveCharacterAsset)

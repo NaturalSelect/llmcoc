@@ -137,3 +137,93 @@ func TestWriteCompactInventory(t *testing.T) {
 		t.Errorf("got %s, want %s", sb.String(), want)
 	}
 }
+
+func TestWriteCompactInventory_Equipped(t *testing.T) {
+	var sb strings.Builder
+	writeCompactInventory(&sb, []models.Item{
+		{Name: "风衣", Count: 1, Type: models.ItemTypeEquipment, Equipped: true},
+		{Name: "手电筒", Count: 1, Type: models.ItemTypeMisc, Equipped: true},
+	})
+	want := `<inv><item n="风衣" type="equipment" eq="1"/><item n="手电筒" eq="1"/></inv>`
+	if sb.String() != want {
+		t.Errorf("got %s, want %s", sb.String(), want)
+	}
+}
+
+func TestManageInventory_AddEquipped(t *testing.T) {
+	initAgentTestDB(t)
+	players := eventTestPlayers()
+	actx := eventTestActx(players)
+	yes := true
+
+	res := manageInventoryAction{}.Execute(ToolCall{
+		CharacterName: "甲", Operate: "add", ItemName: "风衣", ItemType: models.ItemTypeEquipment, ItemEquipped: &yes,
+	}, actx)
+	inv := inventoryOf(players)
+	if got := inv[len(inv)-1]; got.Name != "风衣" || !got.Equipped {
+		t.Fatalf("add equipped = %+v", inv)
+	}
+	if !strings.Contains(res[0].Result, "已装备") {
+		t.Errorf("add equipped result = %q", res[0].Result)
+	}
+
+	manageInventoryAction{}.Execute(ToolCall{CharacterName: "甲", Operate: "add", ItemName: "围巾"}, actx)
+	inv = inventoryOf(players)
+	if got := inv[len(inv)-1]; got.Name != "围巾" || got.Equipped {
+		t.Fatalf("add without item_equipped should be unequipped, got %+v", got)
+	}
+}
+
+func TestManageInventory_UpdateEquippedOnly(t *testing.T) {
+	initAgentTestDB(t)
+	players := eventTestPlayers()
+	actx := eventTestActx(players)
+	yes, no := true, false
+
+	res := manageInventoryAction{}.Execute(ToolCall{
+		CharacterName: "甲", Operate: "update", ItemName: "子弹", ItemEquipped: &yes,
+	}, actx)
+	inv := inventoryOf(players)
+	if len(inv) != 2 || !inv[1].Equipped || inv[1].Count != 6 || inv[1].Desc != "" {
+		t.Fatalf("update equipped = %+v", inv)
+	}
+	if len(res[0].Events) != 1 || res[0].Events[0].Op != "equip" || res[0].Events[0].Name != "子弹" {
+		t.Errorf("equip events = %+v", res[0].Events)
+	}
+	if !strings.Contains(res[0].Result, "已装备") {
+		t.Errorf("equip result = %q", res[0].Result)
+	}
+
+	res = manageInventoryAction{}.Execute(ToolCall{
+		CharacterName: "甲", Operate: "update", ItemName: "子弹", ItemEquipped: &no,
+	}, actx)
+	if inv := inventoryOf(players); inv[1].Equipped {
+		t.Fatalf("unequip = %+v", inv)
+	}
+	if len(res[0].Events) != 1 || res[0].Events[0].Op != "unequip" {
+		t.Errorf("unequip events = %+v", res[0].Events)
+	}
+}
+
+func TestManageInventory_UpdateKeepsEquippedWhenOmitted(t *testing.T) {
+	initAgentTestDB(t)
+	players := eventTestPlayers()
+	players[0].CharacterCard.Inventory.Data[0].Equipped = true
+	actx := eventTestActx(players)
+
+	manageInventoryAction{}.Execute(ToolCall{CharacterName: "甲", Operate: "update", ItemName: "手电筒", ItemDesc: "没电"}, actx)
+	if inv := inventoryOf(players); !inv[0].Equipped || inv[0].Desc != "没电" {
+		t.Fatalf("update without item_equipped must keep the flag, got %+v", inv)
+	}
+}
+
+func TestManageInventory_UpdateNeedsSomething(t *testing.T) {
+	initAgentTestDB(t)
+	players := eventTestPlayers()
+	actx := eventTestActx(players)
+
+	res := manageInventoryAction{}.Execute(ToolCall{CharacterName: "甲", Operate: "update", ItemName: "手电筒"}, actx)
+	if !strings.Contains(res[0].Result, "item_equipped") || len(res[0].Events) != 0 {
+		t.Errorf("empty update result = %q events = %+v", res[0].Result, res[0].Events)
+	}
+}

@@ -21,6 +21,7 @@ import {
   regenConfirmMessage,
   regenCost,
   sortedSkills,
+  splitInventory,
   type Entry,
   type RegenSpec,
 } from './characterLogic'
@@ -37,7 +38,7 @@ const guard = useConfirmGuard()
 const onClose = guard.guardClose(() => emit('close'))
 
 const current = ref<CharacterCardFull | null>(null)
-const inventory = computed(() => current.value?.inventory ?? [])
+const split = computed(() => splitInventory(current.value?.inventory ?? []))
 const busy = ref(false)
 const guidance = reactive<Record<RegenField, string>>({ appearance: '', backstory: '', traits: '' })
 const regenBusy = reactive<Record<RegenField, boolean>>({ appearance: false, backstory: false, traits: false })
@@ -122,6 +123,18 @@ function deposit(it: InventoryItem): Promise<void> | void {
   return mutate(async () => (await characterApi.deposit(id, it)).character_card, '已存入仓库')
 }
 
+function equip(it: InventoryItem): Promise<void> | void {
+  const id = current.value?.id
+  if (!id) return
+  return mutate(() => characterApi.setEquipped(id, it, true), '已装备')
+}
+
+function unequip(it: InventoryItem): Promise<void> | void {
+  const id = current.value?.id
+  if (!id) return
+  return mutate(() => characterApi.setEquipped(id, it, false), '已卸下')
+}
+
 function discard(it: InventoryItem): Promise<void> | void {
   const id = current.value?.id
   if (!id) return
@@ -187,17 +200,41 @@ function assetEntries(card: CharacterCardFull): Entry[] {
         </ul>
       </CharacterSection>
 
-      <CharacterSection title="物品栏">
-        <p class="mb-2 text-xs text-fg-subtle">鼠标放到物品上或点击可查看详情；点击物品右侧按钮可直接丢弃或存入账号仓库。</p>
-        <p v-if="current.in_session" class="mb-2 text-xs text-warning" role="status">该人物卡正在游戏中，无法存取仓库。</p>
-        <ChipList :items="inventory.map((it) => it.name)">
-          <template #label="{ index }"><ItemDetailTip :item="inventory[index]" /></template>
+      <CharacterSection title="装备栏">
+        <ChipList :items="split.equipped.map((it) => it.name)">
+          <template #label="{ index }"><ItemDetailTip :item="split.equipped[index]" /></template>
           <template #actions="{ index }">
             <button
               type="button"
               class="rounded-full px-2 py-0.5 text-xs text-info transition hover:bg-info/15 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="busy"
+              @click="unequip(split.equipped[index])"
+            >
+              卸下
+            </button>
+          </template>
+        </ChipList>
+      </CharacterSection>
+
+      <CharacterSection title="物品栏">
+        <p class="mb-2 text-xs text-fg-subtle">鼠标放到物品上或点击可查看详情；点击物品右侧按钮可直接装备、丢弃或存入账号仓库。</p>
+        <p v-if="current.in_session" class="mb-2 text-xs text-warning" role="status">该人物卡正在游戏中，无法存取仓库。</p>
+        <ChipList :items="split.carried.map((it) => it.name)">
+          <template #label="{ index }"><ItemDetailTip :item="split.carried[index]" /></template>
+          <template #actions="{ index }">
+            <button
+              type="button"
+              class="rounded-full px-2 py-0.5 text-xs text-info transition hover:bg-info/15 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="busy"
+              @click="equip(split.carried[index])"
+            >
+              装备
+            </button>
+            <button
+              type="button"
+              class="rounded-full px-2 py-0.5 text-xs text-info transition hover:bg-info/15 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="current.in_session || busy"
-              @click="deposit(inventory[index])"
+              @click="deposit(split.carried[index])"
             >
               存入仓库
             </button>
@@ -205,7 +242,7 @@ function assetEntries(card: CharacterCardFull): Entry[] {
               type="button"
               class="rounded-full px-2 py-0.5 text-xs text-danger transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="busy"
-              @click="discard(inventory[index])"
+              @click="discard(split.carried[index])"
             >
               丢弃
             </button>

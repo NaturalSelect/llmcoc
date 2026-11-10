@@ -125,7 +125,7 @@ const ITEM_ICON: Record<string, EventIcon> = {
 }
 
 const ITEM_VERB: Record<string, Record<string, string>> = {
-  inventory: { add: '获得', remove: '失去', change: '物品变化' },
+  inventory: { add: '获得', remove: '失去', change: '物品变化', equip: '装备', unequip: '卸下' },
   spell: { add: '学会法术', remove: '遗失法术', change: '法术变化' },
   monster: { add: '记录神话存在', remove: '移除神话存在记录', change: '神话存在记录变化' },
   relation: { add: '记录关系', remove: '移除关系', change: '关系变化' },

@@ -45,6 +45,8 @@ export const characterApi = {
 
   removeInventoryItem: (id: number, it: ItemRef, count?: number) =>
     api<CharacterCardFull>('DELETE', `${cardPath(id)}/inventory/${itemQuery(it, count)}`),
+  setEquipped: (id: number, it: ItemRef, equipped: boolean) =>
+    api<CharacterCardFull>('PUT', `${cardPath(id)}/inventory/equip`, { item: itemBody(it), equipped }),
   removeSocialRelation: (id: number, name: string) =>
     api<CharacterCardFull>('DELETE', `${cardPath(id)}/social-relations/${enc(name)}`),
   removeAsset: (id: number, name: string) => api<CharacterCardFull>('DELETE', `${cardPath(id)}/assets/${enc(name)}`),

@@ -76,6 +76,13 @@ describe('describeEvent', () => {
     expect(describeEvent({ type: 'item', category: 'asset', op: 'add', name: '旧宅' }).icon).toBe('asset')
   })
 
+  test('装备与卸下：没有数量，只显示动词和物品名', () => {
+    expect(view({ type: 'item', character: '甲', category: 'inventory', op: 'equip', name: '手电筒' })).toBe('甲 装备：手电筒')
+    expect(view({ type: 'item', character: '甲', category: 'inventory', op: 'unequip', name: '手电筒' })).toBe('甲 卸下：手电筒')
+    expect(view({ type: 'item', category: 'inventory', op: 'equip', name: '黄铜手电筒' })).toBe('装备：黄铜手电筒')
+    expect(describeEvent({ type: 'item', category: 'inventory', op: 'equip', name: '手电筒' }).icon).toBe('item')
+  })
+
   test('疯狂', () => {
     expect(view({ type: 'madness', character: '甲', state: 'temporary', symptom: '失忆', duration: 5 })).toBe('甲 临时性疯狂 失忆（持续 5）')
     expect(view({ type: 'madness', character: '甲', state: 'none' })).toBe('甲 疯狂解除')

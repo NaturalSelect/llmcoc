@@ -770,6 +770,15 @@ func writeCompactText(sb *strings.Builder, tag, text string) {
 	sb.WriteString(">")
 }
 
+// equippedLabels 把已装备物品的 Label 用「、」连成一行，没有装备时返回空串。
+func equippedLabels(items []models.Item) string {
+	var labels []string
+	for _, it := range models.EquippedItems(items) {
+		labels = append(labels, it.Label())
+	}
+	return strings.Join(labels, "、")
+}
+
 func writeCompactInventory(sb *strings.Builder, items []models.Item) {
 	if len(items) == 0 {
 		return
@@ -785,6 +794,9 @@ func writeCompactInventory(sb *strings.Builder, items []models.Item) {
 		}
 		if it.Type != "" && it.Type != models.ItemTypeMisc {
 			sb.WriteString(fmt.Sprintf(" type=%q", string(it.Type)))
+		}
+		if it.Equipped {
+			sb.WriteString(` eq="1"`)
 		}
 		sb.WriteString("/>")
 	}
@@ -1003,7 +1015,7 @@ func inventoryLabels(list []models.Item, idx []int) string {
 	return strings.Join(labels, "、")
 }
 
-func manageInventory(players []models.SessionPlayer, characterName, operate string, it models.Item) string {
+func manageInventory(players []models.SessionPlayer, characterName, operate string, it models.Item, equipped *bool) string {
 	it.Name = strings.TrimSpace(it.Name)
 	it.Desc = strings.TrimSpace(it.Desc)
 	if characterName == "" || it.Name == "" {
@@ -1020,10 +1032,16 @@ func manageInventory(players []models.SessionPlayer, characterName, operate stri
 		list := card.Inventory.Data
 		switch operate {
 		case "add":
+			if equipped != nil {
+				it.Equipped = *equipped
+			}
 			it = models.NormalizeItem(it)
 			card.Inventory.Data = models.AddItem(list, it)
 			models.DB.Save(card)
 			result := fmt.Sprintf("%s 获得物品:%s", card.Name, it.Label())
+			if it.Equipped {
+				result += "(已装备)"
+			}
 			for _, s := range card.Inventory.Data {
 				if s.SameStack(it) && s.Count > it.Count {
 					result += fmt.Sprintf("，现共 %d 件", s.Count)
@@ -1054,8 +1072,8 @@ func manageInventory(players []models.SessionPlayer, characterName, operate stri
 				return fmt.Sprintf("%s 失去物品:%s(只有 %d 件，已全部移除)", card.Name, stack.Label(), stack.Count)
 			}
 		case "update":
-			if it.Desc == "" && it.Type == "" {
-				return "物品操作失败:update 需要提供 item_desc 或 item_type"
+			if it.Desc == "" && it.Type == "" && equipped == nil {
+				return "物品操作失败:update 需要提供 item_desc、item_type 或 item_equipped"
 			}
 			cands := inventoryCandidates(list, it.Name, "")
 			if len(cands) == 0 {
@@ -1072,10 +1090,18 @@ func manageInventory(players []models.SessionPlayer, characterName, operate stri
 			if it.Type != "" {
 				updated[cands[0]].Type = it.Type
 			}
+			equipNote := ""
+			if equipped != nil && updated[cands[0]].Equipped != *equipped {
+				updated[cands[0]].Equipped = *equipped
+				equipNote = "(已卸下)"
+				if *equipped {
+					equipNote = "(已装备)"
+				}
+			}
 			now := updated[cands[0]].Label()
 			card.Inventory.Data = models.MergeStacks(updated)
 			models.DB.Save(card)
-			return fmt.Sprintf("%s 物品更新:%s → %s", card.Name, old, now)
+			return fmt.Sprintf("%s 物品更新:%s → %s%s", card.Name, old, now, equipNote)
 		default:
 			return fmt.Sprintf("物品操作失败:未知的 operate=%q，只能是 add/remove/update", operate)
 		}

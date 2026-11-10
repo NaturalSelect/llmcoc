@@ -243,7 +243,7 @@ const imagePromptCharacterVisualSystemPrompt = `你是 Writer 代理，负责为
 
 只输出中文外貌描写，把角色卡里能看到的外貌细节写全，不要遗漏，一段话或几条要点即可。
 只能使用提供的角色卡数据，不要编造服饰、装备、秘密、伤势、能力、性格、物品属性、神话名称、规则、背景设定、头衔、隐藏铭文或括号里的元数据。
-聚焦可见的身体、面部、发型、服饰、姿态等具体视觉特征；物品栏不是随身物品清单，只提及明确穿戴或手持的可见饰品，凡不确定的物品一律省略。
+聚焦可见的身体、面部、发型、服饰、姿态等具体视觉特征；装备栏列出的是角色当前穿戴或手持的物品，描写时要把它们写成可见的服饰、配饰或手持物，不在装备栏里的物品一律不提。
 
 只输出纯外貌描写，不要附带其他属性。
 {{NSFW_APPEARANCE_POLICY}}
@@ -274,7 +274,7 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 
 func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []models.CharacterCard) string {
 	var sb strings.Builder
-	sb.WriteString("任务：把下列玩家角色卡数据整理成完整的中文外貌描写，供配图使用，角色卡里可见的外貌细节不要遗漏。Director 会把这段文字直接写进后续的 image_prompt。外貌以 Appearance 为主要来源；物品栏只作为可见物品的参考，不是随身清单。省略物品属性、神话/背景设定名称、规则、头衔、隐藏铭文、括号里的元数据，以及一切不明确可见、穿戴或手持的内容。\n\n")
+	sb.WriteString("任务：把下列玩家角色卡数据整理成完整的中文外貌描写，供配图使用，角色卡里可见的外貌细节不要遗漏。Director 会把这段文字直接写进后续的 image_prompt。外貌以 Appearance 为主要来源；装备栏是角色当前穿戴或手持的物品，可以写进外貌描写。省略物品属性、神话/背景设定名称、规则、头衔、隐藏铭文、括号里的元数据，以及一切不明确可见、穿戴或手持的内容。\n\n")
 	if scene := compactPromptText(scenePrompt); scene != "" {
 		sb.WriteString("画面描述（仅用于挑选相关的外貌特征）：")
 		sb.WriteString(scene)
@@ -293,9 +293,9 @@ func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []model
 			appearance = "（未提供）"
 		}
 		sb.WriteString(appearance)
-		sb.WriteString("\n物品栏：\n")
+		sb.WriteString("\n装备栏：\n")
 		wroteItem := false
-		for _, it := range card.Inventory.Data {
+		for _, it := range models.EquippedItems(card.Inventory.Data) {
 			item := compactPromptText(it.Label())
 			if item == "" {
 				continue
@@ -320,11 +320,17 @@ func fallbackCharacterVisualDescriptions(cards []models.CharacterCard) string {
 			name = "未命名调查员"
 		}
 		appearance := compactPromptText(card.Appearance)
-		if appearance == "" {
+		equipped := compactPromptText(equippedLabels(card.Inventory.Data))
+		switch {
+		case appearance == "" && equipped == "":
 			lines = append(lines, fmt.Sprintf("%s：角色卡没有记录外貌细节。", name))
-			continue
+		case appearance == "":
+			lines = append(lines, fmt.Sprintf("%s：角色卡没有记录外貌细节。装备：%s", name, equipped))
+		case equipped == "":
+			lines = append(lines, fmt.Sprintf("%s：角色卡记录的外貌为：%s", name, appearance))
+		default:
+			lines = append(lines, fmt.Sprintf("%s：角色卡记录的外貌为：%s；装备：%s", name, appearance, equipped))
 		}
-		lines = append(lines, fmt.Sprintf("%s：角色卡记录的外貌为：%s", name, appearance))
 	}
 	return strings.Join(lines, "\n")
 }

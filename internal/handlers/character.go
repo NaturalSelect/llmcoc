@@ -506,6 +506,11 @@ type manageInventoryReq struct {
 	Item models.Item `json:"item" binding:"required"`
 }
 
+type equipItemReq struct {
+	Item     models.Item `json:"item" binding:"required"`
+	Equipped bool        `json:"equipped"`
+}
+
 func GetCharacterInventory(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -600,6 +605,50 @@ func RemoveCharacterInventoryItem(c *gin.Context) {
 	}
 
 	out, _, hit := models.TakeItem(card.Inventory.Data, item, desc, count)
+	if !hit {
+		c.JSON(http.StatusNotFound, gin.H{"error": "该物品不在物品栏中"})
+		return
+	}
+	card.Inventory = models.JSONField[[]models.Item]{Data: out}
+
+	if err := models.DB.Save(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存物品栏失败"})
+		return
+	}
+	c.JSON(http.StatusOK, card)
+}
+
+// SetCharacterItemEquipped 切换物品栏中一堆物品的装备状态。
+func SetCharacterItemEquipped(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var card models.CharacterCard
+	if err := models.DB.First(&card, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "人物卡不存在"})
+		return
+	}
+	if card.UserID != userID {
+		var user models.User
+		models.DB.First(&user, userID)
+		if user.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权修改此人物卡"})
+			return
+		}
+	}
+
+	var req equipItemReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	name := strings.TrimSpace(req.Item.Name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "物品名不能为空"})
+		return
+	}
+
+	out, hit := models.SetEquipped(card.Inventory.Data, name, req.Item.Desc, req.Equipped)
 	if !hit {
 		c.JSON(http.StatusNotFound, gin.H{"error": "该物品不在物品栏中"})
 		return

@@ -28,10 +28,11 @@ func IsInventoryItemType(t ItemType) bool {
 }
 
 type Item struct {
-	Name  string   `json:"name"`
-	Desc  string   `json:"desc,omitempty"`
-	Count int      `json:"count"`
-	Type  ItemType `json:"type"`
+	Name     string   `json:"name"`
+	Desc     string   `json:"desc,omitempty"`
+	Count    int      `json:"count"`
+	Type     ItemType `json:"type"`
+	Equipped bool     `json:"equipped,omitempty"`
 }
 
 // NormalizeItem 去掉首尾空白，数量不足 1 时按 1 处理，类型缺失或不合法时归为 misc。
@@ -140,6 +141,7 @@ func AddItem(list []Item, it Item) []Item {
 		if out[i].Type == ItemTypeMisc && it.Type != ItemTypeMisc {
 			out[i].Type = it.Type
 		}
+		out[i].Equipped = out[i].Equipped || it.Equipped
 		return out
 	}
 	return append(out, it)
@@ -163,6 +165,32 @@ func TakeItem(list []Item, name, desc string, count int) (out []Item, taken Item
 		return out, taken, true
 	}
 	return list, Item{}, false
+}
+
+// SetEquipped 按名称和描述精确定位一堆物品并设置装备状态，装备状态属于整堆。
+// 不修改传入的切片；未命中时返回原列表和 ok=false。
+func SetEquipped(list []Item, name, desc string, equipped bool) (out []Item, ok bool) {
+	key := Item{Name: name, Desc: desc}
+	for i := range list {
+		if !list[i].SameStack(key) {
+			continue
+		}
+		out = slices.Clone(list)
+		out[i].Equipped = equipped
+		return out, true
+	}
+	return list, false
+}
+
+// EquippedItems 返回已装备的物品，保持原顺序。
+func EquippedItems(list []Item) []Item {
+	var out []Item
+	for _, it := range list {
+		if it.Equipped {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 // MergeStacks 合并同一堆物品并丢弃空名称条目，保持首次出现的顺序。

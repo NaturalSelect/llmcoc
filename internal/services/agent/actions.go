@@ -343,11 +343,11 @@ func (manageInventoryAction) Execute(call ToolCall, actx ActionContext) []ToolRe
 	players := actx.GCtx.Session.Players
 	idx := investigatorIndex(players, call.CharacterName)
 	if idx < 0 {
-		result := manageInventory(players, call.CharacterName, call.Operate, it)
+		result := manageInventory(players, call.CharacterName, call.Operate, it, call.ItemEquipped)
 		return []ToolResult{{Action: ToolManageInventory, Result: result}}
 	}
 	before := slices.Clone(players[idx].CharacterCard.Inventory.Data)
-	result := manageInventory(players, call.CharacterName, call.Operate, it)
+	result := manageInventory(players, call.CharacterName, call.Operate, it, call.ItemEquipped)
 	events := inventoryDiffEvents(call.CharacterName, before, players[idx].CharacterCard.Inventory.Data)
 	return []ToolResult{{Action: ToolManageInventory, Result: result, Events: events}}
 }

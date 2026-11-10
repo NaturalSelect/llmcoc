@@ -137,6 +137,29 @@ func TestDeposit_Success(t *testing.T) {
 	}
 }
 
+// TestDeposit_ClearsEquipped 验证装备中的物品存入仓库后不再带装备状态。
+func TestDeposit_ClearsEquipped(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	cardID := seedCard(t, uid, "Card A")
+	worn := stack("风衣", "", 1)
+	worn.Equipped = true
+	setCardInventory(t, cardID, []models.Item{worn})
+
+	r := warehouseRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/warehouse/deposit", map[string]any{
+		"character_card_id": cardID,
+		"item":              map[string]any{"name": "风衣"},
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if wh := userWarehouse(t, uid); len(wh) != 1 || wh[0].Equipped {
+		t.Errorf("warehouse item should not be equipped, got %+v", wh)
+	}
+}
+
 // TestDeposit_MergesIntoExistingStack 验证角色和仓库都已有同名同描述物品时，存入后数量合并，总量守恒。
 func TestDeposit_MergesIntoExistingStack(t *testing.T) {
 	initTestDB(t)

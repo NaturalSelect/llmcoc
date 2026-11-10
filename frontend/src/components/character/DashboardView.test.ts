@@ -19,7 +19,7 @@ interface Call {
 let calls: Call[]
 let routes: Record<string, (call: Call) => unknown>
 
-const alive = { id: 1, user_id: 9, name: '艾米', occupation: '记者', age: 28, gender: '女', is_active: true, in_session: false, stats: { str: 50, con: 50, dex: 60, int: 70, hp: 8, max_hp: 10, san: 40, max_san: 60, mp: 5, max_mp: 12 }, skills: { 侦查: 60 }, inventory: [{ name: '绷带', count: 1, type: 'misc' }, { name: '手电筒', desc: '黄铜', count: 1, type: 'equipment' }], spells: ['束缚术'], backstory: '旧事', appearance: '高挑', traits: '冷静' }
+const alive = { id: 1, user_id: 9, name: '艾米', occupation: '记者', age: 28, gender: '女', is_active: true, in_session: false, stats: { str: 50, con: 50, dex: 60, int: 70, hp: 8, max_hp: 10, san: 40, max_san: 60, mp: 5, max_mp: 12 }, skills: { 侦查: 60 }, inventory: [{ name: '左轮手枪', desc: '.38口径', count: 1, type: 'weapon', equipped: true }, { name: '绷带', count: 1, type: 'misc' }, { name: '手电筒', desc: '黄铜', count: 1, type: 'equipment' }], spells: ['束缚术'], backstory: '旧事', appearance: '高挑', traits: '冷静' }
 const dead = { id: 2, user_id: 9, name: '鲍勃', occupation: '医生', is_active: false, stats: {} }
 
 function respond(body: unknown, status = 200) {
@@ -51,6 +51,9 @@ async function confirmDialog(accept: boolean) {
 
 const text = () => document.body.textContent ?? ''
 const button = (label: string) => [...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim().includes(label)) as HTMLButtonElement | undefined
+const section = (title: string) => [...document.body.querySelectorAll('[role="dialog"] section')].find((s) => s.querySelector('h2')?.textContent?.includes(title)) as HTMLElement
+const chips = (title: string) => [...section(title).querySelectorAll('li')].map((li) => li.querySelector('button')!.textContent!.trim())
+const chipButtons = (title: string, index: number) => [...section(title).querySelectorAll('li')[index]!.querySelectorAll('button')].slice(1) as HTMLButtonElement[]
 
 let wrapper: VueWrapper
 
@@ -177,7 +180,8 @@ describe('DashboardView', () => {
   test('详情弹窗：丢弃物品请求路径经过编码，并同步 store；in_session 沿用列表值', async () => {
     useCharactersStore().characters = []
     routes['GET /api/characters'] = () => ({ items: [{ ...structuredClone(alive), in_session: true }], total_pages: 1 })
-    routes['DELETE /api/characters/1/inventory/%E7%BB%B7%E5%B8%A6?desc='] = () => ({ ...alive, inventory: [alive.inventory[1]], in_session: false })
+    const withoutBandage = alive.inventory.filter((it) => it.name !== '绷带')
+    routes['DELETE /api/characters/1/inventory/%E7%BB%B7%E5%B8%A6?desc='] = () => ({ ...alive, inventory: withoutBandage, in_session: false })
     wrapper = mountDashboard()
     await flushPromises()
     button('艾米')!.click()
@@ -198,8 +202,73 @@ describe('DashboardView', () => {
     button('丢弃')!.click()
     await flushPromises()
     expect(calls[0]).toMatchObject({ method: 'DELETE', path: '/api/characters/1/inventory/%E7%BB%B7%E5%B8%A6?desc=' })
-    expect(useCharactersStore().characters[0]).toMatchObject({ inventory: [alive.inventory[1]], in_session: true })
+    expect(useCharactersStore().characters[0]).toMatchObject({ inventory: withoutBandage, in_session: true })
     expect(useUiStore().toasts.map((t) => t.message)).toContain('已从物品栏移除')
+  })
+
+  test('详情弹窗：已装备的物品显示在装备栏，物品栏只显示未装备的；卸下发 PUT 并同步 store', async () => {
+    const gun = { name: '左轮手枪', desc: '.38口径', count: 1, type: 'weapon' }
+    routes['PUT /api/characters/1/inventory/equip'] = () => ({ ...alive, inventory: [gun, ...alive.inventory.slice(1)] })
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await nextTick()
+    expect(text()).toContain('装备栏')
+    expect(chips('装备栏')).toEqual(['左轮手枪'])
+    expect(chips('物品栏')).toEqual(['绷带', '手电筒'])
+    expect(chipButtons('装备栏', 0).map((b) => b.textContent?.trim())).toEqual(['卸下'])
+
+    calls = []
+    button('卸下')!.click()
+    await flushPromises()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      method: 'PUT',
+      path: '/api/characters/1/inventory/equip',
+      body: { item: { name: '左轮手枪', desc: '.38口径' }, equipped: false },
+    })
+    expect(useCharactersStore().characters[0]).toMatchObject({ inventory: [{ name: '左轮手枪' }, { name: '绷带' }, { name: '手电筒' }] })
+    expect(useUiStore().toasts.map((t) => t.message)).toContain('已卸下')
+    expect(section('装备栏').textContent).toContain('—')
+    expect(chips('物品栏')).toEqual(['左轮手枪', '绷带', '手电筒'])
+  })
+
+  test('详情弹窗：物品栏每项按钮顺序为装备、存入仓库、丢弃；装备发 PUT 请求并移入装备栏', async () => {
+    const lamp = alive.inventory[2]!
+    routes['PUT /api/characters/1/inventory/equip'] = () => ({ ...alive, inventory: [alive.inventory[0], alive.inventory[1], { ...lamp, equipped: true }] })
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await nextTick()
+    expect(chipButtons('物品栏', 1).map((b) => b.textContent?.trim())).toEqual(['装备', '存入仓库', '丢弃'])
+
+    calls = []
+    chipButtons('物品栏', 1)[0]!.click()
+    await flushPromises()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      method: 'PUT',
+      path: '/api/characters/1/inventory/equip',
+      body: { item: { name: '手电筒', desc: '黄铜' }, equipped: true },
+    })
+    expect(useUiStore().toasts.map((t) => t.message)).toContain('已装备')
+    expect(chips('装备栏')).toEqual(['左轮手枪', '手电筒'])
+    expect(chips('物品栏')).toEqual(['绷带'])
+  })
+
+  test('详情弹窗：装备栏里有物品时，物品栏的存入仓库仍然作用在被点击的物品上', async () => {
+    routes['POST /api/warehouse/deposit'] = () => ({ warehouse: [], character_card: { ...alive, inventory: [alive.inventory[0], alive.inventory[1]] } })
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await nextTick()
+    calls = []
+    chipButtons('物品栏', 1)[1]!.click()
+    await flushPromises()
+    expect(calls[0]).toMatchObject({ method: 'POST', path: '/api/warehouse/deposit', body: { character_card_id: 1, item: { name: '手电筒', desc: '黄铜' } } })
+    expect(useUiStore().toasts.map((t) => t.message)).toContain('已存入仓库')
+    expect(chips('物品栏')).toEqual(['绷带'])
+    expect(chips('装备栏')).toEqual(['左轮手枪'])
   })
 
   test('详情弹窗里确认框按 Esc 取消，不会把详情弹窗一起关掉', async () => {
@@ -221,7 +290,7 @@ describe('DashboardView', () => {
     routes['GET /api/warehouse'] = () => ({ warehouse: [{ name: '绷带', count: 1, type: 'misc' }, { name: '地图', desc: '泛黄', count: 2, type: 'tome' }] })
     routes['POST /api/warehouse/withdraw'] = () => ({
       warehouse: [{ name: '地图', desc: '泛黄', count: 2, type: 'tome' }],
-      character_card: { ...alive, inventory: [{ name: '绷带', count: 2, type: 'misc' }, alive.inventory[1]] },
+      character_card: { ...alive, inventory: [alive.inventory[0], { name: '绷带', count: 2, type: 'misc' }, alive.inventory[2]] },
     })
     routes['DELETE /api/warehouse/items/%E5%9C%B0%E5%9B%BE?desc=%E6%B3%9B%E9%BB%84'] = () => ({ warehouse: [] })
     wrapper = mountDashboard()

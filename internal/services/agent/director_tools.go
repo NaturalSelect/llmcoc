@@ -278,9 +278,10 @@ func manageInventoryTool() scripterTool {
 			Name: string(ToolManageInventory),
 			Description: `增加、移除或更新调查员的物品。item_name 是物品基础名(禁止包含圆括号，状态/数量等附加信息放入 item_desc)，item_count 为物品数量(默认为1)。
 【物品名称规则】item_name 必须是纯物品名词，不得附带状态描述或数量后缀；例如应写"手电筒"而非"手电筒(没电)"或"手电筒x1"，状态信息写入 item_desc。
-【operate】add：获得物品，同名同描述的物品会叠加数量；remove：失去物品，按 item_count 扣减数量(默认1)，持有数量不足时全部移除，若有多件同名物品(描述不同)必须用 item_desc 指定移除哪一件；update：只修改已有物品的状态描述(item_desc)和类型(item_type)，不改数量。物品状态变化(如电量耗尽、枪支上膛)必须用 update，不要用 add 重复添加。
+【operate】add：获得物品，同名同描述的物品会叠加数量；remove：失去物品，按 item_count 扣减数量(默认1)，持有数量不足时全部移除，若有多件同名物品(描述不同)必须用 item_desc 指定移除哪一件；update：只修改已有物品的状态描述(item_desc)、类型(item_type)和装备状态(item_equipped)，不改数量。物品状态变化(如电量耗尽、枪支上膛)必须用 update，不要用 add 重复添加。
+【item_equipped】表示物品是否穿戴或手持在调查员身上，已装备的物品进入装备栏。add 时省略视为 false，update 时省略表示不改。query_character 返回的 eq="1" 就是已装备。穿上、拿起、脱下、放下物品时用 update 设置这个字段。配图前 describe_characters 只参考装备栏。
 【item_type】equipment 基础装备、weapon 武器、accessory 配件、tome 神话典籍、artifact 神话物品、misc 其他杂物(默认)。
-调用示例：{"character_name":"角色名","operate":"add","item_name":"手电筒","item_desc":"电量充足","item_count":1,"item_type":"equipment"}`,
+调用示例：{"character_name":"角色名","operate":"add","item_name":"手电筒","item_desc":"电量充足","item_count":1,"item_type":"equipment","item_equipped":true}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
@@ -289,7 +290,8 @@ func manageInventoryTool() scripterTool {
 					"item_name": {"type": "string", "description": "物品基础名,禁止含圆括号"},
 					"item_desc": {"type": "string", "description": "物品状态描述(add/update 时写入,remove 时用于区分同名物品,可选)"},
 					"item_count": {"type": "integer", "description": "物品数量(可选,默认1,update 时忽略)"},
-					"item_type": {"type": "string", "enum": ["equipment", "weapon", "accessory", "tome", "artifact", "misc"], "description": "物品类型(可选,add 默认 misc,update 时省略表示不改类型)"}
+					"item_type": {"type": "string", "enum": ["equipment", "weapon", "accessory", "tome", "artifact", "misc"], "description": "物品类型(可选,add 默认 misc,update 时省略表示不改类型)"},
+					"item_equipped": {"type": "boolean", "description": "是否穿戴或手持在身上，进入装备栏(可选,add 时省略视为 false,update 时省略表示不改)"}
 				},
 				"required": ["character_name", "operate", "item_name"]
 			}`),
@@ -479,14 +481,14 @@ func describeCharactersTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolDescribeCharacters),
-			Description: `查询一个或多个角色(调查员/NPC)的外貌描述，用于后续 generate_image 组织画面提示词。
+			Description: `查询一个或多个角色(调查员/NPC)的外貌描述和装备栏，用于后续 generate_image 组织画面提示词。装备栏是角色当前穿戴或手持的物品，会被整理进外貌描述。
 【批次规则】describe_characters是no-sideeffect查询工具，不能与generate_image同批；下一轮读取结果后再把外貌细节写进image_prompt。
 【nsfw参数】必填。后续配图会是nsfw=true的NSFW画面时，查外貌也设为true，外貌描写会交给NSFW Writer，不再回避身体细节；不是NSFW画面时必须明确填false。仅在房间已开启NSFW开关时生效，房间未开启NSFW或未配置NSFW Writer时按普通外貌描写处理。
 调用示例：{"characters":["约翰","艾琳"],"nsfw":false}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"characters": {"type": "array", "items": {"type": "string"}, "description": "要查询外貌描述的角色名列表"},
+					"characters": {"type": "array", "items": {"type": "string"}, "description": "要查询外貌描述和装备栏的角色名列表"},
 					"nsfw": {"type": "boolean", "description": "必填。后续配图是否为NSFW画面,外貌描写是否需要包含身体细节;仅在房间NSFW开关开启时生效"}
 				},
 				"required": ["characters", "nsfw"]

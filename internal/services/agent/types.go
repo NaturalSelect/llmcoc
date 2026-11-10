@@ -134,6 +134,7 @@ type ToolCall struct {
 	ItemDesc      string                 `json:"item_desc"`      // manage_inventory: 物品状态描述(add/update 时写入,remove 时用于区分同名物品)
 	ItemCount     int                    `json:"item_count"`     // manage_inventory: 物品数量(省略或0均视为1)
 	ItemType      models.ItemType        `json:"item_type"`      // manage_inventory: 物品类型(省略时 add 为 misc,update 不改类型)
+	ItemEquipped  *bool                  `json:"item_equipped"`  // manage_inventory: 是否装备在身上(add 省略为未装备,update 省略不改)
 	Monster       string                 `json:"monster"`        // record_monster: 神话存在名称
 	Spell         string                 `json:"spell"`          // manage_spell: 法术名称
 	Relation      *models.SocialRelation `json:"relation"`       // manage_relation: 社会关系条目

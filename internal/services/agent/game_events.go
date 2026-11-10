@@ -155,6 +155,12 @@ func inventoryDiffEvents(name string, before, after []models.Item) []models.Game
 			added = append(added, it)
 		case prev.Label() != it.Label():
 			out = append(out, ev("change", it.Name, fmt.Sprintf("%s → %s", prev.Label(), it.Label())))
+		case prev.Equipped != it.Equipped:
+			op := "unequip"
+			if it.Equipped {
+				op = "equip"
+			}
+			out = append(out, ev(op, it.Name, ""))
 		}
 	}
 	for _, it := range before {
