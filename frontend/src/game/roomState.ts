@@ -67,7 +67,7 @@ export interface Room {
   messages: RoomMessage[]
   byId: Record<number, RoomMessage>
   streams: Record<number, WriterStream>
-  floor: { running: boolean; number: number; starting: boolean }
+  floor: { running: boolean; number: number; starting: boolean; startedAt: number }
   spotlight: Spotlight
   waiting: Waiting
   me: { submitted: boolean; draft: string }
@@ -164,7 +164,7 @@ export function newRoom(opts?: NewRoomOptions): Room {
     messages: [],
     byId: {},
     streams: {},
-    floor: { running: false, number: 0, starting: false },
+    floor: { running: false, number: 0, starting: false, startedAt: 0 },
     spotlight: { userIds: [], names: [], question: '', kpFloor: false, askedMe: false, stop: '' },
     waiting: { pending: 0, total: 0, submittedNames: [], pendingNames: [] },
     me: { submitted: false, draft: '' },
@@ -386,12 +386,14 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
     case 'floor_start':
       room.floor.running = true
       room.floor.starting = false
+      room.floor.startedAt = Date.now()
       if (d.floor != null) room.floor.number = Number(d.floor) || 0
       // NOTE: 周期一开始，上一轮的等待进度就作废；否则周期结束后的新点名会显示残留的"还差几人"
       setWaiting(room, {})
       break
     case 'floor_end':
       room.floor.running = false
+      room.floor.startedAt = 0
       room.kpStatus = ''
       break
     case 'kp_status':
@@ -434,6 +436,9 @@ export function applyChatStatus(room: Room, cs: ChatStatus | null | undefined): 
   const f = c.floor
   room.floor.running = !!(f || c.kp_running)
   room.floor.number = f ? Number(f.floor) || 0 : 0
+  // NOTE: 服务器给的开始时间优先；解析不出来（或只有 kp_running）时沿用本地记录，没有记录就从现在算起
+  const startedAt = typeof f?.started_at === 'string' ? Date.parse(f.started_at) : NaN
+  room.floor.startedAt = !room.floor.running ? 0 : startedAt > 0 ? startedAt : room.floor.startedAt || Date.now()
   // NOTE: starting 只是本地"已点继续、等 floor_start"的标记；chat-status 能反映真实状态，整体重置以免丢了 floor_start 后按钮卡死
   room.floor.starting = false
 

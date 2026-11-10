@@ -252,29 +252,29 @@ func cleanPlayerVisibleText(text string) string {
 
 func progressKPIteration(iter, _ int) string {
 	if iter == 0 {
-		return "KP正在判断本轮需要哪些裁定"
+		return "KP 正在判断本轮需要哪些裁定…"
 	}
-	return "KP正在继续处理工具结果"
+	return "KP 正在继续处理工具结果…"
 }
 
 func progressPlannedCalls(calls []llm.ToolCall) string {
 	labels := compactProgressLabels(calls)
 	if len(labels) == 0 {
-		return "KP正在整理下一步"
+		return "KP 正在整理下一步…"
 	}
-	return "KP计划：" + strings.Join(labels, "、")
+	return "KP 计划：" + strings.Join(labels, "、")
 }
 
 func progressExecutingCalls(calls []llm.ToolCall) string {
 	labels := compactProgressLabels(calls)
 	if len(labels) == 0 {
-		return "系统正在执行工具"
+		return "KP 正在执行工具…"
 	}
-	return "系统正在并行处理：" + strings.Join(labels, "、")
+	return "KP 正在并行处理：" + strings.Join(labels, "、")
 }
 
 func progressExecutingCall(call llm.ToolCall) string {
-	return "系统正在" + progressToolLabel(ToolCallType(call.Name))
+	return "KP 正在" + progressToolLabel(ToolCallType(call.Name)) + "…"
 }
 
 func compactProgressLabels(calls []llm.ToolCall) []string {
@@ -363,7 +363,11 @@ func formatSingleDiceResult(r DiceCheckResult) string {
 	if r.Target > 0 && r.Result != "" {
 		verdict = fmt.Sprintf("目标:%d 结果:%s ", r.Target, r.Result)
 	}
-	return fmt.Sprintf("%v鉴定: %v %v%v%v", r.What, r.Roll, level, verdict, hidden)
+	detail := ""
+	if r.Detail != "" {
+		detail = r.Detail + " "
+	}
+	return fmt.Sprintf("%v鉴定: %v %v%v%v%v", r.What, r.Roll, level, verdict, detail, hidden)
 }
 
 // formatNPCAction 把 AI 玩家的声明渲染成给 KP 的 tool 结果：标明未裁定，空字段省略。
@@ -548,6 +552,12 @@ func executeDiceChecks(checks []DiceCheck, players []models.SessionPlayer) []Dic
 	for _, dc := range checks {
 		diceVal := game.RollDiceExpr(dc.DiceExpr)
 		res := DiceCheckResult{DiceCheck: dc, Roll: diceVal}
+		if net := modifierNet(dc); net != 0 {
+			m := game.RollD100Modified(net)
+			diceVal = m.Roll
+			res.Roll = diceVal
+			res.Detail = m.Describe(net)
+		}
 		if target, ok := d100CheckTarget(dc, players); ok {
 			res.Target = target
 			res.Result = game.CheckResultLabel(diceVal, target, dc.Level)
@@ -563,10 +573,7 @@ func d100CheckTarget(dc DiceCheck, players []models.SessionPlayer) (int, bool) {
 	if !strings.EqualFold(strings.TrimSpace(dc.DiceExpr), "1d100") {
 		return 0, false
 	}
-	what := strings.TrimSpace(dc.What)
-	for _, suffix := range []string{"检定", "鉴定"} {
-		what = strings.TrimSuffix(what, suffix)
-	}
+	what := checkName(dc.What)
 	if what == "" {
 		return 0, false
 	}
@@ -575,7 +582,7 @@ func d100CheckTarget(dc DiceCheck, players []models.SessionPlayer) (int, bool) {
 		return 0, false
 	}
 	card := &players[idx].CharacterCard
-	if what == "理智" || what == "SAN" {
+	if isSanityCheck(what) {
 		return card.Stats.Data.SAN, true
 	}
 	if v, ok := mapSkillToStat(card, what); ok {
@@ -585,6 +592,27 @@ func d100CheckTarget(dc DiceCheck, players []models.SessionPlayer) (int, bool) {
 		return v, true
 	}
 	return 0, false
+}
+
+func checkName(what string) string {
+	what = strings.TrimSpace(what)
+	for _, suffix := range []string{"检定", "鉴定"} {
+		what = strings.TrimSuffix(what, suffix)
+	}
+	return what
+}
+
+func isSanityCheck(what string) bool {
+	return what == "理智" || strings.EqualFold(what, "SAN")
+}
+
+// NOTE: COC7 规定奖励骰与惩罚骰不适用于理智检定，且各最多两个；非 1D100 的表达式也不适用。
+// 返回奖励骰减惩罚骰的净数量，0 表示按普通 D100 掷。
+func modifierNet(dc DiceCheck) int {
+	if !strings.EqualFold(strings.TrimSpace(dc.DiceExpr), "1d100") || isSanityCheck(checkName(dc.What)) {
+		return 0
+	}
+	return clamp(dc.Bonus, 0, 2) - clamp(dc.Penalty, 0, 2)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

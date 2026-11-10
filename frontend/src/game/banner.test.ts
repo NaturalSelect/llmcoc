@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { continueLabel, hasKPStarted, playerTurnSubmitState, roomBanner, showWaiting } from './banner'
+import { continueLabel, hasKPStarted, playerTurnSubmitState, roomBanner, showWaiting, waitedLabel } from './banner'
 import * as RS from './roomState'
 import type { Room } from './roomState'
 
@@ -9,6 +9,22 @@ function playingRoom(userId = 2): Room {
   RS.applySnapshot(room, { session: { status: 'playing' }, messages: [], chatStatus: {} })
   return room
 }
+
+describe('waitedLabel', () => {
+  test('周期运行中按 mm:ss 显示，没有开始时间或周期未运行时为空', () => {
+    const room = playingRoom()
+    expect(waitedLabel(room, 1_000_000)).toBe('')
+    room.floor.running = true
+    expect(waitedLabel(room, 1_000_000)).toBe('')
+    room.floor.startedAt = 1_000_000 - 75_000
+    expect(waitedLabel(room, 1_000_000)).toBe('已等待 01:15')
+    room.floor.startedAt = 1_000_000 + 5_000
+    expect(waitedLabel(room, 1_000_000)).toBe('已等待 00:00')
+    room.floor.running = false
+    expect(waitedLabel(room, 1_000_000)).toBe('')
+    expect(waitedLabel(null, 1_000_000)).toBe('')
+  })
+})
 
 describe('roomBanner', () => {
   test('没有房间时为空', () => {

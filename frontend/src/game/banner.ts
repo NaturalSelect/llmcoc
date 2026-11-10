@@ -28,6 +28,15 @@ export function hasKPStarted(room: Room | null): boolean {
   return !!room && room.messages.some((m) => (m.floor ?? 0) > 0 && m.kind !== 'event')
 }
 
+// NOTE: KP 周期运行中才有等待时长；startedAt 为 0 表示还不知道开始时间
+export function waitedLabel(room: Room | null, now: number): string {
+  if (!room?.floor.running || !room.floor.startedAt) return ''
+  const sec = Math.max(0, Math.floor((now - room.floor.startedAt) / 1000))
+  const mm = String(Math.floor(sec / 60)).padStart(2, '0')
+  const ss = String(sec % 60).padStart(2, '0')
+  return `已等待 ${mm}:${ss}`
+}
+
 export function continueLabel(room: Room | null): string {
   return hasKPStarted(room) ? '让 KP 继续' : '让 KP 开场'
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BaseButton from '@/components/base/BaseButton.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import StatBar from '@/components/base/StatBar.vue'
@@ -7,14 +8,17 @@ import { playerTurnSubmitState } from '@/game/banner'
 import { statNum } from '@/game/hud'
 import type { Room } from '@/game/roomState'
 
-defineProps<{ open: boolean; session: Session | null; room: Room | null; userId: number | undefined }>()
-const emit = defineEmits<{ close: []; select: [player: SessionPlayer] }>()
+defineProps<{ open: boolean; session: Session | null; room: Room | null; userId: number | undefined; canJoin?: boolean }>()
+const emit = defineEmits<{ close: []; select: [player: SessionPlayer]; join: [] }>()
 </script>
 
 <template>
   <BaseModal :open="open" title="调查员状态" max-width="max-w-md" @close="emit('close')">
-    <p v-if="!session?.players?.length" class="py-6 text-center text-sm text-fg-muted">还没有调查员加入，玩家需要携带人物卡加入房间。</p>
-    <ul v-else class="max-h-[60vh] space-y-2 overflow-y-auto">
+    <div v-if="!session?.players?.length" class="space-y-3 py-6 text-center">
+      <p class="text-sm text-fg-muted">还没有调查员加入，玩家需要携带人物卡加入房间。</p>
+      <BaseButton v-if="canJoin" size="sm" @click="emit('join')">带人物卡加入</BaseButton>
+    </div>
+    <ul v-else class="space-y-2">
       <li v-for="p in session?.players ?? []" :key="p.user_id">
         <button
           type="button"

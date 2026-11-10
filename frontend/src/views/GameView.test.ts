@@ -74,14 +74,15 @@ interface Setup {
   spotlight?: Record<string, unknown>
   extraMessages?: Array<Record<string, unknown>>
   players?: Array<Record<string, unknown>>
+  status?: string
 }
 
-async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players }: Setup = {}) {
+async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing' }: Setup = {}) {
   const fetchCalls: Array<{ method: string; path: string }> = []
   const session = {
     id: 7,
     name: '雾港旧宅',
-    status: 'playing',
+    status,
     created_by: hostId,
     scenario: { name: '旧宅疑云' },
     players: players ?? [{ user_id: 2, user: { username: 'alice' }, character_card: { id: 5, name: '爱丽丝', occupation: '记者', stats: { hp: 9, max_hp: 10, san: 40, max_san: 50, mp: 8, max_mp: 8 } } }],
@@ -272,6 +273,26 @@ describe('GameView', () => {
     expect(text).not.toContain('配图失败：')
     expect(text.match(/叙事生成失败/g)).toHaveLength(2)
     expect(text.match(/配图生成失败/g)).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  test('房主在大厅态房间里没带人物卡：「开始」禁用，可以直接从房间里打开加入弹窗', async () => {
+    const { wrapper } = await setup({ hostId: 2, players: [], status: 'lobby' })
+    const buttons = () => wrapper.findAll('header button')
+    expect(buttons().find((b) => b.text() === '开始')!.attributes('disabled')).toBeDefined()
+
+    await buttons().find((b) => b.text() === '带人物卡加入')!.trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('加入房间')
+    expect(document.body.textContent).toContain('雾港旧宅')
+    wrapper.unmount()
+  })
+
+  test('房主已带人物卡时「开始」可点，且不再显示加入入口', async () => {
+    const { wrapper } = await setup({ hostId: 2, status: 'lobby' })
+    const texts = wrapper.findAll('header button').map((b) => b.text())
+    expect(texts).not.toContain('带人物卡加入')
+    expect(wrapper.findAll('header button').find((b) => b.text() === '开始')!.attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 

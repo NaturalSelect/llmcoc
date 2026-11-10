@@ -69,15 +69,15 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 		if hasResponse && hasNonCompatible {
-			emitProgress("KP正在修正工具调用顺序")
+			emitProgress("KP 正在修正工具调用顺序…")
 			return "SYSTEM REJECT: your entire batch was rejected. narrate/ask_players/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/generate_npc_name/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call narrate/ask_players/end_game after reading the results. Write and state-update tools may stay in the same batch as narrate."
 		}
 		if hasResponse && respStr == "" {
-			emitProgress("KP正在补全消息内容")
+			emitProgress("KP 正在补全消息内容…")
 			return "SYSTEM REJECT: empty reply"
 		}
 		if narrateCalls > 1 || askCalls > 1 {
-			emitProgress("KP正在合并重复回复")
+			emitProgress("KP 正在合并重复回复…")
 			return "SYSTEM REJECT: 同一轮最多只能有一个 narrate 和一个 ask_players。每个 narrate 都会立即成为一条独立的玩家可见消息：把要说的话合并成一条，或者分成相邻的两轮发出。"
 		}
 
@@ -96,7 +96,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 		if actNPCPresent && len(incompatible) > 0 {
-			emitProgress("KP正在修正工具调用顺序")
+			emitProgress("KP 正在修正工具调用顺序…")
 			return fmt.Sprintf(
 				"SYSTEM REJECT: act_npc 返回结果必须先读到才能执行状态更新或叙事，本轮不能把 act_npc 与 %s 混在一起。请先单独调用 act_npc，读取结果后再在下一轮调用这些工具。",
 				strings.Join(incompatible, "、"))
@@ -137,7 +137,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 					continue
 				}
 				if queriedAll || queried[strings.TrimSpace(tc.Dice.Character)] {
-					emitProgress("KP正在修正工具调用顺序")
+					emitProgress("KP 正在修正工具调用顺序…")
 					return "SYSTEM REJECT: query_character/query_npc_card 与技能检定 roll_dice 不能同批——提交时查询结果还不存在，骰子里的技能值只能是猜测。请本轮只发查询，读到真实技能值后再在下一轮掷骰。"
 				}
 			}
@@ -155,7 +155,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 		if hasDescribe && hasImage {
-			emitProgress("KP正在修正工具调用顺序")
+			emitProgress("KP 正在修正工具调用顺序…")
 			return "SYSTEM REJECT: describe_characters 与 generate_image 不能同批——提交时外貌描写还没返回，image_prompt 里的角色外貌只能是编造。请本轮只发 describe_characters，读到结果后再在下一轮画图。"
 		}
 
@@ -171,7 +171,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 		if hasGenerateName && hasCreateNPC {
-			emitProgress("KP正在修正工具调用顺序")
+			emitProgress("KP 正在修正工具调用顺序…")
 			return "SYSTEM REJECT: generate_npc_name 与 create_npc 不能同批——提交时姓名还没返回，char_card.name 只能是编造。请本轮只发 generate_npc_name，读到姓名后再在下一轮 create_npc。"
 		}
 
@@ -201,7 +201,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 		if soloCount > 1 || (soloCount == 1 && hasOtherThanReport) {
-			emitProgress("KP正在修正工具调用顺序")
+			emitProgress("KP 正在修正工具调用顺序…")
 			return fmt.Sprintf("SYSTEM REJECT: %s 必须单独成批调用(可以搭配report)，不能与其他工具或自身的多次调用混在同一批。请拆成多轮，每次只发一个战斗/追逐推进工具，读到结果后再决定下一步。", soloAction)
 		}
 
@@ -210,12 +210,12 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			switch ToolCallType(call.Name) {
 			case ToolCombatAct, ToolEndCombat:
 				if !combatActive {
-					emitProgress("KP正在修正工具调用顺序")
+					emitProgress("KP 正在修正工具调用顺序…")
 					return "SYSTEM REJECT: 当前没有进行中的战斗，不能调用combat_act/end_combat。请先调用start_combat。"
 				}
 			case ToolChaseAct, ToolEndChase:
 				if !chaseActive {
-					emitProgress("KP正在修正工具调用顺序")
+					emitProgress("KP 正在修正工具调用顺序…")
 					return "SYSTEM REJECT: 当前没有进行中的追逐，不能调用chase_act/end_chase。请先调用start_chase。"
 				}
 			}
@@ -225,11 +225,11 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		for _, call := range calls {
 			action := ToolCallType(call.Name)
 			if action == ToolStartCombat && chaseActive {
-				emitProgress("KP正在修正工具调用顺序")
+				emitProgress("KP 正在修正工具调用顺序…")
 				return "SYSTEM REJECT: 追逐正在进行中，战斗与追逐互斥，不能调用start_combat。请先end_chase。"
 			}
 			if action == ToolStartChase && combatActive {
-				emitProgress("KP正在修正工具调用顺序")
+				emitProgress("KP 正在修正工具调用顺序…")
 				return "SYSTEM REJECT: 战斗正在进行中，战斗与追逐互斥，不能调用start_chase。请先end_combat。"
 			}
 		}
@@ -239,7 +239,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		if combatActive || chaseActive {
 			for _, call := range calls {
 				if ToolCallType(call.Name) == ToolAdvanceTime {
-					emitProgress("KP正在修正工具调用顺序")
+					emitProgress("KP 正在修正工具调用顺序…")
 					return "SYSTEM REJECT: 战斗/追逐进行中不能调用advance_time——战斗/追逐轮以秒计，与30分钟/轮的时间推进语义冲突。"
 				}
 			}
@@ -280,7 +280,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 					}
 				}
 				if !hasPending && len(unresolved) > 0 {
-					emitProgress("KP正在补全战斗轮结算")
+					emitProgress("KP 正在补全战斗轮结算…")
 					return fmt.Sprintf("SYSTEM REJECT: 本战斗轮还有参战者未行动(%s)，不能调用ask_players/end_game收尾。请继续对这些参战者调用combat_act(顺序只是建议，NPC可直接裁定，调查员需已有本轮声明)；全员行动完后端会自动进入下一轮再允许收尾。", strings.Join(unresolved, "、"))
 				}
 			}
@@ -296,7 +296,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 					}
 				}
 				if !hasPending && len(unresolved) > 0 {
-					emitProgress("KP正在补全追逐轮结算")
+					emitProgress("KP 正在补全追逐轮结算…")
 					return fmt.Sprintf("SYSTEM REJECT: 本追逐轮还有参与者未行动(%s)，不能调用ask_players/end_game收尾。请继续对这些参与者调用chase_act(顺序只是建议，NPC可直接裁定，调查员需已有本轮声明)；全员行动完后端会自动进入下一轮再允许收尾。", strings.Join(unresolved, "、"))
 				}
 			}
@@ -313,7 +313,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 				continue
 			}
 			if strings.ContainsAny(tc.Dice.What, "0123456789０１２３４５６７８９") {
-				emitProgress("KP正在修正工具调用顺序")
+				emitProgress("KP 正在修正工具调用顺序…")
 				return fmt.Sprintf("SYSTEM REJECT: roll_dice.what=%q 疑似嵌入了猜测的技能值(例如\"投掷(50)\")。what只是纯文本技能名标签，技能值必须来自query_character/query_npc_card的真实结果，不得写进what。", tc.Dice.What)
 			}
 		}
@@ -328,7 +328,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 				continue
 			}
 			if strings.ContainsAny(tc.ItemName, "()（）") {
-				emitProgress("KP正在修正工具调用顺序")
+				emitProgress("KP 正在修正工具调用顺序…")
 				return fmt.Sprintf("SYSTEM REJECT: manage_inventory.item_name=%q 不能包含圆括号。item_name只写物品基础名，状态描述放item_desc，数量放item_count。", tc.ItemName)
 			}
 		}
@@ -343,7 +343,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 				continue
 			}
 			if len(tc.Options) > 2 {
-				emitProgress("KP正在修正工具调用顺序")
+				emitProgress("KP 正在修正工具调用顺序…")
 				return fmt.Sprintf("SYSTEM REJECT: ask_players.options 有 %d 条，超过上限2条。宁可给0条也不要泄露，删减到最多2条最合适的行动入口。", len(tc.Options))
 			}
 		}
@@ -366,7 +366,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 				item:      strings.TrimSpace(tc.ItemName),
 			}
 			if seenInventoryOps[key] {
-				emitProgress("KP正在修正工具调用顺序")
+				emitProgress("KP 正在修正工具调用顺序…")
 				return fmt.Sprintf("SYSTEM REJECT: 本批次对角色%q的物品%q重复调用了manage_inventory(重复结算)。确认这不是同一个事件被记了两次；如需一次性增减多个，合并成单次调用。", key.character, key.item)
 			}
 			seenInventoryOps[key] = true
@@ -379,7 +379,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 		if generateImageCalls > 1 || (generateImageCalls > 0 && *imageGeneratedThisTurn) {
-			emitProgress("KP正在减少重复画图调用")
+			emitProgress("KP 正在减少重复画图调用…")
 			return "SYSTEM REJECT: generate_image may be called at most once per turn. Keep only the single most necessary visual moment."
 		}
 		if generateImageCalls > 0 {
@@ -393,7 +393,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 		if dramaturgCalls > 1 || (dramaturgCalls > 0 && *dramaturgConsultedThisTurn) {
-			emitProgress("KP正在减少重复剧情节奏咨询")
+			emitProgress("KP 正在减少重复剧情节奏咨询…")
 			return "SYSTEM REJECT: consult_dramaturg may be called at most once per turn. Use the guidance you already received."
 		}
 		if dramaturgCalls > 0 {

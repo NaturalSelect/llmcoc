@@ -24,8 +24,8 @@ watch(
 
 // NOTE: 故事原文是正文，用 prose 字体；LLM 对话记录是日志，用等宽小字
 const storyClass =
-  'max-h-[65vh] overflow-auto rounded-lg bg-bg p-4 font-prose text-sm leading-relaxed whitespace-pre-wrap text-fg'
-const logClass = 'max-h-[65vh] overflow-auto rounded-lg bg-bg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-muted'
+  'overflow-x-auto rounded-lg bg-bg p-4 font-prose text-sm leading-relaxed whitespace-pre-wrap text-fg'
+const logClass = 'overflow-x-auto rounded-lg bg-bg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-muted'
 const emptyClass = 'rounded-lg bg-surface-2 p-4 text-sm text-fg-muted'
 </script>
 

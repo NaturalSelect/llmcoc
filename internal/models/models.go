@@ -571,7 +571,7 @@ type GameEvent struct {
 	Category  string `json:"category,omitempty"`  // item: inventory|spell|asset|relation|monster
 	Op        string `json:"op,omitempty"`        // item: add|remove|change；combat/chase: start|end|round
 	Name      string `json:"name,omitempty"`      // item 条目
-	Detail    string `json:"detail,omitempty"`    // item: 补充说明，如数量变化；backstory: 改写后的个人经历；stat: 变化原因，如结算恢复
+	Detail    string `json:"detail,omitempty"`    // item: 补充说明，如数量变化；backstory: 改写后的个人经历；stat: 变化原因，如结算恢复；dice: 奖励骰/惩罚骰的掷骰过程
 	Symptom   string `json:"symptom,omitempty"`   // madness
 	Duration  int    `json:"duration,omitempty"`  // madness
 	Location  string `json:"location,omitempty"`  // location

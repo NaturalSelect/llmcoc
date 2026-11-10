@@ -221,7 +221,7 @@ KP 开始一个周期（一次发言权）。
 | `host_continue` | 房主点击"继续"（不再等待未回应的被点名玩家） |
 | `resume` | 上一个周期因上下文过长被迫结束，服务端总结后自动续跑，没有新的玩家输入（兜底路径，较少出现） |
 
-周期中途上下文逼近窗口时，服务端先发一条 `kp_status`（"KP正在整理记忆"），就地总结较早的剧情后继续同一个周期，客户端看不到额外的 `floor_end` / `floor_start`。只有当前周期本身就超出窗口，或总结失败时，才会走 `resume`：同一次提交产生两对 `floor_start` / `floor_end`，先是 `floor_end(reason=context)`，紧接着一个新编号的 `floor_start(reason=resume)`。续跑没有产出任何消息就不会再续，之后以 `floor_end(reason=context)` 收尾。
+周期中途上下文逼近窗口时，服务端先发一条 `kp_status`（"KP 正在整理记忆…"），就地总结较早的剧情后继续同一个周期，客户端看不到额外的 `floor_end` / `floor_start`。只有当前周期本身就超出窗口，或总结失败时，才会走 `resume`：同一次提交产生两对 `floor_start` / `floor_end`，先是 `floor_end(reason=context)`，紧接着一个新编号的 `floor_start(reason=resume)`。续跑没有产出任何消息就不会再续，之后以 `floor_end(reason=context)` 收尾。
 
 #### `waiting`
 

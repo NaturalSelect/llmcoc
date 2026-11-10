@@ -35,7 +35,7 @@ func diceEvent(r DiceCheckResult, players []models.SessionPlayer) models.GameEve
 	if r.Hidden {
 		return models.GameEvent{Type: "dice", Hidden: true}
 	}
-	ev := models.GameEvent{Type: "dice", Skill: r.What, Roll: r.Roll, Level: r.Level, Target: r.Target, Result: r.Result}
+	ev := models.GameEvent{Type: "dice", Skill: r.What, Roll: r.Roll, Level: r.Level, Target: r.Target, Result: r.Result, Detail: r.Detail}
 	if strings.TrimSpace(r.What) == "" {
 		ev.Expr = strings.TrimSpace(r.DiceExpr)
 	}

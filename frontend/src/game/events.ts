@@ -167,6 +167,7 @@ export function describeEvent(ev: GameEvent): EventView {
       if (hasTarget) notes.push('目标 ' + ev.target)
       if (ev.level) notes.push('难度 ' + ev.level)
       if (hasTarget && ev.result) notes.push(ev.result)
+      if (ev.detail) notes.push(ev.detail)
       return {
         icon: 'dice',
         tone: 'plain',

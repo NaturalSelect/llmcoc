@@ -583,7 +583,7 @@ func waitWritersForBeat(ctx context.Context, sessionID uint) {
 		return
 	default:
 	}
-	hubFor(sessionID).Ephemeral("kp_status", gin.H{"text": "正在撰写叙事"})
+	hubFor(sessionID).Ephemeral("kp_status", gin.H{"text": "KP 正在撰写叙事…"})
 	select {
 	case <-done:
 	case <-ctx.Done():

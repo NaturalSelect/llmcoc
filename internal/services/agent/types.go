@@ -272,6 +272,9 @@ type DiceCheck struct {
 	What      string `json:"what"`      // 检定内容描述(如 "攻击检定"/"智力检定")
 	DiceExpr  string `json:"dice_expr"` // 可选的骰子表达式(如 "1D100+20"),优先于固定值
 	Level     string `json:"level"`     // 可选的检定难度等级(如 "简单"/"困难"),仅供KP参考
+	// NOTE: 奖励骰/惩罚骰数量由后端统一掷出，只对非理智的 1D100 检定生效，各自最多 2 个。
+	Bonus   int `json:"bonus_dice"`
+	Penalty int `json:"penalty_dice"`
 }
 
 // DiceCheckResult is the outcome of an auto-executed dice check.
@@ -281,6 +284,7 @@ type DiceCheckResult struct {
 	// NOTE: Target/Result 只在调查员的 D100 检定且人物卡上查得到数值时才有；NPC、查不到的技能、伤害骰都留空。
 	Target int    `json:"target,omitempty"`
 	Result string `json:"result,omitempty"` // 大成功/极难成功/困难成功/常规成功/失败/大失败，已按 Level 难度换算
+	Detail string `json:"detail,omitempty"` // 奖励骰/惩罚骰的掷骰过程，没用到时为空
 }
 
 // ── Character update types ────────────────────────────────────────────────────

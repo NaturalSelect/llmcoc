@@ -91,7 +91,7 @@ async function submit() {
           role="group"
           :aria-labelledby="pickerLabelId"
           :aria-busy="scenarios.loading"
-          class="max-h-56 space-y-1 overflow-y-auto rounded-lg bg-surface-2 p-1.5"
+          class="space-y-1 rounded-lg bg-surface-2 p-1.5"
         >
           <p v-if="!scenarios.loading && scenarios.items.length === 0" class="p-2 text-sm text-fg-subtle">暂无剧本</p>
           <button
@@ -113,7 +113,7 @@ async function submit() {
         <PaginationBar v-model:page="scenarioPage" :total-pages="scenarios.totalPages" :total="scenarios.total" />
       </div>
 
-      <div v-if="selected" class="max-h-72 space-y-2 overflow-y-auto rounded-lg bg-surface-2 p-3">
+      <div v-if="selected" class="space-y-2 rounded-lg bg-surface-2 p-3">
         <p class="text-sm text-fg-muted">难度：<span>{{ difficultyLabel(selected.difficulty) }}</span></p>
         <p v-if="scenarioContent(selected).setting" class="whitespace-pre-wrap font-prose text-prose text-fg-muted">
           {{ scenarioContent(selected).setting }}

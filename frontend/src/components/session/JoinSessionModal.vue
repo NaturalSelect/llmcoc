@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { api } from '@/api/client'
-import type { JoinSessionForm, LobbySession } from '@/api/sessionTypes'
+import type { JoinSessionForm } from '@/api/sessionTypes'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
@@ -10,7 +10,8 @@ import { useCharactersStore } from '@/stores/characters'
 import { useUiStore } from '@/stores/ui'
 import { buildJoinPayload, cardOptionLabel, emptyJoinForm, errorMessage, joinableCharacters } from './sessionLogic'
 
-const props = defineProps<{ open: boolean; session: LobbySession | null }>()
+// NOTE: 大厅卡片（LobbySession）和游戏页里的房间（Session）都要用，所以只声明用到的三个字段
+const props = defineProps<{ open: boolean; session: { id: number; name?: string; has_password?: boolean } | null }>()
 const emit = defineEmits<{ close: []; joined: [] }>()
 
 const chars = useCharactersStore()

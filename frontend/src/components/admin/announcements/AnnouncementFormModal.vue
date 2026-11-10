@@ -76,7 +76,7 @@ async function save() {
         <div class="mb-1.5 text-sm text-fg-muted">预览</div>
         <!-- NOTE: renderMarkdown 经过 DOMPurify 清洗，是唯一允许 v-html 的来源 -->
         <div
-          class="announcement-preview max-h-40 overflow-y-auto rounded-lg bg-surface-2 p-3 text-sm"
+          class="announcement-preview rounded-lg bg-surface-2 p-3 text-sm"
           v-html="preview"
         />
       </div>

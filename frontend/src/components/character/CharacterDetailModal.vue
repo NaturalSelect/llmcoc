@@ -176,7 +176,7 @@ function assetEntries(card: CharacterCardFull): Entry[] {
 
       <CharacterSection title="技能（完整）">
         <div class="mb-2 text-xs tabular-nums text-fg-subtle">总计 {{ Object.keys(current.skills ?? {}).length }} 项</div>
-        <ul class="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+        <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <li
             v-for="[skill, val] in sortedSkills(current.skills)"
             :key="skill"

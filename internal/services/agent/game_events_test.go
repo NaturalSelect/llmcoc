@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/game"
 )
 
 func eventTestPlayers() []models.SessionPlayer {
@@ -38,6 +39,57 @@ func onlyResultEvents(t *testing.T, res []ToolResult) []models.GameEvent {
 		t.Fatalf("results = %+v, want one", res)
 	}
 	return res[0].Events
+}
+
+func TestModifierNet(t *testing.T) {
+	cases := []struct {
+		name  string
+		check DiceCheck
+		want  int
+	}{
+		{"没有骰子修正", DiceCheck{What: "斗殴", DiceExpr: "1D100"}, 0},
+		{"惩罚骰", DiceCheck{What: "斗殴", DiceExpr: "1D100", Penalty: 1}, -1},
+		{"奖励骰", DiceCheck{What: "斗殴", DiceExpr: "1d100", Bonus: 2}, 2},
+		{"各一个相抵", DiceCheck{What: "斗殴", DiceExpr: "1D100", Bonus: 1, Penalty: 1}, 0},
+		{"上限两个", DiceCheck{What: "斗殴", DiceExpr: "1D100", Penalty: 5}, -2},
+		{"负数当作没有", DiceCheck{What: "斗殴", DiceExpr: "1D100", Bonus: -3}, 0},
+		{"理智检定不适用", DiceCheck{What: "理智", DiceExpr: "1D100", Penalty: 1}, 0},
+		{"理智检定带后缀也不适用", DiceCheck{What: "SAN检定", DiceExpr: "1D100", Bonus: 1}, 0},
+		{"伤害骰不适用", DiceCheck{What: "", DiceExpr: "1D6+2", Penalty: 1}, 0},
+	}
+	for _, tc := range cases {
+		if got := modifierNet(tc.check); got != tc.want {
+			t.Errorf("%s: modifierNet = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestExecuteDiceChecks_PenaltyDiceDescribedAndRollMatchesVerdict(t *testing.T) {
+	players := eventTestPlayers()
+	for i := 0; i < 100; i++ {
+		res := executeDiceChecks([]DiceCheck{{Character: "甲", What: "侦查", DiceExpr: "1D100", Penalty: 1}}, players)
+		if len(res) != 1 {
+			t.Fatalf("results = %d, want 1", len(res))
+		}
+		r := res[0]
+		if !strings.HasPrefix(r.Detail, "惩罚骰：") || r.Roll < 1 || r.Roll > 100 {
+			t.Fatalf("result = %+v, want penalty detail and roll in [1,100]", r)
+		}
+		if want := game.CheckResultLabel(r.Roll, r.Target, r.Level); r.Result != want {
+			t.Fatalf("result %q does not match roll %d against target %d, want %q", r.Result, r.Roll, r.Target, want)
+		}
+		if line := formatSingleDiceResult(r); !strings.Contains(line, r.Detail) {
+			t.Fatalf("KP-facing line %q lost the dice detail %q", line, r.Detail)
+		}
+		if ev := diceEvent(r, players); ev.Detail != r.Detail {
+			t.Fatalf("event detail = %q, want %q", ev.Detail, r.Detail)
+		}
+	}
+
+	plain := executeDiceChecks([]DiceCheck{{Character: "甲", What: "理智", DiceExpr: "1D100", Penalty: 1}}, players)
+	if plain[0].Detail != "" {
+		t.Errorf("sanity check got dice detail %q, want none", plain[0].Detail)
+	}
 }
 
 func TestExecuteDiceChecks_FillsTargetAndResultForInvestigators(t *testing.T) {

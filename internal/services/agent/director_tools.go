@@ -134,7 +134,9 @@ func rollDiceTool() scripterTool {
 							"hidden": {"type": "boolean", "description": "是否为暗骰(不向玩家展示骰值)"},
 							"what": {"type": "string", "description": "检定的技能/属性名;伤害等纯数值骰可留空"},
 							"dice_expr": {"type": "string", "description": "骰子表达式,如 1D100、1D6+2、1D4x5"},
-							"level": {"type": "string", "description": "判定难度:常规/困难/极难,可留空表示常规"}
+							"level": {"type": "string", "description": "判定难度:常规/困难/极难,可留空表示常规"},
+							"bonus_dice": {"type": "integer", "description": "奖励骰个数(0-2)，只用于非理智的 1D100 检定，由后端统一掷出；不要把奖励骰写进 dice_expr 或 what"},
+							"penalty_dice": {"type": "integer", "description": "惩罚骰个数(0-2)，规则同 bonus_dice；奖励骰与惩罚骰按个数相抵"}
 						},
 						"required": ["dice_expr", "what"]
 					}

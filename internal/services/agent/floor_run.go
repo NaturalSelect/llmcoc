@@ -114,7 +114,7 @@ func (f *floorRun) afterDispatch(round int, calls []llm.ToolCall, msgs []llm.Cha
 			if out != nil {
 				cur = out
 			}
-			f.progress("KP正在整理记忆")
+			f.progress("KP 正在整理记忆…")
 			rebuilt, stillFull := f.cm.CompactInFloor(f.ctx, f.summarize, cur, f.lastUsage)
 			f.contextFull = false
 			if stillFull {
@@ -268,7 +268,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 	}
 	debugf("run", "session=%d floor_reason=%q user=%q input=%s", sid, gctx.KPFloor, gctx.UserName, gctx.UserInput)
-	emitProgress("KP正在整理本轮行动")
+	emitProgress("KP 正在整理本轮行动…")
 
 	var tempNPCs []models.SessionNPC
 	models.DB.Where("session_id = ?", sid).Find(&tempNPCs)

@@ -192,6 +192,44 @@ func TestRollD100Range(t *testing.T) {
 	}
 }
 
+// TestRollD100Modified 验证十位骰个数、取高取低和最终骰值一致，描述是完整的一句话。
+func TestRollD100Modified(t *testing.T) {
+	for _, net := range []int{2, 1, -1, -2} {
+		for i := 0; i < 300; i++ {
+			m := RollD100Modified(net)
+			if len(m.Tens) != abs(net)+1 {
+				t.Fatalf("net=%d tens=%v, want %d dice", net, m.Tens, abs(net)+1)
+			}
+			for _, tens := range m.Tens {
+				if net > 0 && tens < m.Kept {
+					t.Fatalf("net=%d kept %d but %d is lower", net, m.Kept, tens)
+				}
+				if net < 0 && tens > m.Kept {
+					t.Fatalf("net=%d kept %d but %d is higher", net, m.Kept, tens)
+				}
+			}
+			want := m.Kept + m.Units
+			if want == 0 {
+				want = 100
+			}
+			if m.Roll != want || m.Roll < 1 || m.Roll > 100 {
+				t.Fatalf("net=%d roll=%d, want %d within [1,100]", net, m.Roll, want)
+			}
+		}
+	}
+}
+
+func TestModifiedD100Describe(t *testing.T) {
+	penalty := ModifiedD100{Roll: 57, Tens: []int{50, 20}, Kept: 50, Units: 7}
+	if got, want := penalty.Describe(-1), "惩罚骰：十位 50、20 取高 50，个位 7，骰值 57"; got != want {
+		t.Errorf("Describe(-1) = %q, want %q", got, want)
+	}
+	bonus := ModifiedD100{Roll: 23, Tens: []int{70, 20}, Kept: 20, Units: 3}
+	if got, want := bonus.Describe(1), "奖励骰：十位 70、20 取低 20，个位 3，骰值 23"; got != want {
+		t.Errorf("Describe(1) = %q, want %q", got, want)
+	}
+}
+
 // TestSkillCheckWithModifierRange 验证奖励/惩罚骰结果始终落在 [1,100]，且成功等级与骰值一致。
 func TestSkillCheckWithModifierRange(t *testing.T) {
 	cases := []struct {

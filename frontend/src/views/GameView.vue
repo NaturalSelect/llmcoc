@@ -16,9 +16,10 @@ import ImagePreview from '@/components/game/ImagePreview.vue'
 import InvestigatorListModal from '@/components/game/InvestigatorListModal.vue'
 import MessageItem from '@/components/game/MessageItem.vue'
 import StatusDock from '@/components/game/StatusDock.vue'
+import JoinSessionModal from '@/components/session/JoinSessionModal.vue'
 import { askAnchor, askView, createAskDraft, resetAskDraft, resetDraftOnFrame } from '@/game/ask'
 import { showWaiting } from '@/game/banner'
-import { diffHud, endSessionMessage, myCard, NO_FLASH, ownCardAccess, playerCardAccess } from '@/game/hud'
+import { diffHud, endSessionMessage, isInSession, myCard, NO_FLASH, ownCardAccess, playerCardAccess } from '@/game/hud'
 import type { HudFlash, HudSnapshot } from '@/game/hud'
 import { currentGameTime } from '@/game/messages'
 import { createRoomController } from '@/game/roomController'
@@ -39,6 +40,7 @@ const ui = useUiStore()
 const draft = reactive(createAskDraft())
 const chatBox = ref<HTMLElement | null>(null)
 const investigatorsOpen = ref(false)
+const joinOpen = ref(false)
 const previewSrc = ref('')
 // NOTE: 点开的人物卡，由 CharacterDetailModal 展示；游戏页的 CharacterCard 类型只列了部分字段，弹窗要求完整卡类型（字段全为可选）
 const viewCard = ref<CharacterCardFull | null>(null)
@@ -100,6 +102,7 @@ const gameTime = computed(() => currentGameTime(room.value))
 const waiting = computed(() => showWaiting(room.value))
 const asking = computed(() => askView(room.value, draft))
 const askAt = computed(() => askAnchor(room.value))
+const canJoin = computed(() => session.value?.status === 'lobby' && !isInSession(session.value, auth.user?.id))
 
 async function enter(id: number) {
   resetAskDraft(draft)
@@ -215,10 +218,11 @@ function openCard(access: ReturnType<typeof ownCardAccess>) {
   else ui.toast(access.error, 'error')
 }
 
-function onAction(action: 'investigators' | 'myCard' | 'leave' | 'start' | 'end' | 'revive') {
+function onAction(action: 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive') {
   const s = session.value
   if (!s) return
   if (action === 'investigators') investigatorsOpen.value = true
+  else if (action === 'join') joinOpen.value = true
   else if (action === 'myCard') openCard(ownCardAccess(s, user.value))
   else if (action === 'leave') void leaveSession(s)
   else if (action === 'start') void startSession(s)
@@ -228,6 +232,11 @@ function onAction(action: 'investigators' | 'myCard' | 'leave' | 'start' | 'end'
 
 function onSelectPlayer(p: SessionPlayer) {
   openCard(playerCardAccess(p, user.value))
+}
+
+function openJoinFromList() {
+  investigatorsOpen.value = false
+  joinOpen.value = true
 }
 
 defineExpose({ viewCard })
@@ -289,9 +298,12 @@ defineExpose({ viewCard })
       :session="session"
       :room="room"
       :user-id="auth.user?.id"
+      :can-join="canJoin"
       @close="investigatorsOpen = false"
       @select="onSelectPlayer"
+      @join="openJoinFromList"
     />
+    <JoinSessionModal :open="joinOpen" :session="session" @close="joinOpen = false" @joined="controller.refreshSession()" />
     <ImagePreview :src="previewSrc" @close="previewSrc = ''" />
     <CharacterDetailModal :open="viewCard !== null" :card="viewCard" @close="viewCard = null" />
   </div>

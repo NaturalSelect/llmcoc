@@ -199,6 +199,46 @@ func calcBuildAndDB(str, siz int) (int, string) {
 
 // ── 奖励骰/惩罚骰 ────────────────────────────────────────────────────────────
 
+// ModifiedD100 记录一次带奖励骰/惩罚骰的 D100：所有十位骰、最终采用的十位和个位。
+type ModifiedD100 struct {
+	Roll  int
+	Tens  []int
+	Kept  int
+	Units int
+}
+
+// RollD100Modified 掷带奖励骰/惩罚骰的 D100：net>0 取较低的十位，net<0 取较高的十位，00+0 记为 100。
+func RollD100Modified(net int) ModifiedD100 {
+	m := ModifiedD100{Units: rand.IntN(10), Tens: make([]int, abs(net)+1)}
+	for i := range m.Tens {
+		m.Tens[i] = rand.IntN(10) * 10
+	}
+	m.Kept = m.Tens[0]
+	for _, t := range m.Tens[1:] {
+		if (net > 0 && t < m.Kept) || (net < 0 && t > m.Kept) {
+			m.Kept = t
+		}
+	}
+	m.Roll = m.Kept + m.Units
+	if m.Roll == 0 {
+		m.Roll = 100
+	}
+	return m
+}
+
+// Describe 把掷骰过程写成一句完整的话，如「惩罚骰：十位 20、70 取高 70，个位 5，骰值 75」。
+func (m ModifiedD100) Describe(net int) string {
+	tens := make([]string, len(m.Tens))
+	for i, t := range m.Tens {
+		tens[i] = strconv.Itoa(t)
+	}
+	kind, pick := "奖励骰", "取低"
+	if net < 0 {
+		kind, pick = "惩罚骰", "取高"
+	}
+	return fmt.Sprintf("%s：十位 %s %s %d，个位 %d，骰值 %d", kind, strings.Join(tens, "、"), pick, m.Kept, m.Units, m.Roll)
+}
+
 // SkillCheckWithModifier performs a COC skill check with bonus/penalty dice.
 // bonus and penalty dice cancel each other; net effect determines which ten-die roll to keep.
 // Net positive bonus: keep the lower tens die (better result).
@@ -209,31 +249,7 @@ func SkillCheckWithModifier(skillValue, bonusDice, penaltyDice int) SkillCheckRe
 		return SkillCheck(skillValue)
 	}
 
-	// Roll units die once (0-9)
-	units := rand.IntN(10)
-
-	// Roll abs(net)+1 tens dice (0,10,20,...,90)
-	count := abs(net) + 1
-	tensDice := make([]int, count)
-	for i := range tensDice {
-		tensDice[i] = rand.IntN(10) * 10
-	}
-
-	// Pick the tens die: bonus→lowest, penalty→highest
-	tens := tensDice[0]
-	for _, t := range tensDice[1:] {
-		if net > 0 && t < tens {
-			tens = t
-		} else if net < 0 && t > tens {
-			tens = t
-		}
-	}
-
-	// Assemble roll: 00+0 = 100
-	roll := tens + units
-	if roll == 0 {
-		roll = 100
-	}
+	roll := RollD100Modified(net).Roll
 
 	result := SkillCheckResult{Value: roll, Skill: skillValue}
 	extreme := skillValue / 5

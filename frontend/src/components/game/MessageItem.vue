@@ -140,7 +140,7 @@ const EVENT_TONES: Record<EventTone, string> = {
         <p v-if="msg.status === 'failed'" class="text-sm text-danger">{{ error || '叙事生成失败' }}</p>
         <template v-else>
           <p v-if="text.trim()" class="whitespace-pre-wrap font-prose text-prose text-fg" :class="msg.status === 'pending' ? 'cursor' : ''">{{ text }}</p>
-          <p v-else-if="msg.status === 'pending'" class="cursor font-prose text-prose text-fg-subtle">叙事正文生成中…</p>
+          <p v-else-if="msg.status === 'pending'" class="cursor font-prose text-prose text-fg-subtle">KP 正在撰写叙事…</p>
         </template>
       </div>
 

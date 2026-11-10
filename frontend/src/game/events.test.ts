@@ -39,6 +39,9 @@ describe('describeEvent', () => {
     )
     expect(view({ type: 'dice', character: '甲', skill: '理智', roll: 27, target: 89, result: '常规成功' })).toBe('甲 理智 骰值 27 目标 89 · 常规成功')
     expect(view({ type: 'dice', skill: '格斗', roll: 6, result: '大成功' })).toBe('格斗 6')
+    expect(
+      view({ type: 'dice', character: '甲', skill: '斗殴', roll: 57, target: 25, result: '失败', detail: '惩罚骰：十位 50、20 取高 50，个位 7，骰值 57' }),
+    ).toBe('甲 斗殴 骰值 57 目标 25 · 失败 · 惩罚骰：十位 50、20 取高 50，个位 7，骰值 57')
   })
 
   test('结算恢复的数值变化显示原因', () => {

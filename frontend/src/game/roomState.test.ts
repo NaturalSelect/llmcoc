@@ -45,7 +45,7 @@ describe('roomState', () => {
     expect(room.lastSeq).toBe(0)
     expect(room.conn).toBe('connecting')
     expect(room.status).toBe('lobby')
-    expect(room.floor).toStrictEqual({ running: false, number: 0, starting: false })
+    expect(room.floor).toStrictEqual({ running: false, number: 0, starting: false, startedAt: 0 })
     expect(room.me).toStrictEqual({ submitted: false, draft: '' })
   })
 
@@ -540,6 +540,23 @@ describe('roomState', () => {
     expect(fresh.me.draft).toBe('')
   })
 
+  test('applyChatStatus：周期开始时间取服务器的 started_at，周期结束后归零', () => {
+    const room = liveRoom({ userId: 3 })
+    RS.applyChatStatus(room, { floor: { floor: 2, started_at: '2026-11-10T06:00:00Z' }, spotlight: {}, waiting: {} })
+    expect(room.floor.startedAt).toBe(Date.parse('2026-11-10T06:00:00Z'))
+
+    RS.applyChatStatus(room, { floor: null, kp_running: false, spotlight: {}, waiting: {} })
+    expect(room.floor.startedAt).toBe(0)
+  })
+
+  test('floor_start 记录本地开始时间，floor_end 清零', () => {
+    const room = liveRoom({ userId: 3 })
+    RS.applyFrame(room, F(11, 'floor_start', { floor: 3, reason: 'player' }))
+    expect(room.floor.startedAt).toBeGreaterThan(0)
+    RS.applyFrame(room, F(12, 'floor_end', { floor: 3 }))
+    expect(room.floor.startedAt).toBe(0)
+  })
+
   test('floor_start 清空上一轮的等待进度', () => {
     const room = liveRoom({ userId: 3 })
     RS.applyFrame(room, F(11, 'waiting', { pending: 1, total: 2, submitted_names: ['爱丽丝'], pending_names: ['鲍勃'] }))
@@ -616,7 +633,7 @@ describe('roomState', () => {
       chatStatus: {
         kp_running: false,
         submitted: true,
-        floor: { floor: 6, started_at: 'x', beats: 2 },
+        floor: { floor: 6, started_at: '2026-11-10T06:00:00Z', beats: 2 },
         spotlight: { user_ids: [4], names: ['鲍勃'], question: '去哪', kp_floor: false, asked_me: true, stop: '' },
         waiting: { pending: 1, total: 2, submitted_names: ['爱丽丝'], pending_names: ['鲍勃'] },
       },
@@ -624,7 +641,7 @@ describe('roomState', () => {
     expect(room.status).toBe('ended')
     expect(room.messages.map((m) => m.id)).toStrictEqual([5, 7, 9])
     expect(room.byId[1]).toBeUndefined()
-    expect(room.floor).toStrictEqual({ running: true, number: 6, starting: false })
+    expect(room.floor).toStrictEqual({ running: true, number: 6, starting: false, startedAt: Date.parse('2026-11-10T06:00:00Z') })
     expect(room.me.submitted).toBe(true)
     expect(room.spotlight.askedMe).toBe(true)
     expect(room.spotlight.userIds).toStrictEqual([4])
@@ -658,7 +675,7 @@ describe('roomState', () => {
     RS.applySnapshot(room, { session: { status: 'lobby' }, messages: null, chatStatus: {} })
     expect(room.status).toBe('lobby')
     expect(room.messages).toStrictEqual([])
-    expect(room.floor).toStrictEqual({ running: false, number: 0, starting: false })
+    expect(room.floor).toStrictEqual({ running: false, number: 0, starting: false, startedAt: 0 })
     expect(room.spotlight.userIds).toStrictEqual([])
   })
 
