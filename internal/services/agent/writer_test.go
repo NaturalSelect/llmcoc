@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -30,6 +29,8 @@ type writerFakeProvider struct {
 	calls     int
 	chunkSize int
 	sentMsgs  [][]llm.ChatMessage
+	// sentTools 记录每次 ChatStream 收到的 historyTools。
+	sentTools [][]llm.ToolDefinition
 	// streamErrs[i] 非 nil 时，第 i 次 ChatStream 调用先流出 responses[i] 再带着这个错误结束，模拟流中途断开。
 	streamErrs []error
 }
@@ -65,9 +66,10 @@ func (p *writerFakeProvider) Chat(_ context.Context, _ string, msgs []llm.ChatMe
 	return p.next(msgs), nil
 }
 
-func (p *writerFakeProvider) ChatStream(_ context.Context, _ string, msgs []llm.ChatMessage) (<-chan string, <-chan error, error) {
+func (p *writerFakeProvider) ChatStream(_ context.Context, _ string, msgs []llm.ChatMessage, historyTools []llm.ToolDefinition) (<-chan string, <-chan error, error) {
 	text := p.next(msgs)
 	p.mu.Lock()
+	p.sentTools = append(p.sentTools, historyTools)
 	var streamErr error
 	if i := p.calls - 1; i < len(p.streamErrs) {
 		streamErr = p.streamErrs[i]
@@ -120,17 +122,15 @@ func newWriterNSFWTestHandle(prov llm.Provider, active bool) agentHandle {
 	}
 }
 
-// newTestWriterState 为appendWriter/appendWriterStream的重试/拒绝判定单元测试构造一个
-// 全新、未落库的ContextManager;这些测试只关心单次调用内的重试逻辑,不关心跨轮持久化,
-// 所以head用固定占位内容即可。
-func newTestWriterState(sessionID uint) *WriterState {
-	head := []llm.ChatMessage{{Role: "system", Content: "test-writer-system"}}
-	return &WriterState{cm: LoadContext(sessionID, writerAgentKey, head, ContextOptions{Window: 100000})}
-}
-
-// committedTurns 返回state.cm已提交的历史轮,供测试断言Commit的落库内容。
-func committedTurns(state *WriterState) []models.TranscriptTurn {
-	return state.cm.data.Turns
+// callAppendWriterStream 以固定的最小请求调用 appendWriterStream:这些测试只关心单次调用内的
+// 重试/拒绝判定,不关心上下文内容。
+func callAppendWriterStream(ctx context.Context, h agentHandle, state *WriterState, onToken func(string)) error {
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: "test-writer-system"},
+		{Role: "user", Content: "继续描述"},
+	}
+	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	return appendWriterStream(ctx, h, state, msgs, nil, gctx, false, onToken)
 }
 
 // ── isWriterResponseRejected ─────────────────────────────────────────────────
@@ -241,102 +241,6 @@ func TestWriterRefusalGate_ForwardsImmediatelyAfterDecision(t *testing.T) {
 	}
 }
 
-// ── appendWriter (非流式) ─────────────────────────────────────────────────────
-
-func TestAppendWriter_RetriesOnEmptyThenSucceeds(t *testing.T) {
-	initSiteSettingTestDB(t)
-	prov := &writerFakeProvider{responses: []string{"", "他推开了门。"}}
-	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
-
-	if err := appendWriter(context.Background(), h, state, "继续描述", gctx, false); err != nil {
-		t.Fatalf("appendWriter error: %v", err)
-	}
-	if state.Buffer != "他推开了门。" {
-		t.Errorf("Buffer = %q, want %q", state.Buffer, "他推开了门。")
-	}
-	turns := committedTurns(state)
-	if len(turns) != 1 || len(turns[0].Messages) != 2 || turns[0].Messages[1].Content != "他推开了门。" {
-		t.Errorf("已提交的轮 = %+v, want单轮opening+assistant且assistant为最终正文", turns)
-	}
-	if got := prov.callCount(); got != 2 {
-		t.Errorf("provider call count = %d, want 2", got)
-	}
-}
-
-func TestAppendWriter_RetriesOnRefusalThenSucceeds(t *testing.T) {
-	initSiteSettingTestDB(t)
-	prov := &writerFakeProvider{responses: []string{
-		"I cannot fulfill this request. blocked by policy",
-		"她小心翼翼地翻开了那本古书。",
-	}}
-	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
-
-	if err := appendWriter(context.Background(), h, state, "继续描述", gctx, false); err != nil {
-		t.Fatalf("appendWriter error: %v", err)
-	}
-	if state.Buffer != "她小心翼翼地翻开了那本古书。" {
-		t.Errorf("Buffer = %q, 不应包含拒绝文本", state.Buffer)
-	}
-	for _, turn := range committedTurns(state) {
-		for _, m := range turn.Messages {
-			if strings.Contains(m.Content, writerRefusalPrefixes[0]) {
-				t.Errorf("已提交的轮不应包含拒绝文本: %+v", turn.Messages)
-			}
-		}
-	}
-}
-
-func TestAppendWriter_RetriesOnChineseRefusalThenSucceeds(t *testing.T) {
-	initSiteSettingTestDB(t)
-	prov := &writerFakeProvider{responses: []string{
-		"我无法完成您的请求。这违反了相关政策",
-		"她小心翼翼地翻开了那本古书。",
-	}}
-	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
-
-	if err := appendWriter(context.Background(), h, state, "继续描述", gctx, false); err != nil {
-		t.Fatalf("appendWriter error: %v", err)
-	}
-	if state.Buffer != "她小心翼翼地翻开了那本古书。" {
-		t.Errorf("Buffer = %q, 不应包含拒绝文本", state.Buffer)
-	}
-	for _, turn := range committedTurns(state) {
-		for _, m := range turn.Messages {
-			if strings.Contains(m.Content, writerRefusalPrefixes[1]) {
-				t.Errorf("已提交的轮不应包含拒绝文本: %+v", turn.Messages)
-			}
-		}
-	}
-}
-
-func TestAppendWriter_AllAttemptsRejected_ReturnsErrorAndSkipsHistory(t *testing.T) {
-	initSiteSettingTestDB(t)
-	prov := &writerFakeProvider{} // 序列为空,next() 恒返回 ""
-	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
-
-	err := appendWriter(context.Background(), h, state, "继续描述", gctx, false)
-	if err == nil {
-		t.Fatal("全部尝试都被拒绝时应返回错误")
-	}
-	if turns := committedTurns(state); len(turns) != 0 {
-		t.Errorf("被拒绝的响应不应提交为新一轮,got %+v", turns)
-	}
-	if state.Buffer != "" {
-		t.Errorf("被拒绝的响应不应写入Buffer,got %q", state.Buffer)
-	}
-	if got := prov.callCount(); got != writerMaxGenerateAttempts {
-		t.Errorf("provider call count = %d, want %d", got, writerMaxGenerateAttempts)
-	}
-}
-
 // ── appendWriterStream (流式) ──────────────────────────────────────────────────
 
 func TestAppendWriterStream_SuppressesRefusalThenSucceeds(t *testing.T) {
@@ -349,11 +253,10 @@ func TestAppendWriterStream_SuppressesRefusalThenSucceeds(t *testing.T) {
 		},
 	}
 	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	state := &WriterState{}
 
 	var forwarded strings.Builder
-	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, false, func(tok string) {
+	err := callAppendWriterStream(context.Background(), h, state, func(tok string) {
 		forwarded.WriteString(tok)
 	})
 	if err != nil {
@@ -380,11 +283,10 @@ func TestAppendWriterStream_SuppressesChineseRefusalThenSucceeds(t *testing.T) {
 		},
 	}
 	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	state := &WriterState{}
 
 	var forwarded strings.Builder
-	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, false, func(tok string) {
+	err := callAppendWriterStream(context.Background(), h, state, func(tok string) {
 		forwarded.WriteString(tok)
 	})
 	if err != nil {
@@ -408,11 +310,10 @@ func TestAppendWriterStream_EmptyThenSucceeds(t *testing.T) {
 		responses: []string{"", "调查员点亮了手中的煤油灯。"},
 	}
 	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	state := &WriterState{}
 
 	var forwarded strings.Builder
-	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, false, func(tok string) {
+	err := callAppendWriterStream(context.Background(), h, state, func(tok string) {
 		forwarded.WriteString(tok)
 	})
 	if err != nil {
@@ -427,11 +328,10 @@ func TestAppendWriterStream_AllAttemptsRejected_ReturnsErrorAndForwardsNothing(t
 	initSiteSettingTestDB(t)
 	prov := &writerFakeProvider{chunkSize: 1} // 序列为空,next() 恒返回 ""
 	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	state := &WriterState{}
 
 	var forwarded strings.Builder
-	err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, false, func(tok string) {
+	err := callAppendWriterStream(context.Background(), h, state, func(tok string) {
 		forwarded.WriteString(tok)
 	})
 	if err == nil {
@@ -460,8 +360,7 @@ func TestAppendWriterStream_MidStreamEOFDiscardsPartialAndRetries(t *testing.T) 
 		streamErrs: []error{fantasy.WrapTransportError(io.ErrUnexpectedEOF)},
 	}
 	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	state := &WriterState{}
 
 	var restarts int
 	var forwarded strings.Builder
@@ -469,7 +368,7 @@ func TestAppendWriterStream_MidStreamEOFDiscardsPartialAndRetries(t *testing.T) 
 		restarts++
 		forwarded.Reset()
 	})
-	err := appendWriterStream(ctx, h, state, "继续描述", gctx, false, func(tok string) {
+	err := callAppendWriterStream(ctx, h, state, func(tok string) {
 		forwarded.WriteString(tok)
 	})
 	if err != nil {
@@ -487,10 +386,6 @@ func TestAppendWriterStream_MidStreamEOFDiscardsPartialAndRetries(t *testing.T) 
 	if got := prov.callCount(); got != 2 {
 		t.Errorf("provider call count = %d, want 2", got)
 	}
-	turns := committedTurns(state)
-	if len(turns) != 1 {
-		t.Fatalf("committed turns = %d, want 1 (the partial attempt must not be committed)", len(turns))
-	}
 }
 
 // 没有挂回调时(例如非队列路径)重试照常进行,不会 panic。
@@ -506,10 +401,9 @@ func TestAppendWriterStream_MidStreamEOFWithoutRestartCallback(t *testing.T) {
 		streamErrs: []error{io.ErrUnexpectedEOF},
 	}
 	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	state := &WriterState{}
 
-	if err := appendWriterStream(context.Background(), h, state, "继续描述", gctx, false, func(string) {}); err != nil {
+	if err := callAppendWriterStream(context.Background(), h, state, func(string) {}); err != nil {
 		t.Fatalf("appendWriterStream error: %v", err)
 	}
 	if state.Buffer != "完整的一段。" {
@@ -532,12 +426,11 @@ func TestAppendWriterStream_MidStreamEOFExhaustsAttempts(t *testing.T) {
 	}
 	prov := &writerFakeProvider{chunkSize: 3, responses: resps, streamErrs: errs}
 	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	state := &WriterState{}
 
 	var restarts int
 	ctx := WithWriterRestart(context.Background(), func() { restarts++ })
-	err := appendWriterStream(ctx, h, state, "继续描述", gctx, false, func(string) {})
+	err := callAppendWriterStream(ctx, h, state, func(string) {})
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("err = %v, want unexpected EOF after exhausting attempts", err)
 	}
@@ -562,12 +455,11 @@ func TestAppendWriterStream_NonEOFStreamErrorIsNotRetried(t *testing.T) {
 		streamErrs: []error{boom},
 	}
 	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	state := &WriterState{}
 
 	var restarts int
 	ctx := WithWriterRestart(context.Background(), func() { restarts++ })
-	err := appendWriterStream(ctx, h, state, "继续描述", gctx, false, func(string) {})
+	err := callAppendWriterStream(ctx, h, state, func(string) {})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want boom", err)
 	}
@@ -595,12 +487,11 @@ func TestAppendWriterStream_MidStreamEOFStopsOnContextCancel(t *testing.T) {
 		streamErrs: []error{io.ErrUnexpectedEOF},
 	}
 	h := newWriterTestHandle(prov)
-	state := newTestWriterState(1)
-	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	state := &WriterState{}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx = WithWriterRestart(ctx, cancel)
-	err := appendWriterStream(ctx, h, state, "继续描述", gctx, false, func(string) {})
+	err := callAppendWriterStream(ctx, h, state, func(string) {})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -729,20 +620,20 @@ func TestWriterContextWindow(t *testing.T) {
 	}
 }
 
-// ── buildWriterHead/buildWriterOpening NSFW后缀 ──────────────────────────────
+// ── Writer system / 指令 / 请求组装 ──────────────────────────────────────────
 
-// TestBuildWriterHeadFollowsNSFWMode 验证system prompt(head)按本次调用的nsfwMode渲染,
+// TestWriterSystemPromptFollowsNSFWMode 验证system prompt按本次调用的nsfwMode渲染,
 // 而不是房间级EnableNSFW:房间开启NSFW但本次write标记为false时,默认Writer必须拿到全年龄提示词。
-func TestBuildWriterHeadFollowsNSFWMode(t *testing.T) {
+func TestWriterSystemPromptFollowsNSFWMode(t *testing.T) {
 	initSiteSettingTestDB(t)
 	h := newWriterTestHandle(&writerFakeProvider{})
 
-	on := buildWriterHead(h, true)[0].Content
-	off := buildWriterHead(h, false)[0].Content
+	on := writerSystemPrompt(h, true)
+	off := writerSystemPrompt(h, false)
 
 	for _, sys := range []string{on, off} {
 		if strings.Contains(sys, "explicit_scene_requirements") {
-			t.Error("system prompt不应包含explicit_scene_requirements,该后缀应拼进本轮user消息尾部")
+			t.Error("system prompt不应包含explicit_scene_requirements,该后缀应拼进末尾的续写指令")
 		}
 		if strings.Contains(sys, "{{NSFW") {
 			t.Errorf("system prompt leaked placeholder:\n%s", sys)
@@ -756,9 +647,33 @@ func TestBuildWriterHeadFollowsNSFWMode(t *testing.T) {
 	}
 }
 
-// TestRunWriter_RoomNSFWNonNSFWCallUsesAllAgesPrompt 验证房间开启NSFW、本次write标记为
+// TestBuildWriterInstruction 验证续写指令:携带调用ID、NSFW后缀只在NSFW模式出现。
+func TestBuildWriterInstruction(t *testing.T) {
+	gctx := GameContext{Session: models.GameSession{ID: 1, EnableNSFW: true}}
+
+	off := buildWriterInstruction(WriterRequest{Direction: "继续描述", CallID: "call_7"}, gctx, false)
+	on := buildWriterInstruction(WriterRequest{Direction: "继续描述"}, gctx, true)
+
+	if off.Role != "user" {
+		t.Errorf("instruction role = %q, want user", off.Role)
+	}
+	if !strings.Contains(off.Content, `<director_instruction call_id="call_7">`) {
+		t.Errorf("instruction should carry the call id:\n%s", off.Content)
+	}
+	if strings.Contains(off.Content, "explicit_scene_requirements") {
+		t.Error("非NSFW模式的续写指令不应包含explicit_scene_requirements后缀")
+	}
+	if !strings.Contains(on.Content, "<director_instruction>") || strings.Contains(on.Content, "call_id=") {
+		t.Errorf("没有调用ID时不应写call_id属性:\n%s", on.Content)
+	}
+	if !strings.Contains(on.Content, "explicit_scene_requirements") {
+		t.Error("NSFW模式的续写指令应包含explicit_scene_requirements后缀")
+	}
+}
+
+// TestRunWriterStream_RoomNSFWNonNSFWCallUsesAllAgesPrompt 验证房间开启NSFW、本次write标记为
 // false时,实际发给默认Writer的system prompt是全年龄版本。
-func TestRunWriter_RoomNSFWNonNSFWCallUsesAllAgesPrompt(t *testing.T) {
+func TestRunWriterStream_RoomNSFWNonNSFWCallUsesAllAgesPrompt(t *testing.T) {
 	initAgentTestDB(t)
 	const sessionID = 202
 	if err := models.DB.Create(&models.GameSession{ID: sessionID, EnableNSFW: true}).Error; err != nil {
@@ -771,8 +686,8 @@ func TestRunWriter_RoomNSFWNonNSFWCallUsesAllAgesPrompt(t *testing.T) {
 	t.Cleanup(func() { deleteCachedAgents(sessionID) })
 
 	gctx := GameContext{Session: models.GameSession{ID: sessionID, EnableNSFW: true}}
-	if _, err := RunWriter(context.Background(), gctx, "推门", false); err != nil {
-		t.Fatalf("RunWriter: %v", err)
+	if _, err := RunWriterStream(context.Background(), gctx, WriterRequest{Direction: "推门"}, func(string) {}); err != nil {
+		t.Fatalf("RunWriterStream: %v", err)
 	}
 	system := prov.msgsAt(0)[0].Content
 	if !strings.Contains(system, "洛氏小说风格") || strings.Contains(system, "官能小说风格") {
@@ -780,73 +695,70 @@ func TestRunWriter_RoomNSFWNonNSFWCallUsesAllAgesPrompt(t *testing.T) {
 	}
 }
 
-// TestBuildWriterOpeningNSFWSuffix 验证explicit_scene_requirements后缀现在拼在本轮
-// user消息(opening)的尾部,而不是system prompt里。
-func TestBuildWriterOpeningNSFWSuffix(t *testing.T) {
-	gctx := GameContext{Session: models.GameSession{ID: 1, EnableNSFW: true}}
-
-	openingOff, _ := buildWriterOpening("继续描述", gctx, false)
-	openingOn, _ := buildWriterOpening("继续描述", gctx, true)
-
-	if strings.Contains(openingOff.Content, "explicit_scene_requirements") {
-		t.Error("非NSFW模式的user消息不应包含explicit_scene_requirements后缀")
-	}
-	if !strings.Contains(openingOn.Content, "explicit_scene_requirements") {
-		t.Error("NSFW模式的user消息应包含explicit_scene_requirements后缀")
-	}
-}
-
-// TestRunWriter_ContextPrefixStableAcrossTurns 验证Writer跨轮上下文前缀稳定:第2轮
-// 发给LLM的msgs,应以"第1轮发送的msgs+其assistant响应"为逐字段相同的前缀(发送版=
-// 归档版,不再有"叙事指令:"+direction这份单独的归档内容),且CacheBreakpoint只打在
-// head末尾(唯一一条system消息)与上一轮末尾。
-func TestRunWriter_ContextPrefixStableAcrossTurns(t *testing.T) {
+// TestRunWriterStream_SendsDirectorContextAndTools 验证Writer的请求:system换成Writer自己的,
+// Director的消息链(含tool_calls/tool结果)原样保留,之前已完成的write正文附在对应tool结果后,
+// 末尾是续写指令,并且声明了Director的全部工具。
+func TestRunWriterStream_SendsDirectorContextAndTools(t *testing.T) {
 	initAgentTestDB(t)
 	const sessionID = 201
 	if err := models.DB.Create(&models.GameSession{ID: sessionID}).Error; err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	prov := &writerFakeProvider{responses: []string{"他推开了门。", "他继续向前走去。"}}
+	if err := models.DB.Create(&models.Message{
+		SessionID: sessionID, Role: models.MessageRoleAssistant, Kind: models.MessageKindWriter,
+		Status: models.MessageStatusDone, Floor: 1, Content: "他推开了门。",
+		Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{CallID: "call_1"}},
+	}).Error; err != nil {
+		t.Fatalf("create writer message: %v", err)
+	}
+	prov := &writerFakeProvider{responses: []string{"他继续向前走去。"}}
 	sessionAgents.Store(uint(sessionID), map[models.AgentRole]agentHandle{
 		models.AgentRoleWriter: newWriterTestHandle(prov),
 	})
 	t.Cleanup(func() { deleteCachedAgents(sessionID) })
 
+	director := []llm.ChatMessage{
+		{Role: "system", Content: "director-system"},
+		{Role: "user", Content: "<scenario>模组</scenario>", CacheBreakpoint: true},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{fakeToolCall("call_1", "write", `{"direction":"推门"}`)}},
+		{Role: "tool", ToolCallID: "call_1", Content: "已发布"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{fakeToolCall("call_2", "write", `{"direction":"继续走"}`)}},
+		{Role: "tool", ToolCallID: "call_2", Content: "已发布"},
+	}
 	gctx := GameContext{Session: models.GameSession{ID: sessionID}}
-	if _, err := RunWriter(context.Background(), gctx, "继续描述场景一", false); err != nil {
-		t.Fatalf("RunWriter turn1: %v", err)
-	}
-	if _, err := RunWriter(context.Background(), gctx, "继续描述场景二", false); err != nil {
-		t.Fatalf("RunWriter turn2: %v", err)
-	}
-	if got := prov.callCount(); got != 2 {
-		t.Fatalf("provider call count = %d, want 2", got)
+	req := WriterRequest{Direction: "继续走", CallID: "call_2", Director: director}
+	if _, err := RunWriterStream(context.Background(), gctx, req, func(string) {}); err != nil {
+		t.Fatalf("RunWriterStream: %v", err)
 	}
 
-	turn1Msgs := prov.msgsAt(0)
-	turn2Msgs := prov.msgsAt(1)
-
-	wantAssistant := llm.ChatMessage{Role: "assistant", Content: "他推开了门。"}
-	wantPrefix := append(append([]llm.ChatMessage(nil), turn1Msgs...), wantAssistant)
-	if len(turn2Msgs) < len(wantPrefix) {
-		t.Fatalf("turn2Msgs长度%d应不小于期望前缀长度%d", len(turn2Msgs), len(wantPrefix))
+	msgs := prov.msgsAt(0)
+	if len(msgs) != len(director)+1 {
+		t.Fatalf("msgs = %d, want director(%d)+instruction", len(msgs), len(director))
 	}
-	for i, want := range wantPrefix {
-		got := turn2Msgs[i]
-		got.CacheBreakpoint = false
-		want.CacheBreakpoint = false
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("turn2Msgs[%d]与期望前缀不一致:\ngot  %+v\nwant %+v", i, got, want)
-		}
+	if msgs[0].Role != "system" || msgs[0].Content == "director-system" {
+		t.Errorf("msgs[0] should be the Writer system prompt, got %+v", msgs[0])
+	}
+	if !msgs[1].CacheBreakpoint || msgs[1].Content != "<scenario>模组</scenario>" {
+		t.Errorf("scenario message must be kept byte-for-byte with its cache breakpoint, got %+v", msgs[1])
+	}
+	if len(msgs[2].ToolCalls) != 1 || msgs[2].ToolCalls[0].ID != "call_1" {
+		t.Errorf("assistant tool_calls must be preserved, got %+v", msgs[2])
+	}
+	if want := "已发布\n<writer_output>\n他推开了门。\n</writer_output>"; msgs[3].Content != want {
+		t.Errorf("tool result of call_1 = %q, want prose attached %q", msgs[3].Content, want)
+	}
+	if msgs[5].Content != "已发布" {
+		t.Errorf("tool result of call_2 has no prose yet, got %q", msgs[5].Content)
+	}
+	last := msgs[len(msgs)-1]
+	if last.Role != "user" || !strings.Contains(last.Content, `call_id="call_2"`) || !strings.Contains(last.Content, "继续走") {
+		t.Errorf("last message should be the continuation instruction, got %+v", last)
 	}
 
-	// head长度固定为1(仅system);turn1归档的历史长度为2(opening+assistant),所以
-	// CacheBreakpoint应恰好落在下标0(head末尾)和下标2(上一轮末尾)。
-	for i, m := range turn2Msgs {
-		want := i == 0 || i == 2
-		if m.CacheBreakpoint != want {
-			t.Errorf("turn2Msgs[%d].CacheBreakpoint=%v, want %v", i, m.CacheBreakpoint, want)
-		}
+	prov.mu.Lock()
+	defer prov.mu.Unlock()
+	if got, want := len(prov.sentTools[0]), len(directorTools(false)); got != want || got == 0 {
+		t.Errorf("declared history tools = %d, want the full director tool list (%d)", got, want)
 	}
 }
 
@@ -875,7 +787,7 @@ func TestWriterPromptAllowsParaphraseAndRequiresInvestigatorSpeech(t *testing.T)
 // 调查员台词搬进direction，导演系统提示词也没有把这类台词一并禁掉。
 func TestWriteToolAsksDirectorToCarryInvestigatorSpeech(t *testing.T) {
 	desc := writeTool().def.Description
-	for _, want := range []string{"【调查员台词】", "看不到玩家原始输入", "必须搬进direction"} {
+	for _, want := range []string{"【调查员台词】", "只会把direction里写明的内容写成正文", "必须搬进direction"} {
 		if !strings.Contains(desc, want) {
 			t.Errorf("write tool description should contain %q", want)
 		}

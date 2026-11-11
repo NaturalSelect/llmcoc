@@ -161,14 +161,14 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 	f.outbox = nil
 
 	if len(kps)+len(asks) > 0 && len(writers) == 0 && !f.beatHasWriter && f.beatNeedsWriter {
-		source := ""
+		source, sourceCallID := "", ""
 		if len(kps) > 0 {
-			source = kps[0].Text
+			source, sourceCallID = kps[0].Text, kps[0].CallID
 		} else {
-			source = asks[0].Text
+			source, sourceCallID = asks[0].Text, asks[0].CallID
 		}
 		if dir := fallbackWriterDirection(source); dir != "" {
-			writers = append(writers, Output{Kind: OutputWriter, Text: dir, Auto: true})
+			writers = append(writers, Output{Kind: OutputWriter, Text: dir, Auto: true, CallID: sourceCallID})
 		}
 	}
 
@@ -194,6 +194,10 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 
 	if f.gctx.Publish != nil {
 		ro := RoundOutputs{Floor: f.floor, Round: round, Items: items, Events: f.events, WriterCtx: snapshotGameContext(*f.gctx)}
+		if len(writers) > 0 {
+			// NOTE: Writer 在 Publish 期间就会入队开跑，此时 Checkpoint 还没落库，只能在这里把消息链浅拷贝交出去。
+			ro.Director = append([]llm.ChatMessage(nil), msgs...)
+		}
 		if closesBeat {
 			ro.ElapsedMs = time.Since(f.beatStart).Milliseconds()
 			ro.Steps = f.beatRounds

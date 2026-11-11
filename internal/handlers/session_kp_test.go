@@ -16,6 +16,7 @@ import (
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/imagestore"
+	"github.com/llmcoc/server/internal/services/llm"
 )
 
 func publish(t *testing.T, gctx agent.GameContext, ro agent.RoundOutputs) {
@@ -253,10 +254,15 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	t.Cleanup(imagestore.SetDefaultDir(t.TempDir()))
 	sessionID, user1ID, _ := seedTwoPlayerSession(t, "爱丽丝", "鲍勃")
 
+	directorChain := []llm.ChatMessage{
+		{Role: "system", Content: "director-system"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "call_w1", Name: "write", Arguments: `{}`}}},
+		{Role: "tool", ToolCallID: "call_w1", Content: "已发布"},
+	}
 	runner := &fakeRunner{}
 	runner.run = func(_ context.Context, gctx agent.GameContext) (agent.RunOutput, error) {
-		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 2, Steps: 2, ElapsedMs: 1200, Items: []agent.Output{
-			{Kind: agent.OutputWriter, Text: "描述走廊", NSFW: true},
+		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 2, Steps: 2, ElapsedMs: 1200, Director: directorChain, Items: []agent.Output{
+			{Kind: agent.OutputWriter, Text: "描述走廊", NSFW: true, CallID: "call_w1"},
 			{Kind: agent.OutputImage, Image: &agent.ImagePromptRequest{Prompt: "a dim corridor"}},
 			{Kind: agent.OutputKP, Text: "你站在走廊里。", TimePoint: "第1天 08:00"},
 		}})
@@ -325,11 +331,11 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	if meta := msgs[1].Meta.Data; meta == nil || meta.Dice != "" || meta.TimePoint != "第1天 08:00" || len(meta.Options) != 0 {
 		t.Errorf("kp meta = %+v", meta)
 	}
-	if meta := msgs[0].Meta.Data; meta == nil || !meta.NSFW {
-		t.Errorf("first writer meta = %+v, want nsfw", meta)
+	if meta := msgs[0].Meta.Data; meta == nil || !meta.NSFW || meta.CallID != "call_w1" {
+		t.Errorf("first writer meta = %+v, want nsfw with the write call id", meta)
 	}
-	if meta := msgs[2].Meta.Data; meta == nil || meta.NSFW {
-		t.Errorf("second writer meta = %+v, want sfw", meta)
+	if meta := msgs[2].Meta.Data; meta == nil || meta.NSFW || meta.CallID != "" {
+		t.Errorf("second writer meta = %+v, want sfw without call id", meta)
 	}
 	if meta := msgs[3].Meta.Data; meta == nil || meta.Ask == nil || len(meta.Ask.UserIDs) != 1 || meta.Ask.Names[0] != "爱丽丝" ||
 		len(meta.Options) != 1 || meta.Options[0] != "我推开门" {
@@ -356,6 +362,12 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	}
 	if runner.writerCtxs[0].Session.ID != sessionID {
 		t.Error("writer must receive the round's game context")
+	}
+	if req := runner.writerReqs[0]; req.CallID != "call_w1" || len(req.Director) != len(directorChain) || req.Direction != "描述走廊" {
+		t.Errorf("first writer request = %+v, want call id, direction and the director chain snapshot", req)
+	}
+	if req := runner.writerReqs[1]; len(req.Director) != 0 {
+		t.Errorf("second round published no director snapshot, got %d messages", len(req.Director))
 	}
 
 	sp := loadSpotlight(t, sessionID)

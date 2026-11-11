@@ -326,7 +326,7 @@ func (p *fakeImageProvider) Chat(ctx context.Context, cacheKey string, messages 
 	return "pong", nil
 }
 
-func (p *fakeImageProvider) ChatStream(ctx context.Context, cacheKey string, messages []llm.ChatMessage) (<-chan string, <-chan error, error) {
+func (p *fakeImageProvider) ChatStream(ctx context.Context, cacheKey string, messages []llm.ChatMessage, _ []llm.ToolDefinition) (<-chan string, <-chan error, error) {
 	return nil, nil, nil
 }
 

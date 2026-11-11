@@ -448,6 +448,17 @@ func (p *fantasyProvider) buildCall(ctx context.Context, cacheKey string, messag
 	return call
 }
 
+// buildStreamCall 组装 ChatStream 的请求；historyTools 非空时声明这些工具并固定 tool_choice=none，
+// 只是为了让历史消息里的 tool_calls / tool 结果被网关接受，模型本次不会再发起工具调用。
+func (p *fantasyProvider) buildStreamCall(ctx context.Context, cacheKey string, messages []ChatMessage, historyTools []ToolDefinition) fantasy.Call {
+	call := p.buildCall(ctx, cacheKey, messages, false, historyTools)
+	if len(historyTools) > 0 {
+		none := fantasy.ToolChoiceNone
+		call.ToolChoice = &none
+	}
+	return call
+}
+
 // usageFromFantasy 把 fantasy 的 Usage 转换成项目内统一的 Usage。fantasy 的 InputTokens 在
 // 两个 provider 实现里都不含缓存命中的部分(Anthropic 的 input_tokens 本身如此；OpenAI 分支
 // 由 fantasy 用 PromptTokens-CachedTokens 计算得出)，需要把三者相加才符合 PromptTokens
@@ -693,10 +704,10 @@ func (p *fantasyProvider) ChatWithTools(ctx context.Context, cacheKey string, me
 // ChatStream 复刻旧实现的"探测首个事件"语义：只有连接尚未产出任何事件就失败时才整体重试
 // (换一次新连接)；一旦已经开始消费流(哪怕只收到一个非文本事件)后再失败，就不再重试，直接
 // 把错误交给 errCh——重试会导致已转发内容前面再拼一段重复内容。
-func (p *fantasyProvider) ChatStream(ctx context.Context, cacheKey string, messages []ChatMessage) (<-chan string, <-chan error, error) {
+func (p *fantasyProvider) ChatStream(ctx context.Context, cacheKey string, messages []ChatMessage, historyTools []ToolDefinition) (<-chan string, <-chan error, error) {
 	start := time.Now()
 	role := roleFromCacheKey(cacheKey)
-	call := p.buildCall(ctx, cacheKey, messages, false, nil)
+	call := p.buildStreamCall(ctx, cacheKey, messages, historyTools)
 
 	var next func() (fantasy.StreamPart, bool)
 	var stop func()

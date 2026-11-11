@@ -24,6 +24,7 @@ type fakeRunner struct {
 	runs        []agent.GameContext
 	directions  []string
 	writerCtxs  []agent.GameContext
+	writerReqs  []agent.WriterRequest
 	nsfwFlags   []bool
 	inFlight    int
 	maxInFlight int
@@ -39,14 +40,12 @@ func (f *fakeRunner) Run(ctx context.Context, gctx agent.GameContext) (agent.Run
 	return f.run(ctx, gctx)
 }
 
-func (f *fakeRunner) RunWriter(context.Context, agent.GameContext, string, bool) (string, error) {
-	return "", nil
-}
-
-func (f *fakeRunner) RunWriterStream(ctx context.Context, gctx agent.GameContext, direction string, nsfw bool, onToken func(string)) (string, error) {
+func (f *fakeRunner) RunWriterStream(ctx context.Context, gctx agent.GameContext, req agent.WriterRequest, onToken func(string)) (string, error) {
+	direction, nsfw := req.Direction, req.NSFW
 	f.mu.Lock()
 	f.directions = append(f.directions, direction)
 	f.writerCtxs = append(f.writerCtxs, gctx)
+	f.writerReqs = append(f.writerReqs, req)
 	f.nsfwFlags = append(f.nsfwFlags, nsfw)
 	f.inFlight++
 	if f.inFlight > f.maxInFlight {

@@ -601,7 +601,7 @@ func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		return []ToolResult{{Action: ToolWrite, Result: "SYSTEM REJECT: write.direction 不能为空，请写明这一段要展开的场景、动作和感官细节。"}}
 	}
 	nsfw := actx.GCtx.Session.EnableNSFW && call.NSFW
-	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputWriter, Text: direction, NSFW: nsfw})
+	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputWriter, Text: direction, NSFW: nsfw, CallID: call.CallID})
 	debugf("tool", "session=%d write direction=%s nsfw=%v", actx.Sid, direction, nsfw)
 	return []ToolResult{{Action: ToolWrite, Result: "已作为一条独立的玩家可见消息发布（正文由 Writer 展开）。你仍持有发言权。"}}
 }
@@ -612,7 +612,7 @@ const narrateKPStreakReminder = 4
 type narrateAction struct{}
 
 func (narrateAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	out := Output{Kind: OutputKP, Text: strings.TrimSpace(call.Reply)}
+	out := Output{Kind: OutputKP, Text: strings.TrimSpace(call.Reply), CallID: call.CallID}
 	*actx.Outbox = append(*actx.Outbox, out)
 	debugf("tool", "session=%d narrate reply=%s", actx.Sid, out.Text)
 
@@ -741,7 +741,7 @@ func (askPlayersAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	if actx.Ask != nil {
 		*actx.Ask = ask
 	}
-	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputAsk, Text: question, Ask: ask, Options: normalizeAskOptions(call.Options)})
+	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputAsk, Text: question, Ask: ask, Options: normalizeAskOptions(call.Options), CallID: call.CallID})
 	if actx.KPStreak != nil {
 		*actx.KPStreak = 0
 	}
@@ -919,7 +919,7 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		closing = "本次冒险到此结束,感谢各位调查员。"
 	}
 	// NOTE: 先把结束语放进 outbox，再跑结算；结算失败不影响游戏已经结束这一事实。
-	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputKP, Text: closing, Ended: true})
+	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputKP, Text: closing, Ended: true, CallID: call.CallID})
 	debugf("tool", "session=%d end_game summary=%s win=%v", actx.Sid, call.EndSummary, win)
 
 	msgs := LoadEndGameMessages(actx.GCtx.Session.ID)

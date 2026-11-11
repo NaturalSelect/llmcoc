@@ -74,7 +74,7 @@ func (p *sequentialFakeProvider) Chat(_ context.Context, _ string, _ []llm.ChatM
 	return "", nil
 }
 
-func (p *sequentialFakeProvider) ChatStream(_ context.Context, _ string, _ []llm.ChatMessage) (<-chan string, <-chan error, error) {
+func (p *sequentialFakeProvider) ChatStream(_ context.Context, _ string, _ []llm.ChatMessage, _ []llm.ToolDefinition) (<-chan string, <-chan error, error) {
 	return nil, nil, nil
 }
 

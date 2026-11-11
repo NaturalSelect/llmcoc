@@ -33,7 +33,7 @@ func (p *scriptedDirectorProvider) Chat(_ context.Context, _ string, msgs []llm.
 	return p.summaryReply, nil
 }
 
-func (p *scriptedDirectorProvider) ChatStream(context.Context, string, []llm.ChatMessage) (<-chan string, <-chan error, error) {
+func (p *scriptedDirectorProvider) ChatStream(context.Context, string, []llm.ChatMessage, []llm.ToolDefinition) (<-chan string, <-chan error, error) {
 	return nil, nil, fmt.Errorf("scriptedDirectorProvider: ChatStream not supported")
 }
 
@@ -246,6 +246,19 @@ func TestFloor_RoundOutputsOrderedWriterImageKPAsk(t *testing.T) {
 	if got := outputKinds(published[0].Items); !equalKinds(got, want) {
 		t.Fatalf("消息种类顺序 = %v, want %v", got, want)
 	}
+
+	ro := published[0]
+	if got := ro.Items[0].CallID; got != "d" {
+		t.Errorf("writer Output.CallID = %q, want the write call id %q", got, "d")
+	}
+	if got := ro.Items[2].CallID; got != "b" {
+		t.Errorf("kp Output.CallID = %q, want the narrate call id %q", got, "b")
+	}
+	if n := len(ro.Director); n == 0 {
+		t.Fatal("含 writer 的轮应带上 Director 消息链快照")
+	} else if last := ro.Director[n-1]; last.Role != "tool" || last.ToolCallID != "d" {
+		t.Errorf("快照应以 write 的 tool 结果结尾(包含本轮所有工具回执), got %+v", last)
+	}
 }
 
 // TestFloor_WriteNSFWIsIndependentPerCall 验证两条 write 的 NSFW 标记各自独立。
@@ -319,6 +332,12 @@ func TestFloor_FallbackWriterWhenVisibleActionWithoutWrite(t *testing.T) {
 	}
 	if !kpRound.Items[0].Auto || kpRound.Items[0].Text == "" {
 		t.Errorf("兜底writer应标记Auto且带direction, got %+v", kpRound.Items[0])
+	}
+	if kpRound.Items[0].CallID != "r" || kpRound.Items[1].CallID != "r" {
+		t.Errorf("自动补写的 CallID 应等于来源 narrate 调用的 ID, got writer=%q kp=%q", kpRound.Items[0].CallID, kpRound.Items[1].CallID)
+	}
+	if len(kpRound.Director) == 0 {
+		t.Error("自动补写的轮也应带上 Director 消息链快照")
 	}
 }
 

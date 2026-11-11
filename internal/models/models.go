@@ -607,8 +607,9 @@ type MessageMeta struct {
 	Ended     bool        `json:"ended,omitempty"`
 	Auto      bool        `json:"auto,omitempty"` // writer 由后端兜底自动补出
 	NSFW      bool        `json:"nsfw,omitempty"`
-	Error     string      `json:"error,omitempty"`  // status=failed 时的原因
-	Events    []GameEvent `json:"events,omitempty"` // event: 本轮工具事件，按调用顺序
+	Error     string      `json:"error,omitempty"`   // status=failed 时的原因
+	Events    []GameEvent `json:"events,omitempty"`  // event: 本轮工具事件，按调用顺序
+	CallID    string      `json:"call_id,omitempty"` // writer: 对应的 write 调用 ID(自动补写的是来源 narrate/ask 调用)，Writer 视图靠它把正文挂回 Director 的工具结果
 }
 
 // NOTE: Message records a single chat message sent within a game session.

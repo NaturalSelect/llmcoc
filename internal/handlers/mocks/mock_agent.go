@@ -56,34 +56,19 @@ func (mr *MockAgentRunnerMockRecorder) Run(ctx, gctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockAgentRunner)(nil).Run), ctx, gctx)
 }
 
-// RunWriter 模拟基础方法。
-func (m *MockAgentRunner) RunWriter(ctx context.Context, gctx agent.GameContext, direction string, nsfw bool) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunWriter", ctx, gctx, direction, nsfw)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// RunWriter 声明期望调用。
-func (mr *MockAgentRunnerMockRecorder) RunWriter(ctx, gctx, direction, nsfw any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunWriter", reflect.TypeOf((*MockAgentRunner)(nil).RunWriter), ctx, gctx, direction, nsfw)
-}
-
 // RunWriterStream 模拟基础方法。
-func (m *MockAgentRunner) RunWriterStream(ctx context.Context, gctx agent.GameContext, direction string, nsfw bool, onToken func(string)) (string, error) {
+func (m *MockAgentRunner) RunWriterStream(ctx context.Context, gctx agent.GameContext, req agent.WriterRequest, onToken func(string)) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunWriterStream", ctx, gctx, direction, nsfw, onToken)
+	ret := m.ctrl.Call(m, "RunWriterStream", ctx, gctx, req, onToken)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // RunWriterStream 声明期望调用。
-func (mr *MockAgentRunnerMockRecorder) RunWriterStream(ctx, gctx, direction, nsfw, onToken any) *gomock.Call {
+func (mr *MockAgentRunnerMockRecorder) RunWriterStream(ctx, gctx, req, onToken any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunWriterStream", reflect.TypeOf((*MockAgentRunner)(nil).RunWriterStream), ctx, gctx, direction, nsfw, onToken)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunWriterStream", reflect.TypeOf((*MockAgentRunner)(nil).RunWriterStream), ctx, gctx, req, onToken)
 }
 
 // NOTE: RunPainter 模拟基础方法。

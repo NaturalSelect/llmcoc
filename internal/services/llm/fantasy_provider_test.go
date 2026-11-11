@@ -769,6 +769,28 @@ func TestBuildCall_ToolsConverted(t *testing.T) {
 	}
 }
 
+func TestBuildStreamCall_HistoryToolsSetsToolChoiceNone(t *testing.T) {
+	messages := []ChatMessage{{Role: "user", Content: "hi"}}
+	tools := []ToolDefinition{{Name: "write", Parameters: json.RawMessage(`{"type":"object"}`)}}
+
+	for _, isAnthropic := range []bool{false, true} {
+		p := &fantasyProvider{isAnthropic: isAnthropic, maxTokens: 10}
+
+		with := p.buildStreamCall(context.Background(), "", messages, tools)
+		if len(with.Tools) != 1 {
+			t.Fatalf("anthropic=%v: Tools = %+v, want 1", isAnthropic, with.Tools)
+		}
+		if with.ToolChoice == nil || *with.ToolChoice != fantasy.ToolChoiceNone {
+			t.Errorf("anthropic=%v: ToolChoice = %v, want none", isAnthropic, with.ToolChoice)
+		}
+
+		without := p.buildStreamCall(context.Background(), "", messages, nil)
+		if len(without.Tools) != 0 || without.ToolChoice != nil {
+			t.Errorf("anthropic=%v: no historyTools must leave Tools/ToolChoice empty, got %+v / %v", isAnthropic, without.Tools, without.ToolChoice)
+		}
+	}
+}
+
 // ---------- consumeStream ----------
 
 func TestConsumeStream_TextAggregationAndCallback(t *testing.T) {

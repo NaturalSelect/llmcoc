@@ -34,7 +34,7 @@ func (p *summaryChatProvider) Chat(_ context.Context, _ string, msgs []llm.ChatM
 	return "", errors.New("no more replies")
 }
 
-func (p *summaryChatProvider) ChatStream(context.Context, string, []llm.ChatMessage) (<-chan string, <-chan error, error) {
+func (p *summaryChatProvider) ChatStream(context.Context, string, []llm.ChatMessage, []llm.ToolDefinition) (<-chan string, <-chan error, error) {
 	return nil, nil, errors.New("unsupported")
 }
 

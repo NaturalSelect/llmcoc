@@ -620,7 +620,12 @@ func (h *SessionHandlers) saveAndBroadcast(sessionID uint, items []roundItem, ro
 	for _, p := range items {
 		hub.Publish("message_new", gin.H{"message": newMessageResponse(p.msg)})
 		if p.msg.Kind == models.MessageKindWriter {
-			h.enqueueWriter(sessionID, writerTask{messageID: p.msg.ID, gctx: ro.WriterCtx, direction: strings.TrimSpace(p.item.Text), nsfw: p.item.NSFW})
+			h.enqueueWriter(sessionID, writerTask{messageID: p.msg.ID, gctx: ro.WriterCtx, req: agent.WriterRequest{
+				Direction: strings.TrimSpace(p.item.Text),
+				NSFW:      p.item.NSFW,
+				CallID:    p.item.CallID,
+				Director:  ro.Director,
+			}})
 		}
 	}
 	return nil
@@ -643,7 +648,7 @@ func roundMessage(sessionID uint, ro agent.RoundOutputs, it agent.Output) (model
 		}
 		msg.Kind = models.MessageKindWriter
 		msg.Status = models.MessageStatusPending
-		meta.NSFW, meta.Auto = it.NSFW, it.Auto
+		meta.NSFW, meta.Auto, meta.CallID = it.NSFW, it.Auto, it.CallID
 	case agent.OutputImage:
 		if it.Image == nil || strings.TrimSpace(it.Image.Prompt) == "" {
 			return msg, false

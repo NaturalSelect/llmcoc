@@ -111,7 +111,9 @@ func usageSinkFromContext(ctx context.Context) func(Usage) {
 type Provider interface {
 	// Chat sends a conversation and returns the full response.
 	Chat(ctx context.Context, cacheKey string, messages []ChatMessage) (string, error)
-	ChatStream(ctx context.Context, cacheKey string, messages []ChatMessage) (<-chan string, <-chan error, error)
+	// ChatStream 流式返回文本。historyTools 只为让 messages 里的 tool_calls / tool 结果合法而声明；
+	// 非空时本次调用固定 tool_choice=none，流里只有文本。
+	ChatStream(ctx context.Context, cacheKey string, messages []ChatMessage, historyTools []ToolDefinition) (<-chan string, <-chan error, error)
 	JsonChat(ctx context.Context, cacheKey string, messages []ChatMessage) (string, error)
 	// ChatWithTools 发起一次支持原生 tool calling 的对话；tools 非空时作为 function calling
 	// 候选传给模型，模型可选择直接回复文本，或请求调用其中若干工具（通过 ToolChatResult.ToolCalls 返回）。

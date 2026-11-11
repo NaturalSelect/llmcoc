@@ -69,8 +69,8 @@ const ROLE_LABELS: Record<string, string> = {
 
 const ROLE_DESCS: Record<string, string> = {
   director: '场景导演 — 决策工具调用序列',
-  writer: '叙事撰写 — 生成面向玩家的克苏鲁叙述（流式输出）',
-  writer_nsfw: '成人向叙事 — 仅在房间开启NSFW且本轮被标记为色情内容时启用；未配置或关闭时自动回落默认 Writer（默认关闭）',
+  writer: '叙事撰写 — 生成面向玩家的克苏鲁叙述（流式输出）；会看到 Director 的完整上下文，需选支持工具调用的模型',
+  writer_nsfw: '成人向叙事 — 仅在房间开启NSFW且本轮被标记为色情内容时启用；未配置或关闭时自动回落默认 Writer（默认关闭）；同样需选支持工具调用的模型',
   lawyer: '规则顾问 — 查阅规则书提供裁决依据',
   npc: 'NPC扮演 — 给出场景NPC的行动与对话',
   npc_nsfw: '成人向NPC互动 — 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用；未配置或关闭时自动回落默认 NPC（默认关闭）',

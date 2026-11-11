@@ -94,12 +94,12 @@ func TestDescribeCharactersAction_SendsEquipmentToWriter(t *testing.T) {
 	}
 }
 
-func TestBuildWriterOpening_IncludesEquipment(t *testing.T) {
+func TestBuildWriterInstruction_IncludesEquipment(t *testing.T) {
 	gctx := GameContext{Session: models.GameSession{
 		ID:      1,
 		Players: []models.SessionPlayer{{CharacterCard: equipmentTestCard()}},
 	}}
-	opening, _ := buildWriterOpening("继续描述", gctx, false)
+	opening := buildWriterInstruction(WriterRequest{Direction: "继续描述"}, gctx, false)
 
 	if !strings.Contains(opening.Content, "<eq>风衣(深灰)、银戒指</eq>") {
 		t.Errorf("opening missing equipment block:\n%s", opening.Content)
@@ -112,7 +112,7 @@ func TestBuildWriterOpening_IncludesEquipment(t *testing.T) {
 		ID:      1,
 		Players: []models.SessionPlayer{{CharacterCard: models.CharacterCard{Name: "乙"}}},
 	}}
-	opening, _ = buildWriterOpening("继续描述", empty, false)
+	opening = buildWriterInstruction(WriterRequest{Direction: "继续描述"}, empty, false)
 	if !strings.Contains(opening.Content, "<eq></eq>") {
 		t.Errorf("empty equipment should render an empty block:\n%s", opening.Content)
 	}

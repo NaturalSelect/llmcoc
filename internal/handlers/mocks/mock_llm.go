@@ -57,9 +57,9 @@ func (mr *MockProviderMockRecorder) Chat(ctx, cacheKey, messages any) *gomock.Ca
 }
 
 // ChatStream 模拟基础方法。
-func (m *MockProvider) ChatStream(ctx context.Context, cacheKey string, messages []llm.ChatMessage) (<-chan string, <-chan error, error) {
+func (m *MockProvider) ChatStream(ctx context.Context, cacheKey string, messages []llm.ChatMessage, historyTools []llm.ToolDefinition) (<-chan string, <-chan error, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ChatStream", ctx, cacheKey, messages)
+	ret := m.ctrl.Call(m, "ChatStream", ctx, cacheKey, messages, historyTools)
 	ret0, _ := ret[0].(<-chan string)
 	ret1, _ := ret[1].(<-chan error)
 	ret2, _ := ret[2].(error)
@@ -67,9 +67,9 @@ func (m *MockProvider) ChatStream(ctx context.Context, cacheKey string, messages
 }
 
 // ChatStream 声明期望调用。
-func (mr *MockProviderMockRecorder) ChatStream(ctx, cacheKey, messages any) *gomock.Call {
+func (mr *MockProviderMockRecorder) ChatStream(ctx, cacheKey, messages, historyTools any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChatStream", reflect.TypeOf((*MockProvider)(nil).ChatStream), ctx, cacheKey, messages)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChatStream", reflect.TypeOf((*MockProvider)(nil).ChatStream), ctx, cacheKey, messages, historyTools)
 }
 
 // ChatWithTools mocks base method.

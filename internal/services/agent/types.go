@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/llm"
 )
 
 // sortedIntMapKeys 返回map[string]int的key按字典序排序后的切片。渲染进prompt/head的内容
@@ -118,6 +119,8 @@ const (
 
 // ToolCall is one item in the master KP agent's output sequence.
 type ToolCall struct {
+	// NOTE: CallID 是网关给这次调用的 ID，只由 decodeDirectorToolCall 从 llm.ToolCall 填入，不参与 JSON 解码。
+	CallID        string                 `json:"-"`
 	Action        ToolCallType           `json:"action"`
 	Question      string                 `json:"question"`       // check_rule: 规则问题的语义描述
 	Dice          *DiceCheck             `json:"dice"`           // roll_dice: 骰子检定请求
@@ -198,10 +201,17 @@ type ImagePromptRequest struct {
 	NSFW   bool   `json:"nsfw"`   // Director 标记该画面含NSFW内容,决定路由到 painter_nsfw
 }
 
-// WriterState 保存Writer本次调用的跨回合上下文管理器和本次生成的白字描述。
+// WriterState 保存Writer本次调用生成的白字描述。
 type WriterState struct {
-	cm     *ContextManager // Writer自己跨回合的原生消息链,由ContextManager统一管理
-	Buffer string          // 本次生成的白字描述
+	Buffer string // 本次生成的白字描述
+}
+
+// WriterRequest 是一次 Writer 调用的全部输入。Writer 没有独立历史，它看到的上下文就是 Director 在发布这一轮时的消息链快照。
+type WriterRequest struct {
+	Direction string
+	NSFW      bool              // 已经过房间开关过滤
+	CallID    string            // 对应的 write 调用；自动补写时是来源 narrate/ask 调用
+	Director  []llm.ChatMessage // 为空时 Writer 只带 system 和指令
 }
 
 // OutputKind 区分一次工具调用产生的玩家可见消息种类。
@@ -225,6 +235,8 @@ type Output struct {
 	Ask       *AskResult          // ask
 	Ended     bool                // end_game
 	Auto      bool                // writer 由 fallbackWriterDirection 自动补出
+	// CallID: writer 是对应的 write 调用；自动补写的是来源 narrate/ask 调用；kp/ask 是它们自己的调用。
+	CallID string
 }
 
 // RoundOutputs 是 Director 一轮工具调用产生的全部消息,按 writer → image → kp → ask 排好序
@@ -239,6 +251,8 @@ type RoundOutputs struct {
 	// WriterCtx 是本轮结束时 GameContext 的拷贝(Session.Players 也已拷贝,Progress/Publish 置空):
 	// Writer、Painter 异步读取它,Director 继续原地修改原 gctx 时不会产生数据竞争。
 	WriterCtx GameContext
+	// Director 是本轮结束时 Director 完整消息链的只读快照，只有含 writer 的轮才有值。
+	Director []llm.ChatMessage
 }
 
 // StopReason 说明一个发言权周期为什么没有以 ask_players/end_game 自然结束。

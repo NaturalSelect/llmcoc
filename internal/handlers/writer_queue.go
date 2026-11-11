@@ -4,8 +4,8 @@ package handlers
 // 但同一周期里之后的 kp/ask 消息要等 Writer 队列写完才发布（见 publishRound），玩家先读到叙事再被提问。
 // writer 落库即广播 message_new，再靠 message_update 补全；image 画完才落库并以 message_new 推送，所以客户端看到的顺序就是推送顺序，
 // 配图排在画完那一刻已有的消息之后，不会跳到上面，GET /messages 里也不会有未画完的图。
-// Writer 每个会话一个 FIFO 队列：一条 writer 消息对应一次 RunWriterStream，也就是 Writer transcript 的一轮，
-// 所以 Writer 的历史顺序等于消息顺序。Painter 不排队，每条 image 消息各自并发生成。
+// Writer 每个会话一个 FIFO 队列：一条 writer 消息对应一次 RunWriterStream，请求里带着 Director 在发布那一轮时的消息链快照，
+// 队列串行保证前一条正文先落库、下一条再把它附到自己的视图里。Painter 不排队，每条 image 消息各自并发生成。
 // 房主打断（kp-stop）不会取消这里的任务，因为对应的消息已经对玩家可见。
 // 流式正文按 writerTokenFlushInterval 合并成 writer_token 帧，帧里带 UTF-16 偏移；连接建立时 WS 会补发正在生成的全文，
 // 断线重连或进房时客户端都能接上，不会因为漏了中间的 token 就停在半截。
@@ -39,8 +39,7 @@ const (
 type writerTask struct {
 	messageID uint
 	gctx      agent.GameContext
-	direction string
-	nsfw      bool
+	req       agent.WriterRequest
 	done      chan struct{} // 任务结束(无论成败)后关闭
 }
 
@@ -222,7 +221,7 @@ func (h *SessionHandlers) runWriterTask(sessionID uint, task writerTask) {
 		}
 	}()
 	ctx = agent.WithWriterRestart(ctx, lw.reset)
-	text, err := h.Runner.RunWriterStream(ctx, task.gctx, task.direction, task.nsfw, func(token string) {
+	text, err := h.Runner.RunWriterStream(ctx, task.gctx, task.req, func(token string) {
 		if token != "" {
 			lw.append(token)
 		}

@@ -45,7 +45,7 @@ func (p *directorHistoryFakeProvider) Chat(_ context.Context, _ string, msgs []l
 	return p.summaryReply, nil
 }
 
-func (p *directorHistoryFakeProvider) ChatStream(context.Context, string, []llm.ChatMessage) (<-chan string, <-chan error, error) {
+func (p *directorHistoryFakeProvider) ChatStream(context.Context, string, []llm.ChatMessage, []llm.ToolDefinition) (<-chan string, <-chan error, error) {
 	return nil, nil, fmt.Errorf("directorHistoryFakeProvider: ChatStream not supported")
 }
 
