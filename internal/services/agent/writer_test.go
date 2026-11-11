@@ -669,6 +669,13 @@ func TestBuildWriterInstruction(t *testing.T) {
 	if !strings.Contains(on.Content, "explicit_scene_requirements") {
 		t.Error("NSFW模式的续写指令应包含explicit_scene_requirements后缀")
 	}
+	for _, c := range []llm.ChatMessage{off, on} {
+		for _, want := range []string{"role play 文本", "不要生成 ask_players", "不要点名、提问或给推荐行动", "不要输出任何标签"} {
+			if !strings.Contains(c.Content, want) {
+				t.Errorf("续写指令应要求只输出 role play 文本，缺少 %q:\n%s", want, c.Content)
+			}
+		}
+	}
 }
 
 // TestRunWriterStream_RoomNSFWNonNSFWCallUsesAllAgesPrompt 验证房间开启NSFW、本次write标记为
@@ -794,6 +801,27 @@ func TestWriteToolAsksDirectorToCarryInvestigatorSpeech(t *testing.T) {
 	}
 	if !strings.Contains(kpSystemPrompt, "玩家本轮已用「」声明的台词不属于虚构") {
 		t.Error("kp system prompt should exempt player-declared speech from the write no-fabrication rule")
+	}
+}
+
+// TestWriterPromptForbidsEchoingControlTags 验证 Writer 提示词明确禁止输出尖括号标签，并说明
+// <writer_output> 只是历史里的分隔标记。测试反馈里每一轮正文都带着 <writer_output> 和 <ask_players> 漏给了玩家。
+func TestWriterPromptForbidsEchoingControlTags(t *testing.T) {
+	for _, want := range []string{
+		"输出里不得出现任何尖括号标签",
+		"<ask_players>",
+		"标签不属于正文",
+		"角色扮演(role play)文本写手",
+		"只输出这一段 role play 文本本身",
+		"不生成 ask_players 点名或提问、不列推荐行动",
+		"不点名玩家、不提问、不给推荐行动",
+	} {
+		if !strings.Contains(writerDefaultPrompt, want) {
+			t.Errorf("writer prompt should contain %q", want)
+		}
+	}
+	if strings.Contains(writerDefaultPrompt, "由你之前写出的 <writer_output> 正文") {
+		t.Error("writer prompt should no longer present <writer_output> as the name of the prose it writes")
 	}
 }
 

@@ -17,18 +17,19 @@ var writerSessionLocks sync.Map
 
 const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN">
 	<identity>
-		你是{{NSFW_WRITER_VOICE}}的场景文字编辑，擅长清晰、具体、有节奏的 COC 叙事。根据导演指令续写当前场景。
+		你是{{NSFW_WRITER_VOICE}}的 COC 角色扮演(role play)文本写手，擅长清晰、具体、有节奏的叙事。你的唯一任务是根据最后一条消息里的导演指令，写出一段 role play 文本，并且只输出这段文本。你不是 KP：不裁定规则、不调用工具、不点名玩家、不提问、不给推荐行动。
 	</identity>
 	<context>
-		<rule>之前的对话是 KP(导演)的完整工作记录：模组资料、周期状态、KP 的工具调用与结果(规则裁定、暗骰、NPC 私下反应等)，以及附在 write 结果后、由你之前写出的 <writer_output> 正文。记录里的工具都已执行完，不要调用任何工具。</rule>
-		<rule>下面规则里说的“上文”，只指玩家已经读到的内容：<writer_output> 正文，以及 KP 发给玩家的 narrate/ask 文字。</rule>
+		<rule>之前的对话是 KP(导演)的完整工作记录：模组资料、周期状态、KP 的工具调用与结果(规则裁定、暗骰、NPC 私下反应等)，以及附在 write 结果后、你之前写出的正文(记录里用 <writer_output> 标签把它们框出来，只是为了让你分清哪一段是正文，标签不属于正文)。记录里的工具都已执行完，不要调用任何工具，也不要续写 KP 的工作：不写 ask_players、narrate、write 之类的调用及其参数(点名、提问、推荐行动)，也不模仿工具结果的格式。</rule>
+		<rule>下面规则里说的“上文”，只指玩家已经读到的内容：你之前写出的正文，以及 KP 发给玩家的 narrate/ask 文字。</rule>
 		<rule>记录里玩家不知道的信息(模组秘密、暗骰结果、NPC 的隐藏意图、规则原文)不得写进正文，也不得暗示；只写最后一条消息里导演指令要求的内容。</rule>
 	</context>
 	<output format="markdown">
-		充分发挥想象力, 直接输出玩家可见叙事文字，不加任何前言、标题或解释。
+		充分发挥想象力, 只输出这一段 role play 文本本身，不加任何前言、标题、解释或收尾说明。
 		<rule>正文按小说排版用 Markdown 输出，段与段之间空一行。</rule>
 		<rule>只允许这几种标记：*斜体* 用于内心低语、外文、书名或幻听到的声音；**粗体** 只用于极少数需要读者一眼看到的关键词，一段里最多一处；> 引用块用于信件、日记、碑文、墙上字迹等人物读到的文字；单独一行 --- 用于场景或时间跳转的分隔，它的前后都要空一行。</rule>
 		<rule>不要使用标题、列表、表格、代码块、链接和图片；对话照常写在段落里，不要用引用块包裹对话。</rule>
+		<rule>输出里不得出现任何尖括号标签，包括 <writer_output>、<ask_players>、<narrate>、<write>、<director_instruction>，也不要给正文套上任何标签；只输出正文本身。你只写 role play 文本，不生成 ask_players 点名或提问、不列推荐行动、不写给玩家的任何话；KP 对玩家的提问由系统另行展示，不要在正文末尾复述或改写它。</rule>
 	</output>
 	<global_config>
 		{{NSFW_GLOBAL_CONFIG}}
@@ -387,7 +388,7 @@ func buildWriterInstruction(req WriterRequest, gctx GameContext, nsfwMode bool) 
 	}
 	sb.WriteString(direction)
 	sb.WriteString("\n</director_instruction>\n")
-	sb.WriteString("这是 KP 刚刚交给你的导演指令(对应上文 call_id 相同的调用)。请在已有正文的基础上续写这一段,并保持逻辑、时间、空间上的连贯,把场景细节充分展开")
+	sb.WriteString("这是 KP 刚刚交给你的导演指令(对应上文 call_id 相同的调用)。你的任务只是根据它写出一段 role play 文本,在已有正文的基础上保持逻辑、时间、空间上的连贯,把场景细节充分展开。只输出这段 role play 文本本身:不要调用工具,不要生成 ask_players、narrate 等调用,不要点名、提问或给推荐行动,不要输出任何标签")
 	if nsfwMode {
 		sb.WriteString(",请将描写的重点放在色情场景上重点突出女角色的反应\n")
 		sb.WriteString(writerNSFWPromptSuffix)
