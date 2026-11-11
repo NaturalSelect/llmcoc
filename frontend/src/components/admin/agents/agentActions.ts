@@ -4,7 +4,7 @@ import { agentLabel } from './agentRoles'
 // NOTE: 保存/测试模型的请求体构造，字段与旧 admin.js 的 saveAgent / pingAgentModel 逐项一致
 
 export function isPainterRole(role: string): boolean {
-  return role === 'painter' || role === 'painter_nsfw'
+  return role === 'painter' || role === 'painter_nsfw' || role === 'painter_hq'
 }
 
 // NOTE: 只有这三个角色会按上下文窗口整体裁剪历史，其余角色不显示该输入框

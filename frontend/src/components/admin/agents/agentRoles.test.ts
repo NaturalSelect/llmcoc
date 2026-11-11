@@ -31,8 +31,8 @@ function row(role: string, over: Partial<AgentConfigRow> = {}): AgentConfigRow {
 }
 
 describe('角色表', () => {
-  test('预期角色共 14 个且不含已下线的 scripter', () => {
-    expect(EXPECTED_ROLES).toHaveLength(14)
+  test('预期角色共 15 个且不含已下线的 scripter', () => {
+    expect(EXPECTED_ROLES).toHaveLength(15)
     expect(EXPECTED_ROLES).not.toContain('scripter')
     expect(EXPECTED_ROLES[0]).toBe('director')
     expect(EXPECTED_ROLES.at(-1)).toBe('dramaturg')
@@ -80,14 +80,14 @@ describe('角色表', () => {
       thinking_level: 'none',
       is_active: false,
     })
-    for (const r of ['writer_nsfw', 'npc_nsfw', 'painter_nsfw', 'dramaturg']) {
+    for (const r of ['writer_nsfw', 'npc_nsfw', 'painter_nsfw', 'painter_hq', 'dramaturg']) {
       expect(ROLE_DEFAULTS[r]?.is_active, r).toBe(false)
     }
   })
 })
 
 describe('buildAgentForms', () => {
-  test('空列表：14 个角色全部按默认值补齐，顺序同角色表', () => {
+  test('空列表：15 个角色全部按默认值补齐，顺序同角色表', () => {
     const forms = buildAgentForms([])
     expect(forms.map((f) => f.role)).toStrictEqual(EXPECTED_ROLES)
     const director = forms[0]!
@@ -113,8 +113,8 @@ describe('buildAgentForms', () => {
   })
 
   test('null / undefined 入参等同空列表', () => {
-    expect(buildAgentForms(null)).toHaveLength(14)
-    expect(buildAgentForms(undefined)).toHaveLength(14)
+    expect(buildAgentForms(null)).toHaveLength(15)
+    expect(buildAgentForms(undefined)).toHaveLength(15)
   })
 
   test('库里已有的行排在前面，缺行的角色补在后面；provider_config_id 为 null 时变空串', () => {
@@ -123,7 +123,7 @@ describe('buildAgentForms', () => {
       ['writer', 7, 3],
       ['director', 2, ''],
     ])
-    expect(forms).toHaveLength(14)
+    expect(forms).toHaveLength(15)
     expect(forms.slice(2).map((f) => f.role)).not.toContain('writer')
     expect(forms[2]!.id).toBe('new-writer_nsfw')
   })
@@ -132,7 +132,7 @@ describe('buildAgentForms', () => {
     const forms = buildAgentForms([row('scripter'), row('lore_researcher', { id: 9 })])
     expect(forms.map((f) => f.role)).not.toContain('scripter')
     expect(forms[0]!.role).toBe('lore_researcher')
-    expect(forms).toHaveLength(15)
+    expect(forms).toHaveLength(16)
   })
 
   test('同一角色重复时后者覆盖前者，位置保持首次出现处', () => {

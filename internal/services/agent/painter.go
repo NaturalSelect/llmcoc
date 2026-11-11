@@ -154,7 +154,11 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 func paintImage(ctx context.Context, painter, translator agentHandle, cacheSession, prompt, sysPrompt string, aspect llm.ImageAspect, nsfw bool) (string, error) {
 	generator, ok := painter.provider.(llm.ImageGenerator)
 	if !ok {
-		return "", fmt.Errorf("当前 %s provider 不支持图片生成", painterRoleFor(nsfw))
+		role := painterRoleFor(nsfw)
+		if painter.config != nil {
+			role = painter.config.Role
+		}
+		return "", fmt.Errorf("当前 %s provider 不支持图片生成", role)
 	}
 	opts := llm.ImageOptions{Aspect: aspect}
 	if painter.config != nil && painter.config.DiffusionMode {

@@ -1,5 +1,5 @@
 // NOTE: portrait.go 负责调查员立绘：Writer 先把外貌和当前穿戴写成画面描述，再由 Painter 出竖版全身图。
-// 立绘不属于任何房间，固定按全年龄渲染，只使用 writer 和 painter，不回落也不路由到 NSFW 角色。
+// 立绘不属于任何房间，固定按全年龄渲染，只使用 writer 和 painter_hq，不回落 painter，也不路由到 NSFW 角色。
 package agent
 
 import (
@@ -36,7 +36,7 @@ func GeneratePortrait(ctx context.Context, card *models.CharacterCard) (string, 
 	if err != nil {
 		return "", err
 	}
-	painter, err := loadSingleAgent(models.AgentRolePainter)
+	painter, err := loadSingleAgent(models.AgentRolePainterHQ)
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +55,7 @@ func generatePortraitWith(ctx context.Context, writer, painter, translator agent
 		ctx = context.Background()
 	}
 	if _, ok := painter.provider.(llm.ImageGenerator); !ok {
-		return "", fmt.Errorf("当前 %s provider 不支持图片生成", models.AgentRolePainter)
+		return "", fmt.Errorf("当前 %s provider 不支持图片生成", models.AgentRolePainterHQ)
 	}
 	desc, err := writeImagePromptCharacterVisualDescription(ctx, writer, "", portraitCacheSession, []models.CharacterCard{*card}, false)
 	if err != nil {

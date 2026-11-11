@@ -177,6 +177,8 @@ func seedDefaultAgentConfigs() {
 		{Role: AgentRolePainter, ProviderConfigID: provID, ModelName: "dall-e-3", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
 		// NOTE: painter_nsfw 默认关闭,需要管理员单独绑定 provider 才会放行 nsfw=true 的配图;未启用时这类请求被拒绝。
 		{Role: AgentRolePainterNSFW, ProviderConfigID: provID, ModelName: "dall-e-3", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
+		// NOTE: painter_hq 默认关闭,需要管理员绑定高质量图片模型;未启用时立绘生成直接报错,不回落默认 Painter。
+		{Role: AgentRolePainterHQ, ProviderConfigID: provID, ModelName: "gpt-image-1", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
 		// NOTE: diffusion_translator 只输出一行标签,低温度减少擅自添加画面元素;仅在 Painter 开启 diffusion_mode 时才会被调用。
 		{Role: AgentRoleDiffusionTranslator, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.3, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
@@ -192,6 +194,10 @@ func seedDefaultAgentConfigs() {
 		var existing AgentConfig
 		if DB.Where("role = ?", ag.Role).First(&existing).Error != nil {
 			DB.Create(&ag)
+			// NOTE: IsActive 带 default:true，Create 会把零值 false 换成 true，需要显式回写才能真正默认关闭。
+			if ag.Role == AgentRolePainterHQ {
+				DB.Model(&ag).Update("is_active", false)
+			}
 		}
 	}
 }

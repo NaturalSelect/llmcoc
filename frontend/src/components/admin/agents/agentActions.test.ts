@@ -36,6 +36,7 @@ describe('角色判定', () => {
   test('painter 系与上下文窗口角色', () => {
     expect(isPainterRole('painter')).toBe(true)
     expect(isPainterRole('painter_nsfw')).toBe(true)
+    expect(isPainterRole('painter_hq')).toBe(true)
     expect(isPainterRole('writer')).toBe(false)
     expect(['director', 'writer', 'writer_nsfw'].every(hasContextWindow)).toBe(true)
     expect(hasContextWindow('npc')).toBe(false)

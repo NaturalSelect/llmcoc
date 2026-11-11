@@ -89,3 +89,17 @@ func TestSeedDefaultAgentConfigs_SeedsDiffusionTranslator(t *testing.T) {
 		t.Errorf("temperature = %v, want a low value so the tag output stays faithful to the scene", cfg.Temperature)
 	}
 }
+
+func TestSeedDefaultAgentConfigs_SeedsPainterHQ(t *testing.T) {
+	db := openSeedTestDB(t)
+
+	seedDefaultAgentConfigs()
+
+	var cfg AgentConfig
+	if err := db.Where("role = ?", string(AgentRolePainterHQ)).First(&cfg).Error; err != nil {
+		t.Fatalf("painter_hq row not seeded: %v", err)
+	}
+	if cfg.IsActive {
+		t.Error("painter_hq should be inactive by default so portraits fail loudly until an admin binds an image model")
+	}
+}

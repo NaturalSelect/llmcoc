@@ -10,6 +10,9 @@ import (
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func portraitTestCard() *models.CharacterCard {
@@ -30,7 +33,7 @@ func TestGeneratePortraitWith_WriterThenPainterPortrait(t *testing.T) {
 
 	dataURL, err := generatePortraitWith(context.Background(),
 		newWriterTestHandle(writer),
-		newPainterTestHandle(models.AgentRolePainter, painter, true, false),
+		newPainterTestHandle(models.AgentRolePainterHQ, painter, true, false),
 		agentHandle{}, portraitTestCard())
 	if err != nil {
 		t.Fatalf("generatePortraitWith error: %v", err)
@@ -79,7 +82,7 @@ func TestGeneratePortraitWith_DiffusionModeTranslatesWithAllAgesNegative(t *test
 
 	_, err := generatePortraitWith(context.Background(),
 		newWriterTestHandle(writer),
-		newPainterTestHandle(models.AgentRolePainter, painter, true, true),
+		newPainterTestHandle(models.AgentRolePainterHQ, painter, true, true),
 		newDiffusionTranslatorHandle(translatorProv), portraitTestCard())
 	if err != nil {
 		t.Fatalf("generatePortraitWith error: %v", err)
@@ -106,7 +109,7 @@ func TestGeneratePortraitWith_DiffusionModeNeedsTranslator(t *testing.T) {
 
 	_, err := generatePortraitWith(context.Background(),
 		newWriterTestHandle(writer),
-		newPainterTestHandle(models.AgentRolePainter, painter, true, true),
+		newPainterTestHandle(models.AgentRolePainterHQ, painter, true, true),
 		agentHandle{}, portraitTestCard())
 	if err == nil || !strings.Contains(err.Error(), string(models.AgentRoleDiffusionTranslator)) {
 		t.Fatalf("err = %v, want error naming diffusion_translator", err)
@@ -126,7 +129,7 @@ func TestGeneratePortraitWith_WriterFailureSkipsPainter(t *testing.T) {
 			painter := &recordingImageProvider{}
 			_, err := generatePortraitWith(context.Background(),
 				newWriterTestHandle(writer),
-				newPainterTestHandle(models.AgentRolePainter, painter, true, false),
+				newPainterTestHandle(models.AgentRolePainterHQ, painter, true, false),
 				agentHandle{}, portraitTestCard())
 			if err == nil {
 				t.Fatal("want error when the writer fails")
@@ -142,12 +145,68 @@ func TestGeneratePortraitWith_PainterWithoutImageSupportSkipsWriter(t *testing.T
 	writer := &chatFakeProvider{chatResponses: []string{"描述"}}
 	_, err := generatePortraitWith(context.Background(),
 		newWriterTestHandle(writer),
-		newPainterTestHandle(models.AgentRolePainter, &chatFakeProvider{}, true, false),
+		newPainterTestHandle(models.AgentRolePainterHQ, &chatFakeProvider{}, true, false),
 		agentHandle{}, portraitTestCard())
 	if err == nil {
 		t.Fatal("want error when painter provider cannot generate images")
 	}
+	if !strings.Contains(err.Error(), string(models.AgentRolePainterHQ)) {
+		t.Errorf("err = %v, want error naming painter_hq", err)
+	}
 	if len(writer.chatKeys) != 0 {
 		t.Errorf("writer must not be called when the painter cannot run, got %v", writer.chatKeys)
+	}
+}
+
+func TestGeneratePortrait_DoesNotFallBackToPainter(t *testing.T) {
+	for _, name := range []string{"missing", "disabled"} {
+		t.Run(name, func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+			if err != nil {
+				t.Fatalf("open db: %v", err)
+			}
+			sqlDB, err := db.DB()
+			if err != nil {
+				t.Fatalf("get sql db: %v", err)
+			}
+			sqlDB.SetMaxOpenConns(1)
+			if err := db.AutoMigrate(&models.LLMProviderConfig{}, &models.AgentConfig{}); err != nil {
+				t.Fatalf("auto-migrate: %v", err)
+			}
+			prev := models.DB
+			models.DB = db
+			t.Cleanup(func() {
+				models.DB = prev
+				_ = sqlDB.Close()
+			})
+
+			prov := models.LLMProviderConfig{Name: "p", Provider: "openai", BaseURL: "http://127.0.0.1:1", IsActive: true}
+			if err := db.Create(&prov).Error; err != nil {
+				t.Fatalf("create provider: %v", err)
+			}
+			// NOTE: writer 和 painter 都启用，painter_hq 缺失或被禁用，立绘仍必须失败。
+			rows := []models.AgentConfig{
+				{Role: models.AgentRoleWriter, ProviderConfigID: &prov.ID, ModelName: "m", IsActive: true},
+				{Role: models.AgentRolePainter, ProviderConfigID: &prov.ID, ModelName: "m", IsActive: true},
+			}
+			if name == "disabled" {
+				rows = append(rows, models.AgentConfig{Role: models.AgentRolePainterHQ, ProviderConfigID: &prov.ID, ModelName: "m", IsActive: false})
+			}
+			for i := range rows {
+				if err := db.Create(&rows[i]).Error; err != nil {
+					t.Fatalf("create %s config: %v", rows[i].Role, err)
+				}
+			}
+			// NOTE: IsActive 带 default:true，Create 会吞掉零值 false，需要建后显式置 false。
+			if name == "disabled" {
+				if err := db.Model(&models.AgentConfig{}).Where("role = ?", models.AgentRolePainterHQ).Update("is_active", false).Error; err != nil {
+					t.Fatalf("disable painter_hq: %v", err)
+				}
+			}
+			_, err = GeneratePortrait(context.Background(), portraitTestCard())
+			if err == nil || !strings.Contains(err.Error(), string(models.AgentRolePainterHQ)) {
+				t.Fatalf("err = %v, want error naming painter_hq even though painter is enabled", err)
+			}
+		})
 	}
 }

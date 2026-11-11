@@ -620,6 +620,30 @@ func TestAdminUpdateAgent_PainterNSFWRoleAccepted(t *testing.T) {
 	}
 }
 
+// TestAdminUpdateAgent_PainterHQRoleAccepted 覆盖 painter_hq 是合法角色,且 diffusion_mode 同样可落库。
+func TestAdminUpdateAgent_PainterHQRoleAccepted(t *testing.T) {
+	initTestDB(t)
+	r := adminConfigRouter()
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/admin/config/agents/painter_hq", map[string]any{
+		"model_name":     "gpt-image-1",
+		"diffusion_mode": true,
+		"is_active":      true,
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT painter_hq want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var cfg models.AgentConfig
+	if err := models.DB.Where("role = ?", "painter_hq").First(&cfg).Error; err != nil {
+		t.Fatalf("painter_hq AgentConfig not found: %v", err)
+	}
+	if !cfg.DiffusionMode || cfg.ModelName != "gpt-image-1" || !cfg.IsActive {
+		t.Fatalf("stored config = %+v", cfg)
+	}
+}
+
 // TestAdminUpdateAgent_DiffusionTranslatorRoleAccepted 覆盖 diffusion_translator 是合法角色并可落库。
 func TestAdminUpdateAgent_DiffusionTranslatorRoleAccepted(t *testing.T) {
 	initTestDB(t)
@@ -668,6 +692,33 @@ func TestAdminPingProvider_PainterNSFWUsesImageMode(t *testing.T) {
 	}
 	if !imageProv.called || imageProv.chatCalled {
 		t.Fatalf("painter_nsfw ping must use image generation, called=%v chatCalled=%v", imageProv.called, imageProv.chatCalled)
+	}
+}
+
+func TestAdminPingProvider_PainterHQUsesImageMode(t *testing.T) {
+	initTestDB(t)
+	pid := seedProvider(t, "Painter")
+
+	ctrl := gomock.NewController(t)
+	imageProv := &fakeImageProvider{base64Data: "ZmFrZS1pbWFnZQ==", mimeType: "image/png"}
+	mockFac := mocks.NewMockProviderFactory(ctrl)
+	mockFac.EXPECT().NewProvider(gomock.Any(), "gpt-image-1", 0, float32(0), false, "none", 0, false).Return(imageProv)
+
+	r := gin.New()
+	r.POST("/admin/config/providers/:id/ping", withAuth(1, "admin", "admin"), func(c *gin.Context) {
+		adminPingProviderWithFactory(c, mockFac)
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/admin/config/providers/%d/ping", pid), map[string]any{
+		"model_name": "gpt-image-1",
+		"role":       "painter_hq",
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !imageProv.called || imageProv.chatCalled {
+		t.Fatalf("painter_hq ping must use image generation, called=%v chatCalled=%v", imageProv.called, imageProv.chatCalled)
 	}
 }
 

@@ -31,6 +31,8 @@ export const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
   painter: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
   // NOTE: painter_nsfw 仅在 Director 把配图标记为 nsfw=true 时启用，默认关闭；未启用时这类配图请求会被拒绝。
   painter_nsfw: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
+  // NOTE: painter_hq 只用于调查员立绘，默认关闭；未启用时立绘生成直接报错，不回落 Painter。
+  painter_hq: { max_tokens: 0, temperature: 0, model_name: 'gpt-image-1', thinking_level: 'none', is_active: false },
   // NOTE: diffusion_translator 把画面描述翻译成扩散模型标签，仅在 Painter 开启扩散模型模式时被调用；低温度减少擅自添加画面元素。
   diffusion_translator: { max_tokens: 800, temperature: 0.3 },
   architect: { max_tokens: 4000, temperature: 0.7 },
@@ -58,6 +60,7 @@ const ROLE_LABELS: Record<string, string> = {
   npc_nsfw: '🔞 NSFW NPC',
   painter: '🎨 Painter',
   painter_nsfw: '🔞 NSFW Painter',
+  painter_hq: '🖼️ 持久 Painter',
   diffusion_translator: '🏷️ Diffusion Translator',
   architect: '🏗️ Architect',
   qa_guard: '🔍 QA Guard',
@@ -76,6 +79,7 @@ const ROLE_DESCS: Record<string, string> = {
   npc_nsfw: '成人向NPC互动 — 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用；未配置或关闭时自动回落默认 NPC（默认关闭）',
   painter: '画图代理 — 按需生成场景图片（默认关闭，不落库）',
   painter_nsfw: '成人向画图 — Director 把配图标记为 nsfw=true 时只路由到它；未启用时这类配图请求会被直接拒绝，不回落默认 Painter（默认关闭）',
+  painter_hq: '持久画图 — 生成调查员立绘等长期保存的图片；未启用时立绘生成直接报错，不回落默认 Painter（默认关闭）',
   diffusion_translator: '扩散提示词翻译 — Painter 开启扩散模型模式时，把导演的自然语言画面描述翻译成标签式提示词；未启用时扩散模式的配图会失败',
   architect: '模组设计 — 生成大纲并转化为完整JSON模组',
   qa_guard: '质量审查 — 审查模组可玩性、规则合规与线索设计',
@@ -95,6 +99,7 @@ const ROLE_HINTS: Record<string, string> = {
   npc_nsfw: '为成人向NPC互动单独绑定更宽松的 provider/模型；未启用时自动使用默认 NPC（默认关闭）',
   painter: '配置 OpenAI 兼容图片模型，如 dall-e-3（默认关闭）',
   painter_nsfw: '为成人向配图单独绑定更宽松的图片模型；未启用时 nsfw=true 的配图会被拒绝（默认关闭）',
+  painter_hq: '为立绘单独绑定高质量图片模型，如 gpt-image-1；开启扩散模式时需要启用 diffusion_translator（默认关闭）',
   diffusion_translator: '留空使用内置提示词（输出一行 Danbooru 风格标签）；建议配置低温度、指令遵循强的文本模型',
   architect: '留空使用内置 Architect 提示词（大纲+JSON生成）',
   qa_guard: '留空使用内置 QA Guard 提示词（模组质量审查）',
