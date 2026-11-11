@@ -250,94 +250,65 @@ func cleanPlayerVisibleText(text string) string {
 	return strings.TrimSpace(internalTagPattern.ReplaceAllString(text, ""))
 }
 
-func progressKPIteration(iter, _ int) string {
-	if iter == 0 {
-		return "KP 正在判断本轮需要哪些裁定…"
-	}
-	return "KP 正在继续处理工具结果…"
+// NOTE: 状态栏只用四种说法：思考、查询规则、掷骰检定、撰写叙事。一批工具里取最靠前的阶段，
+// 工具名对玩家没有意义，不再逐个列出。
+const (
+	progressThinking = "KP 正在思考…"
+	progressRule     = "KP 正在查询规则…"
+	progressDice     = "KP 正在掷骰检定…"
+	progressWriting  = "KP 正在撰写叙事…"
+)
+
+func progressKPIteration(_, _ int) string {
+	return progressThinking
 }
 
 func progressPlannedCalls(calls []llm.ToolCall) string {
-	labels := compactProgressLabels(calls)
-	if len(labels) == 0 {
-		return "KP 正在整理下一步…"
-	}
-	return "KP 计划：" + strings.Join(labels, "、")
+	return progressForCalls(calls)
 }
 
 func progressExecutingCalls(calls []llm.ToolCall) string {
-	labels := compactProgressLabels(calls)
-	if len(labels) == 0 {
-		return "KP 正在执行工具…"
-	}
-	return "KP 正在并行处理：" + strings.Join(labels, "、")
+	return progressForCalls(calls)
 }
 
 func progressExecutingCall(call llm.ToolCall) string {
-	return "KP 正在" + progressToolLabel(ToolCallType(call.Name)) + "…"
+	return progressForCalls([]llm.ToolCall{call})
 }
 
-func compactProgressLabels(calls []llm.ToolCall) []string {
-	seen := map[string]bool{}
-	labels := make([]string, 0, len(calls))
+func progressForCalls(calls []llm.ToolCall) string {
+	phase := progressThinking
+	rank := progressRank(phase)
 	for _, call := range calls {
-		label := progressToolLabel(ToolCallType(call.Name))
-		if label == "" || seen[label] {
-			continue
-		}
-		seen[label] = true
-		labels = append(labels, label)
-		if len(labels) >= 4 {
-			break
+		p := progressToolPhase(ToolCallType(call.Name))
+		if r := progressRank(p); r > rank {
+			phase, rank = p, r
 		}
 	}
-	return labels
+	return phase
 }
 
-func progressToolLabel(action ToolCallType) string {
+func progressRank(phase string) int {
+	switch phase {
+	case progressRule:
+		return 3
+	case progressDice:
+		return 2
+	case progressWriting:
+		return 1
+	}
+	return 0
+}
+
+func progressToolPhase(action ToolCallType) string {
 	switch action {
 	case ToolCheckRule:
-		return "查询规则"
-	case ToolRollDice:
-		return "掷骰检定"
-	case ToolGenerateNPCName, ToolCreateNPC, ToolDestroyNPC:
-		return "处理NPC登场"
-	case ToolActNPC:
-		return "处理NPC行动"
-	case ToolQueryCharacter, ToolQueryNPCCard:
-		return "读取角色状态"
-	case ToolDescribeCharacters:
-		return "整理角色外貌"
-	case ToolUpdateCharacters, ToolUpdateNPCCard, ToolUpdateLocation, ToolUpdateNPCLocation, ToolUpdateArmor:
-		return "更新角色和场景状态"
-	case ToolManageInventory, ToolManageSpell, ToolManageRelation, ToolManageAsset, ToolManageMadness:
-		return "更新角色记录"
-	case ToolRecordMonster, ToolQueryClues:
-		return "处理线索"
-	case ToolGenerateImage:
-		return "生成场景图像"
-	case ToolConsultDramaturg:
-		return "咨询剧构顾问"
-	case ToolAdvanceTime:
-		return "推进时间"
-	case ToolStartCombat, ToolCombatAct, ToolEndCombat:
-		return "推进战斗轮"
-	case ToolStartChase, ToolChaseAct, ToolEndChase:
-		return "推进追逐轮"
-	case ToolWrite:
-		return "整理白字素材"
-	case ToolNarrate:
-		return "生成KP主回复"
-	case ToolAskPlayers:
-		return "点名调查员"
-	case ToolEndGame:
-		return "结算结局"
-	case ToolUpdateSessionMemory, ToolUpdateNPCSessionMemory, ToolHint:
-		return "记录局势备注"
-	case ToolReport:
-		return "记录异常报告"
+		return progressRule
+	case ToolRollDice, ToolCombatAct, ToolChaseAct:
+		return progressDice
+	case ToolWrite, ToolNarrate, ToolAskPlayers, ToolEndGame:
+		return progressWriting
 	default:
-		return "处理工具调用"
+		return progressThinking
 	}
 }
 

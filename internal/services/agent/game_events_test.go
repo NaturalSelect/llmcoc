@@ -353,3 +353,40 @@ func TestLoadNPCTableLogIncludesPublicDiceEvents(t *testing.T) {
 		t.Errorf("table log = %q, want only the public dice line", log)
 	}
 }
+
+// TestDiceEvent_NeedFollowsDifficulty 验证骰子事件同时带人物卡原始数值和按难度换算后的实际目标，
+// 并且结论与显示用的目标一致：技能 63、困难、骰 40 时目标是 31，结论是失败。
+func TestDiceEvent_NeedFollowsDifficulty(t *testing.T) {
+	players := eventTestPlayers()
+	players[0].CharacterCard.Skills.Data["说服"] = 63
+	cases := []struct {
+		level string
+		roll  int
+		need  int
+		want  string
+	}{
+		{"", 46, 63, "常规成功"},
+		{"常规", 64, 63, "失败"},
+		{"困难", 40, 31, "失败"},
+		{"困难", 31, 31, "困难成功"},
+		{"极难", 13, 12, "失败"},
+	}
+	for _, tc := range cases {
+		r := DiceCheckResult{
+			DiceCheck: DiceCheck{Character: "甲", What: "说服", Level: tc.level},
+			Roll:      tc.roll, Target: 63, Result: game.CheckResultLabel(tc.roll, 63, tc.level),
+		}
+		ev := diceEvent(r, players)
+		if ev.Target != 63 || ev.Need != tc.need || ev.Result != tc.want {
+			t.Errorf("level %q roll %d: event = %+v, want target 63 need %d result %q", tc.level, tc.roll, ev, tc.need, tc.want)
+		}
+		if ev.Result == "失败" && tc.roll <= ev.Need {
+			t.Errorf("level %q roll %d: verdict failure contradicts need %d", tc.level, tc.roll, ev.Need)
+		}
+	}
+
+	npc := diceEvent(DiceCheckResult{DiceCheck: DiceCheck{Character: "老板", What: "侦查", Level: "困难"}, Roll: 30}, players)
+	if npc.Need != 0 || npc.Target != 0 {
+		t.Errorf("npc event = %+v, must not carry target or need", npc)
+	}
+}

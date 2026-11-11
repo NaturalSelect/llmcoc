@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,12 +36,14 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		{{NSFW_GLOBAL_CONFIG}}
 	</global_config>
 	<requirements>
-		<rule>使用简体中文，{{NSFW_WRITER_VOICE}}，采用第三人称视角。</rule>
+		<rule>使用简体中文，{{NSFW_WRITER_VOICE}}，全文固定第三人称：用调查员的名字或“他/她”指代，整段正文里不得用“你”指代调查员，也不要在段末向读者发问。</rule>
+		<rule>正文里提到的地点、道具、图纸、文件必须在指令或上文里已经出现；指令里调查员换了位置、拿到或看到了新东西时，用一句过渡写明他在哪里、东西从哪来，不要让人物和物件无交代地出现。</rule>
 		<rule>人物对话(NPC 与调查员)用引号标注，并让读者分得清是谁在说话。</rule>
 		<rule>禁止出现“SAN值”“HP”“技能值”“检定”等游戏术语。</rule>
 		<rule>与上文保持连贯，不重复已描述的内容。</rule>
 		<rule>导演指令里的每一条独立事实——时间点/时间跨度、每个被提到的NPC的行踪与当前状态、场景或环境变化——都必须在正文里有对应体现；不得为了聚焦某个高潮画面而整条略去其余事实。指令信息量超出单段篇幅时，用简洁的过渡句交代被压缩的部分，而不是直接丢弃。</rule>
 		<rule>人物发言(NPC 与调查员)允许同义改写：可以调整措辞、语气词和句式，让它贴合叙事节奏与说话人的性格，但必须保持说话人、原意、立场、承诺和透露的信息量不变；不得借改写增添、删减或反转发言里的事实，也不得为任何人物编造导演指令和上文里都没有的发言。无发言指令时只写场景、动作、环境和 NPC 反应。</rule>
+		<rule>指令里出现 NPC 对玩家提问的回答(无论是原话还是转述)时，必须写成 NPC 开口的对白，一个问题对应一句回答，说清说话人；不得把几个回答压成一句叙述概括带过，也不得只写“她交代了一切”这类不含具体内容的话。</rule>
 		<rule>导演指令里出现调查员的台词(「」包裹的原话，或明确转述的发言)时，必须在正文里让该调查员开口说出来，不能只写他的动作和神情就略过开口这件事；说完后只写指令或上文已给出的在场反应，并停在轮到对方回应或玩家选择的位置。指令里没有调查员台词时，不替调查员开口，也不补写调查员的回应。</rule>
 		<rule>调查员的台词必须做同义转写，不要照抄玩家原句：对照用户消息 character 块里该调查员的 traits(性格)，并参考 app(外貌)和 eq(当前穿戴或手持的装备，描写时可以引用)，把措辞、语气、用词习惯和句子长短改成这个人会说出口的样子——寡言的人说得短促，学者用词讲究，粗人说话直白，紧张的人可以吞吐停顿。转写只改说法不改内容：说话对象、原意、立场、问题本身、承诺和透露的信息量都保持不变，不加入原句没有的事实、请求、情绪表态或新信息，也不删掉原句里的任何一项诉求。性格资料为空时，按上文已经表现出来的说话方式转写。</rule>
 		<rule>玩家行动边界：只能描写导演指令中明确给出的玩家动作/台词，以及工具已确认的结果；禁止补写玩家下一步、心理反应、同意/拒绝/沉默、跟随、移动、拿起/交出物品、攻击、施法、继续搜索、继续交谈或任何未授权后续动作。</rule>
@@ -212,6 +215,23 @@ func notifyWriterRestart(ctx context.Context) {
 	}
 }
 
+// NOTE: Writer 偶尔会照着历史里的 <writer_output> 和 KP 的工具调用把标签原样写进正文。
+// 工具调用块(含里面的点名问题)整段丢弃，问题由系统另行展示；<writer_output> 只剥掉标签、保留正文。
+var (
+	writerToolBlockPattern  = regexp.MustCompile(`(?is)<(?:ask_players|narrate|write|director_instruction)\b[^>]*>.*?(?:</(?:ask_players|narrate|write|director_instruction)>|\z)`)
+	writerWrapperTagPattern = regexp.MustCompile(`(?i)</?writer_output\b[^>]*>`)
+)
+
+// stripWriterControlTags 去掉 Writer 输出里的控制标签，返回收尾去空白后的正文。
+func stripWriterControlTags(text string) string {
+	if !strings.Contains(text, "<") {
+		return strings.TrimSpace(text)
+	}
+	text = writerToolBlockPattern.ReplaceAllString(text, "")
+	text = writerWrapperTagPattern.ReplaceAllString(text, "")
+	return strings.TrimSpace(text)
+}
+
 // isWriterResponseRejected 判断一次Writer响应是否需要丢弃重试:去除首尾空白后为空,
 // 或正文以拒绝前缀开头。
 func isWriterResponseRejected(resp string) bool {
@@ -233,6 +253,7 @@ func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, 
 	for attempt := 1; attempt <= writerMaxGenerateAttempts; attempt++ {
 		var err error
 		text, err = streamWriterOnce(ctx, h, cacheKey, msgs, tools, onToken)
+		text = stripWriterControlTags(text)
 		if err != nil {
 			// NOTE: 流在响应完成前被关闭(EOF)时，半截正文整段丢弃重新请求，不能和重试的正文拼在一起。
 			if llm.IsUnexpectedEOF(err) && ctx.Err() == nil && attempt < writerMaxGenerateAttempts {

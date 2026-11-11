@@ -40,16 +40,19 @@ import {
   writerText,
 } from '@/game/messages'
 import type { Room, RoomMessage } from '@/game/roomState'
+import { useAuthStore } from '@/stores/auth'
 import { fmtDuration, fmtStepAvg, fmtTime } from '@/utils/format'
 import { renderProse } from '@/utils/markdown'
 
 const props = defineProps<{ msg: RoomMessage; room: Room }>()
 const emit = defineEmits<{ preview: [src: string] }>()
+const auth = useAuthStore()
 
 const kind = computed(() => msgKind(props.msg))
 const mine = computed(() => isMyMessage(props.msg, props.room.userId))
 const time = computed(() => timeOf(props.msg))
-const timing = computed(() => directorTiming(props.msg))
+// NOTE: 耗时、步数、平均每步是给调参用的引擎指标，只给管理员看
+const timing = computed(() => (auth.isAdmin ? directorTiming(props.msg) : null))
 const text = computed(() => writerText(props.room, props.msg))
 const error = computed(() => messageError(props.msg))
 const names = computed(() => askNames(props.msg))

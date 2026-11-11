@@ -842,3 +842,71 @@ func TestWriterPromptKeepsNarrativeConsistent(t *testing.T) {
 		}
 	}
 }
+
+// TestStripWriterControlTags 验证 Writer 把控制标签写进正文时被兜底剥掉：
+// 反馈里每一轮都带着整段 <writer_output> 加 <ask_players> 漏给了玩家。
+func TestStripWriterControlTags(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"没有标签原样返回", "他推开了门。", "他推开了门。"},
+		{"首尾空白被去掉", "\n 他推开了门。 \n", "他推开了门。"},
+		{"writer_output 只剥标签保留正文", "<writer_output>\n他推开了门。\n</writer_output>", "他推开了门。"},
+		{"ask_players 整段丢弃", "他推开了门。\n<ask_players>你要怎么做？</ask_players>", "他推开了门。"},
+		{"两种标签同时出现", "<writer_output>雨落下了。</writer_output><ask_players>你站在二楼走廊上，打算做什么？</ask_players>", "雨落下了。"},
+		{"没有闭合的 ask_players 丢到结尾", "雨落下了。\n<ask_players>你站在走廊上", "雨落下了。"},
+		{"标签带属性", "雨落下了。<ask_players targets=\"甲\">怎么办？</ask_players>", "雨落下了。"},
+		{"大小写不敏感", "雨落下了。<ASK_PLAYERS>怎么办？</ASK_PLAYERS>", "雨落下了。"},
+		{"正文里的普通尖括号不动", "他比划着“3 < 5”的手势。", "他比划着“3 < 5”的手势。"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stripWriterControlTags(tc.in); got != tc.want {
+				t.Errorf("stripWriterControlTags(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAppendWriterStream_StripsControlTagsFromBuffer 验证流式路径最终落到缓冲里的正文已经剥掉控制标签；
+// 只有标签、没有正文的响应按空内容处理，丢弃重试。
+func TestAppendWriterStream_StripsControlTagsFromBuffer(t *testing.T) {
+	initSiteSettingTestDB(t)
+	prov := &writerFakeProvider{
+		chunkSize: 4,
+		responses: []string{
+			"<ask_players>你要怎么做？</ask_players>",
+			"<writer_output>雨落在窗上。</writer_output>\n<ask_players>你要怎么做？</ask_players>",
+		},
+	}
+	h := newWriterTestHandle(prov)
+	state := &WriterState{}
+
+	if err := callAppendWriterStream(context.Background(), h, state, nil); err != nil {
+		t.Fatalf("appendWriterStream error: %v", err)
+	}
+	if state.Buffer != "雨落在窗上。" {
+		t.Errorf("buffer = %q, want tags stripped", state.Buffer)
+	}
+	if got := prov.callCount(); got != 2 {
+		t.Errorf("provider call count = %d, want 2 (tags-only response must be retried)", got)
+	}
+}
+
+// TestWriterPromptKeepsThirdPersonAndExplainsNewProps 验证 Writer 提示词固定第三人称、不向读者发问，
+// 并要求位置与道具的变化有过渡。对应反馈里正文中途从“林望舒”跳成“你”、凭空冒出一张引水图。
+func TestWriterPromptKeepsThirdPersonAndExplainsNewProps(t *testing.T) {
+	for _, want := range []string{
+		"全文固定第三人称",
+		"不得用“你”指代调查员",
+		"不要在段末向读者发问",
+		"用一句过渡写明他在哪里、东西从哪来",
+		"一个问题对应一句回答",
+	} {
+		if !strings.Contains(writerDefaultPrompt, want) {
+			t.Errorf("writer prompt should contain %q", want)
+		}
+	}
+}

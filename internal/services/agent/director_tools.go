@@ -619,6 +619,7 @@ func narrateTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolNarrate),
 			Description: `向玩家发布一条KP的对话式回复，立即成为一条独立的玩家可见消息；发布后你仍持有发言权，本轮不会结束，可以继续查询、结算、再write/narrate，直到用ask_players点名或end_game结束。reply 是口语化的回复正文(1-4句日常口吻，不使用编号列表和分析式术语)，也是唯一的参数。
+同一拍已经有write时，reply只写write里没有的新增事实，不复述场景和对白；reply里不要写“你接下来打算做什么”这类提问，提问只放在ask_players。
 需要调查员做决定、声明行动或回答NPC的提问时，不要靠narrate向全体抛问题，改用ask_players点名。连续发布多条narrate仍没有点名时，要判断是否该让调查员介入。
 禁止用narrate替代end_game："收尾"某个已经达成Trigger的结局——只要<endings>中任意结局的Trigger已确认满足，本轮必须改为调用end_game结束游戏，而不是用narrate继续或收场。
 【批次规则】同一批最多一个narrate；narrate可与状态更新工具同批，但查询/掷骰/act_npc类工具的结果必须先在更早的一轮读到。战斗/追逐中还有可推进的参战者未结算时narrate仍可发布(每结算一位参战者就可以发一条战况)，被拦住的是ask_players/end_game。
@@ -643,6 +644,7 @@ func askPlayersTool() scripterTool {
 不需要玩家决定时(如过场、NPC 独白、时间推进)不要点名，用 write/narrate 发布叙述后继续推进即可，narrate 不会交出发言权。
 战斗/追逐中有调查员处于待澄清暂停时，本次必须点名该调查员，否则会被拒绝。
 【推荐行动】options 默认不给：被点名的玩家此前明确问过“我能做什么/有什么建议”时，才给出0-2条RP形式的推荐行动(玩家调查员第一人称的行动或台词)，写法与禁止内容见[OPTIONS]。
+【只问下一步】question 只问现在要决定什么，不复述刚发生的事，不写场景描写；叙述和对白留给 write。
 【批次规则】同一批最多一个ask_players；可与 write、narrate 和状态更新工具同批，但查询/掷骰/act_npc 类工具的结果必须先在更早的一轮读到。战斗/追逐中还有可推进的参战者未结算时会被拒绝。ask_players 的 question 本身就是对玩家的回复，不需要再额外调用 narrate。
 调用示例：{"targets":["调查员名"],"question":"门后传来抓挠声，你打算怎么办？"}
 玩家问过建议时的示例：{"targets":["调查员名"],"question":"门后传来抓挠声，你打算怎么办？","options":["我把耳朵贴到门上听","「谁在里面？」"]}`,

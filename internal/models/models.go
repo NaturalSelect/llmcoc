@@ -564,7 +564,8 @@ type GameEvent struct {
 	Roll      int    `json:"roll,omitempty"`      // dice
 	Expr      string `json:"expr,omitempty"`      // dice: 骰子表达式，只给没有检定名的公开骰(伤害等)用，说明掷的是什么
 	Level     string `json:"level,omitempty"`     // dice: 难度
-	Target    int    `json:"target,omitempty"`    // dice: 调查员该技能/属性的数值，查不到时留空
+	Target    int    `json:"target,omitempty"`    // dice: 调查员该技能/属性的人物卡原始数值，查不到时留空
+	Need      int    `json:"need,omitempty"`      // dice: 按难度换算后实际要掷到的上限(困难为 Target 的一半，极难为五分之一)，有 Target 时才有
 	Result    string `json:"result,omitempty"`    // dice: 对照难度后的结论(大成功/极难成功/困难成功/常规成功/失败/大失败)，有 Target 时才有
 	Hidden    bool   `json:"hidden,omitempty"`    // dice: 暗骰
 	Field     string `json:"field,omitempty"`     // stat: hp/max_hp/san/max_san/mp/max_mp/pow/cthulhu_mythos/armor/str…edu/skill

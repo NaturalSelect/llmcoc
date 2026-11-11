@@ -10,6 +10,7 @@ export interface GameEvent {
   expr?: string
   level?: string
   target?: number
+  need?: number
   result?: string
   hidden?: boolean
   field?: string
@@ -161,10 +162,12 @@ export function describeEvent(ev: GameEvent): EventView {
   switch (ev.type) {
     case 'dice': {
       if (ev.hidden) return { icon: 'hidden', tone: 'plain', text: 'KP 暗骰了一次' }
-      // NOTE: 有目标值时写成「技能 目标 N · 骰值 · 结论」；查不到目标值(NPC、伤害骰)时只显示骰值和难度
+      // NOTE: 目标写判定实际用的上限(need，困难已折半)，人物卡原始数值只在两者不同时补在括号里；
+      // 查不到目标值(NPC、伤害骰)时只显示骰值和难度。历史事件没有 need，仍按原始数值显示
       const hasTarget = typeof ev.target === 'number' && ev.target > 0
+      const need = typeof ev.need === 'number' && ev.need > 0 ? ev.need : ev.target
       const notes: string[] = []
-      if (hasTarget) notes.push('目标 ' + ev.target)
+      if (hasTarget) notes.push('目标 ' + need + (need !== ev.target ? `（技能 ${ev.target}）` : ''))
       if (ev.level) notes.push('难度 ' + ev.level)
       if (hasTarget && ev.result) notes.push(ev.result)
       if (ev.detail) notes.push(ev.detail)

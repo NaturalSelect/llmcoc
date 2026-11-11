@@ -42,7 +42,7 @@ func loadWriterProse(sessionID uint) map[string]writerProse {
 		if meta == nil || meta.CallID == "" {
 			continue
 		}
-		text := strings.TrimSpace(m.Content)
+		text := stripWriterControlTags(m.Content)
 		if text == "" {
 			continue
 		}

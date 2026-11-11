@@ -272,7 +272,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		}
 	}
 	debugf("run", "session=%d floor_reason=%q user=%q input=%s", sid, gctx.KPFloor, gctx.UserName, gctx.UserInput)
-	emitProgress("KP 正在整理本轮行动…")
+	emitProgress(progressThinking)
 
 	var tempNPCs []models.SessionNPC
 	models.DB.Where("session_id = ?", sid).Find(&tempNPCs)

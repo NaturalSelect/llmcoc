@@ -38,10 +38,23 @@ describe('describeEvent', () => {
       '甲 说服 骰值 90 目标 63 · 难度 常规 · 失败',
     )
     expect(view({ type: 'dice', character: '甲', skill: '理智', roll: 27, target: 89, result: '常规成功' })).toBe('甲 理智 骰值 27 目标 89 · 常规成功')
+    expect(view({ type: 'dice', character: '甲', skill: '理智', roll: 27, target: 89, need: 89, result: '常规成功' })).toBe('甲 理智 骰值 27 目标 89 · 常规成功')
     expect(view({ type: 'dice', skill: '格斗', roll: 6, result: '大成功' })).toBe('格斗 6')
     expect(
       view({ type: 'dice', character: '甲', skill: '斗殴', roll: 57, target: 25, result: '失败', detail: '惩罚骰：十位 50、20 取高 50，个位 7，骰值 57' }),
     ).toBe('甲 斗殴 骰值 57 目标 25 · 失败 · 惩罚骰：十位 50、20 取高 50，个位 7，骰值 57')
+  })
+
+  test('困难、极难：目标写换算后的上限，技能值放括号里，结论与目标一致', () => {
+    expect(view({ type: 'dice', character: '林望舒', skill: '说服', roll: 40, target: 63, need: 31, level: '困难', result: '失败' })).toBe(
+      '林望舒 说服 骰值 40 目标 31（技能 63） · 难度 困难 · 失败',
+    )
+    expect(view({ type: 'dice', character: '林望舒', skill: '摄影', roll: 60, target: 70, need: 35, level: '困难', result: '失败' })).toBe(
+      '林望舒 摄影 骰值 60 目标 35（技能 70） · 难度 困难 · 失败',
+    )
+    expect(view({ type: 'dice', character: '甲', skill: '侦查', roll: 9, target: 60, need: 12, level: '极难', result: '极难成功' })).toBe(
+      '甲 侦查 骰值 9 目标 12（技能 60） · 难度 极难 · 极难成功',
+    )
   })
 
   test('结算恢复的数值变化显示原因', () => {

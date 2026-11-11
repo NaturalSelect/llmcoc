@@ -75,9 +75,10 @@ interface Setup {
   extraMessages?: Array<Record<string, unknown>>
   players?: Array<Record<string, unknown>>
   status?: string
+  asAdmin?: boolean
 }
 
-async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing' }: Setup = {}) {
+async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing', asAdmin = false }: Setup = {}) {
   const fetchCalls: Array<{ method: string; path: string }> = []
   const session = {
     id: 7,
@@ -109,7 +110,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
   setActivePinia(pinia)
   localStorage.setItem('coc_token', 'tok')
   const auth = useAuthStore()
-  auth.user = { id: 2, username: 'alice', role: 'user' }
+  auth.user = { id: 2, username: 'alice', role: asAdmin ? 'admin' : 'user' }
   auth.meLoaded = true
   auth.shopCosts = { end_session_cost: 200 }
 
@@ -161,6 +162,21 @@ describe('GameView', () => {
     expect(rows).toStrictEqual(['爱丽丝 侦查 45 难度 困难', 'KP 暗骰了一次', '爱丽丝 HP 10 → 9'])
     expect(list.element.closest('article')?.querySelector('.font-medium')).toBeNull()
     wrapper.unmount()
+  })
+
+  test('KP 耗时和步数只对管理员显示，普通玩家看不到引擎指标', async () => {
+    const timed = { id: 9, role: 'assistant', kind: 'kp', status: 'done', content: '门开了。', floor: 1, director_elapsed_ms: 60900, director_steps: 1 }
+    const player = await setup({ extraMessages: [timed] })
+    expect(player.wrapper.text()).toContain('门开了。')
+    expect(player.wrapper.text()).not.toMatch(/\d+(\.\d+)?s · \d+ 步/)
+    expect(player.wrapper.text()).not.toContain('/步')
+    player.wrapper.unmount()
+
+    document.body.innerHTML = ''
+    FakeWS.all = []
+    const admin = await setup({ extraMessages: [timed], asAdmin: true })
+    expect(admin.wrapper.text()).toContain('60.9s · 1 步 · 均 60.9s/步')
+    admin.wrapper.unmount()
   })
 
   test('勾选推荐行动并提交：按表单发送，成功后收成「已提交」摘要', async () => {

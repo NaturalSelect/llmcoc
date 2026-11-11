@@ -1008,3 +1008,24 @@ func TestKPToolDescriptionsCarryNarrativeConsistencyRules(t *testing.T) {
 		}
 	}
 }
+
+// TestDirectorPromptKeepsReplyFromRepeatingProse 验证 Director 提示词要求旁白不复述 write 正文、
+// 失败只给应得的那部分情报、NPC 的回答写成对白，且 narrate/ask_players 工具说明里不让提问写进旁白。
+// 对应反馈里一轮要读三遍同一段内容、检定失败却情报全给、提问的对白被概括掉。
+func TestDirectorPromptKeepsReplyFromRepeatingProse(t *testing.T) {
+	for _, want := range []string{
+		"reply只交代write里没有的新增事实",
+		"失败的检定只给失败应得的那一部分情报",
+		"一个问题对应一句回答",
+	} {
+		if !strings.Contains(kpSystemPrompt, want) {
+			t.Errorf("kp system prompt should contain %q", want)
+		}
+	}
+	if desc := narrateTool().def.Description; !strings.Contains(desc, "reply里不要写“你接下来打算做什么”这类提问") {
+		t.Error("narrate tool should forbid putting the follow-up question in reply")
+	}
+	if desc := askPlayersTool().def.Description; !strings.Contains(desc, "question 只问现在要决定什么") {
+		t.Error("ask_players tool should keep question to the next decision only")
+	}
+}

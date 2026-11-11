@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/llmcoc/server/internal/models"
+	"github.com/llmcoc/server/internal/services/game"
 )
 
 // investigatorIndex 返回调查员在 players 里的下标，找不到(含 NPC)时返回 -1。
@@ -36,6 +37,10 @@ func diceEvent(r DiceCheckResult, players []models.SessionPlayer) models.GameEve
 		return models.GameEvent{Type: "dice", Hidden: true}
 	}
 	ev := models.GameEvent{Type: "dice", Skill: r.What, Roll: r.Roll, Level: r.Level, Target: r.Target, Result: r.Result, Detail: r.Detail}
+	// NOTE: Target 是人物卡上的原始数值，判定用的是按难度换算后的 Need，两者分开给，玩家才能自己对上结论。
+	if r.Target > 0 {
+		ev.Need = game.DifficultyTarget(r.Target, r.Level)
+	}
 	if strings.TrimSpace(r.What) == "" {
 		ev.Expr = strings.TrimSpace(r.DiceExpr)
 	}
