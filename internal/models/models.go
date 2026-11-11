@@ -158,6 +158,9 @@ type CharacterCard struct {
 	SeenMonsters    JSONField[[]string]         `gorm:"type:text" json:"seen_monsters"` // 已见过的神话存在(见过的不掉SAN)
 	IsActive        bool                        `gorm:"default:true" json:"is_active"`
 	AvatarURL       string                      `gorm:"size:500" json:"avatar_url"`
+	// NOTE: PortraitHash 是立绘文件的内容哈希，只读列：整行 Save/Create 会跳过它，避免对局里的旧快照把新立绘覆盖回去；
+	// 只能用原生 SQL（UPDATE character_cards SET portrait_hash = ?）写入。
+	PortraitHash string `gorm:"size:64;not null;default:'';<-:false" json:"portrait_hash,omitempty"`
 	// COC 理智与疯狂状态
 	MadnessState       string `gorm:"size:20;default:'none'" json:"madness_state"` // none/temporary/indefinite/permanent
 	MadnessSymptom     string `gorm:"type:text" json:"madness_symptom"`            // 当前疯狂症状描述

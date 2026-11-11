@@ -99,6 +99,7 @@ func seedDefaultSiteSettings() {
 		"regenerate_appearance_cost": "100",
 		"regenerate_backstory_cost":  "100",
 		"regenerate_traits_cost":     "100",
+		"regenerate_portrait_cost":   "100",
 		"revive_base_cost":           "2000",
 		"end_session_cost":           "200",
 		// NOTE: dramaturg_history_max_tokens 专用于剧构顾问自己的进度对话历史。

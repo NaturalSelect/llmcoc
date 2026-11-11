@@ -26,13 +26,13 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - CI 只有 `.github/workflows/test.yml`：前端 install/typecheck/test/build，然后 Go vet + test，最后 `go build` 确认带真实产物也能编译（Go 版本取自 `go.mod`）。无 Makefile、无 lint 配置。
 - 测试不依赖网络、真实 LLM 或外部服务。
 - 项目目录里可能已有服务进程在跑（占用 8080、持有 `data/llmcoc.db`）：测试/启动前先确认端口，改代码前先 `git status`。
-- `data/`、`bin/`、`tmp/`、`.env`、`config.local.yaml`、`frontend/node_modules/`、`cmd/server/dist/app/` 被 gitignore。`data/` 含 SQLite 库、`lawyer_cache.json`、`images/`。
+- `data/`、`bin/`、`tmp/`、`.env`、`config.local.yaml`、`frontend/node_modules/`、`cmd/server/dist/app/` 被 gitignore。`data/` 含 SQLite 库、`lawyer_cache.json`、`images/`、`portraits/`。
 - 本机 `~/.npm` 缓存目录若属主是 root，npm 会报权限错误：给 npm 命令加 `NPM_CONFIG_CACHE=/tmp/llmcoc-npm-cache`。
 
 ## 配置与初始化
 
 - `config.yaml` 只含 `server` / `database` / `jwt` 三段（`internal/config/config.go`）。README 里出现的 `shop:` 段并不存在于结构体；初始金币、卡槽等是数据库里的 `SiteSetting`（`models/db.go` 的 `seedDefaultSiteSettings`，后台可改）。
-- 实际读取的环境变量：`CONFIG_PATH`、`JWT_SECRET`、`LOG_LEVEL`（默认 debug，日志级别的唯一开关；Gin 固定 release 模式）、`RULEBOOK_PATH` / `SPELLBOOK_PATH` / `MONSTERBOOK_PATH`、`LAWYER_CACHE_PATH`、`LLMCOC_IMAGE_DIR`、`LLMCOC_IMAGE_QUALITY`。
+- 实际读取的环境变量：`CONFIG_PATH`、`JWT_SECRET`、`LOG_LEVEL`（默认 debug，日志级别的唯一开关；Gin 固定 release 模式）、`RULEBOOK_PATH` / `SPELLBOOK_PATH` / `MONSTERBOOK_PATH`、`LAWYER_CACHE_PATH`、`LLMCOC_IMAGE_DIR`、`LLMCOC_IMAGE_QUALITY`、`LLMCOC_PORTRAIT_DIR`。
 - 文档里提到但代码未读取：`DB_PATH`（start.sh 注释）。不要依赖它们。
 - 不再从环境变量播种 LLM Provider：库里没有 Provider 时各 Agent 的 Provider 为空，需在后台手动添加并绑定；Agent 默认模型固定为 `gpt-4o`。
 - 所有播种都是「缺失才创建」：改 `seedDefaultAgentConfigs` / `seedDefaultSiteSettings` 里的默认值不会影响已有数据库。下线 Agent 角色必须把旧角色名加进 `seedDefaultAgentConfigs` 里的 `DELETE ... WHERE role IN` 清理列表，否则老库会残留。
@@ -89,6 +89,10 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 
 ### 图片
 Painter 默认走 OpenAI 兼容图片接口；开启 `diffusion_mode` 时先由 `diffusion_translator` 把画面描述翻成标签式正面提示词，再调用 `/images/generations`。负面提示词是固定常量，`nsfw=false` 的配图额外追加分级标签（`painter_diffusion.go`）。配图按「连续漫画的单格」出：画风（日式ACG漫画）由 `painter.go` 的 `imageSysPrompt` 和扩散翻译提示词统一附加，Director 的 `image_prompt` 只写这一格的内容；`generate_image` 工具说明里的分镜规则和连续性规则要求景别随剧情变化、不画气泡和文字、角色外貌与场景跨图一致，没有额外的角色外貌存储，一致性靠 Director 沿用前几格的写法。图片落盘与定期清理在 `services/imagestore`（默认目录是数据库文件同级的 `images/`）。
+
+调查员立绘是手动触发的单独流程（`POST /api/characters/:id/portrait`，`agent/portrait.go` 的 `GeneratePortrait`）：Writer 用 `writeImagePromptCharacterVisualDescription` 把外貌加已装备物品写成描述，再经 `paintImage`（`RunPainter` 与立绘共用的出图核心）按竖版出图。立绘不属于任何房间，固定按全年龄渲染，只用 `writer` 和 `painter`（扩散模式再加 `diffusion_translator`），缺任何一个都直接报错，不回落 NSFW 角色，也不退回拼接外貌文本。立绘存在 `imagestore.PortraitDir()`（默认数据库同级的 `portraits/`，`LLMCOC_PORTRAIT_DIR` 可覆盖），读取走 `GET /api/portraits/:hash`。它必须在配图目录之外：`StartCleanup` 会递归删掉配图目录里超过 14 天的文件，`main.go` 启动时发现立绘目录嵌套在配图目录内会直接退出。
+
+`character_cards.portrait_hash` 是只读列（`<-:false`）：对局里几乎所有人物卡改动都是整行 `Save`，普通列会被旧快照覆盖，所以它只能用原生 SQL（`UPDATE character_cards SET portrait_hash = ?`）写入，`Create`、`Save`、`Update` 都会跳过它，`models/character_portrait_test.go` 守着这一点。生成成功后在事务里条件扣费（`regenerate_portrait_cost`，默认 100，管理员替别人生成不收费），余额不足时丢弃新文件并返回 402；换新图后旧文件在没有其他卡引用时删除。同一张卡同时只允许一个生成任务（409）。装备或外貌变化后立绘不会标记过期，也不会自动重画。
 
 ## 代码约定
 

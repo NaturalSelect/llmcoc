@@ -58,6 +58,12 @@ describe('characterApi 路径与请求体', () => {
     }
   })
 
+  test('生成立绘：POST portrait，无请求体', async () => {
+    fn.mockResolvedValueOnce(respond({ portrait_hash: 'ab12', coins: 900 }))
+    await expect(characterApi.generatePortrait(9)).resolves.toEqual({ portrait_hash: 'ab12', coins: 900 })
+    expect(lastCall()).toEqual({ path: '/api/characters/9/portrait', method: 'POST', body: undefined })
+  })
+
   test('仓库存取请求体：character_card_id + item{name,desc} + count（缺省不发送，即整堆）', async () => {
     const stack: InventoryItem = { name: '绷带', desc: '染血', count: 3, type: 'misc' }
     await characterApi.deposit(4, stack)

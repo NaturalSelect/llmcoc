@@ -126,6 +126,7 @@ export interface SiteSettings {
   regenerate_appearance_cost: number
   regenerate_backstory_cost: number
   regenerate_traits_cost: number
+  regenerate_portrait_cost: number
   revive_base_cost: number
   max_character_drafts: number
   end_session_cost: number

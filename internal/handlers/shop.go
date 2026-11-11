@@ -32,6 +32,7 @@ func GetShopCosts(c *gin.Context) {
 		"regenerate_appearance_cost": siteSettingInt("regenerate_appearance_cost", 100),
 		"regenerate_backstory_cost":  siteSettingInt("regenerate_backstory_cost", 100),
 		"regenerate_traits_cost":     siteSettingInt("regenerate_traits_cost", 100),
+		"regenerate_portrait_cost":   siteSettingInt("regenerate_portrait_cost", 100),
 		"revive_base_cost":           siteSettingInt("revive_base_cost", 2000),
 		"end_session_cost":           siteSettingInt("end_session_cost", 200),
 	})

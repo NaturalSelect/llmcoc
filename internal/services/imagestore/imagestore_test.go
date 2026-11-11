@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -11,6 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/llmcoc/server/internal/config"
 )
 
 func TestSaveDataURLAndResolve(t *testing.T) {
@@ -112,5 +115,126 @@ func TestSaveDataURLCompression(t *testing.T) {
 	}
 	if _, _, err := image.Decode(bytes.NewReader(data)); err != nil {
 		t.Fatalf("stored file not decodable as image: %v", err)
+	}
+}
+
+func TestPortraitDirIsSiblingOfImageDir(t *testing.T) {
+	t.Setenv("LLMCOC_IMAGE_DIR", "")
+	t.Setenv("LLMCOC_PORTRAIT_DIR", "")
+	prev := config.Global.Database.Path
+	config.Global.Database.Path = filepath.Join("var", "app", "llmcoc.db")
+	t.Cleanup(func() { config.Global.Database.Path = prev })
+
+	if got, want := DefaultDir(), filepath.Join("var", "app", "images"); got != want {
+		t.Fatalf("DefaultDir = %q, want %q", got, want)
+	}
+	if got, want := PortraitDir(), filepath.Join("var", "app", "portraits"); got != want {
+		t.Fatalf("PortraitDir = %q, want %q", got, want)
+	}
+	nested, err := PortraitDirNested()
+	if err != nil {
+		t.Fatalf("PortraitDirNested: %v", err)
+	}
+	if nested {
+		t.Fatal("default portrait dir must not be inside the image dir")
+	}
+}
+
+func TestPortraitDirEnvAndOverride(t *testing.T) {
+	t.Setenv("LLMCOC_PORTRAIT_DIR", "/tmp/custom-portraits")
+	if got := PortraitDir(); got != "/tmp/custom-portraits" {
+		t.Fatalf("PortraitDir = %q", got)
+	}
+	restore := SetPortraitDir("/tmp/override-portraits")
+	if got := PortraitDir(); got != "/tmp/override-portraits" {
+		t.Fatalf("PortraitDir with override = %q", got)
+	}
+	restore()
+	if got := PortraitDir(); got != "/tmp/custom-portraits" {
+		t.Fatalf("PortraitDir after restore = %q", got)
+	}
+}
+
+func TestPortraitDirNestedDetectsOverlap(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("LLMCOC_IMAGE_DIR", root)
+	for name, portraits := range map[string]string{
+		"same":   root,
+		"inside": filepath.Join(root, "portraits"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Cleanup(SetPortraitDir(portraits))
+			nested, err := PortraitDirNested()
+			if err != nil {
+				t.Fatalf("PortraitDirNested: %v", err)
+			}
+			if !nested {
+				t.Fatalf("portrait dir %q should be reported as nested in %q", portraits, root)
+			}
+		})
+	}
+	t.Run("sibling", func(t *testing.T) {
+		t.Cleanup(SetPortraitDir(root + "-portraits"))
+		nested, err := PortraitDirNested()
+		if err != nil {
+			t.Fatalf("PortraitDirNested: %v", err)
+		}
+		if nested {
+			t.Fatal("sibling dir with the same prefix must not be reported as nested")
+		}
+	})
+}
+
+func TestPortraitURL(t *testing.T) {
+	if got := PortraitURL("ABCDEF"); got != "/api/portraits/abcdef" {
+		t.Fatalf("PortraitURL = %q", got)
+	}
+}
+
+func TestRemoveDeletesFileAndIsIdempotent(t *testing.T) {
+	store := New(t.TempDir())
+	ref, err := store.SaveDataURL("data:image/png;base64,YWJj")
+	if err != nil {
+		t.Fatalf("SaveDataURL: %v", err)
+	}
+	if err := store.Remove(ref.Hash); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, err := os.Stat(ref.Path); !os.IsNotExist(err) {
+		t.Fatalf("file still exists, stat err = %v", err)
+	}
+	if err := store.Remove(ref.Hash); err != nil {
+		t.Fatalf("second Remove: %v", err)
+	}
+	if err := store.Remove("not-a-hash"); !errors.Is(err, ErrInvalidHash) {
+		t.Fatalf("Remove invalid hash err = %v, want ErrInvalidHash", err)
+	}
+}
+
+func TestImageCleanupLeavesPortraitDirAlone(t *testing.T) {
+	base := t.TempDir()
+	images := filepath.Join(base, "images")
+	portraits := filepath.Join(base, "portraits")
+	t.Setenv("LLMCOC_IMAGE_DIR", images)
+	t.Cleanup(SetPortraitDir(portraits))
+
+	portrait, err := PortraitStore().SaveDataURL("data:image/png;base64,cG9ydHJhaXQ=")
+	if err != nil {
+		t.Fatalf("save portrait: %v", err)
+	}
+	if _, err := DefaultStore().SaveDataURL("data:image/png;base64,c2NlbmU="); err != nil {
+		t.Fatalf("save scene image: %v", err)
+	}
+	old := time.Now().Add(-365 * 24 * time.Hour)
+	if err := os.Chtimes(portrait.Path, old, old); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	report := DefaultStore().CleanupOlderThanReport(time.Now().Add(time.Hour))
+	if report.Deleted != 1 || len(report.Errors) != 0 {
+		t.Fatalf("cleanup report = %#v, want exactly the scene image deleted", report)
+	}
+	if _, err := os.Stat(portrait.Path); err != nil {
+		t.Fatalf("portrait removed by image cleanup: %v", err)
 	}
 }

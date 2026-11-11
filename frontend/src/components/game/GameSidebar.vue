@@ -9,6 +9,7 @@ import { playerTurnSubmitState } from '@/game/banner'
 import type { HudFlash } from '@/game/hud'
 import { hudChips, statNum, statusLabel } from '@/game/hud'
 import type { Room, TimePoint } from '@/game/roomState'
+import { portraitSrc } from '@/components/character/characterLogic'
 
 // NOTE: 桌面端右侧栏，只展示信息，不做状态播报；播报仍由底部的 StatusDock 负责，这里不要加动态区域属性
 const props = defineProps<{
@@ -23,6 +24,7 @@ const emit = defineEmits<{ select: [player: SessionPlayer] }>()
 
 const chips = computed(() => hudChips(props.card))
 const occupation = computed(() => (props.card as { occupation?: string } | null)?.occupation || '未知职业')
+const portrait = computed(() => portraitSrc(props.card as { portrait_hash?: string } | null))
 const players = computed(() => props.session?.players ?? [])
 const scenarioName = computed(() => (props.session?.scenario as { name?: string } | undefined)?.name || '')
 const statusTone = computed(() => {
@@ -43,9 +45,12 @@ function playerOccupation(p: SessionPlayer): string {
     <div class="space-y-8 p-5">
       <section v-if="card || time" class="space-y-4">
         <template v-if="card">
-          <div class="min-w-0">
-            <p class="truncate text-base font-semibold text-fg">{{ card.name || '调查员' }}</p>
-            <p class="mt-0.5 truncate text-sm text-fg-subtle">{{ occupation }}</p>
+          <div class="flex min-w-0 items-center gap-3">
+            <img v-if="portrait" :src="portrait" alt="" class="h-20 w-14 shrink-0 rounded-lg bg-surface-2 object-cover object-top" />
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-base font-semibold text-fg">{{ card.name || '调查员' }}</p>
+              <p class="mt-0.5 truncate text-sm text-fg-subtle">{{ occupation }}</p>
+            </div>
           </div>
           <div class="space-y-2">
             <StatBar label="HP" tone="hp" :value="statNum(card, 'hp')" :max="statNum(card, 'max_hp')" :flash="flash.hp" />

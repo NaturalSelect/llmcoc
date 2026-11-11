@@ -4,6 +4,7 @@ type Costs = Record<string, number> | null | undefined
 
 export const DEFAULT_REVIVE_COST = 2000
 export const DEFAULT_REGEN_COST = 100
+export const DEFAULT_PORTRAIT_COST = 100
 
 export interface Entry {
   title: string
@@ -153,4 +154,22 @@ export function regenConfirmMessage(spec: RegenSpec, cost: number, name: string 
 
 export function regenTitle(spec: RegenSpec, cost: number, coins: number): string {
   return `花费 ${cost} 金币重新生成${spec.noun}（当前金币：${coins}）`
+}
+
+// NOTE: 图片接口按小写哈希存取，所以地址统一转小写；没有立绘返回空串，调用方用 || 回落到头像
+export function portraitSrc(card: { portrait_hash?: string } | null | undefined): string {
+  const hash = card?.portrait_hash
+  return hash ? '/api/portraits/' + hash.toLowerCase() : ''
+}
+
+export function portraitCost(costs: Costs): number {
+  return costs?.regenerate_portrait_cost ?? DEFAULT_PORTRAIT_COST
+}
+
+export function portraitConfirmMessage(cost: number, name: string | undefined, regenerate: boolean): string {
+  return `确认花费 ${cost} 金币为「${name}」${regenerate ? '重新生成' : '生成'}立绘？生成可能需要 1 到 3 分钟，期间请勿关闭页面。`
+}
+
+export function portraitTitle(cost: number, coins: number, regenerate: boolean): string {
+  return `花费 ${cost} 金币${regenerate ? '重新生成' : '生成'}立绘（当前金币：${coins}）`
 }

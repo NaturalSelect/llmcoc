@@ -52,6 +52,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// NOTE: 立绘目录若落在配图目录之内，14 天清理会递归删掉付费生成的立绘，所以直接拒绝启动。
+	if nested, err := imagestore.PortraitDirNested(); err != nil {
+		log.Error("failed to compare portrait and image directories", "err", err)
+		os.Exit(1)
+	} else if nested {
+		log.Error("portrait directory must not be inside the image directory",
+			"portrait_dir", imagestore.PortraitDir(), "image_dir", imagestore.DefaultDir())
+		os.Exit(1)
+	}
+
 	// Seed scenarios from scenarios/ directory
 	handlers.SeedScenarios("scenarios")
 	handlers.SeedDebugScenario()
@@ -180,6 +190,7 @@ func main() {
 	// ─── API routes ───────────────────────────────────────────────────────────
 	api := r.Group("/api")
 	api.GET("/images/:hash", handlers.ServeImage)
+	api.GET("/portraits/:hash", handlers.ServePortrait)
 
 	// Auth (public)
 	auth := api.Group("/auth")
@@ -208,6 +219,7 @@ func main() {
 		chars.POST("/:id/regenerate-appearance", chh.RegenerateAppearance)
 		chars.POST("/:id/regenerate-backstory", chh.RegenerateBackstory)
 		chars.POST("/:id/regenerate-traits", chh.RegenerateTraits)
+		chars.POST("/:id/portrait", chh.GenerateCharacterPortrait)
 		chars.DELETE("/:id/dead", handlers.DeleteDeadCharacter)
 		chars.GET("/:id/inventory", handlers.GetCharacterInventory)
 		chars.POST("/:id/inventory", handlers.AddCharacterInventoryItem)

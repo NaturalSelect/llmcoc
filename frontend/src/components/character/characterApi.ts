@@ -5,6 +5,7 @@ import type {
   FinalizePayload,
   GeneratePayload,
   InventoryItem,
+  PortraitResponse,
   RecentSession,
   RegenField,
   RegenResponse,
@@ -42,6 +43,7 @@ export const characterApi = {
 
   regenerate: (id: number, field: RegenField, guidance: string) =>
     api<RegenResponse>('POST', `${cardPath(id)}/regenerate-${field}`, { guidance }),
+  generatePortrait: (id: number) => api<PortraitResponse>('POST', `${cardPath(id)}/portrait`),
 
   removeInventoryItem: (id: number, it: ItemRef, count?: number) =>
     api<CharacterCardFull>('DELETE', `${cardPath(id)}/inventory/${itemQuery(it, count)}`),

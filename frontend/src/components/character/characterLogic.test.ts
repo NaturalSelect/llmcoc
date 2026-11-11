@@ -13,6 +13,10 @@ import {
   madnessHeading,
   madnessLabel,
   mergeUpdatedCard,
+  portraitConfirmMessage,
+  portraitCost,
+  portraitSrc,
+  portraitTitle,
   regenConfirmMessage,
   regenCost,
   regenTitle,
@@ -52,6 +56,32 @@ describe('费率与确认文案', () => {
     expect(appearance.doneToast).toBe('外貌已重新生成')
     expect(backstory.doneToast).toBe('个人经历已重新生成')
     expect(traits.doneToast).toBe('性格特征已重新生成')
+  })
+})
+
+describe('立绘', () => {
+  test('portraitSrc：空值与缺失返回空串，哈希转小写拼成图片地址', () => {
+    expect(portraitSrc(null)).toBe('')
+    expect(portraitSrc(undefined)).toBe('')
+    expect(portraitSrc(card())).toBe('')
+    expect(portraitSrc(card({ portrait_hash: '' }))).toBe('')
+    expect(portraitSrc(card({ portrait_hash: 'ab12cd' }))).toBe('/api/portraits/ab12cd')
+    expect(portraitSrc(card({ portrait_hash: 'AB12CD' }))).toBe('/api/portraits/ab12cd')
+  })
+
+  test('portraitCost：缺省 100，0 是合法值', () => {
+    expect(portraitCost({})).toBe(100)
+    expect(portraitCost(null)).toBe(100)
+    expect(portraitCost(undefined)).toBe(100)
+    expect(portraitCost({ regenerate_portrait_cost: 0 })).toBe(0)
+    expect(portraitCost({ regenerate_portrait_cost: 250 })).toBe(250)
+  })
+
+  test('确认与按钮提示文案区分首次生成和重新生成', () => {
+    expect(portraitConfirmMessage(100, '艾米', false)).toContain('确认花费 100 金币为「艾米」生成立绘？')
+    expect(portraitConfirmMessage(100, '艾米', true)).toContain('确认花费 100 金币为「艾米」重新生成立绘？')
+    expect(portraitTitle(100, 42, false)).toBe('花费 100 金币生成立绘（当前金币：42）')
+    expect(portraitTitle(100, 42, true)).toBe('花费 100 金币重新生成立绘（当前金币：42）')
   })
 })
 

@@ -68,7 +68,7 @@ beforeEach(() => {
     'GET /api/characters/1': () => structuredClone(alive),
     'GET /api/announcements': () => [{ id: 1, title: '维护通知', content: '**今晚** 维护', level: 'warning', is_pinned: true, created_at: '2026-01-01T00:00:00Z' }],
     'GET /api/sessions': () => ({ items: [{ id: 5, name: '雾中小镇', status: 'lobby', max_players: 4, scenario: { name: '迷雾' }, players: [{}] }] }),
-    'GET /api/shop/costs': () => ({ revive_base_cost: 500, regenerate_traits_cost: 30 }),
+    'GET /api/shop/costs': () => ({ revive_base_cost: 500, regenerate_traits_cost: 30, regenerate_portrait_cost: 60 }),
   }
   install()
   const auth = useAuthStore()
@@ -284,6 +284,134 @@ describe('DashboardView', () => {
     await flushPromises()
     expect(document.body.querySelector('[role="alertdialog"]')).toBeNull()
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+  })
+
+  test('首页卡片：有立绘时头像用立绘地址并裁上半身；没有立绘回落头像，再没有就是首字母', async () => {
+    routes['GET /api/characters'] = () => ({ items: [{ ...structuredClone(alive), portrait_hash: 'AB12CD', avatar_url: '/old.png' }], total_pages: 1 })
+    wrapper = mountDashboard()
+    await flushPromises()
+    const img = document.body.querySelector('article img') as HTMLImageElement
+    expect(img.getAttribute('src')).toBe('/api/portraits/ab12cd')
+    expect(img.className).toContain('object-top')
+    wrapper.unmount()
+
+    useCharactersStore().characters = []
+    routes['GET /api/characters'] = () => ({ items: [{ ...structuredClone(alive), avatar_url: '/old.png' }], total_pages: 1 })
+    wrapper = mountDashboard()
+    await flushPromises()
+    expect(document.body.querySelector('article img')!.getAttribute('src')).toBe('/old.png')
+    wrapper.unmount()
+
+    useCharactersStore().characters = []
+    routes['GET /api/characters'] = () => ({ items: [structuredClone(alive)], total_pages: 1 })
+    wrapper = mountDashboard()
+    await flushPromises()
+    expect(document.body.querySelector('article img')).toBeNull()
+  })
+
+  test('详情弹窗立绘：有 hash 时渲染图片地址，没有时显示占位', async () => {
+    routes['GET /api/characters/1'] = () => ({ ...structuredClone(alive), portrait_hash: 'AB12CD' })
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"] img[alt="调查员立绘"]')!.getAttribute('src')).toBe('/api/portraits/ab12cd')
+    expect(text()).not.toContain('尚未生成立绘')
+    expect(button('重新生成立绘')).toBeDefined()
+    wrapper.unmount()
+
+    document.body.innerHTML = ''
+    routes['GET /api/characters/1'] = () => structuredClone(alive)
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"] img[alt="调查员立绘"]')).toBeNull()
+    expect(text()).toContain('尚未生成立绘')
+    expect(button('生成立绘')).toBeDefined()
+  })
+
+  test('详情弹窗立绘：金币不足时按钮禁用', async () => {
+    useAuthStore().user!.coins = 10
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await flushPromises()
+    expect(button('生成立绘')!.disabled).toBe(true)
+  })
+
+  test('详情弹窗立绘：确认后发 POST，生成期间按钮保持加载，完成后更新图片、金币、store 和卡片头像', async () => {
+    let release!: (body: unknown) => void
+    routes['POST /api/characters/1/portrait'] = () => new Promise((resolve) => (release = resolve))
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await flushPromises()
+    calls = []
+    button('生成立绘')!.click()
+    await nextTick()
+    expect(text()).toContain('确认花费 60 金币为「艾米」生成立绘？')
+    await confirmDialog(true)
+    expect(calls).toEqual([{ method: 'POST', path: '/api/characters/1/portrait', body: undefined }])
+    expect(button('生成中')!.disabled).toBe(true)
+
+    release({ portrait_hash: 'AB12CD', coins: 940 })
+    await flushPromises()
+    expect(useAuthStore().user!.coins).toBe(940)
+    expect(document.body.querySelector('[role="dialog"] img[alt="调查员立绘"]')!.getAttribute('src')).toBe('/api/portraits/ab12cd')
+    expect(button('重新生成立绘')!.disabled).toBe(false)
+    expect((useCharactersStore().characters[0] as { portrait_hash?: string }).portrait_hash).toBe('AB12CD')
+    expect(document.body.querySelector('article img')!.getAttribute('src')).toBe('/api/portraits/ab12cd')
+    expect(useUiStore().toasts.map((t) => t.message)).toContain('立绘已生成')
+  })
+
+  test('详情弹窗立绘：失败时提示后端错误，不扣金币，按钮恢复可点', async () => {
+    routes['POST /api/characters/1/portrait'] = () => new Response(JSON.stringify({ error: '金币不足', need: 60, current: 1000 }), { status: 402 })
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await flushPromises()
+    button('生成立绘')!.click()
+    await nextTick()
+    await confirmDialog(true)
+    expect(useUiStore().toasts.map((t) => t.message)).toContain('金币不足')
+    expect(useAuthStore().user!.coins).toBe(1000)
+    expect(button('生成立绘')!.disabled).toBe(false)
+  })
+
+  test('详情弹窗立绘：管理员替别人生成没有 coins，金币保持不变', async () => {
+    routes['POST /api/characters/1/portrait'] = () => ({ portrait_hash: 'ab12' })
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await flushPromises()
+    button('生成立绘')!.click()
+    await nextTick()
+    await confirmDialog(true)
+    expect(useAuthStore().user!.coins).toBe(1000)
+    expect(document.body.querySelector('[role="dialog"] img[alt="调查员立绘"]')!.getAttribute('src')).toBe('/api/portraits/ab12')
+  })
+
+  test('详情弹窗立绘：打开预览后按 Esc 只关预览，弹窗仍在；预览关闭后再按 Esc 才关弹窗', async () => {
+    routes['GET /api/characters/1'] = () => ({ ...structuredClone(alive), portrait_hash: 'ab12cd' })
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await flushPromises()
+    ;(document.body.querySelector('[role="dialog"] img[alt="调查员立绘"]') as HTMLImageElement).click()
+    await nextTick()
+    const preview = () => document.body.querySelector('[aria-label="图片预览"]')
+    expect(preview()!.querySelector('img')!.getAttribute('src')).toBe('/api/portraits/ab12cd')
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(preview()).toBeNull()
+    expect(document.body.querySelector('[aria-label="艾米"]')).not.toBeNull()
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.body.querySelector('[aria-label="艾米"]')).toBeNull()
   })
 
   test('仓库：取出需要目标人物卡；丢弃经确认；无可用人物卡时给出提示', async () => {

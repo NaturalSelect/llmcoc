@@ -88,19 +88,81 @@ func DefaultDir() string {
 	if env := strings.TrimSpace(os.Getenv("LLMCOC_IMAGE_DIR")); env != "" {
 		return env
 	}
+	return dataSiblingDir("images")
+}
+
+// dataSiblingDir 返回数据库文件同级的 name 目录；数据库路径为空或没有目录部分时落到 data/name。
+func dataSiblingDir(name string) string {
 	dbPath := strings.TrimSpace(config.Global.Database.Path)
 	if dbPath == "" {
-		return filepath.Join("data", "images")
+		return filepath.Join("data", name)
 	}
 	dir := filepath.Dir(dbPath)
 	if dir == "." || dir == "" {
-		return filepath.Join("data", "images")
+		return filepath.Join("data", name)
 	}
-	return filepath.Join(dir, "images")
+	return filepath.Join(dir, name)
 }
 
 func DefaultStore() Store {
 	return Store{Dir: DefaultDir()}
+}
+
+var (
+	portraitDirMu       sync.RWMutex
+	portraitDirOverride string
+)
+
+func SetPortraitDir(dir string) func() {
+	portraitDirMu.Lock()
+	prev := portraitDirOverride
+	portraitDirOverride = dir
+	portraitDirMu.Unlock()
+	return func() {
+		portraitDirMu.Lock()
+		portraitDirOverride = prev
+		portraitDirMu.Unlock()
+	}
+}
+
+// PortraitDir 是调查员立绘的持久目录。
+// NOTE: 它必须在 DefaultDir 之外，否则 StartCleanup 会递归删掉立绘。
+func PortraitDir() string {
+	portraitDirMu.RLock()
+	override := portraitDirOverride
+	portraitDirMu.RUnlock()
+	if override != "" {
+		return override
+	}
+	if env := strings.TrimSpace(os.Getenv("LLMCOC_PORTRAIT_DIR")); env != "" {
+		return env
+	}
+	return dataSiblingDir("portraits")
+}
+
+func PortraitStore() Store {
+	return Store{Dir: PortraitDir()}
+}
+
+func PortraitURL(hash string) string {
+	return "/api/portraits/" + strings.ToLower(hash)
+}
+
+// PortraitDirNested 判断立绘目录是否落在配图目录之内（含相同目录）。
+func PortraitDirNested() (bool, error) {
+	images, err := filepath.Abs(DefaultDir())
+	if err != nil {
+		return false, err
+	}
+	portraits, err := filepath.Abs(PortraitDir())
+	if err != nil {
+		return false, err
+	}
+	rel, err := filepath.Rel(images, portraits)
+	if err != nil {
+		return false, err
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)), nil
 }
 
 func New(dir string) Store {
@@ -244,6 +306,21 @@ func (s Store) Open(hash string) (*os.File, StoredFile, error) {
 		return nil, StoredFile{}, err
 	}
 	return file, stored, nil
+}
+
+// Remove 删除哈希对应的文件；文件不存在视为成功。
+func (s Store) Remove(hash string) error {
+	stored, err := s.Resolve(hash)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(stored.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (s Store) CleanupOlderThan(cutoff time.Time) (int, error) {

@@ -136,44 +136,50 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 		debugf("Painter", "session=%d unavailable: painter disabled nsfw=%v elapsed=%.0fms", gctx.Session.ID, request.NSFW, float64(time.Since(start).Microseconds())/1000)
 		return "", fmt.Errorf("%s agent 未配置或未启用", painterRoleFor(request.NSFW))
 	}
-	generator, ok := handle.provider.(llm.ImageGenerator)
-	if !ok {
-		debugf("Painter", "session=%d unavailable: provider lacks image generation elapsed=%.0fms", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000)
-		return "", fmt.Errorf("当前 %s provider 不支持图片生成", painterRoleFor(request.NSFW))
-	}
 	aspect := normalizeImageAspect(request.Aspect)
 	// NOTE: request.NSFW 已在 generateImageAction 经房间开关过滤,这里只按请求渲染分级,不能再并房间开关,否则房间开启时普通配图也会被画成 NSFW。
-	allowNSFW := request.NSFW
 	debugf("Painter", "session=%d start prompt_len=%d aspect=%s nsfw=%v prompt=%q", gctx.Session.ID, len([]rune(prompt)), aspect, request.NSFW, prompt)
-	opts := llm.ImageOptions{Aspect: llm.ImageAspect(aspect)}
-	if handle.config != nil && handle.config.DiffusionMode {
-		translator := handles[models.AgentRoleDiffusionTranslator]
-		if !translator.isEnabled() {
-			return "", fmt.Errorf("扩散模型模式需要启用 %s agent 翻译提示词", models.AgentRoleDiffusionTranslator)
-		}
-		tagPrompt, err := translateToDiffusionPrompt(withWriterGameSessionID(ctx, gctx), translator, fmt.Sprintf("%v", gctx.Session.ID), prompt, allowNSFW)
-		if err != nil {
-			debugf("Painter", "session=%d diffusion translate error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
-			return "", err
-		}
-		prompt = tagPrompt
-		opts.Diffusion = true
-		opts.NegativePrompt = diffusionNegativePromptFor(allowNSFW)
-		debugf("Painter", "session=%d diffusion prompt=%q negative=%q", gctx.Session.ID, prompt, opts.NegativePrompt)
-	} else {
-		prompt = fmt.Sprintf("%v\n%v", prompt, renderNSFW(imageSysPrompt, allowNSFW))
-	}
-	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, opts)
+	dataURL, err := paintImage(withWriterGameSessionID(ctx, gctx), handle, handles[models.AgentRoleDiffusionTranslator],
+		fmt.Sprintf("%v", gctx.Session.ID), prompt, imageSysPrompt, llm.ImageAspect(aspect), request.NSFW)
 	if err != nil {
 		debugf("Painter", "session=%d error elapsed=%.0fms err=%v", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, err)
 		return "", err
 	}
+	debugf("Painter", "session=%d success elapsed=%.0fms data_url_len=%d", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, len(dataURL))
+	return dataURL, nil
+}
+
+// paintImage 用给定的 Painter(扩散模式下再加 translator)出图并返回 data URL。
+// sysPrompt 是非扩散模式下追加在画面描述后的画风要求,扩散模式下由 translator 的提示词负责画风。
+func paintImage(ctx context.Context, painter, translator agentHandle, cacheSession, prompt, sysPrompt string, aspect llm.ImageAspect, nsfw bool) (string, error) {
+	generator, ok := painter.provider.(llm.ImageGenerator)
+	if !ok {
+		return "", fmt.Errorf("当前 %s provider 不支持图片生成", painterRoleFor(nsfw))
+	}
+	opts := llm.ImageOptions{Aspect: aspect}
+	if painter.config != nil && painter.config.DiffusionMode {
+		if !translator.isEnabled() {
+			return "", fmt.Errorf("扩散模型模式需要启用 %s agent 翻译提示词", models.AgentRoleDiffusionTranslator)
+		}
+		tagPrompt, err := translateToDiffusionPrompt(ctx, translator, cacheSession, prompt, nsfw)
+		if err != nil {
+			return "", err
+		}
+		prompt = tagPrompt
+		opts.Diffusion = true
+		opts.NegativePrompt = diffusionNegativePromptFor(nsfw)
+		debugf("Painter", "session=%s diffusion prompt=%q negative=%q", cacheSession, prompt, opts.NegativePrompt)
+	} else {
+		prompt = fmt.Sprintf("%v\n%v", prompt, renderNSFW(sysPrompt, nsfw))
+	}
+	base64Data, mimeType, err := generator.GenerateImage(ctx, prompt, opts)
+	if err != nil {
+		return "", err
+	}
 	dataURL, ok := buildImageDataURL(base64Data, mimeType)
 	if !ok {
-		debugf("Painter", "session=%d invalid image data elapsed=%.0fms mime=%q base64_len=%d", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, mimeType, len(base64Data))
 		return "", fmt.Errorf("empty image data")
 	}
-	debugf("Painter", "session=%d success elapsed=%.0fms mime=%q base64_len=%d", gctx.Session.ID, float64(time.Since(start).Microseconds())/1000, mimeType, len(base64Data))
 	return dataURL, nil
 }
 

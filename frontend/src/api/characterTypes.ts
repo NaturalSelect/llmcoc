@@ -68,6 +68,7 @@ export interface CharacterCardFull extends CharacterCard {
   seen_monsters?: string[] | null
   is_active?: boolean
   avatar_url?: string
+  portrait_hash?: string
   madness_state?: string
   madness_symptom?: string
   madness_duration?: number
@@ -134,6 +135,12 @@ export interface RegenResponse {
   appearance?: string
   backstory?: string
   traits?: string
+  coins?: number
+}
+
+// NOTE: 管理员替别人的卡生成立绘时不扣费，没有 coins
+export interface PortraitResponse {
+  portrait_hash: string
   coins?: number
 }
 

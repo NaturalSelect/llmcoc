@@ -5,7 +5,7 @@ import type { CharacterCardFull } from '@/api/characterTypes'
 import PaperCard from '@/components/base/PaperCard.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import StatBar from '@/components/base/StatBar.vue'
-import { cardSubtitle, hasMadness, madnessLabel } from './characterLogic'
+import { cardSubtitle, hasMadness, madnessLabel, portraitSrc } from './characterLogic'
 import StatCell from './StatCell.vue'
 
 const props = defineProps<{ card: CharacterCardFull }>()
@@ -20,12 +20,13 @@ const HEADLINE_STATS = [
 
 // NOTE: 用 Array.from 取首字，避免名字以代理对字符（如罕见汉字）开头时被截成乱码
 const initial = computed(() => Array.from(props.card.name?.trim() || '?')[0])
+const avatar = computed(() => portraitSrc(props.card) || props.card.avatar_url)
 </script>
 
 <template>
   <PaperCard hover tag="article" class="focus-within:border-accent/60">
     <div class="flex items-start gap-3">
-      <img v-if="card.avatar_url" :src="card.avatar_url" alt="" class="h-11 w-11 shrink-0 rounded-full bg-surface-3 object-cover" />
+      <img v-if="avatar" :src="avatar" alt="" class="h-11 w-11 shrink-0 rounded-full bg-surface-3 object-cover object-top" />
       <div v-else class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/15 text-base font-semibold text-accent" aria-hidden="true">
         {{ initial }}
       </div>

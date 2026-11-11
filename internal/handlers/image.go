@@ -10,8 +10,17 @@ import (
 )
 
 func ServeImage(c *gin.Context) {
+	serveStoredImage(c, imagestore.DefaultStore())
+}
+
+// ServePortrait 提供调查员立绘，存储目录与配图分开，不受定期清理影响。
+func ServePortrait(c *gin.Context) {
+	serveStoredImage(c, imagestore.PortraitStore())
+}
+
+func serveStoredImage(c *gin.Context, store imagestore.Store) {
 	hash := strings.TrimSpace(c.Param("hash"))
-	file, stored, err := imagestore.DefaultStore().Open(hash)
+	file, stored, err := store.Open(hash)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, imagestore.ErrInvalidHash) || errors.Is(err, imagestore.ErrNotFound) {

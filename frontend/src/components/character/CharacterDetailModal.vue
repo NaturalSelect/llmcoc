@@ -2,10 +2,12 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { CharacterCardFull, InventoryItem, RegenField } from '@/api/characterTypes'
 import BaseModal from '@/components/base/BaseModal.vue'
+import ImagePreview from '@/components/game/ImagePreview.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCharactersStore } from '@/stores/characters'
 import { useUiStore } from '@/stores/ui'
 import { characterApi } from './characterApi'
+import CharacterPortrait from './CharacterPortrait.vue'
 import CharacterSection from './CharacterSection.vue'
 import CharacterVitals from './CharacterVitals.vue'
 import ChipList from './ChipList.vue'
@@ -18,6 +20,9 @@ import {
   detailSubtitle,
   errMessage,
   mergeUpdatedCard,
+  portraitConfirmMessage,
+  portraitCost,
+  portraitSrc,
   regenConfirmMessage,
   regenCost,
   sortedSkills,
@@ -29,19 +34,45 @@ import {
 // NOTE: 旧前端的 charDetail 弹窗同时被首页、房间调查员列表、游戏页菜单打开；这里只依赖 card 属性，
 // 其他页面传入人物卡即可复用（操作结果会同步到全局 characters store）
 const props = defineProps<{ open: boolean; card: CharacterCardFull | null }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; portrait: [] }>()
 
 const auth = useAuthStore()
 const chars = useCharactersStore()
 const ui = useUiStore()
 const guard = useConfirmGuard()
-const onClose = guard.guardClose(() => emit('close'))
 
 const current = ref<CharacterCardFull | null>(null)
 const split = computed(() => splitInventory(current.value?.inventory ?? []))
 const busy = ref(false)
 const guidance = reactive<Record<RegenField, string>>({ appearance: '', backstory: '', traits: '' })
 const regenBusy = reactive<Record<RegenField, boolean>>({ appearance: false, backstory: false, traits: false })
+// NOTE: 生成可能持续数分钟，期间弹窗可能被关掉或换成另一张卡，所以按卡 id 记录生成中状态，重新打开同一张卡仍显示生成中
+const portraitBusyIds = reactive(new Set<number>())
+const portraitBusy = computed(() => current.value?.id !== undefined && portraitBusyIds.has(current.value.id))
+
+const previewSrc = ref('')
+let previewHold = 0
+
+// NOTE: ImagePreview 和 BaseModal 都在 document 上监听 Esc，预览打开期间以及关闭后的同一次事件分发内（setTimeout 0 之后才解除），
+// 都忽略弹窗的 close，否则一次 Esc 会把两层一起关掉
+const onClose = guard.guardClose(() => {
+  if (previewSrc.value || previewHold > 0) return
+  emit('close')
+})
+
+function openPreview(): void {
+  previewSrc.value = portraitSrc(current.value)
+}
+
+// NOTE: ImagePreview 每次 Esc 都会触发 close；没有预览时必须直接返回，否则会白白设置忽略窗口，把弹窗自己的 Esc 关闭吞掉
+function closePreview(): void {
+  if (!previewSrc.value) return
+  previewSrc.value = ''
+  previewHold++
+  setTimeout(() => {
+    previewHold--
+  }, 0)
+}
 
 let freshSeq = 0
 
@@ -65,6 +96,7 @@ async function refreshCard(card: CharacterCardFull | null): Promise<void> {
 watch(
   () => [props.open, props.card] as const,
   ([open, card]) => {
+    previewSrc.value = ''
     if (!open) return
     current.value = card
     guidance.appearance = guidance.backstory = guidance.traits = ''
@@ -114,6 +146,27 @@ async function regen(spec: RegenSpec): Promise<void> {
     ui.toast(errMessage(e), 'error')
   } finally {
     regenBusy[spec.field] = false
+  }
+}
+
+async function generatePortrait(): Promise<void> {
+  const card = current.value
+  const id = card?.id
+  if (!card || !id || portraitBusyIds.has(id)) return
+  const regenerate = !!portraitSrc(card)
+  const cost = portraitCost(auth.shopCosts)
+  if (!(await guard.confirm(portraitConfirmMessage(cost, card.name, regenerate), { confirmText: regenerate ? '重新生成' : '生成' }))) return
+  portraitBusyIds.add(id)
+  try {
+    const r = await characterApi.generatePortrait(id)
+    if (auth.user && typeof r.coins === 'number') auth.user.coins = r.coins
+    applyUpdate({ ...latestCard(id, card), portrait_hash: r.portrait_hash })
+    ui.toast(regenerate ? '立绘已重新生成' : '立绘已生成')
+    emit('portrait')
+  } catch (e) {
+    ui.toast(errMessage(e), 'error')
+  } finally {
+    portraitBusyIds.delete(id)
   }
 }
 
@@ -183,6 +236,15 @@ function assetEntries(card: CharacterCardFull): Entry[] {
   <BaseModal :open="open" :title="current?.name ?? ''" max-width="max-w-2xl" @close="onClose">
     <template v-if="current">
       <p class="mb-5 text-sm text-fg-muted">{{ detailSubtitle(current) }}</p>
+
+      <CharacterPortrait
+        :src="portraitSrc(current)"
+        :cost="portraitCost(auth.shopCosts)"
+        :coins="auth.user?.coins ?? 0"
+        :busy="portraitBusy"
+        @generate="generatePortrait"
+        @preview="openPreview"
+      />
 
       <CharacterVitals :card="current" class="mb-5" />
 
@@ -296,4 +358,5 @@ function assetEntries(card: CharacterCardFull): Entry[] {
       </CharacterSection>
     </template>
   </BaseModal>
+  <ImagePreview :src="previewSrc" @close="closePreview" />
 </template>

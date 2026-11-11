@@ -92,13 +92,14 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
     vi.fn(async (path: string, init?: RequestInit) => {
       const method = init?.method || 'GET'
       fetchCalls.push({ method, path })
-      if (path === '/api/sessions/7') return json(session)
+      if (path === '/api/sessions/7') return json(structuredClone(session))
       if (path === '/api/sessions/7/messages') return json([kpMessage, eventMessage, askMessage, ...extraMessages])
       if (path === '/api/sessions/7/chat-status') {
         return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
       }
       if (path === '/api/sessions/7/chat') return json({}, 202)
       if (path === '/api/characters/5') return json({ id: 5, name: '爱丽丝', occupation: '记者', inventory: [{ name: '最新的怀表', count: 1, type: 'misc' }], stats: { hp: 3, max_hp: 10, san: 20, max_san: 50, mp: 8, max_mp: 8 } })
+      if (path === '/api/characters/5/portrait') return json({ portrait_hash: 'FF00AA' })
       return json({})
     }),
   )
@@ -121,7 +122,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
   const ws = FakeWS.all[FakeWS.all.length - 1]
   ws.recv(0, 'hello', { epoch: 'E1', seq: 3 })
   await flushPromises()
-  return { wrapper, ws, router, fetchCalls }
+  return { wrapper, ws, router, fetchCalls, session }
 }
 
 beforeEach(() => {
@@ -307,6 +308,42 @@ describe('GameView', () => {
 
     await wrapper.findAll('header button').find((b) => b.text() === '我的角色')!.trigger('click')
     expect(ui.toasts.some((t) => t.message.includes('没有以调查员身份参与'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('右侧栏：人物卡带立绘时在姓名左侧显示小立绘，没有时不渲染图片', async () => {
+    const withPortrait = await setup({
+      players: [{ user_id: 2, user: { username: 'alice' }, character_card: { id: 5, name: '爱丽丝', occupation: '记者', portrait_hash: 'AB12CD', stats: { hp: 9, max_hp: 10, san: 40, max_san: 50, mp: 8, max_mp: 8 } } }],
+    })
+    const img = withPortrait.wrapper.find('aside img')
+    expect(img.exists()).toBe(true)
+    expect(img.attributes('src')).toBe('/api/portraits/ab12cd')
+    withPortrait.wrapper.unmount()
+
+    const without = await setup()
+    expect(without.wrapper.find('aside img').exists()).toBe(false)
+    without.wrapper.unmount()
+  })
+
+  test('详情弹窗生成立绘成功后刷新房间，右侧栏拿到新立绘', async () => {
+    const { wrapper, fetchCalls, session } = await setup()
+    useAuthStore().user!.coins = 500
+    expect(wrapper.find('aside img').exists()).toBe(false)
+    await wrapper.findAll('header button').find((b) => b.text() === '我的角色')!.trigger('click')
+    await flushPromises()
+
+    const generate = [...document.body.querySelectorAll('button')].find((b) => b.textContent?.includes('生成立绘')) as HTMLButtonElement
+    generate.click()
+    await flushPromises()
+    ;(session.players[0]!.character_card as Record<string, unknown>).portrait_hash = 'ff00aa'
+    const sessionFetches = () => fetchCalls.filter((c) => c.path === '/api/sessions/7').length
+    const before = sessionFetches()
+    useUiStore().resolveConfirm(true)
+    await flushPromises()
+
+    expect(fetchCalls).toContainEqual({ method: 'POST', path: '/api/characters/5/portrait' })
+    expect(sessionFetches()).toBeGreaterThan(before)
+    expect(wrapper.find('aside img').attributes('src')).toBe('/api/portraits/ff00aa')
     wrapper.unmount()
   })
 

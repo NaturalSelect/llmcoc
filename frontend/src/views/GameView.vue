@@ -305,6 +305,6 @@ defineExpose({ viewCard })
     />
     <JoinSessionModal :open="joinOpen" :session="session" @close="joinOpen = false" @joined="controller.refreshSession()" />
     <ImagePreview :src="previewSrc" @close="previewSrc = ''" />
-    <CharacterDetailModal :open="viewCard !== null" :card="viewCard" @close="viewCard = null" />
+    <CharacterDetailModal :open="viewCard !== null" :card="viewCard" @close="viewCard = null" @portrait="controller.refreshSession()" />
   </div>
 </template>
