@@ -2,6 +2,7 @@
 import {
   Activity,
   BookOpen,
+  BookOpenText,
   Brain,
   Clock,
   Coins,
@@ -11,6 +12,7 @@ import {
   Hand,
   HeartPulse,
   MapPin,
+  MessageSquareQuote,
   NotebookPen,
   Package,
   Shield,
@@ -39,6 +41,7 @@ import {
 } from '@/game/messages'
 import type { Room, RoomMessage } from '@/game/roomState'
 import { fmtDuration, fmtStepAvg, fmtTime } from '@/utils/format'
+import { renderProse } from '@/utils/markdown'
 
 const props = defineProps<{ msg: RoomMessage; room: Room }>()
 const emit = defineEmits<{ preview: [src: string] }>()
@@ -88,7 +91,7 @@ const EVENT_TONES: Record<EventTone, string> = {
 
 <template>
   <article :class="msg._new ? 'fade-up' : ''">
-    <!-- NOTE: 叙事类消息（writer / kp / ask / 旧数据）是无框的连续正文；系统消息居中且两侧用发丝线，不抢叙事的视线 -->
+    <!-- NOTE: 剧情（writer）是无框的衬线连续正文，像书页；旁白（kp / ask）是 KP 开口说话，放进淡琥珀底的对话框；系统消息居中且两侧用发丝线 -->
     <div v-if="kind === 'system'" class="flex items-center gap-3 text-xs text-fg-subtle">
       <span class="h-px flex-1 bg-line" aria-hidden="true" />
       <p class="max-w-[85%] whitespace-pre-wrap text-center">{{ msg.content }}</p>
@@ -118,9 +121,13 @@ const EVENT_TONES: Record<EventTone, string> = {
       </li>
     </ul>
 
-    <template v-else>
+    <div v-else :class="kind === 'kp' || kind === 'ask' ? 'rounded-xl bg-accent/10 px-4 py-3' : ''">
       <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-subtle">
-        <span class="font-medium">{{ msgLabel(msg) }}</span>
+        <span class="inline-flex items-center gap-1 font-medium" :class="kind === 'kp' || kind === 'ask' ? 'text-accent' : ''">
+          <BookOpenText v-if="kind === 'writer'" :size="16" :stroke-width="1.75" class="shrink-0" />
+          <MessageSquareQuote v-else-if="kind === 'kp' || kind === 'ask'" :size="16" :stroke-width="1.75" class="shrink-0" />
+          {{ msgLabel(msg) }}
+        </span>
         <span class="tabular-nums">{{ fmtTime(msg.created_at as string | undefined) }}</span>
         <span
           v-if="timing"
@@ -137,9 +144,15 @@ const EVENT_TONES: Record<EventTone, string> = {
       </div>
 
       <div v-if="kind === 'writer'">
+        <!-- NOTE: renderProse 只放行段落/强调/引用/分隔线，是这里唯一允许 v-html 的来源 -->
         <p v-if="msg.status === 'failed'" class="text-sm text-danger">{{ error || '叙事生成失败' }}</p>
         <template v-else>
-          <p v-if="text.trim()" class="whitespace-pre-wrap font-prose text-prose text-fg" :class="msg.status === 'pending' ? 'cursor' : ''">{{ text }}</p>
+          <div
+            v-if="text.trim()"
+            class="prose-md font-prose text-prose text-fg"
+            :class="msg.status === 'pending' ? 'cursor-last' : ''"
+            v-html="renderProse(text)"
+          />
           <p v-else-if="msg.status === 'pending'" class="cursor font-prose text-prose text-fg-subtle">KP 正在撰写叙事…</p>
         </template>
       </div>
@@ -161,10 +174,10 @@ const EVENT_TONES: Record<EventTone, string> = {
       </div>
 
       <div v-else-if="kind === 'kp' || kind === 'ask'">
-        <p class="whitespace-pre-wrap font-prose text-prose text-fg">{{ msg.content }}</p>
+        <p class="whitespace-pre-wrap text-base leading-relaxed text-fg">{{ msg.content }}</p>
         <p
           v-if="kind === 'ask' && names.length"
-          class="mt-3 inline-flex items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-1 text-xs font-medium text-accent"
+          class="mt-3 inline-flex items-center gap-1.5 rounded-full bg-accent/20 px-2.5 py-1 text-xs font-medium text-accent"
         >
           <Hand :size="16" :stroke-width="1.75" class="shrink-0" />
           点名：{{ names.join('、') }}
@@ -188,12 +201,13 @@ const EVENT_TONES: Record<EventTone, string> = {
       </div>
 
       <p v-else class="whitespace-pre-wrap font-prose text-prose text-fg">{{ stripLegacyTags(msg.content) }}</p>
-    </template>
+    </div>
   </article>
 </template>
 
 <style scoped>
-.cursor::after {
+.cursor::after,
+.cursor-last > :last-child::after {
   content: '▍';
   margin-left: 1px;
   animation: blink 1s steps(2, start) infinite;
@@ -214,6 +228,7 @@ const EVENT_TONES: Record<EventTone, string> = {
 }
 @media (prefers-reduced-motion: reduce) {
   .cursor::after,
+  .cursor-last > :last-child::after,
   .fade-up {
     animation: none;
   }

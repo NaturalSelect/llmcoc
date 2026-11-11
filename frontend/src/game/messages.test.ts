@@ -28,7 +28,10 @@ describe('messages', () => {
     expect(msgLabel({ id: 1, kind: 'player', username: '爱丽丝' })).toBe('爱丽丝')
     expect(msgLabel({ id: 1, kind: 'player' })).toBe('玩家')
     expect(msgLabel({ id: 1, kind: 'system' })).toBe('系统')
-    expect(msgLabel({ id: 1, kind: 'writer' })).toBe('KP')
+    expect(msgLabel({ id: 1, kind: 'writer' })).toBe('剧情')
+    expect(msgLabel({ id: 1, kind: 'kp' })).toBe('旁白')
+    expect(msgLabel({ id: 1, kind: 'ask' })).toBe('旁白')
+    expect(msgLabel({ id: 1, role: 'assistant' })).toBe('KP')
 
     expect(isMyMessage({ id: 1, kind: 'player', user_id: 2 }, 2)).toBe(true)
     expect(isMyMessage({ id: 1, kind: 'player', user_id: '2' }, 2)).toBe(true)

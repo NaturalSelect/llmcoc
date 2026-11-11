@@ -24,8 +24,11 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		<rule>下面规则里说的“上文”，只指玩家已经读到的内容：<writer_output> 正文，以及 KP 发给玩家的 narrate/ask 文字。</rule>
 		<rule>记录里玩家不知道的信息(模组秘密、暗骰结果、NPC 的隐藏意图、规则原文)不得写进正文，也不得暗示；只写最后一条消息里导演指令要求的内容。</rule>
 	</context>
-	<output format="plain_text" no_markdown="true">
-		充分发挥想象力, 直接输出玩家可见叙事文字，不加任何前言、标题、解释或格式标记。
+	<output format="markdown">
+		充分发挥想象力, 直接输出玩家可见叙事文字，不加任何前言、标题或解释。
+		<rule>正文按小说排版用 Markdown 输出，段与段之间空一行。</rule>
+		<rule>只允许这几种标记：*斜体* 用于内心低语、外文、书名或幻听到的声音；**粗体** 只用于极少数需要读者一眼看到的关键词，一段里最多一处；> 引用块用于信件、日记、碑文、墙上字迹等人物读到的文字；单独一行 --- 用于场景或时间跳转的分隔，它的前后都要空一行。</rule>
+		<rule>不要使用标题、列表、表格、代码块、链接和图片；对话照常写在段落里，不要用引用块包裹对话。</rule>
 	</output>
 	<global_config>
 		{{NSFW_GLOBAL_CONFIG}}

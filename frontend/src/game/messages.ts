@@ -17,6 +17,8 @@ export function msgLabel(msg: RoomMessage): string {
   const kind = msgKind(msg)
   if (kind === 'player') return msg.username || '玩家'
   if (kind === 'system') return '系统'
+  if (kind === 'writer') return '剧情'
+  if (kind === 'kp' || kind === 'ask') return '旁白'
   return 'KP'
 }
 
