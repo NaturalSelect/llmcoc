@@ -723,7 +723,7 @@ func buildKPCurrentActionBlock(gctx GameContext) string {
 	var sb strings.Builder
 	if gctx.KPFloor != "" {
 		reason := map[string]string{
-			KPFloorOpening:      "开场：玩家尚未发言，由你先手布置开场。必须先用narrate发布一段旁白作为开场，不需要先调用write，再决定是否ask_players点名：reply依据<scenario>里的setting和intro，交代调查员此刻所在的具体场所、年月日与时刻、环境氛围，以及他们为何聚在这里、要达成什么事，1-4句；只写场景和已知的背景，不替调查员说话、做决定或写出内心；性质、成因、身份等未赚取的解释不得写入([UNKNOWN])；不要照抄intro原句，也不要在旁白里列出可选行动。",
+			KPFloorOpening:      "开场：玩家尚未发言，由你先手布置开场。第一步先根据玩家装备更新属性：用query_character查询每位调查员的装备栏和物品描述，装备或物品描述里明确写了属性、护甲加成的，用update_characters(带+/-符号的属性字段)或update_armor落地；描述没有写明的效果不要编造，没有任何加成就不调用更新；query_character的结果要先在更早的一轮读到，更新落地后再进入下一步。第二步，属性处理完后必须先用narrate发布一段旁白作为开场，不需要先调用write，再决定是否ask_players点名：reply依据<scenario>里的setting和intro，交代调查员此刻所在的具体场所、年月日与时刻、环境氛围，以及他们为何聚在这里、要达成什么事，1-4句；只写场景和已知的背景，不替调查员说话、做决定或写出内心；性质、成因、身份等未赚取的解释不得写入([UNKNOWN])；不要照抄intro原句，也不要在旁白里列出可选行动，也不要在旁白里提及属性更新。",
 			KPFloorHostContinue: "房主要求你继续推进，不再等待未回应的调查员。",
 			KPFloorResume:       "上一段因上下文过长被总结后自动续跑，没有新的玩家输入，从你上次停下的地方继续推进。",
 		}[gctx.KPFloor]

@@ -278,7 +278,7 @@ func TestKPFloorRendering(t *testing.T) {
 		if !strings.Contains(out, "<kp_floor reason='opening'>") || strings.Contains(out, "<intent") {
 			t.Errorf("got %q", out)
 		}
-		for _, want := range []string{"必须先用narrate发布一段旁白", "不需要先调用write", "[UNKNOWN]", "不替调查员说话"} {
+		for _, want := range []string{"先根据玩家装备更新属性", "query_character", "update_characters", "update_armor", "描述没有写明的效果不要编造", "必须先用narrate发布一段旁白", "不需要先调用write", "[UNKNOWN]", "不替调查员说话"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("opening floor should contain %q, got %q", want, out)
 			}
@@ -287,8 +287,8 @@ func TestKPFloorRendering(t *testing.T) {
 
 	t.Run("非opening不要求旁白开场", func(t *testing.T) {
 		out := buildKPCurrentActionBlock(GameContext{KPFloor: KPFloorHostContinue})
-		if strings.Contains(out, "旁白") {
-			t.Errorf("host_continue must not ask for an opening narration: %q", out)
+		if strings.Contains(out, "旁白") || strings.Contains(out, "先根据玩家装备更新属性") {
+			t.Errorf("host_continue must not ask for an opening narration or equipment update: %q", out)
 		}
 	})
 
