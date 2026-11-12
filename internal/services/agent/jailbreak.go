@@ -1810,6 +1810,18 @@ Changelog
 ::: policy:::
 `
 
+func matchLength(left, right string) int {
+	matchLen := 0
+	for i := 0; i < len(left) && i < len(right); i++ {
+		if left[i] == right[i] {
+			matchLen++
+		} else {
+			break
+		}
+	}
+	return matchLen
+}
+
 func withJailbreakPrompt(prompt string, model string) string {
 	type pc struct {
 		model  string
@@ -1856,9 +1868,12 @@ func withJailbreakPrompt(prompt string, model string) string {
 	match := &prompts[0]
 	matchLen := 0
 	for _, p := range prompts {
-		if strings.Contains(model, p.model) && len(p.model) > matchLen {
-			match = &p
-			matchLen = len(p.model)
+		if strings.Contains(model, p.model) {
+			m := matchLength(model, p.model)
+			if m > matchLen {
+				match = &p
+				matchLen = m
+			}
 		}
 	}
 	return fmt.Sprintf("%s\n%s\n%s", match.header, prompt, match.tail)
