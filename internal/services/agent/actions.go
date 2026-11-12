@@ -138,7 +138,7 @@ func (checkRuleAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	results := runLawyer(actx.Ctx, actx.Handles[models.AgentRoleLawyer], call.Question)
 	doneL()
 	debugf("tool", "session=%d check_rule result=%s", actx.Sid, formatLawyerResults(results))
-	return []ToolResult{{Action: ToolCheckRule, Result: formatLawyerResults(results)}}
+	return []ToolResult{{Action: ToolCheckRule, Result: formatLawyerResultsXML(results)}}
 }
 
 // consultDramaturgAction 将Director汇报的进度转交给剧构顾问，获取节奏/走向指导。脱敏三层中的
@@ -181,7 +181,7 @@ func (rollDiceAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}
 	return []ToolResult{{
 		Action: ToolRollDice,
-		Result: formatSingleDiceResult(dcr),
+		Result: formatDiceResultXML(dcr),
 		Events: []models.GameEvent{diceEvent(dcr, actx.GCtx.Session.Players)},
 	}}
 }
@@ -250,7 +250,7 @@ func (generateNPCNameAction) Execute(call ToolCall, actx ActionContext) []ToolRe
 		return []ToolResult{{Action: ToolGenerateNPCName, Result: "SYSTEM REJECT: " + err.Error()}}
 	}
 	debugf("tool", "session=%d generate_npc_name culture=%s gender=%s names=%v", actx.Sid, call.Culture, call.Gender, names)
-	return []ToolResult{{Action: ToolGenerateNPCName, Result: formatNPCNames(names)}}
+	return []ToolResult{{Action: ToolGenerateNPCName, Result: formatNPCNamesXML(names)}}
 }
 
 // NOTE: sessionTakenNames 汇总本局已占用的姓名（小写归一化）：调查员、临时NPC、模组NPC。
@@ -552,28 +552,27 @@ type queryCluesAction struct{}
 func (queryCluesAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d query_clues all", actx.Sid)
 	clues := actx.GCtx.Session.Scenario.Content.Data.Clues
-	clueResult := "(无线索)"
-	if len(clues) > 0 {
-		var sb strings.Builder
-		for i, c := range clues {
-			sb.WriteString(fmt.Sprintf("[Idx: %d] [%s] %s", i, c.Nature, c.Summary))
-			if strings.TrimSpace(c.Source) != "" {
-				sb.WriteString("（来源：" + c.Source + "）")
-			}
-			if strings.TrimSpace(c.SkillCheck) != "" {
-				sb.WriteString("｜检定：" + c.SkillCheck)
-			}
-			if strings.TrimSpace(c.OnSuccess) != "" {
-				sb.WriteString("｜成功：" + c.OnSuccess)
-			}
-			if strings.TrimSpace(c.OnFailure) != "" {
-				sb.WriteString("｜失败推进：" + c.OnFailure)
-			}
-			sb.WriteString("\n")
-		}
-		clueResult = sb.String()
+	if len(clues) == 0 {
+		return []ToolResult{{Action: ToolQueryClues, Result: "<clues/>"}}
 	}
-	return []ToolResult{{Action: ToolQueryClues, Result: fmt.Sprintf("线索查询结果(全部):\n%s", clueResult)}}
+	var sb strings.Builder
+	sb.WriteString("<clues>\n")
+	for i, c := range clues {
+		sb.WriteString(fmt.Sprintf(`<clue idx="%d" nature="%s"`, i, xmlAttr(c.Nature)))
+		for _, f := range []struct{ name, val string }{
+			{"source", c.Source},
+			{"check", c.SkillCheck},
+			{"success", c.OnSuccess},
+			{"failure", c.OnFailure},
+		} {
+			if s := strings.TrimSpace(f.val); s != "" {
+				sb.WriteString(" " + f.name + `="` + xmlAttr(s) + `"`)
+			}
+		}
+		sb.WriteString(">" + xmlEscape(c.Summary) + "</clue>\n")
+	}
+	sb.WriteString("</clues>")
+	return []ToolResult{{Action: ToolQueryClues, Result: sb.String()}}
 }
 
 type queryCharacterAction struct{}
@@ -802,7 +801,7 @@ func (advanceTimeAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 	// NOTE: 事件不带 reason：那是 KP 自己写的文字，可能透露剧情。
 	return []ToolResult{{
 		Action: ToolAdvanceTime,
-		Result: fmt.Sprintf("时间推进至 %s(本次推进%s)(%s)", describeGameTime(session.GameStartTime, newTime), formatGameDuration(delta), reason),
+		Result: fmt.Sprintf(`<time_advanced now="%s" delta="%s" reason="%s"/>`, xmlAttr(describeGameTime(session.GameStartTime, newTime)), xmlAttr(formatGameDuration(delta)), xmlAttr(reason)),
 		Events: []models.GameEvent{{Type: "time", Time: newTime}},
 	}}
 }
@@ -835,7 +834,7 @@ func (manageMadnessAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 			models.DB.Save(card)
 			return []ToolResult{{
 				Action: ToolManageMadness,
-				Result: fmt.Sprintf("%s疯狂状态已撤销", card.Name),
+				Result: fmt.Sprintf(`<madness character="%s" state="none"/>`, xmlAttr(card.Name)),
 				Events: []models.GameEvent{{Type: "madness", Character: card.Name, State: "none"}},
 			}}
 		case "trigger", "add":
@@ -865,7 +864,8 @@ func (manageMadnessAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 			models.DB.Save(card)
 			return []ToolResult{{
 				Action: ToolManageMadness,
-				Result: fmt.Sprintf("%s%s(%s,持续%d):%s", card.Name, stateLabel, symptomTable, symptom.Duration, symptom.Description),
+				Result: fmt.Sprintf(`<madness character="%s" state="%s" label="%s" table="%s" duration="%d">%s</madness>`,
+					xmlAttr(card.Name), madnessType, stateLabel, symptomTable, symptom.Duration, xmlEscape(symptom.Description)),
 				Events: []models.GameEvent{{Type: "madness", Character: card.Name, State: madnessType, Symptom: symptom.Description, Duration: symptom.Duration}},
 			}}
 		default:

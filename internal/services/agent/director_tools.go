@@ -218,7 +218,7 @@ func actNPCTool() scripterTool {
   (3) 自行比较骰值与技能值，判定成功/失败/大成功/大失败；
   (4) 调用act_npc，把已裁定的结果写进question或kp_directive(例如"说服检定成功(roll=32 vs 65)，据此反应")，让NPC基于既定机械结果扮演，而不是自己编造成败。
 Hard errors：需要检定时act_npc早于roll_dice调用；act_npc时未把骰子结果告知NPC。NPC施法成功后，须调用update_npc_card扣减MP，再叙述法术效果。
-【检定申请】返回里带有"申请检定"时，和真人玩家说"我想过个X"一样处理：由你按[NPC-SKILL-CHECK]和[FREEDOM]决定是否需要检定、用什么技能和难度，然后query_npc_card → roll_dice → 判定 → 用write落地结果；只有需要他立刻对结果作出反应时，才再次act_npc把裁定结果告诉他。申请被你否决时，按他的意图直接裁定。
+【检定申请】返回的<npc_declaration>里带有<check>(申请检定)时，和真人玩家说"我想过个X"一样处理：由你按[NPC-SKILL-CHECK]和[FREEDOM]决定是否需要检定、用什么技能和难度，然后query_npc_card → roll_dice → 判定 → 用write落地结果；只有需要他立刻对结果作出反应时，才再次act_npc把裁定结果告诉他。申请被你否决时，按他的意图直接裁定。
 【批次规则】act_npc结果须先读到才能写叙事或触发状态更新；可以并列调用多个不同NPC的act_npc，完整批次规则见系统提示。
 【后续边界】读取act_npc结果后，write/narrate只能呈现NPC已返回的可见动作、台词、环境反应，以及"等待玩家回应"的停顿；不得替玩家作出任何回应或后续行动——见[PLAYER-AGENCY]。若NPC提出问题、邀请、交易、命令、威胁或要求选择，本轮必须停在这里等玩家决定。
 【kp_directive】用于向NPC传递KP的剧情指令和行为约束（但你必须有适当原因才能使用这个参数： 1. 剧情设定; 2. 骰子等机械原因），例如：该NPC此刻应保持警惕/可以透露某线索/应拒绝配合/需要引导玩家去某处。NPC会将此视为最高优先级约束来决策，不会透露给玩家。

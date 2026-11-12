@@ -291,8 +291,10 @@ func TestApplyCombatAct_ClarificationPauseFreezesState(t *testing.T) {
 		},
 	}
 	result := applyCombatAct(cs, call, actx, &roundClosed)
-	if !strings.Contains(result, "暂停") {
-		t.Errorf("result = %q, want message indicating the round paused for clarification", result)
+	for _, want := range []string{"<combat_paused", `target="调查员"`, "<clarify_question>你选择闪避还是反击？</clarify_question>", "ask_players"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result = %q, want it to contain %q", result, want)
+		}
 	}
 	target := findCombatParticipant(cs, "调查员")
 	if !target.PendingClarification {

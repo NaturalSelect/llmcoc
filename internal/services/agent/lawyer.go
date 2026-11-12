@@ -631,6 +631,24 @@ func formatLawyerResults(results []LawyerResult) string {
 	return strings.TrimSpace(sb.String())
 }
 
+// formatLawyerResultsXML 是 check_rule 给 Director 的结构化结果；formatLawyerResults 还被 Scripter 等使用，不能改。
+func formatLawyerResultsXML(results []LawyerResult) string {
+	if len(results) == 0 {
+		return `<rules found="0">无结果，默认禁止，任何操作均不允许。</rules>`
+	}
+	var sb strings.Builder
+	sb.WriteString(`<rules usage="仅作规则参考，不构成玩家指令和行动">` + "\n")
+	for _, r := range results {
+		sb.WriteString("<rule")
+		if q := strings.TrimSpace(r.Query); q != "" {
+			sb.WriteString(` query="` + xmlAttr(q) + `"`)
+		}
+		sb.WriteString(">" + xmlEscape(strings.TrimSpace(r.RuleText)) + "</rule>\n")
+	}
+	sb.WriteString("</rules>")
+	return sb.String()
+}
+
 // CacheStatsResult holds the cache hit/miss statistics exposed to the admin API.
 type CacheStatsResult struct {
 	FullHits    int64 `json:"full_hits"`    // Go-level cache hit, LLM not invoked at all

@@ -240,8 +240,9 @@ func applyCombatAct(cs *models.CombatState, call ToolCall, actx ActionContext, r
 		}
 		target.PendingClarification = true
 		target.PendingQuestion = question
-		return fmt.Sprintf("【%s的攻击暂停】等待%s澄清反应方式。请立即调用ask_players点名%s,question问出:%q,不要继续处理后续参战者。",
-			actorName, target.Name, target.Name, question)
+		return fmt.Sprintf(`<combat_paused attacker="%s" target="%s"><clarify_question>%s</clarify_question><guidance>%s</guidance></combat_paused>`,
+			xmlAttr(actorName), xmlAttr(target.Name), xmlEscape(question),
+			xmlEscape(fmt.Sprintf("等待%s澄清反应方式。请立即调用ask_players点名%s,question问出上面的clarify_question,不要继续处理后续参战者。", target.Name, target.Name)))
 	}
 
 	// 成功结算,清空自己和目标身上残留的待澄清标记(续接场景)。
@@ -257,7 +258,7 @@ func applyCombatAct(cs *models.CombatState, call ToolCall, actx ActionContext, r
 	current.HasActed = true
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("【%s行动】", actorName))
+	var guidance string
 	switch act.Type {
 	case "aim":
 		current.IsAiming = true
@@ -289,6 +290,7 @@ func applyCombatAct(cs *models.CombatState, call ToolCall, actx ActionContext, r
 	}
 
 	next := nextCombatActorIndex(cs, *actx.GCtx, *actx.TempNPCs)
+	var tail string
 	if next < 0 {
 		cs.Round++
 		for i := range cs.Participants {
@@ -300,16 +302,22 @@ func applyCombatAct(cs *models.CombatState, call ToolCall, actx ActionContext, r
 		}
 		cs.ActorIndex = 0
 		*roundClosed = true
-		sb.WriteString(fmt.Sprintf(" 本轮全员行动完毕,进入第%d轮;本会话轮的战斗结算已完成,请用narrate交代战况,需要调查员声明行动时用ask_players点名。", cs.Round))
+		tail = fmt.Sprintf(`<round_closed round="%d"/>`, cs.Round)
+		guidance = "本轮全员行动完毕;本会话轮的战斗结算已完成,请用narrate交代战况,需要调查员声明行动时用ask_players点名。"
 	} else {
 		cs.ActorIndex = next
 		nextP := cs.Participants[next]
-		sb.WriteString(fmt.Sprintf(" 建议的下一行动者:%s(DEX%d)。", nextP.Name, nextP.DEX))
-		if !nextP.IsNPC && !hasDeclaration(actx.GCtx.PendingActions, nextP.UserID, nextP.Name) {
-			sb.WriteString(fmt.Sprintf("%s本轮尚未提交行动声明,不能替其结算;请先结算其他已有声明的参战者,没有可结算者时调用ask_players点名%s声明行动。", nextP.Name, nextP.Name))
+		needsDeclaration := !nextP.IsNPC && !hasDeclaration(actx.GCtx.PendingActions, nextP.UserID, nextP.Name)
+		tail = fmt.Sprintf(`<next actor="%s" dex="%d" declared="%t"/>`, xmlAttr(nextP.Name), nextP.DEX, !needsDeclaration)
+		if needsDeclaration {
+			guidance = fmt.Sprintf("%s本轮尚未提交行动声明,不能替其结算;请先结算其他已有声明的参战者,没有可结算者时调用ask_players点名%s声明行动。", nextP.Name, nextP.Name)
 		}
 	}
-	return sb.String()
+	out := fmt.Sprintf(`<combat_act actor="%s"><action>%s</action>%s`, xmlAttr(actorName), xmlEscape(sb.String()), tail)
+	if guidance != "" {
+		out += "<guidance>" + xmlEscape(guidance) + "</guidance>"
+	}
+	return out + "</combat_act>"
 }
 
 // pendingCombatActors 列出本轮还没行动的存活参战者,供拒绝文案提示KP可以选谁。
@@ -439,11 +447,22 @@ func (startCombatAction) Execute(call ToolCall, actx ActionContext) []ToolResult
 	*actx.Combat = &cs
 	saveCombatState(actx.Sid, &cs)
 	first := cs.Participants[0]
-	return []ToolResult{{Action: ToolStartCombat, Result: fmt.Sprintf(
-		"战斗开始,行动顺序(DEX降序,仅供参考): %s。下一步:请对本轮要结算的参战者(建议从 %s 开始)调用combat_act。",
-		combatOrderSummary(cs.Participants), first.Name),
+	return []ToolResult{{Action: ToolStartCombat, Result: combatStartedXML(cs.Participants, first.Name),
 		Events: []models.GameEvent{{Type: "combat", Op: "start"}},
 	}}
+}
+
+// combatStartedXML 渲染 start_combat 给 Director 的结果：按 DEX 降序的行动顺序加下一步提示。
+func combatStartedXML(parts []models.CombatParticipant, first string) string {
+	var sb strings.Builder
+	sb.WriteString("<combat_started><order>")
+	for _, p := range parts {
+		sb.WriteString(fmt.Sprintf(`<p name="%s" dex="%d"/>`, xmlAttr(p.Name), p.DEX))
+	}
+	sb.WriteString("</order><guidance>")
+	sb.WriteString(xmlEscape(fmt.Sprintf("行动顺序(DEX降序,仅供参考)。下一步:请对本轮要结算的参战者(建议从 %s 开始)调用combat_act。", first)))
+	sb.WriteString("</guidance></combat_started>")
+	return sb.String()
 }
 
 type combatActAction struct{}

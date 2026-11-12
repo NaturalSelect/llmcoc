@@ -36,10 +36,13 @@ type scripterTool struct {
 //     驱动器在本轮所有 tool_call 都得到响应后返回成功。
 //   - reject 为空且 done=false：普通非终止工具调用（如 ask_lawyer/confirm_anchor）
 //     成功执行，result 作为对应 tool 消息回传，循环继续。
+//
+// cached 只是渲染提示：result 是对此前同参数只读调用的复用，没有重新执行。
 type toolOutcome struct {
 	result string
 	reject string
 	done   bool
+	cached bool
 }
 
 // scripterToolDispatch 处理一次工具调用；call.Name 保证已在 tools 列表中。
@@ -118,6 +121,10 @@ type toolLoopOptions struct {
 	// 提示继续循环（retryMsg 为空则用默认的"必须输出至少一个工具调用"提示）。
 	// 为 nil 时保留原行为：空 tool_calls 计入 emptyRounds，达到阈值判定端点异常。
 	onPlainText func(content string) (done bool, retryMsg string)
+
+	// renderResult 非 nil 时，每条 tool 消息的内容由它生成（含整批拒绝、未知工具、缺失结果）；
+	// 为 nil 时内容逐字等于 outcome.reject 或 outcome.result。
+	renderResult func(call llm.ToolCall, o toolOutcome) string
 }
 
 // runScripterToolLoop 驱动一次原生工具调用的多轮循环。
@@ -311,7 +318,7 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, 
 		// 整批拒绝，每个 tool_call_id 都要有回执。
 		if rejectMsg := policy(result.ToolCalls); rejectMsg != "" {
 			for _, call := range result.ToolCalls {
-				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: rejectMsg})
+				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: toolMessageContent(opts, call, toolOutcome{reject: rejectMsg})})
 			}
 			if err := applyAfterDispatch(round, result.ToolCalls, true); err != nil {
 				return msgs, err
@@ -346,11 +353,7 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, 
 			}
 			for i, call := range result.ToolCalls {
 				outcome := outcomes[i]
-				content := outcome.result
-				if outcome.reject != "" {
-					content = outcome.reject
-				}
-				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: content})
+				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: toolMessageContent(opts, call, outcome)})
 				if outcome.reject == "" && outcome.done {
 					done = true
 				}
@@ -358,18 +361,12 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, 
 		} else {
 			for _, call := range result.ToolCalls {
 				if !validNames[call.Name] {
-					msgs = append(msgs, llm.ChatMessage{
-						Role: "tool", ToolCallID: call.ID,
-						Content: fmt.Sprintf("SYSTEM REJECT: 未知工具 %q，此阶段不允许调用。", call.Name),
-					})
+					unknown := toolOutcome{reject: fmt.Sprintf("SYSTEM REJECT: 未知工具 %q，此阶段不允许调用。", call.Name)}
+					msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: toolMessageContent(opts, call, unknown)})
 					continue
 				}
 				outcome := opts.dispatch(ctx, call)
-				content := outcome.result
-				if outcome.reject != "" {
-					content = outcome.reject
-				}
-				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: content})
+				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: toolMessageContent(opts, call, outcome)})
 				if outcome.reject == "" && outcome.done {
 					done = true
 				}
@@ -386,6 +383,17 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, 
 		}
 	}
 	return msgs, fmt.Errorf("%s 未在%d轮内完成", stage, opts.maxRounds)
+}
+
+// toolMessageContent 生成一条 tool 消息的内容：有 renderResult 钩子时交给它，否则取 reject 或 result 原文。
+func toolMessageContent(opts toolLoopOptions, call llm.ToolCall, o toolOutcome) string {
+	if opts.renderResult != nil {
+		return opts.renderResult(call, o)
+	}
+	if o.reject != "" {
+		return o.reject
+	}
+	return o.result
 }
 
 // soloMixed 判断本轮响应中是否有 solo 工具与其他调用（含另一个 solo 工具）混批。

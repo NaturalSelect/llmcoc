@@ -5,6 +5,7 @@ import {
   BookOpenText,
   Brain,
   Clock,
+  Code,
   Coins,
   Dices,
   EyeOff,
@@ -22,7 +23,7 @@ import {
   Timer,
   Users,
 } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { Component } from 'vue'
 import { describeEvent, eventsOf } from '@/game/events'
 import type { EventIcon, EventTone } from '@/game/events'
@@ -55,6 +56,8 @@ const time = computed(() => timeOf(props.msg))
 // NOTE: 耗时、步数、平均每步是给调参用的引擎指标，只给管理员看
 const timing = computed(() => (auth.isAdmin ? directorTiming(props.msg) : null))
 const text = computed(() => writerText(props.room, props.msg))
+// NOTE: 调试用：管理员可把 writer 正文切成未渲染的原始 markdown，看配图占位到底落在哪一行；状态不随消息保存
+const showRaw = ref(false)
 const illustrations = computed(() => illustrationsOf(props.msg))
 const error = computed(() => messageError(props.msg))
 const names = computed(() => askNames(props.msg))
@@ -150,6 +153,18 @@ const EVENT_TONES: Record<EventTone, string> = {
           <Timer :size="16" :stroke-width="1.75" class="shrink-0" />
           {{ fmtDuration(timing.elapsedMs) }} · {{ timing.steps }} 步 · 均 {{ fmtStepAvg(timing.elapsedMs, timing.steps) }}/步
         </span>
+        <button
+          v-if="kind === 'writer' && auth.isAdmin"
+          type="button"
+          class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 transition hover:bg-surface-3 hover:text-fg"
+          :class="showRaw ? 'bg-surface-3 text-accent' : ''"
+          :aria-pressed="showRaw"
+          title="调试：显示 Writer 正文的原始 markdown"
+          @click="showRaw = !showRaw"
+        >
+          <Code :size="16" :stroke-width="1.75" class="shrink-0" />
+          源码
+        </button>
         <span v-if="time" class="ml-auto inline-flex items-center gap-1 tabular-nums" :title="time.elapsed || undefined">
           <Clock :size="16" :stroke-width="1.75" class="shrink-0" />
           {{ time.label }}
@@ -160,8 +175,14 @@ const EVENT_TONES: Record<EventTone, string> = {
         <!-- NOTE: renderProse 只放行段落/强调/引用/分隔线和后端图片接口的配图，是这里唯一允许 v-html 的来源 -->
         <p v-if="msg.status === 'failed'" class="text-sm text-danger">{{ error || '叙事生成失败' }}</p>
         <template v-else>
+          <pre
+            v-if="showRaw && text.trim()"
+            class="overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg"
+            :class="msg.status === 'pending' ? 'cursor-last' : ''"
+            data-testid="writer-raw"
+          >{{ text }}</pre>
           <div
-            v-if="text.trim()"
+            v-else-if="text.trim()"
             class="prose-md font-prose text-prose text-fg"
             :class="msg.status === 'pending' ? 'cursor-last' : ''"
             v-html="renderProse(text, illustrations)"

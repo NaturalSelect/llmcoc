@@ -2,7 +2,6 @@ package agent
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
@@ -15,7 +14,6 @@ import (
 const (
 	writerOutputOpen  = "\n<writer_output>\n"
 	writerOutputClose = "\n</writer_output>"
-	toolRejectPrefix  = "SYSTEM REJECT"
 )
 
 // writerProse 是一条已经生成完成的 Writer 正文，Floor 用于超窗口时按周期丢弃。
@@ -99,7 +97,7 @@ func attachableProse(msgs []llm.ChatMessage, prose map[string]writerProse) map[i
 		return attached
 	}
 	for i, m := range msgs {
-		if m.Role != "tool" || m.ToolCallID == "" || strings.HasPrefix(m.Content, toolRejectPrefix) {
+		if m.Role != "tool" || m.ToolCallID == "" || isToolRejected(m.Content) {
 			continue
 		}
 		if p, ok := prose[m.ToolCallID]; ok {

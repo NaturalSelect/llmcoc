@@ -33,9 +33,8 @@ const directorSummaryPrompt = `你是跑团（COC7）KP 的记录员。下面是
 输出必须放在 <summary> 与 </summary> 标签之间，标签之外不要写任何内容。`
 
 var (
-	summaryTagPattern  = regexp.MustCompile(`(?s)<summary>(.*?)</summary>`)
-	playerTurnPattern  = regexp.MustCompile(`(?s)<player_turn[^>]*>.*?</player_turn>`)
-	summaryRejectToken = "SYSTEM REJECT"
+	summaryTagPattern = regexp.MustCompile(`(?s)<summary>(.*?)</summary>`)
+	playerTurnPattern = regexp.MustCompile(`(?s)<player_turn[^>]*>.*?</player_turn>`)
 )
 
 // summarizeFunc 把渲染好的纯文本交给 LLM，返回总结正文（已去掉标签）。
@@ -111,7 +110,7 @@ func renderFloorsForSummary(turns []models.TranscriptTurn) string {
 }
 
 // renderUnitOutputs 渲染一个单元里产生玩家可见消息的调用、掷骰与 NPC 反应，以及同一批的状态更新结果。
-// 被 SYSTEM REJECT 的调用不采纳；check_rule/query_*/consult_dramaturg 只是查询，不渲染。
+// 被拒绝的调用不采纳；check_rule/query_*/consult_dramaturg 只是查询，不渲染。
 func renderUnitOutputs(msgs []models.TranscriptMsg) string {
 	results := make(map[string]string, len(msgs))
 	for _, m := range msgs {
@@ -122,12 +121,12 @@ func renderUnitOutputs(msgs []models.TranscriptMsg) string {
 	var b strings.Builder
 	for _, m := range msgs {
 		for _, tc := range m.ToolCalls {
-			if strings.HasPrefix(results[tc.ID], summaryRejectToken) {
+			if isToolRejected(results[tc.ID]) {
 				continue
 			}
 			call := llm.ToolCall{ID: tc.ID, Name: tc.Name, Arguments: tc.Arguments}
 			parsed, err := decodeDirectorToolCall(call)
-			res := strings.TrimSpace(results[tc.ID])
+			res := strings.TrimSpace(toolResultBody(results[tc.ID]))
 			switch ToolCallType(tc.Name) {
 			case ToolWrite:
 				if err == nil && parsed.Direction != "" {
@@ -186,7 +185,7 @@ func beatBoundaryAt(turns []models.TranscriptTurn, b int) bool {
 	return turnClosesBeat(prev)
 }
 
-// turnClosesBeat 报告单元里是否有未被 SYSTEM REJECT 的 narrate/ask_players/end_game，即这个单元收尾了一拍。
+// turnClosesBeat 报告单元里是否有未被拒绝的 narrate/ask_players/end_game，即这个单元收尾了一拍。
 func turnClosesBeat(t models.TranscriptTurn) bool {
 	results := make(map[string]string)
 	for _, m := range t.Messages {
@@ -198,7 +197,7 @@ func turnClosesBeat(t models.TranscriptTurn) bool {
 		for _, tc := range m.ToolCalls {
 			switch ToolCallType(tc.Name) {
 			case ToolNarrate, ToolLegacyResponse, ToolAskPlayers, ToolEndGame:
-				if !strings.HasPrefix(results[tc.ID], summaryRejectToken) {
+				if !isToolRejected(results[tc.ID]) {
 					return true
 				}
 			}

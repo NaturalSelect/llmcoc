@@ -30,7 +30,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		<rule>正文按小说排版用 Markdown 输出，段与段之间空一行。</rule>
 		<rule>只允许这几种标记：*斜体* 用于内心低语、外文、书名或幻听到的声音；**粗体** 只用于极少数需要读者一眼看到的关键词，一段里最多一处；> 引用块用于信件、日记、碑文、墙上字迹等人物读到的文字；单独一行 --- 用于场景或时间跳转的分隔，它的前后都要空一行。</rule>
 		<rule>不要使用标题、列表、表格、代码块、链接{{WRITER_IMAGE_BAN}}；对话照常写在段落里，不要用引用块包裹对话。</rule>
-		<rule>输出里不得出现任何尖括号标签，包括 <writer_output>、<ask_players>、<narrate>、<write>、<director_instruction>，也不要给正文套上任何标签；只输出正文本身。你只写 role play 文本，不生成 ask_players 点名或提问、不列推荐行动、不写给玩家的任何话；KP 对玩家的提问由系统另行展示，不要在正文末尾复述或改写它。</rule>
+		<rule>输出里不得出现任何尖括号标签，包括 <writer_output>、<tool_result>、<ask_players>、<narrate>、<write>、<director_instruction>，也不要给正文套上任何标签；只输出正文本身。你只写 role play 文本，不生成 ask_players 点名或提问、不列推荐行动、不写给玩家的任何话；KP 对玩家的提问由系统另行展示，不要在正文末尾复述或改写它。</rule>
 	</output>{{WRITER_PAINT_SECTION}}
 	<global_config>
 		{{NSFW_GLOBAL_CONFIG}}
@@ -229,10 +229,10 @@ func notifyWriterRestart(ctx context.Context, keepBytes int) {
 	}
 }
 
-// NOTE: Writer 偶尔会照着历史里的 <writer_output> 和 KP 的工具调用把标签原样写进正文。
-// 工具调用块(含里面的点名问题)整段丢弃，问题由系统另行展示；<writer_output> 只剥掉标签、保留正文。
+// NOTE: Writer 偶尔会照着历史里的 <writer_output>、KP 的工具调用和 <tool_result> 把标签原样写进正文。
+// 工具调用块(含里面的点名问题)和 <tool_result>(里面是只有 KP 能看的信息)整段丢弃，问题由系统另行展示；<writer_output> 只剥掉标签、保留正文。
 var (
-	writerToolBlockPattern  = regexp.MustCompile(`(?is)<(?:ask_players|narrate|write|director_instruction)\b[^>]*>.*?(?:</(?:ask_players|narrate|write|director_instruction)>|\z)`)
+	writerToolBlockPattern  = regexp.MustCompile(`(?is)<(?:ask_players|narrate|write|director_instruction|tool_result)\b[^>]*>.*?(?:</(?:ask_players|narrate|write|director_instruction|tool_result)>|\z)`)
 	writerWrapperTagPattern = regexp.MustCompile(`(?i)</?writer_output\b[^>]*>`)
 )
 

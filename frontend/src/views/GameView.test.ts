@@ -397,6 +397,38 @@ describe('GameView', () => {
     wrapper.unmount()
   })
 
+  test('管理员可以把 writer 正文切成原始 markdown 调试，再切回渲染；普通玩家没有这个按钮', async () => {
+    const hash = 'ab'.repeat(32)
+    const writer = {
+      id: 4,
+      role: 'assistant',
+      kind: 'writer',
+      status: 'done',
+      floor: 1,
+      content: '门开了。\n\n![门廊](illust://1)\n\n他走进去。',
+      meta: { illustrations: [{ slot: 1, status: 'done', hash }] },
+    }
+    const admin = await setup({ asAdmin: true, extraMessages: [writer] })
+    const toggle = () => admin.wrapper.findAll('button').find((b) => b.text().includes('源码'))!
+    expect(admin.wrapper.find('[data-testid="writer-raw"]').exists()).toBe(false)
+    expect(admin.wrapper.find('.prose-md img').exists()).toBe(true)
+
+    await toggle().trigger('click')
+    const raw = admin.wrapper.find('[data-testid="writer-raw"]')
+    expect(raw.text()).toBe('门开了。\n\n![门廊](illust://1)\n\n他走进去。')
+    expect(admin.wrapper.find('.prose-md img').exists()).toBe(false)
+    expect(toggle().attributes('aria-pressed')).toBe('true')
+
+    await toggle().trigger('click')
+    expect(admin.wrapper.find('[data-testid="writer-raw"]').exists()).toBe(false)
+    expect(admin.wrapper.find('.prose-md img').exists()).toBe(true)
+    admin.wrapper.unmount()
+
+    const player = await setup({ extraMessages: [writer] })
+    expect(player.wrapper.findAll('button').some((b) => b.text().includes('源码'))).toBe(false)
+    player.wrapper.unmount()
+  })
+
   test('流式中的 writer 正文：配图占位显示「配图生成中…」，没写完的图片语法不显示原始标记', async () => {
     const { wrapper, ws } = await setup({
       extraMessages: [{ id: 4, role: 'assistant', kind: 'writer', status: 'pending', floor: 1, content: '', meta: {} }],

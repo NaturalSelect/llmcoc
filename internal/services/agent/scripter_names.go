@@ -342,6 +342,17 @@ func formatNPCNames(names []string) string {
 	return fmt.Sprintf("%s\n随机姓名(%d个候选): %s", npcNameGuidance, len(names), strings.Join(parts, " "))
 }
 
+// formatNPCNamesXML 是 Director 的 generate_npc_name 结果；formatNPCNames 还被 Scripter 使用，不能改。
+func formatNPCNamesXML(names []string) string {
+	var sb strings.Builder
+	sb.WriteString(`<npc_names note="` + xmlAttr(npcNameGuidance) + `">`)
+	for _, name := range names {
+		sb.WriteString("<name>" + xmlEscape(name) + "</name>")
+	}
+	sb.WriteString("</npc_names>")
+	return sb.String()
+}
+
 // dispatchGenerateNPCName 是 generate_npc_name 工具的通用执行逻辑，供 Story
 // Architect 与 Oneshot Architect 两个工具循环共用：解析参数、取名、登记到
 // room.usedNPCNames、格式化为工具结果文案。

@@ -223,8 +223,10 @@ func TestApplyChaseAct_ConflictClarificationPause(t *testing.T) {
 			NeedsClarification: true, ClarifyQuestion: "闪避还是反击？",
 		},
 	}, actx, &roundClosed)
-	if !strings.Contains(result, "暂停") {
-		t.Errorf("result = %q, want 暂停提示", result)
+	for _, want := range []string{"<chase_paused", `target="调查员"`, "<clarify_question>闪避还是反击？</clarify_question>", "ask_players"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result = %q, want it to contain %q", result, want)
+		}
 	}
 	target := findChaseParticipant(chs, "调查员")
 	if !target.PendingClarification {

@@ -131,7 +131,7 @@ func (f *floorRun) afterDispatch(round int, calls []llm.ToolCall, msgs []llm.Cha
 func (f *floorRun) noteVisibleActions(calls []llm.ToolCall, msgs []llm.ChatMessage) {
 	results := toolResultsByID(msgs, calls)
 	for _, c := range calls {
-		if strings.HasPrefix(results[c.ID], "SYSTEM REJECT") {
+		if isToolRejected(results[c.ID]) {
 			continue
 		}
 		if visibleActionNeedsWriter(ToolCallType(c.Name)) {
@@ -321,6 +321,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		batchDispatch: fr.guard.wrapDispatch(directorBatchDispatch(st)),
 		afterCall:     fr.afterCall,
 		afterDispatch: fr.afterDispatch,
+		renderResult:  renderDirectorToolResult,
 		beforeRound: func(r int) {
 			round = r
 			debugf("KP", "session=%d floor=%d round=%d — calling LLM", sid, floor, r)

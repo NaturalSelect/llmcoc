@@ -59,7 +59,7 @@ type loopGuard struct {
 	cache   map[string]string // callKey -> 上次成功结果
 	settled map[string]bool   // 上次对玩家发言以来已成功执行过的结算调用
 	confirm map[string]bool   // 已被拒绝过一次、再原样重发即放行的结算调用
-	raw     map[string]string // 本轮 callID -> 工具原始结果（不含复用前缀）
+	raw     map[string]string // 本轮 callID -> 工具原始结果（不含信封）
 }
 
 func newLoopGuard() *loopGuard {
@@ -110,7 +110,7 @@ func roundSignature(calls []llm.ToolCall, results map[string]string, forceResult
 	for _, c := range calls {
 		key := callKey(c.Name, c.Arguments)
 		res := results[c.ID]
-		if forceResult || guardSigWithResult[ToolCallType(c.Name)] || strings.HasPrefix(res, "SYSTEM REJECT") {
+		if forceResult || guardSigWithResult[ToolCallType(c.Name)] || isToolRejected(res) {
 			key += "\x00" + res
 		}
 		parts = append(parts, key)
@@ -139,8 +139,6 @@ func toolResultsByID(msgs []llm.ChatMessage, calls []llm.ToolCall) map[string]st
 	return out
 }
 
-const loopGuardCachedPrefix = "（与前面同参数调用的结果相同，未重新执行，期间状态没有变化）\n"
-
 // directorSideEffect 判断一次成功执行是否可能改变游戏状态（从而让只读缓存失效）。
 func directorSideEffect(action ToolCallType) bool {
 	return !noSideEffectActions[action] && action != ToolReport
@@ -163,7 +161,7 @@ func (g *loopGuard) wrapDispatch(inner toolBatchDispatch) toolBatchDispatch {
 			switch {
 			case guardCacheable[action]:
 				if res, ok := g.cache[key]; ok {
-					outcomes[i] = toolOutcome{result: loopGuardCachedPrefix + res}
+					outcomes[i] = toolOutcome{result: res, cached: true}
 					g.raw[c.ID] = res
 					continue
 				}

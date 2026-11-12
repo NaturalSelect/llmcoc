@@ -860,6 +860,8 @@ func TestStripWriterControlTags(t *testing.T) {
 		{"标签带属性", "雨落下了。<ask_players targets=\"甲\">怎么办？</ask_players>", "雨落下了。"},
 		{"大小写不敏感", "雨落下了。<ASK_PLAYERS>怎么办？</ASK_PLAYERS>", "雨落下了。"},
 		{"正文里的普通尖括号不动", "他比划着“3 < 5”的手势。", "他比划着“3 < 5”的手势。"},
+		{"tool_result 整段丢弃", "他推开了门。\n<tool_result name=\"roll_dice\" status=\"ok\">\n<dice roll=\"42\" hidden=\"true\"/>\n</tool_result>", "他推开了门。"},
+		{"没有闭合的 tool_result 丢到结尾", "他推开了门。\n<tool_result name=\"act_npc\" status=\"ok\">\n<ooc visibility=\"kp_only\">秘密", "他推开了门。"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

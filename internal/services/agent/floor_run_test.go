@@ -241,6 +241,8 @@ func TestFloor_RoundOutputsOrderedWriterKPAsk(t *testing.T) {
 		t.Fatal("含 writer 的轮应带上 Director 消息链快照")
 	} else if last := ro.Director[n-1]; last.Role != "tool" || last.ToolCallID != "d" {
 		t.Errorf("快照应以 write 的 tool 结果结尾(包含本轮所有工具回执), got %+v", last)
+	} else if !strings.HasPrefix(last.Content, `<tool_result name="write" status="ok">`) {
+		t.Errorf("Director 的 tool 消息应带 <tool_result> 信封, got %q", last.Content)
 	}
 }
 

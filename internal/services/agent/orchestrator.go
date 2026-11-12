@@ -345,22 +345,45 @@ func formatSingleDiceResult(r DiceCheckResult) string {
 // formatNPCAction 把 AI 玩家的声明渲染成给 KP 的 tool 结果：标明未裁定，空字段省略。
 func formatNPCAction(a NPCAction) string {
 	var sb strings.Builder
-	sb.WriteString("【NPC玩家声明·未裁定】" + a.NPCName)
-	if s := strings.TrimSpace(a.Intent); s != "" {
-		sb.WriteString(" 意图:" + s)
+	sb.WriteString(`<npc_declaration npc="` + xmlAttr(a.NPCName) + `" adjudicated="false">` + "\n")
+	for _, f := range []struct{ tag, val, attr string }{
+		{"intent", a.Intent, ""},
+		{"action", a.Action, ""},
+		{"dialogue", a.Dialogue, ""},
+		{"check", a.Check, ""},
+		{"ooc", a.OOC, ` visibility="kp_only"`},
+	} {
+		if s := strings.TrimSpace(f.val); s != "" {
+			sb.WriteString("<" + f.tag + f.attr + ">" + xmlEscape(s) + "</" + f.tag + ">")
+		}
 	}
-	if s := strings.TrimSpace(a.Action); s != "" {
-		sb.WriteString(" 动作:" + s)
+	sb.WriteString("\n</npc_declaration>")
+	return sb.String()
+}
+
+// formatDiceResultXML 是 roll_dice 给 Director 的结构化结果；formatSingleDiceResult 供事件消息渲染，不能改。
+func formatDiceResultXML(r DiceCheckResult) string {
+	var sb strings.Builder
+	sb.WriteString("<dice")
+	attr := func(name, val string) {
+		if val != "" {
+			sb.WriteString(" " + name + `="` + xmlAttr(val) + `"`)
+		}
 	}
-	if s := strings.TrimSpace(a.Dialogue); s != "" {
-		sb.WriteString(fmt.Sprintf(" 台词:\"%s\"", s))
+	attr("character", r.Character)
+	attr("what", r.What)
+	attr("expr", r.DiceExpr)
+	attr("roll", strconv.Itoa(r.Roll))
+	attr("level", r.Level)
+	if r.Target > 0 {
+		attr("target", strconv.Itoa(r.Target))
 	}
-	if s := strings.TrimSpace(a.Check); s != "" {
-		sb.WriteString(" 申请检定:" + s)
+	attr("result", r.Result)
+	attr("detail", r.Detail)
+	if r.Hidden {
+		sb.WriteString(` hidden="true"`)
 	}
-	if s := strings.TrimSpace(a.OOC); s != "" {
-		sb.WriteString(" 场外(仅KP可见):" + s)
-	}
+	sb.WriteString("/>")
 	return sb.String()
 }
 

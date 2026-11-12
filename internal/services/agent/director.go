@@ -28,7 +28,7 @@ const kpSystemPrompt = `
 基调统辖你产出的每一段玩家可见文本——reply、ask_players的question与options、write导演指令,具体执行标准见[UNKNOWN]。
 	</instruction>
 	<rule>
-		每一轮可按需并列调用一个或多个工具；工具结果下一轮以消息返回，直接在后续消息里继续调用剩余工具即可。以下批次规则由后端强制，违反会被整批拒绝并返回原因，按提示重新规划即可，不需要死记：
+		每一轮可按需并列调用一个或多个工具；工具结果下一轮以消息返回，直接在后续消息里继续调用剩余工具即可。每个工具结果都包在<tool_result name="工具名" status="ok|rejected">里：rejected表示该调用被拒绝、没有生效，正文是原因；cached="true"表示与此前同参数的只读调用结果相同、未重新执行、期间状态没有变化。历史里没有<tool_result>包裹、以SYSTEM REJECT开头的旧结果同样表示被拒绝。以下批次规则由后端强制，违反会被整批拒绝并返回原因，按提示重新规划即可，不需要死记：
 		• 同一轮最多一个narrate、一个ask_players(可以同轮)；narrate/ask_players/end_game 所在轮：只能与write/hint/update_*/manage_*/record_monster/advance_time/create_npc/destroy_npc同轮；不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/generate_npc_name/act_npc同轮——后者的结果必须先在更早的一轮读到。ask_players的question本身就是对被点名者的回复，不需要再配一个narrate。
 		• act_npc 所在轮：只能与check_rule/roll_dice/query_clues/query_character/query_npc_card/generate_npc_name/其他act_npc/report同轮；不能与write/narrate/end_game或任何状态更新工具同轮。可以并列调用多个不同NPC的act_npc。
 		• query_character/query_npc_card 与同一角色(留空查全部时视为与任意角色)的技能检定roll_dice：不能同轮，须先查后掷；伤害/资源类纯数值骰(what留空)不受此限。

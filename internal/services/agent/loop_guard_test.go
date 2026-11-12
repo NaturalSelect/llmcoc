@@ -124,8 +124,11 @@ func TestLoopGuard_ReadOnlyCacheHitAndInvalidation(t *testing.T) {
 	if h.count("query_clues") != 1 {
 		t.Fatalf("query_clues executed %d times, want 1 (second reused)", h.count("query_clues"))
 	}
-	if !strings.HasPrefix(o2[0].result, loopGuardCachedPrefix) || !strings.HasSuffix(o2[0].result, o1[0].result) {
-		t.Fatalf("cached result = %q", o2[0].result)
+	if !o2[0].cached || o2[0].result != o1[0].result {
+		t.Fatalf("cached outcome = %+v, want cached=true with the original result %q", o2[0], o1[0].result)
+	}
+	if o1[0].cached {
+		t.Fatalf("first execution must not be marked cached: %+v", o1[0])
 	}
 
 	// 有副作用的工具成功执行后，缓存失效

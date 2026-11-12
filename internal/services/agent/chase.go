@@ -183,8 +183,9 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall, actx ActionContext, ro
 		}
 		target.PendingClarification = true
 		target.PendingQuestion = question
-		return fmt.Sprintf("【%s的攻击暂停】等待%s澄清反应方式。请立即调用ask_players点名%s,question问出:%q,不要继续处理后续参战者。",
-			actorName, target.Name, target.Name, question)
+		return fmt.Sprintf(`<chase_paused attacker="%s" target="%s"><clarify_question>%s</clarify_question><guidance>%s</guidance></chase_paused>`,
+			xmlAttr(actorName), xmlAttr(target.Name), xmlEscape(question),
+			xmlEscape(fmt.Sprintf("等待%s澄清反应方式。请立即调用ask_players点名%s,question问出上面的clarify_question,不要继续处理后续参战者。", target.Name, target.Name)))
 	}
 
 	// 成功结算,清空自己和目标身上残留的待澄清标记(续接场景)。
@@ -200,7 +201,7 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall, actx ActionContext, ro
 	current.HasActed = true
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("【%s追逐行动】", actorName))
+	var guidance string
 	if act.MoveDelta != 0 {
 		current.Location += act.MoveDelta
 		sb.WriteString(fmt.Sprintf("移动%+d格(当前位置%d)。", act.MoveDelta, current.Location))
@@ -243,19 +244,21 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall, actx ActionContext, ro
 		sb.WriteString(fmt.Sprintf("执行追逐动作:%s。", act.Type))
 	}
 
+	var caught strings.Builder
 	for _, p := range chs.Participants {
 		if !p.IsPursuer {
 			continue
 		}
 		for _, q := range chs.Participants {
 			if !q.IsPursuer && p.Location >= q.Location {
-				sb.WriteString(fmt.Sprintf(" ⚠ 追逐者%s已追上%s(位置%d≥%d),你可以宣告追逐结束。",
-					p.Name, q.Name, p.Location, q.Location))
+				caught.WriteString(fmt.Sprintf(`<caught pursuer="%s" target="%s" pursuer_location="%d" target_location="%d"/>`,
+					xmlAttr(p.Name), xmlAttr(q.Name), p.Location, q.Location))
 			}
 		}
 	}
 
 	next := nextChaseActorIndex(chs, *actx.GCtx, *actx.TempNPCs)
+	var tail string
 	if next < 0 {
 		chs.Round++
 		for i := range chs.Participants {
@@ -266,16 +269,25 @@ func applyChaseAct(chs *models.ChaseState, call ToolCall, actx ActionContext, ro
 		}
 		chs.ActorIndex = 0
 		*roundClosed = true
-		sb.WriteString(fmt.Sprintf(" 本轮全员行动完毕,进入第%d轮;本会话轮的追逐结算已完成,请用narrate交代战况,需要调查员声明行动时用ask_players点名。", chs.Round))
+		tail = fmt.Sprintf(`<round_closed round="%d"/>`, chs.Round)
+		guidance = "本轮全员行动完毕;本会话轮的追逐结算已完成,请用narrate交代战况,需要调查员声明行动时用ask_players点名。"
 	} else {
 		chs.ActorIndex = next
 		nextP := chs.Participants[next]
-		sb.WriteString(fmt.Sprintf(" 建议的下一行动者:%s(DEX%d)。", nextP.Name, nextP.DEX))
-		if !nextP.IsNPC && !hasDeclaration(actx.GCtx.PendingActions, nextP.UserID, nextP.Name) {
-			sb.WriteString(fmt.Sprintf("%s本轮尚未提交行动声明,不能替其结算;请先结算其他已有声明的参与者,没有可结算者时调用ask_players点名%s声明行动。", nextP.Name, nextP.Name))
+		needsDeclaration := !nextP.IsNPC && !hasDeclaration(actx.GCtx.PendingActions, nextP.UserID, nextP.Name)
+		tail = fmt.Sprintf(`<next actor="%s" dex="%d" declared="%t"/>`, xmlAttr(nextP.Name), nextP.DEX, !needsDeclaration)
+		if needsDeclaration {
+			guidance = fmt.Sprintf("%s本轮尚未提交行动声明,不能替其结算;请先结算其他已有声明的参与者,没有可结算者时调用ask_players点名%s声明行动。", nextP.Name, nextP.Name)
 		}
 	}
-	return sb.String()
+	out := fmt.Sprintf(`<chase_act actor="%s"><action>%s</action>%s%s`, xmlAttr(actorName), xmlEscape(sb.String()), caught.String(), tail)
+	if caught.Len() > 0 {
+		guidance = strings.TrimSpace("追逐者已追上目标,你可以宣告追逐结束。 " + guidance)
+	}
+	if guidance != "" {
+		out += "<guidance>" + xmlEscape(guidance) + "</guidance>"
+	}
+	return out + "</chase_act>"
 }
 
 // pendingChaseActors 列出本轮还没行动的存活参与者,供拒绝文案提示KP可以选谁。
@@ -394,11 +406,22 @@ func (startChaseAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	*actx.Chase = &chs
 	saveChaseState(actx.Sid, &chs)
 	first := chs.Participants[0]
-	return []ToolResult{{Action: ToolStartChase, Result: fmt.Sprintf(
-		"追逐开始,行动顺序(DEX降序,仅供参考): %s。下一步:请对本轮要结算的参与者(建议从 %s 开始)调用chase_act。",
-		chaseOrderSummary(chs.Participants), first.Name),
+	return []ToolResult{{Action: ToolStartChase, Result: chaseStartedXML(chs.Participants, first.Name),
 		Events: []models.GameEvent{{Type: "chase", Op: "start"}},
 	}}
+}
+
+// chaseStartedXML 渲染 start_chase 给 Director 的结果：按 DEX 降序的行动顺序加下一步提示。
+func chaseStartedXML(parts []models.ChaseParticipant, first string) string {
+	var sb strings.Builder
+	sb.WriteString("<chase_started><order>")
+	for _, p := range parts {
+		sb.WriteString(fmt.Sprintf(`<p name="%s" dex="%d"/>`, xmlAttr(p.Name), p.DEX))
+	}
+	sb.WriteString("</order><guidance>")
+	sb.WriteString(xmlEscape(fmt.Sprintf("行动顺序(DEX降序,仅供参考)。下一步:请对本轮要结算的参与者(建议从 %s 开始)调用chase_act。", first)))
+	sb.WriteString("</guidance></chase_started>")
+	return sb.String()
 }
 
 type chaseActAction struct{}
