@@ -111,7 +111,7 @@ func renderFloorsForSummary(turns []models.TranscriptTurn) string {
 }
 
 // renderUnitOutputs 渲染一个单元里产生玩家可见消息的调用、掷骰与 NPC 反应，以及同一批的状态更新结果。
-// 被 SYSTEM REJECT 的调用不采纳；check_rule/query_*/describe_characters/consult_dramaturg 只是查询，不渲染。
+// 被 SYSTEM REJECT 的调用不采纳；check_rule/query_*/consult_dramaturg 只是查询，不渲染。
 func renderUnitOutputs(msgs []models.TranscriptMsg) string {
 	results := make(map[string]string, len(msgs))
 	for _, m := range msgs {
@@ -153,8 +153,6 @@ func renderUnitOutputs(msgs []models.TranscriptMsg) string {
 				if err == nil && res != "" {
 					fmt.Fprintf(&b, "[NPC %s] %s\n", parsed.NPCName, res)
 				}
-			case ToolGenerateImage:
-				// 图片本身不进总结
 			default:
 				if res != "" && directorSideEffect(ToolCallType(tc.Name)) {
 					fmt.Fprintf(&b, "[结算 %s] %s\n", tc.Name, res)

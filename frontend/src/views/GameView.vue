@@ -70,7 +70,7 @@ function queueScroll() {
 
 function onFrame(frame: Frame) {
   resetDraftOnFrame(draft, frame)
-  if (frame.type === 'message_new' || frame.type === 'message_update' || frame.type === 'writer_token') queueScroll()
+  if (frame.type === 'message_new' || frame.type === 'message_update' || frame.type === 'writer_token' || frame.type === 'illustration') queueScroll()
 }
 
 function authLost() {

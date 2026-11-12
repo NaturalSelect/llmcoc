@@ -1,5 +1,5 @@
 // NOTE: floor_run_test.go 用脚本化的假 Provider 端到端驱动 run()，验证发言权周期(floor)的行为：
-// 多拍发布、消息顺序、兜底 writer、每条 write 独立 NSFW、每拍一张图、停滞、打断、防循环、
+// 多拍发布、消息顺序、兜底 writer、每条 write 独立 NSFW、停滞、打断、防循环、
 // 上下文已满，以及 transcript 与已发布消息一一对应。不涉及真实 LLM。
 package agent
 
@@ -67,25 +67,11 @@ func toolRound(calls ...llm.ToolCall) llm.ToolChatResult {
 	return llm.ToolChatResult{ToolCalls: calls}
 }
 
-// floorImageProvider 让 generate_image 通过 ImageGenerator 检查；测试里不会真的出图。
-type floorImageProvider struct{ scriptedDirectorProvider }
-
-func (p *floorImageProvider) GenerateImage(context.Context, string, llm.ImageOptions) (string, string, error) {
-	return "", "", errors.New("not used")
-}
-
-func setFloorHandles(t *testing.T, sessionID uint, director llm.Provider, withPainter bool) {
+func setFloorHandles(t *testing.T, sessionID uint, director llm.Provider) {
 	t.Helper()
 	handles := map[models.AgentRole]agentHandle{
 		models.AgentRoleDirector:  {provider: director, config: &models.AgentConfig{Role: models.AgentRoleDirector, IsActive: true}, enabled: true},
 		models.AgentRoleDramaturg: {enabled: false},
-	}
-	if withPainter {
-		handles[models.AgentRolePainter] = agentHandle{
-			provider: &floorImageProvider{},
-			config:   &models.AgentConfig{Role: models.AgentRolePainter, IsActive: true},
-			enabled:  true,
-		}
 	}
 	sessionAgents.Store(sessionID, handles)
 	t.Cleanup(func() { deleteCachedAgents(sessionID) })
@@ -130,7 +116,7 @@ func equalKinds(a, b []OutputKind) bool {
 	return true
 }
 
-// TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk 验证 write → narrate → write+generate_image → ask_players
+// TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk 验证 write → narrate → write → ask_players
 // 的序列：每个产生消息的轮各 Publish 一次，周期只在 ask_players 后结束，transcript 按单元落库。
 func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 	const sid = 201
@@ -142,15 +128,12 @@ func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 		case 2:
 			return toolRound(floorCall("c2", "narrate", map[string]any{"reply": "你听见远处的钟声。"})), nil
 		case 3:
-			return toolRound(
-				floorCall("c3a", "write", map[string]any{"direction": "灯塔的光扫过海面"}),
-				floorCall("c3b", "generate_image", map[string]any{"image_prompt": "a foggy lighthouse at night"}),
-			), nil
+			return toolRound(floorCall("c3", "write", map[string]any{"direction": "灯塔的光扫过海面"})), nil
 		default:
 			return toolRound(floorCall("c4", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "你要做什么？"})), nil
 		}
 	}}
-	setFloorHandles(t, sid, prov, true)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	out, err := run(context.Background(), floorGctx(sid, &published))
@@ -174,7 +157,7 @@ func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 	wantKinds := [][]OutputKind{
 		{OutputWriter},
 		{OutputKP},
-		{OutputWriter, OutputImage},
+		{OutputWriter},
 		{OutputAsk},
 	}
 	total := 0
@@ -187,8 +170,8 @@ func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 		}
 		total += len(ro.Items)
 	}
-	if out.Messages != total || total != 5 {
-		t.Errorf("RunOutput.Messages = %d, 实际发布 %d 条, want 5", out.Messages, total)
+	if out.Messages != total || total != 4 {
+		t.Errorf("RunOutput.Messages = %d, 实际发布 %d 条, want 4", out.Messages, total)
 	}
 
 	if got := published[1].Items[0].Text; got != "你听见远处的钟声。" {
@@ -204,7 +187,7 @@ func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 		t.Errorf("kp 消息的 Steps = %d, want 2(write轮+narrate轮)", published[1].Steps)
 	}
 	if published[3].Steps != 2 {
-		t.Errorf("ask 消息的 Steps = %d, want 2(write+image轮、ask轮)", published[3].Steps)
+		t.Errorf("ask 消息的 Steps = %d, want 2(write轮、ask轮)", published[3].Steps)
 	}
 
 	data := loadTranscript(t, sid, "director")
@@ -221,20 +204,19 @@ func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 	}
 }
 
-// TestFloor_RoundOutputsOrderedWriterImageKPAsk 验证同一轮 [ask_players, narrate, generate_image, write]
-// 被整理成 writer → image → kp → ask。
-func TestFloor_RoundOutputsOrderedWriterImageKPAsk(t *testing.T) {
+// TestFloor_RoundOutputsOrderedWriterKPAsk 验证同一轮 [ask_players, narrate, write]
+// 被整理成 writer → kp → ask。
+func TestFloor_RoundOutputsOrderedWriterKPAsk(t *testing.T) {
 	const sid = 202
 	newFloorSession(t, sid)
 	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
 		return toolRound(
 			floorCall("a", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "你呢？"}),
 			floorCall("b", "narrate", map[string]any{"reply": "门开了。"}),
-			floorCall("c", "generate_image", map[string]any{"image_prompt": "an opening door"}),
 			floorCall("d", "write", map[string]any{"direction": "门缓缓打开"}),
 		), nil
 	}}
-	setFloorHandles(t, sid, prov, true)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	if _, err := run(context.Background(), floorGctx(sid, &published)); err != nil {
@@ -243,7 +225,7 @@ func TestFloor_RoundOutputsOrderedWriterImageKPAsk(t *testing.T) {
 	if len(published) != 1 {
 		t.Fatalf("Publish 次数 = %d, want 1", len(published))
 	}
-	want := []OutputKind{OutputWriter, OutputImage, OutputKP, OutputAsk}
+	want := []OutputKind{OutputWriter, OutputKP, OutputAsk}
 	if got := outputKinds(published[0].Items); !equalKinds(got, want) {
 		t.Fatalf("消息种类顺序 = %v, want %v", got, want)
 	}
@@ -252,7 +234,7 @@ func TestFloor_RoundOutputsOrderedWriterImageKPAsk(t *testing.T) {
 	if got := ro.Items[0].CallID; got != "d" {
 		t.Errorf("writer Output.CallID = %q, want the write call id %q", got, "d")
 	}
-	if got := ro.Items[2].CallID; got != "b" {
+	if got := ro.Items[1].CallID; got != "b" {
 		t.Errorf("kp Output.CallID = %q, want the narrate call id %q", got, "b")
 	}
 	if n := len(ro.Director); n == 0 {
@@ -280,7 +262,7 @@ func TestFloor_WriteNSFWIsIndependentPerCall(t *testing.T) {
 			return toolRound(floorCall("ask", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "继续吗？"})), nil
 		}
 	}}
-	setFloorHandles(t, sid, prov, false)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	g := floorGctx(sid, &published)
@@ -311,7 +293,7 @@ func TestFloor_FallbackWriterWhenVisibleActionWithoutWrite(t *testing.T) {
 			return toolRound(floorCall("ask", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "然后呢？"})), nil
 		}
 	}}
-	setFloorHandles(t, sid, prov, false)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	if _, err := run(context.Background(), floorGctx(sid, &published)); err != nil {
@@ -342,58 +324,6 @@ func TestFloor_FallbackWriterWhenVisibleActionWithoutWrite(t *testing.T) {
 	}
 }
 
-// TestFloor_ImageQuotaResetsEachBeat 验证每拍各有一张配图额度：同一拍第二张被拒，kp 消息结束一拍后额度重置。
-func TestFloor_ImageQuotaResetsEachBeat(t *testing.T) {
-	const sid = 205
-	newFloorSession(t, sid)
-	var secondImageResult string
-	prov := &scriptedDirectorProvider{script: func(n int, msgs []llm.ChatMessage) (llm.ToolChatResult, error) {
-		switch n {
-		case 1:
-			return toolRound(floorCall("i1", "generate_image", map[string]any{"image_prompt": "a quiet harbor"})), nil
-		case 2:
-			return toolRound(floorCall("i2", "generate_image", map[string]any{"image_prompt": "the same harbor again"})), nil
-		case 3:
-			secondImageResult = toolResultFor(msgs, "i2")
-			return toolRound(floorCall("r1", "narrate", map[string]any{"reply": "海风很冷。"})), nil
-		case 4:
-			return toolRound(floorCall("i3", "generate_image", map[string]any{"image_prompt": "a new beat, a new image"})), nil
-		default:
-			return toolRound(floorCall("ask", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "你怎么办？"})), nil
-		}
-	}}
-	setFloorHandles(t, sid, prov, true)
-
-	var published []RoundOutputs
-	if _, err := run(context.Background(), floorGctx(sid, &published)); err != nil {
-		t.Fatalf("run(): %v", err)
-	}
-	if secondImageResult == "" || secondImageResult[:len("SYSTEM REJECT")] != "SYSTEM REJECT" {
-		t.Errorf("同一拍的第二张配图应被拒绝, got %q", secondImageResult)
-	}
-	images := 0
-	for _, ro := range published {
-		for _, it := range ro.Items {
-			if it.Kind == OutputImage {
-				images++
-			}
-		}
-	}
-	if images != 2 {
-		t.Errorf("发布的配图数 = %d, want 2(每拍各一张)", images)
-	}
-}
-
-// toolResultFor 返回 msgs 里对应 tool_call_id 的 tool 结果文本，找不到返回空串。
-func toolResultFor(msgs []llm.ChatMessage, id string) string {
-	for _, m := range msgs {
-		if m.Role == "tool" && m.ToolCallID == id {
-			return m.Content
-		}
-	}
-	return ""
-}
-
 // TestFloor_CancelKeepsPublishedMessagesAndCommitsTail 验证被房主打断：已发布的消息保留、
 // 已完整的尾部落库、返回 StopHostStop 且没有点名结果。
 func TestFloor_CancelKeepsPublishedMessagesAndCommitsTail(t *testing.T) {
@@ -413,7 +343,7 @@ func TestFloor_CancelKeepsPublishedMessagesAndCommitsTail(t *testing.T) {
 			return toolRound(floorCall("q2", "query_clues", map[string]any{})), nil
 		}
 	}}
-	setFloorHandles(t, sid, prov, false)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	out, err := run(ctx, floorGctx(sid, &published))
@@ -447,7 +377,7 @@ func TestFloor_StallStopsAfterBudgetWithoutMessages(t *testing.T) {
 		// NOTE: 每轮用不同的 hint 内容，避开防循环的签名重复，只让停滞预算起作用。
 		return toolRound(floorCall(fmt.Sprintf("h%d", n), "hint", map[string]any{"hint": fmt.Sprintf("备注%d", n)})), nil
 	}}
-	setFloorHandles(t, sid, prov, false)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	out, err := run(context.Background(), floorGctx(sid, &published))
@@ -472,7 +402,7 @@ func TestFloor_LoopDetectedStopsRepeatedIdenticalCalls(t *testing.T) {
 	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
 		return toolRound(floorCall(fmt.Sprintf("q%d", n), "query_clues", map[string]any{})), nil
 	}}
-	setFloorHandles(t, sid, prov, false)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	out, err := run(context.Background(), floorGctx(sid, &published))
@@ -523,7 +453,7 @@ func TestFloor_PublishErrorStopsWithStopError(t *testing.T) {
 	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
 		return toolRound(floorCall("r", "narrate", map[string]any{"reply": "你好。"})), nil
 	}}
-	setFloorHandles(t, sid, prov, false)
+	setFloorHandles(t, sid, prov)
 
 	g := newDirectorRunGctx(sid, 1, "输入")
 	g.Publish = func(RoundOutputs) error { return errors.New("db down") }
@@ -549,7 +479,7 @@ func TestFloor_ResponseKeepsFloorUntilAsk(t *testing.T) {
 		}
 		return toolRound(floorCall("ask", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "你们呢？"})), nil
 	}}
-	setFloorHandles(t, sid, prov, false)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	out, err := run(context.Background(), floorGctx(sid, &published))
@@ -574,7 +504,7 @@ func TestFloor_EndGameMarksEnded(t *testing.T) {
 			"settlement": []map[string]any{{"character_name": "甲", "score": 80, "skills": []string{"侦查"}}},
 		})), nil
 	}}
-	setFloorHandles(t, sid, prov, false)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	out, err := run(context.Background(), floorGctx(sid, &published))
@@ -716,7 +646,7 @@ func TestFloor_ToolEventsPublishImmediatelyWithoutCountingAsMessages(t *testing.
 			return toolRound(floorCall("ask", "ask_players", map[string]any{"targets": []string{"甲"}, "question": "然后呢？"})), nil
 		}
 	}}
-	setFloorHandles(t, sid, prov, false)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	gctx := floorGctx(sid, &published)
@@ -756,7 +686,7 @@ func TestFloor_EventsOnlyRoundsStillStall(t *testing.T) {
 	prov := &scriptedDirectorProvider{script: func(n int, _ []llm.ChatMessage) (llm.ToolChatResult, error) {
 		return toolRound(floorCall(fmt.Sprintf("l%d", n), "update_location", map[string]any{"character_name": "甲", "new_location": fmt.Sprintf("房间%d", n)})), nil
 	}}
-	setFloorHandles(t, sid, prov, false)
+	setFloorHandles(t, sid, prov)
 
 	var published []RoundOutputs
 	out, err := run(context.Background(), floorGctx(sid, &published))

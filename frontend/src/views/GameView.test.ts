@@ -363,6 +363,54 @@ describe('GameView', () => {
     wrapper.unmount()
   })
 
+  test('writer 正文里的配图占位：画完的显示图片，待画的显示占位，illustration 帧到达后替换，点图片打开预览', async () => {
+    const hashA = 'ab'.repeat(32)
+    const hashB = 'cd'.repeat(32)
+    const { wrapper, ws } = await setup({
+      extraMessages: [
+        {
+          id: 4,
+          role: 'assistant',
+          kind: 'writer',
+          status: 'done',
+          floor: 1,
+          content: '门开了。\n\n![门廊](illust://1)\n\n![远景](illust://2)\n\n![失败的](illust://3)',
+          meta: { illustrations: [{ slot: 1, status: 'done', hash: hashA }, { slot: 3, status: 'failed' }] },
+        },
+      ],
+    })
+    const prose = wrapper.find('.prose-md')
+    expect(prose.findAll('img').map((i) => i.attributes('src'))).toStrictEqual([`/api/images/${hashA}`])
+    expect(prose.findAll('.illust-pending')).toHaveLength(1)
+    expect(prose.text()).toContain('配图生成中…')
+    expect(prose.text()).not.toContain('illust://')
+
+    ws.recv(4, 'illustration', { message_id: 4, slot: 2, status: 'done', hash: hashB })
+    await flushPromises()
+    expect(wrapper.find('.prose-md').findAll('img').map((i) => i.attributes('src'))).toStrictEqual([`/api/images/${hashA}`, `/api/images/${hashB}`])
+    expect(wrapper.find('.prose-md .illust-pending').exists()).toBe(false)
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    await wrapper.findAll('.prose-md img')[1]!.trigger('click')
+    const shown = document.body.querySelector('[role="dialog"] img')
+    expect(shown?.getAttribute('src')).toBe(`/api/images/${hashB}`)
+    wrapper.unmount()
+  })
+
+  test('流式中的 writer 正文：配图占位显示「配图生成中…」，没写完的图片语法不显示原始标记', async () => {
+    const { wrapper, ws } = await setup({
+      extraMessages: [{ id: 4, role: 'assistant', kind: 'writer', status: 'pending', floor: 1, content: '', meta: {} }],
+    })
+    ws.recv(0, 'writer_token', { message_id: 4, offset: 0, text: '门开了。\n\n![门廊](illust://1)\n\n他走进去![远景](ill' })
+    await flushPromises()
+    const prose = wrapper.find('.prose-md')
+    expect(prose.findAll('.illust-pending')).toHaveLength(1)
+    expect(prose.text()).toContain('他走进去')
+    expect(prose.text()).not.toContain('![')
+    expect(prose.text()).not.toContain('illust')
+    wrapper.unmount()
+  })
+
   test('离开页面时关闭 WebSocket', async () => {
     const { wrapper, ws } = await setup()
     expect(ws.closed).toBe(false)

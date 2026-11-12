@@ -22,7 +22,7 @@ type ActionContext struct {
 
 	// 工具执行器写入、调度循环读取的可变状态。
 	HasEnd *bool
-	// Outbox 收集本轮产生玩家可见消息的调用(write/generate_image/narrate/ask_players/end_game),
+	// Outbox 收集本轮产生玩家可见消息的调用(write/narrate/ask_players/end_game),
 	// 一个调用一个 Output;轮末由 floorRun 整理顺序后发布。
 	Outbox   *[]Output
 	KPStreak *int // 本周期内连续发布的 kp 消息数,ask_players 之前不清零,用于节奏提醒
@@ -47,16 +47,14 @@ type Action interface {
 // (sideeffect: false in the KP system prompt). These are pure query/compute
 // actions that must NOT be mixed with side-effect actions in the same phase.
 var noSideEffectActions = map[ToolCallType]bool{
-	ToolRollDice:           true,
-	ToolCheckRule:          true,
-	ToolConsultDramaturg:   true,
-	ToolQueryClues:         true,
-	ToolQueryCharacter:     true,
-	ToolQueryNPCCard:       true,
-	ToolDescribeCharacters: true,
-	ToolGenerateImage:      true,
-	ToolActNPC:             true, // returns NPC reaction that must be read before narrate
-	ToolGenerateNPCName:    true,
+	ToolRollDice:         true,
+	ToolCheckRule:        true,
+	ToolConsultDramaturg: true,
+	ToolQueryClues:       true,
+	ToolQueryCharacter:   true,
+	ToolQueryNPCCard:     true,
+	ToolActNPC:           true, // returns NPC reaction that must be read before narrate
+	ToolGenerateNPCName:  true,
 }
 
 // narrateCompatibleActions 表示可与narrate/end_game同批执行的动作。
@@ -67,7 +65,6 @@ var narrateCompatibleActions = map[ToolCallType]bool{
 	ToolEndGame:                true,
 	ToolWrite:                  true,
 	ToolHint:                   true,
-	ToolGenerateImage:          true,
 	ToolUpdateSessionMemory:    true,
 	ToolUpdateNPCSessionMemory: true,
 	ToolUpdateLocation:         true,
@@ -110,7 +107,6 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolQueryClues:             queryCluesAction{},
 	ToolQueryCharacter:         queryCharacterAction{},
 	ToolQueryNPCCard:           queryNPCCardAction{},
-	ToolDescribeCharacters:     describeCharactersAction{},
 	ToolUpdateNPCCard:          updateNPCCardAction{},
 	ToolWrite:                  writeAction{},
 	ToolAdvanceTime:            advanceTimeAction{},
@@ -120,7 +116,6 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolUpdateNPCLocation:      updateNPCLocationAction{},
 	ToolUpdateArmor:            updateArmorAction{},
 	ToolHint:                   hintAction{},
-	ToolGenerateImage:          generateImageAction{},
 	ToolNarrate:                narrateAction{},
 	ToolAskPlayers:             askPlayersAction{},
 	ToolReport:                 reportAction{},

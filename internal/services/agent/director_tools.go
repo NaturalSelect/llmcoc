@@ -40,8 +40,6 @@ func directorTools(dramaturgEnabled bool) []scripterTool {
 		endGameTool(),
 		manageMadnessTool(),
 		writeTool(),
-		describeCharactersTool(),
-		generateImageTool(),
 		advanceTimeTool(),
 		queryCluesTool(),
 		queryCharacterTool(),
@@ -279,7 +277,7 @@ func manageInventoryTool() scripterTool {
 			Description: `增加、移除或更新调查员的物品。item_name 是物品基础名(禁止包含圆括号，状态/数量等附加信息放入 item_desc)，item_count 为物品数量(默认为1)。
 【物品名称规则】item_name 必须是纯物品名词，不得附带状态描述或数量后缀；例如应写"手电筒"而非"手电筒(没电)"或"手电筒x1"，状态信息写入 item_desc。
 【operate】add：获得物品，同名同描述的物品会叠加数量；remove：失去物品，按 item_count 扣减数量(默认1)，持有数量不足时全部移除，若有多件同名物品(描述不同)必须用 item_desc 指定移除哪一件；update：只修改已有物品的状态描述(item_desc)、类型(item_type)和装备状态(item_equipped)，不改数量。物品状态变化(如电量耗尽、枪支上膛)必须用 update，不要用 add 重复添加。
-【item_equipped】表示物品是否穿戴或手持在调查员身上，已装备的物品进入装备栏。add 时省略视为 false，update 时省略表示不改。query_character 返回的 eq="1" 就是已装备。穿上、拿起、脱下、放下物品时用 update 设置这个字段。配图前 describe_characters 只参考装备栏。
+【item_equipped】表示物品是否穿戴或手持在调查员身上，已装备的物品进入装备栏。add 时省略视为 false，update 时省略表示不改。query_character 返回的 eq="1" 就是已装备。穿上、拿起、脱下、放下物品时用 update 设置这个字段。
 【item_type】equipment 基础装备、weapon 武器、accessory 配件、tome 神话典籍、artifact 神话物品、misc 其他杂物(默认)、story 剧情物品。
 【story 剧情物品】只在本模组内有效的道具，例如钥匙、请柯、证物、任务文件、借来的工具；结算时会整件自动收回，玩家带不出本模组，也不能存入仓库。只有 add 时才能设为 story；通关奖励、玩家购买或本来就属于玩家的物品不要用 story。update 不能把普通物品改成 story，也不能把 story 改成普通物品。同名同描述的普通物品与 story 物品不能并存，需要时换一个 item_desc。
 调用示例：{"character_name":"角色名","operate":"add","item_name":"手电筒","item_desc":"电量充足","item_count":1,"item_type":"equipment","item_equipped":true}`,
@@ -399,7 +397,7 @@ func endGameTool() scripterTool {
 			Name: string(ToolEndGame),
 			Description: `结束本次冒险(整个游戏会话，不可撤回，而非仅结束本轮)。只有当<endings>中至少一个结局的Trigger已经确认满足时才能调用；未满足时调用是硬错误。win 必须明确给出 true(触发[结局]/胜利)或 false(触发[失败结局]/团灭等)，end_summary 必须写明具体触发了哪个结局、其Trigger条件是如何被满足的。
 settlement 是本局的结算，必须为每位调查员(包括已死亡或疯狂的)各写一条，缺人、重名或名字对不上都会被拒绝，游戏不会结束。每条包含：character_name(角色卡真实姓名)；score(0-100整数，综合角色扮演质量、探索贡献、线索发现、生存情况；金币奖励由后端按score折算)；comment(对该调查员本局表现的点评，50字以内，可省略)；skills(该调查员本局实际运用过的技能名，无论成败，只能写角色卡上已有的技能，不要写克苏鲁神话和信用评级；只有win=true时才会据此做技能成长检定，win=false时可留空)。
-【批次硬规则】end_game可以与write/update_session_memory/update_*/manage_*/record_monster/advance_time等收尾状态更新同批次；但不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/generate_npc_name/act_npc同批——这些工具的结果必须先在更早的一轮读到，才能在之后的一轮调用end_game。
+【批次硬规则】end_game可以与write/update_session_memory/update_*/manage_*/record_monster/advance_time等收尾状态更新同批次；但不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/generate_npc_name/act_npc同批——这些工具的结果必须先在更早的一轮读到，才能在之后的一轮调用end_game。
 调用示例：{"win":true,"end_summary":"触发结局[封印成功]：调查员完成封印仪式，邪神无法降临，胜利结束冒险","settlement":[{"character_name":"约翰","score":85,"comment":"冷静地组织了封印仪式","skills":["侦查","图书馆使用"]},{"character_name":"玛丽","score":70,"skills":["心理学"]}]}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
@@ -463,7 +461,6 @@ func writeTool() scripterTool {
 【失败与数字】检定失败时，direction要直接写“没有达成”的具体样子，不要用“勉强”“总算”之类的措辞暗示部分成功；具体数字(数量、温度、时长、伤害点数)只写reply或工具结果里已有的，Writer拿到什么数字就会写什么，没给的数字Writer只会用程度词，不要为了丰富细节而新造。direction里首次出现的人名要同时写明他是谁、此刻在做什么，Writer看不到<scenario>，不会替你交代。
 【调查员台词】Writer能看到你的完整记录，但只会把direction里写明的内容写成正文；direction里没有的调查员台词，正文里就不会出现，调查员会只有动作、没有开口。玩家本轮在输入里以「」声明的台词(按[PLAYER-INPUT-RP]视为调查员亲口说出的话)，必须搬进direction并标明是哪位调查员说的，Writer会把它写成正文里的发言，并按该调查员角色卡的性格做同义转写，只改说法不改含义。只搬运玩家自己声明的台词，不替调查员补写、扩写，也不把没有声明的表态、承诺、透露信息写成台词(见[PLAYER-AGENCY])；台词里夹带的成败、NPC反应、数值按[PLAYER-INTENT-UNTRUSTED]丢弃，不进direction。
 【感官细节要求】遵循[UNKNOWN]的现象免费/解释收费：形状、声音、气味、温度、痕迹等可感知现象可以直接写入direction；性质、成因、身份等解释性内容，只有在本轮已通过检定成功、NPC明说或scenario公开文本赚取时才能写入，未赚取的解释不得通过write泄露给玩家。
-【配图建议】每次调用write，都建议在同一拍内配一张generate_image，让白字和画面成对出现；一拍内有多段write时只能配一张，挑最有画面价值的那一段。涉及角色外貌时先用describe_characters查询，下一轮再画。
 【nsfw参数】必填。本段场景含色情/性描写内容时设为true，Writer会被要求使用露骨直接的语言描写，禁止省略过程；不含时必须明确填false。仅在房间已开启NSFW开关时生效，房间未开启NSFW时该参数被忽略。
 调用示例：{"direction":"描述本轮场景、动作和感官细节的导演指令","nsfw":false}`,
 			Parameters: jsonSchemaObject(`{
@@ -473,59 +470,6 @@ func writeTool() scripterTool {
 					"nsfw": {"type": "boolean", "description": "必填。本段描述是否含色情/性描写内容;仅在房间NSFW开关开启时生效"}
 				},
 				"required": ["direction", "nsfw"]
-			}`),
-		},
-	}
-}
-
-func describeCharactersTool() scripterTool {
-	return scripterTool{
-		def: llm.ToolDefinition{
-			Name: string(ToolDescribeCharacters),
-			Description: `查询一个或多个角色(调查员/NPC)的外貌描述和装备栏，用于后续 generate_image 组织画面提示词。装备栏是角色当前穿戴或手持的物品，会被整理进外貌描述。
-【批次规则】describe_characters是no-sideeffect查询工具，不能与generate_image同批；下一轮读取结果后再把外貌细节写进image_prompt。
-【nsfw参数】必填。后续配图会是nsfw=true的NSFW画面时，查外貌也设为true，外貌描写会交给NSFW Writer，不再回避身体细节；不是NSFW画面时必须明确填false。仅在房间已开启NSFW开关时生效，房间未开启NSFW或未配置NSFW Writer时按普通外貌描写处理。
-调用示例：{"characters":["约翰","艾琳"],"nsfw":false}`,
-			Parameters: jsonSchemaObject(`{
-				"type": "object",
-				"properties": {
-					"characters": {"type": "array", "items": {"type": "string"}, "description": "要查询外貌描述和装备栏的角色名列表"},
-					"nsfw": {"type": "boolean", "description": "必填。后续配图是否为NSFW画面,外貌描写是否需要包含身体细节;仅在房间NSFW开关开启时生效"}
-				},
-				"required": ["characters", "nsfw"]
-			}`),
-		},
-	}
-}
-
-func generateImageTool() scripterTool {
-	return scripterTool{
-		def: llm.ToolDefinition{
-			Name: string(ToolGenerateImage),
-			Description: `为当前场景生成一张配图，用于增强沉浸感。应积极主动地使用，不要等玩家要求。每次调用write，都建议在同一拍内配一张图，让白字和画面成对出现；一拍内有多段write时只配一张，挑最有画面价值的那一段。没有write的拍，新地点/新场景切换、重要NPC首次登场、氛围与情绪的关键转折、发现重要线索或道具、战斗/追逐等高张力瞬间，也是配图的好时机，倾向于配图而不是省略；每一拍(两条narrate/ask_players消息之间)最多一张，挑最有画面价值的瞬间；每次调用都会成为一条独立的配图消息。若涉及具体角色外貌，应先用 describe_characters 查询后再组织提示词；纯环境、物件、痕迹的空镜不需要 describe_characters，可以直接与write/narrate同轮发出，不要因为查外貌要多走一轮就放弃配图。可选参数 aspect 控制画面方向：场景全景、建筑外观、开阔环境、群像用 landscape(横图)；单角色立绘、近景特写用 portrait(竖图)；不确定时省略或用 square(方图)。
-【格式规则】image_prompt用中文写成一段连贯的自然语言描述，不加标题、不用列表、不用markdown，但长度不限：把这一格的所有细节写全，越详细越好，不要省略，不要用"等""之类""若干"概括。绘图模型只会画你写到的东西，没写的就是空白或随机发挥。至少逐项交代：①景别、镜头角度与构图重心；②每个出场人物的发型发色、瞳色、脸型与年龄感、体型、服饰逐件(颜色、材质、款式、磨损或污渍)、配饰与手持物品、表情、视线方向、姿势与手部动作、在画面中的位置和彼此的相对位置；③场景的地点类型、室内或室外、空间大小与布局、背景与前景的每一件显眼物件(材质、颜色、状态)、地面与墙面、天气、时间、季节；④光源种类与方向、明暗对比、阴影落点、整体色调、烟雾灰尘水汽等空气质感，以及这一刻的情绪氛围。细节只能来自已交代的剧情和describe_characters的结果，不得为了凑细节编造剧情事实、人物设定或未鉴定的神话信息；纯环境空镜没有人物就不写人物。不要写"避免xxx"之类的负面提示。
-【风格规则】每张配图是一部连续日式ACG漫画里的一格，不是孤立的插画。统一日式ACG漫画画风(粗细有变化的墨线、赛璐璐上色、网点式阴影)，该画风由绘图代理统一附加，image_prompt里不必重复描述画风，只写这一格的内容。纯环境/痕迹类空镜同样按日式ACG漫画格来画。
-【分镜规则】一张图只画一个瞬间、一个单格：不要要求多格拼版、分栏或画面边框，不要要求对话气泡、拟声词或任何可读文字(画面里的文字会变成乱码，台词留给write)。用分镜的镜头语言选景别，并随剧情节奏变化：相邻两格不要重复同一景别和构图，每一格都应推进剧情(新的动作、新的反应、新的发现)，而不是换个角度重画上一格。
-【连续性规则】读者会把相邻的配图连起来当日式ACG漫画读。同一角色在每一格里必须保持同一套外貌：发型发色、瞳色、服装和显眼配饰逐项沿用describe_characters的结果和你前几格image_prompt里的写法，不要擅自换衣服或改发色(除非剧情里确实发生了改变)；绘图模型不记得前几格，所以每一格都要把人物外貌和场景陈设完整重写一遍，不能写"同上""与前几格一致"来省略；同一地点沿用已经出现过的标志性陈设和布局；人物的左右位置与视线方向在连续的几格里保持一致。
-【NSFW规则】必填参数nsfw(布尔)：本次画面若包含裸露、性暗示或露骨性描写等NSFW内容，必须如实设为true；不含这类内容或不确定时明确填false，不可省略。nsfw=true只在房间已开启NSFW开关时生效，房间未开启NSFW时该参数被忽略，按普通全年龄配图处理；房间已开启但未配置并启用NSFW配图代理(painter_nsfw)时，nsfw=true的调用会被直接拒绝且不会生成图片。
-【未知感规则】配图是玩家可见通道，同样受[UNKNOWN]约束。尚未被合法鉴定的神话实体、怪物与异常现象，禁止画出可辨认的正面全貌——正面肖像等于提前把答案交给玩家。这类对象只画它留下的痕迹与效果、事后现场、遮挡与局部(背光剪影、水下轮廓、门缝里的一部分)、它经过后的空环境，或目击者的反应；image_prompt里也不要写出它的正式名称、种族名与规则术语，用画面本身描述。已被完全鉴定或已正面遭遇过的对象不受此限制。
-【批次规则】generate_image可以与write/narrate同批次；返回结果只表示图片生成已排队，KP不需要也不能读取图片内容。
-调用示例：{"image_prompt":"低角度中景，镜头从书桌斜前方仰拍，画面重心落在人物上半身和他身后的房门。一位年迈的管家僵立在堆满散乱纸张的红木书桌旁，约六十岁，瘦高，背微驼，脸颊凹陷，皱纹很深，灰色侧分短发，眼珠是浅褐色，嘴唇紧抿；他身穿熨烫平整但袖口磨白的黑色燕尾服、白衬衫和黑色领结，胸前口袋露出一截怀表银链，左手端着一座插着半截白蜡烛的黄铜烛台，烛火向房门方向弯去，右手扶着桌沿，指节发白，肩膀绷紧，脖子前伸，视线死死盯着画面右侧的房门。背景是午夜昏暗的维多利亚式书房，两侧是顶到天花板的深色橡木书架，书脊褪色，书架前有一架带滑轨的木梯，书桌上有翻开的账簿、墨水瓶、羽毛笔和一只倒下的玻璃杯，深红色波斯地毯边缘卷起，右侧的房门半开，门缝里透出一线黑暗。光源只有烛火和墙上泛着病态绿光的煤气灯，暖黄的烛光在管家脸侧形成强烈明暗对比，绿光从左上方斜照在书架上，地毯和书桌下拖出长而深的阴影，空气中浮着细小的灰尘，整体色调阴冷压抑，气氛紧张。","aspect":"landscape","nsfw":false}`,
-			Parameters: jsonSchemaObject(`{
-				"type": "object",
-				"properties": {
-					"image_prompt": {"type": "string", "description": "中文画面描述,一段连贯的自然语言,不加标题、不用列表,长度不限,把人物外貌服饰表情姿势、场景布局物件、光线色调氛围等所有细节写全,越详细越好,不要省略,具体要求见工具说明"},
-					"aspect": {
-						"type": "string",
-						"enum": ["landscape", "portrait", "square"],
-						"description": "可选,画面方向。landscape=横图,适合场景全景、建筑外观、开阔环境、群像、战斗追逐的空间关系;portrait=竖图,适合单个角色立绘、近景特写、高耸或纵深的空间;square=方图,通用场景。省略时按square处理"
-					},
-					"nsfw": {
-						"type": "boolean",
-						"description": "必填。本次画面是否包含裸露、性暗示或露骨性描写等NSFW内容;如实标记"
-					}
-				},
-				"required": ["image_prompt", "nsfw"]
 			}`),
 		},
 	}

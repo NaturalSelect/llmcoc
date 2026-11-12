@@ -29,7 +29,7 @@ export const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
   // NOTE: npc_nsfw 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用，默认关闭。
   npc_nsfw: { max_tokens: 600, temperature: 0.9, is_active: false },
   painter: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
-  // NOTE: painter_nsfw 仅在 Director 把配图标记为 nsfw=true 时启用，默认关闭；未启用时这类配图请求会被拒绝。
+  // NOTE: painter_nsfw 仅在 Writer 把配图标记为 nsfw=true 时启用，默认关闭；未启用时这类配图请求会被拒绝。
   painter_nsfw: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
   // NOTE: painter_hq 只用于调查员立绘，默认关闭；未启用时立绘生成直接报错，不回落 Painter。
   painter_hq: { max_tokens: 0, temperature: 0, model_name: 'gpt-image-1', thinking_level: 'none', is_active: false },
@@ -75,15 +75,15 @@ const ROLE_LABELS: Record<string, string> = {
 
 const ROLE_DESCS: Record<string, string> = {
   director: '场景导演 — 决策工具调用序列',
-  writer: '叙事撰写 — 生成面向玩家的克苏鲁叙述（流式输出）；会看到 Director 的完整上下文，需选支持工具调用的模型',
+  writer: '叙事撰写 — 生成面向玩家的克苏鲁叙述（流式输出），并在正文里通过 paint 工具配图；会看到 Director 的完整上下文，需选支持工具调用的模型',
   writer_nsfw: '成人向叙事 — 仅在房间开启NSFW且本轮被标记为色情内容时启用；未配置或关闭时自动回落默认 Writer（默认关闭）；同样需选支持工具调用的模型',
   lawyer: '规则顾问 — 查阅规则书提供裁决依据',
   npc: 'NPC扮演 — 给出场景NPC的行动与对话',
   npc_nsfw: '成人向NPC互动 — 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用；未配置或关闭时自动回落默认 NPC（默认关闭）',
-  painter: '画图代理 — 按需生成场景图片（默认关闭，不落库）',
-  painter_nsfw: '成人向画图 — Director 把配图标记为 nsfw=true 时只路由到它；未启用时这类配图请求会被直接拒绝，不回落默认 Painter（默认关闭）',
+  painter: '画图代理 — 按 Writer 写正文时的 paint 调用生成配图，插入正文（默认关闭）',
+  painter_nsfw: '成人向画图 — Writer 把配图标记为 nsfw=true 时只路由到它；未启用时这类配图请求会被直接拒绝，不回落默认 Painter（默认关闭）',
   painter_hq: '持久画图 — 生成调查员立绘等长期保存的图片；未启用时立绘生成直接报错，不回落默认 Painter（默认关闭）',
-  diffusion_translator: '扩散提示词翻译 — Painter 开启扩散模型模式时，把导演的自然语言画面描述翻译成标签式提示词；未启用时扩散模式的配图会失败',
+  diffusion_translator: '扩散提示词翻译 — Painter 开启扩散模型模式时，把 Writer 的自然语言画面描述翻译成标签式提示词；未启用时扩散模式的配图会失败',
   architect: '模组设计 — 生成大纲并转化为完整JSON模组',
   qa_guard: '质量审查 — 审查模组可玩性、规则合规与线索设计',
   parser: 'JSON修复 — 低温度结构化输出，修复其他Agent的JSON格式错误',

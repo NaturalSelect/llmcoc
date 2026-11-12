@@ -553,7 +553,7 @@ type MessageKind string
 const (
 	MessageKindPlayer MessageKind = "player" // 玩家本轮声明的行动
 	MessageKindWriter MessageKind = "writer" // KP 的一次 write：由 Writer 展开的白字正文
-	MessageKindImage  MessageKind = "image"  // KP 的一次 generate_image：Painter 出的配图
+	MessageKindImage  MessageKind = "image"  // 旧数据：早期 KP 的一次 generate_image 产生的独立配图消息，新对局的配图在 writer 消息的 meta.illustrations 里
 	MessageKindKP     MessageKind = "kp"     // KP 的一次 narrate 或 end_game 的回复
 	MessageKindAsk    MessageKind = "ask"    // KP 的一次 ask_players：点名并交出发言权
 	MessageKindSystem MessageKind = "system" // 加入/离开/复活等系统提示
@@ -604,6 +604,15 @@ type AskMeta struct {
 	Names   []string `json:"names"`
 }
 
+// Illustration 是 writer 正文里一张配图的结果，Slot 对应正文里的 illust://<Slot>。
+// NOTE: pending 不落库：正文里有占位而 meta 里没有对应条目，就表示还在画。
+type Illustration struct {
+	Slot   int    `json:"slot"`
+	Status string `json:"status"` // done | failed
+	Hash   string `json:"hash,omitempty"`
+	NSFW   bool   `json:"nsfw,omitempty"`
+}
+
 // MessageMeta 是 kp/ask/writer 消息的结构化附加信息，正文里不再内嵌 options/dice 之类的标签。
 type MessageMeta struct {
 	Options   []string    `json:"options,omitempty"` // ask: 玩家询问时 KP 给的推荐行动
@@ -616,6 +625,8 @@ type MessageMeta struct {
 	Error     string      `json:"error,omitempty"`   // status=failed 时的原因
 	Events    []GameEvent `json:"events,omitempty"`  // event: 本轮工具事件，按调用顺序
 	CallID    string      `json:"call_id,omitempty"` // writer: 对应的 write 调用 ID(自动补写的是来源 narrate/ask 调用)，Writer 视图靠它把正文挂回 Director 的工具结果
+
+	Illustrations []Illustration `json:"illustrations,omitempty"` // writer: 正文里 illust://<slot> 占位对应的配图结果
 }
 
 // NOTE: Message records a single chat message sent within a game session.
@@ -772,7 +783,7 @@ const (
 	// 标记为色情内容时才路由过去，可绑定独立的provider/模型，未配置或未启用时自动回落默认NPC。
 	AgentRoleNPCNSFW AgentRole = "npc_nsfw"
 	AgentRolePainter AgentRole = "painter"
-	// NOTE: AgentRolePainterNSFW 是可选的成人向配图 Agent；Director 标记 nsfw=true 的 generate_image 只路由到它，
+	// NOTE: AgentRolePainterNSFW 是可选的成人向配图 Agent；Writer 的 paint 调用标记 nsfw=true 时只路由到它，
 	// 未启用时这类请求直接被拒绝，不回落默认 Painter。它取代了原先的管理员「允许 NSFW 配图」全局开关。
 	AgentRolePainterNSFW AgentRole = "painter_nsfw"
 	// NOTE: AgentRolePainterHQ 是立绘等持久图片专用的画图 Agent；未启用或未绑定 provider 时立绘直接报错，不回落默认 Painter。

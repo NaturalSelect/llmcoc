@@ -10,36 +10,6 @@ import (
 	"github.com/llmcoc/server/internal/services/llm"
 )
 
-type generateImageAction struct{}
-
-func (generateImageAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	imagePrompt := strings.TrimSpace(call.ImagePrompt)
-	if imagePrompt == "" {
-		debugf("tool", "session=%d generate_image rejected: empty image_prompt", actx.Sid)
-		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation failed: image_prompt is required"}}
-	}
-	aspect := normalizeImageAspect(call.Aspect)
-
-	nsfw := actx.GCtx.Session.EnableNSFW && call.NSFW
-	handle, ok := pickPainterHandle(actx.Handles, nsfw)
-	if !ok {
-		if nsfw {
-			debugf("tool", "session=%d generate_image rejected: painter_nsfw disabled prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
-			return []ToolResult{{Action: ToolGenerateImage, Result: "image generation rejected: NSFW image generation is not enabled"}}
-		}
-		debugf("tool", "session=%d generate_image unavailable: painter disabled prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
-		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation unavailable"}}
-	}
-	if _, ok := handle.provider.(llm.ImageGenerator); !ok {
-		debugf("tool", "session=%d generate_image unavailable: provider lacks image generation prompt_len=%d prompt=%q", actx.Sid, len([]rune(imagePrompt)), truncateRunes(imagePrompt, 200))
-		return []ToolResult{{Action: ToolGenerateImage, Result: "image generation unavailable"}}
-	}
-	req := ImagePromptRequest{Prompt: imagePrompt, Aspect: aspect, NSFW: nsfw}
-	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputImage, Image: &req, NSFW: nsfw})
-	debugf("tool", "session=%d generate_image queued prompt_len=%d aspect=%s nsfw=%v prompt=%q", actx.Sid, len([]rune(imagePrompt)), aspect, nsfw, imagePrompt)
-	return []ToolResult{{Action: ToolGenerateImage, Result: "image generation queued"}}
-}
-
 // pickPainterHandle 选择本次配图使用的 Painter:nsfw 请求只路由到 painter_nsfw,
 // 它未配置或未启用时返回 false,不回落默认 Painter,避免成人向画面被送进受限的图片模型。
 func pickPainterHandle(handles map[models.AgentRole]agentHandle, nsfw bool) (agentHandle, bool) {
@@ -54,7 +24,7 @@ func painterRoleFor(nsfw bool) models.AgentRole {
 	return models.AgentRolePainter
 }
 
-// normalizeImageAspect 校验/归一化 Director 传入的 aspect 参数;非法或未识别值一律
+// normalizeImageAspect 校验/归一化 LLM 传入的 aspect 参数;非法或未识别值一律
 // 回落方图,因为这是 LLM 不可信输入进入系统的边界,不能把乱填值透传给 Provider。
 func normalizeImageAspect(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
@@ -65,43 +35,6 @@ func normalizeImageAspect(raw string) string {
 	default:
 		return string(llm.ImageAspectSquare)
 	}
-}
-
-type describeCharactersAction struct{}
-
-func (describeCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	names := sanitizeImageCharacters(call.Characters)
-	if len(names) == 0 {
-		return []ToolResult{{Action: ToolDescribeCharacters, Result: "没有提供角色名。"}}
-	}
-	if actx.GCtx == nil {
-		return []ToolResult{{Action: ToolDescribeCharacters, Result: fallbackMissingCharacterVisualDescription(names)}}
-	}
-	cards := collectImagePromptCharacterCards(names, actx.GCtx.Session.Players)
-	if len(cards) == 0 {
-		return []ToolResult{{Action: ToolDescribeCharacters, Result: fallbackMissingCharacterVisualDescription(names)}}
-	}
-
-	description := ""
-	nsfw := actx.GCtx.Session.EnableNSFW && call.NSFW
-	writerHandle, nsfwMode, err := pickWriterHandle(actx.Handles, nsfw)
-	if err == nil {
-		ctx := actx.Ctx
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		ctx = withWriterGameSessionID(ctx, *actx.GCtx)
-		description, err = writeImagePromptCharacterVisualDescription(ctx, writerHandle, "", fmt.Sprintf("%v", actx.GCtx.Session.ID), cards, nsfwMode)
-	}
-	if err != nil {
-		debugf("tool", "session=%d describe_characters writer fallback matched_character_count=%d err=%v", actx.Sid, len(cards), err)
-	}
-	description = strings.TrimSpace(description)
-	if description == "" {
-		description = fallbackCharacterVisualDescriptions(cards)
-	}
-	debugf("tool", "session=%d describe_characters result_len=%d requested_count=%d matched_character_count=%d nsfw=%v", actx.Sid, len([]rune(description)), len(names), len(cards), nsfwMode)
-	return []ToolResult{{Action: ToolDescribeCharacters, Result: description}}
 }
 
 const imageSysPrompt = `
@@ -137,7 +70,7 @@ func RunPainter(ctx context.Context, gctx GameContext, request ImagePromptReques
 		return "", fmt.Errorf("%s agent 未配置或未启用", painterRoleFor(request.NSFW))
 	}
 	aspect := normalizeImageAspect(request.Aspect)
-	// NOTE: request.NSFW 已在 generateImageAction 经房间开关过滤,这里只按请求渲染分级,不能再并房间开关,否则房间开启时普通配图也会被画成 NSFW。
+	// NOTE: request.NSFW 由调用方按房间开关过滤,这里只按请求渲染分级,不能再并房间开关,否则房间开启时普通配图也会被画成 NSFW。
 	debugf("Painter", "session=%d start prompt_len=%d aspect=%s nsfw=%v prompt=%q", gctx.Session.ID, len([]rune(prompt)), aspect, request.NSFW, prompt)
 	dataURL, err := paintImage(withWriterGameSessionID(ctx, gctx), handle, handles[models.AgentRoleDiffusionTranslator],
 		fmt.Sprintf("%v", gctx.Session.ID), prompt, imageSysPrompt, llm.ImageAspect(aspect), request.NSFW)
@@ -187,68 +120,6 @@ func paintImage(ctx context.Context, painter, translator agentHandle, cacheSessi
 	return dataURL, nil
 }
 
-func sanitizeImageCharacters(names []string) []string {
-	result := make([]string, 0, len(names))
-	seen := make(map[string]bool, len(names))
-	for _, name := range names {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		key := strings.ToLower(name)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		result = append(result, name)
-	}
-	return result
-}
-
-func collectImagePromptCharacterCards(names []string, players []models.SessionPlayer) []models.CharacterCard {
-	names = sanitizeImageCharacters(names)
-	if len(names) == 0 || len(players) == 0 {
-		return nil
-	}
-	cards := make([]models.CharacterCard, 0, len(names))
-	usedCards := map[uint]bool{}
-	for _, name := range names {
-		card, ok := findImagePromptCharacterCard(name, players, usedCards)
-		if !ok {
-			continue
-		}
-		if card.ID != 0 {
-			usedCards[card.ID] = true
-		}
-		cards = append(cards, card)
-	}
-	return cards
-}
-
-func findImagePromptCharacterCard(name string, players []models.SessionPlayer, usedCards map[uint]bool) (models.CharacterCard, bool) {
-	name = strings.TrimSpace(name)
-	for _, p := range players {
-		card := p.CharacterCard
-		if card.ID != 0 && usedCards[card.ID] {
-			continue
-		}
-		if strings.TrimSpace(card.Name) == name {
-			return card, true
-		}
-	}
-	lowerName := strings.ToLower(name)
-	for _, p := range players {
-		card := p.CharacterCard
-		if card.ID != 0 && usedCards[card.ID] {
-			continue
-		}
-		if strings.ToLower(strings.TrimSpace(card.Name)) == lowerName {
-			return card, true
-		}
-	}
-	return models.CharacterCard{}, false
-}
-
 const imagePromptCharacterVisualSystemPrompt = `你是 Writer 代理，负责为配图整理角色外貌素材。
 
 只输出中文外貌描写，把角色卡里能看到的外貌细节写全，不要遗漏，一段话或几条要点即可。
@@ -284,7 +155,7 @@ func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHand
 
 func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []models.CharacterCard) string {
 	var sb strings.Builder
-	sb.WriteString("任务：把下列玩家角色卡数据整理成完整的中文外貌描写，供配图使用，角色卡里可见的外貌细节不要遗漏。Director 会把这段文字直接写进后续的 image_prompt。外貌以 Appearance 为主要来源；装备栏是角色当前穿戴或手持的物品，可以写进外貌描写。省略物品属性、神话/背景设定名称、规则、头衔、隐藏铭文、括号里的元数据，以及一切不明确可见、穿戴或手持的内容。\n\n")
+	sb.WriteString("任务：把下列玩家角色卡数据整理成完整的中文外貌描写，供配图使用，角色卡里可见的外貌细节不要遗漏。这段文字会被直接写进后续的绘图提示词。外貌以 Appearance 为主要来源；装备栏是角色当前穿戴或手持的物品，可以写进外貌描写。省略物品属性、神话/背景设定名称、规则、头衔、隐藏铭文、括号里的元数据，以及一切不明确可见、穿戴或手持的内容。\n\n")
 	if scene := compactPromptText(scenePrompt); scene != "" {
 		sb.WriteString("画面描述（仅用于挑选相关的外貌特征）：")
 		sb.WriteString(scene)
@@ -320,33 +191,6 @@ func buildImagePromptCharacterVisualUserPrompt(scenePrompt string, cards []model
 		}
 	}
 	return sb.String()
-}
-
-func fallbackCharacterVisualDescriptions(cards []models.CharacterCard) string {
-	lines := make([]string, 0, len(cards))
-	for _, card := range cards {
-		name := compactPromptText(card.Name)
-		if name == "" {
-			name = "未命名调查员"
-		}
-		appearance := compactPromptText(card.Appearance)
-		equipped := compactPromptText(equippedLabels(card.Inventory.Data))
-		switch {
-		case appearance == "" && equipped == "":
-			lines = append(lines, fmt.Sprintf("%s：角色卡没有记录外貌细节。", name))
-		case appearance == "":
-			lines = append(lines, fmt.Sprintf("%s：角色卡没有记录外貌细节。装备：%s", name, equipped))
-		case equipped == "":
-			lines = append(lines, fmt.Sprintf("%s：角色卡记录的外貌为：%s", name, appearance))
-		default:
-			lines = append(lines, fmt.Sprintf("%s：角色卡记录的外貌为：%s；装备：%s", name, appearance, equipped))
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func fallbackMissingCharacterVisualDescription(names []string) string {
-	return "没有找到匹配的调查员角色卡：" + strings.Join(names, "、") + "。"
 }
 
 func compactPromptText(text string) string {

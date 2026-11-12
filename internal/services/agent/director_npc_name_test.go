@@ -55,8 +55,7 @@ func TestDirectorBatchPolicyNPCNameSequencing(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			imageDone := false
-			policy := noEncounterBatchPolicy(&imageDone)
+			policy := noEncounterBatchPolicy()
 			calls := make([]llm.ToolCall, 0, len(tc.calls))
 			for _, name := range tc.calls {
 				calls = append(calls, policyCall(name, npcNamePolicyArgs(name)))

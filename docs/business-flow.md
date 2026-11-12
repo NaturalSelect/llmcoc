@@ -85,7 +85,7 @@ LLM-COC 是一个房间制 COC7 在线跑团服务。核心用户是玩家和管
 8. 房主或管理员可以随时调用 `kp-turn` 让 KP 继续：未回应的被点名者会被跳过，已提交的声明仍会交给 KP。
 9. `/chat`、`/kp-turn`、`/kp-stop` 都立即返回 202。KP 的全部进展通过房间 WebSocket（`GET /sessions/:id/ws`）广播给每个在线的人，事件与断线重连规则见 `docs/realtime-protocol.md`。
 10. 战斗和追逐中，DEX 顺序只是建议，KP 可以点名任何还没行动的参与者；PC 必须先提交声明才能结算。
-11. Agent 的每次产出落成独立消息：Writer 叙事（`writer`）、配图（`image`）、KP 回复（`kp`）、点名（`ask`），带 `kind`、`status`、`floor`、`meta` 字段。writer 先以 `pending` 落库并广播，异步补全后变 `done` 或 `failed`；image 不先落库，画完（或失败）才落库并广播，前端不会看到“配图生成中”的占位，配图按画完的先后排在已有消息之后，`GET /messages` 里也没有还没画完的图。Writer 按会话排队依次生成；KP 只发 write 的那一轮不等它，但之后要发布 KP 回复或点名时，会先等已发布的 Writer 全部写完，保证玩家先读到叙事再被提问。kp-stop 会立刻结束这次等待，已发布的 Writer 消息仍会写完。客户端断线后，服务端仍会跑完周期并落库。
+11. Agent 的每次产出落成独立消息：Writer 叙事（`writer`）、KP 回复（`kp`）、点名（`ask`），带 `kind`、`status`、`floor`、`meta` 字段。writer 先以 `pending` 落库并广播，异步补全后变 `done` 或 `failed`。配图由 Writer 在写正文时调用 `paint` 工具完成：工具立即返回占位地址 `illust://<n>`，Writer 把它写成 markdown 图片放进正文，图片在后台并发绘制，画完（或失败）后写进这条消息的 `meta.illustrations` 并广播 `illustration` 事件，前端在占位处显示“配图生成中”，画完替换成图片，失败的不显示；点名和 KP 叙事不等配图。旧对局里已有的独立 `image` 消息照常显示，新对局不再产生。Writer 按会话排队依次生成；KP 只发 write 的那一轮不等它，但之后要发布 KP 回复或点名时，会先等已发布的 Writer 全部写完，保证玩家先读到叙事再被提问。kp-stop 会立刻结束这次等待，已发布的 Writer 消息仍会写完。客户端断线后，服务端仍会跑完周期并落库。
 12. 房主或管理员可结束游戏；结束时扣除金币，只发基础奖励并恢复角色状态，没有评分和成长。KP 通过 `end_game` 自然结束时在 `settlement` 里给每位调查员评分并报告用过的技能，金币按评分折算，胜利时对报告的技能做成长检定。
 13. 管理员可以复活已结束房间，系统写入复活系统消息。
 

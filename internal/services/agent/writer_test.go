@@ -364,7 +364,7 @@ func TestAppendWriterStream_MidStreamEOFDiscardsPartialAndRetries(t *testing.T) 
 
 	var restarts int
 	var forwarded strings.Builder
-	ctx := WithWriterRestart(context.Background(), func() {
+	ctx := WithWriterRestart(context.Background(), func(int) {
 		restarts++
 		forwarded.Reset()
 	})
@@ -429,7 +429,7 @@ func TestAppendWriterStream_MidStreamEOFExhaustsAttempts(t *testing.T) {
 	state := &WriterState{}
 
 	var restarts int
-	ctx := WithWriterRestart(context.Background(), func() { restarts++ })
+	ctx := WithWriterRestart(context.Background(), func(int) { restarts++ })
 	err := callAppendWriterStream(ctx, h, state, func(string) {})
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("err = %v, want unexpected EOF after exhausting attempts", err)
@@ -458,7 +458,7 @@ func TestAppendWriterStream_NonEOFStreamErrorIsNotRetried(t *testing.T) {
 	state := &WriterState{}
 
 	var restarts int
-	ctx := WithWriterRestart(context.Background(), func() { restarts++ })
+	ctx := WithWriterRestart(context.Background(), func(int) { restarts++ })
 	err := callAppendWriterStream(ctx, h, state, func(string) {})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want boom", err)
@@ -490,7 +490,7 @@ func TestAppendWriterStream_MidStreamEOFStopsOnContextCancel(t *testing.T) {
 	state := &WriterState{}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	ctx = WithWriterRestart(ctx, cancel)
+	ctx = WithWriterRestart(ctx, func(int) { cancel() })
 	err := callAppendWriterStream(ctx, h, state, func(string) {})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
@@ -628,8 +628,8 @@ func TestWriterSystemPromptFollowsNSFWMode(t *testing.T) {
 	initSiteSettingTestDB(t)
 	h := newWriterTestHandle(&writerFakeProvider{})
 
-	on := writerSystemPrompt(h, true)
-	off := writerSystemPrompt(h, false)
+	on := writerSystemPrompt(h, true, false)
+	off := writerSystemPrompt(h, false, false)
 
 	for _, sys := range []string{on, off} {
 		if strings.Contains(sys, "explicit_scene_requirements") {
@@ -651,8 +651,8 @@ func TestWriterSystemPromptFollowsNSFWMode(t *testing.T) {
 func TestBuildWriterInstruction(t *testing.T) {
 	gctx := GameContext{Session: models.GameSession{ID: 1, EnableNSFW: true}}
 
-	off := buildWriterInstruction(WriterRequest{Direction: "继续描述", CallID: "call_7"}, gctx, false)
-	on := buildWriterInstruction(WriterRequest{Direction: "继续描述"}, gctx, true)
+	off := buildWriterInstruction(WriterRequest{Direction: "继续描述", CallID: "call_7"}, gctx, false, false)
+	on := buildWriterInstruction(WriterRequest{Direction: "继续描述"}, gctx, true, false)
 
 	if off.Role != "user" {
 		t.Errorf("instruction role = %q, want user", off.Role)

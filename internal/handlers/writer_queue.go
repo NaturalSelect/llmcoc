@@ -1,11 +1,12 @@
 package handlers
 
-// NOTE: Director 发布的 writer 消息先以 pending 落库，这里负责补全正文；image 消息则画完才落库。Director 的工具循环不等它们，
+// NOTE: Director 发布的 writer 消息先以 pending 落库，这里负责补全正文。Director 的工具循环不等它，
 // 但同一周期里之后的 kp/ask 消息要等 Writer 队列写完才发布（见 publishRound），玩家先读到叙事再被提问。
-// writer 落库即广播 message_new，再靠 message_update 补全；image 画完才落库并以 message_new 推送，所以客户端看到的顺序就是推送顺序，
-// 配图排在画完那一刻已有的消息之后，不会跳到上面，GET /messages 里也不会有未画完的图。
+// writer 落库即广播 message_new，再靠 message_update 补全。
 // Writer 每个会话一个 FIFO 队列：一条 writer 消息对应一次 RunWriterStream，请求里带着 Director 在发布那一轮时的消息链快照，
-// 队列串行保证前一条正文先落库、下一条再把它附到自己的视图里。Painter 不排队，每条 image 消息各自并发生成。
+// 队列串行保证前一条正文先落库、下一条再把它附到自己的视图里。
+// Writer 写正文时可以调用 paint 配图：每次调用立即拿到 illust://<slot> 占位地址，图片在后台并发出图（不排队、不随 kp-stop 取消），
+// 画完后写进这条消息的 meta.illustrations 并广播 illustration 事件，正文里的占位由前端按 meta 解析；kp/ask 不等配图。
 // 房主打断（kp-stop）不会取消这里的任务，因为对应的消息已经对玩家可见。
 // 流式正文按 writerTokenFlushInterval 合并成 writer_token 帧，帧里带 UTF-16 偏移；连接建立时 WS 会补发正在生成的全文，
 // 断线重连或进房时客户端都能接上，不会因为漏了中间的 token 就停在半截。
@@ -17,8 +18,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
-	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/imagestore"
@@ -28,8 +29,10 @@ const (
 	writerJobTimeout  = 600 * time.Second
 	painterJobTimeout = 600 * time.Second
 
-	writerFailedText  = "叙事生成失败"
-	painterFailedText = "配图生成失败"
+	writerFailedText = "叙事生成失败"
+
+	illustrationDone   = "done"
+	illustrationFailed = "failed"
 
 	// NOTE: 网关常把几百个 token 一次性吐出来，逐 token 广播会瞬间塞满订阅者队列(hubSubscriberQueue)，
 	// 整个房间的连接都被当成慢消费者踢掉。合并后每个连接每秒最多收到约 10 帧正文。
@@ -54,6 +57,8 @@ var writerQueues = struct {
 	m  map[uint]*writerQueue
 }{m: make(map[uint]*writerQueue)}
 
+var settleMu sync.Mutex
+
 // writerTokenEvent 是 writer_token 事件的载荷：Text 从正文的第 Offset 个 UTF-16 码元开始(与浏览器字符串下标一致)。
 type writerTokenEvent struct {
 	MessageID uint   `json:"message_id"`
@@ -61,9 +66,11 @@ type writerTokenEvent struct {
 	Text      string `json:"text"`
 }
 
-// writerResetEvent 是 writer_reset 事件的载荷：这条消息已广播的流式正文作废，客户端清掉本地拼接的内容。
+// writerResetEvent 是 writer_reset 事件的载荷：这条消息已广播的流式正文有一部分作废，客户端只保留前 Offset 个 UTF-16 码元。
+// Offset 为 0 表示整段清空(流中途断开后整段重新请求)；大于 0 表示只撤回当前续写轮，此前各轮已经写出的正文保留。
 type writerResetEvent struct {
 	MessageID uint `json:"message_id"`
+	Offset    int  `json:"offset"`
 }
 
 // liveWriter 是会话里正在生成的那条 writer 消息的已生成正文，供合并广播和新连接补发。
@@ -108,14 +115,35 @@ func (lw *liveWriter) append(token string) {
 	}
 }
 
-// reset 丢弃已生成的正文并通知客户端：流中途断开后 Writer 会整段重新请求，半截正文不能和重试的正文拼在一起。
-func (lw *liveWriter) reset() {
+// resetTo 把已生成的正文截断到前 keepBytes 个字节并通知客户端：流中途断开后 Writer 会重新请求(整段或只重发当前续写轮)，
+// 半截正文不能和重试的正文拼在一起。keepBytes 为 0 就是整段清空。
+func (lw *liveWriter) resetTo(keepBytes int) {
 	lw.mu.Lock()
 	defer lw.mu.Unlock()
+	s := lw.text.String()
+	if keepBytes > len(s) {
+		keepBytes = len(s)
+	}
+	for keepBytes > 0 && keepBytes < len(s) && !utf8.RuneStart(s[keepBytes]) {
+		keepBytes--
+	}
+	kept := s[:keepBytes]
 	lw.text.Reset()
-	lw.units, lw.sentBytes, lw.sentUnits = 0, 0, 0
+	lw.text.WriteString(kept)
+	lw.units = utf16Len(kept)
+	if lw.sentBytes > keepBytes {
+		lw.sentBytes, lw.sentUnits = keepBytes, lw.units
+	}
 	// NOTE: 持锁广播，和 flush 一样保证 reset 与前后的 writer_token 帧按顺序进入 hub。
-	hubFor(lw.sessionID).Ephemeral("writer_reset", writerResetEvent{MessageID: lw.messageID})
+	hubFor(lw.sessionID).Ephemeral("writer_reset", writerResetEvent{MessageID: lw.messageID, Offset: lw.units})
+}
+
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		n += utf16.RuneLen(r)
+	}
+	return n
 }
 
 // flush 把还没广播的正文作为一帧 writer_token 发出去。
@@ -220,7 +248,9 @@ func (h *SessionHandlers) runWriterTask(sessionID uint, task writerTask) {
 			}
 		}
 	}()
-	ctx = agent.WithWriterRestart(ctx, lw.reset)
+	ctx = agent.WithWriterRestart(ctx, lw.resetTo)
+	sink := &illustrationSink{h: h, sessionID: sessionID, messageID: task.messageID, gctx: task.gctx}
+	ctx = agent.WithWriterIllustrator(ctx, sink.start)
 	text, err := h.Runner.RunWriterStream(ctx, task.gctx, task.req, func(token string) {
 		if token != "" {
 			lw.append(token)
@@ -263,17 +293,70 @@ func finishWriterMessage(messageID uint, text string, runErr error) {
 	}
 }
 
-// runPainterTask 为一条还没落库的 image 消息生成图片；画完(或失败)后才由 finishImageMessage 落库并推送。
-func (h *SessionHandlers) runPainterTask(msg models.Message, gctx agent.GameContext, request agent.ImagePromptRequest) {
+// illustrationSink 给一条 writer 消息分配配图占位：Writer 每调用一次 paint，就在后台起一个出图任务并返回 illust://<slot>。
+type illustrationSink struct {
+	h         *SessionHandlers
+	sessionID uint
+	messageID uint
+	gctx      agent.GameContext
+
+	mu   sync.Mutex
+	next int
+}
+
+func (s *illustrationSink) start(req agent.ImagePromptRequest) string {
+	s.mu.Lock()
+	s.next++
+	slot := s.next
+	s.mu.Unlock()
+	go s.h.runIllustration(s.sessionID, s.messageID, slot, s.gctx, req)
+	return agent.IllustrationPlaceholder(slot)
+}
+
+// illustrationEvent 是 illustration 事件的载荷：正文里 illust://<Slot> 的配图画完(Status=done，带 Hash)或失败。
+type illustrationEvent struct {
+	MessageID uint   `json:"message_id"`
+	Slot      int    `json:"slot"`
+	Status    string `json:"status"`
+	Hash      string `json:"hash,omitempty"`
+}
+
+// runIllustration 画一张配图并把结果写进消息的 meta.illustrations，再广播 illustration 事件。
+// 它不随 kp-stop 取消：对应的 writer 消息已经对玩家可见，正文里的占位总要有个结果。
+func (h *SessionHandlers) runIllustration(sessionID, messageID uint, slot int, gctx agent.GameContext, req agent.ImagePromptRequest) {
 	ctx, cancel := context.WithTimeout(context.Background(), painterJobTimeout)
 	defer cancel()
 	start := time.Now()
-	ref, err := h.paint(ctx, gctx, request)
+	ill := models.Illustration{Slot: slot, Status: illustrationDone, NSFW: req.NSFW}
+	ref, err := h.paint(ctx, gctx, req)
 	if err != nil {
-		chatLog.Error("painter task failed", "session", gctx.Session.ID,
+		chatLog.Error("illustration failed", "session", sessionID, "message", messageID, "slot", slot,
 			"elapsed_ms", float64(time.Since(start).Milliseconds()), "err", err)
+		ill.Status = illustrationFailed
+	} else {
+		ill.Hash = ref.Hash
 	}
-	finishImageMessage(msg, ref, err)
+	if _, err := settleMessage(messageID, func(m *models.Message) { setIllustration(m, ill) }); err != nil {
+		chatLog.Error("illustration save failed", "session", sessionID, "message", messageID, "slot", slot, "err", err)
+		return
+	}
+	hubFor(sessionID).Publish("illustration", illustrationEvent{MessageID: messageID, Slot: slot, Status: ill.Status, Hash: ill.Hash})
+}
+
+func setIllustration(m *models.Message, ill models.Illustration) {
+	meta := m.Meta.Data
+	if meta == nil {
+		meta = &models.MessageMeta{}
+	}
+	for i := range meta.Illustrations {
+		if meta.Illustrations[i].Slot == ill.Slot {
+			meta.Illustrations[i] = ill
+			m.Meta.Data = meta
+			return
+		}
+	}
+	meta.Illustrations = append(meta.Illustrations, ill)
+	m.Meta.Data = meta
 }
 
 func (h *SessionHandlers) paint(ctx context.Context, gctx agent.GameContext, request agent.ImagePromptRequest) (storedImageRef, error) {
@@ -296,27 +379,11 @@ func (h *SessionHandlers) paint(ctx context.Context, gctx agent.GameContext, req
 	return storedImageRef{Hash: stored.Hash, MIME: stored.MIME}, nil
 }
 
-// finishImageMessage 在画完后才把 image 消息落库并以 message_new 推给房间：id 和 created_at 是画完那一刻的，
-// 客户端按 id 排序时它排在已有消息之后，和推送顺序一致。err 非空时落成 failed，同样推送，客户端据此显示失败。
-func finishImageMessage(msg models.Message, ref storedImageRef, runErr error) {
-	msg.Status = models.MessageStatusDone
-	errText := ""
-	if runErr != nil {
-		msg.Status = models.MessageStatusFailed
-		errText = painterFailedText
-	} else {
-		msg.Content = appendInternalImageTags("", []storedImageRef{ref}, nil)
-	}
-	setMessageError(&msg, errText)
-	if err := models.DB.Create(&msg).Error; err != nil {
-		chatLog.Error("image message save failed", "session", msg.SessionID, "err", err)
-		return
-	}
-	hubFor(msg.SessionID).Publish("message_new", gin.H{"message": newMessageResponse(msg)})
-}
-
 // settleMessage 读出消息、交给 apply 修改，再只回写 content/status/meta 三列，返回修改后的消息。
+// NOTE: Writer 收尾和各张配图完成会对同一条消息的 meta 做读-改-写，必须串行，否则后写的会覆盖先写的。
 func settleMessage(messageID uint, apply func(m *models.Message)) (models.Message, error) {
+	settleMu.Lock()
+	defer settleMu.Unlock()
 	var msg models.Message
 	if err := models.DB.First(&msg, messageID).Error; err != nil {
 		return msg, err

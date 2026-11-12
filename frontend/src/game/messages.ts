@@ -57,6 +57,26 @@ export function askNames(msg: RoomMessage): string[] {
   return Array.isArray(ask?.names) ? ask.names.map(String) : []
 }
 
+export interface IllustrationView {
+  status: 'done' | 'failed'
+  url?: string
+}
+
+const IMAGE_HASH_RE = /^[0-9a-f]{64}$/
+
+// NOTE: 正文里有 illust://n 而这里没有 n，表示还在画（pending 不落库）；done 但 hash 不合法的条目不给 url，渲染时当作失败处理
+export function illustrationsOf(msg: RoomMessage | null | undefined): Record<number, IllustrationView> {
+  const list = msg?.meta?.illustrations
+  const out: Record<number, IllustrationView> = {}
+  if (!Array.isArray(list)) return out
+  for (const it of list) {
+    if (!it || !Number.isInteger(it.slot) || (it.status !== 'done' && it.status !== 'failed')) continue
+    const ok = it.status === 'done' && typeof it.hash === 'string' && IMAGE_HASH_RE.test(it.hash)
+    out[it.slot] = ok ? { status: 'done', url: `/api/images/${it.hash}` } : { status: it.status }
+  }
+  return out
+}
+
 export function isEndedMessage(msg: RoomMessage): boolean {
   return !!(msg.meta as { ended?: unknown } | null | undefined)?.ended
 }

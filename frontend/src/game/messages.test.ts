@@ -4,6 +4,7 @@ import {
   currentGameTime,
   diceOf,
   directorTiming,
+  illustrationsOf,
   isEndedMessage,
   isMyMessage,
   messageError,
@@ -100,6 +101,42 @@ describe('messages', () => {
     expect(messageError({ id: 1 })).toBe('')
     expect(directorTiming({ id: 1 })).toBeNull()
     expect(directorTiming({ id: 1, director_elapsed_ms: 4200, director_steps: 3 })).toStrictEqual({ elapsedMs: 4200, steps: 3 })
+  })
+
+  test('illustrationsOf：按 slot 收窄配图结果，只有 done 且 hash 合法才给出地址', () => {
+    const hash = 'f0'.repeat(32)
+    const msg = {
+      id: 1,
+      kind: 'writer',
+      meta: {
+        illustrations: [
+          { slot: 1, status: 'done', hash },
+          { slot: 2, status: 'failed' },
+          { slot: 3, status: 'done', hash: 'ZZ' + hash.slice(2) },
+          { slot: 4, status: 'done', hash: hash.toUpperCase() },
+          { slot: 5, status: 'done' },
+          { slot: 6, status: 'failed', hash },
+          { slot: '7', status: 'done', hash },
+          { slot: 8, status: 'pending', hash },
+          null,
+        ],
+      },
+    } as unknown as RS.RoomMessage
+    expect(illustrationsOf(msg)).toStrictEqual({
+      1: { status: 'done', url: `/api/images/${hash}` },
+      2: { status: 'failed' },
+      3: { status: 'done' },
+      4: { status: 'done' },
+      5: { status: 'done' },
+      6: { status: 'failed' },
+    })
+  })
+
+  test('illustrationsOf：没有 meta、meta 没有配图或类型不对时返回空对象', () => {
+    expect(illustrationsOf(null)).toStrictEqual({})
+    expect(illustrationsOf({ id: 1 })).toStrictEqual({})
+    expect(illustrationsOf({ id: 1, meta: {} })).toStrictEqual({})
+    expect(illustrationsOf({ id: 1, meta: { illustrations: 'x' as unknown as [] } })).toStrictEqual({})
   })
 
   test('stripLegacyTags：清掉旧消息正文里混入的内部标签', () => {

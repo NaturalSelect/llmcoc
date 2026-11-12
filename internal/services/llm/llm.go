@@ -147,6 +147,13 @@ type Embedder interface {
 	Embed(ctx context.Context, texts []string) ([][]float32, error)
 }
 
+// NOTE: ToolStreamer 是可选能力：tool_choice=auto 的流式对话，文本增量实时回调 onText，
+// 返回聚合结果（含 ToolCalls、推理、Usage）。和 ChatStream 一样，只有在尚未收到任何事件就失败时才整体重试；
+// 流开始后出错，把已聚合的部分结果连同 err 一起返回。
+type ToolStreamer interface {
+	ChatStreamTools(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition, onText func(string)) (ToolChatResult, error)
+}
+
 // NewProviderFromConfig creates a provider from a DB-stored LLMProviderConfig.
 func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, thinkingBudgetTokens int, imageViaChat bool) Provider {
 	return newProviderByType(cfg.Provider, cfg.APIKey, cfg.BaseURL, modelName, maxTokens, temperature, disableTemperature, reasoningEffort, thinkingBudgetTokens, imageViaChat)

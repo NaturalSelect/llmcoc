@@ -239,8 +239,7 @@ func TestAskPlayersPendingClarificationMustBeTargeted(t *testing.T) {
 
 func TestDirectorBatchPolicyAskPlayers(t *testing.T) {
 	t.Run("ask_players可与write和状态更新同批", func(t *testing.T) {
-		imageDone := false
-		reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
+		reject := noEncounterBatchPolicy()([]llm.ToolCall{
 			policyCall("write", `{"direction":"雨夜"}`),
 			policyCall("update_location", `{"character_name":"甲","new_location":"门厅"}`),
 			policyCall("ask_players", `{"targets":["甲"],"question":"你怎么办？"}`),
@@ -251,8 +250,7 @@ func TestDirectorBatchPolicyAskPlayers(t *testing.T) {
 	})
 
 	t.Run("ask_players与查询类工具同批被拒", func(t *testing.T) {
-		imageDone := false
-		reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
+		reject := noEncounterBatchPolicy()([]llm.ToolCall{
 			policyCall("query_character", `{"character_name":"甲"}`),
 			policyCall("ask_players", `{"targets":["甲"],"question":"你怎么办？"}`),
 		})
@@ -262,8 +260,7 @@ func TestDirectorBatchPolicyAskPlayers(t *testing.T) {
 	})
 
 	t.Run("空question被视为空回复", func(t *testing.T) {
-		imageDone := false
-		reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
+		reject := noEncounterBatchPolicy()([]llm.ToolCall{
 			policyCall("ask_players", `{"targets":["甲"],"question":""}`),
 		})
 		if !strings.Contains(reject, "empty reply") {

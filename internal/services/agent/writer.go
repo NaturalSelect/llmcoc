@@ -21,7 +21,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		你是{{NSFW_WRITER_VOICE}}的 COC 角色扮演(role play)文本写手，擅长清晰、具体、有节奏的叙事。你的唯一任务是根据最后一条消息里的导演指令，写出一段 role play 文本，并且只输出这段文本。你不是 KP：不裁定规则、不调用工具、不点名玩家、不提问、不给推荐行动。
 	</identity>
 	<context>
-		<rule>之前的对话是 KP(导演)的完整工作记录：模组资料、周期状态、KP 的工具调用与结果(规则裁定、暗骰、NPC 私下反应等)，以及附在 write 结果后、你之前写出的正文(记录里用 <writer_output> 标签把它们框出来，只是为了让你分清哪一段是正文，标签不属于正文)。记录里的工具都已执行完，不要调用任何工具，也不要续写 KP 的工作：不写 ask_players、narrate、write 之类的调用及其参数(点名、提问、推荐行动)，也不模仿工具结果的格式。</rule>
+		<rule>之前的对话是 KP(导演)的完整工作记录：模组资料、周期状态、KP 的工具调用与结果(规则裁定、暗骰、NPC 私下反应等)，以及附在 write 结果后、你之前写出的正文(记录里用 <writer_output> 标签把它们框出来，只是为了让你分清哪一段是正文，标签不属于正文)。记录里的工具都已执行完，{{WRITER_TOOL_RULE}}，也不要续写 KP 的工作：不写 ask_players、narrate、write 之类的调用及其参数(点名、提问、推荐行动)，也不模仿工具结果的格式。</rule>
 		<rule>下面规则里说的“上文”，只指玩家已经读到的内容：你之前写出的正文，以及 KP 发给玩家的 narrate/ask 文字。</rule>
 		<rule>记录里玩家不知道的信息(模组秘密、暗骰结果、NPC 的隐藏意图、规则原文)不得写进正文，也不得暗示；只写最后一条消息里导演指令要求的内容。</rule>
 	</context>
@@ -29,9 +29,9 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		充分发挥想象力, 只输出这一段 role play 文本本身，不加任何前言、标题、解释或收尾说明。
 		<rule>正文按小说排版用 Markdown 输出，段与段之间空一行。</rule>
 		<rule>只允许这几种标记：*斜体* 用于内心低语、外文、书名或幻听到的声音；**粗体** 只用于极少数需要读者一眼看到的关键词，一段里最多一处；> 引用块用于信件、日记、碑文、墙上字迹等人物读到的文字；单独一行 --- 用于场景或时间跳转的分隔，它的前后都要空一行。</rule>
-		<rule>不要使用标题、列表、表格、代码块、链接和图片；对话照常写在段落里，不要用引用块包裹对话。</rule>
+		<rule>不要使用标题、列表、表格、代码块、链接{{WRITER_IMAGE_BAN}}；对话照常写在段落里，不要用引用块包裹对话。</rule>
 		<rule>输出里不得出现任何尖括号标签，包括 <writer_output>、<ask_players>、<narrate>、<write>、<director_instruction>，也不要给正文套上任何标签；只输出正文本身。你只写 role play 文本，不生成 ask_players 点名或提问、不列推荐行动、不写给玩家的任何话；KP 对玩家的提问由系统另行展示，不要在正文末尾复述或改写它。</rule>
-	</output>
+	</output>{{WRITER_PAINT_SECTION}}
 	<global_config>
 		{{NSFW_GLOBAL_CONFIG}}
 	</global_config>
@@ -122,15 +122,28 @@ func RunWriterStream(ctx context.Context, gctx GameContext, req WriterRequest, o
 		return "", err
 	}
 
-	// NOTE: 工具定义只为让消息链里的 tool_calls/tool 结果合法而声明,请求固定 tool_choice=none。
+	// NOTE: 提供 paint 需要三个条件同时满足：上层挂了配图启动器、Writer 的 provider 支持流式工具调用、
+	// 至少有一个可用的 painter。否则保持原来的路径：工具定义只为让消息链里的 tool_calls/tool 结果合法而声明,请求固定 tool_choice=none。
+	start := WriterIllustratorFrom(ctx)
+	streamer, canStream := h.provider.(llm.ToolStreamer)
+	paintOK := start != nil && canStream && writerPaintAvailable(handles, gctx.Session.EnableNSFW)
+
 	tools, _, _ := buildToolState(directorTools(handles[models.AgentRoleDramaturg].isEnabled()))
-	instruction := buildWriterInstruction(req, gctx, nsfwMode)
-	msgs := buildWriterView(req.Director, writerSystemPrompt(h, nsfwMode), loadWriterProse(gctx.Session.ID),
+	if paintOK {
+		// NOTE: paint 追加在 Director 工具列表之后，保持前缀稳定。
+		tools = append(tools, writerPaintTool())
+	}
+	instruction := buildWriterInstruction(req, gctx, nsfwMode, paintOK)
+	msgs := buildWriterView(req.Director, writerSystemPrompt(h, nsfwMode, paintOK), loadWriterProse(gctx.Session.ID),
 		sameModelConfig(h.config, handles[models.AgentRoleDirector].config), writerContextWindow(h),
 		writerToolRunes(tools), instruction)
 
 	state := &WriterState{}
-	err = appendWriterStream(ctx, h, state, msgs, tools, gctx, nsfwMode, onToken)
+	if paintOK {
+		err = appendWriterStreamTools(ctx, h, streamer, state, msgs, tools, gctx, handles, start, nsfwMode, onToken)
+	} else {
+		err = appendWriterStream(ctx, h, state, msgs, tools, gctx, nsfwMode, onToken)
+	}
 	return state.Buffer, err
 }
 
@@ -205,13 +218,14 @@ var writerStreamRetryDelay = 2 * time.Second
 type writerRestartKey struct{}
 
 // NOTE: WithWriterRestart 挂一个回调，流式 Writer 丢弃半截正文重新请求前调用，上层据此撤回已广播的部分正文。
-func WithWriterRestart(ctx context.Context, fn func()) context.Context {
+// keepBytes 是要保留的已转发正文字节数：整段重来时为 0，续写轮中途断流时只撤回当前轮，保留此前各轮已经写出的正文。
+func WithWriterRestart(ctx context.Context, fn func(keepBytes int)) context.Context {
 	return context.WithValue(ctx, writerRestartKey{}, fn)
 }
 
-func notifyWriterRestart(ctx context.Context) {
-	if fn, _ := ctx.Value(writerRestartKey{}).(func()); fn != nil {
-		fn()
+func notifyWriterRestart(ctx context.Context, keepBytes int) {
+	if fn, _ := ctx.Value(writerRestartKey{}).(func(int)); fn != nil {
+		fn(keepBytes)
 	}
 }
 
@@ -259,7 +273,7 @@ func appendWriterStream(ctx context.Context, h agentHandle, state *WriterState, 
 			if llm.IsUnexpectedEOF(err) && ctx.Err() == nil && attempt < writerMaxGenerateAttempts {
 				alog.Warn("writer stream interrupted, retrying", "session", gctx.Session.ID, "attempt", attempt,
 					"max_attempts", writerMaxGenerateAttempts, "partial_len", len([]rune(text)), "err", err)
-				notifyWriterRestart(ctx)
+				notifyWriterRestart(ctx, 0)
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -381,14 +395,14 @@ func siteSettingInt(key string, fallback int) int {
 // writerSystemPrompt 返回 Writer 本次调用的 system 提示词。基础提示词按本次调用的 nsfwMode
 // 渲染(同一 handle 下字节固定);NSFW 专属的 explicit_scene_requirements 不放这里,
 // 而是在 buildWriterInstruction 里拼进末尾的 user 消息。房间开启 NSFW 但本次 write
-// 标记为 false 时,必须仍用全年龄提示词。
-func writerSystemPrompt(h agentHandle, nsfwMode bool) string {
-	return h.systemPrompt(renderNSFW(writerDefaultPrompt, nsfwMode))
+// 标记为 false 时,必须仍用全年龄提示词。paintOK 为 true 时提示词里换成允许调用 paint 的版本。
+func writerSystemPrompt(h agentHandle, nsfwMode, paintOK bool) string {
+	return h.systemPrompt(renderWriterPaint(renderNSFW(writerDefaultPrompt, nsfwMode), paintOK))
 }
 
 // buildWriterInstruction 组装请求末尾的续写指令:人物卡、导演指令与续写要求;
 // nsfwMode 为 true 时在尾部追加色情场景写作要求。
-func buildWriterInstruction(req WriterRequest, gctx GameContext, nsfwMode bool) llm.ChatMessage {
+func buildWriterInstruction(req WriterRequest, gctx GameContext, nsfwMode, paintOK bool) llm.ChatMessage {
 	direction := req.Direction
 	if direction == "" {
 		direction = "继续描述当前场景"
@@ -409,7 +423,11 @@ func buildWriterInstruction(req WriterRequest, gctx GameContext, nsfwMode bool) 
 	}
 	sb.WriteString(direction)
 	sb.WriteString("\n</director_instruction>\n")
-	sb.WriteString("这是 KP 刚刚交给你的导演指令(对应上文 call_id 相同的调用)。你的任务只是根据它写出一段 role play 文本,在已有正文的基础上保持逻辑、时间、空间上的连贯,把场景细节充分展开。只输出这段 role play 文本本身:不要调用工具,不要生成 ask_players、narrate 等调用,不要点名、提问或给推荐行动,不要输出任何标签")
+	toolClause := writerInstructionToolClauseOff
+	if paintOK {
+		toolClause = writerInstructionToolClauseOn
+	}
+	sb.WriteString("这是 KP 刚刚交给你的导演指令(对应上文 call_id 相同的调用)。你的任务只是根据它写出一段 role play 文本,在已有正文的基础上保持逻辑、时间、空间上的连贯,把场景细节充分展开。只输出这段 role play 文本本身:" + toolClause + ",不要生成 ask_players、narrate 等调用,不要点名、提问或给推荐行动,不要输出任何标签")
 	if nsfwMode {
 		sb.WriteString(",请将描写的重点放在色情场景上重点突出女角色的反应\n")
 		sb.WriteString(writerNSFWPromptSuffix)

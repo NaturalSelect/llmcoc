@@ -30,24 +30,22 @@ const (
 var ErrLoopDetected = errors.New("director repeated identical tool calls too many times")
 
 // guardCacheable 是可以在「状态未变」时复用上次结果的只读工具。
-// NOTE: roll_dice（结果随机）、generate_npc_name（结果随机）、act_npc（会写 NPC transcript）、generate_image、consult_dramaturg 永不复用。
+// NOTE: roll_dice（结果随机）、generate_npc_name（结果随机）、act_npc（会写 NPC transcript）、consult_dramaturg 永不复用。
 var guardCacheable = map[ToolCallType]bool{
-	ToolQueryClues:         true,
-	ToolQueryCharacter:     true,
-	ToolQueryNPCCard:       true,
-	ToolDescribeCharacters: true,
-	ToolCheckRule:          true,
+	ToolQueryClues:     true,
+	ToolQueryCharacter: true,
+	ToolQueryNPCCard:   true,
+	ToolCheckRule:      true,
 }
 
 // guardSigWithResult 是签名里需要带上结果的工具：它们的结果变化代表有新信息，不算空转。
 var guardSigWithResult = map[ToolCallType]bool{
-	ToolQueryClues:         true,
-	ToolQueryCharacter:     true,
-	ToolQueryNPCCard:       true,
-	ToolDescribeCharacters: true,
-	ToolCheckRule:          true,
-	ToolActNPC:             true,
-	ToolConsultDramaturg:   true,
+	ToolQueryClues:       true,
+	ToolQueryCharacter:   true,
+	ToolQueryNPCCard:     true,
+	ToolCheckRule:        true,
+	ToolActNPC:           true,
+	ToolConsultDramaturg: true,
 }
 
 // guardSettlement 是需要跨轮去重的结算类工具。

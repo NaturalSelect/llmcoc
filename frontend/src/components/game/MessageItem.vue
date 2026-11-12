@@ -30,6 +30,7 @@ import {
   askNames,
   diceOf,
   directorTiming,
+  illustrationsOf,
   isEndedMessage,
   isMyMessage,
   messageError,
@@ -54,11 +55,20 @@ const time = computed(() => timeOf(props.msg))
 // NOTE: 耗时、步数、平均每步是给调参用的引擎指标，只给管理员看
 const timing = computed(() => (auth.isAdmin ? directorTiming(props.msg) : null))
 const text = computed(() => writerText(props.room, props.msg))
+const illustrations = computed(() => illustrationsOf(props.msg))
 const error = computed(() => messageError(props.msg))
 const names = computed(() => askNames(props.msg))
 const dice = computed(() => diceOf(props.msg))
 const images = computed(() => (props.msg.status === 'done' ? props.msg.images || [] : []))
 const events = computed(() => (kind.value === 'event' ? eventsOf(props.msg).map(describeEvent) : []))
+
+// NOTE: 正文是 v-html 渲染的，图片没有自己的事件，在容器上委托点击；renderProse 只会产出后端图片接口的 img
+function onProseClick(e: MouseEvent) {
+  if (e.target instanceof HTMLImageElement) {
+    const src = e.target.getAttribute('src')
+    if (src) emit('preview', src)
+  }
+}
 
 const EVENT_ICONS: Record<EventIcon, Component> = {
   dice: Dices,
@@ -147,14 +157,15 @@ const EVENT_TONES: Record<EventTone, string> = {
       </div>
 
       <div v-if="kind === 'writer'">
-        <!-- NOTE: renderProse 只放行段落/强调/引用/分隔线，是这里唯一允许 v-html 的来源 -->
+        <!-- NOTE: renderProse 只放行段落/强调/引用/分隔线和后端图片接口的配图，是这里唯一允许 v-html 的来源 -->
         <p v-if="msg.status === 'failed'" class="text-sm text-danger">{{ error || '叙事生成失败' }}</p>
         <template v-else>
           <div
             v-if="text.trim()"
             class="prose-md font-prose text-prose text-fg"
             :class="msg.status === 'pending' ? 'cursor-last' : ''"
-            v-html="renderProse(text)"
+            v-html="renderProse(text, illustrations)"
+            @click="onProseClick"
           />
           <p v-else-if="msg.status === 'pending'" class="cursor font-prose text-prose text-fg-subtle">KP 正在撰写叙事…</p>
         </template>

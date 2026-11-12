@@ -99,7 +99,6 @@ func TestKPSystemPromptCarriesUnknownToneCharter(t *testing.T) {
 		"全貌分期",
 		// 通道全覆盖
 		"通道全覆盖",
-		"image_prompt",
 		// 命名与描写技法
 		"命名三阶段",
 		"比较失败法",
@@ -268,12 +267,43 @@ func TestKPTurnReminderStructure(t *testing.T) {
 
 	// 已由 directorBatchPolicy 强制或已迁入系统提示词的内容不应在每轮消息里重复。
 	for _, removed := range []string{
-		"describe_characters", // 批次规则已代码强制
-		"每个人物(包括NPC)之间的行动顺序",  // 属性语义已迁入 <important>[ATTRIBUTES]
+		"每个人物(包括NPC)之间的行动顺序", // 属性语义已迁入 <important>[ATTRIBUTES]
 	} {
 		if strings.Contains(kpTurnReminder, removed) {
 			t.Errorf("turn reminder should not repeat %q", removed)
 		}
+	}
+}
+
+// TestDirectorHasNoImageTools 验证配图不再由 Director 触发：工具列表、write 说明、系统提示词和
+// 每轮清单里都不应再出现 generate_image / describe_characters。
+func TestDirectorHasNoImageTools(t *testing.T) {
+	removed := []string{"generate_image", "describe_characters"}
+	for _, dramaturg := range []bool{false, true} {
+		for _, tool := range directorTools(dramaturg) {
+			for _, name := range removed {
+				if tool.def.Name == name {
+					t.Errorf("directorTools(%v) should not expose %s", dramaturg, name)
+				}
+				if strings.Contains(tool.def.Description, name) {
+					t.Errorf("directorTools(%v): description of %s should not mention %s", dramaturg, tool.def.Name, name)
+				}
+			}
+		}
+	}
+	for _, name := range removed {
+		if _, ok := actionRegistry[ToolCallType(name)]; ok {
+			t.Errorf("actionRegistry should not contain %s", name)
+		}
+		if strings.Contains(kpSystemPrompt, name) {
+			t.Errorf("kp system prompt should not mention %s", name)
+		}
+		if strings.Contains(kpTurnReminder, name) {
+			t.Errorf("turn reminder should not mention %s", name)
+		}
+	}
+	if strings.Contains(kpTurnReminder, "是否配图") || strings.Contains(kpSystemPrompt, "配图") {
+		t.Error("director prompts should no longer ask for images")
 	}
 }
 
@@ -331,94 +361,6 @@ func TestBuildKPTurnOpening_SendVersionEqualsArchiveVersion(t *testing.T) {
 	}
 }
 
-// TestGenerateImageToolBlocksUnidentifiedEntityPortrait 验证配图工具描述已收紧未鉴定实体的正面描绘规则。
-func TestGenerateImageToolBlocksUnidentifiedEntityPortrait(t *testing.T) {
-	desc := generateImageTool().def.Description
-
-	for _, want := range []string{
-		"[UNKNOWN]",
-		"正面全貌",
-		"背光剪影",
-		"应积极主动地使用",
-	} {
-		if !strings.Contains(desc, want) {
-			t.Errorf("generate_image description should contain %q", want)
-		}
-	}
-
-	if strings.Contains(desc, "重要NPC或怪物首次登场") {
-		t.Error("generate_image description should not encourage portraying unidentified monsters on first appearance")
-	}
-}
-
-// TestGenerateImageToolDescribesComicPanels 验证配图被约束成连续漫画的单格：分镜、禁文字和拼版、角色与场景前后一致。
-func TestGenerateImageToolDescribesComicPanels(t *testing.T) {
-	desc := generateImageTool().def.Description
-
-	for _, want := range []string{
-		"连续日式ACG漫画里的一格",
-		"【分镜规则】",
-		"对话气泡",
-		"多格拼版",
-		"【连续性规则】",
-		"发型发色",
-	} {
-		if !strings.Contains(desc, want) {
-			t.Errorf("generate_image description should contain %q", want)
-		}
-	}
-	if strings.Contains(desc, "统一二次元(ACG/动漫)插画审美") {
-		t.Error("generate_image description should no longer ask for generic anime illustration")
-	}
-	if !strings.Contains(kpSystemPrompt, "配图是一部连续日式ACG漫画的分格") {
-		t.Error("kp system prompt should tell the director that images form a continuous comic")
-	}
-}
-
-// TestGenerateImageToolDemandsFullDetail 验证 image_prompt 要求写全所有细节,不再要求简短。
-func TestGenerateImageToolDemandsFullDetail(t *testing.T) {
-	tool := generateImageTool().def
-	for _, want := range []string{"越详细越好", "不要省略", "长度不限", "不能写\"同上\""} {
-		if !strings.Contains(tool.Description, want) {
-			t.Errorf("generate_image description should contain %q", want)
-		}
-	}
-	for _, stale := range []string{"两三句话", "简洁的自然语言", "不要分段"} {
-		if strings.Contains(tool.Description, stale) || strings.Contains(string(tool.Parameters), stale) {
-			t.Errorf("generate_image definition should no longer ask for a short prompt, found %q", stale)
-		}
-	}
-	if !strings.Contains(string(tool.Parameters), "越详细越好") {
-		t.Error("image_prompt parameter description should ask for full detail")
-	}
-	if !strings.Contains(kpSystemPrompt, "image_prompt要把这一格的所有细节写全，越详细越好，不要省略") {
-		t.Error("kp system prompt should ask the director to write every detail into image_prompt")
-	}
-}
-
-// TestDirectorEncouragedToGenerateImages 验证"主动配图"的鼓励同时出现在系统提示词、每轮清单
-// 和 generate_image / write 工具说明里:每次 write 都建议同拍配图,空镜可以跳过 describe_characters。
-func TestDirectorEncouragedToGenerateImages(t *testing.T) {
-	if !strings.Contains(kpSystemPrompt, "每次调用write，都建议在同一拍内配一张图") {
-		t.Error("kp system prompt should encourage pairing every write with an image")
-	}
-	if !strings.Contains(kpTurnReminder, "这一拍是否配图") || !strings.Contains(kpTurnReminder, "generate_image") {
-		t.Error("turn checklist should prompt the director to consider generate_image every turn")
-	}
-	if !strings.Contains(kpTurnReminder, "调用了write，就建议同拍配一张generate_image") {
-		t.Error("turn checklist should suggest pairing write with generate_image")
-	}
-	desc := generateImageTool().def.Description
-	for _, want := range []string{"每次调用write，都建议在同一拍内配一张图", "每一拍(两条narrate/ask_players消息之间)最多一张", "空镜不需要 describe_characters"} {
-		if !strings.Contains(desc, want) {
-			t.Errorf("generate_image description should contain %q", want)
-		}
-	}
-	if !strings.Contains(writeTool().def.Description, "【配图建议】") {
-		t.Error("write description should suggest pairing each write with an image")
-	}
-}
-
 // TestAskPlayersOptionsAreOptInAndNarrateHasOnlyReply 验证推荐行动只挂在 ask_players 上且默认不给，narrate 只剩 reply，两份 schema 都是合法 JSON。
 func TestAskPlayersOptionsAreOptInAndNarrateHasOnlyReply(t *testing.T) {
 	ask := askPlayersTool()
@@ -463,12 +405,12 @@ func policyCall(name, args string) llm.ToolCall {
 
 // noEncounterBatchPolicy 是不关心战斗/追逐状态的测试用例的默认构造：没有激活的
 // 战斗/追逐，本回合也未推进过任何战斗/追逐轮次。
-func noEncounterBatchPolicy(imageDone *bool) toolBatchPolicy {
+func noEncounterBatchPolicy() toolBatchPolicy {
 	var combat *models.CombatState
 	var chase *models.ChaseState
 	roundClosed := false
 	dramaturgDone := false
-	return directorBatchPolicy(imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})
+	return directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})
 }
 
 // TestDirectorBatchPolicySkillRollSequencing 验证 query_* 与技能检定 roll_dice 同批被拒，
@@ -530,8 +472,7 @@ func TestDirectorBatchPolicySkillRollSequencing(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			imageDone := false
-			reject := noEncounterBatchPolicy(&imageDone)(tc.calls)
+			reject := noEncounterBatchPolicy()(tc.calls)
 			if tc.wantReject && reject == "" {
 				t.Error("batch should have been rejected but was accepted")
 			}
@@ -539,32 +480,6 @@ func TestDirectorBatchPolicySkillRollSequencing(t *testing.T) {
 				t.Errorf("batch should have been accepted, got reject: %s", reject)
 			}
 		})
-	}
-}
-
-// TestDirectorBatchPolicyImageCharacterSequencing 验证 describe_characters 与 generate_image
-// 同批被拒，且被拒批次不会消耗当轮画图配额。
-func TestDirectorBatchPolicyImageCharacterSequencing(t *testing.T) {
-	imageDone := false
-	reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
-		policyCall("describe_characters", `{"characters":["约翰"]}`),
-		policyCall("generate_image", `{"image_prompt":"A dim study"}`),
-	})
-	if reject == "" {
-		t.Fatal("describe_characters + generate_image should be rejected")
-	}
-	if imageDone {
-		t.Error("rejected batch must not consume the per-turn generate_image quota")
-	}
-
-	// 拆成两轮后画图应当仍然可用。
-	if reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
-		policyCall("generate_image", `{"image_prompt":"A dim study"}`),
-	}); reject != "" {
-		t.Errorf("generate_image alone should be accepted, got: %s", reject)
-	}
-	if !imageDone {
-		t.Error("accepted generate_image batch should consume the per-turn quota")
 	}
 }
 
@@ -585,9 +500,8 @@ func TestDirectorBatchPolicyEmbeddedSkillValue(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			imageDone := false
 			args := fmt.Sprintf(`{"dice":{"character":"约翰","what":%q,"dice_expr":"1D100"},"reason":"测试"}`, tc.what)
-			reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
+			reject := noEncounterBatchPolicy()([]llm.ToolCall{
 				policyCall("roll_dice", args),
 			})
 			if tc.wantReject && reject == "" {
@@ -613,9 +527,8 @@ func TestDirectorBatchPolicyItemNameFormat(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			imageDone := false
 			args := fmt.Sprintf(`{"character_name":"约翰","operate":"add","item_name":%q,"reason":"测试"}`, tc.itemName)
-			reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
+			reject := noEncounterBatchPolicy()([]llm.ToolCall{
 				policyCall("manage_inventory", args),
 			})
 			if tc.wantReject && reject == "" {
@@ -641,9 +554,8 @@ func TestDirectorBatchPolicyOptionsCap(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			imageDone := false
 			args := fmt.Sprintf(`{"targets":["甲"],"question":"怎么办？","options":%s}`, tc.options)
-			reject := noEncounterBatchPolicy(&imageDone)([]llm.ToolCall{
+			reject := noEncounterBatchPolicy()([]llm.ToolCall{
 				policyCall("ask_players", args),
 			})
 			if tc.wantReject && reject == "" {
@@ -699,8 +611,7 @@ func TestDirectorBatchPolicyDupSettlementInBatch(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			imageDone := false
-			reject := noEncounterBatchPolicy(&imageDone)(tc.calls)
+			reject := noEncounterBatchPolicy()(tc.calls)
 			if tc.wantReject && reject == "" {
 				t.Error("batch should have been rejected but was accepted")
 			}
@@ -733,10 +644,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	}
 
 	t.Run("combat_act与report同批放行", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
 			policyCall("report", `{"report":"备注"}`),
 		})
@@ -746,10 +656,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	})
 
 	t.Run("combat_act与其他工具同批被拒", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
 			policyCall("roll_dice", `{"dice":{"character":"甲","what":"格斗","dice_expr":"1D100"},"reason":"攻击"}`),
 		})
@@ -759,10 +668,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	})
 
 	t.Run("combat_act调用两次(含彼此)被拒", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
 			policyCall("combat_act", `{"combat_actor_name":"乙","combat_action":{"type":"attack"}}`),
 		})
@@ -772,12 +680,11 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	})
 
 	t.Run("无激活战斗时combat_act被拒", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		var nilCombat *models.CombatState
 		var nilChase *models.ChaseState
 		roundClosed := false
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &nilCombat, &nilChase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &nilCombat, &nilChase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("combat_act", `{"combat_actor_name":"甲","combat_action":{"type":"attack"}}`),
 		})
 		if reject == "" {
@@ -786,12 +693,11 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	})
 
 	t.Run("追逐激活时start_combat被拒(互斥)", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		var nilCombat *models.CombatState
 		chase := freshChase()
 		roundClosed := false
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &nilCombat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &nilCombat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("start_combat", `{"combat_participants":[{"name":"甲","is_npc":true}]}`),
 		})
 		if reject == "" {
@@ -800,10 +706,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	})
 
 	t.Run("战斗激活时advance_time被拒", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("advance_time", `{"game_time":"1924-09-03T10:00","time_reason":"等待"}`),
 		})
 		if reject == "" {
@@ -818,10 +723,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 			policyCall("ask_players", `{"targets":["甲"],"question":"你怎么办?"}`),
 			policyCall("end_game", `{"reply":"结束"}`),
 		} {
-			imageDone := false
 			dramaturgDone := false
 			combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-			reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, declared, func(string) {})([]llm.ToolCall{call})
+			reject := directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, declared, func(string) {})([]llm.ToolCall{call})
 			if reject == "" {
 				t.Fatalf("还有已声明但未行动的可推进参战者时%s应被拒", call.Name)
 			}
@@ -832,11 +736,10 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	})
 
 	t.Run("可推进者未结算时narrate放行(只发布一条消息、不交出发言权)", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
 		declared := []PlayerAction{{PlayerName: "甲", Content: "攻击"}, {PlayerName: "乙", Content: "闪避"}}
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, declared, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, declared, func(string) {})([]llm.ToolCall{
 			policyCall("narrate", `{"reply":"战斗继续"}`),
 		})
 		if reject != "" {
@@ -845,13 +748,12 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	})
 
 	t.Run("剩余全是未提交声明的PC时narrate放行", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		actedCombat := freshCombat()
 		actedCombat.Participants[0].HasActed = true // 甲已行动(当前批次内唯一成员)
 		combat, chase, roundClosed := actedCombat, (*models.ChaseState)(nil), false
 		// pendingActions为nil:乙不在当前批次,本轮未提交任何声明,不应卡住narrate。
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("narrate", `{"reply":"甲行动完毕,轮到乙,但乙尚未到批次"}`),
 		})
 		if reject != "" {
@@ -860,13 +762,12 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	})
 
 	t.Run("存在待澄清时narrate放行", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		pendingCombat := freshCombat()
 		pendingCombat.Participants[1].PendingClarification = true
 		pendingCombat.Participants[1].PendingQuestion = "闪避还是反击？"
 		combat, chase, roundClosed := pendingCombat, (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("narrate", `{"reply":"你被攻击了,闪避还是反击？"}`),
 		})
 		if reject != "" {
@@ -875,10 +776,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	})
 
 	t.Run("roundClosed为true时narrate放行", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), true
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("narrate", `{"reply":"本轮战斗结束"}`),
 		})
 		if reject != "" {
@@ -887,10 +787,9 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 	})
 
 	t.Run("end_combat与narrate同批放行(即使未结算完毕)", func(t *testing.T) {
-		imageDone := false
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
-		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
+		reject := directorBatchPolicy(&dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
 			policyCall("end_combat", `{"combat_end_reason":"敌人逃离"}`),
 			policyCall("narrate", `{"reply":"战斗结束,敌人逃走了"}`),
 		})

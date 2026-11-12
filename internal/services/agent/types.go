@@ -99,8 +99,6 @@ const (
 	ToolUpdateNPCLocation      ToolCallType = "update_npc_location"       // 更新NPC当前位置
 	ToolUpdateArmor            ToolCallType = "update_armor"              // 更新调查员护甲值
 	ToolHint                   ToolCallType = "hint"                      // KP写入当前场景高密度提示
-	ToolGenerateImage          ToolCallType = "generate_image"            // NOTE: 生成即时场景图片
-	ToolDescribeCharacters     ToolCallType = "describe_characters"       // NOTE: 获取调查员可见外貌描写
 	ToolNarrate                ToolCallType = "narrate"                   // 发布一条KP消息,不交出发言权
 	// NOTE: ToolLegacyResponse 是 narrate 的旧名，只用于读懂老会话已归档的 Director 历史，不在工具列表里。
 	ToolLegacyResponse ToolCallType = "response"
@@ -153,10 +151,7 @@ type ToolCall struct {
 	NewLocation   string                 `json:"new_location"`   // update_location/update_npc_location: 新位置名称
 	ArmorValue    int                    `json:"armor_value"`    // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint"`           // hit: KP当前场景高密度提示
-	ImagePrompt   string                 `json:"image_prompt"`   // NOTE: generate_image: 中文画面描述,要求写全所有细节
-	Aspect        string                 `json:"aspect"`         // NOTE: generate_image: 画面方向 landscape|portrait|square(可选,默认square)
-	NSFW          bool                   `json:"nsfw"`           // NOTE: generate_image: 该配图是否含裸露/性暗示等NSFW内容(必填),仅在房间NSFW开关开启时生效,房间关闭时按普通配图处理;房间开启但painter_nsfw未启用时,标记为true的调用会被拒绝。write: 该段描述是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效。act_npc: 该次互动是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效。describe_characters: 后续配图是否为NSFW画面,决定外貌描写是否交给NSFW Writer(必填),仅在房间NSFW开关开启时生效
-	Characters    []string               `json:"characters"`     // NOTE: describe_characters 参数;兼容旧 generate_image JSON,但生成图片时忽略
+	NSFW          bool                   `json:"nsfw"`           // write / act_npc: 该段描写或该次互动是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效
 	Options       []string               `json:"options"`        // ask_players: 玩家询问时才给的推荐行动(可选,0-2条)
 	Reply         string                 `json:"reply"`          // narrate: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
@@ -193,12 +188,12 @@ type ToolResult struct {
 	Events []models.GameEvent `json:"-"` // 玩家可见的结算事件,不回传给 Director
 }
 
-// NOTE: ImagePromptRequest carries the Director's final visual prompt and optional
+// NOTE: ImagePromptRequest carries the Writer's final visual prompt (from its paint tool call) and optional
 // display options (e.g. aspect); the queued shape Painter/handler consume later.
 type ImagePromptRequest struct {
 	Prompt string `json:"prompt"`
 	Aspect string `json:"aspect"` // 画面方向 landscape|portrait|square(可选,默认square)
-	NSFW   bool   `json:"nsfw"`   // Director 标记该画面含NSFW内容,决定路由到 painter_nsfw
+	NSFW   bool   `json:"nsfw"`   // Writer 标记该画面含NSFW内容,决定路由到 painter_nsfw
 }
 
 // WriterState 保存Writer本次调用生成的白字描述。
@@ -219,7 +214,6 @@ type OutputKind string
 
 const (
 	OutputWriter OutputKind = "writer" // write:交给 Writer 展开成白字正文
-	OutputImage  OutputKind = "image"  // generate_image:交给 Painter 出图
 	OutputKP     OutputKind = "kp"     // narrate/end_game:KP 的回复
 	OutputAsk    OutputKind = "ask"    // ask_players:点名并交出发言权
 )
@@ -227,19 +221,18 @@ const (
 // Output 是一次产生玩家可见消息的工具调用的结果,一个 Output 对应一条消息。
 type Output struct {
 	Kind      OutputKind
-	Text      string              // writer: direction(交给Writer,不是正文); kp: reply或结束语; ask: question
-	NSFW      bool                // writer、image 各自单独标记
-	Image     *ImagePromptRequest // image
-	Options   []string            // ask: 玩家询问时才给的推荐行动
-	TimePoint string              // kp/ask: 发布时的游戏内时间
-	Ask       *AskResult          // ask
-	Ended     bool                // end_game
-	Auto      bool                // writer 由 fallbackWriterDirection 自动补出
+	Text      string     // writer: direction(交给Writer,不是正文); kp: reply或结束语; ask: question
+	NSFW      bool       // writer 单独标记
+	Options   []string   // ask: 玩家询问时才给的推荐行动
+	TimePoint string     // kp/ask: 发布时的游戏内时间
+	Ask       *AskResult // ask
+	Ended     bool       // end_game
+	Auto      bool       // writer 由 fallbackWriterDirection 自动补出
 	// CallID: writer 是对应的 write 调用；自动补写的是来源 narrate/ask 调用；kp/ask 是它们自己的调用。
 	CallID string
 }
 
-// RoundOutputs 是 Director 一轮工具调用产生的全部消息,按 writer → image → kp → ask 排好序
+// RoundOutputs 是 Director 一轮工具调用产生的全部消息,按 writer → kp → ask 排好序
 // (同类保持调用顺序)。handler 在 Publish 里同步落库并广播。
 type RoundOutputs struct {
 	Floor     int

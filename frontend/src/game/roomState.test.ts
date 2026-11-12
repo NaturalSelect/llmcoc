@@ -391,6 +391,91 @@ describe('roomState', () => {
     expect(room.streams[7].text).toBe('雨夜里')
   })
 
+  test('writer 流：writer_reset 带 offset 时只回退到该位置，不删除 stream', () => {
+    const room = liveRoom()
+    feed(room, F(11, 'message_new', { message: writer(7) }))
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '雨夜，钟声响了' }))
+
+    feed(room, F(0, 'writer_reset', { message_id: 7, offset: 3 }))
+    expect(room.streams[7].text).toBe('雨夜，')
+    feed(room, F(0, 'writer_token', { message_id: 7, offset: 3, text: '雷声滚过' }))
+    expect(room.streams[7].text).toBe('雨夜，雷声滚过')
+
+    // offset 超过已有长度：没有东西可截，原样保留
+    feed(room, F(0, 'writer_reset', { message_id: 7, offset: 99 }))
+    expect(room.streams[7].text).toBe('雨夜，雷声滚过')
+    // 没有 stream 时带 offset 的重置什么都不做，也不会凭空建出 stream
+    feed(room, F(0, 'writer_reset', { message_id: 8, offset: 2 }))
+    expect(room.streams[8]).toBeUndefined()
+  })
+
+  test('writer 流：writer_reset 的 offset 缺省、为 0 或非法时仍整段清空', () => {
+    for (const extra of [{}, { offset: 0 }, { offset: -1 }, { offset: '3' }]) {
+      const room = liveRoom()
+      feed(room, F(11, 'message_new', { message: writer(7) }))
+      feed(room, F(0, 'writer_token', { message_id: 7, offset: 0, text: '雨夜，钟' }))
+      feed(room, F(0, 'writer_reset', { message_id: 7, ...extra }))
+      expect(room.streams[7], JSON.stringify(extra)).toBeUndefined()
+    }
+  })
+
+  test('illustration 帧：按 slot 写进 meta.illustrations，meta 为空时先初始化，同 slot 覆盖', () => {
+    const room = liveRoom()
+    feed(room, F(11, 'message_new', { message: writer(7, { meta: null }) }))
+    const hash = 'a'.repeat(64)
+
+    expect(feed(room, F(12, 'illustration', { message_id: 7, slot: 2, status: 'done', hash })).verdict).toBe('apply')
+    expect(room.byId[7].meta?.illustrations).toStrictEqual([{ slot: 2, status: 'done', hash }])
+
+    feed(room, F(13, 'illustration', { message_id: 7, slot: 1, status: 'failed' }))
+    expect(room.byId[7].meta?.illustrations).toStrictEqual([{ slot: 2, status: 'done', hash }, { slot: 1, status: 'failed' }])
+
+    feed(room, F(14, 'illustration', { message_id: 7, slot: 1, status: 'done', hash: 'b'.repeat(64) }))
+    expect(room.byId[7].meta?.illustrations).toStrictEqual([
+      { slot: 2, status: 'done', hash },
+      { slot: 1, status: 'done', hash: 'b'.repeat(64) },
+    ])
+  })
+
+  test('illustration 帧：保留 meta 里原有的字段，消息不存在或载荷不合法时忽略', () => {
+    const room = liveRoom()
+    feed(room, F(11, 'message_new', { message: writer(7, { meta: { nsfw: true, call_id: 'c1' } }) }))
+    feed(room, F(12, 'illustration', { message_id: 7, slot: 1, status: 'done', hash: 'c'.repeat(64) }))
+    expect(room.byId[7].meta).toMatchObject({ nsfw: true, call_id: 'c1' })
+
+    expect(RS.applyFrame(room, F(13, 'illustration', { message_id: 99, slot: 1, status: 'done', hash: 'c'.repeat(64) }))).toStrictEqual([])
+    expect(room.byId[99]).toBeUndefined()
+    expect(room.messages.length).toBe(1)
+
+    feed(room, F(14, 'illustration', { message_id: 7, slot: 'x', status: 'done' }))
+    feed(room, F(15, 'illustration', { message_id: 7, slot: 2, status: 'pending' }))
+    feed(room, F(16, 'illustration', {}))
+    expect(room.byId[7].meta?.illustrations).toHaveLength(1)
+  })
+
+  test('message_update 不会清掉已经通过 illustration 帧收到的配图', () => {
+    const room = liveRoom()
+    feed(room, F(11, 'message_new', { message: writer(7) }))
+    feed(room, F(12, 'illustration', { message_id: 7, slot: 1, status: 'done', hash: 'd'.repeat(64) }))
+    feed(room, F(13, 'message_update', { id: 7, status: 'done', content: '![门](illust://1)\n\n![远景](illust://2)' }))
+    expect(room.byId[7].status).toBe('done')
+    expect(room.byId[7].meta?.illustrations).toStrictEqual([{ slot: 1, status: 'done', hash: 'd'.repeat(64) }])
+
+    // 带 meta 的 message_update 也只处理 error，不会整个换掉本地 meta
+    feed(room, F(14, 'message_update', { id: 7, status: 'failed', error: '额度不足', meta: { illustrations: [] } }))
+    expect(room.byId[7].meta?.error).toBe('额度不足')
+    expect(room.byId[7].meta?.illustrations).toHaveLength(1)
+  })
+
+  test('快照里已带配图结果的消息，缓冲的 illustration 帧重放后收敛', () => {
+    const room = RS.newRoom({ sessionId: 1, userId: 3 })
+    RS.onHello(room, { epoch: 'e1', seq: 5 })
+    const hash = 'e'.repeat(64)
+    RS.acceptFrame(room, F(6, 'illustration', { message_id: 20, slot: 1, status: 'done', hash }))
+    RS.applySnapshot(room, snap({ messages: [writer(20, { meta: { illustrations: [{ slot: 1, status: 'done', hash }] } })] }))
+    expect(room.byId[20].meta?.illustrations).toStrictEqual([{ slot: 1, status: 'done', hash }])
+  })
+
   test('writer 流：快照期间也接收 writer_reset，不会漏掉重试的信号', () => {
     const room = RS.newRoom({ sessionId: 1, userId: 3 })
     RS.onHello(room, { epoch: 'e1', seq: 5 })

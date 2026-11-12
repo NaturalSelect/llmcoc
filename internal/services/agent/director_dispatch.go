@@ -12,7 +12,7 @@ import (
 
 // NOTE: 本文件是 Director 原生 tool calling 的批次校验(batchPolicy)与批量执行
 // (batchDispatch)桥接，取代旧 orchestrator.go run() 里手写的 hasResponse/
-// hasNonCompatible/emptyResponse/generateImage 系列检查，以及 executeParallelBatch
+// hasNonCompatible/emptyResponse 系列检查，以及 executeParallelBatch
 // 的并发调度。行为对齐旧代码，唯一实质变化是：act_npc 与副作用工具混批从旧协议里
 // "act_npc执行后*actx.Interrupt=true静默丢弃本批剩余调用"，改成在 batchPolicy 阶段
 // 整批显式拒绝并给出可读错误，逼模型下一轮再发——不再需要 Interrupt。
@@ -28,17 +28,14 @@ func directorActNPCCompatible(action ToolCallType) bool {
 }
 
 // directorBatchPolicy 构造 Director 原生工具循环的整批校验策略。
-// imageGeneratedThisTurn 由 run() 持有并跨轮次共享，用于保留"每拍(两条 kp/ask 消息之间)
-// 最多生成一张图片"的限制(这条限制跨越多轮 ChatWithTools 调用，必须用闭包捕获的指针维持，
-// 每拍结束时由 floorRun 重置)。
+// dramaturgConsultedThisTurn 由 run() 持有并跨轮次共享，用于保留"每回合最多咨询一次
+// 剧构顾问"的限制(这条限制跨越多轮 ChatWithTools 调用，必须用闭包捕获的指针维持)。
 // combat/chase/roundClosed 是 run() 持有的战斗/追逐状态与"本轮是否已推进过一个
 // 战斗/追逐回合"标记，用于战斗/追逐轮次的批次校验(见下方 ENCOUNTER SEQUENCING)。
 // pendingActions 是本次run收到的玩家声明集合，用于RULE 5判断"未行动者是否可推进"
 // ——按批次收集后，不在当前批次的PC不会有声明，不能因为它们未行动就卡住narrate。
 // emitProgress 用于在拒绝分支保留原有的 SSE 提示文案。
-// dramaturgConsultedThisTurn 与 imageGeneratedThisTurn 同理，保留"每回合最多咨询一次
-// 剧构顾问"的限制。
-func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTurn *bool, combat **models.CombatState, chase **models.ChaseState, roundClosed *bool, pendingActions []PlayerAction, emitProgress func(string)) toolBatchPolicy {
+func directorBatchPolicy(dramaturgConsultedThisTurn *bool, combat **models.CombatState, chase **models.ChaseState, roundClosed *bool, pendingActions []PlayerAction, emitProgress func(string)) toolBatchPolicy {
 	return func(calls []llm.ToolCall) string {
 		hasResponse := false
 		hasNonCompatible := false
@@ -70,7 +67,7 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 		}
 		if hasResponse && hasNonCompatible {
 			emitProgress(progressThinking)
-			return "SYSTEM REJECT: your entire batch was rejected. narrate/ask_players/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/describe_characters/generate_npc_name/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call narrate/ask_players/end_game after reading the results. Write and state-update tools may stay in the same batch as narrate."
+			return "SYSTEM REJECT: your entire batch was rejected. narrate/ask_players/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/generate_npc_name/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call narrate/ask_players/end_game after reading the results. Write and state-update tools may stay in the same batch as narrate."
 		}
 		if hasResponse && respStr == "" {
 			emitProgress(progressThinking)
@@ -141,22 +138,6 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 					return "SYSTEM REJECT: query_character/query_npc_card 与技能检定 roll_dice 不能同批——提交时查询结果还不存在，骰子里的技能值只能是猜测。请本轮只发查询，读到真实技能值后再在下一轮掷骰。"
 				}
 			}
-		}
-
-		// IMAGE-CHARACTER SEQUENCING：同理，外貌描写要先读到才能写进 image_prompt。
-		hasDescribe := false
-		hasImage := false
-		for _, call := range calls {
-			switch ToolCallType(call.Name) {
-			case ToolDescribeCharacters:
-				hasDescribe = true
-			case ToolGenerateImage:
-				hasImage = true
-			}
-		}
-		if hasDescribe && hasImage {
-			emitProgress(progressThinking)
-			return "SYSTEM REJECT: describe_characters 与 generate_image 不能同批——提交时外貌描写还没返回，image_prompt 里的角色外貌只能是编造。请本轮只发 describe_characters，读到结果后再在下一轮画图。"
 		}
 
 		// NAME SEQUENCING：姓名要先读到才能写进 create_npc 的 char_card.name，同批只能靠编造。
@@ -370,20 +351,6 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 				return fmt.Sprintf("SYSTEM REJECT: 本批次对角色%q的物品%q重复调用了manage_inventory(重复结算)。确认这不是同一个事件被记了两次；如需一次性增减多个，合并成单次调用。", key.character, key.item)
 			}
 			seenInventoryOps[key] = true
-		}
-
-		generateImageCalls := 0
-		for _, call := range calls {
-			if call.Name == string(ToolGenerateImage) {
-				generateImageCalls++
-			}
-		}
-		if generateImageCalls > 1 || (generateImageCalls > 0 && *imageGeneratedThisTurn) {
-			emitProgress(progressThinking)
-			return "SYSTEM REJECT: generate_image may be called at most once per turn. Keep only the single most necessary visual moment."
-		}
-		if generateImageCalls > 0 {
-			*imageGeneratedThisTurn = true
 		}
 
 		dramaturgCalls := 0

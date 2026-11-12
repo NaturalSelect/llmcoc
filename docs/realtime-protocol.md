@@ -145,8 +145,8 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | 值 | 含义 |
 | --- | --- |
 | `player` | 玩家本轮声明的行动 |
-| `writer` | KP 的一次 `write`：由 Writer 展开的白字正文 |
-| `image` | KP 的一次 `generate_image`：Painter 出的配图。画完（`done`，`images` 带落盘地址）或失败（`failed`）后才落库，并经 `message_new` 送达，所以 `id` 是画完那一刻分配的，排在到达之前已有的所有消息之后 |
+| `writer` | KP 的一次 `write`：由 Writer 展开的白字正文，markdown。正文里可以有 `![说明](illust://<slot>)`，是 Writer 调用 `paint` 配的图，图片画完后由 `illustration` 事件和 `meta.illustrations` 给出结果 |
+| `image` | 旧数据：早期由 KP 的 `generate_image` 产生的独立配图消息，新对局不再产生。画完（`done`，`images` 带落盘地址）或失败（`failed`）后才落库，并经 `message_new` 送达 |
 | `kp` | KP 的一次 `narrate` 或 `end_game` 的回复 |
 | `ask` | KP 的一次 `ask_players`：点名并交出发言权 |
 | `system` | 复活提示，复活时经 `message_new` 送达。加入、离开的系统提示不会推送，也不出现在 `GET /messages` 里，客户端以 `session` 事件刷新成员列表 |
@@ -191,7 +191,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 
 #### `message_update`
 
-更新已有消息（writer 生成结束、生成失败）。只有出现的字段才需要更新。配图不走这个事件，见 `message_new`。
+更新已有消息（writer 生成结束、生成失败）。只有出现的字段才需要更新，不会改动 `meta`，配图结果走 `illustration` 事件。
 
 ```json
 {"id": 123, "status": "done", "content": "...", "error": "..."}
@@ -328,12 +328,32 @@ Writer 流式输出的一段文字。服务端每 100ms 合并一次，不是逐
 
 #### `writer_reset`
 
-Writer 的流在中途被上游断开（EOF）时，服务端会丢弃这次的半截正文并整段重新请求。这个事件通知客户端作废已经拼接的流式正文。
+Writer 的流在中途被上游断开（EOF）时，服务端会丢弃当前这次请求的半截正文并重新请求。这个事件通知客户端作废已经拼接的那部分流式正文。
 
 ```json
-{"message_id": 123}
+{"message_id": 123, "offset": 0}
 ```
 
-- 收到后清掉 `message_id` 对应的本地流式文字；之后的 `writer_token` 从 `offset=0` 重新开始。
-- 重试期间服务端不再广播旧的半截内容，新连接补发的全文也只包含重试后的正文。
+- `offset`：要保留的正文长度，单位是 UTF-16 码元。`0`（或缺省）表示整段作废，客户端清掉 `message_id` 对应的本地流式文字；大于 0 表示 Writer 在配图后的续写轮中途断流，只撤回当前轮，客户端保留前 `offset` 个码元（`本地文本.slice(0, offset)`）。
+- 之后的 `writer_token` 从 `offset` 处接着开始。
+- 重试期间服务端不再广播旧的半截内容，新连接补发的全文也只包含保留部分加重试后的正文。
 - 重试用尽仍失败时，已生成的半截正文会保留，以 `message_update` 的终态为准。
+
+#### `illustration`
+
+writer 正文里一张配图画完或失败。持久事件（带 `seq`），断线重连时可以补发；超出补发缓冲时，客户端靠快照里消息的 `meta.illustrations` 拿到结果。
+
+```json
+{"message_id": 123, "slot": 1, "status": "done", "hash": "3f2a…"}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `message_id` | 目标 writer 消息 ID |
+| `slot` | 对应正文里的 `illust://<slot>`，每条消息从 1 开始 |
+| `status` | `done` 或 `failed` |
+| `hash` | `done` 时的图片哈希，图片地址是 `/api/images/<hash>` |
+
+- 正文里有 `illust://<slot>` 而 `meta.illustrations` 里没有这个 slot，表示还在画，客户端显示「配图生成中」；`failed` 的配图不显示。
+- 结果同时写进该消息的 `meta.illustrations`（`[{"slot", "status", "hash"}]`），`GET /messages` 返回的就是这份数据。
+- 配图在后台并发绘制，不等待也不随房主打断取消；点名和 KP 叙事不等配图，所以这个事件可能晚于 `message_update` 很久才到。

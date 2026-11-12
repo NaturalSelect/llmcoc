@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -1106,5 +1107,102 @@ func TestFantasyProvider_OpenAICompatEndToEnd_NonRetryableErrorExhaustsFast(t *t
 	}
 	if captured.count != 3 {
 		t.Errorf("server received %d requests, want exactly 3 (JsonChat's outer retry budget, one HTTP call each)", captured.count)
+	}
+}
+
+// writeSSEToolCallCompletion 下发一次「先吐文本、再请求一个工具调用」的流式响应；
+// 工具调用按真实网关的方式拆成两块：先给 id 和函数名，再给参数。
+func writeSSEToolCallCompletion(w http.ResponseWriter, texts []string, callID, name string, argChunks []string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.WriteHeader(http.StatusOK)
+	flusher := w.(http.Flusher)
+	writeChunk := func(choices []map[string]any, extra map[string]any) {
+		chunk := map[string]any{
+			"id": "chatcmpl-test", "object": "chat.completion.chunk", "created": 1700000000,
+			"model": "test-model", "choices": choices,
+		}
+		for k, v := range extra {
+			chunk[k] = v
+		}
+		data, _ := json.Marshal(chunk)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+	writeChunk([]map[string]any{{"index": 0, "delta": map[string]any{"role": "assistant", "content": ""}, "finish_reason": nil}}, nil)
+	for _, c := range texts {
+		writeChunk([]map[string]any{{"index": 0, "delta": map[string]any{"content": c}, "finish_reason": nil}}, nil)
+	}
+	for i, args := range argChunks {
+		fn := map[string]any{"arguments": args}
+		call := map[string]any{"index": 0, "function": fn}
+		if i == 0 {
+			call["id"] = callID
+			call["type"] = "function"
+			fn["name"] = name
+		}
+		writeChunk([]map[string]any{{"index": 0, "delta": map[string]any{"tool_calls": []map[string]any{call}}, "finish_reason": nil}}, nil)
+	}
+	writeChunk([]map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}, nil)
+	writeChunk([]map[string]any{}, map[string]any{"usage": map[string]any{"prompt_tokens": 20, "completion_tokens": 6, "total_tokens": 26}})
+	fmt.Fprint(w, "data: [DONE]\n\n")
+	flusher.Flush()
+}
+
+// TestFantasyProvider_ChatStreamTools 验证 ChatStreamTools：文本按增量实时回调、
+// 工具调用被聚合成一次完整调用、请求声明了工具且没有被固定成 tool_choice=none。
+func TestFantasyProvider_ChatStreamTools(t *testing.T) {
+	srv, captured := newFakeChatCompletionsServer(t, func(w http.ResponseWriter, r *http.Request, _ int) {
+		writeSSEToolCallCompletion(w, []string{"夜色", "渐深。"}, "call_1", "paint", []string{`{"prompt":"月下`, `的钟楼"}`})
+	})
+	p, err := newFantasyProvider(false, "test-key", srv.URL, "test-model", 0, 0, false, "", 0)
+	if err != nil {
+		t.Fatalf("newFantasyProvider error: %v", err)
+	}
+
+	var streamer ToolStreamer = p
+	var deltas []string
+	tools := []ToolDefinition{{Name: "paint", Description: "画图", Parameters: json.RawMessage(`{"type":"object","properties":{"prompt":{"type":"string"}}}`)}}
+	res, err := streamer.ChatStreamTools(context.Background(), "", []ChatMessage{{Role: "user", Content: "写"}}, tools, func(s string) { deltas = append(deltas, s) })
+	if err != nil {
+		t.Fatalf("ChatStreamTools error: %v", err)
+	}
+	if strings.Join(deltas, "|") != "夜色|渐深。" {
+		t.Errorf("onText deltas = %q, want 夜色|渐深。", deltas)
+	}
+	if res.Content != "夜色渐深。" {
+		t.Errorf("Content = %q", res.Content)
+	}
+	if len(res.ToolCalls) != 1 || res.ToolCalls[0].ID != "call_1" || res.ToolCalls[0].Name != "paint" || res.ToolCalls[0].Arguments != `{"prompt":"月下的钟楼"}` {
+		t.Errorf("ToolCalls = %+v", res.ToolCalls)
+	}
+	if res.Usage.PromptTokens != 20 || res.Usage.OutputTokens != 6 {
+		t.Errorf("Usage = %+v, want prompt=20 output=6", res.Usage)
+	}
+	if captured.count != 1 {
+		t.Errorf("server received %d requests, want 1", captured.count)
+	}
+
+	var body struct {
+		Tools      []map[string]any `json:"tools"`
+		ToolChoice any              `json:"tool_choice"`
+	}
+	if err := json.Unmarshal(captured.body, &body); err != nil {
+		t.Fatalf("unmarshal request body: %v; raw=%s", err, captured.body)
+	}
+	if len(body.Tools) != 1 {
+		t.Errorf("request tools = %d, want 1", len(body.Tools))
+	}
+	if body.ToolChoice == "none" {
+		t.Errorf("tool_choice = none, ChatStreamTools must leave tool choice to the model")
+	}
+}
+
+// TestNewProviderFromConfig_ImplementsToolStreamer 守住 OpenAI 兼容和 Anthropic 两种 provider 都带有流式工具调用能力。
+func TestNewProviderFromConfig_ImplementsToolStreamer(t *testing.T) {
+	for _, typ := range []string{"openai", "anthropic"} {
+		p := newProviderByType(typ, "k", "http://127.0.0.1:1", "m", 0, 0, false, "", 0, false)
+		if _, ok := p.(ToolStreamer); !ok {
+			t.Errorf("provider type %q does not implement ToolStreamer", typ)
+		}
 	}
 }

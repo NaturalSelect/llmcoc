@@ -807,3 +807,74 @@ func (p *fantasyProvider) ChatStream(ctx context.Context, cacheKey string, messa
 	}()
 	return tokenCh, errCh, nil
 }
+
+// ChatStreamTools 是 tool_choice=auto 的流式对话。首事件探测与重试语义和 ChatStream 一致：
+// 只有连接尚未产出任何事件就失败时才整体重试；流开始后出错，把已聚合的部分结果连同错误一起返回，
+// 由调用方决定丢弃还是保留。
+func (p *fantasyProvider) ChatStreamTools(ctx context.Context, cacheKey string, messages []ChatMessage, tools []ToolDefinition, onText func(string)) (ToolChatResult, error) {
+	start := time.Now()
+	role := roleFromCacheKey(cacheKey)
+	call := p.buildCall(ctx, cacheKey, messages, false, tools)
+
+	var next func() (fantasy.StreamPart, bool)
+	var stop func()
+	var first fantasy.StreamPart
+	var hasFirst bool
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		s, err := p.lm.Stream(ctx, call)
+		if err != nil {
+			recordLatency(role, p.model, "stream", time.Since(start), err)
+			return ToolChatResult{}, fmt.Errorf("LLM chat stream error: %w", err)
+		}
+		n, st := iter.Pull(s)
+		part, ok := n()
+		if ok && part.Type == fantasy.StreamPartTypeError {
+			if isRetryableFantasyError(part.Error) && attempt < maxRetries-1 {
+				st()
+				log.Warn("chat stream tools attempt failed, retrying", "attempt", attempt+1, "max_retries", maxRetries, "err", part.Error)
+				select {
+				case <-ctx.Done():
+					return ToolChatResult{}, ctx.Err()
+				case <-time.After(8 * time.Second):
+				}
+				continue
+			}
+			st()
+			recordLatency(role, p.model, "stream", time.Since(start), part.Error)
+			return ToolChatResult{}, fmt.Errorf("LLM chat stream error: %w", part.Error)
+		}
+		next, stop, first, hasFirst = n, st, part, ok
+		break
+	}
+	if next == nil {
+		return ToolChatResult{}, fmt.Errorf("LLM chat stream error: exhausted %d retries", maxRetries)
+	}
+	defer stop()
+
+	resumed := func(yield func(fantasy.StreamPart) bool) {
+		if hasFirst && !yield(first) {
+			return
+		}
+		for {
+			part, ok := next()
+			if !ok || !yield(part) {
+				return
+			}
+		}
+	}
+	res, err := p.consumeStream(resumed, onText)
+	recordLatency(role, p.model, "stream", time.Since(start), err)
+	out := ToolChatResult{Content: res.content, ToolCalls: res.toolCalls, ReasoningBlocks: res.blocks, Reasoning: res.reasoning, Usage: res.usage}
+	if err != nil {
+		return out, fmt.Errorf("LLM chat stream receive error: %w", err)
+	}
+
+	recordUsage(role, p.model, "stream", res.usage)
+	logUsage(role, p.model, res.usage)
+	if sink := usageSinkFromContext(ctx); sink != nil {
+		sink(res.usage)
+	}
+	log.Debug("chat stream tools done", "role", role, "model", p.model, "elapsed_ms", float64(time.Since(start).Microseconds())/1000,
+		"response_len", len([]rune(res.content)), "tool_calls", len(res.toolCalls), "finish_reason", res.finishReason, "usage", res.usage)
+	return out, nil
+}

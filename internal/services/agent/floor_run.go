@@ -37,7 +37,6 @@ type floorRun struct {
 	ask             *AskResult
 	roundClosed     bool
 	dramaturgDone   bool
-	imageThisBeat   bool
 	combat          *models.CombatState
 	chase           *models.ChaseState
 	published       int
@@ -141,16 +140,14 @@ func (f *floorRun) noteVisibleActions(calls []llm.ToolCall, msgs []llm.ChatMessa
 	}
 }
 
-// flush 把本轮 outbox 整理成 writer → image → kp → ask 的固定顺序(同类保持调用顺序)，
+// flush 把本轮 outbox 整理成 writer → kp → ask 的固定顺序(同类保持调用顺序)，
 // 必要时在 kp 前补一条自动 writer，同步 Publish 后 Checkpoint。
 func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
-	var writers, images, kps, asks []Output
+	var writers, kps, asks []Output
 	for _, it := range f.outbox {
 		switch it.Kind {
 		case OutputWriter:
 			writers = append(writers, it)
-		case OutputImage:
-			images = append(images, it)
 		case OutputKP:
 			kps = append(kps, it)
 		case OutputAsk:
@@ -171,9 +168,8 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 		}
 	}
 
-	items := make([]Output, 0, len(writers)+len(images)+len(kps)+len(asks))
+	items := make([]Output, 0, len(writers)+len(kps)+len(asks))
 	items = append(items, writers...)
-	items = append(items, images...)
 	items = append(items, kps...)
 	items = append(items, asks...)
 
@@ -212,7 +208,6 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 	f.idleRounds = 0
 
 	if closesBeat {
-		f.imageThisBeat = false
 		f.beatRounds = 0
 		f.beatStart = time.Now()
 		f.beatNeedsWriter = false
@@ -322,7 +317,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		msgs:          kpMsgs,
 		tools:         directorTools(handles[models.AgentRoleDramaturg].isEnabled()),
 		maxRounds:     0,
-		batchPolicy:   directorBatchPolicy(&fr.imageThisBeat, &fr.dramaturgDone, &fr.combat, &fr.chase, &fr.roundClosed, gctx.PendingActions, emitProgress),
+		batchPolicy:   directorBatchPolicy(&fr.dramaturgDone, &fr.combat, &fr.chase, &fr.roundClosed, gctx.PendingActions, emitProgress),
 		batchDispatch: fr.guard.wrapDispatch(directorBatchDispatch(st)),
 		afterCall:     fr.afterCall,
 		afterDispatch: fr.afterDispatch,

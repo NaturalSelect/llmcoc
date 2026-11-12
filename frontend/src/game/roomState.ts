@@ -15,8 +15,17 @@ export interface Frame {
   data?: FrameData
 }
 
+// NOTE: 正文里 illust://<slot> 占位的画图结果；正文里有占位而这里没有对应 slot，表示还在画
+export interface Illustration {
+  slot: number
+  status: 'done' | 'failed'
+  hash?: string
+  nsfw?: boolean
+}
+
 export interface MessageMeta {
   error?: string
+  illustrations?: Illustration[]
   [key: string]: unknown
 }
 
@@ -322,10 +331,35 @@ function onWriterToken(room: Room, d: FrameData): void {
   st.text = st.text.slice(0, offset) + d.text
 }
 
-// NOTE: Writer 流中途断开后服务端会整段重新请求，已拼接的半截正文作废；之后的 writer_token 从 offset=0 重新开始
+// NOTE: 配图在后台画完才到达：按 slot 写进 meta.illustrations（重复的帧覆盖同一 slot），消息还没见过就忽略，快照里已经带着结果。
+// message_update 只按字段更新 status/content/error，不会动 meta，所以这里写进去的结果不会被正文完成的帧冲掉
+function onIllustration(room: Room, d: FrameData): void {
+  const msg = room.byId[Number(d.message_id)]
+  const slot = Number(d.slot)
+  if (!msg || !Number.isInteger(slot) || (d.status !== 'done' && d.status !== 'failed')) return
+  const entry: Illustration = { slot, status: d.status }
+  if (typeof d.hash === 'string') entry.hash = d.hash
+  if (typeof d.nsfw === 'boolean') entry.nsfw = d.nsfw
+  if (!msg.meta || typeof msg.meta !== 'object') msg.meta = {}
+  // NOTE: 新建后必须从 msg 上重新取，原因同 onWriterToken：赋值表达式返回的是原始对象，改它不会触发 reactive 代理的更新
+  if (!Array.isArray(msg.meta.illustrations)) msg.meta.illustrations = []
+  const list = msg.meta.illustrations
+  const i = list.findIndex((it) => it.slot === slot)
+  if (i >= 0) list[i] = entry
+  else list.push(entry)
+}
+
+// NOTE: Writer 流中途断开后服务端会整段重新请求，已拼接的半截正文作废；之后的 writer_token 从 offset=0 重新开始。
+// 带 offset > 0 时只是回退到该位置（Writer 重写了 paint 之后的内容），保留前面已拼好的部分
 function onWriterReset(room: Room, d: FrameData): void {
   const id = Number(d.message_id)
   if (!Number.isFinite(id)) return
+  const offset = typeof d.offset === 'number' ? d.offset : 0
+  if (offset > 0) {
+    const st = room.streams[id]
+    if (st) st.text = st.text.slice(0, offset)
+    return
+  }
   delete room.streams[id]
 }
 
@@ -371,6 +405,9 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
       break
     case 'message_update':
       onMessageUpdate(room, d)
+      break
+    case 'illustration':
+      onIllustration(room, d)
       break
     case 'writer_token':
       onWriterToken(room, d)
