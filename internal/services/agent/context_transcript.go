@@ -275,15 +275,6 @@ func (c *ContextManager) NextFloor() int {
 	return c.data.NextFloor
 }
 
-// SeenMessageID 返回 NPC 已读过的最后一条公开消息 ID；SetSeenMessageID 只改内存，由下一次 Commit 落库。
-func (c *ContextManager) SeenMessageID() uint {
-	return c.data.SeenMessageID
-}
-
-func (c *ContextManager) SetSeenMessageID(id uint) {
-	c.data.SeenMessageID = id
-}
-
 // IsEmpty 报告 transcript 是否还没有任何已提交的历史轮，供调用方判断是否需要把旧数据
 // (如老会话按纯文本 transcript 存的历史)播种为 seq=0 的一轮，且只在为空时播种一次。
 func (c *ContextManager) IsEmpty() bool {
@@ -533,15 +524,6 @@ func (c *ContextManager) appendUnit(round int, msgs []llm.ChatMessage, cut int, 
 	}
 	c.stat = models.TurnCacheStat{}
 	c.save()
-}
-
-// DeleteContext 删除(session_id, agent_key)对应的整条持久化transcript记录，用于NPC
-// 重新创建(seedNPCFromMemory)时彻底丢弃旧的存活上下文，只保留(若有)压缩后的长期记忆。
-func DeleteContext(sessionID uint, agentKey string) {
-	if err := models.DB.Where("session_id = ? AND agent_key = ?", sessionID, agentKey).
-		Delete(&models.AgentTranscript{}).Error; err != nil {
-		alog.Error("delete agent transcript failed", "session", sessionID, "agent_key", agentKey, "err", err)
-	}
 }
 
 // save 按 (session_id, agent_key) upsert 整个 TranscriptData。

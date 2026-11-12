@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/llmcoc/server/internal/services/llm"
@@ -25,6 +26,32 @@ func xmlAttr(s string) string {
 	return xmlAttrEscaper.Replace(s)
 }
 
+// toolResultNPC 返回针对单个 NPC 的工具调用所指向的 NPC 名；其他工具、名字为空(如 query_npc_card 查全部)或参数解析失败时返回空串。
+func toolResultNPC(call llm.ToolCall) string {
+	switch ToolCallType(call.Name) {
+	case ToolActNPC, ToolQueryNPCCard, ToolUpdateNPCCard, ToolUpdateNPCLocation,
+		ToolUpdateNPCSessionMemory, ToolCreateNPC, ToolDestroyNPC:
+	default:
+		return ""
+	}
+	var args struct {
+		NPCName  string `json:"npc_name"`
+		CharCard *struct {
+			Name string `json:"name"`
+		} `json:"char_card"`
+	}
+	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+		return ""
+	}
+	if ToolCallType(call.Name) == ToolCreateNPC {
+		if args.CharCard == nil {
+			return ""
+		}
+		return strings.TrimSpace(args.CharCard.Name)
+	}
+	return strings.TrimSpace(args.NPCName)
+}
+
 // renderDirectorToolResult 把一次工具调用的结果渲染成 Director 看到的 tool 消息内容。
 // 正文不转义：query_character 等工具的正文本身就是 XML。
 func renderDirectorToolResult(call llm.ToolCall, o toolOutcome) string {
@@ -44,6 +71,11 @@ func renderDirectorToolResult(call llm.ToolCall, o toolOutcome) string {
 	b.WriteString(`name="`)
 	b.WriteString(xmlAttr(call.Name))
 	b.WriteString(`"`)
+	if npc := toolResultNPC(call); npc != "" {
+		b.WriteString(` npc="`)
+		b.WriteString(xmlAttr(npc))
+		b.WriteString(`"`)
+	}
 	if rejected {
 		b.WriteString(toolResultReject)
 	} else {

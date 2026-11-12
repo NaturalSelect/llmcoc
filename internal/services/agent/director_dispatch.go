@@ -391,6 +391,7 @@ type directorDispatchState struct {
 	events       *[]models.GameEvent
 	kpStreak     *int
 	ask          **AskResult
+	chain        *[]llm.ChatMessage
 	emitProgress func(string)
 }
 
@@ -416,7 +417,7 @@ func joinToolResults(results []ToolResult) string {
 // 并把结果写回 st 持有的可变状态。
 //
 // 并发策略与旧 executeParallelBatch 一致：check_rule 各自并发；act_npc 按 NPC 名
-// 分组，不同 NPC 并发、同一 NPC 顺序执行以保留其记忆顺序；其余工具按原始顺序依次
+// 分组，不同 NPC 并发、同一 NPC 顺序执行；其余工具按原始顺序依次
 // 执行。
 // SSE 进度文案的粒度与旧代码一致：批内出现 >1 个 check_rule 或 >1 个不同 NPC 时，
 // 发一条合并提示；否则按调用顺序逐条发。
@@ -437,6 +438,10 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			Outbox:      st.outbox,
 			KPStreak:    st.kpStreak,
 			Ask:         st.ask,
+		}
+		if st.chain != nil {
+			// NOTE: 浅拷贝快照：各 NPC 的 goroutine 只读；runToolLoop 要等本批返回才会往链上追加 tool 消息。
+			actx.Director = append([]llm.ChatMessage(nil), (*st.chain)...)
 		}
 
 		decoded := make([]ToolCall, len(calls))

@@ -55,7 +55,7 @@ func transcriptRuneCount(turns []models.TranscriptTurn) int64 {
 }
 
 // AdminGetSessionContext handles GET /admin/sessions/:id/context。
-// 返回该会话下每个 agent(director/writer/dramaturg/npc:<name>)的 ContextManager
+// 返回该会话下每个 agent(director/writer/dramaturg；旧会话里遗留的 npc:<name>)的 ContextManager
 // transcript 概览：已提交轮数、估算字符数、最近若干条逐轮缓存命中统计。
 func AdminGetSessionContext(c *gin.Context) {
 	sid, err := strconv.ParseUint(c.Param("id"), 10, 64)

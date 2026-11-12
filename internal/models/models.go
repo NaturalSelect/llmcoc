@@ -336,8 +336,8 @@ type ChatMsg struct {
 }
 
 // AgentTranscript 持久化单个 agent 在某个会话里跨回合的完整原生消息链，按会话+AgentKey
-// (如 "director"、"writer"、"dramaturg"、"npc:<name>")联合唯一。取代原来分散在
-// GameSession 上的 DirectorHistory/WriterHistory/DramaturgHistory 各自为政的存法：
+// (如 "director"、"writer"、"dramaturg")联合唯一；旧会话里可能还有 "npc:<name>" 的遗留行，已不再读取。
+// 取代原来分散在 GameSession 上的 DirectorHistory/WriterHistory/DramaturgHistory 各自为政的存法：
 // internal/services/agent 包的 ContextManager(context_transcript.go)统一负责读写、
 // 按整轮 trim、以及在 head 末尾/已提交历史轮末尾标记 prompt cache 断点，具体设计见该文件。
 type AgentTranscript struct {
@@ -361,12 +361,9 @@ type TranscriptData struct {
 	NextSeq int `json:"next_seq"`
 	// NextFloor 是 Director 下一次发言权周期（floor）的编号，只有 Director 使用；
 	// 一个 floor 内可以落多个发布单元，各自占用一个 Seq。
-	NextFloor int `json:"next_floor,omitempty"`
-	// NOTE: SeenMessageID 只有 NPC 使用：该 NPC 的 AI 玩家已经读过的最后一条公开消息 ID，
-	// 下次被询问时只把之后的牌桌记录发给它。
-	SeenMessageID uint             `json:"seen_message_id,omitempty"`
-	Turns         []TranscriptTurn `json:"turns"`
-	Stats         []TurnCacheStat  `json:"stats"`
+	NextFloor int              `json:"next_floor,omitempty"`
+	Turns     []TranscriptTurn `json:"turns"`
+	Stats     []TurnCacheStat  `json:"stats"`
 }
 
 // TranscriptTurn 是一次调用(一个回合)产生的完整原生消息链。Compacted 现在只标记 LLM 总结出来的

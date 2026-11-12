@@ -30,7 +30,7 @@ const (
 var ErrLoopDetected = errors.New("director repeated identical tool calls too many times")
 
 // guardCacheable 是可以在「状态未变」时复用上次结果的只读工具。
-// NOTE: roll_dice（结果随机）、generate_npc_name（结果随机）、act_npc（会写 NPC transcript）、consult_dramaturg 永不复用。
+// NOTE: roll_dice（结果随机）、generate_npc_name（结果随机）、act_npc（结果随机）、consult_dramaturg 永不复用。
 var guardCacheable = map[ToolCallType]bool{
 	ToolQueryClues:     true,
 	ToolQueryCharacter: true,

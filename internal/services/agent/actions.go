@@ -10,6 +10,7 @@ import (
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
+	"github.com/llmcoc/server/internal/services/llm"
 )
 
 // ActionContext 是各工具执行器共享的上下文。
@@ -36,6 +37,9 @@ type ActionContext struct {
 	Combat      **models.CombatState
 	Chase       **models.ChaseState
 	RoundClosed *bool
+
+	// Director 是发出本批调用时 Director 的消息链快照(只读，末尾是尚无结果的 assistant tool_calls)；非 Director 的调用方为 nil。
+	Director []llm.ChatMessage
 }
 
 // Action is implemented by every tool call handler.
@@ -211,7 +215,8 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		question += " (你没有法术可用, 且无法创造改造魔法物品)"
 	}
 	npcHandle, nsfwMode := pickNPCHandle(actx.Handles, actx.GCtx.Session.EnableNSFW && call.NSFW)
-	action, npcErr := actNPC(actx.Ctx, npcHandle, *actx.GCtx, call.NPCName, question, *actx.TempNPCs, nsfwMode)
+	action, npcErr := runNPC(actx.Ctx, npcHandle, actx.Handles, *actx.GCtx,
+		npcRequest{Name: call.NPCName, Question: question, NSFW: nsfwMode, Director: actx.Director}, *actx.TempNPCs)
 	doneNPC()
 	if npcErr != nil {
 		alog.Error("act_npc failed", "npc", call.NPCName, "err", npcErr)

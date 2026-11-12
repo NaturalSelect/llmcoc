@@ -78,7 +78,7 @@ const ROLE_DESCS: Record<string, string> = {
   writer: '叙事撰写 — 生成面向玩家的克苏鲁叙述（流式输出），并在正文里通过 paint 工具配图；会看到 Director 的完整上下文，需选支持工具调用的模型',
   writer_nsfw: '成人向叙事 — 仅在房间开启NSFW且本轮被标记为色情内容时启用；未配置或关闭时自动回落默认 Writer（默认关闭）；同样需选支持工具调用的模型',
   lawyer: '规则顾问 — 查阅规则书提供裁决依据',
-  npc: 'NPC扮演 — 给出场景NPC的行动与对话',
+  npc: 'NPC扮演 — 给出场景NPC的行动与对话；读取 Director 的完整消息链，需绑定支持函数调用、上下文不小于 Director 的模型',
   npc_nsfw: '成人向NPC互动 — 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用；未配置或关闭时自动回落默认 NPC（默认关闭）',
   painter: '画图代理 — 按 Writer 写正文时的 paint 调用生成配图，插入正文（默认关闭）',
   painter_nsfw: '成人向画图 — Writer 把配图标记为 nsfw=true 时只路由到它；未启用时这类配图请求会被直接拒绝，不回落默认 Painter（默认关闭）',

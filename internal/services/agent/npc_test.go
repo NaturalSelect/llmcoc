@@ -2,8 +2,6 @@
 package agent
 
 import (
-	"context"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -85,20 +83,20 @@ func TestPickNPCHandle(t *testing.T) {
 	}
 }
 
-// ── buildNPCHead/buildNPCOpening NSFW后缀 ──────────────────────────────────────
+// ── NPC system 与指令的 NSFW 渲染 ───────────────────────────────────────────────
 
-// TestBuildNPCHeadFollowsNSFWMode 验证head(system prompt+人设)按本次调用的nsfwMode渲染,
-// 而不是房间级EnableNSFW;explicit_scene_requirements后缀只在opening里出现。
-func TestBuildNPCHeadFollowsNSFWMode(t *testing.T) {
+// TestNPCSystemPromptFollowsNSFWMode 验证 system 按本次调用的 nsfwMode 渲染,而不是房间级 EnableNSFW;
+// 它不含人设,也不含 explicit_scene_requirements 后缀(后者在末尾指令里)。
+func TestNPCSystemPromptFollowsNSFWMode(t *testing.T) {
 	prov := &sequentialFakeProvider{}
 	h := newNPCTestHandle(prov, true)
 
-	on := buildNPCHead(h, true, "姓名:线人")[0].Content
-	off := buildNPCHead(h, false, "姓名:线人")[0].Content
+	on := npcSystemPrompt(h, true)
+	off := npcSystemPrompt(h, false)
 
 	for _, sys := range []string{on, off} {
 		if strings.Contains(sys, "explicit_scene_requirements") {
-			t.Error("system prompt不应包含explicit_scene_requirements,该后缀应拼进本轮opening")
+			t.Error("system prompt不应包含explicit_scene_requirements,该后缀应拼进末尾指令")
 		}
 		if !strings.Contains(sys, "npc_agent") {
 			t.Error("system prompt应包含NPC基础提示词")
@@ -115,74 +113,46 @@ func TestBuildNPCHeadFollowsNSFWMode(t *testing.T) {
 	}
 }
 
-// TestBuildNPCOpeningNSFWSuffix 验证explicit_scene_requirements后缀和欲望列表都只按本次
-// nsfwMode渲染在opening(user消息)里,而不是system prompt里。
-func TestBuildNPCOpeningNSFWSuffix(t *testing.T) {
-	openingOff := buildNPCOpening("", "", "他有什么反应？", false)
-	openingOn := buildNPCOpening("", "", "他有什么反应？", true)
+// TestBuildNPCInstruction 验证末尾指令带人设、场景卡、KP 的提问,npc 属性与名字一致并转义;
+// explicit_scene_requirements 后缀和欲望列表只按本次 nsfwMode 渲染。
+func TestBuildNPCInstruction(t *testing.T) {
+	off := buildNPCInstruction("线人", "姓名:线人", "时间:未设定\n", "他有什么反应？", false)
+	on := buildNPCInstruction("线人", "姓名:线人", "", "他有什么反应？", true)
 
-	if strings.Contains(openingOff.Content, "explicit_scene_requirements") {
-		t.Error("非NSFW模式的opening不应包含explicit_scene_requirements后缀")
+	if off.Role != "user" {
+		t.Errorf("指令应是 user 消息, got %q", off.Role)
 	}
-	if !strings.Contains(openingOn.Content, "explicit_scene_requirements") {
-		t.Error("NSFW模式的opening应包含explicit_scene_requirements后缀")
-	}
-	if !strings.Contains(openingOff.Content, nsfwNPCDesiresOff) || strings.Contains(openingOff.Content, "性欲") {
-		t.Errorf("非NSFW模式的欲望列表不应包含性欲, got %q", openingOff.Content)
-	}
-	if !strings.Contains(openingOn.Content, nsfwNPCDesiresOn) {
-		t.Errorf("NSFW模式的欲望列表应包含性欲, got %q", openingOn.Content)
-	}
-}
-
-// TestRunNPC_ContextPrefixStableAcrossTurns 验证同一NPC连续两次act_npc:第2次发给LLM的
-// msgs应以"第1次发送的msgs+其assistant响应(LLM原始JSON,不是改写过的摘要)"为逐字段
-// 相同的前缀,且CacheBreakpoint只打在head末尾(下标1,人设消息)与上一轮末尾。
-func TestRunNPC_ContextPrefixStableAcrossTurns(t *testing.T) {
-	initAgentTestDB(t)
-	const sessionID = 501
-	if err := models.DB.Create(&models.GameSession{ID: sessionID}).Error; err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	prov := &sequentialFakeProvider{jsonResponses: []string{
-		`{"action":"皱眉","dialogue":"你想干什么？"}`,
-		`{"action":"后退一步","dialogue":"别过来！"}`,
-	}}
-	h := newNPCTestHandle(prov, true)
-	tempNPCs := []models.SessionNPC{{Name: "线人", Description: "一个线人", IsAlive: true}}
-	gctx := GameContext{Session: models.GameSession{ID: sessionID}}
-
-	if _, err := runNPC(context.Background(), h, gctx, "线人", "调查员上前搭话。", tempNPCs, false); err != nil {
-		t.Fatalf("runNPC turn1: %v", err)
-	}
-	if _, err := runNPC(context.Background(), h, gctx, "线人", "调查员继续追问。", tempNPCs, false); err != nil {
-		t.Fatalf("runNPC turn2: %v", err)
-	}
-
-	turn1Msgs := prov.recordedMessages[0]
-	turn2Msgs := prov.recordedMessages[1]
-
-	wantAssistant := llm.ChatMessage{Role: "assistant", Content: `{"action":"皱眉","dialogue":"你想干什么？"}`}
-	wantPrefix := append(append([]llm.ChatMessage(nil), turn1Msgs...), wantAssistant)
-	if len(turn2Msgs) < len(wantPrefix) {
-		t.Fatalf("turn2Msgs长度%d应不小于期望前缀长度%d", len(turn2Msgs), len(wantPrefix))
-	}
-	for i, want := range wantPrefix {
-		got := turn2Msgs[i]
-		got.CacheBreakpoint = false
-		want.CacheBreakpoint = false
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("turn2Msgs[%d]与期望前缀不一致:\ngot  %+v\nwant %+v", i, got, want)
+	for _, want := range []string{
+		"<npc_role npc=\"线人\">\n姓名:线人\n</npc_role>",
+		"<scene>\n时间:未设定\n</scene>",
+		"<kp_says npc=\"线人\">\n他有什么反应？\n</kp_says>",
+	} {
+		if !strings.Contains(off.Content, want) {
+			t.Errorf("指令缺少 %q:\n%s", want, off.Content)
 		}
 	}
+	if strings.Contains(on.Content, "<scene>") {
+		t.Error("场景卡为空时不应输出 <scene>")
+	}
+	if strings.Contains(off.Content, "explicit_scene_requirements") {
+		t.Error("非NSFW模式的指令不应包含explicit_scene_requirements后缀")
+	}
+	if !strings.Contains(on.Content, "explicit_scene_requirements") {
+		t.Error("NSFW模式的指令应包含explicit_scene_requirements后缀")
+	}
+	if !strings.Contains(off.Content, nsfwNPCDesiresOff) || strings.Contains(off.Content, "性欲") {
+		t.Errorf("非NSFW模式的欲望列表不应包含性欲, got %q", off.Content)
+	}
+	if !strings.Contains(on.Content, nsfwNPCDesiresOn) {
+		t.Errorf("NSFW模式的欲望列表应包含性欲, got %q", on.Content)
+	}
+	if strings.Contains(off.Content, "table_log") {
+		t.Error("指令不应再出现 table_log")
+	}
 
-	// head长度固定为2(system+人设);turn1归档的历史长度为2(opening+assistant),
-	// 所以CacheBreakpoint应恰好落在下标1(head末尾)和下标3(上一轮末尾)。
-	for i, m := range turn2Msgs {
-		want := i == 1 || i == 3
-		if m.CacheBreakpoint != want {
-			t.Errorf("turn2Msgs[%d].CacheBreakpoint=%v, want %v", i, m.CacheBreakpoint, want)
-		}
+	esc := buildNPCInstruction(`a"<b>`, "p", "", "q", false)
+	if !strings.Contains(esc.Content, `<npc_role npc="a&quot;&lt;b&gt;">`) || !strings.Contains(esc.Content, `<kp_says npc="a&quot;&lt;b&gt;">`) {
+		t.Errorf("npc 属性应转义:\n%s", esc.Content)
 	}
 }
 

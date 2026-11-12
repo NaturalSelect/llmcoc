@@ -435,22 +435,6 @@ func TestEventMessagesRenderOnlyPublicDiceForLLM(t *testing.T) {
 	}
 }
 
-func TestLoadNPCTableLogIncludesPublicDiceEvents(t *testing.T) {
-	initAgentTestDB(t)
-	const sid = 640
-	seedTableMsg(t, models.Message{SessionID: sid, Role: models.MessageRoleAssistant, Kind: models.MessageKindEvent, Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{Events: []models.GameEvent{{Type: "dice", Hidden: true}}}}})
-	seedTableMsg(t, models.Message{SessionID: sid, Role: models.MessageRoleAssistant, Kind: models.MessageKindEvent, Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{Events: []models.GameEvent{{Type: "dice", Skill: "力量", Roll: 33}}}}})
-	last := seedTableMsg(t, models.Message{SessionID: sid, Role: models.MessageRoleAssistant, Kind: models.MessageKindKP, Content: "门开了。"})
-
-	log, seen := loadNPCTableLog(sid, 0)
-	if seen != last.ID {
-		t.Errorf("seen = %d, want %d", seen, last.ID)
-	}
-	if !strings.Contains(log, "[骰子]: 力量鉴定: 33") || strings.Count(log, "[骰子]") != 1 {
-		t.Errorf("table log = %q, want only the public dice line", log)
-	}
-}
-
 // TestDiceEvent_NeedFollowsDifficulty 验证骰子事件同时带人物卡原始数值和按难度换算后的实际目标，
 // 并且结论与显示用的目标一致：技能 63、困难、骰 40 时目标是 31，结论是失败。
 func TestDiceEvent_NeedFollowsDifficulty(t *testing.T) {

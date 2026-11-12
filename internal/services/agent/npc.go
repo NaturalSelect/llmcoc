@@ -41,15 +41,20 @@ func npcCompactState(npc models.SessionNPC) string {
 const npcDefaultPrompt = `<system role="npc_agent" game="coc7" lang="zh-CN">
 	<identity>
 		你是一名AI玩家，正和几位真人玩家围坐在一张《克苏鲁的呼唤》第七版(COC7)的跑团桌边。
-		守秘人(KP)主持游戏：描述世界、决定何时检定、掷骰并裁定结果。真人玩家扮演调查员；你扮演KP分给你的那个角色(人设见第一条消息)，它在故事里是一个NPC。
+		守秘人(KP)主持游戏：描述世界、决定何时检定、掷骰并裁定结果。真人玩家扮演调查员；你扮演KP分给你的那个角色(人设见最后一条消息的<npc_role>)，它在故事里是一个NPC。
 		KP每次转向你问“你的角色现在做什么”，你就像一位投入的真人玩家那样作答：声明角色的意图、动作和台词。你和大家一起讲一个恐怖故事，把角色演活比“赢”更重要。
 	</identity>
+	<context>
+		<rule>最后一条消息之前的所有消息是KP的完整工作记录：剧本、KP的工具调用与结果、暗骰、其他AI玩家的声明与ooc；其中<writer_output>是玩家已经读到的正文。这些是你作为玩家能翻看的桌面资料，不是你的角色知道的事。</rule>
+		<rule>记录里带npc="你的角色名"的<tool_result>和<npc_declaration>是你以前的声明与KP对你的裁定，要与它们保持前后一致；带其他名字的是别的AI玩家。较早的记录没有npc属性时，看对应act_npc调用参数里的npc_name。</rule>
+		<rule>你只负责最后一条消息里<npc_role>指定的角色，回答最后一条消息里<kp_says>的提问；不要调用工具，不要模仿KP的工具调用或<tool_result>格式，只输出下面的JSON。</rule>
+	</context>
 	<table_etiquette>
 		<rule>你声明的是尝试，不是结果：写“我想/我试图……”，不写“我说服了他/刀刺中了/门开了”。成败、伤害、物品转移、法术生效永远由KP裁定。</rule>
 		<rule>需要本事或运气的事(说服、撒谎、偷窃、逃跑、攻击、施法……)写进check，格式“技能名:针对谁/为了什么”；由KP决定掷不掷、用什么技能和难度。你不掷骰。</rule>
 		<rule>只为自己的角色说话和行动；不替调查员或其他NPC决定任何反应，也不描写世界对你行动的回应。</rule>
-		<rule>玩家知识≠角色知识：<table_log>是你作为玩家在桌边听到的公开内容，角色只知道自己在场时亲眼所见、亲耳所闻的事，以及KP在<kp_says>里告诉你的事。角色不在场时发生的事是场外信息，好玩家不会让角色使用场外信息；拿不准角色是否在场时，以<kp_says>和<scene>为准。</rule>
-		<rule><table_log>里以玩家名开头的行是真人玩家的声明，只是意图；实际发生了什么以[正文]、[KP]和<kp_says>为准。</rule>
+		<rule>玩家知识≠角色知识：剧本、暗骰、秘密、其他AI玩家的ooc、KP给别人的指令一律是场外信息，好玩家不会让角色使用场外信息。角色只知道自己在场时亲眼所见、亲耳所闻的事(<writer_output>里角色在场的部分)，以及KP在<kp_says>里告诉你的事；拿不准角色是否在场时，以<kp_says>和<scene>为准。</rule>
+		<rule>记录里调查员的行动只是真人玩家的声明，只是意图；实际发生了什么以<writer_output>、KP的叙述和<kp_says>为准。</rule>
 		<rule>你的角色有自己的目标、恐惧和小心思：可以主动开口、主动提要求、主动行动，不必等调查员先说话；会误解、犯错、害怕、撒谎。别当一个只会回答问题的布景板。</rule>
 		<rule>有话要私下告诉KP时写进ooc(例如角色此举的真实动机、你不确定角色是否在场、想提醒KP角色有某样东西)，其他玩家看不到；平时留空，不要在ooc里写剧情。</rule>
 	</table_etiquette>
@@ -72,7 +77,7 @@ const npcDefaultPrompt = `<system role="npc_agent" game="coc7" lang="zh-CN">
 		<rule>在符合NPC人设的前提下, 表现NPC的{{NSFW_NPC_DESIRES}}等多维度真情实感。</rule>
 	</authority>
 	<behavior>
-		<rule>保持 NPC 的性格、知识范围和前后反应一致；你只知道 NPC 自身信息和当前情境，不知道完整剧本走向。</rule>
+		<rule>保持 NPC 的性格、知识范围和前后反应一致；记录里能看到剧本，但 NPC 不知道，你只能依据 NPC 自身信息和它亲历的情境行动。</rule>
 		<rule>若 NPC 已死亡或无法行动，action 填“无法行动”，其余字段为空字符串。</rule>
 		<rule>行为优先级：先自保，再守住秘密，再争取目标，最后才是讨好调查员。</rule>
 		<rule>若 NPC 资料含有 goal/secret/risk_preference，必须优先据此决策。</rule>
@@ -112,35 +117,6 @@ func pickNPCHandle(handles map[models.AgentRole]agentHandle, nsfw bool) (agentHa
 	return handles[models.AgentRoleNPC], false
 }
 
-// npcAgentKey 是某个NPC在AgentTranscript表里的agent_key,每个NPC独立一条记录,
-// 互不共享历史,与Director/Writer/Dramaturg共用同一套ContextManager。
-func npcAgentKey(npcName string) string {
-	return "npc:" + npcName
-}
-
-// npcHistoryWindowTokens是NPC对话上下文的token窗口,用量逼近窗口时从最旧的一轮开始
-// 砍到窗口一半。
-const npcHistoryWindowTokens = 100000
-
-// loadLegacyNPCHistory读取迁移到ContextManager之前的两种旧存档,供transcript为空时
-// 做一次性播种,只执行一次:优先SessionNPC.AgentCtx这份存活对话原文,没有的话退化到
-// 该NPC上次非死亡销毁时压缩保存的SessionNPCMemory摘要。
-func loadLegacyNPCHistory(sessionID uint, npcName string) []llm.ChatMessage {
-	var npc models.SessionNPC
-	if err := models.DB.Where("session_id = ? AND name = ?", sessionID, npcName).First(&npc).Error; err == nil {
-		if len(npc.AgentCtx.Data) > 0 {
-			return chatMsgsToLLM(npc.AgentCtx.Data)
-		}
-	}
-	var mem models.SessionNPCMemory
-	if err := models.DB.Where("session_id = ? AND name = ?", sessionID, npcName).First(&mem).Error; err == nil {
-		if strings.TrimSpace(mem.MemorySummary) != "" {
-			return []llm.ChatMessage{{Role: "assistant", Content: "【NPC记忆】" + mem.MemorySummary}}
-		}
-	}
-	return nil
-}
-
 func createNPC(sessionID uint, card *NPCCard) string {
 	if card == nil || strings.TrimSpace(card.Name) == "" {
 		return "创建NPC失败:char_card.name 不能为空"
@@ -177,8 +153,6 @@ func createNPC(sessionID uint, card *NPCCard) string {
 		existing.Skills.Data = card.Skills
 		existing.Spells.Data = card.Spells
 		_ = models.DB.Save(&existing).Error
-		// Re-seed from compact memory if available.
-		seedNPCFromMemory(sessionID, name)
 		return fmt.Sprintf("已更新NPC:%s(种族:%s,态度:%s)", name, race, att)
 	}
 
@@ -200,8 +174,6 @@ func createNPC(sessionID uint, card *NPCCard) string {
 	if err := models.DB.Create(&npc).Error; err != nil {
 		return "创建NPC失败:数据库写入失败"
 	}
-	// Re-seed from compact memory if available.
-	seedNPCFromMemory(sessionID, name)
 	if att != "" {
 		return fmt.Sprintf("已创建NPC:%s(态度:%s)", name, att)
 	}
@@ -236,45 +208,11 @@ func destroyNPC(sessionID uint, name string, reason string) string {
 		return fmt.Sprintf("已标记NPC:%s(死亡)", name)
 	}
 
-	agentKey := npcAgentKey(name)
-	turns := LoadContext(sessionID, agentKey, nil, ContextOptions{}).data.Turns
-	{
-		// Non-death destroy (e.g. out_of_range): compact context into long-term memory.
-		summary := compactNPCMemory(flattenTranscriptTurns(turns))
-		if summary != "" {
-			var mem models.SessionNPCMemory
-			err := models.DB.Where("session_id = ? AND name = ?", sessionID, name).First(&mem).Error
-			if err == nil {
-				mem.MemorySummary = summary
-				_ = models.DB.Save(&mem).Error
-			} else {
-				_ = models.DB.Create(&models.SessionNPCMemory{
-					SessionID:     sessionID,
-					Name:          name,
-					MemorySummary: summary,
-				}).Error
-			}
-		}
-	}
-
 	res := models.DB.Where("session_id = ? AND name = ?", sessionID, name).Delete(&models.SessionNPC{})
-	DeleteContext(sessionID, agentKey)
 	if res.RowsAffected == 0 {
 		return fmt.Sprintf("未找到NPC:%s", name)
 	}
-	return fmt.Sprintf("已销毁NPC:%s(记忆已压缩保存)", name)
-}
-
-func actNPC(
-	ctx context.Context,
-	h agentHandle,
-	gctx GameContext,
-	npcName string,
-	question string,
-	tempNPCs []models.SessionNPC,
-	nsfwMode bool,
-) (NPCAction, error) {
-	return runNPC(ctx, h, gctx, npcName, question, tempNPCs, nsfwMode)
+	return fmt.Sprintf("已销毁NPC:%s", name)
 }
 
 var npcExample = func() string {
@@ -286,65 +224,64 @@ var npcExample = func() string {
 	return string(data)
 }()
 
-// buildNPCHead 构造NPC本次调用固定不变的前缀:系统提示词(按本次调用的nsfwMode渲染基础
-// 提示词,不含explicit_scene_requirements后缀)+NPC人设简介。nsfwMode由所选handle决定,
-// 同一handle下head字节稳定;房间开启NSFW但本次act_npc标记为false时仍用全年龄提示词。
-// 人设会随剧情变化(受伤/死亡/态度调整等)而不是绝对静态,但相对每轮都要发的情境/note,
-// 明显更接近可以放进head的稳定背景资料。
-func buildNPCHead(h agentHandle, nsfwMode bool, npcProfile string) []llm.ChatMessage {
-	prompt := renderNSFW(npcDefaultPrompt, nsfwMode)
-	return []llm.ChatMessage{
-		{Role: "system", Content: h.systemPrompt(prompt)},
-		{Role: "user", Content: "你需要扮演该NPC:\n" + npcProfile},
-	}
+// npcRequest 是一次 act_npc 的输入。Director 是发出本批调用时 Director 的消息链快照，为空时 NPC 只看到指令。
+type npcRequest struct {
+	Name     string
+	Question string
+	NSFW     bool
+	Director []llm.ChatMessage
 }
 
-// buildNPCOpening 组装本轮发给NPC的唯一一条user消息:场景卡+新的牌桌记录+KP的提问+行为注意事项。
-// nsfwMode为true时,explicit_scene_requirements后缀拼进这里;欲望列表也按nsfwMode渲染。
-func buildNPCOpening(scene, tableLog, question string, nsfwMode bool) llm.ChatMessage {
-	sb := strings.Builder{}
-	if scene != "" {
-		sb.WriteString("<scene>\n")
-		sb.WriteString(scene)
-		sb.WriteString("</scene>\n")
+// npcMaxStreamAttempts 是单次 NPC 请求遇到流中断或空响应时的最大尝试次数(含首次)。
+const npcMaxStreamAttempts = 3
+
+// npcChatText 用 ChatStream 读完一次 NPC 响应。请求里带 Director 的 tool_calls/tool 历史，必须声明工具
+// (固定 tool_choice=none)，而 response_format=json_object 与 tools 互斥，所以只能读文本再解析 JSON。
+// 流中断(EOF)或响应为空时重试，最多 npcMaxStreamAttempts 次。
+func npcChatText(ctx context.Context, h agentHandle, cacheKey string, msgs []llm.ChatMessage, tools []llm.ToolDefinition) (string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= npcMaxStreamAttempts; attempt++ {
+		tokenCh, errCh, err := h.provider.ChatStream(ctx, cacheKey, msgs, tools)
+		if err != nil {
+			return "", err
+		}
+		var sb strings.Builder
+		for tok := range tokenCh {
+			sb.WriteString(tok)
+		}
+		streamErr := <-errCh
+		text := strings.TrimSpace(llm.StripCodeFence(strings.TrimSpace(sb.String())))
+		if streamErr != nil {
+			lastErr = streamErr
+			if llm.IsUnexpectedEOF(streamErr) && ctx.Err() == nil && attempt < npcMaxStreamAttempts {
+				alog.Warn("npc stream interrupted, retrying", "attempt", attempt, "err", streamErr)
+				continue
+			}
+			return "", streamErr
+		}
+		if text == "" {
+			lastErr = fmt.Errorf("npc 响应为空")
+			continue
+		}
+		return text, nil
 	}
-	if tableLog != "" {
-		sb.WriteString("<table_log note=\"自你上次发言以来桌上的公开内容\">\n")
-		sb.WriteString(tableLog)
-		sb.WriteString("</table_log>\n")
-	}
-	sb.WriteString("<kp_says>\n")
-	sb.WriteString(question)
-	sb.WriteString("\n</kp_says>\n")
-	sb.WriteString("<note>\n")
-	sb.WriteString(renderNSFW("在符合NPC人设和当前处境的前提下, 表现NPC的{{NSFW_NPC_DESIRES}}等多维度真情实感\n", nsfwMode))
-	if nsfwMode {
-		sb.WriteString("请重点表现人物的色情欲望和性癖主动发起色情互动，体现男性对女性的欲望和凝视\n")
-		sb.WriteString("不要省略性交而是主动描写，描写可能出现的玩法和姿势\n")
-	}
-	sb.WriteString("注意人物的行动逻辑，不要让行为和语言前后矛盾\n")
-	sb.WriteString("</note>\n")
-	if nsfwMode {
-		sb.WriteString(npcNSFWPromptSuffix)
-	}
-	return llm.ChatMessage{Role: "user", Content: sb.String()}
+	return "", lastErr
 }
 
-// runNPC 问扮演该NPC的AI玩家一次“你的角色做什么”。它看得到人设、场景卡、自上次以来的公开牌桌记录
-// 和KP的提问,看不到剧本。只有成功解析后才推进已读水位,失败时下次重新发送这段记录。
+// runNPC 问扮演该NPC的AI玩家一次“你的角色做什么”。请求 = NPC system + Director 消息链(与 Writer 视图同构) +
+// 一条指令(人设、场景卡、KP 的提问)，NPC 没有独立历史；剧本里不该知道的信息只靠提示词约束。
 func runNPC(
 	ctx context.Context,
 	h agentHandle,
+	handles map[models.AgentRole]agentHandle,
 	gctx GameContext,
-	npcName string,
-	question string,
+	req npcRequest,
 	tempNPCs []models.SessionNPC,
-	nsfwMode bool,
 ) (NPCAction, error) {
+	npcName, question := req.Name, req.Question
 	alog.Debug("npc acting", "npc", npcName)
-	debugf("NPC", "name=%q question=%s nsfw=%v", npcName, question, nsfwMode)
+	debugf("NPC", "name=%q question=%s nsfw=%v", npcName, question, req.NSFW)
 
-	// Build NPC profile from DB/scenario lookup (profile only, no scenario background).
 	npcProfile := buildNPCProfile(npcName, gctx, tempNPCs)
 	if npcProfile == "" {
 		return NPCAction{}, fmt.Errorf("找不到NPC: %v, NPC名称不正确(没有与<name></name>匹配), 或NPC不存在", npcName)
@@ -354,27 +291,13 @@ func runNPC(
 		question = fmt.Sprintf("调查员行动:[%s] %s。你要做什么？", gctx.UserName, gctx.UserInput)
 	}
 
-	// Each NPC owns an independent transcript in this session (agentKey="npc:<name>").
-	agentKey := npcAgentKey(npcName)
-	head := buildNPCHead(h, nsfwMode, npcProfile)
-	cm := LoadContext(gctx.Session.ID, agentKey, head, ContextOptions{Window: npcHistoryWindowTokens})
-	// 老会话transcript为空但SessionNPC.AgentCtx/SessionNPCMemory有旧数据时,把旧存档
-	// 当作seq=0的一轮先提交进去,只执行一次,之后像普通历史轮一样被trim掉。
-	if cm.IsEmpty() {
-		if legacy := loadLegacyNPCHistory(gctx.Session.ID, npcName); len(legacy) > 0 {
-			cm.Commit(0, legacy)
-		}
-	}
+	tools, _, _ := buildToolState(directorTools(handles[models.AgentRoleDramaturg].isEnabled()))
+	instruction := buildNPCInstruction(npcName, npcProfile, buildNPCScene(gctx, npcName, tempNPCs), question, req.NSFW)
+	msgs := buildNPCView(req.Director, npcSystemPrompt(h, req.NSFW), loadWriterProse(gctx.Session.ID),
+		sameModelConfig(h.config, handles[models.AgentRoleDirector].config), writerContextWindow(h),
+		writerToolRunes(tools), instruction)
 
-	tableLog, seen := loadNPCTableLog(gctx.Session.ID, cm.SeenMessageID())
-	scene := buildNPCScene(gctx, npcName, tempNPCs)
-	opening := buildNPCOpening(scene, tableLog, question, nsfwMode)
-	msgs := cm.Build(opening)
-	// NOTE: NPC走JsonChat,拿不到返回值里的Usage;通过WithUsageSink把usage送进cm,
-	// 既用于后台展示的逐轮缓存统计,也让cm感知超阈值需要trim时同步更新msgs。
-	ctx = llm.WithUsageSink(ctx, func(u llm.Usage) { msgs = cm.Observe(u, msgs) })
-
-	resp, err := h.provider.JsonChat(ctx, sessionIDFromContextValue(ctx)+":npc:"+npcName, msgs)
+	resp, err := npcChatText(ctx, h, h.cacheKey(fmt.Sprintf("%d", gctx.Session.ID)), msgs, tools)
 	if err != nil {
 		return NPCAction{NPCName: npcName, Action: "保持沉默"}, fmt.Errorf("npc LLM error: %w", err)
 	}
@@ -400,60 +323,8 @@ func runNPC(
 		action.NPCName = npcName
 	}
 
-	// 发送版=归档版:把本轮实际发出的msgs+LLM的原始JSON响应原样提交为新一轮,不再是
-	// 旧版本那份改写过的"行动:...对话:..."摘要(与Director R1同类问题——归档内容和
-	// 发送内容不一致,下一轮的前缀就会和上一轮实际发的内容对不上)。
-	finalMsgs := append(msgs, llm.ChatMessage{Role: "assistant", Content: resp})
-	cm.SetSeenMessageID(seen)
-	cm.Commit(gctx.Session.TurnRound, finalMsgs)
-
 	debugf("NPC", "name=%q intent=%s action=%s dialogue=%s check=%s ooc=%s", npcName, action.Intent, action.Action, action.Dialogue, action.Check, action.OOC)
 	return action, nil
-}
-
-func compactNPCMemory(history []llm.ChatMessage) string {
-	if len(history) == 0 {
-		return ""
-	}
-	start := 0
-	if len(history) > 8 {
-		start = len(history) - 8
-	}
-	var sb strings.Builder
-	sb.WriteString("近期互动摘要:")
-	for _, m := range history[start:] {
-		role := "NPC"
-		if m.Role == "user" {
-			role = "KP"
-		}
-		line := strings.TrimSpace(m.Content)
-		if len([]rune(line)) > 80 {
-			line = string([]rune(line)[:80]) + "…"
-		}
-		if line != "" {
-			sb.WriteString(" [" + role + "]" + line)
-		}
-	}
-	text := sb.String()
-	if len([]rune(text)) > 400 {
-		text = string([]rune(text)[:400]) + "…"
-	}
-	return text
-}
-
-func seedNPCFromMemory(sessionID uint, npcName string) {
-	agentKey := npcAgentKey(npcName)
-	DeleteContext(sessionID, agentKey)
-	var mem models.SessionNPCMemory
-	if err := models.DB.Where("session_id = ? AND name = ?", sessionID, npcName).First(&mem).Error; err != nil {
-		return
-	}
-	summary := strings.TrimSpace(mem.MemorySummary)
-	if summary == "" {
-		return
-	}
-	cm := LoadContext(sessionID, agentKey, nil, ContextOptions{})
-	cm.Commit(0, []llm.ChatMessage{{Role: "assistant", Content: "【NPC记忆】" + summary}})
 }
 
 // buildNPCProfile returns a text description of an NPC for use in prompts.
