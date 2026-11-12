@@ -317,7 +317,7 @@ func TestRenderWriterPaint(t *testing.T) {
 	if strings.Contains(off, "paint") || strings.Contains(off, "<illustration>") {
 		t.Error("off prompt must not mention paint")
 	}
-	for _, want := range []string{"<illustration>", "唯一可用的工具是 paint", "![一句话说明](地址)", "不要一开篇就配图", "一次只调用一个 paint"} {
+	for _, want := range []string{"<illustration>", "唯一可用的工具是 paint", "![一句话说明](地址)", "不要一开篇就配图", "一次只调用一个 paint", "主动配图"} {
 		if !strings.Contains(on, want) {
 			t.Errorf("on prompt missing %q", want)
 		}
