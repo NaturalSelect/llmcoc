@@ -49,7 +49,7 @@ func (h agentHandle) isEnabled() bool {
 // 但若该 Agent 配置了 WithJailbreak,会在外层包裹越狱提示词,对所有角色统一生效。
 func (h agentHandle) systemPrompt(defaultPrompt string) string {
 	if h.config != nil && h.config.WithJailbreak {
-		return withJailbreakPrompt(defaultPrompt)
+		return withJailbreakPrompt(defaultPrompt, h.config.ModelName)
 	}
 	return defaultPrompt
 }
