@@ -5,9 +5,11 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"strings"
 	"time"
 
@@ -215,14 +217,69 @@ func (p *openAIProvider) generateImage(ctx context.Context, prompt string, opts 
 		return p.generateImageViaChat(ctx, model, prompt)
 	}
 
-	resp, err := p.client.Images.Generate(ctx, buildImageParams(model, prompt, opts))
+	params := buildImageParams(model, prompt, opts)
+	if shouldStreamImage(model) {
+		return p.generateImageStream(ctx, params)
+	}
+
+	resp, err := p.client.Images.Generate(ctx, params)
 	if err != nil {
 		return "", "", fmt.Errorf("LLM image error: %w", err)
 	}
+	return firstImageData(resp)
+}
+
+func firstImageData(resp *openai.ImagesResponse) (string, string, error) {
 	if len(resp.Data) == 0 || strings.TrimSpace(resp.Data[0].B64JSON) == "" {
 		return "", "", errors.New("LLM returned no image data")
 	}
 	return resp.Data[0].B64JSON, "image/png", nil
+}
+
+// NOTE: OpenAI 文档里 dall-e-2/3 不支持 stream 参数，会直接拒绝并被 30 次重试循环放大成长时间失败，
+// 所以只有它们保持一次性请求；其余模型(gpt-image、扩散渠道、第三方网关)一律走流式。
+func shouldStreamImage(model string) bool {
+	return !strings.Contains(strings.ToLower(model), "dall-e")
+}
+
+// generateImageStream 以 SSE 请求 /images/generations，只取最终的 completed 事件。
+// 不请求中间预览图(partial_images)，预览图会额外计费且这里用不上。
+func (p *openAIProvider) generateImageStream(ctx context.Context, params openai.ImageGenerateParams) (string, string, error) {
+	var raw *http.Response
+	stream := p.client.Images.GenerateStreaming(ctx, params, option.WithResponseInto(&raw))
+	defer stream.Close()
+	if err := stream.Err(); err != nil {
+		return "", "", fmt.Errorf("LLM image error: %w", err)
+	}
+
+	// NOTE: 部分网关会忽略 stream 参数直接返回完整 JSON。此时图片已经生成并计费，必须按普通响应解析，不能重发请求。
+	if raw != nil && strings.HasPrefix(raw.Header.Get("Content-Type"), "application/json") {
+		var resp openai.ImagesResponse
+		if err := json.NewDecoder(raw.Body).Decode(&resp); err != nil {
+			return "", "", fmt.Errorf("LLM image error: decode response: %w", err)
+		}
+		return firstImageData(&resp)
+	}
+
+	for stream.Next() {
+		ev := stream.Current()
+		if ev.Type != "image_generation.completed" {
+			continue
+		}
+		if strings.TrimSpace(ev.B64JSON) == "" {
+			return "", "", errors.New("LLM returned no image data")
+		}
+		mime := "image/png"
+		switch ev.OutputFormat {
+		case "jpeg", "webp":
+			mime = "image/" + ev.OutputFormat
+		}
+		return ev.B64JSON, mime, nil
+	}
+	if err := stream.Err(); err != nil {
+		return "", "", fmt.Errorf("LLM image stream error: %w", err)
+	}
+	return "", "", errors.New("LLM image stream ended without a completed image")
 }
 
 func (p *openAIProvider) GenerateImage(ctx context.Context, prompt string, opts ImageOptions) (string, string, error) {
