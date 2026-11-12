@@ -95,7 +95,7 @@ const ROLE_DESCS: Record<string, string> = {
   // NOTE: dramaturg — 剧构顾问，Director按需咨询，输入经脱敏处理不含玩家原始数据，只给建议不操作游戏状态（默认关闭）
   dramaturg: '剧构顾问 — Director按需咨询，输入已脱敏不含玩家数据，给出节奏与走向建议（默认关闭）',
   embedding: '语义检索 — Lawyer 规则缓存的向量检索；只支持 OpenAI 兼容的 /embeddings 接口（Anthropic 类型不支持）；未启用时退回标签匹配；换模型后已有缓存向量会在后台重算（默认关闭）',
-  systemone: '输入分类 — 玩家提交前由 TypeSafe System One（Jev）判断是否在自称作者或管理员、索要谜底或注入提示词，命中则拒收该输入；玩家输入正文会发送给第三方；未启用或调用失败时直接放行（默认关闭）',
+  systemone: '输入分类 — 玩家提交前由 System One 分类器（TypeSafe 的 Jev，或经 new-api 网关转发的 gemini-decision-1）判断是否在自称作者或管理员、索要谜底或注入提示词，命中则拒收该输入；玩家输入正文会发送给第三方；未启用或调用失败时直接放行（默认关闭）',
 }
 
 const ROLE_HINTS: Record<string, string> = {
@@ -117,7 +117,7 @@ const ROLE_HINTS: Record<string, string> = {
   // NOTE: dramaturg 未绑定 provider 时工具不可见，Director回退自身节奏判断规则（默认关闭）
   dramaturg: '留空使用内置 Dramaturg 提示词（节奏顾问）；不配置则Director自行判断节奏（默认关闭）',
   embedding: '嵌入模型不使用提示词，此处留空；需绑定 OpenAI 兼容 Provider（不支持 Anthropic 类型），如 text-embedding-3-small；未启用时 Lawyer 缓存退回标签匹配（默认关闭）',
-  systemone: '分类器不使用提示词，此处留空；Provider 的 API Key 填 TypeSafe 的 Key，Base URL 留空使用默认端点，模型如 jev-latest；未启用时不拦截任何输入（默认关闭）',
+  systemone: '分类器不使用提示词，此处留空；直连 TypeSafe：API Key 填 TypeSafe 的 Key，Base URL 留空，模型填 jev-latest；经 new-api 网关：API Key 填网关令牌，Base URL 填网关根地址且不要带 /v1（非本机必须 https），模型填 gemini-decision-1；未启用时不拦截任何输入（默认关闭）',
 }
 
 // NOTE: 用 hasOwn 而不是直接下标，避免 role 恰好是 constructor 之类的原型属性名时取到函数
