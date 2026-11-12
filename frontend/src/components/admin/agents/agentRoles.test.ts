@@ -72,6 +72,7 @@ describe('角色表', () => {
     expect(agentDesc('systemone')).toContain('第三方')
     expect(agentDesc('systemone')).toContain('放行')
     expect(agentDefaultHint('systemone')).toContain('jev-latest')
+    expect(agentDefaultHint('systemone')).toContain('gemini-decision-1')
     expect(agentDefaultHint('systemone')).toContain('API Key')
   })
 
@@ -108,7 +109,7 @@ describe('角色表', () => {
     expect(ROLE_DEFAULTS.systemone).toStrictEqual({
       max_tokens: 0,
       temperature: 0,
-      model_name: 'jev-latest',
+      model_name: 'gemini-decision-1',
       thinking_level: 'none',
       is_active: false,
     })
@@ -143,7 +144,7 @@ describe('buildAgentForms', () => {
     const painter = forms.find((f) => f.role === 'painter')!
     expect(painter).toMatchObject({ model_name: 'dall-e-3', thinking_level: 'none', is_active: false, max_tokens: 0 })
     const systemone = forms.at(-1)!
-    expect(systemone).toMatchObject({ role: 'systemone', model_name: 'jev-latest', thinking_level: 'none', is_active: false, max_tokens: 0 })
+    expect(systemone).toMatchObject({ role: 'systemone', model_name: 'gemini-decision-1', thinking_level: 'none', is_active: false, max_tokens: 0 })
     const embedding = forms.at(-2)!
     expect(embedding).toMatchObject({ role: 'embedding', model_name: 'text-embedding-3-small', thinking_level: 'none', is_active: false, max_tokens: 0 })
   })

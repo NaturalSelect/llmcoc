@@ -133,8 +133,8 @@ func TestSeedDefaultAgentConfigs_SeedsSystemOneInactive(t *testing.T) {
 	if cfg.IsActive {
 		t.Error("systemone should be inactive by default so player input is not sent to a third party until an admin binds a TypeSafe key")
 	}
-	if cfg.ModelName != "jev-latest" {
-		t.Errorf("model = %q, want jev-latest", cfg.ModelName)
+	if cfg.ModelName != "gemini-decision-1" {
+		t.Errorf("model = %q, want gemini-decision-1", cfg.ModelName)
 	}
 }
 

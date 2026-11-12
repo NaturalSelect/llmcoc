@@ -14,14 +14,15 @@ import (
 )
 
 const (
-	// NOTE: 厂商标称延迟 70 到 500 毫秒，3 秒是玩家愿意等待的上限，超时按放行处理。
+	// NOTE: 厂商标称延迟：Jev 70 到 500 毫秒，gemini-decision-1 端到端约 150 到 250 毫秒。
+	// 3 秒是玩家愿意等待的上限，超时按放行处理。
 	inputGuardTimeout = 3 * time.Second
 	// NOTE: 阈值作用在三项违规概率之和上，不作用在 confidence 上。0.8 没有数据依据，
 	// 每次分类都会在 debug 日志里记录各项概率，上线后据此调整。
 	inputGuardBlockThreshold = 0.8
 	inputGuardQuestionID     = "kind"
 
-	systemOneDefaultModel = "jev-latest"
+	systemOneDefaultModel = "gemini-decision-1"
 )
 
 // 违规类别；其余类别（in_character / table_talk）视为正常输入。

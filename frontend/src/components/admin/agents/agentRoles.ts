@@ -45,7 +45,7 @@ export const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
   // NOTE: embedding 给 Lawyer 规则缓存做语义检索，只走嵌入接口，不用 token 上限和温度；默认关闭，未启用时缓存退回标签匹配。
   embedding: { max_tokens: 0, temperature: 0, model_name: 'text-embedding-3-small', thinking_level: 'none', is_active: false },
   // NOTE: systemone 是玩家输入的越权请求分类器，只走 TypeSafe 的 System One 接口：Provider 只取 Base URL 和 API Key，不用 token 上限、温度和提示词；默认关闭，未启用时输入直接放行。
-  systemone: { max_tokens: 0, temperature: 0, model_name: 'jev-latest', thinking_level: 'none', is_active: false },
+  systemone: { max_tokens: 0, temperature: 0, model_name: 'gemini-decision-1', thinking_level: 'none', is_active: false },
 }
 
 // NOTE: scripter 角色已下线，后端旧库可能还残留该行，界面不显示

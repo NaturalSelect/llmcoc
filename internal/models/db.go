@@ -193,7 +193,7 @@ func seedDefaultAgentConfigs() {
 		// NOTE: embedding 默认关闭，需要管理员绑定 OpenAI 兼容的嵌入模型；未启用时 Lawyer 规则缓存退回标签子串匹配。
 		{Role: AgentRoleEmbedding, ProviderConfigID: provID, ModelName: "text-embedding-3-small", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
 		// NOTE: systemone 默认关闭，需要管理员绑定填了 TypeSafe Key 的 provider；未启用时玩家输入不经过分类直接放行。
-		{Role: AgentRoleSystemOne, ProviderConfigID: provID, ModelName: "jev-latest", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
+		{Role: AgentRoleSystemOne, ProviderConfigID: provID, ModelName: "gemini-decision-1", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
 		// NOTE: diffusion_translator 只输出一行标签,低温度减少擅自添加画面元素;仅在 Painter 开启 diffusion_mode 时才会被调用。
 		{Role: AgentRoleDiffusionTranslator, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.3, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
