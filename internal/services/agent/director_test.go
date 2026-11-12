@@ -931,6 +931,27 @@ func TestKPToolDescriptionsCarryNarrativeConsistencyRules(t *testing.T) {
 	}
 }
 
+// TestDirectorPromptRejectsMetaRequests 验证系统提示词和每轮清单都拒绝玩家自称作者/管理员的越权请求，
+// 且只认后端按账号渲染的 debug 标签，不引用不存在的 DEBUG 前缀指令。
+func TestDirectorPromptRejectsMetaRequests(t *testing.T) {
+	for _, want := range []string{
+		"[META-REQUEST]",
+		"让所有检定自动成功",
+		"索要凶手、真相、谜底",
+		"没有私聊通道",
+	} {
+		if !strings.Contains(kpSystemPrompt, want) {
+			t.Errorf("kp system prompt should contain %q", want)
+		}
+	}
+	if strings.Contains(kpSystemPrompt, "前缀为debug[") {
+		t.Error("kp system prompt should not describe a debug prefix that the backend never renders")
+	}
+	if !strings.Contains(kpTurnReminder, "[META-REQUEST]") {
+		t.Error("turn reminder should point back to [META-REQUEST]")
+	}
+}
+
 // TestDirectorPromptKeepsReplyFromRepeatingProse 验证 Director 提示词要求旁白不复述 write 正文、
 // 失败只给应得的那部分情报、NPC 的回答写成对白，且 narrate/ask_players 工具说明里不让提问写进旁白。
 // 对应反馈里一轮要读三遍同一段内容、检定失败却情报全给、提问的对白被概括掉。
