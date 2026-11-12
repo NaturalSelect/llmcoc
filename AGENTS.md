@@ -26,6 +26,7 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - CI 只有 `.github/workflows/test.yml`：前端 install/typecheck/test/build，然后 Go vet + test，最后 `go build` 确认带真实产物也能编译（Go 版本取自 `go.mod`）。无 Makefile、无 lint 配置。
 - 测试不依赖网络、真实 LLM 或外部服务。
 - 项目目录里可能已有服务进程在跑（占用 8080、持有 `data/llmcoc.db`）：测试/启动前先确认端口，改代码前先 `git status`。
+- 服务端不在本机部署。
 - `data/`、`bin/`、`tmp/`、`.env`、`config.local.yaml`、`frontend/node_modules/`、`cmd/server/dist/app/` 被 gitignore。`data/` 含 SQLite 库、`lawyer_cache.json`、`images/`、`portraits/`。
 - 本机 `~/.npm` 缓存目录若属主是 root，npm 会报权限错误：给 npm 命令加 `NPM_CONFIG_CACHE=/tmp/llmcoc-npm-cache`。
 
