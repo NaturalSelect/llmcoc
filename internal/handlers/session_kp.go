@@ -642,6 +642,7 @@ func roundMessage(sessionID uint, ro agent.RoundOutputs, it agent.Output) (model
 		}
 		msg.Kind = models.MessageKindWriter
 		msg.Status = models.MessageStatusPending
+		msg.WriterDirection = strings.TrimSpace(it.Text)
 		meta.NSFW, meta.Auto, meta.CallID = it.NSFW, it.Auto, it.CallID
 	case agent.OutputKP:
 		msg.Kind = models.MessageKindKP

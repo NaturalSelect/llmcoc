@@ -310,6 +310,9 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	if meta := msgs[2].Meta.Data; meta == nil || meta.NSFW || meta.CallID != "" {
 		t.Errorf("second writer meta = %+v, want sfw without call id", meta)
 	}
+	if msgs[0].WriterDirection != "描述走廊" || msgs[1].WriterDirection != "" || msgs[2].WriterDirection != "描述门后" {
+		t.Errorf("writer directions = %q, %q, %q", msgs[0].WriterDirection, msgs[1].WriterDirection, msgs[2].WriterDirection)
+	}
 	if meta := msgs[3].Meta.Data; meta == nil || meta.Ask == nil || len(meta.Ask.UserIDs) != 1 || meta.Ask.Names[0] != "爱丽丝" ||
 		len(meta.Options) != 1 || meta.Options[0] != "我推开门" {
 		t.Errorf("ask meta = %+v", meta)
@@ -821,13 +824,16 @@ func TestGetMessages_ReturnsKindStatusFloorAndMeta(t *testing.T) {
 	})
 	models.DB.Create(&models.Message{
 		SessionID: sessionID, Role: models.MessageRoleAssistant, Kind: models.MessageKindWriter, Status: models.MessageStatusPending,
-		Floor: 3, Content: "", Username: "KP",
+		Floor: 3, Content: "", Username: "KP", WriterDirection: "秘密指令",
 	})
 
 	w := httptest.NewRecorder()
 	roomRouter(NewSessionHandlers(nil), userID, "tester", "user").ServeHTTP(w, jsonReq(http.MethodGet, "/sessions/"+itoa(sessionID)+"/messages", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "秘密指令") {
+		t.Errorf("messages response leaks the writer direction: %s", w.Body.String())
 	}
 	var got []struct {
 		Kind    string `json:"kind"`

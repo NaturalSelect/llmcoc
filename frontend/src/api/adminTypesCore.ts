@@ -176,3 +176,11 @@ export interface SessionContextAgent {
 export interface SessionContext {
   agents: SessionContextAgent[]
 }
+
+export interface WriterDirection {
+  id: number
+  call_id: string
+  auto: boolean
+  // NOTE: 功能上线前的旧消息没有记录，为空串
+  direction: string
+}

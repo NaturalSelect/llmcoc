@@ -99,6 +99,8 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
         return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
       }
       if (path === '/api/sessions/7/chat') return json({}, 202)
+      if (path === '/api/admin/messages/4/direction') return json({ id: 4, call_id: 'call_w1', auto: false, direction: '描述门廊，强调霉味' })
+      if (path === '/api/admin/messages/5/direction') return json({ id: 5, call_id: '', auto: true, direction: '' })
       if (path === '/api/characters/5') return json({ id: 5, name: '爱丽丝', occupation: '记者', inventory: [{ name: '最新的怀表', count: 1, type: 'misc' }], stats: { hp: 3, max_hp: 10, san: 20, max_san: 50, mp: 8, max_mp: 8 } })
       if (path === '/api/characters/5/portrait') return json({ portrait_hash: 'FF00AA' })
       return json({})
@@ -433,6 +435,48 @@ describe('GameView', () => {
 
     const player = await setup({ extraMessages: [writer] })
     expect(player.wrapper.findAll('button').some((b) => b.text().includes('源码'))).toBe(false)
+    player.wrapper.unmount()
+  })
+
+  test('管理员可以按需查看 writer 的导演指令：只请求一次、能和源码同时打开、空指令有提示；普通玩家没有按钮也不请求', async () => {
+    const writer = { id: 4, role: 'assistant', kind: 'writer', status: 'done', floor: 1, content: '门开了。', meta: { call_id: 'call_w1' } }
+    const legacy = { id: 5, role: 'assistant', kind: 'writer', status: 'done', floor: 1, content: '旧正文。', meta: {} }
+    const directionCalls = (calls: Array<{ method: string; path: string }>, id: number) =>
+      calls.filter((c) => c.method === 'GET' && c.path === `/api/admin/messages/${id}/direction`).length
+
+    const admin = await setup({ asAdmin: true, extraMessages: [writer, legacy] })
+    const toggle = (label: string, idx: number) => admin.wrapper.findAll('button').filter((b) => b.text().includes(label))[idx]!
+    expect(admin.wrapper.find('[data-testid="writer-direction"]').exists()).toBe(false)
+    expect(directionCalls(admin.fetchCalls, 4)).toBe(0)
+
+    await toggle('指令', 0).trigger('click')
+    await flushPromises()
+    expect(admin.wrapper.find('[data-testid="writer-direction"]').text()).toBe('描述门廊，强调霉味')
+    expect(admin.wrapper.text()).toContain('call_w1')
+    expect(admin.wrapper.find('.prose-md').exists()).toBe(true)
+    expect(toggle('指令', 0).attributes('aria-pressed')).toBe('true')
+    expect(directionCalls(admin.fetchCalls, 4)).toBe(1)
+
+    await toggle('源码', 0).trigger('click')
+    expect(admin.wrapper.find('[data-testid="writer-direction"]').exists()).toBe(true)
+    expect(admin.wrapper.find('[data-testid="writer-raw"]').exists()).toBe(true)
+
+    await toggle('指令', 0).trigger('click')
+    expect(admin.wrapper.find('[data-testid="writer-direction"]').exists()).toBe(false)
+    await toggle('指令', 0).trigger('click')
+    await flushPromises()
+    expect(admin.wrapper.find('[data-testid="writer-direction"]').text()).toBe('描述门廊，强调霉味')
+    expect(directionCalls(admin.fetchCalls, 4)).toBe(1)
+
+    await toggle('指令', 1).trigger('click')
+    await flushPromises()
+    expect(admin.wrapper.text()).toContain('没有记录指令')
+    expect(admin.wrapper.text()).toContain('自动补写')
+    admin.wrapper.unmount()
+
+    const player = await setup({ extraMessages: [writer] })
+    expect(player.wrapper.findAll('button').some((b) => b.text().includes('指令'))).toBe(false)
+    expect(player.fetchCalls.some((c) => c.path.startsWith('/api/admin/'))).toBe(false)
     player.wrapper.unmount()
   })
 

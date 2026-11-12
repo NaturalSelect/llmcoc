@@ -16,6 +16,7 @@ import {
   MessageSquareQuote,
   NotebookPen,
   Package,
+  ScrollText,
   Shield,
   Skull,
   Sparkles,
@@ -25,6 +26,8 @@ import {
 } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import type { Component } from 'vue'
+import { api } from '@/api/client'
+import type { WriterDirection } from '@/api/adminTypesCore'
 import { describeEvent, eventsOf } from '@/game/events'
 import type { EventIcon, EventTone } from '@/game/events'
 import {
@@ -58,6 +61,25 @@ const timing = computed(() => (auth.isAdmin ? directorTiming(props.msg) : null))
 const text = computed(() => writerText(props.room, props.msg))
 // NOTE: 调试用：管理员可把 writer 正文切成未渲染的原始 markdown，看配图占位到底落在哪一行；状态不随消息保存
 const showRaw = ref(false)
+// NOTE: 调试用：导演指令可能含模组秘密，不随消息和 WebSocket 下发，管理员点开时才按需拉取；指令创建后不会再变，取到一次就缓存
+const showDirection = ref(false)
+const direction = ref<WriterDirection | null>(null)
+const directionLoading = ref(false)
+const directionError = ref('')
+
+async function toggleDirection() {
+  showDirection.value = !showDirection.value
+  if (!showDirection.value || direction.value || directionLoading.value) return
+  directionLoading.value = true
+  directionError.value = ''
+  try {
+    direction.value = await api<WriterDirection>('GET', `/api/admin/messages/${props.msg.id}/direction`)
+  } catch (e) {
+    directionError.value = e instanceof Error ? e.message : '加载导演指令失败'
+  } finally {
+    directionLoading.value = false
+  }
+}
 const illustrations = computed(() => illustrationsOf(props.msg))
 const error = computed(() => messageError(props.msg))
 const names = computed(() => askNames(props.msg))
@@ -157,6 +179,18 @@ const EVENT_TONES: Record<EventTone, string> = {
           v-if="kind === 'writer' && auth.isAdmin"
           type="button"
           class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 transition hover:bg-surface-3 hover:text-fg"
+          :class="showDirection ? 'bg-surface-3 text-accent' : ''"
+          :aria-pressed="showDirection"
+          title="调试：显示 Director 交给 Writer 的导演指令"
+          @click="toggleDirection"
+        >
+          <ScrollText :size="16" :stroke-width="1.75" class="shrink-0" />
+          指令
+        </button>
+        <button
+          v-if="kind === 'writer' && auth.isAdmin"
+          type="button"
+          class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 transition hover:bg-surface-3 hover:text-fg"
           :class="showRaw ? 'bg-surface-3 text-accent' : ''"
           :aria-pressed="showRaw"
           title="调试：显示 Writer 正文的原始 markdown"
@@ -172,6 +206,21 @@ const EVENT_TONES: Record<EventTone, string> = {
       </div>
 
       <div v-if="kind === 'writer'">
+        <div v-if="showDirection && auth.isAdmin" class="mb-3" data-testid="writer-direction-block">
+          <p class="mb-1 text-xs text-fg-subtle">
+            导演指令
+            <template v-if="direction?.auto"> · 自动补写</template>
+            <template v-if="direction?.call_id"> · {{ direction.call_id }}</template>
+          </p>
+          <p v-if="directionLoading" class="text-xs text-fg-subtle">加载中…</p>
+          <p v-else-if="directionError" class="text-xs text-danger">{{ directionError }}</p>
+          <p v-else-if="direction && !direction.direction" class="text-xs text-fg-subtle">这条消息没有记录指令（功能上线前的旧消息）</p>
+          <pre
+            v-else-if="direction"
+            class="overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg"
+            data-testid="writer-direction"
+          >{{ direction.direction }}</pre>
+        </div>
         <!-- NOTE: renderProse 只放行段落/强调/引用/分隔线和后端图片接口的配图，是这里唯一允许 v-html 的来源 -->
         <p v-if="msg.status === 'failed'" class="text-sm text-danger">{{ error || '叙事生成失败' }}</p>
         <template v-else>

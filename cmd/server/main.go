@@ -339,6 +339,7 @@ func main() {
 		// Session management
 		admin.POST("/sessions/end-all", handlers.AdminEndAllSessions)
 		admin.GET("/sessions/:id/context", handlers.AdminGetSessionContext)
+		admin.GET("/messages/:id/direction", handlers.AdminGetMessageDirection)
 	}
 
 	// ─── Frontend (embedded) ─────────────────────────────────────────────────

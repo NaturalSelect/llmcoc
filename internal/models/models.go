@@ -628,6 +628,7 @@ type MessageMeta struct {
 
 // NOTE: Message records a single chat message sent within a game session.
 // Kind/Status/Floor/Meta 是 KP 周期化之后新增的列：一次工具调用对应一条消息。
+// NOTE: WriterDirection 是 writer 消息的导演指令原文，可能含模组秘密：只经管理员接口读取，不能放进 Meta（Meta 会广播给所有订阅者）。
 type Message struct {
 	ID                uint                    `gorm:"primaryKey;autoIncrement" json:"id"`
 	SessionID         uint                    `gorm:"not null;index" json:"session_id"`
@@ -638,6 +639,7 @@ type Message struct {
 	Floor             int                     `gorm:"index" json:"floor"`
 	Content           string                  `gorm:"type:text;not null" json:"content"`
 	Meta              JSONField[*MessageMeta] `gorm:"type:text" json:"-"`
+	WriterDirection   string                  `gorm:"type:text" json:"-"`
 	Username          string                  `gorm:"size:50" json:"username"`
 	DirectorElapsedMs *int64                  `json:"director_elapsed_ms"` // 从上一条 kp/ask 到这一条的 Director 耗时(毫秒),仅 kp/ask 消息有值
 	DirectorSteps     *int                    `json:"director_steps"`      // 同上区间内的工具调用轮数,仅 kp/ask 消息有值
