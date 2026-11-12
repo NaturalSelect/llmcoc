@@ -11,6 +11,10 @@ export function isEmbeddingRole(role: string): boolean {
   return role === 'embedding'
 }
 
+export function isSystemOneRole(role: string): boolean {
+  return role === 'systemone'
+}
+
 // NOTE: 只有 Director 按上下文窗口触发总结，其余角色不显示该输入框
 export function hasContextWindow(role: string): boolean {
   return role === 'director'
@@ -45,7 +49,7 @@ export function pingLoadingKey(ag: Pick<AgentFormState, 'role' | 'provider_confi
 export interface PingPayload {
   model_name: string
   role: string
-  mode?: 'image' | 'embedding'
+  mode?: 'image' | 'embedding' | 'systemone'
   image_via_chat?: boolean
   diffusion_mode?: boolean
 }
@@ -69,6 +73,8 @@ export function planPing(ag: AgentFormState): PingPlan {
     payload.diffusion_mode = ag.diffusion_mode || false
   } else if (isEmbeddingRole(role)) {
     payload.mode = 'embedding'
+  } else if (isSystemOneRole(role)) {
+    payload.mode = 'systemone'
   }
   return { ok: true, providerId, role, isPainter, key: `${role}:${providerId}`, payload }
 }
@@ -80,6 +86,7 @@ export function pingSuccessMessage(role: string, latencyMs: number, dimensions?:
     const dim = dimensions && dimensions > 0 ? `，向量维度 ${dimensions}` : ''
     return `Embedding 嵌入模型连通正常${dim}，延迟 ${latencyMs} ms`
   }
+  if (isSystemOneRole(role)) return `System One 输入分类器连通正常，延迟 ${latencyMs} ms`
   return `${agentLabel(role)} 模型连通正常，延迟 ${latencyMs} ms`
 }
 
@@ -87,5 +94,6 @@ export function pingFailureMessage(role: string, reason: string): string {
   let prefix = `${agentLabel(role)} 模型测试失败：`
   if (isPainterRole(role)) prefix = 'Painter 图片模型测试失败：'
   else if (isEmbeddingRole(role)) prefix = 'Embedding 嵌入模型测试失败：'
+  else if (isSystemOneRole(role)) prefix = 'System One 输入分类器测试失败：'
   return prefix + reason
 }

@@ -26,11 +26,20 @@ var chatLog = logging.For("chat")
 // SessionHandlers holds injectable dependencies for session-related handlers.
 type SessionHandlers struct {
 	Runner agent.AgentRunner
+	// Guard 对玩家输入做越权请求分类，为 nil 时用 agent.ClassifyPlayerInput；测试里替换它避免依赖数据库里的 Provider。
+	Guard func(ctx context.Context, content string) agent.InputVerdict
 }
 
 // NewSessionHandlers returns a SessionHandlers wired to the given runner.
 func NewSessionHandlers(r agent.AgentRunner) *SessionHandlers {
 	return &SessionHandlers{Runner: r}
+}
+
+func (h *SessionHandlers) classify(ctx context.Context, content string) agent.InputVerdict {
+	if h.Guard != nil {
+		return h.Guard(ctx, content)
+	}
+	return agent.ClassifyPlayerInput(ctx, content)
 }
 
 type CreateSessionReq struct {
@@ -916,6 +925,8 @@ func saveTurnAction(session models.GameSession, userID uint, displayName, conten
 // ChatStream 接收被 KP 点名的玩家的回应，立即返回 202；KP 的进展通过房间的 WebSocket 推送。
 //
 // 流程：
+//  0. 内容校验和越权请求分类在拿会话锁之前做：非管理员的输入先交给 systemone 分类器，命中返回 422，不落库、不开周期；
+//     分类器未启用或调用失败时放行。这样第三方调用不会占住会话锁。
 //  1. 只有被点名且存活的玩家可以提交；其他人被拒绝(KP 持有发言权时 409，没被点名时 403)。
 //  2. 声明写入 SessionTurnAction，同一轮重复提交只保留最新一条。
 //  3. 被点名的人没到齐：广播 waiting，返回 floor_started=false。
@@ -924,6 +935,24 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID := c.GetUint("user_id")
 	username := c.GetString("username")
+
+	content := c.PostForm("content")
+	if content == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能为空"})
+		return
+	}
+	if utf8.RuneCountInString(content) > 2000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "消息过长(最多2000字)"})
+		return
+	}
+	// NOTE: 管理员的 DEBUG 指令也走这个接口，必须跳过分类，否则调试指令会被当成越权请求拦掉。
+	if !isAdminUser(c, userID) {
+		if v := h.classify(c.Request.Context(), content); v.Blocked {
+			chatLog.Warn("chat blocked by input guard", "session", sessionID, "user", username, "category", v.Category, "score", v.Score)
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "这条输入像是在要求越权或索要谜底，KP 不会执行。请写成你的调查员此刻要做的事或要说的话。"})
+			return
+		}
+	}
 
 	lock := getSessionLock(uint(sessionID))
 	lock.Lock()
@@ -955,15 +984,6 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		return
 	}
 
-	content := c.PostForm("content")
-	if content == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能为空"})
-		return
-	}
-	if utf8.RuneCountInString(content) > 2000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "消息过长(最多2000字)"})
-		return
-	}
 	if _, running := getSessionProcessing(session.ID); running {
 		c.JSON(http.StatusConflict, gin.H{"error": "KP 正在发言，请稍候"})
 		return

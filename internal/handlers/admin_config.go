@@ -171,7 +171,7 @@ func AdminUpdateAgent(c *gin.Context) {
 	validRoles := map[string]bool{
 		"director": true, "writer": true, "writer_nsfw": true, "lawyer": true, "npc": true, "npc_nsfw": true,
 		"scripter": true, "architect": true, "compiler": true, "lore_researcher": true, "encounter_designer": true, "qa_guard": true,
-		"parser": true, "painter": true, "painter_nsfw": true, "painter_hq": true, "diffusion_translator": true, "embedding": true,
+		"parser": true, "painter": true, "painter_nsfw": true, "painter_hq": true, "diffusion_translator": true, "embedding": true, "systemone": true,
 		// NOTE: dramaturg 是可选的剧情节奏顾问 Agent，由Director按需通过consult_dramaturg工具调用，
 		// 允许管理员配置其 provider/model，不配置即禁用。
 		"dramaturg": true,
@@ -378,6 +378,10 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 		adminPingEmbeddingProvider(c, factory, &p, req.ModelName)
 		return
 	}
+	if req.Mode == "systemone" || req.Role == string(models.AgentRoleSystemOne) {
+		adminPingSystemOne(c, &p, req.ModelName)
+		return
+	}
 	if req.ModelName == "" {
 		req.ModelName = "gpt-5.4-nano"
 	}
@@ -430,6 +434,23 @@ func adminPingEmbeddingProvider(c *gin.Context, factory ProviderFactory, p *mode
 	}
 	adminConfigLog.Info("ping provider embedding ok", "id", p.ID, "latency_ms", latencyMs, "dimensions", len(vectors[0]))
 	c.JSON(http.StatusOK, gin.H{"ok": true, "mode": "embedding", "latency_ms": latencyMs, "dimensions": len(vectors[0])})
+}
+
+// NOTE: System One 不是 OpenAI 兼容协议，不走 ProviderFactory；Provider 只取 BaseURL 和 APIKey。
+func adminPingSystemOne(c *gin.Context, p *models.LLMProviderConfig, modelName string) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := agent.PingSystemOne(ctx, p, modelName)
+	latencyMs := time.Since(start).Milliseconds()
+	if err != nil {
+		adminConfigLog.Error("ping provider systemone failed", "id", p.ID, "err", err)
+		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "mode": "systemone", "error": "System One 测试失败: " + err.Error()})
+		return
+	}
+	adminConfigLog.Info("ping provider systemone ok", "id", p.ID, "latency_ms", latencyMs)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "mode": "systemone", "latency_ms": latencyMs})
 }
 
 func adminPingImageProvider(c *gin.Context, factory ProviderFactory, p *models.LLMProviderConfig, modelName string, imageViaChat, diffusionMode bool) {

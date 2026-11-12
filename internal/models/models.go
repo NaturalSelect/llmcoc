@@ -790,6 +790,9 @@ const (
 	// NOTE: AgentRoleEmbedding 为 Lawyer 规则缓存提供语义检索的嵌入模型，只支持 OpenAI 兼容的 /embeddings；
 	// 未启用、未绑定或 provider 不支持时，Lawyer 退回标签子串匹配，不影响主流程。它不走聊天，也不在 batchLoadAgents 里。
 	AgentRoleEmbedding AgentRole = "embedding"
+	// NOTE: AgentRoleSystemOne 是玩家输入的越权请求分类器，只走 TypeSafe 的 System One 接口（Provider 只取 BaseURL 和 APIKey，模型名取本行）；
+	// 未启用、未绑定或调用失败时放行输入，不影响主流程。它不走聊天，也不在 batchLoadAgents 里。
+	AgentRoleSystemOne AgentRole = "systemone"
 	// NOTE: AgentRoleDiffusionTranslator 把 Director 的自然语言画面描述翻译成扩散模型的标签式提示词；
 	// 仅在 Painter/Painter NSFW 开启 diffusion_mode 时被调用，未启用时扩散模式的配图直接失败，不回落 Writer。
 	AgentRoleDiffusionTranslator AgentRole = "diffusion_translator"

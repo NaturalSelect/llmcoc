@@ -121,6 +121,23 @@ func TestSeedDefaultAgentConfigs_SeedsEmbeddingInactive(t *testing.T) {
 	}
 }
 
+func TestSeedDefaultAgentConfigs_SeedsSystemOneInactive(t *testing.T) {
+	db := openSeedTestDB(t)
+
+	seedDefaultAgentConfigs()
+
+	var cfg AgentConfig
+	if err := db.Where("role = ?", string(AgentRoleSystemOne)).First(&cfg).Error; err != nil {
+		t.Fatalf("systemone row not seeded: %v", err)
+	}
+	if cfg.IsActive {
+		t.Error("systemone should be inactive by default so player input is not sent to a third party until an admin binds a TypeSafe key")
+	}
+	if cfg.ModelName != "jev-latest" {
+		t.Errorf("model = %q, want jev-latest", cfg.ModelName)
+	}
+}
+
 func TestSeedDefaultSiteSettings_SeedsLawyerSimilarityWithoutOverwriting(t *testing.T) {
 	db := openSeedTestDB(t)
 	if err := db.AutoMigrate(&SiteSetting{}); err != nil {
