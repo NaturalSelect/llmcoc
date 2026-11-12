@@ -327,16 +327,19 @@ func pickNPCNames(ctx context.Context, handle agentHandle, sessionID string, arg
 	}
 }
 
+// NOTE: npcNameGuidance 放在 generate_npc_name 工具结果的最前面：随机姓名只是素材，调用方要按角色实际文化调整。
+const npcNameGuidance = "仅供参考，根据实际NPC角色所属文化调整，外文名称需要翻译成中文。"
+
 // NOTE: formatNPCNames 把取到的姓名格式化为 generate_npc_name 的工具结果文案。
 func formatNPCNames(names []string) string {
 	if len(names) == 1 {
-		return fmt.Sprintf("随机姓名: %s", names[0])
+		return fmt.Sprintf("%s\n随机姓名: %s", npcNameGuidance, names[0])
 	}
 	parts := make([]string, len(names))
 	for i, name := range names {
 		parts[i] = fmt.Sprintf("%d. %s", i+1, name)
 	}
-	return fmt.Sprintf("随机姓名(%d个候选): %s", len(names), strings.Join(parts, " "))
+	return fmt.Sprintf("%s\n随机姓名(%d个候选): %s", npcNameGuidance, len(names), strings.Join(parts, " "))
 }
 
 // dispatchGenerateNPCName 是 generate_npc_name 工具的通用执行逻辑，供 Story

@@ -94,7 +94,7 @@ func TestGenerateNPCNameActionWestern(t *testing.T) {
 	if len(results) != 1 || strings.HasPrefix(results[0].Result, "SYSTEM REJECT") {
 		t.Fatalf("results = %+v, want one non-reject result", results)
 	}
-	if !strings.HasPrefix(results[0].Result, "随机姓名(3个候选): ") {
+	if !strings.HasPrefix(results[0].Result, npcNameGuidance+"\n随机姓名(3个候选): ") {
 		t.Errorf("result = %q, want three candidates", results[0].Result)
 	}
 }
@@ -124,10 +124,11 @@ func TestGenerateNPCNameActionChineseFallsBackWithoutLLM(t *testing.T) {
 
 	results := generateNPCNameAction{}.Execute(ToolCall{Culture: "chinese", Gender: "male"}, actx)
 
-	if len(results) != 1 || !strings.HasPrefix(results[0].Result, "随机姓名: ") {
+	const prefix = npcNameGuidance + "\n随机姓名: "
+	if len(results) != 1 || !strings.HasPrefix(results[0].Result, prefix) {
 		t.Fatalf("results = %+v, want a fallback name", results)
 	}
-	name := strings.TrimPrefix(results[0].Result, "随机姓名: ")
+	name := strings.TrimPrefix(results[0].Result, prefix)
 	found := false
 	for _, candidate := range npcNameFallbackPool["chinese"]["male"] {
 		if candidate == name {
@@ -166,7 +167,7 @@ func TestGenerateNPCNameActionSkipsTakenNames(t *testing.T) {
 
 	results := generateNPCNameAction{}.Execute(ToolCall{Culture: "japanese", Gender: "female"}, actx)
 
-	if len(results) != 1 || results[0].Result != "随机姓名: "+pool[0] {
+	if len(results) != 1 || results[0].Result != npcNameGuidance+"\n随机姓名: "+pool[0] {
 		t.Errorf("results = %+v, want the only free name %q", results, pool[0])
 	}
 }
