@@ -137,6 +137,31 @@ func TestDeposit_Success(t *testing.T) {
 	}
 }
 
+// TestDeposit_RejectsStoryItem 验证剧情物品不能存入仓库，人物卡和仓库都保持原样。
+func TestDeposit_RejectsStoryItem(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	cardID := seedCard(t, uid, "Card A")
+	setCardInventory(t, cardID, []models.Item{{Name: "请柬", Count: 1, Type: models.ItemTypeStory}})
+
+	r := warehouseRouter(uid)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/warehouse/deposit", map[string]any{
+		"character_card_id": cardID,
+		"item":              map[string]any{"name": "请柬"},
+	}))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if inv := cardInventory(t, cardID); len(inv) != 1 || inv[0].Type != models.ItemTypeStory {
+		t.Errorf("card inventory should be untouched, got %+v", inv)
+	}
+	if wh := userWarehouse(t, uid); len(wh) != 0 {
+		t.Errorf("warehouse should stay empty, got %+v", wh)
+	}
+}
+
 // TestDeposit_ClearsEquipped 验证装备中的物品存入仓库后不再带装备状态。
 func TestDeposit_ClearsEquipped(t *testing.T) {
 	initTestDB(t)

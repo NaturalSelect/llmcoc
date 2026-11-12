@@ -295,7 +295,8 @@ function assetEntries(card: CharacterCardFull): Entry[] {
             <button
               type="button"
               class="rounded-full px-2 py-0.5 text-xs text-info transition hover:bg-info/15 disabled:cursor-not-allowed disabled:opacity-40"
-              :disabled="current.in_session || busy"
+              :disabled="current.in_session || busy || split.carried[index].type === 'story'"
+              :title="split.carried[index].type === 'story' ? '剧情物品无法存入仓库' : undefined"
               @click="deposit(split.carried[index])"
             >
               存入仓库

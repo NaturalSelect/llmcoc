@@ -16,12 +16,13 @@ const (
 	ItemTypeTome     ItemType = "tome"     // 典籍
 	ItemTypeArtifact ItemType = "artifact" // 神器
 	ItemTypeMisc     ItemType = "misc"     // 杂物，旧数据一律归入此类
+	ItemTypeStory    ItemType = "story"    // 剧情物品：只在当前模组内有效，结算时自动收回
 )
 
 // IsInventoryItemType 判断 t 是否可以作为物品栏物品的类型（卡槽、金币不是物品）。
 func IsInventoryItemType(t ItemType) bool {
 	switch t {
-	case ItemTypeEquipment, ItemTypeWeapon, ItemTypeAccessory, ItemTypeTome, ItemTypeArtifact, ItemTypeMisc:
+	case ItemTypeEquipment, ItemTypeWeapon, ItemTypeAccessory, ItemTypeTome, ItemTypeArtifact, ItemTypeMisc, ItemTypeStory:
 		return true
 	}
 	return false
@@ -134,7 +135,8 @@ func AddItem(list []Item, it Item) []Item {
 	it = NormalizeItem(it)
 	out := slices.Clone(list)
 	for i := range out {
-		if !out[i].SameStack(it) {
+		// NOTE: 剧情物品不与同名同描述的普通物品合并，否则结算收回剧情物品时会把玩家自己的同名物品一并收走。
+		if !out[i].SameStack(it) || (out[i].Type == ItemTypeStory) != (it.Type == ItemTypeStory) {
 			continue
 		}
 		out[i].Count += it.Count
@@ -180,6 +182,19 @@ func SetEquipped(list []Item, name, desc string, equipped bool) (out []Item, ok 
 		return out, true
 	}
 	return list, false
+}
+
+// SplitStoryItems 把物品列表拆成保留部分和剧情物品，两侧各自保持原有顺序。不修改传入的切片。
+func SplitStoryItems(list []Item) (kept, story []Item) {
+	kept = make([]Item, 0, len(list))
+	for _, it := range list {
+		if it.Type == ItemTypeStory {
+			story = append(story, it)
+		} else {
+			kept = append(kept, it)
+		}
+	}
+	return kept, story
 }
 
 // EquippedItems 返回已装备的物品，保持原顺序。

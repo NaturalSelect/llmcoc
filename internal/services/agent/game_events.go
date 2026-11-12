@@ -135,10 +135,21 @@ func listDiffEvents(name, category string, before, after []listEntry) []models.G
 	return out
 }
 
+// storyItemNote 是剧情物品在获得和回收事件里附带的说明，让玩家知道它带不出本模组。
+const storyItemNote = "剧情物品，模组结束时收回"
+
+// storyItemReclaimedNote 是结算收回剧情物品时的事件说明。
+const storyItemReclaimedNote = "剧情物品，结算时收回"
+
 // inventoryDiffEvents 按 Name+Desc 比对物品栏前后快照：数量变了是 change，新增 add，消失 remove；
 // 同一个名字恰好消失一堆又新增一堆(描述被改)视为一次 change。
 func inventoryDiffEvents(name string, before, after []models.Item) []models.GameEvent {
-	key := func(it models.Item) string { return it.Name + "\x00" + it.Desc }
+	key := func(it models.Item) string {
+		if it.Type == models.ItemTypeStory {
+			return it.Name + "\x00" + it.Desc + "\x00story"
+		}
+		return it.Name + "\x00" + it.Desc
+	}
 	old := make(map[string]models.Item, len(before))
 	for _, it := range before {
 		old[key(it)] = it
@@ -184,7 +195,11 @@ func inventoryDiffEvents(name string, before, after []models.Item) []models.Game
 			}
 		}
 		if !merged {
-			out = append(out, ev("add", a.Label(), ""))
+			detail := ""
+			if a.Type == models.ItemTypeStory {
+				detail = storyItemNote
+			}
+			out = append(out, ev("add", a.Label(), detail))
 		}
 	}
 	for _, r := range removed {

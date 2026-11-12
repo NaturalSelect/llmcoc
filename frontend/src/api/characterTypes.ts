@@ -36,7 +36,7 @@ export interface CharacterAsset {
   note?: string
 }
 
-export type InventoryItemType = 'equipment' | 'weapon' | 'accessory' | 'tome' | 'artifact' | 'misc'
+export type InventoryItemType = 'equipment' | 'weapon' | 'accessory' | 'tome' | 'artifact' | 'misc' | 'story'
 
 // NOTE: desc 为空时后端整个字段省略；同名同描述的物品合并成一条，count >= 1；
 // equipped 只在为 true 时才出现，装备栏就是物品栏里 equipped 为 true 的那部分

@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest'
 import type { CharacterCardFull, InventoryItem } from '@/api/characterTypes'
 import {
   ITEM_TYPE_LABEL,
+  MANUAL_ITEM_TYPE_LABEL,
   REGEN_SPECS,
   cardSubtitle,
   deadSubtitle,
@@ -164,7 +165,8 @@ describe('仓库', () => {
   })
 
   test('物品类型中文名覆盖全部类型', () => {
-    expect(ITEM_TYPE_LABEL).toEqual({ equipment: '装备', weapon: '武器', accessory: '配件', tome: '典籍', artifact: '神器', misc: '杂物' })
+    expect(ITEM_TYPE_LABEL).toEqual({ equipment: '装备', weapon: '武器', accessory: '配件', tome: '典籍', artifact: '神器', misc: '杂物', story: '剧情物品' })
+    expect(Object.keys(MANUAL_ITEM_TYPE_LABEL)).toEqual(['equipment', 'weapon', 'accessory', 'tome', 'artifact', 'misc'])
   })
   test('只允许启用且不在房间中的人物卡取出', () => {
     const list = [

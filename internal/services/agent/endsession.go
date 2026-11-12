@@ -230,6 +230,16 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 				events = append(events, models.GameEvent{Type: "backstory", Character: card.Name, Detail: newBackstory})
 			}
 
+			// NOTE: 剧情物品只属于本模组，结算时不论存活与否、胜负都整件收回。
+			if kept, story := models.SplitStoryItems(card.Inventory.Data); len(story) > 0 {
+				card.Inventory.Data = kept
+				for _, it := range story {
+					events = append(events, models.GameEvent{
+						Type: "item", Character: card.Name, Category: "inventory", Op: "remove", Name: it.Label(), Detail: storyItemReclaimedNote,
+					})
+				}
+			}
+
 			if err := tx.Save(card).Error; err != nil {
 				return err
 			}

@@ -9,7 +9,7 @@ import BaseInput from '@/components/base/BaseInput.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
 import FormField from '@/components/base/FormField.vue'
-import { ITEM_TYPE_LABEL, itemLabel } from '@/components/character/characterLogic'
+import { itemLabel, MANUAL_ITEM_TYPE_LABEL } from '@/components/character/characterLogic'
 import { useUiStore } from '@/stores/ui'
 import { errMsg } from '../shared/errMsg'
 
@@ -144,7 +144,7 @@ async function submit() {
           </FormField>
           <FormField label="类型">
             <BaseSelect v-model="type">
-              <option v-for="(label, key) in ITEM_TYPE_LABEL" :key="key" :value="key">{{ label }}</option>
+              <option v-for="(label, key) in MANUAL_ITEM_TYPE_LABEL" :key="key" :value="key">{{ label }}</option>
             </BaseSelect>
           </FormField>
         </div>

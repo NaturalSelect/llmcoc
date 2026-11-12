@@ -981,7 +981,7 @@ func manageInventory(players []models.SessionPlayer, characterName, operate stri
 		return "物品操作失败:缺少角色名或物品名"
 	}
 	if it.Type != "" && !models.IsInventoryItemType(it.Type) {
-		return fmt.Sprintf("物品操作失败:item_type=%q 无效，可选 equipment/weapon/accessory/tome/artifact/misc", it.Type)
+		return fmt.Sprintf("物品操作失败:item_type=%q 无效，可选 equipment/weapon/accessory/tome/artifact/misc/story", it.Type)
 	}
 	for i := range players {
 		card := &players[i].CharacterCard
@@ -995,6 +995,12 @@ func manageInventory(players []models.SessionPlayer, characterName, operate stri
 				it.Equipped = *equipped
 			}
 			it = models.NormalizeItem(it)
+			// NOTE: 剧情物品和普通物品按名称加描述无法区分，二者并存会让后续 remove/update 指错对象，所以直接拒绝。
+			for _, s := range list {
+				if s.SameStack(it) && (s.Type == models.ItemTypeStory) != (it.Type == models.ItemTypeStory) {
+					return fmt.Sprintf("物品操作失败:%s 已有同名同描述的物品(%s)，剧情物品与普通物品不能同名同描述并存，请换一个 item_desc，本次未修改任何物品", card.Name, s.Label())
+				}
+			}
 			card.Inventory.Data = models.AddItem(list, it)
 			models.DB.Save(card)
 			result := fmt.Sprintf("%s 获得物品:%s", card.Name, it.Label())
@@ -1040,6 +1046,10 @@ func manageInventory(players []models.SessionPlayer, characterName, operate stri
 			}
 			if len(cands) > 1 {
 				return fmt.Sprintf("物品操作失败:%s 有多件同名物品(%s)，update 无法确定修改哪一件，请先 remove 对应物品再 add，本次未修改任何物品", card.Name, inventoryLabels(list, cands))
+			}
+			// NOTE: 剧情物品结算时整件收回，update 跨过这条界限会没收玩家的自有物品，或让剧情物品留在人物卡上。
+			if cur := list[cands[0]]; it.Type != "" && (it.Type == models.ItemTypeStory) != (cur.Type == models.ItemTypeStory) {
+				return fmt.Sprintf("物品操作失败:不能用 update 把普通物品改成剧情物品，也不能把剧情物品改成普通物品(%s)，需要请先 remove 再 add，本次未修改任何物品", cur.Label())
 			}
 			updated := slices.Clone(list)
 			old := updated[cands[0]].Label()

@@ -40,6 +40,25 @@ func TestAddInventoryItem_StacksAndKeepsType(t *testing.T) {
 	}
 }
 
+// TestAddInventoryItem_RejectsStoryItem 验证手动接口不能添加剧情物品，它只能由 KP 在对局里发放。
+func TestAddInventoryItem_RejectsStoryItem(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "u", "user", 0, 3)
+	cardID := seedCard(t, uid, "Card A")
+	r := inventoryRouter(uid, "user")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/characters/"+itoa(cardID)+"/inventory", map[string]any{
+		"item": map[string]any{"name": "请柬", "count": 1, "type": "story"},
+	}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if inv := cardInventory(t, cardID); len(inv) != 0 {
+		t.Fatalf("inventory should stay empty, got %+v", inv)
+	}
+}
+
 // TestAddInventoryItem_LegacyStringBody 验证旧客户端提交的整串物品仍会被解析成结构化物品。
 func TestAddInventoryItem_LegacyStringBody(t *testing.T) {
 	initTestDB(t)

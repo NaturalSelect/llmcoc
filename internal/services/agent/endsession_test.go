@@ -289,6 +289,97 @@ func makeTestSession(sessionID uint, userID uint, card models.CharacterCard) *mo
 	}
 }
 
+// TestRunEndSession_ReclaimsStoryItems 验证结算收回全部剧情物品，不论胜负、存活与否，
+// 同名同描述的普通物品保留，并为每件被收回的物品给出玩家可见的事件。
+func TestRunEndSession_ReclaimsStoryItems(t *testing.T) {
+	tests := []struct {
+		name  string
+		win   bool
+		alive bool
+	}{
+		{"胜利存活", true, true},
+		{"失败存活", false, true},
+		{"失败死亡", false, false},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			initEndSessionTestDB(t)
+			uid := newEndSessionUser(t, "story_user")
+			hp, wound := 10, "none"
+			if !tt.alive {
+				hp, wound = 0, "dead"
+			}
+			card := newEndSessionCard(t, "持有者", models.CharacterStats{
+				POW: 50, MaxHP: 10, HP: hp, MaxMP: 10, MP: 10, MaxSAN: 99, SAN: 50,
+			}, nil)
+			card.WoundState = wound
+			card.Inventory = models.JSONField[[]models.Item]{Data: []models.Item{
+				{Name: "绷带", Count: 3, Type: models.ItemTypeMisc},
+				{Name: "钥匙", Desc: "黄铜", Count: 1, Type: models.ItemTypeMisc},
+				{Name: "钥匙", Desc: "黄铜", Count: 2, Type: models.ItemTypeStory},
+				{Name: "请柬", Count: 1, Type: models.ItemTypeStory},
+			}}
+			if err := models.DB.Save(card).Error; err != nil {
+				t.Fatalf("save card: %v", err)
+			}
+
+			sess := makeTestSession(uint(100+i), uid, *card)
+			events, err := RunEndSession(context.Background(), sess, nil, tt.win, nil)
+			if err != nil {
+				t.Fatalf("RunEndSession: %v", err)
+			}
+
+			var updated models.CharacterCard
+			models.DB.First(&updated, card.ID)
+			inv := updated.Inventory.Data
+			if len(inv) != 2 || inv[0].Name != "绷带" || inv[0].Count != 3 || inv[1].Name != "钥匙" || inv[1].Count != 1 || inv[1].Type != models.ItemTypeMisc {
+				t.Fatalf("inventory after settlement = %+v", inv)
+			}
+
+			var reclaimed []string
+			for _, ev := range events {
+				if ev.Type == "item" && ev.Op == "remove" && ev.Detail == storyItemReclaimedNote {
+					if ev.Character != "持有者" || ev.Category != "inventory" {
+						t.Errorf("reclaim event = %+v", ev)
+					}
+					reclaimed = append(reclaimed, ev.Name)
+				}
+			}
+			if len(reclaimed) != 2 || reclaimed[0] != "钥匙(黄铜, x2)" || reclaimed[1] != "请柬" {
+				t.Errorf("reclaim events = %v", reclaimed)
+			}
+		})
+	}
+}
+
+// TestRunEndSession_NoStoryItemsNoReclaimEvents 验证没有剧情物品时不产生收回事件，物品栏原样保留。
+func TestRunEndSession_NoStoryItemsNoReclaimEvents(t *testing.T) {
+	initEndSessionTestDB(t)
+	uid := newEndSessionUser(t, "plain_user")
+	card := newEndSessionCard(t, "普通人", models.CharacterStats{
+		POW: 50, MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 99, SAN: 50,
+	}, nil)
+	card.Inventory = models.JSONField[[]models.Item]{Data: []models.Item{{Name: "绷带", Count: 3, Type: models.ItemTypeMisc}}}
+	if err := models.DB.Save(card).Error; err != nil {
+		t.Fatalf("save card: %v", err)
+	}
+
+	events, err := RunEndSession(context.Background(), makeTestSession(110, uid, *card), nil, false, nil)
+	if err != nil {
+		t.Fatalf("RunEndSession: %v", err)
+	}
+	for _, ev := range events {
+		if ev.Type == "item" {
+			t.Errorf("unexpected item event: %+v", ev)
+		}
+	}
+	var updated models.CharacterCard
+	models.DB.First(&updated, card.ID)
+	if inv := updated.Inventory.Data; len(inv) != 1 || inv[0].Count != 3 {
+		t.Errorf("inventory = %+v", inv)
+	}
+}
+
 // TestRunEndSession_WinFalse_SkipsPOW 验证 win=false 时 POW 不发生增长。
 // NOTE: 使用 POW=0；win=true 时 RollD100()>0 必为真，POW 必增；win=false 时跳过 POW 块。
 func TestRunEndSession_WinFalse_SkipsPOW(t *testing.T) {

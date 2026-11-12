@@ -106,6 +106,11 @@ func DepositToWarehouse(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该物品不在人物卡物品栏中"})
 		return
 	}
+	if taken.Type == models.ItemTypeStory {
+		tx.Rollback()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "剧情物品无法存入仓库"})
+		return
+	}
 	card.Inventory = models.JSONField[[]models.Item]{Data: newInv}
 	taken.Equipped = false
 	user.Warehouse = models.JSONField[[]models.Item]{Data: models.AddItem(user.Warehouse.Data, taken)}

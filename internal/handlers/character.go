@@ -563,6 +563,11 @@ func AddCharacterInventoryItem(c *gin.Context) {
 		return
 	}
 	item := models.NormalizeItem(req.Item)
+	// NOTE: 剧情物品只能由 KP 在对局里发放，手动添加的话没有对应的模组，要到下一局结算才会被收走。
+	if item.Type == models.ItemTypeStory {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "剧情物品只能由 KP 在游戏中发放"})
+		return
+	}
 
 	card.Inventory = models.JSONField[[]models.Item]{Data: models.AddItem(card.Inventory.Data, item)}
 

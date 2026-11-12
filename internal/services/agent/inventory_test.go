@@ -117,6 +117,75 @@ func TestManageInventory_AddWritesItemType(t *testing.T) {
 	}
 }
 
+func TestManageInventory_AddStoryItem(t *testing.T) {
+	initAgentTestDB(t)
+	players := eventTestPlayers()
+	actx := eventTestActx(players)
+
+	res := manageInventoryAction{}.Execute(ToolCall{
+		CharacterName: "甲", Operate: "add", ItemName: "地下室钥匙", ItemDesc: "黄铜", ItemType: models.ItemTypeStory,
+	}, actx)
+	inv := inventoryOf(players)
+	if got := inv[len(inv)-1]; got.Name != "地下室钥匙" || got.Type != models.ItemTypeStory {
+		t.Fatalf("story add = %+v", got)
+	}
+	if len(res[0].Events) != 1 || res[0].Events[0].Op != "add" || res[0].Events[0].Detail != storyItemNote {
+		t.Errorf("story add events = %+v", res[0].Events)
+	}
+
+	res = manageInventoryAction{}.Execute(ToolCall{
+		CharacterName: "甲", Operate: "add", ItemName: "子弹", ItemType: models.ItemTypeStory,
+	}, actx)
+	if !strings.Contains(res[0].Result, "不能同名同描述并存") {
+		t.Errorf("story add clashing with ordinary stack result = %q", res[0].Result)
+	}
+	if inv := inventoryOf(players); len(inv) != 3 || inv[1].Count != 6 {
+		t.Errorf("clashing add changed inventory: %+v", inv)
+	}
+
+	res = manageInventoryAction{}.Execute(ToolCall{
+		CharacterName: "甲", Operate: "add", ItemName: "地下室钥匙", ItemDesc: "黄铜", ItemType: models.ItemTypeMisc,
+	}, actx)
+	if !strings.Contains(res[0].Result, "不能同名同描述并存") {
+		t.Errorf("ordinary add clashing with story stack result = %q", res[0].Result)
+	}
+}
+
+func TestManageInventory_UpdateCannotCrossStoryBoundary(t *testing.T) {
+	initAgentTestDB(t)
+	players := eventTestPlayers()
+	players[0].CharacterCard.Inventory.Data = append(players[0].CharacterCard.Inventory.Data,
+		models.Item{Name: "请柬", Count: 1, Type: models.ItemTypeStory})
+	actx := eventTestActx(players)
+
+	res := manageInventoryAction{}.Execute(ToolCall{
+		CharacterName: "甲", Operate: "update", ItemName: "手电筒", ItemType: models.ItemTypeStory,
+	}, actx)
+	if !strings.Contains(res[0].Result, "不能用 update") {
+		t.Errorf("ordinary -> story result = %q", res[0].Result)
+	}
+	res = manageInventoryAction{}.Execute(ToolCall{
+		CharacterName: "甲", Operate: "update", ItemName: "请柬", ItemType: models.ItemTypeMisc,
+	}, actx)
+	if !strings.Contains(res[0].Result, "不能用 update") {
+		t.Errorf("story -> ordinary result = %q", res[0].Result)
+	}
+	for _, it := range inventoryOf(players) {
+		if (it.Name == "请柬") != (it.Type == models.ItemTypeStory) {
+			t.Errorf("update crossed the story boundary: %+v", inventoryOf(players))
+		}
+	}
+
+	manageInventoryAction{}.Execute(ToolCall{
+		CharacterName: "甲", Operate: "update", ItemName: "请柬", ItemDesc: "已盖章",
+	}, actx)
+	for _, it := range inventoryOf(players) {
+		if it.Name == "请柬" && (it.Desc != "已盖章" || it.Type != models.ItemTypeStory) {
+			t.Errorf("desc-only update lost story type: %+v", it)
+		}
+	}
+}
+
 func TestInventoryDiffEvents_RenamedDescIsOneChange(t *testing.T) {
 	before := []models.Item{{Name: "手电筒", Count: 1}}
 	after := []models.Item{{Name: "手电筒", Desc: "没电", Count: 1}}

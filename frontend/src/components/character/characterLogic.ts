@@ -73,7 +73,13 @@ export const ITEM_TYPE_LABEL: Record<InventoryItemType, string> = {
   tome: '典籍',
   artifact: '神器',
   misc: '杂物',
+  story: '剧情物品',
 }
+
+// NOTE: 剧情物品只能由 KP 在对局中发放，管理员手动添加和存入仓库都不接受
+export const MANUAL_ITEM_TYPE_LABEL: Partial<Record<InventoryItemType, string>> = Object.fromEntries(
+  Object.entries(ITEM_TYPE_LABEL).filter(([key]) => key !== 'story'),
+)
 
 // NOTE: 必须与后端 models.Item.Label() 完全一致：名称(描述, xN)，无描述且数量 1 只显示名称
 export function itemLabel(it: InventoryItem): string {

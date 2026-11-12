@@ -128,6 +128,58 @@ func TestTakeItem(t *testing.T) {
 	}
 }
 
+func TestAddItem_StoryItemNeverMergesWithOrdinary(t *testing.T) {
+	list := []Item{{Name: "钥匙", Desc: "黄铜", Count: 1, Type: ItemTypeMisc}}
+
+	out := AddItem(list, Item{Name: "钥匙", Desc: "黄铜", Count: 1, Type: ItemTypeStory})
+	if len(out) != 2 || out[0].Count != 1 || out[0].Type != ItemTypeMisc || out[1].Type != ItemTypeStory {
+		t.Fatalf("story add should append a separate stack: %+v", out)
+	}
+
+	out = AddItem(out, Item{Name: "钥匙", Desc: "黄铜", Count: 2, Type: ItemTypeStory})
+	if len(out) != 2 || out[1].Count != 3 || out[0].Count != 1 {
+		t.Fatalf("story add should stack with story: %+v", out)
+	}
+
+	out = AddItem(out, Item{Name: "钥匙", Desc: "黄铜", Count: 1, Type: ItemTypeMisc})
+	if len(out) != 2 || out[0].Count != 2 || out[1].Count != 3 {
+		t.Fatalf("ordinary add should stack with ordinary: %+v", out)
+	}
+}
+
+func TestSplitStoryItems(t *testing.T) {
+	list := []Item{
+		{Name: "绷带", Count: 3, Type: ItemTypeMisc},
+		{Name: "请柬", Count: 1, Type: ItemTypeStory},
+		{Name: "左轮", Count: 1, Type: ItemTypeWeapon},
+		{Name: "地图", Desc: "手绘", Count: 1, Type: ItemTypeStory},
+	}
+	kept, story := SplitStoryItems(list)
+	if len(kept) != 2 || kept[0].Name != "绷带" || kept[1].Name != "左轮" {
+		t.Fatalf("kept = %+v", kept)
+	}
+	if len(story) != 2 || story[0].Name != "请柬" || story[1].Name != "地图" {
+		t.Fatalf("story = %+v", story)
+	}
+	if len(list) != 4 || list[1].Type != ItemTypeStory {
+		t.Fatalf("input slice mutated: %+v", list)
+	}
+
+	kept, story = SplitStoryItems(nil)
+	if kept == nil || len(kept) != 0 || len(story) != 0 {
+		t.Fatalf("empty split = %+v, %+v", kept, story)
+	}
+}
+
+func TestStoryItemTypeIsInventoryType(t *testing.T) {
+	if !IsInventoryItemType(ItemTypeStory) {
+		t.Fatal("story must be a valid inventory item type")
+	}
+	if got := NormalizeItem(Item{Name: "请柬", Type: ItemTypeStory}); got.Type != ItemTypeStory {
+		t.Fatalf("normalize changed story type: %+v", got)
+	}
+}
+
 func TestMergeStacks(t *testing.T) {
 	out := MergeStacks([]Item{
 		{Name: "绷带", Count: 3},
