@@ -21,7 +21,7 @@ const summaryMaxAttempts = 3
 // 本次发言需要先结束，下一个周期开始时再总结后续跑。
 var ErrContextFull = errors.New("director context is full")
 
-const directorSummaryPrompt = `你是跑团（COC7）KP 的记录员。下面是 KP 在此前若干个发言权周期里做过的事：玩家行动、KP 的叙事方向、对玩家的回复、点名、掷骰和结算结果。
+const directorSummaryPrompt = `你是跑团（COC7）KP 的记录员。下面是 KP 在此前若干个发言权周期里做过的事：玩家行动、玩家读到的正文和 KP 的叙事方向、对玩家的回复、点名、掷骰和结算结果。
 请把它们总结成一份供 KP 之后继续主持时参考的"故事至今"，必须保留：
 1. 事件时间线（按发生顺序，写清谁在什么地点做了什么）；
 2. 调查员已经获得的线索和已知信息；
@@ -126,17 +126,33 @@ func renderUnitOutputs(msgs []models.TranscriptMsg) string {
 			}
 			call := llm.ToolCall{ID: tc.ID, Name: tc.Name, Arguments: tc.Arguments}
 			parsed, err := decodeDirectorToolCall(call)
+			prose, hasProse := writerOutputOf(results[tc.ID])
 			res := strings.TrimSpace(toolResultBody(results[tc.ID]))
+			// NOTE: 正文是玩家实际读到的内容，比 direction 更接近事实；自动补写的正文挂在来源 narrate/ask 的结果上。
+			if hasProse {
+				if i := strings.Index(res, writerOutputOpen); i >= 0 {
+					res = strings.TrimSpace(res[:i])
+				}
+			}
 			switch ToolCallType(tc.Name) {
 			case ToolWrite:
-				if err == nil && parsed.Direction != "" {
+				switch {
+				case hasProse:
+					fmt.Fprintf(&b, "[正文] %s\n", prose)
+				case err == nil && parsed.Direction != "":
 					fmt.Fprintf(&b, "[叙事方向] %s\n", parsed.Direction)
 				}
 			case ToolNarrate, ToolLegacyResponse:
+				if hasProse {
+					fmt.Fprintf(&b, "[正文] %s\n", prose)
+				}
 				if err == nil && parsed.Reply != "" {
 					fmt.Fprintf(&b, "[KP回复] %s\n", parsed.Reply)
 				}
 			case ToolAskPlayers:
+				if hasProse {
+					fmt.Fprintf(&b, "[正文] %s\n", prose)
+				}
 				if err == nil {
 					fmt.Fprintf(&b, "[点名 %s] %s\n", strings.Join(parsed.Targets, "、"), parsed.Question)
 				}

@@ -80,7 +80,7 @@ describe('角色表', () => {
 
   test('默认值与旧 roleDefaults 一致（抽样）', () => {
     expect(ROLE_DEFAULTS.director).toStrictEqual({ max_tokens: 1500, temperature: 0.7, context_window: 0 })
-    expect(ROLE_DEFAULTS.writer).toStrictEqual({ max_tokens: 800, temperature: 0.85, context_window: 300000 })
+    expect(ROLE_DEFAULTS.writer).toStrictEqual({ max_tokens: 800, temperature: 0.85 })
     expect(ROLE_DEFAULTS.compiler).toStrictEqual({ max_tokens: 4000, temperature: 0.15 })
     expect(ROLE_DEFAULTS.painter).toStrictEqual({
       max_tokens: 0,

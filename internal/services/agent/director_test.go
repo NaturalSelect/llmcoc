@@ -183,6 +183,29 @@ func TestWriteToolAlignsWithResponse(t *testing.T) {
 	}
 }
 
+// TestWriteToolAsksForBulletDirectionAndReturnsProse 验证 write 说明要求要点式 direction，并告知正文会回到工具结果里；
+// 系统提示词不再说正文是异步生成的。
+func TestWriteToolAsksForBulletDirectionAndReturnsProse(t *testing.T) {
+	def := writeTool().def
+	for _, want := range []string{"【direction写法】", "要点", "<writer_output>", "不写氛围、修辞和感官描写", "逐项列出"} {
+		if !strings.Contains(def.Description, want) {
+			t.Errorf("write tool description should contain %q", want)
+		}
+	}
+	if strings.Contains(def.Description, "感官细节要求") {
+		t.Error("write tool description should no longer ask the director for sensory detail")
+	}
+	if !strings.Contains(string(def.Parameters), "要点") {
+		t.Error("direction parameter description should mention bullet points")
+	}
+	if strings.Contains(kpSystemPrompt, "异步生成正文") {
+		t.Error("kp system prompt should no longer say the prose is generated asynchronously")
+	}
+	if !strings.Contains(kpSystemPrompt, "<writer_output>") {
+		t.Error("kp system prompt should tell the director where the prose comes back")
+	}
+}
+
 // TestProceduresBlockCoversComplexFlows 验证复杂流程样板存在，且其中与 COC_kp.md 对应的
 // 关键机制没有被后续编辑改坏——尤其是两处反直觉判定，改错不会报错但会让裁定系统性出错。
 func TestProceduresBlockCoversComplexFlows(t *testing.T) {

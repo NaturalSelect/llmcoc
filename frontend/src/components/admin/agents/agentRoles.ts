@@ -21,9 +21,9 @@ export interface RoleDefaults {
 // NOTE: 键的顺序就是「库里缺行时」追加到界面末尾的顺序，不要随意重排
 export const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
   director: { max_tokens: 1500, temperature: 0.7, context_window: 0 },
-  writer: { max_tokens: 800, temperature: 0.85, context_window: 300000 },
+  writer: { max_tokens: 800, temperature: 0.85 },
   // NOTE: writer_nsfw 仅在房间开启NSFW且本轮被标记为色情内容时启用，默认关闭。
-  writer_nsfw: { max_tokens: 800, temperature: 0.85, context_window: 300000, is_active: false },
+  writer_nsfw: { max_tokens: 800, temperature: 0.85, is_active: false },
   lawyer: { max_tokens: 800, temperature: 0.3 },
   npc: { max_tokens: 600, temperature: 0.9 },
   // NOTE: npc_nsfw 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用，默认关闭。

@@ -834,10 +834,9 @@ type AgentConfig struct {
 	// 把导演的自然语言画面描述翻译成标签式提示词，再调用 /images/generations（仅 Painter 角色使用，
 	// 与 ImageViaChat 互斥）。
 	DiffusionMode bool `gorm:"default:false" json:"diffusion_mode"`
-	// ContextWindow 是该 Agent 所用模型的上下文窗口 token 数上限，供需要按阈值整体
-	// 裁剪历史的 Agent(目前为 Director、Writer、Writer NSFW)判断何时该 trim。
-	// Director 为 0 表示不 trim；Writer/Writer NSFW 为 0 时回落 DefaultWriterContextWindow。
-	// 不同模型窗口差异很大，需要在后台按实际模型手动填写。
+	// ContextWindow 是该 Agent 所用模型的上下文窗口 token 数上限，目前只有 Director 用它判断何时触发总结，
+	// 0 表示不总结。不同模型窗口差异很大，需要在后台按实际模型手动填写。
+	// 旧库里 Writer/NPC 行残留的值不再读取。
 	ContextWindow int `gorm:"default:0" json:"context_window"`
 	// WithJailbreak 为 true 时在该 Agent 的系统提示词外包裹越狱提示词，用于降低模型因内容审查拒绝创作黑暗/成人向剧情的概率。
 	WithJailbreak bool   `gorm:"default:false" json:"with_jailbreak"`
@@ -884,10 +883,6 @@ const DefaultBalanceRules = "调查员/玩家被禁止使用《精神转移术�
 // NOTE: DefaultLawyerCacheMinSimilarity 是 lawyer_cache_min_similarity 的默认值与运行时回落值。
 // 0.3 没有数据依据，是偏召回的保守猜测；不同嵌入模型的相似度分布差异很大，上线后要看 debug 日志调。
 const DefaultLawyerCacheMinSimilarity = "0.3"
-
-// DefaultWriterContextWindow 是 Writer/Writer NSFW 未在后台填写上下文窗口(ContextWindow<=0)
-// 时使用的 token 数上限，避免历史无限增长。
-const DefaultWriterContextWindow = 300000
 
 // SiteSetting is a simple key/value store for site-wide configuration.
 type SiteSetting struct {

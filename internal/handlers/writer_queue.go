@@ -184,7 +184,8 @@ type messageUpdateEvent struct {
 }
 
 // enqueueWriter 把一条 writer 消息放进会话的 FIFO 队列，立即返回；队列空闲时才会起 worker，worker 排空后退出。
-func (h *SessionHandlers) enqueueWriter(sessionID uint, task writerTask) {
+// 返回的 chan 在这条任务结束(无论成败，正文和状态已落库)后关闭。
+func (h *SessionHandlers) enqueueWriter(sessionID uint, task writerTask) <-chan struct{} {
 	writerQueues.mu.Lock()
 	defer writerQueues.mu.Unlock()
 	q := writerQueues.m[sessionID]
@@ -199,6 +200,7 @@ func (h *SessionHandlers) enqueueWriter(sessionID uint, task writerTask) {
 		q.running = true
 		go h.drainWriterQueue(sessionID, q)
 	}
+	return task.done
 }
 
 func (h *SessionHandlers) drainWriterQueue(sessionID uint, q *writerQueue) {

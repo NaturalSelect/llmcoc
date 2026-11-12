@@ -33,7 +33,8 @@ type GameContext struct {
 	Progress func(string)
 	// Publish 由handler注入:Director 每一轮产生玩家可见消息后同步调用,handler 负责落库并广播;
 	// 返回 err 时本周期以 StopError 结束。nil 时输出只计数、不外发(测试用)。
-	Publish func(RoundOutputs) error
+	// 返回值与 ro.Items 里的 writer 项按顺序一一对应(没有 writer 时为空)：handler 会等这些 writer 写完再返回。
+	Publish func(RoundOutputs) ([]WriterResult, error)
 	// KPFloor 非空表示本周期由KP主动发起而不是玩家回应触发:opening(开场)/host_continue(房主
 	// 要求KP继续)/resume(上下文已满,总结后续跑)。为空表示由玩家回应触发。
 	KPFloor string
@@ -232,6 +233,22 @@ type Output struct {
 	CallID string
 }
 
+// WriterResult 是一条 writer 消息发布后的结果，供 Director 把正文放进对应 tool 结果。
+type WriterResult struct {
+	CallID string
+	Status WriterStatus
+	Text   string // Status 为 WriterDone 时是正文
+}
+
+// WriterStatus 说明发布返回时这条 writer 的状态。
+type WriterStatus string
+
+const (
+	WriterDone    WriterStatus = "done"    // 正文已写完并落库
+	WriterFailed  WriterStatus = "failed"  // 生成失败，玩家只看到失败提示
+	WriterPending WriterStatus = "pending" // 周期被取消，没有等到
+)
+
 // RoundOutputs 是 Director 一轮工具调用产生的全部消息,按 writer → kp → ask 排好序
 // (同类保持调用顺序)。handler 在 Publish 里同步落库并广播。
 type RoundOutputs struct {
@@ -244,7 +261,8 @@ type RoundOutputs struct {
 	// WriterCtx 是本轮结束时 GameContext 的拷贝(Session.Players 也已拷贝,Progress/Publish 置空):
 	// Writer、Painter 异步读取它,Director 继续原地修改原 gctx 时不会产生数据竞争。
 	WriterCtx GameContext
-	// Director 是本轮结束时 Director 完整消息链的只读快照，只有含 writer 的轮才有值。
+	// Director 是发布这条 writer 时 Director 完整消息链的只读快照，只有含 writer 的发布才有值；
+	// 同一轮里前面的 writer 的正文已经回填在其中。
 	Director []llm.ChatMessage
 }
 

@@ -11,9 +11,9 @@ export function isEmbeddingRole(role: string): boolean {
   return role === 'embedding'
 }
 
-// NOTE: 这些角色会按上下文窗口裁剪历史(Writer 与 NPC 是超窗时丢掉附带的正文)，其余角色不显示该输入框
+// NOTE: 只有 Director 按上下文窗口触发总结，其余角色不显示该输入框
 export function hasContextWindow(role: string): boolean {
-  return ['director', 'writer', 'writer_nsfw', 'npc', 'npc_nsfw'].includes(role)
+  return role === 'director'
 }
 
 export function buildSavePayload(ag: AgentFormState) {

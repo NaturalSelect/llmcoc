@@ -22,7 +22,7 @@ func npcViewDirector() []llm.ChatMessage {
 func TestBuildNPCView_DropsTrailingUnansweredAssistant(t *testing.T) {
 	director := npcViewDirector()
 	instr := llm.ChatMessage{Role: "user", Content: "npc指令"}
-	view := buildNPCView(director, "npc-system", nil, true, 0, 0, instr)
+	view := buildNPCView(director, "npc-system", true, instr)
 
 	// system + 其余 Director 消息(去掉末尾未回答的 assistant) + 指令
 	if want := len(director) - 1 + 1; len(view) != want {
@@ -46,22 +46,21 @@ func TestBuildNPCView_DropsTrailingUnansweredAssistant(t *testing.T) {
 
 func TestBuildNPCView_KeepsAnsweredTail(t *testing.T) {
 	director := writerViewDirector()
-	view := buildNPCView(director, "sys", nil, true, 0, 0, writerViewInstruction())
+	view := buildNPCView(director, "sys", true, writerViewInstruction())
 	if len(view) != len(director)+1 {
 		t.Fatalf("a chain that ends with a tool result must be kept whole: got %d, want %d", len(view), len(director)+1)
 	}
 }
 
 func TestBuildNPCView_EmptyDirectorIsSystemPlusInstruction(t *testing.T) {
-	view := buildNPCView(nil, "sys", nil, true, 0, 0, writerViewInstruction())
+	view := buildNPCView(nil, "sys", true, writerViewInstruction())
 	if len(view) != 2 || view[0].Role != "system" || view[0].Content != "sys" || view[1].Content != "续写指令" {
 		t.Errorf("view = %+v, want system + instruction", view)
 	}
 }
 
-func TestBuildNPCView_AttachesProseAndStripsForeignReasoning(t *testing.T) {
-	prose := map[string]writerProse{"w1": {Floor: 1, Text: "他推开了门。"}}
-	view := buildNPCView(npcViewDirector(), "sys", prose, false, 0, 0, writerViewInstruction())
+func TestBuildNPCView_KeepsProseAndStripsForeignReasoning(t *testing.T) {
+	view := buildNPCView(npcViewDirector(), "sys", false, writerViewInstruction())
 
 	if want := "已发布\n<writer_output>\n他推开了门。\n</writer_output>"; view[3].Content != want {
 		t.Errorf("tool result of w1 = %q, want %q", view[3].Content, want)

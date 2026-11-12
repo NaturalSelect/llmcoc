@@ -122,3 +122,50 @@ func toolResultBody(content string) string {
 	rest := strings.TrimPrefix(content[len(tag):], "\n")
 	return strings.TrimSuffix(rest, "\n"+toolResultClose)
 }
+
+const (
+	writerOutputOpen  = "\n<writer_output>\n"
+	writerOutputClose = "\n</writer_output>"
+	// writerFailedNote 是 Writer 生成失败时附在 write 结果里的说明：Director 得知玩家没有读到正文。
+	writerFailedNote = "Writer 生成失败，玩家只看到失败提示；需要时重新 write。"
+)
+
+// attachWriterOutput 把 Writer 正文放进一条 write（或自动补写的来源 narrate/ask）的 tool 结果：
+// 信封格式插在闭标签之前，旧会话里没有信封的纯文本直接追加。被拒绝的结果、已经带正文的结果、
+// 正文清理后为空时不改动，返回 false。
+func attachWriterOutput(content, prose string) (string, bool) {
+	prose = stripWriterControlTags(prose)
+	if prose == "" || isToolRejected(content) || strings.Contains(content, writerOutputOpen) {
+		return content, false
+	}
+	block := writerOutputOpen + prose + writerOutputClose
+	if _, ok := toolResultOpenTag(content); ok && strings.HasSuffix(content, "\n"+toolResultClose) {
+		return strings.TrimSuffix(content, "\n"+toolResultClose) + block + "\n" + toolResultClose, true
+	}
+	return content + block, true
+}
+
+// attachWriterFailure 在 Writer 生成失败时给结果附一句说明，规则同 attachWriterOutput。
+func attachWriterFailure(content string) (string, bool) {
+	if isToolRejected(content) || strings.Contains(content, writerFailedNote) {
+		return content, false
+	}
+	if _, ok := toolResultOpenTag(content); ok && strings.HasSuffix(content, "\n"+toolResultClose) {
+		return strings.TrimSuffix(content, "\n"+toolResultClose) + "\n" + writerFailedNote + "\n" + toolResultClose, true
+	}
+	return content + "\n" + writerFailedNote, true
+}
+
+// writerOutputOf 取回 tool 结果里附带的 Writer 正文；没有时 ok 为 false。
+func writerOutputOf(content string) (string, bool) {
+	start := strings.Index(content, writerOutputOpen)
+	if start < 0 {
+		return "", false
+	}
+	rest := content[start+len(writerOutputOpen):]
+	end := strings.Index(rest, writerOutputClose)
+	if end < 0 {
+		return "", false
+	}
+	return rest[:end], true
+}

@@ -49,6 +49,9 @@ type floorRun struct {
 	beatStart       time.Time
 	beatNeedsWriter bool // 本拍内出现过需要白字叙事的可见动作
 	beatHasWriter   bool // 本拍内已经发布过 writer 消息
+	// writerWait 是本拍内等 Writer 写完花掉的时间，计入周期总等待；两者都要从 Director 决策耗时里扣掉。
+	writerWait      time.Duration
+	totalWriterWait time.Duration
 }
 
 func newFloorRun(ctx context.Context, gctx *GameContext, cm *ContextManager, floor int, summarize summarizeFunc, progress func(string)) *floorRun {
@@ -88,10 +91,14 @@ func (f *floorRun) afterDispatch(round int, calls []llm.ToolCall, msgs []llm.Cha
 	if !rejected {
 		f.noteVisibleActions(calls, msgs)
 	}
+	// NOTE: flush 会把 Writer 正文回填进 msgs 里的 tool 结果，后面的防循环和总结都要基于回填后的消息链。
+	var patched []llm.ChatMessage
 	if !rejected && len(f.outbox) > 0 {
-		if err := f.flush(round, msgs); err != nil {
+		var err error
+		if patched, err = f.flush(round, msgs); err != nil {
 			return nil, err
 		}
+		msgs = patched
 	} else {
 		if err := f.publishEvents(round); err != nil {
 			return nil, err
@@ -99,7 +106,7 @@ func (f *floorRun) afterDispatch(round int, calls []llm.ToolCall, msgs []llm.Cha
 		f.idleRounds++
 	}
 
-	var out []llm.ChatMessage
+	out := patched
 	next, err := f.guard.afterDispatch(round, calls, msgs, rejected)
 	if err != nil {
 		return nil, err
@@ -144,8 +151,10 @@ func (f *floorRun) noteVisibleActions(calls []llm.ToolCall, msgs []llm.ChatMessa
 }
 
 // flush 把本轮 outbox 整理成 writer → kp → ask 的固定顺序(同类保持调用顺序)，
-// 必要时在 kp 前补一条自动 writer，同步 Publish 后 Checkpoint。
-func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
+// 必要时在 kp 前补一条自动 writer。每条 writer 单独 Publish 并等它写完，正文回填进对应的 tool 结果，
+// 所以同一轮里后一条 writer 看得到前一条的正文；kp/ask 在所有 writer 之后一起发布，最后 Checkpoint。
+// 返回回填后的消息链，调用方必须用它替换原来的 msgs。
+func (f *floorRun) flush(round int, msgs []llm.ChatMessage) ([]llm.ChatMessage, error) {
 	var writers, kps, asks []Output
 	for _, it := range f.outbox {
 		switch it.Kind {
@@ -171,41 +180,59 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 		}
 	}
 
-	items := make([]Output, 0, len(writers)+len(kps)+len(asks))
-	items = append(items, writers...)
-	items = append(items, kps...)
-	items = append(items, asks...)
+	beats := make([]Output, 0, len(kps)+len(asks))
+	beats = append(beats, kps...)
+	beats = append(beats, asks...)
 
-	closesBeat := len(kps) > 0 || len(asks) > 0
+	closesBeat := len(beats) > 0
 	if closesBeat {
 		timePoint := f.gctx.Session.GameTime
-		for i := range items {
-			if items[i].Kind != OutputKP && items[i].Kind != OutputAsk {
-				continue
-			}
-			items[i].TimePoint = timePoint
-			if items[i].Ended {
+		for i := range beats {
+			beats[i].TimePoint = timePoint
+			if beats[i].Ended {
 				f.ended = true
 			}
 		}
 	}
 
-	if f.gctx.Publish != nil {
-		ro := RoundOutputs{Floor: f.floor, Round: round, Items: items, Events: f.events, WriterCtx: snapshotGameContext(*f.gctx)}
-		if len(writers) > 0 {
+	if f.gctx.Publish == nil {
+		f.published += len(writers) + len(beats)
+	} else {
+		for i, w := range writers {
+			ro := RoundOutputs{Floor: f.floor, Round: round, Items: []Output{w}, WriterCtx: snapshotGameContext(*f.gctx)}
+			if i == 0 {
+				ro.Events = f.events
+				f.events = nil
+			}
 			// NOTE: Writer 在 Publish 期间就会入队开跑，此时 Checkpoint 还没落库，只能在这里把消息链浅拷贝交出去。
 			ro.Director = append([]llm.ChatMessage(nil), msgs...)
+			start := time.Now()
+			results, err := f.gctx.Publish(ro)
+			f.addWriterWait(time.Since(start))
+			if err != nil {
+				return msgs, fmt.Errorf("publish round outputs: %w", err)
+			}
+			f.published++
+			msgs = backfillWriterResults(msgs, results)
+		}
+
+		ro := RoundOutputs{Floor: f.floor, Round: round, Items: beats, WriterCtx: snapshotGameContext(*f.gctx)}
+		if len(writers) == 0 {
+			ro.Events = f.events
+			f.events = nil
 		}
 		if closesBeat {
-			ro.ElapsedMs = time.Since(f.beatStart).Milliseconds()
+			ro.ElapsedMs = max(0, (time.Since(f.beatStart) - f.writerWait).Milliseconds())
 			ro.Steps = f.beatRounds
 		}
-		if err := f.gctx.Publish(ro); err != nil {
-			return fmt.Errorf("publish round outputs: %w", err)
+		if len(ro.Items) > 0 || len(ro.Events) > 0 {
+			if _, err := f.gctx.Publish(ro); err != nil {
+				return msgs, fmt.Errorf("publish round outputs: %w", err)
+			}
+			f.published += len(beats)
 		}
 	}
 	f.events = nil
-	f.published += len(items)
 	f.cm.Checkpoint(f.gctx.Session.TurnRound, msgs)
 	f.guard.markMessagesProduced()
 	f.idleRounds = 0
@@ -213,12 +240,43 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 	if closesBeat {
 		f.beatRounds = 0
 		f.beatStart = time.Now()
+		f.writerWait = 0
 		f.beatNeedsWriter = false
 		f.beatHasWriter = false
 	} else if len(writers) > 0 {
 		f.beatHasWriter = true
 	}
-	return nil
+	return msgs, nil
+}
+
+// addWriterWait 记下一次发布里等 Writer 花掉的时间。
+func (f *floorRun) addWriterWait(d time.Duration) {
+	f.writerWait += d
+	f.totalWriterWait += d
+}
+
+// backfillWriterResults 按 CallID 把 Writer 的结果写回消息链里对应的 tool 消息。
+// 返回新切片：原来的切片可能已经被交给异步的 Writer 当快照，不能原地修改。
+func backfillWriterResults(msgs []llm.ChatMessage, results []WriterResult) []llm.ChatMessage {
+	if len(results) == 0 {
+		return msgs
+	}
+	out := append([]llm.ChatMessage(nil), msgs...)
+	for _, r := range results {
+		for i := len(out) - 1; i >= 0; i-- {
+			if out[i].Role != "tool" || out[i].ToolCallID != r.CallID {
+				continue
+			}
+			switch r.Status {
+			case WriterDone:
+				out[i].Content, _ = attachWriterOutput(out[i].Content, r.Text)
+			case WriterFailed:
+				out[i].Content, _ = attachWriterFailure(out[i].Content)
+			}
+			break
+		}
+	}
+	return out
 }
 
 // publishEvents 发布只有工具事件、没有消息的一轮。
@@ -233,7 +291,7 @@ func (f *floorRun) publishEvents(round int) error {
 		return nil
 	}
 	ro := RoundOutputs{Floor: f.floor, Round: round, Events: events, WriterCtx: snapshotGameContext(*f.gctx)}
-	if err := f.gctx.Publish(ro); err != nil {
+	if _, err := f.gctx.Publish(ro); err != nil {
 		return fmt.Errorf("publish round events: %w", err)
 	}
 	return nil
@@ -286,6 +344,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	if cm.IsEmpty() && len(gctx.History) > 0 {
 		cm.Commit(0, []llm.ChatMessage{{Role: "user", Content: formatHistoryTranscript(gctx.History)}})
 	}
+	// NOTE: 打断时没等到的 Writer、以及正文进历史这个机制上线前的旧会话，tool 结果里缺正文，这里按调用 ID 从消息表补上，
+	// 要在总结之前做，Build 和总结看到的都是补齐后的历史。
+	cm.backfillWriterProse(loadWriterProse(sid))
 	// NOTE: 新周期开始前先看历史是否逼近窗口，逼近就用 Director 自己的模型把较早的拍总结掉。
 	summarize := directorSummarizer(director, sid)
 	cm.MaybeCompact(ctx, summarize)
@@ -336,7 +397,8 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 			emitProgress(progressPlannedCalls(calls))
 		},
 	})
-	elapsedMs := time.Since(directorStart).Milliseconds()
+	// NOTE: Director 决策耗时不含等 Writer 写完的时间。
+	elapsedMs := max(0, (time.Since(directorStart) - fr.totalWriterWait).Milliseconds())
 
 	stop, runErr := classifyFloorEnd(ctx, loopErr, round)
 	// NOTE: 已经执行完的轮(哪怕没有产生消息)的副作用必须留在 KP 的记忆里，所以无论怎么结束都补落库一次；

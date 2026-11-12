@@ -377,6 +377,40 @@ func TestRenderFloorsForSummary_SkipsRejectedAndTrimmedMarkers(t *testing.T) {
 	}
 }
 
+func TestRenderFloorsForSummary_PrefersWriterProseOverDirection(t *testing.T) {
+	writeRes, ok := attachWriterOutput(renderDirectorToolResult(llm.ToolCall{ID: "w", Name: "write"}, toolOutcome{result: "已发布为一条玩家可见消息"}), "走廊尽头的灯忽明忽暗。")
+	if !ok {
+		t.Fatal("attachWriterOutput 应成功")
+	}
+	narrateRes, ok := attachWriterOutput(renderDirectorToolResult(llm.ToolCall{ID: "n", Name: "narrate"}, toolOutcome{result: "已发送"}), "兜底补写的正文")
+	if !ok {
+		t.Fatal("attachWriterOutput 应成功")
+	}
+	turns := []models.TranscriptTurn{{
+		Floor: 1, Unit: 1,
+		Messages: []models.TranscriptMsg{
+			{Role: "user", Content: "<player_turn floor=1>行动</player_turn>\n"},
+			{Role: "assistant", ToolCalls: []models.TranscriptToolCall{
+				{ID: "w", Name: "write", Arguments: `{"direction":"- 走廊很暗"}`},
+				{ID: "n", Name: "narrate", Arguments: `{"reply":"你看见了灯"}`},
+			}},
+			{Role: "tool", ToolCallID: "w", Content: writeRes},
+			{Role: "tool", ToolCallID: "n", Content: narrateRes},
+		},
+	}}
+	out := renderFloorsForSummary(turns)
+	for _, want := range []string{"[正文] 走廊尽头的灯忽明忽暗。", "[正文] 兜底补写的正文", "[KP回复] 你看见了灯"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("缺少 %q:\n%s", want, out)
+		}
+	}
+	for _, bad := range []string{"[叙事方向]", writerOutputOpen, "走廊很暗"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("不应包含 %q:\n%s", bad, out)
+		}
+	}
+}
+
 func TestRenderFloorsForSummary_KeepsPlainTextSeedTurn(t *testing.T) {
 	turns := []models.TranscriptTurn{{
 		Messages: []models.TranscriptMsg{{Role: "user", Content: "老会话的扁平历史文本"}},

@@ -21,7 +21,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		你是{{NSFW_WRITER_VOICE}}的 COC 角色扮演(role play)文本写手，擅长清晰、具体、有节奏的叙事。你的唯一任务是根据最后一条消息里的导演指令，写出一段 role play 文本，并且只输出这段文本。你不是 KP：不裁定规则、不调用工具、不点名玩家、不提问、不给推荐行动。
 	</identity>
 	<context>
-		<rule>之前的对话是 KP(导演)的完整工作记录：模组资料、周期状态、KP 的工具调用与结果(规则裁定、暗骰、NPC 私下反应等)，以及附在 write 结果后、你之前写出的正文(记录里用 <writer_output> 标签把它们框出来，只是为了让你分清哪一段是正文，标签不属于正文)。记录里的工具都已执行完，{{WRITER_TOOL_RULE}}，也不要续写 KP 的工作：不写 ask_players、narrate、write 之类的调用及其参数(点名、提问、推荐行动)，也不模仿工具结果的格式。</rule>
+		<rule>之前的对话是 KP(导演)的完整工作记录：模组资料、周期状态、KP 的工具调用与结果(规则裁定、暗骰、NPC 私下反应等)，以及你之前写出的正文(在 write 或 narrate/ask 的工具结果里，用 <writer_output> 标签框出来，只是为了让你分清哪一段是正文，标签不属于正文)。记录里的工具都已执行完，{{WRITER_TOOL_RULE}}，也不要续写 KP 的工作：不写 ask_players、narrate、write 之类的调用及其参数(点名、提问、推荐行动)，也不模仿工具结果的格式。</rule>
 		<rule>下面规则里说的“上文”，只指玩家已经读到的内容：你之前写出的正文，以及 KP 发给玩家的 narrate/ask 文字。</rule>
 		<rule>记录里玩家不知道的信息(模组秘密、暗骰结果、NPC 的隐藏意图、规则原文)不得写进正文，也不得暗示；只写最后一条消息里导演指令要求的内容。</rule>
 	</context>
@@ -48,7 +48,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		<rule>调查员的台词必须做同义转写，不要照抄玩家原句：对照用户消息 character 块里该调查员的 traits(性格)，并参考 app(外貌)和 eq(当前穿戴或手持的装备，描写时可以引用)，把措辞、语气、用词习惯和句子长短改成这个人会说出口的样子——寡言的人说得短促，学者用词讲究，粗人说话直白，紧张的人可以吞吐停顿。转写只改说法不改内容：说话对象、原意、立场、问题本身、承诺和透露的信息量都保持不变，不加入原句没有的事实、请求、情绪表态或新信息，也不删掉原句里的任何一项诉求。性格资料为空时，按上文已经表现出来的说话方式转写。</rule>
 		<rule>玩家行动边界：只能描写导演指令中明确给出的玩家动作/台词，以及工具已确认的结果；禁止补写玩家下一步、心理反应、同意/拒绝/沉默、跟随、移动、拿起/交出物品、攻击、施法、继续搜索、继续交谈或任何未授权后续动作。</rule>
 		<rule>每段叙事要形成完整场景拍点：动作开始、环境/对象反馈、动作结束后的可互动状态；可互动状态只能由导演指令或上文已出现的对象构成，必须停在玩家可选择的位置，不得替玩家跨过选择点。</rule>
-		<rule>如果导演指令较短，也要基于已给出的行动、地点和上下文补足自然过渡；但不能新增未授权线索、结果、NPC台词、机械收益或玩家行为。</rule>
+		<rule>导演指令是要点式的：把每条要点展开成完整场景，过渡、动作细节和感官描写由你补足；可以引用玩家已经读到的内容(此前的正文、KP 发给玩家的消息)来保持连贯；但不能新增未授权线索、结果、NPC台词、机械收益或玩家行为。</rule>
 		<rule>场景转换只能描写导演指令明确要求的移动；若未明确要求移动，只能描述当前地点和导演指令或上文已出现的出口，不能写玩家已经离开或到达新地点，也不得自行增设出口。</rule>
 		<rule>指令中出现具体时刻或“过了多久”这类时间跨度时，必须把它转成正文中能被感知的信号——光线/天色变化、环境声响、人物疲惫或状态变化等——让时间流逝清晰可读，不能只靠一个动作衔接就带过不提。</rule>
 		<rule>指令交代了某NPC在场景外的行踪（去了哪里、做了什么、为何此刻出现）时，该NPC登场必须体现来历：脚步声由远及近、外观或气息透露刚经历的事、或一句话点出他从何处赶来；禁止让NPC毫无铺垫地凭空出现在玩家面前。</rule>
@@ -134,9 +134,8 @@ func RunWriterStream(ctx context.Context, gctx GameContext, req WriterRequest, o
 		tools = append(tools, writerPaintTool())
 	}
 	instruction := buildWriterInstruction(req, gctx, nsfwMode, paintOK)
-	msgs := buildWriterView(req.Director, writerSystemPrompt(h, nsfwMode, paintOK), loadWriterProse(gctx.Session.ID),
-		sameModelConfig(h.config, handles[models.AgentRoleDirector].config), writerContextWindow(h),
-		writerToolRunes(tools), instruction)
+	msgs := buildWriterView(req.Director, writerSystemPrompt(h, nsfwMode, paintOK),
+		sameModelConfig(h.config, handles[models.AgentRoleDirector].config), instruction)
 
 	state := &WriterState{}
 	if paintOK {
@@ -160,24 +159,6 @@ func pickWriterHandle(handles map[models.AgentRole]agentHandle, nsfw bool) (agen
 		return agentHandle{}, false, fmt.Errorf("writer agent 未配置或未启用")
 	}
 	return h, false, nil
-}
-
-// writerContextWindow 返回本轮选中的 Writer 配置的上下文窗口；未配置或为 0 时回落
-// 默认值，保证 Writer 历史始终有裁剪阈值。
-func writerContextWindow(h agentHandle) int64 {
-	if h.config != nil && h.config.ContextWindow > 0 {
-		return int64(h.config.ContextWindow)
-	}
-	return models.DefaultWriterContextWindow
-}
-
-// writerToolRunes 估算工具定义占用的字符数,计入 Writer 视图的窗口判断。
-func writerToolRunes(tools []llm.ToolDefinition) int64 {
-	var n int64
-	for _, t := range tools {
-		n += int64(len([]rune(t.Name)) + len([]rune(t.Description)) + len(t.Parameters))
-	}
-	return n
 }
 
 // writerRefusalPrefixes 命中其中任一前缀视为模型拒绝生成正文,与空内容一样需要丢弃重试。

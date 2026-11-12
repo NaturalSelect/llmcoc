@@ -26,10 +26,9 @@ func dropUnansweredToolCalls(chain []llm.ChatMessage) []llm.ChatMessage {
 }
 
 // buildNPCView 组装发给 NPC 的完整消息序列(不含工具定义)：与 Writer 视图同构，
-// 替换 system、跨模型去推理、在 write 结果后附 <writer_output>、超窗口时整周期丢弃正文、末尾追加 instruction。
-func buildNPCView(director []llm.ChatMessage, system string, prose map[string]writerProse,
-	keepReasoning bool, window, fixedRunes int64, instruction llm.ChatMessage) []llm.ChatMessage {
-	return buildWriterView(dropUnansweredToolCalls(director), system, prose, keepReasoning, window, fixedRunes, instruction)
+// 替换 system、跨模型去推理、末尾追加 instruction；write 的正文已经在 Director 消息链的工具结果里。
+func buildNPCView(director []llm.ChatMessage, system string, keepReasoning bool, instruction llm.ChatMessage) []llm.ChatMessage {
+	return buildWriterView(dropUnansweredToolCalls(director), system, keepReasoning, instruction)
 }
 
 // buildNPCInstruction 组装本轮的指令：人设 + 场景卡 + KP 的提问 + 行为注意事项 + 输出要求。

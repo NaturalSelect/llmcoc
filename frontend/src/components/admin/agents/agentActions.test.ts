@@ -39,8 +39,8 @@ describe('角色判定', () => {
     expect(isPainterRole('painter_nsfw')).toBe(true)
     expect(isPainterRole('painter_hq')).toBe(true)
     expect(isPainterRole('writer')).toBe(false)
-    expect(['director', 'writer', 'writer_nsfw', 'npc', 'npc_nsfw'].every(hasContextWindow)).toBe(true)
-    expect(hasContextWindow('lawyer')).toBe(false)
+    expect(hasContextWindow('director')).toBe(true)
+    expect(['writer', 'writer_nsfw', 'npc', 'npc_nsfw', 'lawyer'].some(hasContextWindow)).toBe(false)
   })
 
   test('embedding 只匹配自身，不被当成画图角色', () => {

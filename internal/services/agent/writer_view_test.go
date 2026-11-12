@@ -15,9 +15,9 @@ func writerViewDirector() []llm.ChatMessage {
 		{Role: "user", Content: "<scenario>模组</scenario>", CacheBreakpoint: true},
 		{Role: "assistant", Reasoning: "思考A", ReasoningBlocks: []llm.ReasoningBlock{{Type: "thinking", Text: "t", Signature: "s"}},
 			ToolCalls: []llm.ToolCall{fakeToolCall("w1", "write", `{"direction":"推门"}`)}},
-		{Role: "tool", ToolCallID: "w1", Content: "已发布"},
+		{Role: "tool", ToolCallID: "w1", Content: "已发布\n<writer_output>\n他推开了门。\n</writer_output>"},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{fakeToolCall("w2", "write", `{"direction":"走进去"}`)}},
-		{Role: "tool", ToolCallID: "w2", Content: "已发布"},
+		{Role: "tool", ToolCallID: "w2", Content: "已发布\n<writer_output>\n他走了进去。\n</writer_output>"},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{fakeToolCall("w3", "write", `{"direction":""}`)}},
 		{Role: "tool", ToolCallID: "w3", Content: "SYSTEM REJECT: write.direction 不能为空"},
 	}
@@ -29,7 +29,7 @@ func writerViewInstruction() llm.ChatMessage {
 
 func TestBuildWriterView_ReplacesSystemKeepsDirectorChain(t *testing.T) {
 	director := writerViewDirector()
-	view := buildWriterView(director, "writer-system", nil, true, 0, 0, writerViewInstruction())
+	view := buildWriterView(director, "writer-system", true, writerViewInstruction())
 
 	if len(view) != len(director)+1 {
 		t.Fatalf("view = %d messages, want %d", len(view), len(director)+1)
@@ -37,6 +37,7 @@ func TestBuildWriterView_ReplacesSystemKeepsDirectorChain(t *testing.T) {
 	if view[0].Role != "system" || view[0].Content != "writer-system" || !view[0].CacheBreakpoint {
 		t.Errorf("system should be replaced but keep its cache breakpoint, got %+v", view[0])
 	}
+	// NOTE: 正文已经在 Director 的 tool 结果里，视图必须原样透传，不再自己附加。
 	for i := 1; i < len(director); i++ {
 		if !reflect.DeepEqual(view[i], director[i]) {
 			t.Errorf("view[%d] differs from director message:\ngot  %+v\nwant %+v", i, view[i], director[i])
@@ -51,87 +52,27 @@ func TestBuildWriterView_ReplacesSystemKeepsDirectorChain(t *testing.T) {
 }
 
 func TestBuildWriterView_NoSystemInDirectorPrependsOne(t *testing.T) {
-	view := buildWriterView([]llm.ChatMessage{{Role: "user", Content: "u"}}, "writer-system", nil, true, 0, 0, writerViewInstruction())
+	view := buildWriterView([]llm.ChatMessage{{Role: "user", Content: "u"}}, "writer-system", true, writerViewInstruction())
 	if len(view) != 3 || view[0].Role != "system" || view[0].Content != "writer-system" {
 		t.Errorf("view = %+v, want system + user + instruction", view)
 	}
-	if view := buildWriterView(nil, "writer-system", nil, true, 0, 0, writerViewInstruction()); len(view) != 2 {
+	if view := buildWriterView(nil, "writer-system", true, writerViewInstruction()); len(view) != 2 {
 		t.Errorf("empty director view = %+v, want system + instruction", view)
 	}
 }
 
-func TestBuildWriterView_AttachesProseToMatchingToolResult(t *testing.T) {
-	prose := map[string]writerProse{
-		"w1": {Floor: 1, Text: "他推开了门。"},
-		"w3": {Floor: 2, Text: "不应附在被拒绝的结果上"},
-		"zz": {Floor: 2, Text: "没有对应的工具结果"},
-	}
-	view := buildWriterView(writerViewDirector(), "sys", prose, true, 0, 0, writerViewInstruction())
-
-	if want := "已发布\n<writer_output>\n他推开了门。\n</writer_output>"; view[3].Content != want {
-		t.Errorf("tool result of w1 = %q, want %q", view[3].Content, want)
-	}
-	if view[5].Content != "已发布" {
-		t.Errorf("tool result of w2 has no prose, got %q", view[5].Content)
-	}
-	if strings.Contains(view[7].Content, "<writer_output>") {
-		t.Errorf("a rejected tool result must not get prose attached, got %q", view[7].Content)
-	}
-	for i, m := range view {
-		if m.Role != "tool" && strings.Contains(m.Content, "<writer_output>") {
-			t.Errorf("view[%d] (%s) must not carry prose", i, m.Role)
-		}
-	}
-}
-
-func TestBuildWriterView_DropsOldestFloorProseFirst(t *testing.T) {
-	director := writerViewDirector()
-	long := strings.Repeat("字", 400)
-	prose := map[string]writerProse{
-		"w1": {Floor: 1, Text: long},
-		"w2": {Floor: 2, Text: long},
-	}
-	base := chatMessagesRuneCount(director)
-
-	// 窗口只放得下一条正文：floor 1 的先被去掉，floor 2 的保留。
-	window := int64(float64(base+500) / (1 - contextReserveRatio))
-	view := buildWriterView(director, "director-system", prose, true, window, 0, writerViewInstruction())
-
-	if len(view) != len(director)+1 {
-		t.Fatalf("director messages must never be dropped: got %d, want %d", len(view), len(director)+1)
-	}
-	if strings.Contains(view[3].Content, "<writer_output>") {
-		t.Error("the oldest floor's prose should be dropped first")
-	}
-	if !strings.Contains(view[5].Content, long) {
-		t.Error("the newer floor's prose should be kept when it still fits")
-	}
-
-	// 窗口放不下任何正文：全部去掉，Director 消息仍然全部保留。
-	view = buildWriterView(director, "director-system", prose, true, base/2, 0, writerViewInstruction())
-	for _, i := range []int{3, 5} {
-		if strings.Contains(view[i].Content, "<writer_output>") {
-			t.Errorf("view[%d] should have no prose when nothing fits", i)
-		}
-	}
-	if len(view) != len(director)+1 {
-		t.Errorf("director messages must never be dropped, got %d", len(view))
-	}
-}
-
 func TestBuildWriterView_Deterministic(t *testing.T) {
-	prose := map[string]writerProse{"w1": {Floor: 1, Text: "甲"}, "w2": {Floor: 2, Text: "乙"}}
-	a := buildWriterView(writerViewDirector(), "sys", prose, true, 100000, 10, writerViewInstruction())
-	b := buildWriterView(writerViewDirector(), "sys", prose, true, 100000, 10, writerViewInstruction())
+	a := buildWriterView(writerViewDirector(), "sys", true, writerViewInstruction())
+	b := buildWriterView(writerViewDirector(), "sys", true, writerViewInstruction())
 	if !reflect.DeepEqual(a, b) {
 		t.Error("the same input must produce the same view")
 	}
 
-	// 在 Director 末尾追加一轮后，原有前缀(除新附正文的那条 tool 消息)字节不变。
+	// 在 Director 末尾追加一轮后，原有前缀字节不变。
 	longer := append(writerViewDirector(),
 		llm.ChatMessage{Role: "assistant", ToolCalls: []llm.ToolCall{fakeToolCall("w4", "write", `{"direction":"x"}`)}},
 		llm.ChatMessage{Role: "tool", ToolCallID: "w4", Content: "已发布"})
-	c := buildWriterView(longer, "sys", prose, true, 100000, 10, writerViewInstruction())
+	c := buildWriterView(longer, "sys", true, writerViewInstruction())
 	for i := 0; i < len(writerViewDirector()); i++ {
 		if !reflect.DeepEqual(a[i], c[i]) {
 			t.Errorf("prefix message %d changed after appending a round:\nbefore %+v\nafter  %+v", i, a[i], c[i])
@@ -140,13 +81,16 @@ func TestBuildWriterView_Deterministic(t *testing.T) {
 }
 
 func TestBuildWriterView_ReasoningOnlyKeptForSameModel(t *testing.T) {
-	kept := buildWriterView(writerViewDirector(), "sys", nil, true, 0, 0, writerViewInstruction())
+	kept := buildWriterView(writerViewDirector(), "sys", true, writerViewInstruction())
 	if kept[2].Reasoning == "" || len(kept[2].ReasoningBlocks) == 0 {
 		t.Error("reasoning should be kept when Writer shares the Director's model")
 	}
-	dropped := buildWriterView(writerViewDirector(), "sys", nil, false, 0, 0, writerViewInstruction())
+	dropped := buildWriterView(writerViewDirector(), "sys", false, writerViewInstruction())
 	if dropped[2].Reasoning != "" || dropped[2].ReasoningBlocks != nil {
 		t.Errorf("reasoning must be stripped for a different model, got %+v", dropped[2])
+	}
+	if !strings.Contains(dropped[3].Content, "他推开了门。") {
+		t.Errorf("stripping reasoning must keep the prose in the tool result, got %q", dropped[3].Content)
 	}
 }
 
@@ -199,7 +143,7 @@ func TestLoadWriterProse_OnlyDoneMessagesWithCallID(t *testing.T) {
 	}
 
 	got := loadWriterProse(sessionID)
-	if len(got) != 1 || got["a"].Text != "完成的正文" || got["a"].Floor != 1 {
+	if len(got) != 1 || got["a"] != "完成的正文" {
 		t.Errorf("loadWriterProse = %+v, want only the done message with a call id", got)
 	}
 }

@@ -577,49 +577,6 @@ func TestPickWriterHandle(t *testing.T) {
 	}
 }
 
-// TestWriterContextWindow 验证Writer的上下文窗口取自本轮选中的Writer配置，
-// 未配置或为0时回落默认值，保证历史始终有裁剪阈值。
-func TestWriterContextWindow(t *testing.T) {
-	cases := []struct {
-		name   string
-		handle agentHandle
-		want   int64
-	}{
-		{
-			name:   "配置了窗口则使用配置值",
-			handle: agentHandle{config: &models.AgentConfig{Role: models.AgentRoleWriter, ContextWindow: 200000}},
-			want:   200000,
-		},
-		{
-			name:   "窗口为0回落默认值",
-			handle: agentHandle{config: &models.AgentConfig{Role: models.AgentRoleWriter}},
-			want:   models.DefaultWriterContextWindow,
-		},
-		{
-			name:   "窗口为负数回落默认值",
-			handle: agentHandle{config: &models.AgentConfig{Role: models.AgentRoleWriter, ContextWindow: -1}},
-			want:   models.DefaultWriterContextWindow,
-		},
-		{
-			name:   "config为空回落默认值",
-			handle: agentHandle{},
-			want:   models.DefaultWriterContextWindow,
-		},
-		{
-			name:   "NSFW Writer使用自己的窗口而不是默认Writer的",
-			handle: agentHandle{config: &models.AgentConfig{Role: models.AgentRoleWriterNSFW, ContextWindow: 64000}},
-			want:   64000,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := writerContextWindow(tc.handle); got != tc.want {
-				t.Errorf("writerContextWindow = %d, want %d", got, tc.want)
-			}
-		})
-	}
-}
-
 // ── Writer system / 指令 / 请求组装 ──────────────────────────────────────────
 
 // TestWriterSystemPromptFollowsNSFWMode 验证system prompt按本次调用的nsfwMode渲染,
@@ -703,7 +660,7 @@ func TestRunWriterStream_RoomNSFWNonNSFWCallUsesAllAgesPrompt(t *testing.T) {
 }
 
 // TestRunWriterStream_SendsDirectorContextAndTools 验证Writer的请求:system换成Writer自己的,
-// Director的消息链(含tool_calls/tool结果)原样保留,之前已完成的write正文附在对应tool结果后,
+// Director的消息链(含tool_calls/tool结果,以及tool结果里已有的<writer_output>正文)原样保留,不再读库补正文,
 // 末尾是续写指令,并且声明了Director的全部工具。
 func TestRunWriterStream_SendsDirectorContextAndTools(t *testing.T) {
 	initAgentTestDB(t)
@@ -711,10 +668,11 @@ func TestRunWriterStream_SendsDirectorContextAndTools(t *testing.T) {
 	if err := models.DB.Create(&models.GameSession{ID: sessionID}).Error; err != nil {
 		t.Fatalf("create session: %v", err)
 	}
+	// NOTE: 库里有 call_2 的正文，但消息链里 call_2 的结果没有——视图不能再去库里补。
 	if err := models.DB.Create(&models.Message{
 		SessionID: sessionID, Role: models.MessageRoleAssistant, Kind: models.MessageKindWriter,
-		Status: models.MessageStatusDone, Floor: 1, Content: "他推开了门。",
-		Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{CallID: "call_1"}},
+		Status: models.MessageStatusDone, Floor: 1, Content: "库里的正文不应出现在请求里",
+		Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{CallID: "call_2"}},
 	}).Error; err != nil {
 		t.Fatalf("create writer message: %v", err)
 	}
@@ -728,7 +686,7 @@ func TestRunWriterStream_SendsDirectorContextAndTools(t *testing.T) {
 		{Role: "system", Content: "director-system"},
 		{Role: "user", Content: "<scenario>模组</scenario>", CacheBreakpoint: true},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{fakeToolCall("call_1", "write", `{"direction":"推门"}`)}},
-		{Role: "tool", ToolCallID: "call_1", Content: "已发布"},
+		{Role: "tool", ToolCallID: "call_1", Content: "已发布\n<writer_output>\n他推开了门。\n</writer_output>"},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{fakeToolCall("call_2", "write", `{"direction":"继续走"}`)}},
 		{Role: "tool", ToolCallID: "call_2", Content: "已发布"},
 	}
@@ -752,10 +710,10 @@ func TestRunWriterStream_SendsDirectorContextAndTools(t *testing.T) {
 		t.Errorf("assistant tool_calls must be preserved, got %+v", msgs[2])
 	}
 	if want := "已发布\n<writer_output>\n他推开了门。\n</writer_output>"; msgs[3].Content != want {
-		t.Errorf("tool result of call_1 = %q, want prose attached %q", msgs[3].Content, want)
+		t.Errorf("tool result of call_1 = %q, want the prose already in the chain %q", msgs[3].Content, want)
 	}
 	if msgs[5].Content != "已发布" {
-		t.Errorf("tool result of call_2 has no prose yet, got %q", msgs[5].Content)
+		t.Errorf("tool result of call_2 must stay as the director left it, got %q", msgs[5].Content)
 	}
 	last := msgs[len(msgs)-1]
 	if last.Role != "user" || !strings.Contains(last.Content, `call_id="call_2"`) || !strings.Contains(last.Content, "继续走") {

@@ -178,9 +178,9 @@ func seedDefaultAgentConfigs() {
 		{Role: AgentRoleDirector, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true, WithJailbreak: true},
 		{Role: AgentRoleArchitect, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleQAGuard, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
-		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, ContextWindow: DefaultWriterContextWindow, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
+		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		// NOTE: writer_nsfw 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时自动回落默认 Writer。
-		{Role: AgentRoleWriterNSFW, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, ContextWindow: DefaultWriterContextWindow, Temperature: 0.5, ThinkingLevel: "low", IsActive: false},
+		{Role: AgentRoleWriterNSFW, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, ThinkingLevel: "low", IsActive: false},
 		{Role: AgentRoleLawyer, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleNPC, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true, WithJailbreak: true},
 		// NOTE: npc_nsfw 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时自动回落默认 NPC。

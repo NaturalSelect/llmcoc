@@ -446,7 +446,10 @@ func (h *SessionHandlers) runOneFloor(ctx context.Context, af *activeFloor, seg 
 			hubFor(sessionID).Ephemeral("kp_status", gin.H{"text": text})
 		}
 	}
-	gctx.Publish = func(ro agent.RoundOutputs) error { return h.publishRound(ctx, af, ro) }
+	gctx.Publish = func(ro agent.RoundOutputs) ([]agent.WriterResult, error) { return h.publishRound(ctx, af, ro) }
+
+	// NOTE: 上个周期被打断时没等到的 Writer 还在后台写，先等它们结束，Director 才能把它们的正文补进自己的历史。
+	waitWritersIdle(ctx, sessionID)
 
 	start := time.Now()
 	out, err := h.Runner.Run(ctx, gctx)
@@ -522,10 +525,11 @@ type roundItem struct {
 }
 
 // publishRound 是注入给 Director 的 gctx.Publish：同步把一轮产生的消息落库并广播，writer 交给后台任务补全。
-// kp/ask 要等会话里已入队的 writer 全部写完才落库广播：玩家先读到叙事，再看到 KP 的话和提问。
-// 等待期间 Director 停在这一轮；周期被取消(房主打断、关机)时不再等，直接发布。
+// 每条 writer 都要等它写完才返回，并把终态正文交回 Director 放进工具结果；等待期间 Director 停在这一轮。
+// 周期被取消(房主打断、关机)时不再等，对应的 writer 返回 pending，Writer 仍会在后台写完。
+// 所以 kp/ask 落库时，同一周期里发布过的 writer 都已经结束：玩家先读到叙事，再看到 KP 的话和提问。
 // 落库失败时返回 err，周期随之以 StopError 结束。
-func (h *SessionHandlers) publishRound(ctx context.Context, af *activeFloor, ro agent.RoundOutputs) error {
+func (h *SessionHandlers) publishRound(ctx context.Context, af *activeFloor, ro agent.RoundOutputs) ([]agent.WriterResult, error) {
 	sessionID := af.sessionID
 	var first, beats []roundItem
 	// NOTE: 事件消息先落库，id 比同轮其他消息小，前端按 id 排序时就排在这一轮叙事前面。
@@ -547,27 +551,79 @@ func (h *SessionHandlers) publishRound(ctx context.Context, af *activeFloor, ro 
 		}
 	}
 
-	if err := h.saveAndBroadcast(sessionID, first, ro); err != nil {
-		return err
+	pending, err := h.saveAndBroadcast(sessionID, first, ro)
+	if err != nil {
+		return nil, err
 	}
+	results := h.awaitWriters(ctx, sessionID, pending)
 	if len(beats) == 0 {
 		if eventsTouchCards(ro.Events) {
 			publishCardsChanged(sessionID)
 		}
-		return nil
+		return results, nil
 	}
-	waitWritersForBeat(ctx, sessionID)
-	if err := h.saveAndBroadcast(sessionID, beats, ro); err != nil {
-		return err
+	if _, err := h.saveAndBroadcast(sessionID, beats, ro); err != nil {
+		return results, err
 	}
 	af.beats.Add(int32(len(beats)))
 	// NOTE: 每一拍结算后人物卡（HP/SAN 等）可能已变化，通知客户端刷新。
 	publishCardsChanged(sessionID)
-	return nil
+	return results, nil
 }
 
-// waitWritersForBeat 等会话里已入队的 writer 全部结束；ctx 取消时提前返回。
-func waitWritersForBeat(ctx context.Context, sessionID uint) {
+// pendingWriter 是一条已入队、等待写完的 writer 消息。
+type pendingWriter struct {
+	messageID uint
+	callID    string
+	done      <-chan struct{}
+}
+
+// awaitWriters 逐条等这些 writer 写完，再从库里读回终态；ctx 取消后不再等，剩下的返回 pending。
+func (h *SessionHandlers) awaitWriters(ctx context.Context, sessionID uint, pending []pendingWriter) []agent.WriterResult {
+	if len(pending) == 0 {
+		return nil
+	}
+	results := make([]agent.WriterResult, 0, len(pending))
+	announced := false
+	for _, p := range pending {
+		res := agent.WriterResult{CallID: p.callID, Status: agent.WriterPending}
+		select {
+		case <-p.done:
+		case <-ctx.Done():
+			results = append(results, res)
+			continue
+		default:
+			if !announced {
+				hubFor(sessionID).Ephemeral("kp_status", gin.H{"text": "KP 正在撰写叙事…"})
+				announced = true
+			}
+			select {
+			case <-p.done:
+			case <-ctx.Done():
+				results = append(results, res)
+				continue
+			}
+		}
+		var row models.Message
+		if err := models.DB.Select("id", "content", "status").First(&row, p.messageID).Error; err != nil {
+			chatLog.Warn("read writer result failed", "session", sessionID, "message", p.messageID, "err", err)
+			results = append(results, res)
+			continue
+		}
+		switch row.Status {
+		case models.MessageStatusDone:
+			res.Status, res.Text = agent.WriterDone, row.Content
+		case models.MessageStatusFailed:
+			res.Status = agent.WriterFailed
+		}
+		results = append(results, res)
+	}
+	return results
+}
+
+// waitWritersIdle 等会话里已入队的 writer 全部结束；ctx 取消时提前返回。
+// 周期开始前调用：上个周期被打断时遗留的 Writer 要先写完，Director 才能从消息表补回它们的正文。
+func waitWritersIdle(ctx context.Context, sessionID uint) {
 	done := writersDone(sessionID)
 	if done == nil {
 		return
@@ -593,10 +649,11 @@ func publishCardsChanged(sessionID uint) {
 	publishSessionChanged(sessionID, status, "cards")
 }
 
-// saveAndBroadcast 在一个事务里落库这批消息，再逐条广播 message_new，并把 writer 交给后台任务。
-func (h *SessionHandlers) saveAndBroadcast(sessionID uint, items []roundItem, ro agent.RoundOutputs) error {
+// saveAndBroadcast 在一个事务里落库这批消息，再逐条广播 message_new，并把 writer 交给后台任务；
+// 返回已入队的 writer，调用方据此等它们写完。
+func (h *SessionHandlers) saveAndBroadcast(sessionID uint, items []roundItem, ro agent.RoundOutputs) ([]pendingWriter, error) {
 	if len(items) == 0 {
-		return nil
+		return nil, nil
 	}
 	err := models.DB.Transaction(func(tx *gorm.DB) error {
 		for i := range items {
@@ -607,22 +664,24 @@ func (h *SessionHandlers) saveAndBroadcast(sessionID uint, items []roundItem, ro
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("save round messages: %w", err)
+		return nil, fmt.Errorf("save round messages: %w", err)
 	}
 
 	hub := hubFor(sessionID)
+	var pending []pendingWriter
 	for _, p := range items {
 		hub.Publish("message_new", gin.H{"message": newMessageResponse(p.msg)})
 		if p.msg.Kind == models.MessageKindWriter {
-			h.enqueueWriter(sessionID, writerTask{messageID: p.msg.ID, gctx: ro.WriterCtx, req: agent.WriterRequest{
+			done := h.enqueueWriter(sessionID, writerTask{messageID: p.msg.ID, gctx: ro.WriterCtx, req: agent.WriterRequest{
 				Direction: strings.TrimSpace(p.item.Text),
 				NSFW:      p.item.NSFW,
 				CallID:    p.item.CallID,
 				Director:  ro.Director,
 			}})
+			pending = append(pending, pendingWriter{messageID: p.msg.ID, callID: p.item.CallID, done: done})
 		}
 	}
-	return nil
+	return pending, nil
 }
 
 // roundMessage 把一次产生消息的工具调用变成一条待落库的消息；没有内容可发的调用返回 false。

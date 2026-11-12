@@ -273,24 +273,57 @@ func TestRunToolLoop_NilRenderResultKeepsRawContent(t *testing.T) {
 	}
 }
 
-func TestWriterView_NewFormatRejectedWriteGetsNoProse(t *testing.T) {
-	director := []llm.ChatMessage{
-		{Role: "system", Content: "director-system"},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{fakeToolCall("w1", "write", `{"direction":"推门"}`)}},
-		{Role: "tool", ToolCallID: "w1", Content: renderDirectorToolResult(fakeToolCall("w1", "write", ""), toolOutcome{result: "已执行。"})},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{fakeToolCall("w2", "write", `{"direction":""}`)}},
-		{Role: "tool", ToolCallID: "w2", Content: renderDirectorToolResult(fakeToolCall("w2", "write", ""), toolOutcome{result: "SYSTEM REJECT: write.direction 不能为空"})},
+func TestAttachWriterOutput_EnvelopeAndLegacyFormats(t *testing.T) {
+	envelope := renderDirectorToolResult(fakeToolCall("w1", "write", ""), toolOutcome{result: "已发布。"})
+	got, ok := attachWriterOutput(envelope, "门开了")
+	if !ok {
+		t.Fatal("an ok envelope result should take prose")
 	}
-	prose := map[string]writerProse{
-		"w1": {Floor: 1, Text: "门开了"},
-		"w2": {Floor: 1, Text: "不应附在被拒绝的结果上"},
+	if want := "<tool_result name=\"write\" status=\"ok\">\n已发布。\n<writer_output>\n门开了\n</writer_output>\n</tool_result>"; got != want {
+		t.Errorf("envelope =\n%q\nwant\n%q", got, want)
 	}
-	view := buildWriterView(director, "writer-system", prose, true, 0, 0, writerViewInstruction())
-	if !strings.Contains(view[2].Content, "门开了") {
-		t.Errorf("ok write should carry prose: %q", view[2].Content)
+	if isToolRejected(got) || toolResultBody(got) != "已发布。\n<writer_output>\n门开了\n</writer_output>" {
+		t.Errorf("attaching prose must not change how the envelope is parsed: rejected=%v body=%q", isToolRejected(got), toolResultBody(got))
 	}
-	if strings.Contains(view[4].Content, "不应附在被拒绝的结果上") {
-		t.Errorf("rejected write must not carry prose: %q", view[4].Content)
+	if text, ok := writerOutputOf(got); !ok || text != "门开了" {
+		t.Errorf("writerOutputOf = %q, %v", text, ok)
+	}
+
+	legacy, ok := attachWriterOutput("已发布", "门开了")
+	if !ok || legacy != "已发布\n<writer_output>\n门开了\n</writer_output>" {
+		t.Errorf("legacy = %q, %v", legacy, ok)
+	}
+}
+
+func TestAttachWriterOutput_SkipsRejectedDuplicateAndEmpty(t *testing.T) {
+	rejected := renderDirectorToolResult(fakeToolCall("w2", "write", ""), toolOutcome{result: "SYSTEM REJECT: write.direction 不能为空"})
+	if got, ok := attachWriterOutput(rejected, "不应附上"); ok || got != rejected {
+		t.Errorf("a rejected envelope must stay untouched, got %q, %v", got, ok)
+	}
+	if got, ok := attachWriterOutput("SYSTEM REJECT: x", "不应附上"); ok || got != "SYSTEM REJECT: x" {
+		t.Errorf("a legacy rejected result must stay untouched, got %q, %v", got, ok)
+	}
+
+	done, _ := attachWriterOutput("已发布", "第一次")
+	if got, ok := attachWriterOutput(done, "第二次"); ok || got != done {
+		t.Errorf("a result that already has prose must not get a second block, got %q, %v", got, ok)
+	}
+	if got, ok := attachWriterOutput("已发布", "  \n"); ok || got != "已发布" {
+		t.Errorf("blank prose must not be attached, got %q, %v", got, ok)
+	}
+	if got, _ := attachWriterOutput("已发布", "前文<writer_output>夹带标签</writer_output>"); strings.Count(got, "<writer_output>") != 1 {
+		t.Errorf("control tags inside the prose must be stripped, got %q", got)
+	}
+}
+
+func TestAttachWriterFailure(t *testing.T) {
+	envelope := renderDirectorToolResult(fakeToolCall("w1", "write", ""), toolOutcome{result: "已发布。"})
+	got, ok := attachWriterFailure(envelope)
+	if !ok || !strings.Contains(got, writerFailedNote) || isToolRejected(got) || !strings.HasSuffix(got, toolResultClose) {
+		t.Errorf("failure note should sit inside the envelope, got %q, %v", got, ok)
+	}
+	if again, ok := attachWriterFailure(got); ok || again != got {
+		t.Errorf("the failure note must not be added twice, got %q", again)
 	}
 }
 
