@@ -18,6 +18,7 @@ export const COST_FIELDS = [
   { key: 'revive_base_cost', label: '复活基础费用', min: 0 },
   { key: 'max_character_drafts', label: '角色草稿最大数量', min: 1 },
   { key: 'end_session_cost', label: '结束游戏费用（每人）', min: 0 },
+  { key: 'session_retention_days', label: '已结束房间保留天数（0 为不自动清理）', min: 0 },
 ] as const
 
 export type CostKey = (typeof COST_FIELDS)[number]['key']
@@ -34,6 +35,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   revive_base_cost: 2000,
   max_character_drafts: 3,
   end_session_cost: 200,
+  session_retention_days: 30,
   balance_rules: '',
   lawyer_cache_min_similarity: LAWYER_SIMILARITY_DEFAULT,
 }
@@ -68,6 +70,7 @@ export function parseSiteSettings(rows: SiteSettingRow[] | null | undefined): Si
     revive_base_cost: intOr(map.revive_base_cost, d.revive_base_cost),
     max_character_drafts: intOr(map.max_character_drafts, d.max_character_drafts),
     end_session_cost: intOr(map.end_session_cost, d.end_session_cost),
+    session_retention_days: intOr(map.session_retention_days, d.session_retention_days),
     balance_rules: map.balance_rules !== undefined ? map.balance_rules : '',
     lawyer_cache_min_similarity: similarityOr(map.lawyer_cache_min_similarity, d.lawyer_cache_min_similarity),
   }

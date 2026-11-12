@@ -130,6 +130,7 @@ export interface SiteSettings {
   revive_base_cost: number
   max_character_drafts: number
   end_session_cost: number
+  session_retention_days: number
   balance_rules: string
   lawyer_cache_min_similarity: number
 }

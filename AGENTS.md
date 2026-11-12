@@ -44,7 +44,8 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 ## 架构
 
 ### 入口与前端
-- `cmd/server/main.go` 完成：加载配置 → `models.InitDB` → 播种 → 加载三本规则资料并算哈希 → 启动统计持久化/图片清理 → 注册路由 → 优雅退出时保存 Lawyer 缓存。
+- `cmd/server/main.go` 完成：加载配置 → `models.InitDB` → 播种 → 加载三本规则资料并算哈希 → 启动统计持久化/图片清理/已结束房间回收 → 注册路由 → 优雅退出时保存 Lawyer 缓存。
+- 已结束房间回收（`handlers/session_purge.go`）启动时跑一次、之后每 24 小时一次：删除 `status=ended`、`updated_at`（结束后没有代码再改它，即结束时刻）早于站点设置 `session_retention_days`（默认 30，0 为关闭，后台可改）的房间，被任意用户收藏的房间永不删除。每个房间一个事务，先删子表再删房间（正式库开着外键），最后一条带条件的 DELETE 没命中（期间被复活或被收藏）就整体回滚；有运行中周期或排队 Writer 的房间跳过。硬删除不可恢复；配图文件交给 imagestore 的 14 天清理。新增用 `session_id` 引用房间的表必须加进 `sessionChildTables`。
 - 前端是仓库根目录 `frontend/` 下的 Vue 3 + TypeScript + Vite + Tailwind v4 + Pinia + Vue Router 工程。`npm run build` 把产物输出到 `cmd/server/dist/app/`（不入库，`dist/.gitkeep` 保证目录存在），`main.go` 用 `//go:embed all:dist` 嵌入，`frontend.go` 的 `frontendHandler` 挂在 `NoRoute` 上：真实文件按路径返回（`assets/*` 带内容哈希，缓存一年），目录和不存在的路径回落到 `index.html`（`no-cache`），没有 `index.html`（没构建前端）时返回 503 和构建提示。改前端后需要重新 build 并重启（或用 `npm run dev` 热更新）。
 - 前端用 history 路由，地址即页面：`/login`、`/`、`/sessions`、`/sessions/:id`（游戏页）、`/shop`、`/admin/:tab?`。路由守卫在 `src/router.ts`，token 仍存 `localStorage['coc_token']`；任何带 token 的请求返回 401 都由 `main.ts` 里注册的处理函数统一登出并跳回登录页。
 - gzip 中间件按路径正则排除了流式接口：房间 WebSocket `/api/sessions/:id/ws`，以及 SSE 的 `/api/scenarios/generate`、`/api/scenarios/compile-story`。`/chat`、`/kp-turn`、`/kp-stop` 已改为立即返回 202 的普通 JSON 接口，不再在排除列表里。新增流式接口必须同步加进 `main.go` 的排除列表。HTTP `WriteTimeout` 为 30 分钟，是为了长时间 AI 生成。

@@ -49,6 +49,7 @@ func initTestDB(t *testing.T) {
 		&models.SessionPlayer{},
 		&models.SessionFavorite{},
 		&models.SessionNPC{},
+		&models.SessionNPCMemory{},
 		&models.SessionTurnAction{},
 		&models.Message{},
 		&models.LLMProviderConfig{},

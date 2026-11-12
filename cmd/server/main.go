@@ -149,6 +149,7 @@ func main() {
 	cleanupCtx, stopImageCleanup := context.WithCancel(context.Background())
 	defer stopImageCleanup()
 	imagestore.StartCleanup(cleanupCtx, imagestore.DefaultStore(), 14*24*time.Hour, 24*time.Hour)
+	handlers.StartSessionPurge(cleanupCtx, 24*time.Hour)
 
 	// Create Gin engine
 	gin.SetMode(gin.ReleaseMode)

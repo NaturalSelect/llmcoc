@@ -35,6 +35,14 @@ describe('parseSiteSettings', () => {
     expect(s.end_session_cost).toBe(200)
   })
 
+  test('session_retention_days：缺失默认 30，存 0 保留 0，无法解析回落默认', () => {
+    const parse = (value: string) => parseSiteSettings([{ key: 'session_retention_days', value }]).session_retention_days
+    expect(parseSiteSettings([]).session_retention_days).toBe(30)
+    expect(parse('0')).toBe(0)
+    expect(parse('7')).toBe(7)
+    expect(parse('abc')).toBe(30)
+  })
+
   test('balance_rules 缺失为空串，存在则原样保留', () => {
     expect(parseSiteSettings([]).balance_rules).toBe('')
     expect(parseSiteSettings([{ key: 'balance_rules', value: '规则一\n规则二' }]).balance_rules).toBe('规则一\n规则二')
@@ -111,7 +119,7 @@ describe('balanceRulesLength', () => {
 })
 
 describe('COST_FIELDS', () => {
-  test('九个数值项，键与后端站点设置一致', () => {
+  test('十个数值项，键与后端站点设置一致', () => {
     expect(COST_FIELDS.map((f) => f.key)).toStrictEqual([
       'initial_coins',
       'initial_card_slots',
@@ -122,6 +130,7 @@ describe('COST_FIELDS', () => {
       'revive_base_cost',
       'max_character_drafts',
       'end_session_cost',
+      'session_retention_days',
     ])
   })
 })

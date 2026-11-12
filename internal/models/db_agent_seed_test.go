@@ -140,3 +140,23 @@ func TestSeedDefaultSiteSettings_SeedsLawyerSimilarityWithoutOverwriting(t *test
 		t.Errorf("re-seeding must not overwrite an admin-set value, got %q", got)
 	}
 }
+
+func TestSeedDefaultSiteSettings_SeedsSessionRetentionWithoutOverwriting(t *testing.T) {
+	db := openSeedTestDB(t)
+	if err := db.AutoMigrate(&SiteSetting{}); err != nil {
+		t.Fatalf("auto-migrate: %v", err)
+	}
+
+	seedDefaultSiteSettings()
+	if got := GetSiteSetting("session_retention_days", "MISSING"); got != "30" {
+		t.Fatalf("seeded session_retention_days = %q, want 30", got)
+	}
+
+	if err := SetSiteSetting("session_retention_days", "0"); err != nil {
+		t.Fatalf("SetSiteSetting: %v", err)
+	}
+	seedDefaultSiteSettings()
+	if got := GetSiteSetting("session_retention_days", "MISSING"); got != "0" {
+		t.Errorf("re-seeding must not overwrite an admin-set value (0 disables purge), got %q", got)
+	}
+}

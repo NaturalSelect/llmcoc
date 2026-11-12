@@ -60,6 +60,15 @@ func AdminUpdateSiteSetting(c *gin.Context) {
 		}
 		body.Value = strings.TrimSpace(body.Value)
 	}
+	if key == "session_retention_days" {
+		// NOTE: 非法值会被运行时静默回落默认值，这里提前拒绝；0 表示关闭自动回收。
+		v, err := strconv.Atoi(strings.TrimSpace(body.Value))
+		if err != nil || v < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "保留天数必须是不小于 0 的整数"})
+			return
+		}
+		body.Value = strconv.Itoa(v)
+	}
 	if err := models.SetSiteSetting(key, body.Value); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
