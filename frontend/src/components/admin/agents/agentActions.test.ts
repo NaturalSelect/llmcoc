@@ -3,6 +3,7 @@ import type { AgentFormState } from '@/api/adminTypesCore'
 import {
   buildSavePayload,
   hasContextWindow,
+  isEmbeddingRole,
   isPainterRole,
   pingFailureMessage,
   pingLoadingKey,
@@ -40,6 +41,14 @@ describe('角色判定', () => {
     expect(isPainterRole('writer')).toBe(false)
     expect(['director', 'writer', 'writer_nsfw'].every(hasContextWindow)).toBe(true)
     expect(hasContextWindow('npc')).toBe(false)
+  })
+
+  test('embedding 只匹配自身，不被当成画图角色', () => {
+    expect(isEmbeddingRole('embedding')).toBe(true)
+    expect(isEmbeddingRole('painter')).toBe(false)
+    expect(isEmbeddingRole('lawyer')).toBe(false)
+    expect(isPainterRole('embedding')).toBe(false)
+    expect(hasContextWindow('embedding')).toBe(false)
   })
 })
 
@@ -110,6 +119,18 @@ describe('planPing', () => {
     })
   })
 
+  test('embedding 角色：附带 embedding 模式，不带画图开关', () => {
+    const plan = planPing(form({ role: 'embedding', provider_config_id: 3, model_name: ' text-embedding-3-small ' }))
+    expect(plan).toStrictEqual({
+      ok: true,
+      providerId: 3,
+      role: 'embedding',
+      isPainter: false,
+      key: 'embedding:3',
+      payload: { model_name: 'text-embedding-3-small', role: 'embedding', mode: 'embedding' },
+    })
+  })
+
   test('提供商 ID 无法转成数字时视为未选', () => {
     expect(planPing(form({ provider_config_id: 'abc' as unknown as number }))).toStrictEqual({ ok: false, error: '请先选择 Provider' })
   })
@@ -126,5 +147,13 @@ describe('pingLoadingKey 与提示文案', () => {
     expect(pingSuccessMessage('lawyer', 80)).toBe('⚖️ Lawyer 模型连通正常，延迟 80 ms')
     expect(pingFailureMessage('painter_nsfw', 'boom')).toBe('Painter 图片模型测试失败：boom')
     expect(pingFailureMessage('lawyer', 'boom')).toBe('⚖️ Lawyer 模型测试失败：boom')
+  })
+
+  test('embedding 成功文案带维度与延迟；响应没带维度时只显示延迟', () => {
+    expect(pingSuccessMessage('embedding', 95, 1536)).toBe('Embedding 嵌入模型连通正常，向量维度 1536，延迟 95 ms')
+    expect(pingSuccessMessage('embedding', 95)).toBe('Embedding 嵌入模型连通正常，延迟 95 ms')
+    expect(pingSuccessMessage('embedding', 95, 0)).toBe('Embedding 嵌入模型连通正常，延迟 95 ms')
+    expect(pingSuccessMessage('lawyer', 80, 1536)).toBe('⚖️ Lawyer 模型连通正常，延迟 80 ms')
+    expect(pingFailureMessage('embedding', 'boom')).toBe('Embedding 嵌入模型测试失败：boom')
   })
 })

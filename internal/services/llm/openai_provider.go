@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -97,6 +98,76 @@ func imageSizeForModel(model string, aspect ImageAspect) openai.ImageGeneratePar
 		}
 	}
 	return openai.ImageGenerateParamsSize1024x1024
+}
+
+// Embed 调用 /embeddings 并返回 L2 归一化后的向量。不做重试：调用方有标签匹配兜底，失败即退回。
+func (p *openAIProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, errors.New("embedding input is empty")
+	}
+	for _, t := range texts {
+		if strings.TrimSpace(t) == "" {
+			return nil, errors.New("embedding input contains an empty text")
+		}
+	}
+	model := strings.TrimSpace(p.model)
+	if model == "" {
+		return nil, errors.New("embedding model is empty")
+	}
+
+	start := time.Now()
+	vectors, err := p.embed(ctx, model, texts)
+	recordLatency("embedding", model, "embed", time.Since(start), err)
+	return vectors, err
+}
+
+func (p *openAIProvider) embed(ctx context.Context, model string, texts []string) ([][]float32, error) {
+	resp, err := p.client.Embeddings.New(ctx, openai.EmbeddingNewParams{
+		Model: openai.EmbeddingModel(model),
+		Input: openai.EmbeddingNewParamsInputUnion{OfArrayOfStrings: texts},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("LLM embedding error: %w", err)
+	}
+	if len(resp.Data) != len(texts) {
+		return nil, fmt.Errorf("LLM embedding returned %d vectors for %d inputs", len(resp.Data), len(texts))
+	}
+
+	vectors := make([][]float32, len(texts))
+	for _, d := range resp.Data {
+		if d.Index < 0 || int(d.Index) >= len(texts) || vectors[d.Index] != nil {
+			return nil, fmt.Errorf("LLM embedding returned an invalid index %d", d.Index)
+		}
+		v, err := normalizeEmbedding(d.Embedding)
+		if err != nil {
+			return nil, err
+		}
+		vectors[d.Index] = v
+	}
+	return vectors, nil
+}
+
+// normalizeEmbedding 转成 float32 并做 L2 归一化；空向量、非有限值或零向量都视为失败。
+func normalizeEmbedding(raw []float64) ([]float32, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("LLM embedding returned an empty vector")
+	}
+	var sum float64
+	for _, x := range raw {
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			return nil, errors.New("LLM embedding contains a non-finite value")
+		}
+		sum += x * x
+	}
+	if sum == 0 {
+		return nil, errors.New("LLM embedding is a zero vector")
+	}
+	norm := math.Sqrt(sum)
+	out := make([]float32, len(raw))
+	for i, x := range raw {
+		out[i] = float32(x / norm)
+	}
+	return out, nil
 }
 
 // NOTE: 扩散模型(NovelAI)分辨率边长须为 64 的倍数且总像素不超过 1024x1024，否则 new-api 直接拒绝并被重试循环放大。

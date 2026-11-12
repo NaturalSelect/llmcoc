@@ -42,6 +42,8 @@ export const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
   compiler: { max_tokens: 4000, temperature: 0.15 },
   // NOTE: dramaturg 是可选的剧构顾问，由Director按需通过工具调用咨询，默认关闭，需管理员单独绑定 provider 才会被路由。
   dramaturg: { max_tokens: 500, temperature: 0.5, is_active: false },
+  // NOTE: embedding 给 Lawyer 规则缓存做语义检索，只走嵌入接口，不用 token 上限和温度；默认关闭，未启用时缓存退回标签匹配。
+  embedding: { max_tokens: 0, temperature: 0, model_name: 'text-embedding-3-small', thinking_level: 'none', is_active: false },
 }
 
 // NOTE: scripter 角色已下线，后端旧库可能还残留该行，界面不显示
@@ -68,6 +70,7 @@ const ROLE_LABELS: Record<string, string> = {
   // NOTE: compiler — 故事转模组编译
   compiler: '🛠️ Compiler',
   dramaturg: '🎭 Dramaturg',
+  embedding: '🧬 Embedding',
 }
 
 const ROLE_DESCS: Record<string, string> = {
@@ -88,6 +91,7 @@ const ROLE_DESCS: Record<string, string> = {
   compiler: '模组编译 — 将故事文本忠实编译为结构化模组JSON；建议配置低温度模型',
   // NOTE: dramaturg — 剧构顾问，Director按需咨询，输入经脱敏处理不含玩家原始数据，只给建议不操作游戏状态（默认关闭）
   dramaturg: '剧构顾问 — Director按需咨询，输入已脱敏不含玩家数据，给出节奏与走向建议（默认关闭）',
+  embedding: '语义检索 — Lawyer 规则缓存的向量检索；只支持 OpenAI 兼容的 /embeddings 接口（Anthropic 类型不支持）；未启用时退回标签匹配；换模型后已有缓存向量会在后台重算（默认关闭）',
 }
 
 const ROLE_HINTS: Record<string, string> = {
@@ -108,6 +112,7 @@ const ROLE_HINTS: Record<string, string> = {
   compiler: '留空使用内置 Compiler 提示词（故事转模组编译）；建议配置低温度模型',
   // NOTE: dramaturg 未绑定 provider 时工具不可见，Director回退自身节奏判断规则（默认关闭）
   dramaturg: '留空使用内置 Dramaturg 提示词（节奏顾问）；不配置则Director自行判断节奏（默认关闭）',
+  embedding: '嵌入模型不使用提示词，此处留空；需绑定 OpenAI 兼容 Provider（不支持 Anthropic 类型），如 text-embedding-3-small；未启用时 Lawyer 缓存退回标签匹配（默认关闭）',
 }
 
 // NOTE: 用 hasOwn 而不是直接下标，避免 role 恰好是 constructor 之类的原型属性名时取到函数

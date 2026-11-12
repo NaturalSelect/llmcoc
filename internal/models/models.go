@@ -777,6 +777,9 @@ const (
 	AgentRolePainterNSFW AgentRole = "painter_nsfw"
 	// NOTE: AgentRolePainterHQ 是立绘等持久图片专用的画图 Agent；未启用或未绑定 provider 时立绘直接报错，不回落默认 Painter。
 	AgentRolePainterHQ AgentRole = "painter_hq"
+	// NOTE: AgentRoleEmbedding 为 Lawyer 规则缓存提供语义检索的嵌入模型，只支持 OpenAI 兼容的 /embeddings；
+	// 未启用、未绑定或 provider 不支持时，Lawyer 退回标签子串匹配，不影响主流程。它不走聊天，也不在 batchLoadAgents 里。
+	AgentRoleEmbedding AgentRole = "embedding"
 	// NOTE: AgentRoleDiffusionTranslator 把 Director 的自然语言画面描述翻译成扩散模型的标签式提示词；
 	// 仅在 Painter/Painter NSFW 开启 diffusion_mode 时被调用，未启用时扩散模式的配图直接失败，不回落 Writer。
 	AgentRoleDiffusionTranslator AgentRole = "diffusion_translator"
@@ -867,6 +870,10 @@ type PlayerEvalContent struct {
 // the "balance_rules" key is absent from the database.
 // agent/lawyer.go references this constant directly to avoid string duplication.
 const DefaultBalanceRules = "调查员/玩家被禁止使用《精神转移术》,《精神交换术》,《内心灵光唤醒术》,《完善术》，《伊格的尖牙》, 任何涉及到这些法术的查询都必须告知KP这一禁令, 并且明确说明这些法术无法作为任何调查员属性变更的依据"
+
+// NOTE: DefaultLawyerCacheMinSimilarity 是 lawyer_cache_min_similarity 的默认值与运行时回落值。
+// 0.3 没有数据依据，是偏召回的保守猜测；不同嵌入模型的相似度分布差异很大，上线后要看 debug 日志调。
+const DefaultLawyerCacheMinSimilarity = "0.3"
 
 // DefaultWriterContextWindow 是 Writer/Writer NSFW 未在后台填写上下文窗口(ContextWindow<=0)
 // 时使用的 token 数上限，避免历史无限增长。

@@ -9,7 +9,10 @@ import {
   type CostKey,
   costValueToSubmit,
   DEFAULT_SITE_SETTINGS,
+  LAWYER_SIMILARITY_MAX,
+  LAWYER_SIMILARITY_MIN,
   parseSiteSettings,
+  similarityValueToSubmit,
 } from './settingsLogic'
 
 export type ToggleKey = 'require_invite_code' | 'allow_nsfw'
@@ -58,6 +61,25 @@ export function useSiteSettings() {
     }
   }
 
+  // NOTE: 同 setCost：输入框清空时会得到空字符串，非法值由 saveSimilarity 拦住
+  function setSimilarity(v: unknown): void {
+    settings.lawyer_cache_min_similarity = v as number
+  }
+
+  async function saveSimilarity(): Promise<void> {
+    const val = similarityValueToSubmit(settings.lawyer_cache_min_similarity)
+    if (val === null) {
+      ui.toast(`相似度阈值需为 ${LAWYER_SIMILARITY_MIN} 到 ${LAWYER_SIMILARITY_MAX} 之间的数字`, 'error')
+      return
+    }
+    try {
+      await put('lawyer_cache_min_similarity', val)
+      ui.toast('相似度阈值已保存')
+    } catch (e) {
+      ui.toast(errorMessage(e), 'error')
+    }
+  }
+
   async function saveBalanceRules(): Promise<void> {
     const val = settings.balance_rules || ''
     if (balanceRulesLength(val) > BALANCE_RULES_MAX) {
@@ -87,5 +109,5 @@ export function useSiteSettings() {
     }
   }
 
-  return { settings, load, toggle, setCost, saveCost, saveBalanceRules, endAllSessions }
+  return { settings, load, toggle, setCost, saveCost, setSimilarity, saveSimilarity, saveBalanceRules, endAllSessions }
 }

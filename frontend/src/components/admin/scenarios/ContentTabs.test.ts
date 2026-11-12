@@ -58,6 +58,7 @@ describe('SettingsTab', () => {
     'GET /api/admin/invite-codes': page([]),
     'PUT /api/admin/config/settings/require_invite_code': {},
     'PUT /api/admin/config/settings/initial_coins': {},
+    'PUT /api/admin/config/settings/lawyer_cache_min_similarity': {},
     'PUT /api/admin/config/settings/balance_rules': {},
     'POST /api/admin/sessions/end-all': { message: '已强制结束 2 个房间' },
   }
@@ -94,6 +95,35 @@ describe('SettingsTab', () => {
     await wrapper.findAll('button').filter((b) => b.text() === '保存')[0].trigger('click')
     await flushPromises()
     expect(calls.at(-1)).toMatchObject({ method: 'PUT', url: '/api/admin/config/settings/initial_coins', body: { value: '300' } })
+  })
+
+  test('Lawyer 缓存相似度阈值：缺省回填 0.3；越界在前端拦下，合法值 PUT 字符串', async () => {
+    const calls = stubApi(routes)
+    const wrapper = mount(SettingsTab)
+    await flushPromises()
+    const before = calls.length
+
+    const input = wrapper.find('#lawyer-cache-min-similarity')
+    expect((input.element as HTMLInputElement).value).toBe('0.3')
+    const saveBtn = input.element.closest('div.flex')!.parentElement!.querySelector('button')!
+    const save = async () => {
+      saveBtn.click()
+      await flushPromises()
+    }
+
+    await input.setValue('1.5')
+    await save()
+    expect(calls.length).toBe(before)
+    expect(ui.toasts.at(-1)).toMatchObject({ message: '相似度阈值需为 -1 到 1 之间的数字', type: 'error' })
+
+    await input.setValue('')
+    await save()
+    expect(calls.length).toBe(before)
+
+    await input.setValue('0.45')
+    await save()
+    expect(calls.at(-1)).toMatchObject({ method: 'PUT', url: '/api/admin/config/settings/lawyer_cache_min_similarity', body: { value: '0.45' } })
+    expect(ui.toasts.at(-1)).toMatchObject({ message: '相似度阈值已保存', type: 'success' })
   })
 
   test('平衡规则超过 2000 字符被拦下；合法时保存并提示', async () => {

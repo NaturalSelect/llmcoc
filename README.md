@@ -24,7 +24,8 @@
 - GORM + SQLite
 - JWT（`github.com/golang-jwt/jwt/v5`）
 - LLM SDK（`charm.land/fantasy`，统一封装 OpenAI 兼容与 Anthropic 的对话接口）
-- 图片生成 SDK（`github.com/openai/openai-go/v3`）
+- 图片生成与嵌入向量 SDK（`github.com/openai/openai-go/v3`）
+- 规则缓存向量检索（`github.com/philippgille/chromem-go`，见下方第三方许可证）
 - 前端：Vue 3 + TypeScript + Vite + Tailwind CSS 单页应用（源码在 `frontend/`，构建产物嵌入二进制）
 
 ## 快速开始
@@ -241,3 +242,7 @@ data                  # SQLite 数据目录
 - 使用强 API Key，并限制管理接口访问来源。
 - 结合反向代理（Nginx/Caddy）做 HTTPS 与限流。
 - 对 `data/` 目录做持久化与备份。
+
+## 第三方许可证
+
+本项目以 AGPL-3.0 发布。规则缓存的向量检索依赖 [chromem-go](https://github.com/philippgille/chromem-go)（v0.7.0），它采用 MPL-2.0 许可证，源码可在该仓库获取；MPL-2.0 允许与 AGPL-3.0 作品合并分发，本项目未修改它的源码。分发二进制或镜像时请保留其许可证声明。

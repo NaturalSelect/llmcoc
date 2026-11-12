@@ -126,6 +126,10 @@ func (p *fantasyOpenAIProvider) GenerateImage(ctx context.Context, prompt string
 	return p.image.GenerateImage(ctx, prompt, opts)
 }
 
+func (p *fantasyOpenAIProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return p.image.Embed(ctx, texts)
+}
+
 func sessionIDFromContext(ctx context.Context) string {
 	s := ctx.Value("session")
 	if s == nil {

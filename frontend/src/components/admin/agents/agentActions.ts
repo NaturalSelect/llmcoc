@@ -7,6 +7,10 @@ export function isPainterRole(role: string): boolean {
   return role === 'painter' || role === 'painter_nsfw' || role === 'painter_hq'
 }
 
+export function isEmbeddingRole(role: string): boolean {
+  return role === 'embedding'
+}
+
 // NOTE: 只有这三个角色会按上下文窗口整体裁剪历史，其余角色不显示该输入框
 export function hasContextWindow(role: string): boolean {
   return role === 'director' || role === 'writer' || role === 'writer_nsfw'
@@ -41,7 +45,7 @@ export function pingLoadingKey(ag: Pick<AgentFormState, 'role' | 'provider_confi
 export interface PingPayload {
   model_name: string
   role: string
-  mode?: 'image'
+  mode?: 'image' | 'embedding'
   image_via_chat?: boolean
   diffusion_mode?: boolean
 }
@@ -63,17 +67,25 @@ export function planPing(ag: AgentFormState): PingPlan {
     payload.mode = 'image'
     payload.image_via_chat = ag.image_via_chat || false
     payload.diffusion_mode = ag.diffusion_mode || false
+  } else if (isEmbeddingRole(role)) {
+    payload.mode = 'embedding'
   }
   return { ok: true, providerId, role, isPainter, key: `${role}:${providerId}`, payload }
 }
 
-export function pingSuccessMessage(role: string, latencyMs: number): string {
-  return isPainterRole(role)
-    ? `Painter 图片模型连通正常，延迟 ${latencyMs} ms`
-    : `${agentLabel(role)} 模型连通正常，延迟 ${latencyMs} ms`
+// NOTE: dimensions 只有嵌入模型的响应才带；缺失或非正数时不显示，避免出现「维度 undefined」
+export function pingSuccessMessage(role: string, latencyMs: number, dimensions?: number): string {
+  if (isPainterRole(role)) return `Painter 图片模型连通正常，延迟 ${latencyMs} ms`
+  if (isEmbeddingRole(role)) {
+    const dim = dimensions && dimensions > 0 ? `，向量维度 ${dimensions}` : ''
+    return `Embedding 嵌入模型连通正常${dim}，延迟 ${latencyMs} ms`
+  }
+  return `${agentLabel(role)} 模型连通正常，延迟 ${latencyMs} ms`
 }
 
 export function pingFailureMessage(role: string, reason: string): string {
-  const prefix = isPainterRole(role) ? 'Painter 图片模型测试失败：' : `${agentLabel(role)} 模型测试失败：`
+  let prefix = `${agentLabel(role)} 模型测试失败：`
+  if (isPainterRole(role)) prefix = 'Painter 图片模型测试失败：'
+  else if (isEmbeddingRole(role)) prefix = 'Embedding 嵌入模型测试失败：'
   return prefix + reason
 }

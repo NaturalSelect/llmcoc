@@ -5,6 +5,7 @@ import {
   costValueToSubmit,
   DEFAULT_SITE_SETTINGS,
   parseSiteSettings,
+  similarityValueToSubmit,
 } from './settingsLogic'
 
 describe('parseSiteSettings', () => {
@@ -38,6 +39,25 @@ describe('parseSiteSettings', () => {
     expect(parseSiteSettings([]).balance_rules).toBe('')
     expect(parseSiteSettings([{ key: 'balance_rules', value: '规则一\n规则二' }]).balance_rules).toBe('规则一\n规则二')
   })
+  test('lawyer_cache_min_similarity：缺失默认 0.3；合法值含负数与边界按浮点解析', () => {
+    const parse = (value: string) => parseSiteSettings([{ key: 'lawyer_cache_min_similarity', value }]).lawyer_cache_min_similarity
+    expect(parseSiteSettings([]).lawyer_cache_min_similarity).toBe(0.3)
+    expect(parse('0.55')).toBe(0.55)
+    expect(parse('0')).toBe(0)
+    expect(parse('-1')).toBe(-1)
+    expect(parse('1')).toBe(1)
+    expect(parse('-0.25')).toBe(-0.25)
+  })
+
+  test('lawyer_cache_min_similarity：无法解析或越界回落默认值', () => {
+    const parse = (value: string) => parseSiteSettings([{ key: 'lawyer_cache_min_similarity', value }]).lawyer_cache_min_similarity
+    expect(parse('')).toBe(0.3)
+    expect(parse('abc')).toBe(0.3)
+    expect(parse('NaN')).toBe(0.3)
+    expect(parse('1.5')).toBe(0.3)
+    expect(parse('-1.01')).toBe(0.3)
+    expect(parse('Infinity')).toBe(0.3)
+  })
 })
 
 describe('costValueToSubmit', () => {
@@ -53,6 +73,30 @@ describe('costValueToSubmit', () => {
     expect(costValueToSubmit(undefined)).toBeNull()
     expect(costValueToSubmit('abc')).toBeNull()
     expect(costValueToSubmit(-1)).toBeNull()
+  })
+})
+
+describe('similarityValueToSubmit', () => {
+  test('范围内的数字（含边界与负数）返回规范化字符串', () => {
+    expect(similarityValueToSubmit(0.3)).toBe('0.3')
+    expect(similarityValueToSubmit('0.45')).toBe('0.45')
+    expect(similarityValueToSubmit(' 0.5 ')).toBe('0.5')
+    expect(similarityValueToSubmit(-1)).toBe('-1')
+    expect(similarityValueToSubmit(1)).toBe('1')
+    expect(similarityValueToSubmit('0')).toBe('0')
+  })
+
+  test('空、非数字、夹杂字符、越界都拒绝', () => {
+    expect(similarityValueToSubmit('')).toBeNull()
+    expect(similarityValueToSubmit('   ')).toBeNull()
+    expect(similarityValueToSubmit(null)).toBeNull()
+    expect(similarityValueToSubmit(undefined)).toBeNull()
+    expect(similarityValueToSubmit('abc')).toBeNull()
+    expect(similarityValueToSubmit('0.5abc')).toBeNull()
+    expect(similarityValueToSubmit(1.01)).toBeNull()
+    expect(similarityValueToSubmit(-1.01)).toBeNull()
+    expect(similarityValueToSubmit(Infinity)).toBeNull()
+    expect(similarityValueToSubmit(NaN)).toBeNull()
   })
 })
 

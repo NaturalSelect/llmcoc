@@ -47,6 +47,7 @@ func LoadLawyerCache(hashes LawyerCacheHashes) {
 	if loaded {
 		entries, used, _ := lawyerCache.Stats()
 		alog.Info("lawyer cache loaded", "entries", entries, "used_bytes", used, "path", path)
+		ensureLawyerCacheBackfill()
 	}
 }
 
@@ -121,13 +122,14 @@ var lawyerSystemPromptBase = `你是COC TRPG(克苏鲁的呼唤7版)规则专家
 【缓存使用手册】
 缓存是一个"标签串 → 裁定正文"的词典。它是你唯一能跳过检索的捷径，也是唯一会留给后续查询复用的产物，写法必须严格照本节执行。
 
-一、匹配算法（决定了标签必须怎么写，先看懂再写标签）
-- 检索时**只比对标签串，永远不会检索裁定正文**。正文里写了什么，对能不能被搜到毫无影响。
-- 你的 keyword 会按空格拆成若干标签，每个标签只要是某条缓存标签串的**子串**就得1分；总分高的排前面，0分的不返回。
-- 由此推出三条硬性写法，违反任意一条都会检索落空：
+一、匹配算法（决定了标签怎么写，先看懂再写标签）
+- 检索优先按**语义相似度**匹配"标签串 + 裁定正文"，返回"相似度 0.xx"；嵌入服务不可用、或条目尚未建立向量时，退回**标签子串匹配**，返回"匹配 n/m 标签"。两种回执你都可能遇到，所以 keyword 必须同时适配两种算法。
+- 标签子串匹配的规则：你的 keyword 会按空格拆成若干标签，每个标签只要是某条缓存标签串的**子串**就得1分；总分高的排前面，0分的不返回。此时**只比对标签串，不检索裁定正文**。
+- 由此推出三条硬性写法，违反任意一条都会在退回标签匹配时落空：
   1. 标签必须短而原子：写 "#手枪"，不要写 "#手枪的伤害是多少"。整句话几乎不可能是任何标签串的子串，等于必然0分。
   2. 子串匹配是单向的：查询 "#SAN" 能命中缓存 "#SAN损失"，反过来不行。**所以查询时一律用短词根。**
   3. 用词必须逐字一致："#手枪" 和 "#枪械" 是两个毫不相干的标签，不会互相命中。
+- 一个问题涉及多个对象时，每个对象各调用一次 search_cache，同一轮并列调用，不要把几个对象塞进同一个 keyword。
 
 二、标签词表（查询和保存共用，只能用下面的词，不得自造同义写法）
 标签串是缓存的唯一索引，且**只有逐字完全相同的标签串才算同一条缓存**。同一对象在不同会话里必须能拼出一模一样的标签串，否则就会堆出一批内容重复、互不覆盖的条目。所以用词不是自由发挥，只能取自下表：
@@ -138,7 +140,7 @@ var lawyerSystemPromptBase = `你是COC TRPG(克苏鲁的呼唤7版)规则专家
 
 三、search_cache 怎么查、怎么读结果（第1轮强制执行）
 - keyword 给 3~6 个二节词表里的标签：1个类别 + 对象 + 你要问的属性。不要写成句子。
-- 返回里的 "匹配 n/m 标签"：m 是你给的标签数，n 是这条缓存命中的个数。**比值低不等于不相关**——保存时标签只列本条覆盖的属性，所以你多问一个属性比值就会降。只要对象标签命中了，就必须把正文逐字读一遍再判断，禁止靠比值直接筛掉。
+- 返回里的 "相似度 0.xx" 是语义相似度，"匹配 n/m 标签" 是标签匹配（m 是你给的标签数，n 是这条缓存命中的个数）。**两者数值低都不等于不相关**——保存时标签只列本条覆盖的属性，所以你多问一个属性数值就会降。只要对象对得上，就必须把正文逐字读一遍再判断，禁止靠数值直接筛掉。
 - 判定只有一条标准：**这条缓存的正文里，有没有回答当前问题所需的具体数值或完整词条内容。**
   · 有 → 直接引用它调用 response，本次查询到此结束，不得再调用任何检索工具复核。缓存正文在保存时已核实过原文出处，重查一遍没有任何收益。
   · 只答了一部分（例如同一把武器但问的是另一个属性）→ 把已答的部分当作已确认事实，只 grep 缺失的那部分，不要重查它已经答过的内容。
@@ -248,7 +250,7 @@ type lawyerResponseArgs struct {
 
 // lawyerSearchCacheDescription 是 search_cache 工具的描述，第1轮限制工具集和
 // 全量工具集共用同一份文案。
-const lawyerSearchCacheDescription = "在缓存中检索已有裁定(最多返回10条,含完整裁定正文)。检索时只比对标签串、从不检索正文；keyword 按空格拆成标签，每个标签只要是某条缓存标签串的子串就得1分，总分高的排前面。因此标签必须短而原子(写\"#手枪\"，不要写\"#手枪的伤害是多少\")，且查询要用短词根(\"#SAN\"能命中\"#SAN损失\"，反过来不行)，用词逐字一致(\"#手枪\"命中不了\"#枪械\")。给3~6个标签：1个类别+对象+所问属性，例如\"#武器 #手枪 #伤害\"。返回的\"匹配n/m标签\"比值低不代表不相关，只要对象命中就要逐字读正文；正文里已有回答所需的数值或完整词条，就直接引用它调用response结束查询，不得再用grep复核；只答了一部分时只补搜缺失部分。"
+const lawyerSearchCacheDescription = "在缓存中检索已有裁定(最多返回10条,含完整裁定正文)。优先按语义相似度匹配标签串和裁定正文，返回\"相似度0.xx\"；嵌入服务不可用或条目尚无向量时退回标签子串匹配，keyword 按空格拆成标签，每个标签只要是某条缓存标签串的子串就得1分，返回\"匹配n/m标签\"。因此标签必须短而原子(写\"#手枪\"，不要写\"#手枪的伤害是多少\")，且查询要用短词根(\"#SAN\"能命中\"#SAN损失\"，反过来不行)，用词逐字一致(\"#手枪\"命中不了\"#枪械\")。给3~6个标签：1个类别+对象+所问属性，例如\"#武器 #手枪 #伤害\"。涉及多个对象时每个对象各调用一次。返回的相似度或匹配比值低都不代表不相关，只要对象对得上就要逐字读正文；正文里已有回答所需的数值或完整词条，就直接引用它调用response结束查询，不得再用grep复核；只答了一部分时只补搜缺失部分。"
 
 // lawyerKeywordSchema 是 grep/grep_spell/grep_monster 的 keyword 参数 schema。
 const lawyerKeywordSchema = `{
@@ -431,7 +433,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 		{Role: "user", Content: userSB.String()},
 	}
 
-	dispatch := func(_ context.Context, call llm.ToolCall) toolOutcome {
+	dispatch := func(ctx context.Context, call llm.ToolCall) toolOutcome {
 		switch call.Name {
 		case toolNameSearchCache:
 			var args lawyerKeywordArgs
@@ -440,9 +442,9 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 			}
 			query := strings.TrimSpace(args.Keyword)
 			debugf("Lawyer", "search_cache query=%q", query)
-			matches := lawyerCache.Search(query, 10)
-			// NOTE: 回显"命中标签数/查询标签数"，让模型能自己判断相关度；
-			// Search 只要有1个标签命中就会返回，低分结果基本是噪声。
+			matches := searchLawyerCache(ctx, query, 10)
+			// NOTE: 向量命中回显相似度，标签兜底命中回显"命中标签数/查询标签数"，让模型能自己判断相关度；
+			// 标签匹配只要有1个标签命中就会返回，低分结果基本是噪声。
 			totalTags := len(strings.Fields(query))
 			var sb strings.Builder
 			if len(matches) == 0 {
@@ -451,9 +453,13 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 				cacheSearchHadResults = true
 				sb.WriteString(fmt.Sprintf("[搜索缓存] 找到 %d 条相关裁定：\n", len(matches)))
 				for i, m := range matches {
-					sb.WriteString(fmt.Sprintf("%d. 匹配 %d/%d 标签\n   标签：%s\n   裁定：%s\n", i+1, m.Score, totalTags, m.Key, m.Ruling))
+					if m.Similarity > 0 {
+						sb.WriteString(fmt.Sprintf("%d. 相似度 %.2f\n   标签：%s\n   裁定：%s\n", i+1, m.Similarity, m.Key, m.Ruling))
+					} else {
+						sb.WriteString(fmt.Sprintf("%d. 匹配 %d/%d 标签\n   标签：%s\n   裁定：%s\n", i+1, m.Score, totalTags, m.Key, m.Ruling))
+					}
 				}
-				sb.WriteString("\n比值低不代表不相关，请逐条读完上面的裁定正文再判断。若其中已含回答所需的数值或完整词条，直接引用它调用 response，不要再检索规则书，也不要重复 save_cache；只答了一部分时，只补搜缺失的那部分。\n\n")
+				sb.WriteString("\n相似度或匹配比值低不代表不相关，请逐条读完上面的裁定正文再判断。若其中已含回答所需的数值或完整词条，直接引用它调用 response，不要再检索规则书，也不要重复 save_cache；只答了一部分时，只补搜缺失的那部分。\n\n")
 			}
 			return toolOutcome{result: sb.String()}
 
@@ -509,7 +515,7 @@ func runLawyer(ctx context.Context, h agentHandle, situation string) []LawyerRes
 			if key == "" || ruling == "" {
 				return toolOutcome{reject: "SYSTEM REJECT: save_cache 的 cache_key 和 ruling 都不能为空。"}
 			}
-			lawyerCache.Set(key, ruling)
+			saveLawyerCacheEntry(ctx, key, ruling)
 			debugf("Lawyer", "save_cache key=%s ruling=%s", key, ruling)
 			return toolOutcome{result: "[缓存] 裁定已保存到缓存。"}
 

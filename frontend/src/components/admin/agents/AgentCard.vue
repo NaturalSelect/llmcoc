@@ -52,7 +52,7 @@ async function ping() {
   pingingKey.value = plan.key
   try {
     const r = await api<PingResult>('POST', `/api/admin/config/providers/${plan.providerId}/ping`, plan.payload)
-    ui.toast(pingSuccessMessage(plan.role, r.latency_ms))
+    ui.toast(pingSuccessMessage(plan.role, r.latency_ms, r.dimensions))
   } catch (e) {
     ui.toast(pingFailureMessage(plan.role, errMsg(e)), 'error')
   } finally {

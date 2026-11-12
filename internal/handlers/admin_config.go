@@ -171,7 +171,7 @@ func AdminUpdateAgent(c *gin.Context) {
 	validRoles := map[string]bool{
 		"director": true, "writer": true, "writer_nsfw": true, "lawyer": true, "npc": true, "npc_nsfw": true,
 		"scripter": true, "architect": true, "compiler": true, "lore_researcher": true, "encounter_designer": true, "qa_guard": true,
-		"parser": true, "painter": true, "painter_nsfw": true, "painter_hq": true, "diffusion_translator": true,
+		"parser": true, "painter": true, "painter_nsfw": true, "painter_hq": true, "diffusion_translator": true, "embedding": true,
 		// NOTE: dramaturg 是可选的剧情节奏顾问 Agent，由Director按需通过consult_dramaturg工具调用，
 		// 允许管理员配置其 provider/model，不配置即禁用。
 		"dramaturg": true,
@@ -374,6 +374,10 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 		adminPingImageProvider(c, factory, &p, req.ModelName, req.ImageViaChat, req.DiffusionMode)
 		return
 	}
+	if req.Mode == "embedding" || req.Role == string(models.AgentRoleEmbedding) {
+		adminPingEmbeddingProvider(c, factory, &p, req.ModelName)
+		return
+	}
 	if req.ModelName == "" {
 		req.ModelName = "gpt-5.4-nano"
 	}
@@ -393,6 +397,39 @@ func adminPingProviderWithFactory(c *gin.Context, factory ProviderFactory) {
 	}
 	adminConfigLog.Info("ping provider ok", "id", id, "latency_ms", latencyMs)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "mode": "chat", "latency_ms": latencyMs})
+}
+
+func adminPingEmbeddingProvider(c *gin.Context, factory ProviderFactory, p *models.LLMProviderConfig, modelName string) {
+	if modelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "mode": "embedding", "error": "请先填写模型名称"})
+		return
+	}
+
+	provider := factory.NewProvider(p, modelName, 0, 0, false, "none", 0, false)
+	embedder, ok := provider.(llm.Embedder)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "mode": "embedding", "error": "当前 Provider 不支持嵌入接口，无法测试嵌入模型（仅 OpenAI 兼容类型支持）"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	vectors, err := embedder.Embed(ctx, []string{"ping"})
+	latencyMs := time.Since(start).Milliseconds()
+	if err != nil {
+		adminConfigLog.Error("ping provider embedding failed", "id", p.ID, "err", err)
+		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "mode": "embedding", "error": "嵌入测试失败: " + err.Error()})
+		return
+	}
+	if len(vectors) != 1 || len(vectors[0]) == 0 {
+		adminConfigLog.Warn("ping provider embedding empty vector", "id", p.ID)
+		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "mode": "embedding", "error": "嵌入测试未返回向量"})
+		return
+	}
+	adminConfigLog.Info("ping provider embedding ok", "id", p.ID, "latency_ms", latencyMs, "dimensions", len(vectors[0]))
+	c.JSON(http.StatusOK, gin.H{"ok": true, "mode": "embedding", "latency_ms": latencyMs, "dimensions": len(vectors[0])})
 }
 
 func adminPingImageProvider(c *gin.Context, factory ProviderFactory, p *models.LLMProviderConfig, modelName string, imageViaChat, diffusionMode bool) {

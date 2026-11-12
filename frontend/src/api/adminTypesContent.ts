@@ -131,6 +131,7 @@ export interface SiteSettings {
   max_character_drafts: number
   end_session_cost: number
   balance_rules: string
+  lawyer_cache_min_similarity: number
 }
 
 export interface InviteCode {

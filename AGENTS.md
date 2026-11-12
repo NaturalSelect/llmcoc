@@ -79,8 +79,9 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
   - Writer / NPC / 配图的 NSFW 提示词按本次调用的 `nsfw` 标记渲染（该标记已经过房间开关过滤），不是按房间开关；只有 Director 的系统提示词按房间开关渲染。
   - `diffusion_translator` 仅在 Painter 开启 `diffusion_mode` 时才被调用。
   - `painter_hq` 只用于调查员立绘，不在 `batchLoadAgents` 里（对局用不到）。立绘用 `loadSingleAgent` 加载它，缺行、未启用或未绑定 Provider 都直接报错，**不会**回落到 `painter`。新库播种出来是未启用，升级后管理员要绑定图片模型并启用，否则立绘生成返回 500（在扣费之前失败）。
+  - `embedding` 给 Lawyer 规则缓存做语义检索，不走聊天，也不在 `batchLoadAgents` 里。运行时每次检索都用 `loadSingleAgent` 现读配置：缺行、未启用、未绑定 Provider 或 Provider 不支持 `/embeddings`（Anthropic 类型）都视为不可用，Lawyer 退回标签子串匹配，与没有这个角色时的行为逐字一致。新库播种为未启用。ping 走 `llm.Embedder`，成功返回 `dimensions`。
 - 每会话的 Agent 句柄会缓存（`sessionAgents`），后台改配置后靠 `ClearAllCachedAgents` 失效，会话结束时 `deleteCachedAgents`。
-- 新增角色要同步改：`models/models.go`（常量）、`models/db.go`（`required` 播种列表）、`batchLoadAgents` 的角色列表、`handlers/admin_config.go` 的 `validRoles`（漏掉的话后台保存返回 400）、`frontend/src/components/admin/agents/agentRoles.ts`（`ROLE_DEFAULTS` 默认值，以及名称/描述/占位提示三张表，共四处）、`models/db_agent_seed_test.go`。图片类角色还要改 `admin_config.go` 的 ping 判断（走图片接口）和前端 `agentActions.ts` 的 `isPainterRole`。`AgentConfig.IsActive` 带 `default:true`，播种默认关闭的角色时 `Create` 会把 `false` 换成 `true`，`seedDefaultAgentConfigs` 里要像 `painter_hq` 那样 `Create` 后显式回写 `is_active=false`。
+- 新增角色要同步改：`models/models.go`（常量）、`models/db.go`（`required` 播种列表）、`batchLoadAgents` 的角色列表、`handlers/admin_config.go` 的 `validRoles`（漏掉的话后台保存返回 400）、`frontend/src/components/admin/agents/agentRoles.ts`（`ROLE_DEFAULTS` 默认值，以及名称/描述/占位提示三张表，共四处）、`models/db_agent_seed_test.go`。图片类角色还要改 `admin_config.go` 的 ping 判断（走图片接口）和前端 `agentActions.ts` 的 `isPainterRole`；嵌入类角色同理改 ping 判断（走 `llm.Embedder`）和 `isEmbeddingRole`。`AgentConfig.IsActive` 带 `default:true`，播种默认关闭的角色时 `Create` 会把 `false` 换成 `true`，`seedDefaultAgentConfigs` 里要像 `painter_hq` / `embedding` 那样 `Create` 后显式回写 `is_active=false`。
 
 ### 新增 Director 工具要改的地方
 `types.go`（`ToolCallType` 常量和 `ToolCall` 字段）→ `director_tools.go`（`XxxTool()` 定义 + 加入 `directorTools` + `decodeDirectorToolCall` 分支）→ `actions.go`（`actionRegistry` 登记，并按需加入 `noSideEffectActions` / `narrateCompatibleActions`）→ `director_dispatch.go`（`directorBatchPolicy` 的批次规则；`narrate` / `ask_players` / `end_game` 是回复类工具，不能和需要先读结果的工具同批，其中只有 `ask_players` / `end_game` 结束周期）。`directorTools(dramaturgEnabled)` 每轮发送同一份完整列表（唯一的条件项是 dramaturg 是否启用），这是为了保持提示词缓存前缀稳定（见提交 1b395d7）；不要按回合状态裁剪工具列表。Director 历史同理：发送版即归档版，不要在归档时再裁剪。工具如果有玩家可见的结算，就在 `ToolResult.Events` 里给出 `models.GameEvent`（辅助函数在 `game_events.go`），并同步前端 `frontend/src/game/events.ts` 的文案。工具列表和描述也是 Writer 请求的前缀（Writer 会声明同一份工具），改动会同时影响 Director 和 Writer 的提示词缓存。
@@ -89,6 +90,13 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - `COC_kp.md`、`COC_spell.md`、`COC_monster.md` 各有 1–2MB，启动时加载并计算 SHA-256；不要整文件读取它们。
 - 三本全部哈希并加载成功才会启用缓存持久化（`data/lawyer_cache.json`，可由 `LAWYER_CACHE_PATH` 覆盖）。缓存文件里的哈希与当前资料不一致时整体丢弃，所以改这三份 md 会使缓存失效。缓存只在优雅退出时落盘，统计每 30 秒落库。
 - `agent` 包的全局状态（`lawyerCache` 4GB 预算 LRU、`sessionAgents`、`activeSessions`）在包导入时创建，且几乎所有函数都依赖全局 `models.DB` 已初始化。
+- 向量检索（`lawyer_embedding.go`，索引在 `cache.go`）：条目除标签串和正文外还可带一个已归一化的向量和 `vecModel`（`<provider_config_id>:<model_name>`）。`search_cache` 先嵌入 keyword（标签串，不是原始问题），在 chromem-go 内存索引里按余弦相似度取 ≥ 阈值的前 10 条，再用标签匹配补上还没有当前模型向量的条目；嵌入失败或没有嵌入器时整体退回原来的 `Search`。回执向量命中写“相似度 0.xx”，标签命中写“匹配 n/m 标签”。
+  - 标签串仍是条目身份：覆盖写入、后台列表、删除都按它。`save_cache` 同步嵌入 `标签串\n正文`（超过 2000 字符截断），失败就先存无向量条目；`LoadLawyerCache` 和每次检索都会触发单飞的后台补算（每批 32 条），某批失败就结束本轮，下次再补。补算用 `AttachVector`，正文已变则拒绝挂载。
+  - 换嵌入模型或 Provider 后 `vecModel` 不符，旧向量不参与检索，并被补算覆盖；不需要手动清缓存。
+  - 向量随条目落进 `lawyer_cache.json`（`vector` 为小端 float32 字节的 base64，`vec_model`）。缺字段即无向量，旧文件可直接加载，旧二进制读新文件会忽略未知字段。向量计入 4GB 预算。
+  - chromem-go 只用内存索引和 `QueryEmbedding`，不用它的落盘。建 collection 时必须传一个总是报错的桩嵌入函数：传 nil 会回落到默认的 OpenAI 函数并读 `OPENAI_API_KEY`。`QueryEmbedding` 在 `nResults` 大于条目数时直接报错，`SearchVector` 已先截断。
+  - 相似度阈值是站点设置 `lawyer_cache_min_similarity`（默认 `models.DefaultLawyerCacheMinSimilarity`，范围 [-1, 1]，后台保存时校验）。默认值 0.3 没有数据依据，上线后看 debug 日志里每条命中的相似度再调。
+  - 测试通过替换 `lawyerEmbedderLoader` 注入假嵌入器，等补算用 `waitLawyerBackfill`。
 
 ### 图片
 Painter 默认走 OpenAI 兼容图片接口；开启 `diffusion_mode` 时先由 `diffusion_translator` 把画面描述翻成标签式正面提示词，再调用 `/images/generations`。负面提示词是固定常量，`nsfw=false` 的配图额外追加分级标签（`painter_diffusion.go`）。配图按「连续漫画的单格」出：画风（日式ACG漫画）由 `painter.go` 的 `imageSysPrompt` 和扩散翻译提示词统一附加，Director 的 `image_prompt` 只写这一格的内容；`generate_image` 工具说明里的分镜规则和连续性规则要求景别随剧情变化、不画气泡和文字、角色外貌与场景跨图一致，没有额外的角色外貌存储，一致性靠 Director 沿用前几格的写法。图片落盘与定期清理在 `services/imagestore`（默认目录是数据库文件同级的 `images/`）。

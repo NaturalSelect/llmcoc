@@ -103,3 +103,40 @@ func TestSeedDefaultAgentConfigs_SeedsPainterHQ(t *testing.T) {
 		t.Error("painter_hq should be inactive by default so portraits fail loudly until an admin binds an image model")
 	}
 }
+
+func TestSeedDefaultAgentConfigs_SeedsEmbeddingInactive(t *testing.T) {
+	db := openSeedTestDB(t)
+
+	seedDefaultAgentConfigs()
+
+	var cfg AgentConfig
+	if err := db.Where("role = ?", string(AgentRoleEmbedding)).First(&cfg).Error; err != nil {
+		t.Fatalf("embedding row not seeded: %v", err)
+	}
+	if cfg.IsActive {
+		t.Error("embedding should be inactive by default so the Lawyer cache keeps using tag matching until an admin binds an embedding model")
+	}
+	if cfg.ModelName != "text-embedding-3-small" {
+		t.Errorf("model = %q, want text-embedding-3-small", cfg.ModelName)
+	}
+}
+
+func TestSeedDefaultSiteSettings_SeedsLawyerSimilarityWithoutOverwriting(t *testing.T) {
+	db := openSeedTestDB(t)
+	if err := db.AutoMigrate(&SiteSetting{}); err != nil {
+		t.Fatalf("auto-migrate: %v", err)
+	}
+
+	seedDefaultSiteSettings()
+	if got := GetSiteSetting("lawyer_cache_min_similarity", "MISSING"); got != DefaultLawyerCacheMinSimilarity {
+		t.Fatalf("seeded lawyer_cache_min_similarity = %q, want %q", got, DefaultLawyerCacheMinSimilarity)
+	}
+
+	if err := SetSiteSetting("lawyer_cache_min_similarity", "0.55"); err != nil {
+		t.Fatalf("SetSiteSetting: %v", err)
+	}
+	seedDefaultSiteSettings()
+	if got := GetSiteSetting("lawyer_cache_min_similarity", "MISSING"); got != "0.55" {
+		t.Errorf("re-seeding must not overwrite an admin-set value, got %q", got)
+	}
+}

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/rand"
+	"math"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -49,6 +50,15 @@ func AdminUpdateSiteSetting(c *gin.Context) {
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if key == "lawyer_cache_min_similarity" {
+		// NOTE: 相似度是余弦值，合法范围 [-1, 1]；非法值落库后会被运行时静默回落默认值，这里提前拒绝让管理员知道。
+		v, err := strconv.ParseFloat(strings.TrimSpace(body.Value), 64)
+		if err != nil || math.IsNaN(v) || v < -1 || v > 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "相似度阈值必须是 -1 到 1 之间的数字"})
+			return
+		}
+		body.Value = strings.TrimSpace(body.Value)
 	}
 	if err := models.SetSiteSetting(key, body.Value); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

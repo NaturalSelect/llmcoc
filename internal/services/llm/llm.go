@@ -141,6 +141,12 @@ type ImageGenerator interface {
 	GenerateImage(ctx context.Context, prompt string, opts ImageOptions) (base64Data string, mimeType string, err error)
 }
 
+// NOTE: Embedder 是可选能力，只有 OpenAI 兼容 provider 实现；Anthropic 类型断言失败即视为不支持。
+// 返回的向量已 L2 归一化，顺序与 texts 一一对应。
+type Embedder interface {
+	Embed(ctx context.Context, texts []string) ([][]float32, error)
+}
+
 // NewProviderFromConfig creates a provider from a DB-stored LLMProviderConfig.
 func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, thinkingBudgetTokens int, imageViaChat bool) Provider {
 	return newProviderByType(cfg.Provider, cfg.APIKey, cfg.BaseURL, modelName, maxTokens, temperature, disableTemperature, reasoningEffort, thinkingBudgetTokens, imageViaChat)

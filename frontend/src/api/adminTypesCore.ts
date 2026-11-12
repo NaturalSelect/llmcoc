@@ -105,6 +105,8 @@ export interface PingResult {
   ok: boolean
   mode: string
   latency_ms: number
+  // NOTE: 仅 mode 为 embedding 时返回
+  dimensions?: number
 }
 
 export interface CacheStats {

@@ -117,6 +117,8 @@ func seedDefaultSiteSettings() {
 		// NOTE: 默认平衡调整规则，与 models.DefaultBalanceRules 保持同一来源；
 		// 已有该 key（含空字符串）时绝不覆盖。
 		"balance_rules": DefaultBalanceRules,
+		// NOTE: Lawyer 规则缓存向量检索的相似度阈值，仅在启用 embedding 角色后生效；合法范围 [-1, 1]。
+		"lawyer_cache_min_similarity": DefaultLawyerCacheMinSimilarity,
 	}
 	for k, v := range defaults {
 		var s SiteSetting
@@ -186,6 +188,8 @@ func seedDefaultAgentConfigs() {
 		{Role: AgentRolePainterNSFW, ProviderConfigID: provID, ModelName: "dall-e-3", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
 		// NOTE: painter_hq 默认关闭,需要管理员绑定高质量图片模型;未启用时立绘生成直接报错,不回落默认 Painter。
 		{Role: AgentRolePainterHQ, ProviderConfigID: provID, ModelName: "gpt-image-1", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
+		// NOTE: embedding 默认关闭，需要管理员绑定 OpenAI 兼容的嵌入模型；未启用时 Lawyer 规则缓存退回标签子串匹配。
+		{Role: AgentRoleEmbedding, ProviderConfigID: provID, ModelName: "text-embedding-3-small", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
 		// NOTE: diffusion_translator 只输出一行标签,低温度减少擅自添加画面元素;仅在 Painter 开启 diffusion_mode 时才会被调用。
 		{Role: AgentRoleDiffusionTranslator, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.3, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
@@ -202,7 +206,7 @@ func seedDefaultAgentConfigs() {
 		if DB.Where("role = ?", ag.Role).First(&existing).Error != nil {
 			DB.Create(&ag)
 			// NOTE: IsActive 带 default:true，Create 会把零值 false 换成 true，需要显式回写才能真正默认关闭。
-			if ag.Role == AgentRolePainterHQ {
+			if ag.Role == AgentRolePainterHQ || ag.Role == AgentRoleEmbedding {
 				DB.Model(&ag).Update("is_active", false)
 			}
 		}
