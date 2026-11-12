@@ -213,7 +213,7 @@ func buildDramaturgStaticContent(gctx GameContext) string {
 // 进展。发送版即归档版,不再有另外一份归档内容。
 func buildDramaturgOpening(gctx GameContext, progressNote string) llm.ChatMessage {
 	var sb strings.Builder
-	sb.WriteString("<now>当前时间(每轮=游戏内30分钟): " + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</now>\n")
+	sb.WriteString("<now>当前时间: " + describeGameTime(gctx.Session.GameStartTime, gctx.Session.GameTime) + "</now>\n")
 	sb.WriteString("\n<progress_note>\n" + progressNote + "\n</progress_note>\n")
 	sb.WriteString("\n<instruction>结合以上信息，用固定两段式简短给出结论：【进度】当前处于剧情的哪个阶段、整体进展如何；【指导】接下来应该发生什么来推进节奏、有没有该出现但还未出现的线索或伏笔。只给方向：不宣布结局，不预设未结算的结果，不描写场面，不编造资料外内容，不替调查员决定。</instruction>\n")
 	return llm.ChatMessage{Role: "user", Content: sb.String()}

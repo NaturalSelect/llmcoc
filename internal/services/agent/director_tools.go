@@ -534,15 +534,15 @@ func advanceTimeTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolAdvanceTime),
-			Description: `推进游戏内时间。time_rounds 是推进的轮次数值，1轮＝游戏内30分钟，time_reason 说明推进依据(如调查员选择长时间休息、赶路等)。
-调用示例：{"time_rounds":1,"time_reason":"调查员选择原地休息一晚"}`,
+			Description: `推进游戏内时间。game_time 是推进之后的绝对时间，RFC 3339 本地时间，格式 YYYY-MM-DDTHH:MM，不带时区，例如 1924-09-03T21:30；必须不早于<now>里的当前时间，跨日时日期要进位。time_reason 说明推进依据(如调查员选择长时间休息、赶路等)。
+调用示例：{"game_time":"1924-09-04T07:00","time_reason":"调查员选择原地休息一晚"}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
-					"time_rounds": {"type": "integer", "description": "推进的轮次数值，1轮＝游戏内30分钟"},
+					"game_time": {"type": "string", "description": "推进之后的绝对时间，格式 YYYY-MM-DDTHH:MM，不带时区，不早于当前时间"},
 					"time_reason": {"type": "string", "description": "时间推进依据"}
 				},
-				"required": ["time_rounds", "time_reason"]
+				"required": ["game_time", "time_reason"]
 			}`),
 		},
 	}

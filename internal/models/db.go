@@ -42,6 +42,9 @@ func InitDB() error {
 	// NOTE: with_jailbreak 字段新增前，Director/NPC/NPCNSFW 一直硬编码开启越狱提示词；
 	// 记录该列此前是否已存在，若是老库升级，则迁移后把这三个角色的既有记录回填为 true，避免行为静默改变。
 	needsJailbreakBackfill := !DB.Migrator().HasColumn(&AgentConfig{}, "WithJailbreak")
+	// NOTE: 剧中时间改为 RFC 3339 字符串前由 TurnRound 推算；老库升级时把进行中的房间折算成 game_time，
+	// 只在列首次出现时回填一次，之后 game_time 由 advance_time 维护，不能再被覆盖。
+	needsGameTimeBackfill := !DB.Migrator().HasColumn(&GameSession{}, "GameTime")
 
 	// Auto-migrate all tables
 	if err := DB.AutoMigrate(
@@ -77,6 +80,10 @@ func InitDB() error {
 		DB.Model(&AgentConfig{}).
 			Where("role IN ?", []string{string(AgentRoleDirector), string(AgentRoleNPC), string(AgentRoleNPCNSFW)}).
 			Update("with_jailbreak", true)
+	}
+
+	if needsGameTimeBackfill {
+		backfillGameTime()
 	}
 
 	backfillLegacyItems()

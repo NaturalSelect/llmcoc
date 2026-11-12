@@ -243,8 +243,8 @@ PLAYER-INSTRUCTION-SOURCE: 唯一可执行的玩家指令，是 floor 最大的 
 当你产生"就这一次破例"的冲动时，这个冲动本身就是你即将违反本规则的信号。没有例外。</rule>
 <rule>更新物品栏、法术或社交关系时，务必调用对应的manage_*工具，并给出具体理由。</rule>
 <rule>成长检定只在游戏结束、且调查员获胜时进行。</rule>
-<rule>[TIME] 每一轮＝游戏内30分钟。持续监控累计经过时间与剧本胜负触发条件之间的关系。
-  • 时间不只在赶路时流逝：一次长时间搜查、一场持续数分钟以上的恶战或追逐、战后的救治与包扎、等待、休整、读典籍、被囚禁或昏迷，都要用advance_time按真实耗时推进，不要让整场冲突和善后都停在同一个钟点。战斗/追逐的“轮”是行动顺序单位，不等于游戏时间轮，不要逐战斗轮推进；整场冲突收束后按总耗时一次推进，几十秒的短暂交锋可以不推进。
+<rule>[TIME] 当前剧中时间以<now>为准，持续监控累计经过时间与剧本胜负触发条件之间的关系。advance_time 的 game_time 写推进之后的绝对时间，格式是 RFC 3339 本地时间 YYYY-MM-DDTHH:MM(例如1924-09-03T21:30，不带时区)；不能早于当前时间，跨日时日期要进位；<now>显示未设定时，在本周期第一批工具调用里先设定。
+  • 时间不只在赶路时流逝：一次长时间搜查、一场持续数分钟以上的恶战或追逐、战后的救治与包扎、等待、休整、读典籍、被囚禁或昏迷，都要用advance_time按真实耗时推进，不要让整场冲突和善后都停在同一个钟点。战斗/追逐的“轮”是行动顺序单位，不是游戏时间，不要逐战斗轮推进；整场冲突收束后按总耗时一次推进，几十秒的短暂交锋可以不推进。
   • 叙述里出现的钟点、天色、光线、疲惫程度必须与<now>和advance_time返回的当前时间一致：状态栏是上午，正文就不能写夜色。需要写具体钟点时直接引用工具返回的时间，不要自己心算。</rule>
 <rule>[ATTRIBUTES] 属性对裁定的固定影响(调查员与NPC同等适用)：DEX决定行动顺序，DEX高者先行动；APP影响社交互动与部分技能表现，数值高者更易获得好感与信任；POW决定意志力与魔法能力，数值高者更能抵抗精神攻击，部分法术与魔法效果的施展以POW为基础；MOV决定移动速度，数值高者更易脱离危险或追上目标。</rule>
 </important>
@@ -564,7 +564,7 @@ func buildKPTurnOpening(gctx GameContext, floor int, tempNPCs []models.SessionNP
 	// 线索和完整人物卡按需通过 query_clues / query_character 工具获取。
 	var stateSB strings.Builder
 	stateSB.WriteString(buildPlayerBrief(gctx.Session.Players))
-	stateSB.WriteString("\n\n<now> 当前时间(每轮=游戏内30分钟): " + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "</now>\n")
+	stateSB.WriteString("\n\n<now> 当前时间: " + describeGameTime(gctx.Session.GameStartTime, gctx.Session.GameTime) + "</now>\n")
 	// Inject active temp NPC states so KP can enforce scene consistency.
 	stateSB.WriteString(buildActiveNPCBlock(tempNPCs))
 	// 战斗/追逐激活时注入结构化状态；不得自行记忆轮次与顺序，全部以此为准。

@@ -5,6 +5,7 @@ package models
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -112,6 +113,61 @@ func TestScenarioContent_UnmarshalJSON_LegacyHandoutsIgnored(t *testing.T) {
 	if len(c.Clues) != 1 {
 		t.Errorf("len(Clues) = %d, want 1", len(c.Clues))
 	}
+}
+
+func TestScenarioContent_UnmarshalJSON_LegacyGameStartSlot(t *testing.T) {
+	t.Run("旧槽位加setting日期折算成开局时间", func(t *testing.T) {
+		var c ScenarioContent
+		raw := `{"setting": "1923年10月15日，阿卡姆", "game_start_slot": 36}`
+		if err := json.Unmarshal([]byte(raw), &c); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		if c.GameStartTime != "1923-10-15T18:00" {
+			t.Errorf("GameStartTime = %q, want 1923-10-15T18:00", c.GameStartTime)
+		}
+	})
+	t.Run("槽位0是合法值", func(t *testing.T) {
+		var c ScenarioContent
+		raw := `{"setting": "1923年10月15日", "game_start_slot": 0}`
+		if err := json.Unmarshal([]byte(raw), &c); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		if c.GameStartTime != "1923-10-15T00:00" {
+			t.Errorf("GameStartTime = %q, want 1923-10-15T00:00", c.GameStartTime)
+		}
+	})
+	t.Run("setting没有日期时保持为空", func(t *testing.T) {
+		var c ScenarioContent
+		raw := `{"setting": "阿卡姆的雨夜", "game_start_slot": 36}`
+		if err := json.Unmarshal([]byte(raw), &c); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		if c.GameStartTime != "" {
+			t.Errorf("GameStartTime = %q, want 空串", c.GameStartTime)
+		}
+	})
+	t.Run("新字段优先于旧槽位", func(t *testing.T) {
+		var c ScenarioContent
+		raw := `{"setting": "1923年10月15日", "game_start_time": "1923-10-15T07:00", "game_start_slot": 36}`
+		if err := json.Unmarshal([]byte(raw), &c); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		if c.GameStartTime != "1923-10-15T07:00" {
+			t.Errorf("GameStartTime = %q, want 1923-10-15T07:00", c.GameStartTime)
+		}
+	})
+	t.Run("序列化不再输出旧字段", func(t *testing.T) {
+		buf, err := json.Marshal(ScenarioContent{GameStartTime: "1923-10-15T07:00"})
+		if err != nil {
+			t.Fatalf("Marshal() error = %v", err)
+		}
+		if strings.Contains(string(buf), "game_start_slot") {
+			t.Errorf("序列化结果不应包含 game_start_slot: %s", buf)
+		}
+		if !strings.Contains(string(buf), `"game_start_time":"1923-10-15T07:00"`) {
+			t.Errorf("序列化结果缺少 game_start_time: %s", buf)
+		}
+	})
 }
 
 // TestScenario_DecodeData_DescriptionFallsBackToSetting 验证简介与背景设定合并后的

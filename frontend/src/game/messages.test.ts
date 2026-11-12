@@ -69,6 +69,14 @@ describe('messages', () => {
     expect(currentGameTime(null)).toBeNull()
   })
 
+  test('currentGameTime：RFC 时间点转成年月日，event 里的 RFC 时间同样生效', () => {
+    const room = RS.newRoom({ sessionId: 1, userId: 2 })
+    room.messages.push({ id: 1, kind: 'kp', meta: { time_point: '1924-09-03T21:30' } })
+    expect(currentGameTime(room)).toStrictEqual({ raw: '1924-09-03T21:30', label: '1924年9月3日 21:30', elapsed: '' })
+    room.messages.push({ id: 2, kind: 'event', meta: { events: [{ type: 'time', time: '1924-09-04T06:00' }] } })
+    expect(currentGameTime(room)?.label).toBe('1924年9月4日 06:00')
+  })
+
   test('currentGameTime：event 消息里的时间推进立即生效', () => {
     const room = RS.newRoom({ sessionId: 1, userId: 2 })
     room.messages.push({ id: 1, kind: 'kp', meta: { time_point: '第1天 08:00' } })

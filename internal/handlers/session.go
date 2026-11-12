@@ -464,9 +464,12 @@ func StartSession(c *gin.Context) {
 	}
 
 	// NOTE: 新开局的房间由 KP 驱动：空 Spotlight 表示 KP 持有发言权，开场段由房主调用 kp-turn 触发。
+	startTime := session.Scenario.Content.Data.GameStartTime
 	models.DB.Model(&session).Updates(map[string]any{
-		"status":    models.SessionStatusPlaying,
-		"spotlight": models.JSONField[*models.SpotlightState]{Data: &models.SpotlightState{}},
+		"status":          models.SessionStatusPlaying,
+		"spotlight":       models.JSONField[*models.SpotlightState]{Data: &models.SpotlightState{}},
+		"game_start_time": startTime,
+		"game_time":       startTime,
 	})
 
 	publishSessionChanged(session.ID, models.SessionStatusPlaying, "start")

@@ -514,7 +514,7 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 	r.emitProgress("normalize", "start", "规范化与收尾…")
 	normalizeOneshotDraft(&draft, r.req, r.architectModelName(), constraints, r.usedNPCNames, sessionID)
 	applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
-	alog.Debug("scripter stage done", "session", sessionID, "stage", "normalize", "name", draft.Name, "players", fmt.Sprintf("%d-%d", draft.MinPlayers, draft.MaxPlayers), "slot", draft.Content.GameStartSlot, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues), "endings", len(draft.Content.Endings))
+	alog.Debug("scripter stage done", "session", sessionID, "stage", "normalize", "name", draft.Name, "players", fmt.Sprintf("%d-%d", draft.MinPlayers, draft.MaxPlayers), "start_time", draft.Content.GameStartTime, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues), "endings", len(draft.Content.Endings))
 	r.emitProgress("normalize", "done", fmt.Sprintf("规范化完成：《%s》，准备入库", draft.Name))
 
 	if issues := validateDraftCompatibility(draft); len(issues) > 0 {
@@ -697,8 +697,8 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	} else if length := len([]rune(strings.TrimSpace(content.Intro))); length < 40 {
 		issues = append(issues, fmt.Sprintf("content.intro 过短（当前%d字），须写出至少两处能让人看见/听见/感受到的具体场景细节，不能只有一句抽象事实交代", length))
 	}
-	if content.GameStartSlot < 0 || content.GameStartSlot > 47 {
-		issues = append(issues, "content.game_start_slot 必须在0-47之间")
+	if _, err := models.ParseGameTime(content.GameStartTime); err != nil {
+		issues = append(issues, "content.game_start_time 必须是 YYYY-MM-DDTHH:MM 格式的本地时间(不带时区)")
 	}
 	if strings.TrimSpace(content.MapDescription) == "" {
 		issues = append(issues, "content.map_description 为空")

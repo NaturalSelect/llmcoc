@@ -1,17 +1,12 @@
 import type { Scenario } from '@/api/scenarioTypes'
 import type { ScenarioContentView, ScenarioKeeperAppendix, ScenarioMechanicStage } from '@/api/sessionTypes'
+import { parseTimePoint } from '@/game/roomState'
 
 export type Tone = 'seal' | 'ledger' | 'moss' | 'faint'
 
-// NOTE: 开局时间槽位 0-47，每槽 30 分钟。后端 game_start_slot 不带 omitempty，所以 0（00:00）是合法值，不能当「未设置」
-export function slotToTime(slot: number | string | null | undefined): string {
-  if (slot === null || slot === undefined || slot === '') return '未设置'
-  const n = Number(slot)
-  if (!Number.isFinite(n) || n < 0) return '未设置'
-  const whole = Math.floor(n)
-  const h = Math.floor(whole / 2)
-  const m = (whole % 2) * 30
-  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0')
+// NOTE: game_start_time 是 KP 自由书写的 YYYY-MM-DDTHH:MM，可能为空；展示格式与剧中时间点保持一致
+export function startTimeLabel(v: string | null | undefined): string {
+  return (v && parseTimePoint(v)?.label) || '未设置'
 }
 
 // NOTE: Scenario.content 在共享类型里是宽松 Record，渲染前统一收窄；content 不是对象时按空模组处理

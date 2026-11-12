@@ -104,6 +104,8 @@ describe('describeEvent', () => {
   test('场景：位置、时间、战斗与追逐', () => {
     expect(view({ type: 'location', character: '甲', location: '地下室' })).toBe('甲 前往 地下室')
     expect(view({ type: 'time', time: '第2天 08:30(距开局已过24h30m)' })).toBe('时间来到 第2天 08:30')
+    expect(view({ type: 'time', time: '1924-09-03T21:30' })).toBe('时间来到 1924年9月3日 21:30')
+    expect(view({ type: 'time', time: '黄昏时分' })).toBe('时间来到 黄昏时分')
     expect(view({ type: 'combat', op: 'start' })).toBe('战斗开始')
     expect(view({ type: 'combat', op: 'round', round: 2 })).toBe('战斗进入第 2 轮')
     expect(view({ type: 'chase', op: 'end' })).toBe('追逐结束')

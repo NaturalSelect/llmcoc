@@ -804,7 +804,7 @@ func TestDirectorBatchPolicyEncounterSequencing(t *testing.T) {
 		dramaturgDone := false
 		combat, chase, roundClosed := freshCombat(), (*models.ChaseState)(nil), false
 		reject := directorBatchPolicy(&imageDone, &dramaturgDone, &combat, &chase, &roundClosed, nil, func(string) {})([]llm.ToolCall{
-			policyCall("advance_time", `{"time_rounds":1,"time_reason":"等待"}`),
+			policyCall("advance_time", `{"game_time":"1924-09-03T10:00","time_reason":"等待"}`),
 		})
 		if reject == "" {
 			t.Error("战斗激活时advance_time应被拒")

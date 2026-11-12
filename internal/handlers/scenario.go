@@ -552,7 +552,7 @@ func DownloadScenarioTemplate(c *gin.Context) {
 		Content: models.ScenarioContent{
 			Setting:       "时代与地点背景",
 			Intro:         "具体年月日+时刻，调查员在具体场所遇到的开场情境，把要达成的那件事自然写进叙事句子里",
-			GameStartSlot: 36,
+			GameStartTime: "1924-09-03T18:00",
 			Scenes: []models.SceneData{{
 				ID:          "arrival",
 				Name:        "抵达",

@@ -166,7 +166,7 @@ type CharacterCard struct {
 	MadnessSymptom     string `gorm:"type:text" json:"madness_symptom"`            // 当前疯狂症状描述
 	MadnessDuration    int    `gorm:"default:0" json:"madness_duration"`           // 剩余轮数(临时性)或标记仍在发作(不定性)
 	DailySanLoss       int    `gorm:"default:0" json:"daily_san_loss"`             // 当日累计SAN损失(用于不定性疯狂判断)
-	DailySanLossDay    int    `gorm:"default:0" json:"daily_san_loss_day"`         // DailySanLoss对应的游戏内天数,天数变化时清零重新计数
+	DailySanLossDay    int    `gorm:"default:0" json:"daily_san_loss_day"`         // DailySanLoss对应的游戏内日期键(YYYYMMDD),日期变化时清零重新计数
 	CthulhuMythosSkill int    `gorm:"default:0" json:"cthulhu_mythos_skill"`       // 克苏鲁神话技能值(控制最大SAN上限)
 	// COC 伤亡状态
 	WoundState    string    `gorm:"size:20;default:'none'" json:"wound_state"` // none/major/dying/dead
@@ -195,7 +195,7 @@ type ScenarioContent struct {
 	ToneTags           []string        `json:"tone_tags"`
 	InvestFocus        string          `json:"invest_focus"`
 	Intro              string          `json:"intro"`
-	GameStartSlot      int             `json:"game_start_slot"`               // 开局时间槽位(0-47),每槽30分钟
+	GameStartTime      string          `json:"game_start_time"`               // 开局时间,RFC 3339 本地时间 YYYY-MM-DDTHH:MM,可为空
 	MapDescription     string          `json:"map_description"`               // 文字描述的场景地图,供KP感知空间关系
 	PlaythroughOutline string          `json:"playthrough_outline,omitempty"` // 游玩流程大纲（场景衔接、触发分支），供KP把握主线
 	Scenes             []SceneData     `json:"scenes"`                        //
@@ -441,7 +441,12 @@ type GameSession struct {
 	HasPassword   bool                 `gorm:"default:false" json:"has_password"`
 	EnableNSFW    bool                 `gorm:"default:false" json:"enable_nsfw"`
 	CreatedBy     uint                 `gorm:"not null" json:"created_by"`
-	TurnRound     int                  `gorm:"default:1" json:"turn_round"`
+	// NOTE: TurnRound 只是玩家声明(SessionTurnAction.Round)的批次键，不代表游戏时间；剧中时间见 GameTime。
+	TurnRound int `gorm:"default:1" json:"turn_round"`
+	// NOTE: GameStartTime / GameTime 都是 RFC 3339 本地时间(YYYY-MM-DDTHH:MM)，空串表示未设定；
+	// GameStartTime 用来算「距开局已过」，GameTime 是当前剧中时间，只能被 advance_time 往后推。
+	GameStartTime string `gorm:"size:32" json:"-"`
+	GameTime      string `gorm:"size:32" json:"-"`
 	WriterHistory JSONField[[]ChatMsg] `gorm:"type:text" json:"-"`
 	// NOTE: DramaturgHistory 是剧构顾问独立的多轮进度线，与WriterHistory同结构；
 	// 只存Director脱敏后的progress_note与顾问回复，不与messages/WriterHistory共享数据源。

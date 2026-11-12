@@ -64,12 +64,13 @@ func hasScenarioContent(c ScenarioContent) bool {
 		len(c.Endings) > 0 {
 		return true
 	}
-	return len(c.Scenes) > 0 || len(c.NPCs) > 0 || len(c.Clues) > 0 || c.GameStartSlot != 0
+	return len(c.Scenes) > 0 || len(c.NPCs) > 0 || len(c.Clues) > 0 || c.GameStartTime != ""
 }
 
 // UnmarshalJSON 兼容旧模组 JSON：
 //  1. clues 旧格式为 []string（形如"[真实]xxx"），转成 []ClueData；
-//  2. 旧的 win_condition/lose_condition/partial_wins 自动迁移为 Endings。
+//  2. 旧的 win_condition/lose_condition/partial_wins 自动迁移为 Endings；
+//  3. 旧的 game_start_slot(0-47，每槽30分钟)用 setting 里的年月日拼成 game_start_time。
 //
 // 新格式（clues 为对象数组、endings 为数组）直接解析；旧字段不再序列化输出。
 func (c *ScenarioContent) UnmarshalJSON(data []byte) error {
@@ -80,6 +81,7 @@ func (c *ScenarioContent) UnmarshalJSON(data []byte) error {
 		WinCondition  string          `json:"win_condition"`
 		LoseCondition string          `json:"lose_condition"`
 		PartialWins   []string        `json:"partial_wins"`
+		GameStartSlot *int            `json:"game_start_slot"`
 	}{alias: (*alias)(c)}
 	if err := json.Unmarshal(data, aux); err != nil {
 		return err
@@ -90,6 +92,10 @@ func (c *ScenarioContent) UnmarshalJSON(data []byte) error {
 	// 旧结局字段迁移：仅在新 endings 缺省时回填，避免覆盖新数据
 	if len(c.Endings) == 0 {
 		c.Endings = legacyEndings(aux.WinCondition, aux.LoseCondition, aux.PartialWins)
+	}
+	// 旧开局槽位迁移：仅在新字段缺省时回填；setting 里没有日期就保持为空，不编造日期。
+	if c.GameStartTime == "" && aux.GameStartSlot != nil {
+		c.GameStartTime = LegacyGameStartTime(c.Setting, *aux.GameStartSlot)
 	}
 	return nil
 }

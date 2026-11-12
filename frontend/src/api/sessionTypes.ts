@@ -152,7 +152,7 @@ export interface ScenarioMechanic {
 export interface ScenarioContentView {
   setting?: string
   intro?: string
-  game_start_slot?: number | string | null
+  game_start_time?: string | null
   map_description?: string
   playthrough_outline?: string
   scenes?: ScenarioScene[] | null

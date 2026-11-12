@@ -264,7 +264,7 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 2, Steps: 2, ElapsedMs: 1200, Director: directorChain, Items: []agent.Output{
 			{Kind: agent.OutputWriter, Text: "描述走廊", NSFW: true, CallID: "call_w1"},
 			{Kind: agent.OutputImage, Image: &agent.ImagePromptRequest{Prompt: "a dim corridor"}},
-			{Kind: agent.OutputKP, Text: "你站在走廊里。", TimePoint: "第1天 08:00"},
+			{Kind: agent.OutputKP, Text: "你站在走廊里。", TimePoint: "1924-09-03T08:00"},
 		}})
 		publish(t, gctx, agent.RoundOutputs{Floor: 1, Round: 3, Steps: 1, ElapsedMs: 10, Items: []agent.Output{
 			{Kind: agent.OutputWriter, Text: "描述门后"},
@@ -328,7 +328,7 @@ func TestFloor_PublishesRoundsAsSeparateMessages(t *testing.T) {
 	if msgs[1].Content != "你站在走廊里。" || strings.Contains(msgs[1].Content, "KP:") {
 		t.Errorf("kp content = %q, want the plain reply", msgs[1].Content)
 	}
-	if meta := msgs[1].Meta.Data; meta == nil || meta.Dice != "" || meta.TimePoint != "第1天 08:00" || len(meta.Options) != 0 {
+	if meta := msgs[1].Meta.Data; meta == nil || meta.Dice != "" || meta.TimePoint != "1924-09-03T08:00" || len(meta.Options) != 0 {
 		t.Errorf("kp meta = %+v", meta)
 	}
 	if meta := msgs[0].Meta.Data; meta == nil || !meta.NSFW || meta.CallID != "call_w1" {

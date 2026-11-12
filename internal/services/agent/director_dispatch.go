@@ -234,13 +234,13 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 			}
 		}
 
-		// RULE 4: advance_time 与战斗/追逐互斥——战斗/追逐轮以秒计，与30分钟/轮的
-		// 时间推进语义冲突。
+		// RULE 4: advance_time 与战斗/追逐互斥——战斗/追逐轮以秒计，不逐轮推进时间，
+		// 整场冲突收束后按总耗时一次推进。
 		if combatActive || chaseActive {
 			for _, call := range calls {
 				if ToolCallType(call.Name) == ToolAdvanceTime {
 					emitProgress(progressThinking)
-					return "SYSTEM REJECT: 战斗/追逐进行中不能调用advance_time——战斗/追逐轮以秒计，与30分钟/轮的时间推进语义冲突。"
+					return "SYSTEM REJECT: 战斗/追逐进行中不能调用advance_time——战斗/追逐轮以秒计，不要逐轮推进时间；整场冲突结束后，按总耗时一次推进到结束时的绝对时间。"
 				}
 			}
 		}
@@ -413,19 +413,18 @@ func directorBatchPolicy(imageGeneratedThisTurn *bool, dramaturgConsultedThisTur
 // "最多推进一个战斗/追逐回合"的门闩，同时供 directorBatchPolicy 判断本回合是否
 // 已经结算完毕。
 type directorDispatchState struct {
-	sid                uint
-	gctx               *GameContext
-	handles            map[models.AgentRole]agentHandle
-	tempNPCs           *[]models.SessionNPC
-	timeAdvancedInTurn *bool
-	combat             **models.CombatState
-	chase              **models.ChaseState
-	roundClosed        *bool
-	outbox             *[]Output
-	events             *[]models.GameEvent
-	kpStreak           *int
-	ask                **AskResult
-	emitProgress       func(string)
+	sid          uint
+	gctx         *GameContext
+	handles      map[models.AgentRole]agentHandle
+	tempNPCs     *[]models.SessionNPC
+	combat       **models.CombatState
+	chase        **models.ChaseState
+	roundClosed  *bool
+	outbox       *[]Output
+	events       *[]models.GameEvent
+	kpStreak     *int
+	ask          **AskResult
+	emitProgress func(string)
 }
 
 // joinToolResults 把一次 Action.Execute 的 []ToolResult 折成原生协议里一个 tool_call
@@ -459,19 +458,18 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 		hasEnd := false
 
 		actx := ActionContext{
-			Ctx:                ctx,
-			GCtx:               st.gctx,
-			Sid:                st.sid,
-			Handles:            st.handles,
-			TempNPCs:           st.tempNPCs,
-			HasEnd:             &hasEnd,
-			TimeAdvancedInTurn: st.timeAdvancedInTurn,
-			Combat:             st.combat,
-			Chase:              st.chase,
-			RoundClosed:        st.roundClosed,
-			Outbox:             st.outbox,
-			KPStreak:           st.kpStreak,
-			Ask:                st.ask,
+			Ctx:         ctx,
+			GCtx:        st.gctx,
+			Sid:         st.sid,
+			Handles:     st.handles,
+			TempNPCs:    st.tempNPCs,
+			HasEnd:      &hasEnd,
+			Combat:      st.combat,
+			Chase:       st.chase,
+			RoundClosed: st.roundClosed,
+			Outbox:      st.outbox,
+			KPStreak:    st.kpStreak,
+			Ask:         st.ask,
 		}
 
 		decoded := make([]ToolCall, len(calls))

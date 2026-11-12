@@ -13,29 +13,20 @@ import {
   phaseLabel,
   playersLabel,
   scenarioContent,
-  slotToTime,
   splitTags,
+  startTimeLabel,
 } from './scenarioFormat'
 
-describe('slotToTime', () => {
-  test('每槽 30 分钟，补零', () => {
-    expect(slotToTime(0)).toBe('00:00')
-    expect(slotToTime(1)).toBe('00:30')
-    expect(slotToTime(19)).toBe('09:30')
-    expect(slotToTime(47)).toBe('23:30')
+describe('startTimeLabel', () => {
+  test('有值时转成年月日，月日去前导零', () => {
+    expect(startTimeLabel('1924-09-03T21:30')).toBe('1924年9月3日 21:30')
+    expect(startTimeLabel('1925-12-25T00:00')).toBe('1925年12月25日 00:00')
   })
 
-  test('缺省值显示未设置，0 不算缺省', () => {
-    expect(slotToTime(undefined)).toBe('未设置')
-    expect(slotToTime(null)).toBe('未设置')
-    expect(slotToTime('')).toBe('未设置')
-    expect(slotToTime(0)).not.toBe('未设置')
-  })
-
-  test('数字字符串可用，非法值不会输出 NaN', () => {
-    expect(slotToTime('5')).toBe('02:30')
-    expect(slotToTime('abc')).toBe('未设置')
-    expect(slotToTime(-1)).toBe('未设置')
+  test('空字符串、null、undefined 显示未设置', () => {
+    expect(startTimeLabel('')).toBe('未设置')
+    expect(startTimeLabel(null)).toBe('未设置')
+    expect(startTimeLabel(undefined)).toBe('未设置')
   })
 })
 

@@ -166,7 +166,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | --- | --- | --- |
 | `options` | `ask` | 推荐行动，KP 只在被点名的玩家问过建议时才给，最多 2 条 |
 | `dice` | `kp`、`ask` | 旧数据：本拍的骰子结果文字。新消息不再带它，骰子改由 `event` 消息给出 |
-| `time_point` | `kp`、`ask` | 剧中时间点 |
+| `time_point` | `kp`、`ask` | 剧中时间点，RFC 3339 本地时间 `YYYY-MM-DDTHH:MM`，不带时区和秒，例如 `1924-09-03T21:30`。旧消息可能是 `第N天 HH:MM(距开局已过…)` |
 | `ask` | `ask` | `{"user_ids": [...], "names": [...]}`，被点名的玩家 |
 | `ended` | `kp` | 为 true 表示这条回复同时结束了游戏 |
 | `auto` | `writer` | 由后端兜底自动补出，不是 KP 显式调用 |
@@ -184,7 +184,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | `item` | `character`、`category`、`op`、`name`、`detail` | `category` 取 `inventory`/`spell`/`monster`/`relation`/`asset`；`op` 取 `add`/`remove`/`change`，`change` 时 `detail` 是“旧 → 新” |
 | `madness` | `character`、`state`、`symptom`、`duration` | `state` 取 `temporary`/`indefinite`/`permanent`，解除时为 `none` |
 | `location` | `character`、`location` | 调查员移动到新地点 |
-| `time` | `time` | 推进后的剧中时间点，格式同 `time_point`，不带推进理由 |
+| `time` | `time` | 推进后的剧中时间点，格式同 `time_point`，不带推进理由；后端拒绝早于当前时间的推进 |
 | `combat` / `chase` | `op`、`round` | `op` 取 `start`/`end`/`round`，`round` 时带新的轮次。不带参与者和结束理由 |
 | `coins` | `character`、`amount` | 结算发放的金币，只出现在结局那一轮 |
 | `backstory` | `character`、`detail` | 房间开启经历改写且胜利时，存活调查员改写后的个人经历全文 |

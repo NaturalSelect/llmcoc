@@ -146,7 +146,7 @@ type ToolCall struct {
 	MadnessType   string                 `json:"madness_type"`   // manage_madness trigger: 疯狂类型 temporary/indefinite/permanent,由Director按规则判定
 	Direction     string                 `json:"direction"`      // write: 叙事方向(供Writer参考)
 	ProgressNote  string                 `json:"progress_note"`  // consult_dramaturg: 脱敏后的剧情进展报告
-	TimeRounds    int                    `json:"time_rounds"`    // advance_time: 推进的回合数
+	GameTime      string                 `json:"game_time"`      // advance_time: 推进后的绝对时间(YYYY-MM-DDTHH:MM)
 	TimeReason    string                 `json:"time_reason"`    // advance_time: 原因(如"睡觉"/"吃饭")
 	Keyword       string                 `json:"keyword"`        // query_clues: 已废弃(保留仅为兼容旧输出)
 	SessionMemory string                 `json:"session_memory"` // update_session_memory: 会话记忆内容(整体覆盖,非追加)

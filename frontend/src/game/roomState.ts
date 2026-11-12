@@ -149,6 +149,8 @@ const STATUSES: readonly string[] = ['lobby', 'playing', 'ended']
 const DICE_RE = /^(.*?)鉴定[:：]\s*(\S+)(?:\s*难度[:：]\s*([^\s(（]+))?/
 const DICE_HIDDEN_RE = /[(（]\s*暗骰\s*[)）]/
 const TIME_POINT_RE = /^第(\d+)天\s*(\d{1,2}:\d{2})(?:[(（](.*?)[)）])?/
+// NOTE: 新消息的时间点是 KP 书写的本地时间 YYYY-MM-DDTHH:MM（也容忍空格分隔、带秒），历史消息仍是上面的旧格式
+const RFC_TIME_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/
 
 export function newRoom(opts?: NewRoomOptions): Room {
   const o = opts || {}
@@ -523,6 +525,10 @@ export function parseTimePoint(input: unknown): TimePoint | null {
   if (input == null) return null
   const raw = String(input).trim()
   if (!raw) return null
+  const rfc = raw.match(RFC_TIME_RE)
+  if (rfc) {
+    return { raw, label: `${rfc[1]}年${Number(rfc[2])}月${Number(rfc[3])}日 ${rfc[4]}:${rfc[5]}`, elapsed: '' }
+  }
   const parsed = raw.match(TIME_POINT_RE)
   if (!parsed) return { raw, label: raw, elapsed: '' }
   return {

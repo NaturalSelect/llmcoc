@@ -293,8 +293,8 @@ func TestSceneAndMadnessEvents(t *testing.T) {
 	initAgentTestDB(t)
 	players := eventTestPlayers()
 	actx := eventTestActx(players)
-	advanced := false
-	actx.TimeAdvancedInTurn = &advanced
+	actx.GCtx.Session.GameStartTime = "1924-09-03T08:00"
+	actx.GCtx.Session.GameTime = "1924-09-03T08:00"
 
 	evs := onlyResultEvents(t, updateLocationAction{}.Execute(ToolCall{CharacterName: "甲", NewLocation: "地下室"}, actx))
 	if len(evs) != 1 || evs[0].Type != "location" || evs[0].Location != "地下室" {
@@ -307,8 +307,8 @@ func TestSceneAndMadnessEvents(t *testing.T) {
 	if len(evs) != 1 || evs[0].Field != "armor" || *evs[0].From != 0 || *evs[0].To != 2 {
 		t.Errorf("armor events = %+v", evs)
 	}
-	evs = onlyResultEvents(t, advanceTimeAction{}.Execute(ToolCall{TimeRounds: 2, TimeReason: "秘密仪式开始"}, actx))
-	if len(evs) != 1 || evs[0].Type != "time" || !strings.HasPrefix(evs[0].Time, "第1天 01:00") || strings.Contains(evs[0].Time, "仪式") {
+	evs = onlyResultEvents(t, advanceTimeAction{}.Execute(ToolCall{GameTime: "1924-09-03T10:00", TimeReason: "秘密仪式开始"}, actx))
+	if len(evs) != 1 || evs[0].Type != "time" || evs[0].Time != "1924-09-03T10:00" || strings.Contains(evs[0].Time, "仪式") {
 		t.Errorf("time events = %+v", evs)
 	}
 	evs = onlyResultEvents(t, manageMadnessAction{}.Execute(ToolCall{CharacterName: "甲", Operate: "trigger", MadnessType: "temporary"}, actx))
@@ -319,6 +319,103 @@ func TestSceneAndMadnessEvents(t *testing.T) {
 	if len(evs) != 1 || evs[0].State != "none" {
 		t.Errorf("madness clear events = %+v", evs)
 	}
+}
+
+func TestAdvanceTime(t *testing.T) {
+	newCtx := func(t *testing.T, start, now string) ActionContext {
+		t.Helper()
+		initAgentTestDB(t)
+		sess := models.GameSession{Name: "r", Status: models.SessionStatusPlaying, TurnRound: 3, GameStartTime: start, GameTime: now}
+		if err := models.DB.Create(&sess).Error; err != nil {
+			t.Fatalf("create session: %v", err)
+		}
+		actx := eventTestActx(nil)
+		actx.GCtx.Session = sess
+		return actx
+	}
+	stored := func(t *testing.T, id uint) models.GameSession {
+		t.Helper()
+		var s models.GameSession
+		if err := models.DB.First(&s, id).Error; err != nil {
+			t.Fatalf("load session: %v", err)
+		}
+		return s
+	}
+
+	t.Run("推进写库且不动回合键与玩家声明", func(t *testing.T) {
+		actx := newCtx(t, "1924-09-03T08:00", "1924-09-03T08:00")
+		id := actx.GCtx.Session.ID
+		models.DB.AutoMigrate(&models.SessionTurnAction{})
+		models.DB.Create(&models.SessionTurnAction{SessionID: id, Round: 1, UserID: 7, Username: "甲", ActionSummary: "我推门"})
+
+		res := advanceTimeAction{}.Execute(ToolCall{GameTime: "1924-09-03 21:30:45", TimeReason: "赶路"}, actx)
+		if len(res) != 1 || strings.Contains(res[0].Result, "SYSTEM REJECT") {
+			t.Fatalf("results = %+v", res)
+		}
+		if !strings.Contains(res[0].Result, "1924-09-03T21:30") || !strings.Contains(res[0].Result, "13h30m") {
+			t.Errorf("result should show normalized time and elapsed: %q", res[0].Result)
+		}
+		got := stored(t, id)
+		if got.GameTime != "1924-09-03T21:30" || got.TurnRound != 3 {
+			t.Errorf("stored game_time=%q turn_round=%d, want 1924-09-03T21:30 and 3", got.GameTime, got.TurnRound)
+		}
+		if actx.GCtx.Session.GameTime != "1924-09-03T21:30" {
+			t.Errorf("in-memory game_time = %q", actx.GCtx.Session.GameTime)
+		}
+		var actions int64
+		models.DB.Model(&models.SessionTurnAction{}).Where("session_id = ?", id).Count(&actions)
+		if actions != 1 {
+			t.Errorf("turn actions = %d, want 1 untouched", actions)
+		}
+	})
+
+	rejects := map[string]string{
+		"格式非法":  "黄昏时分",
+		"带时区Z":  "1924-09-03T21:30Z",
+		"带时区偏移": "1924-09-03T21:30+08:00",
+		"时间倒退":  "1924-09-03T07:59",
+		"空字符串":  "",
+	}
+	for name, input := range rejects {
+		t.Run("拒绝/"+name, func(t *testing.T) {
+			actx := newCtx(t, "1924-09-03T08:00", "1924-09-03T08:00")
+			res := advanceTimeAction{}.Execute(ToolCall{GameTime: input, TimeReason: "x"}, actx)
+			if len(res) != 1 || !strings.HasPrefix(res[0].Result, "SYSTEM REJECT") || len(res[0].Events) != 0 {
+				t.Fatalf("want SYSTEM REJECT without events, got %+v", res)
+			}
+			if got := stored(t, actx.GCtx.Session.ID); got.GameTime != "1924-09-03T08:00" {
+				t.Errorf("rejected call changed game_time to %q", got.GameTime)
+			}
+		})
+	}
+
+	t.Run("倒退被拒时提示当前时间", func(t *testing.T) {
+		actx := newCtx(t, "1924-09-03T08:00", "1924-09-03T12:00")
+		res := advanceTimeAction{}.Execute(ToolCall{GameTime: "1924-09-03T11:00"}, actx)
+		if len(res) != 1 || !strings.Contains(res[0].Result, "1924-09-03T12:00") {
+			t.Errorf("reject should name current time: %+v", res)
+		}
+	})
+
+	t.Run("原地不动允许", func(t *testing.T) {
+		actx := newCtx(t, "1924-09-03T08:00", "1924-09-03T12:00")
+		res := advanceTimeAction{}.Execute(ToolCall{GameTime: "1924-09-03T12:00"}, actx)
+		if len(res) != 1 || strings.Contains(res[0].Result, "SYSTEM REJECT") {
+			t.Errorf("equal time should be accepted: %+v", res)
+		}
+	})
+
+	t.Run("未设定时间时接受并同时写入开局时间", func(t *testing.T) {
+		actx := newCtx(t, "", "")
+		res := advanceTimeAction{}.Execute(ToolCall{GameTime: "1924-09-03T18:00", TimeReason: "设定"}, actx)
+		if len(res) != 1 || strings.Contains(res[0].Result, "SYSTEM REJECT") {
+			t.Fatalf("results = %+v", res)
+		}
+		got := stored(t, actx.GCtx.Session.ID)
+		if got.GameStartTime != "1924-09-03T18:00" || got.GameTime != "1924-09-03T18:00" {
+			t.Errorf("start/now = %q/%q, want both 1924-09-03T18:00", got.GameStartTime, got.GameTime)
+		}
+	})
 }
 
 func TestEventMessagesRenderOnlyPublicDiceForLLM(t *testing.T) {

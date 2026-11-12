@@ -49,7 +49,7 @@ func TestValidateDraftCompatibility_SettingDate(t *testing.T) {
 				KeeperAppendix: &models.KeeperAppendix{CoreTruth: "KP独有的内部真相：这是用于测试的占位真相文本，用来满足core_truth的长度校验要求，不作为实际剧情内容使用。"},
 				Setting:        setting,
 				Intro:          "1924年9月3日傍晚六点，你们抵达镇图书馆一层大厅，可以四处走走，清点整理新到的捐赠藏书。",
-				GameStartSlot:  16,
+				GameStartTime:  "1923-10-15T08:00",
 				MapDescription: "【文字地图】A→B",
 				Scenes: []models.SceneData{
 					{ID: "a", Name: "场景A", Description: "描述"},
@@ -110,6 +110,40 @@ func TestValidateDraftCompatibility_SettingDate(t *testing.T) {
 			t.Errorf("setting 为空时不应额外报日期缺失（已被空值检查覆盖），实际 issues：%v", issues)
 		}
 	})
+
+	t.Run("开局时间格式校验", func(t *testing.T) {
+		hasStartTimeIssue := func(start string) bool {
+			draft := base("1923年10月15日，初秋的小镇，你们受邀前来。")
+			draft.Content.GameStartTime = start
+			for _, issue := range validateDraftCompatibility(draft) {
+				if strings.Contains(issue, "game_start_time") {
+					return true
+				}
+			}
+			return false
+		}
+		for _, ok := range []string{"1923-10-15T08:00", "1923-10-15 08:00", "1923-10-15T08:00:30"} {
+			if hasStartTimeIssue(ok) {
+				t.Errorf("合法开局时间 %q 不应报问题", ok)
+			}
+		}
+		for _, bad := range []string{"", "1923-10-15", "1923-10-15T08:00Z", "1923-10-15T08:00+08:00", "清晨", "36"} {
+			if !hasStartTimeIssue(bad) {
+				t.Errorf("非法开局时间 %q 应报 game_start_time 问题", bad)
+			}
+		}
+	})
+}
+
+// TestOneshotResultExampleStartTimeValid 验证内置示例的开局时间合法，且日期与 setting 一致（示例作为模型参考）。
+func TestOneshotResultExampleStartTimeValid(t *testing.T) {
+	start := oneshotResultExample.Content.GameStartTime
+	if _, err := models.ParseGameTime(start); err != nil {
+		t.Fatalf("示例开局时间 %q 不合法: %v", start, err)
+	}
+	if !strings.HasPrefix(start, "1924-09-03") {
+		t.Errorf("示例开局时间 %q 应与 setting 里的 1924年9月3日 一致", start)
+	}
 }
 
 // TestOneshotResultExampleSettingHasDate 验证内置示例 setting 满足日期要求（示例作为模型参考）。
@@ -186,7 +220,7 @@ func TestValidateDraftCompatibility_Timeline(t *testing.T) {
 				KeeperAppendix: &models.KeeperAppendix{CoreTruth: "KP独有的内部真相：这是用于测试的占位真相文本，用来满足core_truth的长度校验要求，不作为实际剧情内容使用。"},
 				Setting:        "1923年10月15日，初秋的小镇，你们受邀前来。",
 				Intro:          "1924年9月3日傍晚六点，你们抵达镇图书馆一层大厅，可以四处走走，清点整理新到的捐赠藏书。",
-				GameStartSlot:  16,
+				GameStartTime:  "1923-10-15T08:00",
 				MapDescription: "【文字地图】A→B",
 				PlaythroughOutline: strings.Repeat(
 					"开场后先进入场景A，与NPC甲交谈可得线索一，出口通向场景B。", 5,

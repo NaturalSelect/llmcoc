@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ScenarioContentView } from '@/api/sessionTypes'
-import { listLength, slotToTime } from './scenarioFormat'
+import { listLength, startTimeLabel } from './scenarioFormat'
 
 const props = defineProps<{ content: ScenarioContentView }>()
 
 const stats = computed(() => [
-  { label: '开局时间', value: slotToTime(props.content.game_start_slot) },
+  { label: '开局时间', value: startTimeLabel(props.content.game_start_time) },
   { label: '场景数', value: listLength(props.content.scenes) },
   { label: 'NPC 数', value: listLength(props.content.npcs) },
   { label: '线索数', value: listLength(props.content.clues) },

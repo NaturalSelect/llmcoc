@@ -38,7 +38,6 @@ type floorRun struct {
 	roundClosed     bool
 	dramaturgDone   bool
 	imageThisBeat   bool
-	timeAdvanced    bool
 	combat          *models.CombatState
 	chase           *models.ChaseState
 	published       int
@@ -180,7 +179,7 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 
 	closesBeat := len(kps) > 0 || len(asks) > 0
 	if closesBeat {
-		timePoint := formatGameTime(f.gctx.Session.TurnRound, scenarioStartSlot(f.gctx.Session))
+		timePoint := f.gctx.Session.GameTime
 		for i := range items {
 			if items[i].Kind != OutputKP && items[i].Kind != OutputAsk {
 				continue
@@ -301,19 +300,18 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	kpMsgs := cm.Build(buildKPTurnOpening(gctx, floor, tempNPCs, balanceRules, fr.combat, fr.chase)...)
 
 	st := directorDispatchState{
-		sid:                sid,
-		gctx:               &gctx,
-		handles:            handles,
-		tempNPCs:           &tempNPCs,
-		timeAdvancedInTurn: &fr.timeAdvanced,
-		combat:             &fr.combat,
-		chase:              &fr.chase,
-		roundClosed:        &fr.roundClosed,
-		outbox:             &fr.outbox,
-		events:             &fr.events,
-		kpStreak:           &fr.kpStreak,
-		ask:                &fr.ask,
-		emitProgress:       emitProgress,
+		sid:          sid,
+		gctx:         &gctx,
+		handles:      handles,
+		tempNPCs:     &tempNPCs,
+		combat:       &fr.combat,
+		chase:        &fr.chase,
+		roundClosed:  &fr.roundClosed,
+		outbox:       &fr.outbox,
+		events:       &fr.events,
+		kpStreak:     &fr.kpStreak,
+		ask:          &fr.ask,
+		emitProgress: emitProgress,
 	}
 
 	round := 0
@@ -346,7 +344,7 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	cm.CommitTail(gctx.Session.TurnRound, finalMsgs)
 
 	natural := loopErr == nil
-	if (natural || fr.published > 0) && !fr.timeAdvanced {
+	if natural || fr.published > 0 {
 		clearConsumedTurnActions(gctx, fr.combat, fr.chase)
 	}
 	if natural {

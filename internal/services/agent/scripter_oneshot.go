@@ -68,7 +68,7 @@ const oneshotDraftJSONSchema = `{
 				"tone_tags": {"type": "array", "items": {"type": "string"}, "description": "必须逐字等于diversity_constraints.tone_tags"},
 				"invest_focus": {"type": "string", "description": "调查入口的简短概括；除非must_fix明确要求，否则保持previous_draft原值"},
 				"intro": {"type": "string", "description": "以完整叙事散文呈现调查员到场情境与基本理由，须先自然写出具体场所、具体年月日+时刻、要达成的那件事，再写出至少两处能让人看见/听见/感受到的具体场景细节（不是空泛概括）；四项须自然融入叙事句子，禁止另起一行、禁止使用【】或地点/时间/目标式标签罗列；不列出、不推荐、不暗示任何具体行动或下一步"},
-				"game_start_slot": {"type": "integer", "description": "0-47，每槽30分钟；未写明具体时刻时取16"},
+				"game_start_time": {"type": "string", "description": "开局时间，RFC 3339 本地时间，格式 YYYY-MM-DDTHH:MM，不带时区；年月日须与setting、intro一致，时刻须与intro里写的时刻一致；未写明具体时刻时取08:00"},
 				"map_description": {"type": "string", "description": "按地点关系概括的文字地图，体现可回访、可交叉验证的调查网络"},
 				"playthrough_outline": {"type": "string", "description": "由编译器依据全文脉络归纳的逐场景流程大纲，每个场景写明进入条件、可接触人物、可得发现、通向哪里与分支"},
 				"mythos_anchor": {"type": "string", "description": "必须逐字等于mythos_anchor输入"},
@@ -187,7 +187,7 @@ const oneshotDraftJSONSchema = `{
 					}
 				}
 			},
-			"required": ["setting", "tone_tags", "invest_focus", "intro", "game_start_slot", "map_description", "playthrough_outline", "mythos_anchor", "scenes", "npcs", "clues", "endings", "keeper_appendix"]
+			"required": ["setting", "tone_tags", "invest_focus", "intro", "game_start_time", "map_description", "playthrough_outline", "mythos_anchor", "scenes", "npcs", "clues", "endings", "keeper_appendix"]
 		}
 	},
 	"required": ["reward_concept", "name", "author", "tags", "min_players", "max_players", "difficulty", "content"]
@@ -240,7 +240,7 @@ var oneshotResultExample = OneshotResult{
 		ToneTags:       []string{"forbidden-knowledge", "cosmic-dread", "occult-noir"},
 		InvestFocus:    "artifact_theft",
 		Intro:          "1924年9月3日，傍晚六点的钟声刚敲过，你们如约走进镇图书馆一层大厅，来帮着整理清点一批新到的捐赠藏书。馆员在前台核对着今天的编目单，大厅里只有翻纸的声音。",
-		GameStartSlot:  36,
+		GameStartTime:  "1924-09-03T18:00",
 		MapDescription: "【文字地图】图书馆→书架区↔档案室↔墓地。",
 		PlaythroughOutline: "开场：调查员受邀到图书馆大厅协助编目，馆员提及近期失窃。" +
 			"图书馆大厅（入口条件：开局即可进入；可接触NPC：守墓人Henrik；可得线索：被取走的书出自同一捐赠者；出口：查阅捐赠登记签收单可解锁书架区细节，安抚或盘问Henrik可解锁档案室话题）→" +
@@ -392,7 +392,7 @@ func repairSystemPrompt() string {
     "tone_tags": ["必须等于diversity_constraints.tone_tags"],
     "invest_focus": "调查入口的简短概括；除非must_fix明确要求，否则保持previous_draft原值",
     "intro": "以叙事散文呈现入场情境，须先自然写出地点/具体年月日+时刻/要达成的那件事，再写出至少两处具体场景细节；禁止用【】或地点/时间/目标式标签另起一行罗列；不列出、不推荐、不暗示任何具体行动或下一步",
-    "game_start_slot": 16,
+    "game_start_time": "1923-10-15T08:00",
     "map_description": "文字地图",
     "playthrough_outline": "逐场景流程大纲：进入条件/可接触人物/可得发现/通向哪里与分支",
     "mythos_anchor": "已确认的COC7元素全称，不得更换",
@@ -862,18 +862,19 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 	if strings.TrimSpace(draft.Difficulty) == "" {
 		draft.Difficulty = firstNonEmpty(req.Difficulty, "normal")
 	}
-	if draft.Content.GameStartSlot < 0 {
-		draft.Content.GameStartSlot = 0
-	}
-	if draft.Content.GameStartSlot > 47 {
-		draft.Content.GameStartSlot = 47
-	}
 	if strings.TrimSpace(draft.Content.Setting) == "" {
 		draft.Content.Setting = fmt.Sprintf(
 			"%s。这是平常的一天，你们因各自的缘由来到此地，眼前的一切安静而寻常，尚无任何异样。",
 			constraints.Era,
 		)
 		alog.Debug("normalize filled setting", "session", sessionID)
+	}
+	// NOTE: 必须在 setting 兜底之后处理：模型给的开局时间不合法时，用 setting 里的年月日加 08:00 回退。
+	if normalized, err := models.NormalizeGameTime(draft.Content.GameStartTime); err == nil {
+		draft.Content.GameStartTime = normalized
+	} else {
+		draft.Content.GameStartTime = models.LegacyGameStartTime(draft.Content.Setting, 16)
+		alog.Debug("normalize reset game_start_time", "session", sessionID, "fallback", draft.Content.GameStartTime)
 	}
 	// 简介与背景设定已合并：description 不再由模型单独产出，统一取 content.setting；
 	// setting 本身仍为空的极端情况下才使用固定兜底文案。
@@ -890,11 +891,13 @@ func normalizeOneshotDraft(draft *ScenarioDraft, req ScenarioCreationRequest, au
 		if dateStr == "" {
 			dateStr = "当天"
 		}
-		hour := draft.Content.GameStartSlot / 2
-		minute := (draft.Content.GameStartSlot % 2) * 30
+		clock := ""
+		if t, err := models.ParseGameTime(draft.Content.GameStartTime); err == nil {
+			clock = fmt.Sprintf("%d点%02d分", t.Hour(), t.Minute())
+		}
 		draft.Content.Intro = fmt.Sprintf(
-			"%s%d点%02d分，光线平常，人声细碎，你们按各自的缘由抵达此地，只等着弄清此行要处理的这件事。",
-			dateStr, hour, minute,
+			"%s%s，光线平常，人声细碎，你们按各自的缘由抵达此地，只等着弄清此行要处理的这件事。",
+			dateStr, clock,
 		)
 		alog.Debug("normalize filled intro", "session", sessionID)
 	}

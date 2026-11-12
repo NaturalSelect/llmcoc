@@ -19,7 +19,7 @@ const (
 // NPC 没有位置记录时不列名单，谁在场以 KP 的描述为准。
 func buildNPCScene(gctx GameContext, npcName string, tempNPCs []models.SessionNPC) string {
 	var sb strings.Builder
-	sb.WriteString("时间:" + formatGameTime(gctx.Session.TurnRound, scenarioStartSlot(gctx.Session)) + "\n")
+	sb.WriteString("时间:" + describeGameTime(gctx.Session.GameStartTime, gctx.Session.GameTime) + "\n")
 
 	loc := ""
 	for _, npc := range tempNPCs {

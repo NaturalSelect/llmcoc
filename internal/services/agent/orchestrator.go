@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
@@ -419,50 +420,37 @@ func unresolvedEncounterUserIDs(players []models.SessionPlayer, combat *models.C
 	return keep
 }
 
-// formatGameTime converts an absolute round number to a human-readable game time string.
-// Each round = 30 minutes; 48 rounds = 1 day.
-// startSlot is the scenario start slot in [0,47], where each slot is 30 minutes.
-// Default start slot is 16 (08:00) when input is out of range.
-// Also includes elapsed time since game start so the KP can track time-sensitive deadlines.
-func formatGameTime(round int, startSlot int) string {
-	if round <= 0 {
-		round = 1
+// gameTimeUnset 是 <now> 里剧中时间尚未设定时的提示，KP 据此在第一批工具调用里用 advance_time 设定。
+const gameTimeUnset = "未设定——请在本周期第一批工具调用里用advance_time设定绝对时间(YYYY-MM-DDTHH:MM)"
+
+// describeGameTime 把剧中时间渲染给 LLM：当前时间、星期，以及距开局已过多久。
+// 「距开局已过」只给 LLM 看，玩家端的 time_point 和 time 事件里只有纯时间字符串。
+func describeGameTime(start, now string) string {
+	nowT, err := models.ParseGameTime(now)
+	if err != nil {
+		return gameTimeUnset
 	}
-	if startSlot < 0 || startSlot > 47 {
-		startSlot = 16 // 08:00
+	desc := fmt.Sprintf("%s(%s", nowT.Format(models.GameTimeLayout), chineseWeekday(nowT.Weekday()))
+	if startT, err := models.ParseGameTime(start); err == nil {
+		desc += "，距开局已过" + formatGameDuration(nowT.Sub(startT))
 	}
-	zi := round - 1 // zero-indexed
-	day := (zi+startSlot)/48 + 1
-	slot := (zi + startSlot) % 48
-	hour := slot / 2
-	min := (slot % 2) * 30
-	// Elapsed time since game start (round 1 = 0 elapsed).
-	elapsedMins := zi * 30
-	elapsedH := elapsedMins / 60
-	elapsedM := elapsedMins % 60
-	var elapsed string
-	if elapsedH > 0 {
-		elapsed = fmt.Sprintf("距开局已过%dh%02dm", elapsedH, elapsedM)
-	} else {
-		elapsed = fmt.Sprintf("距开局已过%dm", elapsedM)
-	}
-	return fmt.Sprintf("第%d天 %02d:%02d(%s)", day, hour, min, elapsed)
+	return desc + ")"
 }
 
-func scenarioStartSlot(session models.GameSession) int {
-	return session.Scenario.Content.Data.GameStartSlot
+func chineseWeekday(d time.Weekday) string {
+	return "周" + string([]rune("日一二三四五六")[d])
 }
 
-// gameDay converts a turn round (1-based, 30 minutes/round) and scenario start
-// slot into a 1-based in-game day number, matching the day shown by formatGameTime.
-func gameDay(round, startSlot int) int {
-	if round <= 0 {
-		round = 1
+// formatGameDuration 渲染为 XhYYm，小时可以超过 24；不足一小时只写分钟。
+func formatGameDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
 	}
-	if startSlot < 0 || startSlot > 47 {
-		startSlot = 16 // 08:00
+	mins := int(d / time.Minute)
+	if mins >= 60 {
+		return fmt.Sprintf("%dh%02dm", mins/60, mins%60)
 	}
-	return (round-1+startSlot)/48 + 1
+	return fmt.Sprintf("%dm", mins)
 }
 
 // ResetMadnessAfterSession clears non-permanent madness state on session end.

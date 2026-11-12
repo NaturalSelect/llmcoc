@@ -750,6 +750,38 @@ func TestStartSession_Success(t *testing.T) {
 	}
 }
 
+func TestStartSession_CopiesScenarioStartTime(t *testing.T) {
+	initTestDB(t)
+	ownerID := seedUser(t, "owner", "user", 0, 3)
+	scenario := models.Scenario{
+		Name:     "有开局时间",
+		IsActive: true,
+		Content:  models.JSONField[models.ScenarioContent]{Data: models.ScenarioContent{GameStartTime: "1924-09-03T18:00"}},
+	}
+	if err := models.DB.Create(&scenario).Error; err != nil {
+		t.Fatalf("create scenario: %v", err)
+	}
+	sess := models.GameSession{
+		Name: "Lobby", ScenarioID: scenario.ID,
+		Status: models.SessionStatusLobby, MaxPlayers: 4, CreatedBy: ownerID,
+	}
+	models.DB.Create(&sess)
+	cardID := seedCard(t, ownerID, "Card")
+	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: ownerID, CharacterCardID: cardID})
+
+	w := httptest.NewRecorder()
+	sessionCRUDRouter(ownerID, "owner", "user").ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/start", sess.ID), nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got models.GameSession
+	models.DB.First(&got, sess.ID)
+	if got.GameStartTime != "1924-09-03T18:00" || got.GameTime != "1924-09-03T18:00" {
+		t.Errorf("game_start_time/game_time = %q/%q, want both 1924-09-03T18:00", got.GameStartTime, got.GameTime)
+	}
+}
+
 // ── EndSession ─────────────────────────────────────────────────────────────────
 
 func TestEndSession_NotFound(t *testing.T) {

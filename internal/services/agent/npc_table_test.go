@@ -123,7 +123,9 @@ func TestLoadNPCTableLogDBErrorIsEmpty(t *testing.T) {
 
 func TestBuildNPCScene(t *testing.T) {
 	gctx := GameContext{Session: models.GameSession{
-		TurnRound: 1,
+		TurnRound:     1,
+		GameStartTime: "1924-09-03T08:00",
+		GameTime:      "1924-09-03T09:30",
 		Players: []models.SessionPlayer{
 			{Location: "酒馆", CharacterCard: models.CharacterCard{Name: "阿明", Appearance: "戴圆框眼镜的瘦高青年"}},
 			{Location: "码头", CharacterCard: models.CharacterCard{Name: "小红"}},
@@ -139,7 +141,7 @@ func TestBuildNPCScene(t *testing.T) {
 	}
 
 	scene := buildNPCScene(gctx, "老板", tempNPCs)
-	for _, want := range []string{"时间:第1天", "所在位置:酒馆", "阿明(戴圆框眼镜的瘦高青年)", "醉汉"} {
+	for _, want := range []string{"时间:1924-09-03T09:30(周三，距开局已过1h30m)", "所在位置:酒馆", "阿明(戴圆框眼镜的瘦高青年)", "醉汉"} {
 		if !strings.Contains(scene, want) {
 			t.Errorf("场景卡缺少 %q:\n%s", want, scene)
 		}

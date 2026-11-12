@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
@@ -20,8 +21,7 @@ type ActionContext struct {
 	TempNPCs *[]models.SessionNPC
 
 	// 工具执行器写入、调度循环读取的可变状态。
-	HasEnd             *bool
-	TimeAdvancedInTurn *bool
+	HasEnd *bool
 	// Outbox 收集本轮产生玩家可见消息的调用(write/generate_image/narrate/ask_players/end_game),
 	// 一个调用一个 Output;轮末由 floorRun 整理顺序后发布。
 	Outbox   *[]Output
@@ -310,7 +310,7 @@ func (updateCharactersAction) Execute(call ToolCall, actx ActionContext) []ToolR
 	}
 
 	// All parsed successfully — apply.
-	day := gameDay(actx.GCtx.Session.TurnRound, scenarioStartSlot(actx.GCtx.Session))
+	day := models.GameDayKey(actx.GCtx.Session.GameTime)
 	var events []models.GameEvent
 	for _, p := range pending {
 		if p.isPlayer {
@@ -774,28 +774,41 @@ func normalizeAskOptions(raw []string) []string {
 type advanceTimeAction struct{}
 
 func (advanceTimeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	rounds := call.TimeRounds
-	if rounds <= 0 {
-		rounds = 1
+	session := &actx.GCtx.Session
+	reject := func(msg string) []ToolResult {
+		return []ToolResult{{Action: ToolAdvanceTime, Result: "SYSTEM REJECT: " + msg}}
 	}
-	newRound := actx.GCtx.Session.TurnRound + rounds
-	models.DB.Model(&models.GameSession{}).
-		Where("id = ?", actx.GCtx.Session.ID).
-		Update("turn_round", newRound)
-	models.DB.Where("session_id = ? AND round < ?", actx.GCtx.Session.ID, newRound).
-		Delete(&models.SessionTurnAction{})
-	actx.GCtx.Session.TurnRound = newRound
-	*actx.TimeAdvancedInTurn = true
+	newTime, err := models.NormalizeGameTime(call.GameTime)
+	if err != nil {
+		return reject(fmt.Sprintf("advance_time 的 game_time 必须是 RFC 3339 本地时间，格式 YYYY-MM-DDTHH:MM，不带时区，例如 1924-09-03T21:30。收到: %q。", call.GameTime))
+	}
+	newT, _ := models.ParseGameTime(newTime)
+	var delta time.Duration
+	if cur, err := models.ParseGameTime(session.GameTime); err == nil {
+		if newT.Before(cur) {
+			return reject(fmt.Sprintf("时间不能倒退：当前时间是 %s，收到的 %s 更早。请写不早于当前时间的绝对时间。", session.GameTime, newTime))
+		}
+		delta = newT.Sub(cur)
+	}
+	updates := map[string]any{"game_time": newTime}
+	if session.GameStartTime == "" {
+		updates["game_start_time"] = newTime
+	}
+	models.DB.Model(&models.GameSession{}).Where("id = ?", session.ID).Updates(updates)
+	if session.GameStartTime == "" {
+		session.GameStartTime = newTime
+	}
+	session.GameTime = newTime
 	reason := call.TimeReason
 	if reason == "" {
 		reason = "时间推进"
 	}
-	alog.Debug("advance time", "session", actx.GCtx.Session.ID, "rounds", rounds, "reason", reason, "game_time", formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session)))
+	alog.Debug("advance time", "session", session.ID, "game_time", newTime, "advanced", delta, "reason", reason)
 	// NOTE: 事件不带 reason：那是 KP 自己写的文字，可能透露剧情。
 	return []ToolResult{{
 		Action: ToolAdvanceTime,
-		Result: fmt.Sprintf("时间推进%d回合(每轮=30分钟)(%s),当前时间:%s", rounds, reason, formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session))),
-		Events: []models.GameEvent{{Type: "time", Time: formatGameTime(newRound, scenarioStartSlot(actx.GCtx.Session))}},
+		Result: fmt.Sprintf("时间推进至 %s(本次推进%s)(%s)", describeGameTime(session.GameStartTime, newTime), formatGameDuration(delta), reason),
+		Events: []models.GameEvent{{Type: "time", Time: newTime}},
 	}}
 }
 

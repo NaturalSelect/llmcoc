@@ -921,6 +921,29 @@ describe('roomState', () => {
     expect(RS.parseTimePoint('第3天 21:00')).toStrictEqual({ raw: '第3天 21:00', label: '第3天 21:00', elapsed: '' })
   })
 
+  test('parseTimePoint：RFC 本地时间转成年月日，没有已过时间', () => {
+    expect(RS.parseTimePoint('1924-09-03T21:30')).toStrictEqual({
+      raw: '1924-09-03T21:30',
+      label: '1924年9月3日 21:30',
+      elapsed: '',
+    })
+    expect(RS.parseTimePoint('1924-12-25T08:05')?.label).toBe('1924年12月25日 08:05')
+    expect(RS.parseTimePoint('  1924-01-01T00:00  ')).toStrictEqual({
+      raw: '1924-01-01T00:00',
+      label: '1924年1月1日 00:00',
+      elapsed: '',
+    })
+  })
+
+  test('parseTimePoint：RFC 容忍空格分隔，带秒时只取到分', () => {
+    expect(RS.parseTimePoint('1924-09-03 21:30')?.label).toBe('1924年9月3日 21:30')
+    expect(RS.parseTimePoint('1924-09-03T21:30:45')).toStrictEqual({
+      raw: '1924-09-03T21:30:45',
+      label: '1924年9月3日 21:30',
+      elapsed: '',
+    })
+  })
+
   test('parseTimePoint：格式不符保留原文，空输入返回 null', () => {
     expect(RS.parseTimePoint('黄昏时分')).toStrictEqual({ raw: '黄昏时分', label: '黄昏时分', elapsed: '' })
     expect(RS.parseTimePoint('')).toBeNull()

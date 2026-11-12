@@ -94,6 +94,7 @@ func setFloorHandles(t *testing.T, sessionID uint, director llm.Provider, withPa
 // floorGctx 构造一次 run() 的 GameContext，并把每次 Publish 的内容记录到 published。
 func floorGctx(sessionID uint, published *[]RoundOutputs) GameContext {
 	g := newDirectorRunGctx(sessionID, 1, "我环顾四周")
+	g.Session.GameStartTime, g.Session.GameTime = "1924-09-03T08:00", "1924-09-03T08:00"
 	g.Publish = func(ro RoundOutputs) error {
 		*published = append(*published, ro)
 		return nil
@@ -193,8 +194,8 @@ func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 	if got := published[1].Items[0].Text; got != "你听见远处的钟声。" {
 		t.Errorf("kp 消息正文 = %q", got)
 	}
-	if published[1].Items[0].TimePoint == "" {
-		t.Error("kp 消息应带上游戏内时间点")
+	if got := published[1].Items[0].TimePoint; got != "1924-09-03T08:00" {
+		t.Errorf("kp 消息的游戏内时间点 = %q, want 1924-09-03T08:00", got)
 	}
 	if published[0].ElapsedMs != 0 || published[0].Steps != 0 {
 		t.Errorf("只有write的轮不关闭一拍，不应携带耗时/轮数, got %+v", published[0])
