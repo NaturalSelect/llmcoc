@@ -231,6 +231,13 @@ describe('GameView', () => {
     wrapper.unmount()
   })
 
+  test('管理员被点名时也能看到继续按钮', async () => {
+    const { wrapper } = await setup({ hostId: 1, asAdmin: true })
+    expect(wrapper.find('section[aria-label="KP 点名"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('让 KP 继续')
+    wrapper.unmount()
+  })
+
   test('非房主看不到继续按钮；非房主非管理员在头部看不到结束按钮', async () => {
     const { wrapper } = await setup({ hostId: 1 })
     expect(wrapper.text()).not.toContain('让 KP 继续')
