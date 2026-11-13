@@ -244,7 +244,7 @@ func fallbackWriterDirection(kpReply string) string {
 	if reply == "" {
 		return ""
 	}
-	return "根据以下KP消息生成白字描述,只展开已经发生的可见事实和环境/NPC反应,停在玩家选择点,不要替玩家决定后续行动:\n" + reply
+	return "任务：把下面这条KP消息已经交代的可见事实写成白字场景描述。\n必写：\n" + reply + "\n可补：这些事实所涉环境和NPC反应的过渡与感官层面。\n禁止：替玩家决定后续行动，新增KP消息之外的事实。\n停在：玩家的选择点。"
 }
 
 func cleanPlayerVisibleText(text string) string {

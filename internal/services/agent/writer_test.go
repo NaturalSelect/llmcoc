@@ -855,6 +855,53 @@ func TestAppendWriterStream_StripsControlTagsFromBuffer(t *testing.T) {
 	}
 }
 
+// TestWriterPromptStaysWithinDirection 验证 Writer 提示词把导演指令当任务单：必写不少、范围外不多，
+// 不再鼓励“充分发挥想象力”，明确只写最后一条指令、不写其他 write 的内容，续写指令里也有同样的约束。
+func TestWriterPromptStaysWithinDirection(t *testing.T) {
+	for _, want := range []string{
+		"任务/必写/可补/禁止/停在",
+		"不多做也不少做",
+		"一条不能少",
+		"都必须能在必写项里找到",
+		"指令没有分段时，把它的每一行都当作必写项",
+		"只写最后一条消息里 &lt;director_instruction&gt; 的内容",
+		"前面已经写出的，不要重写；还没写的，也不要提前写",
+		"不得借细节新增未授权的事件",
+		"必写项也不得漏写",
+		"篇幅用来展开必写项，不用来增加必写项之外的内容",
+	} {
+		if !strings.Contains(writerDefaultPrompt, want) {
+			t.Errorf("writer prompt should contain %q", want)
+		}
+	}
+	for _, banned := range []string{"充分发挥想象力", "进行想象让人物的动作更生动具体", "宁可多写一层感官细节", "导演指令是要点式的"} {
+		if strings.Contains(writerDefaultPrompt, banned) {
+			t.Errorf("writer prompt should no longer contain %q", banned)
+		}
+	}
+	gctx := GameContext{Session: models.GameSession{ID: 1}}
+	inst := buildWriterInstruction(WriterRequest{Direction: "任务：写推门\n必写：\n- 他推门", CallID: "call_1"}, gctx, false, false)
+	for _, want := range []string{"任务单的框架内", "必写项按顺序全部写进", "只在可补范围内补细节", "不增加任务单之外的事件、人物和对白", "不要漏写必写项", "不要写上文里其他 write 调用的内容"} {
+		if !strings.Contains(inst.Content, want) {
+			t.Errorf("writer instruction should contain %q:\n%s", want, inst.Content)
+		}
+	}
+}
+
+// TestFallbackWriterDirectionUsesTaskSheet 验证自动补写的兜底指令和 write 的 direction 用同一套分段，
+// KP 消息放在必写下面，且清掉内部标签；空消息不补写。
+func TestFallbackWriterDirectionUsesTaskSheet(t *testing.T) {
+	got := fallbackWriterDirection("门开了。")
+	for _, want := range []string{"任务：", "必写：\n门开了。", "可补：", "禁止：", "停在："} {
+		if !strings.Contains(got, want) {
+			t.Errorf("fallback direction should contain %q:\n%s", want, got)
+		}
+	}
+	if fallbackWriterDirection("  ") != "" {
+		t.Error("empty KP message should not produce a fallback direction")
+	}
+}
+
 // TestWriterPromptKeepsThirdPersonAndExplainsNewProps 验证 Writer 提示词固定第三人称、不向读者发问，
 // 并要求位置与道具的变化有过渡。对应反馈里正文中途从“林望舒”跳成“你”、凭空冒出一张引水图。
 func TestWriterPromptKeepsThirdPersonAndExplainsNewProps(t *testing.T) {
