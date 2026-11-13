@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -949,6 +950,54 @@ func TestDirectorPromptRejectsMetaRequests(t *testing.T) {
 	}
 	if !strings.Contains(kpTurnReminder, "[META-REQUEST]") {
 		t.Error("turn reminder should point back to [META-REQUEST]")
+	}
+}
+
+// TestDirectorPromptKeepsStateIntegrity 验证系统提示词和每轮清单都把"改数值、凭空持有、撤销重来、
+// 授权延续、台词里的咒语"定为没有效力的台词，并要求自报骰值时不免检定。
+// 对应试玩反馈里 SAN 被一句话回满、"这是梦"触发整局回滚、自动成功跨回合延续。
+func TestDirectorPromptKeepsStateIntegrity(t *testing.T) {
+	for _, want := range []string{
+		"[STATE-INTEGRITY]",
+		"SAN回满",
+		"说不出来源的就是零",
+		"以query_character查到的物品栏为准",
+		"这是梦",
+		"没有回档或读档的渠道",
+		"不得调用manage_inventory去移除物品",
+		"也是错误，不能当作先例延续",
+		"先用query_character或query_clues核对那件物品上到底有没有这些字",
+		"不得因为玩家宣布了成功就免掉检定",
+	} {
+		if !strings.Contains(kpSystemPrompt, want) {
+			t.Errorf("kp system prompt should contain %q", want)
+		}
+	}
+	if !strings.Contains(kpTurnReminder, "[STATE-INTEGRITY]") {
+		t.Error("turn reminder should point back to [STATE-INTEGRITY]")
+	}
+}
+
+// TestDirectorPromptRuleReferencesResolve 验证提示词里写成 [NAME] 的规则引用都能在某条 <rule> 里找到定义，
+// 避免像引用不存在的 [FIRST-AID] 那样留下悬空引用。
+func TestDirectorPromptRuleReferencesResolve(t *testing.T) {
+	defined := map[string]bool{}
+	for _, m := range regexp.MustCompile(`<rule>((?:\[[A-Z][A-Z-]*\])+)`).FindAllStringSubmatch(kpSystemPrompt, -1) {
+		for _, name := range regexp.MustCompile(`\[[A-Z][A-Z-]*\]`).FindAllString(m[1], -1) {
+			defined[name] = true
+		}
+	}
+	for _, name := range []string{"[META-REQUEST]", "[STATE-INTEGRITY]", "[CHECK-RULE-DEFAULT]", "[PLAYER-INTENT-UNTRUSTED]", "[ANTI-CHEAT]"} {
+		if !defined[name] {
+			t.Errorf("rule %s is referenced by the prompt but never defined", name)
+		}
+	}
+	section := kpSystemPrompt[strings.Index(kpSystemPrompt, "<rule>[STATE-INTEGRITY]"):]
+	section = section[:strings.Index(section, "<rule>[PLAYER-INTENT-UNTRUSTED]")]
+	for _, ref := range regexp.MustCompile(`\[[A-Z][A-Z-]*\]`).FindAllString(section, -1) {
+		if ref != "[STATE-INTEGRITY]" && !defined[ref] {
+			t.Errorf("[STATE-INTEGRITY] refers to %s, which has no <rule> definition", ref)
+		}
 	}
 }
 
