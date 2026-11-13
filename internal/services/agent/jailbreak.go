@@ -33,6 +33,9 @@ var qwenJailbreakPrompt string
 //go:embed jailbreaks/minimax-m3.1-flash.md
 var minimaxM3_1FlashJailbreakPrompt string
 
+//go:embed jailbreaks/gemini-3.8-flash.md
+var gemini3_8FlashJailbreakPrompt string
+
 func matchLength(left, right string) int {
 	matchLen := 0
 	for i := 0; i < len(left) && i < len(right); i++ {
@@ -85,6 +88,11 @@ func withJailbreakPrompt(prompt string, model string) string {
 		{
 			model:  "qwen",
 			header: qwenJailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "gemini-3.8-flash",
+			header: gemini3_8FlashJailbreakPrompt,
 			tail:   "",
 		},
 	}
