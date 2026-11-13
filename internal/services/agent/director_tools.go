@@ -454,7 +454,7 @@ func writeTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolWrite),
-			Description: `向 Writer 提供要点式导演指令，由 Writer 据此展开成玩家可见的正式描述文本(白字)。调用会等 Writer 写完才返回，正文放在工具结果的 <writer_output> 里：下一拍接着它往下写，不要重复它已经写过的内容。
+			Description: `向 Writer 提供要点式导演指令，由 Writer 据此展开成玩家可见的正式描述文本(白字)。调用立即返回，不等 Writer；正文写完后会以 <writer_output> 提醒作为新消息追加到对话里(通常在之后一两轮)：后续拍接着它往下写，不要重复它已经写过的内容，提醒到达前不要猜正文的具体写法。
 【direction写法】写成几条短要点(每条一行，以“- ”开头)，只写这一拍的事实：发生了什么、结果如何、谁说了什么、停在哪里。玩家可以据此行动的对象(出口、可拿取或可检查的物品、线索、新登场的人)必须逐项列出，Writer不会自己添加。不写氛围、修辞和感官描写，过渡、动作细节和感官层面由Writer补足。
 【独立消息】每一次write调用都会成为一条独立的玩家可见白字消息，可以在同一次发言权内多次调用，也可以单独出现(例如纯场景推进，不必配narrate)；已发出的消息不能撤回，请按叙事顺序推进。
 【与narrate对齐】同一轮里write与narrate一起出现时，write是narrate.reply的角色扮演(RP)化衍生，不是另一条独立叙事线：两者必须描述同一批事实、同一个结果、同一个停顿点——direction不得出现reply里没有的事件、结果或状态变化，也不得改写reply已给出的成败、数值与因果。二者冲突时以reply为准。

@@ -99,6 +99,17 @@ func renderFloorsForSummary(turns []models.TranscriptTurn) string {
 				b.WriteString("\n")
 				continue
 			}
+			// NOTE: Writer 正文以提醒追加在单元开头，玩家读到的是它，比 direction 更接近事实。
+			if ns := parseWriterNotices(m.Content); ns != nil {
+				for _, n := range ns {
+					if n.Status == models.MessageStatusDone {
+						fmt.Fprintf(&b, "[正文] %s\n", n.Text)
+					} else {
+						fmt.Fprintf(&b, "[正文失败] %s\n", n.Text)
+					}
+				}
+				continue
+			}
 			if block := playerTurnPattern.FindString(m.Content); block != "" {
 				b.WriteString(block)
 				b.WriteString("\n")

@@ -99,6 +99,10 @@ type toolLoopOptions struct {
 	// beforeRound 非 nil 时，在每轮 ctx.Err() 检查之后、ChatWithTools 调用之前触发，
 	// round 从 1 开始计数。
 	beforeRound func(round int)
+	// injectBeforeCall 非 nil 时，在 beforeRound 之后、ChatWithTools 调用之前触发，入参为当前 msgs，
+	// 返回非 nil 时替换 msgs；只能追加（msgs 此刻以完整的 tool 结果或 user 消息结尾），不能改动已有前缀。
+	// Director 用它把后台 Writer 写完的正文作为提醒追加进历史。
+	injectBeforeCall func(round int, msgs []llm.ChatMessage) []llm.ChatMessage
 	// onToolCalls 非 nil 时，在拿到本轮非空 tool_calls（assistant 消息已写入 msgs）、
 	// batchPolicy 判定之前触发，供调用方发出"计划执行哪些工具"一类的进度提示。
 	onToolCalls func(calls []llm.ToolCall)
@@ -248,6 +252,11 @@ func runToolLoop(ctx context.Context, opts toolLoopOptions) ([]llm.ChatMessage, 
 		}
 		if opts.beforeRound != nil {
 			opts.beforeRound(round)
+		}
+		if opts.injectBeforeCall != nil {
+			if next := opts.injectBeforeCall(round, msgs); next != nil {
+				msgs = next
+			}
 		}
 		validNames, soloNames := defValidNames, defSoloNames
 		if round == 1 && len(opts.firstRoundTools) > 0 {

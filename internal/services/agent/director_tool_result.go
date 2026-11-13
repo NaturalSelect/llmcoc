@@ -126,7 +126,7 @@ func toolResultBody(content string) string {
 const (
 	writerOutputOpen  = "\n<writer_output>\n"
 	writerOutputClose = "\n</writer_output>"
-	// writerFailedNote 是 Writer 生成失败时附在 write 结果里的说明：Director 得知玩家没有读到正文。
+	// writerFailedNote 是 Writer 生成失败时写进提醒的说明：Director 得知玩家没有读到正文。
 	writerFailedNote = "Writer 生成失败，玩家只看到失败提示；需要时重新 write。"
 )
 
@@ -143,17 +143,6 @@ func attachWriterOutput(content, prose string) (string, bool) {
 		return strings.TrimSuffix(content, "\n"+toolResultClose) + block + "\n" + toolResultClose, true
 	}
 	return content + block, true
-}
-
-// attachWriterFailure 在 Writer 生成失败时给结果附一句说明，规则同 attachWriterOutput。
-func attachWriterFailure(content string) (string, bool) {
-	if isToolRejected(content) || strings.Contains(content, writerFailedNote) {
-		return content, false
-	}
-	if _, ok := toolResultOpenTag(content); ok && strings.HasSuffix(content, "\n"+toolResultClose) {
-		return strings.TrimSuffix(content, "\n"+toolResultClose) + "\n" + writerFailedNote + "\n" + toolResultClose, true
-	}
-	return content + "\n" + writerFailedNote, true
 }
 
 // writerOutputOf 取回 tool 结果里附带的 Writer 正文；没有时 ok 为 false。

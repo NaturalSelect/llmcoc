@@ -602,7 +602,7 @@ func (writeAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	nsfw := actx.GCtx.Session.EnableNSFW && call.NSFW
 	*actx.Outbox = append(*actx.Outbox, Output{Kind: OutputWriter, Text: direction, NSFW: nsfw, CallID: call.CallID})
 	debugf("tool", "session=%d write direction=%s nsfw=%v", actx.Sid, direction, nsfw)
-	return []ToolResult{{Action: ToolWrite, Result: "已发布为一条玩家可见消息，正文见下方 <writer_output>。你仍持有发言权。"}}
+	return []ToolResult{{Action: ToolWrite, Result: "已入队：Writer 正在后台按 direction 写正文并同步给玩家，写完后正文会以 <writer_output> 提醒追加到对话里。在那之前你不知道正文的具体写法，不要复述或猜测；你仍持有发言权。"}}
 }
 
 // narrateKPStreakReminder 是连续发布这么多条 kp 消息仍没有点名时附在 narrate 结果后的提醒(只提醒,不强制)。

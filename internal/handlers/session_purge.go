@@ -76,7 +76,7 @@ func purgeExpiredSessions(now time.Time) (int, error) {
 
 	purged := 0
 	for _, id := range ids {
-		if getActiveFloor(id) != nil || writersDone(id) != nil {
+		if getActiveFloor(id) != nil || outboxDone(id) != nil {
 			continue
 		}
 		err := models.DB.Transaction(func(tx *gorm.DB) error {

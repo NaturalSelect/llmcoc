@@ -52,6 +52,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// NOTE: 重启后内存里的 Writer 队列已经丢失，遗留的 pending 正文永远写不完，会卡住 Director 的正文投递。
+	handlers.FailOrphanWriters()
+
 	// NOTE: 立绘目录若落在配图目录之内，14 天清理会递归删掉付费生成的立绘，所以直接拒绝启动。
 	if nested, err := imagestore.PortraitDirNested(); err != nil {
 		log.Error("failed to compare portrait and image directories", "err", err)

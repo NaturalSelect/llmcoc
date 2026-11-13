@@ -1,13 +1,14 @@
 package handlers
 
-// NOTE: Director 发布的 writer 消息先以 pending 落库，这里负责补全正文。Director 的工具循环不等它，
-// 但同一周期里之后的 kp/ask 消息要等 Writer 队列写完才发布（见 publishRound），玩家先读到叙事再被提问。
-// writer 落库即广播 message_new，再靠 message_update 补全。
-// Writer 每个会话一个 FIFO 队列：一条 writer 消息对应一次 RunWriterStream，请求里带着 Director 在发布那一轮时的消息链快照，
-// 队列串行保证前一条正文先落库、下一条再把它附到自己的视图里。
+// NOTE: Director 发布的 writer 消息先以 pending 落库，这里负责补全正文。Director 的工具循环不等它：write 立即返回回执，
+// 写完的正文由之后某一轮 LLM 调用前的提醒带回 Director 历史（见 agent/writer_notice.go）。
+// 玩家侧靠会话出站队列保证顺序：event/writer/kp/ask 按落库 id 的顺序放出，排在未写完的 writer 后面的消息先扣住，
+// 玩家先读到叙事再被提问；writer 轮到时才广播 message_new，再靠 message_update 补全。
+// 出站队列每个会话一个 FIFO：一条 writer 消息对应一次 RunWriterStream，请求里带着 Director 在发布那一轮时的消息链快照，
+// 队列串行保证前一条正文先落库、下一条再从消息表补上它(WriterRequest.ProseAfter)。
 // Writer 写正文时可以调用 paint 配图：每次调用立即拿到 illust://<slot> 占位地址，图片在后台并发出图（不排队、不随 kp-stop 取消），
 // 画完后写进这条消息的 meta.illustrations 并广播 illustration 事件，正文里的占位由前端按 meta 解析；kp/ask 不等配图。
-// 房主打断（kp-stop）不会取消这里的任务，因为对应的消息已经对玩家可见。
+// 房主打断（kp-stop）不会取消这里的任务，因为对应的消息已经落库。
 // 流式正文按 writerTokenFlushInterval 合并成 writer_token 帧，帧里带 UTF-16 偏移；连接建立时 WS 会补发正在生成的全文，
 // 断线重连或进房时客户端都能接上，不会因为漏了中间的 token 就停在半截。
 
@@ -20,6 +21,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/gin-gonic/gin"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/imagestore"
@@ -43,19 +45,27 @@ type writerTask struct {
 	messageID uint
 	gctx      agent.GameContext
 	req       agent.WriterRequest
-	done      chan struct{} // 任务结束(无论成败)后关闭
 }
 
-type writerQueue struct {
-	tasks   []writerTask
+// outboxTask 是会话出站队列里的一项：先广播 msgs 里每条消息的 message_new，再(如果带 writer)跑这条 writer，
+// 结束之后才轮到下一项，所以排在未写完的 writer 后面的消息被扣住。
+type outboxTask struct {
+	msgs   []models.Message
+	writer *writerTask // 非空时 msgs 恰好是这条 writer 的消息
+	after  func()      // 广播之后调用，例如通知客户端刷新人物卡
+	done   chan struct{}
+}
+
+type outboxQueue struct {
+	tasks   []outboxTask // 还没开始的任务；正在跑的那一项已经出队
 	running bool
 	last    chan struct{} // 最后入队任务的 done：它关闭时队列里此前的任务都已结束
 }
 
-var writerQueues = struct {
+var outboxQueues = struct {
 	mu sync.Mutex
-	m  map[uint]*writerQueue
-}{m: make(map[uint]*writerQueue)}
+	m  map[uint]*outboxQueue
+}{m: make(map[uint]*outboxQueue)}
 
 var settleMu sync.Mutex
 
@@ -183,52 +193,104 @@ type messageUpdateEvent struct {
 	Error   string               `json:"error,omitempty"`
 }
 
-// enqueueWriter 把一条 writer 消息放进会话的 FIFO 队列，立即返回；队列空闲时才会起 worker，worker 排空后退出。
-// 返回的 chan 在这条任务结束(无论成败，正文和状态已落库)后关闭。
-func (h *SessionHandlers) enqueueWriter(sessionID uint, task writerTask) <-chan struct{} {
-	writerQueues.mu.Lock()
-	defer writerQueues.mu.Unlock()
-	q := writerQueues.m[sessionID]
+// enqueueOutbox 把一项放进会话的出站队列，立即返回；队列空闲时才会起 worker，worker 排空后退出。
+func (h *SessionHandlers) enqueueOutbox(sessionID uint, task outboxTask) {
+	outboxQueues.mu.Lock()
+	defer outboxQueues.mu.Unlock()
+	q := outboxQueues.m[sessionID]
 	if q == nil {
-		q = &writerQueue{}
-		writerQueues.m[sessionID] = q
+		q = &outboxQueue{}
+		outboxQueues.m[sessionID] = q
 	}
 	task.done = make(chan struct{})
 	q.tasks = append(q.tasks, task)
 	q.last = task.done
 	if !q.running {
 		q.running = true
-		go h.drainWriterQueue(sessionID, q)
+		go h.drainOutbox(sessionID, q)
 	}
-	return task.done
 }
 
-func (h *SessionHandlers) drainWriterQueue(sessionID uint, q *writerQueue) {
+func (h *SessionHandlers) drainOutbox(sessionID uint, q *outboxQueue) {
 	for {
-		writerQueues.mu.Lock()
+		outboxQueues.mu.Lock()
 		if len(q.tasks) == 0 {
 			q.running = false
-			delete(writerQueues.m, sessionID)
-			writerQueues.mu.Unlock()
+			delete(outboxQueues.m, sessionID)
+			outboxQueues.mu.Unlock()
 			return
 		}
 		task := q.tasks[0]
 		q.tasks = q.tasks[1:]
-		writerQueues.mu.Unlock()
+		outboxQueues.mu.Unlock()
 
-		h.runWriterTask(sessionID, task)
+		h.runOutboxTask(sessionID, task)
 		close(task.done)
 	}
 }
 
-// writersDone 返回一个 chan，会话里此刻已入队的 writer 全部结束时关闭；队列为空时返回 nil。
-func writersDone(sessionID uint) <-chan struct{} {
-	writerQueues.mu.Lock()
-	defer writerQueues.mu.Unlock()
-	if q := writerQueues.m[sessionID]; q != nil {
+func (h *SessionHandlers) runOutboxTask(sessionID uint, task outboxTask) {
+	hub := hubFor(sessionID)
+	for _, m := range task.msgs {
+		hub.Publish("message_new", gin.H{"message": newMessageResponse(m)})
+	}
+	if task.writer != nil {
+		h.runWriterTask(sessionID, *task.writer)
+	}
+	if task.after != nil {
+		task.after()
+	}
+}
+
+// outboxDone 返回一个 chan，会话里此刻已入队的任务全部结束时关闭；队列为空时返回 nil。
+func outboxDone(sessionID uint) <-chan struct{} {
+	outboxQueues.mu.Lock()
+	defer outboxQueues.mu.Unlock()
+	if q := outboxQueues.m[sessionID]; q != nil {
 		return q.last
 	}
 	return nil
+}
+
+// heldMessageIDs 返回已落库但还没有广播的消息 id（队列里还没轮到的任务）：
+// 重连拉快照时要排除它们，否则 KP 的话会跑到还没写完的叙事前面。
+func heldMessageIDs(sessionID uint) []uint {
+	outboxQueues.mu.Lock()
+	defer outboxQueues.mu.Unlock()
+	q := outboxQueues.m[sessionID]
+	if q == nil {
+		return nil
+	}
+	var ids []uint
+	for _, t := range q.tasks {
+		for _, m := range t.msgs {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids
+}
+
+// FailOrphanWriters 在启动时把上次进程退出时还没写完的 writer 标成失败：出站队列在内存里，
+// 重启后没有任何东西会再去写它们，留着 pending 会让 Director 的正文投递永远停在这一条。
+func FailOrphanWriters() {
+	var ids []uint
+	if err := models.DB.Model(&models.Message{}).
+		Where("kind = ? AND status = ?", models.MessageKindWriter, models.MessageStatusPending).
+		Pluck("id", &ids).Error; err != nil {
+		chatLog.Error("scan orphan writers failed", "err", err)
+		return
+	}
+	for _, id := range ids {
+		if _, err := settleMessage(id, func(m *models.Message) {
+			m.Status = models.MessageStatusFailed
+			setMessageError(m, writerFailedText)
+		}); err != nil {
+			chatLog.Error("fail orphan writer failed", "message", id, "err", err)
+		}
+	}
+	if len(ids) > 0 {
+		chatLog.Warn("marked orphan writers as failed", "count", len(ids))
+	}
 }
 
 func (h *SessionHandlers) runWriterTask(sessionID uint, task writerTask) {

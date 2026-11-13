@@ -513,6 +513,8 @@ func (c *ContextManager) appendUnit(round int, msgs []llm.ChatMessage, cut int, 
 	})
 	c.historyTurns++
 	c.historyLen += cut - c.turnStart
+	// NOTE: 水位与包含提醒的单元同一次 save 推进：落库前崩溃则两者都没变，下次会重新投递。
+	c.advanceWriterSeen(msgs[c.turnStart:cut])
 	c.turnStart = cut
 
 	c.stat.Seq = seq

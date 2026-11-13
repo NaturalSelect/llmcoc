@@ -316,17 +316,6 @@ func TestAttachWriterOutput_SkipsRejectedDuplicateAndEmpty(t *testing.T) {
 	}
 }
 
-func TestAttachWriterFailure(t *testing.T) {
-	envelope := renderDirectorToolResult(fakeToolCall("w1", "write", ""), toolOutcome{result: "已发布。"})
-	got, ok := attachWriterFailure(envelope)
-	if !ok || !strings.Contains(got, writerFailedNote) || isToolRejected(got) || !strings.HasSuffix(got, toolResultClose) {
-		t.Errorf("failure note should sit inside the envelope, got %q, %v", got, ok)
-	}
-	if again, ok := attachWriterFailure(got); ok || again != got {
-		t.Errorf("the failure note must not be added twice, got %q", again)
-	}
-}
-
 func TestSummary_NewFormatRejectedCallsAreSkippedAndBodyUnwrapped(t *testing.T) {
 	wrap := func(name, result string) string {
 		return renderDirectorToolResult(fakeToolCall("x", name, ""), toolOutcome{result: result})

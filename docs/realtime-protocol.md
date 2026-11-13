@@ -157,7 +157,7 @@ GET /api/sessions/:id/ws?token=<JWT>&since=<N>&epoch=<E>
 | 值 | 含义 |
 | --- | --- |
 | `done` | 已就绪。除下面两种情况外的消息都是它 |
-| `pending` | 只有 `writer` 会带它：先以此状态落库并广播，等异步补全。同一周期里之后的 `kp` / `ask` 会等已发布的 `writer` 全部结束才发布。`image` 不会以 `pending` 出现：画完才落库和广播，`GET /messages` 里也没有未画完的图 |
+| `pending` | 只有 `writer` 会带它：先以此状态落库并广播，等异步补全。排在它后面的所有消息（同一周期或之后的 `writer`、`kp`、`ask`、`event`）按 id 顺序等它结束才广播，所以 `GET /messages` 不返回尚未广播的消息，重连后的快照也不会让 KP 的话先于叙事出现。`image` 不会以 `pending` 出现：画完才落库和广播，`GET /messages` 里也没有未画完的图 |
 | `failed` | 生成失败，原因在 `meta.error` |
 
 `floor` 是所属周期编号，`system` 消息为 0。`meta` 是结构化附加信息，字段都可省略，只有下表列出的消息类型会带对应字段：

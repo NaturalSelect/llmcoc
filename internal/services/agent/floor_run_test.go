@@ -81,22 +81,11 @@ func setFloorHandles(t *testing.T, sessionID uint, director llm.Provider) {
 func floorGctx(sessionID uint, published *[]RoundOutputs) GameContext {
 	g := newDirectorRunGctx(sessionID, 1, "我环顾四周")
 	g.Session.GameStartTime, g.Session.GameTime = "1924-09-03T08:00", "1924-09-03T08:00"
-	g.Publish = func(ro RoundOutputs) ([]WriterResult, error) {
+	g.Publish = func(ro RoundOutputs) error {
 		*published = append(*published, ro)
-		return writerResultsFor(ro), nil
+		return nil
 	}
 	return g
-}
-
-// writerResultsFor 模拟 handler：每条 writer 都立即写完，正文是「正文:<direction>」。
-func writerResultsFor(ro RoundOutputs) []WriterResult {
-	var results []WriterResult
-	for _, it := range ro.Items {
-		if it.Kind == OutputWriter {
-			results = append(results, WriterResult{CallID: it.CallID, Status: WriterDone, Text: "正文:" + it.Text})
-		}
-	}
-	return results
 }
 
 func newFloorSession(t *testing.T, id uint) {
@@ -216,7 +205,7 @@ func TestFloor_MultiBeatPublishesEachRoundAndEndsOnAsk(t *testing.T) {
 }
 
 // TestFloor_RoundOutputsOrderedWriterKPAsk 验证同一轮 [ask_players, narrate, write]
-// 被整理成 writer → kp → ask：writer 单独先发布并等它写完，kp/ask 随后一起发布。
+// 被整理成 writer → kp → ask。
 func TestFloor_RoundOutputsOrderedWriterKPAsk(t *testing.T) {
 	const sid = 202
 	newFloorSession(t, sid)
@@ -233,35 +222,31 @@ func TestFloor_RoundOutputsOrderedWriterKPAsk(t *testing.T) {
 	if _, err := run(context.Background(), floorGctx(sid, &published)); err != nil {
 		t.Fatalf("run(): %v", err)
 	}
-	if len(published) != 2 {
-		t.Fatalf("Publish 次数 = %d, want 2(writer 一次，kp+ask 一次)", len(published))
+	if len(published) != 1 {
+		t.Fatalf("Publish 次数 = %d, want 1", len(published))
 	}
-	if got, want := outputKinds(published[0].Items), []OutputKind{OutputWriter}; !equalKinds(got, want) {
-		t.Fatalf("第一次发布的种类 = %v, want %v", got, want)
-	}
-	if got, want := outputKinds(published[1].Items), []OutputKind{OutputKP, OutputAsk}; !equalKinds(got, want) {
-		t.Fatalf("第二次发布的种类 = %v, want %v", got, want)
+	want := []OutputKind{OutputWriter, OutputKP, OutputAsk}
+	if got := outputKinds(published[0].Items); !equalKinds(got, want) {
+		t.Fatalf("消息种类顺序 = %v, want %v", got, want)
 	}
 
-	if got := published[0].Items[0].CallID; got != "d" {
+	ro := published[0]
+	if got := ro.Items[0].CallID; got != "d" {
 		t.Errorf("writer Output.CallID = %q, want the write call id %q", got, "d")
 	}
-	if got := published[1].Items[0].CallID; got != "b" {
+	if got := ro.Items[1].CallID; got != "b" {
 		t.Errorf("kp Output.CallID = %q, want the narrate call id %q", got, "b")
 	}
-	if len(published[1].Director) != 0 {
-		t.Error("只有 writer 的发布才带 Director 消息链快照")
-	}
-	if n := len(published[0].Director); n == 0 {
-		t.Fatal("含 writer 的发布应带上 Director 消息链快照")
-	} else if last := published[0].Director[n-1]; last.Role != "tool" || last.ToolCallID != "d" {
+	if n := len(ro.Director); n == 0 {
+		t.Fatal("含 writer 的轮应带上 Director 消息链快照")
+	} else if last := ro.Director[n-1]; last.Role != "tool" || last.ToolCallID != "d" {
 		t.Errorf("快照应以 write 的 tool 结果结尾(包含本轮所有工具回执), got %+v", last)
 	} else if !strings.HasPrefix(last.Content, `<tool_result name="write" status="ok">`) {
 		t.Errorf("Director 的 tool 消息应带 <tool_result> 信封, got %q", last.Content)
 	}
 }
 
-// TestFloor_WriteNSFWIsIndependentPerCall 验证两条 write 的 NSFW 标记各自独立，并且各自单独发布。
+// TestFloor_WriteNSFWIsIndependentPerCall 验证两条 write 的 NSFW 标记各自独立。
 func TestFloor_WriteNSFWIsIndependentPerCall(t *testing.T) {
 	const sid = 203
 	newFloorSession(t, sid)
@@ -287,26 +272,16 @@ func TestFloor_WriteNSFWIsIndependentPerCall(t *testing.T) {
 	if _, err := run(context.Background(), g); err != nil {
 		t.Fatalf("run(): %v", err)
 	}
-	if len(published) < 2 || len(published[0].Items) != 1 || len(published[1].Items) != 1 {
-		t.Fatalf("两条write应各自单独发布, got %+v", published)
+	if len(published) < 1 || len(published[0].Items) != 2 {
+		t.Fatalf("第一次Publish应有两条write, got %+v", published)
 	}
-	if !published[0].Items[0].NSFW || published[1].Items[0].NSFW {
-		t.Errorf("两条write的NSFW应各自独立: got [%v, %v], want [true, false]", published[0].Items[0].NSFW, published[1].Items[0].NSFW)
-	}
-	// NOTE: 第二条 write 的快照里已经带着第一条的正文，它的 Writer 才看得到前文。
-	var firstResult string
-	for _, m := range published[1].Director {
-		if m.Role == "tool" && m.ToolCallID == "w1" {
-			firstResult = m.Content
-		}
-	}
-	if !strings.Contains(firstResult, "<writer_output>") || !strings.Contains(firstResult, "正文:亲密场景") {
-		t.Errorf("第二条 write 的 Director 快照里 w1 的结果应已带上正文, got %q", firstResult)
+	if !published[0].Items[0].NSFW || published[0].Items[1].NSFW {
+		t.Errorf("两条write的NSFW应各自独立: got [%v, %v], want [true, false]", published[0].Items[0].NSFW, published[0].Items[1].NSFW)
 	}
 }
 
 // TestFloor_FallbackWriterWhenVisibleActionWithoutWrite 验证：一拍内有需要白字叙事的可见动作、
-// 出了 kp 消息却没有 write 时，在 kp 之前自动补一条 Auto writer，并先于 kp 单独发布。
+// 出了 kp 消息却没有 write 时，在 kp 之前自动补一条 Auto writer。
 func TestFloor_FallbackWriterWhenVisibleActionWithoutWrite(t *testing.T) {
 	const sid = 204
 	newFloorSession(t, sid)
@@ -326,43 +301,28 @@ func TestFloor_FallbackWriterWhenVisibleActionWithoutWrite(t *testing.T) {
 	if _, err := run(context.Background(), floorGctx(sid, &published)); err != nil {
 		t.Fatalf("run(): %v", err)
 	}
-	writerIdx, kpIdx := -1, -1
+	var kpRound *RoundOutputs
 	for i := range published {
 		for _, it := range published[i].Items {
-			switch it.Kind {
-			case OutputWriter:
-				writerIdx = i
-			case OutputKP:
-				kpIdx = i
+			if it.Kind == OutputKP {
+				kpRound = &published[i]
 			}
 		}
 	}
-	if kpIdx < 0 || writerIdx < 0 {
-		t.Fatalf("应发布自动补写的 writer 和 kp: %+v", published)
+	if kpRound == nil {
+		t.Fatalf("没有发布kp消息: %+v", published)
 	}
-	if writerIdx >= kpIdx {
-		t.Fatalf("自动补写的 writer 必须先于 kp 发布, writer=%d kp=%d", writerIdx, kpIdx)
+	if got := outputKinds(kpRound.Items); !equalKinds(got, []OutputKind{OutputWriter, OutputKP}) {
+		t.Fatalf("含可见动作的kp轮应补一条writer在kp前, got %v", got)
 	}
-	auto, kp := published[writerIdx].Items[0], published[kpIdx].Items[0]
-	if !auto.Auto || auto.Text == "" {
-		t.Errorf("兜底writer应标记Auto且带direction, got %+v", auto)
+	if !kpRound.Items[0].Auto || kpRound.Items[0].Text == "" {
+		t.Errorf("兜底writer应标记Auto且带direction, got %+v", kpRound.Items[0])
 	}
-	if auto.CallID != "r" || kp.CallID != "r" {
-		t.Errorf("自动补写的 CallID 应等于来源 narrate 调用的 ID, got writer=%q kp=%q", auto.CallID, kp.CallID)
+	if kpRound.Items[0].CallID != "r" || kpRound.Items[1].CallID != "r" {
+		t.Errorf("自动补写的 CallID 应等于来源 narrate 调用的 ID, got writer=%q kp=%q", kpRound.Items[0].CallID, kpRound.Items[1].CallID)
 	}
-	if len(published[writerIdx].Director) == 0 {
-		t.Error("自动补写的发布也应带上 Director 消息链快照")
-	}
-
-	// NOTE: 自动补写的正文回填在来源 narrate 的结果里，Director 下一轮就读得到。
-	var narrateResult string
-	for _, m := range prov.calls[len(prov.calls)-1] {
-		if m.Role == "tool" && m.ToolCallID == "r" {
-			narrateResult = m.Content
-		}
-	}
-	if !strings.Contains(narrateResult, "<writer_output>") {
-		t.Errorf("自动补写的正文应回填进 narrate 的结果, got %q", narrateResult)
+	if len(kpRound.Director) == 0 {
+		t.Error("自动补写的轮也应带上 Director 消息链快照")
 	}
 }
 
@@ -498,7 +458,7 @@ func TestFloor_PublishErrorStopsWithStopError(t *testing.T) {
 	setFloorHandles(t, sid, prov)
 
 	g := newDirectorRunGctx(sid, 1, "输入")
-	g.Publish = func(RoundOutputs) ([]WriterResult, error) { return nil, errors.New("db down") }
+	g.Publish = func(RoundOutputs) error { return errors.New("db down") }
 	out, err := run(context.Background(), g)
 	if err == nil {
 		t.Fatal("Publish 失败应让 run() 返回err")
@@ -697,8 +657,8 @@ func TestFloor_ToolEventsPublishImmediatelyWithoutCountingAsMessages(t *testing.
 	if err != nil {
 		t.Fatalf("run(): %v", err)
 	}
-	if len(published) < 3 {
-		t.Fatalf("published = %+v, want an events-only round, then the auto writer, then kp+ask", published)
+	if len(published) < 2 {
+		t.Fatalf("published = %+v, want an events-only round first", published)
 	}
 	first := published[0]
 	if len(first.Items) != 0 || len(first.Events) != 3 {
@@ -713,11 +673,8 @@ func TestFloor_ToolEventsPublishImmediatelyWithoutCountingAsMessages(t *testing.
 	if ev := first.Events[2]; ev.Type != "stat" || ev.Field != "hp" || *ev.From != 10 || *ev.To != 7 {
 		t.Errorf("hp event = %+v", ev)
 	}
-	if second := published[1]; len(second.Events) != 0 || !equalKinds(outputKinds(second.Items), []OutputKind{OutputWriter}) {
+	if second := published[1]; len(second.Events) != 0 || !equalKinds(outputKinds(second.Items), []OutputKind{OutputWriter, OutputKP}) {
 		t.Errorf("second publish items=%v events=%+v", outputKinds(second.Items), second.Events)
-	}
-	if third := published[2]; len(third.Events) != 0 || !equalKinds(outputKinds(third.Items), []OutputKind{OutputKP}) {
-		t.Errorf("third publish items=%v events=%+v", outputKinds(third.Items), third.Events)
 	}
 	if out.Messages != 3 {
 		t.Errorf("Messages = %d, want 3 (auto writer + kp + ask, events not counted)", out.Messages)

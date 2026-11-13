@@ -117,37 +117,6 @@ func TestSameModelConfig(t *testing.T) {
 	}
 }
 
-func TestLoadWriterProse_OnlyDoneMessagesWithCallID(t *testing.T) {
-	initAgentTestDB(t)
-	const sessionID = 301
-	mk := func(status models.MessageStatus, floor int, content, callID string) models.Message {
-		return models.Message{
-			SessionID: sessionID, Role: models.MessageRoleAssistant, Kind: models.MessageKindWriter,
-			Status: status, Floor: floor, Content: content,
-			Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{CallID: callID}},
-		}
-	}
-	rows := []models.Message{
-		mk(models.MessageStatusDone, 1, "完成的正文", "a"),
-		mk(models.MessageStatusPending, 2, "", "b"),
-		mk(models.MessageStatusFailed, 2, "", "c"),
-		mk(models.MessageStatusDone, 3, "旧消息没有调用ID", ""),
-		{SessionID: sessionID, Role: models.MessageRoleAssistant, Kind: models.MessageKindKP, Status: models.MessageStatusDone, Floor: 3, Content: "kp 消息"},
-		{SessionID: sessionID + 1, Role: models.MessageRoleAssistant, Kind: models.MessageKindWriter, Status: models.MessageStatusDone, Floor: 1, Content: "别的会话",
-			Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{CallID: "other"}}},
-	}
-	for i := range rows {
-		if err := models.DB.Create(&rows[i]).Error; err != nil {
-			t.Fatalf("create message: %v", err)
-		}
-	}
-
-	got := loadWriterProse(sessionID)
-	if len(got) != 1 || got["a"] != "完成的正文" {
-		t.Errorf("loadWriterProse = %+v, want only the done message with a call id", got)
-	}
-}
-
 func TestDecodeDirectorToolCall_SetsCallIDFromGatewayOnly(t *testing.T) {
 	tc, err := decodeDirectorToolCall(llm.ToolCall{ID: "call_9", Name: "write", Arguments: `{"direction":"推门","CallID":"forged","action":"end_game"}`})
 	if err != nil {

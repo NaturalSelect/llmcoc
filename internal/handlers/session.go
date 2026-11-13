@@ -588,9 +588,12 @@ func GetMessages(c *gin.Context) {
 	}
 
 	var messages []models.Message
-	models.DB.Where("session_id = ? AND (role != ? OR content LIKE ?)", sessionID, models.MessageRoleSystem, "管理员「%」复活了房间，游戏继续。").
-		Order("created_at ASC, id ASC").
-		Find(&messages)
+	q := models.DB.Where("session_id = ? AND (role != ? OR content LIKE ?)", sessionID, models.MessageRoleSystem, "管理员「%」复活了房间，游戏继续。")
+	// NOTE: 排在未写完的 writer 之后、还没广播的消息不能出现在快照里，否则重连的客户端会先读到 KP 的话。
+	if held := heldMessageIDs(uint(sessionID)); len(held) > 0 {
+		q = q.Where("id NOT IN ?", held)
+	}
+	q.Order("created_at ASC, id ASC").Find(&messages)
 	c.JSON(http.StatusOK, newMessageResponses(messages))
 }
 

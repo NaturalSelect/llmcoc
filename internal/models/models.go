@@ -364,6 +364,11 @@ type TranscriptData struct {
 	NextFloor int              `json:"next_floor,omitempty"`
 	Turns     []TranscriptTurn `json:"turns"`
 	Stats     []TurnCacheStat  `json:"stats"`
+	// WriterSeen 是已经随提醒（或回填）进入 Director 历史的最大 writer 消息 id，只有 Director 使用；
+	// 它与包含该提醒的单元在同一次落库里推进，保证每条 Writer 正文只投递一次。
+	WriterSeen uint `json:"writer_seen,omitempty"`
+	// ProseInHistory 为 true 表示旧会话的正文回填和 WriterSeen 初始化已经做过，之后历史只追加不改写。
+	ProseInHistory bool `json:"prose_in_history,omitempty"`
 }
 
 // TranscriptTurn 是一次调用(一个回合)产生的完整原生消息链。Compacted 现在只标记 LLM 总结出来的

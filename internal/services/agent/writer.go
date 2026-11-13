@@ -21,7 +21,7 @@ const writerDefaultPrompt = `<system role="writer_agent" game="coc7" lang="zh-CN
 		你是{{NSFW_WRITER_VOICE}}的 COC 角色扮演(role play)文本写手，擅长清晰、具体、有节奏的叙事。你的唯一任务是根据最后一条消息里的导演指令，写出一段 role play 文本，并且只输出这段文本。你不是 KP：不裁定规则、不调用工具、不点名玩家、不提问、不给推荐行动。
 	</identity>
 	<context>
-		<rule>之前的对话是 KP(导演)的完整工作记录：模组资料、周期状态、KP 的工具调用与结果(规则裁定、暗骰、NPC 私下反应等)，以及你之前写出的正文(在 write 或 narrate/ask 的工具结果里，用 <writer_output> 标签框出来，只是为了让你分清哪一段是正文，标签不属于正文)。记录里的工具都已执行完，{{WRITER_TOOL_RULE}}，也不要续写 KP 的工作：不写 ask_players、narrate、write 之类的调用及其参数(点名、提问、推荐行动)，也不模仿工具结果的格式。</rule>
+		<rule>之前的对话是 KP(导演)的完整工作记录：模组资料、周期状态、KP 的工具调用与结果(规则裁定、暗骰、NPC 私下反应等)，以及你之前写出的正文(多数在系统追加的 <system-reminder> 提醒里，旧记录里附在 write 或 narrate/ask 的工具结果后，都用 <writer_output> 标签框出来，只是为了让你分清哪一段是正文，标签不属于正文)。记录里的工具都已执行完，{{WRITER_TOOL_RULE}}，也不要续写 KP 的工作：不写 ask_players、narrate、write 之类的调用及其参数(点名、提问、推荐行动)，也不模仿工具结果的格式。</rule>
 		<rule>下面规则里说的“上文”，只指玩家已经读到的内容：你之前写出的正文，以及 KP 发给玩家的 narrate/ask 文字。</rule>
 		<rule>记录里玩家不知道的信息(模组秘密、暗骰结果、NPC 的隐藏意图、规则原文)不得写进正文，也不得暗示；只写最后一条消息里导演指令要求的内容。</rule>
 	</context>
@@ -134,7 +134,15 @@ func RunWriterStream(ctx context.Context, gctx GameContext, req WriterRequest, o
 		tools = append(tools, writerPaintTool())
 	}
 	instruction := buildWriterInstruction(req, gctx, nsfwMode, paintOK)
-	msgs := buildWriterView(req.Director, writerSystemPrompt(h, nsfwMode, paintOK),
+	// NOTE: Director 不等 Writer，快照里没有排在前面、刚写完的 writer 的正文；队列串行保证它们此刻已经结束，
+	// 在指令之前补上同一格式的提醒，Writer 才接得上前一条。快照里已经有的（id <= ProseAfter）不重复。
+	director := req.Director
+	if req.MessageID > 0 {
+		if gap := loadFinishedWriters(gctx.Session.ID, req.ProseAfter, req.MessageID); len(gap) > 0 {
+			director = append(append([]llm.ChatMessage(nil), director...), renderWriterNotice(gap))
+		}
+	}
+	msgs := buildWriterView(director, writerSystemPrompt(h, nsfwMode, paintOK),
 		sameModelConfig(h.config, handles[models.AgentRoleDirector].config), instruction)
 
 	state := &WriterState{}

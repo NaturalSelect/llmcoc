@@ -184,11 +184,11 @@ func TestWriteToolAlignsWithResponse(t *testing.T) {
 	}
 }
 
-// TestWriteToolAsksForBulletDirectionAndReturnsProse 验证 write 说明要求要点式 direction，并告知正文会回到工具结果里；
-// 系统提示词不再说正文是异步生成的。
+// TestWriteToolAsksForBulletDirectionAndReturnsProse 验证 write 说明要求要点式 direction，并告知调用立即返回、
+// 正文之后以提醒追加；系统提示词也不再说会等 Writer 写完。
 func TestWriteToolAsksForBulletDirectionAndReturnsProse(t *testing.T) {
 	def := writeTool().def
-	for _, want := range []string{"【direction写法】", "要点", "<writer_output>", "不写氛围、修辞和感官描写", "逐项列出"} {
+	for _, want := range []string{"【direction写法】", "要点", "<writer_output>", "不写氛围、修辞和感官描写", "逐项列出", "立即返回", "提醒"} {
 		if !strings.Contains(def.Description, want) {
 			t.Errorf("write tool description should contain %q", want)
 		}
@@ -196,14 +196,22 @@ func TestWriteToolAsksForBulletDirectionAndReturnsProse(t *testing.T) {
 	if strings.Contains(def.Description, "感官细节要求") {
 		t.Error("write tool description should no longer ask the director for sensory detail")
 	}
+	if strings.Contains(def.Description, "会等 Writer") || strings.Contains(def.Description, "等 Writer 写完") {
+		t.Error("write tool description must not claim the call waits for the Writer")
+	}
 	if !strings.Contains(string(def.Parameters), "要点") {
 		t.Error("direction parameter description should mention bullet points")
 	}
 	if strings.Contains(kpSystemPrompt, "异步生成正文") {
 		t.Error("kp system prompt should no longer say the prose is generated asynchronously")
 	}
-	if !strings.Contains(kpSystemPrompt, "<writer_output>") {
-		t.Error("kp system prompt should tell the director where the prose comes back")
+	if strings.Contains(kpSystemPrompt, "会等Writer写完") {
+		t.Error("kp system prompt must not claim write waits for the Writer")
+	}
+	for _, want := range []string{"write立即返回", "<writer_output>提醒追加到对话里"} {
+		if !strings.Contains(kpSystemPrompt, want) {
+			t.Errorf("kp system prompt should contain %q", want)
+		}
 	}
 }
 
