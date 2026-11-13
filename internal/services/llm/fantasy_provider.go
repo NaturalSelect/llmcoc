@@ -296,11 +296,16 @@ func toFantasyInputSchema(params json.RawMessage) map[string]any {
 	if schema.Type == "" {
 		schema.Type = "object"
 	}
-	return map[string]any{
+	out := map[string]any{
 		"type":       schema.Type,
 		"properties": schema.Properties,
-		"required":   schema.Required,
 	}
+	// NOTE: 没有必填项时不能带 required 键：nil 切片会序列化成 "required": null，
+	// openai 兼容接口会以 "null is not of type array" 拒绝整个请求。
+	if len(schema.Required) > 0 {
+		out["required"] = schema.Required
+	}
+	return out
 }
 
 // anthropicCacheControlOptions 构造一个 ephemeral cache breakpoint 的 provider options。

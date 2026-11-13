@@ -98,6 +98,23 @@ func TestToFantasyInputSchema(t *testing.T) {
 		}
 	})
 
+	t.Run("no required fields never serializes required as null", func(t *testing.T) {
+		for _, params := range []json.RawMessage{
+			nil,
+			json.RawMessage(`{"type":"object","properties":{}}`),
+			json.RawMessage(`{"type":"object","properties":{},"required":null}`),
+			json.RawMessage(`{"type":"object","properties":{},"required":[]}`),
+		} {
+			raw, err := json.Marshal(toFantasyInputSchema(params))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(raw), "null") {
+				t.Errorf("schema for %s = %s, must not contain null", params, raw)
+			}
+		}
+	})
+
 	t.Run("blank type falls back to object", func(t *testing.T) {
 		schema := toFantasyInputSchema(json.RawMessage(`{"type":"","properties":{}}`))
 		if schema["type"] != "object" {
