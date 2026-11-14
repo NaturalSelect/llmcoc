@@ -12,10 +12,13 @@ const (
 	OnlineModuleStatusFailed      = "failed"
 
 	// 后台任务的阶段，只在 status 为 downloading 时有值。
+	// NOTE: downloading 在这里泛指「有后台任务在跑」：下载、提取和编译共用它。编译（compile）结束后回到 extracted，
+	// 正文还在，失败原因写在 error 里。
 	OnlineStageResolve  = "resolve"
 	OnlineStageDownload = "download"
 	OnlineStageExtract  = "extract"
 	OnlineStageOCR      = "ocr"
+	OnlineStageCompile  = "compile"
 )
 
 // OnlineModuleMeta 保存来源站列表接口返回的展示信息，原样留存不参与逻辑。

@@ -126,6 +126,7 @@ func (r onlineDownloadReq) meta() models.OnlineModuleMeta {
 type onlineLocalRef struct {
 	ID         uint   `json:"id"`
 	Status     string `json:"status"`
+	Stage      string `json:"stage"`
 	ScenarioID *uint  `json:"scenario_id"`
 }
 
@@ -234,14 +235,14 @@ func OnlineModuleBrowse(c *gin.Context) {
 	local := map[string]onlineLocalRef{}
 	if len(keys) > 0 {
 		var rows []models.OnlineModule
-		if err := models.DB.Select("id, source_key, status, scenario_id").
+		if err := models.DB.Select("id, source_key, status, stage, scenario_id").
 			Where("source = ? AND source_key IN ?", models.OnlineModuleSourceCnmods, keys).
 			Find(&rows).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询本地状态失败"})
 			return
 		}
 		for _, r := range rows {
-			local[r.SourceKey] = onlineLocalRef{ID: r.ID, Status: r.Status, ScenarioID: r.ScenarioID}
+			local[r.SourceKey] = onlineLocalRef{ID: r.ID, Status: r.Status, Stage: r.Stage, ScenarioID: r.ScenarioID}
 		}
 	}
 
@@ -623,7 +624,8 @@ func OnlineModuleLicenseOverride(c *gin.Context) {
 	c.JSON(http.StatusOK, fresh)
 }
 
-// OnlineModuleCompile 把选中的一篇正文交给故事编译流水线（SSE）。所有校验都在发出 SSE 头之前完成。
+// OnlineModuleCompile 把选中的一篇正文交给故事编译流水线：抢占任务后立即返回 202，编译在后台完成。
+// 进度、日志和结果经 WebSocket 推送，日志也可以经 compile-log 补拉；编译失败时条目回到 extracted 并带上原因。
 func OnlineModuleCompile(c *gin.Context) {
 	m, ok := onlineModuleFromParam(c)
 	if !ok {
@@ -681,19 +683,30 @@ func OnlineModuleCompile(c *gin.Context) {
 		author += "（cnmods）"
 	}
 	moduleID := m.ID
-	streamCompileStory(c, agent.CompileStoryRequest{StoryDocument: doc.Text, Name: name},
-		func(s *models.Scenario) {
-			s.Name = name
-			s.Author = author
-		},
-		func(s *models.Scenario) {
-			if err := models.DB.Model(&models.OnlineModule{}).Where("id = ?", moduleID).
-				Update("scenario_id", s.ID).Error; err != nil {
-				onlineLog.Error("backfill online module scenario id failed", "id", moduleID, "scenario_id", s.ID, "err", err)
-				return
-			}
-			publishOnlineModuleID(moduleID)
-		})
+	claimed, err := claimOnlineModule(moduleID, models.OnlineStageCompile, "准备编译")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新编译状态失败"})
+		return
+	}
+	if !claimed {
+		c.JSON(http.StatusConflict, gin.H{"error": "该模组正在处理中"})
+		return
+	}
+
+	story := agent.CompileStoryRequest{StoryDocument: doc.Text, Name: name}
+	docPath := doc.Path
+	prepare := func(s *models.Scenario) {
+		s.Name = name
+		s.Author = author
+	}
+	if err := onlineRunner.startDescribed(moduleID, models.OnlineModuleStatusExtracted, compileFailureHandler(moduleID), func(ctx context.Context) error {
+		return runOnlineCompile(ctx, moduleID, story, docPath, prepare)
+	}); err != nil {
+		finishOnlineTask(moduleID, models.OnlineModuleStatusExtracted, compileFailureMessage(err))
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "服务正在关闭，请稍后重试"})
+		return
+	}
+	respondOnlineAccepted(c, moduleID)
 }
 
 // OnlineModuleDelete 删除条目和提取出的文档，不影响已编译入库的模组。
@@ -716,6 +729,7 @@ func OnlineModuleDelete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除线上模组失败"})
 		return
 	}
+	onlineLogs.drop(m.ID)
 	onlineHubInst.publishDeleted(m.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

@@ -3,11 +3,19 @@
 
 export type OnlineStatus = 'pending' | 'downloading' | 'extracted' | 'failed'
 
-// NOTE: 任务进度 WebSocket 的帧：{type, data}，只有服务端 → 客户端一个方向
+// NOTE: 任务进度 WebSocket 的帧：{type, data}，只有服务端 → 客户端一个方向。
+// log 帧是编译日志的一行：index 是该模组日志的绝对行号（从 0 递增），line 已由服务端带好时间前缀
 export type OnlineTaskFrame =
   | { type: 'snapshot'; data: { modules: OnlineModule[] } }
   | { type: 'module'; data: OnlineModule }
   | { type: 'deleted'; data: { id: number } }
+  | { type: 'log'; data: { id: number; index: number; line: string } }
+
+// NOTE: GET /:id/compile-log 的响应：lines[i] 的绝对行号是 base + i；没有日志时 base 为 0、lines 为空
+export interface CompileLogResponse {
+  base: number
+  lines: string[]
+}
 
 // 来源站条目；url 是蓝奏云分享页，opinion 是 HTML，只能当纯文本显示
 export interface CnmodsItem {
@@ -34,6 +42,8 @@ export interface LocalRef {
   id: number
   status: OnlineStatus
   scenario_id: number | null
+  // NOTE: 浏览接口不带 stage，只有经 WebSocket 同步过的条目才有；用来区分「下载中」和「编译中」
+  stage?: string
 }
 
 export type BrowseItem = CnmodsItem & { local: LocalRef | null }
@@ -69,7 +79,8 @@ export interface OnlineModule {
   status: OnlineStatus
   // NOTE: error 非空即「最近一次后台任务失败」，与 status 无关：上传失败会恢复原状态，所以 extracted 也可能带 error
   error: string
-  // stage：'' | 'resolve' | 'download' | 'extract' | 'ocr'；stage_note 是阶段备注（如正在 OCR 的文件名）
+  // stage：'' | 'resolve' | 'download' | 'extract' | 'ocr' | 'compile'；stage_note 是阶段备注（如正在 OCR 的文件名、编译的当前步骤）
+  // 编译期间 status 仍是 downloading（沿用「后台任务进行中」），靠 stage === 'compile' 区分
   stage: string
   stage_note: string
   // status 为 downloading 时才有值

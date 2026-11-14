@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -72,8 +73,24 @@ func (t plainHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	return t.base.RoundTrip(clone)
 }
 
+// trimV1Suffix 去掉 BaseURL 路径末尾的 /v1（连同多余的斜杠），其余路径前缀原样保留。
+// NOTE: 客户端自己会追加 /v1/systemone，而同一个 Provider 常按 OpenAI 的习惯填成 addr/v1，不去掉会请求到 /v1/v1/systemone。
+func trimV1Suffix(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+	p := strings.TrimRight(u.Path, "/")
+	if len(p) >= len("/v1") && strings.EqualFold(p[len(p)-len("/v1"):], "/v1") {
+		p = p[:len(p)-len("/v1")]
+	}
+	u.Path = strings.TrimRight(p, "/")
+	u.RawPath = ""
+	return u.String()
+}
+
 // NewSystemOneClient 用 Provider 配置里的 BaseURL（留空走默认端点）和 APIKey 构造 System One 客户端。
-// BaseURL 可以是 http：此时 API Key 和玩家输入明文传输，只应用于内网。
+// BaseURL 末尾的 /v1 会被去掉。BaseURL 可以是 http：此时 API Key 和玩家输入明文传输，只应用于内网。
 // NOTE: 不重试：请求不幂等，而且分类只有几秒预算，重试没有意义。
 func NewSystemOneClient(cfg *models.LLMProviderConfig, model string) (*typesafe.Client, error) {
 	if strings.TrimSpace(model) == "" {
@@ -87,6 +104,7 @@ func NewSystemOneClient(cfg *models.LLMProviderConfig, model string) (*typesafe.
 		typesafe.WithRetryPolicy(policy),
 	}
 	if base := strings.TrimSpace(cfg.BaseURL); base != "" {
+		base = trimV1Suffix(base)
 		if len(base) >= len("http://") && strings.EqualFold(base[:len("http://")], "http://") {
 			base = "https://" + base[len("http://"):]
 			opts = append(opts, typesafe.WithHTTPClient(&http.Client{Transport: plainHTTPTransport{base: http.DefaultTransport}}))

@@ -228,107 +228,310 @@ describe('OnlineModuleDetailModal', () => {
     w.unmount()
   })
 
-  test('编译：SSE 的 done 带 scenario_id 后刷新详情，显示「已编译为模组 #id」', async () => {
-    let compiled = false
-    routes['GET /api/admin/online-modules/7'] = () => detail(compiled ? { scenario_id: 42 } : {})
-    const enc = new TextEncoder()
-    const signals: AbortSignal[] = []
+  // NOTE: 编译是后台任务：POST 只返回 202 / 错误 JSON，进度、日志和结果全部经 store（WebSocket）到达。这里只替换 compile 的 POST，其余请求走默认路由
+  function stubCompilePost(respond: () => Response | Promise<Response>) {
     const base = globalThis.fetch as unknown as (path: string, init?: RequestInit) => Promise<Response>
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (path: string, init?: RequestInit) => {
-        if (path.endsWith('/compile')) {
-          calls.push({ method: 'POST', path, body: JSON.parse(String(init?.body)) })
-          signals.push(init?.signal as AbortSignal)
-          compiled = true
-          const body = new ReadableStream<Uint8Array>({
-            start(c) {
-              c.enqueue(enc.encode('event: progress\ndata: {"stage":"compile","status":"start","detail":"编译中"}\n\n'))
-              c.enqueue(enc.encode('event: done\ndata: {"index":1,"scenario_id":42,"name":"雨夜档案"}\n\n'))
-              c.close()
-            },
-          })
-          return { ok: true, status: 200, body } as unknown as Response
-        }
-        return base(path, init)
-      }),
-    )
+    vi.stubGlobal('fetch', (path: string, init?: RequestInit) => {
+      if (path.endsWith('/compile') && init?.method === 'POST') {
+        calls.push({ method: 'POST', path, body: JSON.parse(String(init.body)) })
+        return Promise.resolve(respond())
+      }
+      return base(path, init)
+    })
+  }
+  const accepted202 = (m: OnlineModule) => ({ ok: true, status: 202, json: async () => m }) as unknown as Response
+  const compiling = (over: Partial<OnlineModule> = {}) =>
+    module_({
+      status: 'downloading',
+      stage: 'compile',
+      stage_note: '准备编译',
+      task_started_at: '2026-11-14T09:00:00Z',
+      updated_at: '2026-11-14T09:00:00Z',
+      ...over,
+    })
+  const detailGets = () => calls.filter((c) => c.method === 'GET' && c.path === '/api/admin/online-modules/7').length
+  const logBox = () => document.body.querySelector('[role="log"]')
+  const logTexts = () => Array.from(logBox()?.querySelectorAll('div') ?? []).map((d) => d.textContent)
+  const toastPairs = () => useUiStore().toasts.map((t) => [t.message, t.type])
+  const STARTED = '已开始编译，进度显示在下方，也可在「任务进度」页查看'
+
+  test('编译：POST 202 后把返回的模组写进 store，只提示已开始；弹窗改显示编译进度，按钮和上传都禁用，不再发详情请求', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail()
+    connectTasks()
+    const accepted = compiling()
+    stubCompilePost(() => accepted202(accepted))
     const w = mountModal()
     await flushPromises()
     buttonByText('编译')!.click()
     await flushPromises()
 
-    const post = calls.find((c) => c.path === '/api/admin/online-modules/7/compile')!
+    const post = calls.find((c) => c.method === 'POST' && c.path === '/api/admin/online-modules/7/compile')!
     expect(post.body).toStrictEqual({ document_id: 11 })
-    expect(document.body.textContent).toContain('已编译为模组 #42')
-    expect(useUiStore().toasts.map((t) => t.type)).toStrictEqual(['success'])
+    // 和下载、上传一致：202 的记录直接 upsert 进 store，任务进度页立刻可见
+    expect(useOnlineTasksStore().modules[7]).toMatchObject({ status: 'downloading', stage: 'compile' })
+    expect(toastPairs()).toStrictEqual([[STARTED, 'success']])
     expect(w.emitted('changed')).toHaveLength(1)
-    // 流已正常结束，没有在途请求需要中断
-    expect(signals[0]!.aborted).toBe(false)
+    expect(detailGets()).toBe(1)
+
+    const progress = document.body.querySelector('[data-testid="task-progress"]')!
+    expect(progress.textContent).toContain('编译')
+    expect(progress.textContent).toContain('准备编译')
+    expect(document.body.textContent).toContain('编译中')
+    expect(buttonByText('编译中…')!.disabled).toBe(true)
+    expect(buttonByText('上传')!.disabled).toBe(true)
+    expect(document.body.querySelector('[data-testid="compile-block-reason"]')).toBeNull()
     w.unmount()
   })
 
-  test('编译中卸载弹窗：中断在途请求，之后不再弹 toast', async () => {
-    routes['GET /api/admin/online-modules/7'] = detail()
-    const enc = new TextEncoder()
-    const signals: AbortSignal[] = []
-    const base = globalThis.fetch as unknown as (path: string, init?: RequestInit) => Promise<Response>
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (path: string, init?: RequestInit) => {
-        if (!path.endsWith('/compile')) return base(path, init)
-        const signal = init?.signal as AbortSignal
-        signals.push(signal)
-        const body = new ReadableStream<Uint8Array>({
-          start(c) {
-            c.enqueue(enc.encode('event: progress\ndata: {"stage":"compile","status":"start","detail":"编译中"}\n\n'))
-            signal.addEventListener('abort', () => c.error(new DOMException('aborted', 'AbortError')))
-          },
-        })
-        return { ok: true, status: 200, body } as unknown as Response
-      }),
+  test('编译：带自定义名称时请求体含 name；名称两端空白被去掉', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail()
+    stubCompilePost(() => accepted202(compiling()))
+    const w = mountModal()
+    await flushPromises()
+    const input = document.body.querySelector('input[type="text"]') as HTMLInputElement
+    input.value = '  我的雨夜  '
+    input.dispatchEvent(new Event('input'))
+    buttonByText('编译')!.click()
+    await flushPromises()
+    expect(calls.find((c) => c.path.endsWith('/compile'))!.body).toStrictEqual({ document_id: 11, name: '我的雨夜' })
+    w.unmount()
+  })
+
+  test('编译：409 等校验失败原样提示后端消息，store 和按钮不变，不通知外层', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail()
+    connectTasks()
+    stubCompilePost(
+      () => ({ ok: false, status: 409, json: async () => ({ error: '已存在同名模组「雨夜档案」，请换一个名称' }) }) as unknown as Response,
     )
     const w = mountModal()
     await flushPromises()
     buttonByText('编译')!.click()
     await flushPromises()
-    expect(document.body.textContent).toContain('编译中')
-    // 编译期间按钮保持禁用，不会重复提交
+
+    expect(toastPairs()).toStrictEqual([['已存在同名模组「雨夜档案」，请换一个名称', 'error']])
+    expect(useOnlineTasksStore().modules[7]).toBeUndefined()
+    expect(w.emitted('changed')).toBeUndefined()
+    expect(document.body.querySelector('[data-testid="task-progress"]')).toBeNull()
+    // 请求结束后防重复状态已解除，可以改名重试
+    expect(buttonByText('编译')!.disabled).toBe(false)
+    w.unmount()
+  })
+
+  test('编译：请求在途时按钮 loading 且禁用，重复点击只发一次请求', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail()
+    let finish: (r: Response) => void = () => {}
+    const pending = new Promise<Response>((res) => (finish = res))
+    stubCompilePost(() => pending)
+    const w = mountModal()
+    await flushPromises()
+    buttonByText('编译')!.click()
+    await flushPromises()
+    const busy = buttonByText('编译中…')!
+    expect(busy.disabled).toBe(true)
+    busy.click()
+    await flushPromises()
+    expect(calls.filter((c) => c.path.endsWith('/compile'))).toHaveLength(1)
+
+    finish(accepted202(compiling()))
+    await flushPromises()
+    expect(calls.filter((c) => c.path.endsWith('/compile'))).toHaveLength(1)
+    w.unmount()
+  })
+
+  test('竞态：结束帧先于 202 到达时，不套用 202 里的 downloading（否则永远停在「编译中」），按已结束处理：重载详情、通知外层、补完成提示', async () => {
+    let compiled = false
+    routes['GET /api/admin/online-modules/7'] = () => detail(compiled ? { scenario_id: 42, updated_at: '2026-11-14T09:00:05Z' } : {})
+    connectTasks()
+    let finish: (r: Response) => void = () => {}
+    const pending = new Promise<Response>((res) => (finish = res))
+    stubCompilePost(() => pending)
+    const w = mountModal()
+    await flushPromises()
+    buttonByText('编译')!.click()
+    await flushPromises()
+
+    // 任务秒结束：WebSocket 的结束帧先到，store 没见过任何 downloading 帧
+    compiled = true
+    pushModule(module_({ scenario_id: 42, updated_at: '2026-11-14T09:00:05Z' }))
+    await flushPromises()
+    expect(toastPairs()).toStrictEqual([])
+
+    finish(accepted202(compiling()))
+    await flushPromises()
+
+    expect(useOnlineTasksStore().modules[7]!.status).toBe('extracted')
+    expect(document.body.querySelector('[data-testid="task-progress"]')).toBeNull()
+    expect(document.body.textContent).toContain('已编译为模组 #42')
+    expect(buttonByText('重新编译')!.disabled).toBe(false)
+    expect(detailGets()).toBe(2)
+    expect(w.emitted('changed')).toHaveLength(1)
+    expect(toastPairs()).toStrictEqual([
+      [STARTED, 'success'],
+      ['编译完成，已入库：雨夜档案', 'success'],
+    ])
+    w.unmount()
+  })
+
+  test('编译完成（WebSocket 推来结束帧）：显示「已编译为模组 #id」，通知外层刷新，由 store 弹一次完成提示；不重新加载文档', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail({ status: 'downloading', stage: 'compile', task_started_at: '2026-11-14T09:00:00Z' })
+    connectTasks()
+    pushModule(compiling())
+    const w = mountModal()
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="task-progress"]')!.textContent).toContain('编译')
     expect(buttonByText('编译中…')!.disabled).toBe(true)
 
-    expect(signals[0]!.aborted).toBe(false)
-    w.unmount()
-    expect(signals[0]!.aborted).toBe(true)
+    pushModule(compiling({ stage_note: '正在生成场景' }))
     await flushPromises()
-    expect(useUiStore().toasts).toStrictEqual([])
+    expect(document.body.querySelector('[data-testid="task-progress"]')!.textContent).toContain('正在生成场景')
+
+    pushModule(module_({ scenario_id: 42, updated_at: '2026-11-14T09:05:00Z' }))
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="task-progress"]')).toBeNull()
+    expect(document.body.textContent).toContain('已编译为模组 #42')
+    expect(buttonByText('重新编译')!.disabled).toBe(false)
+    expect(buttonByText('上传')!.disabled).toBe(false)
+    expect(w.emitted('changed')).toHaveLength(1)
+    expect((w.emitted('changed')![0]![0] as OnlineModule).scenario_id).toBe(42)
+    // 编译不改文档，结束后不需要重新加载详情
+    expect(detailGets()).toBe(1)
+    expect(toastPairs()).toStrictEqual([['编译完成，已入库：雨夜档案', 'success']])
+    w.unmount()
   })
 
-  test('关闭弹窗同样中断在途编译', async () => {
-    routes['GET /api/admin/online-modules/7'] = detail()
-    const signals: AbortSignal[] = []
-    const base = globalThis.fetch as unknown as (path: string, init?: RequestInit) => Promise<Response>
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (path: string, init?: RequestInit) => {
-        if (!path.endsWith('/compile')) return base(path, init)
-        const signal = init?.signal as AbortSignal
-        signals.push(signal)
-        const body = new ReadableStream<Uint8Array>({
-          start(c) {
-            signal.addEventListener('abort', () => c.error(new DOMException('aborted', 'AbortError')))
-          },
-        })
-        return { ok: true, status: 200, body } as unknown as Response
-      }),
-    )
+  test('编译失败（结束帧带 error）：沿用「最近一次任务失败」显示，scenario_id 不变，可以重试；store 弹一次错误提示', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail({ status: 'downloading', stage: 'compile', scenario_id: 5 })
+    connectTasks()
+    pushModule(compiling({ scenario_id: 5 }))
     const w = mountModal()
     await flushPromises()
-    buttonByText('编译')!.click()
+    // 重新编译：旧的 scenario_id 还在，徽标也必须是「编译中」
+    expect(document.body.textContent).toContain('编译中')
+
+    pushModule(module_({ scenario_id: 5, error: '模组编译失败: 逻辑审查未通过', updated_at: '2026-11-14T09:05:00Z' }))
     await flushPromises()
+    expect(document.body.textContent).toContain('最近一次任务失败：模组编译失败: 逻辑审查未通过')
+    expect(document.body.textContent).toContain('已编译为模组 #5')
+    expect(buttonByText('重新编译')!.disabled).toBe(false)
+    expect(w.emitted('changed')).toHaveLength(1)
+    expect(toastPairs()).toStrictEqual([['雨夜档案：模组编译失败: 逻辑审查未通过', 'error']])
+    w.unmount()
+  })
+
+  test('打开弹窗时补拉编译日志：行号为 base + i，原样显示（不再加时间前缀）', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail()
+    routes['GET /api/admin/online-modules/7/compile-log'] = { base: 10, lines: ['[09:00:00] —— 开始编译 ——', '[09:00:01] 提取场景'] }
+    const w = mountModal()
+    await flushPromises()
+    expect(calls.some((c) => c.method === 'GET' && c.path === '/api/admin/online-modules/7/compile-log')).toBe(true)
+    expect(logTexts()).toStrictEqual(['[09:00:00] —— 开始编译 ——', '[09:00:01] 提取场景'])
+    w.unmount()
+  })
+
+  test('没有日志的模组不显示日志框', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail()
+    routes['GET /api/admin/online-modules/7/compile-log'] = { base: 0, lines: [] }
+    const w = mountModal()
+    await flushPromises()
+    expect(logBox()).toBeNull()
+    w.unmount()
+  })
+
+  test('补拉日志失败不影响弹窗：详情照常显示，没有日志框，也没有错误提示', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail()
+    // 没有配置 compile-log 路由 → 404
+    const w = mountModal()
+    await flushPromises()
+    expect(document.body.textContent).toContain('雨夜档案')
+    expect(logBox()).toBeNull()
+    expect(toastPairs()).toStrictEqual([])
+    w.unmount()
+  })
+
+  test('实时 log 帧追加到日志框；关闭再打开弹窗日志还在（日志在 store 里），重新打开会再补拉一次', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail({ status: 'downloading', stage: 'compile' })
+    routes['GET /api/admin/online-modules/7/compile-log'] = { base: 0, lines: [] }
+    connectTasks()
+    pushModule(compiling())
+    const w = mountModal()
+    await flushPromises()
+    const frame = (index: number, line: string) => FakeWebSocket.last.recv({ type: 'log', data: { id: 7, index, line } })
+    frame(0, '[09:00:00] —— 开始编译 ——')
+    frame(1, '[09:00:03] 读取故事')
+    await flushPromises()
+    expect(logTexts()).toStrictEqual(['[09:00:00] —— 开始编译 ——', '[09:00:03] 读取故事'])
+    // 别的模组的日志不会串进来
+    FakeWebSocket.last.recv({ type: 'log', data: { id: 99, index: 0, line: '别人的' } })
+    await flushPromises()
+    expect(logTexts()).toHaveLength(2)
+
     await w.setProps({ open: false })
     await flushPromises()
-    expect(signals[0]!.aborted).toBe(true)
-    expect(useUiStore().toasts).toStrictEqual([])
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    frame(2, '[09:00:05] 关着弹窗时来的行')
+
+    const before = calls.filter((c) => c.path.endsWith('/compile-log')).length
+    await w.setProps({ open: true })
+    await flushPromises()
+    expect(calls.filter((c) => c.path.endsWith('/compile-log')).length).toBe(before + 1)
+    expect(logTexts()).toStrictEqual(['[09:00:00] —— 开始编译 ——', '[09:00:03] 读取故事', '[09:00:05] 关着弹窗时来的行'])
+    w.unmount()
+  })
+
+  test('日志框：新行到达时滚到底；弹窗重新打开时直接定位到最新一行', async () => {
+    // NOTE: jsdom 没有布局，scrollHeight 恒为 0；用可变的假高度模拟内容增长
+    let height = 100
+    const spy = vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(() => height)
+    try {
+      routes['GET /api/admin/online-modules/7'] = () => detail({ status: 'downloading', stage: 'compile' })
+      routes['GET /api/admin/online-modules/7/compile-log'] = { base: 0, lines: [] }
+      connectTasks()
+      pushModule(compiling())
+      const w = mountModal()
+      await flushPromises()
+      FakeWebSocket.last.recv({ type: 'log', data: { id: 7, index: 0, line: 'a' } })
+      await flushPromises()
+      expect(logBox()!.scrollTop).toBe(100)
+
+      height = 250
+      FakeWebSocket.last.recv({ type: 'log', data: { id: 7, index: 1, line: 'b' } })
+      await flushPromises()
+      expect(logBox()!.scrollTop).toBe(250)
+
+      await w.setProps({ open: false })
+      await flushPromises()
+      height = 400
+      await w.setProps({ open: true })
+      await flushPromises()
+      expect(logBox()!.scrollTop).toBe(400)
+      w.unmount()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test('卸载弹窗不会中断编译：不取消任何请求，store 里的日志保留，之后的结束帧不再触发弹窗的任何请求', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail({ status: 'downloading', stage: 'compile' })
+    connectTasks()
+    pushModule(compiling())
+    const w = mountModal()
+    await flushPromises()
+    FakeWebSocket.last.recv({ type: 'log', data: { id: 7, index: 0, line: '[09:00:00] x' } })
+    const n = calls.length
+    w.unmount()
+    expect(useOnlineTasksStore().compileLines(7)).toStrictEqual(['[09:00:00] x'])
+    pushModule(module_({ scenario_id: 1, updated_at: '2026-11-14T09:05:00Z' }))
+    await flushPromises()
+    expect(calls.length).toBe(n)
+  })
+
+  test('日志框没有「清空日志」按钮（日志是服务端共享的，本地清空重开弹窗就回来了）', async () => {
+    routes['GET /api/admin/online-modules/7'] = () => detail()
+    routes['GET /api/admin/online-modules/7/compile-log'] = { base: 0, lines: ['[09:00:00] x'] }
+    const w = mountModal()
+    await flushPromises()
+    expect(logBox()).not.toBeNull()
+    expect(buttonByText('清空日志')).toBeUndefined()
     w.unmount()
   })
 
@@ -614,6 +817,33 @@ describe('OnlineBrowsePanel', () => {
     buttonByText('下一页')!.click()
     await flushPromises()
     expect(calls.at(-1)!.path).toBe('/api/admin/online-modules/browse?page=2&title=' + encodeURIComponent('雨夜'))
+    w.unmount()
+  })
+
+  test('编译中的条目显示「编译中」，不显示下载按钮；applyModule 带上 stage，编译结束后恢复', async () => {
+    routes['GET /api/admin/online-modules/browse'] = {
+      items: [browseItem({ local: { id: 7, status: 'downloading', scenario_id: 5, stage: 'compile' } })],
+      page: 1,
+      total_pages: 1,
+      total_elements: 1,
+    }
+    const w = mount(OnlineBrowsePanel, { attachTo: document.body })
+    await flushPromises()
+    expect(document.body.textContent).toContain('编译中')
+    expect(document.body.textContent).not.toContain('下载中')
+    expect(buttonByText('下载中…')).toBeUndefined()
+    expect(buttonByText('下载')).toBeUndefined()
+
+    const panel = w.vm as unknown as { applyModule: (m: OnlineModule) => void }
+    panel.applyModule(module_({ status: 'extracted', scenario_id: 5 }))
+    await flushPromises()
+    expect(document.body.textContent).not.toContain('编译中')
+    expect(document.body.textContent).toContain('已编译')
+
+    // 浏览接口不带 stage 时（页面刚加载）按旧逻辑显示下载中
+    panel.applyModule(module_({ status: 'downloading', stage: 'download' }))
+    await flushPromises()
+    expect(document.body.textContent).toContain('下载中')
     w.unmount()
   })
 

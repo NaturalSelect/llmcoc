@@ -5,7 +5,6 @@ import { api } from '@/api/client'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
-import BaseTextarea from '@/components/base/BaseTextarea.vue'
 import FormField from '@/components/base/FormField.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
@@ -21,7 +20,7 @@ import {
   planPing,
   savedMessage,
 } from './agentActions'
-import { agentDefaultHint, agentDesc, agentLabel } from './agentRoles'
+import { agentDesc, agentLabel } from './agentRoles'
 
 const props = defineProps<{ initial: AgentFormState; providers: ProviderConfig[] }>()
 const ui = useUiStore()
@@ -141,10 +140,6 @@ const pinging = () => pingingKey.value === pingLoadingKey(form)
         <span>启用越狱提示词（在该 Agent 提示词外包裹破限内容，降低模型因审查拒绝创作黑暗/成人向剧情的概率）</span>
       </label>
     </div>
-
-    <FormField label="System Prompt（留空使用默认）">
-      <BaseTextarea v-model="form.system_prompt" rows="3" :placeholder="agentDefaultHint(form.role)" />
-    </FormField>
 
     <div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
       <label class="flex cursor-pointer items-center gap-2 text-sm text-fg-muted">

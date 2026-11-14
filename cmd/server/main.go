@@ -191,14 +191,12 @@ func main() {
 	}))
 
 	// Gzip 压缩前端静态资源与常规 API 响应。
-	// NOTE: 必须排除 SSE 流式接口（线上模组编译）和 WebSocket 升级接口，否则 gzip 缓冲会破坏逐段推流或握手。
-	// gin-contrib/gzip 本身也会在请求 Accept 含 text/event-stream 时跳过，但前端 fetch 未显式带该头，
-	// 故这里用路径正则显式排除，双保险。聊天的 /chat、/kp-turn、/kp-stop 已是立即返回的 JSON，不需要排除。
+	// NOTE: 必须排除 WebSocket 升级接口，否则 gzip 缓冲会破坏握手。
+	// 聊天的 /chat、/kp-turn、/kp-stop 和线上模组编译都是立即返回的 JSON，不需要排除。
 	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPathsRegexs([]string{
 		`^/api/sessions/[^/]+/ws$`,
 		`^/api/scenarios/generate/ws$`,
 		`^/api/scenarios/compile-story/ws$`,
-		`^/api/admin/online-modules/[^/]+/compile$`,
 		`^/api/admin/online-modules/ws$`,
 	})))
 
@@ -320,6 +318,7 @@ func main() {
 		admin.POST("/online-modules/download", handlers.OnlineModuleDownload)
 		admin.GET("/online-modules/:id", handlers.OnlineModuleGet)
 		admin.GET("/online-modules/:id/documents/:docId", handlers.OnlineModuleDocument)
+		admin.GET("/online-modules/:id/compile-log", handlers.OnlineModuleCompileLog)
 		admin.POST("/online-modules/:id/archive", handlers.OnlineModuleUploadArchive)
 		admin.POST("/online-modules/:id/license-override", handlers.OnlineModuleLicenseOverride)
 		admin.POST("/online-modules/:id/compile", handlers.OnlineModuleCompile)

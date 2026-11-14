@@ -10,6 +10,7 @@ import {
   defaultDocument,
   formatBytes,
   formatElapsed,
+  isCompiling,
   moduleMetaLine,
   opinionText,
   safeUrl,
@@ -78,6 +79,31 @@ describe('statusLabel / statusTone', () => {
     expect(statusTone('downloading')).toBe('ledger')
     expect(statusTone(undefined)).toBe('faint')
     expect(statusTone('extracted', 3)).toBe('seal')
+  })
+
+  test('编译期间（downloading + compile）显示「编译中」，色调与「下载中」一致；重新编译时旧的 scenario_id 不能盖住它', () => {
+    expect(statusLabel('downloading', null, 'compile')).toBe('编译中')
+    expect(statusLabel('downloading', 7, 'compile')).toBe('编译中')
+    expect(statusTone('downloading', null, 'compile')).toBe('ledger')
+    expect(statusTone('downloading', 7, 'compile')).toBe('ledger')
+  })
+
+  test('其他阶段、空阶段、缺省阶段保持原样；stage=compile 但状态已结束时不算编译', () => {
+    for (const stage of ['resolve', 'download', 'extract', 'ocr', '', undefined, null]) {
+      expect(statusLabel('downloading', null, stage)).toBe('下载中')
+      expect(statusTone('downloading', null, stage)).toBe('ledger')
+    }
+    expect(statusLabel('downloading', 7, 'ocr')).toBe('已编译')
+    expect(statusLabel('extracted', null, 'compile')).toBe('已提取')
+    expect(statusLabel('extracted', 7, 'compile')).toBe('已编译')
+    expect(statusTone('extracted', null, 'compile')).toBe('moss')
+  })
+
+  test('isCompiling 只认 downloading + compile', () => {
+    expect(isCompiling('downloading', 'compile')).toBe(true)
+    expect(isCompiling('downloading', 'ocr')).toBe(false)
+    expect(isCompiling('extracted', 'compile')).toBe(false)
+    expect(isCompiling(undefined, undefined)).toBe(false)
   })
 })
 
@@ -284,11 +310,12 @@ describe('validateArchiveFile', () => {
 })
 
 describe('stageLabel', () => {
-  test('四个阶段有中文名；空值返回空串；未知阶段原样显示', () => {
+  test('五个阶段有中文名；空值返回空串；未知阶段原样显示', () => {
     expect(stageLabel('resolve')).toBe('解析分享页')
     expect(stageLabel('download')).toBe('下载压缩包')
     expect(stageLabel('extract')).toBe('提取正文')
     expect(stageLabel('ocr')).toBe('OCR 识别')
+    expect(stageLabel('compile')).toBe('编译')
     expect(stageLabel('')).toBe('')
     expect(stageLabel(null)).toBe('')
     expect(stageLabel('future')).toBe('future')
@@ -340,6 +367,15 @@ describe('sortTaskModules', () => {
     const copy = [...input]
     expect(sortTaskModules(input).map((x) => x.id)).toStrictEqual([4, 2, 3, 1])
     expect(input).toStrictEqual(copy)
+  })
+
+  test('编译任务（downloading）和下载任务一样排在前面；编译失败后回到 extracted（带 error）按更新时间排在已结束的行里', () => {
+    const out = sortTaskModules([
+      { ...m(1, 'extracted', '2026-11-14T10:00:00Z'), error: '模组编译失败: x' },
+      { ...m(2, 'downloading', '2026-11-14T08:00:00Z', '2026-11-14T08:00:00Z'), stage: 'compile' },
+      m(3, 'extracted', '2026-11-14T09:00:00Z'),
+    ])
+    expect(out.map((x) => x.id)).toStrictEqual([2, 1, 3])
   })
 
   test('更新时间相同按 id 倒序，结果稳定；时间非法排最后', () => {

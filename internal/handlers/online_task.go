@@ -1,9 +1,9 @@
 package handlers
 
-// NOTE: 线上模组的后台任务和管理员实时推送。下载、上传提取（含慢速的 OCR）都在后台协程里跑，
+// NOTE: 线上模组的后台任务和管理员实时推送。下载、上传提取（含慢速的 OCR）和编译都在后台协程里跑，
 // 进度经 GET /api/admin/online-modules/ws 推给所有在线的管理员页面。推送协议很简单：
-// 连接后第一帧是全量快照，之后只有 module（upsert）和 deleted 两种帧，没有序号和重放，
-// 掉线重连就拿一份新快照。客户端不会发数据帧，读循环只负责控制帧和超时（复用房间 WebSocket 的实现）。
+// 连接后第一帧是全量快照，之后只有 module（upsert）、deleted 和 log（编译日志的一行）三种帧，没有序号和重放，
+// 掉线重连就拿一份新快照，日志另走 GET /:id/compile-log 补拉。客户端不会发数据帧，读循环只负责控制帧和超时（复用房间 WebSocket 的实现）。
 
 import (
 	"context"
@@ -140,6 +140,16 @@ func (h *onlineHub) publishDeleted(id uint) {
 	h.broadcastLocked(onlineFrame{Type: "deleted", Data: gin.H{"id": id}})
 }
 
+// publishLog 推送一行编译日志。index 是该条目日志的绝对行号，客户端按它去重和合并。
+func (h *onlineHub) publishLog(id uint, index int, line string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.subs) == 0 {
+		return
+	}
+	h.broadcastLocked(onlineFrame{Type: "log", Data: gin.H{"id": id, "index": index, "line": line}})
+}
+
 func publishOnlineModuleID(id uint) { onlineHubInst.publishModule(id) }
 
 // OnlineModuleWS 升级为 WebSocket 并推送线上模组的任务进度：GET /api/admin/online-modules/ws?token=。
@@ -230,6 +240,11 @@ var onlineRunner = newOnlineTaskRunner()
 // start 在后台协程里执行 fn。失败时把条目置为 failStatus 并写入失败原因，成功时 fn 自己已经落好状态，这里只负责推送。
 // 调用方必须已经用 claimOnlineModule 抢到了下载状态。
 func (r *onlineTaskRunner) start(id uint, failStatus string, fn func(ctx context.Context) error) error {
+	return r.startDescribed(id, failStatus, onlineFailureMessage, fn)
+}
+
+// startDescribed 与 start 相同，但失败原因由 describe 生成，编译任务的错误文案和下载不同。
+func (r *onlineTaskRunner) startDescribed(id uint, failStatus string, describe func(error) string, fn func(ctx context.Context) error) error {
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
@@ -242,7 +257,7 @@ func (r *onlineTaskRunner) start(id uint, failStatus string, fn func(ctx context
 		defer r.wg.Done()
 		if err := runOnlineTaskSafely(r.ctx, fn); err != nil {
 			onlineLog.Warn("online module task failed", "id", id, "err", err)
-			finishOnlineTask(id, failStatus, onlineFailureMessage(err))
+			finishOnlineTask(id, failStatus, describe(err))
 			return
 		}
 		publishOnlineModuleID(id)
@@ -318,23 +333,27 @@ func finishOnlineTask(id uint, status, message string) {
 
 // FailOrphanOnlineTasks 在启动时调用：上次进程退出时还在跑的任务已经不存在了。
 // 已经有提取文档的条目恢复成 extracted（文档在提取成功时才会写入，所以内容是完整的），否则标成 failed。
+// 编译任务不动文档，一定恢复成 extracted，只是原因文案不同。
 func FailOrphanOnlineTasks() {
 	var rows []models.OnlineModule
-	if err := models.DB.Select("id").Where("status = ?", models.OnlineModuleStatusDownloading).Find(&rows).Error; err != nil {
+	if err := models.DB.Select("id, stage").Where("status = ?", models.OnlineModuleStatusDownloading).Find(&rows).Error; err != nil {
 		onlineLog.Error("list orphan online module tasks failed", "err", err)
 		return
 	}
 	for _, r := range rows {
-		var docs int64
-		if err := models.DB.Model(&models.OnlineModuleDocument{}).Where("online_module_id = ?", r.ID).Count(&docs).Error; err != nil {
-			onlineLog.Error("count online module documents failed", "id", r.ID, "err", err)
-			continue
+		status, message := models.OnlineModuleStatusExtracted, onlineCompileInterruptedMessage
+		if r.Stage != models.OnlineStageCompile {
+			var docs int64
+			if err := models.DB.Model(&models.OnlineModuleDocument{}).Where("online_module_id = ?", r.ID).Count(&docs).Error; err != nil {
+				onlineLog.Error("count online module documents failed", "id", r.ID, "err", err)
+				continue
+			}
+			status, message = models.OnlineModuleStatusFailed, onlineInterruptedMessage
+			if docs > 0 {
+				status = models.OnlineModuleStatusExtracted
+			}
 		}
-		status := models.OnlineModuleStatusFailed
-		if docs > 0 {
-			status = models.OnlineModuleStatusExtracted
-		}
-		finishOnlineTask(r.ID, status, onlineInterruptedMessage)
+		finishOnlineTask(r.ID, status, message)
 		onlineLog.Warn("online module task interrupted by restart", "id", r.ID, "restored_status", status)
 	}
 }

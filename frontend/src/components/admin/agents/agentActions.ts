@@ -31,7 +31,6 @@ export function buildSavePayload(ag: AgentFormState) {
     image_via_chat: ag.image_via_chat || false,
     diffusion_mode: ag.diffusion_mode || false,
     with_jailbreak: ag.with_jailbreak || false,
-    system_prompt: ag.system_prompt,
     thinking_level: ag.thinking_level || '',
     thinking_budget_tokens: ag.thinking_budget_tokens || 0,
     is_active: ag.is_active,

@@ -39,7 +39,7 @@ function back() {
 
 <template>
   <div class="mx-auto w-full max-w-6xl space-y-5 p-5">
-    <PageHeader title="线上模组任务进度" subtitle="下载、上传后的提取正文和 OCR 都在后台运行，进度实时推送到这里。">
+    <PageHeader title="线上模组任务进度" subtitle="下载、上传后的提取正文、OCR 和编译都在后台运行，进度实时推送到这里。">
       <template #actions>
         <span
           class="inline-flex items-center gap-1.5 text-sm"
@@ -69,7 +69,7 @@ function back() {
           <div class="min-w-0 flex-1 space-y-1">
             <div class="flex flex-wrap items-center gap-2">
               <p class="truncate text-sm font-medium text-fg">{{ m.title }}</p>
-              <StampBadge :tone="statusTone(m.status, m.scenario_id)">{{ statusLabel(m.status, m.scenario_id) }}</StampBadge>
+              <StampBadge :tone="statusTone(m.status, m.scenario_id, m.stage)">{{ statusLabel(m.status, m.scenario_id, m.stage) }}</StampBadge>
             </div>
             <p v-if="m.author" class="text-xs text-fg-subtle">作者 {{ m.author }}</p>
             <OnlineTaskProgress v-if="m.status === 'downloading'" :module="m" :now="now" />

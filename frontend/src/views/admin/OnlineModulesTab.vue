@@ -32,7 +32,7 @@ const browse = ref<InstanceType<typeof OnlineBrowsePanel> | null>(null)
 const detailId = ref<number | null>(null)
 const detailOpen = ref(false)
 
-// NOTE: 下载和上传都在后台跑，结果经 WebSocket 推送：每次变化同步浏览区的状态标签，任务结束时再刷新本地列表
+// NOTE: 下载、上传提取和编译都在后台跑，结果经 WebSocket 推送：每次变化同步浏览区的状态标签，任务结束时再刷新本地列表
 const offChange = tasks.onChange(({ module, settled }) => {
   browse.value?.applyModule(module)
   if (settled) void run(() => list.load(list.page.value))

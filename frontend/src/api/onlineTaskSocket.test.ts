@@ -21,6 +21,7 @@ function harness(over: { api?: () => Promise<unknown>; token?: string } = {}) {
     onSnapshot: vi.fn((list: OnlineModule[]) => events.push('snapshot:' + list.map((m) => m.id).join(','))),
     onModule: vi.fn((m: OnlineModule) => events.push('module:' + m.id)),
     onDeleted: vi.fn((id: number) => events.push('deleted:' + id)),
+    onLog: vi.fn((id: number, index: number, line: string) => events.push(`log:${id}:${index}:${line}`)),
     onStatus: vi.fn((v: boolean) => events.push('status:' + v)),
     token: () => over.token ?? 'tok en',
     api: async (method: string, path: string) => {
@@ -47,10 +48,30 @@ afterEach(() => {
 })
 
 describe('parseOnlineTaskFrame', () => {
-  test('三种合法帧', () => {
+  test('四种合法帧', () => {
     expect(parseOnlineTaskFrame(JSON.stringify({ type: 'snapshot', data: { modules: [mod(1)] } }))?.type).toBe('snapshot')
     expect(parseOnlineTaskFrame(JSON.stringify({ type: 'module', data: mod(2) }))?.type).toBe('module')
     expect(parseOnlineTaskFrame(JSON.stringify({ type: 'deleted', data: { id: 3 } }))).toStrictEqual({ type: 'deleted', data: { id: 3 } })
+    expect(parseOnlineTaskFrame(JSON.stringify({ type: 'log', data: { id: 4, index: 0, line: '[09:00:00] x' } }))).toStrictEqual({
+      type: 'log',
+      data: { id: 4, index: 0, line: '[09:00:00] x' },
+    })
+  })
+
+  test('log 帧字段不合法一律丢弃：缺字段、类型错、行号为负数或小数；空字符串行是合法的', () => {
+    const bad = [
+      { id: 1, index: 0 },
+      { id: 1, line: 'x' },
+      { index: 0, line: 'x' },
+      { id: '1', index: 0, line: 'x' },
+      { id: 1, index: '0', line: 'x' },
+      { id: 1, index: -1, line: 'x' },
+      { id: 1, index: 1.5, line: 'x' },
+      { id: 1, index: 0, line: 5 },
+      null,
+    ]
+    for (const data of bad) expect(parseOnlineTaskFrame(JSON.stringify({ type: 'log', data }))).toBeNull()
+    expect(parseOnlineTaskFrame(JSON.stringify({ type: 'log', data: { id: 1, index: 0, line: '' } }))).not.toBeNull()
   })
 
   test('畸形 JSON、非对象、未知类型、缺字段一律返回 null', () => {
@@ -78,14 +99,15 @@ describe('OnlineTaskSocket', () => {
     h.ctl.close()
   })
 
-  test('快照、module、deleted 依次转交给回调；快照到达后才算已连接', () => {
+  test('快照、module、deleted、log 依次转交给回调；快照到达后才算已连接', () => {
     const h = harness()
     h.ctl.open()
     expect(h.events).toStrictEqual([])
     h.ws().recv({ type: 'snapshot', data: { modules: [mod(1), mod(2)] } })
     h.ws().recv({ type: 'module', data: mod(2, { status: 'failed' }) })
+    h.ws().recv({ type: 'log', data: { id: 2, index: 3, line: '[09:00:00] hi' } })
     h.ws().recv({ type: 'deleted', data: { id: 1 } })
-    expect(h.events).toStrictEqual(['snapshot:1,2', 'status:true', 'module:2', 'deleted:1'])
+    expect(h.events).toStrictEqual(['snapshot:1,2', 'status:true', 'module:2', 'log:2:3:[09:00:00] hi', 'deleted:1'])
     h.ctl.close()
   })
 
@@ -97,6 +119,7 @@ describe('OnlineTaskSocket', () => {
     h.ws().recv('{not json')
     h.ws().recv({ type: 'mystery', data: {} })
     h.ws().recv({ type: 'module', data: { title: '没有 id' } })
+    h.ws().recv({ type: 'log', data: { id: 1, index: -3, line: 'x' } })
     expect(h.events).toStrictEqual([])
     h.ws().recv({ type: 'module', data: mod(5) })
     expect(h.events).toStrictEqual(['module:5'])
@@ -279,6 +302,7 @@ describe('OnlineTaskSocket', () => {
       onSnapshot: vi.fn(),
       onModule: vi.fn(),
       onDeleted: vi.fn(),
+      onLog: vi.fn(),
       onStatus: vi.fn(),
       token: () => 't',
       createSocket: (url) => {

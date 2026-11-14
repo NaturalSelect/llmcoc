@@ -16,6 +16,7 @@ import {
   DOWNLOAD_FAILED_HINT,
   cnmodsByline,
   cnmodsMetaLine,
+  isCompiling,
   opinionText,
   safeUrl,
   statusLabel,
@@ -79,7 +80,7 @@ function search() {
 function applyModule(m: OnlineModule): void {
   for (const it of items.value) {
     if (it.keyId !== m.source_key) continue
-    it.local = { id: m.id, status: m.status, scenario_id: m.scenario_id }
+    it.local = { id: m.id, status: m.status, scenario_id: m.scenario_id, stage: m.stage }
     if (m.status === 'failed') failures[it.keyId] = m
     else delete failures[it.keyId]
   }
@@ -112,6 +113,11 @@ async function download(item: BrowseItem) {
 
 function busy(item: BrowseItem): boolean {
   return downloading.has(item.keyId) || item.local?.status === 'downloading'
+}
+
+// NOTE: 编译期间条目已有提取好的正文，状态却是 downloading；这时不能显示「下载中…」按钮，和 extracted 一样隐藏
+function compiling(item: BrowseItem): boolean {
+  return isCompiling(item.local?.status, item.local?.stage)
 }
 
 function downloadLabel(item: BrowseItem): string {
@@ -167,8 +173,8 @@ defineExpose({ applyModule, applyDeleted, reload: () => load() })
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <p class="truncate text-sm font-medium text-fg">{{ item.title }}</p>
-              <StampBadge :tone="statusTone(item.local?.status, item.local?.scenario_id)">
-                {{ statusLabel(item.local?.status, item.local?.scenario_id) }}
+              <StampBadge :tone="statusTone(item.local?.status, item.local?.scenario_id, item.local?.stage)">
+                {{ statusLabel(item.local?.status, item.local?.scenario_id, item.local?.stage) }}
               </StampBadge>
               <StampBadge v-if="item.moduleType">{{ item.moduleType }}</StampBadge>
             </div>
@@ -177,7 +183,7 @@ defineExpose({ applyModule, applyDeleted, reload: () => load() })
             <p v-if="opinionText(item.opinion)" class="mt-1 line-clamp-2 text-xs break-words text-fg-muted">{{ opinionText(item.opinion) }}</p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            <BaseButton v-if="item.local?.status !== 'extracted'" size="sm" :loading="busy(item)" @click="download(item)">
+            <BaseButton v-if="item.local?.status !== 'extracted' && !compiling(item)" size="sm" :loading="busy(item)" @click="download(item)">
               <Download v-if="!busy(item)" :size="16" :stroke-width="1.75" />
               {{ downloadLabel(item) }}
             </BaseButton>

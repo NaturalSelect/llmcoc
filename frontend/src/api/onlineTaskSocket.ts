@@ -16,6 +16,8 @@ export interface OnlineTaskSocketDeps {
   onSnapshot: (modules: OnlineModule[]) => void
   onModule: (module: OnlineModule) => void
   onDeleted: (id: number) => void
+  // NOTE: 编译日志的一行；index 是该模组日志的绝对行号，line 已带服务端的时间前缀
+  onLog: (id: number, index: number, line: string) => void
   // NOTE: 只在状态翻转时调用；「已连接」指快照已到达，而不是握手完成
   onStatus: (connected: boolean) => void
   // NOTE: 以下是测试注入点，生产环境走默认实现
@@ -49,6 +51,13 @@ export function parseOnlineTaskFrame(raw: unknown): OnlineTaskFrame | null {
   if (type === 'deleted') {
     const id = (data as { id?: unknown } | null | undefined)?.id
     return typeof id === 'number' && Number.isFinite(id) ? { type, data: { id } } : null
+  }
+  if (type === 'log') {
+    const { id, index, line } = (data ?? {}) as { id?: unknown; index?: unknown; line?: unknown }
+    // NOTE: index 是行号，必须是非负整数；否则合并进 Map 时会产生永远接不上的下标
+    if (typeof id !== 'number' || !Number.isFinite(id)) return null
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return null
+    return typeof line === 'string' ? { type, data: { id, index, line } } : null
   }
   return null
 }
@@ -150,6 +159,8 @@ export class OnlineTaskSocket {
         this.setConnected(true)
       } else if (frame.type === 'module') {
         this.deps.onModule(frame.data)
+      } else if (frame.type === 'log') {
+        this.deps.onLog(frame.data.id, frame.data.index, frame.data.line)
       } else {
         this.deps.onDeleted(frame.data.id)
       }

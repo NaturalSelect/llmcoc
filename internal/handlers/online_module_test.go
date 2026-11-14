@@ -69,6 +69,10 @@ func initOnlineTest(t *testing.T, src *fakeOnlineSource) *gin.Engine {
 	if err := models.DB.AutoMigrate(&models.OnlineModule{}, &models.OnlineModuleDocument{}); err != nil {
 		t.Fatalf("auto-migrate online module: %v", err)
 	}
+	// NOTE: 每个用例的库都从 id 1 开始，进程内的编译日志按 id 存放，不清掉会串到下一个用例。
+	onlineLogs.mu.Lock()
+	onlineLogs.bufs = map[uint]*onlineLogBuf{}
+	onlineLogs.mu.Unlock()
 
 	prevClient, prevValid := onlineClient, onlineValidShareURL
 	onlineClient = src
@@ -90,6 +94,7 @@ func initOnlineTest(t *testing.T, src *fakeOnlineSource) *gin.Engine {
 	g.POST("/online-modules/download", OnlineModuleDownload)
 	g.GET("/online-modules/:id", OnlineModuleGet)
 	g.GET("/online-modules/:id/documents/:docId", OnlineModuleDocument)
+	g.GET("/online-modules/:id/compile-log", OnlineModuleCompileLog)
 	g.POST("/online-modules/:id/archive", OnlineModuleUploadArchive)
 	g.POST("/online-modules/:id/license-override", OnlineModuleLicenseOverride)
 	g.POST("/online-modules/:id/compile", OnlineModuleCompile)
@@ -518,7 +523,7 @@ func TestOnlineModuleCompile_Validation(t *testing.T) {
 func TestOnlineModuleCompile_LicenseGateThenOverride(t *testing.T) {
 	r := initOnlineTest(t, &fakeOnlineSource{})
 	m := seedOnlineModule(t, models.OnlineModuleStatusExtracted, nil)
-	// 正文超过编译上限：放行后应该越过版权闸门、落在体积校验上，而不是进入 SSE。
+	// 正文超过编译上限：放行后应该越过版权闸门、落在体积校验上，而不是启动后台编译。
 	huge := seedOnlineDoc(t, m.ID, strings.Repeat("a", onlineCompileMaxBytes+1), []string{"禁止投喂AI"})
 	path := fmt.Sprintf("/admin/online-modules/%d/compile", m.ID)
 

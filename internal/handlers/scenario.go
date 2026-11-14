@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -215,7 +216,7 @@ func RandomSalt() string {
 	return string(b)
 }
 
-// NOTE: scenarioGenEvent 是流水线推送给前端的事件，WebSocket 和 SSE 两种传输各自负责编码。
+// NOTE: scenarioGenEvent 是流水线推送给前端的事件，由 WebSocket 负责编码。
 type scenarioGenEvent struct {
 	name string
 	data any
@@ -328,19 +329,16 @@ func runScenarioGeneration(req GenerateScenarioReq, count int, emit scenarioEmit
 	})
 }
 
-// NOTE: runCompileStory 同步跑完故事编译并入库（跳过 Story Architect，模型只做 ETL），与传输方式无关，调用方负责放进后台协程。
-// NOTE: prepare 在入库前调用，可改写即将入库的模组；after 在入库成功、发出 done 事件之前调用，两者都可为 nil。
-func runCompileStory(req agent.CompileStoryRequest, prepare func(*models.Scenario), after func(*models.Scenario), emit scenarioEmit) {
-	progress := func(stage, status, detail string) {
-		emit("progress", gin.H{"stage": stage, "status": status, "detail": detail})
-	}
+// NOTE: compileStoryPipeline 是故事编译流水线的入口，测试里替换成假实现，避免真实调用 LLM。
+var compileStoryPipeline = agent.RunCompileStoryWithProgress
 
-	gen, err := agent.RunCompileStoryWithProgress(context.Background(), req, progress)
+// NOTE: compileStoryToScenario 同步跑完故事编译并入库（跳过 Story Architect，模型只做 ETL），与传输方式无关，调用方负责放进后台协程。
+// NOTE: prepare 在入库前调用，可改写即将入库的模组；after 在入库成功之后调用，两者都可为 nil。返回的错误文案可以直接给管理员看。
+func compileStoryToScenario(ctx context.Context, req agent.CompileStoryRequest, prepare func(*models.Scenario), after func(*models.Scenario), progress agent.ScripterProgressFunc) (*models.Scenario, error) {
+	gen, err := compileStoryPipeline(ctx, req, progress)
 	if err != nil {
 		scenarioLog.Error("compile story upload failed", "err", err)
-		msg := "模组编译失败: " + err.Error()
-		emit("error", gin.H{"index": 1, "message": msg})
-		return
+		return nil, fmt.Errorf("模组编译失败: %w", err)
 	}
 
 	if gen.Draft.Name == "" {
@@ -373,9 +371,7 @@ func runCompileStory(req agent.CompileStoryRequest, prepare func(*models.Scenari
 
 	if err := models.DB.Create(&scenario).Error; err != nil {
 		scenarioLog.Error("save compiled scenario failed", "err", err)
-		msg := "模组入库失败，请联系管理员查看服务端日志"
-		emit("error", gin.H{"index": 1, "message": msg})
-		return
+		return nil, errors.New("模组入库失败，请联系管理员查看服务端日志")
 	}
 
 	generationLog := models.ScenarioGenerationLog{
@@ -393,39 +389,20 @@ func runCompileStory(req agent.CompileStoryRequest, prepare func(*models.Scenari
 	if after != nil {
 		after(&scenario)
 	}
-
-	emit("done", gin.H{"index": 1, "scenario_id": scenario.ID, "name": scenario.Name})
+	return &scenario, nil
 }
 
-// NOTE: streamCompileStory 以 SSE 推送编译进度，目前只有线上模组编译还在用；客户端断开后照常跑完并入库。
-func streamCompileStory(c *gin.Context, req agent.CompileStoryRequest, prepare func(*models.Scenario), after func(*models.Scenario)) {
-	setChatSSEHeaders(c)
-
-	events := make(chan scenarioGenEvent, 128)
-	go func() {
-		defer close(events)
-		// NOTE: 发送是阻塞的；下面的循环在客户端断开后也会继续排空，所以不会死锁。
-		runCompileStory(req, prepare, after, func(name string, data any) {
-			events <- scenarioGenEvent{name: name, data: data}
-		})
-	}()
-
-	disconnected := false
-	for evt := range events {
-		if !disconnected {
-			select {
-			case <-c.Request.Context().Done():
-				disconnected = true
-				scenarioLog.Info("compile story upload client disconnected, continuing in background")
-			default:
-			}
-		}
-		if disconnected {
-			continue
-		}
-		c.SSEvent(evt.name, evt.data)
-		c.Writer.Flush()
+// NOTE: runCompileStory 是上传故事编译的 WebSocket 用的事件包装：进度、失败和完成都转成事件推出去。
+func runCompileStory(req agent.CompileStoryRequest, prepare func(*models.Scenario), after func(*models.Scenario), emit scenarioEmit) {
+	progress := func(stage, status, detail string) {
+		emit("progress", gin.H{"stage": stage, "status": status, "detail": detail})
 	}
+	scenario, err := compileStoryToScenario(context.Background(), req, prepare, after, progress)
+	if err != nil {
+		emit("error", gin.H{"index": 1, "message": err.Error()})
+		return
+	}
+	emit("done", gin.H{"index": 1, "scenario_id": scenario.ID, "name": scenario.Name})
 }
 
 // UploadScenario imports a scenario JSON file into DB.

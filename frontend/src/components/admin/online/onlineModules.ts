@@ -53,7 +53,14 @@ export function opinionText(html: string | null | undefined): string {
 }
 
 // 没有本地记录或仍是 pending 都算「未下载」；已有 scenario_id 说明已编译入库，优先显示
-export function statusLabel(status: OnlineStatus | null | undefined, scenarioId?: number | null): string {
+// NOTE: 编译期间 status 仍是 downloading（沿用「后台任务进行中」），要靠 stage 区分；
+// 重新编译时 scenario_id 还是上一次的，也必须显示「编译中」，所以编译判断排在 scenario_id 前面
+export function isCompiling(status: OnlineStatus | null | undefined, stage?: string | null): boolean {
+  return status === 'downloading' && stage === 'compile'
+}
+
+export function statusLabel(status: OnlineStatus | null | undefined, scenarioId?: number | null, stage?: string | null): string {
+  if (isCompiling(status, stage)) return '编译中'
   if (scenarioId != null) return '已编译'
   switch (status) {
     case 'downloading':
@@ -69,7 +76,8 @@ export function statusLabel(status: OnlineStatus | null | undefined, scenarioId?
 
 export type StatusTone = 'seal' | 'ledger' | 'moss' | 'faint' | 'danger'
 
-export function statusTone(status: OnlineStatus | null | undefined, scenarioId?: number | null): StatusTone {
+export function statusTone(status: OnlineStatus | null | undefined, scenarioId?: number | null, stage?: string | null): StatusTone {
+  if (isCompiling(status, stage)) return 'ledger'
   if (scenarioId != null) return 'seal'
   switch (status) {
     case 'downloading':
@@ -267,6 +275,7 @@ const STAGE_LABELS: Record<string, string> = {
   download: '下载压缩包',
   extract: '提取正文',
   ocr: 'OCR 识别',
+  compile: '编译',
 }
 
 // NOTE: 未知阶段（后端新增了阶段而前端还没跟上）原样显示，不吞掉
@@ -295,7 +304,7 @@ export function taskElapsedMs(m: Pick<OnlineModule, 'task_started_at'>, now: num
   return started > 0 ? Math.max(0, now - started) : null
 }
 
-// NOTE: 下载中的排最前（开始得晚的在前），其余按更新时间倒序；id 大的在前兜底，保证排序稳定
+// NOTE: 进行中的任务（下载、提取、编译，status 都是 downloading）排最前，开始得晚的在前；其余按更新时间倒序；id 大的在前兜底，保证排序稳定
 export function sortTaskModules<T extends Pick<OnlineModule, 'id' | 'status' | 'task_started_at' | 'updated_at'>>(list: readonly T[]): T[] {
   return [...list].sort((a, b) => {
     const ad = a.status === 'downloading'

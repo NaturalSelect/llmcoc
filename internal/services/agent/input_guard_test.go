@@ -218,6 +218,47 @@ func TestNewSystemOneClient_RejectsBlankKey(t *testing.T) {
 	}
 }
 
+func TestTrimV1Suffix(t *testing.T) {
+	cases := map[string]string{
+		"https://ai.example.com":               "https://ai.example.com",
+		"https://ai.example.com/":              "https://ai.example.com",
+		"https://ai.example.com/v1":            "https://ai.example.com",
+		"https://ai.example.com/v1/":           "https://ai.example.com",
+		"https://ai.example.com/V1":            "https://ai.example.com",
+		"http://host.docker.internal:3000/v1":  "http://host.docker.internal:3000",
+		"https://ai.example.com/team":          "https://ai.example.com/team",
+		"https://ai.example.com/team/v1":       "https://ai.example.com/team",
+		"https://ai.example.com/v2":            "https://ai.example.com/v2",
+		"https://ai.example.com/api/v1beta":    "https://ai.example.com/api/v1beta",
+		"https://ai.example.com/v1/v1":         "https://ai.example.com/v1",
+		"https://ai.example.com/team%20one/v1": "https://ai.example.com/team%20one",
+		"not a url":                            "not a url",
+	}
+	for in, want := range cases {
+		if got := trimV1Suffix(in); got != want {
+			t.Errorf("trimV1Suffix(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestNewSystemOneClient_RequestPathHasSingleV1(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		_, _ = io.WriteString(w, `{"model":"m","answers":{"ping":{"type":"choice","choice":"yes","probabilities":{"yes":1,"no":0},"confidence":1}},"usage":{"input_tokens":1,"output_tokens":0}}`)
+	}))
+	defer srv.Close()
+	for _, suffix := range []string{"", "/", "/v1", "/v1/"} {
+		paths = nil
+		if err := PingSystemOne(context.Background(), &models.LLMProviderConfig{APIKey: "k", BaseURL: srv.URL + suffix}, ""); err != nil {
+			t.Fatalf("suffix %q: %v", suffix, err)
+		}
+		if len(paths) != 1 || paths[0] != "/v1/systemone" {
+			t.Errorf("suffix %q: request paths = %v, want [/v1/systemone]", suffix, paths)
+		}
+	}
+}
+
 func TestNewSystemOneClient_AcceptsPlainHTTPBaseURL(t *testing.T) {
 	for _, base := range []string{"http://example.com", "http://host.docker.internal:3000", "HTTP://gateway.lan/team"} {
 		if _, err := NewSystemOneClient(&models.LLMProviderConfig{APIKey: "k", BaseURL: base}, ""); err != nil {

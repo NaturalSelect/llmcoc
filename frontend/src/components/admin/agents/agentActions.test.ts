@@ -28,7 +28,6 @@ function form(over: Partial<AgentFormState> = {}): AgentFormState {
     with_jailbreak: false,
     thinking_level: '',
     thinking_budget_tokens: 0,
-    system_prompt: '',
     is_active: true,
     ...over,
   }
@@ -64,7 +63,7 @@ describe('角色判定', () => {
 
 describe('buildSavePayload', () => {
   test('未绑定提供商（空串）提交 null，缺省数值归零，字符串原样提交', () => {
-    const p = buildSavePayload(form({ provider_config_id: '', context_window: '', thinking_budget_tokens: '', system_prompt: '  x ' }))
+    const p = buildSavePayload(form({ provider_config_id: '', context_window: '', thinking_budget_tokens: '' }))
     expect(p).toStrictEqual({
       provider_config_id: null,
       model_name: ' gpt-4o ',
@@ -75,7 +74,6 @@ describe('buildSavePayload', () => {
       image_via_chat: false,
       diffusion_mode: false,
       with_jailbreak: false,
-      system_prompt: '  x ',
       thinking_level: '',
       thinking_budget_tokens: 0,
       is_active: true,

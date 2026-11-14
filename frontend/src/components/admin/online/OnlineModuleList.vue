@@ -53,11 +53,11 @@ function byline(m: OnlineModule): string {
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
             <p class="truncate text-sm font-medium text-fg">{{ m.title }}</p>
-            <StampBadge :tone="statusTone(m.status, m.scenario_id)">{{ statusLabel(m.status, m.scenario_id) }}</StampBadge>
+            <StampBadge :tone="statusTone(m.status, m.scenario_id, m.stage)">{{ statusLabel(m.status, m.scenario_id, m.stage) }}</StampBadge>
             <span v-if="m.scenario_id != null" class="text-xs tabular-nums text-fg-subtle">模组 #{{ m.scenario_id }}</span>
           </div>
           <p class="mt-0.5 truncate text-xs tabular-nums text-fg-subtle">{{ byline(m) }}</p>
-          <p v-if="m.status === 'failed' && m.error" class="mt-0.5 line-clamp-1 text-xs break-words text-danger">{{ m.error }}</p>
+          <p v-if="m.error" class="mt-0.5 line-clamp-1 text-xs break-words text-danger">{{ m.error }}</p>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           <BaseButton variant="ghost" size="sm" @click="emit('view', m.id)">

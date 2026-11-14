@@ -3,7 +3,6 @@ import type { AgentConfigRow } from '@/api/adminTypesCore'
 import {
   EXPECTED_ROLES,
   ROLE_DEFAULTS,
-  agentDefaultHint,
   agentDesc,
   agentLabel,
   buildAgentForms,
@@ -22,7 +21,6 @@ function row(role: string, over: Partial<AgentConfigRow> = {}): AgentConfigRow {
     diffusion_mode: false,
     context_window: 0,
     with_jailbreak: false,
-    system_prompt: '',
     thinking_level: 'high',
     thinking_budget_tokens: 0,
     is_active: true,
@@ -38,23 +36,20 @@ describe('角色表', () => {
     expect(EXPECTED_ROLES.at(-1)).toBe('systemone')
   })
 
-  test('每个预期角色都同时有名称、描述和占位提示', () => {
+  test('每个预期角色都同时有名称和描述', () => {
     for (const role of EXPECTED_ROLES) {
       expect(agentLabel(role), role).not.toBe(role)
       expect(agentDesc(role), role).not.toBe('')
-      expect(agentDefaultHint(role), role).not.toBe('留空使用默认')
     }
   })
 
-  test('名称、描述、提示与旧 admin.js 文案一致（抽样）', () => {
+  test('名称、描述与旧 admin.js 文案一致（抽样）', () => {
     expect(agentLabel('director')).toBe('🎬 Director')
     expect(agentLabel('writer_nsfw')).toBe('🔞 NSFW Writer')
     expect(agentLabel('diffusion_translator')).toBe('🏷️ Diffusion Translator')
     expect(agentLabel('compiler')).toBe('🛠️ Compiler')
     expect(agentDesc('director')).toBe('场景导演 — 决策工具调用序列')
     expect(agentDesc('qa_guard')).toBe('质量审查 — 审查模组可玩性、规则合规与线索设计')
-    expect(agentDefaultHint('lawyer')).toBe('留空使用内置 Lawyer 提示词（规则查阅模式）')
-    expect(agentDefaultHint('dramaturg')).toBe('留空使用内置 Dramaturg 提示词（节奏顾问）；不配置则Director自行判断节奏（默认关闭）')
   })
 
   test('embedding 角色的文案说明只支持 OpenAI 兼容接口与退回标签匹配', () => {
@@ -63,7 +58,7 @@ describe('角色表', () => {
     expect(agentDesc('embedding')).toContain('Anthropic')
     expect(agentDesc('embedding')).toContain('标签匹配')
     expect(agentDesc('embedding')).toContain('重算')
-    expect(agentDefaultHint('embedding')).toContain('text-embedding-3-small')
+    expect(agentDesc('embedding')).toContain('text-embedding-3-small')
   })
 
   test('systemone 角色的文案说明第三方、拦截和未启用时放行', () => {
@@ -71,21 +66,20 @@ describe('角色表', () => {
     expect(agentDesc('systemone')).toContain('TypeSafe')
     expect(agentDesc('systemone')).toContain('第三方')
     expect(agentDesc('systemone')).toContain('放行')
-    expect(agentDefaultHint('systemone')).toContain('jev-latest')
-    expect(agentDefaultHint('systemone')).toContain('gemini-decision-1')
-    expect(agentDefaultHint('systemone')).toContain('API Key')
+    expect(agentDesc('systemone')).toContain('jev-latest')
+    expect(agentDesc('systemone')).toContain('gemini-decision-1')
+    expect(agentDesc('systemone')).toContain('API Key')
   })
 
-  test('未知角色：名称回落为角色名，描述为空，提示为默认文案', () => {
+  test('未知角色：名称回落为角色名，描述为空', () => {
     expect(agentLabel('lore_researcher')).toBe('lore_researcher')
     expect(agentDesc('lore_researcher')).toBe('')
-    expect(agentDefaultHint('lore_researcher')).toBe('留空使用默认')
   })
 
   test('原型属性名不会被当成角色', () => {
     expect(agentLabel('constructor')).toBe('constructor')
     expect(agentDesc('toString')).toBe('')
-    expect(agentDefaultHint('__proto__')).toBe('留空使用默认')
+    expect(agentDesc('__proto__')).toBe('')
   })
 
   test('默认值与旧 roleDefaults 一致（抽样）', () => {
@@ -138,7 +132,6 @@ describe('buildAgentForms', () => {
       with_jailbreak: false,
       thinking_level: '',
       thinking_budget_tokens: 0,
-      system_prompt: '',
       is_active: true,
     })
     const painter = forms.find((f) => f.role === 'painter')!

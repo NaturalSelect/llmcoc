@@ -44,7 +44,6 @@ const agentRow = (role: string, over: Record<string, unknown> = {}) => ({
   diffusion_mode: false,
   context_window: 0,
   with_jailbreak: false,
-  system_prompt: '',
   thinking_level: 'high',
   thinking_budget_tokens: 0,
   is_active: true,
@@ -161,7 +160,7 @@ describe('ProvidersTab', () => {
 describe('AgentsTab', () => {
   test('库里缺行的角色补默认行（共 17 张卡），保存请求体与旧前端字段一致', async () => {
     routes['GET /api/admin/config/providers'] = [{ id: 2, name: 'prov', provider: 'openai', base_url: '', api_key_set: true, is_active: true }]
-    routes['GET /api/admin/config/agents'] = [agentRow('director', { system_prompt: 'hi' }), agentRow('scripter')]
+    routes['GET /api/admin/config/agents'] = [agentRow('director'), agentRow('scripter')]
     routes['PUT /api/admin/config/agents/director'] = {}
     const w = mount(AgentsTab, { attachTo: document.body })
     await flushPromises()
@@ -183,7 +182,6 @@ describe('AgentsTab', () => {
         image_via_chat: false,
         diffusion_mode: false,
         with_jailbreak: false,
-        system_prompt: 'hi',
         thinking_level: 'high',
         thinking_budget_tokens: 0,
         is_active: true,

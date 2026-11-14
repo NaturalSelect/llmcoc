@@ -207,6 +207,73 @@ describe('OnlineTasksView', () => {
     w.unmount()
   })
 
+  test('编译任务（downloading + compile）出现在列表最前：徽标「编译中」，进度显示「编译」阶段、当前步骤和已用时，并每秒递增', async () => {
+    const { w } = await mountView()
+    snapshot([
+      mod(1, { updated_at: '2026-11-14T08:00:00Z' }),
+      mod(2, {
+        status: 'downloading',
+        stage: 'compile',
+        stage_note: '正在生成场景',
+        task_started_at: '2026-11-14T09:00:00Z',
+        scenario_id: 5,
+      }),
+    ])
+    await flushPromises()
+
+    expect(rowTitles()).toStrictEqual(['模组2', '模组1'])
+    const row = document.body.querySelectorAll('[data-testid="task-row"]')[0]!
+    // 重新编译时 scenario_id 还是上一次的，也必须显示「编译中」而不是「已编译」
+    expect(row.textContent).toContain('编译中')
+    expect(row.textContent).not.toContain('已编译')
+    expect(row.textContent).not.toContain('下载中')
+    const progress = row.querySelector('[data-testid="task-progress"]')!
+    expect(progress.textContent).toContain('编译')
+    expect(progress.textContent).toContain('正在生成场景')
+    expect(progress.textContent).toContain('2分05秒')
+    expect(vi.getTimerCount()).toBe(1)
+
+    vi.advanceTimersByTime(1000)
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="task-progress"]')!.textContent).toContain('2分06秒')
+
+    // 步骤变化经 module 帧实时更新
+    FakeWebSocket.last.recv({
+      type: 'module',
+      data: mod(2, { status: 'downloading', stage: 'compile', stage_note: '逻辑审查', task_started_at: '2026-11-14T09:00:00Z' }),
+    })
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="task-progress"]')!.textContent).toContain('逻辑审查')
+    w.unmount()
+  })
+
+  test('编译失败：条目回到 extracted 并带 error，仍留在列表里，用 danger 样式显示原因，不再有进度；成功则显示「已编译」', async () => {
+    const { w } = await mountView()
+    snapshot([mod(1, { status: 'downloading', stage: 'compile', task_started_at: NOW }), mod(2, { status: 'downloading', stage: 'compile', task_started_at: NOW })])
+    await flushPromises()
+    expect(document.body.querySelectorAll('[data-testid="task-progress"]')).toHaveLength(2)
+
+    FakeWebSocket.last.recv({
+      type: 'module',
+      data: mod(1, { status: 'extracted', error: '模组编译失败: 逻辑审查未通过', updated_at: '2026-11-14T09:03:00Z' }),
+    })
+    FakeWebSocket.last.recv({ type: 'module', data: mod(2, { status: 'extracted', scenario_id: 8, updated_at: '2026-11-14T09:02:30Z' }) })
+    await flushPromises()
+
+    expect(document.body.querySelectorAll('[data-testid="task-progress"]')).toHaveLength(0)
+    expect(rowTitles()).toStrictEqual(['模组1', '模组2'])
+    const rows = document.body.querySelectorAll('[data-testid="task-row"]')
+    const err = rows[0]!.querySelector('[data-testid="task-error"]')!
+    expect(err.textContent).toBe('模组编译失败: 逻辑审查未通过')
+    expect(err.className).toContain('text-danger')
+    expect(rows[0]!.textContent).toContain('已提取')
+    expect(rows[1]!.textContent).toContain('已编译')
+    expect(rows[1]!.querySelector('[data-testid="task-error"]')).toBeNull()
+    // 编译结束后计时器清掉
+    expect(vi.getTimerCount()).toBe(0)
+    w.unmount()
+  })
+
   test('已编译的模组显示「已编译」徽标', async () => {
     const { w } = await mountView()
     snapshot([mod(1, { scenario_id: 5 })])

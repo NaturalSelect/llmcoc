@@ -184,7 +184,6 @@ func TestAdminUpdateAgent_CreateNew(t *testing.T) {
 		"model_name":         "gpt-4o",
 		"max_tokens":         512,
 		"temperature":        0.7,
-		"system_prompt":      "You are a director.",
 		"provider_config_id": "", // empty string from JS → treated as nil
 	}))
 	if w.Code != http.StatusOK {

@@ -1,7 +1,7 @@
 import type { AgentConfigRow, AgentFormState } from '@/api/adminTypesCore'
 
-// NOTE: 角色表分四处：ROLE_DEFAULTS（默认值）与 ROLE_LABELS / ROLE_DESCS / ROLE_HINTS（名称、描述、占位提示）。
-// 新增角色时四处都要改（见 AGENTS.md「Agent 角色配置」）。
+// NOTE: 角色表分三处：ROLE_DEFAULTS（默认值）与 ROLE_LABELS / ROLE_DESCS（名称、描述）。
+// 新增角色时三处都要改（见 AGENTS.md「Agent 角色配置」）。
 
 export interface RoleDefaults {
   max_tokens: number
@@ -85,7 +85,7 @@ const ROLE_DESCS: Record<string, string> = {
   npc_nsfw: '成人向NPC互动 — 仅在房间开启NSFW且本次act_npc调用被标记为色情内容时启用；未配置或关闭时自动回落默认 NPC（默认关闭）',
   painter: '画图代理 — 按 Writer 写正文时的 paint 调用生成配图，插入正文（默认关闭）',
   painter_nsfw: '成人向画图 — Writer 把配图标记为 nsfw=true 时只路由到它；未启用时这类配图请求会被直接拒绝，不回落默认 Painter（默认关闭）',
-  painter_hq: '持久画图 — 生成调查员立绘等长期保存的图片；未启用时立绘生成直接报错，不回落默认 Painter（默认关闭）',
+  painter_hq: '持久画图 — 生成调查员立绘等长期保存的图片，如 gpt-image-1；开启扩散模式时需要同时启用 diffusion_translator；未启用时立绘生成直接报错，不回落默认 Painter（默认关闭）',
   diffusion_translator: '扩散提示词翻译 — Painter 开启扩散模型模式时，把 Writer 的自然语言画面描述翻译成标签式提示词；未启用时扩散模式的配图会失败',
   architect: '模组设计 — 生成大纲并转化为完整JSON模组',
   qa_guard: '质量审查 — 审查模组可玩性、规则合规与线索设计',
@@ -94,30 +94,8 @@ const ROLE_DESCS: Record<string, string> = {
   compiler: '模组编译 — 用工具调用逐块把故事文本忠实编译为结构化模组，需绑定支持 function calling 的模型；建议配置低温度模型',
   // NOTE: dramaturg — 剧构顾问，Director按需咨询，输入经脱敏处理不含玩家原始数据，只给建议不操作游戏状态（默认关闭）
   dramaturg: '剧构顾问 — Director按需咨询，输入已脱敏不含玩家数据，给出节奏与走向建议（默认关闭）',
-  embedding: '语义检索 — Lawyer 规则缓存的向量检索；只支持 OpenAI 兼容的 /embeddings 接口（Anthropic 类型不支持）；未启用时退回标签匹配；换模型后已有缓存向量会在后台重算（默认关闭）',
-  systemone: '输入分类 — 玩家提交前由 System One 分类器（TypeSafe 的 Jev，或经 new-api 网关转发的 gemini-decision-1）判断是否在自称作者或管理员、索要谜底或注入提示词，命中则拒收该输入；玩家输入正文会发送给第三方；未启用或调用失败时直接放行（默认关闭）',
-}
-
-const ROLE_HINTS: Record<string, string> = {
-  director: '留空使用内置 Director 提示词（JSON工具调用格式）',
-  writer: '留空使用内置 Writer 提示词（克苏鲁散文风格）',
-  writer_nsfw: '为成人向场景单独绑定更宽松的 provider/模型；未启用时自动使用默认 Writer（默认关闭）',
-  lawyer: '留空使用内置 Lawyer 提示词（规则查阅模式）',
-  npc: '留空使用内置 NPC 提示词',
-  npc_nsfw: '为成人向NPC互动单独绑定更宽松的 provider/模型；未启用时自动使用默认 NPC（默认关闭）',
-  painter: '配置 OpenAI 兼容图片模型，如 dall-e-3（默认关闭）',
-  painter_nsfw: '为成人向配图单独绑定更宽松的图片模型；未启用时 nsfw=true 的配图会被拒绝（默认关闭）',
-  painter_hq: '为立绘单独绑定高质量图片模型，如 gpt-image-1；开启扩散模式时需要启用 diffusion_translator（默认关闭）',
-  diffusion_translator: '留空使用内置提示词（输出一行 Danbooru 风格标签）；建议配置低温度、指令遵循强的文本模型',
-  architect: '留空使用内置 Architect 提示词（大纲+JSON生成）',
-  qa_guard: '留空使用内置 QA Guard 提示词（模组质量审查）',
-  parser: '留空使用内置 Parser 提示词（JSON格式修复）',
-  // NOTE: compiler 留空使用内置 Compiler 提示词（故事转模组编译）
-  compiler: '留空使用内置 Compiler 提示词（故事转模组编译）；建议配置低温度模型',
-  // NOTE: dramaturg 未绑定 provider 时工具不可见，Director回退自身节奏判断规则（默认关闭）
-  dramaturg: '留空使用内置 Dramaturg 提示词（节奏顾问）；不配置则Director自行判断节奏（默认关闭）',
-  embedding: '嵌入模型不使用提示词，此处留空；需绑定 OpenAI 兼容 Provider（不支持 Anthropic 类型），如 text-embedding-3-small；未启用时 Lawyer 缓存退回标签匹配（默认关闭）',
-  systemone: '分类器不使用提示词，此处留空；直连 TypeSafe：API Key 填 TypeSafe 的 Key，Base URL 留空，模型填 jev-latest；经 new-api 网关：API Key 填网关令牌，Base URL 填网关根地址且不要带 /v1（http 也可以，但 Key 和玩家输入会明文传输，只应在内网使用），模型填 gemini-decision-1；未启用时不拦截任何输入（默认关闭）',
+  embedding: '语义检索 — Lawyer 规则缓存的向量检索；只支持 OpenAI 兼容的 /embeddings 接口（Anthropic 类型不支持），如 text-embedding-3-small；未启用时退回标签匹配；换模型后已有缓存向量会在后台重算（默认关闭）',
+  systemone: '输入分类 — 玩家提交前由 System One 分类器（TypeSafe 的 Jev，或经 new-api 网关转发的 gemini-decision-1）判断是否在自称作者或管理员、索要谜底或注入提示词，命中则拒收该输入；玩家输入正文会发送给第三方；未启用或调用失败时直接放行（默认关闭）。直连 TypeSafe：API Key 填 TypeSafe 的 Key，Base URL 留空，模型填 jev-latest；经 new-api 网关：API Key 填网关令牌，Base URL 填网关根地址，末尾的 /v1 会被自动去掉，所以可以和聊天角色共用同一个 Provider（http 也可以，但 Key 和玩家输入会明文传输，只应在内网使用），模型填 gemini-decision-1',
 }
 
 // NOTE: 用 hasOwn 而不是直接下标，避免 role 恰好是 constructor 之类的原型属性名时取到函数
@@ -131,10 +109,6 @@ export function agentLabel(role: string): string {
 
 export function agentDesc(role: string): string {
   return pick(ROLE_DESCS, role) || ''
-}
-
-export function agentDefaultHint(role: string): string {
-  return pick(ROLE_HINTS, role) || '留空使用默认'
 }
 
 function rowToForm(r: AgentConfigRow): AgentFormState {
@@ -153,7 +127,6 @@ function rowToForm(r: AgentConfigRow): AgentFormState {
     with_jailbreak: r.with_jailbreak,
     thinking_level: r.thinking_level,
     thinking_budget_tokens: r.thinking_budget_tokens,
-    system_prompt: r.system_prompt,
     is_active: r.is_active,
   }
 }
@@ -174,7 +147,6 @@ function defaultsToForm(role: string): AgentFormState {
     with_jailbreak: d.with_jailbreak || false,
     thinking_level: d.thinking_level || '',
     thinking_budget_tokens: d.thinking_budget_tokens || 0,
-    system_prompt: '',
     is_active: d.is_active !== undefined ? d.is_active : true,
   }
 }

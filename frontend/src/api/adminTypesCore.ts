@@ -75,7 +75,6 @@ export interface AgentConfigRow {
   diffusion_mode: boolean
   context_window: number
   with_jailbreak: boolean
-  system_prompt: string
   thinking_level: string
   thinking_budget_tokens: number
   is_active: boolean
@@ -97,7 +96,6 @@ export interface AgentFormState {
   with_jailbreak: boolean
   thinking_level: string
   thinking_budget_tokens: number | ''
-  system_prompt: string
   is_active: boolean
 }
 
