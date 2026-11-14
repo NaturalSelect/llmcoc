@@ -35,15 +35,7 @@ func StartSessionPurge(ctx context.Context, interval time.Duration) {
 		interval = 24 * time.Hour
 	}
 	go func() {
-		run := func() {
-			n, err := purgeExpiredSessions(time.Now())
-			if err != nil {
-				purgeLog.Error("session purge failed", "err", err)
-			}
-			if n > 0 {
-				purgeLog.Info("purged expired sessions", "count", n)
-			}
-		}
+		run := func() { purgeOnce(time.Now()) }
 		run()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -56,6 +48,25 @@ func StartSessionPurge(ctx context.Context, interval time.Duration) {
 			}
 		}
 	}()
+}
+
+// purgeOnce 做一轮回收：先房间后模组。房间没有软删除，被回收后才不再引用模组，所以模组必须排在后面，同一轮就能一起释放。
+func purgeOnce(now time.Time) {
+	n, err := purgeExpiredSessions(now)
+	if err != nil {
+		purgeLog.Error("session purge failed", "err", err)
+	}
+	if n > 0 {
+		purgeLog.Info("purged expired sessions", "count", n)
+	}
+
+	m, err := purgeUnusedScenarios()
+	if err != nil {
+		purgeLog.Error("scenario purge failed", "err", err)
+	}
+	if m > 0 {
+		purgeLog.Info("purged unused scenarios", "count", m)
+	}
 }
 
 // purgeExpiredSessions 返回删除的房间数；保留天数 <= 0 时不做任何事。
