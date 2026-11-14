@@ -206,7 +206,7 @@ func newScripterRoom(req ScenarioCreationRequest) (*scripterRoom, error) {
 	if err != nil {
 		return nil, err
 	}
-	// NOTE: compiler 未配置或被禁用时不阻断房间创建，compileStoryToModule 会 fallback 到 architect。
+	// NOTE: compiler 未配置或被禁用时不阻断房间创建，startCompile 会 fallback 到 architect。
 	compiler, _ := loadSingleAgent(models.AgentRoleCompiler)
 	return &scripterRoom{
 		architect: architect, qa: qa, lawyer: lawyer, compiler: compiler,
@@ -397,7 +397,7 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 	return ScenarioCreationOutput{Draft: draft, IronyCore: &IronyCore{}, Iterations: iterations, GenerationLog: r.generationLogText(), StoryDocument: story.Document}, nil
 }
 
-// compileAndFinalize 从已有故事文档出发执行 compile→repair→logic_review→reward_agent→normalize，
+// compileAndFinalize 从已有故事文档出发执行 compile→logic_review→reward_agent→normalize，
 // 供完整 AI 生成流水线（Run）和管理员上传故事直接编译（RunCompileStoryWithProgress）两条路径共用。
 // 返回编译产出的草稿与本阶段内的修复轮次数；error 非空时上层应直接返回失败。
 func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput, constraints ScripterConstraints) (ScenarioDraft, int, error) {
@@ -406,58 +406,33 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 
 	alog.Debug("scripter stage start", "session", sessionID, "stage", "compile")
 	r.emitProgress("compile", "start", "Compiler 编译结构化数据…")
-	draft, rewardConcept, err := compileStoryToModule(ctx, r, story, constraints)
+	session, err := startCompile(ctx, r, story, constraints)
 	if err != nil {
 		alog.Error("scripter stage failed", "session", sessionID, "stage", "compile", "err", err)
 		r.emitProgress("compile", "error", "编译失败："+err.Error())
 		return ScenarioDraft{}, iterations, fmt.Errorf("编译失败: %w", err)
 	}
+	iterations += session.rejects
+	draft, rewardConcept := session.result()
 	alog.Debug("scripter stage done", "session", sessionID, "stage", "compile", "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
 	r.emitProgress("compile", "done", fmt.Sprintf("编译完成：《%s》，场景 %d 个、NPC %d 个、线索 %d 条",
 		draft.Name, len(draft.Content.Scenes), len(draft.Content.NPCs), len(draft.Content.Clues)))
 
 	applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
 
-	// repairConv 承载 compile 后修复阶段（结构修复 + 逻辑修复）复用的消息链，两处
-	// repairOneshotDraft 调用共用；与 story 阶段的 storyConv 相互独立，因为 compiler
-	// 与 repair architect 的 system prompt 语义不同（忠实编译 vs 最小改动修复）。
-	repairConv := &scripterConversation{}
-
-	// Repair loop: up to 2 rounds for structural issues
-	for round := 1; round <= 2; round++ {
-		issues := validateDraftCompatibility(draft)
-		issues = append(issues, checkScenarioTagsOverlap(draft.Tags, r.tagsBlacklist)...)
-		if len(issues) == 0 {
-			break
-		}
-		alog.Warn("scripter repair issues found", "session", sessionID, "stage", "repair", "round", round, "count", len(issues), "issues", issues)
-		r.emitProgress("repair", "start", fmt.Sprintf("结构修复第 %d 轮：发现 %d 个结构问题", round, len(issues)))
-		repaired, repairErr := repairOneshotDraft(ctx, r, repairConv, constraints, &draft, issues)
-		if repairErr != nil {
-			alog.Warn("scripter repair failed", "session", sessionID, "stage", "repair", "round", round, "err", repairErr)
-			r.emitProgress("repair", "error", fmt.Sprintf("结构修复第 %d 轮失败（保留当前草稿）", round))
-			break
-		}
-		draft = repaired
-		applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
-		iterations++
-		alog.Debug("scripter repair done", "session", sessionID, "stage", "repair", "round", round, "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
-		r.emitProgress("repair", "done", fmt.Sprintf("结构修复第 %d 轮完成", round))
-	}
-
-	// 逻辑审查：QA agent 以故事文档为真相源审因果可达性与编译忠实度，问题清单走一轮修复；失败不阻塞生成
+	// 逻辑审查：QA agent 以故事文档为真相源审因果可达性与编译忠实度，问题清单追加回编译的同一条对话，
+	// 由同一个 compiler 用同一套工具改草稿并重新提交；失败时草稿保持原样，不阻塞生成
 	alog.Debug("scripter stage start", "session", sessionID, "stage", "logic_review")
 	r.emitProgress("logic_review", "start", "逻辑一致性审查…")
 	if logicIssues := runLogicReview(ctx, r, &draft, story.Document); len(logicIssues) > 0 {
 		alog.Warn("scripter repair issues found", "session", sessionID, "stage", "logic_review", "count", len(logicIssues), "issues", logicIssues)
 		r.emitProgress("logic_review", "start", fmt.Sprintf("逻辑审查发现 %d 个问题，执行修复", len(logicIssues)))
 		logScripterArtifact("Logic Review Issues", sessionID, logicIssues)
-		repaired, repairErr := repairOneshotDraft(ctx, r, repairConv, constraints, &draft, logicIssues)
-		if repairErr != nil {
+		if repairErr := session.fix(ctx, logicIssues); repairErr != nil {
 			alog.Warn("scripter repair failed", "session", sessionID, "stage", "logic_review", "err", repairErr)
 			r.emitProgress("logic_review", "error", "逻辑修复失败（保留当前草稿）")
 		} else {
-			draft = repaired
+			draft, rewardConcept = session.result()
 			applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
 			iterations++
 			alog.Debug("scripter repair done", "session", sessionID, "stage", "logic_review", "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
@@ -469,7 +444,7 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 	}
 
 	// Reward agent (isolated context, optional)：reward_concept 由 compiler 在编译阶段
-	// 通读故事文档全文提炼（见 compileStoryToModule），不再依赖 story 阶段的提交字段。
+	// 通读故事文档全文提炼（见 compileSession），不再依赖 story 阶段的提交字段。
 	// compiler 提示词与机制层校验已经基本保证 reward_concept 非空；下面的锚点兜底只覆盖
 	// 极端情况下 compiler 两次提交仍为空的场景，避免奖励阶段被静默跳过。
 	concept := strings.TrimSpace(rewardConcept)
@@ -752,8 +727,8 @@ func validateDraftCompatibility(draft ScenarioDraft) []string {
 	if strings.TrimSpace(content.MythosAnchor) == "" {
 		issues = append(issues, "content.mythos_anchor 为空；神话锚点必须明确写出，作为宇宙法则的具体载体")
 	}
-	if !hasMythosEssenceClue(content) {
-		issues = append(issues, "content.clues 中缺少揭示神话本质的[隐藏]线索（且content.mythos_core也为空）；至少需要一处说明神话真相本身")
+	if strings.TrimSpace(content.MythosCore) == "" {
+		issues = append(issues, "content.mythos_core 为空；须用 set_keeper_notes 写出神话本质的核心揭示，即这个故事里神话真相本身是什么")
 	}
 	realClueCount := 0
 	for _, clue := range content.Clues {
@@ -786,20 +761,6 @@ func checkScenarioTagsOverlap(draftTags string, blacklist []string) []string {
 		}
 	}
 	return issues
-}
-
-// hasMythosEssenceClue 容错检查：神话本质既可能仍在clues里以[隐藏]线索呈现，
-// 也可能已被normalizeOneshotDraft提取进content.mythos_core，两者满足其一即可。
-func hasMythosEssenceClue(content models.ScenarioContent) bool {
-	if strings.TrimSpace(content.MythosCore) != "" {
-		return true
-	}
-	for _, clue := range content.Clues {
-		if strings.TrimSpace(clue.Nature) == "隐藏" && strings.Contains(clue.Summary, "神话本质") {
-			return true
-		}
-	}
-	return false
 }
 
 func anyNPCHasSecretDescription(npcs []models.NPCData) bool {
@@ -1039,18 +1000,6 @@ func repairJSONWith(ctx context.Context, parser agentHandle, rawJSON string, par
 		alog.Warn("parser json repair attempt still invalid", "session", sessionID, "attempt", attempt)
 	}
 	return "", fmt.Errorf("parser 修复失败(%d次尝试)", maxAttempts)
-}
-
-// marshalExample renders a fully-populated value as a compact JSON string for use
-// in schema/repair prompts. The value must marshal cleanly; a marshal failure means
-// the example itself is malformed, so it panics at init time rather than silently
-// emitting an empty string that would hide the whole structure from the repair LLM.
-func marshalExample(v any) string {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(fmt.Sprintf("marshalExample: %v", err))
-	}
-	return string(data)
 }
 
 // grepRulebook searches the rulebook for exact keyword matches.

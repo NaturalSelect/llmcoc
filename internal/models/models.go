@@ -802,7 +802,8 @@ const (
 	// 仅在 Painter/Painter NSFW 开启 diffusion_mode 时被调用，未启用时扩散模式的配图直接失败，不回落 Writer。
 	AgentRoleDiffusionTranslator AgentRole = "diffusion_translator"
 	AgentRoleParser              AgentRole = "parser"
-	// NOTE: AgentRoleCompiler 负责把故事阶段产出的纯文本剧本编译为结构化ScenarioContent；
+	// NOTE: AgentRoleCompiler 负责把故事阶段产出的纯文本剧本编译为结构化ScenarioContent：
+	// 在 ReAct 循环里用字段级工具逐块编辑内存草稿，最后 submit_draft 提交；
 	// 只做格式转换和技术字段补充，无权改写故事事实。
 	AgentRoleCompiler AgentRole = "compiler"
 	// NOTE: AgentRoleDramaturg 是可选的剧情节奏顾问；由Director按需通过consult_dramaturg

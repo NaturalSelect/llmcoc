@@ -38,7 +38,7 @@ export const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
   architect: { max_tokens: 4000, temperature: 0.7 },
   qa_guard: { max_tokens: 2000, temperature: 0.3 },
   parser: { max_tokens: 4000, temperature: 0.1 },
-  // NOTE: compiler 负责把故事文本编译为结构化模组JSON，低温度减少擅自发挥。
+  // NOTE: compiler 用字段级工具逐块把故事文本编译进模组草稿，低温度减少擅自发挥。
   compiler: { max_tokens: 4000, temperature: 0.15 },
   // NOTE: dramaturg 是可选的剧构顾问，由Director按需通过工具调用咨询，默认关闭，需管理员单独绑定 provider 才会被路由。
   dramaturg: { max_tokens: 500, temperature: 0.5, is_active: false },
@@ -90,8 +90,8 @@ const ROLE_DESCS: Record<string, string> = {
   architect: '模组设计 — 生成大纲并转化为完整JSON模组',
   qa_guard: '质量审查 — 审查模组可玩性、规则合规与线索设计',
   parser: 'JSON修复 — 低温度结构化输出，修复其他Agent的JSON格式错误',
-  // NOTE: compiler — 只做故事文本到结构化JSON的忠实转换，无权改写剧情事实
-  compiler: '模组编译 — 将故事文本忠实编译为结构化模组JSON；建议配置低温度模型',
+  // NOTE: compiler — 只做故事文本到结构化模组的忠实转换，无权改写剧情事实
+  compiler: '模组编译 — 用工具调用逐块把故事文本忠实编译为结构化模组，需绑定支持 function calling 的模型；建议配置低温度模型',
   // NOTE: dramaturg — 剧构顾问，Director按需咨询，输入经脱敏处理不含玩家原始数据，只给建议不操作游戏状态（默认关闭）
   dramaturg: '剧构顾问 — Director按需咨询，输入已脱敏不含玩家数据，给出节奏与走向建议（默认关闭）',
   embedding: '语义检索 — Lawyer 规则缓存的向量检索；只支持 OpenAI 兼容的 /embeddings 接口（Anthropic 类型不支持）；未启用时退回标签匹配；换模型后已有缓存向量会在后台重算（默认关闭）',

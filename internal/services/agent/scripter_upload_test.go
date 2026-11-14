@@ -1,13 +1,14 @@
 // NOTE: scripter_upload_test.go 验证管理员上传故事编译功能：
 // RunCompileStoryWithProgress 的输入校验、extractAnchorFromDocument 的锚点自动提取，
 // 以及 compileAndFinalize 在跳过 Story Architect 阶段时的编译产出、mythos_anchor 强制覆盖
-// 与 reward_concept 为空时的机制层重试、兜底触发行为。
+// 与 reward_concept 始终为空时的提交关卡拒绝、放行与兜底触发行为。
 // 禁止真实网络/真实LLM；复用 testhelpers_test.go 中的 sequentialFakeProvider。
 package agent
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -149,7 +150,7 @@ func TestExtractAnchorFromDocument_Failure(t *testing.T) {
 func TestCompileAndFinalize_Success(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName:    "compiler",
-		jsonResponses: []string{oneshotExample},
+		toolResponses: compileToolResponses(compileFixtureDraft, compileFixtureConcept),
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-upload-1",
@@ -192,20 +193,21 @@ func TestCompileAndFinalize_Success(t *testing.T) {
 	}
 }
 
-// TestCompileAndFinalize_RewardConceptEmptyFallsBack 验证 compiler 提交的 reward_concept
-// 为空时：机制层先拒绝一次要求重新提交（见 scripter_compile.go dispatch 的 rewardRetried
-// 逻辑），重提后仍为空则放行编译；触发点改用 mythos_anchor 合成兜底概念继续触发
-// reward_agent（见 scripter.go 的 fallbackRewardConcept 调用），而不是像旧行为那样
-// 静默跳过整个奖励阶段。
+// TestCompileAndFinalize_RewardConceptEmptyFallsBack 验证 compiler 始终不填 reward_concept 时：
+// 提交关卡每次都拒绝，达到 compileMaxRejects 后带着问题放行；触发点改用 mythos_anchor
+// 合成兜底概念继续触发 reward_agent（见 scripter.go 的 fallbackRewardConcept 调用），
+// 而不是静默跳过整个奖励阶段。
 // 本测试的 room 未配置 architect/lawyer provider，所以 reward_agent 执行本身必然因
 // "no LLM provider available" 而失败——这与"因为概念为空所以跳过"是两种不同的原因，
 // 这里只验证后者不再发生（reward_agent 仍会被尝试触发）。
 func TestCompileAndFinalize_RewardConceptEmptyFallsBack(t *testing.T) {
-	noReward := oneshotResultExample
-	noReward.RewardConcept = ""
+	responses := []llm.ToolChatResult{{ToolCalls: compileWriteCalls(compileFixtureDraft, "")}}
+	for i := 0; i <= compileMaxRejects; i++ {
+		responses = append(responses, llm.ToolChatResult{ToolCalls: []llm.ToolCall{compileSubmitCall(fmt.Sprintf("s%d", i))}})
+	}
 	fake := &sequentialFakeProvider{
 		callerName:    "compiler",
-		jsonResponses: []string{marshalExample(noReward), marshalExample(noReward)},
+		toolResponses: responses,
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-upload-2",
@@ -223,12 +225,15 @@ func TestCompileAndFinalize_RewardConceptEmptyFallsBack(t *testing.T) {
 	}
 	story := compileTestStory()
 
-	draft, _, err := room.compileAndFinalize(context.Background(), story, ScripterConstraints{})
+	draft, iterations, err := room.compileAndFinalize(context.Background(), story, ScripterConstraints{})
 	if err != nil {
 		t.Fatalf("compileAndFinalize failed: %v", err)
 	}
+	if iterations != compileMaxRejects {
+		t.Errorf("提交被拒绝 %d 次后放行, iterations = %d", compileMaxRejects, iterations)
+	}
 	if !sawRewardStart {
-		t.Error("reward_concept 重试后仍为空时，应改用 mythos_anchor 兜底概念继续触发 reward_agent，而不是静默跳过")
+		t.Error("reward_concept 始终为空时，应改用 mythos_anchor 兜底概念继续触发 reward_agent，而不是静默跳过")
 	}
 	// room 未配置 reward_agent 可用的 architect/lawyer provider，reward_agent 必然因无
 	// provider 而失败（非致命，跳过），这与"概念为空"是两回事。
@@ -237,8 +242,8 @@ func TestCompileAndFinalize_RewardConceptEmptyFallsBack(t *testing.T) {
 	}
 	// NOTE: 取标题环节在 architect 缺席时同样 fallback 到 compiler provider，会追加若干次
 	// 调用；这里只数 compile 阶段的调用（cache key 不带 :title 后缀）。
-	if got := len(fake.recordedKeys) - countTitleCalls(fake); got != 2 {
-		t.Errorf("reward_concept 为空应被拒绝一次并重提, compile 阶段调用次数 got %d, want 2", got)
+	if got, want := len(fake.recordedKeys)-countTitleCalls(fake), 1+compileMaxRejects+1; got != want {
+		t.Errorf("reward_concept 为空应被拒绝 %d 次后放行, compile 阶段调用次数 got %d, want %d", compileMaxRejects, got, want)
 	}
 }
 
@@ -249,7 +254,7 @@ func TestCompileAndFinalize_RewardConceptEmptyFallsBack(t *testing.T) {
 func TestCompileAndFinalize_RewardTriggeredByCompiler(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName:    "compiler",
-		jsonResponses: []string{oneshotExample},
+		toolResponses: compileToolResponses(compileFixtureDraft, compileFixtureConcept),
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-upload-3",
@@ -271,6 +276,6 @@ func TestCompileAndFinalize_RewardTriggeredByCompiler(t *testing.T) {
 		t.Fatalf("compileAndFinalize failed: %v", err)
 	}
 	if !sawRewardStart {
-		t.Error("oneshotExample的reward_concept非空，应触发reward_agent（即使无architect provider而失败，也应先发出reward_agent:start进度）")
+		t.Error("compiler 填了 reward_concept，应触发reward_agent（即使无architect provider而失败，也应先发出reward_agent:start进度）")
 	}
 }

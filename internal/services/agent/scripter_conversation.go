@@ -1,7 +1,7 @@
 // scripter_conversation.go — 消息链复用原语：把一次 Scripter 生成/修复调用积累的
 // 完整对话历史（system/user/assistant/tool 全部消息）在同一 agentHandle、同一职责
 // 角色的连续调用之间保留下来，供 QA 修复轮次续接同一条对话而不是每轮重建，
-// 详见 repairStoryDocument / repairOneshotDraft。
+// 详见 repairStoryDocument 和 compileSession.fix。
 package agent
 
 import (
@@ -11,7 +11,7 @@ import (
 )
 
 // scripterConversation 持有一条可能跨越多次生成/修复调用的消息链。draftIdxs 记录
-// 历次"成稿"（story 文档全文 / oneshot JSON 全文）在 msgs 中的下标，供
+// 历次"成稿"（story 文档全文）在 msgs 中的下标，供
 // supersedePriorDrafts 把除最新一版外的历史正文原地替换为占位符，避免每轮修复都把
 // 整份历史正文重新叠进上下文。logged 是 recordScripterLLMExchange 已经写入生成日志
 // 的消息前缀长度，避免同一条链被多次调用复用时把历史消息重复记入生成日志。

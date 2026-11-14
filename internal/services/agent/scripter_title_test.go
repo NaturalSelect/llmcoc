@@ -100,7 +100,7 @@ func TestRunTitleAgent_RejectedThenRetried(t *testing.T) {
 		},
 	}
 	room := newTitleTestRoom("test-session-title-retry", fake, nil)
-	draft := oneshotResultExample.toScenarioDraft()
+	draft := compileFixtureDraft
 
 	title, err := runTitleAgent(context.Background(), room, &draft)
 	if err != nil {
@@ -132,7 +132,7 @@ func TestRunTitleAgent_NeverBlocksPipeline(t *testing.T) {
 		},
 	}
 	room := newTitleTestRoom("test-session-title-exhausted", fake, nil)
-	draft := oneshotResultExample.toScenarioDraft()
+	draft := compileFixtureDraft
 
 	title, err := runTitleAgent(context.Background(), room, &draft)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestRunTitleAgent_NeverBlocksPipeline(t *testing.T) {
 // TestRunTitleAgent_NoProviderAvailable 验证无可用 provider 时返回错误，由调用方保留编译标题。
 func TestRunTitleAgent_NoProviderAvailable(t *testing.T) {
 	room := &scripterRoom{sessionID: "test-session-title-noprovider"}
-	draft := oneshotResultExample.toScenarioDraft()
+	draft := compileFixtureDraft
 	if _, err := runTitleAgent(context.Background(), room, &draft); err == nil {
 		t.Fatal("architect/compiler 均不可用时应返回错误")
 	}
@@ -166,7 +166,7 @@ func TestRunTitleAgent_BlacklistInjected(t *testing.T) {
 		},
 	}
 	room := newTitleTestRoom("test-session-title-blacklist", fake, []string{"马什家的账本"})
-	draft := oneshotResultExample.toScenarioDraft()
+	draft := compileFixtureDraft
 
 	title, err := runTitleAgent(context.Background(), room, &draft)
 	if err != nil {
@@ -186,7 +186,8 @@ func TestRunTitleAgent_BlacklistInjected(t *testing.T) {
 func TestCompileAndFinalize_TitleStageSkippedWhenNameSpecified(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName:    "compiler",
-		jsonResponses: []string{oneshotExample, titleJSON("布里格斯农场的羊圈")},
+		toolResponses: compileToolResponses(compileFixtureDraft, compileFixtureConcept),
+		jsonResponses: []string{titleJSON("布里格斯农场的羊圈")},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-title-skip",
@@ -215,7 +216,8 @@ func TestCompileAndFinalize_TitleStageSkippedWhenNameSpecified(t *testing.T) {
 func TestCompileAndFinalize_TitleStageOverridesCompiledName(t *testing.T) {
 	fake := &sequentialFakeProvider{
 		callerName:    "compiler",
-		jsonResponses: []string{oneshotExample, titleJSON("布里格斯农场的羊圈")},
+		toolResponses: compileToolResponses(compileFixtureDraft, compileFixtureConcept),
+		jsonResponses: []string{titleJSON("布里格斯农场的羊圈")},
 	}
 	room := &scripterRoom{
 		sessionID: "test-session-title-override",

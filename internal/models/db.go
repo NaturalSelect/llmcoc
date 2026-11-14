@@ -200,8 +200,8 @@ func seedDefaultAgentConfigs() {
 		{Role: AgentRoleDiffusionTranslator, ProviderConfigID: provID, ModelName: model, MaxTokens: 800, Temperature: 0.3, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleParser, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.1, ThinkingLevel: "low", IsActive: true},
 		// NOTE: Compiler 负责把故事文本忠实编译为结构化ScenarioContent；低温度以减少编译时的擅自发挥。
-		// MaxTokens=4000 实测会被单次submit_compiled_scenario工具调用（scenes/npcs/clues/endings等
-		// 十余个字段一次性生成）打满导致stop_reason=max_tokens截断，调大到8000留出余量。
+		// 编译是多轮工具调用：每次调用只写草稿的一部分，所以单次响应的 token 压力远小于旧的整份 JSON 提交，
+		// 但模型可能在一轮里并行发出多个写入调用，MaxTokens 仍需留足余量。
 		{Role: AgentRoleCompiler, ProviderConfigID: provID, ModelName: model, MaxTokens: 128000, Temperature: 0.15, ThinkingLevel: "low", IsActive: true},
 		// NOTE: dramaturg 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时该工具不会
 		// 出现在Director工具列表中,Director按自身[ACTIVE-PACING]规则自行判断节奏,不影响主流程。

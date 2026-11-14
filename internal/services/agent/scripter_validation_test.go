@@ -135,21 +135,21 @@ func TestValidateDraftCompatibility_SettingDate(t *testing.T) {
 	})
 }
 
-// TestOneshotResultExampleStartTimeValid 验证内置示例的开局时间合法，且日期与 setting 一致（示例作为模型参考）。
-func TestOneshotResultExampleStartTimeValid(t *testing.T) {
-	start := oneshotResultExample.Content.GameStartTime
+// TestCompileFixtureDraftStartTimeValid 验证编译夹具的开局时间合法，且日期与 setting 一致。
+func TestCompileFixtureDraftStartTimeValid(t *testing.T) {
+	start := compileFixtureDraft.Content.GameStartTime
 	if _, err := models.ParseGameTime(start); err != nil {
-		t.Fatalf("示例开局时间 %q 不合法: %v", start, err)
+		t.Fatalf("夹具开局时间 %q 不合法: %v", start, err)
 	}
 	if !strings.HasPrefix(start, "1924-09-03") {
-		t.Errorf("示例开局时间 %q 应与 setting 里的 1924年9月3日 一致", start)
+		t.Errorf("夹具开局时间 %q 应与 setting 里的 1924年9月3日 一致", start)
 	}
 }
 
-// TestOneshotResultExampleSettingHasDate 验证内置示例 setting 满足日期要求（示例作为模型参考）。
-func TestOneshotResultExampleSettingHasDate(t *testing.T) {
-	if !settingHasDate(oneshotResultExample.Content.Setting) {
-		t.Errorf("oneshotResultExample.Content.Setting 缺少具体年月日，setting=%q", oneshotResultExample.Content.Setting)
+// TestCompileFixtureDraftSettingHasDate 验证编译夹具的 setting 满足日期要求。
+func TestCompileFixtureDraftSettingHasDate(t *testing.T) {
+	if !settingHasDate(compileFixtureDraft.Content.Setting) {
+		t.Errorf("compileFixtureDraft.Content.Setting 缺少具体年月日，setting=%q", compileFixtureDraft.Content.Setting)
 	}
 }
 
@@ -176,10 +176,10 @@ func TestIntroHasDate(t *testing.T) {
 	}
 }
 
-// TestOneshotResultExampleIntroHasDate 验证内置示例 intro 满足具体年月日要求（示例作为模型参考）。
-func TestOneshotResultExampleIntroHasDate(t *testing.T) {
-	if !introHasDate(oneshotResultExample.Content.Intro) {
-		t.Errorf("oneshotResultExample.Content.Intro 缺少具体年月日，intro=%q", oneshotResultExample.Content.Intro)
+// TestCompileFixtureDraftIntroHasDate 验证编译夹具的 intro 满足具体年月日要求。
+func TestCompileFixtureDraftIntroHasDate(t *testing.T) {
+	if !introHasDate(compileFixtureDraft.Content.Intro) {
+		t.Errorf("compileFixtureDraft.Content.Intro 缺少具体年月日，intro=%q", compileFixtureDraft.Content.Intro)
 	}
 }
 
