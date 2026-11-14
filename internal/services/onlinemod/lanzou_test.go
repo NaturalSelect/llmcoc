@@ -235,6 +235,46 @@ func TestResolveLanzouFallsBackToDomain2(t *testing.T) {
 	}
 }
 
+// 新版分享页（cnmods.lanzov.com 实测）：iframe 类名是 ifr2，没有文件名元素，文件名只在标题里。
+const newSharePageHTML = `<html><head>
+<title>海產龍-魔王大人决定伪装勇者小队讨伐魔族.zip - 蓝奏云</title></head><body>
+<div style="font-size: 30px;text-align: center;">海產龍-魔王大人决定伪装勇者小队讨伐魔族.zip</div>
+<div class="ifr">
+<iframe class="ifr2" name="1794669342" src="/fn?VzFbMQlnBWMJ" frameborder="0" scrolling="no"></iframe>
+</div></body></html>`
+
+func TestResolveLanzouNewSharePageLayout(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/s", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(newSharePageHTML))
+	})
+	mux.HandleFunc("/fn", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "VzFbMQlnBWMJ" {
+			http.Error(w, "bad query "+r.URL.RawQuery, http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`<script>
+		var wp_sign = 'S';
+		var ajaxdata = 'D';
+		var domain2 = 'https://apifile.lanzouw.com/ajaxfile.php?file=1';</script>`))
+	})
+	mux.HandleFunc("/ajaxfile.php", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"zt":"1","dom":"https://developer9.lanrar.com","url":"Z"}`))
+	})
+	srv := httptest.NewTLSServer(mux)
+	defer srv.Close()
+	direct, filename, err := newAliasClient(srv).ResolveLanzou(context.Background(), "https://cnmods.lanzov.com/s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if direct != "https://developer9.lanrar.com/file/Z" {
+		t.Errorf("direct = %q", direct)
+	}
+	if filename != "海產龍-魔王大人决定伪装勇者小队讨伐魔族.zip" {
+		t.Errorf("filename = %q，应取自标题并去掉「- 蓝奏云」", filename)
+	}
+}
+
 func TestResolveLanzouZtNotOne(t *testing.T) {
 	ls, c, closeFn := newLanzouFixture(t)
 	defer closeFn()

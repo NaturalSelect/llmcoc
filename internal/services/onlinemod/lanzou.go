@@ -16,6 +16,8 @@ import (
 
 var (
 	reDownIframe  = regexp.MustCompile(`(?is)<iframe\b[^>]*\bn_downlink\b[^>]*>`)
+	reFnIframe    = regexp.MustCompile(`(?is)<iframe\b[^>]*\bsrc\s*=\s*["']/fn\?[^"']*["'][^>]*>`)
+	reTitle       = regexp.MustCompile(`(?is)<title\b[^>]*>(.*?)</title>`)
 	reSrcAttr     = regexp.MustCompile(`(?is)\bsrc\s*=\s*["']([^"']+)["']`)
 	reFileNameID  = regexp.MustCompile(`(?is)<div\b[^>]*\bid\s*=\s*["']filenajax["'][^>]*>(.*?)</div>`)
 	reFileNameCls = regexp.MustCompile(`(?is)<div\b[^>]*\bclass\s*=\s*["']n_box_3fn["'][^>]*>(.*?)</div>`)
@@ -54,8 +56,13 @@ func (c *Client) ResolveLanzou(ctx context.Context, shareURL string) (direct, fi
 	}
 	page := string(body)
 
+	// NOTE: 旧版分享页的 iframe 带 n_downlink 类，新版类名是 ifr2；两者的共同点是 src 指向 /fn?，所以按地址兜底。
 	fnPath := ""
-	if tag := reDownIframe.FindString(page); tag != "" {
+	tag := reDownIframe.FindString(page)
+	if tag == "" {
+		tag = reFnIframe.FindString(page)
+	}
+	if tag != "" {
 		fnPath = html.UnescapeString(submatch(reSrcAttr, tag))
 	}
 	if fnPath == "" {
@@ -69,6 +76,10 @@ func (c *Client) ResolveLanzou(ctx context.Context, shareURL string) (direct, fi
 	filename = cleanFilename(submatch(reFileNameID, page))
 	if filename == "" {
 		filename = cleanFilename(submatch(reFileNameCls, page))
+	}
+	if filename == "" {
+		// NOTE: 新版分享页没有文件名元素，标题形如「文件名.zip - 蓝奏云」，扩展名决定后续怎么提取。
+		filename = cleanFilename(strings.TrimSuffix(strings.TrimSpace(html.UnescapeString(submatch(reTitle, page))), "- 蓝奏云"))
 	}
 
 	fnURL, err := shareFinal.Parse(fnPath)
