@@ -1,11 +1,13 @@
-// NOTE: 覆盖 idle_timeout.go 的"连续无数据即超时、任何数据都续约"语义。空闲时长在测试里缩到
-// 100ms 量级，全部基于内存假 HTTP 端点，不涉及真实网络。
+// NOTE: 覆盖 idle_timeout.go 的"连接上连续无字节即超时、任何字节(含响应头之前的保活)都续约"语义。
+// 空闲时长在测试里缩到 100ms 量级，全部基于本机假 HTTP 端点，不涉及真实网络。
 package llm
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,9 +19,11 @@ import (
 
 const testIdle = 100 * time.Millisecond
 
-func newTestIdleClient() *http.Client {
-	return &http.Client{Transport: &idleTimeoutTransport{base: http.DefaultTransport, idle: testIdle}}
+func newIdleClient(idle time.Duration) *http.Client {
+	return &http.Client{Transport: newIdleTimeoutTransport(idle)}
 }
+
+func newTestIdleClient() *http.Client { return newIdleClient(testIdle) }
 
 func TestIdleTimeoutTransport_HeaderStallTimesOut(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +46,29 @@ func TestIdleTimeoutTransport_HeaderStallTimesOut(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Errorf("timed out after %v, want close to %v", elapsed, testIdle)
+	}
+}
+
+// 响应头到达之前上游持续发 1xx 临时响应(网关常用的保活方式)时，等待总时长超过空闲上限也不能超时。
+func TestIdleTimeoutTransport_PreHeaderBytesRenewTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 5 次 1xx，间隔 40ms，总时长 200ms 超过 100ms 空闲上限；net/http 客户端最多容忍 5 次 1xx。
+		for i := 0; i < 5; i++ {
+			w.WriteHeader(http.StatusProcessing)
+			time.Sleep(40 * time.Millisecond)
+		}
+		_, _ = io.WriteString(w, "ok")
+	}))
+	t.Cleanup(srv.Close)
+
+	resp, err := newTestIdleClient().Get(srv.URL)
+	if err != nil {
+		t.Fatalf("Get error: %v (bytes before the response header must renew the idle timer)", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || string(body) != "ok" {
+		t.Fatalf("body = %q, %v, want %q with no error", body, err, "ok")
 	}
 }
 
@@ -129,6 +156,107 @@ func TestIdleTimeoutTransport_SlowConsumerIsNotIdle(t *testing.T) {
 	rest, err := io.ReadAll(resp.Body)
 	if err != nil || string(rest) != "b" {
 		t.Fatalf("rest = %q, %v, want %q with no error", rest, err, "b")
+	}
+}
+
+// 连接复用时，空闲期间挂着的那次读不能把旧的读期限带进新请求：新请求要拿到完整的空闲窗口。
+func TestIdleTimeoutTransport_ReusedConnectionGetsFullWindow(t *testing.T) {
+	const idle = 600 * time.Millisecond
+	var addrs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		addrs = append(addrs, r.RemoteAddr)
+		if len(addrs) == 2 {
+			time.Sleep(400 * time.Millisecond)
+		}
+		_, _ = io.WriteString(w, "ok")
+	}))
+	t.Cleanup(srv.Close)
+
+	client := newIdleClient(idle)
+	get := func() {
+		t.Helper()
+		resp, err := client.Get(srv.URL)
+		if err != nil {
+			t.Fatalf("Get error: %v", err)
+		}
+		defer resp.Body.Close()
+		if _, err := io.ReadAll(resp.Body); err != nil {
+			t.Fatalf("ReadAll error: %v", err)
+		}
+	}
+	get()
+	// 连接在池里空闲 400ms 后再发第二个请求；它的响应头要再等 400ms，总共 800ms 超过窗口起点，但没超过窗口长度。
+	time.Sleep(400 * time.Millisecond)
+	get()
+
+	if len(addrs) != 2 || addrs[0] != addrs[1] {
+		t.Fatalf("remote addrs = %v, want both requests on one reused connection", addrs)
+	}
+}
+
+// 空闲超时被 fantasy 当作可重试错误的前提：错误链里能认出 io.ErrUnexpectedEOF。
+func TestIdleTimeoutError_UnwrapsToUnexpectedEOF(t *testing.T) {
+	var err error = &idleTimeoutError{idle: time.Second}
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("errors.Is(%v, io.ErrUnexpectedEOF) = false", err)
+	}
+}
+
+// 生产环境走 TLS：超时错误要能穿过 tls.Conn 原样到达调用方，而不是被换成别的错误。
+func TestIdleTimeoutTransport_BodyStallTimesOutOverTLS(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "first")
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	transport := newIdleTimeoutTransport(testIdle).(*http.Transport)
+	transport.TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+	resp, err := (&http.Client{Transport: transport}).Get(srv.URL)
+	if err != nil {
+		t.Fatalf("Get error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	buf := make([]byte, 5)
+	if _, err := io.ReadFull(resp.Body, buf); err != nil || string(buf) != "first" {
+		t.Fatalf("first read = %q, %v, want %q", buf, err, "first")
+	}
+	_, err = resp.Body.Read(buf)
+	var idleErr *idleTimeoutError
+	if !errors.As(err, &idleErr) {
+		t.Fatalf("second read err = %v (%T), want *idleTimeoutError", err, err)
+	}
+}
+
+// 连接被服务端直接断开等普通错误不能被误报成空闲超时。
+func TestIdleTimeoutTransport_ConnectionResetIsNotIdleTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = bufio.NewReader(conn).ReadString('\n')
+		conn.Close()
+	}()
+
+	resp, err := newTestIdleClient().Get("http://" + ln.Addr().String())
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("err = nil, want a connection error")
+	}
+	var idleErr *idleTimeoutError
+	if errors.As(err, &idleErr) {
+		t.Fatalf("err = %v, want a plain connection error, not an idle timeout", err)
 	}
 }
 
