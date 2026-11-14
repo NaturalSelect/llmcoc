@@ -326,16 +326,25 @@ func runNPC(
 	return action, nil
 }
 
+// npcDescriptionMaxRunes 是 act_npc 人设卡里 NPC 描述的字符上限。
+const npcDescriptionMaxRunes = 200
+
+// clipNPCDescription 按字符（不是字节）截断，避免中文在字节边界被切成非法 UTF-8。
+func clipNPCDescription(desc string) string {
+	runes := []rune(desc)
+	if len(runes) <= npcDescriptionMaxRunes {
+		return desc
+	}
+	return string(runes[:npcDescriptionMaxRunes]) + "…"
+}
+
 // buildNPCProfile returns a text description of an NPC for use in prompts.
 func buildNPCProfile(name string, gctx GameContext, tempNPCs []models.SessionNPC) string {
 	// Check scenario static NPCs first.
 	content := gctx.Session.Scenario.Content.Data
 	for _, npc := range content.NPCs {
 		if npc.Name == name {
-			desc := npc.Description
-			if len(desc) > 200 {
-				desc = desc[:200] + "…"
-			}
+			desc := clipNPCDescription(npc.Description)
 			race := npc.Race
 			if race == "" {
 				race = "人类"
@@ -366,10 +375,7 @@ func buildNPCProfile(name string, gctx GameContext, tempNPCs []models.SessionNPC
 	for _, npc := range tempNPCs {
 		if npc.Name == name {
 			alive := npcDisplayState(npc)
-			desc := npc.Description
-			if len(desc) > 200 {
-				desc = desc[:200] + "…"
-			}
+			desc := clipNPCDescription(npc.Description)
 			profile := fmt.Sprintf("姓名:%s(%s,临时NPC,%s)\n描述:%s", npc.Name, npc.Race, alive, desc)
 			if strings.TrimSpace(npc.Attitude) != "" {
 				profile += "\n态度:" + strings.TrimSpace(npc.Attitude)

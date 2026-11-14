@@ -27,6 +27,8 @@ const doc = (over: Partial<OnlineModuleDocument> = {}): OnlineModuleDocument => 
   kind: 'docx',
   runes: 1000,
   candidate: true,
+  ocr: false,
+  garbled: false,
   license_hits: [],
   ...over,
 })
@@ -112,6 +114,19 @@ describe('compileBlockReason', () => {
 
   test('没有命中的文档不需要放行', () => {
     expect(compileBlockReason(ok, doc({ license_hits: [] }))).toBeNull()
+  })
+
+  test('疑似乱码的文档一律禁用，放行版权也不行', () => {
+    const garbled = doc({ garbled: true })
+    expect(compileBlockReason(ok, garbled)).toBe('所选文档的文字提取结果是乱码')
+    const hitAndGarbled = doc({ garbled: true, license_hits: ['禁止投喂AI'] })
+    expect(compileBlockReason({ status: 'extracted', license_override_at: '2026-11-14T08:00:00Z' }, hitAndGarbled)).toBe(
+      '所选文档的文字提取结果是乱码',
+    )
+  })
+
+  test('OCR 识别出的文档不受影响', () => {
+    expect(compileBlockReason(ok, doc({ ocr: true }))).toBeNull()
   })
 
   test('未加载全文：字数已超 500KB 必然超限，其余不拦', () => {

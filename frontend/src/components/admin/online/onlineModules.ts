@@ -109,10 +109,11 @@ export interface CompileBlockModule {
 // 未加载（undefined）时只用「字节数 >= 字数」的下界判断，不做 runes * 3 估算
 export function compileBlockReason(
   module: CompileBlockModule | null | undefined,
-  doc: Pick<OnlineModuleDocument, 'runes' | 'license_hits'> | null | undefined,
+  doc: Pick<OnlineModuleDocument, 'runes' | 'license_hits' | 'garbled'> | null | undefined,
   textBytes?: number | null,
 ): string | null {
   if (!module || module.status !== 'extracted' || !doc) return '未提取'
+  if (doc.garbled) return '所选文档的文字提取结果是乱码'
   if ((doc.license_hits?.length ?? 0) > 0 && module.license_override_at == null) return '所选文档命中版权筛查，需先放行'
   const tooLarge = textBytes != null ? textBytes > MAX_COMPILE_BYTES : doc.runes > MAX_COMPILE_BYTES
   if (tooLarge) return '正文超过 500KB'

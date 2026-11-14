@@ -597,3 +597,113 @@ func TestOnlineModuleDelete_RefusesActiveDownload(t *testing.T) {
 		t.Fatalf("status = %d, want 409", w.Code)
 	}
 }
+
+type fakeOnlineOCR struct {
+	calls []string
+	text  string
+	err   error
+}
+
+func (f *fakeOnlineOCR) ParsePDF(_ context.Context, name string, _ []byte) (string, error) {
+	f.calls = append(f.calls, name)
+	return f.text, f.err
+}
+
+func useOnlineOCR(t *testing.T, ocr onlinemod.OCR) {
+	t.Helper()
+	prev := onlineOCR
+	onlineOCR = ocr
+	t.Cleanup(func() { onlineOCR = prev })
+}
+
+// emptyTextPDF 是没有任何文字的合法 PDF：本地抽不出内容，相当于扫描件。
+// NOTE: 头部后面垫一段 PDF 注释，让文件体积超过候选正文的 2000 字节门槛，真实的扫描件都比这大得多。
+func emptyTextPDF() []byte {
+	var b bytes.Buffer
+	var offs []int
+	b.WriteString("%PDF-1.4\n")
+	b.WriteString("%" + strings.Repeat("x", 2500) + "\n")
+	add := func(body string) {
+		offs = append(offs, b.Len())
+		fmt.Fprintf(&b, "%d 0 obj\n%s\nendobj\n", len(offs), body)
+	}
+	add("<< /Type /Catalog /Pages 2 0 R >>")
+	add("<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+	add("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>")
+	add("<< /Length 0 >>\nstream\n\nendstream")
+	xref := b.Len()
+	fmt.Fprintf(&b, "xref\n0 %d\n0000000000 65535 f \n", len(offs)+1)
+	for _, o := range offs {
+		fmt.Fprintf(&b, "%010d 00000 n \n", o)
+	}
+	fmt.Fprintf(&b, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(offs)+1, xref)
+	return b.Bytes()
+}
+
+func TestOnlineModuleUploadArchive_OCRFillsScannedPDF(t *testing.T) {
+	r := initOnlineTest(t, &fakeOnlineSource{})
+	ocr := &fakeOnlineOCR{text: onlineStory("")}
+	useOnlineOCR(t, ocr)
+	m := seedOnlineModule(t, models.OnlineModuleStatusFailed, nil)
+
+	w := serveOnline(r, onlineUpload(t, fmt.Sprintf("/admin/online-modules/%d/archive", m.ID), "scan.pdf", emptyTextPDF()))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var detail struct {
+		Documents []struct {
+			Candidate bool `json:"candidate"`
+			OCR       bool `json:"ocr"`
+			Garbled   bool `json:"garbled"`
+		} `json:"documents"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(detail.Documents) != 1 || !detail.Documents[0].OCR || detail.Documents[0].Garbled || !detail.Documents[0].Candidate {
+		t.Fatalf("unexpected documents: %+v", detail.Documents)
+	}
+	if len(ocr.calls) != 1 || ocr.calls[0] != "scan.pdf" {
+		t.Fatalf("OCR calls = %v", ocr.calls)
+	}
+}
+
+func TestOnlineModuleUploadArchive_NoOCRConfiguredSendsNothing(t *testing.T) {
+	r := initOnlineTest(t, &fakeOnlineSource{})
+	useOnlineOCR(t, nil)
+	m := seedOnlineModule(t, models.OnlineModuleStatusFailed, nil)
+
+	w := serveOnline(r, onlineUpload(t, fmt.Sprintf("/admin/online-modules/%d/archive", m.ID), "scan.pdf", emptyTextPDF()))
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (%s)", w.Code, w.Body.String())
+	}
+}
+
+func TestOnlineModuleUploadArchive_OCRFailureFailsWholeUpload(t *testing.T) {
+	r := initOnlineTest(t, &fakeOnlineSource{})
+	ocr := &fakeOnlineOCR{err: errors.New("boom")}
+	useOnlineOCR(t, ocr)
+	m := seedOnlineModule(t, models.OnlineModuleStatusFailed, func(m *models.OnlineModule) { m.Error = "旧错误" })
+
+	w := serveOnline(r, onlineUpload(t, fmt.Sprintf("/admin/online-modules/%d/archive", m.ID), "scan.pdf", emptyTextPDF()))
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (%s)", w.Code, w.Body.String())
+	}
+	if got := loadOnlineModule(t, m.ID); got.Status != models.OnlineModuleStatusFailed || got.Error != "旧错误" {
+		t.Fatalf("状态应保持原样: %+v", got)
+	}
+}
+
+func TestOnlineModuleCompile_RefusesGarbledDocument(t *testing.T) {
+	r := initOnlineTest(t, &fakeOnlineSource{})
+	m := seedOnlineModule(t, models.OnlineModuleStatusExtracted, nil)
+	doc := seedOnlineDoc(t, m.ID, onlineStory(""), nil)
+	if err := models.DB.Model(&doc).Update("garbled", true).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	w := serveOnline(r, jsonReq("POST", fmt.Sprintf("/admin/online-modules/%d/compile", m.ID), map[string]any{"document_id": doc.ID}))
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "乱码") {
+		t.Fatalf("status = %d, body = %s, want 409 mentioning 乱码", w.Code, w.Body.String())
+	}
+}

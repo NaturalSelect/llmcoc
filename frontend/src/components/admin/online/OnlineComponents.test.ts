@@ -58,6 +58,8 @@ const doc = (over: Partial<OnlineModuleDocument> = {}): OnlineModuleDocument => 
   kind: 'docx',
   runes: 5000,
   candidate: true,
+  ocr: false,
+  garbled: false,
   license_hits: [],
   preview: '这是正文的前三百字预览',
   ...over,
@@ -140,6 +142,27 @@ describe('OnlineModuleDetailModal', () => {
     expect(buttonByText('编译')!.disabled).toBe(false)
     expect(document.body.querySelector('[data-testid="compile-block-reason"]')).toBeNull()
     expect(w.emitted('changed')).toHaveLength(1)
+    w.unmount()
+  })
+
+  test('乱码文档：显示「疑似乱码」徽标并禁用编译；OCR 文档显示「OCR 识别」徽标', async () => {
+    routes['GET /api/admin/online-modules/7'] = detail({}, [
+      doc({ id: 1, path: 'bad.pdf', kind: 'pdf', runes: 9000, garbled: true, candidate: false }),
+      doc({ id: 2, path: 'scan.pdf', kind: 'pdf', runes: 5000, ocr: true }),
+    ])
+    const w = mountModal()
+    await flushPromises()
+
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('疑似乱码')
+    expect(text).toContain('OCR 识别')
+    // 默认选中的是候选文档（OCR 那篇），可以编译；切到乱码那篇后禁用并写明原因
+    expect(buttonByText('编译')!.disabled).toBe(false)
+    const rows = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button[aria-pressed]'))
+    rows.find((b) => b.textContent?.includes('bad.pdf'))!.click()
+    await flushPromises()
+    expect(buttonByText('编译')!.disabled).toBe(true)
+    expect(document.body.querySelector('[data-testid="compile-block-reason"]')?.textContent).toBe('所选文档的文字提取结果是乱码')
     w.unmount()
   })
 

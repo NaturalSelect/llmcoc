@@ -37,12 +37,23 @@ var (
 	onlineValidShareURL              = onlinemod.ValidShareURL
 )
 
+// onlineOCR 是 PDF 本地抽取为空或乱码时的兜底识别服务。
+// NOTE: nil 表示未配置，不会把任何 PDF 发到外部；赋值时必须是真正的 nil 接口，不要包一个 nil 指针。
+var onlineOCR onlinemod.OCR
+
+// ConfigureOnlineOCR 设置线上模组 PDF 的 OCR 后备；传 nil 关闭。启动时调用一次。
+func ConfigureOnlineOCR(ocr onlinemod.OCR) { onlineOCR = ocr }
+
 const (
-	onlineArchiveMaxBytes    = 50 << 20
-	onlineCompileMaxBytes    = 512 * 1024
-	onlineDownloadTimeout    = 4 * time.Minute
-	onlineListTimeout        = 20 * time.Second
-	onlineDownloadStaleAfter = 10 * time.Minute
+	onlineArchiveMaxBytes = 50 << 20
+	onlineCompileMaxBytes = 512 * 1024
+	onlineDownloadTimeout = 4 * time.Minute
+	// NOTE: OCR 的总预算：MinerU 单个 PDF 最多等 8 分钟，这里只保证一个压缩包不会无限占着下载状态。
+	// 预算耗尽后剩下的 PDF 不再识别，按乱码标记，其余内容照常入库。
+	onlineOCRTimeout  = 12 * time.Minute
+	onlineListTimeout = 20 * time.Second
+	// NOTE: 必须大于下载超时加 OCR 预算，否则识别还在跑时状态就被别的请求抢走。
+	onlineDownloadStaleAfter = 20 * time.Minute
 	onlinePreviewRunes       = 300
 	onlineTitleMaxRunes      = 100
 )
@@ -172,7 +183,7 @@ func onlineModuleFromParam(c *gin.Context) (models.OnlineModule, bool) {
 func loadOnlineDocRows(moduleID uint) ([]onlineDocRow, error) {
 	rows := make([]onlineDocRow, 0)
 	err := models.DB.Model(&models.OnlineModuleDocument{}).
-		Select("id, online_module_id, path, kind, runes, candidate, license_hits, created_at, substr(text, 1, ?) AS preview", onlinePreviewRunes).
+		Select("id, online_module_id, path, kind, runes, candidate, ocr, garbled, license_hits, created_at, substr(text, 1, ?) AS preview", onlinePreviewRunes).
 		Where("online_module_id = ?", moduleID).
 		Order("runes DESC, id ASC").
 		Find(&rows).Error
@@ -335,9 +346,12 @@ func onlineFailureMessage(err error) string {
 }
 
 // ingestOnlineArchive 提取压缩包正文、做版权筛查，并在一个事务里替换该条目的全部文档。
-// 内容变了，之前的版权放行记录一并清空。
+// 内容变了，之前的版权放行记录一并清空。配置了 OCR 时，本地抽不出可用文字的 PDF 会被送去识别。
 func ingestOnlineArchive(id uint, name string, data []byte) error {
-	docs, err := onlinemod.Extract(data, name)
+	// NOTE: 脱离请求的 ctx：管理员中途关页面不应让识别半途而废，也不应留下半截状态。
+	ctx, cancel := context.WithTimeout(context.Background(), onlineOCRTimeout)
+	defer cancel()
+	docs, err := onlinemod.ExtractWithOCR(ctx, data, name, onlineOCR)
 	if err != nil {
 		return err
 	}
@@ -353,6 +367,8 @@ func ingestOnlineArchive(id uint, name string, data []byte) error {
 			Kind:           d.Kind,
 			Runes:          d.Runes,
 			Candidate:      d.Candidate,
+			OCR:            d.OCR,
+			Garbled:        d.Garbled,
 			Text:           d.Text,
 			LicenseHits:    models.JSONField[[]string]{Data: hits},
 		})
@@ -603,6 +619,10 @@ func OnlineModuleCompile(c *gin.Context) {
 	var doc models.OnlineModuleDocument
 	if err := models.DB.Where("id = ? AND online_module_id = ?", req.DocumentID, m.ID).First(&doc).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "文档不存在"})
+		return
+	}
+	if doc.Garbled {
+		c.JSON(http.StatusConflict, gin.H{"error": "所选文档的文字提取结果是乱码，无法编译；请换用 docx 或文本版本重新上传"})
 		return
 	}
 	if len(doc.LicenseHits.Data) > 0 && m.LicenseOverrideAt == nil {

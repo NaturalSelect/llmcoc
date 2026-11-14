@@ -5,6 +5,7 @@ package onlinemod
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"html"
@@ -48,6 +49,9 @@ const (
 	// 候选正文的判定阈值（skill 规则）：原文件大于 2000 字节且正文超过 3000 字。
 	candidateMinFileBytes = 2000
 	candidateMinRunes     = 3000
+
+	// maxOCRPerArchive 限制一个压缩包最多送去 OCR 的 PDF 数，免得一个异常压缩包耗光服务商的每日额度。
+	maxOCRPerArchive = 5
 )
 
 // Document 是抽取出的一篇文档。
@@ -61,6 +65,15 @@ type Document struct {
 	Text  string
 	// Candidate 表示它像一篇完整的模组正文：原文件字节数 > 2000 且 Runes > 3000。
 	Candidate bool
+	// OCR 表示正文来自 OCR 服务：PDF 本地抽取为空或乱码，且 OCR 成功。
+	OCR bool
+	// Garbled 表示正文疑似乱码且没能修复（没有配置 OCR、OCR 失败或超出次数上限），内容不可信。
+	Garbled bool
+}
+
+// OCR 是 PDF 本地抽取不可用时的兜底识别服务，返回 Markdown 或纯文本。
+type OCR interface {
+	ParsePDF(ctx context.Context, name string, data []byte) (string, error)
 }
 
 var (
@@ -70,9 +83,15 @@ var (
 	magic7z  = []byte("7z\xbc\xaf\x27\x1c")
 )
 
-// Extract 按文件内容的魔数（而不是扩展名）判断类型并抽取正文，结果按 Runes 从多到少排序。
+// Extract 按文件内容的魔数（而不是扩展名）判断类型并抽取正文，结果按 Runes 从多到少排序。不使用 OCR。
 func Extract(data []byte, filename string) ([]Document, error) {
-	ex := &extractor{}
+	return ExtractWithOCR(context.Background(), data, filename, nil)
+}
+
+// ExtractWithOCR 在 Extract 的基础上，对本地抽取为空或乱码的 PDF 调用 ocr 重新识别；ocr 为 nil 时不识别。
+// OCR 失败不会让提取失败：保留本地结果，乱码的标记 Garbled，没有文字的照旧丢弃。
+func ExtractWithOCR(ctx context.Context, data []byte, filename string, ocr OCR) ([]Document, error) {
+	ex := &extractor{ctx: ctx, ocr: ocr}
 	switch {
 	case bytes.HasPrefix(data, magicZip):
 		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
@@ -118,8 +137,12 @@ func kindByEntry(name string) string {
 }
 
 type extractor struct {
+	ctx context.Context
+	ocr OCR
 	// total 是已经从压缩包里解出的字节数，包含 docx 内部的 document.xml。
 	total int64
+	// ocrCalls 是已经送去 OCR 的次数（含失败）。
+	ocrCalls int
 }
 
 func (ex *extractor) single(data []byte, kind, filename string) ([]Document, error) {
@@ -244,11 +267,19 @@ func findEntry(zr *zip.Reader, name string) *zip.File {
 func (ex *extractor) document(raw []byte, kind, name string) (Document, error) {
 	var text string
 	var err error
+	var ocred, garbled bool
 	switch kind {
 	case "docx":
 		text, err = ex.docxText(raw)
 	case "pdf":
 		text, err = pdfText(raw)
+		if err == nil && needsOCR(text) {
+			if better, ok := ex.ocrText(raw, name); ok {
+				text, ocred = better, true
+			} else {
+				garbled = looksGarbled(text)
+			}
+		}
 	case "txt", "md":
 		text = decodeText(raw)
 	default:
@@ -258,6 +289,9 @@ func (ex *extractor) document(raw []byte, kind, name string) (Document, error) {
 		return Document{}, err
 	}
 	text, runes := finalizeText(text)
+	// NOTE: 放在 finalizeText 之后：先清掉非法 UTF-8，strings.Map 才不会把它们变成替换字符。
+	// 部首字符和对应汉字都是 3 字节、1 个 rune，所以截断位置和 runes 都不受影响。
+	text = normalizeRadicals(text)
 	if strings.TrimSpace(text) == "" {
 		return Document{}, errEmptyText
 	}
@@ -266,8 +300,28 @@ func (ex *extractor) document(raw []byte, kind, name string) (Document, error) {
 		Kind:      kind,
 		Runes:     runes,
 		Text:      text,
-		Candidate: len(raw) > candidateMinFileBytes && runes > candidateMinRunes,
+		Candidate: !garbled && len(raw) > candidateMinFileBytes && runes > candidateMinRunes,
+		OCR:       ocred,
+		Garbled:   garbled,
 	}, nil
+}
+
+// ocrText 把本地抽不出可用文字的 PDF 交给 OCR；返回的文字仍不可用时视为失败。
+func (ex *extractor) ocrText(raw []byte, name string) (string, bool) {
+	if ex.ocr == nil || ex.ocrCalls >= maxOCRPerArchive || ex.ctx.Err() != nil {
+		return "", false
+	}
+	ex.ocrCalls++
+	text, err := ex.ocr.ParsePDF(ex.ctx, path.Base(name), raw)
+	if err != nil {
+		log.Warn("pdf ocr failed, keep local text", "entry", name, "err", err)
+		return "", false
+	}
+	if needsOCR(text) {
+		log.Warn("pdf ocr returned unusable text, keep local text", "entry", name)
+		return "", false
+	}
+	return text, true
 }
 
 // finalizeText 清掉非法 UTF-8 和 NUL，超过上限时按 rune 边界截断并追加说明；返回的 runes 不含说明。
@@ -344,6 +398,9 @@ func (ex *extractor) docxText(data []byte) (string, error) {
 }
 
 // pdfText 用纯 Go 库抽取 PDF 文本。畸形 PDF 会让库 panic，这里统一转成错误。
+// NOTE: 不用 Reader.GetPlainText：它按字体资源名（F9、C2_0 这类）跨页缓存解码表，只认第一次见到的那份。
+// 很多 PDF 每页的子集字体都叫同一个名字但字形映射不同，整本提取时后面的页会用错解码表，全变成 U+FFFD。
+// 逐页独立提取（不传字体缓存）解码是对的。单页失败只丢这一页，整本都失败才报错。
 func pdfText(data []byte) (text string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -354,15 +411,36 @@ func pdfText(data []byte) (text string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("PDF 解析失败: %w", err)
 	}
-	rd, err := r.GetPlainText()
-	if err != nil {
-		return "", fmt.Errorf("PDF 解析失败: %w", err)
+	var sb strings.Builder
+	var firstErr error
+	for i := 1; i <= r.NumPage() && sb.Len() < maxPDFTextBytes; i++ {
+		page, perr := pdfPageText(r, i)
+		if perr != nil {
+			if firstErr == nil {
+				firstErr = perr
+			}
+			log.Warn("skip pdf page: extract failed", "page", i, "err", perr)
+			continue
+		}
+		sb.WriteString(page)
 	}
-	b, err := io.ReadAll(io.LimitReader(rd, maxPDFTextBytes))
-	if err != nil {
-		return "", fmt.Errorf("PDF 解析失败: %w", err)
+	if sb.Len() == 0 && firstErr != nil {
+		return "", fmt.Errorf("PDF 解析失败: %w", firstErr)
 	}
-	return joinVerticalLines(string(b)), nil
+	return joinVerticalLines(sb.String()), nil
+}
+
+func pdfPageText(r *pdf.Reader, i int) (text string, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			text, err = "", fmt.Errorf("%v", p)
+		}
+	}()
+	page := r.Page(i)
+	if pageNeedsToUnicode(page) {
+		return toUnicodePageText(page)
+	}
+	return page.GetPlainText(nil)
 }
 
 // reSentenceEnd 在句末标点后补换行；后一个字符是标点或收引号时不拆，免得把「。」」拆开。

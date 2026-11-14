@@ -27,6 +27,7 @@ import (
 	"github.com/llmcoc/server/internal/services/agent"
 	"github.com/llmcoc/server/internal/services/imagestore"
 	"github.com/llmcoc/server/internal/services/llm"
+	"github.com/llmcoc/server/internal/services/onlinemod"
 	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
@@ -68,6 +69,12 @@ func main() {
 	// Seed scenarios from scenarios/ directory
 	handlers.SeedScenarios("scenarios")
 	handlers.SeedDebugScenario()
+
+	// NOTE: 只有配置了 MINERU_TOKEN 才会把本地提取失败的 PDF 发到 MinerU；没配置时不会有任何 PDF 离开本机。
+	if mu := onlinemod.NewMinerU(os.Getenv("MINERU_TOKEN")); mu.Configured() {
+		handlers.ConfigureOnlineOCR(mu)
+		log.Info("online module PDF OCR fallback enabled", "provider", "mineru")
+	}
 
 	// Seed default shop items
 	handlers.SeedShopItems()

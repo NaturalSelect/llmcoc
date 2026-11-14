@@ -4,6 +4,7 @@ package agent
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/llm"
@@ -154,6 +155,41 @@ func TestBuildNPCInstruction(t *testing.T) {
 	if !strings.Contains(esc.Content, `<npc_role npc="a&quot;&lt;b&gt;">`) || !strings.Contains(esc.Content, `<kp_says npc="a&quot;&lt;b&gt;">`) {
 		t.Errorf("npc 属性应转义:\n%s", esc.Content)
 	}
+}
+
+// ── buildNPCProfile 描述截断 ───────────────────────────────────────────────────
+
+// TestBuildNPCProfileClipsDescriptionByRune 验证描述按字符截断：纯中文描述若按字节切 200，
+// 会在汉字中间断开产生非法 UTF-8，并且只保留约 66 个字。
+func TestBuildNPCProfileClipsDescriptionByRune(t *testing.T) {
+	long := strings.Repeat("秘", npcDescriptionMaxRunes+50)
+	exact := strings.Repeat("秘", npcDescriptionMaxRunes)
+	want := strings.Repeat("秘", npcDescriptionMaxRunes) + "…"
+
+	t.Run("剧本静态NPC", func(t *testing.T) {
+		gctx := GameContext{Session: models.GameSession{Scenario: models.Scenario{
+			Content: models.JSONField[models.ScenarioContent]{Data: models.ScenarioContent{
+				NPCs: []models.NPCData{
+					{Name: "长描述", Description: long},
+					{Name: "刚好", Description: exact},
+				},
+			}},
+		}}}
+		got := buildNPCProfile("长描述", gctx, nil)
+		if !utf8.ValidString(got) || !strings.Contains(got, "描述:"+want+"\n") {
+			t.Fatalf("超长描述应保留%d个字加省略号且是合法UTF-8,got %q", npcDescriptionMaxRunes, got)
+		}
+		if got := buildNPCProfile("刚好", gctx, nil); !strings.Contains(got, "描述:"+exact+"\n") || strings.Contains(got, "…") {
+			t.Fatalf("恰好等于上限的描述不应被截断,got %q", got)
+		}
+	})
+
+	t.Run("临时NPC", func(t *testing.T) {
+		got := buildNPCProfile("临时", GameContext{}, []models.SessionNPC{{Name: "临时", Description: long}})
+		if !utf8.ValidString(got) || !strings.Contains(got, "描述:"+want) {
+			t.Fatalf("超长描述应保留%d个字加省略号且是合法UTF-8,got %q", npcDescriptionMaxRunes, got)
+		}
+	})
 }
 
 // ── buildNPCProfile 渲染确定性 ─────────────────────────────────────────────────

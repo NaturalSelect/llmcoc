@@ -396,6 +396,8 @@ async function compile() {
               <StampBadge>{{ d.kind }}</StampBadge>
               <span class="text-xs tabular-nums text-fg-muted">{{ d.runes }} 字</span>
               <StampBadge v-if="d.candidate" tone="seal">候选正文</StampBadge>
+              <StampBadge v-if="d.ocr" tone="ledger">OCR 识别</StampBadge>
+              <StampBadge v-if="d.garbled" tone="danger">疑似乱码</StampBadge>
               <StampBadge v-if="d.license_hits.length > 0" tone="danger">命中版权筛查</StampBadge>
             </button>
           </li>

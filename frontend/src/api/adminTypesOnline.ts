@@ -79,6 +79,10 @@ export interface OnlineModuleDocument {
   kind: string
   runes: number
   candidate: boolean
+  // 正文来自 OCR（PDF 本地抽取为空或乱码时的兜底识别）
+  ocr: boolean
+  // 正文疑似乱码且没能修复，不可编译
+  garbled: boolean
   license_hits: string[]
   // 详情接口里只含前 300 字，全文要单独请求
   preview?: string

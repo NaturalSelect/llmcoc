@@ -48,13 +48,16 @@ type OnlineModule struct {
 }
 
 type OnlineModuleDocument struct {
-	ID             uint                `gorm:"primaryKey;autoIncrement" json:"id"`
-	OnlineModuleID uint                `gorm:"not null;index" json:"online_module_id"`
-	Path           string              `gorm:"size:500" json:"path"`
-	Kind           string              `gorm:"size:16" json:"kind"`
-	Runes          int                 `json:"runes"`
-	Candidate      bool                `json:"candidate"`
-	Text           string              `gorm:"type:text" json:"-"`
-	LicenseHits    JSONField[[]string] `gorm:"type:text" json:"license_hits"`
-	CreatedAt      time.Time           `json:"created_at"`
+	ID             uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	OnlineModuleID uint   `gorm:"not null;index" json:"online_module_id"`
+	Path           string `gorm:"size:500" json:"path"`
+	Kind           string `gorm:"size:16" json:"kind"`
+	Runes          int    `json:"runes"`
+	Candidate      bool   `json:"candidate"`
+	// NOTE: OCR 表示正文来自 OCR 服务（PDF 本地抽取为空或乱码）；Garbled 表示正文疑似乱码且没能修复，不可编译。
+	OCR         bool                `json:"ocr"`
+	Garbled     bool                `json:"garbled"`
+	Text        string              `gorm:"type:text" json:"-"`
+	LicenseHits JSONField[[]string] `gorm:"type:text" json:"license_hits"`
+	CreatedAt   time.Time           `json:"created_at"`
 }
