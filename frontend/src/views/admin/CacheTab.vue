@@ -8,7 +8,7 @@ import CacheStatsCard from '@/components/admin/cache/CacheStatsCard.vue'
 import LlmStatsCard from '@/components/admin/cache/LlmStatsCard.vue'
 import SessionContextCard from '@/components/admin/cache/SessionContextCard.vue'
 import { errMsg } from '@/components/admin/shared/errMsg'
-import { clampPage, normalizeKeysPage } from '@/components/admin/shared/paging'
+import { clampPage, normalizeKeysPage } from '@/components/admin/shared/pagedList'
 import { useUiStore } from '@/stores/ui'
 
 // NOTE: 旧前端的规则缓存页没有任何定时刷新（admin.js / app.js 里没有 setInterval），只在进入页签和点击按钮时拉取，这里同样不加轮询

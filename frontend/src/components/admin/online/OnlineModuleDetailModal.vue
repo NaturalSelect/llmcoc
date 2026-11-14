@@ -3,9 +3,10 @@ import { ExternalLink, FileText, Hammer, RefreshCw, ShieldAlert, ShieldCheck, Tr
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import type { OnlineModule, OnlineModuleDetail, OnlineModuleDocumentFull } from '@/api/adminTypesOnline'
 import { api, postForm } from '@/api/client'
-import { errorMessage } from '@/components/admin/scenarios/pagedList'
+import { errMsg } from '@/components/admin/shared/errMsg'
 import StreamLogBox from '@/components/admin/scenarios/StreamLogBox.vue'
 import BaseButton from '@/components/base/BaseButton.vue'
+import BaseFileInput from '@/components/base/BaseFileInput.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import FormField from '@/components/base/FormField.vue'
@@ -60,7 +61,7 @@ const uploading = ref(false)
 // NOTE: 只防「点击到 202 返回」之间的重复提交；是否正在编译看模组状态（compiling），不再由弹窗自己记
 const compileSubmitting = ref(false)
 const compileName = ref('')
-const fileInput = ref<HTMLInputElement | null>(null)
+const fileInput = ref<InstanceType<typeof BaseFileInput> | null>(null)
 
 // 切换条目或关闭弹窗后，较早发出的详情请求不能再覆盖当前内容
 let loadSeq = 0
@@ -157,7 +158,7 @@ async function openDetail(id: number) {
   try {
     await loadDetail(id, false)
   } catch (e) {
-    if (seq === loadSeq) loadError.value = errorMessage(e)
+    if (seq === loadSeq) loadError.value = errMsg(e)
   } finally {
     if (seq === loadSeq) loading.value = false
   }
@@ -170,7 +171,7 @@ async function refresh() {
     await loadDetail(m.id, true)
     if (detail.value) emit('changed', detail.value.module)
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   }
 }
 
@@ -196,7 +197,7 @@ async function loadText(docId: number): Promise<void> {
     texts[docId] = text
     byteCounts[docId] = utf8Bytes(text)
   } catch (e) {
-    if (isCurrent(m.id)) textError.value = errorMessage(e)
+    if (isCurrent(m.id)) textError.value = errMsg(e)
   } finally {
     if (loadingDocId.value === docId) loadingDocId.value = null
   }
@@ -244,7 +245,7 @@ async function override() {
     emit('changed', updated)
     ui.toast('已放行')
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   } finally {
     overriding.value = false
   }
@@ -255,7 +256,7 @@ async function override() {
 async function upload() {
   const m = mod.value
   if (!m || uploading.value) return
-  const file = fileInput.value?.files?.[0]
+  const file = fileInput.value?.file()
   if (!file) {
     ui.toast('请选择一个 .zip / .docx / .pdf 文件', 'error')
     return
@@ -275,7 +276,7 @@ async function upload() {
       return
     }
     const next = data as OnlineModule
-    if (fileInput.value) fileInput.value.value = ''
+    fileInput.value?.clear()
     // NOTE: 任务很快时，结束帧可能先于 202 响应到达；此时 store 里已经是更新的非 downloading 状态，
     // 再套用 202 里的 downloading 会让弹窗永远停在「处理中」，所以直接按已结束处理
     const latest = tasks.modules[m.id]
@@ -287,7 +288,7 @@ async function upload() {
     emit('changed', next)
     ui.toast('已开始提取，完成后会通知你')
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   } finally {
     uploading.value = false
   }
@@ -298,7 +299,7 @@ async function reloadAfterSettle(module: OnlineModule) {
   try {
     await loadDetail(module.id, true)
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
     if (isCurrent(module.id) && detail.value) detail.value.module = module
   }
   if (isCurrent(module.id) && detail.value) emit('changed', detail.value.module)
@@ -351,7 +352,7 @@ async function compile() {
       emit('changed', latest)
     }
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   } finally {
     compileSubmitting.value = false
   }
@@ -503,12 +504,11 @@ async function compile() {
           自动下载失败，或想换一份文件时，可以在自己的浏览器里下载压缩包后上传（.zip / .docx / .pdf，≤50MB）。上传会替换已提取的文档，并清除放行记录。
         </p>
         <div class="flex flex-wrap items-center gap-2">
-          <input
+          <BaseFileInput
             ref="fileInput"
-            type="file"
             accept=".zip,.docx,.pdf"
             aria-label="选择要上传的压缩包"
-            class="block min-w-0 flex-1 rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-fg file:mr-3 file:rounded-lg file:border-0 file:bg-surface-3 file:px-2 file:py-1 file:text-xs file:text-fg"
+            class="flex-1"
           />
           <BaseButton variant="secondary" :loading="uploading" :disabled="taskRunning" @click="upload">
             <Upload v-if="!uploading" :size="16" :stroke-width="1.75" />

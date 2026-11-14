@@ -8,8 +8,9 @@ import OnlineBrowsePanel from '@/components/admin/online/OnlineBrowsePanel.vue'
 import OnlineModuleDetailModal from '@/components/admin/online/OnlineModuleDetailModal.vue'
 import OnlineModuleList from '@/components/admin/online/OnlineModuleList.vue'
 import { RIGHTS_NOTICE } from '@/components/admin/online/onlineModules'
-import { errorMessage, usePagedList } from '@/components/admin/scenarios/pagedList'
-import { useToastRun } from '@/components/admin/scenarios/useToastRun'
+import { errMsg } from '@/components/admin/shared/errMsg'
+import { usePagedList } from '@/components/admin/shared/pagedList'
+import { useToastRun } from '@/components/admin/shared/useToastRun'
 import BaseButton from '@/components/base/BaseButton.vue'
 import TabBar from '@/components/base/TabBar.vue'
 import { useOnlineTasksStore } from '@/stores/onlineTasks'
@@ -72,7 +73,7 @@ async function remove(m: OnlineModule) {
     if (detailId.value === m.id) detailOpen.value = false
     await list.reloadAfterDelete()
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   }
 }
 </script>
@@ -102,7 +103,7 @@ async function remove(m: OnlineModule) {
       @prev="run(list.prev)"
       @next="run(list.next)"
       @refresh="run(() => list.load(list.page.value))"
-      @page-size="(n) => ((list.pageSize.value = n), run(list.changePageSize))"
+      @page-size="(n) => run(() => list.changePageSize(n))"
       @view="openDetail"
       @delete="remove"
     />

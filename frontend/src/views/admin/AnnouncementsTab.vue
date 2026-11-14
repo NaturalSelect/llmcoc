@@ -5,9 +5,10 @@ import type { Announcement } from '@/api/adminTypesContent'
 import { api } from '@/api/client'
 import { announcementStatusLabel, levelLabel } from '@/components/admin/announcements/announcementLogic'
 import AnnouncementFormModal from '@/components/admin/announcements/AnnouncementFormModal.vue'
-import PagerHeader from '@/components/admin/scenarios/PagerHeader.vue'
-import { errorMessage, usePagedList } from '@/components/admin/scenarios/pagedList'
-import { useToastRun } from '@/components/admin/scenarios/useToastRun'
+import PagerHeader from '@/components/admin/shared/PagerHeader.vue'
+import { errMsg } from '@/components/admin/shared/errMsg'
+import { usePagedList } from '@/components/admin/shared/pagedList'
+import { useToastRun } from '@/components/admin/shared/useToastRun'
 import BaseButton from '@/components/base/BaseButton.vue'
 import EmptyState from '@/components/base/EmptyState.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
@@ -46,7 +47,7 @@ async function remove(id: number) {
     ui.toast('已删除')
     await list.reloadAfterDelete()
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   }
 }
 

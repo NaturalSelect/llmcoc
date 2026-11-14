@@ -8,10 +8,8 @@ import BaseInput from '@/components/base/BaseInput.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
 import BaseTextarea from '@/components/base/BaseTextarea.vue'
 import FormField from '@/components/base/FormField.vue'
-import PaperCard from '@/components/base/PaperCard.vue'
-import SectionHeading from '@/components/base/SectionHeading.vue'
 import { useUiStore } from '@/stores/ui'
-import { errorMessage } from './pagedList'
+import { errMsg } from '@/components/admin/shared/errMsg'
 import { createGenerationHandler, formatLogLine, summarizeBatchDone } from './scenarioStream'
 import StreamLogBox from './StreamLogBox.vue'
 
@@ -85,7 +83,7 @@ async function generate() {
     if (outcome.reload) await props.reload()
   } catch (e) {
     if (ctrl.signal.aborted) return
-    const msg = errorMessage(e)
+    const msg = errMsg(e)
     log(msg || '生成失败')
     ui.toast(msg, 'error')
   } finally {
@@ -96,13 +94,10 @@ async function generate() {
 </script>
 
 <template>
-  <PaperCard>
-    <SectionHeading>AI 生成模组</SectionHeading>
-    <p class="mt-1 mb-4 text-sm text-fg-muted">
-      流水线：约束构建 → 正文生成（多轮工具调用）→ 自动修复 → QA/逻辑审查 → 奖励设计。生成过程流式显示，耗时数分钟；中途关闭页面不影响后台生成与入库。
-    </p>
+  <div>
+    <p class="mb-4 text-sm text-fg-muted">按参数让 AI 写故事并编译入库，耗时数分钟；中途关闭页面不影响后台生成。</p>
     <div class="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-      <FormField label="模组名称（可选）" hint="留空则AI自动命名。">
+      <FormField label="模组名称（可选）">
         <BaseInput v-model="form.name" type="text" placeholder="留空由AI命名" />
       </FormField>
       <FormField label="主题 / 风格" hint="引导AI的神话题材与氛围。">
@@ -165,5 +160,5 @@ async function generate() {
       :running="activeCount > 0"
       @clear="logs = []"
     />
-  </PaperCard>
+  </div>
 </template>

@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import type { SiteSettingRow, SiteSettings } from '@/api/adminTypesContent'
 import { api } from '@/api/client'
-import { errorMessage } from '@/components/admin/scenarios/pagedList'
+import { errMsg } from '@/components/admin/shared/errMsg'
 import { useUiStore } from '@/stores/ui'
 import {
   balanceRulesLength,
@@ -38,7 +38,7 @@ export function useSiteSettings() {
       settings[key] = newVal === 'true'
       ui.toast('设置已更新')
     } catch (e) {
-      ui.toast(errorMessage(e), 'error')
+      ui.toast(errMsg(e), 'error')
     }
   }
 
@@ -57,7 +57,7 @@ export function useSiteSettings() {
       await put(key, val)
       ui.toast('设置已更新')
     } catch (e) {
-      ui.toast(errorMessage(e), 'error')
+      ui.toast(errMsg(e), 'error')
     }
   }
 
@@ -76,7 +76,7 @@ export function useSiteSettings() {
       await put('lawyer_cache_min_similarity', val)
       ui.toast('相似度阈值已保存')
     } catch (e) {
-      ui.toast(errorMessage(e), 'error')
+      ui.toast(errMsg(e), 'error')
     }
   }
 
@@ -90,7 +90,7 @@ export function useSiteSettings() {
       await put('balance_rules', val)
       ui.toast('平衡调整规则已保存')
     } catch (e) {
-      ui.toast(errorMessage(e), 'error')
+      ui.toast(errMsg(e), 'error')
     }
   }
 
@@ -105,7 +105,7 @@ export function useSiteSettings() {
       const r = await api<{ message?: string }>('POST', '/api/admin/sessions/end-all')
       ui.toast(r.message || '已结束所有房间')
     } catch (e) {
-      ui.toast(errorMessage(e), 'error')
+      ui.toast(errMsg(e), 'error')
     }
   }
 

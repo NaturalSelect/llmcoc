@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { Announcement } from '@/api/adminTypesContent'
 import { api } from '@/api/client'
-import { errorMessage } from '@/components/admin/scenarios/pagedList'
+import { errMsg } from '@/components/admin/shared/errMsg'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
@@ -52,7 +52,7 @@ async function save() {
     }
     emit('saved')
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   } finally {
     saving.value = false
   }

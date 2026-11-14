@@ -5,7 +5,7 @@ import BaseButton from '@/components/base/BaseButton.vue'
 import EmptyState from '@/components/base/EmptyState.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
-import PagerHeader from '@/components/admin/scenarios/PagerHeader.vue'
+import PagerHeader from '@/components/admin/shared/PagerHeader.vue'
 
 defineProps<{ items: AdminShopItem[]; page: number; total: number; totalPages: number }>()
 const emit = defineEmits<{ prev: []; next: []; refresh: []; delete: [item: AdminShopItem] }>()

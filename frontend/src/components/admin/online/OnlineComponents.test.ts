@@ -696,7 +696,8 @@ describe('OnlineBrowsePanel', () => {
 
     expect(document.body.textContent).toContain('未下载')
     expect(document.body.textContent).toContain('好玩 的团')
-    expect(document.body.textContent).toContain('共 25 个 · 第 1 / 3 页')
+    expect(document.body.textContent).toContain('共 25 个')
+    expect(document.body.textContent).toContain('1 / 3')
     expect(document.body.querySelector('[role="alert"]')).toBeNull()
 
     buttonByText('下载')!.click()
@@ -814,7 +815,12 @@ describe('OnlineBrowsePanel', () => {
     await flushPromises()
     expect(calls.at(-1)!.path).toBe('/api/admin/online-modules/browse?page=1&title=' + encodeURIComponent('雨夜'))
 
-    buttonByText('下一页')!.click()
+    // NOTE: 翻页在列表下方（图标按钮，靠 aria-label 定位），头部不再有文字的上一页/下一页
+    expect(buttonByText('下一页')).toBeUndefined()
+    const nextBtn = document.body.querySelector('button[aria-label="下一页"]') as HTMLButtonElement
+    const list = document.body.querySelector('ul') as HTMLElement
+    expect(list.compareDocumentPosition(nextBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    nextBtn.click()
     await flushPromises()
     expect(calls.at(-1)!.path).toBe('/api/admin/online-modules/browse?page=2&title=' + encodeURIComponent('雨夜'))
     w.unmount()

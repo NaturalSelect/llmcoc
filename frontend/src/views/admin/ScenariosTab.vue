@@ -2,14 +2,12 @@
 import { onMounted, ref } from 'vue'
 import type { AdminScenario, ScenarioGenerationLog } from '@/api/adminTypesContent'
 import { api } from '@/api/client'
-import ScenarioGeneratePanel from '@/components/admin/scenarios/ScenarioGeneratePanel.vue'
+import ScenarioCreateCard from '@/components/admin/scenarios/ScenarioCreateCard.vue'
 import ScenarioGenerationLogModal from '@/components/admin/scenarios/ScenarioGenerationLogModal.vue'
 import ScenarioListPanel from '@/components/admin/scenarios/ScenarioListPanel.vue'
-import ScenarioTemplateCard from '@/components/admin/scenarios/ScenarioTemplateCard.vue'
-import ScenarioUploadCard from '@/components/admin/scenarios/ScenarioUploadCard.vue'
-import StoryCompilePanel from '@/components/admin/scenarios/StoryCompilePanel.vue'
-import { errorMessage, usePagedList } from '@/components/admin/scenarios/pagedList'
-import { useToastRun } from '@/components/admin/scenarios/useToastRun'
+import { errMsg } from '@/components/admin/shared/errMsg'
+import { usePagedList } from '@/components/admin/shared/pagedList'
+import { useToastRun } from '@/components/admin/shared/useToastRun'
 import ScenarioDetailModal from '@/components/scenario/ScenarioDetailModal.vue'
 import { useUiStore } from '@/stores/ui'
 
@@ -50,7 +48,7 @@ async function viewLog(s: AdminScenario) {
     const resp = await api<ScenarioGenerationLog>('GET', '/api/admin/scenarios/' + s.id + '/generation-log')
     genLog.value = resp || genLog.value
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
     logOpen.value = false
   }
   logLoading.value = false
@@ -63,7 +61,7 @@ async function remove(id: number) {
     ui.toast('模组已删除')
     await list.reloadAfterDelete()
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   }
 }
 
@@ -74,7 +72,7 @@ async function clearAll() {
     ui.toast('模组已清空')
     await list.load(1)
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   }
 }
 </script>
@@ -90,16 +88,13 @@ async function clearAll() {
       @prev="run(list.prev)"
       @next="run(list.next)"
       @refresh="run(() => list.load(list.page.value))"
-      @page-size="(n) => ((list.pageSize.value = n), run(list.changePageSize))"
+      @page-size="(n) => run(() => list.changePageSize(n))"
       @clear="clearAll"
       @view="view"
       @log="viewLog"
       @delete="remove"
     />
-    <ScenarioTemplateCard />
-    <ScenarioUploadCard :reload="reloadFirstPage" />
-    <ScenarioGeneratePanel :reload="reloadFirstPage" />
-    <StoryCompilePanel :reload="reloadFirstPage" />
+    <ScenarioCreateCard :reload="reloadFirstPage" />
 
     <ScenarioDetailModal :open="detailOpen" :scenario="viewing" @close="detailOpen = false" />
     <ScenarioGenerationLogModal :open="logOpen" :loading="logLoading" :log="genLog" @close="logOpen = false" />

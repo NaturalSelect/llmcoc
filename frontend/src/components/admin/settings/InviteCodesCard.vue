@@ -3,9 +3,10 @@ import { Trash2 } from '@lucide/vue'
 import { onMounted, ref } from 'vue'
 import type { InviteCode } from '@/api/adminTypesContent'
 import { api } from '@/api/client'
-import PagerHeader from '@/components/admin/scenarios/PagerHeader.vue'
-import { errorMessage, usePagedList } from '@/components/admin/scenarios/pagedList'
-import { useToastRun } from '@/components/admin/scenarios/useToastRun'
+import PagerHeader from '@/components/admin/shared/PagerHeader.vue'
+import { errMsg } from '@/components/admin/shared/errMsg'
+import { usePagedList } from '@/components/admin/shared/pagedList'
+import { useToastRun } from '@/components/admin/shared/useToastRun'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import EmptyState from '@/components/base/EmptyState.vue'
@@ -27,7 +28,7 @@ async function generate() {
     ui.toast('邀请码已生成')
     await list.load(1)
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   }
 }
 
@@ -38,7 +39,7 @@ async function remove(id: number) {
     ui.toast('已删除')
     await list.reloadAfterDelete()
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   }
 }
 </script>

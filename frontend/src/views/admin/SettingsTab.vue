@@ -7,7 +7,7 @@ import LawyerSimilarityCard from '@/components/admin/settings/LawyerSimilarityCa
 import SessionMaintenanceCard from '@/components/admin/settings/SessionMaintenanceCard.vue'
 import SiteToggleCard from '@/components/admin/settings/SiteToggleCard.vue'
 import { useSiteSettings } from '@/components/admin/settings/useSiteSettings'
-import { useToastRun } from '@/components/admin/scenarios/useToastRun'
+import { useToastRun } from '@/components/admin/shared/useToastRun'
 
 const run = useToastRun()
 const { settings, load, toggle, setCost, saveCost, setSimilarity, saveSimilarity, saveBalanceRules, endAllSessions } = useSiteSettings()

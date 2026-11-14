@@ -2,6 +2,7 @@
 import { ChevronLeft, ChevronRight, Coins, RefreshCw } from '@lucide/vue'
 import { onMounted, ref } from 'vue'
 import type { AdminUser } from '@/api/adminTypesCore'
+import type { AdminPaged } from '@/api/adminTypesContent'
 import { api } from '@/api/client'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
@@ -12,7 +13,7 @@ import StampBadge from '@/components/base/StampBadge.vue'
 import AdminInventoryModal from '@/components/admin/users/AdminInventoryModal.vue'
 import RechargeCard from '@/components/admin/users/RechargeCard.vue'
 import { errMsg } from '@/components/admin/shared/errMsg'
-import { PAGE_SIZE_OPTIONS, clampPage, normalizeItemsPage, sanitizePageSize } from '@/components/admin/shared/paging'
+import { PAGE_SIZES, clampPage, normalizePaged, sanitizePageSize } from '@/components/admin/shared/pagedList'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
@@ -30,9 +31,9 @@ async function loadUsers(p?: number) {
   const nextPage = Math.max(1, Number(p || page.value || 1))
   const size = Math.max(1, Number(pageSize.value || 20))
   const seq = ++loadSeq
-  const resp = await api('GET', `/api/admin/users?page=${nextPage}&page_size=${size}`)
+  const resp = await api<AdminPaged<AdminUser> | AdminUser[]>('GET', `/api/admin/users?page=${nextPage}&page_size=${size}`)
   if (seq !== loadSeq) return
-  const s = normalizeItemsPage<AdminUser>(resp, nextPage, size)
+  const s = normalizePaged(resp, nextPage, size)
   users.value = s.items
   page.value = s.page
   pageSize.value = s.pageSize
@@ -116,7 +117,7 @@ onMounted(() => safeLoad())
           <!-- NOTE: BaseSelect 没有 size 属性，用外层容器把高度压到与 sm 按钮一致（h-8） -->
           <div class="w-20 [&_select]:h-8">
             <BaseSelect id="admin-user-page-size" :model-value="pageSize" @update:model-value="changePageSize">
-              <option v-for="n in PAGE_SIZE_OPTIONS" :key="n" :value="n">{{ n }}</option>
+              <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}</option>
             </BaseSelect>
           </div>
           <BaseButton variant="ghost" size="sm" :disabled="page <= 1" @click="goPage(page - 1)">

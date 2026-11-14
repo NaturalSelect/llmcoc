@@ -2,8 +2,9 @@
 import { onMounted } from 'vue'
 import type { AdminShopItem } from '@/api/adminTypesContent'
 import { api } from '@/api/client'
-import { errorMessage, usePagedList } from '@/components/admin/scenarios/pagedList'
-import { useToastRun } from '@/components/admin/scenarios/useToastRun'
+import { errMsg } from '@/components/admin/shared/errMsg'
+import { usePagedList } from '@/components/admin/shared/pagedList'
+import { useToastRun } from '@/components/admin/shared/useToastRun'
 import ShopCreateCard from '@/components/admin/shop/ShopCreateCard.vue'
 import ShopItemList from '@/components/admin/shop/ShopItemList.vue'
 import { useUiStore } from '@/stores/ui'
@@ -24,7 +25,7 @@ async function remove(item: AdminShopItem) {
     ui.toast('商品已删除')
     await list.reloadAfterDelete()
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   }
 }
 </script>

@@ -1,16 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Eye, Trash2 } from '@lucide/vue'
 import type { OnlineModule } from '@/api/adminTypesOnline'
-import PagerHeader from '@/components/admin/scenarios/PagerHeader.vue'
-import { PAGE_SIZES } from '@/components/admin/scenarios/pagedList'
+import PageSizeSelect from '@/components/admin/shared/PageSizeSelect.vue'
+import PagerHeader from '@/components/admin/shared/PagerHeader.vue'
 import BaseButton from '@/components/base/BaseButton.vue'
-import BaseSelect from '@/components/base/BaseSelect.vue'
 import EmptyState from '@/components/base/EmptyState.vue'
+import PaginationBar from '@/components/base/PaginationBar.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import { formatTime, moduleMetaLine, statusLabel, statusTone } from './onlineModules'
 
-defineProps<{ items: OnlineModule[]; page: number; pageSize: number; total: number; totalPages: number }>()
+const props = defineProps<{ items: OnlineModule[]; page: number; pageSize: number; total: number; totalPages: number }>()
 const emit = defineEmits<{
   prev: []
   next: []
@@ -20,6 +21,15 @@ const emit = defineEmits<{
   delete: [module: OnlineModule]
 }>()
 
+// NOTE: PaginationBar 用 v-model:page 给出目标页码，这里翻译回对外不变的 prev / next 事件，页码本身仍由上层的分页列表维护
+const pageModel = computed({
+  get: () => props.page,
+  set: (target: number) => {
+    if (target > props.page) emit('next')
+    else if (target < props.page) emit('prev')
+  },
+})
+
 function byline(m: OnlineModule): string {
   return [m.author ? '作者 ' + m.author : '', moduleMetaLine(m.meta), formatTime(m.updated_at)].filter(Boolean).join(' · ')
 }
@@ -28,8 +38,8 @@ function byline(m: OnlineModule): string {
 <template>
   <PaperCard>
     <PagerHeader
-      title="已下载的线上模组"
       unit="个"
+      bottom-nav
       :page="page"
       :total-pages="totalPages"
       :total="total"
@@ -38,12 +48,7 @@ function byline(m: OnlineModule): string {
       @refresh="emit('refresh')"
     >
       <template #before>
-        <label for="admin-online-page-size" class="text-xs text-fg-subtle">每页</label>
-        <div class="w-20">
-          <BaseSelect id="admin-online-page-size" :model-value="pageSize" @update:model-value="emit('pageSize', Number($event))">
-            <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}</option>
-          </BaseSelect>
-        </div>
+        <PageSizeSelect :model-value="pageSize" @update:model-value="emit('pageSize', $event)" />
       </template>
     </PagerHeader>
 
@@ -71,5 +76,6 @@ function byline(m: OnlineModule): string {
         </div>
       </li>
     </ul>
+    <PaginationBar v-model:page="pageModel" :total-pages="totalPages" />
   </PaperCard>
 </template>

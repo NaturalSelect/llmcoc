@@ -7,6 +7,7 @@ import { defineComponent, h, nextTick, ref } from 'vue'
 import App from '@/App.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
+import BaseFileInput from '@/components/base/BaseFileInput.vue'
 import PaginationBar from '@/components/base/PaginationBar.vue'
 import StatBar from '@/components/base/StatBar.vue'
 import TabBar from '@/components/base/TabBar.vue'
@@ -156,6 +157,39 @@ describe('BaseInput', () => {
     expect(wrapper.find('#out').text()).toBe('42')
     await input.setValue('')
     expect(wrapper.find('#out').text()).toBe('""')
+  })
+})
+
+describe('BaseFileInput', () => {
+  test('accept / aria-label 透传到 input，file() 读取所选文件，clear() 清空', async () => {
+    const wrapper = mount(BaseFileInput, { attrs: { accept: '.json', 'aria-label': '选择文件' } })
+    const input = wrapper.find('input[type="file"]')
+    expect(input.attributes('accept')).toBe('.json')
+    expect(input.attributes('aria-label')).toBe('选择文件')
+    expect(wrapper.vm.file()).toBeNull()
+
+    const picked = new File(['{}'], 'a.json', { type: 'application/json' })
+    Object.defineProperty(input.element, 'files', { value: [picked], configurable: true })
+    expect(wrapper.vm.file()).toBe(picked)
+
+    const el = input.element as HTMLInputElement
+    let cleared = false
+    Object.defineProperty(el, 'value', {
+      get: () => '',
+      set: (v: string) => {
+        cleared = v === ''
+      },
+      configurable: true,
+    })
+    wrapper.vm.clear()
+    expect(cleared).toBe(true)
+  })
+
+  test('change 事件透传给外层监听器', async () => {
+    const onChange = vi.fn()
+    const wrapper = mount(BaseFileInput, { attrs: { onChange } })
+    await wrapper.find('input').trigger('change')
+    expect(onChange).toHaveBeenCalledTimes(1)
   })
 })
 

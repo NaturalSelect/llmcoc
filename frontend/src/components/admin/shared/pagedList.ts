@@ -2,8 +2,7 @@ import { shallowRef, ref } from 'vue'
 import { api } from '@/api/client'
 import type { AdminPaged } from '@/api/adminTypesContent'
 
-// NOTE: 模组/商城/公告/邀请码四个列表共用的分页状态，逻辑与旧 admin.js 的 loadAdminXxx/setAdminXxxPage 一一对应。
-// 这四个页签的共享代码只能放在自己名下的目录里，所以统一放在 scenarios/，其余三个页签从这里引用
+// NOTE: 后台各列表共用的分页归一化与分页状态，逻辑与旧 admin.js 的 loadAdminXxx/setAdminXxxPage 一一对应
 
 export const PAGE_SIZES = [10, 20, 50] as const
 
@@ -13,10 +12,6 @@ export interface PagedView<T> {
   pageSize: number
   total: number
   totalPages: number
-}
-
-export function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e)
 }
 
 // NOTE: 兼容两种响应：分页信封，或老接口直接返回数组（此时视为只有一页）
@@ -33,7 +28,23 @@ export function normalizePaged<T>(resp: AdminPaged<T> | T[] | null | undefined, 
   }
 }
 
-export function clampPage(page: number, totalPages: number): number {
+// NOTE: 缓存条目接口的信封字段叫 keys 而不是 items；数组形态下排序且固定回到第 1 页
+export function normalizeKeysPage(resp: unknown, requestedPage: number, pageSize: number): PagedView<string> {
+  if (Array.isArray(resp)) {
+    const keys = ([...resp] as string[]).sort()
+    return { items: keys, page: 1, pageSize, total: keys.length, totalPages: 1 }
+  }
+  const r = (resp ?? {}) as Record<string, unknown>
+  return {
+    items: (r.keys as string[] | undefined) || [],
+    page: Math.max(1, Number(r.page || requestedPage)),
+    pageSize: Math.max(1, Number(r.page_size || pageSize)),
+    total: Math.max(0, Number(r.total || 0)),
+    totalPages: Math.max(1, Number(r.total_pages || 1)),
+  }
+}
+
+export function clampPage(page: unknown, totalPages: unknown): number {
   return Math.min(Math.max(1, Number(page || 1)), Math.max(1, Number(totalPages || 1)))
 }
 
@@ -42,7 +53,8 @@ export function pageAfterDelete(itemCount: number, page: number): number {
   return itemCount === 1 && page > 1 ? page - 1 : page
 }
 
-export function sanitizePageSize(v: number): number {
+// NOTE: 每页条数只接受预设值，其它回落 20
+export function sanitizePageSize(v: unknown): number {
   const n = Number(v || 20)
   return (PAGE_SIZES as readonly number[]).includes(n) ? n : 20
 }
@@ -78,8 +90,9 @@ export function usePagedList<T>(basePath: string, initialPageSize = 20) {
   const next = () => setPage(page.value + 1)
   const reloadAfterDelete = () => load(pageAfterDelete(items.value.length, page.value))
 
-  async function changePageSize(): Promise<void> {
-    pageSize.value = sanitizePageSize(pageSize.value)
+  // NOTE: 传了 size 就直接采用事件携带的新值，不依赖 v-model 与 change 监听器的触发先后；换每页条数后回到第 1 页
+  async function changePageSize(size?: number): Promise<void> {
+    pageSize.value = sanitizePageSize(size ?? pageSize.value)
     await load(1)
   }
 

@@ -3,11 +3,12 @@ import { Download, ExternalLink, Eye, Search, TriangleAlert } from '@lucide/vue'
 import { onMounted, reactive, ref } from 'vue'
 import type { BrowseItem, BrowsePage, OnlineModule } from '@/api/adminTypesOnline'
 import { api } from '@/api/client'
-import PagerHeader from '@/components/admin/scenarios/PagerHeader.vue'
-import { errorMessage } from '@/components/admin/scenarios/pagedList'
+import PagerHeader from '@/components/admin/shared/PagerHeader.vue'
+import { errMsg } from '@/components/admin/shared/errMsg'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import EmptyState from '@/components/base/EmptyState.vue'
+import PaginationBar from '@/components/base/PaginationBar.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
 import Skeleton from '@/components/base/Skeleton.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
@@ -60,7 +61,7 @@ async function load(p: number = page.value): Promise<void> {
     total.value = Math.max(0, Number(resp.total_elements || 0))
   } catch (e) {
     if (seq !== latest) return
-    loadError.value = errorMessage(e)
+    loadError.value = errMsg(e)
     ui.toast(loadError.value, 'error')
   } finally {
     if (seq === latest) loading.value = false
@@ -105,7 +106,7 @@ async function download(item: BrowseItem) {
     ui.toast(`已开始下载：${item.title}，可在「任务进度」页查看`)
   } catch (e) {
     // 409：该条目已有下载在进行，后端消息原样提示
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   } finally {
     downloading.delete(item.keyId)
   }
@@ -137,8 +138,8 @@ defineExpose({ applyModule, applyDeleted, reload: () => load() })
 <template>
   <PaperCard>
     <PagerHeader
-      title="浏览线上模组"
       unit="个"
+      bottom-nav
       :page="page"
       :total-pages="totalPages"
       :total="total"
@@ -213,5 +214,6 @@ defineExpose({ applyModule, applyDeleted, reload: () => load() })
         </div>
       </li>
     </ul>
+    <PaginationBar :page="page" :total-pages="totalPages" @update:page="goto" />
   </PaperCard>
 </template>

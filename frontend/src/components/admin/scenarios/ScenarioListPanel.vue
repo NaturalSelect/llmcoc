@@ -3,12 +3,11 @@ import { Eye, ScrollText, Trash2 } from '@lucide/vue'
 import type { AdminScenario } from '@/api/adminTypesContent'
 import { splitTags } from '@/components/scenario/scenarioFormat'
 import BaseButton from '@/components/base/BaseButton.vue'
-import BaseSelect from '@/components/base/BaseSelect.vue'
 import EmptyState from '@/components/base/EmptyState.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
-import { PAGE_SIZES } from './pagedList'
-import PagerHeader from './PagerHeader.vue'
+import PageSizeSelect from '@/components/admin/shared/PageSizeSelect.vue'
+import PagerHeader from '@/components/admin/shared/PagerHeader.vue'
 import { scenarioMeta } from './scenarioMeta'
 
 defineProps<{ items: AdminScenario[]; page: number; pageSize: number; total: number; totalPages: number }>()
@@ -37,16 +36,7 @@ const emit = defineEmits<{
       @refresh="emit('refresh')"
     >
       <template #before>
-        <label for="admin-scenario-page-size" class="text-xs text-fg-subtle">每页</label>
-        <div class="w-20">
-          <BaseSelect
-            id="admin-scenario-page-size"
-            :model-value="pageSize"
-            @update:model-value="emit('pageSize', Number($event))"
-          >
-            <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}</option>
-          </BaseSelect>
-        </div>
+        <PageSizeSelect :model-value="pageSize" @update:model-value="emit('pageSize', $event)" />
       </template>
       <template #after>
         <BaseButton variant="danger" size="sm" @click="emit('clear')">清空所有模组</BaseButton>

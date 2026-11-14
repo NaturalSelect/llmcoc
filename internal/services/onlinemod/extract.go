@@ -408,6 +408,13 @@ func pdfText(data []byte) (text string, err error) {
 		}
 	}()
 	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
+	if isUnsupportedEncryption(err) {
+		dec, derr := decryptPDF(data)
+		if derr != nil {
+			return "", fmt.Errorf("PDF 解析失败: %w（用空密码解密也失败: %v）", err, derr)
+		}
+		r, err = pdf.NewReader(bytes.NewReader(dec), int64(len(dec)))
+	}
 	if err != nil {
 		return "", fmt.Errorf("PDF 解析失败: %w", err)
 	}

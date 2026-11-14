@@ -7,7 +7,7 @@ import BaseSelect from '@/components/base/BaseSelect.vue'
 import BaseTextarea from '@/components/base/BaseTextarea.vue'
 import PaperCard from '@/components/base/PaperCard.vue'
 import SectionHeading from '@/components/base/SectionHeading.vue'
-import { errorMessage } from '@/components/admin/scenarios/pagedList'
+import { errMsg } from '@/components/admin/shared/errMsg'
 import { useUiStore } from '@/stores/ui'
 import { emptyShopItemForm, SHOP_ITEM_TYPES } from './shopForm'
 
@@ -25,7 +25,7 @@ async function create() {
     Object.assign(form, emptyShopItemForm())
     await props.created()
   } catch (e) {
-    ui.toast(errorMessage(e), 'error')
+    ui.toast(errMsg(e), 'error')
   }
 }
 </script>
