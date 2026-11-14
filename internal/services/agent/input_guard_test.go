@@ -218,12 +218,40 @@ func TestNewSystemOneClient_RejectsBlankKey(t *testing.T) {
 	}
 }
 
-func TestNewSystemOneClient_RejectsPlainHTTPBaseURL(t *testing.T) {
-	_, err := NewSystemOneClient(&models.LLMProviderConfig{APIKey: "k", BaseURL: "http://example.com"}, "")
-	if err == nil {
-		t.Fatal("expected an error for a non-loopback http base URL")
+func TestNewSystemOneClient_AcceptsPlainHTTPBaseURL(t *testing.T) {
+	for _, base := range []string{"http://example.com", "http://host.docker.internal:3000", "HTTP://gateway.lan/team"} {
+		if _, err := NewSystemOneClient(&models.LLMProviderConfig{APIKey: "k", BaseURL: base}, ""); err != nil {
+			t.Errorf("base URL %q rejected: %v", base, err)
+		}
 	}
 }
+
+func TestPlainHTTPTransport_RestoresHTTPScheme(t *testing.T) {
+	var got *http.Request
+	base := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		got = r
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Header: http.Header{}}, nil
+	})
+	orig, err := http.NewRequest(http.MethodPost, "https://host.docker.internal:3000/v1/systemone", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := plainHTTPTransport{base: base}.RoundTrip(orig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if got == nil || got.URL.String() != "http://host.docker.internal:3000/v1/systemone" {
+		t.Fatalf("forwarded request = %v, want http://host.docker.internal:3000/v1/systemone", got)
+	}
+	if orig.URL.Scheme != "https" {
+		t.Errorf("original request was mutated: scheme %q", orig.URL.Scheme)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // openInputGuardTestDB 把全局 models.DB 换成只含 Agent 配置相关表的内存库。
 func openInputGuardTestDB(t *testing.T) *gorm.DB {

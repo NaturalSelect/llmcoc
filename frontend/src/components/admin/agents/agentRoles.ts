@@ -117,7 +117,7 @@ const ROLE_HINTS: Record<string, string> = {
   // NOTE: dramaturg 未绑定 provider 时工具不可见，Director回退自身节奏判断规则（默认关闭）
   dramaturg: '留空使用内置 Dramaturg 提示词（节奏顾问）；不配置则Director自行判断节奏（默认关闭）',
   embedding: '嵌入模型不使用提示词，此处留空；需绑定 OpenAI 兼容 Provider（不支持 Anthropic 类型），如 text-embedding-3-small；未启用时 Lawyer 缓存退回标签匹配（默认关闭）',
-  systemone: '分类器不使用提示词，此处留空；直连 TypeSafe：API Key 填 TypeSafe 的 Key，Base URL 留空，模型填 jev-latest；经 new-api 网关：API Key 填网关令牌，Base URL 填网关根地址且不要带 /v1（非本机必须 https），模型填 gemini-decision-1；未启用时不拦截任何输入（默认关闭）',
+  systemone: '分类器不使用提示词，此处留空；直连 TypeSafe：API Key 填 TypeSafe 的 Key，Base URL 留空，模型填 jev-latest；经 new-api 网关：API Key 填网关令牌，Base URL 填网关根地址且不要带 /v1（http 也可以，但 Key 和玩家输入会明文传输，只应在内网使用），模型填 gemini-decision-1；未启用时不拦截任何输入（默认关闭）',
 }
 
 // NOTE: 用 hasOwn 而不是直接下标，避免 role 恰好是 constructor 之类的原型属性名时取到函数
