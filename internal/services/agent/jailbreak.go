@@ -36,6 +36,12 @@ var minimaxM3_1FlashJailbreakPrompt string
 //go:embed jailbreaks/gemini-3.8-flash.md
 var gemini3_8FlashJailbreakPrompt string
 
+//go:embed jailbreaks/glm-5.1.md
+var glm5_1JailbreakPrompt string
+
+//go:embed jailbreaks/glm-5.2.md
+var glm5_2JailbreakPrompt string
+
 func matchLength(left, right string) int {
 	matchLen := 0
 	for i := 0; i < len(left) && i < len(right); i++ {
@@ -93,6 +99,16 @@ func withJailbreakPrompt(prompt string, model string) string {
 		{
 			model:  "gemini-3.8-flash",
 			header: gemini3_8FlashJailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "glm-5.1",
+			header: glm5_1JailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "glm-5.2",
+			header: glm5_2JailbreakPrompt,
 			tail:   "",
 		},
 	}
