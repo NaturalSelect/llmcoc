@@ -4,6 +4,7 @@ import {
   COST_FIELDS,
   costValueToSubmit,
   DEFAULT_SITE_SETTINGS,
+  inputGuardThresholdToSubmit,
   parseSiteSettings,
   similarityValueToSubmit,
 } from './settingsLogic'
@@ -66,6 +67,25 @@ describe('parseSiteSettings', () => {
     expect(parse('-1.01')).toBe(0.3)
     expect(parse('Infinity')).toBe(0.3)
   })
+
+  test('input_guard_block_threshold：缺失默认 0.8；合法值含上界 1 按浮点解析', () => {
+    const parse = (value: string) => parseSiteSettings([{ key: 'input_guard_block_threshold', value }]).input_guard_block_threshold
+    expect(parseSiteSettings([]).input_guard_block_threshold).toBe(0.8)
+    expect(parse('0.55')).toBe(0.55)
+    expect(parse('0.01')).toBe(0.01)
+    expect(parse('1')).toBe(1)
+  })
+
+  test('input_guard_block_threshold：0、负数、越界、无法解析都回落默认值，不显示成 0', () => {
+    const parse = (value: string) => parseSiteSettings([{ key: 'input_guard_block_threshold', value }]).input_guard_block_threshold
+    expect(parse('0')).toBe(0.8)
+    expect(parse('-0.1')).toBe(0.8)
+    expect(parse('1.01')).toBe(0.8)
+    expect(parse('')).toBe(0.8)
+    expect(parse('abc')).toBe(0.8)
+    expect(parse('NaN')).toBe(0.8)
+    expect(parse('Infinity')).toBe(0.8)
+  })
 })
 
 describe('costValueToSubmit', () => {
@@ -105,6 +125,31 @@ describe('similarityValueToSubmit', () => {
     expect(similarityValueToSubmit(-1.01)).toBeNull()
     expect(similarityValueToSubmit(Infinity)).toBeNull()
     expect(similarityValueToSubmit(NaN)).toBeNull()
+  })
+})
+
+describe('inputGuardThresholdToSubmit', () => {
+  test('(0, 1] 内的数字（含上界）返回规范化字符串', () => {
+    expect(inputGuardThresholdToSubmit(0.8)).toBe('0.8')
+    expect(inputGuardThresholdToSubmit('0.45')).toBe('0.45')
+    expect(inputGuardThresholdToSubmit(' 0.5 ')).toBe('0.5')
+    expect(inputGuardThresholdToSubmit(0.01)).toBe('0.01')
+    expect(inputGuardThresholdToSubmit(1)).toBe('1')
+  })
+
+  test('0 会拦下所有输入，和空、非数字、夹杂字符、负数、越界一起拒绝', () => {
+    expect(inputGuardThresholdToSubmit(0)).toBeNull()
+    expect(inputGuardThresholdToSubmit('0')).toBeNull()
+    expect(inputGuardThresholdToSubmit('')).toBeNull()
+    expect(inputGuardThresholdToSubmit('   ')).toBeNull()
+    expect(inputGuardThresholdToSubmit(null)).toBeNull()
+    expect(inputGuardThresholdToSubmit(undefined)).toBeNull()
+    expect(inputGuardThresholdToSubmit('abc')).toBeNull()
+    expect(inputGuardThresholdToSubmit('0.5abc')).toBeNull()
+    expect(inputGuardThresholdToSubmit(-0.1)).toBeNull()
+    expect(inputGuardThresholdToSubmit(1.01)).toBeNull()
+    expect(inputGuardThresholdToSubmit(Infinity)).toBeNull()
+    expect(inputGuardThresholdToSubmit(NaN)).toBeNull()
   })
 })
 

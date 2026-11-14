@@ -121,6 +121,8 @@ func seedDefaultSiteSettings() {
 		"balance_rules": DefaultBalanceRules,
 		// NOTE: Lawyer 规则缓存向量检索的相似度阈值，仅在启用 embedding 角色后生效；合法范围 [-1, 1]。
 		"lawyer_cache_min_similarity": DefaultLawyerCacheMinSimilarity,
+		// NOTE: 玩家输入越权分类的拦截阈值，仅在启用 systemone 角色后生效；合法范围 (0, 1]。
+		"input_guard_block_threshold": DefaultInputGuardBlockThreshold,
 		// NOTE: 已结束房间的保留天数，按结束时间（updated_at）计算，0 表示不自动回收；被收藏的房间永不回收。
 		"session_retention_days": "30",
 	}

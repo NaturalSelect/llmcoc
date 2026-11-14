@@ -5,8 +5,10 @@ package agent
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,13 +18,11 @@ import (
 )
 
 const (
-	// NOTE: 厂商标称延迟：Jev 70 到 500 毫秒，gemini-decision-1 端到端约 150 到 250 毫秒。
-	// 3 秒是玩家愿意等待的上限，超时按放行处理。
-	inputGuardTimeout = 3 * time.Second
-	// NOTE: 阈值作用在三项违规概率之和上，不作用在 confidence 上。0.8 没有数据依据，
-	// 每次分类都会在 debug 日志里记录各项概率，上线后据此调整。
-	inputGuardBlockThreshold = 0.8
-	inputGuardQuestionID     = "kind"
+	// NOTE: gemini-decision-1 的官方文档没有给出延迟毫秒数，3 秒是玩家愿意等待的上限而不是实测值，超时按放行处理。
+	inputGuardTimeout    = 3 * time.Second
+	inputGuardQuestionID = "kind"
+	// NOTE: 拦截阈值存在站点设置里，后台可改；默认值见 models.DefaultInputGuardBlockThreshold。
+	inputGuardBlockThresholdKey = "input_guard_block_threshold"
 
 	systemOneDefaultModel = "gemini-decision-1"
 )
@@ -39,6 +39,17 @@ type InputVerdict struct {
 
 type inputGuard struct {
 	client *typesafe.Client
+}
+
+// inputGuardBlockThreshold 读取站点设置；解析失败或越界（要求 (0, 1]）时用默认值。
+// NOTE: 阈值作用在三项违规概率之和上，不作用在 confidence 上。每次分类都会在 debug 日志里记录各项概率，上线后据此调整。
+func inputGuardBlockThreshold() float64 {
+	raw := strings.TrimSpace(models.GetSiteSetting(inputGuardBlockThresholdKey, models.DefaultInputGuardBlockThreshold))
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(v) || v <= 0 || v > 1 {
+		v, _ = strconv.ParseFloat(models.DefaultInputGuardBlockThreshold, 64)
+	}
+	return v
 }
 
 // inputGuardLoader 可在测试里替换，避免依赖数据库里的 Provider。
@@ -198,9 +209,10 @@ func ClassifyPlayerInput(ctx context.Context, content string) InputVerdict {
 			verdict.Category = name
 		}
 	}
-	verdict.Blocked = verdict.Score >= inputGuardBlockThreshold
+	threshold := inputGuardBlockThreshold()
+	verdict.Blocked = verdict.Score >= threshold
 	alog.Debug("input guard verdict",
 		"choice", ans.Choice, "category", verdict.Category, "score", verdict.Score,
-		"blocked", verdict.Blocked, "probabilities", ans.Probabilities, "request_id", resp.RequestID)
+		"threshold", threshold, "blocked", verdict.Blocked, "probabilities", ans.Probabilities, "request_id", resp.RequestID)
 	return verdict
 }

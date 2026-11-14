@@ -892,6 +892,10 @@ const DefaultBalanceRules = "调查员/玩家被禁止使用《精神转移术�
 // 0.3 没有数据依据，是偏召回的保守猜测；不同嵌入模型的相似度分布差异很大，上线后要看 debug 日志调。
 const DefaultLawyerCacheMinSimilarity = "0.3"
 
+// NOTE: DefaultInputGuardBlockThreshold 是 input_guard_block_threshold 的默认值与运行时回落值。
+// 合法范围 (0, 1]：阈值作用在三项违规概率之和上，0 以下会拦下所有输入，1 以上永远不拦。0.8 没有数据依据，上线后看 debug 日志调。
+const DefaultInputGuardBlockThreshold = "0.8"
+
 // SiteSetting is a simple key/value store for site-wide configuration.
 type SiteSetting struct {
 	Key   string `gorm:"primaryKey;size:100" json:"key"`

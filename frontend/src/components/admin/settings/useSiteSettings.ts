@@ -9,6 +9,8 @@ import {
   type CostKey,
   costValueToSubmit,
   DEFAULT_SITE_SETTINGS,
+  INPUT_GUARD_THRESHOLD_MAX,
+  inputGuardThresholdToSubmit,
   LAWYER_SIMILARITY_MAX,
   LAWYER_SIMILARITY_MIN,
   parseSiteSettings,
@@ -80,6 +82,25 @@ export function useSiteSettings() {
     }
   }
 
+  // NOTE: 同 setSimilarity：输入框清空时会得到空字符串，非法值由 saveInputGuardThreshold 拦住
+  function setInputGuardThreshold(v: unknown): void {
+    settings.input_guard_block_threshold = v as number
+  }
+
+  async function saveInputGuardThreshold(): Promise<void> {
+    const val = inputGuardThresholdToSubmit(settings.input_guard_block_threshold)
+    if (val === null) {
+      ui.toast(`拦截阈值需为大于 0 且不超过 ${INPUT_GUARD_THRESHOLD_MAX} 的数字`, 'error')
+      return
+    }
+    try {
+      await put('input_guard_block_threshold', val)
+      ui.toast('拦截阈值已保存')
+    } catch (e) {
+      ui.toast(errMsg(e), 'error')
+    }
+  }
+
   async function saveBalanceRules(): Promise<void> {
     const val = settings.balance_rules || ''
     if (balanceRulesLength(val) > BALANCE_RULES_MAX) {
@@ -109,5 +130,17 @@ export function useSiteSettings() {
     }
   }
 
-  return { settings, load, toggle, setCost, saveCost, setSimilarity, saveSimilarity, saveBalanceRules, endAllSessions }
+  return {
+    settings,
+    load,
+    toggle,
+    setCost,
+    saveCost,
+    setSimilarity,
+    saveSimilarity,
+    setInputGuardThreshold,
+    saveInputGuardThreshold,
+    saveBalanceRules,
+    endAllSessions,
+  }
 }

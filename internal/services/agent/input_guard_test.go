@@ -49,6 +49,7 @@ func choiceResponse(t *testing.T, probs map[string]float64) string {
 // useFakeGuard 起一个假的 System One 服务并让 inputGuardLoader 返回指向它的真实客户端。
 func useFakeGuard(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
+	initSiteSettingTestDB(t)
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	client, err := NewSystemOneClient(&models.LLMProviderConfig{APIKey: "test-key", BaseURL: srv.URL}, "")
@@ -306,7 +307,7 @@ func openInputGuardTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("get sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&models.LLMProviderConfig{}, &models.AgentConfig{}); err != nil {
+	if err := db.AutoMigrate(&models.LLMProviderConfig{}, &models.AgentConfig{}, &models.SiteSetting{}); err != nil {
 		t.Fatalf("auto-migrate: %v", err)
 	}
 	prev := models.DB

@@ -177,3 +177,23 @@ func TestSeedDefaultSiteSettings_SeedsSessionRetentionWithoutOverwriting(t *test
 		t.Errorf("re-seeding must not overwrite an admin-set value (0 disables purge), got %q", got)
 	}
 }
+
+func TestSeedDefaultSiteSettings_SeedsInputGuardThresholdWithoutOverwriting(t *testing.T) {
+	db := openSeedTestDB(t)
+	if err := db.AutoMigrate(&SiteSetting{}); err != nil {
+		t.Fatalf("auto-migrate: %v", err)
+	}
+
+	seedDefaultSiteSettings()
+	if got := GetSiteSetting("input_guard_block_threshold", "MISSING"); got != DefaultInputGuardBlockThreshold {
+		t.Fatalf("seeded input_guard_block_threshold = %q, want %q", got, DefaultInputGuardBlockThreshold)
+	}
+
+	if err := SetSiteSetting("input_guard_block_threshold", "0.65"); err != nil {
+		t.Fatalf("SetSiteSetting: %v", err)
+	}
+	seedDefaultSiteSettings()
+	if got := GetSiteSetting("input_guard_block_threshold", "MISSING"); got != "0.65" {
+		t.Errorf("re-seeding must not overwrite an admin-set value, got %q", got)
+	}
+}
