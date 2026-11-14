@@ -2,7 +2,7 @@
 import { LoaderCircle } from '@lucide/vue'
 import { onBeforeUnmount, reactive, ref } from 'vue'
 import type { ScenarioGenForm } from '@/api/adminTypesContent'
-import { streamSSE } from '@/api/sse'
+import { runJobSocket } from '@/api/jobSocket'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
@@ -33,7 +33,7 @@ const activeCount = ref(0)
 const logs = ref<string[]>([])
 const controllers = new Set<AbortController>()
 
-// NOTE: 离开页签即中断所有在途流。后端在客户端断开后仍会继续生成并入库（见 GenerateScenarioByAgents），
+// NOTE: 离开页签即关闭所有在途连接。后端在客户端断开后仍会继续生成并入库（见 GenerateScenarioByAgents），
 // 这里只是不再接收进度，所以中断后不再弹 toast / 写日志
 onBeforeUnmount(() => {
   for (const c of controllers) c.abort()
@@ -62,8 +62,8 @@ async function generate() {
   controllers.add(ctrl)
   const handler = createGenerationHandler(log)
   try {
-    await streamSSE(
-      '/api/scenarios/generate',
+    await runJobSocket(
+      '/api/scenarios/generate/ws',
       {
         name: form.name || '',
         theme: form.theme || '',

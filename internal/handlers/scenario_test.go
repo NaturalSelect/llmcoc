@@ -21,7 +21,6 @@ func scenarioRouter(userID uint, isAdmin bool) *gin.Engine {
 	r.GET("/scenarios", auth, ListScenarios)
 	r.GET("/scenarios/:id", auth, GetScenario)
 	r.POST("/scenarios", auth, CreateScenario)
-	r.POST("/scenarios/compile-story", auth, CompileStoryByUpload)
 	r.DELETE("/scenarios", auth, ClearScenarios)
 	return r
 }
@@ -210,22 +209,5 @@ func TestClearScenarios_SoftDeletesAllActive(t *testing.T) {
 	models.DB.Model(&models.Scenario{}).Where("is_active = ?", true).Count(&remaining)
 	if remaining != 0 {
 		t.Errorf("remaining active scenarios = %d, want 0", remaining)
-	}
-}
-
-// TestCompileStoryByUpload_MissingStoryDocument 验证故事全文缺失时直接返回 400，
-// 不会进入编译流水线（因此不依赖 LLM/agent 配置）。
-func TestCompileStoryByUpload_MissingStoryDocument(t *testing.T) {
-	initTestDB(t)
-	uid := seedUser(t, "admin", "admin", 0, 3)
-	r := scenarioRouter(uid, true)
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, jsonReq("POST", "/scenarios/compile-story", map[string]any{
-		"name": "测试模组",
-	}))
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("want 400, got %d: %s", w.Code, w.Body.String())
 	}
 }

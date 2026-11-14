@@ -156,7 +156,8 @@ sqlite3 data/llmcoc.db "update users set role='admin' where username='your_usern
   - `GET /scenarios/:id/module`
   - `GET /scenarios/template`
   - `POST /scenarios`（管理员）
-  - `POST /scenarios/generate`（管理员）
+  - `GET /scenarios/generate/ws`（管理员，WebSocket：连接后发一帧 JSON 请求，推送生成进度）
+  - `GET /scenarios/compile-story/ws`（管理员，WebSocket：上传故事文档并编译，协议同上）
   - `POST /scenarios/upload`（管理员）
   - `DELETE /scenarios/:id`（管理员）
 - 房间与会话：

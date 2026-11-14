@@ -215,195 +215,56 @@ func RandomSalt() string {
 	return string(b)
 }
 
-// scenarioGenEvent 是模组生成流水线推送给前端的 SSE 事件。
+// NOTE: scenarioGenEvent 是流水线推送给前端的事件，WebSocket 和 SSE 两种传输各自负责编码。
 type scenarioGenEvent struct {
 	name string
 	data any
 }
 
-// GenerateScenarioByAgents 以 SSE 流式方式运行 AI 模组生成流水线，支持通过 count 批量生成。
-// 生成在服务端后台完整执行并落库；即使客户端中途断开连接，结果仍会写入模组列表。
-func GenerateScenarioByAgents(c *gin.Context) {
-	var req GenerateScenarioReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+// NOTE: scenarioEmit 接收流水线事件；客户端已断开时实现也必须返回，否则后台任务会被卡住。
+type scenarioEmit func(name string, data any)
+
+// NOTE: runScenarioGeneration 同步跑完整批 AI 模组生成并落库，与传输方式无关，调用方负责放进后台协程。
+func runScenarioGeneration(req GenerateScenarioReq, count int, emit scenarioEmit) {
+	progress := func(stage, status, detail string) {
+		emit("progress", gin.H{"stage": stage, "status": status, "detail": detail})
 	}
 
-	count := req.Count
-	if count <= 0 {
-		count = 1
-	}
-	if count > maxScenarioGenCount {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("生成数量不能超过 %d", maxScenarioGenCount)})
-		return
-	}
+	results := make([]scenarioBatchResult, 0, count)
+	for i := 0; i < count; i++ {
+		index := i + 1
+		emit("batch_progress", gin.H{"current": index, "total": count})
+		progress("queued", "start", "请求已受理，等待生成槽位（全局同时仅运行一路生成任务）")
 
-	setChatSSEHeaders(c)
-
-	events := make(chan scenarioGenEvent, 128)
-	go func() {
-		defer close(events)
-		// NOTE: 进度回调在生成 goroutine 内同步发送；handler 侧会持续排空 channel
-		// 直到其关闭（客户端断开也继续排空），因此此处阻塞发送不会死锁。
-		progress := func(stage, status, detail string) {
-			events <- scenarioGenEvent{name: "progress", data: gin.H{"stage": stage, "status": status, "detail": detail}}
+		name := req.Name
+		if name != "" && index > 1 {
+			name = fmt.Sprintf("%s-%d", name, index)
 		}
 
-		results := make([]scenarioBatchResult, 0, count)
-		for i := 0; i < count; i++ {
-			index := i + 1
-			events <- scenarioGenEvent{name: "batch_progress", data: gin.H{"current": index, "total": count}}
-			progress("queued", "start", "请求已受理，等待生成槽位（全局同时仅运行一路生成任务）")
-
-			name := req.Name
-			if name != "" && index > 1 {
-				name = fmt.Sprintf("%s-%d", name, index)
-			}
-
-			gen, err := agent.RunScripterScenarioTeamWithProgress(context.Background(), agent.ScenarioCreationRequest{
-				Name:         name,
-				Theme:        req.Theme,
-				Era:          req.Era,
-				Brief:        req.Brief,
-				TargetLength: req.TargetLength,
-				Difficulty:   req.Difficulty,
-				MinPlayers:   req.MinPlayers,
-				MaxPlayers:   req.MaxPlayers,
-				Salt:         RandomSalt(),
-			}, progress)
-			if err != nil {
-				scenarioLog.Error("scenario generation failed", "index", index, "count", count, "err", err)
-				msg := "模组生成失败: " + err.Error()
-				events <- scenarioGenEvent{name: "error", data: gin.H{"index": index, "message": msg}}
-				results = append(results, scenarioBatchResult{Index: index, Error: msg})
-				continue
-			}
-
-			if gen.Draft.Name == "" {
-				gen.Draft.Name = "AI模组-" + time.Now().Format("20060102150405")
-				if index > 1 {
-					gen.Draft.Name = fmt.Sprintf("%s-%d", gen.Draft.Name, index)
-				}
-			}
-
-			scenario := models.Scenario{
-				Name:        gen.Draft.Name,
-				Description: gen.Draft.Description,
-				Author:      gen.Draft.Author,
-				Tags:        gen.Draft.Tags,
-				MinPlayers:  gen.Draft.MinPlayers,
-				MaxPlayers:  gen.Draft.MaxPlayers,
-				Difficulty:  gen.Draft.Difficulty,
-				Content:     models.JSONField[models.ScenarioContent]{Data: gen.Draft.Content},
-				IsActive:    true,
-			}
-
-			if scenario.MinPlayers == 0 {
-				scenario.MinPlayers = 1
-			}
-			if scenario.MaxPlayers == 0 {
-				scenario.MaxPlayers = 4
-			}
-			if scenario.Difficulty == "" {
-				scenario.Difficulty = "normal"
-			}
-
-			if err := models.DB.Create(&scenario).Error; err != nil {
-				scenarioLog.Error("save generated scenario failed", "err", err)
-				msg := "模组入库失败，请联系管理员查看服务端日志"
-				events <- scenarioGenEvent{name: "error", data: gin.H{"index": index, "message": msg}}
-				results = append(results, scenarioBatchResult{Index: index, Error: msg})
-				continue
-			}
-
-			generationLog := models.ScenarioGenerationLog{
-				ScenarioID:    scenario.ID,
-				ScenarioName:  scenario.Name,
-				LogText:       strings.TrimSpace(gen.GenerationLog),
-				StoryDocument: strings.TrimSpace(gen.StoryDocument),
-			}
-			if generationLog.LogText == "" {
-				generationLog.LogText = "本次 AI 生成未捕获到 LLM 对话记录。"
-			}
-			if err := models.DB.Create(&generationLog).Error; err != nil {
-				scenarioLog.Error("save scenario generation log failed", "scenario_id", scenario.ID, "err", err)
-			}
-
-			events <- scenarioGenEvent{name: "done", data: gin.H{"index": index, "scenario_id": scenario.ID, "name": scenario.Name}}
-			results = append(results, scenarioBatchResult{Index: index, ScenarioID: scenario.ID, Name: scenario.Name})
-		}
-
-		succeeded := 0
-		for _, r := range results {
-			if r.Error == "" {
-				succeeded++
-			}
-		}
-		events <- scenarioGenEvent{name: "batch_done", data: gin.H{
-			"total":     count,
-			"succeeded": succeeded,
-			"failed":    count - succeeded,
-			"results":   results,
-		}}
-	}()
-
-	// NOTE: 客户端断开后继续排空事件通道直到生成结束，保证后台生成与落库完整执行。
-	disconnected := false
-	for evt := range events {
-		if !disconnected {
-			select {
-			case <-c.Request.Context().Done():
-				disconnected = true
-				scenarioLog.Info("scenario generation client disconnected, continuing in background")
-			default:
-			}
-		}
-		if disconnected {
-			continue
-		}
-		c.SSEvent(evt.name, evt.data)
-		c.Writer.Flush()
-	}
-}
-
-// CompileStoryByUpload 以 SSE 流式方式将管理员上传的故事文档直接编译为结构化模组，
-// 跳过 Story Architect 生成阶段（模型只做 ETL）。不支持批量：一次请求编译一篇故事。
-func CompileStoryByUpload(c *gin.Context) {
-	var req CompileStoryReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	streamCompileStory(c, agent.CompileStoryRequest{
-		StoryDocument: req.StoryDocument,
-		Name:          req.Name,
-	}, nil, nil)
-}
-
-// streamCompileStory 设置 SSE 头后在后台跑编译流水线并入库，客户端断开后照常跑完。
-// prepare 在入库前调用，可改写即将入库的模组；after 在入库成功、发出 done 事件之前调用。两者都可为 nil。
-func streamCompileStory(c *gin.Context, req agent.CompileStoryRequest, prepare func(*models.Scenario), after func(*models.Scenario)) {
-	setChatSSEHeaders(c)
-
-	events := make(chan scenarioGenEvent, 128)
-	go func() {
-		defer close(events)
-		progress := func(stage, status, detail string) {
-			events <- scenarioGenEvent{name: "progress", data: gin.H{"stage": stage, "status": status, "detail": detail}}
-		}
-
-		gen, err := agent.RunCompileStoryWithProgress(context.Background(), req, progress)
+		gen, err := agent.RunScripterScenarioTeamWithProgress(context.Background(), agent.ScenarioCreationRequest{
+			Name:         name,
+			Theme:        req.Theme,
+			Era:          req.Era,
+			Brief:        req.Brief,
+			TargetLength: req.TargetLength,
+			Difficulty:   req.Difficulty,
+			MinPlayers:   req.MinPlayers,
+			MaxPlayers:   req.MaxPlayers,
+			Salt:         RandomSalt(),
+		}, progress)
 		if err != nil {
-			scenarioLog.Error("compile story upload failed", "err", err)
-			msg := "模组编译失败: " + err.Error()
-			events <- scenarioGenEvent{name: "error", data: gin.H{"index": 1, "message": msg}}
-			return
+			scenarioLog.Error("scenario generation failed", "index", index, "count", count, "err", err)
+			msg := "模组生成失败: " + err.Error()
+			emit("error", gin.H{"index": index, "message": msg})
+			results = append(results, scenarioBatchResult{Index: index, Error: msg})
+			continue
 		}
 
 		if gen.Draft.Name == "" {
-			gen.Draft.Name = "上传故事-" + time.Now().Format("20060102150405")
+			gen.Draft.Name = "AI模组-" + time.Now().Format("20060102150405")
+			if index > 1 {
+				gen.Draft.Name = fmt.Sprintf("%s-%d", gen.Draft.Name, index)
+			}
 		}
 
 		scenario := models.Scenario{
@@ -417,6 +278,7 @@ func streamCompileStory(c *gin.Context, req agent.CompileStoryRequest, prepare f
 			Content:     models.JSONField[models.ScenarioContent]{Data: gen.Draft.Content},
 			IsActive:    true,
 		}
+
 		if scenario.MinPlayers == 0 {
 			scenario.MinPlayers = 1
 		}
@@ -426,15 +288,13 @@ func streamCompileStory(c *gin.Context, req agent.CompileStoryRequest, prepare f
 		if scenario.Difficulty == "" {
 			scenario.Difficulty = "normal"
 		}
-		if prepare != nil {
-			prepare(&scenario)
-		}
 
 		if err := models.DB.Create(&scenario).Error; err != nil {
-			scenarioLog.Error("save compiled scenario failed", "err", err)
+			scenarioLog.Error("save generated scenario failed", "err", err)
 			msg := "模组入库失败，请联系管理员查看服务端日志"
-			events <- scenarioGenEvent{name: "error", data: gin.H{"index": 1, "message": msg}}
-			return
+			emit("error", gin.H{"index": index, "message": msg})
+			results = append(results, scenarioBatchResult{Index: index, Error: msg})
+			continue
 		}
 
 		generationLog := models.ScenarioGenerationLog{
@@ -444,16 +304,110 @@ func streamCompileStory(c *gin.Context, req agent.CompileStoryRequest, prepare f
 			StoryDocument: strings.TrimSpace(gen.StoryDocument),
 		}
 		if generationLog.LogText == "" {
-			generationLog.LogText = "本次编译未捕获到 LLM 对话记录。"
+			generationLog.LogText = "本次 AI 生成未捕获到 LLM 对话记录。"
 		}
 		if err := models.DB.Create(&generationLog).Error; err != nil {
 			scenarioLog.Error("save scenario generation log failed", "scenario_id", scenario.ID, "err", err)
 		}
-		if after != nil {
-			after(&scenario)
-		}
 
-		events <- scenarioGenEvent{name: "done", data: gin.H{"index": 1, "scenario_id": scenario.ID, "name": scenario.Name}}
+		emit("done", gin.H{"index": index, "scenario_id": scenario.ID, "name": scenario.Name})
+		results = append(results, scenarioBatchResult{Index: index, ScenarioID: scenario.ID, Name: scenario.Name})
+	}
+
+	succeeded := 0
+	for _, r := range results {
+		if r.Error == "" {
+			succeeded++
+		}
+	}
+	emit("batch_done", gin.H{
+		"total":     count,
+		"succeeded": succeeded,
+		"failed":    count - succeeded,
+		"results":   results,
+	})
+}
+
+// NOTE: runCompileStory 同步跑完故事编译并入库（跳过 Story Architect，模型只做 ETL），与传输方式无关，调用方负责放进后台协程。
+// NOTE: prepare 在入库前调用，可改写即将入库的模组；after 在入库成功、发出 done 事件之前调用，两者都可为 nil。
+func runCompileStory(req agent.CompileStoryRequest, prepare func(*models.Scenario), after func(*models.Scenario), emit scenarioEmit) {
+	progress := func(stage, status, detail string) {
+		emit("progress", gin.H{"stage": stage, "status": status, "detail": detail})
+	}
+
+	gen, err := agent.RunCompileStoryWithProgress(context.Background(), req, progress)
+	if err != nil {
+		scenarioLog.Error("compile story upload failed", "err", err)
+		msg := "模组编译失败: " + err.Error()
+		emit("error", gin.H{"index": 1, "message": msg})
+		return
+	}
+
+	if gen.Draft.Name == "" {
+		gen.Draft.Name = "上传故事-" + time.Now().Format("20060102150405")
+	}
+
+	scenario := models.Scenario{
+		Name:        gen.Draft.Name,
+		Description: gen.Draft.Description,
+		Author:      gen.Draft.Author,
+		Tags:        gen.Draft.Tags,
+		MinPlayers:  gen.Draft.MinPlayers,
+		MaxPlayers:  gen.Draft.MaxPlayers,
+		Difficulty:  gen.Draft.Difficulty,
+		Content:     models.JSONField[models.ScenarioContent]{Data: gen.Draft.Content},
+		IsActive:    true,
+	}
+	if scenario.MinPlayers == 0 {
+		scenario.MinPlayers = 1
+	}
+	if scenario.MaxPlayers == 0 {
+		scenario.MaxPlayers = 4
+	}
+	if scenario.Difficulty == "" {
+		scenario.Difficulty = "normal"
+	}
+	if prepare != nil {
+		prepare(&scenario)
+	}
+
+	if err := models.DB.Create(&scenario).Error; err != nil {
+		scenarioLog.Error("save compiled scenario failed", "err", err)
+		msg := "模组入库失败，请联系管理员查看服务端日志"
+		emit("error", gin.H{"index": 1, "message": msg})
+		return
+	}
+
+	generationLog := models.ScenarioGenerationLog{
+		ScenarioID:    scenario.ID,
+		ScenarioName:  scenario.Name,
+		LogText:       strings.TrimSpace(gen.GenerationLog),
+		StoryDocument: strings.TrimSpace(gen.StoryDocument),
+	}
+	if generationLog.LogText == "" {
+		generationLog.LogText = "本次编译未捕获到 LLM 对话记录。"
+	}
+	if err := models.DB.Create(&generationLog).Error; err != nil {
+		scenarioLog.Error("save scenario generation log failed", "scenario_id", scenario.ID, "err", err)
+	}
+	if after != nil {
+		after(&scenario)
+	}
+
+	emit("done", gin.H{"index": 1, "scenario_id": scenario.ID, "name": scenario.Name})
+}
+
+// NOTE: streamCompileStory 以 SSE 推送编译进度，目前只有线上模组编译还在用；客户端断开后照常跑完并入库。
+func streamCompileStory(c *gin.Context, req agent.CompileStoryRequest, prepare func(*models.Scenario), after func(*models.Scenario)) {
+	setChatSSEHeaders(c)
+
+	events := make(chan scenarioGenEvent, 128)
+	go func() {
+		defer close(events)
+		// NOTE: 发送是阻塞的；下面的循环在客户端断开后也会继续排空，所以不会死锁。
+		runCompileStory(req, prepare, after, func(name string, data any) {
+			events <- scenarioGenEvent{name: name, data: data}
+		})
 	}()
 
 	disconnected := false

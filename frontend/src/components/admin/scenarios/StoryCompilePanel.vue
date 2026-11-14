@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, reactive, ref } from 'vue'
-import { streamSSE } from '@/api/sse'
+import { runJobSocket } from '@/api/jobSocket'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import FormField from '@/components/base/FormField.vue'
@@ -20,7 +20,7 @@ const running = ref(false)
 const logs = ref<string[]>([])
 let controller: AbortController | null = null
 
-// NOTE: 离开页签即中断在途编译流；后端会继续编译并入库，只是这里不再接收进度
+// NOTE: 离开页签即关闭在途编译连接；后端会继续编译并入库，只是这里不再接收进度
 onBeforeUnmount(() => controller?.abort())
 
 // NOTE: 故事编译不支持批量，一次只跑一篇；神话锚点与奖励概念由后端从文档内容自动识别，前端只负责上传文件
@@ -60,8 +60,8 @@ async function compile() {
   controller = ctrl
   const handler = createCompileHandler(log)
   try {
-    await streamSSE(
-      '/api/scenarios/compile-story',
+    await runJobSocket(
+      '/api/scenarios/compile-story/ws',
       { story_document: storyDocument, name: form.name || '' },
       handler.onEvent,
       { signal: ctrl.signal },

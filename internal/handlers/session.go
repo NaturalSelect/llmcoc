@@ -632,7 +632,7 @@ func getSessionProcessing(sessionID uint) (sessionProcessingState, bool) {
 	return state, ok
 }
 
-// setChatSSEHeaders 设置 SSE 响应头；聊天已改走 WebSocket，现在只有模组生成这类流式接口还在用。
+// setChatSSEHeaders 设置 SSE 响应头；聊天、模组生成和上传编译都已改走 WebSocket，现在只有线上模组编译还在用。
 func setChatSSEHeaders(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
