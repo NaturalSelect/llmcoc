@@ -1,8 +1,8 @@
-// NOTE: acw.go 负责下载直链，并处理阿里云 CDN 的 acw_sc__v2 挑战：页面里内嵌 arg1，
-// 经固定的置换与异或得到 cookie 值，带上后重试一次。
+// NOTE: acw.go 处理阿里云 CDN 的 acw_sc__v2 挑战：页面里内嵌 arg1，经固定的置换与异或得到 cookie 值，
+// 带上后重试一次。下载直链用 Download，分享页和 fn 页用 getSolvingACW。
 //
-// FIXME: solveACW 的常量表来自公开的逆向资料，没有对照过真实挑战页；站点改版后会失效，
-// 失效时 Download 返回 ErrChallenge，由调用方引导人工下载。
+// FIXME: solveACW 的常量表来自公开的逆向资料；对 cnmods.lanzoum.com 分享页和 developer4.lanrar.com
+// 直链的真实挑战实测有效，站点改版后可能失效，失效时返回 ErrChallenge，由调用方引导人工下载。
 package onlinemod
 
 import (
@@ -73,6 +73,26 @@ func looksLikeHTML(data []byte) bool {
 		}
 	}
 	return false
+}
+
+// getSolvingACW 发 GET；响应是 acw_sc__v2 挑战页就解题，把 cookie 写进 hc.Jar 后重发一次，最多重试一次。
+// 没有挑战或解不出来时原样返回，由调用方判断页面内容。hc.Jar 不能为空。
+func (c *Client) getSolvingACW(ctx context.Context, hc *http.Client, rawURL string, header http.Header) ([]byte, *url.URL, int, error) {
+	data, final, status, err := c.fetchWith(ctx, hc, http.MethodGet, rawURL, nil, header, maxPageBytes)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	m := reACWArg1.FindSubmatch(data)
+	if m == nil || !looksLikeHTML(data) {
+		return data, final, status, nil
+	}
+	value := solveACW(string(m[1]))
+	if value == "" {
+		return data, final, status, nil
+	}
+	hc.Jar.SetCookies(final, []*http.Cookie{{Name: acwCookieName, Value: value, Path: "/"}})
+	log.Debug("acw challenge solved on page, retrying", "host", final.Hostname())
+	return c.fetchWith(ctx, hc, http.MethodGet, rawURL, nil, header, maxPageBytes)
 }
 
 // Download 下载直链。遇到 acw_sc__v2 挑战页就解题并带 cookie 重试一次，仍是 HTML 则返回 ErrChallenge。

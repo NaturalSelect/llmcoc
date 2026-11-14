@@ -1,5 +1,6 @@
 // NOTE: lanzou.go 把蓝奏云分享页解析成 CDN 直链：分享页 → /fn? 页 → POST ajaxfile.php。
-// 只用普通 HTTP；遇到 JS 挑战（典型是 *.lanzoum.com）直接返回 ErrChallenge，不做浏览器模拟。
+// 只用普通 HTTP；分享页和 fn 页遇到 acw_sc__v2 挑战（典型是 *.lanzoum.com）时解题重试一次，
+// 仍然过不去就返回 ErrChallenge，不做浏览器模拟。
 package onlinemod
 
 import (
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strings"
@@ -46,8 +48,11 @@ func (c *Client) ResolveLanzou(ctx context.Context, shareURL string) (direct, fi
 	ctx, cancel := withDefaultTimeout(ctx, resolveTimeout)
 	defer cancel()
 	hc := c.client()
+	if hc.Jar == nil {
+		hc.Jar, _ = cookiejar.New(nil)
+	}
 
-	body, shareFinal, status, err := c.fetchWith(ctx, hc, http.MethodGet, shareURL, nil, nil, maxPageBytes)
+	body, shareFinal, status, err := c.getSolvingACW(ctx, hc, shareURL, nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -86,8 +91,8 @@ func (c *Client) ResolveLanzou(ctx context.Context, shareURL string) (direct, fi
 	if err != nil {
 		return "", "", fmt.Errorf("无效的下载入口地址: %w", err)
 	}
-	fnBody, fnFinal, status, err := c.fetchWith(ctx, hc, http.MethodGet, fnURL.String(), nil,
-		http.Header{"Referer": {shareFinal.String()}}, maxPageBytes)
+	fnBody, fnFinal, status, err := c.getSolvingACW(ctx, hc, fnURL.String(),
+		http.Header{"Referer": {shareFinal.String()}})
 	if err != nil {
 		return "", "", err
 	}

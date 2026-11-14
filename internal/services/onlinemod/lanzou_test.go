@@ -275,6 +275,70 @@ func TestResolveLanzouNewSharePageLayout(t *testing.T) {
 	}
 }
 
+// lanzoum 的分享页和 fn 页都可能先返回 acw_sc__v2 挑战页：解题带 cookie 重试后应拿到真实页面。
+// 两个页面在同一主机上共用 cookie jar，所以两页都有挑战时，fn 页第一次请求就带着分享页解出的 cookie。
+func TestResolveLanzouSolvesACWChallenge(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		gateShare, gateFn bool
+		wantShare, wantFn int
+	}{
+		{"只有分享页有挑战", true, false, 2, 1},
+		{"只有 fn 页有挑战", false, true, 1, 2},
+		{"两页都有挑战时 cookie 共用", true, true, 2, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var mu sync.Mutex
+			hits := map[string]int{}
+			pass := func(w http.ResponseWriter, r *http.Request, gated bool) bool {
+				mu.Lock()
+				hits[r.URL.Path]++
+				mu.Unlock()
+				if !gated {
+					return true
+				}
+				if c, err := r.Cookie("acw_sc__v2"); err == nil && c.Value == testSolve {
+					return true
+				}
+				_, _ = w.Write([]byte("<html><script>var arg1='" + testArg1 + "';setTimeout('reload()',2000)</script></html>"))
+				return false
+			}
+			mux := http.NewServeMux()
+			mux.HandleFunc("/s", func(w http.ResponseWriter, r *http.Request) {
+				if pass(w, r, tc.gateShare) {
+					_, _ = w.Write([]byte(newSharePageHTML))
+				}
+			})
+			mux.HandleFunc("/fn", func(w http.ResponseWriter, r *http.Request) {
+				if pass(w, r, tc.gateFn) {
+					_, _ = w.Write([]byte(fnPageHTML("https://" + r.Host)))
+				}
+			})
+			mux.HandleFunc("/ajaxfile.php", func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(`{"zt":"1","dom":"https://developer4.lanrar.com","url":"CODE_abc"}`))
+			})
+			srv := httptest.NewTLSServer(mux)
+			defer srv.Close()
+
+			direct, filename, err := newAliasClient(srv).ResolveLanzou(context.Background(), "https://cnmods.lanzoum.com/s")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if direct != "https://developer4.lanrar.com/file/CODE_abc" {
+				t.Errorf("direct = %q", direct)
+			}
+			if filename != "海產龍-魔王大人决定伪装勇者小队讨伐魔族.zip" {
+				t.Errorf("filename = %q", filename)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if hits["/s"] != tc.wantShare || hits["/fn"] != tc.wantFn {
+				t.Errorf("请求次数 /s=%d /fn=%d，应为 /s=%d /fn=%d", hits["/s"], hits["/fn"], tc.wantShare, tc.wantFn)
+			}
+		})
+	}
+}
+
 func TestResolveLanzouZtNotOne(t *testing.T) {
 	ls, c, closeFn := newLanzouFixture(t)
 	defer closeFn()
@@ -311,13 +375,18 @@ func TestResolveLanzouRejectsBadShareURL(t *testing.T) {
 func TestResolveLanzouChallenge(t *testing.T) {
 	challenge := `<html><script>var arg1='` + testArg1 + `';var _0x1=function(){};setTimeout(...)</script></html>`
 	t.Run("lanzoum 脚本挑战", func(t *testing.T) {
+		var hits int
 		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits++
 			_, _ = w.Write([]byte(challenge))
 		}))
 		defer srv.Close()
 		_, _, err := newAliasClient(srv).ResolveLanzou(context.Background(), "https://wwbth.lanzoum.com/iNWGo4fuqqli")
 		if !errors.Is(err, ErrChallenge) {
 			t.Fatalf("err = %v，期望 ErrChallenge", err)
+		}
+		if hits != 2 {
+			t.Errorf("请求次数 = %d，解题后只应重试一次（共 2 次）", hits)
 		}
 	})
 	t.Run("lanzoum 取不到 iframe 即使没有 arg1", func(t *testing.T) {
