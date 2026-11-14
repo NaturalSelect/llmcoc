@@ -50,13 +50,22 @@ const hudFlash = ref<HudFlash>(NO_FLASH)
 let hudLast: HudSnapshot | null = null
 let flashTimer: ReturnType<typeof setTimeout> | null = null
 let scrollQueued = false
+// NOTE: 是否跟随最新消息只由用户的滚动动作决定，不能在内容增长之后再量：新内容一次长高超过阈值时，贴底的玩家会被误判成在翻历史
+let stickToBottom = true
+let initialScrollPending = true
 
-// 已在底部附近才跟随滚动，避免打断用户翻阅历史；force 用于首次进入和自己发言后
-function scrollChat(force = false) {
+function onChatScroll() {
   const el = chatBox.value
   if (!el) return
-  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD
-  if (force || atBottom) el.scrollTop = el.scrollHeight
+  stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD
+}
+
+// 玩家贴在底部才跟随滚动，避免打断翻阅历史；force 只用于进房后的首次定位和自己提交之后
+function scrollChat(force = false) {
+  const el = chatBox.value
+  if (!el || (!force && !stickToBottom)) return
+  el.scrollTop = el.scrollHeight
+  stickToBottom = true
 }
 
 function queueScroll() {
@@ -91,7 +100,12 @@ const controller = createRoomController({
   onAuthLost: authLost,
   onRoomGone: () => void router.replace({ name: 'sessions' }),
   onFrame,
-  onSnapshot: () => void nextTick(() => scrollChat(true)),
+  onSnapshot: () =>
+    void nextTick(() => {
+      // NOTE: 重连会重新拉快照，只有进房后的第一份才强制定位到底部，之后遵循玩家当前的滚动位置
+      scrollChat(initialScrollPending)
+      initialScrollPending = false
+    }),
 })
 // NOTE: 控制器是 markRaw 的普通对象，模板不会自动解包它的属性，所以把两个 ref 取出来放在顶层
 const { room, session } = controller
@@ -108,6 +122,8 @@ async function enter(id: number) {
   resetAskDraft(draft)
   hudLast = null
   hudFlash.value = NO_FLASH
+  stickToBottom = true
+  initialScrollPending = true
   await controller.enter(id)
   // NOTE: 进房失败（房间不存在或无权限）时 enter 已经弹过提示，回到大厅
   if (!room.value) void router.replace({ name: 'sessions' })
@@ -126,9 +142,9 @@ watch(
   },
 )
 
-// 问题卡出现时滚到底部，让挂在最新点名消息下面的卡片进入视野
+// 问题卡出现时，贴在底部的玩家跟到卡片处；正在翻阅历史的玩家不被打断
 watch(asking, (v) => {
-  if (v === 'card') void nextTick(() => scrollChat(true))
+  if (v === 'card') void nextTick(() => scrollChat())
 })
 
 watch(
@@ -249,7 +265,7 @@ defineExpose({ viewCard })
         <GameHeader v-if="session" :session="session" :user="user" :busy="busy" @action="onAction" />
         <GameHud v-if="card" class="lg:hidden" :card="card" :flash="hudFlash" :time="gameTime" />
 
-        <div ref="chatBox" class="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="off">
+        <div ref="chatBox" class="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="off" @scroll.passive="onChatScroll">
           <div class="mx-auto max-w-3xl space-y-6 px-4 py-6">
             <template v-if="room">
               <template v-for="m in room.messages" :key="m.id">

@@ -136,6 +136,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('GameView', () => {
@@ -499,5 +500,120 @@ describe('GameView', () => {
     expect(ws.closed).toBe(false)
     wrapper.unmount()
     expect(ws.closed).toBe(true)
+  })
+})
+
+// NOTE: jsdom 没有布局，scrollHeight / clientHeight 恒为 0；这里用可变的假高度模拟内容增长，滚动位置由用户滚动事件驱动
+describe('GameView 滚动跟随', () => {
+  const KP_FLOOR = { user_ids: [], names: [], question: '', kp_floor: true, asked_me: false, stop: '' }
+  const kpMessage2 = { id: 10, role: 'assistant', kind: 'kp', status: 'done', content: '风停了。', floor: 2 }
+  const askMessage2 = {
+    id: 10,
+    role: 'assistant',
+    kind: 'ask',
+    status: 'done',
+    content: '接下来怎么办？',
+    floor: 2,
+    meta: { options: [], ask: { user_ids: [2], names: ['爱丽丝'] } },
+  }
+  const writerPending = { id: 10, role: 'assistant', kind: 'writer', status: 'pending', content: '', floor: 2, meta: {} }
+
+  async function enterRoom() {
+    const geo = { height: 2000 }
+    vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(() => geo.height)
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(500)
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb))
+    const room = await setup({ spotlight: KP_FLOOR })
+    const log = room.wrapper.find('[role="log"]').element as HTMLElement
+    const userScroll = (top: number) => {
+      log.scrollTop = top
+      log.dispatchEvent(new Event('scroll'))
+    }
+    // NOTE: 先等界面更新，再放行动画帧，和浏览器里「帧回调在渲染之后」的次序一致
+    const settle = async () => {
+      await flushPromises()
+      for (const cb of frames.splice(0)) cb(0)
+    }
+    return { ...room, geo, log, userScroll, settle }
+  }
+
+  test('首次进房的快照把页面放到最新消息处', async () => {
+    const { wrapper, log } = await enterRoom()
+    expect(log.scrollTop).toBe(2000)
+    wrapper.unmount()
+  })
+
+  test('玩家向上翻阅时，点名问题卡出现不会把页面拉到底部', async () => {
+    const { wrapper, ws, geo, log, userScroll, settle } = await enterRoom()
+    userScroll(300)
+
+    ws.recv(4, 'message_new', { message: askMessage2 })
+    ws.recv(5, 'spotlight', { user_ids: [2], names: ['爱丽丝'], question: '接下来怎么办？', kp_floor: false, stop: '' })
+    geo.height = 2400
+    await settle()
+
+    expect(wrapper.find('section[aria-label="KP 点名"]').exists()).toBe(true)
+    expect(log.scrollTop).toBe(300)
+    wrapper.unmount()
+  })
+
+  test('停在底部的玩家，点名问题卡在点名消息之后才出现，页面仍跟到卡片底部', async () => {
+    const { wrapper, ws, geo, log, settle } = await enterRoom()
+
+    ws.recv(4, 'message_new', { message: askMessage2 })
+    await settle()
+    ws.recv(5, 'spotlight', { user_ids: [2], names: ['爱丽丝'], question: '接下来怎么办？', kp_floor: false, stop: '' })
+    geo.height = 2300
+    await settle()
+
+    expect(wrapper.find('section[aria-label="KP 点名"]').exists()).toBe(true)
+    expect(log.scrollTop).toBe(2300)
+    wrapper.unmount()
+  })
+
+  test('玩家向上翻阅时，旁白流式生成不会拉回底部；回到底部后恢复跟随', async () => {
+    const { wrapper, ws, geo, log, userScroll, settle } = await enterRoom()
+    userScroll(300)
+
+    ws.recv(4, 'message_new', { message: writerPending })
+    ws.recv(0, 'writer_token', { message_id: 10, offset: 0, text: '门开了。' })
+    geo.height = 2200
+    await settle()
+    expect(log.scrollTop).toBe(300)
+
+    userScroll(1700)
+    ws.recv(0, 'writer_token', { message_id: 10, offset: 4, text: '他走进去。' })
+    geo.height = 2400
+    await settle()
+    expect(log.scrollTop).toBe(2400)
+    wrapper.unmount()
+  })
+
+  test('停在底部的玩家，新消息一次长高很多也继续跟随', async () => {
+    const { wrapper, ws, geo, log, settle } = await enterRoom()
+
+    ws.recv(4, 'message_new', { message: kpMessage2 })
+    geo.height = 3000
+    await settle()
+
+    expect(log.scrollTop).toBe(3000)
+    wrapper.unmount()
+  })
+
+  test('重连后重新拉取的快照不会把正在翻阅的玩家拉到底部', async () => {
+    const { wrapper, ws, geo, log, userScroll, settle } = await enterRoom()
+    userScroll(300)
+
+    // NOTE: 序号出现缺口，控制器会丢弃游标、重连并重新拉一次快照
+    ws.recv(9, 'message_new', { message: kpMessage2 })
+    const ws2 = FakeWS.all[FakeWS.all.length - 1]
+    expect(ws2).not.toBe(ws)
+    ws2.recv(0, 'hello', { epoch: 'E1', seq: 9 })
+    geo.height = 2400
+    await settle()
+
+    expect(log.scrollTop).toBe(300)
+    wrapper.unmount()
   })
 })
