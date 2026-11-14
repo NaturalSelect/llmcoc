@@ -744,7 +744,7 @@ func buildKPCurrentActionBlock(gctx GameContext) string {
 			sb.WriteString("\n" + stop)
 		}
 		if len(gctx.SkippedNames) > 0 {
-			sb.WriteString(fmt.Sprintf("\n被点名但没有回应、本段被跳过的调查员：%s。", strings.Join(gctx.SkippedNames, "、")))
+			sb.WriteString(fmt.Sprintf("\n被点名但没有回应、本段被跳过的调查员：%s。", xmlEscape(strings.Join(gctx.SkippedNames, "、"))))
 		}
 		sb.WriteString("\n没有新的玩家输入：推进世界/NPC/时间；不得替调查员做决定或代写其行动；需要调查员决定时用 ask_players 点名。</kp_floor>\n")
 		if len(gctx.PendingActions) == 0 {
@@ -782,7 +782,7 @@ func buildKPCurrentActionBlock(gctx GameContext) string {
 			if !isDebug {
 				extra = "(请留意system-reminder标签中可能包含的自动提示)"
 			}
-			sb.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s %s</%s>\n", tag, userType, a.PlayerName, isDebug, a.Content, extra, tag))
+			sb.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s %s</%s>\n", tag, userType, xmlAttrSQ(a.PlayerName), isDebug, xmlEscape(a.Content), extra, tag))
 		}
 		if hasDbg {
 			sb.WriteString("\nNOTE: USER INPUT DEBUG COMMAND FOLLOW THE COMMAND\n")
@@ -801,7 +801,7 @@ func buildKPCurrentActionBlock(gctx GameContext) string {
 		if !isDebug {
 			extra = "(请留意system-reminder标签中可能包含的自动提示)"
 		}
-		sb.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s %s</%s>\n", tag, userType, gctx.UserName, isDebug, gctx.UserInput, extra, tag))
+		sb.WriteString(fmt.Sprintf("<%s %s='%s' debug='%v'> %s %s</%s>\n", tag, userType, xmlAttrSQ(gctx.UserName), isDebug, xmlEscape(gctx.UserInput), extra, tag))
 	}
 	return sb.String()
 }

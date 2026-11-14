@@ -34,9 +34,20 @@ func messageSpeaker(m models.Message) string {
 
 func playerSpeaker(m models.Message) string {
 	if m.Username != "" {
-		return m.Username
+		return xmlEscape(m.Username)
 	}
 	return "玩家"
+}
+
+// isPlayerMessage 报告一条消息是否出自玩家输入：只有它的正文需要转义，KP 和 Writer 的文字是模型生成的。
+func isPlayerMessage(m models.Message) bool {
+	switch m.Kind {
+	case models.MessageKindPlayer:
+		return true
+	case models.MessageKindWriter, models.MessageKindKP, models.MessageKindAsk, models.MessageKindEvent:
+		return false
+	}
+	return m.Role == models.MessageRoleUser
 }
 
 // renderableMessage 报告一条消息是否应该进入给 LLM 的日志：配图没有文字，失败或还没写完的 writer 没有正文，
@@ -60,7 +71,11 @@ func renderMessageLine(m models.Message) string {
 	if m.Kind == models.MessageKindEvent {
 		return fmt.Sprintf("[%s]: %s", messageSpeaker(m), publicDiceLine(m))
 	}
-	line := fmt.Sprintf("[%s]: %s", messageSpeaker(m), strings.TrimSpace(m.Content))
+	content := strings.TrimSpace(m.Content)
+	if isPlayerMessage(m) {
+		content = xmlEscape(content)
+	}
+	line := fmt.Sprintf("[%s]: %s", messageSpeaker(m), content)
 	if meta := m.Meta.Data; meta != nil && meta.Dice != "" {
 		line += fmt.Sprintf(" (骰子: %s)", meta.Dice)
 	}

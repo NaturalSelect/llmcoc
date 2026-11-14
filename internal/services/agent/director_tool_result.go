@@ -26,6 +26,11 @@ func xmlAttr(s string) string {
 	return xmlAttrEscaper.Replace(s)
 }
 
+// NOTE: 单引号包裹的属性值要在 xmlAttr 之外再转义 '，否则玩家名里的 ' 能提前闭合属性、伪造后续属性。
+func xmlAttrSQ(s string) string {
+	return strings.ReplaceAll(xmlAttr(s), "'", "&apos;")
+}
+
 // toolResultNPC 返回针对单个 NPC 的工具调用所指向的 NPC 名；其他工具、名字为空(如 query_npc_card 查全部)或参数解析失败时返回空串。
 func toolResultNPC(call llm.ToolCall) string {
 	switch ToolCallType(call.Name) {

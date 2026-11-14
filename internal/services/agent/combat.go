@@ -405,7 +405,7 @@ func combatStateBrief(cs *models.CombatState, gctx GameContext, tempNPCs []model
 		}
 		if !p.IsNPC {
 			if intent := findPlayerIntent(gctx.PendingActions, p.UserID, p.Name); intent != "" {
-				sb.WriteString(" | 本轮意图: " + intent)
+				sb.WriteString(" | 本轮意图: " + xmlEscape(intent))
 			} else {
 				sb.WriteString(" | [本轮尚未提交]")
 			}

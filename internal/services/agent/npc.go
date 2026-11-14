@@ -289,7 +289,7 @@ func runNPC(
 	}
 
 	if question == "" {
-		question = fmt.Sprintf("调查员行动:[%s] %s。你要做什么？", gctx.UserName, gctx.UserInput)
+		question = fmt.Sprintf("调查员行动:[%s] %s。你要做什么？", xmlEscape(gctx.UserName), xmlEscape(gctx.UserInput))
 	}
 
 	tools, _, _ := buildToolState(directorTools(handles[models.AgentRoleDramaturg].isEnabled()))
