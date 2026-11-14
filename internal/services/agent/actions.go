@@ -201,23 +201,9 @@ func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	if question == "" {
 		question = call.NPCCtx
 	}
-	if strings.TrimSpace(call.KPDirective) != "" {
-		question = question + "\n【KP私下给你的指令(最高优先级，其他玩家看不到)】" + call.KPDirective
-	}
+	question = renderNPCTask(npcTask{Question: question, Directive: call.KPDirective, HideSecret: call.HideSecret, Spell: call.Spell})
 	debugf("tool", "session=%d act_npc npc=%q question=%s nsfw=%v", actx.Sid, call.NPCName, question, call.NSFW)
 	doneNPC := timedDebug("NPC", "session=%d npc=%s", actx.Sid, call.NPCName)
-	if call.HideSecret {
-		question = "(注意隐瞒你的秘密) " + question
-	}
-	if call.Spell != "" {
-		if strings.Contains(call.Spell, "附魔") {
-			question += " (你可以使用使用法术: " + call.Spell + ", 且可以附魔)"
-		} else {
-			question += " (你可以使用使用法术: " + call.Spell + " , 但不能附魔)"
-		}
-	} else {
-		question += " (你没有法术可用, 且无法创造改造魔法物品)"
-	}
 	npcHandle, nsfwMode := pickNPCHandle(actx.Handles, actx.GCtx.Session.EnableNSFW && call.NSFW)
 	action, npcErr := runNPC(actx.Ctx, npcHandle, actx.Handles, *actx.GCtx,
 		npcRequest{Name: call.NPCName, Question: question, NSFW: nsfwMode, Director: actx.Director}, *actx.TempNPCs)

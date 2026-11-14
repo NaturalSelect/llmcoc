@@ -31,6 +31,37 @@ func buildNPCView(director []llm.ChatMessage, system string, keepReasoning bool,
 	return buildWriterView(dropUnansweredToolCalls(director), system, keepReasoning, instruction)
 }
 
+// npcTask 是一次 act_npc 交给 AI 玩家的任务单：Question 由 Director 按「情境 / 已裁定 / 回应」写，
+// 其余字段由代码渲染成独立分段。
+type npcTask struct {
+	Question   string
+	Directive  string
+	HideSecret bool
+	Spell      string
+}
+
+// renderNPCTask 把任务单渲染成 <kp_says> 的正文：Question 原样在前(旧写法没有分段也照常放行)，
+// 随后依次是约束、秘密、法术三段。分段顺序固定，同样的输入逐字节相同。
+func renderNPCTask(t npcTask) string {
+	sb := strings.Builder{}
+	sb.WriteString(strings.TrimSpace(t.Question))
+	if d := strings.TrimSpace(t.Directive); d != "" {
+		sb.WriteString("\n约束：" + d)
+	}
+	if t.HideSecret {
+		sb.WriteString("\n秘密：隐瞒你的秘密")
+	}
+	switch spell := strings.TrimSpace(t.Spell); {
+	case spell == "":
+		sb.WriteString("\n法术：没有法术可用，也不能创造或改造魔法物品")
+	case strings.Contains(spell, "附魔"):
+		sb.WriteString("\n法术：可以使用 " + spell + "，且可以附魔")
+	default:
+		sb.WriteString("\n法术：可以使用 " + spell + "，但不能附魔")
+	}
+	return sb.String()
+}
+
 // buildNPCInstruction 组装本轮的指令：人设 + 场景卡 + KP 的提问 + 行为注意事项 + 输出要求。
 // nsfwMode 为 true 时 explicit_scene_requirements 后缀拼进这里；欲望列表也按 nsfwMode 渲染。
 // npc 属性与 Director 历史里 <tool_result npc="…"> 的名字一致，方便 NPC 认出哪些记录是自己的。

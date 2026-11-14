@@ -157,6 +157,49 @@ func TestBuildNPCInstruction(t *testing.T) {
 	}
 }
 
+// TestRenderNPCTask 验证任务单渲染：Question 原样在前(含没有分段的旧写法)，
+// 约束/秘密/法术三段按固定顺序跟在后面，可选段为空时不输出，法术段一定有。
+func TestRenderNPCTask(t *testing.T) {
+	sheet := "情境：调查员说“让我看看档案”\n已裁定：说服检定失败(roll=88 vs 40)\n回应：你让不让他看"
+
+	t.Run("可选字段全空只剩法术行", func(t *testing.T) {
+		got := renderNPCTask(npcTask{Question: sheet})
+		want := sheet + "\n法术：没有法术可用，也不能创造或改造魔法物品"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("全部字段按固定顺序输出", func(t *testing.T) {
+		got := renderNPCTask(npcTask{Question: sheet, Directive: "拒绝查看档案", HideSecret: true, Spell: "遗忘术"})
+		want := sheet + "\n约束：拒绝查看档案\n秘密：隐瞒你的秘密\n法术：可以使用 遗忘术，但不能附魔"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("法术含附魔时允许附魔", func(t *testing.T) {
+		got := renderNPCTask(npcTask{Question: "q", Spell: "附魔武器、束缚术"})
+		if !strings.HasSuffix(got, "\n法术：可以使用 附魔武器、束缚术，且可以附魔") {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("没有分段的旧写法原样保留", func(t *testing.T) {
+		got := renderNPCTask(npcTask{Question: "  有人进门，你怎么办？\n", Directive: "  "})
+		if !strings.HasPrefix(got, "有人进门，你怎么办？\n法术：") || strings.Contains(got, "约束：") {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("相同输入逐字节相同", func(t *testing.T) {
+		task := npcTask{Question: sheet, Directive: "d", HideSecret: true, Spell: "s"}
+		if a, b := renderNPCTask(task), renderNPCTask(task); a != b {
+			t.Errorf("两次渲染不一致:\n%q\n%q", a, b)
+		}
+	})
+}
+
 // ── buildNPCProfile 描述截断 ───────────────────────────────────────────────────
 
 // TestBuildNPCProfileClipsDescriptionByRune 验证描述按字符截断：纯中文描述若按字节切 200，

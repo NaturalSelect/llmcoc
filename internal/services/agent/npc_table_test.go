@@ -9,7 +9,7 @@ import (
 )
 
 func TestNPCPromptFramesTRPGPlayer(t *testing.T) {
-	for _, want := range []string{"AI玩家", "跑团", "守秘人", `"check"`, `"ooc"`, `"intent"`, "场外信息", "<writer_output>", "<npc_role>", "<kp_says>"} {
+	for _, want := range []string{"AI玩家", "跑团", "守秘人", `"check"`, `"ooc"`, `"intent"`, "场外信息", "<writer_output>", "<npc_role>", "<kp_says>", "任务单", "已裁定", "约束"} {
 		if !strings.Contains(npcDefaultPrompt, want) {
 			t.Errorf("npcDefaultPrompt 缺少 %q", want)
 		}
@@ -83,6 +83,28 @@ func TestFormatNPCActionDeclaration(t *testing.T) {
 	escaped := formatNPCAction(NPCAction{NPCName: `a"b`, Dialogue: "<走>&开"})
 	if !strings.Contains(escaped, `npc="a&quot;b"`) || !strings.Contains(escaped, "<dialogue>&lt;走&gt;&amp;开</dialogue>") {
 		t.Errorf("属性与正文应转义: %s", escaped)
+	}
+}
+
+// TestActNPCToolAsksForTaskSheet 验证 act_npc 说明要求按情境/已裁定/回应三段写 question，
+// kp_directive 对应约束段，骰子结果只写在已裁定段。
+func TestActNPCToolAsksForTaskSheet(t *testing.T) {
+	def := actNPCTool().def
+	for _, want := range []string{
+		"【question写法】", "任务单", "情境：", "已裁定：", "回应：", "约束", "已裁定\"段",
+	} {
+		if !strings.Contains(def.Description, want) {
+			t.Errorf("act_npc 工具说明缺少 %q", want)
+		}
+	}
+	if strings.Contains(def.Description, "写进question或kp_directive") {
+		t.Error("已裁定的结果不应再允许写进 kp_directive")
+	}
+	if !strings.Contains(string(def.Parameters), "任务单") {
+		t.Error("question 参数描述应说明是任务单")
+	}
+	if !strings.Contains(kpSystemPrompt, "question的已裁定段") {
+		t.Error("kpSystemPrompt 的 [NPC-SKILL-CHECK] 应要求把结果写进 question 的已裁定段")
 	}
 }
 
