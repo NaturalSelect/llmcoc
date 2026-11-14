@@ -35,6 +35,9 @@ var compileKeyedSections = []string{"scenes", "npcs", "clues", "endings", "mecha
 
 var compileViewSections = []string{"overview", "keeper_notes", "scenes", "npcs", "clues", "endings", "mechanics", "timeline"}
 
+// NOTE: 系统最多支持 4 名调查员（创建房间时 max_players 会被截到 4），文档写得更多时只取 4。
+const compileMaxPlayers = 4
+
 // compileDraft 是编译过程中累积的模组草稿。clueKeys 与 draft.Content.Clues 一一对应：
 // ClueData 本身没有键字段，键只在草稿内用来定位条目，不入库。
 type compileDraft struct {
@@ -113,7 +116,7 @@ func compileDraftTools() []scripterTool {
 		{def: llm.ToolDefinition{
 			Name: toolNameSetOverview,
 			Description: "设置模组概览字段，只覆盖传入的字段，未传的保持不变，传空字符串表示清空。" +
-				"人数、难度、作者、简介由系统设定，不在此处填写。",
+				"作者、简介由系统设定，不在此处填写；人数和难度只在故事文档明确写出时才填。",
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
@@ -125,6 +128,9 @@ func compileDraftTools() []scripterTool {
 					"setting": {"type": "string", "description": "表层情境原文或忠实改写，必须保留具体年月日；同时作为模组简介展示"},
 					"intro": {"type": "string", "description": "以叙事散文呈现调查员到场情境：先自然写出具体场所、具体年月日+时刻、要达成的那件事，再写至少两处可视可听可感的场景细节；不得用【】或标签式罗列，不推荐具体行动"},
 					"game_start_time": {"type": "string", "description": "开局时间，格式 YYYY-MM-DDTHH:MM，不带时区；年月日须与 setting 一致，文档未写明时刻时取 08:00"},
+					"min_players": {"type": "integer", "minimum": 1, "maximum": 4, "description": "故事文档明确写出的最少调查员人数；没写明就不要传"},
+					"max_players": {"type": "integer", "minimum": 1, "maximum": 4, "description": "故事文档明确写出的最多调查员人数；系统最多支持 4 人，文档写得更多时取 4；没写明就不要传"},
+					"difficulty": {"type": "string", "enum": ["easy", "normal", "hard"], "description": "故事文档明确写出的难度或面向新手/老手的定位；没写明就不要传，不要凭剧情自行估算"},
 					"map_description": {"type": "string", "description": "按地点关系概括的文字地图，体现可回访、可交叉验证的调查网络"},
 					"playthrough_outline": {"type": "string", "description": "逐场景的游玩流程大纲：进入条件、可接触人物、可得发现、通向哪里与分支，以及哪些条件导向哪种收场；只能引用已写入草稿的场景、人物、发现与收场"}
 				}
@@ -428,6 +434,9 @@ type overviewArgs struct {
 	GameStartTime      *string   `json:"game_start_time"`
 	MapDescription     *string   `json:"map_description"`
 	PlaythroughOutline *string   `json:"playthrough_outline"`
+	MinPlayers         *int      `json:"min_players"`
+	MaxPlayers         *int      `json:"max_players"`
+	Difficulty         *string   `json:"difficulty"`
 }
 
 type fieldWrite struct {
@@ -460,6 +469,24 @@ func (d *compileDraft) setOverview(raw string) toolOutcome {
 			}
 		}
 	}
+	if (a.MinPlayers != nil && (*a.MinPlayers < 1 || *a.MinPlayers > compileMaxPlayers)) ||
+		(a.MaxPlayers != nil && (*a.MaxPlayers < 1 || *a.MaxPlayers > compileMaxPlayers)) {
+		return compileReject("min_players / max_players 必须在 1-%d 之间（系统最多支持 %d 名调查员，文档写得更多时取 %d），本次调用未写入任何字段。",
+			compileMaxPlayers, compileMaxPlayers, compileMaxPlayers)
+	}
+	minP, maxP := d.draft.MinPlayers, d.draft.MaxPlayers
+	if a.MinPlayers != nil {
+		minP = *a.MinPlayers
+	}
+	if a.MaxPlayers != nil {
+		maxP = *a.MaxPlayers
+	}
+	if minP > 0 && maxP > 0 && maxP < minP {
+		return compileReject("max_players（%d）不能小于 min_players（%d），本次调用未写入任何字段。", maxP, minP)
+	}
+	if a.Difficulty != nil && !slices.Contains(scripterDifficulties, strings.TrimSpace(*a.Difficulty)) {
+		return compileReject("difficulty 必须是 %s 之一，本次调用未写入任何字段。", strings.Join(scripterDifficulties, "/"))
+	}
 	var tone []string
 	if a.ToneTags != nil {
 		tone = trimmedNonEmpty(*a.ToneTags)
@@ -482,6 +509,18 @@ func (d *compileDraft) setOverview(raw string) toolOutcome {
 	if a.ToneTags != nil {
 		c.ToneTags = tone
 		changed = append(changed, "tone_tags")
+	}
+	if a.MinPlayers != nil {
+		d.draft.MinPlayers = *a.MinPlayers
+		changed = append(changed, "min_players")
+	}
+	if a.MaxPlayers != nil {
+		d.draft.MaxPlayers = *a.MaxPlayers
+		changed = append(changed, "max_players")
+	}
+	if a.Difficulty != nil {
+		d.draft.Difficulty = strings.TrimSpace(*a.Difficulty)
+		changed = append(changed, "difficulty")
 	}
 	if len(changed) == 0 {
 		return compileReject("set_overview 没有传入任何字段。")
@@ -901,6 +940,11 @@ func (d *compileDraft) overview(tagsBlacklist []string) string {
 		coreTruth = c.KeeperAppendix.CoreTruth
 	}
 	fmt.Fprintf(&sb, "core_truth: %s\n", fieldState(coreTruth))
+	players := "未填写（系统默认 1-4 人）"
+	if d.draft.MinPlayers > 0 || d.draft.MaxPlayers > 0 {
+		players = fmt.Sprintf("%d-%d", d.draft.MinPlayers, d.draft.MaxPlayers)
+	}
+	fmt.Fprintf(&sb, "players: %s\ndifficulty: %s\n", players, d.draft.Difficulty)
 	for _, section := range compileKeyedSections {
 		keys := d.sectionKeys(section)
 		fmt.Fprintf(&sb, "%s（%d）：%s\n", section, len(keys), joinOrNone(keys))
@@ -930,6 +974,7 @@ func (d *compileDraft) sectionJSON(section string) string {
 			"invest_focus": c.InvestFocus, "tone_tags": c.ToneTags, "setting": c.Setting, "intro": c.Intro,
 			"game_start_time": c.GameStartTime, "map_description": c.MapDescription,
 			"playthrough_outline": c.PlaythroughOutline,
+			"min_players":         d.draft.MinPlayers, "max_players": d.draft.MaxPlayers, "difficulty": d.draft.Difficulty,
 		}
 	case "keeper_notes":
 		k := models.KeeperAppendix{}

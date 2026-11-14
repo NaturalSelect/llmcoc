@@ -35,7 +35,7 @@ func RunCompileStoryWithProgress(ctx context.Context, req CompileStoryRequest, p
 		return ScenarioCreationOutput{}, err
 	}
 	room.progressFn = progress
-	room.skipLogicReview = true
+	room.markETL()
 	scripterCounterMu.Lock()
 	sessionID := fmt.Sprintf("%v", scriptSessionId-int64(scripterCounter))
 	scripterCounter++
@@ -64,7 +64,6 @@ func RunCompileStoryWithProgress(ctx context.Context, req CompileStoryRequest, p
 		Era:          room.req.Era,
 		Theme:        room.req.Theme,
 		TargetLength: room.req.TargetLength,
-		PlayerRange:  fmt.Sprintf("%d-%d", room.req.MinPlayers, room.req.MaxPlayers),
 		Difficulty:   room.req.Difficulty,
 	}
 
@@ -81,6 +80,14 @@ func RunCompileStoryWithProgress(ctx context.Context, req CompileStoryRequest, p
 		GenerationLog: room.generationLogText(),
 		StoryDocument: story.Document,
 	}, nil
+}
+
+// markETL 把房间切到上传编译（ETL）模式：只做忠实转换，不走 QA 逻辑审查。
+// NOTE: 上传编译没有用户指定的人数和难度，要清掉 normalize 填的默认值，交给 Compiler 从文档提取；
+// 留着默认值的话，applyGuardrails 会把提取结果覆盖回 1-4 人 / normal。
+func (r *scripterRoom) markETL() {
+	r.skipLogicReview = true
+	r.req.MinPlayers, r.req.MaxPlayers, r.req.Difficulty = 0, 0, ""
 }
 
 // scenarioCreationRequestFromCompileStory 把管理员上传的故事编译请求映射为

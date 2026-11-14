@@ -42,6 +42,18 @@ var glm5_1JailbreakPrompt string
 //go:embed jailbreaks/glm-5.2.md
 var glm5_2JailbreakPrompt string
 
+//go:embed jailbreaks/gemini-3.5-flash.md
+var gemini3_5FlashJailbreakPrompt string
+
+//go:embed jailbreaks/gemini-3.6-flash.md
+var gemini3_6FlashJailbreakPrompt string
+
+// NOTE: gemini-3.5-flash-lite 使用 gemini-3.6-flash 的 jailbreak prompt
+var gemini3_5FlashLitelJailbreakPrompt = gemini3_6FlashJailbreakPrompt
+
+//go:embed jailbreaks/gemini-4-argon.md
+var gemini4ArgonJailbreakPrompt string
+
 func matchLength(left, right string) int {
 	matchLen := 0
 	for i := 0; i < len(left) && i < len(right); i++ {
@@ -109,6 +121,26 @@ func withJailbreakPrompt(prompt string, model string) string {
 		{
 			model:  "glm-5.2",
 			header: glm5_2JailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "gemini-3.5-flash",
+			header: gemini3_5FlashJailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "gemini-3.6-flash",
+			header: gemini3_6FlashJailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "gemini-3.5-flash-lite",
+			header: gemini3_5FlashLitelJailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "gemini-4-argon",
+			header: gemini4ArgonJailbreakPrompt,
 			tail:   "",
 		},
 	}

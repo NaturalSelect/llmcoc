@@ -247,6 +247,32 @@ func TestCompileDraftSetOverviewValidation(t *testing.T) {
 	}
 }
 
+func TestCompileDraftSetOverviewPlayersAndDifficulty(t *testing.T) {
+	d := newCompileDraft(StoryOutput{}, ScripterConstraints{})
+	mustAccept(t, callDraftTool(d, toolNameSetOverview, map[string]any{"min_players": 2, "max_players": 4, "difficulty": "hard"}))
+	if d.draft.MinPlayers != 2 || d.draft.MaxPlayers != 4 || d.draft.Difficulty != "hard" {
+		t.Fatalf("写入后 players=%d-%d difficulty=%q", d.draft.MinPlayers, d.draft.MaxPlayers, d.draft.Difficulty)
+	}
+
+	for name, args := range map[string]map[string]any{
+		"人数低于 1":      {"name": "新名", "min_players": 0},
+		"人数超过上限":      {"name": "新名", "max_players": 6},
+		"最大小于已写的最小":   {"name": "新名", "max_players": 1},
+		"最小大于已写的最大":   {"name": "新名", "min_players": 5},
+		"难度不在枚举内":     {"name": "新名", "difficulty": "legendary"},
+		"同一调用里最大小于最小": {"name": "新名", "min_players": 3, "max_players": 2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := d.draft
+			mustReject(t, callDraftTool(d, toolNameSetOverview, args), "")
+			if d.draft.Name != before.Name || d.draft.MinPlayers != before.MinPlayers ||
+				d.draft.MaxPlayers != before.MaxPlayers || d.draft.Difficulty != before.Difficulty {
+				t.Errorf("被拒绝的调用不应写入任何字段: %+v", d.draft)
+			}
+		})
+	}
+}
+
 func TestCompileDraftFixedToneTags(t *testing.T) {
 	fixed := []string{"cosmic-dread", "occult-noir"}
 	d := newCompileDraft(StoryOutput{}, ScripterConstraints{ToneTags: fixed})

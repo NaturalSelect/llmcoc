@@ -278,6 +278,55 @@ func TestCompileAndFinalize_SkipLogicReview(t *testing.T) {
 	}
 }
 
+// TestCompileAndFinalize_ETLPlayersAndDifficulty 验证上传编译（ETL）从文档提取的人数和难度不会被默认值覆盖回去：
+// 房间请求里的人数和难度是 normalize 填的默认值而不是用户指定，markETL 要把它们清掉。
+func TestCompileAndFinalize_ETLPlayersAndDifficulty(t *testing.T) {
+	run := func(t *testing.T, etl bool, overview map[string]any) ScenarioDraft {
+		t.Helper()
+		calls := compileWriteCalls(compileFixtureDraft, compileFixtureConcept)
+		if overview != nil {
+			calls = append(calls, llm.ToolCall{ID: "w8", Name: toolNameSetOverview, Arguments: mustJSON(overview)})
+		}
+		fake := &sequentialFakeProvider{
+			callerName: "compiler",
+			toolResponses: []llm.ToolChatResult{
+				{ToolCalls: calls},
+				{ToolCalls: []llm.ToolCall{compileSubmitCall("s1")}},
+			},
+		}
+		room := compilerRoom(fake)
+		room.req = normalizeScenarioCreationRequest(ScenarioCreationRequest{Name: "指定标题"})
+		if etl {
+			room.markETL()
+		}
+		draft, _, err := room.compileAndFinalize(context.Background(), compileTestStory(), ScripterConstraints{})
+		if err != nil {
+			t.Fatalf("compileAndFinalize failed: %v", err)
+		}
+		return draft
+	}
+	fromDoc := map[string]any{"min_players": 2, "max_players": 3, "difficulty": "hard"}
+
+	t.Run("ETL 采用文档里的人数和难度", func(t *testing.T) {
+		d := run(t, true, fromDoc)
+		if d.MinPlayers != 2 || d.MaxPlayers != 3 || d.Difficulty != "hard" {
+			t.Errorf("players=%d-%d difficulty=%q, want 2-3 hard", d.MinPlayers, d.MaxPlayers, d.Difficulty)
+		}
+	})
+	t.Run("文档没写时落回默认值", func(t *testing.T) {
+		d := run(t, true, nil)
+		if d.MinPlayers != 1 || d.MaxPlayers != 4 || d.Difficulty != "normal" {
+			t.Errorf("players=%d-%d difficulty=%q, want 1-4 normal", d.MinPlayers, d.MaxPlayers, d.Difficulty)
+		}
+	})
+	t.Run("非 ETL 仍以请求为准", func(t *testing.T) {
+		d := run(t, false, fromDoc)
+		if d.MinPlayers != 1 || d.MaxPlayers != 4 || d.Difficulty != "normal" {
+			t.Errorf("players=%d-%d difficulty=%q, want 1-4 normal（请求里的值覆盖草稿）", d.MinPlayers, d.MaxPlayers, d.Difficulty)
+		}
+	})
+}
+
 // TestCompileAndFinalize_LogicFixContinuesSameConversation 验证逻辑审查的问题追加到编译的同一条对话，
 // compiler 第二段请求的消息以第一段的全部消息为前缀，修复后的字段进入最终草稿。
 func TestCompileAndFinalize_LogicFixContinuesSameConversation(t *testing.T) {
