@@ -92,6 +92,8 @@ const (
 	ToolQueryClues             ToolCallType = "query_clues"               // 查询剧本线索
 	ToolQueryCharacter         ToolCallType = "query_character"           // 查询调查员完整人物卡
 	ToolQueryNPCCard           ToolCallType = "query_npc_card"            // 查询NPC完整角色卡
+	ToolGrepStory              ToolCallType = "grep_story"                // 在模组故事原文里按正则搜索
+	ToolReadStory              ToolCallType = "read_story"                // 按行号读取模组故事原文
 	ToolUpdateNPCCard          ToolCallType = "update_npc_card"           // 更新NPC角色卡状态
 	ToolUpdateSessionMemory    ToolCallType = "update_session_memory"     // 更新调查员的会话记忆
 	ToolUpdateNPCSessionMemory ToolCallType = "update_npc_session_memory" // 更新NPC的会话记忆
@@ -179,6 +181,11 @@ type ToolCall struct {
 	Culture string `json:"culture"`
 	Gender  string `json:"gender"`
 	Count   int    `json:"count"`
+
+	Pattern      string `json:"pattern"`       // grep_story: 正则表达式(Go RE2)
+	ContextLines *int   `json:"context_lines"` // grep_story: 命中行前后各带几行(省略为默认值,0 表示不带上下文)
+	StartLine    int    `json:"start_line"`    // read_story: 起始行号(从1起,省略为1)
+	LineCount    int    `json:"line_count"`    // read_story: 读取行数(省略为默认值)
 }
 
 // ToolResult wraps the result of executing one ToolCall.

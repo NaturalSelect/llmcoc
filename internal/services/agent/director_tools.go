@@ -44,6 +44,8 @@ func directorTools(dramaturgEnabled bool) []scripterTool {
 		queryCluesTool(),
 		queryCharacterTool(),
 		queryNPCCardTool(),
+		grepStoryTool(),
+		readStoryTool(),
 		updateNPCCardTool(),
 		narrateTool(),
 		askPlayersTool(),
@@ -397,7 +399,7 @@ func endGameTool() scripterTool {
 			Name: string(ToolEndGame),
 			Description: `结束本次冒险(整个游戏会话，不可撤回，而非仅结束本轮)。只有当<endings>中至少一个结局的Trigger已经确认满足时才能调用；未满足时调用是硬错误。win 必须明确给出 true(触发[结局]/胜利)或 false(触发[失败结局]/团灭等)，end_summary 必须写明具体触发了哪个结局、其Trigger条件是如何被满足的。
 settlement 是本局的结算，必须为每位调查员(包括已死亡或疯狂的)各写一条，缺人、重名或名字对不上都会被拒绝，游戏不会结束。每条包含：character_name(角色卡真实姓名)；score(0-100整数，综合角色扮演质量、探索贡献、线索发现、生存情况；金币奖励由后端按score折算)；comment(对该调查员本局表现的点评，50字以内，可省略)；skills(该调查员本局实际运用过的技能名，无论成败，只能写角色卡上已有的技能，不要写克苏鲁神话和信用评级；只有win=true时才会据此做技能成长检定，win=false时可留空)。
-【批次硬规则】end_game可以与write/update_session_memory/update_*/manage_*/record_monster/advance_time等收尾状态更新同批次；但不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/generate_npc_name/act_npc同批——这些工具的结果必须先在更早的一轮读到，才能在之后的一轮调用end_game。
+【批次硬规则】end_game可以与write/update_session_memory/update_*/manage_*/record_monster/advance_time等收尾状态更新同批次；但不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/grep_story/read_story/generate_npc_name/act_npc同批——这些工具的结果必须先在更早的一轮读到，才能在之后的一轮调用end_game。
 调用示例：{"win":true,"end_summary":"触发结局[封印成功]：调查员完成封印仪式，邪神无法降临，胜利结束冒险","settlement":[{"character_name":"约翰","score":85,"comment":"冷静地组织了封印仪式","skills":["侦查","图书馆使用"]},{"character_name":"玛丽","score":70,"skills":["心理学"]}]}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
@@ -542,6 +544,46 @@ func queryNPCCardTool() scripterTool {
 				"type": "object",
 				"properties": {
 					"npc_name": {"type": "string", "description": "NPC名,留空返回全部NPC"}
+				}
+			}`),
+		},
+	}
+}
+
+func grepStoryTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolGrepStory),
+			Description: `在当前模组的故事原文(编译成结构化模组之前的完整故事文档)里按正则搜索，返回命中行及前后文，每行带行号。<scenario>里的结构化资料由故事原文提炼而来，细节可能被压缩；需要核对原文怎么写(NPC的口吻与动机、场景描写、线索的出处和措辞、时间线细节)时使用。
+pattern 是 Go(RE2)正则表达式，含 . ( ? 等符号时需要转义，忽略大小写加 (?i) 前缀；context_lines 是每处命中前后各带几行(默认1，最大5，0 表示不带上下文)。按行匹配，不能跨行；超过400字的行会被截断并标出全文字数，用 read_story 读全文。命中行的行号后是冒号，上下文行的行号后是短横线；命中太多时只返回前若干处，请收窄 pattern，或用 read_story 按行号读取。
+没有保存故事原文的模组会返回拒绝，此时只能依据<scenario>和 query_clues 的资料。
+【批次规则】只读查询：不得与narrate/ask_players/end_game同批，结果须先在更早的一轮读到。
+调用示例：{"pattern":"地下室|酒窖","context_lines":2}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"pattern": {"type": "string", "description": "要搜索的正则表达式(Go RE2 语法)"},
+					"context_lines": {"type": "integer", "minimum": 0, "maximum": 5, "description": "每处命中前后各带几行,默认1"}
+				},
+				"required": ["pattern"]
+			}`),
+		},
+	}
+}
+
+func readStoryTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolReadStory),
+			Description: `按行号读取当前模组的故事原文，每行带行号。通常先用 grep_story 找到位置，再用本工具读完整的一段。start_line 是起始行号(从1起，默认1)，line_count 是读取行数(默认120，最大300)；单次返回的字数有上限，读不完时结果里的 next_start_line 就是下一次的起始行号。
+没有保存故事原文的模组会返回拒绝，此时只能依据<scenario>和 query_clues 的资料。
+【批次规则】只读查询：不得与narrate/ask_players/end_game同批，结果须先在更早的一轮读到。
+调用示例：{"start_line":40,"line_count":60}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"start_line": {"type": "integer", "minimum": 1, "description": "起始行号,从1起,默认1"},
+					"line_count": {"type": "integer", "minimum": 1, "maximum": 300, "description": "读取行数,默认120"}
 				}
 			}`),
 		},

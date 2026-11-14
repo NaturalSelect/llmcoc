@@ -57,6 +57,8 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolQueryClues:       true,
 	ToolQueryCharacter:   true,
 	ToolQueryNPCCard:     true,
+	ToolGrepStory:        true,
+	ToolReadStory:        true,
 	ToolActNPC:           true, // returns NPC reaction that must be read before narrate
 	ToolGenerateNPCName:  true,
 }
@@ -111,6 +113,8 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolQueryClues:             queryCluesAction{},
 	ToolQueryCharacter:         queryCharacterAction{},
 	ToolQueryNPCCard:           queryNPCCardAction{},
+	ToolGrepStory:              grepStoryAction{},
+	ToolReadStory:              readStoryAction{},
 	ToolUpdateNPCCard:          updateNPCCardAction{},
 	ToolWrite:                  writeAction{},
 	ToolAdvanceTime:            advanceTimeAction{},

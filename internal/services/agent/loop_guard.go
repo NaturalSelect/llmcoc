@@ -35,6 +35,8 @@ var guardCacheable = map[ToolCallType]bool{
 	ToolQueryClues:     true,
 	ToolQueryCharacter: true,
 	ToolQueryNPCCard:   true,
+	ToolGrepStory:      true,
+	ToolReadStory:      true,
 	ToolCheckRule:      true,
 }
 
@@ -43,6 +45,8 @@ var guardSigWithResult = map[ToolCallType]bool{
 	ToolQueryClues:       true,
 	ToolQueryCharacter:   true,
 	ToolQueryNPCCard:     true,
+	ToolGrepStory:        true,
+	ToolReadStory:        true,
 	ToolCheckRule:        true,
 	ToolActNPC:           true,
 	ToolConsultDramaturg: true,

@@ -883,6 +883,29 @@ func TestBuildKPHeadScenarioNPCRenderingIsDeterministic(t *testing.T) {
 	}
 }
 
+// TestBuildKPHeadInjectsIntro 验证模组的 intro 会写进 <scenario>，为空时不出现 <intro> 标签。
+func TestBuildKPHeadInjectsIntro(t *testing.T) {
+	build := func(intro string) string {
+		gctx := GameContext{
+			Session: models.GameSession{
+				Scenario: models.Scenario{
+					Name:    "测试剧本",
+					Content: models.JSONField[models.ScenarioContent]{Data: models.ScenarioContent{Intro: intro}},
+				},
+			},
+		}
+		return buildKPHead(gctx, "system")[1].Content
+	}
+
+	got := build("  1924年9月3日傍晚六点，你们抵达镇图书馆一层大厅。  ")
+	if !strings.Contains(got, "<intro>1924年9月3日傍晚六点，你们抵达镇图书馆一层大厅。</intro>") {
+		t.Errorf("scenario消息应包含去掉首尾空白的intro,got %q", got)
+	}
+	if got := build("   "); strings.Contains(got, "<intro>") {
+		t.Errorf("intro为空白时不应注入<intro>,got %q", got)
+	}
+}
+
 // TestKPSystemPromptCarriesNarrativeConsistencyRules 验证叙事一致性相关的规则写进了 Director 提示词：
 // 失败不被写成半成功、急救每处伤一次、坠落要掷伤害、每次检定都交代、未登场人物不得提及、战斗耗时要推进。
 func TestKPSystemPromptCarriesNarrativeConsistencyRules(t *testing.T) {
