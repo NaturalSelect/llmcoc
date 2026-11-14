@@ -3,6 +3,7 @@ export const ADMIN_TABS = [
   { key: 'providers', label: 'LLM 提供商' },
   { key: 'agents', label: 'Agent 配置' },
   { key: 'scenarios', label: '模组管理' },
+  { key: 'online', label: '线上模组' },
   { key: 'shop', label: '商城管理' },
   { key: 'announcements', label: '公告管理' },
   { key: 'settings', label: '系统设置' },

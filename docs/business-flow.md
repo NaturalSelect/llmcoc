@@ -61,8 +61,11 @@ LLM-COC 是一个房间制 COC7 在线跑团服务。核心用户是玩家和管
 3. 管理员可以调用 AI 生成模组，后端异步运行 Scripter 团队，生成完成后写入数据库。
 4. 模组内容包含背景、开场、地图、场景、NPC、线索、胜利条件、失败条件和奖励。
 5. 前端跑团大厅和创建房间流程读取可用模组列表。
+6. 管理员可以在后台「线上模组」浏览 cnmods 的公开列表，点「下载」由服务端解析蓝奏云分享页、下载压缩包、提取 docx / pdf / txt / md 正文并存档。自动下载失败（例如被 CDN 挑战拦截）时，条目标记为失败，管理员在自己的浏览器里下载后上传同一条记录，走同一套提取流程。rar / 7z 不支持。
+7. 提取时会对正文做「禁止投喂 AI」类声明的正则筛查。命中的文档默认不能编译，管理员读过原文后可以放行，放行人和时间会记录；重新下载或重新上传会清空放行。编译由管理员手动触发，复用「上传故事编译模组」的 SSE 流水线，入库后回填线上模组的 `scenario_id`，作者写成 cnmods 上的原作者。
+8. cnmods 上的模组多数不可商用、禁止二改二传，只用于本站跑团，不要对外分发。编译出的模组默认对所有玩家可见，站点对外开放时由管理员自行把握。
 
-主要实现位于 `internal/handlers/scenario.go`、`internal/models/scenario_module.go` 和 `internal/services/agent/scripter*.go`。
+主要实现位于 `internal/handlers/scenario.go`、`internal/models/scenario_module.go` 和 `internal/services/agent/scripter*.go`；线上模组见 `internal/handlers/online_module.go`、`internal/models/online_module.go` 和 `internal/services/onlinemod`。
 
 ## 房间与跑团流程
 

@@ -189,6 +189,7 @@ func main() {
 		`^/api/sessions/[^/]+/ws$`,
 		`^/api/scenarios/generate$`,
 		`^/api/scenarios/compile-story$`,
+		`^/api/admin/online-modules/[^/]+/compile$`,
 	})))
 
 	// ─── API routes ───────────────────────────────────────────────────────────
@@ -302,6 +303,16 @@ func main() {
 		admin.GET("/users/:id/characters", handlers.AdminListUserCharacters)
 		admin.GET("/scenarios", handlers.AdminListScenarios)
 		admin.GET("/scenarios/:id/generation-log", handlers.AdminGetScenarioGenerationLog)
+		// Online modules (cnmods)
+		admin.GET("/online-modules/browse", handlers.OnlineModuleBrowse)
+		admin.GET("/online-modules", handlers.OnlineModuleList)
+		admin.POST("/online-modules/download", handlers.OnlineModuleDownload)
+		admin.GET("/online-modules/:id", handlers.OnlineModuleGet)
+		admin.GET("/online-modules/:id/documents/:docId", handlers.OnlineModuleDocument)
+		admin.POST("/online-modules/:id/archive", handlers.OnlineModuleUploadArchive)
+		admin.POST("/online-modules/:id/license-override", handlers.OnlineModuleLicenseOverride)
+		admin.POST("/online-modules/:id/compile", handlers.OnlineModuleCompile)
+		admin.DELETE("/online-modules/:id", handlers.OnlineModuleDelete)
 		admin.POST("/recharge", handlers.AdminRechargeCoins)
 		admin.PUT("/users/:id/role", handlers.AdminSetRole)
 		admin.GET("/recharges", handlers.AdminGetRechargeHistory)

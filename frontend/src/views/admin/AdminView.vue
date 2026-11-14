@@ -15,6 +15,7 @@ const panels: Record<AdminTabKey, ReturnType<typeof defineAsyncComponent>> = {
   providers: defineAsyncComponent(() => import('./ProvidersTab.vue')),
   agents: defineAsyncComponent(() => import('./AgentsTab.vue')),
   scenarios: defineAsyncComponent(() => import('./ScenariosTab.vue')),
+  online: defineAsyncComponent(() => import('./OnlineModulesTab.vue')),
   shop: defineAsyncComponent(() => import('./ShopTab.vue')),
   announcements: defineAsyncComponent(() => import('./AnnouncementsTab.vue')),
   settings: defineAsyncComponent(() => import('./SettingsTab.vue')),

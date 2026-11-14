@@ -376,6 +376,15 @@ func CompileStoryByUpload(c *gin.Context) {
 		return
 	}
 
+	streamCompileStory(c, agent.CompileStoryRequest{
+		StoryDocument: req.StoryDocument,
+		Name:          req.Name,
+	}, nil, nil)
+}
+
+// streamCompileStory 设置 SSE 头后在后台跑编译流水线并入库，客户端断开后照常跑完。
+// prepare 在入库前调用，可改写即将入库的模组；after 在入库成功、发出 done 事件之前调用。两者都可为 nil。
+func streamCompileStory(c *gin.Context, req agent.CompileStoryRequest, prepare func(*models.Scenario), after func(*models.Scenario)) {
 	setChatSSEHeaders(c)
 
 	events := make(chan scenarioGenEvent, 128)
@@ -385,10 +394,7 @@ func CompileStoryByUpload(c *gin.Context) {
 			events <- scenarioGenEvent{name: "progress", data: gin.H{"stage": stage, "status": status, "detail": detail}}
 		}
 
-		gen, err := agent.RunCompileStoryWithProgress(context.Background(), agent.CompileStoryRequest{
-			StoryDocument: req.StoryDocument,
-			Name:          req.Name,
-		}, progress)
+		gen, err := agent.RunCompileStoryWithProgress(context.Background(), req, progress)
 		if err != nil {
 			scenarioLog.Error("compile story upload failed", "err", err)
 			msg := "模组编译失败: " + err.Error()
@@ -420,6 +426,9 @@ func CompileStoryByUpload(c *gin.Context) {
 		if scenario.Difficulty == "" {
 			scenario.Difficulty = "normal"
 		}
+		if prepare != nil {
+			prepare(&scenario)
+		}
 
 		if err := models.DB.Create(&scenario).Error; err != nil {
 			scenarioLog.Error("save compiled scenario failed", "err", err)
@@ -439,6 +448,9 @@ func CompileStoryByUpload(c *gin.Context) {
 		}
 		if err := models.DB.Create(&generationLog).Error; err != nil {
 			scenarioLog.Error("save scenario generation log failed", "scenario_id", scenario.ID, "err", err)
+		}
+		if after != nil {
+			after(&scenario)
 		}
 
 		events <- scenarioGenEvent{name: "done", data: gin.H{"index": 1, "scenario_id": scenario.ID, "name": scenario.Name}}
