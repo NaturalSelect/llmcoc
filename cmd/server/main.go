@@ -55,6 +55,8 @@ func main() {
 
 	// NOTE: 重启后内存里的 Writer 队列已经丢失，遗留的 pending 正文永远写不完，会卡住 Director 的正文投递。
 	handlers.FailOrphanWriters()
+	// NOTE: 同理，上次进程退出时还在跑的线上模组下载和提取任务已经不存在，要把它们从「进行中」里放出来。
+	handlers.FailOrphanOnlineTasks()
 
 	// NOTE: 立绘目录若落在配图目录之内，14 天清理会递归删掉付费生成的立绘，所以直接拒绝启动。
 	if nested, err := imagestore.PortraitDirNested(); err != nil {
@@ -197,6 +199,7 @@ func main() {
 		`^/api/scenarios/generate$`,
 		`^/api/scenarios/compile-story$`,
 		`^/api/admin/online-modules/[^/]+/compile$`,
+		`^/api/admin/online-modules/ws$`,
 	})))
 
 	// ─── API routes ───────────────────────────────────────────────────────────
@@ -312,6 +315,7 @@ func main() {
 		admin.GET("/scenarios/:id/generation-log", handlers.AdminGetScenarioGenerationLog)
 		// Online modules (cnmods)
 		admin.GET("/online-modules/browse", handlers.OnlineModuleBrowse)
+		admin.GET("/online-modules/ws", handlers.OnlineModuleWS)
 		admin.GET("/online-modules", handlers.OnlineModuleList)
 		admin.POST("/online-modules/download", handlers.OnlineModuleDownload)
 		admin.GET("/online-modules/:id", handlers.OnlineModuleGet)
@@ -401,6 +405,8 @@ func main() {
 		}
 		// NOTE: 周期跑在后台 goroutine 里，Shutdown 不会等它们；要先取消并等它们落库尾部，再保存缓存和统计。
 		handlers.StopAllFloors()
+		// NOTE: 线上模组任务同样跑在后台协程里：取消它们、等它们把状态写完，并断开管理员的推送连接。
+		handlers.StopOnlineTasks(10 * time.Second)
 		if stopStatsPersistence != nil {
 			stopStatsPersistence()
 		}

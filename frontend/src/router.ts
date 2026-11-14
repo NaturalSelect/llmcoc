@@ -8,6 +8,8 @@ export const routes = [
   { path: '/sessions', name: 'sessions', component: () => import('@/views/SessionsView.vue') },
   { path: '/sessions/:id(\\d+)', name: 'game', component: () => import('@/views/GameView.vue'), meta: { fullHeight: true } },
   { path: '/shop', name: 'shop', component: () => import('@/views/ShopView.vue') },
+  // NOTE: 必须声明在 /admin/:tab? 之前，否则 online-tasks 会被当成 tab 参数吞掉
+  { path: '/admin/online-tasks', name: 'admin-online-tasks', component: () => import('@/views/admin/OnlineTasksView.vue'), meta: { admin: true } },
   { path: '/admin/:tab?', name: 'admin', component: () => import('@/views/admin/AdminView.vue'), meta: { admin: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

@@ -15,6 +15,9 @@ import SectionHeading from '@/components/base/SectionHeading.vue'
 import Skeleton from '@/components/base/Skeleton.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import { useUiStore } from '@/stores/ui'
+import { useOnlineTasksStore } from '@/stores/onlineTasks'
+import OnlineTaskProgress from './OnlineTaskProgress.vue'
+import { useNow } from './useNow'
 import {
   DOWNLOAD_FAILED_HINT,
   PREVIEW_RUNES,
@@ -39,6 +42,7 @@ const BASE = '/api/admin/online-modules'
 const props = defineProps<{ open: boolean; moduleId: number | null }>()
 const emit = defineEmits<{ close: []; changed: [module: OnlineModule] }>()
 const ui = useUiStore()
+const tasks = useOnlineTasksStore()
 
 const detail = ref<OnlineModuleDetail | null>(null)
 const loading = ref(false)
@@ -73,6 +77,9 @@ const opinion = computed(() => opinionText(mod.value?.meta?.opinion))
 const metaLine = computed(() => moduleMetaLine(mod.value?.meta))
 const hits = computed(() => selected.value?.license_hits ?? [])
 const overridden = computed(() => mod.value?.license_override_at != null)
+// NOTE: 后台任务（下载或上传后的提取）进行中：此时不能再上传，耗时靠 now 每秒刷新（只在任务进行时才有定时器）
+const downloading = computed(() => mod.value?.status === 'downloading')
+const now = useNow(downloading)
 const showOverride = computed(() => mod.value?.status === 'extracted' && hits.value.length > 0 && !overridden.value)
 
 // 字数落在「按 3 字节估算会超、按字数不会超」的区间时，必须看到全文才能确定是否超过 500KB
@@ -233,7 +240,8 @@ async function override() {
   }
 }
 
-// 自动下载失败后的兜底：管理员手动下载后上传，服务端走同一套提取流程，成功后返回与详情相同的结构
+// NOTE: 自动下载失败后的兜底：管理员手动下载后上传。服务端校验通过就返回 202 和模组记录，提取在后台跑，
+// 进度和结果经 WebSocket 推送，所以这里不能当详情用，等任务结束再重新加载详情
 async function upload() {
   const m = mod.value
   if (!m || uploading.value) return
@@ -256,17 +264,45 @@ async function upload() {
       ui.toast(data?.error || `上传失败（HTTP ${status}）`, 'error')
       return
     }
-    const next = data as OnlineModuleDetail
-    if (isCurrent(m.id)) applyDetail(next, false)
+    const next = data as OnlineModule
     if (fileInput.value) fileInput.value.value = ''
-    emit('changed', next.module)
-    ui.toast('已上传并提取正文')
+    // NOTE: 任务很快时，结束帧可能先于 202 响应到达；此时 store 里已经是更新的非 downloading 状态，
+    // 再套用 202 里的 downloading 会让弹窗永远停在「处理中」，所以直接按已结束处理
+    const latest = tasks.modules[m.id]
+    if (latest && latest.status !== 'downloading' && Date.parse(latest.updated_at) >= Date.parse(next.updated_at)) {
+      void reloadAfterSettle({ ...latest })
+    } else if (isCurrent(m.id) && detail.value) {
+      detail.value.module = next
+    }
+    emit('changed', next)
+    ui.toast('已开始提取，完成后会通知你')
   } catch (e) {
     ui.toast(errorMessage(e), 'error')
   } finally {
     uploading.value = false
   }
 }
+
+// NOTE: 后台任务结束后重新加载详情（文档已被替换），保留选中项；加载失败时至少把模组状态更新到最新
+async function reloadAfterSettle(module: OnlineModule) {
+  try {
+    await loadDetail(module.id, true)
+  } catch (e) {
+    ui.toast(errorMessage(e), 'error')
+    if (isCurrent(module.id) && detail.value) detail.value.module = module
+  }
+  if (isCurrent(module.id) && detail.value) emit('changed', detail.value.module)
+}
+
+// NOTE: 结束判断用弹窗自己当前持有的状态，不用 store 的 settled：上传返回 202 时弹窗已经拿到 downloading 状态，
+// 即使 store 没见过中间帧（任务秒结束），也能识别「离开 downloading」并重新加载。
+// 存入前浅拷贝：编译完成后会就地改 scenario_id，不能连带改到 store 里共享的对象
+const offChange = tasks.onChange(({ module }) => {
+  const cur = detail.value?.module
+  if (!props.open || !detail.value || !cur || cur.id !== module.id) return
+  if (cur.status === 'downloading' && module.status !== 'downloading') void reloadAfterSettle({ ...module })
+  else detail.value.module = { ...module }
+})
 
 async function refreshAfterCompile(id: number, scenarioId: number) {
   try {
@@ -280,7 +316,10 @@ async function refreshAfterCompile(id: number, scenarioId: number) {
 }
 
 // 离开弹窗即中断在途编译流；后端会继续编译并入库，只是这里不再接收进度
-onBeforeUnmount(() => controller?.abort())
+onBeforeUnmount(() => {
+  offChange()
+  controller?.abort()
+})
 
 async function compile() {
   const m = mod.value
@@ -377,7 +416,10 @@ async function compile() {
           </p>
           <p v-if="mod.error" class="mt-1 text-xs break-words text-fg-muted">{{ mod.error }}</p>
         </div>
-        <p v-else-if="mod.status === 'downloading'" class="text-sm text-fg-muted">正在下载中，稍后点「刷新」查看结果。</p>
+        <OnlineTaskProgress v-else-if="mod.status === 'downloading'" :module="mod" :now="now" />
+        <p v-if="mod.error && mod.status !== 'failed'" class="text-sm break-words text-danger" role="alert">
+          最近一次任务失败：{{ mod.error }}
+        </p>
       </section>
 
       <section v-if="docs.length > 0" class="space-y-3">
@@ -469,7 +511,7 @@ async function compile() {
             aria-label="选择要上传的压缩包"
             class="block min-w-0 flex-1 rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-fg file:mr-3 file:rounded-lg file:border-0 file:bg-surface-3 file:px-2 file:py-1 file:text-xs file:text-fg"
           />
-          <BaseButton variant="secondary" :loading="uploading" :disabled="compiling" @click="upload">
+          <BaseButton variant="secondary" :loading="uploading" :disabled="compiling || downloading" @click="upload">
             <Upload v-if="!uploading" :size="16" :stroke-width="1.75" />
             {{ uploading ? '上传中…' : '上传' }}
           </BaseButton>

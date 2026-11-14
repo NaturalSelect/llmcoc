@@ -1,6 +1,7 @@
 import type {
   BrowseItem,
   CnmodsItem,
+  OnlineModule,
   OnlineModuleDocument,
   OnlineModuleMeta,
   OnlineStatus,
@@ -259,6 +260,53 @@ export function formatTime(iso: string | null | undefined): string {
   if (!iso) return ''
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('zh-CN', { hour12: false })
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  resolve: '解析分享页',
+  download: '下载压缩包',
+  extract: '提取正文',
+  ocr: 'OCR 识别',
+}
+
+// NOTE: 未知阶段（后端新增了阶段而前端还没跟上）原样显示，不吞掉
+export function stageLabel(stage: string | null | undefined): string {
+  if (!stage) return ''
+  return STAGE_LABELS[stage] ?? stage
+}
+
+// NOTE: 2分05秒；不足一分钟只写秒；负数和非法值按 0 处理（本机时钟比服务器慢时 now - started 可能为负）
+export function formatElapsed(ms: number): string {
+  const total = Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : 0
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return m > 0 ? `${m}分${String(s).padStart(2, '0')}秒` : `${s}秒`
+}
+
+function timeOf(iso: string | null | undefined): number {
+  if (!iso) return 0
+  const t = new Date(iso).getTime()
+  return Number.isNaN(t) ? 0 : t
+}
+
+// NOTE: 任务已运行多久；没有开始时间（或时间非法）返回 null，调用方不显示耗时
+export function taskElapsedMs(m: Pick<OnlineModule, 'task_started_at'>, now: number): number | null {
+  const started = timeOf(m.task_started_at)
+  return started > 0 ? Math.max(0, now - started) : null
+}
+
+// NOTE: 下载中的排最前（开始得晚的在前），其余按更新时间倒序；id 大的在前兜底，保证排序稳定
+export function sortTaskModules<T extends Pick<OnlineModule, 'id' | 'status' | 'task_started_at' | 'updated_at'>>(list: readonly T[]): T[] {
+  return [...list].sort((a, b) => {
+    const ad = a.status === 'downloading'
+    const bd = b.status === 'downloading'
+    if (ad !== bd) return ad ? -1 : 1
+    if (ad) {
+      const diff = timeOf(b.task_started_at) - timeOf(a.task_started_at)
+      if (diff !== 0) return diff
+    }
+    return timeOf(b.updated_at) - timeOf(a.updated_at) || b.id - a.id
+  })
 }
 
 export const DOWNLOAD_FAILED_HINT = '自动下载失败，请打开分享页手动下载后上传'

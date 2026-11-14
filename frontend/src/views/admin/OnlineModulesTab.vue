@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Info } from '@lucide/vue'
-import { onMounted, ref, watch } from 'vue'
+import { Info, ListChecks } from '@lucide/vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { OnlineModule } from '@/api/adminTypesOnline'
 import { api } from '@/api/client'
 import OnlineBrowsePanel from '@/components/admin/online/OnlineBrowsePanel.vue'
@@ -9,7 +10,9 @@ import OnlineModuleList from '@/components/admin/online/OnlineModuleList.vue'
 import { RIGHTS_NOTICE } from '@/components/admin/online/onlineModules'
 import { errorMessage, usePagedList } from '@/components/admin/scenarios/pagedList'
 import { useToastRun } from '@/components/admin/scenarios/useToastRun'
+import BaseButton from '@/components/base/BaseButton.vue'
 import TabBar from '@/components/base/TabBar.vue'
+import { useOnlineTasksStore } from '@/stores/onlineTasks'
 import { useUiStore } from '@/stores/ui'
 
 const BASE = '/api/admin/online-modules'
@@ -19,6 +22,8 @@ const SECTIONS = [
 ]
 
 const ui = useUiStore()
+const router = useRouter()
+const tasks = useOnlineTasksStore()
 const run = useToastRun()
 const list = usePagedList<OnlineModule>(BASE)
 
@@ -27,7 +32,20 @@ const browse = ref<InstanceType<typeof OnlineBrowsePanel> | null>(null)
 const detailId = ref<number | null>(null)
 const detailOpen = ref(false)
 
-onMounted(() => run(() => list.load()))
+// NOTE: 下载和上传都在后台跑，结果经 WebSocket 推送：每次变化同步浏览区的状态标签，任务结束时再刷新本地列表
+const offChange = tasks.onChange(({ module, settled }) => {
+  browse.value?.applyModule(module)
+  if (settled) void run(() => list.load(list.page.value))
+})
+
+onMounted(() => {
+  tasks.acquire()
+  void run(() => list.load())
+})
+onBeforeUnmount(() => {
+  offChange()
+  tasks.release()
+})
 
 // 浏览区用 v-show 保留搜索词和页码；本地列表每次切回来都刷新，才能看到刚下载的条目
 watch(section, (s) => {
@@ -66,8 +84,13 @@ async function remove(m: OnlineModule) {
       <p class="text-sm text-fg">{{ RIGHTS_NOTICE }}</p>
     </div>
 
-    <TabBar v-model="section" :tabs="SECTIONS" />
-
+    <div class="flex items-end gap-3">
+      <TabBar v-model="section" :tabs="SECTIONS" class="min-w-0 flex-1" />
+      <BaseButton variant="secondary" size="sm" @click="router.push({ name: 'admin-online-tasks' })">
+        <ListChecks :size="16" :stroke-width="1.75" />
+        任务进度
+      </BaseButton>
+    </div>
     <OnlineBrowsePanel v-show="section === 'browse'" ref="browse" @open="openDetail" />
     <OnlineModuleList
       v-if="section === 'local'"

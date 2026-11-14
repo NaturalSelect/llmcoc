@@ -3,6 +3,12 @@
 
 export type OnlineStatus = 'pending' | 'downloading' | 'extracted' | 'failed'
 
+// NOTE: 任务进度 WebSocket 的帧：{type, data}，只有服务端 → 客户端一个方向
+export type OnlineTaskFrame =
+  | { type: 'snapshot'; data: { modules: OnlineModule[] } }
+  | { type: 'module'; data: OnlineModule }
+  | { type: 'deleted'; data: { id: number } }
+
 // 来源站条目；url 是蓝奏云分享页，opinion 是 HTML，只能当纯文本显示
 export interface CnmodsItem {
   keyId: string
@@ -61,7 +67,13 @@ export interface OnlineModule {
   share_url: string
   meta: OnlineModuleMeta
   status: OnlineStatus
+  // NOTE: error 非空即「最近一次后台任务失败」，与 status 无关：上传失败会恢复原状态，所以 extracted 也可能带 error
   error: string
+  // stage：'' | 'resolve' | 'download' | 'extract' | 'ocr'；stage_note 是阶段备注（如正在 OCR 的文件名）
+  stage: string
+  stage_note: string
+  // status 为 downloading 时才有值
+  task_started_at: string | null
   archive_name: string
   archive_size: number
   archive_sha256: string

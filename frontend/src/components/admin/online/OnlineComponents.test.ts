@@ -3,7 +3,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BrowseItem, OnlineModule, OnlineModuleDetail, OnlineModuleDocument } from '@/api/adminTypesOnline'
+import { useOnlineTasksStore } from '@/stores/onlineTasks'
 import { useUiStore } from '@/stores/ui'
+import { FakeWebSocket } from '@/testing/fakeWebSocket'
 import OnlineBrowsePanel from './OnlineBrowsePanel.vue'
 import OnlineModuleDetailModal from './OnlineModuleDetailModal.vue'
 
@@ -40,6 +42,9 @@ const module_ = (over: Partial<OnlineModule> = {}): OnlineModule => ({
   meta: { module_age: '现代', min_amount: 2, max_amount: 4, opinion: '<p>好玩&nbsp;的团</p>' },
   status: 'extracted',
   error: '',
+  stage: '',
+  stage_note: '',
+  task_started_at: null,
   archive_name: 'a.zip',
   archive_size: 2048,
   archive_sha256: 'deadbeef',
@@ -95,6 +100,13 @@ const browseItem = (over: Partial<BrowseItem> = {}): BrowseItem => ({
 const buttons = () => Array.from(document.body.querySelectorAll('button'))
 const buttonByText = (text: string) => buttons().find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined
 
+// 弹窗和面板依赖的任务进度来自 store；测试里用假 WebSocket 推帧，走和生产一样的路径
+function connectTasks() {
+  useOnlineTasksStore().acquire()
+  FakeWebSocket.last.recv({ type: 'snapshot', data: { modules: [] } })
+}
+const pushModule = (m: OnlineModule) => FakeWebSocket.last.recv({ type: 'module', data: m })
+
 beforeEach(() => {
   setActivePinia(createPinia())
   localStorage.setItem('coc_token', 't')
@@ -103,9 +115,11 @@ beforeEach(() => {
   routes = {}
   vi.unstubAllGlobals()
   stubFetch()
+  FakeWebSocket.install()
 })
 
 afterEach(() => {
+  useOnlineTasksStore().release()
   vi.unstubAllGlobals()
   localStorage.clear()
 })
@@ -318,12 +332,12 @@ describe('OnlineModuleDetailModal', () => {
     w.unmount()
   })
 
-  test('上传兜底：multipart 字段名为 file，成功后用返回的详情刷新', async () => {
+  test('上传兜底：multipart 字段名为 file，返回 202 + 模组记录，只提示已开始，不当详情套用', async () => {
     routes['GET /api/admin/online-modules/7'] = detail({ status: 'failed', error: 'x' }, [])
-    const uploaded = detail({}, [doc({ id: 21, path: 'new.docx' })])
+    const accepted = module_({ status: 'downloading', stage: 'extract', task_started_at: '2026-11-14T09:00:00Z' })
     const post = vi.fn(async (_path: string, init?: RequestInit) => {
       calls.push({ method: 'POST', path: _path, body: init?.body })
-      return { ok: true, status: 200, json: async () => uploaded } as unknown as Response
+      return { ok: true, status: 202, json: async () => accepted } as unknown as Response
     })
     const base = globalThis.fetch as unknown as (path: string, init?: RequestInit) => Promise<Response>
     vi.stubGlobal('fetch', (path: string, init?: RequestInit) => (path.endsWith('/archive') ? post(path, init) : base(path, init)))
@@ -338,9 +352,122 @@ describe('OnlineModuleDetailModal', () => {
     const sent = calls.find((c) => c.path === '/api/admin/online-modules/7/archive')!.body as FormData
     expect(sent).toBeInstanceOf(FormData)
     expect((sent.get('file') as File).name).toBe('mod.zip')
-    expect(document.body.textContent).toContain('new.docx')
-    expect(w.emitted('changed')).toHaveLength(1)
+    expect(useUiStore().toasts.map((t) => [t.message, t.type])).toStrictEqual([['已开始提取，完成后会通知你', 'success']])
+    expect(w.emitted('changed')).toStrictEqual([[accepted]])
+    // 弹窗改为显示进度，而不是把 202 的响应当详情渲染；上传期间不再发详情请求
+    expect(calls.filter((c) => c.method === 'GET' && c.path === '/api/admin/online-modules/7')).toHaveLength(1)
+    expect(document.body.querySelector('[data-testid="task-progress"]')?.textContent).toContain('提取正文')
+    expect(document.body.textContent).not.toContain('自动下载失败，请打开分享页')
     w.unmount()
+  })
+
+  test('下载中：显示阶段、备注和已用时，禁用上传；原来的「点刷新」文案不再出现', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(new Date('2026-11-14T09:02:05Z'))
+    routes['GET /api/admin/online-modules/7'] = detail(
+      { status: 'downloading', stage: 'ocr', stage_note: 'scan.pdf', task_started_at: '2026-11-14T09:00:00Z' },
+      [],
+    )
+    const w = mountModal()
+    await flushPromises()
+
+    const progress = document.body.querySelector('[data-testid="task-progress"]')!
+    expect(progress.textContent).toContain('OCR 识别')
+    expect(progress.textContent).toContain('scan.pdf')
+    expect(progress.textContent).toContain('2分05秒')
+    expect(document.body.textContent).not.toContain('稍后点')
+    expect(buttonByText('上传')!.disabled).toBe(true)
+
+    vi.advanceTimersByTime(1000)
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="task-progress"]')!.textContent).toContain('2分06秒')
+    w.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
+  test('下载中：收到该模组的 WebSocket 更新后阶段文字随之变化；结束后重新加载详情并通知外层', async () => {
+    let current = detail({ status: 'downloading', stage: 'download', task_started_at: '2026-11-14T09:00:00Z' }, [])
+    routes['GET /api/admin/online-modules/7'] = () => current
+    connectTasks()
+    const w = mountModal()
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="task-progress"]')!.textContent).toContain('下载压缩包')
+
+    pushModule(module_({ status: 'downloading', stage: 'extract', task_started_at: '2026-11-14T09:00:00Z' }))
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="task-progress"]')!.textContent).toContain('提取正文')
+    // 别的模组的更新不影响当前弹窗
+    pushModule(module_({ id: 99, status: 'failed', error: '别人的' }))
+    await flushPromises()
+    expect(document.body.textContent).not.toContain('别人的')
+
+    const before = calls.filter((c) => c.path === '/api/admin/online-modules/7').length
+    current = detail({ status: 'extracted', archive_name: 'done.zip' }, [doc({ id: 31, path: 'done.docx' })])
+    pushModule(current.module)
+    await flushPromises()
+
+    expect(calls.filter((c) => c.path === '/api/admin/online-modules/7').length).toBe(before + 1)
+    expect(document.body.querySelector('[data-testid="task-progress"]')).toBeNull()
+    expect(document.body.textContent).toContain('done.docx')
+    expect(w.emitted('changed')).toHaveLength(1)
+    expect(buttonByText('上传')!.disabled).toBe(false)
+    w.unmount()
+  })
+
+  test('结束时保留已选文档（keepSelection）', async () => {
+    // 重新上传期间详情里还是旧文档，状态是下载中
+    let current = detail({ status: 'downloading', stage: 'extract' }, [
+      doc({ id: 1, path: 'a.docx', runes: 9000 }),
+      doc({ id: 2, path: 'b.docx', runes: 100, candidate: false }),
+    ])
+    routes['GET /api/admin/online-modules/7'] = () => current
+    connectTasks()
+    const w = mountModal()
+    await flushPromises()
+    const rows = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>('button[aria-pressed]'))
+    rows().find((b) => b.textContent?.includes('b.docx'))!.click()
+    await flushPromises()
+
+    current = detail({ status: 'extracted' }, current.documents)
+    pushModule(current.module)
+    await flushPromises()
+    expect(rows().find((b) => b.getAttribute('aria-pressed') === 'true')!.textContent).toContain('b.docx')
+    w.unmount()
+  })
+
+  test('error 非空且状态不是 failed：显示「最近一次任务失败」；failed 状态走原来的手动下载提示，不重复显示', async () => {
+    routes['GET /api/admin/online-modules/7'] = detail({ status: 'extracted', error: '压缩包损坏' })
+    const w = mountModal()
+    await flushPromises()
+    expect(document.body.textContent).toContain('最近一次任务失败：压缩包损坏')
+    expect(buttonByText('编译')!.disabled).toBe(false)
+    w.unmount()
+
+    routes['GET /api/admin/online-modules/7'] = detail({ status: 'failed', error: '被拦截' }, [])
+    const w2 = mountModal()
+    await flushPromises()
+    expect(document.body.textContent).not.toContain('最近一次任务失败')
+    expect(document.body.textContent).toContain('被拦截')
+    w2.unmount()
+
+    routes['GET /api/admin/online-modules/7'] = detail({ status: 'extracted', error: '' })
+    const w3 = mountModal()
+    await flushPromises()
+    expect(document.body.textContent).not.toContain('最近一次任务失败')
+    w3.unmount()
+  })
+
+  test('卸载后不再响应 store 的变化', async () => {
+    routes['GET /api/admin/online-modules/7'] = detail({ status: 'downloading', stage: 'download' }, [])
+    connectTasks()
+    const w = mountModal()
+    await flushPromises()
+    const n = calls.length
+    w.unmount()
+    pushModule(module_({ status: 'extracted' }))
+    await flushPromises()
+    expect(calls.length).toBe(n)
   })
 
   test('上传：扩展名不合法时提示且不发请求', async () => {
@@ -358,9 +485,9 @@ describe('OnlineModuleDetailModal', () => {
 })
 
 describe('OnlineBrowsePanel', () => {
-  test('下载失败（HTTP 200 + status=failed）：提示手动下载并给出分享页链接', async () => {
+  test('下载：202 立即返回，提示「已开始下载」并把行标成下载中，不再有「最长约 3 分钟」的提示', async () => {
     routes['GET /api/admin/online-modules/browse'] = { items: [browseItem()], page: 1, total_pages: 3, total_elements: 25 }
-    routes['POST /api/admin/online-modules/download'] = module_({ status: 'failed', error: '下载被蓝奏云拦截' })
+    routes['POST /api/admin/online-modules/download'] = module_({ status: 'downloading', stage: 'resolve', task_started_at: '2026-11-14T09:00:00Z' })
     const w = mount(OnlineBrowsePanel, { attachTo: document.body })
     await flushPromises()
 
@@ -375,6 +502,31 @@ describe('OnlineBrowsePanel', () => {
     const sent = calls.find((c) => c.path === '/api/admin/online-modules/download')!.body as Record<string, unknown>
     expect(sent.keyId).toBe('1850')
     expect('local' in sent).toBe(false)
+    expect(useUiStore().toasts.map((t) => [t.message, t.type])).toStrictEqual([['已开始下载：雨夜档案，可在「任务进度」页查看', 'success']])
+    // 请求已结束，但条目仍是 downloading：按钮保持「下载中…」并禁用，防止重复下载
+    expect(buttonByText('下载中…')!.disabled).toBe(true)
+    expect(document.body.textContent).toContain('下载中')
+    expect(document.body.textContent).not.toContain('最长约 3 分钟')
+    expect(document.body.querySelector('[role="alert"]')).toBeNull()
+    w.unmount()
+  })
+
+  test('下载结果经 WebSocket 到达：applyModule 收到 failed 时显示失败提示和分享页链接；之后重新下载会清掉提示', async () => {
+    routes['GET /api/admin/online-modules/browse'] = {
+      items: [browseItem({ local: { id: 7, status: 'downloading', scenario_id: null } })],
+      page: 1,
+      total_pages: 1,
+      total_elements: 1,
+    }
+    const w = mount(OnlineBrowsePanel, { attachTo: document.body })
+    await flushPromises()
+    expect(buttonByText('下载中…')!.disabled).toBe(true)
+    expect(document.body.querySelector('[role="alert"]')).toBeNull()
+
+    const panel = w.vm as unknown as { applyModule: (m: OnlineModule) => void }
+    panel.applyModule(module_({ status: 'failed', error: '下载被蓝奏云拦截' }))
+    await flushPromises()
+
     const alert = document.body.querySelector('[role="alert"]')!
     expect(alert.textContent).toContain('自动下载失败，请打开分享页手动下载后上传')
     expect(alert.textContent).toContain('下载被蓝奏云拦截')
@@ -382,11 +534,34 @@ describe('OnlineBrowsePanel', () => {
     expect(link.getAttribute('href')).toBe('https://example.lanzoul.com/abc')
     expect(link.getAttribute('rel')).toContain('noopener')
     expect(document.body.textContent).toContain('失败')
-    expect(useUiStore().toasts.map((t) => [t.message, t.type])).toStrictEqual([['自动下载失败，请打开分享页手动下载后上传', 'error']])
+    expect(buttonByText('重新下载')).toBeDefined()
+
+    // 新一轮任务开始（或上传后恢复为已提取）：失败提示消失
+    panel.applyModule(module_({ status: 'downloading', stage: 'resolve' }))
+    await flushPromises()
+    expect(document.body.querySelector('[role="alert"]')).toBeNull()
     w.unmount()
   })
 
-  test('下载等待期间按钮 loading 且禁用，重复点击只发一次请求', async () => {
+  test('409：已有下载在进行，原样提示后端消息，行状态不变', async () => {
+    routes['GET /api/admin/online-modules/browse'] = { items: [browseItem()], page: 1, total_pages: 1, total_elements: 1 }
+    const base = globalThis.fetch as unknown as (path: string, init?: RequestInit) => Promise<Response>
+    vi.stubGlobal('fetch', (path: string, init?: RequestInit) =>
+      path.endsWith('/download')
+        ? Promise.resolve({ ok: false, status: 409, json: async () => ({ error: '该模组正在下载中' }) } as unknown as Response)
+        : base(path, init),
+    )
+    const w = mount(OnlineBrowsePanel, { attachTo: document.body })
+    await flushPromises()
+    buttonByText('下载')!.click()
+    await flushPromises()
+    expect(useUiStore().toasts.map((t) => [t.message, t.type])).toStrictEqual([['该模组正在下载中', 'error']])
+    // POST 结束后短暂的防重复状态已解除
+    expect(buttonByText('下载')!.disabled).toBe(false)
+    w.unmount()
+  })
+
+  test('POST 在途期间按钮 loading 且禁用，重复点击只发一次请求；请求结束后防重复状态解除', async () => {
     routes['GET /api/admin/online-modules/browse'] = { items: [browseItem()], page: 1, total_pages: 1, total_elements: 1 }
     let finish: (m: OnlineModule) => void = () => {}
     const pending = new Promise<OnlineModule>((resolve) => (finish = resolve))
@@ -394,7 +569,7 @@ describe('OnlineBrowsePanel', () => {
     vi.stubGlobal('fetch', (path: string, init?: RequestInit) => {
       if (path.endsWith('/download')) {
         calls.push({ method: 'POST', path, body: undefined })
-        return pending.then((m) => ({ ok: true, status: 200, json: async () => m }) as unknown as Response)
+        return pending.then((m) => ({ ok: true, status: 202, json: async () => m }) as unknown as Response)
       }
       return base(path, init)
     })
@@ -410,10 +585,16 @@ describe('OnlineBrowsePanel', () => {
     await flushPromises()
     expect(calls.filter((c) => c.path.endsWith('/download'))).toHaveLength(1)
 
-    finish(module_({ status: 'extracted' }))
+    finish(module_({ status: 'downloading', stage: 'resolve' }))
+    await flushPromises()
+    expect(document.body.textContent).toContain('下载中')
+    expect(document.body.querySelector('[role="alert"]')).toBeNull()
+
+    // 之后任务结束（WebSocket 推送）：按钮恢复为不可见（已提取），状态标签更新
+    ;(w.vm as unknown as { applyModule: (m: OnlineModule) => void }).applyModule(module_({ status: 'extracted' }))
     await flushPromises()
     expect(document.body.textContent).toContain('已提取')
-    expect(document.body.querySelector('[role="alert"]')).toBeNull()
+    expect(buttonByText('下载')).toBeUndefined()
     w.unmount()
   })
 

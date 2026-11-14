@@ -37,9 +37,9 @@ const totalPages = ref(1)
 const total = ref(0)
 const loading = ref(false)
 const loadError = ref('')
-// 同一条目下载期间禁止重复点击；下载是同步等待，最长约 3 分钟
+// NOTE: 只防 POST 本身的重复点击（接口立即返回 202）；下载是否还在进行看 item.local.status
 const downloading = reactive(new Set<string>())
-// 本次会话里下载失败的条目：带上后端给出的失败原因
+// NOTE: 下载失败的条目：带上后端给出的失败原因；结果经 WebSocket 到达，由 applyModule 写入
 const failures = reactive<Record<string, OnlineModule>>({})
 
 // 快速翻页时较早发出的请求可能后返回，只采用最后一次的结果
@@ -78,7 +78,10 @@ function search() {
 // 本地条目的状态变化（下载、放行、上传、编译）同步到列表行，不重新请求来源站
 function applyModule(m: OnlineModule): void {
   for (const it of items.value) {
-    if (it.keyId === m.source_key) it.local = { id: m.id, status: m.status, scenario_id: m.scenario_id }
+    if (it.keyId !== m.source_key) continue
+    it.local = { id: m.id, status: m.status, scenario_id: m.scenario_id }
+    if (m.status === 'failed') failures[it.keyId] = m
+    else delete failures[it.keyId]
   }
 }
 
@@ -92,19 +95,13 @@ function applyDeleted(id: number): void {
 }
 
 async function download(item: BrowseItem) {
-  if (downloading.has(item.keyId)) return
+  if (busy(item)) return
   downloading.add(item.keyId)
   delete failures[item.keyId]
   try {
     const m = await api<OnlineModule>('POST', `${BASE}/download`, toCnmodsItem(item))
-    // NOTE: 下载失败时后端仍返回 200，要看 status；失败条目也有本地记录，可以进详情手动上传
     applyModule(m)
-    if (m.status === 'failed') {
-      failures[item.keyId] = m
-      ui.toast(DOWNLOAD_FAILED_HINT, 'error')
-    } else {
-      ui.toast('已下载并提取正文：' + item.title)
-    }
+    ui.toast(`已开始下载：${item.title}，可在「任务进度」页查看`)
   } catch (e) {
     // 409：该条目已有下载在进行，后端消息原样提示
     ui.toast(errorMessage(e), 'error')
@@ -113,8 +110,12 @@ async function download(item: BrowseItem) {
   }
 }
 
+function busy(item: BrowseItem): boolean {
+  return downloading.has(item.keyId) || item.local?.status === 'downloading'
+}
+
 function downloadLabel(item: BrowseItem): string {
-  if (downloading.has(item.keyId) || item.local?.status === 'downloading') return '下载中…'
+  if (busy(item)) return '下载中…'
   return item.local?.status === 'failed' ? '重新下载' : '下载'
 }
 
@@ -152,8 +153,6 @@ defineExpose({ applyModule, applyDeleted, reload: () => load() })
       </template>
     </PagerHeader>
 
-    <p v-if="downloading.size > 0" class="mb-3 text-xs text-fg-subtle">正在下载并提取正文，最长约 3 分钟，请不要重复点击。</p>
-
     <div v-if="loading && items.length === 0" class="space-y-2" aria-busy="true">
       <Skeleton class="h-20" />
       <Skeleton class="h-20" />
@@ -178,13 +177,8 @@ defineExpose({ applyModule, applyDeleted, reload: () => load() })
             <p v-if="opinionText(item.opinion)" class="mt-1 line-clamp-2 text-xs break-words text-fg-muted">{{ opinionText(item.opinion) }}</p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            <BaseButton
-              v-if="item.local?.status !== 'extracted'"
-              size="sm"
-              :loading="downloading.has(item.keyId)"
-              @click="download(item)"
-            >
-              <Download v-if="!downloading.has(item.keyId)" :size="16" :stroke-width="1.75" />
+            <BaseButton v-if="item.local?.status !== 'extracted'" size="sm" :loading="busy(item)" @click="download(item)">
+              <Download v-if="!busy(item)" :size="16" :stroke-width="1.75" />
               {{ downloadLabel(item) }}
             </BaseButton>
             <BaseButton v-if="item.local" variant="ghost" size="sm" @click="emit('open', item.local.id)">

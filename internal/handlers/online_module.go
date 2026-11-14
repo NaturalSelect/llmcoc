@@ -315,19 +315,19 @@ func OnlineModuleDocument(c *gin.Context) {
 }
 
 // claimOnlineModule 用条件 UPDATE 抢占下载状态：已有进行中的任务（且未超时）时返回 false。
-func claimOnlineModule(id uint) (bool, error) {
+// 抢到时同时写入初始阶段和开始时间。
+func claimOnlineModule(id uint, stage, note string) (bool, error) {
 	cutoff := time.Now().Add(-onlineDownloadStaleAfter)
 	res := models.DB.Model(&models.OnlineModule{}).
 		Where("id = ? AND (status <> ? OR updated_at < ?)", id, models.OnlineModuleStatusDownloading, cutoff).
-		Updates(map[string]any{"status": models.OnlineModuleStatusDownloading, "error": ""})
+		Updates(map[string]any{
+			"status":          models.OnlineModuleStatusDownloading,
+			"error":           "",
+			"stage":           stage,
+			"stage_note":      note,
+			"task_started_at": time.Now(),
+		})
 	return res.RowsAffected == 1, res.Error
-}
-
-func setOnlineModuleState(id uint, status, message string) {
-	if err := models.DB.Model(&models.OnlineModule{}).Where("id = ?", id).
-		Updates(map[string]any{"status": status, "error": message}).Error; err != nil {
-		onlineLog.Error("update online module state failed", "id", id, "err", err)
-	}
 }
 
 func onlineFailureMessage(err error) string {
@@ -340,6 +340,8 @@ func onlineFailureMessage(err error) string {
 		return "压缩包里没有可提取的文档（支持 docx、pdf、txt、md）"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "下载超时，请稍后重试或手动下载后上传"
+	case errors.Is(err, context.Canceled), errors.Is(err, errOnlineShuttingDown):
+		return onlineInterruptedMessage
 	default:
 		return "下载或提取失败: " + err.Error()
 	}
@@ -347,11 +349,14 @@ func onlineFailureMessage(err error) string {
 
 // ingestOnlineArchive 提取压缩包正文、做版权筛查，并在一个事务里替换该条目的全部文档。
 // 内容变了，之前的版权放行记录一并清空。配置了 OCR 时，本地抽不出可用文字的 PDF 会被送去识别。
-func ingestOnlineArchive(id uint, name string, data []byte) error {
-	// NOTE: 脱离请求的 ctx：管理员中途关页面不应让识别半途而废，也不应留下半截状态。
-	ctx, cancel := context.WithTimeout(context.Background(), onlineOCRTimeout)
+func ingestOnlineArchive(ctx context.Context, id uint, name string, data []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, onlineOCRTimeout)
 	defer cancel()
-	docs, err := onlinemod.ExtractWithOCR(ctx, data, name, onlineOCR)
+	var ocr onlinemod.OCR
+	if onlineOCR != nil {
+		ocr = stageOCR{inner: onlineOCR, id: id}
+	}
+	docs, err := onlinemod.ExtractWithOCR(ctx, data, name, ocr)
 	if err != nil {
 		return err
 	}
@@ -386,6 +391,9 @@ func ingestOnlineArchive(id uint, name string, data []byte) error {
 		res := tx.Model(&models.OnlineModule{}).Where("id = ?", id).Updates(map[string]any{
 			"status":              models.OnlineModuleStatusExtracted,
 			"error":               "",
+			"stage":               "",
+			"stage_note":          "",
+			"task_started_at":     nil,
 			"archive_name":        name,
 			"archive_size":        len(data),
 			"archive_sha256":      hex.EncodeToString(sum[:]),
@@ -439,8 +447,8 @@ func upsertOnlineModule(req onlineDownloadReq) (models.OnlineModule, error) {
 	return models.OnlineModule{}, errors.New("创建线上模组记录失败")
 }
 
-// OnlineModuleDownload 同步完成「解析分享页 → 下载 → 提取 → 版权筛查 → 存档」。
-// 下载或提取失败不是请求错误：返回 200，由条目的 status / error 说明原因，界面提示手动上传。
+// OnlineModuleDownload 抢占下载状态后立即返回 202，「解析分享页 → 下载 → 提取 → 版权筛查 → 存档」在后台完成。
+// 进度和结果经 WebSocket 推送；下载或提取失败不是请求错误，条目会变成 failed 并带上原因，界面提示手动上传。
 func OnlineModuleDownload(c *gin.Context) {
 	var req onlineDownloadReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -463,7 +471,7 @@ func OnlineModuleDownload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存线上模组记录失败"})
 		return
 	}
-	claimed, err := claimOnlineModule(m.ID)
+	claimed, err := claimOnlineModule(m.ID, models.OnlineStageResolve, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新下载状态失败"})
 		return
@@ -473,39 +481,49 @@ func OnlineModuleDownload(c *gin.Context) {
 		return
 	}
 
-	// NOTE: 用脱离请求的 ctx：客户端中途断开也要把状态落完，不留下 downloading。
-	ctx, cancel := context.WithTimeout(context.Background(), onlineDownloadTimeout)
-	defer cancel()
-	if err := runOnlineDownload(ctx, m); err != nil {
-		onlineLog.Warn("online module download failed", "id", m.ID, "title", m.Title, "err", err)
-		setOnlineModuleState(m.ID, models.OnlineModuleStatusFailed, onlineFailureMessage(err))
+	id, shareURL := m.ID, m.ShareURL
+	if err := onlineRunner.start(id, models.OnlineModuleStatusFailed, func(ctx context.Context) error {
+		return runOnlineDownload(ctx, id, shareURL)
+	}); err != nil {
+		finishOnlineTask(id, models.OnlineModuleStatusFailed, onlineFailureMessage(err))
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "服务正在关闭，请稍后重试"})
+		return
 	}
+	respondOnlineAccepted(c, id)
+}
 
+// respondOnlineAccepted 返回 202 和条目的最新状态，并把「任务开始」推给其他管理员页面。
+func respondOnlineAccepted(c *gin.Context, id uint) {
+	publishOnlineModuleID(id)
 	var fresh models.OnlineModule
-	if err := models.DB.First(&fresh, m.ID).Error; err != nil {
+	if err := models.DB.First(&fresh, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取线上模组记录失败"})
 		return
 	}
-	c.JSON(http.StatusOK, fresh)
+	c.JSON(http.StatusAccepted, fresh)
 }
 
-func runOnlineDownload(ctx context.Context, m models.OnlineModule) error {
-	direct, filename, err := onlineClient.ResolveLanzou(ctx, m.ShareURL)
+func runOnlineDownload(ctx context.Context, id uint, shareURL string) error {
+	dctx, cancel := context.WithTimeout(ctx, onlineDownloadTimeout)
+	defer cancel()
+	direct, filename, err := onlineClient.ResolveLanzou(dctx, shareURL)
 	if err != nil {
 		return err
 	}
-	data, err := onlineClient.Download(ctx, direct, onlineArchiveMaxBytes)
+	setOnlineStage(id, models.OnlineStageDownload, "")
+	data, err := onlineClient.Download(dctx, direct, onlineArchiveMaxBytes)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(filename) == "" {
 		filename = "download.zip"
 	}
-	return ingestOnlineArchive(m.ID, filename, data)
+	setOnlineStage(id, models.OnlineStageExtract, "")
+	return ingestOnlineArchive(ctx, id, filename, data)
 }
 
 // OnlineModuleUploadArchive 是自动下载失败后的兜底：管理员手动下载压缩包后上传，走同一套提取流程。
-// 提取失败时恢复原有状态并返回 422，不破坏之前已提取的内容。
+// 校验通过后立即返回 202，提取在后台进行，结果经 WebSocket 推送。
 func OnlineModuleUploadArchive(c *gin.Context) {
 	m, ok := onlineModuleFromParam(c)
 	if !ok {
@@ -533,7 +551,7 @@ func OnlineModuleUploadArchive(c *gin.Context) {
 		return
 	}
 
-	claimed, err := claimOnlineModule(m.ID)
+	claimed, err := claimOnlineModule(m.ID, models.OnlineStageExtract, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新下载状态失败"})
 		return
@@ -542,19 +560,22 @@ func OnlineModuleUploadArchive(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "该模组正在下载中"})
 		return
 	}
-	if err := ingestOnlineArchive(m.ID, fh.Filename, data); err != nil {
-		onlineLog.Warn("online module archive upload failed", "id", m.ID, "err", err)
-		setOnlineModuleState(m.ID, m.Status, m.Error)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": onlineFailureMessage(err)})
-		return
-	}
 
-	var fresh models.OnlineModule
-	if err := models.DB.First(&fresh, m.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取线上模组记录失败"})
+	// NOTE: 失败时恢复认领前的状态，之前已提取的内容不受影响；失败原因写在 error 里。
+	// 认领前是超时的 downloading（僵死任务）时没有可恢复的内容，按 failed 处理。
+	restore := m.Status
+	if restore == models.OnlineModuleStatusDownloading {
+		restore = models.OnlineModuleStatusFailed
+	}
+	id, name := m.ID, fh.Filename
+	if err := onlineRunner.start(id, restore, func(ctx context.Context) error {
+		return ingestOnlineArchive(ctx, id, name, data)
+	}); err != nil {
+		finishOnlineTask(id, restore, onlineFailureMessage(err))
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "服务正在关闭，请稍后重试"})
 		return
 	}
-	respondOnlineDetail(c, fresh)
+	respondOnlineAccepted(c, id)
 }
 
 // OnlineModuleLicenseOverride 记录管理员放行了版权筛查命中的内容。只有确实存在命中时才可放行。
@@ -592,6 +613,7 @@ func OnlineModuleLicenseOverride(c *gin.Context) {
 		return
 	}
 	onlineLog.Info("online module license override", "id", m.ID, "title", m.Title, "user_id", uid)
+	publishOnlineModuleID(m.ID)
 
 	var fresh models.OnlineModule
 	if err := models.DB.First(&fresh, m.ID).Error; err != nil {
@@ -668,7 +690,9 @@ func OnlineModuleCompile(c *gin.Context) {
 			if err := models.DB.Model(&models.OnlineModule{}).Where("id = ?", moduleID).
 				Update("scenario_id", s.ID).Error; err != nil {
 				onlineLog.Error("backfill online module scenario id failed", "id", moduleID, "scenario_id", s.ID, "err", err)
+				return
 			}
+			publishOnlineModuleID(moduleID)
 		})
 }
 
@@ -692,5 +716,6 @@ func OnlineModuleDelete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除线上模组失败"})
 		return
 	}
+	onlineHubInst.publishDeleted(m.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

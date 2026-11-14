@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { BrowseItem, OnlineModuleDocument } from '@/api/adminTypesOnline'
+import type { BrowseItem, OnlineModuleDocument, OnlineStatus } from '@/api/adminTypesOnline'
 import {
   MAX_COMPILE_BYTES,
   bytesAmbiguous,
@@ -9,12 +9,16 @@ import {
   compileBlockReason,
   defaultDocument,
   formatBytes,
+  formatElapsed,
   moduleMetaLine,
   opinionText,
   safeUrl,
+  sortTaskModules,
   splitByHits,
+  stageLabel,
   statusLabel,
   statusTone,
+  taskElapsedMs,
   toCnmodsItem,
   utf8Bytes,
   validateArchiveFile,
@@ -276,5 +280,74 @@ describe('validateArchiveFile', () => {
     expect(validateArchiveFile({ name: 'a.rar', size: 10 })).toBe('仅支持 .zip / .docx / .pdf 格式')
     expect(validateArchiveFile({ name: 'a.zip', size: 0 })).toBe('文件内容为空')
     expect(validateArchiveFile({ name: 'a.zip', size: 50 * 1024 * 1024 + 1 })).toBe('文件过大（最大 50MB）')
+  })
+})
+
+describe('stageLabel', () => {
+  test('四个阶段有中文名；空值返回空串；未知阶段原样显示', () => {
+    expect(stageLabel('resolve')).toBe('解析分享页')
+    expect(stageLabel('download')).toBe('下载压缩包')
+    expect(stageLabel('extract')).toBe('提取正文')
+    expect(stageLabel('ocr')).toBe('OCR 识别')
+    expect(stageLabel('')).toBe('')
+    expect(stageLabel(null)).toBe('')
+    expect(stageLabel('future')).toBe('future')
+  })
+})
+
+describe('formatElapsed', () => {
+  test('不足一分钟只写秒，否则「N分SS秒」，秒补零', () => {
+    expect(formatElapsed(0)).toBe('0秒')
+    expect(formatElapsed(999)).toBe('0秒')
+    expect(formatElapsed(59_999)).toBe('59秒')
+    expect(formatElapsed(60_000)).toBe('1分00秒')
+    expect(formatElapsed(125_000)).toBe('2分05秒')
+    expect(formatElapsed(12 * 60_000 + 30_000)).toBe('12分30秒')
+  })
+
+  test('负数、NaN 按 0 处理', () => {
+    expect(formatElapsed(-5000)).toBe('0秒')
+    expect(formatElapsed(Number.NaN)).toBe('0秒')
+  })
+})
+
+describe('taskElapsedMs', () => {
+  const now = Date.parse('2026-11-14T08:10:00Z')
+
+  test('从 task_started_at 算起；缺失或非法返回 null；时钟偏差不出现负数', () => {
+    expect(taskElapsedMs({ task_started_at: '2026-11-14T08:07:55Z' }, now)).toBe(125_000)
+    expect(taskElapsedMs({ task_started_at: null }, now)).toBeNull()
+    expect(taskElapsedMs({ task_started_at: 'garbage' }, now)).toBeNull()
+    expect(taskElapsedMs({ task_started_at: '2026-11-14T08:20:00Z' }, now)).toBe(0)
+  })
+})
+
+describe('sortTaskModules', () => {
+  const m = (id: number, status: OnlineStatus, updated: string, started: string | null = null) => ({
+    id,
+    status,
+    updated_at: updated,
+    task_started_at: started,
+  })
+
+  test('下载中的在前且开始得晚的更靠前；其余按更新时间倒序；不修改入参', () => {
+    const input = [
+      m(1, 'extracted', '2026-11-14T08:00:00Z'),
+      m(2, 'downloading', '2026-11-14T07:00:00Z', '2026-11-14T07:00:00Z'),
+      m(3, 'failed', '2026-11-14T09:00:00Z'),
+      m(4, 'downloading', '2026-11-14T06:00:00Z', '2026-11-14T07:30:00Z'),
+    ]
+    const copy = [...input]
+    expect(sortTaskModules(input).map((x) => x.id)).toStrictEqual([4, 2, 3, 1])
+    expect(input).toStrictEqual(copy)
+  })
+
+  test('更新时间相同按 id 倒序，结果稳定；时间非法排最后', () => {
+    const out = sortTaskModules([
+      m(1, 'extracted', '2026-11-14T08:00:00Z'),
+      m(2, 'extracted', '2026-11-14T08:00:00Z'),
+      m(3, 'extracted', 'bad'),
+    ])
+    expect(out.map((x) => x.id)).toStrictEqual([2, 1, 3])
   })
 })

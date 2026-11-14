@@ -48,6 +48,21 @@ func (f *fakeOnlineSource) Download(_ context.Context, direct string, _ int64) (
 
 const onlineTestAdminID = 7
 
+// waitOnlineTasks 等所有后台任务结束；任务结束时状态已经落库。
+func waitOnlineTasks(t *testing.T) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		onlineRunner.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("后台任务没有在 10 秒内结束")
+	}
+}
+
 func initOnlineTest(t *testing.T, src *fakeOnlineSource) *gin.Engine {
 	t.Helper()
 	initTestDB(t)
@@ -58,11 +73,19 @@ func initOnlineTest(t *testing.T, src *fakeOnlineSource) *gin.Engine {
 	prevClient, prevValid := onlineClient, onlineValidShareURL
 	onlineClient = src
 	onlineValidShareURL = func(raw string) bool { return strings.HasPrefix(raw, "https://share.test/") }
-	t.Cleanup(func() { onlineClient, onlineValidShareURL = prevClient, prevValid })
+	// NOTE: 后台任务会在请求返回后继续读这些全局变量，还原之前必须等它们结束，否则既有数据竞争，也会写到下一个用例的库里。
+	t.Cleanup(func() {
+		waitOnlineTasks(t)
+		onlineClient, onlineValidShareURL = prevClient, prevValid
+	})
+	// NOTE: Cleanup 后注册先执行：这个等待在用例开头注册，所以排在所有连接关闭之后，
+	// 保证服务端的读循环都退出了、订阅表是空的，下一个用例才不会收到上一个用例遗留的推送。
+	t.Cleanup(func() { waitOnlineSubscribers(t, 0) })
 
 	r := gin.New()
 	g := r.Group("/admin", withAuth(onlineTestAdminID, "root", "admin"))
 	g.GET("/online-modules/browse", OnlineModuleBrowse)
+	g.GET("/online-modules/ws", OnlineModuleWS)
 	g.GET("/online-modules", OnlineModuleList)
 	g.POST("/online-modules/download", OnlineModuleDownload)
 	g.GET("/online-modules/:id", OnlineModuleGet)
@@ -191,15 +214,23 @@ func TestOnlineModuleDownload_Success(t *testing.T) {
 	r := initOnlineTest(t, src)
 
 	w := serveOnline(r, jsonReq("POST", "/admin/online-modules/download", downloadBody(5051, "https://share.test/abc")))
-	if w.Code != http.StatusOK {
+	if w.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
-	var m models.OnlineModule
-	if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil {
+	var accepted models.OnlineModule
+	if err := json.Unmarshal(w.Body.Bytes(), &accepted); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
+	if accepted.Status != models.OnlineModuleStatusDownloading || accepted.TaskStartedAt == nil {
+		t.Fatalf("202 响应应是进行中的条目: status=%q started=%v", accepted.Status, accepted.TaskStartedAt)
+	}
+	waitOnlineTasks(t)
+	m := loadOnlineModule(t, accepted.ID)
 	if m.Status != models.OnlineModuleStatusExtracted || m.Error != "" {
 		t.Fatalf("status = %q, error = %q", m.Status, m.Error)
+	}
+	if m.Stage != "" || m.StageNote != "" || m.TaskStartedAt != nil {
+		t.Fatalf("任务结束后阶段字段应清空: %+v", m)
 	}
 	if m.SourceKey != "5051" || m.Author != "某作者" || m.ArchiveName != "module.zip" || len(m.ArchiveSHA256) != 64 {
 		t.Fatalf("unexpected module: %+v", m)
@@ -234,9 +265,10 @@ func TestOnlineModuleDownload_RedownloadClearsOverride(t *testing.T) {
 	seedOnlineDoc(t, m.ID, "旧正文", []string{"禁止投喂AI"})
 
 	w := serveOnline(r, jsonReq("POST", "/admin/online-modules/download", downloadBody("5051", "https://share.test/abc")))
-	if w.Code != http.StatusOK {
+	if w.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
+	waitOnlineTasks(t)
 	got := loadOnlineModule(t, m.ID)
 	if got.LicenseOverrideAt != nil || got.LicenseOverrideBy != nil {
 		t.Fatalf("override should be cleared, got %+v", got)
@@ -257,13 +289,18 @@ func TestOnlineModuleDownload_ChallengeMarksFailed(t *testing.T) {
 	r := initOnlineTest(t, src)
 
 	w := serveOnline(r, jsonReq("POST", "/admin/online-modules/download", downloadBody(5051, "https://share.test/abc")))
-	if w.Code != http.StatusOK {
-		t.Fatalf("failure should still be 200, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("download failure must not fail the request, got %d: %s", w.Code, w.Body.String())
 	}
-	var m models.OnlineModule
-	_ = json.Unmarshal(w.Body.Bytes(), &m)
+	var accepted models.OnlineModule
+	_ = json.Unmarshal(w.Body.Bytes(), &accepted)
+	waitOnlineTasks(t)
+	m := loadOnlineModule(t, accepted.ID)
 	if m.Status != models.OnlineModuleStatusFailed || !strings.Contains(m.Error, "手动下载") {
 		t.Fatalf("status = %q, error = %q", m.Status, m.Error)
+	}
+	if m.Stage != "" || m.TaskStartedAt != nil {
+		t.Fatalf("失败后阶段字段应清空: %+v", m)
 	}
 }
 
@@ -275,8 +312,10 @@ func TestOnlineModuleDownload_UnsupportedArchiveMarksFailed(t *testing.T) {
 	r := initOnlineTest(t, src)
 
 	w := serveOnline(r, jsonReq("POST", "/admin/online-modules/download", downloadBody(5051, "https://share.test/abc")))
-	var m models.OnlineModule
-	_ = json.Unmarshal(w.Body.Bytes(), &m)
+	var accepted models.OnlineModule
+	_ = json.Unmarshal(w.Body.Bytes(), &accepted)
+	waitOnlineTasks(t)
+	m := loadOnlineModule(t, accepted.ID)
 	if m.Status != models.OnlineModuleStatusFailed || !strings.Contains(m.Error, "rar") {
 		t.Fatalf("status = %q, error = %q", m.Status, m.Error)
 	}
@@ -324,9 +363,10 @@ func TestOnlineModuleDownload_StaleDownloadingCanRetry(t *testing.T) {
 	models.DB.Model(&models.OnlineModule{}).Where("id = ?", m.ID).UpdateColumn("updated_at", old)
 
 	w := serveOnline(r, jsonReq("POST", "/admin/online-modules/download", downloadBody(5051, "https://share.test/abc")))
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (%s)", w.Code, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202 (%s)", w.Code, w.Body.String())
 	}
+	waitOnlineTasks(t)
 	if got := loadOnlineModule(t, m.ID); got.Status != models.OnlineModuleStatusExtracted {
 		t.Fatalf("status = %q, want extracted", got.Status)
 	}
@@ -338,9 +378,19 @@ func TestOnlineModuleUploadArchive(t *testing.T) {
 
 	data := onlineZip(t, "module.txt", onlineStory("本模组禁止投喂给AI使用。"))
 	w := serveOnline(r, onlineUpload(t, fmt.Sprintf("/admin/online-modules/%d/archive", m.ID), "manual.zip", data))
-	if w.Code != http.StatusOK {
+	if w.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
+	var accepted models.OnlineModule
+	if err := json.Unmarshal(w.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if accepted.Status != models.OnlineModuleStatusDownloading || accepted.Stage != models.OnlineStageExtract {
+		t.Fatalf("202 响应应是提取中的条目: %+v", accepted)
+	}
+	waitOnlineTasks(t)
+
+	w = serveOnline(r, jsonReq("GET", fmt.Sprintf("/admin/online-modules/%d", m.ID), nil))
 	var detail struct {
 		Module    models.OnlineModule `json:"module"`
 		Documents []struct {
@@ -374,11 +424,16 @@ func TestOnlineModuleUploadArchive_BadFileKeepsPreviousState(t *testing.T) {
 	seedOnlineDoc(t, m.ID, "已有正文", nil)
 
 	w := serveOnline(r, onlineUpload(t, fmt.Sprintf("/admin/online-modules/%d/archive", m.ID), "bad.rar", []byte("Rar!\x1a\x07\x00rest")))
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422 (%s)", w.Code, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202 (%s)", w.Code, w.Body.String())
 	}
-	if got := loadOnlineModule(t, m.ID); got.Status != models.OnlineModuleStatusExtracted {
-		t.Fatalf("status = %q, want extracted (restored)", got.Status)
+	waitOnlineTasks(t)
+	got := loadOnlineModule(t, m.ID)
+	if got.Status != models.OnlineModuleStatusExtracted || !strings.Contains(got.Error, "rar") {
+		t.Fatalf("应恢复为 extracted 并记下失败原因: status=%q error=%q", got.Status, got.Error)
+	}
+	if got.Stage != "" || got.TaskStartedAt != nil {
+		t.Fatalf("失败后阶段字段应清空: %+v", got)
 	}
 	var count int64
 	models.DB.Model(&models.OnlineModuleDocument{}).Where("online_module_id = ?", m.ID).Count(&count)
@@ -613,7 +668,10 @@ func useOnlineOCR(t *testing.T, ocr onlinemod.OCR) {
 	t.Helper()
 	prev := onlineOCR
 	onlineOCR = ocr
-	t.Cleanup(func() { onlineOCR = prev })
+	t.Cleanup(func() {
+		waitOnlineTasks(t)
+		onlineOCR = prev
+	})
 }
 
 // emptyTextPDF 是没有任何文字的合法 PDF：本地抽不出内容，相当于扫描件。
@@ -647,21 +705,17 @@ func TestOnlineModuleUploadArchive_OCRFillsScannedPDF(t *testing.T) {
 	m := seedOnlineModule(t, models.OnlineModuleStatusFailed, nil)
 
 	w := serveOnline(r, onlineUpload(t, fmt.Sprintf("/admin/online-modules/%d/archive", m.ID), "scan.pdf", emptyTextPDF()))
-	if w.Code != http.StatusOK {
+	if w.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
-	var detail struct {
-		Documents []struct {
-			Candidate bool `json:"candidate"`
-			OCR       bool `json:"ocr"`
-			Garbled   bool `json:"garbled"`
-		} `json:"documents"`
+	waitOnlineTasks(t)
+	if got := loadOnlineModule(t, m.ID); got.Status != models.OnlineModuleStatusExtracted || got.Error != "" {
+		t.Fatalf("status = %q error = %q", got.Status, got.Error)
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(detail.Documents) != 1 || !detail.Documents[0].OCR || detail.Documents[0].Garbled || !detail.Documents[0].Candidate {
-		t.Fatalf("unexpected documents: %+v", detail.Documents)
+	var docs []models.OnlineModuleDocument
+	models.DB.Where("online_module_id = ?", m.ID).Find(&docs)
+	if len(docs) != 1 || !docs[0].OCR || docs[0].Garbled || !docs[0].Candidate {
+		t.Fatalf("unexpected documents: %+v", docs)
 	}
 	if len(ocr.calls) != 1 || ocr.calls[0] != "scan.pdf" {
 		t.Fatalf("OCR calls = %v", ocr.calls)
@@ -674,8 +728,13 @@ func TestOnlineModuleUploadArchive_NoOCRConfiguredSendsNothing(t *testing.T) {
 	m := seedOnlineModule(t, models.OnlineModuleStatusFailed, nil)
 
 	w := serveOnline(r, onlineUpload(t, fmt.Sprintf("/admin/online-modules/%d/archive", m.ID), "scan.pdf", emptyTextPDF()))
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422 (%s)", w.Code, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202 (%s)", w.Code, w.Body.String())
+	}
+	waitOnlineTasks(t)
+	got := loadOnlineModule(t, m.ID)
+	if got.Status != models.OnlineModuleStatusFailed || !strings.Contains(got.Error, "没有可提取的文档") {
+		t.Fatalf("没有文字又没有 OCR 应失败: status=%q error=%q", got.Status, got.Error)
 	}
 }
 
@@ -686,11 +745,16 @@ func TestOnlineModuleUploadArchive_OCRFailureFailsWholeUpload(t *testing.T) {
 	m := seedOnlineModule(t, models.OnlineModuleStatusFailed, func(m *models.OnlineModule) { m.Error = "旧错误" })
 
 	w := serveOnline(r, onlineUpload(t, fmt.Sprintf("/admin/online-modules/%d/archive", m.ID), "scan.pdf", emptyTextPDF()))
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422 (%s)", w.Code, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202 (%s)", w.Code, w.Body.String())
 	}
-	if got := loadOnlineModule(t, m.ID); got.Status != models.OnlineModuleStatusFailed || got.Error != "旧错误" {
-		t.Fatalf("状态应保持原样: %+v", got)
+	waitOnlineTasks(t)
+	got := loadOnlineModule(t, m.ID)
+	if got.Status != models.OnlineModuleStatusFailed || got.Error == "旧错误" || got.Error == "" {
+		t.Fatalf("应保持 failed 并换成本次的失败原因: %+v", got)
+	}
+	if len(ocr.calls) != 1 {
+		t.Fatalf("OCR calls = %v", ocr.calls)
 	}
 }
 
