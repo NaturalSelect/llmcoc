@@ -96,7 +96,7 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - 写入前按字段校验，不合格整次调用拒绝且不改草稿（开局时间格式、`nature` / 机制 `type` 枚举、键重复或缺必填、时间线对话引语、固定的 `tone_tags`）。参数用 `decodeStrict`（禁止未知字段），所以 `mythos_anchor` 无法被任何工具改写：它由 `newCompileDraft` 预置，来自故事阶段确认的锚点。`ClueData` 没有键字段，线索的键存在 `compileDraft.clueKeys`，只在草稿内定位条目，不入库，改动线索列表必须保持两者等长。
 - 跨字段校验在提交关卡 `gateIssues`（`validateDraftCompatibility`、标签与近期黑名单重叠、`reward_concept` 为空、`name` / `tags` / `reward_concept` 的禁用关键词）。有问题就拒绝并回传清单，最多拒绝 `compileMaxRejects`（3）次，之后带着剩余问题放行并记 warn 日志，由下游 `normalizeOneshotDraft` 兜底。`view_draft` 不带参数时也会列出此刻的关卡问题。
 - 神话本质 `mythos_core` 由 Compiler 直接写，不再像旧流程那样先写进隐藏线索的摘要再由归一化阶段提取；`compileAndFinalize` 校验 `MythosCore` 非空，归一化只在仍为空时用锚点合成。
-- 逻辑审查（`runLogicReview`）发现的问题经 `compileSession.fix` 追加到**同一条** `scripterConversation`，Compiler 能看到原文和自己此前的写入，改完重新提交；修复失败草稿回滚到调用前。结构修复环节（旧的 `repairOneshotDraft` 两轮）已删除，由提交关卡替代。
+- 逻辑审查（`runLogicReview`）发现的问题经 `compileSession.fix` 追加到**同一条** `scripterConversation`，Compiler 能看到原文和自己此前的写入，改完重新提交；修复失败草稿回滚到调用前。结构修复环节（旧的 `repairOneshotDraft` 两轮）已删除，由提交关卡替代。**上传故事编译（`RunCompileStoryWithProgress`，含线上模组编译）是 ETL，只做忠实转换，不走 QA 逻辑审查**：`scripterRoom.skipLogicReview` 置位后 `compileAndFinalize` 直接跳过这一段，也不会有 `logic_review` 进度事件；只有完整 AI 生成流水线保留审查。
 - Compiler 角色必须绑定支持 function calling 的模型（和 Writer / NPC 一样）。未配置或被禁用时回落到 Architect。
 
 ### 新增 Director 工具要改的地方

@@ -153,6 +153,8 @@ type scripterRoom struct {
 	usedNPCNames  map[string]bool
 	generationLog *scripterGenerationLog
 	progressFn    ScripterProgressFunc
+	// NOTE: 上传故事编译（ETL）只做忠实转换，不走 QA 逻辑审查；完整 AI 生成路径保持审查。
+	skipLogicReview bool
 }
 
 // emitProgress 向订阅者（SSE）推送阶段进度；未订阅时为空操作。
@@ -398,7 +400,8 @@ func (r *scripterRoom) Run(ctx context.Context) (ScenarioCreationOutput, error) 
 }
 
 // compileAndFinalize 从已有故事文档出发执行 compile→logic_review→reward_agent→normalize，
-// 供完整 AI 生成流水线（Run）和管理员上传故事直接编译（RunCompileStoryWithProgress）两条路径共用。
+// 供完整 AI 生成流水线（Run）和管理员上传故事直接编译（RunCompileStoryWithProgress）两条路径共用；
+// 上传路径把 skipLogicReview 置位，跳过 logic_review。
 // 返回编译产出的草稿与本阶段内的修复轮次数；error 非空时上层应直接返回失败。
 func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput, constraints ScripterConstraints) (ScenarioDraft, int, error) {
 	sessionID := r.sessionID
@@ -422,25 +425,27 @@ func (r *scripterRoom) compileAndFinalize(ctx context.Context, story StoryOutput
 
 	// 逻辑审查：QA agent 以故事文档为真相源审因果可达性与编译忠实度，问题清单追加回编译的同一条对话，
 	// 由同一个 compiler 用同一套工具改草稿并重新提交；失败时草稿保持原样，不阻塞生成
-	alog.Debug("scripter stage start", "session", sessionID, "stage", "logic_review")
-	r.emitProgress("logic_review", "start", "逻辑一致性审查…")
-	if logicIssues := runLogicReview(ctx, r, &draft, story.Document); len(logicIssues) > 0 {
-		alog.Warn("scripter repair issues found", "session", sessionID, "stage", "logic_review", "count", len(logicIssues), "issues", logicIssues)
-		r.emitProgress("logic_review", "start", fmt.Sprintf("逻辑审查发现 %d 个问题，执行修复", len(logicIssues)))
-		logScripterArtifact("Logic Review Issues", sessionID, logicIssues)
-		if repairErr := session.fix(ctx, logicIssues); repairErr != nil {
-			alog.Warn("scripter repair failed", "session", sessionID, "stage", "logic_review", "err", repairErr)
-			r.emitProgress("logic_review", "error", "逻辑修复失败（保留当前草稿）")
+	if !r.skipLogicReview {
+		alog.Debug("scripter stage start", "session", sessionID, "stage", "logic_review")
+		r.emitProgress("logic_review", "start", "逻辑一致性审查…")
+		if logicIssues := runLogicReview(ctx, r, &draft, story.Document); len(logicIssues) > 0 {
+			alog.Warn("scripter repair issues found", "session", sessionID, "stage", "logic_review", "count", len(logicIssues), "issues", logicIssues)
+			r.emitProgress("logic_review", "start", fmt.Sprintf("逻辑审查发现 %d 个问题，执行修复", len(logicIssues)))
+			logScripterArtifact("Logic Review Issues", sessionID, logicIssues)
+			if repairErr := session.fix(ctx, logicIssues); repairErr != nil {
+				alog.Warn("scripter repair failed", "session", sessionID, "stage", "logic_review", "err", repairErr)
+				r.emitProgress("logic_review", "error", "逻辑修复失败（保留当前草稿）")
+			} else {
+				draft, rewardConcept = session.result()
+				applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
+				iterations++
+				alog.Debug("scripter repair done", "session", sessionID, "stage", "logic_review", "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
+				r.emitProgress("logic_review", "done", "逻辑修复完成")
+			}
 		} else {
-			draft, rewardConcept = session.result()
-			applyGuardrails(&draft, r.req, r.architectModelName(), sessionID)
-			iterations++
-			alog.Debug("scripter repair done", "session", sessionID, "stage", "logic_review", "name", draft.Name, "scenes", len(draft.Content.Scenes), "npcs", len(draft.Content.NPCs), "clues", len(draft.Content.Clues))
-			r.emitProgress("logic_review", "done", "逻辑修复完成")
+			alog.Debug("scripter stage done", "session", sessionID, "stage", "logic_review", "issues", 0)
+			r.emitProgress("logic_review", "done", "逻辑审查通过")
 		}
-	} else {
-		alog.Debug("scripter stage done", "session", sessionID, "stage", "logic_review", "issues", 0)
-		r.emitProgress("logic_review", "done", "逻辑审查通过")
 	}
 
 	// Reward agent (isolated context, optional)：reward_concept 由 compiler 在编译阶段

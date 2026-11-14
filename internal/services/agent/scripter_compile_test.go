@@ -243,6 +243,41 @@ func qaReportFake(issues ...string) *sequentialFakeProvider {
 	}
 }
 
+// TestCompileAndFinalize_SkipLogicReview 验证上传编译（ETL）路径跳过 QA 逻辑审查：
+// QA 不被调用、没有 logic_review 进度事件、compiler 只跑写入和提交两轮。
+func TestCompileAndFinalize_SkipLogicReview(t *testing.T) {
+	fake := &sequentialFakeProvider{
+		callerName:    "compiler",
+		toolResponses: compileToolResponses(compileFixtureDraft, compileFixtureConcept),
+	}
+	room := compilerRoom(fake)
+	qa := qaReportFake("endings[书归其主] 的 san_reward 与故事文档不一致")
+	room.qa = agentHandle{provider: qa, config: &models.AgentConfig{Role: models.AgentRoleQAGuard, IsActive: true}, enabled: true}
+	room.req = ScenarioCreationRequest{Name: "指定标题"}
+	room.skipLogicReview = true
+	var stages []string
+	room.progressFn = func(stage, status, _ string) { stages = append(stages, stage+":"+status) }
+
+	_, iterations, err := room.compileAndFinalize(context.Background(), compileTestStory(), ScripterConstraints{})
+	if err != nil {
+		t.Fatalf("compileAndFinalize failed: %v", err)
+	}
+	if iterations != 0 {
+		t.Errorf("跳过审查就没有修复轮, iterations = %d, want 0", iterations)
+	}
+	if len(qa.recordedMessages) != 0 {
+		t.Errorf("QA 不应被调用, got %d 次", len(qa.recordedMessages))
+	}
+	if len(fake.recordedMessages) != 2 {
+		t.Errorf("compiler 应只被调用 2 轮（写入、提交）, got %d", len(fake.recordedMessages))
+	}
+	for _, s := range stages {
+		if strings.HasPrefix(s, "logic_review:") {
+			t.Errorf("不应有 logic_review 进度事件, got %v", stages)
+		}
+	}
+}
+
 // TestCompileAndFinalize_LogicFixContinuesSameConversation 验证逻辑审查的问题追加到编译的同一条对话，
 // compiler 第二段请求的消息以第一段的全部消息为前缀，修复后的字段进入最终草稿。
 func TestCompileAndFinalize_LogicFixContinuesSameConversation(t *testing.T) {

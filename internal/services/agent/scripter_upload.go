@@ -12,15 +12,15 @@ import (
 
 // CompileStoryRequest 是管理员上传故事编译请求：管理员只提供故事全文（及可选名称），
 // 系统跳过 Story Architect 生成阶段，先通过 anchor_extract 阶段自动从文档中识别神话锚点
-// 与奖励概念，再让 Compiler 及后续修复/审查/规范化流程介入，即"模型只做 ETL"。
+// 与奖励概念，再让 Compiler 编译并经奖励、标题、规范化收尾，不走 QA 逻辑审查，即"模型只做 ETL"。
 type CompileStoryRequest struct {
 	StoryDocument string `json:"story_document"`
 	Name          string `json:"name"`
 }
 
 // RunCompileStoryWithProgress 校验管理员上传的故事文档后，先执行 anchor_extract 阶段自动
-// 识别神话锚点，再执行 compile→repair→logic_review→reward_agent→normalize 流水线，跳过
-// 故事生成阶段。与 RunScripterScenarioTeamWithProgress 共享同一把全局锁，两条路径不会
+// 识别神话锚点，再执行 compile→reward_agent→title→normalize 流水线，跳过故事生成阶段和
+// QA 逻辑审查。与 RunScripterScenarioTeamWithProgress 共享同一把全局锁，两条路径不会
 // 并发跑生成任务。
 func RunCompileStoryWithProgress(ctx context.Context, req CompileStoryRequest, progress ScripterProgressFunc) (ScenarioCreationOutput, error) {
 	if strings.TrimSpace(req.StoryDocument) == "" {
@@ -35,6 +35,7 @@ func RunCompileStoryWithProgress(ctx context.Context, req CompileStoryRequest, p
 		return ScenarioCreationOutput{}, err
 	}
 	room.progressFn = progress
+	room.skipLogicReview = true
 	scripterCounterMu.Lock()
 	sessionID := fmt.Sprintf("%v", scriptSessionId-int64(scripterCounter))
 	scripterCounter++
