@@ -102,7 +102,7 @@ Agent 管线负责把玩家行动转成规则裁定、状态变化和叙事输�
 2. Director 读取剧本、当前状态和玩家行动（KP 主动周期读取 `<kp_floor>`），输出 JSON 工具调用数组。
 3. 后端按工具注册表执行工具，工具结果作为下一轮输入返回给 Director。每轮结束后，本轮产生的玩家可见内容立刻发布为消息并保存转录检查点，不必等周期结束。
 4. Lawyer 只负责查 COC 规则、法术和怪物资料，并可使用规则缓存。
-5. NPC Agent 负责临时 NPC 的行动和对话，并维护独立记忆。
+5. NPC 由 Director 直接扮演：Director 按 NPC 的人设和所知决定其行动与台词，经 `write` 交给 Writer 写成正文；临时 NPC 的卡片和状态由 Director 的工具维护。
 6. Writer 看到 Director 在发布这一轮时的完整消息链（含此前已完成 write 的正文），再收到一条按 direction 续写的指令，生成玩家可见正文；Writer 没有独立历史。
 7. Director 调用 `ask_players` 或 `end_game` 后，周期结束。`ask_players` 把发言权交给被点名的调查员，周期因其他原因被强制结束时发言权回到 KP 并记录原因。服务端据此更新 `Spotlight` 后才广播 `spotlight` 与 `floor_end`。
 8. 防循环：同一批工具调用在最近 10 轮内重复出现，第 3 次给 KP 追加提醒，第 5 次中止周期；只读调用的重复结果走缓存，跨轮的重复结算会被去重。
@@ -115,7 +115,7 @@ Agent 管线负责把玩家行动转成规则裁定、状态变化和叙事输�
 - 后端给前端推送的实时进展是房间 WebSocket 事件，命令接口只返回 202。
 - Writer 叙事正文和 KP 直接回复在前端用不同样式展示。
 
-主要实现位于 `internal/services/agent/orchestrator.go`、`internal/services/agent/actions.go`、`internal/services/agent/director.go`、`internal/services/agent/writer.go`、`internal/services/agent/lawyer.go` 和 `internal/services/agent/npc.go`。
+主要实现位于 `internal/services/agent/orchestrator.go`、`internal/services/agent/actions.go`、`internal/services/agent/director.go`、`internal/services/agent/writer.go`、`internal/services/agent/lawyer.go` 和 `internal/services/agent/npc.go`（NPC 建卡、销毁和状态辅助）。
 
 ## 商城与经济流程
 

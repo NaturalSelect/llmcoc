@@ -45,7 +45,7 @@ async function load() {
   <PaperCard tag="section" aria-labelledby="session-ctx-title" class="max-w-xl">
     <SectionHeading id="session-ctx-title" class="mb-2">会话上下文</SectionHeading>
     <p class="mb-4 text-xs leading-relaxed text-fg-subtle">
-      按会话ID查看每个agent(director/writer/dramaturg/npc:*)已提交的历史轮数、估算字符数与最近若干轮的缓存命中统计，用于核对某个具体会话的prompt cache前缀是否稳定命中。
+      按会话ID查看每个agent(director/writer/dramaturg)已提交的历史轮数、估算字符数与最近若干轮的缓存命中统计，用于核对某个具体会话的prompt cache前缀是否稳定命中。
     </p>
     <div class="mb-4 flex gap-2">
       <BaseInput v-model="sessionId" type="text" placeholder="会话ID" aria-label="会话ID" class="flex-1" @keydown.enter="load" />

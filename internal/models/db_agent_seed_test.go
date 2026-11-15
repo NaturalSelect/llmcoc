@@ -73,6 +73,64 @@ func TestSeedDefaultAgentConfigs_RemovesEvaluatorAndGrowth(t *testing.T) {
 	}
 }
 
+func TestSeedDefaultAgentConfigs_RemovesNPCRoles(t *testing.T) {
+	db := openSeedTestDB(t)
+
+	for _, role := range []string{"npc", "npc_nsfw"} {
+		if err := db.Create(&AgentConfig{Role: AgentRole(role), ModelName: "gpt-4o", IsActive: true}).Error; err != nil {
+			t.Fatalf("seed legacy %s row: %v", role, err)
+		}
+	}
+
+	seedDefaultAgentConfigs()
+
+	for _, role := range []string{"npc", "npc_nsfw"} {
+		var count int64
+		db.Model(&AgentConfig{}).Where("role = ?", role).Count(&count)
+		if count != 0 {
+			t.Errorf("%s rows after seed = %d, want 0", role, count)
+		}
+	}
+	var count int64
+	db.Model(&AgentConfig{}).Where("role = ?", string(AgentRoleLawyer)).Count(&count)
+	if count != 1 {
+		t.Errorf("lawyer rows after seed = %d, want 1 (seed should still create active roles)", count)
+	}
+}
+
+// TestPurgeRetiredAgentData 验证已下线的 npc 角色留下的统计行和会话记录被清掉，其余数据原样保留，且可重复执行。
+func TestPurgeRetiredAgentData(t *testing.T) {
+	db := openSeedTestDB(t)
+	if err := db.AutoMigrate(&LLMLatencyStat{}, &AgentTranscript{}); err != nil {
+		t.Fatalf("auto-migrate: %v", err)
+	}
+
+	for _, role := range []string{"npc", "npc_nsfw", "director", "writer"} {
+		if err := db.Create(&LLMLatencyStat{Role: role, Model: "gpt-4o", Method: "chat", Count: 1}).Error; err != nil {
+			t.Fatalf("seed stat %s: %v", role, err)
+		}
+	}
+	for _, key := range []string{"npc:老板", "npc:醉汉", "director", "writer"} {
+		if err := db.Create(&AgentTranscript{SessionID: 1, AgentKey: key}).Error; err != nil {
+			t.Fatalf("seed transcript %s: %v", key, err)
+		}
+	}
+
+	purgeRetiredAgentData()
+	purgeRetiredAgentData()
+
+	var roles []string
+	db.Model(&LLMLatencyStat{}).Order("role").Pluck("role", &roles)
+	if len(roles) != 2 || roles[0] != "director" || roles[1] != "writer" {
+		t.Errorf("remaining stat roles = %v, want [director writer]", roles)
+	}
+	var keys []string
+	db.Model(&AgentTranscript{}).Order("agent_key").Pluck("agent_key", &keys)
+	if len(keys) != 2 || keys[0] != "director" || keys[1] != "writer" {
+		t.Errorf("remaining transcript keys = %v, want [director writer]", keys)
+	}
+}
+
 func TestSeedDefaultAgentConfigs_SeedsDiffusionTranslator(t *testing.T) {
 	db := openSeedTestDB(t)
 

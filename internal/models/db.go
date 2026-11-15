@@ -39,8 +39,8 @@ func InitDB() error {
 		return err
 	}
 
-	// NOTE: with_jailbreak 字段新增前，Director/NPC/NPCNSFW 一直硬编码开启越狱提示词；
-	// 记录该列此前是否已存在，若是老库升级，则迁移后把这三个角色的既有记录回填为 true，避免行为静默改变。
+	// NOTE: with_jailbreak 字段新增前，Director 一直硬编码开启越狱提示词；
+	// 记录该列此前是否已存在，若是老库升级，则迁移后把 Director 的既有记录回填为 true，避免行为静默改变。
 	needsJailbreakBackfill := !DB.Migrator().HasColumn(&AgentConfig{}, "WithJailbreak")
 	// NOTE: 剧中时间改为 RFC 3339 字符串前由 TurnRound 推算；老库升级时把进行中的房间折算成 game_time，
 	// 只在列首次出现时回填一次，之后 game_time 由 advance_time 维护，不能再被覆盖。
@@ -80,7 +80,7 @@ func InitDB() error {
 
 	if needsJailbreakBackfill {
 		DB.Model(&AgentConfig{}).
-			Where("role IN ?", []string{string(AgentRoleDirector), string(AgentRoleNPC), string(AgentRoleNPCNSFW)}).
+			Where("role = ?", string(AgentRoleDirector)).
 			Update("with_jailbreak", true)
 	}
 
@@ -89,9 +89,18 @@ func InitDB() error {
 	}
 
 	backfillLegacyItems()
+	purgeRetiredAgentData()
 	seedDefaultData()
 	logging.For("models").Info("database initialized", "path", dbPath)
 	return nil
+}
+
+// purgeRetiredAgentData 清掉已下线的 npc / npc_nsfw 角色留在库里的死数据：延迟统计行（不清的话后台
+// 「按角色」统计会一直显示它们）和 NPC 的会话记录（agent_key 形如 npc:<名字>，后台会话上下文页会列出）。
+// 两者都已不再被读取，删除不可恢复；可重复执行。
+func purgeRetiredAgentData() {
+	DB.Where("role IN ?", []string{"npc", "npc_nsfw"}).Delete(&LLMLatencyStat{})
+	DB.Where("agent_key LIKE ?", "npc:%").Delete(&AgentTranscript{})
 }
 
 func seedDefaultData() {
@@ -166,7 +175,8 @@ func seedDefaultAgentConfigs() {
 	// NOTE: providence 已改名为 dramaturg，需清理老库中遗留的 providence 行，否则会在后台Agent列表里以裸role字符串显示。
 	// translator 已移除（architect 直接用 ask_lawyer 核验锚点），同理清理老库遗留行。
 	// evaluator / growth 已移除（评分和技能提升改由 Director 在 end_game 里填写），同理清理老库遗留行。
-	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer", "anti_cheat", "providence", "translator", "evaluator", "growth"}).Delete(&AgentConfig{})
+	// npc / npc_nsfw 已移除（NPC 改由 Director 直接扮演），同理清理老库遗留行。
+	DB.Where("role IN ?", []string{"judger", "editor", "lore_researcher", "encounter_designer", "anti_cheat", "providence", "translator", "evaluator", "growth", "npc", "npc_nsfw"}).Delete(&AgentConfig{})
 
 	var provID *uint
 	var prov LLMProviderConfig
@@ -186,9 +196,6 @@ func seedDefaultAgentConfigs() {
 		// NOTE: writer_nsfw 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时自动回落默认 Writer。
 		{Role: AgentRoleWriterNSFW, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, ThinkingLevel: "low", IsActive: false},
 		{Role: AgentRoleLawyer, ProviderConfigID: provID, ModelName: model, MaxTokens: 1400, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
-		{Role: AgentRoleNPC, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: true, WithJailbreak: true},
-		// NOTE: npc_nsfw 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时自动回落默认 NPC。
-		{Role: AgentRoleNPCNSFW, ProviderConfigID: provID, ModelName: model, MaxTokens: 1600, Temperature: 0.5, ThinkingLevel: "low", IsActive: false, WithJailbreak: true},
 		{Role: AgentRolePainter, ProviderConfigID: provID, ModelName: "dall-e-3", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},
 		// NOTE: painter_nsfw 默认关闭,需要管理员单独绑定 provider 才会放行 nsfw=true 的配图;未启用时这类请求被拒绝。
 		{Role: AgentRolePainterNSFW, ProviderConfigID: provID, ModelName: "dall-e-3", MaxTokens: 0, Temperature: 0.0, ThinkingLevel: "none", IsActive: false},

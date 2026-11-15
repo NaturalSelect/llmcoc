@@ -78,7 +78,6 @@ const (
 	ToolCreateNPC              ToolCallType = "create_npc"                // 创建临时NPC
 	ToolGenerateNPCName        ToolCallType = "generate_npc_name"         // NOTE: 随机生成NPC姓名
 	ToolDestroyNPC             ToolCallType = "destroy_npc"               // 销毁临时NPC
-	ToolActNPC                 ToolCallType = "act_npc"                   // 与指定NPC对话并获取反应
 	ToolUpdateCharacters       ToolCallType = "update_characters"         // 更新角色状态
 	ToolManageInventory        ToolCallType = "manage_inventory"          // 角色物品增删
 	ToolRecordMonster          ToolCallType = "record_monster"            // 记录已见神话存在
@@ -104,8 +103,10 @@ const (
 	ToolNarrate                ToolCallType = "narrate"                   // 发布一条KP消息,不交出发言权
 	// NOTE: ToolLegacyResponse 是 narrate 的旧名，只用于读懂老会话已归档的 Director 历史，不在工具列表里。
 	ToolLegacyResponse ToolCallType = "response"
-	ToolAskPlayers     ToolCallType = "ask_players" // 点名调查员并交出发言权,结束本周期
-	ToolReport         ToolCallType = "report"      // 向管理系统自首
+	// NOTE: ToolLegacyActNPC 是已删除的 act_npc，只用于渲染老会话归档历史的总结，不注册、不暴露。
+	ToolLegacyActNPC ToolCallType = "act_npc"
+	ToolAskPlayers   ToolCallType = "ask_players" // 点名调查员并交出发言权,结束本周期
+	ToolReport       ToolCallType = "report"      // 向管理系统自首
 
 	ToolStartCombat ToolCallType = "start_combat" // 开始一场战斗,建立DEX行动顺序
 	ToolCombatAct   ToolCallType = "combat_act"   // 结算战斗轮中一名参战者的行动
@@ -125,9 +126,7 @@ type ToolCall struct {
 	Question      string                 `json:"question"`       // check_rule: 规则问题的语义描述
 	Dice          *DiceCheck             `json:"dice"`           // roll_dice: 骰子检定请求
 	CharCard      *NPCCard               `json:"char_card"`      // create_npc: NPC角色卡
-	NPCName       string                 `json:"npc_name"`       // npc_act: NPC名称
-	NPCCtx        string                 `json:"npc_ctx"`        // npc_act: 当前情境简述
-	KPDirective   string                 `json:"kp_directive"`   // act_npc: KP剧情指令(最高优先级行为约束)
+	NPCName       string                 `json:"npc_name"`       // destroy_npc / update_npc_*: NPC名称
 	DestroyReason string                 `json:"destroy_reason"` // destroy_npc: dead|out_of_range|cleanup
 	Changes       []string               `json:"changes"`        // update_characters: 状态变化列表
 	CharacterName string                 `json:"character_name"` // manage_madness / query_character: 角色名称
@@ -153,7 +152,7 @@ type ToolCall struct {
 	NewLocation   string                 `json:"new_location"`   // update_location/update_npc_location: 新位置名称
 	ArmorValue    int                    `json:"armor_value"`    // update_armor: 新护甲值(0=无护甲)
 	Hint          string                 `json:"hint"`           // hit: KP当前场景高密度提示
-	NSFW          bool                   `json:"nsfw"`           // write / act_npc: 该段描写或该次互动是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效
+	NSFW          bool                   `json:"nsfw"`           // write: 该段描写是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效
 	Options       []string               `json:"options"`        // ask_players: 玩家询问时才给的推荐行动(可选,0-2条)
 	Reply         string                 `json:"reply"`          // narrate: KP对玩家说的话(必填)
 	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
@@ -175,7 +174,6 @@ type ToolCall struct {
 	ChaseAction       *ChaseActionDetail      `json:"chase_action"`       // chase_act: 行动详情
 	ChaseEndReason    string                  `json:"chase_end_reason"`   // end_chase: 追逐结束原因
 	Report            string                  `json:"report"`             // report: agent self-report
-	HideSecret        bool                    `json:"hide_secret"`        // npc_act: 是否隐藏NPC反应中的敏感信息(如HP变化), 由KP根据当前情境决定
 	Targets           []string                `json:"targets"`            // ask_players: 被点名的调查员名,一次只能一个
 
 	Culture string `json:"culture"`
@@ -324,17 +322,6 @@ type CharacterUpdate struct {
 }
 
 // ── NPC types ─────────────────────────────────────────────────────────────────
-
-// NPCAction 是扮演 NPC 的 AI 玩家的一份声明：只是意图，由 KP 决定是否检定并裁定。
-type NPCAction struct {
-	NPCName  string `json:"npc_name"`
-	Intent   string `json:"intent"`
-	Action   string `json:"action"`
-	Dialogue string `json:"dialogue"`
-	// NOTE: Check 是 AI 玩家申请的检定("技能名:目的")，OOC 是只给 KP 看的场外话，两者都不得进入玩家可见内容。
-	Check string `json:"check"`
-	OOC   string `json:"ooc"`
-}
 
 // NPCCard is the input schema for create_npc(char_card).
 type NPCCard struct {

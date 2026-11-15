@@ -128,8 +128,6 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 		models.AgentRoleWriter,
 		models.AgentRoleWriterNSFW,
 		models.AgentRoleLawyer,
-		models.AgentRoleNPC,
-		models.AgentRoleNPCNSFW,
 		models.AgentRolePainter,
 		models.AgentRolePainterNSFW,
 		models.AgentRoleDiffusionTranslator,
@@ -138,7 +136,6 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 	requiredRoles := map[models.AgentRole]bool{
 		models.AgentRoleDirector: true,
 		models.AgentRoleLawyer:   true,
-		models.AgentRoleNPC:      true,
 	}
 	result := make(map[models.AgentRole]agentHandle, len(roles))
 	for _, role := range roles {
@@ -214,7 +211,6 @@ func visibleActionNeedsWriter(action ToolCallType) bool {
 	case ToolRollDice,
 		ToolCreateNPC,
 		ToolDestroyNPC,
-		ToolActNPC,
 		ToolUpdateCharacters,
 		ToolManageInventory,
 		ToolRecordMonster,
@@ -340,25 +336,6 @@ func formatSingleDiceResult(r DiceCheckResult) string {
 		detail = r.Detail + " "
 	}
 	return fmt.Sprintf("%v鉴定: %v %v%v%v%v", r.What, r.Roll, level, verdict, detail, hidden)
-}
-
-// formatNPCAction 把 AI 玩家的声明渲染成给 KP 的 tool 结果：标明未裁定，空字段省略。
-func formatNPCAction(a NPCAction) string {
-	var sb strings.Builder
-	sb.WriteString(`<npc_declaration npc="` + xmlAttr(a.NPCName) + `" adjudicated="false">` + "\n")
-	for _, f := range []struct{ tag, val, attr string }{
-		{"intent", a.Intent, ""},
-		{"action", a.Action, ""},
-		{"dialogue", a.Dialogue, ""},
-		{"check", a.Check, ""},
-		{"ooc", a.OOC, ` visibility="kp_only"`},
-	} {
-		if s := strings.TrimSpace(f.val); s != "" {
-			sb.WriteString("<" + f.tag + f.attr + ">" + xmlEscape(s) + "</" + f.tag + ">")
-		}
-	}
-	sb.WriteString("\n</npc_declaration>")
-	return sb.String()
 }
 
 // formatDiceResultXML 是 roll_dice 给 Director 的结构化结果；formatSingleDiceResult 供事件消息渲染，不能改。

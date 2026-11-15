@@ -44,20 +44,18 @@ func TestRenderDirectorToolResult_NPCAttr(t *testing.T) {
 		out  toolOutcome
 		want string
 	}{
-		{"act_npc", fakeToolCall("a", "act_npc", `{"npc_name":"老板","question":"q"}`), toolOutcome{result: "x"},
-			"<tool_result name=\"act_npc\" npc=\"老板\" status=\"ok\">\nx\n</tool_result>"},
 		{"update_npc_card", fakeToolCall("a", "update_npc_card", `{"npc_name":" 老板 ","changes":["HP -1"]}`), toolOutcome{result: "x"},
 			"<tool_result name=\"update_npc_card\" npc=\"老板\" status=\"ok\">\nx\n</tool_result>"},
 		{"create_npc uses char_card.name", fakeToolCall("a", "create_npc", `{"char_card":{"name":"醉汉","race":"人类"}}`), toolOutcome{result: "x"},
 			"<tool_result name=\"create_npc\" npc=\"醉汉\" status=\"ok\">\nx\n</tool_result>"},
-		{"rejected keeps npc before status", fakeToolCall("a", "act_npc", `{"npc_name":"老板"}`), toolOutcome{reject: "SYSTEM REJECT: 不行"},
-			"<tool_result name=\"act_npc\" npc=\"老板\" status=\"rejected\">\n不行\n</tool_result>"},
+		{"rejected keeps npc before status", fakeToolCall("a", "query_npc_card", `{"npc_name":"老板"}`), toolOutcome{reject: "SYSTEM REJECT: 不行"},
+			"<tool_result name=\"query_npc_card\" npc=\"老板\" status=\"rejected\">\n不行\n</tool_result>"},
 		{"cached after status", fakeToolCall("a", "query_npc_card", `{"npc_name":"老板"}`), toolOutcome{result: "x", cached: true},
 			"<tool_result name=\"query_npc_card\" npc=\"老板\" status=\"ok\" cached=\"true\">\nx\n</tool_result>"},
 		{"empty name has no attr", fakeToolCall("a", "query_npc_card", `{"npc_name":""}`), toolOutcome{result: "x"},
 			"<tool_result name=\"query_npc_card\" status=\"ok\">\nx\n</tool_result>"},
-		{"bad arguments has no attr", fakeToolCall("a", "act_npc", `not json`), toolOutcome{result: "x"},
-			"<tool_result name=\"act_npc\" status=\"ok\">\nx\n</tool_result>"},
+		{"bad arguments has no attr", fakeToolCall("a", "query_npc_card", `not json`), toolOutcome{result: "x"},
+			"<tool_result name=\"query_npc_card\" status=\"ok\">\nx\n</tool_result>"},
 		{"non-npc tool ignores npc_name", fakeToolCall("a", "roll_dice", `{"npc_name":"老板"}`), toolOutcome{result: "x"},
 			"<tool_result name=\"roll_dice\" status=\"ok\">\nx\n</tool_result>"},
 		{"create_npc without char_card", fakeToolCall("a", "create_npc", `{}`), toolOutcome{result: "x"},
@@ -71,14 +69,14 @@ func TestRenderDirectorToolResult_NPCAttr(t *testing.T) {
 }
 
 func TestRenderDirectorToolResult_NPCAttrEscapedAndRoundTrips(t *testing.T) {
-	got := renderDirectorToolResult(fakeToolCall("a", "act_npc", `{"npc_name":"a\"<b>&"}`), toolOutcome{result: "正文"})
-	if !strings.HasPrefix(got, `<tool_result name="act_npc" npc="a&quot;&lt;b&gt;&amp;" status="ok">`) {
+	got := renderDirectorToolResult(fakeToolCall("a", "query_npc_card", `{"npc_name":"a\"<b>&"}`), toolOutcome{result: "正文"})
+	if !strings.HasPrefix(got, `<tool_result name="query_npc_card" npc="a&quot;&lt;b&gt;&amp;" status="ok">`) {
 		t.Fatalf("npc attribute not escaped: %q", got)
 	}
 	if isToolRejected(got) || toolResultBody(got) != "正文" {
 		t.Errorf("round trip broke: rejected=%v body=%q", isToolRejected(got), toolResultBody(got))
 	}
-	rejected := renderDirectorToolResult(fakeToolCall("a", "act_npc", `{"npc_name":"老板"}`), toolOutcome{reject: "SYSTEM REJECT: 不行"})
+	rejected := renderDirectorToolResult(fakeToolCall("a", "query_npc_card", `{"npc_name":"老板"}`), toolOutcome{reject: "SYSTEM REJECT: 不行"})
 	if !isToolRejected(rejected) || toolResultBody(rejected) != "不行" {
 		t.Errorf("rejected round trip broke: rejected=%v body=%q", isToolRejected(rejected), toolResultBody(rejected))
 	}
@@ -119,8 +117,8 @@ func TestIsToolRejected(t *testing.T) {
 		{"legacy rejected", "SYSTEM REJECT: write.direction 不能为空", true},
 		{"legacy ok", "已发布", false},
 		{"empty", "", false},
-		{"ok body mentions rejected status", `<tool_result name="act_npc" status="ok">` + "\n<ooc>status=\"rejected\"</ooc>\n</tool_result>", false},
-		{"ok body starts with SYSTEM REJECT", `<tool_result name="act_npc" status="ok">` + "\nSYSTEM REJECT\n</tool_result>", false},
+		{"ok body mentions rejected status", `<tool_result name="query_npc_card" status="ok">` + "\n<ooc>status=\"rejected\"</ooc>\n</tool_result>", false},
+		{"ok body starts with SYSTEM REJECT", `<tool_result name="query_npc_card" status="ok">` + "\nSYSTEM REJECT\n</tool_result>", false},
 		{"unterminated open tag", `<tool_result name="write" status="rejected"`, false},
 	}
 	for _, tc := range cases {
@@ -147,7 +145,7 @@ func TestToolResultBody(t *testing.T) {
 }
 
 func TestToolResultBody_RoundTrip(t *testing.T) {
-	call := fakeToolCall("a", "act_npc", `{}`)
+	call := fakeToolCall("a", "query_npc_card", `{}`)
 	for _, o := range []toolOutcome{
 		{result: "多行\n正文"},
 		{reject: "SYSTEM REJECT: 原因"},

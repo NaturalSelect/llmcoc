@@ -1,4 +1,5 @@
 import type { CacheStats, LlmStatLine, LlmStats, TurnCacheStat } from '@/api/adminTypesCore'
+import { isHiddenRole } from '@/components/admin/agents/agentRoles'
 
 // NOTE: 规则缓存 tab 的展示文本计算，口径与旧 admin.html 的 x-text 表达式逐项一致
 
@@ -44,6 +45,11 @@ export function llmLineText(line: LlmStatLine): string {
     (line.err_count ? ` · 错误 ${line.err_count}` : '') +
     ` · 缓存命中 ${pct1(line.cache_hit_rate)}`
   )
+}
+
+// NOTE: 「按角色」只显示仍存在的角色；已下线角色（npc、npc_nsfw 等）旧库里可能残留统计行，与 Agent 配置页同一口径过滤
+export function visibleRoleLines(lines: LlmStatLine[] | null | undefined): LlmStatLine[] {
+  return (lines ?? []).filter((l) => !isHiddenRole(l.key))
 }
 
 export interface LlmOverallView {

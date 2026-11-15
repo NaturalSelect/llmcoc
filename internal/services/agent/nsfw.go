@@ -3,13 +3,12 @@ package agent
 import "strings"
 
 // NOTE: 各 agent 系统提示词中的 NSFW 片段统一收敛为占位符,由 renderNSFW 渲染,便于集中审计开关关闭时改了哪些话。
-// Director 按房间的 EnableNSFW 渲染;Writer、NPC、配图按本次调用的 nsfw 标记渲染,该标记已经过房间开关过滤。
+// Director 按房间的 EnableNSFW 渲染(含 NPC 欲望列表);Writer、配图按本次调用的 nsfw 标记渲染,该标记已经过房间开关过滤。
 const (
 	tokenNSFWGlobalConfig   = "{{NSFW_GLOBAL_CONFIG}}"
 	tokenNSFWDirectiveFlags = "{{NSFW_DIRECTIVE_FLAGS}}"
 	tokenNSFWWriterRule     = "{{NSFW_WRITER_RULE}}"
 	tokenNSFWWriterVoice    = "{{NSFW_WRITER_VOICE}}"
-	tokenNSFWNPCConfig      = "{{NSFW_NPC_CONFIG}}"
 	tokenNSFWNPCDesires     = "{{NSFW_NPC_DESIRES}}"
 	tokenNSFWImagePolicy    = "{{NSFW_IMAGE_POLICY}}"
 	tokenNSFWAppearance     = "{{NSFW_APPEARANCE_POLICY}}"
@@ -43,9 +42,6 @@ const (
 	nsfwWriterVoiceOn  = `官能小说风格`
 	nsfwWriterVoiceOff = `洛氏小说风格`
 
-	nsfwNPCConfigOn  = `<config nsfw="true" violent="true" sexual="true"/>`
-	nsfwNPCConfigOff = `<config nsfw="false" violent="true" sexual="false"/>`
-
 	nsfwNPCDesiresOn  = `求生欲、求知欲、表现欲、舒适欲、社交欲和性欲`
 	nsfwNPCDesiresOff = `求生欲、求知欲、表现欲、舒适欲和社交欲`
 
@@ -64,7 +60,6 @@ func renderNSFW(tpl string, enabled bool) string {
 		tokenNSFWDirectiveFlags, pickNSFW(enabled, nsfwDirectiveFlagsOn, nsfwDirectiveFlagsOff),
 		tokenNSFWWriterRule, pickNSFW(enabled, nsfwWriterRuleOn, nsfwWriterRuleOff),
 		tokenNSFWWriterVoice, pickNSFW(enabled, nsfwWriterVoiceOn, nsfwWriterVoiceOff),
-		tokenNSFWNPCConfig, pickNSFW(enabled, nsfwNPCConfigOn, nsfwNPCConfigOff),
 		tokenNSFWNPCDesires, pickNSFW(enabled, nsfwNPCDesiresOn, nsfwNPCDesiresOff),
 		tokenNSFWImagePolicy, pickNSFW(enabled, nsfwImagePolicyOn, nsfwImagePolicyOff),
 		tokenNSFWAppearance, pickNSFW(enabled, nsfwAppearancePolicyOn, nsfwAppearancePolicyOff),

@@ -27,11 +27,11 @@ func TestNormalizeArgs_KeyOrderAndWhitespaceInsensitive(t *testing.T) {
 
 func TestRoundSignature_IgnoresCallOrderAndSideEffectResults(t *testing.T) {
 	c1 := fakeToolCall("1", "check_rule", `{"q":"a"}`)
-	c2 := fakeToolCall("2", "act_npc", `{"npc":"n"}`)
+	c2 := fakeToolCall("2", "consult_dramaturg", `{"progress_note":"n"}`)
 	c3 := fakeToolCall("3", "update_characters", `{"hp":-1}`)
 
-	r1 := map[string]string{"1": "rule A", "2": "npc says hi", "3": "HP 10"}
-	r2 := map[string]string{"1": "rule A", "2": "npc says hi", "3": "HP 9"}
+	r1 := map[string]string{"1": "rule A", "2": "guidance", "3": "HP 10"}
+	r2 := map[string]string{"1": "rule A", "2": "guidance", "3": "HP 9"}
 
 	s1 := roundSignature([]llm.ToolCall{c1, c2, c3}, r1, false)
 	s2 := roundSignature([]llm.ToolCall{c3, c2, c1}, r2, false)
@@ -39,7 +39,7 @@ func TestRoundSignature_IgnoresCallOrderAndSideEffectResults(t *testing.T) {
 		t.Fatal("signature must be independent of call order and of side-effect tool results")
 	}
 
-	r3 := map[string]string{"1": "rule B", "2": "npc says hi", "3": "HP 10"}
+	r3 := map[string]string{"1": "rule B", "2": "guidance", "3": "HP 10"}
 	if roundSignature([]llm.ToolCall{c1, c2, c3}, r3, false) == s1 {
 		t.Fatal("changed read-only result must change the signature")
 	}
@@ -146,16 +146,16 @@ func TestLoopGuard_ReadOnlyCacheHitAndInvalidation(t *testing.T) {
 	}
 }
 
-func TestLoopGuard_RollDiceAndActNPCNeverReused(t *testing.T) {
+func TestLoopGuard_RollDiceAndDramaturgNeverReused(t *testing.T) {
 	h := newGuardHarness()
 	dice := func(id string) llm.ToolCall { return fakeToolCall(id, "roll_dice", `{"dice":"1d100"}`) }
-	npc := func(id string) llm.ToolCall { return fakeToolCall(id, "act_npc", `{"npc":"n"}`) }
+	npc := func(id string) llm.ToolCall { return fakeToolCall(id, "consult_dramaturg", `{"progress_note":"n"}`) }
 	h.round(dice("a"))
 	h.round(dice("b"))
 	h.round(npc("c"))
 	h.round(npc("d"))
-	if h.count("roll_dice") != 2 || h.count("act_npc") != 2 {
-		t.Fatalf("roll_dice=%d act_npc=%d, both want 2", h.count("roll_dice"), h.count("act_npc"))
+	if h.count("roll_dice") != 2 || h.count("consult_dramaturg") != 2 {
+		t.Fatalf("roll_dice=%d consult_dramaturg=%d, both want 2", h.count("roll_dice"), h.count("consult_dramaturg"))
 	}
 }
 

@@ -6,6 +6,7 @@ import {
   agentDesc,
   agentLabel,
   buildAgentForms,
+  isHiddenRole,
 } from './agentRoles'
 
 function row(role: string, over: Partial<AgentConfigRow> = {}): AgentConfigRow {
@@ -29,9 +30,11 @@ function row(role: string, over: Partial<AgentConfigRow> = {}): AgentConfigRow {
 }
 
 describe('角色表', () => {
-  test('预期角色共 17 个且不含已下线的 scripter', () => {
-    expect(EXPECTED_ROLES).toHaveLength(17)
+  test('预期角色共 15 个且不含已下线的 scripter、npc、npc_nsfw', () => {
+    expect(EXPECTED_ROLES).toHaveLength(15)
     expect(EXPECTED_ROLES).not.toContain('scripter')
+    expect(EXPECTED_ROLES).not.toContain('npc')
+    expect(EXPECTED_ROLES).not.toContain('npc_nsfw')
     expect(EXPECTED_ROLES[0]).toBe('director')
     expect(EXPECTED_ROLES.at(-1)).toBe('systemone')
   })
@@ -82,6 +85,17 @@ describe('角色表', () => {
     expect(agentDesc('__proto__')).toBe('')
   })
 
+  test('已下线角色没有名称、描述和默认值，也不是隐藏角色以外的可配置项', () => {
+    for (const r of ['npc', 'npc_nsfw']) {
+      expect(ROLE_DEFAULTS[r], r).toBeUndefined()
+      expect(agentLabel(r), r).toBe(r)
+      expect(agentDesc(r), r).toBe('')
+      expect(isHiddenRole(r), r).toBe(true)
+    }
+    expect(isHiddenRole('scripter')).toBe(true)
+    expect(isHiddenRole('lawyer')).toBe(false)
+  })
+
   test('默认值与旧 roleDefaults 一致（抽样）', () => {
     expect(ROLE_DEFAULTS.director).toStrictEqual({ max_tokens: 1500, temperature: 0.7, context_window: 0 })
     expect(ROLE_DEFAULTS.writer).toStrictEqual({ max_tokens: 800, temperature: 0.85 })
@@ -107,14 +121,14 @@ describe('角色表', () => {
       thinking_level: 'none',
       is_active: false,
     })
-    for (const r of ['writer_nsfw', 'npc_nsfw', 'painter_nsfw', 'painter_hq', 'dramaturg', 'embedding', 'systemone']) {
+    for (const r of ['writer_nsfw', 'painter_nsfw', 'painter_hq', 'dramaturg', 'embedding', 'systemone']) {
       expect(ROLE_DEFAULTS[r]?.is_active, r).toBe(false)
     }
   })
 })
 
 describe('buildAgentForms', () => {
-  test('空列表：17 个角色全部按默认值补齐，顺序同角色表', () => {
+  test('空列表：15 个角色全部按默认值补齐，顺序同角色表', () => {
     const forms = buildAgentForms([])
     expect(forms.map((f) => f.role)).toStrictEqual(EXPECTED_ROLES)
     const director = forms[0]!
@@ -143,8 +157,8 @@ describe('buildAgentForms', () => {
   })
 
   test('null / undefined 入参等同空列表', () => {
-    expect(buildAgentForms(null)).toHaveLength(17)
-    expect(buildAgentForms(undefined)).toHaveLength(17)
+    expect(buildAgentForms(null)).toHaveLength(15)
+    expect(buildAgentForms(undefined)).toHaveLength(15)
   })
 
   test('库里已有的行排在前面，缺行的角色补在后面；provider_config_id 为 null 时变空串', () => {
@@ -153,7 +167,7 @@ describe('buildAgentForms', () => {
       ['writer', 7, 3],
       ['director', 2, ''],
     ])
-    expect(forms).toHaveLength(17)
+    expect(forms).toHaveLength(15)
     expect(forms.slice(2).map((f) => f.role)).not.toContain('writer')
     expect(forms[2]!.id).toBe('new-writer_nsfw')
   })
@@ -162,13 +176,22 @@ describe('buildAgentForms', () => {
     const forms = buildAgentForms([row('scripter'), row('lore_researcher', { id: 9 })])
     expect(forms.map((f) => f.role)).not.toContain('scripter')
     expect(forms[0]!.role).toBe('lore_researcher')
-    expect(forms).toHaveLength(18)
+    expect(forms).toHaveLength(16)
+  })
+
+  test('已下线的 npc / npc_nsfw 旧行被丢弃，不会显示也不会补默认行', () => {
+    const forms = buildAgentForms([row('npc'), row('npc_nsfw'), row('lawyer')])
+    const roles = forms.map((f) => f.role)
+    expect(roles).not.toContain('npc')
+    expect(roles).not.toContain('npc_nsfw')
+    expect(roles[0]).toBe('lawyer')
+    expect(forms).toHaveLength(15)
   })
 
   test('同一角色重复时后者覆盖前者，位置保持首次出现处', () => {
-    const forms = buildAgentForms([row('npc', { id: 1, model_name: 'a' }), row('lawyer', { id: 2 }), row('npc', { id: 3, model_name: 'b' })])
+    const forms = buildAgentForms([row('writer', { id: 1, model_name: 'a' }), row('lawyer', { id: 2 }), row('writer', { id: 3, model_name: 'b' })])
     expect(forms.slice(0, 2).map((f) => [f.role, f.id, f.model_name])).toStrictEqual([
-      ['npc', 3, 'b'],
+      ['writer', 3, 'b'],
       ['lawyer', 2, 'gpt-4o'],
     ])
   })

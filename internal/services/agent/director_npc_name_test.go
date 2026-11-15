@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestDirectorToolsIncludeGenerateNPCName(t *testing.T) {
 func TestKPSystemPromptEncouragesCustomNPCs(t *testing.T) {
 	for _, want := range []string{
 		"主动引入自定义NPC",
-		"generate_npc_name抽名字 → create_npc建卡 → act_npc让他开口",
+		"generate_npc_name抽名字 → create_npc建卡 → 在write的必写里让他登场开口",
 		"自定义NPC是气氛、压力、误导和人情的来源，不是新线索的来源",
 	} {
 		if !strings.Contains(kpSystemPrompt, want) {
@@ -48,7 +49,6 @@ func TestDirectorBatchPolicyNPCNameSequencing(t *testing.T) {
 	}{
 		{"单独取名", []string{"generate_npc_name"}, false},
 		{"取名与建卡同批", []string{"generate_npc_name", "create_npc"}, true},
-		{"取名与act_npc同批", []string{"generate_npc_name", "act_npc"}, false},
 		{"取名与narrate同批", []string{"generate_npc_name", "narrate"}, true},
 		{"取名与write同批", []string{"generate_npc_name", "write"}, false},
 		{"单独建卡", []string{"create_npc"}, false},
@@ -74,8 +74,6 @@ func npcNamePolicyArgs(name string) string {
 		return `{"culture":"western","gender":"male"}`
 	case "create_npc":
 		return `{"char_card":{"name":"X","race":"人类","description":"d","attitude":"a","goal":"g"}}`
-	case "act_npc":
-		return `{"npc_name":"X","question":"q"}`
 	case "narrate":
 		return `{"reply":"你好"}`
 	case "write":
@@ -171,5 +169,45 @@ func TestGenerateNPCNameActionSkipsTakenNames(t *testing.T) {
 	want := `<npc_names note="` + npcNameGuidance + `"><name>` + pool[0] + `</name></npc_names>`
 	if len(results) != 1 || results[0].Result != want {
 		t.Errorf("results = %+v, want the only free name %q", results, pool[0])
+	}
+}
+
+// nameChatProvider 只实现 Chat：按序返回预设姓名并记录调用，其余方法不参与取名路径。
+type nameChatProvider struct {
+	llm.Provider
+	names []string
+	calls int
+}
+
+func (p *nameChatProvider) Chat(_ context.Context, _ string, _ []llm.ChatMessage) (string, error) {
+	name := p.names[p.calls%len(p.names)]
+	p.calls++
+	return name, nil
+}
+
+// TestGenerateNPCNameActionUsesWriterForLocalizedNames 验证中日文取名借用 Writer 角色的模型，
+// 房间里没有任何 NPC 角色也能取名。
+func TestGenerateNPCNameActionUsesWriterForLocalizedNames(t *testing.T) {
+	prov := &nameChatProvider{names: []string{"陈守拙", "苏闻笛", "韩知远"}}
+	gctx := &GameContext{}
+	var npcs []models.SessionNPC
+	actx := ActionContext{
+		GCtx:     gctx,
+		TempNPCs: &npcs,
+		Handles:  map[models.AgentRole]agentHandle{models.AgentRoleWriter: newWriterTestHandle(prov)},
+	}
+
+	results := generateNPCNameAction{}.Execute(ToolCall{Action: ToolGenerateNPCName, Culture: "chinese", Gender: "male", Count: 2}, actx)
+
+	if len(results) != 1 || strings.HasPrefix(results[0].Result, "SYSTEM REJECT") {
+		t.Fatalf("results = %+v, want one non-reject result", results)
+	}
+	if prov.calls == 0 {
+		t.Fatal("中文取名应调用 Writer 的 provider")
+	}
+	for _, want := range []string{"陈守拙", "苏闻笛"} {
+		if !strings.Contains(results[0].Result, want) {
+			t.Errorf("result = %q, want contains %q", results[0].Result, want)
+		}
 	}
 }

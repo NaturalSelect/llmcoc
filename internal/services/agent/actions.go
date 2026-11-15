@@ -10,7 +10,6 @@ import (
 
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/game"
-	"github.com/llmcoc/server/internal/services/llm"
 )
 
 // ActionContext 是各工具执行器共享的上下文。
@@ -37,9 +36,6 @@ type ActionContext struct {
 	Combat      **models.CombatState
 	Chase       **models.ChaseState
 	RoundClosed *bool
-
-	// Director 是发出本批调用时 Director 的消息链快照(只读，末尾是尚无结果的 assistant tool_calls)；非 Director 的调用方为 nil。
-	Director []llm.ChatMessage
 }
 
 // Action is implemented by every tool call handler.
@@ -59,7 +55,6 @@ var noSideEffectActions = map[ToolCallType]bool{
 	ToolQueryNPCCard:     true,
 	ToolGrepStory:        true,
 	ToolReadStory:        true,
-	ToolActNPC:           true, // returns NPC reaction that must be read before narrate
 	ToolGenerateNPCName:  true,
 }
 
@@ -98,7 +93,6 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolCheckRule:              checkRuleAction{},
 	ToolConsultDramaturg:       consultDramaturgAction{},
 	ToolRollDice:               rollDiceAction{},
-	ToolActNPC:                 actNPCAction{},
 	ToolCreateNPC:              createNPCAction{},
 	ToolGenerateNPCName:        generateNPCNameAction{},
 	ToolDestroyNPC:             destroyNPCAction{},
@@ -194,27 +188,6 @@ func (rollDiceAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	}}
 }
 
-type actNPCAction struct{}
-
-func (actNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
-	question := call.Question
-	if question == "" {
-		question = call.NPCCtx
-	}
-	question = renderNPCTask(npcTask{Question: question, Directive: call.KPDirective, HideSecret: call.HideSecret, Spell: call.Spell})
-	debugf("tool", "session=%d act_npc npc=%q question=%s nsfw=%v", actx.Sid, call.NPCName, question, call.NSFW)
-	doneNPC := timedDebug("NPC", "session=%d npc=%s", actx.Sid, call.NPCName)
-	npcHandle, nsfwMode := pickNPCHandle(actx.Handles, actx.GCtx.Session.EnableNSFW && call.NSFW)
-	action, npcErr := runNPC(actx.Ctx, npcHandle, actx.Handles, *actx.GCtx,
-		npcRequest{Name: call.NPCName, Question: question, NSFW: nsfwMode, Director: actx.Director}, *actx.TempNPCs)
-	doneNPC()
-	if npcErr != nil {
-		alog.Error("act_npc failed", "npc", call.NPCName, "err", npcErr)
-		return []ToolResult{{Action: ToolActNPC, Result: fmt.Sprintf("NPC行动生成失败: %v", npcErr)}}
-	}
-	return []ToolResult{{Action: ToolActNPC, Result: formatNPCAction(action)}}
-}
-
 type createNPCAction struct{}
 
 func (createNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
@@ -234,13 +207,13 @@ func (destroyNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 }
 
 // NOTE: generate_npc_name 只返回姓名、不落库；已被调查员、临时NPC和模组NPC占用的姓名不会再发放。
-// 中日文姓名由 NPC 角色的模型现场创作，失败时回退静态姓名池。
+// 中日文姓名由 Writer 角色的模型现场创作，失败时回退静态姓名池。
 type generateNPCNameAction struct{}
 
 func (generateNPCNameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	args := generateNPCNameArgs{Culture: call.Culture, Gender: call.Gender, Count: call.Count}
 	used := sessionTakenNames(actx.GCtx, *actx.TempNPCs)
-	names, err := pickNPCNames(actx.Ctx, actx.Handles[models.AgentRoleNPC], fmt.Sprint(actx.Sid), args, used)
+	names, err := pickNPCNames(actx.Ctx, actx.Handles[models.AgentRoleWriter], fmt.Sprint(actx.Sid), args, used)
 	if err != nil {
 		return []ToolResult{{Action: ToolGenerateNPCName, Result: "SYSTEM REJECT: " + err.Error()}}
 	}

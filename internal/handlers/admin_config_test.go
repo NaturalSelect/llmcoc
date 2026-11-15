@@ -505,6 +505,29 @@ func TestAdminUpdateAgent_TranslatorRejected(t *testing.T) {
 	}
 }
 
+// TestAdminUpdateAgent_NPCRolesRejected 验证已下线的 npc / npc_nsfw 角色不再被接受，NPC 改由 Director 直接扮演。
+func TestAdminUpdateAgent_NPCRolesRejected(t *testing.T) {
+	initTestDB(t)
+	r := adminConfigRouter()
+	for _, role := range []string{"npc", "npc_nsfw"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, jsonReq("PUT", "/admin/config/agents/"+role, map[string]any{
+			"model_name":     "gpt-4o",
+			"max_tokens":     2000,
+			"temperature":    0.7,
+			"thinking_level": "low",
+		}))
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("%s should be rejected, got %d: %s", role, w.Code, w.Body.String())
+		}
+		var count int64
+		models.DB.Model(&models.AgentConfig{}).Where("role = ?", role).Count(&count)
+		if count != 0 {
+			t.Errorf("%s AgentConfig rows = %d, want 0", role, count)
+		}
+	}
+}
+
 func TestAdminUpdateAgent_ThinkingBudgetTokens(t *testing.T) {
 	tests := []struct {
 		name       string

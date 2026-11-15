@@ -34,7 +34,7 @@ func xmlAttrSQ(s string) string {
 // toolResultNPC 返回针对单个 NPC 的工具调用所指向的 NPC 名；其他工具、名字为空(如 query_npc_card 查全部)或参数解析失败时返回空串。
 func toolResultNPC(call llm.ToolCall) string {
 	switch ToolCallType(call.Name) {
-	case ToolActNPC, ToolQueryNPCCard, ToolUpdateNPCCard, ToolUpdateNPCLocation,
+	case ToolQueryNPCCard, ToolUpdateNPCCard, ToolUpdateNPCLocation,
 		ToolUpdateNPCSessionMemory, ToolCreateNPC, ToolDestroyNPC:
 	default:
 		return ""

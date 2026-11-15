@@ -29,8 +29,6 @@ type floorRun struct {
 	summarize summarizeFunc
 	lastUsage llm.Usage
 	progress  func(string)
-	// chain 是本轮 LLM 调用返回后的 Director 消息链，末尾是带 tool_calls 的 assistant；执行器读它给 NPC 组视图。
-	chain []llm.ChatMessage
 
 	// 以下状态由工具执行器/批次策略通过指针读写，生命周期是整个周期。
 	outbox          []Output
@@ -79,7 +77,6 @@ func (f *floorRun) afterCall(usage llm.Usage, msgs []llm.ChatMessage) []llm.Chat
 	out, full := f.cm.observe(usage, msgs)
 	f.contextFull = full
 	f.lastUsage = usage
-	f.chain = out
 	return out
 }
 
@@ -340,7 +337,6 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 		events:       &fr.events,
 		kpStreak:     &fr.kpStreak,
 		ask:          &fr.ask,
-		chain:        &fr.chain,
 		emitProgress: emitProgress,
 	}
 

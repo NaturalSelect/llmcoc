@@ -342,6 +342,49 @@ func TestDirectorHasNoImageTools(t *testing.T) {
 	}
 }
 
+// TestDirectorHasNoNPCAgent 验证 NPC 由 Director 亲自扮演：工具列表、注册表、提示词和每轮清单里
+// 不再出现 act_npc 和 AI 玩家的说法，NPC 台词通过 write 的必写项交给 Writer。
+func TestDirectorHasNoNPCAgent(t *testing.T) {
+	removed := []string{"act_npc", "AI玩家", "npc_declaration"}
+	for _, dramaturg := range []bool{false, true} {
+		for _, tool := range directorTools(dramaturg) {
+			if tool.def.Name == "act_npc" {
+				t.Errorf("directorTools(%v) should not expose act_npc", dramaturg)
+			}
+			for _, name := range removed {
+				if strings.Contains(tool.def.Description, name) {
+					t.Errorf("directorTools(%v): description of %s should not mention %s", dramaturg, tool.def.Name, name)
+				}
+			}
+		}
+	}
+	if _, ok := actionRegistry[ToolCallType("act_npc")]; ok {
+		t.Error("actionRegistry should not contain act_npc")
+	}
+	for _, name := range removed {
+		if strings.Contains(kpSystemPrompt, name) {
+			t.Errorf("kp system prompt should not mention %s", name)
+		}
+		if strings.Contains(kpTurnReminder, name) {
+			t.Errorf("turn reminder should not mention %s", name)
+		}
+	}
+	for _, want := range []string{"由你亲自扮演", "写进write的direction", "不要在narrate里替NPC开口"} {
+		if !strings.Contains(kpSystemPrompt, want) {
+			t.Errorf("kp system prompt should contain %q", want)
+		}
+	}
+	var writeDesc string
+	for _, tool := range directorTools(false) {
+		if tool.def.Name == string(ToolWrite) {
+			writeDesc = tool.def.Description
+		}
+	}
+	if !strings.Contains(writeDesc, "【NPC台词】") {
+		t.Error("write description should explain how to hand NPC lines to the Writer")
+	}
+}
+
 // TestBuildKPTurnOpening_SendVersionEqualsArchiveVersion 验证 buildKPTurnOpening
 // 返回的两条user消息就是唯一版本——不再有裁剪掉timeline/mechanics/keeper_appendix
 // 的单独"归档版"：第1条携带玩家简介、<now>、Active NPC与<player_turn seq=N>包裹的

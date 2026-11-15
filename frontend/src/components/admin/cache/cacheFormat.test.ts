@@ -12,6 +12,7 @@ import {
   recentStatsNewestFirst,
   turnStatLeft,
   turnStatRight,
+  visibleRoleLines,
 } from './cacheFormat'
 
 const GB = 1073741824
@@ -69,6 +70,13 @@ describe('LLM 调用统计', () => {
   test('整体概览：字段缺失时全部回落为 0', () => {
     expect(llmOverallView(null)).toStrictEqual({ count: 0, avg: '0 ms', max: '0 ms', errors: 0, hitRate: '0.0%' })
     expect(llmOverallView({ overall: line })).toStrictEqual({ count: 10, avg: '1235 ms', max: '5000 ms', errors: 0, hitRate: '50.0%' })
+  })
+
+  test('按角色列表过滤已下线角色（npc、npc_nsfw、scripter），保留其余行且顺序不变；null 视为空', () => {
+    const lines = ['director', 'npc', 'writer', 'npc_nsfw', 'scripter', 'lawyer'].map((key) => ({ ...line, key }))
+    expect(visibleRoleLines(lines).map((l) => l.key)).toStrictEqual(['director', 'writer', 'lawyer'])
+    expect(visibleRoleLines(null)).toStrictEqual([])
+    expect(visibleRoleLines(undefined)).toStrictEqual([])
   })
 })
 

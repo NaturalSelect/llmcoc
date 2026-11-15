@@ -175,7 +175,7 @@ func renderUnitOutputs(msgs []models.TranscriptMsg) string {
 				if res != "" {
 					fmt.Fprintf(&b, "[掷骰] %s\n", res)
 				}
-			case ToolActNPC:
+			case ToolLegacyActNPC:
 				if err == nil && res != "" {
 					fmt.Fprintf(&b, "[NPC %s] %s\n", parsed.NPCName, res)
 				}

@@ -158,15 +158,17 @@ describe('ProvidersTab', () => {
 })
 
 describe('AgentsTab', () => {
-  test('库里缺行的角色补默认行（共 17 张卡），保存请求体与旧前端字段一致', async () => {
+  test('库里缺行的角色补默认行（共 15 张卡），保存请求体与旧前端字段一致', async () => {
     routes['GET /api/admin/config/providers'] = [{ id: 2, name: 'prov', provider: 'openai', base_url: '', api_key_set: true, is_active: true }]
-    routes['GET /api/admin/config/agents'] = [agentRow('director'), agentRow('scripter')]
+    routes['GET /api/admin/config/agents'] = [agentRow('director'), agentRow('scripter'), agentRow('npc'), agentRow('npc_nsfw')]
     routes['PUT /api/admin/config/agents/director'] = {}
     const w = mount(AgentsTab, { attachTo: document.body })
     await flushPromises()
-    expect(w.findAll('article')).toHaveLength(17)
+    expect(w.findAll('article')).toHaveLength(15)
     expect(w.text()).toContain('🎬 Director')
     expect(w.text()).not.toContain('scripter')
+    expect(w.text()).not.toContain('npc')
+    expect(w.text()).not.toContain('NPC')
     const first = w.findAll('article')[0]!
     await btn(first, '保存配置').trigger('click')
     await flushPromises()
@@ -243,6 +245,23 @@ describe('CacheTab', () => {
     vi.advanceTimersByTime(10 * 60 * 1000)
     await flushPromises()
     expect(calls.length).toBe(n)
+    w.unmount()
+  })
+
+  test('LLM 统计「按角色」不显示已下线的 npc / npc_nsfw 残留行', async () => {
+    cacheRoutes()
+    const line = (key: string) => ({ key, count: 2, avg_ms: 10, max_ms: 20, err_count: 0, cache_hit_rate: 0 })
+    routes['GET /api/admin/llm/stats'] = {
+      overall: line('overall'),
+      by_role: [line('director'), line('npc'), line('npc_nsfw'), line('writer')],
+      by_model: [],
+    }
+    const w = mount(CacheTab, { attachTo: document.body })
+    await flushPromises()
+    const items = w.findAll('li').map((li) => li.text())
+    expect(items.some((t) => t.startsWith('director'))).toBe(true)
+    expect(items.some((t) => t.startsWith('writer'))).toBe(true)
+    expect(items.some((t) => t.startsWith('npc'))).toBe(false)
     w.unmount()
   })
 

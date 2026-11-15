@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RefreshCw, Trash2 } from '@lucide/vue'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import type { LlmStats } from '@/api/adminTypesCore'
 import { api } from '@/api/client'
 import BaseButton from '@/components/base/BaseButton.vue'
@@ -8,11 +8,12 @@ import PaperCard from '@/components/base/PaperCard.vue'
 import SectionHeading from '@/components/base/SectionHeading.vue'
 import { errMsg } from '@/components/admin/shared/errMsg'
 import { useUiStore } from '@/stores/ui'
-import { llmLineText, llmOverallView } from './cacheFormat'
+import { llmLineText, llmOverallView, visibleRoleLines } from './cacheFormat'
 
 const ui = useUiStore()
 
 const stats = ref<LlmStats | null>(null)
+const roleLines = computed(() => visibleRoleLines(stats.value?.by_role))
 
 async function load() {
   try {
@@ -74,10 +75,10 @@ onMounted(load)
         <div class="mt-1 text-lg tabular-nums text-fg">{{ llmOverallView(stats).hitRate }}</div>
       </div>
 
-      <div v-if="stats.by_role?.length" class="border-t border-line pt-3">
+      <div v-if="roleLines.length" class="border-t border-line pt-3">
         <div class="mb-2 text-xs text-fg-subtle">按角色</div>
         <ul class="space-y-1.5">
-          <li v-for="line in stats.by_role" :key="'role-' + line.key" class="flex flex-wrap items-center justify-between gap-x-3 text-sm text-fg-muted">
+          <li v-for="line in roleLines" :key="'role-' + line.key" class="flex flex-wrap items-center justify-between gap-x-3 text-sm text-fg-muted">
             <span>{{ line.key }}</span>
             <span class="text-xs tabular-nums">{{ llmLineText(line) }}</span>
           </li>

@@ -45,14 +45,12 @@ func TestRenderNSFW(t *testing.T) {
 			},
 		},
 		{
-			name: "npc",
-			tpl:  npcDefaultPrompt,
+			name: "npc desires in director",
+			tpl:  kpSystemPrompt,
 			onWanted: []string{
-				`<config nsfw="true" violent="true" sexual="true"/>`,
 				"社交欲和性欲",
 			},
 			offWanted: []string{
-				`<config nsfw="false" violent="true" sexual="false"/>`,
 				"舒适欲和社交欲",
 			},
 		},

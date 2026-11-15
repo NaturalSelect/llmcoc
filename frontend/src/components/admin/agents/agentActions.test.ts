@@ -40,7 +40,7 @@ describe('角色判定', () => {
     expect(isPainterRole('painter_hq')).toBe(true)
     expect(isPainterRole('writer')).toBe(false)
     expect(hasContextWindow('director')).toBe(true)
-    expect(['writer', 'writer_nsfw', 'npc', 'npc_nsfw', 'lawyer'].some(hasContextWindow)).toBe(false)
+    expect(['writer', 'writer_nsfw', 'lawyer'].some(hasContextWindow)).toBe(false)
   })
 
   test('embedding 只匹配自身，不被当成画图角色', () => {
@@ -158,8 +158,8 @@ describe('planPing', () => {
 
 describe('pingLoadingKey 与提示文案', () => {
   test('未绑定时键为 role:0', () => {
-    expect(pingLoadingKey({ role: 'npc', provider_config_id: '' })).toBe('npc:0')
-    expect(pingLoadingKey({ role: 'npc', provider_config_id: 5 })).toBe('npc:5')
+    expect(pingLoadingKey({ role: 'lawyer', provider_config_id: '' })).toBe('lawyer:0')
+    expect(pingLoadingKey({ role: 'lawyer', provider_config_id: 5 })).toBe('lawyer:5')
   })
 
   test('成功与失败文案区分画图角色', () => {

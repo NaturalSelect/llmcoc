@@ -13,19 +13,7 @@ import (
 // NOTE: 本文件是 Director 原生 tool calling 的批次校验(batchPolicy)与批量执行
 // (batchDispatch)桥接，取代旧 orchestrator.go run() 里手写的 hasResponse/
 // hasNonCompatible/emptyResponse 系列检查，以及 executeParallelBatch
-// 的并发调度。行为对齐旧代码，唯一实质变化是：act_npc 与副作用工具混批从旧协议里
-// "act_npc执行后*actx.Interrupt=true静默丢弃本批剩余调用"，改成在 batchPolicy 阶段
-// 整批显式拒绝并给出可读错误，逼模型下一轮再发——不再需要 Interrupt。
-
-// directorActNPCCompatible 判断某个动作是否可以与 act_npc 同批调用：无副作用查询类
-// 工具(含 act_npc 自身)以及零副作用的 report 自由工具。此外的任何工具都必须等
-// act_npc 结果被读取后，放到下一轮再调用。
-func directorActNPCCompatible(action ToolCallType) bool {
-	if noSideEffectActions[action] {
-		return true
-	}
-	return action == ToolReport
-}
+// 的并发调度。
 
 // directorBatchPolicy 构造 Director 原生工具循环的整批校验策略。
 // dramaturgConsultedThisTurn 由 run() 持有并跨轮次共享，用于保留"每回合最多咨询一次
@@ -67,7 +55,7 @@ func directorBatchPolicy(dramaturgConsultedThisTurn *bool, combat **models.Comba
 		}
 		if hasResponse && hasNonCompatible {
 			emitProgress(progressThinking)
-			return "SYSTEM REJECT: your entire batch was rejected. narrate/ask_players/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/grep_story/read_story/generate_npc_name/act_npc — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call narrate/ask_players/end_game after reading the results. Write and state-update tools may stay in the same batch as narrate."
+			return "SYSTEM REJECT: your entire batch was rejected. narrate/ask_players/end_game must not share a batch with check_rule/roll_dice/query_clues/query_character/query_npc_card/grep_story/read_story/generate_npc_name — their results have to be read in an earlier round first. Split into two rounds: call the result-producing tools now, then call narrate/ask_players/end_game after reading the results. Write and state-update tools may stay in the same batch as narrate."
 		}
 		if hasResponse && respStr == "" {
 			emitProgress(progressThinking)
@@ -76,27 +64,6 @@ func directorBatchPolicy(dramaturgConsultedThisTurn *bool, combat **models.Comba
 		if narrateCalls > 1 || askCalls > 1 {
 			emitProgress(progressThinking)
 			return "SYSTEM REJECT: 同一轮最多只能有一个 narrate 和一个 ask_players。每个 narrate 都会立即成为一条独立的玩家可见消息：把要说的话合并成一条，或者分成相邻的两轮发出。"
-		}
-
-		actNPCPresent := false
-		var incompatible []string
-		seenIncompatible := map[string]bool{}
-		for _, call := range calls {
-			action := ToolCallType(call.Name)
-			if action == ToolActNPC {
-				actNPCPresent = true
-				continue
-			}
-			if !directorActNPCCompatible(action) && !seenIncompatible[call.Name] {
-				seenIncompatible[call.Name] = true
-				incompatible = append(incompatible, call.Name)
-			}
-		}
-		if actNPCPresent && len(incompatible) > 0 {
-			emitProgress(progressThinking)
-			return fmt.Sprintf(
-				"SYSTEM REJECT: act_npc 返回结果必须先读到才能执行状态更新或叙事，本轮不能把 act_npc 与 %s 混在一起。请先单独调用 act_npc，读取结果后再在下一轮调用这些工具。",
-				strings.Join(incompatible, "、"))
 		}
 
 		// SKILL-ROLL SEQUENCING：查询结果要到下一轮才存在，同批的技能检定只能靠
@@ -391,7 +358,6 @@ type directorDispatchState struct {
 	events       *[]models.GameEvent
 	kpStreak     *int
 	ask          **AskResult
-	chain        *[]llm.ChatMessage
 	emitProgress func(string)
 }
 
@@ -416,10 +382,9 @@ func joinToolResults(results []ToolResult) string {
 // tool_call 到共享 ToolCall 结构体、执行 actionRegistry 对应的 Action.Execute，
 // 并把结果写回 st 持有的可变状态。
 //
-// 并发策略与旧 executeParallelBatch 一致：check_rule 各自并发；act_npc 按 NPC 名
-// 分组，不同 NPC 并发、同一 NPC 顺序执行；其余工具按原始顺序依次
+// 并发策略与旧 executeParallelBatch 一致：check_rule 各自并发；其余工具按原始顺序依次
 // 执行。
-// SSE 进度文案的粒度与旧代码一致：批内出现 >1 个 check_rule 或 >1 个不同 NPC 时，
+// SSE 进度文案的粒度与旧代码一致：批内出现 >1 个 check_rule 时，
 // 发一条合并提示；否则按调用顺序逐条发。
 func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 	return func(ctx context.Context, calls []llm.ToolCall) []toolOutcome {
@@ -439,10 +404,6 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			KPStreak:    st.kpStreak,
 			Ask:         st.ask,
 		}
-		if st.chain != nil {
-			// NOTE: 浅拷贝快照：各 NPC 的 goroutine 只读；runToolLoop 要等本批返回才会往链上追加 tool 消息。
-			actx.Director = append([]llm.ChatMessage(nil), (*st.chain)...)
-		}
 
 		decoded := make([]ToolCall, len(calls))
 		decodeErr := make([]error, len(calls))
@@ -452,10 +413,9 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			decodeErr[i] = err
 		}
 
-		// 统计 check_rule 数量与不同 NPC 数量，只用于决定 SSE 进度文案的粒度
+		// 统计 check_rule 数量，只用于决定 SSE 进度文案的粒度
 		// (合并一条 vs 逐条)，不影响下面实际的并发/顺序执行分组。
 		nCheckRule := 0
-		npcNames := map[string]bool{}
 		for i, tc := range decoded {
 			if decodeErr[i] != nil {
 				continue
@@ -463,12 +423,9 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 			if tc.Action == ToolCheckRule {
 				nCheckRule++
 			}
-			if tc.Action == ToolActNPC {
-				npcNames[tc.NPCName] = true
-			}
 		}
 		if st.emitProgress != nil {
-			if nCheckRule > 1 || len(npcNames) > 1 {
+			if nCheckRule > 1 {
 				st.emitProgress(progressExecutingCalls(calls))
 			} else {
 				for i, call := range calls {
@@ -477,17 +434,6 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 					}
 					st.emitProgress(progressExecutingCall(call))
 				}
-			}
-		}
-
-		// 按 NPC 名分组 act_npc 调用下标(排除解码失败的)。
-		npcCallOrder := map[string][]int{}
-		for i, tc := range decoded {
-			if decodeErr[i] != nil {
-				continue
-			}
-			if tc.Action == ToolActNPC {
-				npcCallOrder[tc.NPCName] = append(npcCallOrder[tc.NPCName], i)
 			}
 		}
 
@@ -502,24 +448,6 @@ func directorBatchDispatch(st directorDispatchState) toolBatchDispatch {
 		ch := make(chan slotResult, len(calls))
 		var wg sync.WaitGroup
 		asyncIdx := map[int]bool{}
-
-		for _, indices := range npcCallOrder {
-			wg.Add(1)
-			go func(idxList []int) {
-				defer wg.Done()
-				for _, idx := range idxList {
-					var results []ToolResult
-					if handler, ok := actionRegistry[decoded[idx].Action]; ok {
-						results = handler.Execute(decoded[idx], actx)
-					}
-					ran[idx] = true
-					ch <- slotResult{idx: idx, results: results}
-				}
-			}(indices)
-			for _, idx := range indices {
-				asyncIdx[idx] = true
-			}
-		}
 
 		for i, tc := range decoded {
 			if decodeErr[i] != nil || tc.Action != ToolCheckRule {
