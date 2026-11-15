@@ -139,5 +139,5 @@ Painter 默认走 OpenAI 兼容图片接口；开启 `diffusion_mode` 时先由 
 ## 已知陷阱
 
 - `go.mod` 里 `replace charm.land/fantasy => github.com/NaturalSelect/fantasy <伪版本>` 指向 fork，固定在某个提交上；升级 fork 要改这一行并 `go mod tidy`。fork 的 OpenAI SDK 是 `github.com/charmbracelet/openai-go`，不是 `github.com/openai/openai-go/v3`：传给 `fantasyopenai.WithSDKOptions` 的 `option` 必须来自前者（`fantasy_provider.go`），图片和嵌入仍用后者（`openai_provider.go`），两者的类型不通用。fork 要求 Go 1.27.4，`go.mod` 的 `go` 行随之升到 1.27.4；CI 用 `go-version-file: go.mod`，runner 上要有这个版本，我没有验证。
-- `Dockerfile` 使用 `golang:1.23-alpine`，而 `go.mod` 要求 Go 1.27.4，且 `COPY scenarios/` 指向仓库里不存在的目录；`docker-compose.yml` 也挂载 `./scenarios`。这些我没有实际构建验证，改 Docker 相关内容前先确认。镜像以 `CGO_ENABLED=1` 构建（SQLite）。
+- `Dockerfile` 的构建阶段用 `golang:1.27-alpine3.24`，必须不低于 `go.mod` 的 `go` 行（现为 1.27.4，fork 的 fantasy 带来的）：镜像里的 Go 更低时 `go mod download` 直接失败，`GOTOOLCHAIN=local` 不会自动下载工具链；升级 `go.mod` 的 Go 版本时要同步改这一行。`COPY scenarios/` 指向仓库里不存在的目录，`docker-compose.yml` 也挂载 `./scenarios`。这些我没有实际构建验证（本机的 docker 是 podman，运行时权限报错，镜像也只核对了 Docker Hub 上的标签），改 Docker 相关内容前先确认。镜像以 `CGO_ENABLED=1` 构建（SQLite）。
 - 修复问题要从根因处理；不确定产品语义时先确认；遇到未预期的改动或他人改动先看差异，无法判断时问用户。
