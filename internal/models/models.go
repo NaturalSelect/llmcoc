@@ -817,7 +817,7 @@ const (
 type LLMProviderConfig struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name      string    `gorm:"not null;size:100;uniqueIndex" json:"name"`
-	Provider  string    `gorm:"not null;size:50" json:"provider"` // openai | custom | anthropic
+	Provider  string    `gorm:"not null;size:50" json:"provider"` // openai | custom | anthropic | openai-responses
 	BaseURL   string    `gorm:"size:500" json:"base_url"`
 	APIKey    string    `gorm:"size:500" json:"-"`
 	IsActive  bool      `gorm:"default:true" json:"is_active"`

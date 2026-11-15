@@ -160,19 +160,26 @@ func NewProviderFromConfig(cfg *models.LLMProviderConfig, modelName string, maxT
 }
 
 // newProviderByType 按 LLMProviderConfig.Provider 字段分发到具体实现。
-// 未识别的类型(包括历史遗留的 "custom"/空字符串)一律回落 OpenAI 兼容实现,
-// 保持与既有行为一致。imageViaChat 只对 OpenAI 兼容实现生效(Anthropic 目前不支持画图)。
-// 两种类型都由 fantasy.LanguageModel 驱动(见 fantasy_provider.go)，画图能力则始终由
+// "anthropic" 走 Anthropic，"openai-responses" 走 OpenAI Responses API(/responses)；
+// 其余未识别的类型(包括历史遗留的 "custom"/空字符串)一律回落 OpenAI 兼容实现(/chat/completions)，
+// 保持与既有行为一致。imageViaChat 只对 OpenAI 兼容与 Responses 实现生效(Anthropic 目前不支持画图)。
+// 三种类型都由 fantasy.LanguageModel 驱动(见 fantasy_provider.go)，画图和嵌入能力则始终由
 // openAIProvider 提供，与聊天用的是哪个 provider 无关。
 func newProviderByType(providerType, apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, thinkingBudgetTokens int, imageViaChat bool) Provider {
-	isAnthropic := strings.ToLower(strings.TrimSpace(providerType)) == "anthropic"
-	p, err := newFantasyProvider(isAnthropic, apiKey, baseURL, model, maxTokens, temperature, disableTemperature, reasoningEffort, thinkingBudgetTokens)
+	kind := kindOpenAICompat
+	switch strings.ToLower(strings.TrimSpace(providerType)) {
+	case "anthropic":
+		kind = kindAnthropic
+	case "openai-responses":
+		kind = kindResponses
+	}
+	p, err := newFantasyProvider(kind, apiKey, baseURL, model, maxTokens, temperature, disableTemperature, reasoningEffort, thinkingBudgetTokens)
 	if err != nil {
 		// NOTE: anthropic.New/openaicompat.New 在不使用 vertex/bedrock 时不会失败，这里只是
 		// 防御性兜底；真出现时后续调用会带着这个 error 一路失败，日志用于定位配置问题。
 		log.Error("construct llm provider failed", "provider_type", providerType, "model", model, "err", err)
 	}
-	if isAnthropic {
+	if kind == kindAnthropic {
 		return p
 	}
 	return &fantasyOpenAIProvider{fantasyProvider: p, image: newOpenAIProvider(apiKey, baseURL, model, imageViaChat)}

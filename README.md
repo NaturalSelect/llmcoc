@@ -23,7 +23,7 @@
 - Gin
 - GORM + SQLite
 - JWT（`github.com/golang-jwt/jwt/v5`）
-- LLM SDK（`charm.land/fantasy`，统一封装 OpenAI 兼容与 Anthropic 的对话接口）
+- LLM SDK（`charm.land/fantasy`，统一封装 OpenAI 兼容（chat completions）、OpenAI Responses 与 Anthropic 的对话接口）
 - 图片生成与嵌入向量 SDK（`github.com/openai/openai-go/v3`）
 - 规则缓存向量检索（`github.com/philippgille/chromem-go`，见下方第三方许可证）
 - 前端：Vue 3 + TypeScript + Vite + Tailwind CSS 单页应用（源码在 `frontend/`，构建产物嵌入二进制）

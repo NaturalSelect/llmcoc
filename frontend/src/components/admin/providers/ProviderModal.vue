@@ -14,7 +14,7 @@ const props = defineProps<{ open: boolean; editing: ProviderConfig | null }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 const ui = useUiStore()
 
-const KNOWN_PROVIDERS = ['openai', 'anthropic']
+const KNOWN_PROVIDERS = ['openai', 'openai-responses', 'anthropic']
 
 function blankForm(): ProviderForm {
   return { name: '', provider: 'openai', base_url: '', api_key: '', is_active: true }
@@ -65,6 +65,7 @@ async function save() {
       <BaseInput v-model="form.name" placeholder="显示名称 *" aria-label="显示名称" />
       <BaseSelect v-model="form.provider" aria-label="提供商类型">
         <option value="openai">openai（兼容 OpenAI API）</option>
+        <option value="openai-responses">openai-responses（OpenAI Responses API）</option>
         <option value="anthropic">anthropic（Claude 官方 API）</option>
         <option v-if="hasUnknownProvider" :value="form.provider">{{ form.provider }}</option>
       </BaseSelect>

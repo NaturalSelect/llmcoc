@@ -74,6 +74,26 @@ func TestAdminCreateProvider_Success(t *testing.T) {
 	}
 }
 
+func TestAdminCreateProvider_OpenAIResponses(t *testing.T) {
+	initTestDB(t)
+	r := adminConfigRouter()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/admin/config/providers", map[string]any{
+		"name":     "Responses",
+		"provider": "openai-responses",
+		"api_key":  "sk-test",
+		"base_url": "https://api.openai.com/v1",
+	}))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["provider"] != "openai-responses" {
+		t.Errorf("provider = %v, want openai-responses", resp["provider"])
+	}
+}
+
 func TestAdminCreateProvider_InvalidBody(t *testing.T) {
 	initTestDB(t)
 	r := adminConfigRouter()

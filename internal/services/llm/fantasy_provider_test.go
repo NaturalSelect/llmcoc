@@ -1017,7 +1017,7 @@ func TestFantasyProvider_OpenAICompatEndToEnd_Success(t *testing.T) {
 		})
 	})
 
-	p, err := newFantasyProvider(false, "test-key", srv.URL, "test-model", 0, 0, false, "", 0)
+	p, err := newFantasyProvider(kindOpenAICompat, "test-key", srv.URL, "test-model", 0, 0, false, "", 0)
 	if err != nil {
 		t.Fatalf("newFantasyProvider error: %v", err)
 	}
@@ -1073,7 +1073,7 @@ func TestFantasyProvider_UsageSinkInvokedOnChat(t *testing.T) {
 			"prompt_tokens_details": map[string]any{"cached_tokens": 30},
 		})
 	})
-	p, err := newFantasyProvider(false, "test-key", srv.URL, "test-model", 0, 0, false, "", 0)
+	p, err := newFantasyProvider(kindOpenAICompat, "test-key", srv.URL, "test-model", 0, 0, false, "", 0)
 	if err != nil {
 		t.Fatalf("newFantasyProvider error: %v", err)
 	}
@@ -1107,7 +1107,7 @@ func TestFantasyProvider_OpenAICompatEndToEnd_NonRetryableErrorExhaustsFast(t *t
 		_, _ = w.Write([]byte(`{"error":{"message":"invalid api key","type":"invalid_request_error"}}`))
 	})
 
-	p, err := newFantasyProvider(false, "bad-key", srv.URL, "test-model", 0, 0, false, "", 0)
+	p, err := newFantasyProvider(kindOpenAICompat, "bad-key", srv.URL, "test-model", 0, 0, false, "", 0)
 	if err != nil {
 		t.Fatalf("newFantasyProvider error: %v", err)
 	}
@@ -1171,7 +1171,7 @@ func TestFantasyProvider_ChatStreamTools(t *testing.T) {
 	srv, captured := newFakeChatCompletionsServer(t, func(w http.ResponseWriter, r *http.Request, _ int) {
 		writeSSEToolCallCompletion(w, []string{"夜色", "渐深。"}, "call_1", "paint", []string{`{"prompt":"月下`, `的钟楼"}`})
 	})
-	p, err := newFantasyProvider(false, "test-key", srv.URL, "test-model", 0, 0, false, "", 0)
+	p, err := newFantasyProvider(kindOpenAICompat, "test-key", srv.URL, "test-model", 0, 0, false, "", 0)
 	if err != nil {
 		t.Fatalf("newFantasyProvider error: %v", err)
 	}
@@ -1214,9 +1214,9 @@ func TestFantasyProvider_ChatStreamTools(t *testing.T) {
 	}
 }
 
-// TestNewProviderFromConfig_ImplementsToolStreamer 守住 OpenAI 兼容和 Anthropic 两种 provider 都带有流式工具调用能力。
+// TestNewProviderFromConfig_ImplementsToolStreamer 守住 OpenAI 兼容、Anthropic 和 OpenAI Responses 三种 provider 都带有流式工具调用能力。
 func TestNewProviderFromConfig_ImplementsToolStreamer(t *testing.T) {
-	for _, typ := range []string{"openai", "anthropic"} {
+	for _, typ := range []string{"openai", "anthropic", "openai-responses"} {
 		p := newProviderByType(typ, "k", "http://127.0.0.1:1", "m", 0, 0, false, "", 0, false)
 		if _, ok := p.(ToolStreamer); !ok {
 			t.Errorf("provider type %q does not implement ToolStreamer", typ)

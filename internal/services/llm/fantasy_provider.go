@@ -1,7 +1,7 @@
 // NOTE: 用 charm.land/fantasy 的 LanguageModel.Generate/Stream 统一实现 Anthropic 与
-// OpenAI 兼容两类 provider 的 Chat/ChatStream/JsonChat/ChatWithTools，取代原来分别手写的
-// openAIProvider(聊天部分)/anthropicProvider。两者在 token 用量口径、cache breakpoint、
-// 思考/推理回放上的差异被封装在 isAnthropic 分支里，对外行为与旧实现保持一致。
+// OpenAI 兼容、OpenAI Responses 三类 provider 的 Chat/ChatStream/JsonChat/ChatWithTools，取代原来分别手写的
+// openAIProvider(聊天部分)/anthropicProvider。三者在 token 用量口径、cache breakpoint、
+// 思考/推理回放上的差异被封装在 isAnthropic / isResponses 分支里，对外行为与旧实现保持一致。
 // 画图能力与本文件无关，仍由 openai_provider.go 里精简后的 openAIProvider 提供，见
 // fantasyOpenAIProvider 的组合方式。
 package llm
@@ -20,11 +20,21 @@ import (
 	"charm.land/fantasy/providers/anthropic"
 	fantasyopenai "charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openaicompat"
+	"github.com/openai/openai-go/v3/option"
 )
 
-// defaultReasoningEffort 只用于 OpenAI 兼容分支的默认值；Anthropic 分支的 thinkingLevel
+// defaultReasoningEffort 只用于 OpenAI 兼容与 Responses 分支的默认值；Anthropic 分支的 thinkingLevel
 // 留空即表示不开启扩展思考，不做默认值填充(与旧 anthropicProvider 行为一致)。
 const defaultReasoningEffort = "high"
+
+// providerKind 区分 fantasyProvider 背后的协议。
+type providerKind int
+
+const (
+	kindOpenAICompat providerKind = iota
+	kindAnthropic
+	kindResponses
+)
 
 const maxRetries = 20
 
@@ -38,11 +48,16 @@ var retryCode4xx = map[int]bool{
 	408: true,
 }
 
-// fantasyProvider 用一个 fantasy.LanguageModel 统一承载 Anthropic 与 OpenAI 兼容两类
-// provider 的聊天能力。
+// fantasyProvider 用一个 fantasy.LanguageModel 统一承载 Anthropic、OpenAI 兼容与 OpenAI Responses
+// 三类 provider 的聊天能力。
 type fantasyProvider struct {
 	lm          fantasy.LanguageModel
 	isAnthropic bool
+	// isResponses 为 true 时请求走 POST {base}/responses，无状态(store=false)，推理内容不回放。
+	isResponses bool
+	// NOTE: jsonLM 只有 Responses 分支设置：json_object 需要写进请求体的 text.format，而 fantasy 的
+	// Responses 实现没有对应的逐次调用选项，只能另建一个带客户端级 text.format 的 LanguageModel。
+	jsonLM      fantasy.LanguageModel
 	model       string
 	maxTokens   int
 	temperature float32
@@ -57,7 +72,7 @@ type fantasyProvider struct {
 	thinkingBudgetTokens int
 }
 
-func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, thinkingBudgetTokens int) (*fantasyProvider, error) {
+func newFantasyProvider(kind providerKind, apiKey, baseURL, model string, maxTokens int, temperature float32, disableTemperature bool, reasoningEffort string, thinkingBudgetTokens int) (*fantasyProvider, error) {
 	if maxTokens == 0 {
 		maxTokens = 2048
 	}
@@ -65,8 +80,11 @@ func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxToke
 		temperature = 0.8
 	}
 
-	var lm fantasy.LanguageModel
-	if isAnthropic {
+	isAnthropic := kind == kindAnthropic
+	isResponses := kind == kindResponses
+	var lm, jsonLM fantasy.LanguageModel
+	switch {
+	case isAnthropic:
 		opts := []anthropic.Option{anthropic.WithHTTPClient(llmHTTPClient)}
 		// NOTE: 只有非空时才显式传 APIKey/BaseURL，留空则让 SDK 使用其默认取值链
 		// (ANTHROPIC_API_KEY 环境变量 / 官方 https://api.anthropic.com/ 端点)。
@@ -84,7 +102,54 @@ func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxToke
 		if err != nil {
 			return nil, err
 		}
-	} else {
+	case isResponses:
+		explicitEffort := strings.ToLower(strings.TrimSpace(reasoningEffort))
+		if reasoningEffort == "" {
+			reasoningEffort = defaultReasoningEffort
+		}
+		// NOTE: fantasy 默认只对名字含 gpt-4/gpt-5 的模型走 Responses，其余静默回落 chat completions，
+		// 所以用 WithResponsesAPIFunc 让所有模型名都走 /responses。
+		base := func(extra ...option.RequestOption) []fantasyopenai.Option {
+			opts := []fantasyopenai.Option{
+				fantasyopenai.WithAPIKey(apiKey),
+				fantasyopenai.WithHTTPClient(llmHTTPClient),
+				fantasyopenai.WithUseResponsesAPI(),
+				fantasyopenai.WithResponsesAPIFunc(func(string) bool { return true }),
+			}
+			if baseURL != "" {
+				opts = append(opts, fantasyopenai.WithBaseURL(baseURL))
+			}
+			if len(extra) > 0 {
+				opts = append(opts, fantasyopenai.WithSDKOptions(extra...))
+			}
+			return opts
+		}
+		// NOTE: fantasy 只对名字像推理模型(gpt-5、o 系列等)才写 reasoning；网关上名字不像的推理模型
+		// (deepseek、claude 等)会被丢掉，所以后台显式选了强度时用客户端级 JSON 覆盖强制写入。
+		// 显式选 none 不强制写入；留空只走默认值，由 fantasy 按模型名决定发不发。
+		var sdk []option.RequestOption
+		if explicitEffort != "" && explicitEffort != "none" {
+			sdk = append(sdk, option.WithJSONSet("reasoning.effort", explicitEffort))
+		}
+		provider, err := fantasyopenai.New(base(sdk...)...)
+		if err != nil {
+			return nil, err
+		}
+		lm, err = provider.LanguageModel(context.Background(), model)
+		if err != nil {
+			return nil, err
+		}
+		// NOTE: 每次都新建切片再追加，避免两个客户端共享底层数组而互相串选项。
+		jsonSDK := append(append([]option.RequestOption{}, sdk...), option.WithJSONSet("text.format", map[string]string{"type": "json_object"}))
+		jsonProvider, err := fantasyopenai.New(base(jsonSDK...)...)
+		if err != nil {
+			return nil, err
+		}
+		jsonLM, err = jsonProvider.LanguageModel(context.Background(), model)
+		if err != nil {
+			return nil, err
+		}
+	default:
 		if reasoningEffort == "" {
 			reasoningEffort = defaultReasoningEffort
 		}
@@ -104,7 +169,9 @@ func newFantasyProvider(isAnthropic bool, apiKey, baseURL, model string, maxToke
 
 	return &fantasyProvider{
 		lm:                   lm,
+		jsonLM:               jsonLM,
 		isAnthropic:          isAnthropic,
+		isResponses:          isResponses,
 		model:                model,
 		maxTokens:            maxTokens,
 		temperature:          temperature,
@@ -377,8 +444,8 @@ func applyCacheBreakpoints(prompt fantasy.Prompt, tools []fantasy.Tool, explicit
 }
 
 // buildProviderOptions 构造一次调用的 provider 专属选项：Anthropic 分支处理扩展思考
-// (自适应 effort 或固定 budget)与用户分流 metadata；OpenAI 兼容分支处理 reasoning_effort、session 级 prompt cache key，
-// 以及 tools 与 json_object 互斥的 response_format。
+// (自适应 effort 或固定 budget)与用户分流 metadata；Responses 分支处理 reasoning effort 与原生 prompt_cache_key；
+// OpenAI 兼容分支处理 reasoning_effort、session 级 prompt cache key，以及 tools 与 json_object 互斥的 response_format。
 func (p *fantasyProvider) buildProviderOptions(ctx context.Context, cacheKey string, jsonMode, hasTools bool) fantasy.ProviderOptions {
 	if p.isAnthropic {
 		opts := &anthropic.ProviderOptions{}
@@ -395,6 +462,25 @@ func (p *fantasyProvider) buildProviderOptions(ctx context.Context, cacheKey str
 			opts.ExtraBody = map[string]any{"metadata": map[string]string{"user_id": cacheKey}}
 		}
 		return anthropic.NewProviderOptions(opts)
+	}
+
+	if p.isResponses {
+		opts := &fantasyopenai.ResponsesProviderOptions{}
+		if p.reasoningEffort != "" {
+			effort := fantasyopenai.ReasoningEffort(p.reasoningEffort)
+			opts.ReasoningEffort = &effort
+		}
+		if sessionID := sessionIDFromContext(ctx); sessionID != "" {
+			opts.User = &sessionID
+			log.Debug("using session for prompt cache", "session", sessionID, "model", p.model)
+			// NOTE: prompt_cache_key 必须按 agent 角色/NPC 实例隔离，避免跨 agent 缓存污染。
+			cacheKeyValue := cacheKey
+			if cacheKeyValue == "" {
+				cacheKeyValue = sessionID
+			}
+			opts.PromptCacheKey = &cacheKeyValue
+		}
+		return fantasyopenai.NewResponsesProviderOptions(opts)
 	}
 
 	opts := &openaicompat.ProviderOptions{}
@@ -560,6 +646,8 @@ func (p *fantasyProvider) consumeStream(stream fantasy.StreamResponse, onText fu
 			res.finishReason = string(part.FinishReason)
 		case fantasy.StreamPartTypeError:
 			streamErr = part.Error
+		case fantasy.StreamPartTypeWarnings:
+			logStreamWarnings(part)
 		}
 	}
 
@@ -581,6 +669,25 @@ func (p *fantasyProvider) consumeStream(stream fantasy.StreamResponse, onText fu
 		res.reasoning = reasoningSB.String()
 	}
 	return res, streamErr
+}
+
+// firstNonWarning 跨过流开头的 Warnings 事件，返回第一个真正来自网络的事件。
+// NOTE: fantasy 会在发出任何网络事件之前先 yield 一个 Warnings(如推理模型被丢掉 temperature)，
+// HTTP 错误要等到下一个事件才出现；把 Warnings 当成首事件会让下面的首事件探测重试失效。
+func firstNonWarning(next func() (fantasy.StreamPart, bool)) (fantasy.StreamPart, bool) {
+	for {
+		part, ok := next()
+		if !ok || part.Type != fantasy.StreamPartTypeWarnings {
+			return part, ok
+		}
+		logStreamWarnings(part)
+	}
+}
+
+func logStreamWarnings(part fantasy.StreamPart) {
+	for _, w := range part.Warnings {
+		log.Debug("llm stream warning", "type", w.Type, "setting", w.Setting, "message", w.Message)
+	}
 }
 
 // isRetryableFantasyError 判断错误是否值得整体重试(换一次新连接)：fantasy 自带的
@@ -619,7 +726,11 @@ func (p *fantasyProvider) chat(ctx context.Context, cacheKey string, messages []
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		attemptStart := time.Now()
 		var stream fantasy.StreamResponse
-		stream, err = p.lm.Stream(ctx, call)
+		lm := p.lm
+		if jsonMode && len(tools) == 0 && p.jsonLM != nil {
+			lm = p.jsonLM
+		}
+		stream, err = lm.Stream(ctx, call)
 		if err == nil {
 			res, err = p.consumeStream(stream, nil)
 		}
@@ -728,7 +839,7 @@ func (p *fantasyProvider) ChatStream(ctx context.Context, cacheKey string, messa
 			return nil, nil, fmt.Errorf("LLM chat stream error: %w", err)
 		}
 		n, st := iter.Pull(s)
-		part, ok := n()
+		part, ok := firstNonWarning(n)
 		if ok && part.Type == fantasy.StreamPartTypeError {
 			if isRetryableFantasyError(part.Error) && attempt < maxRetries-1 {
 				st()
@@ -782,6 +893,8 @@ func (p *fantasyProvider) ChatStream(ctx context.Context, cacheKey string, messa
 				recordLatency(role, p.model, "stream", time.Since(start), part.Error)
 				errCh <- fmt.Errorf("LLM chat stream receive error: %w", part.Error)
 				return true
+			case fantasy.StreamPartTypeWarnings:
+				logStreamWarnings(part)
 			case fantasy.StreamPartTypeFinish:
 				usage := usageFromFantasy(part.Usage)
 				recordUsage(role, p.model, "stream", usage)
@@ -832,7 +945,7 @@ func (p *fantasyProvider) ChatStreamTools(ctx context.Context, cacheKey string, 
 			return ToolChatResult{}, fmt.Errorf("LLM chat stream error: %w", err)
 		}
 		n, st := iter.Pull(s)
-		part, ok := n()
+		part, ok := firstNonWarning(n)
 		if ok && part.Type == fantasy.StreamPartTypeError {
 			if isRetryableFantasyError(part.Error) && attempt < maxRetries-1 {
 				st()
