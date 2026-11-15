@@ -137,11 +137,16 @@ func TestResponsesProvider_ReasoningEffort(t *testing.T) {
 		effort string
 		want   any
 	}{
-		{"non-gpt model with explicit effort is forced", "deepseek-r1", "high", "high"},
-		{"non-gpt model with explicit low is forced", "deepseek-r1", "low", "low"},
-		{"non-gpt model with empty effort sends nothing", "deepseek-r1", "", nil},
-		{"non-gpt model with none sends nothing", "deepseek-r1", "none", nil},
+		{"explicit effort on reasoning-by-name model", "deepseek-r1", "high", "high"},
+		{"explicit low on reasoning-by-name model", "deepseek-r1", "low", "low"},
+		// NOTE: fork 的 fantasy 把除 gpt-3/gpt-4/chatgpt/-chat 以外的名字都当推理模型，留空时默认值和显式 none 都由它写进请求体。
+		{"empty effort on reasoning-by-name model uses default", "deepseek-r1", "", "high"},
+		{"none on reasoning-by-name model is sent as none", "deepseek-r1", "none", "none"},
 		{"gpt-5 with empty effort uses default", "gpt-5", "", "high"},
+		// NOTE: 名字带 -chat 的被 fantasy 判为非推理模型会丢掉 reasoning，只有后台显式选择时才靠客户端级 JSON 覆盖强制写入。
+		{"explicit effort on non-reasoning-by-name model is forced", "deepseek-chat", "high", "high"},
+		{"empty effort on non-reasoning-by-name model sends nothing", "deepseek-chat", "", nil},
+		{"none on non-reasoning-by-name model sends nothing", "deepseek-chat", "none", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

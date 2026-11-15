@@ -20,7 +20,9 @@ import (
 	"charm.land/fantasy/providers/anthropic"
 	fantasyopenai "charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openaicompat"
-	"github.com/openai/openai-go/v3/option"
+	// NOTE: fantasy 的 fork 把 OpenAI SDK 换成了 charmbracelet/openai-go，传给 fantasyopenai.WithSDKOptions 的选项类型必须与之一致；
+	// 图片和嵌入仍用 openai-go/v3(见 openai_provider.go)，两者互不相通。
+	"github.com/charmbracelet/openai-go/option"
 )
 
 // defaultReasoningEffort 只用于 OpenAI 兼容与 Responses 分支的默认值；Anthropic 分支的 thinkingLevel
@@ -124,8 +126,8 @@ func newFantasyProvider(kind providerKind, apiKey, baseURL, model string, maxTok
 			}
 			return opts
 		}
-		// NOTE: fantasy 只对名字像推理模型(gpt-5、o 系列等)才写 reasoning；网关上名字不像的推理模型
-		// (deepseek、claude 等)会被丢掉，所以后台显式选了强度时用客户端级 JSON 覆盖强制写入。
+		// NOTE: fork 的 fantasy 把除 gpt-3/gpt-4/chatgpt/-chat 以外的名字都当推理模型并自己写 reasoning；
+		// 名字命中那几类(如 deepseek-chat)的会被丢掉，所以后台显式选了强度时仍用客户端级 JSON 覆盖强制写入。
 		// 显式选 none 不强制写入；留空只走默认值，由 fantasy 按模型名决定发不发。
 		var sdk []option.RequestOption
 		if explicitEffort != "" && explicitEffort != "none" {
