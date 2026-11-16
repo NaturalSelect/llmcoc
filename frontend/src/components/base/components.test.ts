@@ -115,6 +115,33 @@ describe('PaginationBar', () => {
     expect(wrapper.text()).toContain('共 55 条')
     expect(wrapper.findAll('button')[1].attributes('disabled')).toBeDefined()
   })
+
+  test('默认没有跳转框；开启 jump 后按页码跳转并夹在合法范围内', async () => {
+    expect(mount(PaginationBar, { props: { page: 1, totalPages: 5 } }).find('input').exists()).toBe(false)
+
+    const wrapper = mount(PaginationBar, { props: { page: 1, totalPages: 5, jump: true, 'onUpdate:page': (p: number) => wrapper.setProps({ page: p }) } })
+    const input = wrapper.find('input')
+    const submitBtn = () => wrapper.find('button[type="submit"]')
+    expect(submitBtn().attributes('disabled')).toBeDefined()
+
+    await input.setValue('4')
+    expect(submitBtn().attributes('disabled')).toBeUndefined()
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('4 / 5')
+    expect((input.element as HTMLInputElement).value).toBe('')
+
+    await input.setValue('999')
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('5 / 5')
+
+    await input.setValue('0')
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('1 / 5')
+
+    await input.setValue('x3')
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('1 / 5')
+  })
 })
 
 describe('TabBar', () => {

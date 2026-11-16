@@ -214,6 +214,6 @@ defineExpose({ applyModule, applyDeleted, reload: () => load() })
         </div>
       </li>
     </ul>
-    <PaginationBar :page="page" :total-pages="totalPages" @update:page="goto" />
+    <PaginationBar :page="page" :total-pages="totalPages" jump @update:page="goto" />
   </PaperCard>
 </template>

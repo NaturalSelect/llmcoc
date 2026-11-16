@@ -13,20 +13,18 @@ import { formatTime, moduleMetaLine, statusLabel, statusTone } from './onlineMod
 
 const props = defineProps<{ items: OnlineModule[]; page: number; pageSize: number; total: number; totalPages: number }>()
 const emit = defineEmits<{
-  prev: []
-  next: []
+  goto: [page: number]
   refresh: []
   pageSize: [size: number]
   view: [id: number]
   delete: [module: OnlineModule]
 }>()
 
-// NOTE: PaginationBar 用 v-model:page 给出目标页码，这里翻译回对外不变的 prev / next 事件，页码本身仍由上层的分页列表维护
+// NOTE: PaginationBar 用 v-model:page 给出目标页码，这里原样交给上层的 goto（跳转可以跨多页），页码本身仍由上层的分页列表维护
 const pageModel = computed({
   get: () => props.page,
   set: (target: number) => {
-    if (target > props.page) emit('next')
-    else if (target < props.page) emit('prev')
+    if (target !== props.page) emit('goto', target)
   },
 })
 
@@ -43,8 +41,6 @@ function byline(m: OnlineModule): string {
       :page="page"
       :total-pages="totalPages"
       :total="total"
-      @prev="emit('prev')"
-      @next="emit('next')"
       @refresh="emit('refresh')"
     >
       <template #before>
@@ -76,6 +72,6 @@ function byline(m: OnlineModule): string {
         </div>
       </li>
     </ul>
-    <PaginationBar v-model:page="pageModel" :total-pages="totalPages" />
+    <PaginationBar v-model:page="pageModel" :total-pages="totalPages" jump />
   </PaperCard>
 </template>

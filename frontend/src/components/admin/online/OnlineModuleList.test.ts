@@ -38,12 +38,27 @@ describe('OnlineModuleList', () => {
     wrapper.unmount()
   })
 
-  test('点下方的上一页 / 下一页发出 prev / next', async () => {
+  test('点下方的上一页 / 下一页发出目标页码', async () => {
     const wrapper = mount(OnlineModuleList, { props: base })
     await wrapper.find('button[aria-label="下一页"]').trigger('click')
     await wrapper.find('button[aria-label="上一页"]').trigger('click')
-    expect(wrapper.emitted('next')).toHaveLength(1)
-    expect(wrapper.emitted('prev')).toHaveLength(1)
+    expect(wrapper.emitted('goto')).toStrictEqual([[3], [1]])
+  })
+
+  test('输入页码跳转，超出范围夹到首尾页，非数字被忽略', async () => {
+    const wrapper = mount(OnlineModuleList, { props: base })
+    const input = wrapper.find('input[aria-label="跳转到页码"]')
+    const submit = async (text: string) => {
+      await input.setValue(text)
+      await wrapper.find('form').trigger('submit')
+    }
+    await submit('3')
+    await submit('99')
+    await submit('0')
+    await submit('abc')
+    // NOTE: 目标页等于当前页（第 2 页）时不发事件
+    await submit('2')
+    expect(wrapper.emitted('goto')).toStrictEqual([[3], [3], [1]])
   })
 
   test('只有一页时不显示翻页条', () => {

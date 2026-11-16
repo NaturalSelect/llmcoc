@@ -823,6 +823,13 @@ describe('OnlineBrowsePanel', () => {
     nextBtn.click()
     await flushPromises()
     expect(calls.at(-1)!.path).toBe('/api/admin/online-modules/browse?page=2&title=' + encodeURIComponent('雨夜'))
+
+    const jump = document.body.querySelector('input[aria-label="跳转到页码"]') as HTMLInputElement
+    jump.value = '3'
+    jump.dispatchEvent(new Event('input'))
+    jump.closest('form')!.dispatchEvent(new Event('submit', { cancelable: true }))
+    await flushPromises()
+    expect(calls.at(-1)!.path).toBe('/api/admin/online-modules/browse?page=3&title=' + encodeURIComponent('雨夜'))
     w.unmount()
   })
 
