@@ -1098,3 +1098,31 @@ func TestDirectorPromptKeepsReplyFromRepeatingProse(t *testing.T) {
 		t.Error("ask_players tool should keep question to the next decision only")
 	}
 }
+
+// TestDirectorPromptCarriesAntiLiteraryRule 验证 Director 提示词带有反文学规则，覆盖 reply、question、direction 和 NPC 台词，
+// 并且声明与事实交代类规则冲突时以后者为准。
+func TestDirectorPromptCarriesAntiLiteraryRule(t *testing.T) {
+	start := strings.Index(kpSystemPrompt, "<rule>[ANTI-LITERARY]")
+	if start < 0 {
+		t.Fatal("kp system prompt should define [ANTI-LITERARY]")
+	}
+	rule := kpSystemPrompt[start:]
+	rule = rule[:strings.Index(rule, "</rule>")]
+	for _, want := range []string{
+		"reply、ask_players的question、write的direction，以及你替NPC写下的每一句台词和动作",
+		"以那些规则为准",
+		"不用描述心理状态的词",
+		"只写身体症状和看得见的动作",
+		"不让他说“我很害怕”",
+		"不概括事件，不解释为什么",
+		"必写项仍要一条一条写出来，不能用一句概括代替",
+		"看不懂就明说看不懂",
+		"一句一个动作或一样东西",
+		"没读过多少书的普通人",
+		"不因为“没文化”就少答",
+	} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("[ANTI-LITERARY] should contain %q", want)
+		}
+	}
+}

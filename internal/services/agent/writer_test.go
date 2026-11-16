@@ -917,3 +917,28 @@ func TestWriterPromptKeepsThirdPersonAndExplainsNewProps(t *testing.T) {
 		}
 	}
 }
+
+func TestWriterPromptCarriesAntiLiteraryGuide(t *testing.T) {
+	initSiteSettingTestDB(t)
+	for _, want := range []string{
+		"<anti_literary>",
+		"以那些规则为准",
+		"叙述里不用描述心理状态的词",
+		"只写身体症状",
+		"不概括事件，不解释“为什么”",
+		"必写项仍要一条条写出来，不能用一句概括代替",
+		"必写项里的事实、结果、数字和说话人不能因此被改掉或漏掉",
+		"句子要短、要碎",
+		"明说看不懂",
+		"文化不高的人",
+	} {
+		if !strings.Contains(writerDefaultPrompt, want) {
+			t.Errorf("writer prompt should contain %q", want)
+		}
+	}
+	for _, mode := range []bool{false, true} {
+		if !strings.Contains(writerSystemPrompt(newWriterTestHandle(&writerFakeProvider{}), mode, false), "<anti_literary>") {
+			t.Errorf("anti-literary guide should render with nsfwMode=%v", mode)
+		}
+	}
+}
