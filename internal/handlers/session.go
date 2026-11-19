@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -58,6 +59,8 @@ type JoinSessionReq struct {
 	CharacterCardID  uint   `json:"character_card_id" binding:"required"`
 	Password         string `json:"password"`
 	SecretBackground string `json:"secret_background"`
+	// NOTE: 认领模组预设 HO 身份卡：填编号，或 "random" 随机抽签；留空不认领。
+	HandoutCode string `json:"handout_code"`
 }
 
 const maxSecretBackgroundRunes = 1000
@@ -194,6 +197,7 @@ func ListSessions(c *gin.Context) {
 
 	for i := range sessions {
 		populateScenarioPreview(&sessions[i].Scenario)
+		sanitizeScenarioHandouts(&sessions[i].Scenario, admin)
 	}
 	sanitizeSessionsSecrets(sessions, userID, admin, false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
@@ -232,10 +236,12 @@ func ListMyHistorySessions(c *gin.Context) {
 		return
 	}
 
+	historyAdmin := isAdminUser(c, userID)
 	for i := range sessions {
 		populateScenarioPreview(&sessions[i].Scenario)
+		sanitizeScenarioHandouts(&sessions[i].Scenario, historyAdmin)
 	}
-	sanitizeSessionsSecrets(sessions, userID, isAdminUser(c, userID), false)
+	sanitizeSessionsSecrets(sessions, userID, historyAdmin, false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 
@@ -252,8 +258,10 @@ func GetSession(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
 	}
+	viewerAdmin := isAdminUser(c, viewerID)
 	populateScenarioPreview(&session.Scenario)
-	sanitizeSessionPlayerSecrets(&session, viewerID, isAdminUser(c, viewerID), true)
+	sanitizeScenarioHandouts(&session.Scenario, viewerAdmin)
+	sanitizeSessionPlayerSecrets(&session, viewerID, viewerAdmin, true)
 	c.JSON(http.StatusOK, session)
 }
 
@@ -337,6 +345,7 @@ func CreateSession(c *gin.Context) {
 	models.DB.Create(&systemMsg)
 
 	models.DB.Preload("Scenario").Preload("Creator").First(&session, session.ID)
+	sanitizeScenarioHandouts(&session.Scenario, isAdminUser(c, userID))
 	c.JSON(http.StatusCreated, session)
 }
 
@@ -413,6 +422,13 @@ func JoinSession(c *gin.Context) {
 		return
 	}
 
+	handoutCode := strings.TrimSpace(req.HandoutCode)
+	handouts := session.Scenario.Content.Data.Handouts
+	if handoutCode != "" && len(handouts) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该模组没有预设身份卡"})
+		return
+	}
+
 	player := models.SessionPlayer{
 		SessionID:        uint(sessionID),
 		UserID:           userID,
@@ -420,7 +436,30 @@ func JoinSession(c *gin.Context) {
 		SecretBackground: secret,
 		JoinedAt:         time.Now(),
 	}
-	if err := models.DB.Create(&player).Error; err != nil {
+	var joinErr *handoutJoinError
+	if err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if handoutCode != "" {
+			// NOTE: 在事务内重新读取已认领的 HO，避免两名玩家同时认领同一张身份卡。
+			var claimed []string
+			if err := tx.Model(&models.SessionPlayer{}).
+				Where("session_id = ? AND handout_code <> ''", sessionID).
+				Pluck("handout_code", &claimed).Error; err != nil {
+				return err
+			}
+			h, herr := pickScenarioHandout(handouts, claimed, handoutCode)
+			if herr != nil {
+				joinErr = herr
+				return herr
+			}
+			player.HandoutCode = h.Code
+			player.SecretBackground = composeHandoutSecret(h, secret)
+		}
+		return tx.Create(&player).Error
+	}); err != nil {
+		if joinErr != nil {
+			c.JSON(joinErr.status, gin.H{"error": joinErr.msg})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "加入房间失败"})
 		return
 	}
@@ -435,10 +474,71 @@ func JoinSession(c *gin.Context) {
 		Content:   fmt.Sprintf("「%s」以调查员「%s」的身份加入了房间。", username, card.Name),
 		Username:  "系统",
 	}
+	if player.HandoutCode != "" {
+		joinMsg.Content = fmt.Sprintf("「%s」以调查员「%s」的身份加入了房间，认领身份卡 %s。", username, card.Name, player.HandoutCode)
+	}
 	models.DB.Create(&joinMsg)
 	publishSessionChanged(uint(sessionID), models.SessionStatusLobby, "join")
 
-	c.JSON(http.StatusOK, gin.H{"message": "加入成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "加入成功", "handout_code": player.HandoutCode})
+}
+
+type handoutJoinError struct {
+	status int
+	msg    string
+}
+
+func (e *handoutJoinError) Error() string { return e.msg }
+
+// pickScenarioHandout 按编号认领预设 HO；code 为 random 时从未被认领的身份卡里随机抽一张。
+func pickScenarioHandout(handouts []models.ScenarioHandout, claimed []string, code string) (models.ScenarioHandout, *handoutJoinError) {
+	isClaimed := func(c string) bool {
+		for _, x := range claimed {
+			if strings.EqualFold(strings.TrimSpace(x), strings.TrimSpace(c)) {
+				return true
+			}
+		}
+		return false
+	}
+	if strings.EqualFold(code, "random") {
+		free := make([]models.ScenarioHandout, 0, len(handouts))
+		for _, h := range handouts {
+			if strings.TrimSpace(h.Code) != "" && !isClaimed(h.Code) {
+				free = append(free, h)
+			}
+		}
+		if len(free) == 0 {
+			return models.ScenarioHandout{}, &handoutJoinError{http.StatusConflict, "身份卡已被全部认领"}
+		}
+		return free[rand.IntN(len(free))], nil
+	}
+	for _, h := range handouts {
+		if strings.EqualFold(strings.TrimSpace(h.Code), code) {
+			if isClaimed(h.Code) {
+				return models.ScenarioHandout{}, &handoutJoinError{http.StatusConflict, fmt.Sprintf("身份卡 %s 已被其他玩家认领", h.Code)}
+			}
+			return h, nil
+		}
+	}
+	return models.ScenarioHandout{}, &handoutJoinError{http.StatusBadRequest, fmt.Sprintf("身份卡 %s 不存在", code)}
+}
+
+// composeHandoutSecret 把预设 HO 的秘密正文写进玩家的秘密背景，玩家自填的内容作为补充保留。
+func composeHandoutSecret(h models.ScenarioHandout, custom string) string {
+	title := strings.TrimSpace(h.Title)
+	head := "【" + strings.TrimSpace(h.Code)
+	if title != "" {
+		head += " · " + title
+	}
+	head += "】"
+	out := head
+	if s := strings.TrimSpace(h.Secret); s != "" {
+		out += "\n" + s
+	}
+	if custom != "" {
+		out += "\n\n补充秘密：\n" + custom
+	}
+	return out
 }
 
 type setPlayerSecretReq struct {
@@ -1634,7 +1734,11 @@ func ListMyFavoriteSessions(c *gin.Context) {
 		return
 	}
 
-	sanitizeSessionsSecrets(sessions, userID, isAdminUser(c, userID), false)
+	favAdmin := isAdminUser(c, userID)
+	for i := range sessions {
+		sanitizeScenarioHandouts(&sessions[i].Scenario, favAdmin)
+	}
+	sanitizeSessionsSecrets(sessions, userID, favAdmin, false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 

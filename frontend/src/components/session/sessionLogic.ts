@@ -46,13 +46,31 @@ export function emptyJoinForm(): JoinSessionForm {
   return { character_card_id: '', password: '' }
 }
 
-// NOTE: 没选人物卡时不提交（旧前端静默返回，这里由按钮禁用兜底）；秘密背景仅非空时才附带，避免给未填写 HO 的请求塞空字段
+// NOTE: 没选人物卡时不提交（旧前端静默返回，这里由按钮禁用兜底）；秘密背景与预设 HO 仅非空时才附带
 export function buildJoinPayload(form: JoinSessionForm): JoinSessionPayload | null {
   if (!form.character_card_id) return null
   const secret = (form.secret_background ?? '').trim()
+  const handoutCode = (form.handout_code ?? '').trim()
   const payload: JoinSessionPayload = { character_card_id: form.character_card_id, password: form.password }
   if (secret) payload.secret_background = secret
+  if (handoutCode) payload.handout_code = handoutCode
   return payload
+}
+
+// NOTE: 大小写不敏感地收集房间内已被认领的预设 HO 编号，供加入弹窗禁用已占身份卡
+export function claimedHandoutCodes(players: ReadonlyArray<{ handout_code?: unknown }> | null | undefined): Set<string> {
+  const set = new Set<string>()
+  for (const p of players ?? []) {
+    if (typeof p.handout_code !== 'string') continue
+    const code = p.handout_code.trim().toLowerCase()
+    if (code) set.add(code)
+  }
+  return set
+}
+
+export function isHandoutClaimed(claimed: Set<string>, code: string | undefined): boolean {
+  const key = (code ?? '').trim().toLowerCase()
+  return key.length > 0 && claimed.has(key)
 }
 
 // NOTE: 选剧本时若房间名还是空的，用剧本名做默认值；之后换剧本不会覆盖已有房间名

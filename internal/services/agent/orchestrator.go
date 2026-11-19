@@ -669,6 +669,9 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		if p.SessionMemory != "" {
 			sb.WriteString(fmt.Sprintf("<memory>%s</memory>", xmlEscape(p.SessionMemory)))
 		}
+		if code := strings.TrimSpace(p.HandoutCode); code != "" {
+			sb.WriteString(fmt.Sprintf(`<handout code=%q/>`, code))
+		}
 		if secret := strings.TrimSpace(p.SecretBackground); secret != "" {
 			sb.WriteString(fmt.Sprintf("<secret_background>%s</secret_background>", xmlEscape(secret)))
 		}
@@ -887,6 +890,9 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		if strings.TrimSpace(p.SessionMemory) != "" {
 			line += "【有Session级特殊状态:需query_character查看】"
 			hasSessionMemory = true
+		}
+		if code := strings.TrimSpace(p.HandoutCode); code != "" {
+			line += fmt.Sprintf("【HO:%s】", code)
 		}
 		if strings.TrimSpace(p.SecretBackground) != "" {
 			line += "【有秘密背景/HO:需query_character查看】"

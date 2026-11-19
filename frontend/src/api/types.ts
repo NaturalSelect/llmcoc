@@ -16,6 +16,7 @@ export interface CharacterCard {
 
 export interface SessionPlayer {
   user_id: number
+  handout_code?: string
   secret_background?: string
   location?: string
   user?: { username?: string } | null

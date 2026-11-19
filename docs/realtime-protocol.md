@@ -304,6 +304,22 @@ KP 这一个周期结束。
 
 `cards` 在一拍内可能连发多次，客户端应当对重拉请求做防抖。`status` 以事件为准：`end_game` 结束的房间，周期内和 `floor_end` 之后的 `session` 都是 `ended`。
 
+#### `ooc_message`
+
+桌边讨论（OOC）的新消息，由 `POST /api/sessions/:id/ooc` 发布，载荷为单条 `SessionOOCMessage`。对房间内所有订阅者广播，不进入 KP 叙事流。
+
+#### `private_note`
+
+桌下纸条（私聊/悄悄给 KP 递纸条），由 `POST /api/sessions/:id/private-notes` 发布，载荷为单条 `SessionPrivateNote`（`to_user_id = 0` 表示发给 KP）。通过 `PublishTo` 仅推送给递条人、收条人与管理员；断线重连回放同样按该权限过滤。历史列表由 `GET /api/sessions/:id/private-notes` 按查看者权限补拉。
+
+#### `handbook_update`
+
+调查手册（线索板、共享笔记、危机时钟等）发生变化的信号，载荷为 `{"reason": "clue" | "note" | "clock"}`。客户端收到后按需重新拉取 `GET /api/sessions/:id/handbook`。
+
+#### `encounter_update`
+
+遭遇追踪（战斗/追逐回合与行动者变化）发生变化的信号，客户端收到后重新拉取 `GET /api/sessions/:id/handbook` 刷新遭遇状态。
+
 ### 临时事件（`seq = 0`）
 
 #### `kp_status`

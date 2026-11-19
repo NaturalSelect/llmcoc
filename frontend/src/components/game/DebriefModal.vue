@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Award, Brain, Dices, Eye, Lock, ShieldAlert, Timer } from '@lucide/vue'
+import { Award, Brain, Dices, Eye, Lock, Mail, ShieldAlert, Timer } from '@lucide/vue'
 import { ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { ScenarioClue, ScenarioEnding } from '@/api/sessionTypes'
@@ -8,7 +8,9 @@ import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import { attitudeTone, clueNatureLabel, clueNatureTone } from '@/components/scenario/scenarioFormat'
 import type { SessionClock } from '@/game/handbookTypes'
+import type { PrivateNote } from '@/game/roomState'
 import { useUiStore } from '@/stores/ui'
+import { fmtTime } from '@/utils/format'
 
 interface DebriefEvalPlayer {
   character_name: string
@@ -39,6 +41,7 @@ interface DebriefNPC {
 interface DebriefPlayerSecret {
   character_name: string
   username?: string
+  handout_code?: string
   secret_background: string
 }
 
@@ -66,6 +69,7 @@ interface DebriefResponse {
     player_secrets: DebriefPlayerSecret[]
     clocks?: SessionClock[]
     hallucinations?: DebriefHallucination[]
+    private_notes?: PrivateNote[]
   }
 }
 
@@ -249,11 +253,36 @@ function successRate(st: DebriefDiceStat): string {
                 :key="s.character_name + s.username"
                 class="rounded-lg border border-line bg-surface-2/60 p-3"
               >
-                <p class="text-xs font-medium text-info">
-                  {{ s.character_name }}
-                  <span v-if="s.username" class="text-fg-subtle">（@{{ s.username }}）</span>
-                </p>
-                <p class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">{{ s.secret_background }}</p>
+                <div class="flex flex-wrap items-center gap-2 text-xs font-medium text-info">
+                  <span>
+                    {{ s.character_name }}
+                    <span v-if="s.username" class="text-fg-subtle">（@{{ s.username }}）</span>
+                  </span>
+                  <StampBadge v-if="s.handout_code" tone="ledger">{{ s.handout_code }}</StampBadge>
+                </div>
+                <p v-if="s.secret_background" class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">{{ s.secret_background }}</p>
+              </article>
+            </div>
+          </section>
+
+          <section v-if="data.truth.private_notes?.length" class="space-y-2.5">
+            <h3 class="flex items-center gap-1.5 text-sm font-semibold text-fg">
+              <Mail :size="15" :stroke-width="1.75" class="text-info" />
+              本局桌下纸条揭晓
+            </h3>
+            <div class="space-y-2">
+              <article
+                v-for="n in data.truth.private_notes"
+                :key="n.id"
+                class="rounded-lg border border-info/30 bg-info/10 p-3"
+              >
+                <div class="flex items-baseline justify-between gap-2 text-xs">
+                  <span class="font-medium text-info">
+                    {{ n.from_name || '调查员' }} → {{ n.to_user_id === 0 ? 'KP' : n.to_name || '调查员' }}
+                  </span>
+                  <span v-if="n.created_at" class="shrink-0 tabular-nums text-fg-subtle">{{ fmtTime(n.created_at) }}</span>
+                </div>
+                <p class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">{{ n.content }}</p>
               </article>
             </div>
           </section>

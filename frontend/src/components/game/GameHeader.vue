@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Award, BookMarked, BookOpen, Download, Ellipsis, IdCard, LogOut, MessageCircle, Play, RotateCcw, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
+import { ArrowLeft, Award, BookMarked, BookOpen, Download, Ellipsis, IdCard, LogOut, Mail, MessageCircle, Play, RotateCcw, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Session } from '@/api/types'
@@ -15,12 +15,14 @@ const props = defineProps<{
   busy: { leaving: boolean; ending: boolean; reviving: boolean }
   soundEnabled?: boolean
   oocUnread?: number
+  notesUnread?: number
   novelMode?: boolean
 }>()
 const emit = defineEmits<{
   action: [action: Action]
   toggleSound: []
   openOoc: []
+  openNotes: []
   openHandbook: []
   toggleNovel: []
   exportReplay: []
@@ -104,6 +106,21 @@ onBeforeUnmount(() => {
       @click="emit('openHandbook')"
     >
       <BookMarked :size="16" :stroke-width="1.75" />
+    </button>
+
+    <button
+      type="button"
+      class="relative inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-fg-subtle transition hover:bg-surface-2 hover:text-fg lg:hidden"
+      aria-label="打开桌下纸条"
+      title="桌下纸条"
+      @click="emit('openNotes')"
+    >
+      <Mail :size="16" :stroke-width="1.75" />
+      <span
+        v-if="(notesUnread ?? 0) > 0"
+        class="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-info"
+        aria-hidden="true"
+      />
     </button>
 
     <button

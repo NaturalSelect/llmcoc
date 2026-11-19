@@ -17,6 +17,7 @@ export interface LobbyPlayer {
   id?: number
   user_id: number
   character_card_id?: number
+  handout_code?: string
   user?: SessionUserRef | null
   character_card?: CharacterCard | null
   [key: string]: unknown
@@ -70,12 +71,14 @@ export interface JoinSessionForm {
   character_card_id: number | ''
   password: string
   secret_background?: string
+  handout_code?: string
 }
 
 export interface JoinSessionPayload {
   character_card_id: number
   password: string
   secret_background?: string
+  handout_code?: string
 }
 
 // start/end/leave/revive 等接口返回的 { message }
@@ -159,6 +162,13 @@ export interface ScenarioMechanic {
   stages?: ScenarioMechanicStage[] | null
 }
 
+export interface ScenarioHandout {
+  code?: string
+  title?: string
+  public_hook?: string
+  secret?: string
+}
+
 export interface ScenarioContentView {
   setting?: string
   intro?: string
@@ -173,5 +183,6 @@ export interface ScenarioContentView {
   timeline?: ScenarioTimelineEvent[] | null
   keeper_appendix?: ScenarioKeeperAppendix | null
   mechanics?: ScenarioMechanic[] | null
+  handouts?: ScenarioHandout[] | null
   mythos_core?: string
 }

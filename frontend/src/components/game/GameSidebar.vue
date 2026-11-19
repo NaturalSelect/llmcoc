@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookMarked, ChevronDown, Clock, Lock, MapPin, MessageCircle, Sparkles, Users } from '@lucide/vue'
+import { BookMarked, ChevronDown, Clock, Lock, Mail, MapPin, MessageCircle, Sparkles, Users } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { CharacterCard, Session, SessionPlayer } from '@/api/types'
@@ -9,6 +9,7 @@ import StampBadge from '@/components/base/StampBadge.vue'
 import StatBar from '@/components/base/StatBar.vue'
 import { portraitSrc } from '@/components/character/characterLogic'
 import HandbookPanel from '@/components/game/HandbookPanel.vue'
+import PrivateNotePanel from '@/components/game/PrivateNotePanel.vue'
 import TableTalkPanel from '@/components/game/TableTalkPanel.vue'
 import { playerTurnSubmitState } from '@/game/banner'
 import type { HandbookData } from '@/game/handbookTypes'
@@ -34,7 +35,7 @@ const emit = defineEmits<{ select: [player: SessionPlayer]; refresh: []; refresh
 const auth = useAuthStore()
 const ui = useUiStore()
 
-const activeTab = ref<'status' | 'handbook' | 'ooc'>('status')
+const activeTab = ref<'status' | 'handbook' | 'notes' | 'ooc'>('status')
 const chips = computed(() => hudChips(props.card))
 const hasLuck = computed(() => props.card?.stats?.luck !== undefined)
 const occupation = computed(() => (props.card as { occupation?: string } | null)?.occupation || '未知职业')
@@ -42,8 +43,12 @@ const portrait = computed(() => portraitSrc(props.card as { portrait_hash?: stri
 const players = computed(() => props.session?.players ?? [])
 const me = computed(() => players.value.find((p) => p.user_id === props.userId) ?? null)
 const mySecret = computed(() => me.value?.secret_background || '')
+const myHandoutCode = computed(() => me.value?.handout_code || '')
 const canPostOoc = computed(() =>
   Boolean(props.session && (isInSession(props.session, props.userId) || props.session.created_by === props.userId || auth.isAdmin)),
+)
+const canSendPrivateNote = computed(() =>
+  Boolean(props.session && props.session.status !== 'ended' && isInSession(props.session, props.userId)),
 )
 const canEditSecret = computed(() => {
   if (!me.value || !props.session) return false
@@ -51,13 +56,14 @@ const canEditSecret = computed(() => {
   if (props.session.status === 'playing') return props.session.created_by === props.userId || auth.isAdmin
   return false
 })
-const showSecretCard = computed(() => Boolean(me.value && (mySecret.value || canEditSecret.value)))
+const showSecretCard = computed(() => Boolean(me.value && (mySecret.value || myHandoutCode.value || canEditSecret.value)))
 const scenarioName = computed(() => (props.session?.scenario as { name?: string } | undefined)?.name || '')
 const statusTone = computed(() => {
   const status = props.session?.status
   return status === 'playing' ? 'moss' : status === 'lobby' ? 'ledger' : 'faint'
 })
 const oocUnread = computed(() => props.room?.oocUnread ?? 0)
+const notesUnread = computed(() => props.room?.privateNotesUnread ?? 0)
 
 const secretOpen = ref(false)
 const secretEditing = ref(false)
@@ -136,6 +142,21 @@ function playerPublicChips(p: SessionPlayer) {
       <button
         type="button"
         class="inline-flex flex-1 items-center justify-center gap-1 border-b-2 px-1.5 py-2 text-xs font-medium transition"
+        :class="activeTab === 'notes' ? 'border-accent text-fg' : 'border-transparent text-fg-subtle hover:text-fg'"
+        @click="activeTab = 'notes'"
+      >
+        <Mail :size="14" :stroke-width="1.75" class="shrink-0" />
+        纸条
+        <span
+          v-if="notesUnread > 0 && activeTab !== 'notes'"
+          class="inline-flex min-w-4 items-center justify-center rounded-full bg-info px-1 text-xs font-semibold tabular-nums text-bg"
+        >
+          {{ notesUnread > 99 ? '99+' : notesUnread }}
+        </span>
+      </button>
+      <button
+        type="button"
+        class="inline-flex flex-1 items-center justify-center gap-1 border-b-2 px-1.5 py-2 text-xs font-medium transition"
         :class="activeTab === 'ooc' ? 'border-accent text-fg' : 'border-transparent text-fg-subtle hover:text-fg'"
         @click="activeTab = 'ooc'"
       >
@@ -185,6 +206,7 @@ function playerPublicChips(p: SessionPlayer) {
               <span class="inline-flex items-center gap-1.5">
                 <Lock :size="14" :stroke-width="1.75" class="shrink-0" />
                 秘密背景 (HO)
+                <StampBadge v-if="myHandoutCode" tone="ledger">{{ myHandoutCode }}</StampBadge>
               </span>
               <span class="inline-flex items-center gap-1 text-fg-subtle">
                 <span v-if="mySecret">已设</span>
@@ -241,6 +263,7 @@ function playerPublicChips(p: SessionPlayer) {
                   <span class="block truncate text-sm font-medium text-fg">{{ playerName(p) }}</span>
                   <span class="block truncate text-xs text-fg-subtle">{{ playerOccupation(p) }}</span>
                 </span>
+                <StampBadge v-if="p.handout_code" class="shrink-0" tone="ledger">{{ p.handout_code }}</StampBadge>
                 <StampBadge v-if="playerTurnSubmitState(room, p) === 'submitted'" class="shrink-0" tone="moss">已提交</StampBadge>
                 <StampBadge v-else-if="playerTurnSubmitState(room, p) === 'pending'" class="shrink-0" tone="faint">待提交</StampBadge>
                 <StampBadge v-if="p.user_id === userId" class="shrink-0" tone="seal">你</StampBadge>
@@ -276,6 +299,15 @@ function playerPublicChips(p: SessionPlayer) {
       :user-id="userId"
       :can-edit="canPostOoc"
       @refresh="emit('refreshHandbook')"
+    />
+
+    <PrivateNotePanel
+      v-show="activeTab === 'notes'"
+      :session="session"
+      :room="room"
+      :user-id="userId"
+      :can-send="canSendPrivateNote"
+      :active="activeTab === 'notes'"
     />
 
     <TableTalkPanel

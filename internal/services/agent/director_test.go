@@ -1126,3 +1126,57 @@ func TestDirectorPromptCarriesAntiLiteraryRule(t *testing.T) {
 		}
 	}
 }
+
+func TestDirectorPrivateNotesAndHandoutPromptInjection(t *testing.T) {
+	card := models.CharacterCard{
+		Name:       "阿瑟",
+		Occupation: "私家侦探",
+		Stats:      models.JSONField[models.CharacterStats]{Data: models.CharacterStats{HP: 11, MaxHP: 11, SAN: 55, MaxSAN: 99, MP: 10, MaxMP: 10}},
+	}
+	players := []models.SessionPlayer{
+		{
+			UserID:           10,
+			HandoutCode:      "HO1",
+			SecretBackground: "【HO1 · 侦探】\n大衣内袋藏着失窃怀表。",
+			CharacterCard:    card,
+		},
+	}
+	gctx := GameContext{
+		Session: models.GameSession{
+			ID:        1,
+			TurnRound: 2,
+			Scenario: models.Scenario{
+				Name: "测试模组",
+				Content: models.JSONField[models.ScenarioContent]{Data: models.ScenarioContent{
+					Setting: "雾都",
+				}},
+			},
+			Players: players,
+		},
+		PrivateNotes: []models.SessionPrivateNote{
+			{FromName: "阿瑟", ToUserID: 0, ToName: "KP", Content: "我偷偷把怀表滑进袖口。"},
+			{FromName: "阿瑟", ToUserID: 20, ToName: "贝拉", Content: "待会一起搜书房。"},
+		},
+	}
+
+	msgs := buildKPTurnOpening(gctx, 1, nil, "", nil, nil)
+	if len(msgs) != 2 {
+		t.Fatalf("want 2 opening messages, got %d", len(msgs))
+	}
+	if !strings.Contains(msgs[0].Content, "<private_notes>") ||
+		!strings.Contains(msgs[0].Content, "阿瑟 → KP：我偷偷把怀表滑进袖口。") ||
+		!strings.Contains(msgs[0].Content, "阿瑟 → 贝拉：待会一起搜书房。") {
+		t.Fatalf("opening msg[0] missing private_notes block:\n%s", msgs[0].Content)
+	}
+	if !strings.Contains(msgs[0].Content, "【HO:HO1】") {
+		t.Fatalf("player brief should include 【HO:HO1】:\n%s", msgs[0].Content)
+	}
+	if c := strings.Count(msgs[1].Content, "</system-reminder>"); c != 1 {
+		t.Fatalf("opening msg[1] should contain exactly one </system-reminder>, got %d", c)
+	}
+
+	detail := buildCharacterDetail("阿瑟", players)
+	if !strings.Contains(detail, `<handout code="HO1"/>`) {
+		t.Fatalf("character detail should include handout tag:\n%s", detail)
+	}
+}

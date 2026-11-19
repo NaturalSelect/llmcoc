@@ -125,6 +125,135 @@ func PostOOCMessage(c *gin.Context) {
 }
 
 const (
+	maxPrivateNoteRunes     = 500
+	privateNoteHistoryLimit = 200
+)
+
+// GetPrivateNotes 返回当前用户能看到的桌下纸条（按时间升序）。
+// NOTE: 对局中玩家只能看到自己递出或收到的纸条；管理员或已结团时可见全部（复盘揭晓）。
+func GetPrivateNotes(c *gin.Context) {
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID := c.GetUint("user_id")
+
+	var session models.GameSession
+	if err := models.DB.Preload("Players").First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+	if !canViewSession(&session, userID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权查看该房间"})
+		return
+	}
+
+	q := models.DB.Where("session_id = ?", session.ID)
+	if !isAdminUser(c, userID) && session.Status != models.SessionStatusEnded {
+		q = q.Where("from_user_id = ? OR to_user_id = ?", userID, userID)
+	}
+	var notes []models.SessionPrivateNote
+	q.Order("id DESC").Limit(privateNoteHistoryLimit).Find(&notes)
+	slices.Reverse(notes)
+	if notes == nil {
+		notes = []models.SessionPrivateNote{}
+	}
+	c.JSON(http.StatusOK, notes)
+}
+
+type postPrivateNoteReq struct {
+	ToUserID uint   `json:"to_user_id"`
+	Content  string `json:"content"`
+}
+
+// PostPrivateNote 递一张桌下纸条：调查员之间私下传递，或悄悄递给 KP。
+// NOTE: 所有纸条都会在下一个 KP 周期开始时抄送 KP（KP 知情但不得向其他玩家泄露），
+// 实时推送只发给递条人、收条人与管理员。
+func PostPrivateNote(c *gin.Context) {
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID := c.GetUint("user_id")
+
+	var session models.GameSession
+	if err := models.DB.Preload("Players.CharacterCard").Preload("Players.User").First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+	isPlayer := false
+	for _, p := range session.Players {
+		if p.UserID == userID {
+			isPlayer = true
+			break
+		}
+	}
+	if !isPlayer {
+		c.JSON(http.StatusForbidden, gin.H{"error": "只有房间内的调查员可以递纸条"})
+		return
+	}
+	if session.Status == models.SessionStatusEnded {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏已结束，不能再递纸条"})
+		return
+	}
+
+	var req postPrivateNoteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "纸条内容不能为空"})
+		return
+	}
+	if utf8.RuneCountInString(content) > maxPrivateNoteRunes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("纸条最多 %d 字", maxPrivateNoteRunes)})
+		return
+	}
+	if req.ToUserID == userID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能给自己递纸条"})
+		return
+	}
+
+	toName := "KP"
+	if req.ToUserID != 0 {
+		toName = ""
+		for _, p := range session.Players {
+			if p.UserID != req.ToUserID {
+				continue
+			}
+			toName = strings.TrimSpace(p.CharacterCard.Name)
+			if toName == "" {
+				toName = p.User.Username
+			}
+			if toName == "" {
+				toName = "调查员"
+			}
+			break
+		}
+		if toName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "收条人不在本房间"})
+			return
+		}
+	}
+
+	note := models.SessionPrivateNote{
+		SessionID:  session.ID,
+		FromUserID: userID,
+		FromName:   resolveMemberAuthorName(&session, c, userID),
+		ToUserID:   req.ToUserID,
+		ToName:     toName,
+		Content:    content,
+	}
+	if err := models.DB.Create(&note).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "递纸条失败"})
+		return
+	}
+
+	targets := []uint{userID}
+	if req.ToUserID != 0 {
+		targets = append(targets, req.ToUserID)
+	}
+	hubFor(session.ID).PublishTo("private_note", note, targets)
+	c.JSON(http.StatusCreated, note)
+}
+
+const (
 	maxClueTitleRunes   = 100
 	maxClueContentRunes = 1000
 	maxClueSourceRunes  = 100
@@ -614,6 +743,7 @@ type debriefNPC struct {
 type debriefPlayerSecret struct {
 	CharacterName    string `json:"character_name"`
 	Username         string `json:"username,omitempty"`
+	HandoutCode      string `json:"handout_code,omitempty"`
 	SecretBackground string `json:"secret_background"`
 }
 
@@ -624,15 +754,16 @@ type debriefHallucination struct {
 }
 
 type debriefTruth struct {
-	CoreTruth         string                 `json:"core_truth,omitempty"`
-	AntagonistDossier string                 `json:"antagonist_dossier,omitempty"`
-	MythosCore        string                 `json:"mythos_core,omitempty"`
-	Endings           []models.EndingData    `json:"endings"`
-	Clues             []models.ClueData      `json:"clues"`
-	NPCs              []debriefNPC           `json:"npcs"`
-	PlayerSecrets     []debriefPlayerSecret  `json:"player_secrets"`
-	Clocks            []models.SessionClock  `json:"clocks"`
-	Hallucinations    []debriefHallucination `json:"hallucinations"`
+	CoreTruth         string                      `json:"core_truth,omitempty"`
+	AntagonistDossier string                      `json:"antagonist_dossier,omitempty"`
+	MythosCore        string                      `json:"mythos_core,omitempty"`
+	Endings           []models.EndingData         `json:"endings"`
+	Clues             []models.ClueData           `json:"clues"`
+	NPCs              []debriefNPC                `json:"npcs"`
+	PlayerSecrets     []debriefPlayerSecret       `json:"player_secrets"`
+	Clocks            []models.SessionClock       `json:"clocks"`
+	Hallucinations    []debriefHallucination      `json:"hallucinations"`
+	PrivateNotes      []models.SessionPrivateNote `json:"private_notes"`
 }
 
 type debriefResponse struct {
@@ -702,6 +833,12 @@ func GetSessionDebrief(c *gin.Context) {
 		})
 	}
 
+	var privateNotes []models.SessionPrivateNote
+	models.DB.Where("session_id = ?", session.ID).Order("id ASC").Find(&privateNotes)
+	if privateNotes == nil {
+		privateNotes = []models.SessionPrivateNote{}
+	}
+
 	sc := session.Scenario.Content.Data
 	clocks := append([]models.SessionClock(nil), session.Clocks.Data...)
 	if clocks == nil {
@@ -715,6 +852,7 @@ func GetSessionDebrief(c *gin.Context) {
 		PlayerSecrets:  make([]debriefPlayerSecret, 0),
 		Clocks:         clocks,
 		Hallucinations: hallucinations,
+		PrivateNotes:   privateNotes,
 	}
 	if truth.Endings == nil {
 		truth.Endings = []models.EndingData{}
@@ -736,12 +874,14 @@ func GetSessionDebrief(c *gin.Context) {
 	}
 	for _, p := range session.Players {
 		secret := strings.TrimSpace(p.SecretBackground)
-		if secret == "" {
+		code := strings.TrimSpace(p.HandoutCode)
+		if secret == "" && code == "" {
 			continue
 		}
 		truth.PlayerSecrets = append(truth.PlayerSecrets, debriefPlayerSecret{
 			CharacterName:    p.CharacterCard.Name,
 			Username:         p.User.Username,
+			HandoutCode:      code,
 			SecretBackground: secret,
 		})
 	}

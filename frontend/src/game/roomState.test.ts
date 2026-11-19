@@ -1047,6 +1047,16 @@ describe('roomState', () => {
     expect(room.oocUnread).toBe(1)
   })
 
+  test('private_note 帧：按 id 排序去重，他人递来的纸条累加未读、自己递的不加未读', () => {
+    const room = liveRoom({ seq: 15, userId: 3 })
+    feed(room, F(16, 'private_note', { id: 5, from_user_id: 4, from_name: '鲍勃', to_user_id: 3, to_name: '艾米', content: '小心管家' }))
+    feed(room, F(17, 'private_note', { id: 2, from_user_id: 3, from_name: '艾米', to_user_id: 0, to_name: 'KP', content: '我摸走钥匙' }))
+    feed(room, F(18, 'private_note', { id: 5, from_user_id: 4, from_name: '鲍勃', to_user_id: 3, to_name: '艾米', content: '重复' }))
+    expect(room.privateNotes.map((n) => n.id)).toStrictEqual([2, 5])
+    expect(room.privateNotes[0].to_name).toBe('KP')
+    expect(room.privateNotesUnread).toBe(1)
+  })
+
   test('handbook_update / encounter_update / session(cards) 帧递增刷新序号', () => {
     const room = liveRoom({ seq: 20, userId: 1 })
     expect(room.handbookSeq).toBe(0)

@@ -5,6 +5,7 @@ import BaseModal from '@/components/base/BaseModal.vue'
 import type { Scenario } from '@/api/scenarioTypes'
 import ScenarioClues from './ScenarioClues.vue'
 import ScenarioEndings from './ScenarioEndings.vue'
+import ScenarioHandouts from './ScenarioHandouts.vue'
 import ScenarioHeaderMeta from './ScenarioHeaderMeta.vue'
 import ScenarioKeeperAppendix from './ScenarioKeeperAppendix.vue'
 import ScenarioMechanics from './ScenarioMechanics.vue'
@@ -30,6 +31,7 @@ const content = computed(() => scenarioContent(props.scenario))
       <ScenarioHeaderMeta :scenario="scenario" />
       <ScenarioStatsBar :content="content" />
       <ScenarioNarrative :content="content" />
+      <ScenarioHandouts v-if="content.handouts?.length" :handouts="content.handouts" />
       <ScenarioTimeline v-if="content.timeline?.length" :timeline="content.timeline" />
       <ScenarioEndings v-if="content.endings?.length" :endings="content.endings" />
       <ScenarioReward v-if="content.reward" :reward="content.reward" />

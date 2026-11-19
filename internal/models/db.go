@@ -62,6 +62,7 @@ func InitDB() error {
 		&SessionOOCMessage{},
 		&SessionClue{},
 		&SessionNote{},
+		&SessionPrivateNote{},
 		&Message{},
 		&ShopItem{},
 		&Transaction{},

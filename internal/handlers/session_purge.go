@@ -28,6 +28,7 @@ var sessionChildTables = []any{
 	&models.SessionOOCMessage{},
 	&models.SessionClue{},
 	&models.SessionNote{},
+	&models.SessionPrivateNote{},
 	&models.AgentTranscript{},
 	&models.GameEvaluation{},
 }

@@ -365,6 +365,7 @@ func (h *SessionHandlers) startFloor(seg kpSegment) error {
 		finishSessionProcessing(sessionID)
 		return err
 	}
+	seg.gctx.PrivateNotes = claimPrivateNotesForKP(sessionID)
 
 	ctx, cancel := context.WithCancelCause(context.Background())
 	af := &activeFloor{sessionID: sessionID, startedAt: time.Now(), cancel: cancel, done: make(chan struct{})}
@@ -410,6 +411,31 @@ func persistFloorStart(sessionID uint, floor int, turnActions []models.SessionTu
 	return msgs, err
 }
 
+// claimPrivateNotesForKP 取出尚未抄送 KP 的桌下纸条并按 id 标记为已抄送：周期进行中新递的纸条留到下一个周期。
+// NOTE: 读取失败或标记失败时返回空，宁可这一周期少看几张纸条，也不能重复或打断周期启动。
+func claimPrivateNotesForKP(sessionID uint) []models.SessionPrivateNote {
+	var notes []models.SessionPrivateNote
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("session_id = ? AND delivered_to_kp = ?", sessionID, false).
+			Order("id ASC").Limit(50).Find(&notes).Error; err != nil {
+			return err
+		}
+		if len(notes) == 0 {
+			return nil
+		}
+		ids := make([]uint, 0, len(notes))
+		for _, n := range notes {
+			ids = append(ids, n.ID)
+		}
+		return tx.Model(&models.SessionPrivateNote{}).Where("id IN ?", ids).Update("delivered_to_kp", true).Error
+	})
+	if err != nil {
+		chatLog.Warn("claim private notes failed", "session", sessionID, "err", err)
+		return nil
+	}
+	return notes
+}
+
 // runFloor 在后台跑一个周期；上下文已满时自动总结后续跑新周期，直到自然结束、被强制结束或续跑没有进展。
 func (h *SessionHandlers) runFloor(ctx context.Context, af *activeFloor, seg kpSegment) {
 	defer close(af.done)
@@ -431,6 +457,7 @@ func (h *SessionHandlers) runFloor(ctx context.Context, af *activeFloor, seg kpS
 			break
 		}
 		seg = buildKPSegment(session, agent.KPFloorResume, loadLatestTurnActions(sessionID, session.TurnRound, session.Players))
+		seg.gctx.PrivateNotes = claimPrivateNotesForKP(sessionID)
 		floor := agent.NextDirectorFloor(sessionID)
 		af.floor.Store(int32(floor))
 		hubFor(sessionID).Publish("floor_start", gin.H{"floor": floor, "reason": seg.reason()})

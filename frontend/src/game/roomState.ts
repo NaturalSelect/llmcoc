@@ -74,6 +74,18 @@ export interface OocMessage {
   created_at?: string
 }
 
+export interface PrivateNote {
+  id: number
+  session_id?: number
+  from_user_id: number
+  from_name: string
+  to_user_id: number
+  to_name: string
+  content: string
+  delivered_to_kp?: boolean
+  created_at?: string
+}
+
 export interface Room {
   sessionId: number | undefined
   userId: number | string | undefined
@@ -88,6 +100,8 @@ export interface Room {
   streams: Record<number, WriterStream>
   ooc: OocMessage[]
   oocUnread: number
+  privateNotes: PrivateNote[]
+  privateNotesUnread: number
   handbookSeq: number
   encounterSeq: number
   floor: { running: boolean; number: number; starting: boolean; startedAt: number }
@@ -191,6 +205,8 @@ export function newRoom(opts?: NewRoomOptions): Room {
     streams: {},
     ooc: [],
     oocUnread: 0,
+    privateNotes: [],
+    privateNotesUnread: 0,
     handbookSeq: 0,
     encounterSeq: 0,
     floor: { running: false, number: 0, starting: false, startedAt: 0 },
@@ -423,6 +439,28 @@ function onOocMessage(room: Room, d: FrameData): void {
   if (!sameId(msg.user_id, room.userId)) room.oocUnread += 1
 }
 
+function onPrivateNote(room: Room, d: FrameData): void {
+  const id = Number(d.id)
+  if (!Number.isFinite(id)) return
+  if (room.privateNotes.some((n) => n.id === id)) return
+  const toId = Number(d.to_user_id) || 0
+  const note: PrivateNote = {
+    id,
+    session_id: d.session_id != null ? Number(d.session_id) : undefined,
+    from_user_id: Number(d.from_user_id) || 0,
+    from_name: typeof d.from_name === 'string' ? d.from_name : '',
+    to_user_id: toId,
+    to_name: typeof d.to_name === 'string' && d.to_name ? d.to_name : toId === 0 ? 'KP' : '',
+    content: typeof d.content === 'string' ? d.content : '',
+    delivered_to_kp: Boolean(d.delivered_to_kp),
+    created_at: typeof d.created_at === 'string' ? d.created_at : undefined,
+  }
+  let i = room.privateNotes.length
+  while (i > 0 && room.privateNotes[i - 1].id > id) i--
+  room.privateNotes.splice(i, 0, note)
+  if (!sameId(note.from_user_id, room.userId)) room.privateNotesUnread += 1
+}
+
 export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined): Effect[] {
   const effects: Effect[] = []
   if (!frame || typeof frame.type !== 'string') return effects
@@ -445,6 +483,9 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
       break
     case 'ooc_message':
       onOocMessage(room, d)
+      break
+    case 'private_note':
+      onPrivateNote(room, d)
       break
     case 'handbook_update':
       room.handbookSeq += 1

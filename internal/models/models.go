@@ -189,25 +189,35 @@ type ScenarioReward struct {
 	FindCondition string `json:"find_condition"` // 获取条件（技能检定名称+难度，或触发特定事件）
 }
 
+// ScenarioHandout 是模组预设的调查员秘密身份卡(HO)，玩家加入房间时可查看公开钩子并认领或随机抽签。
+// NOTE: Secret 仅对管理员、认领者本人（落库到 SessionPlayer.SecretBackground 后）及 KP 可见，对外接口必须裁剪。
+type ScenarioHandout struct {
+	Code       string `json:"code"`                  // 如 "HO1" / "HO2"
+	Title      string `json:"title"`                 // 身份简称
+	PublicHook string `json:"public_hook,omitempty"` // 公开招募钩子（选角前人人可见）
+	Secret     string `json:"secret,omitempty"`      // 秘密真相与任务（选角前不可剧透）
+}
+
 // NOTE: ScenarioContent defines the narrative and structural elements of a playable scenario.
 type ScenarioContent struct {
-	Setting            string          `json:"setting"`
-	ToneTags           []string        `json:"tone_tags"`
-	InvestFocus        string          `json:"invest_focus"`
-	Intro              string          `json:"intro"`
-	GameStartTime      string          `json:"game_start_time"`               // 开局时间,RFC 3339 本地时间 YYYY-MM-DDTHH:MM,可为空
-	MapDescription     string          `json:"map_description"`               // 文字描述的场景地图,供KP感知空间关系
-	PlaythroughOutline string          `json:"playthrough_outline,omitempty"` // 游玩流程大纲（场景衔接、触发分支），供KP把握主线
-	Scenes             []SceneData     `json:"scenes"`                        //
-	NPCs               []NPCData       `json:"npcs"`                          //
-	Clues              []ClueData      `json:"clues"`                         // 结构化线索（来源/推荐检定/成功/失败推进/性质）
-	Endings            []EndingData    `json:"endings"`                       // 命名多结局（触发条件+SAN恢复），替代旧的win/lose/partial
-	Reward             *ScenarioReward `json:"reward"`                        // 通关奖励（典籍/神话物品），达成非失败结局时给予
-	Timeline           []TimelineEvent `json:"timeline,omitempty"`            // 时间线（过去线痕迹+当天推进）
-	KeeperAppendix     *KeeperAppendix `json:"keeper_appendix,omitempty"`     // 守秘人附录（难度调节/单双人团/恐怖呈现）
-	Mechanics          []MechanicData  `json:"mechanics,omitempty"`           // 量化核心机制标记（计数器/时钟），仅作KP参考
-	MythosAnchor       string          `json:"mythos_anchor"`                 // Stage2确认的神话锚点，用于多样性去重
-	MythosCore         string          `json:"mythos_core"`                   // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
+	Setting            string            `json:"setting"`
+	ToneTags           []string          `json:"tone_tags"`
+	InvestFocus        string            `json:"invest_focus"`
+	Intro              string            `json:"intro"`
+	GameStartTime      string            `json:"game_start_time"`               // 开局时间,RFC 3339 本地时间 YYYY-MM-DDTHH:MM,可为空
+	MapDescription     string            `json:"map_description"`               // 文字描述的场景地图,供KP感知空间关系
+	PlaythroughOutline string            `json:"playthrough_outline,omitempty"` // 游玩流程大纲（场景衔接、触发分支），供KP把握主线
+	Scenes             []SceneData       `json:"scenes"`                        //
+	NPCs               []NPCData         `json:"npcs"`                          //
+	Clues              []ClueData        `json:"clues"`                         // 结构化线索（来源/推荐检定/成功/失败推进/性质）
+	Endings            []EndingData      `json:"endings"`                       // 命名多结局（触发条件+SAN恢复），替代旧的win/lose/partial
+	Reward             *ScenarioReward   `json:"reward"`                        // 通关奖励（典籍/神话物品），达成非失败结局时给予
+	Timeline           []TimelineEvent   `json:"timeline,omitempty"`            // 时间线（过去线痕迹+当天推进）
+	KeeperAppendix     *KeeperAppendix   `json:"keeper_appendix,omitempty"`     // 守秘人附录（难度调节/单双人团/恐怖呈现）
+	Mechanics          []MechanicData    `json:"mechanics,omitempty"`           // 量化核心机制标记（计数器/时钟），仅作KP参考
+	Handouts           []ScenarioHandout `json:"handouts,omitempty"`            // 模组预设 HO 身份卡（认领/随机抽签）
+	MythosAnchor       string            `json:"mythos_anchor"`                 // Stage2确认的神话锚点，用于多样性去重
+	MythosCore         string            `json:"mythos_core"`                   // 神话本质核心揭示（永不放入Clues，不通过found_clue暴露给玩家）
 }
 
 // NOTE: ClueData 是结构化线索。旧版本 clues 为 []string（形如"[真实]xxx"），现拆成独立字段
@@ -538,6 +548,8 @@ type SessionPlayer struct {
 	CharacterCardID uint      `gorm:"not null" json:"character_card_id"`
 	JoinedAt        time.Time `json:"joined_at"`
 	SessionMemory   string    `gorm:"column:llm_note;type:text" json:"session_memory"` // 会话记忆：KP需跨轮记住的隐藏动机/秘密进展等，非玩家可见
+	// NOTE: HandoutCode 记录调查员认领或抽到的模组预设 HO 编号（如 "HO1"），公开展示哪个预设位已被占；具体 SecretBackground 按视角过滤。
+	HandoutCode string `gorm:"size:32" json:"handout_code,omitempty"`
 	// NOTE: SecretBackground 是该调查员在本局的秘密背景 / HO，仅本人、管理员与 KP 可见；对外房间接口按视角过滤。
 	SecretBackground string    `gorm:"type:text" json:"secret_background,omitempty"`
 	Location         string    `gorm:"size:200" json:"location"` // 当前所在地点，由 update_location 工具维护
@@ -594,6 +606,21 @@ type SessionNote struct {
 	IsShared   bool      `gorm:"not null" json:"is_shared"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// SessionPrivateNote 记录玩家间（或玩家发给 KP）的桌下私密纸条。
+// NOTE: ToUserID == 0 表示直接发给 KP；DeliveredToKP 不加 default，避免 GORM Create 跳过 false。
+// 进行中仅发件人、收件人与管理员可见，并在下一轮 KP 周期启动时抄送给 KP；结团后在复盘中全员揭晓。
+type SessionPrivateNote struct {
+	ID            uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID     uint      `gorm:"not null;index" json:"session_id"`
+	FromUserID    uint      `gorm:"not null;index" json:"from_user_id"`
+	FromName      string    `gorm:"size:100" json:"from_name"`
+	ToUserID      uint      `gorm:"not null;index" json:"to_user_id"` // 0 表示发给 KP
+	ToName        string    `gorm:"size:100" json:"to_name"`
+	Content       string    `gorm:"type:text;not null" json:"content"`
+	DeliveredToKP bool      `gorm:"not null" json:"delivered_to_kp"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type MessageRole string

@@ -29,6 +29,7 @@ const emit = defineEmits<{ close: []; select: [player: SessionPlayer]; join: [] 
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-1.5">
                 <span class="truncate text-sm font-medium text-fg">{{ p.character_card?.name || p.user?.username }}</span>
+                <StampBadge v-if="p.handout_code" class="shrink-0" tone="ledger">{{ p.handout_code }}</StampBadge>
                 <StampBadge v-if="playerTurnSubmitState(room, p) === 'submitted'" class="shrink-0" tone="moss">已提交</StampBadge>
                 <StampBadge v-else-if="playerTurnSubmitState(room, p) === 'pending'" class="shrink-0" tone="faint">待提交</StampBadge>
               </div>

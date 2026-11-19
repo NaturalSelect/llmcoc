@@ -21,6 +21,7 @@ import HandbookPanel from '@/components/game/HandbookPanel.vue'
 import ImagePreview from '@/components/game/ImagePreview.vue'
 import InvestigatorListModal from '@/components/game/InvestigatorListModal.vue'
 import MessageItem from '@/components/game/MessageItem.vue'
+import PrivateNotePanel from '@/components/game/PrivateNotePanel.vue'
 import StatusDock from '@/components/game/StatusDock.vue'
 import TableTalkPanel from '@/components/game/TableTalkPanel.vue'
 import JoinSessionModal from '@/components/session/JoinSessionModal.vue'
@@ -53,6 +54,7 @@ const chatBox = ref<HTMLElement | null>(null)
 const investigatorsOpen = ref(false)
 const joinOpen = ref(false)
 const oocOpen = ref(false)
+const notesOpen = ref(false)
 const handbookOpen = ref(false)
 const debriefOpen = ref(false)
 const novelMode = ref(false)
@@ -173,6 +175,9 @@ watch(asking, (v) => {
 
 const canPostOoc = computed(() =>
   Boolean(session.value && (isInSession(session.value, auth.user?.id) || session.value.created_by === auth.user?.id || auth.isAdmin)),
+)
+const canSendPrivateNote = computed(() =>
+  Boolean(session.value && session.value.status !== 'ended' && isInSession(session.value, auth.user?.id)),
 )
 
 async function loadHandbook() {
@@ -414,10 +419,12 @@ defineExpose({ viewCard })
           :busy="busy"
           :sound-enabled="soundEnabled"
           :ooc-unread="room?.oocUnread ?? 0"
+          :notes-unread="room?.privateNotesUnread ?? 0"
           :novel-mode="novelMode"
           @action="onAction"
           @toggle-sound="toggleSound"
           @open-ooc="oocOpen = true"
+          @open-notes="notesOpen = true"
           @open-handbook="handbookOpen = true"
           @toggle-novel="novelMode = !novelMode"
           @export-replay="exportReplay"
@@ -487,6 +494,11 @@ defineExpose({ viewCard })
     <BaseModal :open="oocOpen" title="桌边讨论" max-width="max-w-md" @close="oocOpen = false">
       <div class="-mx-5 -mb-5 flex h-96 flex-col">
         <TableTalkPanel :session="session" :room="room" :user-id="auth.user?.id" :can-post="canPostOoc" :active="oocOpen" />
+      </div>
+    </BaseModal>
+    <BaseModal :open="notesOpen" title="桌下纸条" max-width="max-w-md" @close="notesOpen = false">
+      <div class="-mx-5 -mb-5 flex h-96 flex-col">
+        <PrivateNotePanel :session="session" :room="room" :user-id="auth.user?.id" :can-send="canSendPrivateNote" :active="notesOpen" />
       </div>
     </BaseModal>
     <BaseModal :open="handbookOpen" title="调查手册" max-width="max-w-md" @close="handbookOpen = false">

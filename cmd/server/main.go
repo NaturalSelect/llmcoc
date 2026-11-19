@@ -289,6 +289,8 @@ func main() {
 		sessions.GET("/:id/messages", handlers.GetMessages)
 		sessions.GET("/:id/ooc", handlers.GetOOCMessages)
 		sessions.POST("/:id/ooc", handlers.PostOOCMessage)
+		sessions.GET("/:id/private-notes", handlers.GetPrivateNotes)
+		sessions.POST("/:id/private-notes", handlers.PostPrivateNote)
 		sessions.GET("/:id/handbook", handlers.GetSessionHandbook)
 		sessions.POST("/:id/clues", handlers.CreateSessionClue)
 		sessions.DELETE("/:id/clues/:clueId", handlers.DeleteSessionClue)

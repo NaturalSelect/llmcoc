@@ -17,6 +17,8 @@ func sessionTableRouter(userID uint, username, role string) *gin.Engine {
 	auth := withAuth(userID, username, role)
 	r.GET("/sessions/:id/ooc", auth, GetOOCMessages)
 	r.POST("/sessions/:id/ooc", auth, PostOOCMessage)
+	r.GET("/sessions/:id/private-notes", auth, GetPrivateNotes)
+	r.POST("/sessions/:id/private-notes", auth, PostPrivateNote)
 	r.GET("/sessions/:id/handbook", auth, GetSessionHandbook)
 	r.POST("/sessions/:id/clues", auth, CreateSessionClue)
 	r.DELETE("/sessions/:id/clues/:clueId", auth, DeleteSessionClue)
@@ -24,7 +26,11 @@ func sessionTableRouter(userID uint, username, role string) *gin.Engine {
 	r.DELETE("/sessions/:id/notes/:noteId", auth, DeleteSessionNote)
 	r.GET("/sessions/:id/messages", auth, GetMessages)
 	r.GET("/sessions/:id/debrief", auth, GetSessionDebrief)
+	r.GET("/sessions/:id", auth, GetSession)
+	r.POST("/sessions/:id/join", auth, JoinSession)
 	r.GET("/scenarios", auth, ListScenarios)
+	r.GET("/scenarios/:id", auth, GetScenario)
+	r.GET("/scenarios/:id/module", auth, GetScenarioModule)
 	return r
 }
 
@@ -564,5 +570,309 @@ func TestHallucinationWhisper_RedactionAndDebriefReveal(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&debrief)
 	if len(debrief.Truth.Hallucinations) != 1 || debrief.Truth.Hallucinations[0].RecipientName != "约翰" || !strings.Contains(debrief.Truth.Hallucinations[0].Content, "镜中的你") {
 		t.Fatalf("debrief hallucinations = %+v", debrief.Truth.Hallucinations)
+	}
+}
+
+func TestPrivateNotes_SendVisibilityAndDebrief(t *testing.T) {
+	initTestDB(t)
+	resetHubs(t)
+	p1 := seedUser(t, "pn_p1", "user", 0, 3)
+	p2 := seedUser(t, "pn_p2", "user", 0, 3)
+	p3 := seedUser(t, "pn_p3", "user", 0, 3)
+	stranger := seedUser(t, "pn_stranger", "user", 0, 3)
+	admin := seedUser(t, "pn_admin", "admin", 0, 3)
+	c1 := seedCard(t, p1, "阿瑟")
+	c2 := seedCard(t, p2, "贝拉")
+	c3 := seedCard(t, p3, "查理")
+	sc := seedScenario(t, "纸条测试模组")
+
+	sess := models.GameSession{Name: "纸条团", ScenarioID: sc, CreatedBy: p1, Status: models.SessionStatusPlaying, MaxPlayers: 4}
+	models.DB.Create(&sess)
+	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: p1, CharacterCardID: c1})
+	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: p2, CharacterCardID: c2})
+	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: p3, CharacterCardID: c3})
+
+	subP1, _, _ := hubFor(sess.ID).SubscribeFor(0, p1, false)
+	subP2, _, _ := hubFor(sess.ID).SubscribeFor(0, p2, false)
+	subP3, _, _ := hubFor(sess.ID).SubscribeFor(0, p3, false)
+	subAdmin, _, _ := hubFor(sess.ID).SubscribeFor(0, admin, true)
+	defer hubFor(sess.ID).Unsubscribe(subP1)
+	defer hubFor(sess.ID).Unsubscribe(subP2)
+	defer hubFor(sess.ID).Unsubscribe(subP3)
+	defer hubFor(sess.ID).Unsubscribe(subAdmin)
+
+	r1 := sessionTableRouter(p1, "pn_p1", "user")
+	r2 := sessionTableRouter(p2, "pn_p2", "user")
+	r3 := sessionTableRouter(p3, "pn_p3", "user")
+	rStranger := sessionTableRouter(stranger, "pn_stranger", "user")
+	rAdmin := sessionTableRouter(admin, "pn_admin", "admin")
+
+	// 1. p1 递给 p2 的纸条：只有 p1、p2 与管理员收到 WS，p3 收不到
+	w := httptest.NewRecorder()
+	r1.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/private-notes", sess.ID), map[string]any{
+		"to_user_id": p2,
+		"content":    "别信查理，他藏了钥匙。",
+	}))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("post note p1->p2 want 201, got %d body=%s", w.Code, w.Body.String())
+	}
+	var n1 models.SessionPrivateNote
+	json.NewDecoder(w.Body).Decode(&n1)
+	if n1.FromName != "阿瑟" || n1.ToName != "贝拉" || n1.DeliveredToKP {
+		t.Fatalf("unexpected note1: %+v", n1)
+	}
+	if ev := recvEvent(t, subP1); ev.Type != "private_note" {
+		t.Fatalf("p1 expected private_note, got %+v", ev)
+	}
+	if ev := recvEvent(t, subP2); ev.Type != "private_note" {
+		t.Fatalf("p2 expected private_note, got %+v", ev)
+	}
+	if ev := recvEvent(t, subAdmin); ev.Type != "private_note" {
+		t.Fatalf("admin expected private_note, got %+v", ev)
+	}
+	assertNoEvent(t, subP3)
+
+	// 2. p3 递给 KP（to_user_id=0）：p3 与管理员收到 WS，p1/p2 收不到
+	w = httptest.NewRecorder()
+	r3.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/private-notes", sess.ID), map[string]any{
+		"to_user_id": 0,
+		"content":    "KP，我悄悄把钥匙塞进鞋底。",
+	}))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("post note p3->KP want 201, got %d body=%s", w.Code, w.Body.String())
+	}
+	var n2 models.SessionPrivateNote
+	json.NewDecoder(w.Body).Decode(&n2)
+	if n2.ToUserID != 0 || n2.ToName != "KP" {
+		t.Fatalf("unexpected note2: %+v", n2)
+	}
+	if ev := recvEvent(t, subP3); ev.Type != "private_note" {
+		t.Fatalf("p3 expected private_note, got %+v", ev)
+	}
+	if ev := recvEvent(t, subAdmin); ev.Type != "private_note" {
+		t.Fatalf("admin expected private_note, got %+v", ev)
+	}
+	assertNoEvent(t, subP1)
+	assertNoEvent(t, subP2)
+
+	// 3. 越权与参数校验：给自己递、给房外人递、非调查员递
+	for _, tc := range []struct {
+		name   string
+		router *gin.Engine
+		body   map[string]any
+		want   int
+	}{
+		{"self", r1, map[string]any{"to_user_id": p1, "content": "自言自语"}, http.StatusBadRequest},
+		{"outside", r1, map[string]any{"to_user_id": stranger, "content": "给外人"}, http.StatusBadRequest},
+		{"stranger", rStranger, map[string]any{"to_user_id": 0, "content": "围观群众"}, http.StatusForbidden},
+		{"empty", r1, map[string]any{"to_user_id": 0, "content": "   "}, http.StatusBadRequest},
+	} {
+		w = httptest.NewRecorder()
+		tc.router.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/private-notes", sess.ID), tc.body))
+		if w.Code != tc.want {
+			t.Errorf("%s: want %d, got %d body=%s", tc.name, tc.want, w.Code, w.Body.String())
+		}
+	}
+
+	// 4. GET 按身份隔离：p2 只见 n1，p3 只见 n2，管理员全见
+	getNotes := func(r *gin.Engine) []models.SessionPrivateNote {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/private-notes", sess.ID), nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("get notes want 200, got %d", w.Code)
+		}
+		var out []models.SessionPrivateNote
+		json.NewDecoder(w.Body).Decode(&out)
+		return out
+	}
+	if got := getNotes(r2); len(got) != 1 || got[0].ID != n1.ID {
+		t.Fatalf("p2 should only see n1, got %+v", got)
+	}
+	if got := getNotes(r3); len(got) != 1 || got[0].ID != n2.ID {
+		t.Fatalf("p3 should only see n2, got %+v", got)
+	}
+	if got := getNotes(rAdmin); len(got) != 2 {
+		t.Fatalf("admin should see both notes, got %+v", got)
+	}
+
+	// 5. KP 认领抄送：第一次拿到全部 2 条，第二次为空
+	claimed := claimPrivateNotesForKP(sess.ID)
+	if len(claimed) != 2 || claimed[0].ID != n1.ID || claimed[1].ID != n2.ID {
+		t.Fatalf("first claim want 2 notes, got %+v", claimed)
+	}
+	if again := claimPrivateNotesForKP(sess.ID); len(again) != 0 {
+		t.Fatalf("second claim want 0 notes, got %+v", again)
+	}
+
+	// 6. 结团后：不能再递纸条，但全员可见全部纸条且复盘揭晓
+	models.DB.Model(&sess).Update("status", models.SessionStatusEnded)
+	w = httptest.NewRecorder()
+	r1.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/private-notes", sess.ID), map[string]any{"to_user_id": 0, "content": "太晚了"}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("ended session post want 400, got %d", w.Code)
+	}
+	if got := getNotes(r3); len(got) != 2 {
+		t.Fatalf("ended session should reveal all notes to p3, got %+v", got)
+	}
+	w = httptest.NewRecorder()
+	r3.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/debrief", sess.ID), nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("debrief want 200, got %d", w.Code)
+	}
+	var debrief debriefResponse
+	json.NewDecoder(w.Body).Decode(&debrief)
+	if len(debrief.Truth.PrivateNotes) != 2 || debrief.Truth.PrivateNotes[0].Content != "别信查理，他藏了钥匙。" {
+		t.Fatalf("debrief private_notes = %+v", debrief.Truth.PrivateNotes)
+	}
+}
+
+func TestPresetHandouts_SanitizeClaimAndRandom(t *testing.T) {
+	initTestDB(t)
+	resetHubs(t)
+	p1 := seedUser(t, "ho_p1", "user", 0, 3)
+	p2 := seedUser(t, "ho_p2", "user", 0, 3)
+	p3 := seedUser(t, "ho_p3", "user", 0, 3)
+	admin := seedUser(t, "ho_admin", "admin", 0, 3)
+	c1 := seedCard(t, p1, "一号调查员")
+	c2 := seedCard(t, p2, "二号调查员")
+	c3 := seedCard(t, p3, "三号调查员")
+
+	sc := models.Scenario{
+		Name:       "秘密HO测试模组",
+		MinPlayers: 1,
+		MaxPlayers: 4,
+		Difficulty: "normal",
+		Content: models.JSONField[models.ScenarioContent]{Data: models.ScenarioContent{
+			Setting: "1920年代雾都庄园",
+			Intro:   "你们收到同一封黑边邀请函。",
+			Handouts: []models.ScenarioHandout{
+				{Code: "HO1", Title: "私家侦探", PublicHook: "你受雇调查庄园失窃案。", Secret: "其实失窃的怀表正藏在你大衣内袋。"},
+				{Code: "HO2", Title: "家庭医生", PublicHook: "你照料老庄园主多年。", Secret: "你昨夜偷偷调换了他的镇静剂。"},
+			},
+		}},
+	}
+	if err := models.DB.Create(&sc).Error; err != nil {
+		t.Fatalf("create scenario: %v", err)
+	}
+
+	sess := models.GameSession{Name: "HO测试房", ScenarioID: sc.ID, CreatedBy: p1, Status: models.SessionStatusLobby, MaxPlayers: 4}
+	models.DB.Create(&sess)
+
+	rP1 := sessionTableRouter(p1, "ho_p1", "user")
+	rP2 := sessionTableRouter(p2, "ho_p2", "user")
+	rP3 := sessionTableRouter(p3, "ho_p3", "user")
+	rAdmin := sessionTableRouter(admin, "ho_admin", "admin")
+
+	// 1. 普通玩家查看模组、模组原始数据和房间时，预设 HO 的 Secret 被剥离；管理员仍可见
+	for _, path := range []string{
+		fmt.Sprintf("/scenarios/%d", sc.ID),
+		fmt.Sprintf("/scenarios/%d/module", sc.ID),
+		fmt.Sprintf("/sessions/%d", sess.ID),
+	} {
+		w := httptest.NewRecorder()
+		rP1.ServeHTTP(w, jsonReq("GET", path, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("user GET %s want 200, got %d", path, w.Code)
+		}
+		if strings.Contains(w.Body.String(), "大衣内袋") || strings.Contains(w.Body.String(), "镇静剂") {
+			t.Fatalf("user GET %s leaked HO secret: %s", path, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "受雇调查庄园失窃案") {
+			t.Fatalf("user GET %s missing public_hook: %s", path, w.Body.String())
+		}
+	}
+	w := httptest.NewRecorder()
+	rAdmin.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/scenarios/%d", sc.ID), nil))
+	if !strings.Contains(w.Body.String(), "大衣内袋") {
+		t.Fatalf("admin GET scenario should retain HO secret")
+	}
+
+	// 2. p1 认领 HO1（附带自定义补充秘密）
+	w = httptest.NewRecorder()
+	rP1.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sess.ID), map[string]any{
+		"character_card_id": c1,
+		"handout_code":      "ho1",
+		"secret_background": "我还欠着赌债。",
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("p1 join HO1 want 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var joinResp map[string]any
+	json.NewDecoder(w.Body).Decode(&joinResp)
+	if joinResp["handout_code"] != "HO1" {
+		t.Fatalf("expected handout_code=HO1, got %v", joinResp)
+	}
+	var sp1 models.SessionPlayer
+	models.DB.Where("session_id = ? AND user_id = ?", sess.ID, p1).First(&sp1)
+	if sp1.HandoutCode != "HO1" || !strings.Contains(sp1.SecretBackground, "大衣内袋") || !strings.Contains(sp1.SecretBackground, "赌债") {
+		t.Fatalf("unexpected sp1 secret: code=%q bg=%q", sp1.HandoutCode, sp1.SecretBackground)
+	}
+
+	// 3. p2 试图抢同一张 HO1 被 409 拒绝；未知编号 400；random 自动抽到剩下的 HO2
+	w = httptest.NewRecorder()
+	rP2.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sess.ID), map[string]any{
+		"character_card_id": c2,
+		"handout_code":      "HO1",
+	}))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("duplicate HO1 want 409, got %d body=%s", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	rP2.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sess.ID), map[string]any{
+		"character_card_id": c2,
+		"handout_code":      "HO99",
+	}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("unknown HO99 want 400, got %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	rP2.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sess.ID), map[string]any{
+		"character_card_id": c2,
+		"handout_code":      "random",
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("p2 random HO want 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var sp2 models.SessionPlayer
+	models.DB.Where("session_id = ? AND user_id = ?", sess.ID, p2).First(&sp2)
+	if sp2.HandoutCode != "HO2" || !strings.Contains(sp2.SecretBackground, "镇静剂") {
+		t.Fatalf("p2 random should claim HO2, got code=%q bg=%q", sp2.HandoutCode, sp2.SecretBackground)
+	}
+
+	// 4. 全部认领完后再抽签返回 409；留空仍可自由加入
+	w = httptest.NewRecorder()
+	rP3.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sess.ID), map[string]any{
+		"character_card_id": c3,
+		"handout_code":      "random",
+	}))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("exhausted random HO want 409, got %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	rP3.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sess.ID), map[string]any{
+		"character_card_id": c3,
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("p3 join without HO want 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	// 5. 结团复盘携带 handout_code 与全员秘密
+	models.DB.Model(&sess).Update("status", models.SessionStatusEnded)
+	w = httptest.NewRecorder()
+	rP3.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/debrief", sess.ID), nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("debrief want 200, got %d", w.Code)
+	}
+	var debrief debriefResponse
+	json.NewDecoder(w.Body).Decode(&debrief)
+	if len(debrief.Truth.PlayerSecrets) != 2 {
+		t.Fatalf("expected 2 player secrets in debrief, got %+v", debrief.Truth.PlayerSecrets)
+	}
+	codes := map[string]bool{}
+	for _, ps := range debrief.Truth.PlayerSecrets {
+		codes[ps.HandoutCode] = true
+	}
+	if !codes["HO1"] || !codes["HO2"] {
+		t.Fatalf("expected HO1 & HO2 in debrief player_secrets, got %+v", debrief.Truth.PlayerSecrets)
 	}
 }

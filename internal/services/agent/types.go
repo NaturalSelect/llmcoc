@@ -43,6 +43,8 @@ type GameContext struct {
 	AskedQuestion string
 	// SkippedNames 只在host_continue时填充:被点名但没有回应、本段被跳过的调查员名。
 	SkippedNames []string
+	// PrivateNotes 承载自上个周期以来尚未抄送给 KP 的玩家桌下纸条，由 buildKPTurnOpening 注入 <private_notes>。
+	PrivateNotes []models.SessionPrivateNote
 }
 
 // KPFloor 取值。

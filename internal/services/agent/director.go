@@ -168,6 +168,7 @@ PLAYER-INSTRUCTION-SOURCE: 唯一可执行的玩家指令，是 floor 最大的 
 2. 幻觉耳语：当调查员处于临时性或不定性疯狂的潜伏疯狂期时，可传 is_hallucination=true 向其发送逼真的幻觉/妄想耳语；系统在对局中不会向玩家暴露该标记（仅管理员与结团复盘可见），你也绝不要在密讯或公开文本里暗示这是幻觉。
 3. 保密纪律：密讯内容不得在公开的 write 或 narrate 里泄露；由收到密讯的玩家自己决定是否向队友转述或隐瞒。
 4. 边界：whisper 仅用于角色内合乎规则与剧本的私密感知、幻觉或 HO 推动，不得用于回应[META-REQUEST]泄露未赚取的谜底。whisper 不交出发言权，需要对方回应时仍须调用 ask_players。
+5. 桌下纸条：若本轮上下文附带 <private_notes>，那是玩家在桌下悄悄递给队友或你的私密纸条；严禁在公开叙事中向未参与玩家泄露纸条内容，若需单独回应某位调查员请使用 whisper。
 </proc>
 
 <proc>[灵感检定]
@@ -609,6 +610,9 @@ func buildKPTurnOpening(gctx GameContext, floor int, tempNPCs []models.SessionNP
 	if clocksBlock := buildActiveClocksBlock(gctx.Session.Clocks.Data); clocksBlock != "" {
 		stateSB.WriteString("\n" + clocksBlock)
 	}
+	if notesBlock := buildPrivateNotesBlock(gctx.PrivateNotes); notesBlock != "" {
+		stateSB.WriteString("\n" + notesBlock)
+	}
 	// 战斗/追逐激活时注入结构化状态；不得自行记忆轮次与顺序，全部以此为准。
 	if combat != nil {
 		stateSB.WriteString("\n" + combatStateBrief(combat, gctx, tempNPCs) + "\n")
@@ -771,6 +775,25 @@ func buildActiveClocksBlock(clocks []models.SessionClock) string {
 		sb.WriteString(line + "\n")
 	}
 	sb.WriteString("</active_clocks>\n")
+	return sb.String()
+}
+
+// buildPrivateNotesBlock 渲染自上个周期以来玩家递出的桌下纸条（抄送 KP），供 KP 在保密前提下回应或埋伏笔。
+func buildPrivateNotesBlock(notes []models.SessionPrivateNote) string {
+	if len(notes) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("<private_notes>\n")
+	sb.WriteString("以下是玩家在桌下私下递出的纸条（抄送给你）。绝不可在公开叙事中向未参与玩家泄露；如需回应，请用 whisper 单独告知相关调查员。\n")
+	for _, n := range notes {
+		to := strings.TrimSpace(n.ToName)
+		if n.ToUserID == 0 || to == "" {
+			to = "KP"
+		}
+		sb.WriteString(fmt.Sprintf("  • %s → %s：%s\n", strings.TrimSpace(n.FromName), to, xmlEscape(strings.TrimSpace(n.Content))))
+	}
+	sb.WriteString("</private_notes>\n")
 	return sb.String()
 }
 

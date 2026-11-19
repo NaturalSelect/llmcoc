@@ -6,10 +6,12 @@ import {
   buildCreatePayload,
   buildJoinPayload,
   cardOptionLabel,
+  claimedHandoutCodes,
   emptyCreateForm,
   emptyJoinForm,
   endSessionConfirmMessage,
   errorMessage,
+  isHandoutClaimed,
   isInSession,
   joinableCharacters,
   pageAfterRemoval,
@@ -158,6 +160,21 @@ describe('加入房间表单', () => {
       character_card_id: 7,
       password: '',
     })
+  })
+
+  test('预设 HO 编号非空时附带，已认领集合大小写不敏感', () => {
+    expect(buildJoinPayload({ character_card_id: 7, password: '', handout_code: ' HO1 ' })).toEqual({
+      character_card_id: 7,
+      password: '',
+      handout_code: 'HO1',
+    })
+    expect(buildJoinPayload({ character_card_id: 7, password: '', handout_code: '   ' })).toEqual({
+      character_card_id: 7,
+      password: '',
+    })
+    const claimed = claimedHandoutCodes([{ handout_code: 'HO1' }, { handout_code: '' }, {}])
+    expect(isHandoutClaimed(claimed, 'ho1')).toBe(true)
+    expect(isHandoutClaimed(claimed, 'HO2')).toBe(false)
   })
 })
 

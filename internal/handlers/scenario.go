@@ -106,15 +106,67 @@ func populateScenarioPreview(s *models.Scenario) {
 	s.RecommendedSkills = extractRecommendedSkills(s.Content.Data.Clues)
 }
 
+// sanitizeScenarioHandouts 对非管理员清空预设 HO 的秘密正文，只保留编号、标题与公开钩子供选角。
+// NOTE: 深拷贝切片，避免改写 GORM 读出的共享底层数组或缓存对象。
+func sanitizeScenarioHandouts(s *models.Scenario, isAdmin bool) {
+	if s == nil || isAdmin || len(s.Content.Data.Handouts) == 0 {
+		return
+	}
+	hs := make([]models.ScenarioHandout, len(s.Content.Data.Handouts))
+	copy(hs, s.Content.Data.Handouts)
+	for i := range hs {
+		hs[i].Secret = ""
+	}
+	s.Content.Data.Handouts = hs
+	// NOTE: 接口同时返回原始模组 JSON（data 字段），里面也带着 HO 秘密，需要一并剥离。
+	s.Data.Data = stripHandoutSecretsRaw(s.Data.Data)
+}
+
+// stripHandoutSecretsRaw 从原始模组 JSON 中删除 handouts[].secret，兼容带 content 包装与旧版直接存内容两种格式。
+// NOTE: 解析失败时返回空对象，宁可丢数据也不泄露秘密。
+func stripHandoutSecretsRaw(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || !strings.Contains(string(raw), "handouts") {
+		return raw
+	}
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	var root map[string]any
+	if err := dec.Decode(&root); err != nil {
+		return json.RawMessage("{}")
+	}
+	stripHandoutSecretsMap(root)
+	if content, ok := root["content"].(map[string]any); ok {
+		stripHandoutSecretsMap(content)
+	}
+	buf, err := json.Marshal(root)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return json.RawMessage(buf)
+}
+
+func stripHandoutSecretsMap(m map[string]any) {
+	list, ok := m["handouts"].([]any)
+	if !ok {
+		return
+	}
+	for _, item := range list {
+		if h, ok := item.(map[string]any); ok {
+			delete(h, "secret")
+		}
+	}
+}
+
 func ListScenarios(c *gin.Context) {
 	page, pageSize, ok := parseAdminPagination(c)
 	if !ok {
 		return
 	}
 
+	admin := isAdminUser(c, c.GetUint("user_id"))
 	countQuery := models.DB.Model(&models.Scenario{}).Where("is_active = ?", true)
 	listQuery := models.DB.Where("is_active = ?", true)
-	if !isAdminUser(c, c.GetUint("user_id")) {
+	if !admin {
 		countQuery = countQuery.Where("admin_only = ?", false)
 		listQuery = listQuery.Where("admin_only = ?", false)
 	}
@@ -136,6 +188,7 @@ func ListScenarios(c *gin.Context) {
 	}
 	for i := range scenarios {
 		populateScenarioPreview(&scenarios[i])
+		sanitizeScenarioHandouts(&scenarios[i], admin)
 	}
 
 	c.JSON(http.StatusOK, newPaginatedResponse(scenarios, page, pageSize, total))
@@ -149,6 +202,7 @@ func GetScenario(c *gin.Context) {
 		return
 	}
 	populateScenarioPreview(&scenario)
+	sanitizeScenarioHandouts(&scenario, isAdminUser(c, c.GetUint("user_id")))
 	c.JSON(http.StatusOK, scenario)
 }
 
@@ -160,6 +214,8 @@ func GetScenarioModule(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "剧本不存在"})
 		return
 	}
+
+	sanitizeScenarioHandouts(&scenario, isAdminUser(c, c.GetUint("user_id")))
 
 	var module any
 	if len(scenario.Data.Data) > 0 {
