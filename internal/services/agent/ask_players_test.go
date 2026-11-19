@@ -324,3 +324,121 @@ func TestKPFloorRendering(t *testing.T) {
 		}
 	})
 }
+
+func TestWhisperAction(t *testing.T) {
+	var outbox []Output
+	hasEnd := false
+	actx := ActionContext{
+		GCtx:   &GameContext{Session: models.GameSession{Players: askTestPlayers()}},
+		HasEnd: &hasEnd,
+		Outbox: &outbox,
+	}
+
+	// 成功向存活调查员发密讯
+	res := whisperAction{}.Execute(ToolCall{
+		Action:        ToolWhisper,
+		CharacterName: "乙",
+		Content:       "你看到墙角闪过一道阴影。",
+		CallID:        "c1",
+	}, actx)
+	if len(res) != 1 || strings.HasPrefix(res[0].Result, "SYSTEM REJECT") {
+		t.Fatalf("whisper should succeed, got %+v", res)
+	}
+	if hasEnd {
+		t.Error("whisper should not end floor")
+	}
+	if len(outbox) != 1 || outbox[0].Kind != OutputKP || outbox[0].RecipientName != "乙" || len(outbox[0].VisibleTo) != 1 || outbox[0].VisibleTo[0] != 2 {
+		t.Fatalf("unexpected outbox = %+v", outbox)
+	}
+
+	// 未知角色、已死亡角色、空内容都应被拒绝
+	for _, tc := range []ToolCall{
+		{CharacterName: "不存在", Content: "hi"},
+		{CharacterName: "丙", Content: "hi"},
+		{CharacterName: "甲", Content: "   "},
+	} {
+		outbox = nil
+		got := whisperAction{}.Execute(tc, actx)
+		if len(got) != 1 || !strings.HasPrefix(got[0].Result, "SYSTEM REJECT") || len(outbox) != 0 {
+			t.Errorf("call %+v should be rejected without output, got res=%+v outbox=%+v", tc, got, outbox)
+		}
+	}
+}
+
+func TestSecretBackgroundInjection(t *testing.T) {
+	players := []models.SessionPlayer{
+		{
+			UserID:           1,
+			SecretBackground: "你是教会派来销毁手稿的秘密探员",
+			CharacterCard:    models.CharacterCard{Name: "甲", Occupation: "记者"},
+		},
+		{
+			UserID:        2,
+			CharacterCard: models.CharacterCard{Name: "乙", Occupation: "医生"},
+		},
+	}
+	brief := buildPlayerBrief(players)
+	if !strings.Contains(brief, "有秘密背景/HO") || !strings.Contains(brief, "<attention>") {
+		t.Errorf("buildPlayerBrief should highlight HO presence, got:\n%s", brief)
+	}
+	detail := buildCharacterDetail("甲", players)
+	if !strings.Contains(detail, "<secret_background>你是教会派来销毁手稿的秘密探员</secret_background>") {
+		t.Errorf("buildCharacterDetail should embed <secret_background>, got:\n%s", detail)
+	}
+	detailNoHO := buildCharacterDetail("乙", players)
+	if strings.Contains(detailNoHO, "<secret_background>") {
+		t.Errorf("buildCharacterDetail should omit empty <secret_background>, got:\n%s", detailNoHO)
+	}
+}
+
+func TestFallbackWriterIgnoresPrivateWhisper(t *testing.T) {
+	var published []RoundOutputs
+	gctx := &GameContext{
+		Publish: func(ro RoundOutputs) error {
+			published = append(published, ro)
+			return nil
+		},
+	}
+	fr := newFloorRun(t.Context(), gctx, &ContextManager{}, 1, nil, nil)
+	fr.beatNeedsWriter = true
+	fr.outbox = []Output{{
+		Kind:          OutputKP,
+		Text:          "只有你听见了低语。",
+		VisibleTo:     []uint{2},
+		RecipientName: "乙",
+	}}
+	if err := fr.flush(1, nil); err != nil {
+		t.Fatalf("flush whisper-only: %v", err)
+	}
+	if len(published) != 1 || len(published[0].Items) != 1 || published[0].Items[0].Kind != OutputKP {
+		t.Fatalf("whisper-only flush should not synthesize public writer, got %+v", published)
+	}
+	if !fr.beatNeedsWriter {
+		t.Error("whisper-only flush should preserve beatNeedsWriter for subsequent public beat")
+	}
+
+	published = nil
+	fr.outbox = []Output{
+		{Kind: OutputKP, Text: "只有你听见了低语。", VisibleTo: []uint{2}, RecipientName: "乙"},
+		{Kind: OutputKP, Text: "大厅吊灯突然熄灭，一片漆黑。"},
+	}
+	if err := fr.flush(2, nil); err != nil {
+		t.Fatalf("flush mixed: %v", err)
+	}
+	if len(published) != 1 {
+		t.Fatalf("expected 1 round output, got %d", len(published))
+	}
+	var writerFound bool
+	for _, it := range published[0].Items {
+		if it.Kind == OutputWriter {
+			writerFound = true
+			if strings.Contains(it.Text, "只有你听见了低语") || !strings.Contains(it.Text, "大厅吊灯突然熄灭") {
+				t.Fatalf("fallback writer leaked whisper or missed public kp: %q", it.Text)
+			}
+		}
+	}
+	if !writerFound {
+		t.Fatal("expected fallback public writer for public kp output")
+	}
+}
+

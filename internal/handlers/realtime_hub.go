@@ -23,19 +23,37 @@ const (
 )
 
 type roomEvent struct {
-	Seq  uint64 `json:"seq"`
-	Type string `json:"type"`
-	Data any    `json:"data"`
+	Seq       uint64 `json:"seq"`
+	Type      string `json:"type"`
+	Data      any    `json:"data"`
+	visibleTo []uint // 非空时仅列表中用户与管理员可见，不序列化给客户端
 }
 
 // subscriber 是一个 WebSocket 连接在 hub 里的接收端。
 type subscriber struct {
-	ch   chan roomEvent
-	done chan struct{} // 被 hub 移除（慢消费者或 Unsubscribe）后关闭
+	ch      chan roomEvent
+	done    chan struct{} // 被 hub 移除（慢消费者或 Unsubscribe）后关闭
+	userID  uint
+	isAdmin bool
 	// startSeq 是注册那一刻 hub 的最大 seq（与 replay 同锁取得）：replay 不超过它，之后的实时事件都大于它。
 	startSeq uint64
 	// slow 为 true 表示因队列写满被 hub 踢掉；先于 close(done) 写入，读取方在 <-done 之后读，无数据竞争。
 	slow bool
+}
+
+func canSeeEvent(ev roomEvent, userID uint, isAdmin bool) bool {
+	if len(ev.visibleTo) == 0 || isAdmin {
+		return true
+	}
+	if userID == 0 {
+		return false
+	}
+	for _, id := range ev.visibleTo {
+		if id == userID {
+			return true
+		}
+	}
+	return false
 }
 
 type roomHub struct {
@@ -57,12 +75,21 @@ func newRoomHub(startSeq uint64) *roomHub {
 
 func (h *roomHub) touch() { h.lastActive.Store(time.Now().UnixNano()) }
 
-// Publish 发布持久事件：分配单调递增 seq，写入环形缓冲并广播。
+// Publish 发布对全员可见的持久事件：分配单调递增 seq，写入环形缓冲并广播。
 func (h *roomHub) Publish(typ string, data any) {
+	h.PublishTo(typ, data, nil)
+}
+
+// PublishTo 发布持久事件；visibleTo 非空时仅列表中的用户与管理员可接收和补发。
+func (h *roomHub) PublishTo(typ string, data any, visibleTo []uint) {
+	var targets []uint
+	if len(visibleTo) > 0 {
+		targets = append([]uint(nil), visibleTo...)
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.seq++
-	ev := roomEvent{Seq: h.seq, Type: typ, Data: data}
+	ev := roomEvent{Seq: h.seq, Type: typ, Data: data, visibleTo: targets}
 	h.buf[h.seq%hubBufferSize] = ev
 	if h.n < hubBufferSize {
 		h.n++
@@ -86,16 +113,23 @@ func (h *roomHub) Seq() uint64 {
 	return h.seq
 }
 
-// Subscribe 注册订阅者，并返回缓冲里 seq>since 的事件作为 replay。
+// Subscribe 注册无视角过滤的订阅者（兼容旧调用方与单元测试）。
+func (h *roomHub) Subscribe(since uint64) (sub *subscriber, replay []roomEvent, gap bool) {
+	return h.SubscribeFor(since, 0, true)
+}
+
+// SubscribeFor 按用户身份注册订阅者，并返回缓冲里该用户可见的 seq>since 事件作为 replay。
 // gap=true 表示 (since, seq] 里有事件已不在缓冲中（被挤掉、hub 被回收过，或 since 比服务端还新），
 // 此时 replay 只含缓冲里剩下的部分，是残缺序列，调用方应让客户端重新拉取全量数据而不是照单补发。
-// since=0 视为"没有游标"，不会判定 gap，replay 为缓冲内全部事件。
-func (h *roomHub) Subscribe(since uint64) (sub *subscriber, replay []roomEvent, gap bool) {
+// since=0 视为"没有游标"，不会判定 gap，replay 为缓冲内全部可见事件。
+func (h *roomHub) SubscribeFor(since uint64, userID uint, isAdmin bool) (sub *subscriber, replay []roomEvent, gap bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	sub = &subscriber{
 		ch:       make(chan roomEvent, h.queueSize),
 		done:     make(chan struct{}),
+		userID:   userID,
+		isAdmin:  isAdmin,
 		startSeq: h.seq,
 	}
 	h.subs[sub] = struct{}{}
@@ -111,7 +145,10 @@ func (h *roomHub) Subscribe(since uint64) (sub *subscriber, replay []roomEvent, 
 		from = oldest
 	}
 	for s := from; s <= h.seq; s++ {
-		replay = append(replay, h.buf[s%hubBufferSize])
+		ev := h.buf[s%hubBufferSize]
+		if canSeeEvent(ev, userID, isAdmin) {
+			replay = append(replay, ev)
+		}
 	}
 	return sub, replay, gap
 }
@@ -132,6 +169,9 @@ func (h *roomHub) numSubscribers() int {
 
 func (h *roomHub) broadcastLocked(ev roomEvent) {
 	for sub := range h.subs {
+		if !canSeeEvent(ev, sub.userID, sub.isAdmin) {
+			continue
+		}
 		select {
 		case sub.ch <- ev:
 		default:

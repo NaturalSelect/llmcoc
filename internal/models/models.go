@@ -522,8 +522,10 @@ type SessionPlayer struct {
 	CharacterCardID uint      `gorm:"not null" json:"character_card_id"`
 	JoinedAt        time.Time `json:"joined_at"`
 	SessionMemory   string    `gorm:"column:llm_note;type:text" json:"session_memory"` // 会话记忆：KP需跨轮记住的隐藏动机/秘密进展等，非玩家可见
-	Location        string    `gorm:"size:200" json:"location"`                        // 当前所在地点，由 update_location 工具维护
-	Armor           int       `gorm:"default:0" json:"armor"`                          // 当前护甲值，由 update_armor 工具维护
+	// NOTE: SecretBackground 是该调查员在本局的秘密背景 / HO，仅本人、管理员与 KP 可见；对外房间接口按视角过滤。
+	SecretBackground string    `gorm:"type:text" json:"secret_background,omitempty"`
+	Location         string    `gorm:"size:200" json:"location"` // 当前所在地点，由 update_location 工具维护
+	Armor            int       `gorm:"default:0" json:"armor"`   // 当前护甲值，由 update_armor 工具维护
 	// SessionRelations 是本局内的 tier1 社交关系变更，manage_relation 只写这里；
 	// 结算(end_game/手动结束/管理员一键结束)时由 AI 判断哪些提升进人物卡的 SocialRelations。
 	SessionRelations JSONField[[]SessionRelation] `gorm:"type:text" json:"session_relations"`
@@ -617,16 +619,18 @@ type Illustration struct {
 
 // MessageMeta 是 kp/ask/writer 消息的结构化附加信息，正文里不再内嵌 options/dice 之类的标签。
 type MessageMeta struct {
-	Options   []string    `json:"options,omitempty"` // ask: 玩家询问时 KP 给的推荐行动
-	Dice      string      `json:"dice,omitempty"`    // 旧数据：骰子挂在 kp/ask 上，新消息改用 event
-	TimePoint string      `json:"time_point,omitempty"`
-	Ask       *AskMeta    `json:"ask,omitempty"`
-	Ended     bool        `json:"ended,omitempty"`
-	Auto      bool        `json:"auto,omitempty"` // writer 由后端兜底自动补出
-	NSFW      bool        `json:"nsfw,omitempty"`
-	Error     string      `json:"error,omitempty"`   // status=failed 时的原因
-	Events    []GameEvent `json:"events,omitempty"`  // event: 本轮工具事件，按调用顺序
-	CallID    string      `json:"call_id,omitempty"` // writer: 对应的 write 调用 ID(自动补写的是来源 narrate/ask 调用)，Writer 视图靠它把正文挂回 Director 的工具结果
+	Options       []string    `json:"options,omitempty"`        // ask: 玩家询问时 KP 给的推荐行动
+	Dice          string      `json:"dice,omitempty"`           // 旧数据：骰子挂在 kp/ask 上，新消息改用 event
+	TimePoint     string      `json:"time_point,omitempty"`
+	Ask           *AskMeta    `json:"ask,omitempty"`
+	Ended         bool        `json:"ended,omitempty"`
+	Auto          bool        `json:"auto,omitempty"`           // writer 由后端兜底自动补出
+	NSFW          bool        `json:"nsfw,omitempty"`
+	Error         string      `json:"error,omitempty"`          // status=failed 时的原因
+	Events        []GameEvent `json:"events,omitempty"`         // event: 本轮工具事件，按调用顺序
+	CallID        string      `json:"call_id,omitempty"`        // writer: 对应的 write 调用 ID(自动补写的是来源 narrate/ask 调用)，Writer 视图靠它把正文挂回 Director 的工具结果
+	Private       bool        `json:"private,omitempty"`        // kp: true 表示仅特定调查员可见的密讯
+	RecipientName string      `json:"recipient_name,omitempty"` // kp: 密讯接收调查员姓名
 
 	Illustrations []Illustration `json:"illustrations,omitempty"` // writer: 正文里 illust://<slot> 占位对应的配图结果
 }
@@ -634,6 +638,7 @@ type MessageMeta struct {
 // NOTE: Message records a single chat message sent within a game session.
 // Kind/Status/Floor/Meta 是 KP 周期化之后新增的列：一次工具调用对应一条消息。
 // NOTE: WriterDirection 是 writer 消息的导演指令原文，可能含模组秘密：只经管理员接口读取，不能放进 Meta（Meta 会广播给所有订阅者）。
+// NOTE: VisibleTo 为空表示全员可见；非空时仅列表中的用户与管理员可见（游戏结束后参与者也可复盘查看）。
 type Message struct {
 	ID                uint                    `gorm:"primaryKey;autoIncrement" json:"id"`
 	SessionID         uint                    `gorm:"not null;index" json:"session_id"`
@@ -644,6 +649,7 @@ type Message struct {
 	Floor             int                     `gorm:"index" json:"floor"`
 	Content           string                  `gorm:"type:text;not null" json:"content"`
 	Meta              JSONField[*MessageMeta] `gorm:"type:text" json:"-"`
+	VisibleTo         JSONField[[]uint]       `gorm:"type:text" json:"-"`
 	WriterDirection   string                  `gorm:"type:text" json:"-"`
 	Username          string                  `gorm:"size:50" json:"username"`
 	DirectorElapsedMs *int64                  `json:"director_elapsed_ms"` // 从上一条 kp/ask 到这一条的 Director 耗时(毫秒),仅 kp/ask 消息有值

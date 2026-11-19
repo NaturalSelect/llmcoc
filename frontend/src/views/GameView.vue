@@ -306,6 +306,7 @@ defineExpose({ viewCard })
         :time="gameTime"
         :user-id="auth.user?.id"
         @select="onSelectPlayer"
+        @refresh="controller.refreshSession()"
       />
     </div>
 

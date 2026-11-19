@@ -181,10 +181,16 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 	}
 	f.outbox = nil
 
-	if len(kps)+len(asks) > 0 && len(writers) == 0 && !f.beatHasWriter && f.beatNeedsWriter {
+	var publicKPs []Output
+	for _, it := range kps {
+		if len(it.VisibleTo) == 0 {
+			publicKPs = append(publicKPs, it)
+		}
+	}
+	if len(publicKPs)+len(asks) > 0 && len(writers) == 0 && !f.beatHasWriter && f.beatNeedsWriter {
 		source, sourceCallID := "", ""
-		if len(kps) > 0 {
-			source, sourceCallID = kps[0].Text, kps[0].CallID
+		if len(publicKPs) > 0 {
+			source, sourceCallID = publicKPs[0].Text, publicKPs[0].CallID
 		} else {
 			source, sourceCallID = asks[0].Text, asks[0].CallID
 		}
@@ -198,8 +204,8 @@ func (f *floorRun) flush(round int, msgs []llm.ChatMessage) error {
 	items = append(items, kps...)
 	items = append(items, asks...)
 
-	closesBeat := len(kps) > 0 || len(asks) > 0
-	if closesBeat {
+	closesBeat := len(publicKPs) > 0 || len(asks) > 0
+	if len(kps) > 0 || len(asks) > 0 {
 		timePoint := f.gctx.Session.GameTime
 		for i := range items {
 			if items[i].Kind != OutputKP && items[i].Kind != OutputAsk {

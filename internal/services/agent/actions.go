@@ -62,6 +62,7 @@ var noSideEffectActions = map[ToolCallType]bool{
 // 这些动作不需要把结果再交给KP阅读后才能结束回合。
 var narrateCompatibleActions = map[ToolCallType]bool{
 	ToolNarrate:                true,
+	ToolWhisper:                true,
 	ToolAskPlayers:             true,
 	ToolEndGame:                true,
 	ToolWrite:                  true,
@@ -119,6 +120,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolUpdateArmor:            updateArmorAction{},
 	ToolHint:                   hintAction{},
 	ToolNarrate:                narrateAction{},
+	ToolWhisper:                whisperAction{},
 	ToolAskPlayers:             askPlayersAction{},
 	ToolReport:                 reportAction{},
 
@@ -729,6 +731,56 @@ func normalizeAskOptions(raw []string) []string {
 		}
 	}
 	return options
+}
+
+// whisperAction 向单个存活调查员发送仅其本人可见的密讯；名字不存在或角色已死时拒绝。
+type whisperAction struct{}
+
+func (whisperAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	reject := func(msg string) []ToolResult {
+		return []ToolResult{{Action: ToolWhisper, Result: "SYSTEM REJECT: " + msg}}
+	}
+	target := strings.TrimSpace(call.CharacterName)
+	content := strings.TrimSpace(call.Content)
+	if target == "" {
+		return reject("whisper.character_name 不能为空，请填一位存活调查员的角色名。")
+	}
+	if content == "" {
+		return reject("whisper.content 不能为空，请写明要发给该调查员的密讯内容。")
+	}
+
+	players := actx.GCtx.Session.Players
+	var aliveNames []string
+	var matched *models.SessionPlayer
+	for i := range players {
+		p := &players[i]
+		alive := isCharacterAlive(p.CharacterCard.Name, false, players, nil)
+		if alive {
+			aliveNames = append(aliveNames, p.CharacterCard.Name)
+		}
+		if p.CharacterCard.Name == target {
+			matched = p
+		}
+	}
+	if matched == nil {
+		return reject(fmt.Sprintf("找不到调查员 %s。character_name 必须是一位存活调查员的角色名(当前存活：%s)。", target, strings.Join(aliveNames, "、")))
+	}
+	if !isCharacterAlive(matched.CharacterCard.Name, false, players, nil) {
+		return reject(fmt.Sprintf("调查员 %s 已死亡，无法接收密讯。", target))
+	}
+
+	*actx.Outbox = append(*actx.Outbox, Output{
+		Kind:          OutputKP,
+		Text:          content,
+		VisibleTo:     []uint{matched.UserID},
+		RecipientName: matched.CharacterCard.Name,
+		CallID:        call.CallID,
+	})
+	debugf("tool", "session=%d whisper to=%s user=%d", actx.Sid, matched.CharacterCard.Name, matched.UserID)
+	return []ToolResult{{
+		Action: ToolWhisper,
+		Result: fmt.Sprintf("已向「%s」发送密讯（仅该调查员可见）。你仍持有发言权。", matched.CharacterCard.Name),
+	}}
 }
 
 // ── Time action ───────────────────────────────────────────────────────────────

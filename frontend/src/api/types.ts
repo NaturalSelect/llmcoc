@@ -15,6 +15,8 @@ export interface CharacterCard {
 
 export interface SessionPlayer {
   user_id: number
+  secret_background?: string
+  location?: string
   user?: { username?: string } | null
   character_card?: CharacterCard | null
   [key: string]: unknown

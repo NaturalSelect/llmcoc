@@ -66,6 +66,13 @@ export interface CreateSessionPayload {
 export interface JoinSessionForm {
   character_card_id: number | ''
   password: string
+  secret_background?: string
+}
+
+export interface JoinSessionPayload {
+  character_card_id: number
+  password: string
+  secret_background?: string
 }
 
 // start/end/leave/revive 等接口返回的 { message }

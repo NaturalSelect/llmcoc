@@ -53,8 +53,31 @@ type CreateSessionReq struct {
 }
 
 type JoinSessionReq struct {
-	CharacterCardID uint   `json:"character_card_id" binding:"required"`
-	Password        string `json:"password"`
+	CharacterCardID  uint   `json:"character_card_id" binding:"required"`
+	Password         string `json:"password"`
+	SecretBackground string `json:"secret_background"`
+}
+
+const maxSecretBackgroundRunes = 1000
+
+// sanitizeSessionPlayerSecrets 按查看者身份裁剪调查员的秘密背景(HO)：
+// 管理员可见全部；allowOwn=true 时玩家仅可见自己的 HO；列表接口统一清空避免泄露。
+func sanitizeSessionPlayerSecrets(session *models.GameSession, viewerID uint, isAdmin bool, allowOwn bool) {
+	if session == nil || isAdmin {
+		return
+	}
+	for i := range session.Players {
+		if allowOwn && viewerID != 0 && session.Players[i].UserID == viewerID {
+			continue
+		}
+		session.Players[i].SecretBackground = ""
+	}
+}
+
+func sanitizeSessionsSecrets(sessions []models.GameSession, viewerID uint, isAdmin bool, allowOwn bool) {
+	for i := range sessions {
+		sanitizeSessionPlayerSecrets(&sessions[i], viewerID, isAdmin, allowOwn)
+	}
 }
 
 type messageResponse struct {
@@ -117,7 +140,8 @@ func ListSessions(c *gin.Context) {
 		return
 	}
 
-	admin := isAdminUser(c, c.GetUint("user_id"))
+	userID := c.GetUint("user_id")
+	admin := isAdminUser(c, userID)
 
 	countQuery := models.DB.Model(&models.GameSession{}).
 		Where("status IN ?", []string{"lobby", "playing"})
@@ -150,6 +174,7 @@ func ListSessions(c *gin.Context) {
 		return
 	}
 
+	sanitizeSessionsSecrets(sessions, userID, admin, false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 
@@ -186,11 +211,13 @@ func ListMyHistorySessions(c *gin.Context) {
 		return
 	}
 
+	sanitizeSessionsSecrets(sessions, userID, isAdminUser(c, userID), false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 
 func GetSession(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	viewerID := c.GetUint("user_id")
 	var session models.GameSession
 	if err := models.DB.
 		Preload("Scenario").
@@ -201,6 +228,7 @@ func GetSession(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
 	}
+	sanitizeSessionPlayerSecrets(&session, viewerID, isAdminUser(c, viewerID), true)
 	c.JSON(http.StatusOK, session)
 }
 
@@ -345,11 +373,18 @@ func JoinSession(c *gin.Context) {
 		return
 	}
 
+	secret := strings.TrimSpace(req.SecretBackground)
+	if utf8.RuneCountInString(secret) > maxSecretBackgroundRunes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("秘密背景最多 %d 字", maxSecretBackgroundRunes)})
+		return
+	}
+
 	player := models.SessionPlayer{
-		SessionID:       uint(sessionID),
-		UserID:          userID,
-		CharacterCardID: req.CharacterCardID,
-		JoinedAt:        time.Now(),
+		SessionID:        uint(sessionID),
+		UserID:           userID,
+		CharacterCardID:  req.CharacterCardID,
+		SecretBackground: secret,
+		JoinedAt:         time.Now(),
 	}
 	if err := models.DB.Create(&player).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "加入房间失败"})
@@ -370,6 +405,80 @@ func JoinSession(c *gin.Context) {
 	publishSessionChanged(uint(sessionID), models.SessionStatusLobby, "join")
 
 	c.JSON(http.StatusOK, gin.H{"message": "加入成功"})
+}
+
+type setPlayerSecretReq struct {
+	SecretBackground string `json:"secret_background"`
+	UserID           uint   `json:"user_id"`
+}
+
+// SetPlayerSecret 允许玩家在准备阶段设置或更新自己的秘密背景(HO)，房主或管理员也可在准备/进行中为指定玩家分发 HO。
+func SetPlayerSecret(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var session models.GameSession
+	if err := models.DB.Preload("Players").First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+	if session.Status == models.SessionStatusEnded {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏已结束，无法修改秘密背景"})
+		return
+	}
+
+	var req setPlayerSecretReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	secret := strings.TrimSpace(req.SecretBackground)
+	if utf8.RuneCountInString(secret) > maxSecretBackgroundRunes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("秘密背景最多 %d 字", maxSecretBackgroundRunes)})
+		return
+	}
+
+	isAdmin := isAdminUser(c, userID)
+	isHost := session.CreatedBy == userID
+	targetUserID := req.UserID
+	if targetUserID == 0 {
+		targetUserID = userID
+	}
+
+	if targetUserID != userID {
+		if !isHost && !isAdmin {
+			c.JSON(http.StatusForbidden, gin.H{"error": "只有房主或管理员可以为其他玩家设置秘密背景"})
+			return
+		}
+	} else if session.Status != models.SessionStatusLobby && !isHost && !isAdmin {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏开始后仅房主或管理员可修改秘密背景"})
+		return
+	}
+
+	var target *models.SessionPlayer
+	for i := range session.Players {
+		if session.Players[i].UserID == targetUserID {
+			target = &session.Players[i]
+			break
+		}
+	}
+	if target == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "目标玩家不在房间中"})
+		return
+	}
+
+	if err := models.DB.Model(&models.SessionPlayer{}).
+		Where("id = ?", target.ID).
+		Update("secret_background", secret).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存秘密背景失败"})
+		return
+	}
+
+	publishSessionChanged(session.ID, session.Status, "secret")
+	c.JSON(http.StatusOK, gin.H{
+		"message":           "秘密背景已更新",
+		"secret_background": secret,
+	})
 }
 
 func LeaveSession(c *gin.Context) {
@@ -571,6 +680,30 @@ func canViewSession(session *models.GameSession, userID uint) bool {
 	return true
 }
 
+// canSeeMessage 判断指定用户能否看到一条房间消息。
+// 公开消息(VisibleTo 为空)所有人可见；密讯仅接收者与管理员可见；游戏结束后对本局参与者与房主解锁。
+func canSeeMessage(m models.Message, session *models.GameSession, userID uint, isAdmin bool) bool {
+	if len(m.VisibleTo.Data) == 0 || isAdmin {
+		return true
+	}
+	for _, id := range m.VisibleTo.Data {
+		if id == userID {
+			return true
+		}
+	}
+	if session != nil && session.Status == models.SessionStatusEnded {
+		if session.CreatedBy == userID {
+			return true
+		}
+		for _, p := range session.Players {
+			if p.UserID == userID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func GetMessages(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID := c.GetUint("user_id")
@@ -594,7 +727,14 @@ func GetMessages(c *gin.Context) {
 		q = q.Where("id NOT IN ?", held)
 	}
 	q.Order("created_at ASC, id ASC").Find(&messages)
-	c.JSON(http.StatusOK, newMessageResponses(messages))
+	isAdmin := isAdminUser(c, userID)
+	visible := make([]models.Message, 0, len(messages))
+	for _, m := range messages {
+		if canSeeMessage(m, &session, userID, isAdmin) {
+			visible = append(visible, m)
+		}
+	}
+	c.JSON(http.StatusOK, newMessageResponses(visible))
 }
 
 var sessionMutex = sync.Map{}
@@ -1450,6 +1590,7 @@ func ListMyFavoriteSessions(c *gin.Context) {
 		return
 	}
 
+	sanitizeSessionsSecrets(sessions, userID, isAdminUser(c, userID), false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 

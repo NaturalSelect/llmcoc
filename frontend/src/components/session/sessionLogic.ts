@@ -1,5 +1,5 @@
 import type { Scenario } from '@/api/scenarioTypes'
-import type { CreateSessionForm, CreateSessionPayload, JoinSessionForm, LobbyPlayer, LobbySession } from '@/api/sessionTypes'
+import type { CreateSessionForm, CreateSessionPayload, JoinSessionForm, JoinSessionPayload, LobbyPlayer, LobbySession } from '@/api/sessionTypes'
 import type { CharacterCard } from '@/api/types'
 
 export type StatusTone = 'ledger' | 'seal' | 'faint'
@@ -46,10 +46,13 @@ export function emptyJoinForm(): JoinSessionForm {
   return { character_card_id: '', password: '' }
 }
 
-// NOTE: 没选人物卡时不提交（旧前端静默返回，这里由按钮禁用兜底）
-export function buildJoinPayload(form: JoinSessionForm): { character_card_id: number; password: string } | null {
+// NOTE: 没选人物卡时不提交（旧前端静默返回，这里由按钮禁用兜底）；秘密背景仅非空时才附带，避免给未填写 HO 的请求塞空字段
+export function buildJoinPayload(form: JoinSessionForm): JoinSessionPayload | null {
   if (!form.character_card_id) return null
-  return { character_card_id: form.character_card_id, password: form.password }
+  const secret = (form.secret_background ?? '').trim()
+  const payload: JoinSessionPayload = { character_card_id: form.character_card_id, password: form.password }
+  if (secret) payload.secret_background = secret
+  return payload
 }
 
 // NOTE: 选剧本时若房间名还是空的，用剧本名做默认值；之后换剧本不会覆盖已有房间名

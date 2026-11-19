@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChevronDown, Lock } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { JoinSessionForm } from '@/api/sessionTypes'
@@ -18,6 +19,8 @@ const chars = useCharactersStore()
 const ui = useUiStore()
 
 const form = ref<JoinSessionForm>(emptyJoinForm())
+const secretInput = ref('')
+const showSecret = ref(false)
 const joining = ref(false)
 const candidates = computed(() => joinableCharacters(chars.characters))
 
@@ -27,6 +30,8 @@ watch(
   (open) => {
     if (!open) return
     form.value = emptyJoinForm()
+    secretInput.value = ''
+    showSecret.value = false
     const only = candidates.value.length === 1 ? candidates.value[0] : undefined
     if (only?.id) form.value.character_card_id = only.id
   },
@@ -34,7 +39,7 @@ watch(
 )
 
 async function submit() {
-  const payload = buildJoinPayload(form.value)
+  const payload = buildJoinPayload({ ...form.value, secret_background: secretInput.value })
   if (!props.session || !payload) return
   joining.value = true
   try {
@@ -59,6 +64,33 @@ async function submit() {
         <option v-for="c in candidates" :key="c.id" :value="c.id">{{ cardOptionLabel(c) }}</option>
       </BaseSelect>
       <BaseInput v-if="session?.has_password" v-model="form.password" type="text" placeholder="房间密码" aria-label="房间密码" autocomplete="off" />
+
+      <div class="rounded-lg border border-line bg-surface-2/60 px-3 py-2">
+        <button
+          type="button"
+          class="flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-fg-muted transition hover:text-fg"
+          :aria-expanded="showSecret"
+          @click="showSecret = !showSecret"
+        >
+          <span class="inline-flex items-center gap-1.5">
+            <Lock :size="14" :stroke-width="1.75" class="shrink-0 text-info" />
+            秘密背景 / 隐藏任务 (HO，可选)
+          </span>
+          <ChevronDown :size="14" :stroke-width="1.75" class="shrink-0 transition-transform" :class="showSecret ? 'rotate-180' : ''" />
+        </button>
+        <div v-if="showSecret" class="mt-2 space-y-1.5">
+          <textarea
+            v-model="secretInput"
+            rows="3"
+            maxlength="1000"
+            placeholder="仅你与 KP 可见：例如隐藏身份、不可告人的目的或模组 HO 内容…"
+            aria-label="秘密背景或隐藏任务"
+            class="w-full resize-none rounded-lg border border-line bg-surface px-2.5 py-2 text-xs leading-relaxed text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
+          />
+          <p class="text-right text-xs tabular-nums text-fg-subtle">{{ secretInput.length }}/1000</p>
+        </div>
+      </div>
+
       <div class="flex gap-2 pt-1">
         <BaseButton variant="ghost" class="flex-1" @click="emit('close')">取消</BaseButton>
         <BaseButton type="submit" class="flex-1" :loading="joining" :disabled="!form.character_card_id">

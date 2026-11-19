@@ -376,3 +376,49 @@ func TestHubRegistry_DropIdleHubs(t *testing.T) {
 		t.Fatalf("recently active hubs dropped: %d", n)
 	}
 }
+
+func TestHub_PublishToFiltersSubscribersAndReplay(t *testing.T) {
+	h := newRoomHub(0)
+	subRecipient, _, _ := h.SubscribeFor(0, 10, false)
+	subOther, _, _ := h.SubscribeFor(0, 20, false)
+	subAdmin, _, _ := h.SubscribeFor(0, 99, true)
+	defer h.Unsubscribe(subRecipient)
+	defer h.Unsubscribe(subOther)
+	defer h.Unsubscribe(subAdmin)
+
+	h.Publish("public_ev", "all")
+	h.PublishTo("whisper_ev", "secret", []uint{10})
+
+	// 接收者和管理员都能收到两条
+	if ev := recvEvent(t, subRecipient); ev.Type != "public_ev" {
+		t.Fatalf("recipient first = %+v", ev)
+	}
+	if ev := recvEvent(t, subRecipient); ev.Type != "whisper_ev" {
+		t.Fatalf("recipient second = %+v", ev)
+	}
+	if ev := recvEvent(t, subAdmin); ev.Type != "public_ev" {
+		t.Fatalf("admin first = %+v", ev)
+	}
+	if ev := recvEvent(t, subAdmin); ev.Type != "whisper_ev" {
+		t.Fatalf("admin second = %+v", ev)
+	}
+
+	// 其他玩家只能收到公开事件
+	if ev := recvEvent(t, subOther); ev.Type != "public_ev" {
+		t.Fatalf("other first = %+v", ev)
+	}
+	assertNoEvent(t, subOther)
+
+	// 重连回放同样按权限过滤
+	subReplayOther, replayOther, gap := h.SubscribeFor(0, 20, false)
+	defer h.Unsubscribe(subReplayOther)
+	if gap || len(replayOther) != 1 || replayOther[0].Type != "public_ev" {
+		t.Fatalf("other replay = %+v (gap=%v), want only public_ev", replayOther, gap)
+	}
+	subReplayRecipient, replayRecipient, _ := h.SubscribeFor(0, 10, false)
+	defer h.Unsubscribe(subReplayRecipient)
+	if len(replayRecipient) != 2 {
+		t.Fatalf("recipient replay = %+v, want 2 events", replayRecipient)
+	}
+}
+

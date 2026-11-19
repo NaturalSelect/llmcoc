@@ -232,7 +232,7 @@ func (h *SessionHandlers) drainOutbox(sessionID uint, q *outboxQueue) {
 func (h *SessionHandlers) runOutboxTask(sessionID uint, task outboxTask) {
 	hub := hubFor(sessionID)
 	for _, m := range task.msgs {
-		hub.Publish("message_new", gin.H{"message": newMessageResponse(m)})
+		hub.PublishTo("message_new", gin.H{"message": newMessageResponse(m)}, m.VisibleTo.Data)
 	}
 	if task.writer != nil {
 		h.runWriterTask(sessionID, *task.writer)

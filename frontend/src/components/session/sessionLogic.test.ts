@@ -140,6 +140,18 @@ describe('加入房间表单', () => {
   test('选了人物卡带上密码', () => {
     expect(buildJoinPayload({ character_card_id: 7, password: 'pw' })).toEqual({ character_card_id: 7, password: 'pw' })
   })
+
+  test('秘密背景非空时去首尾空白附带，纯空白省略', () => {
+    expect(buildJoinPayload({ character_card_id: 7, password: '', secret_background: '  我是卧底  ' })).toEqual({
+      character_card_id: 7,
+      password: '',
+      secret_background: '我是卧底',
+    })
+    expect(buildJoinPayload({ character_card_id: 7, password: '', secret_background: '   ' })).toEqual({
+      character_card_id: 7,
+      password: '',
+    })
+  })
 })
 
 describe('确认文案', () => {

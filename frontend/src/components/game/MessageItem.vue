@@ -12,6 +12,7 @@ import {
   Footprints,
   Hand,
   HeartPulse,
+  Lock,
   MapPin,
   MessageSquareQuote,
   NotebookPen,
@@ -84,6 +85,8 @@ const illustrations = computed(() => illustrationsOf(props.msg))
 const error = computed(() => messageError(props.msg))
 const names = computed(() => askNames(props.msg))
 const dice = computed(() => diceOf(props.msg))
+const isPrivate = computed(() => kind.value === 'kp' && Boolean((props.msg.meta as { private?: boolean } | null | undefined)?.private))
+const recipientName = computed(() => String((props.msg.meta as { recipient_name?: string } | null | undefined)?.recipient_name || ''))
 const images = computed(() => (props.msg.status === 'done' ? props.msg.images || [] : []))
 const events = computed(() => (kind.value === 'event' ? eventsOf(props.msg).map(describeEvent) : []))
 
@@ -159,12 +162,25 @@ const EVENT_TONES: Record<EventTone, string> = {
       </li>
     </ul>
 
-    <div v-else :class="kind === 'kp' || kind === 'ask' ? 'rounded-xl bg-accent/10 px-4 py-3' : ''">
+    <div
+      v-else
+      :class="
+        isPrivate
+          ? 'rounded-xl border border-info/40 bg-info/10 px-4 py-3'
+          : kind === 'kp' || kind === 'ask'
+            ? 'rounded-xl bg-accent/10 px-4 py-3'
+            : ''
+      "
+    >
       <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-subtle">
-        <span class="inline-flex items-center gap-1 font-medium" :class="kind === 'kp' || kind === 'ask' ? 'text-accent' : ''">
+        <span
+          class="inline-flex items-center gap-1 font-medium"
+          :class="isPrivate ? 'text-info' : kind === 'kp' || kind === 'ask' ? 'text-accent' : ''"
+        >
           <BookOpenText v-if="kind === 'writer'" :size="16" :stroke-width="1.75" class="shrink-0" />
+          <Lock v-else-if="isPrivate" :size="14" :stroke-width="1.75" class="shrink-0" />
           <MessageSquareQuote v-else-if="kind === 'kp' || kind === 'ask'" :size="16" :stroke-width="1.75" class="shrink-0" />
-          {{ msgLabel(msg) }}
+          {{ isPrivate ? `密讯 · 仅 ${recipientName || '你'} 可见` : msgLabel(msg) }}
         </span>
         <span class="tabular-nums">{{ fmtTime(msg.created_at as string | undefined) }}</span>
         <span

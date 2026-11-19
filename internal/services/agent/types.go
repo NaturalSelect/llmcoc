@@ -101,6 +101,7 @@ const (
 	ToolUpdateArmor            ToolCallType = "update_armor"              // 更新调查员护甲值
 	ToolHint                   ToolCallType = "hint"                      // KP写入当前场景高密度提示
 	ToolNarrate                ToolCallType = "narrate"                   // 发布一条KP消息,不交出发言权
+	ToolWhisper                ToolCallType = "whisper"                   // NOTE: 向单个调查员发送仅其可见的私密密讯,不交出发言权
 	// NOTE: ToolLegacyResponse 是 narrate 的旧名，只用于读懂老会话已归档的 Director 历史，不在工具列表里。
 	ToolLegacyResponse ToolCallType = "response"
 	// NOTE: ToolLegacyActNPC 是已删除的 act_npc，只用于渲染老会话归档历史的总结，不注册、不暴露。
@@ -129,7 +130,8 @@ type ToolCall struct {
 	NPCName       string                 `json:"npc_name"`       // destroy_npc / update_npc_*: NPC名称
 	DestroyReason string                 `json:"destroy_reason"` // destroy_npc: dead|out_of_range|cleanup
 	Changes       []string               `json:"changes"`        // update_characters: 状态变化列表
-	CharacterName string                 `json:"character_name"` // manage_madness / query_character: 角色名称
+	CharacterName string                 `json:"character_name"` // manage_madness / query_character / whisper: 角色名称
+	Content       string                 `json:"content"`        // whisper: 仅目标调查员可见的密讯内容
 	Operate       string                 `json:"operate"`        // 通用操作: add/remove(manage_inventory 另有 update)
 	Item          string                 `json:"item"`           // manage_inventory: 旧版整串物品(如 "绷带(x3)"),仅在 item_name 为空时按旧格式解析
 	ItemName      string                 `json:"item_name"`      // manage_inventory: 物品基础名称
@@ -155,8 +157,8 @@ type ToolCall struct {
 	NSFW          bool                   `json:"nsfw"`           // write: 该段描写是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效
 	Options       []string               `json:"options"`        // ask_players: 玩家询问时才给的推荐行动(可选,0-2条)
 	Reply         string                 `json:"reply"`          // narrate: KP对玩家说的话(必填)
-	EndingName string             `json:"ending_name"` // end_game: 触发的结局名称(可选,与<endings>中名称一致,用于结算SAN奖惩)
-	EndSummary string             `json:"end_summary"` // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
+	EndingName    string                 `json:"ending_name"`    // end_game: 触发的结局名称(可选,与<endings>中名称一致,用于结算SAN奖惩)
+	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
 	// NOTE: Win 使用指针以区分 false（失败）与缺失/null（未填写）。
 	// Director 必须显式填写 true 或 false；缺失时 endGameAction.Execute 拒绝并返回错误。
 	Win        *bool              `json:"win"`        // end_game: 是否胜利(必填,true=胜/false=败)
@@ -230,14 +232,16 @@ const (
 
 // Output 是一次产生玩家可见消息的工具调用的结果,一个 Output 对应一条消息。
 type Output struct {
-	Kind      OutputKind
-	Text      string     // writer: direction(交给Writer,不是正文); kp: reply或结束语; ask: question
-	NSFW      bool       // writer 单独标记
-	Options   []string   // ask: 玩家询问时才给的推荐行动
-	TimePoint string     // kp/ask: 发布时的游戏内时间
-	Ask       *AskResult // ask
-	Ended     bool       // end_game
-	Auto      bool       // writer 由 fallbackWriterDirection 自动补出
+	Kind          OutputKind
+	Text          string     // writer: direction(交给Writer,不是正文); kp: reply或结束语或密讯; ask: question
+	NSFW          bool       // writer 单独标记
+	Options       []string   // ask: 玩家询问时才给的推荐行动
+	TimePoint     string     // kp/ask: 发布时的游戏内时间
+	Ask           *AskResult // ask
+	Ended         bool       // end_game
+	Auto          bool       // writer 由 fallbackWriterDirection 自动补出
+	VisibleTo     []uint     // whisper: 非空时仅列表中的用户可见
+	RecipientName string     // whisper: 密讯接收调查员姓名
 	// CallID: writer 是对应的 write 调用；自动补写的是来源 narrate/ask 调用；kp/ask 是它们自己的调用。
 	CallID string
 }

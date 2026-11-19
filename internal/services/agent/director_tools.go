@@ -47,6 +47,7 @@ func directorTools(dramaturgEnabled bool) []scripterTool {
 		readStoryTool(),
 		updateNPCCardTool(),
 		narrateTool(),
+		whisperTool(),
 		askPlayersTool(),
 		updateSessionMemoryTool(),
 		updateLocationTool(),
@@ -575,6 +576,26 @@ func narrateTool() scripterTool {
 					"reply": {"type": "string", "description": "口语化回复正文,1-4句,不使用编号列表"}
 				},
 				"required": ["reply"]
+			}`),
+		},
+	}
+}
+
+func whisperTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolWhisper),
+			Description: `向指定一位调查员发送私密讯息（密讯），仅该调查员与管理员可见，其他调查员不会收到。适用于分队/独处时单人目击的线索、精神幻觉或疯狂低语、暗骰结果、或与该调查员隐藏背景(HO)相关的私密情报。
+发布后你仍持有发言权，可继续调用其他工具或用 ask_players 点名。不得把应公开给全队的场景描述改用 whisper 发送。
+【批次规则】可与 narrate/write/ask_players 和状态更新工具同批，但查询/掷骰类工具的结果必须先在更早的一轮读到。
+调用示例：{"character_name":"调查员名","content":"你借着火柴微光看清纸条背面写着你妹妹的名字。"}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"character_name": {"type": "string", "description": "接收密讯的存活调查员角色名"},
+					"content": {"type": "string", "description": "密讯正文，仅该调查员可见"}
+				},
+				"required": ["character_name", "content"]
 			}`),
 		},
 	}

@@ -654,6 +654,11 @@ func roundMessage(sessionID uint, ro agent.RoundOutputs, it agent.Output) (model
 		msg.Kind = models.MessageKindKP
 		msg.Content = strings.TrimSpace(it.Text)
 		meta.TimePoint, meta.Ended = it.TimePoint, it.Ended
+		if len(it.VisibleTo) > 0 {
+			msg.VisibleTo = models.JSONField[[]uint]{Data: append([]uint(nil), it.VisibleTo...)}
+			meta.Private = true
+			meta.RecipientName = it.RecipientName
+		}
 		setDirectorTiming(&msg, ro)
 	case agent.OutputAsk:
 		msg.Kind = models.MessageKindAsk

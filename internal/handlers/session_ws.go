@@ -106,7 +106,7 @@ func (h *SessionHandlers) WS(c *gin.Context) {
 	}
 
 	hub := hubFor(uint(sessionID))
-	sub, replay, gap := hub.Subscribe(since)
+	sub, replay, gap := hub.SubscribeFor(since, userID, isAdminUser(c, userID))
 
 	initial := []roomEvent{{Type: "hello", Data: wsHelloData{Epoch: wsEpoch, Seq: sub.startSeq}}}
 	resync := gap || (clientEpoch != "" && clientEpoch != wsEpoch)
