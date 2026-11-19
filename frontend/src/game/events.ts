@@ -51,6 +51,7 @@ export type EventIcon =
   | 'coins'
   | 'backstory'
   | 'clue'
+  | 'clock'
 
 export type EventTone = 'plain' | 'hp' | 'san' | 'mp' | 'danger'
 
@@ -221,6 +222,18 @@ export function describeEvent(ev: GameEvent): EventView {
       return { icon: 'backstory', tone: 'plain', text: who(ev) + '个人经历有了新的篇章', note: ev.detail }
     case 'clue':
       return { icon: 'clue', tone: 'plain', text: '发现线索：' + (ev.name || '新线索'), note: ev.detail || undefined }
+    case 'clock': {
+      const name = ev.name || '危机时钟'
+      if (ev.op === 'remove') return { icon: 'clock', tone: 'plain', text: `危机时钟「${name}」已解除` }
+      const to = ev.to ?? 0
+      const max = ev.amount ?? 0
+      const tone: EventTone = max > 0 && to >= max ? 'danger' : 'plain'
+      const value = max > 0 ? `${to}/${max}` : String(to)
+      if (ev.op === 'create' || ev.from === undefined || ev.from === ev.to) {
+        return { icon: 'clock', tone, text: `危机时钟「${name}」`, value, note: ev.detail || undefined }
+      }
+      return { icon: 'clock', tone, text: `危机时钟「${name}」${ev.from} →`, value, note: ev.detail || undefined }
+    }
   }
   return { icon: 'stat', tone: 'plain', text: ev.type }
 }

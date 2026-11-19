@@ -185,12 +185,13 @@ type handbookChase struct {
 }
 
 type handbookResponse struct {
-	Clues     []models.SessionClue `json:"clues"`
-	Notes     []models.SessionNote `json:"notes"`
-	Locations []handbookLocation   `json:"locations"`
-	NPCs      []handbookNPC        `json:"npcs"`
-	Combat    *handbookCombat      `json:"combat"`
-	Chase     *handbookChase       `json:"chase"`
+	Clues     []models.SessionClue  `json:"clues"`
+	Notes     []models.SessionNote  `json:"notes"`
+	Locations []handbookLocation    `json:"locations"`
+	NPCs      []handbookNPC         `json:"npcs"`
+	Clocks    []models.SessionClock `json:"clocks"`
+	Combat    *handbookCombat       `json:"combat"`
+	Chase     *handbookChase        `json:"chase"`
 }
 
 func resolveMemberAuthorName(session *models.GameSession, c *gin.Context, userID uint) string {
@@ -389,11 +390,20 @@ func GetSessionHandbook(c *gin.Context) {
 		}
 	}
 
+	clocks := make([]models.SessionClock, 0, len(session.Clocks.Data))
+	for _, clk := range session.Clocks.Data {
+		if !clk.Visible && !isAdmin {
+			continue
+		}
+		clocks = append(clocks, clk)
+	}
+
 	c.JSON(http.StatusOK, handbookResponse{
 		Clues:     clues,
 		Notes:     notes,
 		Locations: locations,
 		NPCs:      npcs,
+		Clocks:    clocks,
 		Combat:    combat,
 		Chase:     chase,
 	})
@@ -615,6 +625,7 @@ type debriefTruth struct {
 	Clues             []models.ClueData     `json:"clues"`
 	NPCs              []debriefNPC          `json:"npcs"`
 	PlayerSecrets     []debriefPlayerSecret `json:"player_secrets"`
+	Clocks            []models.SessionClock `json:"clocks"`
 }
 
 type debriefResponse struct {
@@ -669,12 +680,17 @@ func GetSessionDebrief(c *gin.Context) {
 	diceStats := aggregateDebriefDiceStats(eventMsgs)
 
 	sc := session.Scenario.Content.Data
+	clocks := append([]models.SessionClock(nil), session.Clocks.Data...)
+	if clocks == nil {
+		clocks = []models.SessionClock{}
+	}
 	truth := debriefTruth{
 		MythosCore:    strings.TrimSpace(sc.MythosCore),
 		Endings:       sc.Endings,
 		Clues:         sc.Clues,
 		NPCs:          make([]debriefNPC, 0, len(sc.NPCs)),
 		PlayerSecrets: make([]debriefPlayerSecret, 0),
+		Clocks:        clocks,
 	}
 	if truth.Endings == nil {
 		truth.Endings = []models.EndingData{}

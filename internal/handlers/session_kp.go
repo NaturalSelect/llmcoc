@@ -718,7 +718,7 @@ func eventsTouchCards(events []models.GameEvent) bool {
 
 func eventsTouchHandbook(events []models.GameEvent) bool {
 	for _, ev := range events {
-		if ev.Type == "clue" || ev.Type == "location" || (ev.Type == "item" && ev.Category == "relation") {
+		if ev.Type == "clue" || ev.Type == "location" || ev.Type == "clock" || (ev.Type == "item" && ev.Category == "relation") {
 			return true
 		}
 	}

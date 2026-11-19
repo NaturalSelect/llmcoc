@@ -33,6 +33,15 @@ export interface HandbookNpc {
   is_alive: boolean
 }
 
+export interface SessionClock {
+  name: string
+  current: number
+  max: number
+  stage?: string
+  description?: string
+  visible: boolean
+}
+
 export interface HandbookCombatParticipant {
   name: string
   dex: number
@@ -85,6 +94,7 @@ export interface HandbookData {
   notes: SessionNote[]
   locations: HandbookLocation[]
   npcs: HandbookNpc[]
+  clocks: SessionClock[]
   combat: HandbookCombat | null
   chase: HandbookChase | null
 }
@@ -95,6 +105,7 @@ export function emptyHandbook(): HandbookData {
     notes: [],
     locations: [],
     npcs: [],
+    clocks: [],
     combat: null,
     chase: null,
   }
@@ -108,6 +119,7 @@ export function normalizeHandbook(raw: unknown): HandbookData {
     notes: Array.isArray(r.notes) ? r.notes : [],
     locations: Array.isArray(r.locations) ? r.locations : [],
     npcs: Array.isArray(r.npcs) ? r.npcs : [],
+    clocks: Array.isArray(r.clocks) ? r.clocks : [],
     combat: r.combat && typeof r.combat === 'object' && r.combat.active ? r.combat : null,
     chase: r.chase && typeof r.chase === 'object' && r.chase.active ? r.chase : null,
   }

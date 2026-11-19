@@ -54,6 +54,7 @@ func directorTools(dramaturgEnabled bool) []scripterTool {
 		updateLocationTool(),
 		updateNPCLocationTool(),
 		updateArmorTool(),
+		updateClockTool(),
 		updateNPCSessionMemoryTool(),
 		hintTool(),
 		reportTool(),
@@ -716,6 +717,35 @@ func updateArmorTool() scripterTool {
 					"armor_value": {"type": "integer", "description": "护甲值"}
 				},
 				"required": ["character_name", "armor_value"]
+			}`),
+		},
+	}
+}
+
+func updateClockTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolUpdateClock),
+			Description: `创建、推进、调整或移除本局的危机时钟/模组机制追踪器(如<mechanics>中的仪式倒计时、反派警戒度、污染度、三重承认等)。
+【operate】advance(默认)：在当前格数上增减 delta(省略默认+1，可填负数回退)；若同名时钟尚未创建会自动创建。set：直接设定当前格数为 value(省略默认0)，适合开局建立 0/N 的时钟。remove：移除不再需要的时钟。
+【visible】true(默认)：公开时钟，玩家会在顶部危机条和调查手册中看到格数与阶段变化，营造紧迫感；false：暗钟，仅 KP 与管理员可见，不会向玩家暴露或产生公开事件，结团复盘时才会揭晓。更新已有时钟时省略 visible 会保持原可见性。
+【自动推断】clock_name 与模组 <mechanics> 名称一致时，新建可省略 max 和 description，后端会自动按模组阶段数与说明填充，并按当前格数匹配阶段标签(传入 stage 可覆盖)。
+【批次规则】属于状态更新工具，可与 narrate/write/ask_players 等同轮调用。
+调用示例(公开推进)：{"clock_name":"血月仪式倒计时","operate":"advance","delta":1,"max":6,"stage":"祭坛点亮","visible":true}
+调用示例(暗钟建立)：{"clock_name":"教团警戒度","operate":"set","value":1,"max":4,"visible":false,"description":"每惊动一次教徒推进一格"}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"clock_name": {"type": "string", "description": "时钟/机制名称(建议与<mechanics>条目名保持一致)"},
+					"operate": {"type": "string", "enum": ["advance", "set", "remove"], "description": "操作类型：advance(默认,按delta推进)、set(设为value)、remove(移除)"},
+					"delta": {"type": "integer", "description": "advance 时的增减格数(可负，省略默认+1)"},
+					"value": {"type": "integer", "description": "set 时的目标格数(省略默认0)"},
+					"max": {"type": "integer", "minimum": 1, "maximum": 20, "description": "总格数(1-20，新建省略时按模组mechanics阶段数或默认6)"},
+					"stage": {"type": "string", "description": "当前阶段标签(可选)"},
+					"visible": {"type": "boolean", "description": "是否对玩家公开(新建默认true；false为仅KP可见的暗钟；更新时省略保持不变)"},
+					"description": {"type": "string", "description": "时钟简短说明(可选)"}
+				},
+				"required": ["clock_name"]
 			}`),
 		},
 	}

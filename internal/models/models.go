@@ -267,6 +267,17 @@ type MechanicStage struct {
 	Trigger string `json:"trigger,omitempty"` // 推进/触发条件
 }
 
+// NOTE: SessionClock 是运行中的危机时钟 / 模组机制追踪器，由 Director 通过 update_clock 创建、推进或移除。
+// Visible=false 的暗钟只对 KP(Director) 与管理员可见，不会出现在玩家手册或公开事件流中，结团复盘后才揭晓。
+type SessionClock struct {
+	Name        string `json:"name"`
+	Current     int    `json:"current"`
+	Max         int    `json:"max"`
+	Stage       string `json:"stage,omitempty"`
+	Description string `json:"description,omitempty"`
+	Visible     bool   `json:"visible"`
+}
+
 // NOTE: SceneData describes a specific location or event in a scenario.
 type SceneData struct {
 	ID          string   `json:"id"`
@@ -454,8 +465,10 @@ type GameSession struct {
 	// NOTE: DramaturgHistory 是剧构顾问独立的多轮进度线，与WriterHistory同结构；
 	// 只存Director脱敏后的progress_note与顾问回复，不与messages/WriterHistory共享数据源。
 	DramaturgHistory JSONField[[]ChatMsg]    `gorm:"type:text" json:"-"`
-	CombatState      JSONField[*CombatState] `gorm:"type:text" json:"-"`
-	ChaseState       JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
+	CombatState      JSONField[*CombatState]   `gorm:"type:text" json:"-"`
+	ChaseState       JSONField[*ChaseState]    `gorm:"type:text" json:"-"`
+	// NOTE: Clocks 记录本局进行中的危机时钟与模组机制进度；json:"-" 避免 GET /sessions/:id 把暗钟(Visible=false)泄露给普通玩家。
+	Clocks           JSONField[[]SessionClock] `gorm:"type:text" json:"-"`
 	// NOTE: 房主创建时决定；开启后胜利结算会改写存活调查员的个人经历，改写不可撤销，所以默认关闭。
 	EvolveBackstory bool `gorm:"default:false" json:"evolve_backstory"`
 	// NOTE: NarrativeStyle 决定 Writer 叙事文风（空或 plain=默认白描、lovecraft=经典档案风、cinematic=电影紧凑风），创建后不可修改以保证 prompt cache 前缀稳定。
@@ -607,7 +620,7 @@ const (
 // GameEvent 是一次玩家可见的工具结算，只存玩家能看到的信息；字段按 Type 取用，其余留空。
 // NOTE: 暗骰只有 Type+Hidden，不存技能、点数和角色，避免玩家从接口里读到。NPC 的变化不产生事件。
 type GameEvent struct {
-	Type      string `json:"type"`                // dice|stat|wound|item|madness|location|time|combat|chase|coins|backstory|clue
+	Type      string `json:"type"`                // dice|stat|wound|item|madness|location|time|combat|chase|coins|backstory|clue|clock
 	Character string `json:"character,omitempty"` // 调查员名；NPC、暗骰留空
 	Skill     string `json:"skill,omitempty"`     // dice: 检定名；stat 且 field=skill 时为技能名
 	Roll      int    `json:"roll,omitempty"`      // dice

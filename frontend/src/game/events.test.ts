@@ -137,6 +137,14 @@ describe('describeEvent', () => {
     expect(view({ type: 'stat', character: '甲', field: 'luck', from: 50, to: 40 })).toBe('甲 幸运 50 → 40')
     expect(view({ type: 'clue', name: '撕碎的信纸', detail: '提到了灯塔' })).toBe('发现线索：撕碎的信纸 提到了灯塔')
     expect(describeEvent({ type: 'clue', name: '密信' }).icon).toBe('clue')
+    expect(view({ type: 'clock', op: 'create', name: '血月仪式', from: 0, to: 1, amount: 4, detail: '低语渐起' })).toBe(
+      '危机时钟「血月仪式」 1/4 低语渐起',
+    )
+    expect(view({ type: 'clock', op: 'update', name: '血月仪式', from: 1, to: 4, amount: 4, detail: '外神降临' })).toBe(
+      '危机时钟「血月仪式」1 → 4/4 外神降临',
+    )
+    expect(describeEvent({ type: 'clock', op: 'update', name: '血月仪式', from: 3, to: 4, amount: 4 }).tone).toBe('danger')
+    expect(view({ type: 'clock', op: 'remove', name: '血月仪式' })).toBe('危机时钟「血月仪式」已解除')
   })
 })
 

@@ -597,6 +597,9 @@ func buildKPTurnOpening(gctx GameContext, floor int, tempNPCs []models.SessionNP
 	stateSB.WriteString("\n\n<now> 当前时间: " + describeGameTime(gctx.Session.GameStartTime, gctx.Session.GameTime) + "</now>\n")
 	// Inject active temp NPC states so KP can enforce scene consistency.
 	stateSB.WriteString(buildActiveNPCBlock(tempNPCs))
+	if clocksBlock := buildActiveClocksBlock(gctx.Session.Clocks.Data); clocksBlock != "" {
+		stateSB.WriteString("\n" + clocksBlock)
+	}
 	// 战斗/追逐激活时注入结构化状态；不得自行记忆轮次与顺序，全部以此为准。
 	if combat != nil {
 		stateSB.WriteString("\n" + combatStateBrief(combat, gctx, tempNPCs) + "\n")
@@ -630,7 +633,7 @@ func buildKPTurnOpening(gctx GameContext, floor int, tempNPCs []models.SessionNP
 	}
 	if len(content.Mechanics) > 0 {
 		reminderSB.WriteString("<mechanics>\n")
-		reminderSB.WriteString("以下是本模组的量化追踪机制，供你在叙事中参考推进，不做自动结算：\n")
+		reminderSB.WriteString("以下是本模组的量化追踪机制，可使用 update_clock 落地为公开时钟或仅KP可见的暗钟，随剧情推进实时追踪：\n")
 		for _, m := range content.Mechanics {
 			reminderSB.WriteString(fmt.Sprintf("  • %s（%s）：%s\n", m.Name, m.Type, m.Description))
 			for _, st := range m.Stages {
@@ -731,6 +734,34 @@ func buildActiveNPCBlock(tempNPCs []models.SessionNPC) string {
 		line += "</npc>"
 		sb.WriteString(line + "\n")
 	}
+	return sb.String()
+}
+
+// buildActiveClocksBlock 渲染本局当前活跃的危机时钟 / 模组机制追踪器，让 KP 每轮掌握精确格数与暗钟状态。
+func buildActiveClocksBlock(clocks []models.SessionClock) string {
+	if len(clocks) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("<active_clocks>\n")
+	for _, c := range clocks {
+		vis := "公开"
+		if !c.Visible {
+			vis = "暗钟·仅KP可见"
+		}
+		line := fmt.Sprintf("  • %s [%d/%d]（%s）", c.Name, c.Current, c.Max, vis)
+		if strings.TrimSpace(c.Stage) != "" {
+			line += " 阶段：" + strings.TrimSpace(c.Stage)
+		}
+		if c.Current >= c.Max {
+			line += " 【已满】"
+		}
+		if strings.TrimSpace(c.Description) != "" {
+			line += " — " + strings.TrimSpace(c.Description)
+		}
+		sb.WriteString(line + "\n")
+	}
+	sb.WriteString("</active_clocks>\n")
 	return sb.String()
 }
 

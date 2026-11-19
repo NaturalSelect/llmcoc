@@ -100,6 +100,7 @@ const (
 	ToolUpdateLocation         ToolCallType = "update_location"           // 更新调查员当前位置
 	ToolUpdateNPCLocation      ToolCallType = "update_npc_location"       // 更新NPC当前位置
 	ToolUpdateArmor            ToolCallType = "update_armor"              // 更新调查员护甲值
+	ToolUpdateClock            ToolCallType = "update_clock"              // NOTE: 创建、推进或移除危机时钟/模组机制追踪器
 	ToolHint                   ToolCallType = "hint"                      // KP写入当前场景高密度提示
 	ToolNarrate                ToolCallType = "narrate"                   // 发布一条KP消息,不交出发言权
 	ToolWhisper                ToolCallType = "whisper"                   // NOTE: 向单个调查员发送仅其可见的私密密讯,不交出发言权
@@ -135,7 +136,14 @@ type ToolCall struct {
 	Title         string                 `json:"title"`          // reveal_clue: 线索标题
 	Content       string                 `json:"content"`        // whisper / reveal_clue: 密讯或已公开线索内容
 	Source        string                 `json:"source"`         // reveal_clue: 线索来源(地点/NPC/物件)
-	Operate       string                 `json:"operate"`        // 通用操作: add/remove(manage_inventory 另有 update)
+	Operate       string                 `json:"operate"`        // 通用操作: add/remove(manage_inventory 另有 update; update_clock 为 advance/set/remove)
+	ClockName     string                 `json:"clock_name"`     // update_clock: 时钟/机制名称
+	ClockDelta    *int                   `json:"delta"`          // update_clock(advance): 推进/回退格数(省略默认+1)
+	ClockValue    *int                   `json:"value"`          // update_clock(set): 直接设定的当前格数
+	ClockMax      int                    `json:"max"`            // update_clock: 最大格数(1-20,新建省略时优先按模组mechanics推断或6)
+	ClockStage    string                 `json:"stage"`          // update_clock: 当前阶段标签(可选)
+	ClockVisible  *bool                  `json:"visible"`        // update_clock: 是否对调查员公开(新建默认true,更新省略保持不变)
+	ClockDesc     string                 `json:"description"`    // update_clock: 时钟简短说明(可选)
 	Item          string                 `json:"item"`           // manage_inventory: 旧版整串物品(如 "绷带(x3)"),仅在 item_name 为空时按旧格式解析
 	ItemName      string                 `json:"item_name"`      // manage_inventory: 物品基础名称
 	ItemDesc      string                 `json:"item_desc"`      // manage_inventory: 物品状态描述(add/update 时写入,remove 时用于区分同名物品)

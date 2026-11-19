@@ -421,3 +421,67 @@ func TestSessionDebrief_BlockedBeforeEndedAndReturnsTruthAfterEnded(t *testing.T
 	}
 }
 
+func TestClocks_HandbookFilterAndDebriefReveal(t *testing.T) {
+	initTestDB(t)
+	host := seedUser(t, "host", "user", 0, 3)
+	admin := seedUser(t, "admin", "admin", 0, 3)
+	sid := seedScenario(t, "S")
+	c1 := seedCard(t, host, "侦探甲")
+
+	sess := models.GameSession{
+		Name: "Clock Room", ScenarioID: sid, Status: models.SessionStatusPlaying,
+		MaxPlayers: 4, CreatedBy: host,
+		Clocks: models.JSONField[[]models.SessionClock]{Data: []models.SessionClock{
+			{Name: "血月仪式", Current: 2, Max: 4, Stage: "祭坛点亮", Visible: true},
+			{Name: "教团暗杀倒计时", Current: 3, Max: 4, Stage: "杀手已入镇", Visible: false},
+		}},
+	}
+	models.DB.Create(&sess)
+	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: host, CharacterCardID: c1})
+
+	// 1. 普通玩家在手册中只能看到公开时钟，绝不能泄露暗钟
+	rHost := sessionTableRouter(host, "host", "user")
+	w := httptest.NewRecorder()
+	rHost.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/handbook", sess.ID), nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("player handbook want 200, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "教团暗杀倒计时") {
+		t.Fatalf("player handbook leaked hidden clock: %s", w.Body.String())
+	}
+	var hb handbookResponse
+	json.NewDecoder(w.Body).Decode(&hb)
+	if len(hb.Clocks) != 1 || hb.Clocks[0].Name != "血月仪式" || hb.Clocks[0].Current != 2 {
+		t.Errorf("player clocks = %+v, want only 血月仪式", hb.Clocks)
+	}
+
+	// 2. 管理员可以看到全部 2 个时钟（含暗钟）
+	rAdmin := sessionTableRouter(admin, "admin", "admin")
+	w = httptest.NewRecorder()
+	rAdmin.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/handbook", sess.ID), nil))
+	var adminHB handbookResponse
+	json.NewDecoder(w.Body).Decode(&adminHB)
+	if len(adminHB.Clocks) != 2 {
+		t.Errorf("admin clocks count = %d, want 2", len(adminHB.Clocks))
+	}
+
+	// 3. 结团复盘后普通玩家可以看到所有时钟（含暗钟揭晓）
+	models.DB.Model(&sess).Update("status", models.SessionStatusEnded)
+	w = httptest.NewRecorder()
+	rHost.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/debrief", sess.ID), nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("debrief want 200, got %d", w.Code)
+	}
+	var debrief debriefResponse
+	json.NewDecoder(w.Body).Decode(&debrief)
+	if len(debrief.Truth.Clocks) != 2 || debrief.Truth.Clocks[1].Name != "教团暗杀倒计时" || debrief.Truth.Clocks[1].Visible {
+		t.Errorf("debrief clocks = %+v, want both clocks revealed", debrief.Truth.Clocks)
+	}
+
+	// 4. clock 事件触发 handbook_update WebSocket 推送
+	if !eventsTouchHandbook([]models.GameEvent{{Type: "clock", Op: "update", Name: "血月仪式"}}) {
+		t.Error("eventsTouchHandbook should return true for clock events")
+	}
+}
+
+

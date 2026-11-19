@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookMarked, Compass, Lock, MapPin, Plus, Search, StickyNote, Trash2, Users } from '@lucide/vue'
+import { BookMarked, Compass, EyeOff, Lock, MapPin, Plus, Search, StickyNote, Timer, Trash2, Users } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { api } from '@/api/client'
 import type { Session } from '@/api/types'
@@ -261,6 +261,44 @@ async function removeNote(id: number) {
       </template>
 
       <template v-else>
+        <section v-if="data.clocks.length" class="space-y-2">
+          <p class="flex items-center gap-1.5 text-xs font-medium text-fg-muted">
+            <Timer :size="13" :stroke-width="1.75" class="text-accent" />
+            危机时钟 ({{ data.clocks.length }})
+          </p>
+          <ul class="space-y-1.5">
+            <li
+              v-for="clk in data.clocks"
+              :key="clk.name"
+              class="space-y-1.5 rounded-lg border px-3 py-2 text-xs"
+              :class="clk.visible === false ? 'border-info/30 bg-info/10' : clk.current >= clk.max ? 'border-danger/50 bg-danger/10' : 'border-line bg-surface-2'"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="inline-flex items-center gap-1 font-medium text-fg">
+                  <EyeOff v-if="!clk.visible" :size="12" :stroke-width="1.75" class="text-info" />
+                  {{ clk.name }}
+                </span>
+                <span class="tabular-nums font-semibold" :class="clk.current >= clk.max ? 'text-danger' : 'text-accent'">
+                  {{ clk.current }} / {{ clk.max }}
+                </span>
+              </div>
+              <div class="flex items-center gap-1">
+                <span
+                  v-for="seg in clk.max"
+                  :key="seg"
+                  class="h-1.5 flex-1 rounded-full"
+                  :class="seg <= clk.current ? (clk.current >= clk.max ? 'bg-danger' : 'bg-accent') : 'bg-surface-3'"
+                />
+              </div>
+              <p v-if="clk.stage || clk.description" class="text-fg-subtle">
+                <span v-if="clk.stage" class="font-medium text-fg-muted">{{ clk.stage }}</span>
+                <span v-if="clk.stage && clk.description"> · </span>
+                <span v-if="clk.description">{{ clk.description }}</span>
+              </p>
+            </li>
+          </ul>
+        </section>
+
         <section class="space-y-2">
           <p class="flex items-center gap-1.5 text-xs font-medium text-fg-muted">
             <MapPin :size="13" :stroke-width="1.75" class="text-accent" />

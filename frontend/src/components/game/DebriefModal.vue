@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Award, Dices, Eye, Lock, ShieldAlert } from '@lucide/vue'
+import { Award, Dices, Eye, Lock, ShieldAlert, Timer } from '@lucide/vue'
 import { ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { ScenarioClue, ScenarioEnding } from '@/api/sessionTypes'
@@ -7,6 +7,7 @@ import BaseButton from '@/components/base/BaseButton.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import { attitudeTone, clueNatureLabel, clueNatureTone } from '@/components/scenario/scenarioFormat'
+import type { SessionClock } from '@/game/handbookTypes'
 import { useUiStore } from '@/stores/ui'
 
 interface DebriefEvalPlayer {
@@ -57,6 +58,7 @@ interface DebriefResponse {
     clues: ScenarioClue[]
     npcs: DebriefNPC[]
     player_secrets: DebriefPlayerSecret[]
+    clocks?: SessionClock[]
   }
 }
 
@@ -245,6 +247,32 @@ function successRate(st: DebriefDiceStat): string {
                   <span v-if="s.username" class="text-fg-subtle">（@{{ s.username }}）</span>
                 </p>
                 <p class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">{{ s.secret_background }}</p>
+              </article>
+            </div>
+          </section>
+
+          <section v-if="data.truth.clocks?.length" class="space-y-2.5">
+            <h3 class="flex items-center gap-1.5 text-sm font-semibold text-fg">
+              <Timer :size="15" :stroke-width="1.75" class="text-accent" />
+              本局危机时钟（含 KP 暗钟）
+            </h3>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <article
+                v-for="clk in data.truth.clocks"
+                :key="clk.name"
+                class="space-y-1.5 rounded-lg border border-line bg-surface-2/60 p-3 text-xs"
+              >
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="font-medium text-fg">{{ clk.name }}</span>
+                  <div class="flex items-center gap-1.5">
+                    <StampBadge v-if="!clk.visible" tone="faint">KP 暗钟</StampBadge>
+                    <span class="font-semibold tabular-nums" :class="clk.current >= clk.max ? 'text-danger' : 'text-accent'">
+                      {{ clk.current }} / {{ clk.max }}
+                    </span>
+                  </div>
+                </div>
+                <p v-if="clk.stage" class="text-fg-muted">最终阶段：{{ clk.stage }}</p>
+                <p v-if="clk.description" class="text-fg-subtle">{{ clk.description }}</p>
               </article>
             </div>
           </section>

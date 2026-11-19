@@ -11,6 +11,7 @@ import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import CharacterDetailModal from '@/components/character/CharacterDetailModal.vue'
 import AskCard from '@/components/game/AskCard.vue'
+import ClockTracker from '@/components/game/ClockTracker.vue'
 import DebriefModal from '@/components/game/DebriefModal.vue'
 import EncounterTracker from '@/components/game/EncounterTracker.vue'
 import GameHeader from '@/components/game/GameHeader.vue'
@@ -422,6 +423,7 @@ defineExpose({ viewCard })
           @export-replay="exportReplay"
         />
         <GameHud v-if="card" class="lg:hidden" :card="card" :flash="hudFlash" :time="gameTime" />
+        <ClockTracker :clocks="handbook.clocks" />
         <EncounterTracker :combat="handbook.combat" :chase="handbook.chase" />
 
         <div ref="chatBox" class="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="off" @scroll.passive="onChatScroll">

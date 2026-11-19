@@ -73,6 +73,7 @@ var narrateCompatibleActions = map[ToolCallType]bool{
 	ToolUpdateLocation:         true,
 	ToolUpdateNPCLocation:      true,
 	ToolUpdateArmor:            true,
+	ToolUpdateClock:            true,
 	ToolReport:                 true,
 	ToolUpdateCharacters:       true,
 	ToolManageInventory:        true,
@@ -120,6 +121,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolUpdateLocation:         updateLocationAction{},
 	ToolUpdateNPCLocation:      updateNPCLocationAction{},
 	ToolUpdateArmor:            updateArmorAction{},
+	ToolUpdateClock:            updateClockAction{},
 	ToolHint:                   hintAction{},
 	ToolNarrate:                narrateAction{},
 	ToolWhisper:                whisperAction{},
@@ -592,6 +594,200 @@ func (revealClueAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 		Action: ToolRevealClue,
 		Result: "已登记线索至全队线索板：" + title,
 		Events: []models.GameEvent{{Type: "clue", Name: title, Detail: content}},
+	}}
+}
+
+type updateClockAction struct{}
+
+func (updateClockAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	reject := func(msg string) []ToolResult {
+		return []ToolResult{{Action: ToolUpdateClock, Result: "SYSTEM REJECT: " + msg}}
+	}
+	name := strings.TrimSpace(call.ClockName)
+	if name == "" {
+		return reject("update_clock 必须提供非空的 clock_name。")
+	}
+	op := strings.ToLower(strings.TrimSpace(call.Operate))
+	if op == "" {
+		op = "advance"
+	}
+	if op != "advance" && op != "set" && op != "remove" {
+		return reject(fmt.Sprintf("update_clock 的 operate=%q 无效，仅支持 advance/set/remove。", call.Operate))
+	}
+
+	session := &actx.GCtx.Session
+	clocks := append([]models.SessionClock(nil), session.Clocks.Data...)
+	idx := -1
+	for i := range clocks {
+		if strings.TrimSpace(clocks[i].Name) == name {
+			idx = i
+			break
+		}
+	}
+
+	// NOTE: 查找同名模组机制以自动补全默认格数、说明与阶段名。
+	var mech *models.MechanicData
+	for i := range session.Scenario.Content.Data.Mechanics {
+		m := &session.Scenario.Content.Data.Mechanics[i]
+		if strings.TrimSpace(m.Name) == name {
+			mech = m
+			break
+		}
+	}
+
+	saveClocks := func(next []models.SessionClock) {
+		session.Clocks = models.JSONField[[]models.SessionClock]{Data: next}
+		if models.DB != nil && session.ID != 0 {
+			models.DB.Model(&models.GameSession{}).Where("id = ?", session.ID).Update("clocks", session.Clocks)
+		}
+	}
+
+	if op == "remove" {
+		if idx < 0 {
+			return reject(fmt.Sprintf("未找到名为「%s」的危机时钟。", name))
+		}
+		removed := clocks[idx]
+		next := append(clocks[:idx], clocks[idx+1:]...)
+		saveClocks(next)
+		var events []models.GameEvent
+		if removed.Visible {
+			events = []models.GameEvent{{Type: "clock", Op: "remove", Name: removed.Name}}
+		}
+		debugf("tool", "session=%d update_clock op=remove name=%q visible=%v", actx.Sid, removed.Name, removed.Visible)
+		return []ToolResult{{
+			Action: ToolUpdateClock,
+			Result: fmt.Sprintf(`<clock op="remove" name="%s"/>`, xmlAttr(removed.Name)),
+			Events: events,
+		}}
+	}
+
+	clampMax := func(v int) int {
+		if v < 1 {
+			return 1
+		}
+		if v > 20 {
+			return 20
+		}
+		return v
+	}
+
+	var cur models.SessionClock
+	existed := idx >= 0
+	wasVisible := false
+	prevVal := 0
+	if existed {
+		cur = clocks[idx]
+		wasVisible = cur.Visible
+		prevVal = cur.Current
+		if call.ClockMax > 0 {
+			cur.Max = clampMax(call.ClockMax)
+		}
+		if desc := strings.TrimSpace(call.ClockDesc); desc != "" {
+			cur.Description = desc
+		}
+		if call.ClockVisible != nil {
+			cur.Visible = *call.ClockVisible
+		}
+	} else {
+		maxVal := 6
+		if call.ClockMax > 0 {
+			maxVal = clampMax(call.ClockMax)
+		} else if mech != nil && len(mech.Stages) > 0 {
+			maxVal = clampMax(len(mech.Stages))
+		}
+		desc := strings.TrimSpace(call.ClockDesc)
+		if desc == "" && mech != nil {
+			desc = strings.TrimSpace(mech.Description)
+		}
+		visible := true
+		if call.ClockVisible != nil {
+			visible = *call.ClockVisible
+		}
+		cur = models.SessionClock{
+			Name:        name,
+			Current:     0,
+			Max:         maxVal,
+			Description: desc,
+			Visible:     visible,
+		}
+	}
+
+	if op == "set" {
+		target := 0
+		if call.ClockValue != nil {
+			target = *call.ClockValue
+		}
+		cur.Current = target
+	} else {
+		delta := 1
+		if call.ClockDelta != nil {
+			delta = *call.ClockDelta
+		}
+		cur.Current += delta
+	}
+	if cur.Current < 0 {
+		cur.Current = 0
+	}
+	if cur.Current > cur.Max {
+		cur.Current = cur.Max
+	}
+
+	if stage := strings.TrimSpace(call.ClockStage); stage != "" {
+		cur.Stage = stage
+	} else if mech != nil && len(mech.Stages) > 0 {
+		if cur.Current > 0 && cur.Current <= len(mech.Stages) {
+			cur.Stage = strings.TrimSpace(mech.Stages[cur.Current-1].Label)
+		} else if cur.Current == 0 {
+			cur.Stage = ""
+		}
+	}
+
+	if existed {
+		clocks[idx] = cur
+	} else {
+		clocks = append(clocks, cur)
+	}
+	saveClocks(clocks)
+
+	var events []models.GameEvent
+	if cur.Visible {
+		evOp := "update"
+		if !existed || !wasVisible {
+			evOp = "create"
+		}
+		fromVal, toVal := prevVal, cur.Current
+		events = []models.GameEvent{{
+			Type:   "clock",
+			Op:     evOp,
+			Name:   cur.Name,
+			From:   &fromVal,
+			To:     &toVal,
+			Amount: cur.Max,
+			Detail: cur.Stage,
+		}}
+	} else if wasVisible {
+		// NOTE: 从公开时钟切换为暗钟时通知前端刷新手册，避免残留旧进度条。
+		events = []models.GameEvent{{Type: "clock", Op: "remove", Name: cur.Name}}
+	}
+
+	visLabel := "公开"
+	if !cur.Visible {
+		visLabel = "暗钟(仅KP可见)"
+	}
+	fullNote := ""
+	if cur.Current >= cur.Max {
+		fullNote = ` full="true"`
+	}
+	stageAttr := ""
+	if cur.Stage != "" {
+		stageAttr = fmt.Sprintf(` stage="%s"`, xmlAttr(cur.Stage))
+	}
+	debugf("tool", "session=%d update_clock op=%s name=%q %d->%d/%d visible=%v", actx.Sid, op, cur.Name, prevVal, cur.Current, cur.Max, cur.Visible)
+	return []ToolResult{{
+		Action: ToolUpdateClock,
+		Result: fmt.Sprintf(`<clock op="%s" name="%s" current="%d" max="%d" visibility="%s"%s%s/>`,
+			op, xmlAttr(cur.Name), cur.Current, cur.Max, visLabel, stageAttr, fullNote),
+		Events: events,
 	}}
 }
 

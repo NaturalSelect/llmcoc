@@ -128,6 +128,7 @@ const EVENT_ICONS: Record<EventIcon, Component> = {
   coins: Coins,
   backstory: NotebookPen,
   clue: Search,
+  clock: Timer,
 }
 
 const EVENT_TONES: Record<EventTone, string> = {
