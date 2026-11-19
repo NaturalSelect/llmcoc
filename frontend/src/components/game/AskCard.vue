@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Backpack, BookOpen, Check, Flame, Hand, Pencil, Quote, Sparkles } from '@lucide/vue'
+import { Backpack, BookOpen, Check, Eye, Flame, Hand, Pencil, Quote, Sparkles } from '@lucide/vue'
 import { computed, nextTick, ref } from 'vue'
 import type { CharacterCard } from '@/api/types'
 import BaseButton from '@/components/base/BaseButton.vue'
@@ -13,9 +13,11 @@ import {
   askView,
   CHAT_MAX_CHARS,
   cancelEdit,
+  characterMadnessLabel,
   draftAnswer,
   findBurnableFailedCheck,
   insertDialogueQuotes,
+  isCharacterMad,
   quickCharacterItems,
   quickCharacterSkills,
   startEdit,
@@ -38,6 +40,9 @@ const answer = computed(() => draftAnswer(props.room, props.draft))
 const count = computed(() => askCharCount(answer.value))
 const currentLuck = computed(() => statNum(props.card, 'luck'))
 const burnable = computed(() => findBurnableFailedCheck(props.room, props.card?.name, currentLuck.value))
+const inUnderlyingMadness = computed(() => isCharacterMad(props.card))
+const madnessLabel = computed(() => characterMadnessLabel(props.card))
+const madnessSymptom = computed(() => String((props.card as { madness_symptom?: unknown } | null | undefined)?.madness_symptom || ''))
 const quickSkills = computed(() => quickCharacterSkills(props.card))
 const quickItems = computed(() => quickCharacterItems(props.card))
 const hasQuickRef = computed(() => quickSkills.value.length > 0 || quickItems.value.length > 0)
@@ -87,6 +92,11 @@ function prefillPushRoll() {
   const b = burnable.value
   if (!b || !b.pushable || locked.value) return
   void appendText(`我决定对刚才失败的「${b.skill}」检定孤注一掷：`)
+}
+
+function prefillRealityCheck() {
+  if (!inUnderlyingMadness.value || locked.value) return
+  void appendText('我深吸一口气，试图对照周围细节向 KP 请求一次现实检定，确认刚才感知到的一切是否为幻觉：')
 }
 
 function toggleQuick(tab: 'skills' | 'items') {
@@ -148,6 +158,21 @@ function insertItem(name: string) {
           孤注一掷
         </BaseButton>
       </div>
+    </div>
+
+    <div
+      v-if="inUnderlyingMadness"
+      class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-san/35 bg-san/10 px-3 py-2 text-xs"
+      :title="madnessSymptom ? `当前症状：${madnessSymptom}` : undefined"
+    >
+      <div class="min-w-0 flex-1 text-fg-muted">
+        <span class="font-medium text-san">潜伏疯狂期（{{ madnessLabel }}）</span>
+        <span class="ml-1.5 text-fg-subtle">若怀疑眼前所见非实，可主动要求现实检定</span>
+      </div>
+      <BaseButton variant="secondary" size="sm" :disabled="locked" @click="prefillRealityCheck">
+        <Eye :size="14" :stroke-width="1.75" />
+        请求现实检定
+      </BaseButton>
     </div>
 
     <div v-if="options.length > 0" class="space-y-2">

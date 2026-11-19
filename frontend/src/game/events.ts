@@ -208,6 +208,19 @@ export function describeEvent(ev: GameEvent): EventView {
       const duration = ev.duration ? `（持续 ${ev.duration}）` : ''
       return { icon: 'madness', tone: 'san', text: `${who(ev)}${label}`, note: (ev.symptom || '') + duration || undefined }
     }
+    case 'reality_check': {
+      const failed = ev.result === '失败'
+      const status = ev.result || '结算'
+      const outcomeNote = failed ? '陷入幻觉' : '识破幻觉'
+      const note = ev.detail ? `${ev.detail} · ${outcomeNote}` : outcomeNote
+      return {
+        icon: 'madness',
+        tone: failed ? 'san' : 'plain',
+        text: `${who(ev)}现实检定（${status}）`,
+        value: ev.roll !== undefined && ev.target !== undefined ? `${ev.roll}/${ev.target}` : undefined,
+        note,
+      }
+    }
     case 'location':
       return { icon: 'location', tone: 'plain', text: `${who(ev)}前往 ${ev.location || '未知地点'}` }
     case 'time':

@@ -9,10 +9,12 @@ import {
   askTag,
   askView,
   cancelEdit,
+  characterMadnessLabel,
   createAskDraft,
   draftAnswer,
   findBurnableFailedCheck,
   insertDialogueQuotes,
+  isCharacterMad,
   quickCharacterItems,
   quickCharacterSkills,
   resetAskDraft,
@@ -248,6 +250,16 @@ describe('ask', () => {
       { name: '手电筒', desc: '电量满', count: 1, equipped: true },
       { name: '绷带', desc: '', count: 3, equipped: false },
     ])
+  })
+
+  test('潜伏疯狂期判定仅覆盖 temporary 与 indefinite', () => {
+    expect(isCharacterMad({ name: '爱丽丝', madness_state: 'temporary' })).toBe(true)
+    expect(characterMadnessLabel({ name: '爱丽丝', madness_state: 'temporary' })).toBe('临时性疯狂')
+    expect(isCharacterMad({ name: '爱丽丝', madness_state: 'indefinite' })).toBe(true)
+    expect(characterMadnessLabel({ name: '爱丽丝', madness_state: 'indefinite' })).toBe('不定性疯狂')
+    expect(isCharacterMad({ name: '爱丽丝', madness_state: 'permanent' })).toBe(false)
+    expect(isCharacterMad({ name: '爱丽丝', madness_state: 'none' })).toBe(false)
+    expect(isCharacterMad(null)).toBe(false)
   })
 })
 

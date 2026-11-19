@@ -218,6 +218,7 @@ func visibleActionNeedsWriter(action ToolCallType) bool {
 		ToolManageRelation,
 		ToolManageAsset,
 		ToolManageMadness,
+		ToolRealityCheck,
 		ToolAdvanceTime,
 		ToolUpdateNPCCard,
 		ToolUpdateLocation,
@@ -300,7 +301,7 @@ func progressToolPhase(action ToolCallType) string {
 	switch action {
 	case ToolCheckRule:
 		return progressRule
-	case ToolRollDice, ToolCombatAct, ToolChaseAct:
+	case ToolRollDice, ToolRealityCheck, ToolCombatAct, ToolChaseAct:
 		return progressDice
 	case ToolWrite, ToolNarrate, ToolAskPlayers, ToolEndGame:
 		return progressWriting
@@ -861,6 +862,7 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 	hasNotHuman := false
 	hasSessionMemory := false
 	hasSecretBackground := false
+	hasUnderlyingMadness := false
 	s := "【调查员概况(完整人物卡请用 query_character 获取)】\n所有角色均已成年"
 	for _, p := range players {
 		card := p.CharacterCard
@@ -892,9 +894,11 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		}
 		switch card.MadnessState {
 		case "temporary":
-			line += "【临时性疯狂】"
+			line += "【临时性疯狂/潜伏疯狂期】"
+			hasUnderlyingMadness = true
 		case "indefinite":
-			line += "【不定性疯狂】"
+			line += "【不定性疯狂/潜伏疯狂期】"
+			hasUnderlyingMadness = true
 		case "permanent":
 			line += "【永久性疯狂】"
 		}
@@ -920,6 +924,9 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 	}
 	if hasSecretBackground {
 		s += "\n<attention>有调查员设定了秘密背景(HO)。先用 query_character 查看其 secret_background；在公开叙事与 narrate 中严格替其保密，需要传达只属于他的发现或呼应隐藏动机时用 whisper 私密发送。</attention>\n"
+	}
+	if hasUnderlyingMadness {
+		s += "\n<attention>有调查员处于临时性或不定性疯狂（潜伏疯狂期）。你可以适时用 whisper(is_hallucination=true) 向其单独植入逼真幻觉（切勿暗示这是幻觉）；若其怀疑所见非实并要求验证，调用 reality_check 进行现实检定。</attention>\n"
 	}
 	if hasNotHuman {
 		s += "\n\n"

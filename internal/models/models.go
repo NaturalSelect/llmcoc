@@ -620,7 +620,7 @@ const (
 // GameEvent 是一次玩家可见的工具结算，只存玩家能看到的信息；字段按 Type 取用，其余留空。
 // NOTE: 暗骰只有 Type+Hidden，不存技能、点数和角色，避免玩家从接口里读到。NPC 的变化不产生事件。
 type GameEvent struct {
-	Type      string `json:"type"`                // dice|stat|wound|item|madness|location|time|combat|chase|coins|backstory|clue|clock
+	Type      string `json:"type"`                // dice|stat|wound|item|madness|reality_check|location|time|combat|chase|coins|backstory|clue|clock
 	Character string `json:"character,omitempty"` // 调查员名；NPC、暗骰留空
 	Skill     string `json:"skill,omitempty"`     // dice: 检定名；stat 且 field=skill 时为技能名
 	Roll      int    `json:"roll,omitempty"`      // dice
@@ -684,6 +684,7 @@ type MessageMeta struct {
 	CallID        string      `json:"call_id,omitempty"`        // writer: 对应的 write 调用 ID(自动补写的是来源 narrate/ask 调用)，Writer 视图靠它把正文挂回 Director 的工具结果
 	Private       bool        `json:"private,omitempty"`        // kp: true 表示仅特定调查员可见的密讯
 	RecipientName string      `json:"recipient_name,omitempty"` // kp: 密讯接收调查员姓名
+	Hallucination bool        `json:"hallucination,omitempty"`  // kp: true 表示幻觉耳语，仅管理员与结团复盘可见，对局中下发给玩家前必须剥离
 
 	Illustrations []Illustration `json:"illustrations,omitempty"` // writer: 正文里 illust://<slot> 占位对应的配图结果
 }

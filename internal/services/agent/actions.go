@@ -107,6 +107,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolManageAsset:            manageAssetAction{},
 	ToolEndGame:                endGameAction{},
 	ToolManageMadness:          manageMadnessAction{},
+	ToolRealityCheck:           realityCheckAction{},
 	ToolQueryClues:             queryCluesAction{},
 	ToolRevealClue:             revealClueAction{},
 	ToolQueryCharacter:         queryCharacterAction{},
@@ -1020,12 +1021,17 @@ func (whisperAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 		Text:          content,
 		VisibleTo:     []uint{matched.UserID},
 		RecipientName: matched.CharacterCard.Name,
+		Hallucination: call.IsHallucination,
 		CallID:        call.CallID,
 	})
-	debugf("tool", "session=%d whisper to=%s user=%d", actx.Sid, matched.CharacterCard.Name, matched.UserID)
+	debugf("tool", "session=%d whisper to=%s user=%d hallucination=%v", actx.Sid, matched.CharacterCard.Name, matched.UserID, call.IsHallucination)
+	resMsg := fmt.Sprintf("已向「%s」发送密讯（仅该调查员可见）。你仍持有发言权。", matched.CharacterCard.Name)
+	if call.IsHallucination {
+		resMsg = fmt.Sprintf("已向「%s」发送幻觉耳语（仅该调查员可见；对局中不会向玩家暴露幻觉标记，仅在结团复盘时揭晓）。你仍持有发言权。", matched.CharacterCard.Name)
+	}
 	return []ToolResult{{
 		Action: ToolWhisper,
-		Result: fmt.Sprintf("已向「%s」发送密讯（仅该调查员可见）。你仍持有发言权。", matched.CharacterCard.Name),
+		Result: resMsg,
 	}}
 }
 
@@ -1144,6 +1150,127 @@ func (manageMadnessAction) Execute(call ToolCall, actx ActionContext) []ToolResu
 	return []ToolResult{{
 		Action: ToolManageMadness,
 		Result: fmt.Sprintf("未找到调查员:%s", who),
+	}}
+}
+
+// realityCheckRoll 独立封装 1D100 掷骰，便于单测确定性覆盖边界值。
+var realityCheckRoll = func() int {
+	total, _ := game.Roll(1, 100)
+	return total
+}
+
+// realityCheckAction 对处于临时性或不定性疯狂（潜伏疯狂期）的调查员执行 COC7 现实检定。
+// 成功（1D100 ≤ SAN）识破幻觉不损 SAN；失败扣 1 点 SAN（更新今日累计损失）并提醒 KP 触发新一轮疯狂发作。
+type realityCheckAction struct{}
+
+func (realityCheckAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	reject := func(msg string) []ToolResult {
+		return []ToolResult{{Action: ToolRealityCheck, Result: "SYSTEM REJECT: " + msg}}
+	}
+	target := strings.TrimSpace(call.CharacterName)
+	if target == "" {
+		return reject("reality_check.character_name 不能为空，请填一位存活调查员的角色名。")
+	}
+
+	players := actx.GCtx.Session.Players
+	var matched *models.SessionPlayer
+	var aliveNames []string
+	for i := range players {
+		p := &players[i]
+		if isCharacterAlive(p.CharacterCard.Name, false, players, nil) {
+			aliveNames = append(aliveNames, p.CharacterCard.Name)
+		}
+		if p.CharacterCard.Name == target {
+			matched = p
+		}
+	}
+	if matched == nil {
+		return reject(fmt.Sprintf("找不到调查员 %s。当前存活：%s。", target, strings.Join(aliveNames, "、")))
+	}
+	if !isCharacterAlive(matched.CharacterCard.Name, false, players, nil) {
+		return reject(fmt.Sprintf("调查员 %s 已死亡，无法进行现实检定。", target))
+	}
+
+	card := &matched.CharacterCard
+	switch card.MadnessState {
+	case "temporary", "indefinite":
+	case "permanent":
+		return reject(fmt.Sprintf("调查员 %s 已陷入永久性疯狂，无法通过现实检定恢复理智认知。", card.Name))
+	default:
+		return reject(fmt.Sprintf("调查员 %s 当前未处于临时性或不定性疯狂（潜伏疯狂期），无需进行现实检定。", card.Name))
+	}
+
+	beforeSAN := card.Stats.Data.SAN
+	roll := realityCheckRoll()
+	reason := strings.TrimSpace(call.Reason)
+	debugf("tool", "session=%d reality_check char=%q roll=%d target=%d reason=%q", actx.Sid, card.Name, roll, beforeSAN, reason)
+
+	if roll <= beforeSAN {
+		ev := models.GameEvent{
+			Type:      "reality_check",
+			Character: card.Name,
+			Roll:      roll,
+			Target:    beforeSAN,
+			Result:    "成功",
+			Detail:    reason,
+		}
+		return []ToolResult{{
+			Action: ToolRealityCheck,
+			Result: fmt.Sprintf(`<reality_check character="%s" roll="%d" target="%d" passed="true" san="%d"/>`+"\n现实检定成功：调查员识破了眼前的幻觉，不损失理智。请清楚揭示现实真相。",
+				xmlAttr(card.Name), roll, beforeSAN, beforeSAN),
+			Events: []models.GameEvent{ev},
+		}}
+	}
+
+	// NOTE: COC7 现实检定失败：扣除 1 点 SAN 并累计当日损失，触发新一轮疯狂发作。
+	stats := card.Stats.Data
+	afterSAN := clamp(beforeSAN-1, 0, stats.MaxSAN)
+	stats.SAN = afterSAN
+	card.Stats.Data = stats
+	if beforeSAN > afterSAN {
+		day := models.GameDayKey(actx.GCtx.Session.GameTime)
+		if card.DailySanLossDay != day {
+			card.DailySanLossDay = day
+			card.DailySanLoss = 0
+		}
+		card.DailySanLoss += beforeSAN - afterSAN
+	}
+	if models.DB != nil && card.ID != 0 {
+		models.DB.Save(card)
+	}
+
+	events := []models.GameEvent{{
+		Type:      "reality_check",
+		Character: card.Name,
+		Roll:      roll,
+		Target:    beforeSAN,
+		Result:    "失败",
+		Detail:    reason,
+	}}
+	if afterSAN != beforeSAN {
+		fromVal, toVal := beforeSAN, afterSAN
+		events = append(events, models.GameEvent{
+			Type:      "stat",
+			Character: card.Name,
+			Field:     "san",
+			From:      &fromVal,
+			To:        &toVal,
+			Detail:    "现实检定失败",
+		})
+	}
+
+	threshold := stats.MaxSAN / 5
+	note := "现实检定失败：调查员深信幻觉为真，已扣除 1 点 SAN。按 COC7 规则，现实检定失败会立刻触发新一轮疯狂发作，请调用 manage_madness(trigger) 结算发作症状。"
+	if afterSAN == 0 {
+		note = "现实检定失败：已扣除 1 点 SAN 且 SAN 归零，请立刻调用 manage_madness(trigger, madness_type=\"permanent\") 结算永久性疯狂。"
+	} else if threshold > 0 && card.DailySanLoss >= threshold && card.MadnessState != "indefinite" {
+		note = fmt.Sprintf("现实检定失败：已扣除 1 点 SAN，今日累计理智损失已达不定性疯狂阈值(%d)，请调用 manage_madness(trigger, madness_type=\"indefinite\") 结算新一轮疯狂发作。", threshold)
+	}
+	return []ToolResult{{
+		Action: ToolRealityCheck,
+		Result: fmt.Sprintf(`<reality_check character="%s" roll="%d" target="%d" passed="false" san_before="%d" san_after="%d" daily_san_loss="%d" indefinite_threshold="%d"/>`+"\n%s",
+			xmlAttr(card.Name), roll, beforeSAN, beforeSAN, afterSAN, card.DailySanLoss, threshold, note),
+		Events: events,
 	}}
 }
 

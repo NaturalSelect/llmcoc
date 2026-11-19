@@ -617,15 +617,22 @@ type debriefPlayerSecret struct {
 	SecretBackground string `json:"secret_background"`
 }
 
+type debriefHallucination struct {
+	RecipientName string    `json:"recipient_name"`
+	Content       string    `json:"content"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type debriefTruth struct {
-	CoreTruth         string                `json:"core_truth,omitempty"`
-	AntagonistDossier string                `json:"antagonist_dossier,omitempty"`
-	MythosCore        string                `json:"mythos_core,omitempty"`
-	Endings           []models.EndingData   `json:"endings"`
-	Clues             []models.ClueData     `json:"clues"`
-	NPCs              []debriefNPC          `json:"npcs"`
-	PlayerSecrets     []debriefPlayerSecret `json:"player_secrets"`
-	Clocks            []models.SessionClock `json:"clocks"`
+	CoreTruth         string                 `json:"core_truth,omitempty"`
+	AntagonistDossier string                 `json:"antagonist_dossier,omitempty"`
+	MythosCore        string                 `json:"mythos_core,omitempty"`
+	Endings           []models.EndingData    `json:"endings"`
+	Clues             []models.ClueData      `json:"clues"`
+	NPCs              []debriefNPC           `json:"npcs"`
+	PlayerSecrets     []debriefPlayerSecret  `json:"player_secrets"`
+	Clocks            []models.SessionClock  `json:"clocks"`
+	Hallucinations    []debriefHallucination `json:"hallucinations"`
 }
 
 type debriefResponse struct {
@@ -679,18 +686,35 @@ func GetSessionDebrief(c *gin.Context) {
 		Find(&eventMsgs)
 	diceStats := aggregateDebriefDiceStats(eventMsgs)
 
+	var kpMsgs []models.Message
+	models.DB.Where("session_id = ? AND kind = ?", session.ID, models.MessageKindKP).
+		Order("id ASC").
+		Find(&kpMsgs)
+	hallucinations := make([]debriefHallucination, 0)
+	for _, m := range kpMsgs {
+		if m.Meta.Data == nil || !m.Meta.Data.Hallucination {
+			continue
+		}
+		hallucinations = append(hallucinations, debriefHallucination{
+			RecipientName: m.Meta.Data.RecipientName,
+			Content:       stripInternalImageTags(m.Content),
+			CreatedAt:     m.CreatedAt,
+		})
+	}
+
 	sc := session.Scenario.Content.Data
 	clocks := append([]models.SessionClock(nil), session.Clocks.Data...)
 	if clocks == nil {
 		clocks = []models.SessionClock{}
 	}
 	truth := debriefTruth{
-		MythosCore:    strings.TrimSpace(sc.MythosCore),
-		Endings:       sc.Endings,
-		Clues:         sc.Clues,
-		NPCs:          make([]debriefNPC, 0, len(sc.NPCs)),
-		PlayerSecrets: make([]debriefPlayerSecret, 0),
-		Clocks:        clocks,
+		MythosCore:     strings.TrimSpace(sc.MythosCore),
+		Endings:        sc.Endings,
+		Clues:          sc.Clues,
+		NPCs:           make([]debriefNPC, 0, len(sc.NPCs)),
+		PlayerSecrets:  make([]debriefPlayerSecret, 0),
+		Clocks:         clocks,
+		Hallucinations: hallucinations,
 	}
 	if truth.Endings == nil {
 		truth.Endings = []models.EndingData{}

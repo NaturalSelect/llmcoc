@@ -99,10 +99,18 @@ type messageResponse struct {
 	DirectorSteps     *int                 `json:"director_steps"`
 }
 
-func newMessageResponse(msg models.Message) messageResponse {
+// newMessageResponseForViewer 构造返回给前端的消息结构。
+// NOTE: revealSecretMeta=false 时剥离幻觉耳语等仅管理员/结团复盘可见的元信息，防止对局中剧透。
+func newMessageResponseForViewer(msg models.Message, revealSecretMeta bool) messageResponse {
 	images := extractImageSources(msg.Content)
 	if images == nil {
 		images = []string{}
+	}
+	meta := msg.Meta.Data
+	if meta != nil && !revealSecretMeta && meta.Hallucination {
+		metaCopy := *meta
+		metaCopy.Hallucination = false
+		meta = &metaCopy
 	}
 	return messageResponse{
 		ID:                msg.ID,
@@ -113,7 +121,7 @@ func newMessageResponse(msg models.Message) messageResponse {
 		Status:            msg.Status,
 		Floor:             msg.Floor,
 		Content:           stripInternalImageTags(msg.Content),
-		Meta:              msg.Meta.Data,
+		Meta:              meta,
 		Username:          msg.Username,
 		CreatedAt:         msg.CreatedAt,
 		Images:            images,
@@ -122,12 +130,20 @@ func newMessageResponse(msg models.Message) messageResponse {
 	}
 }
 
-func newMessageResponses(messages []models.Message) []messageResponse {
+func newMessageResponse(msg models.Message) messageResponse {
+	return newMessageResponseForViewer(msg, false)
+}
+
+func newMessageResponsesForViewer(messages []models.Message, revealSecretMeta bool) []messageResponse {
 	responses := make([]messageResponse, 0, len(messages))
 	for _, msg := range messages {
-		responses = append(responses, newMessageResponse(msg))
+		responses = append(responses, newMessageResponseForViewer(msg, revealSecretMeta))
 	}
 	return responses
+}
+
+func newMessageResponses(messages []models.Message) []messageResponse {
+	return newMessageResponsesForViewer(messages, false)
 }
 
 // hideAdminOnlySessions 让非管理员的房间查询排除仅管理员可用模组的房间。
@@ -761,7 +777,8 @@ func GetMessages(c *gin.Context) {
 			visible = append(visible, m)
 		}
 	}
-	c.JSON(http.StatusOK, newMessageResponses(visible))
+	revealSecretMeta := isAdmin || session.Status == models.SessionStatusEnded
+	c.JSON(http.StatusOK, newMessageResponsesForViewer(visible, revealSecretMeta))
 }
 
 var sessionMutex = sync.Map{}

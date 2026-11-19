@@ -86,6 +86,7 @@ const (
 	ToolManageAsset            ToolCallType = "manage_asset"              // 管理资产
 	ToolEndGame                ToolCallType = "end_game"                  // 结束游戏
 	ToolManageMadness          ToolCallType = "manage_madness"            // 管理疯狂状态
+	ToolRealityCheck           ToolCallType = "reality_check"             // NOTE: 对潜伏疯狂期调查员执行COC7现实检定
 	ToolWrite                  ToolCallType = "write"                     // 生成叙事段落
 	ToolAdvanceTime            ToolCallType = "advance_time"              // 推进游戏内时间
 	ToolQueryClues             ToolCallType = "query_clues"               // 查询剧本线索
@@ -124,52 +125,54 @@ const (
 // ToolCall is one item in the master KP agent's output sequence.
 type ToolCall struct {
 	// NOTE: CallID 是网关给这次调用的 ID，只由 decodeDirectorToolCall 从 llm.ToolCall 填入，不参与 JSON 解码。
-	CallID        string                 `json:"-"`
-	Action        ToolCallType           `json:"action"`
-	Question      string                 `json:"question"`       // check_rule: 规则问题的语义描述
-	Dice          *DiceCheck             `json:"dice"`           // roll_dice: 骰子检定请求
-	CharCard      *NPCCard               `json:"char_card"`      // create_npc: NPC角色卡
-	NPCName       string                 `json:"npc_name"`       // destroy_npc / update_npc_*: NPC名称
-	DestroyReason string                 `json:"destroy_reason"` // destroy_npc: dead|out_of_range|cleanup
-	Changes       []string               `json:"changes"`        // update_characters: 状态变化列表
-	CharacterName string                 `json:"character_name"` // manage_madness / query_character / whisper: 角色名称
-	Title         string                 `json:"title"`          // reveal_clue: 线索标题
-	Content       string                 `json:"content"`        // whisper / reveal_clue: 密讯或已公开线索内容
-	Source        string                 `json:"source"`         // reveal_clue: 线索来源(地点/NPC/物件)
-	Operate       string                 `json:"operate"`        // 通用操作: add/remove(manage_inventory 另有 update; update_clock 为 advance/set/remove)
-	ClockName     string                 `json:"clock_name"`     // update_clock: 时钟/机制名称
-	ClockDelta    *int                   `json:"delta"`          // update_clock(advance): 推进/回退格数(省略默认+1)
-	ClockValue    *int                   `json:"value"`          // update_clock(set): 直接设定的当前格数
-	ClockMax      int                    `json:"max"`            // update_clock: 最大格数(1-20,新建省略时优先按模组mechanics推断或6)
-	ClockStage    string                 `json:"stage"`          // update_clock: 当前阶段标签(可选)
-	ClockVisible  *bool                  `json:"visible"`        // update_clock: 是否对调查员公开(新建默认true,更新省略保持不变)
-	ClockDesc     string                 `json:"description"`    // update_clock: 时钟简短说明(可选)
-	Item          string                 `json:"item"`           // manage_inventory: 旧版整串物品(如 "绷带(x3)"),仅在 item_name 为空时按旧格式解析
-	ItemName      string                 `json:"item_name"`      // manage_inventory: 物品基础名称
-	ItemDesc      string                 `json:"item_desc"`      // manage_inventory: 物品状态描述(add/update 时写入,remove 时用于区分同名物品)
-	ItemCount     int                    `json:"item_count"`     // manage_inventory: 物品数量(省略或0均视为1)
-	ItemType      models.ItemType        `json:"item_type"`      // manage_inventory: 物品类型(省略时 add 为 misc,update 不改类型)
-	ItemEquipped  *bool                  `json:"item_equipped"`  // manage_inventory: 是否装备在身上(add 省略为未装备,update 省略不改)
-	Monster       string                 `json:"monster"`        // record_monster: 神话存在名称
-	Spell         string                 `json:"spell"`          // manage_spell: 法术名称
-	Relation      *models.SocialRelation `json:"relation"`       // manage_relation: 社会关系条目
-	Asset         *models.Asset          `json:"asset"`          // manage_asset: 资产条目
-	IsBystander   bool                   `json:"is_bystander"`   // manage_madness trigger: 是否有旁观者在场(仅决定症状表,不代表疯狂类型)
-	MadnessType   string                 `json:"madness_type"`   // manage_madness trigger: 疯狂类型 temporary/indefinite/permanent,由Director按规则判定
-	Direction     string                 `json:"direction"`      // write: 叙事方向(供Writer参考)
-	ProgressNote  string                 `json:"progress_note"`  // consult_dramaturg: 脱敏后的剧情进展报告
-	GameTime      string                 `json:"game_time"`      // advance_time: 推进后的绝对时间(YYYY-MM-DDTHH:MM)
-	TimeReason    string                 `json:"time_reason"`    // advance_time: 原因(如"睡觉"/"吃饭")
-	Keyword       string                 `json:"keyword"`        // query_clues: 已废弃(保留仅为兼容旧输出)
-	SessionMemory string                 `json:"session_memory"` // update_session_memory: 会话记忆内容(整体覆盖,非追加)
-	NewLocation   string                 `json:"new_location"`   // update_location/update_npc_location: 新位置名称
-	ArmorValue    int                    `json:"armor_value"`    // update_armor: 新护甲值(0=无护甲)
-	Hint          string                 `json:"hint"`           // hit: KP当前场景高密度提示
-	NSFW          bool                   `json:"nsfw"`           // write: 该段描写是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效
-	Options       []string               `json:"options"`        // ask_players: 玩家询问时才给的推荐行动(可选,0-2条)
-	Reply         string                 `json:"reply"`          // narrate: KP对玩家说的话(必填)
-	EndingName    string                 `json:"ending_name"`    // end_game: 触发的结局名称(可选,与<endings>中名称一致,用于结算SAN奖惩)
-	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
+	CallID          string                 `json:"-"`
+	Action          ToolCallType           `json:"action"`
+	Question        string                 `json:"question"`         // check_rule: 规则问题的语义描述
+	Dice            *DiceCheck             `json:"dice"`             // roll_dice: 骰子检定请求
+	CharCard        *NPCCard               `json:"char_card"`        // create_npc: NPC角色卡
+	NPCName         string                 `json:"npc_name"`         // destroy_npc / update_npc_*: NPC名称
+	DestroyReason   string                 `json:"destroy_reason"`   // destroy_npc: dead|out_of_range|cleanup
+	Changes         []string               `json:"changes"`          // update_characters: 状态变化列表
+	CharacterName   string                 `json:"character_name"`   // manage_madness / reality_check / query_character / whisper: 角色名称
+	Title           string                 `json:"title"`            // reveal_clue: 线索标题
+	Content         string                 `json:"content"`          // whisper / reveal_clue: 密讯或已公开线索内容
+	IsHallucination bool                   `json:"is_hallucination"` // whisper: 是否为潜伏疯狂幻觉耳语(对局中对玩家保密,仅管理员及结团复盘可见)
+	Reason          string                 `json:"reason"`           // reality_check: 触发现实检定的疑点简述(可选)
+	Source          string                 `json:"source"`           // reveal_clue: 线索来源(地点/NPC/物件)
+	Operate         string                 `json:"operate"`          // 通用操作: add/remove(manage_inventory 另有 update; update_clock 为 advance/set/remove)
+	ClockName       string                 `json:"clock_name"`       // update_clock: 时钟/机制名称
+	ClockDelta      *int                   `json:"delta"`            // update_clock(advance): 推进/回退格数(省略默认+1)
+	ClockValue      *int                   `json:"value"`            // update_clock(set): 直接设定的当前格数
+	ClockMax        int                    `json:"max"`              // update_clock: 最大格数(1-20,新建省略时优先按模组mechanics推断或6)
+	ClockStage      string                 `json:"stage"`            // update_clock: 当前阶段标签(可选)
+	ClockVisible    *bool                  `json:"visible"`          // update_clock: 是否对调查员公开(新建默认true,更新省略保持不变)
+	ClockDesc       string                 `json:"description"`      // update_clock: 时钟简短说明(可选)
+	Item            string                 `json:"item"`             // manage_inventory: 旧版整串物品(如 "绷带(x3)"),仅在 item_name 为空时按旧格式解析
+	ItemName        string                 `json:"item_name"`        // manage_inventory: 物品基础名称
+	ItemDesc        string                 `json:"item_desc"`        // manage_inventory: 物品状态描述(add/update 时写入,remove 时用于区分同名物品)
+	ItemCount       int                    `json:"item_count"`       // manage_inventory: 物品数量(省略或0均视为1)
+	ItemType        models.ItemType        `json:"item_type"`        // manage_inventory: 物品类型(省略时 add 为 misc,update 不改类型)
+	ItemEquipped    *bool                  `json:"item_equipped"`    // manage_inventory: 是否装备在身上(add 省略为未装备,update 省略不改)
+	Monster         string                 `json:"monster"`          // record_monster: 神话存在名称
+	Spell           string                 `json:"spell"`            // manage_spell: 法术名称
+	Relation        *models.SocialRelation `json:"relation"`         // manage_relation: 社会关系条目
+	Asset           *models.Asset          `json:"asset"`            // manage_asset: 资产条目
+	IsBystander     bool                   `json:"is_bystander"`     // manage_madness trigger: 是否有旁观者在场(仅决定症状表,不代表疯狂类型)
+	MadnessType     string                 `json:"madness_type"`     // manage_madness trigger: 疯狂类型 temporary/indefinite/permanent,由Director按规则判定
+	Direction       string                 `json:"direction"`        // write: 叙事方向(供Writer参考)
+	ProgressNote    string                 `json:"progress_note"`    // consult_dramaturg: 脱敏后的剧情进展报告
+	GameTime        string                 `json:"game_time"`        // advance_time: 推进后的绝对时间(YYYY-MM-DDTHH:MM)
+	TimeReason      string                 `json:"time_reason"`      // advance_time: 原因(如"睡觉"/"吃饭")
+	Keyword         string                 `json:"keyword"`          // query_clues: 已废弃(保留仅为兼容旧输出)
+	SessionMemory   string                 `json:"session_memory"`   // update_session_memory: 会话记忆内容(整体覆盖,非追加)
+	NewLocation     string                 `json:"new_location"`     // update_location/update_npc_location: 新位置名称
+	ArmorValue      int                    `json:"armor_value"`      // update_armor: 新护甲值(0=无护甲)
+	Hint            string                 `json:"hint"`             // hit: KP当前场景高密度提示
+	NSFW            bool                   `json:"nsfw"`             // write: 该段描写是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效
+	Options         []string               `json:"options"`          // ask_players: 玩家询问时才给的推荐行动(可选,0-2条)
+	Reply           string                 `json:"reply"`            // narrate: KP对玩家说的话(必填)
+	EndingName      string                 `json:"ending_name"`      // end_game: 触发的结局名称(可选,与<endings>中名称一致,用于结算SAN奖惩)
+	EndSummary      string                 `json:"end_summary"`      // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
 	// NOTE: Win 使用指针以区分 false（失败）与缺失/null（未填写）。
 	// Director 必须显式填写 true 或 false；缺失时 endGameAction.Execute 拒绝并返回错误。
 	Win        *bool              `json:"win"`        // end_game: 是否胜利(必填,true=胜/false=败)
@@ -253,6 +256,7 @@ type Output struct {
 	Auto          bool       // writer 由 fallbackWriterDirection 自动补出
 	VisibleTo     []uint     // whisper: 非空时仅列表中的用户可见
 	RecipientName string     // whisper: 密讯接收调查员姓名
+	Hallucination bool       // whisper: 幻觉耳语标记，仅管理员和结团后复盘可见
 	// CallID: writer 是对应的 write 调用；自动补写的是来源 narrate/ask 调用；kp/ask 是它们自己的调用。
 	CallID string
 }

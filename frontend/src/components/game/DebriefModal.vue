@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Award, Dices, Eye, Lock, ShieldAlert, Timer } from '@lucide/vue'
+import { Award, Brain, Dices, Eye, Lock, ShieldAlert, Timer } from '@lucide/vue'
 import { ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { ScenarioClue, ScenarioEnding } from '@/api/sessionTypes'
@@ -42,6 +42,12 @@ interface DebriefPlayerSecret {
   secret_background: string
 }
 
+interface DebriefHallucination {
+  recipient_name: string
+  content: string
+  created_at: string
+}
+
 interface DebriefResponse {
   session_name: string
   scenario_name: string
@@ -59,6 +65,7 @@ interface DebriefResponse {
     npcs: DebriefNPC[]
     player_secrets: DebriefPlayerSecret[]
     clocks?: SessionClock[]
+    hallucinations?: DebriefHallucination[]
   }
 }
 
@@ -273,6 +280,23 @@ function successRate(st: DebriefDiceStat): string {
                 </div>
                 <p v-if="clk.stage" class="text-fg-muted">最终阶段：{{ clk.stage }}</p>
                 <p v-if="clk.description" class="text-fg-subtle">{{ clk.description }}</p>
+              </article>
+            </div>
+          </section>
+
+          <section v-if="data.truth.hallucinations?.length" class="space-y-2.5">
+            <h3 class="flex items-center gap-1.5 text-sm font-semibold text-fg">
+              <Brain :size="15" :stroke-width="1.75" class="text-san" />
+              潜伏疯狂 · 幻觉耳语揭晓
+            </h3>
+            <div class="space-y-2">
+              <article
+                v-for="(h, idx) in data.truth.hallucinations"
+                :key="idx"
+                class="rounded-lg border border-san/35 bg-san/10 p-3"
+              >
+                <p class="text-xs font-medium text-san">发送给：{{ h.recipient_name || '调查员' }}</p>
+                <p class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">{{ h.content }}</p>
               </article>
             </div>
           </section>

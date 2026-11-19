@@ -236,3 +236,17 @@ export function quickCharacterItems(card: CharacterCard | null | undefined): Qui
   }
   return list
 }
+
+// NOTE: 处于临时性或不定性疯狂（潜伏疯狂期）时允许玩家主动向 KP 请求现实检定。
+export function isCharacterMad(card: CharacterCard | null | undefined): boolean {
+  const state = String((card as { madness_state?: unknown } | null | undefined)?.madness_state || '')
+  return state === 'temporary' || state === 'indefinite'
+}
+
+export function characterMadnessLabel(card: CharacterCard | null | undefined): string {
+  const state = String((card as { madness_state?: unknown } | null | undefined)?.madness_state || '')
+  if (state === 'temporary') return '临时性疯狂'
+  if (state === 'indefinite') return '不定性疯狂'
+  return ''
+}
+

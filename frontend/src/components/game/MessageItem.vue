@@ -88,6 +88,9 @@ const error = computed(() => messageError(props.msg))
 const names = computed(() => askNames(props.msg))
 const dice = computed(() => diceOf(props.msg))
 const isPrivate = computed(() => kind.value === 'kp' && Boolean((props.msg.meta as { private?: boolean } | null | undefined)?.private))
+const isHallucination = computed(
+  () => isPrivate.value && Boolean((props.msg.meta as { hallucination?: boolean } | null | undefined)?.hallucination),
+)
 const recipientName = computed(() => String((props.msg.meta as { recipient_name?: string } | null | undefined)?.recipient_name || ''))
 const showPinButton = computed(() => {
   if (!props.canPinClue || isPrivate.value || props.msg.status !== 'done') return false
@@ -191,6 +194,13 @@ const EVENT_TONES: Record<EventTone, string> = {
           <Lock v-else-if="isPrivate" :size="14" :stroke-width="1.75" class="shrink-0" />
           <MessageSquareQuote v-else-if="kind === 'kp' || kind === 'ask'" :size="16" :stroke-width="1.75" class="shrink-0" />
           {{ isPrivate ? `密讯 · 仅 ${recipientName || '你'} 可见` : msgLabel(msg) }}
+        </span>
+        <span
+          v-if="isHallucination"
+          class="inline-flex items-center rounded-md bg-san/15 px-1.5 py-0.5 text-xs font-medium text-san"
+          title="潜伏疯狂期幻觉耳语（仅管理员及结团复盘可见）"
+        >
+          幻觉
         </span>
         <span class="tabular-nums">{{ fmtTime(msg.created_at as string | undefined) }}</span>
         <span

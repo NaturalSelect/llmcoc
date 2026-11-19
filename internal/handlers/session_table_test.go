@@ -22,6 +22,7 @@ func sessionTableRouter(userID uint, username, role string) *gin.Engine {
 	r.DELETE("/sessions/:id/clues/:clueId", auth, DeleteSessionClue)
 	r.POST("/sessions/:id/notes", auth, CreateSessionNote)
 	r.DELETE("/sessions/:id/notes/:noteId", auth, DeleteSessionNote)
+	r.GET("/sessions/:id/messages", auth, GetMessages)
 	r.GET("/sessions/:id/debrief", auth, GetSessionDebrief)
 	r.GET("/scenarios", auth, ListScenarios)
 	return r
@@ -484,4 +485,84 @@ func TestClocks_HandbookFilterAndDebriefReveal(t *testing.T) {
 	}
 }
 
+func TestHallucinationWhisper_RedactionAndDebriefReveal(t *testing.T) {
+	initTestDB(t)
+	host := seedUser(t, "hall_host", "user", 0, 3)
+	admin := seedUser(t, "hall_admin", "admin", 0, 3)
+	card := seedCard(t, host, "约翰")
+	sc := seedScenario(t, "幻觉模组")
+	sess := models.GameSession{Name: "幻觉团", ScenarioID: sc, CreatedBy: host, Status: models.SessionStatusPlaying, MaxPlayers: 4}
+	models.DB.Create(&sess)
+	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: host, CharacterCardID: card})
 
+	msg := models.Message{
+		SessionID: sess.ID,
+		Role:      models.MessageRoleAssistant,
+		Kind:      models.MessageKindKP,
+		Status:    models.MessageStatusDone,
+		Floor:     1,
+		Username:  "KP",
+		Content:   "镜中的你微微一笑，嘴角裂到了耳根。",
+		VisibleTo: models.JSONField[[]uint]{Data: []uint{host}},
+		Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{
+			Private:       true,
+			RecipientName: "约翰",
+			Hallucination: true,
+		}},
+	}
+	models.DB.Create(&msg)
+
+	// 1. 实时推送用的 newMessageResponse 必须剥离 hallucination 标记
+	liveResp := newMessageResponse(msg)
+	if liveResp.Meta == nil || !liveResp.Meta.Private || liveResp.Meta.Hallucination {
+		t.Fatalf("live broadcast response leaked hallucination flag: %+v", liveResp.Meta)
+	}
+	if !msg.Meta.Data.Hallucination {
+		t.Fatalf("newMessageResponse mutated underlying DB model Meta")
+	}
+
+	rHost := sessionTableRouter(host, "hall_host", "user")
+	rAdmin := sessionTableRouter(admin, "hall_admin", "admin")
+
+	// 2. 进行中：普通玩家拉取消息看不到 hallucination 标记
+	w := httptest.NewRecorder()
+	rHost.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/messages", sess.ID), nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("player messages want 200, got %d", w.Code)
+	}
+	var hostMsgs []messageResponse
+	json.NewDecoder(w.Body).Decode(&hostMsgs)
+	if len(hostMsgs) != 1 || hostMsgs[0].Meta == nil || !hostMsgs[0].Meta.Private || hostMsgs[0].Meta.Hallucination {
+		t.Fatalf("active player messages leaked hallucination flag: %+v", hostMsgs)
+	}
+
+	// 3. 进行中：管理员可以看到 hallucination=true
+	w = httptest.NewRecorder()
+	rAdmin.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/messages", sess.ID), nil))
+	var adminMsgs []messageResponse
+	json.NewDecoder(w.Body).Decode(&adminMsgs)
+	if len(adminMsgs) != 1 || adminMsgs[0].Meta == nil || !adminMsgs[0].Meta.Hallucination {
+		t.Fatalf("admin should see hallucination=true, got %+v", adminMsgs)
+	}
+
+	// 4. 结团后：普通玩家消息历史与结团复盘均揭晓幻觉耳语
+	models.DB.Model(&sess).Update("status", models.SessionStatusEnded)
+	w = httptest.NewRecorder()
+	rHost.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/messages", sess.ID), nil))
+	var endedMsgs []messageResponse
+	json.NewDecoder(w.Body).Decode(&endedMsgs)
+	if len(endedMsgs) != 1 || endedMsgs[0].Meta == nil || !endedMsgs[0].Meta.Hallucination {
+		t.Fatalf("ended session player messages should reveal hallucination=true, got %+v", endedMsgs)
+	}
+
+	w = httptest.NewRecorder()
+	rHost.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/debrief", sess.ID), nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("debrief want 200, got %d", w.Code)
+	}
+	var debrief debriefResponse
+	json.NewDecoder(w.Body).Decode(&debrief)
+	if len(debrief.Truth.Hallucinations) != 1 || debrief.Truth.Hallucinations[0].RecipientName != "约翰" || !strings.Contains(debrief.Truth.Hallucinations[0].Content, "镜中的你") {
+		t.Fatalf("debrief hallucinations = %+v", debrief.Truth.Hallucinations)
+	}
+}

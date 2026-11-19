@@ -38,6 +38,7 @@ func directorTools(dramaturgEnabled bool) []scripterTool {
 		manageAssetTool(),
 		endGameTool(),
 		manageMadnessTool(),
+		realityCheckTool(),
 		writeTool(),
 		advanceTimeTool(),
 		queryCluesTool(),
@@ -405,6 +406,28 @@ is_bystander 只用于选择症状表(决定随机症状文本与持续时间)�
 	}
 }
 
+func realityCheckTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolRealityCheck),
+			Description: `对处于临时性或不定性疯狂（潜伏疯狂期）的调查员执行 COC7 现实检定（1D100 对照当前 SAN）。
+当处于潜伏疯狂期的调查员对眼前所见、听到的声音或此前收到的幻觉耳语产生怀疑并要求验证虚实时，必须调用本工具结算，不要用 roll_dice 替代。未处于潜伏疯狂期（无疯狂或永久性疯狂）的调查员会被拒绝。
+• 成功（骰值≤当前SAN）：调查员识破幻觉，不损失理智，请清楚揭示现实真相。
+• 失败（骰值>当前SAN）：调查员深信幻觉为真，后端会自动扣除 1 点 SAN 并累计当日损失；随后你须按规则调用 manage_madness(trigger) 结算新一轮疯狂发作。
+【批次规则】本工具产生检定结果，不得与 narrate/ask_players/end_game 同批，结果须先在下一轮读到后再叙述或点名。
+调用示例：{"character_name":"约翰","reason":"怀疑门廊上的血手印是否为幻觉"}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"character_name": {"type": "string", "description": "进行现实检定的存活调查员角色名"},
+					"reason": {"type": "string", "description": "触发现实检定的疑点简述(可选)"}
+				},
+				"required": ["character_name"]
+			}`),
+		},
+	}
+}
+
 func writeTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
@@ -609,14 +632,17 @@ func whisperTool() scripterTool {
 		def: llm.ToolDefinition{
 			Name: string(ToolWhisper),
 			Description: `向指定一位调查员发送私密讯息（密讯），仅该调查员与管理员可见，其他调查员不会收到。适用于分队/独处时单人目击的线索、精神幻觉或疯狂低语、暗骰结果、或与该调查员隐藏背景(HO)相关的私密情报。
+is_hallucination(可选，默认false)：当目标调查员处于临时性或不定性疯狂（潜伏疯狂期）时，可设为 true 发送逼真的幻觉耳语；系统会在对局中对玩家隐藏该标记（仅管理员与结团复盘可见），你也绝不要在密讯或公开文本里提示这是幻觉。
 发布后你仍持有发言权，可继续调用其他工具或用 ask_players 点名。不得把应公开给全队的场景描述改用 whisper 发送。
 【批次规则】可与 narrate/write/ask_players 和状态更新工具同批，但查询/掷骰类工具的结果必须先在更早的一轮读到。
-调用示例：{"character_name":"调查员名","content":"你借着火柴微光看清纸条背面写着你妹妹的名字。"}`,
+调用示例：{"character_name":"调查员名","content":"你借着火柴微光看清纸条背面写着你妹妹的名字。"}
+幻觉耳语示例：{"character_name":"调查员名","content":"你眼角余光瞥见壁炉上的全家福正缓慢转过头盯着你，嘴唇无声地动了动。","is_hallucination":true}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {
 					"character_name": {"type": "string", "description": "接收密讯的存活调查员角色名"},
-					"content": {"type": "string", "description": "密讯正文，仅该调查员可见"}
+					"content": {"type": "string", "description": "密讯正文，仅该调查员可见"},
+					"is_hallucination": {"type": "boolean", "description": "可选：是否为潜伏疯狂期的幻觉耳语(对局中对玩家隐藏，结团复盘时揭晓)"}
 				},
 				"required": ["character_name", "content"]
 			}`),

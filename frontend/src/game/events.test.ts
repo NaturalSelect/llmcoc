@@ -146,5 +146,15 @@ describe('describeEvent', () => {
     expect(describeEvent({ type: 'clock', op: 'update', name: '血月仪式', from: 3, to: 4, amount: 4 }).tone).toBe('danger')
     expect(view({ type: 'clock', op: 'remove', name: '血月仪式' })).toBe('危机时钟「血月仪式」已解除')
   })
+
+  test('现实检定事件区分识破幻觉与陷入幻觉', () => {
+    expect(view({ type: 'reality_check', character: '约翰', roll: 32, target: 45, result: '成功', detail: '墙上血迹' })).toBe(
+      '约翰 现实检定（成功） 32/45 墙上血迹 · 识破幻觉',
+    )
+    const failed = describeEvent({ type: 'reality_check', character: '约翰', roll: 68, target: 45, result: '失败' })
+    expect(failed.tone).toBe('san')
+    expect(failed.value).toBe('68/45')
+    expect(failed.note).toBe('陷入幻觉')
+  })
 })
 
