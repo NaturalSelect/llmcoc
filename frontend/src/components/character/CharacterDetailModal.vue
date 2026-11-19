@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { BookOpen, HeartPulse } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 import type { CharacterCardFull, InventoryItem, RegenField } from '@/api/characterTypes'
+import BaseButton from '@/components/base/BaseButton.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import ImagePreview from '@/components/game/ImagePreview.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -44,11 +46,32 @@ const guard = useConfirmGuard()
 const current = ref<CharacterCardFull | null>(null)
 const split = computed(() => splitInventory(current.value?.inventory ?? []))
 const busy = ref(false)
+const downtimeBusy = ref(false)
 const guidance = reactive<Record<RegenField, string>>({ appearance: '', backstory: '', traits: '' })
 const regenBusy = reactive<Record<RegenField, boolean>>({ appearance: false, backstory: false, traits: false })
 // NOTE: 生成可能持续数分钟，期间弹窗可能被关掉或换成另一张卡，所以按卡 id 记录生成中状态，重新打开同一张卡仍显示生成中
 const portraitBusyIds = reactive(new Set<number>())
 const portraitBusy = computed(() => current.value?.id !== undefined && portraitBusyIds.has(current.value.id))
+
+// NOTE: 幕间休整仅对本人存活卡开放；测试固件未填 user_id 时按本人处理，后端会做最终归属校验
+const canDowntime = computed(() => {
+  const c = current.value
+  if (!c?.id) return false
+  if (c.is_active === false || c.wound_state === 'dead') return false
+  return !c.user_id || c.user_id === auth.user?.id
+})
+const sanatoriumCost = computed(() => Number(auth.shopCosts.sanatorium_cost ?? 50))
+const needsSanatorium = computed(() => {
+  const c = current.value
+  if (!c) return false
+  const madness = c.madness_state ?? 'none'
+  if (madness === 'permanent') return false
+  const san = Number(c.stats?.san ?? 0)
+  const maxSan = Number(c.stats?.max_san ?? 0)
+  return (maxSan > 0 && san < maxSan) || madness === 'temporary' || madness === 'indefinite'
+})
+const tomes = computed(() => (current.value?.inventory ?? []).filter((it) => it.type === 'tome'))
+const sanTooLowForTome = computed(() => Number(current.value?.stats?.san ?? 0) <= 4)
 
 const previewSrc = ref('')
 let previewHold = 0
@@ -215,6 +238,44 @@ async function removeAsset(name: string | undefined): Promise<void> {
   await mutate(() => characterApi.removeAsset(id, name), '已删除资产')
 }
 
+async function visitSanatorium(): Promise<void> {
+  const card = current.value
+  const id = card?.id
+  if (!card || !id || downtimeBusy.value) return
+  const cost = sanatoriumCost.value
+  const msg = `确认送「${card.name || '该调查员'}」入住阿卡姆疗养院？将消耗 ${cost} 金币，恢复 1D6+2 点理智并平复临时性/不定性疯狂状态。`
+  if (!(await guard.confirm(msg, { confirmText: '入住疗养院' }))) return
+  downtimeBusy.value = true
+  try {
+    const r = await characterApi.sanatorium(id)
+    if (auth.user && typeof r.coins_left === 'number') auth.user.coins = r.coins_left
+    applyUpdate(r.card)
+    ui.toast(r.message || '疗养完成')
+  } catch (e) {
+    ui.toast(errMessage(e), 'error')
+  } finally {
+    downtimeBusy.value = false
+  }
+}
+
+async function studyTome(tomeName: string): Promise<void> {
+  const card = current.value
+  const id = card?.id
+  if (!card || !id || !tomeName || downtimeBusy.value) return
+  const msg = `确认研读神话典籍《${tomeName}》？将进行智力检定并损失 1D4 点理智（至少保留 1 点），换取克苏鲁神话技能提升（同时降低理智上限）。`
+  if (!(await guard.confirm(msg, { confirmText: '开始研读' }))) return
+  downtimeBusy.value = true
+  try {
+    const r = await characterApi.studyTome(id, tomeName)
+    applyUpdate(r.card)
+    ui.toast(r.message || `研读《${tomeName}》完成`)
+  } catch (e) {
+    ui.toast(errMessage(e), 'error')
+  } finally {
+    downtimeBusy.value = false
+  }
+}
+
 function relationEntries(card: CharacterCardFull): Entry[] {
   return (card.social_relations ?? []).map((r) => ({
     title: r?.name || '未命名关系',
@@ -247,6 +308,62 @@ function assetEntries(card: CharacterCardFull): Entry[] {
       />
 
       <CharacterVitals :card="current" class="mb-5" />
+
+      <CharacterSection v-if="canDowntime" title="幕间休整">
+        <p v-if="current.in_session" class="mb-2 text-xs text-warning" role="status">
+          该人物卡正在游戏中，需结团后才能进行幕间休整。
+        </p>
+        <div class="space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2.5">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 text-sm font-medium text-fg">
+                <HeartPulse :size="15" :stroke-width="1.75" class="shrink-0 text-san" />
+                <span>阿卡姆疗养院</span>
+              </div>
+              <p class="mt-0.5 text-xs text-fg-subtle">
+                <template v-if="current.madness_state === 'permanent'">永久性疯狂无法通过疗养院治愈。</template>
+                <template v-else-if="needsSanatorium">花费 {{ sanatoriumCost }} 金币，恢复 1D6+2 理智并清除临时/不定性疯狂。</template>
+                <template v-else>当前理智充沛且无疯狂症状，无需疗养。</template>
+              </p>
+            </div>
+            <BaseButton
+              size="sm"
+              variant="secondary"
+              :loading="downtimeBusy"
+              :disabled="current.in_session || !needsSanatorium || (auth.user?.coins ?? 0) < sanatoriumCost"
+              @click="visitSanatorium"
+            >
+              入住疗养院（{{ sanatoriumCost }} 金币）
+            </BaseButton>
+          </div>
+
+          <div
+            v-for="tome in tomes"
+            :key="tome.name"
+            class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2.5"
+          >
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 text-sm font-medium text-fg">
+                <BookOpen :size="15" :stroke-width="1.75" class="shrink-0 text-accent" />
+                <span class="truncate">研读《{{ tome.name }}》</span>
+              </div>
+              <p class="mt-0.5 text-xs text-fg-subtle">
+                <template v-if="sanTooLowForTome">当前理智过低（≤ 4），贸然研读神话典籍风险过高。</template>
+                <template v-else>智力检定：损失 1D4 理智，成功 +1D3 克苏鲁神话，失败 +1。</template>
+              </p>
+            </div>
+            <BaseButton
+              size="sm"
+              variant="secondary"
+              :loading="downtimeBusy"
+              :disabled="current.in_session || sanTooLowForTome"
+              @click="studyTome(tome.name)"
+            >
+              开始研读
+            </BaseButton>
+          </div>
+        </div>
+      </CharacterSection>
 
       <CharacterSection title="技能（完整）">
         <div class="mb-2 text-xs tabular-nums text-fg-subtle">总计 {{ Object.keys(current.skills ?? {}).length }} 项</div>

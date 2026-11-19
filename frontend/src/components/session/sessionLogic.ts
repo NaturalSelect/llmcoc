@@ -68,7 +68,7 @@ export function buildCreatePayload(form: CreateSessionForm, selected: Pick<Scena
   const name = form.name.trim() || selected?.name || ''
   if (!name) return null
   const max = typeof form.max_players === 'number' && Number.isFinite(form.max_players) ? form.max_players : 0
-  return {
+  const payload: CreateSessionPayload = {
     name,
     scenario_id: form.scenario_id,
     max_players: max,
@@ -76,12 +76,17 @@ export function buildCreatePayload(form: CreateSessionForm, selected: Pick<Scena
     enable_nsfw: form.enable_nsfw,
     evolve_backstory: form.evolve_backstory,
   }
+  if (form.narrative_style === 'lovecraft' || form.narrative_style === 'cinematic') {
+    payload.narrative_style = form.narrative_style
+  }
+  return payload
 }
 
+// NOTE: 手动提前结束走 POST /api/sessions/:id/end（不触发 AI 成长评分），文案需准确反映实际行为避免误导玩家
 export function endSessionConfirmMessage(playerCount: number, costPerPlayer: number): string {
   return playerCount > 1
-    ? `确认结束游戏？${playerCount}名玩家每人将消耗${costPerPlayer}金币（共${costPerPlayer * playerCount}金币），系统将进行成长评估。`
-    : `确认结束游戏？将消耗${costPerPlayer}金币，系统将进行成长评估。`
+    ? `确认提前结束游戏？${playerCount}名玩家每人将消耗${costPerPlayer}金币（共${costPerPlayer * playerCount}金币）。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。`
+    : `确认提前结束游戏？将消耗${costPerPlayer}金币。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。`
 }
 
 export function reviveConfirmMessage(s: { id: number; name?: string }): string {

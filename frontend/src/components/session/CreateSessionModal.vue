@@ -7,6 +7,7 @@ import type { CreateSessionForm, LobbySession } from '@/api/sessionTypes'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
+import BaseSelect from '@/components/base/BaseSelect.vue'
 import FormField from '@/components/base/FormField.vue'
 import PaginationBar from '@/components/base/PaginationBar.vue'
 import { playersLabel, scenarioContent, splitTags } from '@/components/scenario/scenarioFormat'
@@ -25,6 +26,7 @@ const pickerLabelId = useId()
 const formId = useId()
 
 const form = ref<CreateSessionForm>(emptyCreateForm())
+const narrativeStyle = ref('')
 // NOTE: 选中的剧本单独缓存：翻页后选中项不在当前页列表里，名称/简介仍要能显示和作为默认房间名
 const selected = ref<Scenario | null>(null)
 const submitting = ref(false)
@@ -53,6 +55,7 @@ watch(
     if (!open) return
     selected.value = null
     form.value = emptyCreateForm()
+    narrativeStyle.value = ''
     void loadScenarios(1)
   },
   { immediate: true },
@@ -64,7 +67,7 @@ function pick(s: Scenario) {
 }
 
 async function submit() {
-  const payload = buildCreatePayload(form.value, selected.value)
+  const payload = buildCreatePayload({ ...form.value, narrative_style: narrativeStyle.value }, selected.value)
   if (!payload) return
   submitting.value = true
   try {
@@ -151,6 +154,14 @@ async function submit() {
           <BaseInput v-model="form.password" type="text" placeholder="留空则公开" autocomplete="off" />
         </FormField>
       </div>
+
+      <FormField label="叙事文风（可选，创建后不可修改）">
+        <BaseSelect v-model="narrativeStyle" aria-label="叙事文风">
+          <option value="">默认白描（冷静写实）</option>
+          <option value="lovecraft">经典档案风（洛氏古典悬疑）</option>
+          <option value="cinematic">电影紧凑风（快节奏分镜感）</option>
+        </BaseSelect>
+      </FormField>
 
       <label v-if="auth.publicSettings.allowNSFW" class="flex items-center gap-2 text-sm text-fg-muted">
         <input v-model="form.enable_nsfw" type="checkbox" class="accent-accent" />

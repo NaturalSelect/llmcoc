@@ -164,7 +164,7 @@ describe('balanceRulesLength', () => {
 })
 
 describe('COST_FIELDS', () => {
-  test('十个数值项，键与后端站点设置一致', () => {
+  test('十一个数值项，键与后端站点设置一致', () => {
     expect(COST_FIELDS.map((f) => f.key)).toStrictEqual([
       'initial_coins',
       'initial_card_slots',
@@ -173,6 +173,7 @@ describe('COST_FIELDS', () => {
       'regenerate_traits_cost',
       'regenerate_portrait_cost',
       'revive_base_cost',
+      'sanatorium_cost',
       'max_character_drafts',
       'end_session_cost',
       'session_retention_days',

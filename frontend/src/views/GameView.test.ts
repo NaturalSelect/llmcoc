@@ -253,7 +253,9 @@ describe('GameView', () => {
     const ui = useUiStore()
     const end = wrapper.findAll('header button').find((b) => b.text() === '结束')!
     await end.trigger('click')
-    expect(ui.confirmState?.message).toBe('确认结束游戏？将消耗200金币，系统将进行成长评估。')
+    expect(ui.confirmState?.message).toBe(
+      '确认提前结束游戏？将消耗200金币。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。',
+    )
     ui.resolveConfirm(false)
     await flushPromises()
     expect(fetchCalls.some((c) => c.path.endsWith('/end'))).toBe(false)

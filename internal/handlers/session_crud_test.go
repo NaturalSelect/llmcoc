@@ -1176,6 +1176,40 @@ func TestGetMessages_PrivateWhisperVisibility(t *testing.T) {
 	}
 }
 
+func TestCreateSession_NarrativeStyleValidation(t *testing.T) {
+	initTestDB(t)
+	uid := seedUser(t, "stylehost", "user", 0, 3)
+	sid := seedScenario(t, "StyleScenario")
+	r := sessionCRUDRouter(uid, "stylehost", "user")
+
+	for _, style := range []string{"", "plain", "lovecraft", "cinematic"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, jsonReq("POST", "/sessions", map[string]any{
+			"name":            "风格房-" + style,
+			"scenario_id":     sid,
+			"narrative_style": style,
+		}))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("style=%q want 201, got %d body=%s", style, w.Code, w.Body.String())
+		}
+		var created models.GameSession
+		json.NewDecoder(w.Body).Decode(&created)
+		if created.NarrativeStyle != style {
+			t.Errorf("created.NarrativeStyle = %q, want %q", created.NarrativeStyle, style)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/sessions", map[string]any{
+		"name":            "非法风格房",
+		"scenario_id":     sid,
+		"narrative_style": "anime",
+	}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid style want 400, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
 // ── compile check ──────────────────────────────────────────────────────────────
 // Verify formatters don't add unused import warnings.
 var _ = strings.Contains

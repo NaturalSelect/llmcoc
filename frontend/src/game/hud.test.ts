@@ -72,8 +72,12 @@ describe('hud', () => {
   })
 
   test('结束游戏确认文案与状态标签', () => {
-    expect(endSessionMessage(1, 200)).toBe('确认结束游戏？将消耗200金币，系统将进行成长评估。')
-    expect(endSessionMessage(3, 200)).toBe('确认结束游戏？3名玩家每人将消耗200金币（共600金币），系统将进行成长评估。')
+    expect(endSessionMessage(1, 200)).toBe(
+      '确认提前结束游戏？将消耗200金币。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。',
+    )
+    expect(endSessionMessage(3, 200)).toBe(
+      '确认提前结束游戏？3名玩家每人将消耗200金币（共600金币）。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。',
+    )
     expect(statusLabel('lobby')).toBe('等待中')
     expect(statusLabel('playing')).toBe('游戏中')
     expect(statusLabel('ended')).toBe('已结束')

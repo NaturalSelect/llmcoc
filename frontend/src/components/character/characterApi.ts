@@ -11,7 +11,9 @@ import type {
   RegenResponse,
   ReviveResponse,
   RollDraft,
+  SanatoriumResponse,
   SkillDefaultsResponse,
+  StudyTomeResponse,
   WarehouseResponse,
   WarehouseTransferResponse,
 } from '@/api/characterTypes'
@@ -40,6 +42,8 @@ export const characterApi = {
   remove: (id: number) => api<{ message?: string }>('DELETE', cardPath(id)),
   removeDead: (id: number) => api<{ message?: string }>('DELETE', `${cardPath(id)}/dead`),
   revive: (id: number) => api<ReviveResponse>('POST', `${cardPath(id)}/revive`),
+  sanatorium: (id: number) => api<SanatoriumResponse>('POST', `${cardPath(id)}/sanatorium`),
+  studyTome: (id: number, tomeName: string) => api<StudyTomeResponse>('POST', `${cardPath(id)}/study-tome`, { tome_name: tomeName }),
 
   regenerate: (id: number, field: RegenField, guidance: string) =>
     api<RegenResponse>('POST', `${cardPath(id)}/regenerate-${field}`, { guidance }),

@@ -31,6 +31,7 @@ export interface LobbySession {
   has_password?: boolean
   enable_nsfw?: boolean
   evolve_backstory?: boolean
+  narrative_style?: string
   created_by: number
   created_at?: string
   updated_at?: string
@@ -52,6 +53,7 @@ export interface CreateSessionForm {
   password: string
   enable_nsfw: boolean
   evolve_backstory: boolean
+  narrative_style?: string
 }
 
 export interface CreateSessionPayload {
@@ -61,6 +63,7 @@ export interface CreateSessionPayload {
   password: string
   enable_nsfw: boolean
   evolve_backstory: boolean
+  narrative_style?: string
 }
 
 export interface JoinSessionForm {

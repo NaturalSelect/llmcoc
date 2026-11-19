@@ -50,6 +50,8 @@ type CreateSessionReq struct {
 	EnableNSFW bool   `json:"enable_nsfw"`
 	// NOTE: 胜利结算时是否改写存活调查员的个人经历。
 	EvolveBackstory bool `json:"evolve_backstory"`
+	// NOTE: 叙事文风预设："" / "plain" / "lovecraft" / "cinematic"。
+	NarrativeStyle string `json:"narrative_style"`
 }
 
 type JoinSessionReq struct {
@@ -270,6 +272,14 @@ func CreateSession(c *gin.Context) {
 		req.EnableNSFW = false
 	}
 
+	narrativeStyle := strings.TrimSpace(req.NarrativeStyle)
+	switch narrativeStyle {
+	case "", "plain", "lovecraft", "cinematic":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的叙事风格，可选值：plain / lovecraft / cinematic"})
+		return
+	}
+
 	var pwHash string
 	hasPassword := req.Password != ""
 	if hasPassword {
@@ -290,6 +300,7 @@ func CreateSession(c *gin.Context) {
 		HasPassword:     hasPassword,
 		EnableNSFW:      req.EnableNSFW,
 		EvolveBackstory: req.EvolveBackstory,
+		NarrativeStyle:  narrativeStyle,
 		CreatedBy:       userID,
 	}
 

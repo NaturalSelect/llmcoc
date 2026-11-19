@@ -161,6 +161,26 @@ export interface WarehouseTransferResponse extends WarehouseResponse {
   character_card: CharacterCardFull
 }
 
+export interface SanatoriumResponse {
+  message?: string
+  card: CharacterCardFull
+  healed: number
+  cleared_madness: boolean
+  coins_spent: number
+  coins_left: number
+}
+
+export interface StudyTomeResponse {
+  message?: string
+  card: CharacterCardFull
+  tome_name: string
+  int_roll: number
+  int_target: number
+  int_success: boolean
+  san_lost: number
+  mythos_gained: number
+}
+
 export interface Announcement {
   id: number
   title: string

@@ -604,6 +604,27 @@ func TestWriterSystemPromptFollowsNSFWMode(t *testing.T) {
 	}
 }
 
+func TestWriterSystemPromptWithStyle(t *testing.T) {
+	initSiteSettingTestDB(t)
+	h := newWriterTestHandle(&writerFakeProvider{})
+
+	base := writerSystemPrompt(h, false, false)
+	if got := writerSystemPromptWithStyle(h, false, false, ""); got != base {
+		t.Error("empty style should be byte-identical to writerSystemPrompt")
+	}
+	if got := writerSystemPromptWithStyle(h, false, false, "plain"); got != base {
+		t.Error("plain style should be byte-identical to writerSystemPrompt")
+	}
+	lovecraft := writerSystemPromptWithStyle(h, false, false, "lovecraft")
+	if !strings.HasPrefix(lovecraft, base) || !strings.Contains(lovecraft, `style="lovecraft"`) {
+		t.Errorf("lovecraft style should append override block without mutating prefix")
+	}
+	cinematic := writerSystemPromptWithStyle(h, false, false, "cinematic")
+	if !strings.HasPrefix(cinematic, base) || !strings.Contains(cinematic, `style="cinematic"`) {
+		t.Errorf("cinematic style should append override block without mutating prefix")
+	}
+}
+
 // TestBuildWriterInstruction 验证续写指令:携带调用ID、NSFW后缀只在NSFW模式出现。
 func TestBuildWriterInstruction(t *testing.T) {
 	gctx := GameContext{Session: models.GameSession{ID: 1, EnableNSFW: true}}

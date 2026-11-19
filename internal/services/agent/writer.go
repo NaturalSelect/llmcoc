@@ -150,7 +150,7 @@ func RunWriterStream(ctx context.Context, gctx GameContext, req WriterRequest, o
 			director = append(append([]llm.ChatMessage(nil), director...), renderWriterNotice(gap))
 		}
 	}
-	msgs := buildWriterView(director, writerSystemPrompt(h, nsfwMode, paintOK),
+	msgs := buildWriterView(director, writerSystemPromptWithStyle(h, nsfwMode, paintOK, gctx.Session.NarrativeStyle),
 		sameModelConfig(h.config, handles[models.AgentRoleDirector].config), instruction)
 
 	state := &WriterState{}
@@ -395,6 +395,30 @@ func siteSettingInt(key string, fallback int) int {
 // 标记为 false 时,必须仍用全年龄提示词。paintOK 为 true 时提示词里换成允许调用 paint 的版本。
 func writerSystemPrompt(h agentHandle, nsfwMode, paintOK bool) string {
 	return h.systemPrompt(renderWriterPaint(renderNSFW(writerDefaultPrompt, nsfwMode), paintOK))
+}
+
+const writerStyleLovecraft = `<narrative_style_override style="lovecraft">
+	<rule>本房间启用「经典档案风」：允许使用严谨克制的 1920 年代书面叙述口吻与考据精确的建筑/材质/气味细节，适度放宽上文 anti_literary 中“口语直白、短碎句”的限制，但仍禁止空泛情绪词与替读者下结论。</rule>
+	<rule>感官线索按声响/气味→触感→视觉层层推进，让冷静精准的记录本身透出古怪与不祥；必写项、玩家行动边界、不泄露秘密、失败写成失败等硬规则依然绝对优先。</rule>
+</narrative_style_override>`
+
+const writerStyleCinematic = `<narrative_style_override style="cinematic">
+	<rule>本房间启用「电影紧凑风」：以镜头切换感与高密度动作节拍推进叙事，句式短促利落，善用环境声、光影切面与近景特写凸显临场压迫感，减少冗长静态铺陈。</rule>
+	<rule>压缩过渡但不遗漏任何必写事实与人物台词；必写项、玩家行动边界、不泄露秘密、失败写成失败等硬规则依然绝对优先。</rule>
+</narrative_style_override>`
+
+// writerSystemPromptWithStyle 在基础 system 提示词后按房间叙事文风追加风格覆盖块；
+// 空串或 "plain" 与 writerSystemPrompt 字节完全一致，避免破坏默认房间的 prompt cache。
+func writerSystemPromptWithStyle(h agentHandle, nsfwMode, paintOK bool, style string) string {
+	base := writerSystemPrompt(h, nsfwMode, paintOK)
+	switch strings.TrimSpace(style) {
+	case "lovecraft":
+		return base + "\n" + writerStyleLovecraft
+	case "cinematic":
+		return base + "\n" + writerStyleCinematic
+	default:
+		return base
+	}
 }
 
 // buildWriterInstruction 组装请求末尾的续写指令:人物卡、导演指令与续写要求;

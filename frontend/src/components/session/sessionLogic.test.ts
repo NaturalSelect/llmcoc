@@ -130,6 +130,13 @@ describe('创建房间表单', () => {
   test('最大玩家数被清空时传 0，由后端取剧本上限，不会把空串发给整型字段', () => {
     expect(buildCreatePayload(form({ scenario_id: 3, name: 'x', max_players: '' }), null)?.max_players).toBe(0)
   })
+
+  test('叙事文风：仅非默认档位（lovecraft/cinematic）附带，空串或 plain 省略', () => {
+    expect(buildCreatePayload(form({ scenario_id: 3, name: 'x', narrative_style: 'lovecraft' }), null)?.narrative_style).toBe('lovecraft')
+    expect(buildCreatePayload(form({ scenario_id: 3, name: 'x', narrative_style: 'cinematic' }), null)?.narrative_style).toBe('cinematic')
+    expect(buildCreatePayload(form({ scenario_id: 3, name: 'x', narrative_style: 'plain' }), null)).not.toHaveProperty('narrative_style')
+    expect(buildCreatePayload(form({ scenario_id: 3, name: 'x', narrative_style: '' }), null)).not.toHaveProperty('narrative_style')
+  })
 })
 
 describe('加入房间表单', () => {
@@ -156,9 +163,15 @@ describe('加入房间表单', () => {
 
 describe('确认文案', () => {
   test('结束游戏：多人显示总额，单人只显示每人额度', () => {
-    expect(endSessionConfirmMessage(3, 200)).toBe('确认结束游戏？3名玩家每人将消耗200金币（共600金币），系统将进行成长评估。')
-    expect(endSessionConfirmMessage(1, 200)).toBe('确认结束游戏？将消耗200金币，系统将进行成长评估。')
-    expect(endSessionConfirmMessage(0, 50)).toBe('确认结束游戏？将消耗50金币，系统将进行成长评估。')
+    expect(endSessionConfirmMessage(3, 200)).toBe(
+      '确认提前结束游戏？3名玩家每人将消耗200金币（共600金币）。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。',
+    )
+    expect(endSessionConfirmMessage(1, 200)).toBe(
+      '确认提前结束游戏？将消耗200金币。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。',
+    )
+    expect(endSessionConfirmMessage(0, 50)).toBe(
+      '确认提前结束游戏？将消耗50金币。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。',
+    )
   })
 
   test('复活：优先房间名，没有名字用 id', () => {

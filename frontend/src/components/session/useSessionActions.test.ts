@@ -91,7 +91,10 @@ describe('endSession', () => {
     const confirm = answerConfirm(false)
     auth.shopCosts = { end_session_cost: 150 }
     await useSessionActions().endSession({ id: 2, players: [{ user_id: 1 }, { user_id: 2 }] })
-    expect(confirm).toHaveBeenCalledWith('确认结束游戏？2名玩家每人将消耗150金币（共300金币），系统将进行成长评估。', { confirmText: '结束游戏' })
+    expect(confirm).toHaveBeenCalledWith(
+      '确认提前结束游戏？2名玩家每人将消耗150金币（共300金币）。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。',
+      { confirmText: '结束游戏' },
+    )
     expect(apiMock).not.toHaveBeenCalled()
   })
 
@@ -101,7 +104,10 @@ describe('endSession', () => {
     const confirm = answerConfirm(false)
     await useSessionActions().endSession({ id: 2, players: null })
     expect(auth.loadShopCosts).toHaveBeenCalledOnce()
-    expect(confirm).toHaveBeenCalledWith('确认结束游戏？将消耗200金币，系统将进行成长评估。', { confirmText: '结束游戏' })
+    expect(confirm).toHaveBeenCalledWith(
+      '确认提前结束游戏？将消耗200金币。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。',
+      { confirmText: '结束游戏' },
+    )
   })
 
   test('成功：提示服务端 message 并复位 ending', async () => {

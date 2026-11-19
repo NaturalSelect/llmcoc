@@ -128,6 +128,7 @@ export interface SiteSettings {
   regenerate_traits_cost: number
   regenerate_portrait_cost: number
   revive_base_cost: number
+  sanatorium_cost: number
   max_character_drafts: number
   end_session_cost: number
   session_retention_days: number

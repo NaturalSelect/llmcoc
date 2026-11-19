@@ -458,6 +458,8 @@ type GameSession struct {
 	ChaseState       JSONField[*ChaseState]  `gorm:"type:text" json:"-"`
 	// NOTE: 房主创建时决定；开启后胜利结算会改写存活调查员的个人经历，改写不可撤销，所以默认关闭。
 	EvolveBackstory bool `gorm:"default:false" json:"evolve_backstory"`
+	// NOTE: NarrativeStyle 决定 Writer 叙事文风（空或 plain=默认白描、lovecraft=经典档案风、cinematic=电影紧凑风），创建后不可修改以保证 prompt cache 前缀稳定。
+	NarrativeStyle string `gorm:"size:32;default:''" json:"narrative_style"`
 	// NOTE: Spotlight 记录发言权：nil 与 UserIDs 为空都表示 KP 持有；非空表示等这些玩家回应。
 	Spotlight     JSONField[*SpotlightState] `gorm:"type:text" json:"-"`
 	KPHint        string                     `gorm:"type:text" json:"-"` // KP自写的当前场景高密度提示

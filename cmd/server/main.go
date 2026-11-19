@@ -229,6 +229,8 @@ func main() {
 		chars.PUT("/:id", handlers.UpdateCharacter)
 		chars.DELETE("/:id", handlers.DeleteCharacter)
 		chars.POST("/:id/revive", handlers.ReviveCharacter)
+		chars.POST("/:id/sanatorium", handlers.SanatoriumHeal)
+		chars.POST("/:id/study-tome", handlers.StudyTome)
 		chars.POST("/:id/regenerate-appearance", chh.RegenerateAppearance)
 		chars.POST("/:id/regenerate-backstory", chh.RegenerateBackstory)
 		chars.POST("/:id/regenerate-traits", chh.RegenerateTraits)

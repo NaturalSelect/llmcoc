@@ -78,10 +78,11 @@ export function ownCardAccess(session: Session | null, user: SessionUser | null)
   return { ok: false, error: hint }
 }
 
+// NOTE: 手动提前结束走 POST /api/sessions/:id/end（不触发 AI 成长评分），文案需准确反映实际行为避免误导玩家
 export function endSessionMessage(playerCount: number, costPerPlayer: number): string {
   return playerCount > 1
-    ? `确认结束游戏？${playerCount}名玩家每人将消耗${costPerPlayer}金币（共${costPerPlayer * playerCount}金币），系统将进行成长评估。`
-    : `确认结束游戏？将消耗${costPerPlayer}金币，系统将进行成长评估。`
+    ? `确认提前结束游戏？${playerCount}名玩家每人将消耗${costPerPlayer}金币（共${costPerPlayer * playerCount}金币）。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。`
+    : `确认提前结束游戏？将消耗${costPerPlayer}金币。手动结束不会触发 AI 评分与技能成长，仅结算基础金币与释放人物卡。`
 }
 
 export const STATUS_LABEL: Record<string, string> = { lobby: '等待中', playing: '游戏中' }
