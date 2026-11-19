@@ -750,3 +750,134 @@ func TestRunEndSession_RelationPromotion_DeadCharacterSkipped(t *testing.T) {
 		t.Error("dead card should have IsActive=false")
 	}
 }
+
+func TestParseEndingSANReward(t *testing.T) {
+	cases := []struct {
+		raw      string
+		wantExpr string
+		wantSign int
+		wantOK   bool
+	}{
+		{"恢复1d6", "1D6", 1, true},
+		{"恢复 1D10+2", "1D10+2", 1, true},
+		{"损失1d10", "1D10", -1, true},
+		{"-1d4", "1D4", -1, true},
+		{"2D6", "2D6", 1, true},
+		{"0", "0", 0, true},
+		{"无", "0", 0, true},
+		{"", "", 0, false},
+	}
+	for _, tc := range cases {
+		expr, sign, ok := parseEndingSANReward(tc.raw)
+		if expr != tc.wantExpr || sign != tc.wantSign || ok != tc.wantOK {
+			t.Errorf("parseEndingSANReward(%q) = (%q, %d, %v), want (%q, %d, %v)",
+				tc.raw, expr, sign, ok, tc.wantExpr, tc.wantSign, tc.wantOK)
+		}
+	}
+}
+
+func TestRunEndSessionWithEnding_UsesEndingSANReward(t *testing.T) {
+	initEndSessionTestDB(t)
+	uid := newEndSessionUser(t, "ending_san_user")
+
+	scenario := models.Scenario{
+		Content: models.JSONField[models.ScenarioContent]{
+			Data: models.ScenarioContent{
+				Endings: []models.EndingData{
+					{Name: "完美封印", SANReward: "恢复10"},
+					{Name: "虚空吞噬", SANReward: "损失5", IsFailure: true},
+					{Name: "淡然离开", SANReward: "无"},
+				},
+			},
+		},
+	}
+
+	// 1. 匹配胜利结局：恢复 10 SAN
+	c1 := newEndSessionCard(t, "调查员一", models.CharacterStats{MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 90, SAN: 50, POW: 50, Luck: 99}, nil)
+	s1 := makeTestSession(201, uid, *c1)
+	s1.Scenario = scenario
+	evs1, err := RunEndSessionWithEnding(context.Background(), s1, nil, true, nil, "完美封印", "")
+	if err != nil {
+		t.Fatalf("RunEndSessionWithEnding win: %v", err)
+	}
+	var u1 models.CharacterCard
+	models.DB.First(&u1, c1.ID)
+	if u1.Stats.Data.SAN != 60 {
+		t.Errorf("SAN = %d, want 60 (50 + 10)", u1.Stats.Data.SAN)
+	}
+	foundDetail := false
+	for _, ev := range evs1 {
+		if ev.Type == "stat" && ev.Field == "san" && strings.Contains(ev.Detail, "完美封印") {
+			foundDetail = true
+		}
+	}
+	if !foundDetail {
+		t.Errorf("expected SAN event mentioning 完美封印, got %+v", evs1)
+	}
+
+	// 2. 通过 endSummary 匹配失败结局：损失 5 SAN
+	c2 := newEndSessionCard(t, "调查员二", models.CharacterStats{MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 90, SAN: 50, POW: 50, Luck: 50}, nil)
+	s2 := makeTestSession(202, uid, *c2)
+	s2.Scenario = scenario
+	if _, err := RunEndSessionWithEnding(context.Background(), s2, nil, false, nil, "", "触发结局[虚空吞噬]：调查员未能阻止仪式"); err != nil {
+		t.Fatalf("RunEndSessionWithEnding loss: %v", err)
+	}
+	var u2 models.CharacterCard
+	models.DB.First(&u2, c2.ID)
+	if u2.Stats.Data.SAN != 45 {
+		t.Errorf("SAN = %d, want 45 (50 - 5)", u2.Stats.Data.SAN)
+	}
+
+	// 3. 匹配无恢复结局：SAN 不变
+	c3 := newEndSessionCard(t, "调查员三", models.CharacterStats{MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 90, SAN: 50, POW: 50, Luck: 99}, nil)
+	s3 := makeTestSession(203, uid, *c3)
+	s3.Scenario = scenario
+	if _, err := RunEndSessionWithEnding(context.Background(), s3, nil, true, nil, "淡然离开", ""); err != nil {
+		t.Fatalf("RunEndSessionWithEnding zero: %v", err)
+	}
+	var u3 models.CharacterCard
+	models.DB.First(&u3, c3.ID)
+	if u3.Stats.Data.SAN != 50 {
+		t.Errorf("SAN = %d, want 50 (no recovery)", u3.Stats.Data.SAN)
+	}
+}
+
+func TestRunEndSession_LuckRecoveryOnlyOnWin(t *testing.T) {
+	initEndSessionTestDB(t)
+	uid := newEndSessionUser(t, "luck_rec_user")
+
+	// Luck=0 时 RollD100() > 0 必通过，win=true 必涨 1-10
+	cWin := newEndSessionCard(t, "胜者", models.CharacterStats{MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 90, SAN: 50, POW: 50, Luck: 0}, nil)
+	sWin := makeTestSession(210, uid, *cWin)
+	evs, err := RunEndSession(context.Background(), sWin, nil, true, nil)
+	if err != nil {
+		t.Fatalf("RunEndSession win: %v", err)
+	}
+	var uWin models.CharacterCard
+	models.DB.First(&uWin, cWin.ID)
+	if uWin.Stats.Data.Luck < 1 || uWin.Stats.Data.Luck > 10 {
+		t.Errorf("win=true Luck = %d, want in [1, 10]", uWin.Stats.Data.Luck)
+	}
+	hasLuckEv := false
+	for _, ev := range evs {
+		if ev.Type == "stat" && ev.Field == "luck" && ev.Detail == "通关后幸运恢复检定通过" {
+			hasLuckEv = true
+		}
+	}
+	if !hasLuckEv {
+		t.Errorf("expected luck recovery event, got %+v", evs)
+	}
+
+	// win=false 不恢复幸运
+	cLose := newEndSessionCard(t, "败者", models.CharacterStats{MaxHP: 10, HP: 10, MaxMP: 10, MP: 10, MaxSAN: 90, SAN: 50, POW: 50, Luck: 0}, nil)
+	sLose := makeTestSession(211, uid, *cLose)
+	if _, err := RunEndSession(context.Background(), sLose, nil, false, nil); err != nil {
+		t.Fatalf("RunEndSession lose: %v", err)
+	}
+	var uLose models.CharacterCard
+	models.DB.First(&uLose, cLose.ID)
+	if uLose.Stats.Data.Luck != 0 {
+		t.Errorf("win=false Luck = %d, want 0", uLose.Stats.Data.Luck)
+	}
+}
+

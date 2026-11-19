@@ -270,9 +270,9 @@ defineExpose({ viewCard })
             <template v-if="room">
               <template v-for="m in room.messages" :key="m.id">
                 <MessageItem :msg="m" :room="room" @preview="previewSrc = $event" />
-                <AskCard v-if="m.id === askAt" :room="room" :draft="draft" @submit="submit" />
+                <AskCard v-if="m.id === askAt" :room="room" :draft="draft" :card="card" @submit="submit" />
               </template>
-              <AskCard v-if="asking && askAt === null" :room="room" :draft="draft" show-question @submit="submit" />
+              <AskCard v-if="asking && askAt === null" :room="room" :draft="draft" :card="card" show-question @submit="submit" />
 
               <div v-if="waiting" class="space-y-2 rounded-xl bg-surface-2 px-4 py-3">
                 <p class="flex items-center gap-2 text-sm text-fg-muted">

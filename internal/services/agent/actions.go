@@ -900,7 +900,7 @@ func (endGameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 
 	msgs := LoadEndGameMessages(actx.GCtx.Session.ID)
 	sessionSnap := actx.GCtx.Session
-	events, err := RunEndSession(actx.Ctx, &sessionSnap, msgs, win, call.Settlement)
+	events, err := RunEndSessionWithEnding(actx.Ctx, &sessionSnap, msgs, win, call.Settlement, call.EndingName, call.EndSummary)
 	if err != nil {
 		debugf("tool", "session=%d RunEndSession error: %v", actx.GCtx.Session.ID, err)
 	}

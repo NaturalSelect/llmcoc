@@ -65,6 +65,7 @@ func cardStatEvents(before, after models.CharacterCard) []models.GameEvent {
 		{"max_san", b.MaxSAN, a.MaxSAN},
 		{"mp", b.MP, a.MP},
 		{"max_mp", b.MaxMP, a.MaxMP},
+		{"luck", b.Luck, a.Luck},
 		{"pow", b.POW, a.POW},
 		{"cthulhu_mythos", before.CthulhuMythosSkill, after.CthulhuMythosSkill},
 		{"str", b.STR, a.STR},

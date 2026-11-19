@@ -12,10 +12,10 @@ import (
 
 // parseStateChange parses a director change string (e.g. "HP -3(角色名)" or
 // "cthulhu_mythos +1(角色名)") into a CharacterUpdate.
-// Supported fields: HP, SAN, MP, POW, cthulhu_mythos, race, occupation, wound_state, age.
+// Supported fields: HP, SAN, MP, POW, LUCK, cthulhu_mythos, race, occupation, wound_state, age.
 // Returns false if the string cannot be matched to a known field.
 var stateChangeFields = []string{
-	"cthulhu_mythos", "wound_state", "HP", "SAN", "MP", "POW", "race", "occupation", "age",
+	"cthulhu_mythos", "wound_state", "LUCK", "HP", "SAN", "MP", "POW", "race", "occupation", "age",
 	"str", "con", "siz", "dex", "app", "int", "edu",
 }
 
@@ -66,7 +66,7 @@ func parseStateChange(change string) (CharacterUpdate, string, bool) {
 			Delta:         delta,
 		}, "", true
 	}
-	errMsg := fmt.Sprintf("无法识别的变更字段: %q，支持的字段: HP, SAN, MP, POW, STR, CON, SIZ, DEX, APP, INT, EDU, age, cthulhu_mythos, race, occupation, wound_state。正确格式如 HP -3(角色名)", change)
+	errMsg := fmt.Sprintf("无法识别的变更字段: %q，支持的字段: HP, SAN, MP, LUCK, POW, STR, CON, SIZ, DEX, APP, INT, EDU, age, cthulhu_mythos, race, occupation, wound_state。正确格式如 HP -3(角色名)", change)
 	alog.Error("state change parse failed", "reason", errMsg)
 	return CharacterUpdate{}, errMsg, false
 }
@@ -174,6 +174,12 @@ func applyCharacterUpdate(upd CharacterUpdate, players []models.SessionPlayer, g
 		case "mp":
 			s := card.Stats.Data
 			s.MP = clamp(s.MP+upd.Delta, 0, s.MaxMP)
+			card.Stats.Data = s
+			models.DB.Save(card)
+
+		case "luck":
+			s := card.Stats.Data
+			s.Luck = clamp(s.Luck+upd.Delta, 0, 99)
 			card.Stats.Data = s
 			models.DB.Save(card)
 

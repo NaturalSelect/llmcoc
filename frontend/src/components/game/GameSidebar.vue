@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Clock } from '@lucide/vue'
+import { Clock, Sparkles } from '@lucide/vue'
 import { computed } from 'vue'
 import type { CharacterCard, Session, SessionPlayer } from '@/api/types'
 import SectionHeading from '@/components/base/SectionHeading.vue'
@@ -23,6 +23,7 @@ const props = defineProps<{
 const emit = defineEmits<{ select: [player: SessionPlayer] }>()
 
 const chips = computed(() => hudChips(props.card))
+const hasLuck = computed(() => props.card?.stats?.luck !== undefined)
 const occupation = computed(() => (props.card as { occupation?: string } | null)?.occupation || '未知职业')
 const portrait = computed(() => portraitSrc(props.card as { portrait_hash?: string } | null))
 const players = computed(() => props.session?.players ?? [])
@@ -56,6 +57,13 @@ function playerOccupation(p: SessionPlayer): string {
             <StatBar label="HP" tone="hp" :value="statNum(card, 'hp')" :max="statNum(card, 'max_hp')" :flash="flash.hp" />
             <StatBar label="SAN" tone="san" :value="statNum(card, 'san')" :max="statNum(card, 'max_san')" :flash="flash.san" />
             <StatBar label="MP" tone="mp" :value="statNum(card, 'mp')" :max="statNum(card, 'max_mp')" />
+            <div v-if="hasLuck" class="flex items-center justify-between rounded-md bg-surface-2 px-2.5 py-1.5 text-xs">
+              <span class="inline-flex items-center gap-1.5 text-fg-muted">
+                <Sparkles :size="14" :stroke-width="1.75" class="shrink-0 text-accent" />
+                幸运
+              </span>
+              <span class="font-medium tabular-nums text-fg">{{ statNum(card, 'luck') }}</span>
+            </div>
           </div>
           <div v-if="chips.length" class="flex flex-wrap gap-1.5">
             <StampBadge v-for="chip in chips" :key="chip.text" tone="seal" :title="chip.title || undefined">{{ chip.text }}</StampBadge>

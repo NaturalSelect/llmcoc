@@ -155,7 +155,8 @@ type ToolCall struct {
 	NSFW          bool                   `json:"nsfw"`           // write: 该段描写是否含色情/性描写内容(必填),仅在房间NSFW开关开启时生效
 	Options       []string               `json:"options"`        // ask_players: 玩家询问时才给的推荐行动(可选,0-2条)
 	Reply         string                 `json:"reply"`          // narrate: KP对玩家说的话(必填)
-	EndSummary    string                 `json:"end_summary"`    // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
+	EndingName string             `json:"ending_name"` // end_game: 触发的结局名称(可选,与<endings>中名称一致,用于结算SAN奖惩)
+	EndSummary string             `json:"end_summary"` // end_game: 结局总结(必填,需说明触发的具体结局及Trigger满足情况)
 	// NOTE: Win 使用指针以区分 false（失败）与缺失/null（未填写）。
 	// Director 必须显式填写 true 或 false；缺失时 endGameAction.Execute 拒绝并返回错误。
 	Win        *bool              `json:"win"`        // end_game: 是否胜利(必填,true=胜/false=败)

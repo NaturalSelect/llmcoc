@@ -63,7 +63,7 @@ export interface EventView {
 }
 
 const STR_KEYS = ['type', 'character', 'skill', 'expr', 'level', 'result', 'field', 'state', 'category', 'op', 'name', 'detail', 'symptom', 'location', 'time'] as const
-const NUM_KEYS = ['roll', 'target', 'from', 'to', 'duration', 'round', 'amount'] as const
+const NUM_KEYS = ['roll', 'target', 'need', 'from', 'to', 'duration', 'round', 'amount'] as const
 
 // NOTE: meta.events 来自服务器 JSON，逐字段校验类型，丢掉不合法的条目
 export function eventsOf(msg: RoomMessage | null | undefined): GameEvent[] {
@@ -90,6 +90,7 @@ const FIELD_LABEL: Record<string, string> = {
   max_san: 'SAN上限',
   mp: 'MP',
   max_mp: 'MP上限',
+  luck: '幸运',
   pow: '意志',
   cthulhu_mythos: '克苏鲁神话',
   armor: '护甲',

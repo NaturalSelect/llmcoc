@@ -11,7 +11,10 @@ import {
   cancelEdit,
   createAskDraft,
   draftAnswer,
+  findBurnableFailedCheck,
   insertDialogueQuotes,
+  quickCharacterItems,
+  quickCharacterSkills,
   resetAskDraft,
   resetDraftOnFrame,
   startEdit,
@@ -180,4 +183,71 @@ describe('ask', () => {
     expect(insertDialogueQuotes('abcd', 1, 3)).toStrictEqual({ value: 'a「bc」d', caret: 5 })
     expect(insertDialogueQuotes('', 0, 0)).toStrictEqual({ value: '「」', caret: 1 })
   })
+
+  test('燃烧幸运：识别本周期失败的普通技能检定，按 need 算消耗，排除大失败/理智/幸运/已烧幸运', () => {
+    const room = askingRoom()
+    room.messages.push(
+      {
+        id: 210,
+        kind: 'event',
+        status: 'done',
+        meta: {
+          events: [{ type: 'dice', character: '爱丽丝', skill: '侦查', roll: 38, target: 60, need: 30, level: '困难', result: '失败' }],
+        },
+      },
+      ask(211, []),
+    )
+    expect(findBurnableFailedCheck(room, '爱丽丝', 50)).toStrictEqual({
+      skill: '侦查',
+      roll: 38,
+      need: 30,
+      target: 60,
+      level: '困难',
+      cost: 8,
+      affordable: true,
+      pushable: true,
+    })
+    expect(findBurnableFailedCheck(room, '爱丽丝', 5)?.affordable).toBe(false)
+
+    // 已经消耗幸运后不再提示
+    room.messages.push({
+      id: 212,
+      kind: 'event',
+      status: 'done',
+      meta: { events: [{ type: 'stat', character: '爱丽丝', field: 'luck', from: 50, to: 42 }] },
+    })
+    expect(findBurnableFailedCheck(room, '爱丽丝', 42)).toBeNull()
+
+    // 理智与大失败不可燃烧幸运
+    const room2 = askingRoom()
+    room2.messages.push({
+      id: 220,
+      kind: 'event',
+      status: 'done',
+      meta: {
+        events: [
+          { type: 'dice', character: '爱丽丝', skill: '理智', roll: 80, target: 50, need: 50, result: '失败' },
+          { type: 'dice', character: '爱丽丝', skill: '开锁', roll: 99, target: 40, need: 40, result: '大失败' },
+        ],
+      },
+    })
+    expect(findBurnableFailedCheck(room2, '爱丽丝', 50)).toBeNull()
+  })
+
+  test('技能与物品速查：按数值降序过滤技能并解析背包物品', () => {
+    const card = {
+      name: '爱丽丝',
+      skills: { 侦查: 65, 图书馆使用: 70, 潜水: 10 },
+      inventory: [{ name: '手电筒', desc: '电量满', count: 1, equipped: true }, { name: '绷带', count: 3 }],
+    }
+    expect(quickCharacterSkills(card)).toStrictEqual([
+      { name: '图书馆使用', value: 70 },
+      { name: '侦查', value: 65 },
+    ])
+    expect(quickCharacterItems(card)).toStrictEqual([
+      { name: '手电筒', desc: '电量满', count: 1, equipped: true },
+      { name: '绷带', desc: '', count: 3, equipped: false },
+    ])
+  })
 })
+

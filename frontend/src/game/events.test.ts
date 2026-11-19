@@ -119,8 +119,22 @@ describe('describeEvent', () => {
     expect(describeEvent({ type: 'backstory', character: '甲' }).icon).toBe('backstory')
   })
 
-  test('eventsOf 保留金币数量', () => {
-    const msg = { id: 1, kind: 'event', meta: { events: [{ type: 'coins', character: '甲', amount: 60 }] } }
-    expect(eventsOf(msg)).toStrictEqual([{ type: 'coins', character: '甲', amount: 60 }])
+  test('eventsOf 保留金币数量与换算目标 need', () => {
+    const msg = {
+      id: 1,
+      kind: 'event',
+      meta: {
+        events: [
+          { type: 'coins', character: '甲', amount: 60 },
+          { type: 'dice', character: '甲', skill: '侦查', roll: 40, target: 60, need: 30, level: '困难', result: '失败' },
+        ],
+      },
+    }
+    expect(eventsOf(msg)).toStrictEqual([
+      { type: 'coins', character: '甲', amount: 60 },
+      { type: 'dice', character: '甲', skill: '侦查', roll: 40, target: 60, need: 30, level: '困难', result: '失败' },
+    ])
+    expect(view({ type: 'stat', character: '甲', field: 'luck', from: 50, to: 40 })).toBe('甲 幸运 50 → 40')
   })
 })
+

@@ -629,3 +629,44 @@ func TestApplyNPCStatUpdate_RaceBackToHuman_MaxSANRecomputed(t *testing.T) {
 		t.Errorf("SAN should be capped to 69, got %d", got)
 	}
 }
+
+func TestParseStateChange_Luck(t *testing.T) {
+	upd, errMsg, ok := parseStateChange("LUCK -7 (陈明)")
+	if !ok || errMsg != "" {
+		t.Fatalf("parse LUCK failed: ok=%v err=%q", ok, errMsg)
+	}
+	if upd.Field != "luck" || upd.Delta != -7 || upd.CharacterName != "陈明" {
+		t.Errorf("got %+v, want field=luck delta=-7 char=陈明", upd)
+	}
+
+	upd2, _, ok2 := parseStateChange("luck +12(陈明)")
+	if !ok2 || upd2.Field != "luck" || upd2.Delta != 12 {
+		t.Errorf("lowercase luck failed: ok=%v upd=%+v", ok2, upd2)
+	}
+}
+
+func TestApplyCharacterUpdate_LuckClamped(t *testing.T) {
+	initAgentTestDB(t)
+	card := newTestCard(t, "幸运测试", 25) // Luck starts at 50
+	players := []models.SessionPlayer{{CharacterCard: *card}}
+
+	applyCharacterUpdate(CharacterUpdate{CharacterName: card.Name, Field: "luck", Delta: -12}, players, 1)
+	var saved models.CharacterCard
+	models.DB.First(&saved, card.ID)
+	if saved.Stats.Data.Luck != 38 {
+		t.Fatalf("Luck = %d, want 38", saved.Stats.Data.Luck)
+	}
+
+	applyCharacterUpdate(CharacterUpdate{CharacterName: card.Name, Field: "luck", Delta: -100}, players, 1)
+	models.DB.First(&saved, card.ID)
+	if saved.Stats.Data.Luck != 0 {
+		t.Fatalf("Luck floor = %d, want 0", saved.Stats.Data.Luck)
+	}
+
+	applyCharacterUpdate(CharacterUpdate{CharacterName: card.Name, Field: "luck", Delta: 150}, players, 1)
+	models.DB.First(&saved, card.ID)
+	if saved.Stats.Data.Luck != 99 {
+		t.Fatalf("Luck cap = %d, want 99", saved.Stats.Data.Luck)
+	}
+}
+

@@ -471,3 +471,16 @@ func TestDiceEvent_NeedFollowsDifficulty(t *testing.T) {
 		t.Errorf("npc event = %+v, must not carry target or need", npc)
 	}
 }
+
+func TestCardStatEvents_LuckChange(t *testing.T) {
+	before := eventTestPlayers()[0].CharacterCard
+	before.Stats.Data.Luck = 55
+	after := before
+	after.Stats.Data.Luck = 48
+
+	evs := cardStatEvents(before, after)
+	if len(evs) != 1 || evs[0].Field != "luck" || *evs[0].From != 55 || *evs[0].To != 48 {
+		t.Fatalf("events = %+v, want single luck stat event 55 -> 48", evs)
+	}
+}
+

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Clock } from '@lucide/vue'
+import { Clock, Sparkles } from '@lucide/vue'
 import { computed } from 'vue'
 import type { CharacterCard } from '@/api/types'
 import StampBadge from '@/components/base/StampBadge.vue'
@@ -11,6 +11,7 @@ import type { TimePoint } from '@/game/roomState'
 // NOTE: 小屏专用的紧凑状态条；桌面端同样的信息在右侧栏里，由父级用 lg:hidden 隐藏本组件
 const props = defineProps<{ card: CharacterCard; flash: HudFlash; time: TimePoint | null }>()
 const chips = computed(() => hudChips(props.card))
+const hasLuck = computed(() => props.card.stats?.luck !== undefined)
 </script>
 
 <template>
@@ -21,6 +22,10 @@ const chips = computed(() => hudChips(props.card))
     <div class="hidden w-40 sm:block">
       <StatBar label="MP" tone="mp" :value="statNum(card, 'mp')" :max="statNum(card, 'max_mp')" />
     </div>
+    <span v-if="hasLuck" class="inline-flex items-center gap-1 text-xs tabular-nums text-fg-muted">
+      <Sparkles :size="14" :stroke-width="1.75" class="shrink-0 text-accent" />
+      幸运 <b class="font-medium text-fg">{{ statNum(card, 'luck') }}</b>
+    </span>
     <StampBadge v-for="chip in chips" :key="chip.text" tone="seal" :title="chip.title || undefined">{{ chip.text }}</StampBadge>
     <span v-if="time" class="ml-auto inline-flex items-center gap-1.5 text-xs tabular-nums text-fg-muted" :title="time.elapsed || undefined">
       <Clock :size="16" :stroke-width="1.75" class="shrink-0" />

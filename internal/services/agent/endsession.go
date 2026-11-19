@@ -25,8 +25,75 @@ const settlementBaseCoins = 20
 // NOTE: 克苏鲁神话和信用评级不靠使用成长，Director 填了也忽略。
 var growthExcludedSkills = map[string]bool{"克苏鲁神话": true, "信用评级": true}
 
-// NOTE: 结算时自动恢复的数值：HP 与 MP 回满，SAN 恢复 3D6。
+// NOTE: 结算时自动恢复的数值：HP 与 MP 回满，SAN 按结局或默认 3D6 结算。
 var settlementRestoredFields = map[string]bool{"hp": true, "mp": true, "san": true}
+
+var endingSANDicePattern = regexp.MustCompile(`(?i)(\d+\s*d\s*\d+(?:\s*[+-]\s*\d+)?|\d+)`)
+
+// parseEndingSANReward 解析结局条目里的 san_reward 文案（如 "恢复1d6"、"损失1d10"、"1D6+1"、"0"/"无"）。
+// 返回骰子表达式、符号(+1 恢复 / -1 损失 / 0 无变化)以及是否识别成功。
+func parseEndingSANReward(raw string) (expr string, sign int, ok bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", 0, false
+	}
+	switch s {
+	case "0", "0点", "无", "无恢复", "不恢复", "无变化", "无奖励":
+		return "0", 0, true
+	}
+	sign = 1
+	if strings.HasPrefix(s, "-") || strings.Contains(s, "损失") || strings.Contains(s, "扣除") || strings.Contains(s, "失去") || strings.Contains(s, "减少") {
+		sign = -1
+	}
+	m := endingSANDicePattern.FindString(s)
+	if m == "" {
+		return "", 0, false
+	}
+	clean := strings.ToUpper(strings.ReplaceAll(m, " ", ""))
+	if clean == "0" {
+		return "0", 0, true
+	}
+	return clean, sign, true
+}
+
+// resolveEndingSANReward 按 endingName（优先）或 endSummary 匹配模组里对应的 EndingData，
+// 解析其 SANReward；未匹配或未配置有效 SANReward 时返回 matched=false，由调用方回退到默认 3D6 恢复。
+func resolveEndingSANReward(scenario *models.Scenario, endingName, endSummary string) (matchedName, expr string, sign int, matched bool) {
+	if scenario == nil || len(scenario.Content.Data.Endings) == 0 {
+		return "", "", 0, false
+	}
+	endings := scenario.Content.Data.Endings
+	name := strings.TrimSpace(endingName)
+	if name != "" {
+		for _, e := range endings {
+			if strings.TrimSpace(e.Name) == name {
+				if ex, sg, ok := parseEndingSANReward(e.SANReward); ok {
+					return e.Name, ex, sg, true
+				}
+				return e.Name, "", 0, false
+			}
+		}
+	}
+	summary := strings.TrimSpace(endSummary)
+	if summary != "" {
+		bestIdx := -1
+		bestLen := 0
+		for i, e := range endings {
+			en := strings.TrimSpace(e.Name)
+			if en != "" && strings.Contains(summary, en) && len([]rune(en)) > bestLen {
+				bestIdx = i
+				bestLen = len([]rune(en))
+			}
+		}
+		if bestIdx >= 0 {
+			e := endings[bestIdx]
+			if ex, sg, ok := parseEndingSANReward(e.SANReward); ok {
+				return e.Name, ex, sg, true
+			}
+		}
+	}
+	return "", "", 0, false
+}
 
 // NOTE: 没有结算条目(手动结束)时 score 视为 0，只发基础金币。
 func (s PlayerSettlement) score() int {
@@ -113,6 +180,11 @@ func applySkillGrowth(card *models.CharacterCard, skills []string) []models.Game
 // 返回玩家可见的结算事件（金币、技能成长、数值恢复、疯狂解除、经历改写），结算失败时为空。
 // 调用方保证 session 已预加载 Players 和 CharacterCard。
 func RunEndSession(ctx context.Context, session *models.GameSession, messages []models.Message, win bool, settlement []PlayerSettlement) ([]models.GameEvent, error) {
+	return RunEndSessionWithEnding(ctx, session, messages, win, settlement, "", "")
+}
+
+// RunEndSessionWithEnding 在 RunEndSession 的基础上按触发结局应用模组定义的 SAN 奖惩（匹配不到时回退 3D6 恢复）。
+func RunEndSessionWithEnding(ctx context.Context, session *models.GameSession, messages []models.Message, win bool, settlement []PlayerSettlement, endingName, endSummary string) ([]models.GameEvent, error) {
 	defer deleteCachedAgents(session.ID)
 	stripMessageImageDataURLTags(messages)
 
@@ -135,6 +207,8 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 	for _, s := range settlement {
 		settlementByChar[s.CharacterName] = s
 	}
+
+	endingMatchedName, sanExpr, sanSign, hasEndingSAN := resolveEndingSANReward(&session.Scenario, endingName, endSummary)
 
 	var events []models.GameEvent
 	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
@@ -171,6 +245,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 
 			// NOTE: 失败没有角色成长：技能成长和 POW 增长只在 win=true 时执行。
 			powGrowth := false
+			luckGrowth := false
 			if win {
 				events = append(events, applySkillGrowth(card, s.Skills)...)
 
@@ -190,6 +265,7 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 
 			// 撕卡:死亡的调查员失活。
 			newBackstory := ""
+			sanDetail := "结算恢复"
 			if card.WoundState == "dead" || card.Stats.Data.HP <= 0 {
 				card.IsActive = false
 			} else {
@@ -199,7 +275,28 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 				card.Stats.Data.HP = card.Stats.Data.MaxHP
 				card.Stats.Data.MP = card.Stats.Data.MaxMP
 				if card.Stats.Data.SAN > 0 {
-					card.Stats.Data.SAN = clamp(card.Stats.Data.SAN+game.RollDiceExpr("3D6"), card.Stats.Data.SAN, card.Stats.Data.MaxSAN)
+					if hasEndingSAN {
+						switch {
+						case sanSign > 0:
+							gain := game.RollDiceExpr(sanExpr)
+							card.Stats.Data.SAN = clamp(card.Stats.Data.SAN+gain, card.Stats.Data.SAN, card.Stats.Data.MaxSAN)
+							sanDetail = fmt.Sprintf("结局理智奖励（%s）", endingMatchedName)
+						case sanSign < 0:
+							loss := game.RollDiceExpr(sanExpr)
+							card.Stats.Data.SAN = clamp(card.Stats.Data.SAN-loss, 0, card.Stats.Data.MaxSAN)
+							sanDetail = fmt.Sprintf("结局理智损失（%s）", endingMatchedName)
+						default:
+							sanDetail = fmt.Sprintf("结局理智结算（%s）", endingMatchedName)
+						}
+					} else {
+						card.Stats.Data.SAN = clamp(card.Stats.Data.SAN+game.RollDiceExpr("3D6"), card.Stats.Data.SAN, card.Stats.Data.MaxSAN)
+					}
+				}
+				// NOTE: COC7 通关后幸运恢复检定：d100 大于当前幸运则恢复 1D10（上限 99）。
+				if win && card.Stats.Data.Luck < 99 && game.RollD100() > card.Stats.Data.Luck {
+					gain, _ := game.Roll(1, 10)
+					card.Stats.Data.Luck = clamp(card.Stats.Data.Luck+gain, 0, 99)
+					luckGrowth = true
 				}
 				card.WoundState = "none"
 				card.IsUnconscious = false
@@ -216,10 +313,15 @@ func RunEndSession(ctx context.Context, session *models.GameSession, messages []
 				if statEvents[i].Type != "stat" {
 					continue
 				}
-				if settlementRestoredFields[statEvents[i].Field] {
+				switch {
+				case statEvents[i].Field == "san":
+					statEvents[i].Detail = sanDetail
+				case settlementRestoredFields[statEvents[i].Field]:
 					statEvents[i].Detail = "结算恢复"
-				} else if statEvents[i].Field == "pow" && powGrowth {
+				case statEvents[i].Field == "pow" && powGrowth:
 					statEvents[i].Detail = "通关后意志增长检定通过"
+				case statEvents[i].Field == "luck" && luckGrowth:
+					statEvents[i].Detail = "通关后幸运恢复检定通过"
 				}
 			}
 			events = append(events, statEvents...)

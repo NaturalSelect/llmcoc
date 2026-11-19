@@ -208,7 +208,7 @@ func updateCharactersTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolUpdateCharacters),
-			Description: `批量更新一个或多个调查员的属性/状态数值(HP、MP、SAN、临时状态等)，每条 change 为一行"字段 数值变化 (角色名)"格式的自然语言描述，例如"HP -3 (约翰)"、"SAN -1D6 (艾琳)"。SAN 单次损失需注意触发疯狂检查条件。
+			Description: `批量更新一个或多个调查员的属性/状态数值(HP、MP、SAN、LUCK、临时状态等)，每条 change 为一行"字段 数值变化 (角色名)"格式的自然语言描述，例如"HP -3 (约翰)"、"SAN -1D6 (艾琳)"、"LUCK -5 (约翰)"。SAN 单次损失需注意触发疯狂检查条件。
 调用示例：{"changes":["HP -3 (约翰)","SAN -2 (艾琳)"]}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
@@ -354,6 +354,7 @@ settlement 是本局的结算，必须为每位调查员(包括已死亡或疯�
 				"type": "object",
 				"properties": {
 					"win": {"type": "boolean", "description": "是否胜利结束"},
+					"ending_name": {"type": "string", "description": "触发的<endings>中的结局名称(可选，尽量与剧本结局名完全一致，便于结算发放对应SAN奖惩)"},
 					"end_summary": {"type": "string", "description": "结局总结(必填)：须说明触发的具体结局名称及其Trigger条件如何被满足"},
 					"settlement": {
 						"type": "array",

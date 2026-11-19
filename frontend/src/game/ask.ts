@@ -1,4 +1,6 @@
 // NOTE: 点名问题卡的纯逻辑。状态（勾选、修改中、输入内容）放在调用方持有的 AskDraft 里，这里的函数只读 room 和 draft，不碰 DOM
+import type { CharacterCard } from '@/api/types'
+import { eventsOf } from './events'
 import * as RS from './roomState'
 import type { Room } from './roomState'
 
@@ -126,4 +128,111 @@ export function insertDialogueQuotes(
     value: value.slice(0, start) + '「' + selected + '」' + value.slice(end),
     caret: selected ? end + 2 : start + 1,
   }
+}
+
+export interface BurnableCheck {
+  skill: string
+  roll: number
+  need: number
+  target: number
+  level?: string
+  cost: number
+  affordable: boolean
+  pushable: boolean
+}
+
+const NON_BURNABLE_SKILLS = ['理智', 'san', '幸运', 'luck']
+const COMBAT_SKILL_HINTS = ['格斗', '斗殴', '射击', '闪避', '反击', '手枪', '步枪', '霰弹枪', '投掷', '弓箭', '近战']
+
+function matchesAnyKeyword(skill: string, keywords: string[]): boolean {
+  const s = skill.trim().toLowerCase()
+  return keywords.some((k) => s.includes(k))
+}
+
+// NOTE: 扫描最近一次玩家行动之后的 KP 结算事件，找出本调查员最近一次可燃烧幸运的失败检定（不含大失败、理智、幸运和已扣幸运后的检定）。
+export function findBurnableFailedCheck(
+  room: Room | null,
+  charName: string | undefined,
+  currentLuck: number,
+): BurnableCheck | null {
+  if (!askOpen(room) || !charName) return null
+  let luckSpentAfter = false
+  for (let i = room.messages.length - 1; i >= 0; i--) {
+    const msg = room.messages[i]
+    if (msg.kind === 'player') break
+    if (msg.kind !== 'event') continue
+    const evs = eventsOf(msg)
+    for (let j = evs.length - 1; j >= 0; j--) {
+      const ev = evs[j]
+      if (ev.type === 'stat' && ev.field === 'luck' && ev.character === charName && typeof ev.from === 'number' && typeof ev.to === 'number' && ev.to < ev.from) {
+        luckSpentAfter = true
+        continue
+      }
+      if (ev.type !== 'dice' || ev.hidden || ev.character !== charName) continue
+      if (ev.result !== '失败' || !ev.skill) continue
+      if (matchesAnyKeyword(ev.skill, NON_BURNABLE_SKILLS)) continue
+      const need = typeof ev.need === 'number' && ev.need > 0 ? ev.need : ev.target || 0
+      const roll = ev.roll || 0
+      if (need <= 0 || roll <= need) continue
+      if (luckSpentAfter) return null
+      const cost = roll - need
+      return {
+        skill: ev.skill,
+        roll,
+        need,
+        target: ev.target || need,
+        level: ev.level,
+        cost,
+        affordable: currentLuck >= cost,
+        pushable: !matchesAnyKeyword(ev.skill, COMBAT_SKILL_HINTS),
+      }
+    }
+  }
+  return null
+}
+
+export interface QuickSkill {
+  name: string
+  value: number
+}
+
+export interface QuickItem {
+  name: string
+  desc: string
+  count: number
+  equipped: boolean
+}
+
+export function quickCharacterSkills(card: CharacterCard | null | undefined, minVal = 30): QuickSkill[] {
+  const raw = (card as { skills?: Record<string, unknown> } | null | undefined)?.skills
+  if (!raw || typeof raw !== 'object') return []
+  const list: QuickSkill[] = []
+  for (const [name, val] of Object.entries(raw)) {
+    const num = Number(val)
+    if (Number.isFinite(num) && num >= minVal) list.push({ name, value: num })
+  }
+  list.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, 'zh-Hans-CN'))
+  return list
+}
+
+export function quickCharacterItems(card: CharacterCard | null | undefined): QuickItem[] {
+  const raw = (card as { inventory?: unknown } | null | undefined)?.inventory
+  if (!Array.isArray(raw)) return []
+  const list: QuickItem[] = []
+  for (const entry of raw) {
+    if (typeof entry === 'string' && entry.trim()) {
+      list.push({ name: entry.trim(), desc: '', count: 1, equipped: false })
+    } else if (entry && typeof entry === 'object') {
+      const obj = entry as { name?: unknown; desc?: unknown; count?: unknown; equipped?: unknown }
+      const name = String(obj.name ?? '').trim()
+      if (!name) continue
+      list.push({
+        name,
+        desc: String(obj.desc ?? '').trim(),
+        count: Number(obj.count) || 1,
+        equipped: Boolean(obj.equipped),
+      })
+    }
+  }
+  return list
 }
