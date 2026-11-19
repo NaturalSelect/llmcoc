@@ -64,6 +64,16 @@ export interface Waiting {
   pendingNames: string[]
 }
 
+export interface OocMessage {
+  id: number
+  session_id?: number
+  user_id: number
+  username: string
+  character_name?: string
+  content: string
+  created_at?: string
+}
+
 export interface Room {
   sessionId: number | undefined
   userId: number | string | undefined
@@ -76,6 +86,8 @@ export interface Room {
   messages: RoomMessage[]
   byId: Record<number, RoomMessage>
   streams: Record<number, WriterStream>
+  ooc: OocMessage[]
+  oocUnread: number
   floor: { running: boolean; number: number; starting: boolean; startedAt: number }
   spotlight: Spotlight
   waiting: Waiting
@@ -175,6 +187,8 @@ export function newRoom(opts?: NewRoomOptions): Room {
     messages: [],
     byId: {},
     streams: {},
+    ooc: [],
+    oocUnread: 0,
     floor: { running: false, number: 0, starting: false, startedAt: 0 },
     spotlight: { userIds: [], names: [], question: '', kpFloor: false, askedMe: false, stop: '' },
     waiting: { pending: 0, total: 0, submittedNames: [], pendingNames: [] },
@@ -386,6 +400,25 @@ function setWaiting(room: Room, src: WaitingSource): void {
   })
 }
 
+function onOocMessage(room: Room, d: FrameData): void {
+  const id = Number(d.id)
+  if (!Number.isFinite(id)) return
+  if (room.ooc.some((m) => m.id === id)) return
+  const msg: OocMessage = {
+    id,
+    session_id: d.session_id != null ? Number(d.session_id) : undefined,
+    user_id: Number(d.user_id) || 0,
+    username: typeof d.username === 'string' ? d.username : '',
+    character_name: typeof d.character_name === 'string' && d.character_name ? d.character_name : undefined,
+    content: typeof d.content === 'string' ? d.content : '',
+    created_at: typeof d.created_at === 'string' ? d.created_at : undefined,
+  }
+  let i = room.ooc.length
+  while (i > 0 && room.ooc[i - 1].id > id) i--
+  room.ooc.splice(i, 0, msg)
+  if (!sameId(msg.user_id, room.userId)) room.oocUnread += 1
+}
+
 export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined): Effect[] {
   const effects: Effect[] = []
   if (!frame || typeof frame.type !== 'string') return effects
@@ -405,6 +438,9 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
       break
     case 'message_update':
       onMessageUpdate(room, d)
+      break
+    case 'ooc_message':
+      onOocMessage(room, d)
       break
     case 'illustration':
       onIllustration(room, d)

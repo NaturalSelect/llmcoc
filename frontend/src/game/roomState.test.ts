@@ -1037,6 +1037,16 @@ describe('roomState', () => {
     expect(RS.parseTimePoint(null)).toBeNull()
   })
 
+  test('ooc_message 帧：按 id 排序去重，他人消息累加未读、自己消息不加未读', () => {
+    const room = liveRoom({ seq: 10, userId: 3 })
+    feed(room, F(11, 'ooc_message', { id: 2, user_id: 4, username: 'bob', character_name: '鲍勃', content: '先查书房' }))
+    feed(room, F(12, 'ooc_message', { id: 1, user_id: 3, username: 'me', character_name: '艾米', content: '收到' }))
+    feed(room, F(13, 'ooc_message', { id: 2, user_id: 4, username: 'bob', content: '重复' }))
+    expect(room.ooc.map((m) => m.id)).toStrictEqual([1, 2])
+    expect(room.ooc[1].character_name).toBe('鲍勃')
+    expect(room.oocUnread).toBe(1)
+  })
+
   test('模块导出的 API 清单', () => {
     expect(Object.keys(RS).sort()).toStrictEqual([
       'acceptFrame',

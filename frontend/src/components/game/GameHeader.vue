@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Ellipsis, IdCard, LogOut, Play, RotateCcw, Square, UserPlus, Users } from '@lucide/vue'
+import { ArrowLeft, Ellipsis, IdCard, LogOut, MessageCircle, Play, RotateCcw, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Session } from '@/api/types'
@@ -13,8 +13,10 @@ const props = defineProps<{
   session: Session
   user: { id: number; role: string } | null
   busy: { leaving: boolean; ending: boolean; reviving: boolean }
+  soundEnabled?: boolean
+  oocUnread?: number
 }>()
-const emit = defineEmits<{ action: [action: Action] }>()
+const emit = defineEmits<{ action: [action: Action]; toggleSound: []; openOoc: [] }>()
 
 const menuOpen = ref(false)
 const menuRoot = ref<HTMLElement | null>(null)
@@ -84,6 +86,33 @@ onBeforeUnmount(() => {
     <StampBadge class="shrink-0" :tone="session.status === 'playing' ? 'moss' : session.status === 'lobby' ? 'ledger' : 'faint'">
       {{ statusLabel(session.status) }}
     </StampBadge>
+
+    <button
+      type="button"
+      class="relative inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-fg-subtle transition hover:bg-surface-2 hover:text-fg lg:hidden"
+      aria-label="打开桌边讨论"
+      title="桌边讨论"
+      @click="emit('openOoc')"
+    >
+      <MessageCircle :size="16" :stroke-width="1.75" />
+      <span
+        v-if="(oocUnread ?? 0) > 0"
+        class="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-accent"
+        aria-hidden="true"
+      />
+    </button>
+
+    <button
+      type="button"
+      class="inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-fg-subtle transition hover:bg-surface-2 hover:text-fg"
+      :aria-pressed="soundEnabled !== false"
+      aria-label="回合提示音开关"
+      :title="soundEnabled !== false ? '已开启点名提示音（点击静音）' : '已静音点名提示音（点击开启）'"
+      @click="emit('toggleSound')"
+    >
+      <Volume2 v-if="soundEnabled !== false" :size="16" :stroke-width="1.75" class="text-accent" />
+      <VolumeX v-else :size="16" :stroke-width="1.75" />
+    </button>
 
     <div class="hidden shrink-0 items-center gap-2 sm:flex">
       <BaseButton v-for="a in actions" :key="a.key" size="sm" :variant="variantOf[a.tone]" :disabled="a.disabled" @click="run(a.key)">

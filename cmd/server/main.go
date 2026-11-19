@@ -285,6 +285,8 @@ func main() {
 		sessions.POST("/:id/favorite", handlers.FavoriteSession)
 		sessions.DELETE("/:id/favorite", handlers.UnfavoriteSession)
 		sessions.GET("/:id/messages", handlers.GetMessages)
+		sessions.GET("/:id/ooc", handlers.GetOOCMessages)
+		sessions.POST("/:id/ooc", handlers.PostOOCMessage)
 		sessions.GET("/:id/chat-status", sh.GetChatStatus)
 		sessions.POST("/:id/chat", sh.ChatStream)
 		sessions.POST("/:id/kp-turn", sh.KPTurn)

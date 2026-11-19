@@ -59,6 +59,7 @@ func InitDB() error {
 		&SessionNPC{},
 		&SessionNPCMemory{},
 		&SessionTurnAction{},
+		&SessionOOCMessage{},
 		&Message{},
 		&ShopItem{},
 		&Transaction{},

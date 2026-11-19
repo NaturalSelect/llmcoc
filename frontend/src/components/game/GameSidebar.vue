@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, Clock, Lock, Sparkles } from '@lucide/vue'
+import { ChevronDown, Clock, Lock, MapPin, MessageCircle, Sparkles, Users } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { CharacterCard, Session, SessionPlayer } from '@/api/types'
@@ -8,9 +8,10 @@ import SectionHeading from '@/components/base/SectionHeading.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import StatBar from '@/components/base/StatBar.vue'
 import { portraitSrc } from '@/components/character/characterLogic'
+import TableTalkPanel from '@/components/game/TableTalkPanel.vue'
 import { playerTurnSubmitState } from '@/game/banner'
 import type { HudFlash } from '@/game/hud'
-import { hudChips, statNum, statusLabel } from '@/game/hud'
+import { hudChips, isInSession, statNum, statusLabel } from '@/game/hud'
 import type { Room, TimePoint } from '@/game/roomState'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
@@ -29,6 +30,7 @@ const emit = defineEmits<{ select: [player: SessionPlayer]; refresh: [] }>()
 const auth = useAuthStore()
 const ui = useUiStore()
 
+const activeTab = ref<'status' | 'ooc'>('status')
 const chips = computed(() => hudChips(props.card))
 const hasLuck = computed(() => props.card?.stats?.luck !== undefined)
 const occupation = computed(() => (props.card as { occupation?: string } | null)?.occupation || '未知职业')
@@ -36,6 +38,9 @@ const portrait = computed(() => portraitSrc(props.card as { portrait_hash?: stri
 const players = computed(() => props.session?.players ?? [])
 const me = computed(() => players.value.find((p) => p.user_id === props.userId) ?? null)
 const mySecret = computed(() => me.value?.secret_background || '')
+const canPostOoc = computed(() =>
+  Boolean(props.session && (isInSession(props.session, props.userId) || props.session.created_by === props.userId || auth.isAdmin)),
+)
 const canEditSecret = computed(() => {
   if (!me.value || !props.session) return false
   if (props.session.status === 'lobby') return true
@@ -48,6 +53,7 @@ const statusTone = computed(() => {
   const status = props.session?.status
   return status === 'playing' ? 'moss' : status === 'lobby' ? 'ledger' : 'faint'
 })
+const oocUnread = computed(() => props.room?.oocUnread ?? 0)
 
 const secretOpen = ref(false)
 const secretEditing = ref(false)
@@ -57,6 +63,7 @@ const secretSaving = ref(false)
 watch(
   () => props.session?.id,
   () => {
+    activeTab.value = 'status'
     secretOpen.value = false
     secretEditing.value = false
   },
@@ -91,11 +98,41 @@ function playerName(p: SessionPlayer): string {
 function playerOccupation(p: SessionPlayer): string {
   return (p.character_card as { occupation?: string } | null | undefined)?.occupation || '未知职业'
 }
+function playerPublicChips(p: SessionPlayer) {
+  return hudChips(p.character_card ?? null)
+}
 </script>
 
 <template>
   <aside aria-label="房间信息">
-    <div class="space-y-8 p-5">
+    <div class="flex shrink-0 border-b border-line px-2 pt-2">
+      <button
+        type="button"
+        class="inline-flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2 text-xs font-medium transition"
+        :class="activeTab === 'status' ? 'border-accent text-fg' : 'border-transparent text-fg-subtle hover:text-fg'"
+        @click="activeTab = 'status'"
+      >
+        <Users :size="14" :stroke-width="1.75" class="shrink-0" />
+        状态
+      </button>
+      <button
+        type="button"
+        class="inline-flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2 text-xs font-medium transition"
+        :class="activeTab === 'ooc' ? 'border-accent text-fg' : 'border-transparent text-fg-subtle hover:text-fg'"
+        @click="activeTab = 'ooc'"
+      >
+        <MessageCircle :size="14" :stroke-width="1.75" class="shrink-0" />
+        桌边讨论
+        <span
+          v-if="oocUnread > 0 && activeTab !== 'ooc'"
+          class="inline-flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-xs font-semibold tabular-nums text-bg"
+        >
+          {{ oocUnread > 99 ? '99+' : oocUnread }}
+        </span>
+      </button>
+    </div>
+
+    <div v-show="activeTab === 'status'" class="min-h-0 flex-1 space-y-8 overflow-y-auto p-5">
       <section v-if="card || time" class="space-y-4">
         <template v-if="card">
           <div class="flex min-w-0 items-center gap-3">
@@ -178,16 +215,27 @@ function playerOccupation(p: SessionPlayer): string {
           <li v-for="p in players" :key="p.user_id">
             <button
               type="button"
-              class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              class="flex w-full flex-col gap-1 rounded-lg px-2 py-2 text-left transition hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               @click="emit('select', p)"
             >
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-medium text-fg">{{ playerName(p) }}</span>
-                <span class="block truncate text-xs text-fg-subtle">{{ playerOccupation(p) }}</span>
-              </span>
-              <StampBadge v-if="playerTurnSubmitState(room, p) === 'submitted'" class="shrink-0" tone="moss">已提交</StampBadge>
-              <StampBadge v-else-if="playerTurnSubmitState(room, p) === 'pending'" class="shrink-0" tone="faint">待提交</StampBadge>
-              <StampBadge v-if="p.user_id === userId" class="shrink-0" tone="seal">你</StampBadge>
+              <div class="flex w-full items-center gap-2">
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-sm font-medium text-fg">{{ playerName(p) }}</span>
+                  <span class="block truncate text-xs text-fg-subtle">{{ playerOccupation(p) }}</span>
+                </span>
+                <StampBadge v-if="playerTurnSubmitState(room, p) === 'submitted'" class="shrink-0" tone="moss">已提交</StampBadge>
+                <StampBadge v-else-if="playerTurnSubmitState(room, p) === 'pending'" class="shrink-0" tone="faint">待提交</StampBadge>
+                <StampBadge v-if="p.user_id === userId" class="shrink-0" tone="seal">你</StampBadge>
+              </div>
+              <div v-if="p.location || playerPublicChips(p).length" class="flex flex-wrap items-center gap-1.5">
+                <span v-if="p.location" class="inline-flex max-w-full items-center gap-1 truncate text-xs text-fg-muted">
+                  <MapPin :size="12" :stroke-width="1.75" class="shrink-0 text-fg-subtle" />
+                  <span class="truncate">{{ p.location }}</span>
+                </span>
+                <StampBadge v-for="chip in playerPublicChips(p)" :key="chip.text" tone="seal" :title="chip.title || undefined">
+                  {{ chip.text }}
+                </StampBadge>
+              </div>
             </button>
           </li>
         </ul>
@@ -201,5 +249,14 @@ function playerOccupation(p: SessionPlayer): string {
         </div>
       </section>
     </div>
+
+    <TableTalkPanel
+      v-show="activeTab === 'ooc'"
+      :session="session"
+      :room="room"
+      :user-id="userId"
+      :can-post="canPostOoc"
+      :active="activeTab === 'ooc'"
+    />
   </aside>
 </template>

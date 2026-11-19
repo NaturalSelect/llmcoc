@@ -25,6 +25,7 @@ var sessionChildTables = []any{
 	&models.SessionNPC{},
 	&models.SessionNPCMemory{},
 	&models.SessionTurnAction{},
+	&models.SessionOOCMessage{},
 	&models.AgentTranscript{},
 	&models.GameEvaluation{},
 }

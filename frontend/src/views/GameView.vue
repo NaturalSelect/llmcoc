@@ -6,6 +6,7 @@ import { api, postForm } from '@/api/client'
 import { getToken } from '@/api/token'
 import type { CharacterCardFull } from '@/api/characterTypes'
 import type { CharacterCard, Session, SessionPlayer } from '@/api/types'
+import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import CharacterDetailModal from '@/components/character/CharacterDetailModal.vue'
 import AskCard from '@/components/game/AskCard.vue'
@@ -16,6 +17,7 @@ import ImagePreview from '@/components/game/ImagePreview.vue'
 import InvestigatorListModal from '@/components/game/InvestigatorListModal.vue'
 import MessageItem from '@/components/game/MessageItem.vue'
 import StatusDock from '@/components/game/StatusDock.vue'
+import TableTalkPanel from '@/components/game/TableTalkPanel.vue'
 import JoinSessionModal from '@/components/session/JoinSessionModal.vue'
 import { askAnchor, askView, createAskDraft, resetAskDraft, resetDraftOnFrame } from '@/game/ask'
 import { showWaiting } from '@/game/banner'
@@ -24,6 +26,7 @@ import type { HudFlash, HudSnapshot } from '@/game/hud'
 import { currentGameTime } from '@/game/messages'
 import { createRoomController } from '@/game/roomController'
 import type { Frame } from '@/game/roomState'
+import { formatTurnTitle, loadTurnSoundPref, playTurnChime, saveTurnSoundPref } from '@/game/turnAlert'
 import { useAuthStore } from '@/stores/auth'
 import { useCharactersStore } from '@/stores/characters'
 import { useUiStore } from '@/stores/ui'
@@ -41,11 +44,14 @@ const draft = reactive(createAskDraft())
 const chatBox = ref<HTMLElement | null>(null)
 const investigatorsOpen = ref(false)
 const joinOpen = ref(false)
+const oocOpen = ref(false)
+const soundEnabled = ref(loadTurnSoundPref())
 const previewSrc = ref('')
 // NOTE: 点开的人物卡，由 CharacterDetailModal 展示；游戏页的 CharacterCard 类型只列了部分字段，弹窗要求完整卡类型（字段全为可选）
 const viewCard = ref<CharacterCardFull | null>(null)
 const busy = reactive({ leaving: false, ending: false, reviving: false })
 const hudFlash = ref<HudFlash>(NO_FLASH)
+const originalTitle = typeof document !== 'undefined' ? document.title : ''
 
 let hudLast: HudSnapshot | null = null
 let flashTimer: ReturnType<typeof setTimeout> | null = null
@@ -147,6 +153,29 @@ watch(asking, (v) => {
   if (v === 'card') void nextTick(() => scrollChat())
 })
 
+const canPostOoc = computed(() =>
+  Boolean(session.value && (isInSession(session.value, auth.user?.id) || session.value.created_by === auth.user?.id || auth.isAdmin)),
+)
+
+function toggleSound() {
+  soundEnabled.value = !soundEnabled.value
+  saveTurnSoundPref(soundEnabled.value)
+}
+
+watch(
+  () => [Boolean(room.value?.spotlight.askedMe && room.value?.status === 'playing'), (session.value?.name as string) || ''] as const,
+  ([myTurn, sessionName], prev) => {
+    if (typeof document !== 'undefined') {
+      const base = sessionName ? `${sessionName} · LLM-COC` : originalTitle
+      document.title = formatTurnTitle(base, myTurn)
+    }
+    const wasMyTurn = prev ? prev[0] : false
+    if (myTurn && !wasMyTurn && soundEnabled.value) {
+      playTurnChime()
+    }
+  },
+)
+
 watch(
   () => route.params.id,
   (id, old) => {
@@ -162,6 +191,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   controller.leave()
   if (flashTimer) clearTimeout(flashTimer)
+  if (typeof document !== 'undefined' && originalTitle) document.title = originalTitle
 })
 
 function errMsg(e: unknown): string {
@@ -262,7 +292,17 @@ defineExpose({ viewCard })
   <div class="flex min-h-0 flex-1 overflow-hidden bg-bg">
     <div class="mx-auto flex min-h-0 w-full max-w-7xl">
       <section class="flex min-h-0 min-w-0 flex-1 flex-col">
-        <GameHeader v-if="session" :session="session" :user="user" :busy="busy" @action="onAction" />
+        <GameHeader
+          v-if="session"
+          :session="session"
+          :user="user"
+          :busy="busy"
+          :sound-enabled="soundEnabled"
+          :ooc-unread="room?.oocUnread ?? 0"
+          @action="onAction"
+          @toggle-sound="toggleSound"
+          @open-ooc="oocOpen = true"
+        />
         <GameHud v-if="card" class="lg:hidden" :card="card" :flash="hudFlash" :time="gameTime" />
 
         <div ref="chatBox" class="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="off" @scroll.passive="onChatScroll">
@@ -298,7 +338,7 @@ defineExpose({ viewCard })
       </section>
 
       <GameSidebar
-        class="hidden w-80 shrink-0 flex-col overflow-y-auto border-l border-line bg-surface lg:flex"
+        class="hidden w-80 shrink-0 flex-col overflow-hidden border-l border-line bg-surface lg:flex"
         :session="session"
         :room="room"
         :card="card"
@@ -320,6 +360,11 @@ defineExpose({ viewCard })
       @select="onSelectPlayer"
       @join="openJoinFromList"
     />
+    <BaseModal :open="oocOpen" title="桌边讨论" max-width="max-w-md" @close="oocOpen = false">
+      <div class="-mx-5 -mb-5 flex h-96 flex-col">
+        <TableTalkPanel :session="session" :room="room" :user-id="auth.user?.id" :can-post="canPostOoc" :active="oocOpen" />
+      </div>
+    </BaseModal>
     <JoinSessionModal :open="joinOpen" :session="session" @close="joinOpen = false" @joined="controller.refreshSession()" />
     <ImagePreview :src="previewSrc" @close="previewSrc = ''" />
     <CharacterDetailModal :open="viewCard !== null" :card="viewCard" @close="viewCard = null" @portrait="controller.refreshSession()" />

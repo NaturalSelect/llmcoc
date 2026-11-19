@@ -543,6 +543,17 @@ type SessionFavorite struct {
 	Session   GameSession `gorm:"foreignKey:SessionID" json:"-"`
 }
 
+// SessionOOCMessage 记录房间内的桌边闲聊(OOC)消息，仅用于玩家间交流，不会进入 KP 叙事历史或触发导演周期。
+type SessionOOCMessage struct {
+	ID            uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID     uint      `gorm:"not null;index" json:"session_id"`
+	UserID        uint      `gorm:"not null" json:"user_id"`
+	Username      string    `gorm:"size:100" json:"username"`
+	CharacterName string    `gorm:"size:100" json:"character_name,omitempty"`
+	Content       string    `gorm:"type:text;not null" json:"content"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type MessageRole string
 
 const (
