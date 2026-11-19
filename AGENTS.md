@@ -40,6 +40,7 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - 只有 `AutoMigrate`，没有迁移文件。新增列需要回填旧数据时，参照 `with_jailbreak`：迁移前用 `Migrator().HasColumn` 记下列是否存在，迁移后回填。新增模型要加进 `InitDB` 的 AutoMigrate 列表。
 - 人物卡 `Inventory` 和账号 `Warehouse` 存的是 `[]models.Item`（名称、描述、数量、类型）。库里历史上存的是 `"绷带(x3)"` 这样的字符串：`Item.UnmarshalJSON` 同时接受字符串和对象，`InitDB` 里的 `backfillLegacyItems` 把旧行改写成对象数组（可重复执行）。写入一律走 `models.AddItem` / `TakeItem`，堆叠键是名称加描述。回填后旧二进制读不了这两列，回滚只能恢复库备份。
 - 管理员不会自动创建：注册后用 `sqlite3 data/llmcoc.db "update users set role='admin' where username='...'"`。
+- 拍卖行（`handlers/auction.go`、`models/auction.go`）是一口价挂单，物品只来自账号 `Warehouse`：上架时物品从仓库移出，由 `AuctionListing` 行托管，成交进买家仓库，下架退回卖家仓库。购买事务里第一条写语句必须是对挂单的条件 UPDATE（`status='active'` 才命中），它保证同一张挂单只成交一次，也让 SQLite 先拿写锁，后面对仓库 JSON 的读改写不会读到过期值；金币只用 `coins = coins ± ?` 的条件 UPDATE，不要像商城 `PurchaseItem` 那样先读余额再写绝对值。仓库列只用 `Update("warehouse", …)` 写，不要在这里 `Save` 整个 `User`。没有手续费、数量上限和过期时间，要加时在站点设置里新增 key。
 - `scenarios/` 目录不在仓库中。`handlers.SeedScenarios("scenarios")` 在目录缺失或库里已有模组时静默返回。
 
 ## 架构

@@ -9,6 +9,7 @@
 - 剧本系统：剧本列表、详情、模板下载、上传与 AI 生成（管理员）。
 - 房间与会话：创建房间、加入房间、开局、聊天与消息记录。
 - 商店系统：商品列表、购买、交易记录、金币充值（管理员）。
+- 拍卖行：玩家把仓库里的物品一口价上架，其他玩家用金币整单买下，卖家可随时下架。
 - 公告系统：首页展示当前有效公告，支持置顶、有效期、Markdown 正文（管理员维护）。
 - 管理后台接口：
   - 用户与权限管理。
@@ -177,6 +178,12 @@ sqlite3 data/llmcoc.db "update users set role='admin' where username='your_usern
   - `GET /shop/items`
   - `POST /shop/purchase`
   - `GET /shop/transactions`
+- 拍卖行（一口价，物品来自账号仓库）：
+  - `GET /auction/listings?q=&type=&sort=&page=&page_size=`：在售挂单，`sort` 取 `newest`（默认）、`price_asc`、`price_desc`
+  - `GET /auction/mine?status=&page=&page_size=`：自己的挂单，`status` 取 `active`、`sold`、`cancelled`
+  - `POST /auction/listings`：请求体 `{"item": {"name", "desc"}, "count", "price"}`，物品立即从仓库移出，`price` 是整单总价
+  - `POST /auction/listings/:id/buy`：买下整张挂单，金币不足返回 402，已被买走或已下架返回 409
+  - `DELETE /auction/listings/:id`：下架自己的在售挂单，物品退回仓库
 - 公告：
   - `GET /announcements`（登录用户可读，只返回当前启用且在有效期内的公告）
 - 管理：

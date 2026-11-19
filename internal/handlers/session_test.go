@@ -62,6 +62,7 @@ func initTestDB(t *testing.T) {
 		&models.ShopItem{},
 		&models.Transaction{},
 		&models.CoinRecharge{},
+		&models.AuctionListing{},
 		&models.SiteSetting{},
 		&models.InviteCode{},
 		&models.Announcement{},

@@ -314,6 +314,16 @@ func main() {
 	// NOTE: 费率公开接口，无需鉴权，供前端页面初始化时读取
 	api.GET("/shop/costs", handlers.GetShopCosts)
 
+	// Auction house (player-to-player, fixed price)
+	auction := api.Group("/auction", middleware.AuthRequired(), middleware.BanCheck())
+	{
+		auction.GET("/listings", handlers.ListAuctionListings)
+		auction.GET("/mine", handlers.ListMyAuctionListings)
+		auction.POST("/listings", handlers.CreateAuctionListing)
+		auction.POST("/listings/:id/buy", handlers.BuyAuctionListing)
+		auction.DELETE("/listings/:id", handlers.CancelAuctionListing)
+	}
+
 	// Announcements（首页公告，登录用户可读）
 	api.GET("/announcements", middleware.AuthRequired(), middleware.BanCheck(), handlers.ListAnnouncements)
 

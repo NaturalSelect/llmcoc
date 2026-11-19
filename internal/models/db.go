@@ -67,6 +67,7 @@ func InitDB() error {
 		&ShopItem{},
 		&Transaction{},
 		&CoinRecharge{},
+		&AuctionListing{},
 		&LLMProviderConfig{},
 		&AgentConfig{},
 		&GameEvaluation{},

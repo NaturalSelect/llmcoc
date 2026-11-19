@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { BookOpen, Coins, LayoutDashboard, LogOut, ShieldCheck, ShoppingBag, Swords } from '@lucide/vue'
+import { BookOpen, Coins, Gavel, LayoutDashboard, LogOut, ShieldCheck, ShoppingBag, Swords } from '@lucide/vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCharactersStore } from '@/stores/characters'
@@ -21,6 +21,7 @@ const links = computed(() => {
     { to: '/', label: '首页', icon: LayoutDashboard, active: route.name === 'dashboard' },
     { to: '/sessions', label: '跑团大厅', icon: Swords, active: route.name === 'sessions' || route.name === 'game' },
     { to: '/shop', label: '商城', icon: ShoppingBag, active: route.name === 'shop' },
+    { to: '/auction', label: '拍卖行', icon: Gavel, active: route.name === 'auction' },
   ]
   return auth.isAdmin ? [...base, { to: '/admin', label: '管理', icon: ShieldCheck, active: route.name === 'admin' }] : base
 })
