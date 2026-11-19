@@ -571,16 +571,29 @@ func (h *SessionHandlers) publishRound(af *activeFloor, ro agent.RoundOutputs) e
 	// 含 kp/ask 的任务广播后通知客户端刷新人物卡（每一拍结算后 HP/SAN 等可能已变化）。
 	var group []models.Message
 	groupCards := false
+	groupHandbook := false
+	groupEncounter := false
 	flushGroup := func() {
 		if len(group) == 0 {
 			return
 		}
 		task := outboxTask{msgs: group}
-		if groupCards {
-			task.after = func() { publishCardsChanged(sessionID) }
+		cards, handbook, encounter := groupCards, groupHandbook, groupEncounter
+		if cards || handbook || encounter {
+			task.after = func() {
+				if cards {
+					publishCardsChanged(sessionID)
+				}
+				if handbook {
+					hubFor(sessionID).Publish("handbook_update", gin.H{"reason": "event"})
+				}
+				if encounter {
+					hubFor(sessionID).Publish("encounter_update", gin.H{"reason": "event"})
+				}
+			}
 		}
 		h.enqueueOutbox(sessionID, task)
-		group, groupCards = nil, false
+		group, groupCards, groupHandbook, groupEncounter = nil, false, false, false
 	}
 	for _, p := range items {
 		switch p.msg.Kind {
@@ -603,6 +616,8 @@ func (h *SessionHandlers) publishRound(af *activeFloor, ro agent.RoundOutputs) e
 		default:
 			group = append(group, p.msg)
 			groupCards = groupCards || eventsTouchCards(ro.Events)
+			groupHandbook = groupHandbook || eventsTouchHandbook(ro.Events)
+			groupEncounter = groupEncounter || eventsTouchEncounter(ro.Events)
 		}
 	}
 	flushGroup()
@@ -695,6 +710,24 @@ func roundEventMessage(sessionID uint, ro agent.RoundOutputs) (models.Message, b
 func eventsTouchCards(events []models.GameEvent) bool {
 	for _, ev := range events {
 		if ev.Type != "dice" && ev.Type != "time" {
+			return true
+		}
+	}
+	return false
+}
+
+func eventsTouchHandbook(events []models.GameEvent) bool {
+	for _, ev := range events {
+		if ev.Type == "clue" || ev.Type == "location" || (ev.Type == "item" && ev.Category == "relation") {
+			return true
+		}
+	}
+	return false
+}
+
+func eventsTouchEncounter(events []models.GameEvent) bool {
+	for _, ev := range events {
+		if ev.Type == "combat" || ev.Type == "chase" {
 			return true
 		}
 	}

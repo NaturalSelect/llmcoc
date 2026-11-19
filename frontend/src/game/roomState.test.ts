@@ -1047,6 +1047,19 @@ describe('roomState', () => {
     expect(room.oocUnread).toBe(1)
   })
 
+  test('handbook_update / encounter_update / session(cards) 帧递增刷新序号', () => {
+    const room = liveRoom({ seq: 20, userId: 1 })
+    expect(room.handbookSeq).toBe(0)
+    expect(room.encounterSeq).toBe(0)
+    feed(room, F(21, 'handbook_update', { reason: 'clue' }))
+    expect(room.handbookSeq).toBe(1)
+    feed(room, F(22, 'encounter_update', { reason: 'event' }))
+    expect(room.encounterSeq).toBe(1)
+    feed(room, F(23, 'session', { status: 'playing', reason: 'cards' }))
+    expect(room.handbookSeq).toBe(2)
+    expect(room.encounterSeq).toBe(2)
+  })
+
   test('模块导出的 API 清单', () => {
     expect(Object.keys(RS).sort()).toStrictEqual([
       'acceptFrame',

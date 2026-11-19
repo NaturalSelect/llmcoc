@@ -17,7 +17,9 @@ import {
   MessageSquareQuote,
   NotebookPen,
   Package,
+  Pin,
   ScrollText,
+  Search,
   Shield,
   Skull,
   Sparkles,
@@ -50,8 +52,8 @@ import { useAuthStore } from '@/stores/auth'
 import { fmtDuration, fmtStepAvg, fmtTime } from '@/utils/format'
 import { renderProse } from '@/utils/markdown'
 
-const props = defineProps<{ msg: RoomMessage; room: Room }>()
-const emit = defineEmits<{ preview: [src: string] }>()
+const props = defineProps<{ msg: RoomMessage; room: Room; canPinClue?: boolean }>()
+const emit = defineEmits<{ preview: [src: string]; pinClue: [msg: RoomMessage] }>()
 const auth = useAuthStore()
 
 const kind = computed(() => msgKind(props.msg))
@@ -87,6 +89,12 @@ const names = computed(() => askNames(props.msg))
 const dice = computed(() => diceOf(props.msg))
 const isPrivate = computed(() => kind.value === 'kp' && Boolean((props.msg.meta as { private?: boolean } | null | undefined)?.private))
 const recipientName = computed(() => String((props.msg.meta as { recipient_name?: string } | null | undefined)?.recipient_name || ''))
+const showPinButton = computed(() => {
+  if (!props.canPinClue || isPrivate.value || props.msg.status !== 'done') return false
+  if (kind.value === 'writer') return Boolean(text.value.trim())
+  if (kind.value === 'kp') return Boolean((props.msg.content || '').trim())
+  return false
+})
 const images = computed(() => (props.msg.status === 'done' ? props.msg.images || [] : []))
 const events = computed(() => (kind.value === 'event' ? eventsOf(props.msg).map(describeEvent) : []))
 
@@ -119,6 +127,7 @@ const EVENT_ICONS: Record<EventIcon, Component> = {
   chase: Footprints,
   coins: Coins,
   backstory: NotebookPen,
+  clue: Search,
 }
 
 const EVENT_TONES: Record<EventTone, string> = {
@@ -214,6 +223,17 @@ const EVENT_TONES: Record<EventTone, string> = {
         >
           <Code :size="16" :stroke-width="1.75" class="shrink-0" />
           源码
+        </button>
+        <button
+          v-if="showPinButton"
+          type="button"
+          class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 transition hover:bg-surface-3 hover:text-accent"
+          title="收入线索板"
+          aria-label="收入线索板"
+          @click="emit('pinClue', msg)"
+        >
+          <Pin :size="13" :stroke-width="1.75" class="shrink-0" />
+          收线索
         </button>
         <span v-if="time" class="ml-auto inline-flex items-center gap-1 tabular-nums" :title="time.elapsed || undefined">
           <Clock :size="16" :stroke-width="1.75" class="shrink-0" />

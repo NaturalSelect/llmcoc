@@ -50,6 +50,7 @@ export type EventIcon =
   | 'chase'
   | 'coins'
   | 'backstory'
+  | 'clue'
 
 export type EventTone = 'plain' | 'hp' | 'san' | 'mp' | 'danger'
 
@@ -218,6 +219,8 @@ export function describeEvent(ev: GameEvent): EventView {
       return { icon: 'coins', tone: 'plain', text: who(ev) + '获得金币', value: '+' + (ev.amount ?? 0), note: ev.detail || undefined }
     case 'backstory':
       return { icon: 'backstory', tone: 'plain', text: who(ev) + '个人经历有了新的篇章', note: ev.detail }
+    case 'clue':
+      return { icon: 'clue', tone: 'plain', text: '发现线索：' + (ev.name || '新线索'), note: ev.detail || undefined }
   }
   return { icon: 'stat', tone: 'plain', text: ev.type }
 }

@@ -6,13 +6,16 @@ import { api, postForm } from '@/api/client'
 import { getToken } from '@/api/token'
 import type { CharacterCardFull } from '@/api/characterTypes'
 import type { CharacterCard, Session, SessionPlayer } from '@/api/types'
+import BaseButton from '@/components/base/BaseButton.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import CharacterDetailModal from '@/components/character/CharacterDetailModal.vue'
 import AskCard from '@/components/game/AskCard.vue'
+import EncounterTracker from '@/components/game/EncounterTracker.vue'
 import GameHeader from '@/components/game/GameHeader.vue'
 import GameHud from '@/components/game/GameHud.vue'
 import GameSidebar from '@/components/game/GameSidebar.vue'
+import HandbookPanel from '@/components/game/HandbookPanel.vue'
 import ImagePreview from '@/components/game/ImagePreview.vue'
 import InvestigatorListModal from '@/components/game/InvestigatorListModal.vue'
 import MessageItem from '@/components/game/MessageItem.vue'
@@ -21,11 +24,13 @@ import TableTalkPanel from '@/components/game/TableTalkPanel.vue'
 import JoinSessionModal from '@/components/session/JoinSessionModal.vue'
 import { askAnchor, askView, createAskDraft, resetAskDraft, resetDraftOnFrame } from '@/game/ask'
 import { showWaiting } from '@/game/banner'
+import { emptyHandbook, normalizeHandbook } from '@/game/handbookTypes'
+import type { HandbookData } from '@/game/handbookTypes'
 import { diffHud, endSessionMessage, isInSession, myCard, NO_FLASH, ownCardAccess, playerCardAccess } from '@/game/hud'
 import type { HudFlash, HudSnapshot } from '@/game/hud'
-import { currentGameTime } from '@/game/messages'
+import { currentGameTime, msgKind, writerText } from '@/game/messages'
 import { createRoomController } from '@/game/roomController'
-import type { Frame } from '@/game/roomState'
+import type { Frame, RoomMessage } from '@/game/roomState'
 import { formatTurnTitle, loadTurnSoundPref, playTurnChime, saveTurnSoundPref } from '@/game/turnAlert'
 import { useAuthStore } from '@/stores/auth'
 import { useCharactersStore } from '@/stores/characters'
@@ -45,6 +50,14 @@ const chatBox = ref<HTMLElement | null>(null)
 const investigatorsOpen = ref(false)
 const joinOpen = ref(false)
 const oocOpen = ref(false)
+const handbookOpen = ref(false)
+const handbook = ref<HandbookData>(emptyHandbook())
+const handbookLoading = ref(false)
+const pinOpen = ref(false)
+const pinTitle = ref('')
+const pinContent = ref('')
+const pinSource = ref('')
+const pinSaving = ref(false)
 const soundEnabled = ref(loadTurnSoundPref())
 const previewSrc = ref('')
 // NOTE: 点开的人物卡，由 CharacterDetailModal 展示；游戏页的 CharacterCard 类型只列了部分字段，弹窗要求完整卡类型（字段全为可选）
@@ -156,6 +169,79 @@ watch(asking, (v) => {
 const canPostOoc = computed(() =>
   Boolean(session.value && (isInSession(session.value, auth.user?.id) || session.value.created_by === auth.user?.id || auth.isAdmin)),
 )
+
+async function loadHandbook() {
+  const sid = session.value?.id
+  if (!sid) return
+  handbookLoading.value = true
+  try {
+    const res = await api<unknown>('GET', `/api/sessions/${sid}/handbook`)
+    handbook.value = normalizeHandbook(res)
+  } catch {
+    // NOTE: 后台同步失败时不打扰玩家阅读，保留上一次有效手册数据
+  } finally {
+    handbookLoading.value = false
+  }
+}
+
+watch(
+  () => [session.value?.id, session.value?.status] as const,
+  ([sid, status], prev) => {
+    if (!sid) {
+      handbook.value = emptyHandbook()
+      return
+    }
+    if (prev && prev[0] !== sid) handbook.value = emptyHandbook()
+    if (status === 'playing' || status === 'ended') void loadHandbook()
+  },
+)
+
+watch(
+  () => (room.value ? room.value.handbookSeq + room.value.encounterSeq : 0),
+  (seq, prev) => {
+    if (seq > 0 && seq !== prev) void loadHandbook()
+  },
+)
+
+watch(handbookOpen, (open) => {
+  if (open) void loadHandbook()
+})
+
+function openPinClue(msg: RoomMessage) {
+  const raw = msgKind(msg) === 'writer' && room.value ? writerText(room.value, msg) : msg.content || ''
+  const plain = raw
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/[*_`>#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!plain) return
+  pinTitle.value = plain.slice(0, 24) + (plain.length > 24 ? '…' : '')
+  pinContent.value = plain.slice(0, 400)
+  pinSource.value = msgKind(msg) === 'writer' ? '叙事摘录' : 'KP 旁白'
+  pinOpen.value = true
+}
+
+async function savePinnedClue() {
+  if (!session.value || pinSaving.value) return
+  const title = pinTitle.value.trim()
+  const content = pinContent.value.trim()
+  if (!title || !content) return
+  pinSaving.value = true
+  try {
+    await api('POST', `/api/sessions/${session.value.id}/clues`, {
+      title,
+      content,
+      source: pinSource.value.trim(),
+    })
+    pinOpen.value = false
+    ui.toast('已收入线索板')
+    void loadHandbook()
+  } catch (e) {
+    ui.toast(errMsg(e), 'error')
+  } finally {
+    pinSaving.value = false
+  }
+}
 
 function toggleSound() {
   soundEnabled.value = !soundEnabled.value
@@ -302,14 +388,16 @@ defineExpose({ viewCard })
           @action="onAction"
           @toggle-sound="toggleSound"
           @open-ooc="oocOpen = true"
+          @open-handbook="handbookOpen = true"
         />
         <GameHud v-if="card" class="lg:hidden" :card="card" :flash="hudFlash" :time="gameTime" />
+        <EncounterTracker :combat="handbook.combat" :chase="handbook.chase" />
 
         <div ref="chatBox" class="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="off" @scroll.passive="onChatScroll">
           <div class="mx-auto max-w-3xl space-y-6 px-4 py-6">
             <template v-if="room">
               <template v-for="m in room.messages" :key="m.id">
-                <MessageItem :msg="m" :room="room" @preview="previewSrc = $event" />
+                <MessageItem :msg="m" :room="room" :can-pin-clue="canPostOoc" @preview="previewSrc = $event" @pin-clue="openPinClue" />
                 <AskCard v-if="m.id === askAt" :room="room" :draft="draft" :card="card" @submit="submit" />
               </template>
               <AskCard v-if="asking && askAt === null" :room="room" :draft="draft" :card="card" show-question @submit="submit" />
@@ -345,8 +433,11 @@ defineExpose({ viewCard })
         :flash="hudFlash"
         :time="gameTime"
         :user-id="auth.user?.id"
+        :handbook="handbook"
+        :handbook-loading="handbookLoading"
         @select="onSelectPlayer"
         @refresh="controller.refreshSession()"
+        @refresh-handbook="loadHandbook()"
       />
     </div>
 
@@ -364,6 +455,56 @@ defineExpose({ viewCard })
       <div class="-mx-5 -mb-5 flex h-96 flex-col">
         <TableTalkPanel :session="session" :room="room" :user-id="auth.user?.id" :can-post="canPostOoc" :active="oocOpen" />
       </div>
+    </BaseModal>
+    <BaseModal :open="handbookOpen" title="调查手册" max-width="max-w-md" @close="handbookOpen = false">
+      <div class="-mx-5 -mb-5 flex h-96 flex-col">
+        <HandbookPanel
+          :session="session"
+          :data="handbook"
+          :loading="handbookLoading"
+          :user-id="auth.user?.id"
+          :can-edit="canPostOoc"
+          @refresh="loadHandbook()"
+        />
+      </div>
+    </BaseModal>
+    <BaseModal :open="pinOpen" title="收入线索板" max-width="max-w-md" @close="pinOpen = false">
+      <form class="space-y-3" @submit.prevent="savePinnedClue">
+        <div class="space-y-1">
+          <label class="block text-xs text-fg-muted" for="pin-clue-title">线索标题</label>
+          <input
+            id="pin-clue-title"
+            v-model="pinTitle"
+            type="text"
+            maxlength="100"
+            class="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none"
+          />
+        </div>
+        <div class="space-y-1">
+          <label class="block text-xs text-fg-muted" for="pin-clue-source">来源（选填）</label>
+          <input
+            id="pin-clue-source"
+            v-model="pinSource"
+            type="text"
+            maxlength="100"
+            class="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none"
+          />
+        </div>
+        <div class="space-y-1">
+          <label class="block text-xs text-fg-muted" for="pin-clue-content">线索内容</label>
+          <input
+            id="pin-clue-content"
+            v-model="pinContent"
+            type="text"
+            maxlength="1000"
+            class="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none"
+          />
+        </div>
+        <div class="flex justify-end gap-2 pt-1">
+          <BaseButton variant="ghost" size="sm" @click="pinOpen = false">取消</BaseButton>
+          <BaseButton type="submit" size="sm" :loading="pinSaving" :disabled="!pinTitle.trim() || !pinContent.trim()">保存线索</BaseButton>
+        </div>
+      </form>
     </BaseModal>
     <JoinSessionModal :open="joinOpen" :session="session" @close="joinOpen = false" @joined="controller.refreshSession()" />
     <ImagePreview :src="previewSrc" @close="previewSrc = ''" />

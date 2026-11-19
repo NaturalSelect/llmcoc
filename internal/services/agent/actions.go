@@ -63,6 +63,7 @@ var noSideEffectActions = map[ToolCallType]bool{
 var narrateCompatibleActions = map[ToolCallType]bool{
 	ToolNarrate:                true,
 	ToolWhisper:                true,
+	ToolRevealClue:             true,
 	ToolAskPlayers:             true,
 	ToolEndGame:                true,
 	ToolWrite:                  true,
@@ -106,6 +107,7 @@ var actionRegistry = map[ToolCallType]Action{
 	ToolEndGame:                endGameAction{},
 	ToolManageMadness:          manageMadnessAction{},
 	ToolQueryClues:             queryCluesAction{},
+	ToolRevealClue:             revealClueAction{},
 	ToolQueryCharacter:         queryCharacterAction{},
 	ToolQueryNPCCard:           queryNPCCardAction{},
 	ToolGrepStory:              grepStoryAction{},
@@ -522,7 +524,11 @@ type queryCluesAction struct{}
 func (queryCluesAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	debugf("tool", "session=%d query_clues all", actx.Sid)
 	clues := actx.GCtx.Session.Scenario.Content.Data.Clues
-	if len(clues) == 0 {
+	var revealed []models.SessionClue
+	if models.DB != nil && actx.GCtx.Session.ID != 0 {
+		models.DB.Where("session_id = ?", actx.GCtx.Session.ID).Order("id ASC").Find(&revealed)
+	}
+	if len(clues) == 0 && len(revealed) == 0 {
 		return []ToolResult{{Action: ToolQueryClues, Result: "<clues/>"}}
 	}
 	var sb strings.Builder
@@ -541,8 +547,52 @@ func (queryCluesAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 		}
 		sb.WriteString(">" + xmlEscape(c.Summary) + "</clue>\n")
 	}
+	for _, r := range revealed {
+		sb.WriteString(`<revealed title="` + xmlAttr(r.Title) + `"`)
+		if s := strings.TrimSpace(r.Source); s != "" {
+			sb.WriteString(` source="` + xmlAttr(s) + `"`)
+		}
+		sb.WriteString(">" + xmlEscape(r.Content) + "</revealed>\n")
+	}
 	sb.WriteString("</clues>")
 	return []ToolResult{{Action: ToolQueryClues, Result: sb.String()}}
+}
+
+type revealClueAction struct{}
+
+func (revealClueAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
+	title := strings.TrimSpace(call.Title)
+	content := strings.TrimSpace(call.Content)
+	source := strings.TrimSpace(call.Source)
+	if title == "" || content == "" {
+		return []ToolResult{{Action: ToolRevealClue, Result: "SYSTEM REJECT: reveal_clue 必须同时提供非空的 title 和 content。"}}
+	}
+	if models.DB != nil && actx.GCtx.Session.ID != 0 {
+		var existing models.SessionClue
+		err := models.DB.Where("session_id = ? AND title = ?", actx.GCtx.Session.ID, title).First(&existing).Error
+		if err == nil {
+			updates := map[string]any{"content": content}
+			if source != "" {
+				updates["source"] = source
+			}
+			models.DB.Model(&existing).Updates(updates)
+		} else {
+			clue := models.SessionClue{
+				SessionID: actx.GCtx.Session.ID,
+				Title:     title,
+				Content:   content,
+				Source:    source,
+				AddedBy:   "KP",
+			}
+			models.DB.Create(&clue)
+		}
+	}
+	debugf("tool", "session=%d reveal_clue title=%q source=%q", actx.Sid, title, source)
+	return []ToolResult{{
+		Action: ToolRevealClue,
+		Result: "已登记线索至全队线索板：" + title,
+		Events: []models.GameEvent{{Type: "clue", Name: title, Detail: content}},
+	}}
 }
 
 type queryCharacterAction struct{}

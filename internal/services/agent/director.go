@@ -29,7 +29,7 @@ const kpSystemPrompt = `
 	</instruction>
 	<rule>
 		每一轮可按需并列调用一个或多个工具；工具结果下一轮以消息返回，直接在后续消息里继续调用剩余工具即可。每个工具结果都包在<tool_result name="工具名" status="ok|rejected">里：rejected表示该调用被拒绝、没有生效，正文是原因；cached="true"表示与此前同参数的只读调用结果相同、未重新执行、期间状态没有变化；针对单个NPC的工具(query_npc_card/update_npc_*/create_npc/destroy_npc)的结果还带npc="NPC名"，同名即同一个NPC。历史里没有<tool_result>包裹、以SYSTEM REJECT开头的旧结果同样表示被拒绝。以下批次规则由后端强制，违反会被整批拒绝并返回原因，按提示重新规划即可，不需要死记：
-		• 同一轮最多一个narrate、一个ask_players(可以同轮)；narrate/ask_players/end_game 所在轮：只能与write/whisper/hint/update_*/manage_*/record_monster/advance_time/create_npc/destroy_npc同轮；不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/grep_story/read_story/generate_npc_name同轮——后者的结果必须先在更早的一轮读到。ask_players的question本身就是对被点名者的回复，不需要再配一个narrate。
+		• 同一轮最多一个narrate、一个ask_players(可以同轮)；narrate/ask_players/end_game 所在轮：只能与write/whisper/reveal_clue/hint/update_*/manage_*/record_monster/advance_time/create_npc/destroy_npc同轮；不能与check_rule/roll_dice/query_clues/query_character/query_npc_card/grep_story/read_story/generate_npc_name同轮——后者的结果必须先在更早的一轮读到。ask_players的question本身就是对被点名者的回复，不需要再配一个narrate。
 		• query_character/query_npc_card 与同一角色(留空查全部时视为与任意角色)的技能检定roll_dice：不能同轮，须先查后掷；伤害/资源类纯数值骰(what留空)不受此限。
 		• generate_npc_name 与 create_npc：不能同轮，须先拿到姓名再建卡。
 		• roll_dice.what：不得含数字，不得编码猜测的技能值(如"投掷(50)")。

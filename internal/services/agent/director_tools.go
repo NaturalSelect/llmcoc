@@ -41,6 +41,7 @@ func directorTools(dramaturgEnabled bool) []scripterTool {
 		writeTool(),
 		advanceTimeTool(),
 		queryCluesTool(),
+		revealClueTool(),
 		queryCharacterTool(),
 		queryNPCCardTool(),
 		grepStoryTool(),
@@ -458,11 +459,32 @@ func queryCluesTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolQueryClues),
-			Description: `查询当前已发现的全部线索记录。无需任何参数。
+			Description: `查询剧本线索列表以及本局已揭示到线索板的线索标题。无需任何参数。
 调用示例：{}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",
 				"properties": {}
+			}`),
+		},
+	}
+}
+
+func revealClueTool() scripterTool {
+	return scripterTool{
+		def: llm.ToolDefinition{
+			Name: string(ToolRevealClue),
+			Description: `当调查员通过检定成功、搜查、盘问或亲眼目击正式获得一条公开线索时，将其登记到全队可见的调查员线索板，方便团队记录与推理。
+严禁在 content 中泄露未赚取的真相或隐藏谜底；只写调查员此刻实际获知的信息。同名 title 会覆盖更新已有条目。私密情报（仅单人得知）请改用 whisper 而非本工具。
+【批次规则】可与 narrate/write/ask_players 和状态更新工具同批，但查询/掷骰类工具的结果必须先在更早的一轮读到。
+调用示例：{"title":"书房账本的缺页","content":"1924年3月的支出记录被人撕去，页脚残留着暗红色印泥。","source":"书房"}`,
+			Parameters: jsonSchemaObject(`{
+				"type": "object",
+				"properties": {
+					"title": {"type": "string", "description": "线索简短标题"},
+					"content": {"type": "string", "description": "调查员已获知的线索正文，不得泄露未赚取的谜底"},
+					"source": {"type": "string", "description": "可选：发现地点、人物或物件来源"}
+				},
+				"required": ["title", "content"]
 			}`),
 		},
 	}

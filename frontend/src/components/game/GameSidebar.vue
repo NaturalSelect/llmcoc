@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, Clock, Lock, MapPin, MessageCircle, Sparkles, Users } from '@lucide/vue'
+import { BookMarked, ChevronDown, Clock, Lock, MapPin, MessageCircle, Sparkles, Users } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { CharacterCard, Session, SessionPlayer } from '@/api/types'
@@ -8,8 +8,10 @@ import SectionHeading from '@/components/base/SectionHeading.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import StatBar from '@/components/base/StatBar.vue'
 import { portraitSrc } from '@/components/character/characterLogic'
+import HandbookPanel from '@/components/game/HandbookPanel.vue'
 import TableTalkPanel from '@/components/game/TableTalkPanel.vue'
 import { playerTurnSubmitState } from '@/game/banner'
+import type { HandbookData } from '@/game/handbookTypes'
 import type { HudFlash } from '@/game/hud'
 import { hudChips, isInSession, statNum, statusLabel } from '@/game/hud'
 import type { Room, TimePoint } from '@/game/roomState'
@@ -24,13 +26,15 @@ const props = defineProps<{
   flash: HudFlash
   time: TimePoint | null
   userId: number | undefined
+  handbook: HandbookData
+  handbookLoading: boolean
 }>()
-const emit = defineEmits<{ select: [player: SessionPlayer]; refresh: [] }>()
+const emit = defineEmits<{ select: [player: SessionPlayer]; refresh: []; refreshHandbook: [] }>()
 
 const auth = useAuthStore()
 const ui = useUiStore()
 
-const activeTab = ref<'status' | 'ooc'>('status')
+const activeTab = ref<'status' | 'handbook' | 'ooc'>('status')
 const chips = computed(() => hudChips(props.card))
 const hasLuck = computed(() => props.card?.stats?.luck !== undefined)
 const occupation = computed(() => (props.card as { occupation?: string } | null)?.occupation || '未知职业')
@@ -68,6 +72,10 @@ watch(
     secretEditing.value = false
   },
 )
+
+watch(activeTab, (tab) => {
+  if (tab === 'handbook') emit('refreshHandbook')
+})
 
 function startEditSecret() {
   secretDraft.value = mySecret.value
@@ -108,7 +116,7 @@ function playerPublicChips(p: SessionPlayer) {
     <div class="flex shrink-0 border-b border-line px-2 pt-2">
       <button
         type="button"
-        class="inline-flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2 text-xs font-medium transition"
+        class="inline-flex flex-1 items-center justify-center gap-1 border-b-2 px-1.5 py-2 text-xs font-medium transition"
         :class="activeTab === 'status' ? 'border-accent text-fg' : 'border-transparent text-fg-subtle hover:text-fg'"
         @click="activeTab = 'status'"
       >
@@ -117,12 +125,22 @@ function playerPublicChips(p: SessionPlayer) {
       </button>
       <button
         type="button"
-        class="inline-flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2 text-xs font-medium transition"
+        class="inline-flex flex-1 items-center justify-center gap-1 border-b-2 px-1.5 py-2 text-xs font-medium transition"
+        :class="activeTab === 'handbook' ? 'border-accent text-fg' : 'border-transparent text-fg-subtle hover:text-fg'"
+        @click="activeTab = 'handbook'"
+      >
+        <BookMarked :size="14" :stroke-width="1.75" class="shrink-0" />
+        手册
+        <span v-if="handbook.clues.length" class="tabular-nums text-fg-subtle">{{ handbook.clues.length }}</span>
+      </button>
+      <button
+        type="button"
+        class="inline-flex flex-1 items-center justify-center gap-1 border-b-2 px-1.5 py-2 text-xs font-medium transition"
         :class="activeTab === 'ooc' ? 'border-accent text-fg' : 'border-transparent text-fg-subtle hover:text-fg'"
         @click="activeTab = 'ooc'"
       >
         <MessageCircle :size="14" :stroke-width="1.75" class="shrink-0" />
-        桌边讨论
+        桌边
         <span
           v-if="oocUnread > 0 && activeTab !== 'ooc'"
           class="inline-flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-xs font-semibold tabular-nums text-bg"
@@ -249,6 +267,16 @@ function playerPublicChips(p: SessionPlayer) {
         </div>
       </section>
     </div>
+
+    <HandbookPanel
+      v-show="activeTab === 'handbook'"
+      :session="session"
+      :data="handbook"
+      :loading="handbookLoading"
+      :user-id="userId"
+      :can-edit="canPostOoc"
+      @refresh="emit('refreshHandbook')"
+    />
 
     <TableTalkPanel
       v-show="activeTab === 'ooc'"

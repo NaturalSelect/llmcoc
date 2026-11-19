@@ -89,6 +89,7 @@ const (
 	ToolWrite                  ToolCallType = "write"                     // 生成叙事段落
 	ToolAdvanceTime            ToolCallType = "advance_time"              // 推进游戏内时间
 	ToolQueryClues             ToolCallType = "query_clues"               // 查询剧本线索
+	ToolRevealClue             ToolCallType = "reveal_clue"               // NOTE: 将已向调查员公开的线索同步登记到全队线索板
 	ToolQueryCharacter         ToolCallType = "query_character"           // 查询调查员完整人物卡
 	ToolQueryNPCCard           ToolCallType = "query_npc_card"            // 查询NPC完整角色卡
 	ToolGrepStory              ToolCallType = "grep_story"                // 在模组故事原文里按正则搜索
@@ -131,7 +132,9 @@ type ToolCall struct {
 	DestroyReason string                 `json:"destroy_reason"` // destroy_npc: dead|out_of_range|cleanup
 	Changes       []string               `json:"changes"`        // update_characters: 状态变化列表
 	CharacterName string                 `json:"character_name"` // manage_madness / query_character / whisper: 角色名称
-	Content       string                 `json:"content"`        // whisper: 仅目标调查员可见的密讯内容
+	Title         string                 `json:"title"`          // reveal_clue: 线索标题
+	Content       string                 `json:"content"`        // whisper / reveal_clue: 密讯或已公开线索内容
+	Source        string                 `json:"source"`         // reveal_clue: 线索来源(地点/NPC/物件)
 	Operate       string                 `json:"operate"`        // 通用操作: add/remove(manage_inventory 另有 update)
 	Item          string                 `json:"item"`           // manage_inventory: 旧版整串物品(如 "绷带(x3)"),仅在 item_name 为空时按旧格式解析
 	ItemName      string                 `json:"item_name"`      // manage_inventory: 物品基础名称

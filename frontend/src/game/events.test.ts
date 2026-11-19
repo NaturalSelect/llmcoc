@@ -135,6 +135,8 @@ describe('describeEvent', () => {
       { type: 'dice', character: '甲', skill: '侦查', roll: 40, target: 60, need: 30, level: '困难', result: '失败' },
     ])
     expect(view({ type: 'stat', character: '甲', field: 'luck', from: 50, to: 40 })).toBe('甲 幸运 50 → 40')
+    expect(view({ type: 'clue', name: '撕碎的信纸', detail: '提到了灯塔' })).toBe('发现线索：撕碎的信纸 提到了灯塔')
+    expect(describeEvent({ type: 'clue', name: '密信' }).icon).toBe('clue')
   })
 })
 

@@ -122,6 +122,37 @@ func TestQueryCluesAction_XML(t *testing.T) {
 	assertWellFormedXML(t, "clues", res[0].Result)
 }
 
+func TestRevealClueAction_UpsertAndQueryClues(t *testing.T) {
+	initAgentTestDB(t)
+	sess := models.GameSession{Name: "ClueTest"}
+	models.DB.Create(&sess)
+	actx := eventTestActx(eventTestPlayers())
+	actx.GCtx.Session.ID = sess.ID
+
+	rej := revealClueAction{}.Execute(ToolCall{Title: "   ", Content: "内容"}, actx)
+	if len(rej) != 1 || !strings.HasPrefix(rej[0].Result, "SYSTEM REJECT:") {
+		t.Fatalf("empty title should reject, got %+v", rej)
+	}
+
+	res := revealClueAction{}.Execute(ToolCall{Title: "密信", Content: "署名为M", Source: "书房"}, actx)
+	if len(res) != 1 || len(res[0].Events) != 1 || res[0].Events[0].Type != "clue" || res[0].Events[0].Name != "密信" {
+		t.Fatalf("unexpected reveal_clue result: %+v", res)
+	}
+	// 同名标题更新而非重复插入
+	revealClueAction{}.Execute(ToolCall{Title: "密信", Content: "署名为M，日期1924", Source: "书房"}, actx)
+	var rows []models.SessionClue
+	models.DB.Where("session_id = ?", sess.ID).Find(&rows)
+	if len(rows) != 1 || rows[0].Content != "署名为M，日期1924" || rows[0].AddedBy != "KP" {
+		t.Fatalf("expected 1 upserted clue, got %+v", rows)
+	}
+
+	q := queryCluesAction{}.Execute(ToolCall{}, actx)
+	if len(q) != 1 || !strings.Contains(q[0].Result, `<revealed title="密信" source="书房">署名为M，日期1924</revealed>`) {
+		t.Fatalf("query_clues should include revealed clue, got %+v", q)
+	}
+	assertWellFormedXML(t, "clues", q[0].Result)
+}
+
 func TestAdvanceTimeAction_XMLResult(t *testing.T) {
 	actx := eventTestActx(eventTestPlayers())
 	initAgentTestDB(t)

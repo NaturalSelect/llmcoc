@@ -525,6 +525,12 @@ func LeaveSession(c *gin.Context) {
 			if err := tx.Where("session_id = ?", sessionID).Delete(&models.SessionOOCMessage{}).Error; err != nil {
 				return err
 			}
+			if err := tx.Where("session_id = ?", sessionID).Delete(&models.SessionClue{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("session_id = ?", sessionID).Delete(&models.SessionNote{}).Error; err != nil {
+				return err
+			}
 			if err := tx.Where("session_id = ?", sessionID).Delete(&models.Message{}).Error; err != nil {
 				return err
 			}

@@ -52,6 +52,8 @@ func initTestDB(t *testing.T) {
 		&models.SessionNPCMemory{},
 		&models.SessionTurnAction{},
 		&models.SessionOOCMessage{},
+		&models.SessionClue{},
+		&models.SessionNote{},
 		&models.Message{},
 		&models.LLMProviderConfig{},
 		&models.AgentConfig{},

@@ -554,6 +554,32 @@ type SessionOOCMessage struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// SessionClue 记录房间内已向玩家揭示或由玩家钉选到线索板的线索条目。
+type SessionClue struct {
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID uint      `gorm:"not null;index" json:"session_id"`
+	Title     string    `gorm:"size:200;not null" json:"title"`
+	Content   string    `gorm:"type:text;not null" json:"content"`
+	Source    string    `gorm:"size:200" json:"source,omitempty"`
+	AddedBy   string    `gorm:"size:100" json:"added_by"`
+	UserID    *uint     `json:"user_id,omitempty"` // nil 表示由 KP 通过 reveal_clue 写入
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// SessionNote 记录调查员在房间内的个人或团队共享推理笔记。
+// NOTE: IsShared 不加 default:true，避免 GORM Create 跳过 false 零值把私密笔记静默写成共享；默认值由 handler 填充。
+type SessionNote struct {
+	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID  uint      `gorm:"not null;index" json:"session_id"`
+	UserID     uint      `gorm:"not null;index" json:"user_id"`
+	AuthorName string    `gorm:"size:100" json:"author_name"`
+	Content    string    `gorm:"type:text;not null" json:"content"`
+	IsShared   bool      `gorm:"not null" json:"is_shared"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 type MessageRole string
 
 const (
@@ -578,7 +604,7 @@ const (
 // GameEvent 是一次玩家可见的工具结算，只存玩家能看到的信息；字段按 Type 取用，其余留空。
 // NOTE: 暗骰只有 Type+Hidden，不存技能、点数和角色，避免玩家从接口里读到。NPC 的变化不产生事件。
 type GameEvent struct {
-	Type      string `json:"type"`                // dice|stat|wound|item|madness|location|time|combat|chase|coins|backstory
+	Type      string `json:"type"`                // dice|stat|wound|item|madness|location|time|combat|chase|coins|backstory|clue
 	Character string `json:"character,omitempty"` // 调查员名；NPC、暗骰留空
 	Skill     string `json:"skill,omitempty"`     // dice: 检定名；stat 且 field=skill 时为技能名
 	Roll      int    `json:"roll,omitempty"`      // dice

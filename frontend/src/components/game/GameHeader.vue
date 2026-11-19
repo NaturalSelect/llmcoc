@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Ellipsis, IdCard, LogOut, MessageCircle, Play, RotateCcw, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
+import { ArrowLeft, BookMarked, Ellipsis, IdCard, LogOut, MessageCircle, Play, RotateCcw, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Session } from '@/api/types'
@@ -16,7 +16,7 @@ const props = defineProps<{
   soundEnabled?: boolean
   oocUnread?: number
 }>()
-const emit = defineEmits<{ action: [action: Action]; toggleSound: []; openOoc: [] }>()
+const emit = defineEmits<{ action: [action: Action]; toggleSound: []; openOoc: []; openHandbook: [] }>()
 
 const menuOpen = ref(false)
 const menuRoot = ref<HTMLElement | null>(null)
@@ -86,6 +86,16 @@ onBeforeUnmount(() => {
     <StampBadge class="shrink-0" :tone="session.status === 'playing' ? 'moss' : session.status === 'lobby' ? 'ledger' : 'faint'">
       {{ statusLabel(session.status) }}
     </StampBadge>
+
+    <button
+      type="button"
+      class="inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-fg-subtle transition hover:bg-surface-2 hover:text-fg lg:hidden"
+      aria-label="打开调查手册"
+      title="调查手册"
+      @click="emit('openHandbook')"
+    >
+      <BookMarked :size="16" :stroke-width="1.75" />
+    </button>
 
     <button
       type="button"

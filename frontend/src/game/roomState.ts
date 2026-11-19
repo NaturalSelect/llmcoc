@@ -88,6 +88,8 @@ export interface Room {
   streams: Record<number, WriterStream>
   ooc: OocMessage[]
   oocUnread: number
+  handbookSeq: number
+  encounterSeq: number
   floor: { running: boolean; number: number; starting: boolean; startedAt: number }
   spotlight: Spotlight
   waiting: Waiting
@@ -189,6 +191,8 @@ export function newRoom(opts?: NewRoomOptions): Room {
     streams: {},
     ooc: [],
     oocUnread: 0,
+    handbookSeq: 0,
+    encounterSeq: 0,
     floor: { running: false, number: 0, starting: false, startedAt: 0 },
     spotlight: { userIds: [], names: [], question: '', kpFloor: false, askedMe: false, stop: '' },
     waiting: { pending: 0, total: 0, submittedNames: [], pendingNames: [] },
@@ -442,6 +446,12 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
     case 'ooc_message':
       onOocMessage(room, d)
       break
+    case 'handbook_update':
+      room.handbookSeq += 1
+      break
+    case 'encounter_update':
+      room.encounterSeq += 1
+      break
     case 'illustration':
       onIllustration(room, d)
       break
@@ -476,6 +486,10 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
       break
     case 'session':
       if (STATUSES.includes(d.status)) room.status = d.status
+      if (d.reason === 'cards') {
+        room.handbookSeq += 1
+        room.encounterSeq += 1
+      }
       effects.push('fetchSession')
       break
     default:
