@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, BookMarked, Ellipsis, IdCard, LogOut, MessageCircle, Play, RotateCcw, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
+import { ArrowLeft, Award, BookMarked, BookOpen, Download, Ellipsis, IdCard, LogOut, MessageCircle, Play, RotateCcw, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Session } from '@/api/types'
@@ -7,7 +7,7 @@ import BaseButton from '@/components/base/BaseButton.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import { isInSession, statusLabel } from '@/game/hud'
 
-type Action = 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive'
+type Action = 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive' | 'debrief'
 
 const props = defineProps<{
   session: Session
@@ -15,8 +15,16 @@ const props = defineProps<{
   busy: { leaving: boolean; ending: boolean; reviving: boolean }
   soundEnabled?: boolean
   oocUnread?: number
+  novelMode?: boolean
 }>()
-const emit = defineEmits<{ action: [action: Action]; toggleSound: []; openOoc: []; openHandbook: [] }>()
+const emit = defineEmits<{
+  action: [action: Action]
+  toggleSound: []
+  openOoc: []
+  openHandbook: []
+  toggleNovel: []
+  exportReplay: []
+}>()
 
 const menuOpen = ref(false)
 const menuRoot = ref<HTMLElement | null>(null)
@@ -35,6 +43,7 @@ const actions = computed(() => {
   if (s.status === 'lobby' && isInSession(s, props.user?.id)) list.push({ key: 'leave', label: '退出', tone: 'red', disabled: props.busy.leaving })
   if (s.status === 'lobby' && isCreator.value) list.push({ key: 'start', label: '开始', tone: 'green', disabled: !s.players?.length })
   if (s.status === 'playing' && (isCreator.value || isAdmin.value)) list.push({ key: 'end', label: '结束', tone: 'red', disabled: props.busy.ending })
+  if (s.status === 'ended') list.push({ key: 'debrief', label: '复盘与真相', tone: 'ghost' })
   if (s.status === 'ended' && isAdmin.value) list.push({ key: 'revive', label: '复活', tone: 'green', disabled: props.busy.reviving })
   return list
 })
@@ -42,7 +51,7 @@ const actions = computed(() => {
 // NOTE: 危险和成功操作用淡色底的 BaseButton 变体，不用实心色块；只有主操作才实心
 const variantOf = { ghost: 'ghost', green: 'success', red: 'danger' } as const
 const menuToneClass = { ghost: 'text-fg', green: 'text-success', red: 'text-danger' }
-const iconOf = { investigators: Users, myCard: IdCard, join: UserPlus, leave: LogOut, start: Play, end: Square, revive: RotateCcw }
+const iconOf = { investigators: Users, myCard: IdCard, join: UserPlus, leave: LogOut, start: Play, end: Square, revive: RotateCcw, debrief: Award }
 
 function run(action: Action) {
   menuOpen.value = false
@@ -110,6 +119,28 @@ onBeforeUnmount(() => {
         class="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-accent"
         aria-hidden="true"
       />
+    </button>
+
+    <button
+      type="button"
+      class="inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 transition hover:bg-surface-2 hover:text-fg"
+      :class="novelMode ? 'bg-accent/15 text-accent' : 'text-fg-subtle'"
+      :aria-pressed="Boolean(novelMode)"
+      aria-label="小说阅读模式"
+      :title="novelMode ? '小说模式已开启（隐藏骰点与事件，点击还原）' : '切换到小说阅读模式（隐藏骰点与事件）'"
+      @click="emit('toggleNovel')"
+    >
+      <BookOpen :size="16" :stroke-width="1.75" />
+    </button>
+
+    <button
+      type="button"
+      class="inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-fg-subtle transition hover:bg-surface-2 hover:text-fg"
+      aria-label="导出 Markdown 战报"
+      title="导出 Markdown 战报"
+      @click="emit('exportReplay')"
+    >
+      <Download :size="16" :stroke-width="1.75" />
     </button>
 
     <button

@@ -2,17 +2,23 @@
 import { ChevronDown, Lock } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { api } from '@/api/client'
+import type { Scenario } from '@/api/scenarioTypes'
 import type { JoinSessionForm } from '@/api/sessionTypes'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
+import { playersLabel, splitTags } from '@/components/scenario/scenarioFormat'
 import { useCharactersStore } from '@/stores/characters'
 import { useUiStore } from '@/stores/ui'
+import { difficultyLabel } from '@/utils/format'
 import { buildJoinPayload, cardOptionLabel, emptyJoinForm, errorMessage, joinableCharacters } from './sessionLogic'
 
-// NOTE: 大厅卡片（LobbySession）和游戏页里的房间（Session）都要用，所以只声明用到的三个字段
-const props = defineProps<{ open: boolean; session: { id: number; name?: string; has_password?: boolean } | null }>()
+// NOTE: 大厅卡片（LobbySession）和游戏页里的房间（Session）都要用，scenario 可选，供加入前展示无剧透推荐技能
+const props = defineProps<{
+  open: boolean
+  session: { id: number; name?: string; has_password?: boolean; scenario?: Scenario | null } | null
+}>()
 const emit = defineEmits<{ close: []; joined: [] }>()
 
 const chars = useCharactersStore()
@@ -23,6 +29,11 @@ const secretInput = ref('')
 const showSecret = ref(false)
 const joining = ref(false)
 const candidates = computed(() => joinableCharacters(chars.characters))
+const scenario = computed(() => props.session?.scenario ?? null)
+const scenarioTags = computed(() => splitTags(scenario.value?.tags))
+const recommendedSkills = computed(() =>
+  Array.isArray(scenario.value?.recommended_skills) ? scenario.value.recommended_skills.filter((s): s is string => typeof s === 'string' && s.length > 0) : [],
+)
 
 // 每次打开都清空上次选择的人物卡和密码；只有一张可用卡时直接选中
 watch(
@@ -56,8 +67,24 @@ async function submit() {
 </script>
 
 <template>
-  <BaseModal :open="open" title="加入房间" max-width="max-w-sm" @close="emit('close')">
-    <p class="mb-4 text-sm text-fg-muted">{{ session?.name }}</p>
+  <BaseModal :open="open" title="加入房间" max-width="max-w-md" @close="emit('close')">
+    <p class="mb-3 text-sm font-medium text-fg">{{ session?.name }}</p>
+
+    <div v-if="scenario && (scenario.name || recommendedSkills.length || scenarioTags.length)" class="mb-4 space-y-2 rounded-lg border border-line bg-surface-2/70 p-3">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+        <span v-if="scenario.name" class="font-medium text-accent">{{ scenario.name }}</span>
+        <span v-if="scenario.difficulty">难度：{{ difficultyLabel(scenario.difficulty) }}</span>
+        <span v-if="scenario.min_players || scenario.max_players">{{ playersLabel(scenario.min_players, scenario.max_players) }}</span>
+      </div>
+      <div v-if="scenarioTags.length" class="flex flex-wrap gap-1">
+        <span v-for="t in scenarioTags" :key="t" class="rounded-full bg-surface-3 px-2 py-0.5 text-xs text-fg-subtle">{{ t }}</span>
+      </div>
+      <div v-if="recommendedSkills.length" class="flex flex-wrap items-center gap-1.5">
+        <span class="text-xs text-fg-subtle">推荐技能：</span>
+        <span v-for="sk in recommendedSkills" :key="sk" class="rounded-full bg-accent/15 px-2 py-0.5 text-xs text-accent">{{ sk }}</span>
+      </div>
+    </div>
+
     <form class="space-y-3" @submit.prevent="submit">
       <BaseSelect v-model="form.character_card_id" aria-label="选择携带的人物卡">
         <option value="">选择携带的人物卡 *</option>

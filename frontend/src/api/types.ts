@@ -1,4 +1,5 @@
 // NOTE: 只列出游戏页目前用到的字段；其余页面迁移时再按后端 handler 的 JSON 补全
+import type { Scenario } from './scenarioTypes'
 
 export interface CardStats {
   hp?: number
@@ -24,8 +25,11 @@ export interface SessionPlayer {
 
 export interface Session {
   id: number
+  name?: string
   status: string
+  has_password?: boolean
   created_by: number
+  scenario?: Scenario | null
   players?: SessionPlayer[]
   [key: string]: unknown
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,11 +19,92 @@ import (
 	"github.com/llmcoc/server/internal/logging"
 	"github.com/llmcoc/server/internal/models"
 	"github.com/llmcoc/server/internal/services/agent"
+	"github.com/llmcoc/server/internal/services/rulebook"
 )
 
 var scenarioLog = logging.For("scenario")
 
 type ScenarioListResponse = PaginatedResponse[models.Scenario]
+
+const maxRecommendedSkills = 6
+
+// scenarioSkillAliases 把模组线索 skill_check 中常见的简写映射到规范 COC7 技能名，
+// 仅用于开团前无剧透推荐技能标签，不暴露任何线索原文。
+var scenarioSkillAliases = []struct {
+	alias     string
+	canonical string
+}{
+	{"图书馆", "图书馆使用"},
+	{"汽车驾驶", "驾驶(汽车)"},
+	{"领航", "领航(陆地)"},
+	{"地质学", "科学(地质学)"},
+	{"计算机", "计算机使用"},
+	{"重型机械", "操作重型机械"},
+	{"开锁", "锁匠"},
+	{"交涉", "说服"},
+	{"格斗", "斗殴"},
+	{"枪械", "手枪"},
+	{"射击", "手枪"},
+	{"医疗", "医学"},
+}
+
+// extractRecommendedSkills 仅从线索的 skill_check 字段提取规范 COC7 技能名并按频次排序（最多 6 个），
+// 不读取线索正文或来源，保证开团前绝对零剧透。
+func extractRecommendedSkills(clues []models.ClueData) []string {
+	if len(clues) == 0 {
+		return nil
+	}
+	counts := make(map[string]int)
+	for _, clue := range clues {
+		text := strings.TrimSpace(clue.SkillCheck)
+		if text == "" {
+			continue
+		}
+		seen := make(map[string]struct{})
+		for _, skill := range rulebook.AllSkills {
+			if strings.Contains(text, skill) {
+				seen[skill] = struct{}{}
+			}
+		}
+		for _, pair := range scenarioSkillAliases {
+			if strings.Contains(text, pair.alias) {
+				seen[pair.canonical] = struct{}{}
+			}
+		}
+		if strings.Contains(text, "驾驶") {
+			if _, isBoat := seen["驾驶(船)"]; !isBoat {
+				seen["驾驶(汽车)"] = struct{}{}
+			}
+		}
+		for skill := range seen {
+			counts[skill]++
+		}
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	skills := make([]string, 0, len(counts))
+	for skill := range counts {
+		skills = append(skills, skill)
+	}
+	sort.Slice(skills, func(i, j int) bool {
+		if counts[skills[i]] != counts[skills[j]] {
+			return counts[skills[i]] > counts[skills[j]]
+		}
+		return skills[i] < skills[j]
+	})
+	if len(skills) > maxRecommendedSkills {
+		skills = skills[:maxRecommendedSkills]
+	}
+	return skills
+}
+
+func populateScenarioPreview(s *models.Scenario) {
+	if s == nil {
+		return
+	}
+	s.RecommendedSkills = extractRecommendedSkills(s.Content.Data.Clues)
+}
 
 func ListScenarios(c *gin.Context) {
 	page, pageSize, ok := parseAdminPagination(c)
@@ -52,6 +134,9 @@ func ListScenarios(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询剧本列表失败"})
 		return
 	}
+	for i := range scenarios {
+		populateScenarioPreview(&scenarios[i])
+	}
 
 	c.JSON(http.StatusOK, newPaginatedResponse(scenarios, page, pageSize, total))
 }
@@ -63,6 +148,7 @@ func GetScenario(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "剧本不存在"})
 		return
 	}
+	populateScenarioPreview(&scenario)
 	c.JSON(http.StatusOK, scenario)
 }
 

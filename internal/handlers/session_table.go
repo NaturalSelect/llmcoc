@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
@@ -578,3 +580,201 @@ func DeleteSessionNote(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "已删除笔记"})
 }
+
+// ── 结团复盘与模组真相（仅 status=ended 解锁）────────────────────────────────
+
+type debriefDiceStat struct {
+	Character string `json:"character"`
+	Total     int    `json:"total"`
+	Criticals int    `json:"criticals"`
+	Fumbles   int    `json:"fumbles"`
+	Successes int    `json:"successes"`
+	Failures  int    `json:"failures"`
+	BestRoll  int    `json:"best_roll"`
+	WorstRoll int    `json:"worst_roll"`
+}
+
+type debriefNPC struct {
+	Name        string `json:"name"`
+	Occupation  string `json:"occupation,omitempty"`
+	Attitude    string `json:"attitude,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type debriefPlayerSecret struct {
+	CharacterName    string `json:"character_name"`
+	Username         string `json:"username,omitempty"`
+	SecretBackground string `json:"secret_background"`
+}
+
+type debriefTruth struct {
+	CoreTruth         string                `json:"core_truth,omitempty"`
+	AntagonistDossier string                `json:"antagonist_dossier,omitempty"`
+	MythosCore        string                `json:"mythos_core,omitempty"`
+	Endings           []models.EndingData   `json:"endings"`
+	Clues             []models.ClueData     `json:"clues"`
+	NPCs              []debriefNPC          `json:"npcs"`
+	PlayerSecrets     []debriefPlayerSecret `json:"player_secrets"`
+}
+
+type debriefResponse struct {
+	SessionName  string                    `json:"session_name"`
+	ScenarioName string                    `json:"scenario_name"`
+	EndedAt      time.Time                 `json:"ended_at"`
+	Evaluation   *models.EvaluationContent `json:"evaluation"`
+	DiceStats    []debriefDiceStat         `json:"dice_stats"`
+	CluesFound   int64                     `json:"clues_found"`
+	TotalClues   int                       `json:"total_clues"`
+	Truth        debriefTruth              `json:"truth"`
+}
+
+// GetSessionDebrief 返回已结束房间的结团复盘数据：战绩评估、公开骰运统计、线索收集进度与模组完整真相/全员 HO。
+// NOTE: 严格校验 status == ended，未结团时一律返回 400，防止任何角色在跑团中途提前剧透。
+func GetSessionDebrief(c *gin.Context) {
+	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID := c.GetUint("user_id")
+
+	var session models.GameSession
+	if err := models.DB.
+		Preload("Scenario").
+		Preload("Players.User").
+		Preload("Players.CharacterCard").
+		First(&session, sessionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
+		return
+	}
+	if !canViewSession(&session, userID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权查看该房间"})
+		return
+	}
+	if session.Status != models.SessionStatusEnded {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏尚未结束，无法查看复盘真相"})
+		return
+	}
+
+	var evalPtr *models.EvaluationContent
+	var eval models.GameEvaluation
+	if err := models.DB.Where("session_id = ?", session.ID).Order("id DESC").First(&eval).Error; err == nil {
+		content := eval.Content.Data
+		evalPtr = &content
+	}
+
+	var cluesFound int64
+	models.DB.Model(&models.SessionClue{}).Where("session_id = ?", session.ID).Count(&cluesFound)
+
+	var eventMsgs []models.Message
+	models.DB.Where("session_id = ? AND kind = ?", session.ID, models.MessageKindEvent).
+		Order("id ASC").
+		Find(&eventMsgs)
+	diceStats := aggregateDebriefDiceStats(eventMsgs)
+
+	sc := session.Scenario.Content.Data
+	truth := debriefTruth{
+		MythosCore:    strings.TrimSpace(sc.MythosCore),
+		Endings:       sc.Endings,
+		Clues:         sc.Clues,
+		NPCs:          make([]debriefNPC, 0, len(sc.NPCs)),
+		PlayerSecrets: make([]debriefPlayerSecret, 0),
+	}
+	if truth.Endings == nil {
+		truth.Endings = []models.EndingData{}
+	}
+	if truth.Clues == nil {
+		truth.Clues = []models.ClueData{}
+	}
+	if sc.KeeperAppendix != nil {
+		truth.CoreTruth = strings.TrimSpace(sc.KeeperAppendix.CoreTruth)
+		truth.AntagonistDossier = strings.TrimSpace(sc.KeeperAppendix.AntagonistDossier)
+	}
+	for _, npc := range sc.NPCs {
+		truth.NPCs = append(truth.NPCs, debriefNPC{
+			Name:        npc.Name,
+			Occupation:  npc.Occupation,
+			Attitude:    npc.Attitude,
+			Description: npc.Description,
+		})
+	}
+	for _, p := range session.Players {
+		secret := strings.TrimSpace(p.SecretBackground)
+		if secret == "" {
+			continue
+		}
+		truth.PlayerSecrets = append(truth.PlayerSecrets, debriefPlayerSecret{
+			CharacterName:    p.CharacterCard.Name,
+			Username:         p.User.Username,
+			SecretBackground: secret,
+		})
+	}
+
+	c.JSON(http.StatusOK, debriefResponse{
+		SessionName:  session.Name,
+		ScenarioName: session.Scenario.Name,
+		EndedAt:      session.UpdatedAt,
+		Evaluation:   evalPtr,
+		DiceStats:    diceStats,
+		CluesFound:   cluesFound,
+		TotalClues:   len(sc.Clues),
+		Truth:        truth,
+	})
+}
+
+func aggregateDebriefDiceStats(eventMsgs []models.Message) []debriefDiceStat {
+	byChar := make(map[string]*debriefDiceStat)
+	for _, msg := range eventMsgs {
+		if msg.Meta.Data == nil {
+			continue
+		}
+		for _, ev := range msg.Meta.Data.Events {
+			if ev.Type != "dice" || ev.Hidden {
+				continue
+			}
+			charName := strings.TrimSpace(ev.Character)
+			if charName == "" {
+				continue
+			}
+			result := strings.TrimSpace(ev.Result)
+			// 仅统计带判定目标或检定结果的 D100 检定，排除纯伤害/回复骰（如 1D6）。
+			if ev.Target <= 0 && result == "" {
+				continue
+			}
+			st, ok := byChar[charName]
+			if !ok {
+				st = &debriefDiceStat{Character: charName}
+				byChar[charName] = st
+			}
+			st.Total++
+			switch {
+			case result == "大成功":
+				st.Criticals++
+				st.Successes++
+			case result == "大失败":
+				st.Fumbles++
+				st.Failures++
+			case strings.Contains(result, "成功"):
+				st.Successes++
+			case strings.Contains(result, "失败"):
+				st.Failures++
+			}
+			if ev.Roll >= 1 && ev.Roll <= 100 {
+				if st.BestRoll == 0 || ev.Roll < st.BestRoll {
+					st.BestRoll = ev.Roll
+				}
+				if ev.Roll > st.WorstRoll {
+					st.WorstRoll = ev.Roll
+				}
+			}
+		}
+	}
+	out := make([]debriefDiceStat, 0, len(byChar))
+	for _, st := range byChar {
+		out = append(out, *st)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Total != out[j].Total {
+			return out[i].Total > out[j].Total
+		}
+		return out[i].Character < out[j].Character
+	})
+	return out
+}
+

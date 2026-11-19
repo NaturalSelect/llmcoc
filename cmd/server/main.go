@@ -292,6 +292,7 @@ func main() {
 		sessions.DELETE("/:id/clues/:clueId", handlers.DeleteSessionClue)
 		sessions.POST("/:id/notes", handlers.CreateSessionNote)
 		sessions.DELETE("/:id/notes/:noteId", handlers.DeleteSessionNote)
+		sessions.GET("/:id/debrief", handlers.GetSessionDebrief)
 		sessions.GET("/:id/chat-status", sh.GetChatStatus)
 		sessions.POST("/:id/chat", sh.ChatStream)
 		sessions.POST("/:id/kp-turn", sh.KPTurn)

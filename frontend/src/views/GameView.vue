@@ -11,6 +11,7 @@ import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import CharacterDetailModal from '@/components/character/CharacterDetailModal.vue'
 import AskCard from '@/components/game/AskCard.vue'
+import DebriefModal from '@/components/game/DebriefModal.vue'
 import EncounterTracker from '@/components/game/EncounterTracker.vue'
 import GameHeader from '@/components/game/GameHeader.vue'
 import GameHud from '@/components/game/GameHud.vue'
@@ -29,6 +30,7 @@ import type { HandbookData } from '@/game/handbookTypes'
 import { diffHud, endSessionMessage, isInSession, myCard, NO_FLASH, ownCardAccess, playerCardAccess } from '@/game/hud'
 import type { HudFlash, HudSnapshot } from '@/game/hud'
 import { currentGameTime, msgKind, writerText } from '@/game/messages'
+import { buildReplayMarkdown } from '@/game/replayExport'
 import { createRoomController } from '@/game/roomController'
 import type { Frame, RoomMessage } from '@/game/roomState'
 import { formatTurnTitle, loadTurnSoundPref, playTurnChime, saveTurnSoundPref } from '@/game/turnAlert'
@@ -51,6 +53,8 @@ const investigatorsOpen = ref(false)
 const joinOpen = ref(false)
 const oocOpen = ref(false)
 const handbookOpen = ref(false)
+const debriefOpen = ref(false)
+const novelMode = ref(false)
 const handbook = ref<HandbookData>(emptyHandbook())
 const handbookLoading = ref(false)
 const pinOpen = ref(false)
@@ -350,7 +354,30 @@ function openCard(access: ReturnType<typeof ownCardAccess>) {
   else ui.toast(access.error, 'error')
 }
 
-function onAction(action: 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive') {
+const visibleMessages = computed(() => {
+  const msgs = room.value?.messages ?? []
+  return novelMode.value ? msgs.filter((m) => msgKind(m) !== 'event') : msgs
+})
+
+function exportReplay() {
+  if (!session.value || !room.value) return
+  const md = buildReplayMarkdown(session.value, room.value.messages, {
+    includeEvents: !novelMode.value,
+    writerTextOf: (m) => writerText(room.value!, m),
+  })
+  const baseName = ((session.value.name as string) || `session-${session.value.id}`).replace(/[\\/:*?"<>|]+/g, '_')
+  const fileName = `${baseName}${novelMode.value ? '-小说版' : '-战报'}.md`
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(url)
+  ui.toast(novelMode.value ? '已导出小说版 Markdown 战报' : '已导出 Markdown 战报')
+}
+
+function onAction(action: 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive' | 'debrief') {
   const s = session.value
   if (!s) return
   if (action === 'investigators') investigatorsOpen.value = true
@@ -359,6 +386,7 @@ function onAction(action: 'investigators' | 'myCard' | 'join' | 'leave' | 'start
   else if (action === 'leave') void leaveSession(s)
   else if (action === 'start') void startSession(s)
   else if (action === 'end') void endSession(s)
+  else if (action === 'debrief') debriefOpen.value = true
   else void reviveSession(s)
 }
 
@@ -385,10 +413,13 @@ defineExpose({ viewCard })
           :busy="busy"
           :sound-enabled="soundEnabled"
           :ooc-unread="room?.oocUnread ?? 0"
+          :novel-mode="novelMode"
           @action="onAction"
           @toggle-sound="toggleSound"
           @open-ooc="oocOpen = true"
           @open-handbook="handbookOpen = true"
+          @toggle-novel="novelMode = !novelMode"
+          @export-replay="exportReplay"
         />
         <GameHud v-if="card" class="lg:hidden" :card="card" :flash="hudFlash" :time="gameTime" />
         <EncounterTracker :combat="handbook.combat" :chase="handbook.chase" />
@@ -396,7 +427,7 @@ defineExpose({ viewCard })
         <div ref="chatBox" class="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="off" @scroll.passive="onChatScroll">
           <div class="mx-auto max-w-3xl space-y-6 px-4 py-6">
             <template v-if="room">
-              <template v-for="m in room.messages" :key="m.id">
+              <template v-for="m in visibleMessages" :key="m.id">
                 <MessageItem :msg="m" :room="room" :can-pin-clue="canPostOoc" @preview="previewSrc = $event" @pin-clue="openPinClue" />
                 <AskCard v-if="m.id === askAt" :room="room" :draft="draft" :card="card" @submit="submit" />
               </template>
@@ -506,6 +537,7 @@ defineExpose({ viewCard })
         </div>
       </form>
     </BaseModal>
+    <DebriefModal :open="debriefOpen" :session-id="session?.id ?? null" @close="debriefOpen = false" />
     <JoinSessionModal :open="joinOpen" :session="session" @close="joinOpen = false" @joined="controller.refreshSession()" />
     <ImagePreview :src="previewSrc" @close="previewSrc = ''" />
     <CharacterDetailModal :open="viewCard !== null" :card="viewCard" @close="viewCard = null" @portrait="controller.refreshSession()" />

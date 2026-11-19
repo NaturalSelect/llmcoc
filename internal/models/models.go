@@ -304,10 +304,11 @@ type Scenario struct {
 	Description string                     `gorm:"-" json:"description"`
 	Author      string                     `gorm:"-" json:"author"`
 	Tags        string                     `gorm:"-" json:"tags"`
-	MinPlayers  int                        `gorm:"-" json:"min_players"`
-	MaxPlayers  int                        `gorm:"-" json:"max_players"`
-	Difficulty  string                     `gorm:"-" json:"difficulty"`
-	Content     JSONField[ScenarioContent] `gorm:"-" json:"content"`
+	MinPlayers        int                        `gorm:"-" json:"min_players"`
+	MaxPlayers        int                        `gorm:"-" json:"max_players"`
+	Difficulty        string                     `gorm:"-" json:"difficulty"`
+	RecommendedSkills []string                   `gorm:"-" json:"recommended_skills,omitempty"`
+	Content           JSONField[ScenarioContent] `gorm:"-" json:"content"`
 }
 
 type ScenarioGenerationLog struct {

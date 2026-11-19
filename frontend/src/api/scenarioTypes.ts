@@ -7,6 +7,7 @@ export interface Scenario {
   max_players?: number
   author?: string
   tags?: string
+  recommended_skills?: string[]
   content?: Record<string, any>
   [key: string]: unknown
 }

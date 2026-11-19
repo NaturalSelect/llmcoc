@@ -9,7 +9,7 @@ import BaseInput from '@/components/base/BaseInput.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import FormField from '@/components/base/FormField.vue'
 import PaginationBar from '@/components/base/PaginationBar.vue'
-import { scenarioContent } from '@/components/scenario/scenarioFormat'
+import { playersLabel, scenarioContent, splitTags } from '@/components/scenario/scenarioFormat'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
 import { difficultyLabel } from '@/utils/format'
@@ -113,8 +113,31 @@ async function submit() {
         <PaginationBar v-model:page="scenarioPage" :total-pages="scenarios.totalPages" :total="scenarios.total" />
       </div>
 
-      <div v-if="selected" class="space-y-2 rounded-lg bg-surface-2 p-3">
-        <p class="text-sm text-fg-muted">难度：<span>{{ difficultyLabel(selected.difficulty) }}</span></p>
+      <div v-if="selected" class="space-y-2 rounded-lg border border-line bg-surface-2 p-3">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+          <span>难度：<span class="text-fg">{{ difficultyLabel(selected.difficulty) }}</span></span>
+          <span>推荐人数：<span class="text-fg">{{ playersLabel(selected.min_players, selected.max_players) }}</span></span>
+          <span v-if="selected.author">作者：<span class="text-fg">{{ selected.author }}</span></span>
+        </div>
+        <div v-if="splitTags(selected.tags).length" class="flex flex-wrap gap-1.5">
+          <span
+            v-for="tag in splitTags(selected.tags)"
+            :key="tag"
+            class="rounded-full bg-surface-3 px-2 py-0.5 text-xs text-fg-subtle"
+          >
+            {{ tag }}
+          </span>
+        </div>
+        <div v-if="selected.recommended_skills?.length" class="flex flex-wrap items-center gap-1.5">
+          <span class="text-xs text-fg-subtle">推荐技能：</span>
+          <span
+            v-for="sk in selected.recommended_skills"
+            :key="sk"
+            class="rounded-full bg-accent/15 px-2 py-0.5 text-xs text-accent"
+          >
+            {{ sk }}
+          </span>
+        </div>
         <p v-if="scenarioContent(selected).setting" class="whitespace-pre-wrap font-prose text-prose text-fg-muted">
           {{ scenarioContent(selected).setting }}
         </p>

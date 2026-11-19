@@ -174,6 +174,9 @@ func ListSessions(c *gin.Context) {
 		return
 	}
 
+	for i := range sessions {
+		populateScenarioPreview(&sessions[i].Scenario)
+	}
 	sanitizeSessionsSecrets(sessions, userID, admin, false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
@@ -211,6 +214,9 @@ func ListMyHistorySessions(c *gin.Context) {
 		return
 	}
 
+	for i := range sessions {
+		populateScenarioPreview(&sessions[i].Scenario)
+	}
 	sanitizeSessionsSecrets(sessions, userID, isAdminUser(c, userID), false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
@@ -228,6 +234,7 @@ func GetSession(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
 	}
+	populateScenarioPreview(&session.Scenario)
 	sanitizeSessionPlayerSecrets(&session, viewerID, isAdminUser(c, viewerID), true)
 	c.JSON(http.StatusOK, session)
 }

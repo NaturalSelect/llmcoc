@@ -22,6 +22,8 @@ func sessionTableRouter(userID uint, username, role string) *gin.Engine {
 	r.DELETE("/sessions/:id/clues/:clueId", auth, DeleteSessionClue)
 	r.POST("/sessions/:id/notes", auth, CreateSessionNote)
 	r.DELETE("/sessions/:id/notes/:noteId", auth, DeleteSessionNote)
+	r.GET("/sessions/:id/debrief", auth, GetSessionDebrief)
+	r.GET("/scenarios", auth, ListScenarios)
 	return r
 }
 
@@ -244,3 +246,178 @@ func TestHandbook_CluesNotesPrivacyAndAntiSpoilerProjection(t *testing.T) {
 		t.Errorf("creator delete clue want 200, got %d", w.Code)
 	}
 }
+
+func TestScenarioPreview_RecommendedSkills(t *testing.T) {
+	initTestDB(t)
+	u := seedUser(t, "reader", "user", 0, 3)
+
+	sc := models.Scenario{
+		Name:     "迷雾灯塔",
+		IsActive: true,
+		Content: models.JSONField[models.ScenarioContent]{Data: models.ScenarioContent{
+			Setting: "1924 年秋，孤岛灯塔失联。",
+			Clues: []models.ClueData{
+				{Summary: "灯塔地窖的秘密祭坛", SkillCheck: "侦查（困难）", Nature: "真实"},
+				{Summary: "海员失踪案报纸", SkillCheck: "图书馆 或 历史", Nature: "真实"},
+				{Summary: "灯塔守卫的紧张神情", SkillCheck: "侦查 / 心理学", Nature: "隐藏"},
+				{Summary: "水下雕像铭文", SkillCheck: "神秘学、考古学、医学、潜行、锁匠", Nature: "真实"},
+			},
+		}},
+	}
+	if err := sc.EncodeData(); err != nil {
+		t.Fatalf("encode scenario: %v", err)
+	}
+	if err := models.DB.Create(&sc).Error; err != nil {
+		t.Fatalf("create scenario: %v", err)
+	}
+
+	r := sessionTableRouter(u, "reader", "user")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("GET", "/scenarios?page=1&page_size=20", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("list scenarios want 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Items []models.Scenario `json:"items"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode scenarios: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(resp.Items))
+	}
+	skills := resp.Items[0].RecommendedSkills
+	if len(skills) != maxRecommendedSkills {
+		t.Fatalf("recommended_skills = %v, want capped at %d", skills, maxRecommendedSkills)
+	}
+	if skills[0] != "侦查" {
+		t.Errorf("most frequent skill = %q, want 侦查 (all=%v)", skills[0], skills)
+	}
+	for _, s := range skills {
+		if strings.Contains(s, "祭坛") || strings.Contains(s, "失踪") {
+			t.Errorf("recommended_skills leaked clue text: %q", s)
+		}
+	}
+}
+
+func TestSessionDebrief_BlockedBeforeEndedAndReturnsTruthAfterEnded(t *testing.T) {
+	initTestDB(t)
+	host := seedUser(t, "host", "user", 0, 3)
+	p2 := seedUser(t, "p2", "user", 0, 3)
+	stranger := seedUser(t, "stranger", "user", 0, 3)
+	c1 := seedCard(t, host, "侦探甲")
+	c2 := seedCard(t, p2, "医生乙")
+
+	sc := models.Scenario{
+		Name:     "深渊低语",
+		IsActive: true,
+		Content: models.JSONField[models.ScenarioContent]{Data: models.ScenarioContent{
+			Setting:    "雨夜小镇",
+			MythosCore: "沉睡在湖底的星之眷族",
+			KeeperAppendix: &models.KeeperAppendix{
+				CoreTruth:         "镇长正是百年前仪式的延续者",
+				AntagonistDossier: "老镇长掌握召唤法术",
+			},
+			NPCs: []models.NPCData{
+				{Name: "老镇长", Occupation: "镇长", Attitude: "hostile", Description: "伪善的幕后主使"},
+			},
+			Clues: []models.ClueData{
+				{Summary: "湖底契约残页", Source: "档案馆", SkillCheck: "图书馆使用", Nature: "真实"},
+				{Summary: "钟楼暗格", Source: "教堂", SkillCheck: "侦查", Nature: "隐藏"},
+			},
+			Endings: []models.EndingData{
+				{Name: "黎明驱雾", Trigger: "破坏仪式", SANReward: "1D6"},
+				{Name: "永夜降临", Trigger: "仪式完成", IsFailure: true},
+			},
+		}},
+	}
+	_ = sc.EncodeData()
+	models.DB.Create(&sc)
+
+	sess := models.GameSession{
+		Name: "复盘测试房", ScenarioID: sc.ID, Status: models.SessionStatusPlaying,
+		MaxPlayers: 4, CreatedBy: host, HasPassword: true,
+	}
+	models.DB.Create(&sess)
+	models.DB.Create(&models.SessionPlayer{
+		SessionID: sess.ID, UserID: host, CharacterCardID: c1,
+		SecretBackground: "你是来秘密调查镇长的报社线人",
+	})
+	models.DB.Create(&models.SessionPlayer{
+		SessionID: sess.ID, UserID: p2, CharacterCardID: c2,
+	})
+
+	// 进行中严格禁止查看复盘真相
+	rHost := sessionTableRouter(host, "host", "user")
+	w := httptest.NewRecorder()
+	rHost.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/debrief", sess.ID), nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("playing debrief want 400, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	// 结团并写入评估、已发现线索与公开/暗骰/伤害事件
+	models.DB.Model(&sess).Update("status", models.SessionStatusEnded)
+	models.DB.Create(&models.GameEvaluation{
+		SessionID: sess.ID,
+		Content: models.JSONField[models.EvaluationContent]{Data: models.EvaluationContent{
+			Players: []models.PlayerEvalContent{
+				{CharacterName: "侦探甲", Score: 92, Comment: "抽丝剥茧", BaseCoins: 100, BonusCoins: 40},
+			},
+		}},
+	})
+	models.DB.Create(&models.SessionClue{
+		SessionID: sess.ID, Title: "湖底契约", Content: "证实镇长参与仪式", AddedBy: "KP",
+	})
+	models.DB.Create(&models.Message{
+		SessionID: sess.ID, Role: models.MessageRoleAssistant, Kind: models.MessageKindEvent,
+		Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{Events: []models.GameEvent{
+			{Type: "dice", Character: "侦探甲", Skill: "侦查", Roll: 1, Target: 60, Result: "大成功"},
+			{Type: "dice", Character: "侦探甲", Skill: "潜行", Roll: 98, Target: 40, Result: "大失败"},
+			{Type: "dice", Character: "侦探甲", Skill: "伤害", Roll: 4}, // 纯伤害骰不计入检定统计
+			{Type: "dice", Hidden: true},                           // 暗骰不计入
+			{Type: "dice", Character: "医生乙", Skill: "医学", Roll: 25, Target: 70, Result: "困难成功"},
+		}}},
+	})
+
+	// 加密房间的非成员返回 403
+	rStranger := sessionTableRouter(stranger, "stranger", "user")
+	w = httptest.NewRecorder()
+	rStranger.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/debrief", sess.ID), nil))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("stranger debrief want 403, got %d", w.Code)
+	}
+
+	// 结团后成员可读取完整复盘、骰运、线索进度与全员 HO
+	rP2 := sessionTableRouter(p2, "p2", "user")
+	w = httptest.NewRecorder()
+	rP2.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d/debrief", sess.ID), nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("ended debrief want 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp debriefResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode debrief: %v", err)
+	}
+	if resp.CluesFound != 1 || resp.TotalClues != 2 {
+		t.Errorf("clues = %d/%d, want 1/2", resp.CluesFound, resp.TotalClues)
+	}
+	if resp.Evaluation == nil || len(resp.Evaluation.Players) != 1 || resp.Evaluation.Players[0].Score != 92 {
+		t.Errorf("evaluation = %+v", resp.Evaluation)
+	}
+	if len(resp.DiceStats) != 2 {
+		t.Fatalf("dice_stats = %+v, want 2 characters", resp.DiceStats)
+	}
+	if resp.DiceStats[0].Character != "侦探甲" || resp.DiceStats[0].Total != 2 || resp.DiceStats[0].Criticals != 1 || resp.DiceStats[0].Fumbles != 1 || resp.DiceStats[0].BestRoll != 1 || resp.DiceStats[0].WorstRoll != 98 {
+		t.Errorf("first dice stat = %+v", resp.DiceStats[0])
+	}
+	if resp.Truth.CoreTruth != "镇长正是百年前仪式的延续者" || resp.Truth.MythosCore != "沉睡在湖底的星之眷族" {
+		t.Errorf("truth core = %+v", resp.Truth)
+	}
+	if len(resp.Truth.Endings) != 2 || len(resp.Truth.Clues) != 2 || len(resp.Truth.NPCs) != 1 {
+		t.Errorf("truth lists = endings:%d clues:%d npcs:%d", len(resp.Truth.Endings), len(resp.Truth.Clues), len(resp.Truth.NPCs))
+	}
+	if len(resp.Truth.PlayerSecrets) != 1 || resp.Truth.PlayerSecrets[0].CharacterName != "侦探甲" {
+		t.Errorf("player_secrets = %+v", resp.Truth.PlayerSecrets)
+	}
+}
+
