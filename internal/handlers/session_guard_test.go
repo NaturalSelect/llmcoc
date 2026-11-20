@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -15,17 +16,47 @@ import (
 	"github.com/llmcoc/server/internal/services/agent"
 )
 
-// fakeGuard 记录被调用的次数和收到的输入，并返回预设结论。
+// fakeGuard 记录被调用的次数、收到的输入和背景，并返回预设结论。
 type fakeGuard struct {
 	verdict agent.InputVerdict
 	calls   atomic.Int32
 	last    atomic.Value
+	lastCtx atomic.Value
 }
 
-func (g *fakeGuard) classify(_ context.Context, content string) agent.InputVerdict {
+func (g *fakeGuard) classify(_ context.Context, content string, ic agent.InputContext) agent.InputVerdict {
 	g.calls.Add(1)
 	g.last.Store(content)
+	g.lastCtx.Store(ic)
 	return g.verdict
+}
+
+// seenContext 返回分类器最近一次收到的背景。
+func (g *fakeGuard) seenContext(t *testing.T) agent.InputContext {
+	t.Helper()
+	ic, ok := g.lastCtx.Load().(agent.InputContext)
+	if !ok {
+		t.Fatal("guard was never called")
+	}
+	return ic
+}
+
+func seedGuardMessage(t *testing.T, m models.Message) {
+	t.Helper()
+	if m.Role == "" {
+		m.Role = models.MessageRoleAssistant
+	}
+	if err := models.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+}
+
+func guardMessageContents(ic agent.InputContext) []string {
+	out := make([]string, 0, len(ic.Messages))
+	for _, m := range ic.Messages {
+		out = append(out, m.Content)
+	}
+	return out
 }
 
 func guardedHandlers(runner agent.AgentRunner, g *fakeGuard) *SessionHandlers {
@@ -41,6 +72,79 @@ func countTurnActions(t *testing.T, sessionID uint) int64 {
 		t.Fatalf("count turn actions: %v", err)
 	}
 	return n
+}
+
+func TestChatStream_GuardReceivesPublicTableContext(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{userID}, Names: []string{"Test Char"}, Question: "你要怎么做？"})
+
+	stranger := userID + 100
+	seedGuardMessage(t, models.Message{SessionID: sessionID, Kind: models.MessageKindWriter, Status: models.MessageStatusDone,
+		Content: "雨夜里，门开了。", WriterDirection: "机密：凶手是管家"})
+	seedGuardMessage(t, models.Message{SessionID: sessionID, Kind: models.MessageKindKP, Status: models.MessageStatusDone,
+		Content: "管家朝你点了点头。"})
+	seedGuardMessage(t, models.Message{SessionID: sessionID, Kind: models.MessageKindKP, Status: models.MessageStatusDone,
+		Content: "只给别人的密讯", VisibleTo: models.JSONField[[]uint]{Data: []uint{stranger}}})
+	seedGuardMessage(t, models.Message{SessionID: sessionID, Role: models.MessageRoleSystem, Kind: models.MessageKindSystem,
+		Content: "某人加入了房间"})
+	seedGuardMessage(t, models.Message{SessionID: sessionID, Kind: models.MessageKindWriter, Status: models.MessageStatusPending,
+		Content: "还没写完"})
+	seedGuardMessage(t, models.Message{SessionID: sessionID, Kind: models.MessageKindAsk, Status: models.MessageStatusDone,
+		Content: "你要怎么做？"})
+
+	runner := &fakeRunner{run: askRun("接下来呢？", []uint{userID}, []string{"Test Char"})}
+	tap := tapRoom(t, sessionID)
+	g := &fakeGuard{}
+	w := postChat(makeTestRouter(guardedHandlers(runner, g), userID, "tester"), sessionID, "我走进去")
+	if body := decodeChatAccepted(t, w); !body.FloorStarted {
+		t.Fatalf("floor_started = false, body: %s", w.Body.String())
+	}
+	tap.waitCount("floor_end", 1)
+
+	ic := g.seenContext(t)
+	if ic.Character != "Test Char" {
+		t.Errorf("character = %q, want the player's investigator", ic.Character)
+	}
+	if got, want := guardMessageContents(ic), []string{"管家朝你点了点头。", "你要怎么做？"}; !slices.Equal(got, want) {
+		t.Errorf("context messages = %q, want only the public KP lines and ask in order %q (no narrative prose, whispers, or system notes)", got, want)
+	}
+}
+
+func TestLoadGuardContext_PagesPastNewerWhispers(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	for _, text := range []string{"早一点的公开叙事", "最近的公开叙事"} {
+		seedGuardMessage(t, models.Message{SessionID: sessionID, Kind: models.MessageKindKP, Status: models.MessageStatusDone, Content: text})
+	}
+	// NOTE: 比公开消息更新的两批密讯：必须翻过它们，而不是没有背景。
+	for i := 0; i < guardContextBatch*2; i++ {
+		seedGuardMessage(t, models.Message{SessionID: sessionID, Kind: models.MessageKindKP, Status: models.MessageStatusDone,
+			Content: "别人的密讯", VisibleTo: models.JSONField[[]uint]{Data: []uint{userID + 100}}})
+	}
+
+	ic := loadGuardContext(sessionID, userID)
+	if got, want := guardMessageContents(ic), []string{"早一点的公开叙事", "最近的公开叙事"}; !slices.Equal(got, want) {
+		t.Errorf("context messages = %q, want %q", got, want)
+	}
+}
+
+func TestLoadGuardContext_GivesUpAfterBoundedPaging(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	seedGuardMessage(t, models.Message{SessionID: sessionID, Kind: models.MessageKindKP, Status: models.MessageStatusDone, Content: "太旧的公开叙事"})
+	for i := 0; i < guardContextBatch*guardContextMaxBatches; i++ {
+		seedGuardMessage(t, models.Message{SessionID: sessionID, Kind: models.MessageKindKP, Status: models.MessageStatusDone,
+			Content: "别人的密讯", VisibleTo: models.JSONField[[]uint]{Data: []uint{userID + 100}}})
+	}
+
+	ic := loadGuardContext(sessionID, userID)
+	if len(ic.Messages) != 0 {
+		t.Errorf("context messages = %q, want none once the paging bound is hit", guardMessageContents(ic))
+	}
+	if ic.Character != "Test Char" {
+		t.Errorf("character = %q, want it kept even without messages", ic.Character)
+	}
 }
 
 func TestChatStream_GuardBlocksBeforeAnythingIsStored(t *testing.T) {

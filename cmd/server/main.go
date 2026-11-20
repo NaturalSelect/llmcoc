@@ -198,6 +198,7 @@ func main() {
 		`^/api/scenarios/generate/ws$`,
 		`^/api/scenarios/compile-story/ws$`,
 		`^/api/admin/online-modules/ws$`,
+		`^/api/admin/companion-cards/generate/ws$`,
 	})))
 
 	// ─── API routes ───────────────────────────────────────────────────────────
@@ -334,6 +335,7 @@ func main() {
 		admin.GET("/users/:id/characters", handlers.AdminListUserCharacters)
 		admin.GET("/companion-cards", handlers.AdminListCompanionCards)
 		admin.POST("/companion-cards", handlers.AdminAddCompanionCard)
+		admin.GET("/companion-cards/generate/ws", handlers.AdminGenerateCompanionCardsWS)
 		admin.POST("/companion-cards/:id/return", handlers.AdminReturnCompanionCard)
 		admin.GET("/scenarios", handlers.AdminListScenarios)
 		admin.GET("/scenarios/:id/generation-log", handlers.AdminGetScenarioGenerationLog)

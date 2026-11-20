@@ -50,3 +50,34 @@ export interface AdminCompanionCard extends CompanionCard {
 export interface CompanionMessageResponse {
   message?: string
 }
+
+// GET /api/admin/companion-cards/generate/ws（WebSocket）推送的事件数据，对应 internal/handlers/admin_companion_generate.go。
+// 请求帧是 { count }；index 从 1 开始，同一张卡的 card_start 与 card_done / card_error 共用同一个 index
+export interface CompanionGenStart {
+  index: number
+  name: string
+  occupation: string
+  gender: string
+  age: number
+}
+
+export interface CompanionGenDone {
+  index: number
+  card_id: number
+  name: string
+  occupation: string
+}
+
+export interface CompanionGenError {
+  index: number
+  // 取名失败时还没有姓名
+  name?: string
+  occupation?: string
+  message: string
+}
+
+export interface CompanionGenBatchDone {
+  total: number
+  succeeded: number
+  failed: number
+}

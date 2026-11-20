@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -298,18 +299,31 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		req.Age = 90
 	}
 
-	// Generate base stats
+	card, err := generateCharacterCard(context.Background(), userID, req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := models.DB.Create(card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建人物卡失败"})
+		return
+	}
+	c.JSON(http.StatusCreated, card)
+}
+
+// NOTE: generateCharacterCard 跑完 AI 车卡流程（掷属性、叙述与属性微调、技能分配），返回尚未入库的人物卡。
+// 调用方要先校验性别和姓名，并把年龄夹到 15-90。
+func generateCharacterCard(ctx context.Context, userID uint, req GenerateCharacterReq) (*models.CharacterCard, error) {
 	stats, _, err := game.GenerateStatsForAge(req.Age)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		return nil, err
 	}
 	skills := game.DefaultSkills()
 	skills["母语"] = stats.EDU
 	skills["闪避"] = stats.DEX / 2
 
-	// Ask LLM to fill out backstory, name, traits
-	generated, err := agent.GenerateCharacter(context.Background(), agent.GenerateCharacterReq{
+	// Ask LLM to fill out backstory, appearance, traits
+	generated, err := generateCharacterNarrative(ctx, agent.GenerateCharacterReq{
 		Name:       req.Name,
 		Occupation: req.Occupation,
 		Background: req.Background,
@@ -320,8 +334,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 	})
 	if err != nil {
 		characterLog.Error("generate character llm error", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI生成失败: " + err.Error()})
-		return
+		return nil, fmt.Errorf("AI生成失败: %w", err)
 	}
 
 	if s := generated.Stats; s != nil {
@@ -332,7 +345,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 	}
 
 	// Second LLM call: adjust skill levels based on occupation and background
-	adjustedSkills, skillErr := agent.AdjustSkills(context.Background(), agent.AdjustSkillsReq{
+	adjustedSkills, skillErr := agent.AdjustSkills(ctx, agent.AdjustSkillsReq{
 		Name:       req.Name,
 		Occupation: req.Occupation,
 		Background: req.Background,
@@ -346,7 +359,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		applyAdjustedSkills(skills, adjustedSkills, stats)
 	}
 
-	card := models.CharacterCard{
+	return &models.CharacterCard{
 		UserID:     userID,
 		Name:       req.Name,
 		Race:       "人类",
@@ -360,13 +373,7 @@ func (h *CharacterHandlers) GenerateCharacter(c *gin.Context) {
 		Skills:     models.JSONField[map[string]int]{Data: skills},
 		Assets:     models.JSONField[[]models.Asset]{Data: req.Assets},
 		IsActive:   true,
-	}
-
-	if err := models.DB.Create(&card).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建人物卡失败"})
-		return
-	}
-	c.JSON(http.StatusCreated, card)
+	}, nil
 }
 
 func UpdateCharacter(c *gin.Context) {

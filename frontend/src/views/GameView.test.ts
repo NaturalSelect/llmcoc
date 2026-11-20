@@ -77,9 +77,10 @@ interface Setup {
   status?: string
   asAdmin?: boolean
   maxPlayers?: number
+  handbook?: Record<string, unknown>
 }
 
-async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing', asAdmin = false, maxPlayers }: Setup = {}) {
+async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing', asAdmin = false, maxPlayers, handbook }: Setup = {}) {
   const fetchCalls: Array<{ method: string; path: string }> = []
   const session = {
     id: 7,
@@ -101,6 +102,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
         return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
       }
       if (path === '/api/sessions/7/chat') return json({}, 202)
+      if (path === '/api/sessions/7/handbook' && handbook) return json(handbook)
       if (path === '/api/sessions/7/companion-cards') {
         return json({ enabled: true, cards: [{ id: 31, name: '陪玩医生', occupation: '医生', age: 35, gender: '女', portrait_hash: '', hp: 10, max_hp: 10, san: 60, max_san: 60 }] })
       }
@@ -169,6 +171,52 @@ describe('GameView', () => {
     const rows = list.findAll('li').map((li) => li.findAll('span, b').map((n) => n.text()).join(' '))
     expect(rows).toStrictEqual(['爱丽丝 侦查 45 难度 困难', 'KP 暗骰了一次', '爱丽丝 HP 10 → 9'])
     expect(list.element.closest('article')?.querySelector('.font-medium')).toBeNull()
+    wrapper.unmount()
+  })
+
+  test('暗钟只在管理员的时钟条上出现，按钮可隐藏并记住选择；普通玩家没有按钮', async () => {
+    const handbook = {
+      clocks: [
+        { name: '血月仪式', current: 2, max: 4, visible: true },
+        { name: '教团暗杀倒计时', current: 3, max: 4, visible: false },
+      ],
+    }
+    const admin = await setup({ asAdmin: true, handbook })
+    const bar = () => admin.wrapper.find('[aria-label="危机时钟"]')
+    expect(bar().text()).toContain('教团暗杀倒计时')
+    expect(bar().text()).toContain('隐藏暗钟')
+
+    await admin.wrapper.find('[data-testid="toggle-dark-clocks"]').trigger('click')
+    expect(bar().text()).toContain('血月仪式')
+    expect(bar().text()).not.toContain('教团暗杀倒计时')
+    expect(bar().text()).toContain('显示暗钟 (1)')
+    expect(localStorage.getItem('coc_hide_dark_clocks')).toBe('1')
+
+    await admin.wrapper.find('[data-testid="toggle-dark-clocks"]').trigger('click')
+    expect(bar().text()).toContain('教团暗杀倒计时')
+    expect(localStorage.getItem('coc_hide_dark_clocks')).toBe('0')
+    admin.wrapper.unmount()
+
+    document.body.innerHTML = ''
+    FakeWS.all = []
+    const player = await setup({ handbook: { clocks: [handbook.clocks[0]] } })
+    expect(player.wrapper.find('[aria-label="危机时钟"]').text()).toContain('血月仪式')
+    expect(player.wrapper.find('[data-testid="toggle-dark-clocks"]').exists()).toBe(false)
+    player.wrapper.unmount()
+  })
+
+  test('暗钟全部被隐藏时时钟条仍保留按钮，可以再显示出来', async () => {
+    localStorage.setItem('coc_hide_dark_clocks', '1')
+    const { wrapper } = await setup({
+      asAdmin: true,
+      handbook: { clocks: [{ name: '教团暗杀倒计时', current: 3, max: 4, visible: false }] },
+    })
+    const bar = wrapper.find('[aria-label="危机时钟"]')
+    expect(bar.text()).not.toContain('教团暗杀倒计时')
+    expect(bar.text()).toContain('显示暗钟 (1)')
+
+    await wrapper.find('[data-testid="toggle-dark-clocks"]').trigger('click')
+    expect(wrapper.find('[aria-label="危机时钟"]').text()).toContain('教团暗杀倒计时')
     wrapper.unmount()
   })
 

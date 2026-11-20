@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { EyeOff, Timer } from '@lucide/vue'
+import { Eye, EyeOff, Timer } from '@lucide/vue'
+import BaseButton from '@/components/base/BaseButton.vue'
 import type { SessionClock } from '@/game/handbookTypes'
 
 defineProps<{
   clocks: SessionClock[]
+  darkCount?: number
+  darkHidden?: boolean
 }>()
+const emit = defineEmits<{ toggleDark: [] }>()
 
 function fillClass(c: SessionClock): string {
   const ratio = c.max > 0 ? c.current / c.max : 0
@@ -29,7 +33,7 @@ function titleClass(c: SessionClock): string {
 </script>
 
 <template>
-  <div v-if="clocks.length" class="shrink-0 border-b border-line bg-surface px-4 py-2" aria-label="危机时钟">
+  <div v-if="clocks.length || darkCount" class="shrink-0 border-b border-line bg-surface px-4 py-2" aria-label="危机时钟">
     <div class="mx-auto flex max-w-3xl flex-wrap items-center gap-2">
       <div
         v-for="clk in clocks"
@@ -57,6 +61,18 @@ function titleClass(c: SessionClock): string {
         </span>
         <span v-if="clk.stage" class="text-fg-subtle">· {{ clk.stage }}</span>
       </div>
+      <BaseButton
+        v-if="darkCount"
+        size="sm"
+        variant="ghost"
+        data-testid="toggle-dark-clocks"
+        :aria-pressed="darkHidden"
+        @click="emit('toggleDark')"
+      >
+        <Eye v-if="darkHidden" :size="16" :stroke-width="1.75" />
+        <EyeOff v-else :size="16" :stroke-width="1.75" />
+        {{ darkHidden ? `显示暗钟 (${darkCount})` : '隐藏暗钟' }}
+      </BaseButton>
     </div>
   </div>
 </template>

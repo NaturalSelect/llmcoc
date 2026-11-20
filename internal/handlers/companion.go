@@ -393,7 +393,7 @@ func (e *companionEnv) OOC(limit int) ([]models.SessionOOCMessage, error) {
 // 被分类器拦下时返回 ErrCompanionInputBlocked（不落库，AI 可改写重提）。
 func (e *companionEnv) Submit(content string) error {
 	// NOTE: AI 的输出来自 LLM，对抗性的模组文本或其他玩家的发言可能诱导它说出越权内容；bot 不是管理员，没有跳过分类的情形。
-	if v := e.h.classify(context.Background(), content); v.Blocked {
+	if v := e.h.classify(context.Background(), e.sessionID, e.botID, content); v.Blocked {
 		companionLog.Warn("companion input blocked by input guard", "session", e.sessionID, "category", v.Category, "score", v.Score)
 		return agent.ErrCompanionInputBlocked
 	}

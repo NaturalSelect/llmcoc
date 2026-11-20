@@ -19,6 +19,7 @@ import { COMPANION_POOL_LABEL, companionCardMeta, companionPoolState, poolCandid
 import type { CompanionPoolState } from '@/game/companion'
 import { useCharactersStore } from '@/stores/characters'
 import { useUiStore } from '@/stores/ui'
+import CompanionGeneratePanel from './CompanionGeneratePanel.vue'
 
 // NOTE: 管理员的 AI 卡池：卡池里的卡属于 bot 用户，房主加 AI 时从这里挑空闲的卡。
 // 「从我的卡移入」的候选取自 /api/characters（只含自己名下的活跃卡，复用人物卡 store），已在房间里的卡不能移入；
@@ -97,6 +98,8 @@ async function giveBack(c: AdminCompanionCard) {
 
 <template>
   <div class="space-y-5">
+    <CompanionGeneratePanel :reload="reload" />
+
     <PaperCard class="space-y-3">
       <div class="min-w-0">
         <SectionHeading>移入卡池</SectionHeading>

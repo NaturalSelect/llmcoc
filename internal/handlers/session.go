@@ -28,7 +28,7 @@ var chatLog = logging.For("chat")
 type SessionHandlers struct {
 	Runner agent.AgentRunner
 	// Guard 对玩家输入做越权请求分类，为 nil 时用 agent.ClassifyPlayerInput；测试里替换它避免依赖数据库里的 Provider。
-	Guard func(ctx context.Context, content string) agent.InputVerdict
+	Guard func(ctx context.Context, content string, ic agent.InputContext) agent.InputVerdict
 	// Companion 驱动 AI 陪玩的回应，为 nil 时用 agent.DefaultCompanion；测试里替换它避免依赖数据库里的 Provider。
 	Companion agent.CompanionRunner
 }
@@ -38,11 +38,13 @@ func NewSessionHandlers(r agent.AgentRunner) *SessionHandlers {
 	return &SessionHandlers{Runner: r}
 }
 
-func (h *SessionHandlers) classify(ctx context.Context, content string) agent.InputVerdict {
+// NOTE: classify 对 userID 在 sessionID 里提交的输入做分类，并把房间里的公开背景一起交给分类器（见 loadGuardContext）。
+func (h *SessionHandlers) classify(ctx context.Context, sessionID, userID uint, content string) agent.InputVerdict {
+	ic := loadGuardContext(sessionID, userID)
 	if h.Guard != nil {
-		return h.Guard(ctx, content)
+		return h.Guard(ctx, content, ic)
 	}
-	return agent.ClassifyPlayerInput(ctx, content)
+	return agent.ClassifyPlayerInput(ctx, content, ic)
 }
 
 type CreateSessionReq struct {
@@ -1155,7 +1157,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	}
 	// NOTE: 管理员的 DEBUG 指令也走这个接口，必须跳过分类，否则调试指令会被当成越权请求拦掉。
 	if !isAdminUser(c, userID) {
-		if v := h.classify(c.Request.Context(), content); v.Blocked {
+		if v := h.classify(c.Request.Context(), uint(sessionID), userID, content); v.Blocked {
 			chatLog.Warn("chat blocked by input guard", "session", sessionID, "user", username, "category", v.Category, "score", v.Score)
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "这条输入像是在要求越权或索要谜底，KP 不会执行。请写成你的调查员此刻要做的事或要说的话。"})
 			return

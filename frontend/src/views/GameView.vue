@@ -38,6 +38,7 @@ import { buildReplayMarkdown } from '@/game/replayExport'
 import { createRoomController } from '@/game/roomController'
 import type { Frame, RoomMessage } from '@/game/roomState'
 import { formatTurnTitle, loadTurnSoundPref, playTurnChime, saveTurnSoundPref } from '@/game/turnAlert'
+import { loadHideDarkClocksPref, saveHideDarkClocksPref } from '@/game/darkClockPref'
 import { useAuthStore } from '@/stores/auth'
 import { useCharactersStore } from '@/stores/characters'
 import { useUiStore } from '@/stores/ui'
@@ -62,6 +63,12 @@ const handbookOpen = ref(false)
 const debriefOpen = ref(false)
 const novelMode = ref(false)
 const handbook = ref<HandbookData>(emptyHandbook())
+const hideDarkClocks = ref(loadHideDarkClocksPref())
+// NOTE: 暗钟只有管理员的手册里才有；普通玩家拿到的列表本来就不含暗钟，所以数量只对管理员计。
+const darkClockCount = computed(() => (auth.isAdmin ? handbook.value.clocks.filter((c) => !c.visible).length : 0))
+const shownHandbook = computed<HandbookData>(() =>
+  hideDarkClocks.value ? { ...handbook.value, clocks: handbook.value.clocks.filter((c) => c.visible) } : handbook.value,
+)
 const handbookLoading = ref(false)
 const pinOpen = ref(false)
 const pinTitle = ref('')
@@ -262,6 +269,11 @@ function toggleSound() {
   saveTurnSoundPref(soundEnabled.value)
 }
 
+function toggleDarkClocks() {
+  hideDarkClocks.value = !hideDarkClocks.value
+  saveHideDarkClocksPref(hideDarkClocks.value)
+}
+
 watch(
   () => [Boolean(room.value?.spotlight.askedMe && room.value?.status === 'playing'), (session.value?.name as string) || ''] as const,
   ([myTurn, sessionName], prev) => {
@@ -454,7 +466,7 @@ defineExpose({ viewCard })
           @export-replay="exportReplay"
         />
         <GameHud v-if="card" class="lg:hidden" :card="card" :flash="hudFlash" :time="gameTime" />
-        <ClockTracker :clocks="handbook.clocks" />
+        <ClockTracker :clocks="shownHandbook.clocks" :dark-count="darkClockCount" :dark-hidden="hideDarkClocks" @toggle-dark="toggleDarkClocks" />
         <EncounterTracker :combat="handbook.combat" :chase="handbook.chase" />
 
         <div ref="chatBox" class="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="off" @scroll.passive="onChatScroll">
@@ -497,7 +509,7 @@ defineExpose({ viewCard })
         :flash="hudFlash"
         :time="gameTime"
         :user-id="auth.user?.id"
-        :handbook="handbook"
+        :handbook="shownHandbook"
         :handbook-loading="handbookLoading"
         :can-add-companion="companionAddable"
         :can-remove-companion="companionRemovable"
@@ -533,7 +545,7 @@ defineExpose({ viewCard })
       <div class="-mx-5 -mb-5 flex h-96 flex-col">
         <HandbookPanel
           :session="session"
-          :data="handbook"
+          :data="shownHandbook"
           :loading="handbookLoading"
           :user-id="auth.user?.id"
           :can-edit="canPostOoc"
