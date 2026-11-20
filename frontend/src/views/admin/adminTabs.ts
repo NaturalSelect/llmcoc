@@ -8,6 +8,7 @@ export const ADMIN_TABS = [
   { key: 'announcements', label: '公告管理' },
   { key: 'settings', label: '系统设置' },
   { key: 'cache', label: '规则缓存' },
+  { key: 'companions', label: 'AI 卡池' },
 ] as const
 
 export type AdminTabKey = (typeof ADMIN_TABS)[number]['key']

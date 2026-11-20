@@ -196,6 +196,20 @@ func TestSeedDefaultAgentConfigs_SeedsSystemOneInactive(t *testing.T) {
 	}
 }
 
+func TestSeedDefaultAgentConfigs_SeedsCompanionInactive(t *testing.T) {
+	db := openSeedTestDB(t)
+
+	seedDefaultAgentConfigs()
+
+	var cfg AgentConfig
+	if err := db.Where("role = ?", string(AgentRoleCompanion)).First(&cfg).Error; err != nil {
+		t.Fatalf("companion row not seeded: %v", err)
+	}
+	if cfg.IsActive {
+		t.Error("companion should be inactive by default so rooms cannot add an AI player until an admin binds a function-calling model")
+	}
+}
+
 func TestSeedDefaultSiteSettings_SeedsLawyerSimilarityWithoutOverwriting(t *testing.T) {
 	db := openSeedTestDB(t)
 	if err := db.AutoMigrate(&SiteSetting{}); err != nil {

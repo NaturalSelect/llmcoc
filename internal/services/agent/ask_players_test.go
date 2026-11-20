@@ -365,32 +365,6 @@ func TestWhisperAction(t *testing.T) {
 	}
 }
 
-func TestSecretBackgroundInjection(t *testing.T) {
-	players := []models.SessionPlayer{
-		{
-			UserID:           1,
-			SecretBackground: "你是教会派来销毁手稿的秘密探员",
-			CharacterCard:    models.CharacterCard{Name: "甲", Occupation: "记者"},
-		},
-		{
-			UserID:        2,
-			CharacterCard: models.CharacterCard{Name: "乙", Occupation: "医生"},
-		},
-	}
-	brief := buildPlayerBrief(players)
-	if !strings.Contains(brief, "有秘密背景/HO") || !strings.Contains(brief, "<attention>") {
-		t.Errorf("buildPlayerBrief should highlight HO presence, got:\n%s", brief)
-	}
-	detail := buildCharacterDetail("甲", players)
-	if !strings.Contains(detail, "<secret_background>你是教会派来销毁手稿的秘密探员</secret_background>") {
-		t.Errorf("buildCharacterDetail should embed <secret_background>, got:\n%s", detail)
-	}
-	detailNoHO := buildCharacterDetail("乙", players)
-	if strings.Contains(detailNoHO, "<secret_background>") {
-		t.Errorf("buildCharacterDetail should omit empty <secret_background>, got:\n%s", detailNoHO)
-	}
-}
-
 func TestFallbackWriterIgnoresPrivateWhisper(t *testing.T) {
 	var published []RoundOutputs
 	gctx := &GameContext{

@@ -1,23 +1,22 @@
 <script setup lang="ts">
-import { BookMarked, ChevronDown, Clock, Lock, Mail, MapPin, MessageCircle, Sparkles, Users } from '@lucide/vue'
+import { BookMarked, Clock, MapPin, MessageCircle, Sparkles, Users } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
-import { api } from '@/api/client'
 import type { CharacterCard, Session, SessionPlayer } from '@/api/types'
-import BaseButton from '@/components/base/BaseButton.vue'
 import SectionHeading from '@/components/base/SectionHeading.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import StatBar from '@/components/base/StatBar.vue'
 import { portraitSrc } from '@/components/character/characterLogic'
+import CompanionActions from '@/components/game/CompanionActions.vue'
+import CompanionBadge from '@/components/game/CompanionBadge.vue'
 import HandbookPanel from '@/components/game/HandbookPanel.vue'
-import PrivateNotePanel from '@/components/game/PrivateNotePanel.vue'
 import TableTalkPanel from '@/components/game/TableTalkPanel.vue'
 import { playerTurnSubmitState } from '@/game/banner'
+import { isCompanionPlayer } from '@/game/companion'
 import type { HandbookData } from '@/game/handbookTypes'
 import type { HudFlash } from '@/game/hud'
 import { hudChips, isInSession, statNum, statusLabel } from '@/game/hud'
 import type { Room, TimePoint } from '@/game/roomState'
 import { useAuthStore } from '@/stores/auth'
-import { useUiStore } from '@/stores/ui'
 
 // NOTE: 桌面端右侧栏，只展示信息，不做状态播报；播报仍由底部的 StatusDock 负责，这里不要加动态区域属性
 const props = defineProps<{
@@ -29,82 +28,46 @@ const props = defineProps<{
   userId: number | undefined
   handbook: HandbookData
   handbookLoading: boolean
+  // NOTE: AI 陪玩的增删入口是否可见由游戏页算好传入（房主/管理员、lobby、有无 AI、是否满员）；点击后的确认和请求也在游戏页里
+  canAddCompanion?: boolean
+  canRemoveCompanion?: boolean
+  companionBusy?: boolean
 }>()
-const emit = defineEmits<{ select: [player: SessionPlayer]; refresh: []; refreshHandbook: [] }>()
+const emit = defineEmits<{
+  select: [player: SessionPlayer]
+  refreshHandbook: []
+  addCompanion: []
+  removeCompanion: []
+}>()
 
 const auth = useAuthStore()
-const ui = useUiStore()
 
-const activeTab = ref<'status' | 'handbook' | 'notes' | 'ooc'>('status')
+const activeTab = ref<'status' | 'handbook' | 'ooc'>('status')
 const chips = computed(() => hudChips(props.card))
 const hasLuck = computed(() => props.card?.stats?.luck !== undefined)
 const occupation = computed(() => (props.card as { occupation?: string } | null)?.occupation || '未知职业')
 const portrait = computed(() => portraitSrc(props.card as { portrait_hash?: string } | null))
 const players = computed(() => props.session?.players ?? [])
-const me = computed(() => players.value.find((p) => p.user_id === props.userId) ?? null)
-const mySecret = computed(() => me.value?.secret_background || '')
-const myHandoutCode = computed(() => me.value?.handout_code || '')
 const canPostOoc = computed(() =>
   Boolean(props.session && (isInSession(props.session, props.userId) || props.session.created_by === props.userId || auth.isAdmin)),
 )
-const canSendPrivateNote = computed(() =>
-  Boolean(props.session && props.session.status !== 'ended' && isInSession(props.session, props.userId)),
-)
-const canEditSecret = computed(() => {
-  if (!me.value || !props.session) return false
-  if (props.session.status === 'lobby') return true
-  if (props.session.status === 'playing') return props.session.created_by === props.userId || auth.isAdmin
-  return false
-})
-const showSecretCard = computed(() => Boolean(me.value && (mySecret.value || myHandoutCode.value || canEditSecret.value)))
 const scenarioName = computed(() => (props.session?.scenario as { name?: string } | undefined)?.name || '')
 const statusTone = computed(() => {
   const status = props.session?.status
   return status === 'playing' ? 'moss' : status === 'lobby' ? 'ledger' : 'faint'
 })
 const oocUnread = computed(() => props.room?.oocUnread ?? 0)
-const notesUnread = computed(() => props.room?.privateNotesUnread ?? 0)
-
-const secretOpen = ref(false)
-const secretEditing = ref(false)
-const secretDraft = ref('')
-const secretSaving = ref(false)
 
 watch(
   () => props.session?.id,
   () => {
     activeTab.value = 'status'
-    secretOpen.value = false
-    secretEditing.value = false
   },
 )
 
 watch(activeTab, (tab) => {
   if (tab === 'handbook') emit('refreshHandbook')
 })
-
-function startEditSecret() {
-  secretDraft.value = mySecret.value
-  secretEditing.value = true
-  secretOpen.value = true
-}
-
-async function saveSecret() {
-  if (!props.session || secretSaving.value) return
-  secretSaving.value = true
-  try {
-    await api<{ secret_background?: string }>('PUT', `/api/sessions/${props.session.id}/secret`, {
-      secret_background: secretDraft.value,
-    })
-    secretEditing.value = false
-    ui.toast('秘密背景已更新')
-    emit('refresh')
-  } catch (e) {
-    ui.toast(e instanceof Error ? e.message : String(e), 'error')
-  } finally {
-    secretSaving.value = false
-  }
-}
 
 function playerName(p: SessionPlayer): string {
   return p.character_card?.name || p.user?.username || ''
@@ -138,21 +101,6 @@ function playerPublicChips(p: SessionPlayer) {
         <BookMarked :size="14" :stroke-width="1.75" class="shrink-0" />
         手册
         <span v-if="handbook.clues.length" class="tabular-nums text-fg-subtle">{{ handbook.clues.length }}</span>
-      </button>
-      <button
-        type="button"
-        class="inline-flex flex-1 items-center justify-center gap-1 border-b-2 px-1.5 py-2 text-xs font-medium transition"
-        :class="activeTab === 'notes' ? 'border-accent text-fg' : 'border-transparent text-fg-subtle hover:text-fg'"
-        @click="activeTab = 'notes'"
-      >
-        <Mail :size="14" :stroke-width="1.75" class="shrink-0" />
-        纸条
-        <span
-          v-if="notesUnread > 0 && activeTab !== 'notes'"
-          class="inline-flex min-w-4 items-center justify-center rounded-full bg-info px-1 text-xs font-semibold tabular-nums text-bg"
-        >
-          {{ notesUnread > 99 ? '99+' : notesUnread }}
-        </span>
       </button>
       <button
         type="button"
@@ -196,52 +144,6 @@ function playerPublicChips(p: SessionPlayer) {
           <div v-if="chips.length" class="flex flex-wrap gap-1.5">
             <StampBadge v-for="chip in chips" :key="chip.text" tone="seal" :title="chip.title || undefined">{{ chip.text }}</StampBadge>
           </div>
-          <div v-if="showSecretCard" class="rounded-lg border border-info/30 bg-info/10 px-3 py-2">
-            <button
-              type="button"
-              class="flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-info"
-              :aria-expanded="secretOpen"
-              @click="secretOpen = !secretOpen"
-            >
-              <span class="inline-flex items-center gap-1.5">
-                <Lock :size="14" :stroke-width="1.75" class="shrink-0" />
-                秘密背景 (HO)
-                <StampBadge v-if="myHandoutCode" tone="ledger">{{ myHandoutCode }}</StampBadge>
-              </span>
-              <span class="inline-flex items-center gap-1 text-fg-subtle">
-                <span v-if="mySecret">已设</span>
-                <ChevronDown :size="14" :stroke-width="1.75" class="shrink-0 transition-transform" :class="secretOpen ? 'rotate-180' : ''" />
-              </span>
-            </button>
-            <div v-if="secretOpen" class="mt-2 space-y-2">
-              <form v-if="secretEditing" class="space-y-2" @submit.prevent="saveSecret">
-                <input
-                  v-model="secretDraft"
-                  type="text"
-                  maxlength="1000"
-                  placeholder="仅你与 KP 可见的隐藏身份或任务…"
-                  aria-label="编辑秘密背景"
-                  class="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
-                />
-                <div class="flex justify-end gap-1.5">
-                  <BaseButton variant="ghost" size="sm" @click="secretEditing = false">取消</BaseButton>
-                  <BaseButton type="submit" size="sm" :loading="secretSaving">保存</BaseButton>
-                </div>
-              </form>
-              <template v-else>
-                <p v-if="mySecret" class="whitespace-pre-wrap text-xs leading-relaxed text-fg">{{ mySecret }}</p>
-                <p v-else class="text-xs text-fg-subtle">未填写，仅你与 KP 可见。</p>
-                <button
-                  v-if="canEditSecret"
-                  type="button"
-                  class="text-xs text-info underline-offset-2 hover:underline"
-                  @click="startEditSecret"
-                >
-                  {{ mySecret ? '修改秘密背景' : '填写秘密背景' }}
-                </button>
-              </template>
-            </div>
-          </div>
         </template>
         <p v-if="time" class="flex items-center gap-2 text-sm tabular-nums text-fg-muted" :title="time.elapsed || undefined">
           <Clock :size="16" :stroke-width="1.75" class="shrink-0 text-fg-subtle" />
@@ -249,7 +151,7 @@ function playerPublicChips(p: SessionPlayer) {
         </p>
       </section>
 
-      <section v-if="players.length" class="space-y-2">
+      <section v-if="players.length || canAddCompanion" class="space-y-2">
         <SectionHeading :count="players.length">调查员</SectionHeading>
         <ul class="-mx-2 space-y-0.5">
           <li v-for="p in players" :key="p.user_id">
@@ -263,6 +165,7 @@ function playerPublicChips(p: SessionPlayer) {
                   <span class="block truncate text-sm font-medium text-fg">{{ playerName(p) }}</span>
                   <span class="block truncate text-xs text-fg-subtle">{{ playerOccupation(p) }}</span>
                 </span>
+                <CompanionBadge v-if="isCompanionPlayer(p)" class="shrink-0" />
                 <StampBadge v-if="p.handout_code" class="shrink-0" tone="ledger">{{ p.handout_code }}</StampBadge>
                 <StampBadge v-if="playerTurnSubmitState(room, p) === 'submitted'" class="shrink-0" tone="moss">已提交</StampBadge>
                 <StampBadge v-else-if="playerTurnSubmitState(room, p) === 'pending'" class="shrink-0" tone="faint">待提交</StampBadge>
@@ -280,6 +183,13 @@ function playerPublicChips(p: SessionPlayer) {
             </button>
           </li>
         </ul>
+        <CompanionActions
+          :can-add="Boolean(canAddCompanion)"
+          :can-remove="Boolean(canRemoveCompanion)"
+          :busy="companionBusy"
+          @add="emit('addCompanion')"
+          @remove="emit('removeCompanion')"
+        />
       </section>
 
       <section v-if="session" class="space-y-2">
@@ -299,15 +209,6 @@ function playerPublicChips(p: SessionPlayer) {
       :user-id="userId"
       :can-edit="canPostOoc"
       @refresh="emit('refreshHandbook')"
-    />
-
-    <PrivateNotePanel
-      v-show="activeTab === 'notes'"
-      :session="session"
-      :room="room"
-      :user-id="userId"
-      :can-send="canSendPrivateNote"
-      :active="activeTab === 'notes'"
     />
 
     <TableTalkPanel

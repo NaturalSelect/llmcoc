@@ -4,12 +4,25 @@ import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import StatBar from '@/components/base/StatBar.vue'
 import type { Session, SessionPlayer } from '@/api/types'
+import CompanionActions from '@/components/game/CompanionActions.vue'
+import CompanionBadge from '@/components/game/CompanionBadge.vue'
 import { playerTurnSubmitState } from '@/game/banner'
+import { isCompanionPlayer } from '@/game/companion'
 import { statNum } from '@/game/hud'
 import type { Room } from '@/game/roomState'
 
-defineProps<{ open: boolean; session: Session | null; room: Room | null; userId: number | undefined; canJoin?: boolean }>()
-const emit = defineEmits<{ close: []; select: [player: SessionPlayer]; join: [] }>()
+// NOTE: 手机上看不到右侧栏，AI 陪玩的增删入口在这里也放一份；显不显示由游戏页算好传入
+defineProps<{
+  open: boolean
+  session: Session | null
+  room: Room | null
+  userId: number | undefined
+  canJoin?: boolean
+  canAddCompanion?: boolean
+  canRemoveCompanion?: boolean
+  companionBusy?: boolean
+}>()
+const emit = defineEmits<{ close: []; select: [player: SessionPlayer]; join: []; addCompanion: []; removeCompanion: [] }>()
 </script>
 
 <template>
@@ -29,6 +42,7 @@ const emit = defineEmits<{ close: []; select: [player: SessionPlayer]; join: [] 
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-1.5">
                 <span class="truncate text-sm font-medium text-fg">{{ p.character_card?.name || p.user?.username }}</span>
+                <CompanionBadge v-if="isCompanionPlayer(p)" class="shrink-0" />
                 <StampBadge v-if="p.handout_code" class="shrink-0" tone="ledger">{{ p.handout_code }}</StampBadge>
                 <StampBadge v-if="playerTurnSubmitState(room, p) === 'submitted'" class="shrink-0" tone="moss">已提交</StampBadge>
                 <StampBadge v-else-if="playerTurnSubmitState(room, p) === 'pending'" class="shrink-0" tone="faint">待提交</StampBadge>
@@ -45,5 +59,13 @@ const emit = defineEmits<{ close: []; select: [player: SessionPlayer]; join: [] 
         </button>
       </li>
     </ul>
+    <CompanionActions
+      class="mt-3"
+      :can-add="Boolean(canAddCompanion)"
+      :can-remove="Boolean(canRemoveCompanion)"
+      :busy="companionBusy"
+      @add="emit('addCompanion')"
+      @remove="emit('removeCompanion')"
+    />
   </BaseModal>
 </template>

@@ -74,18 +74,6 @@ export interface OocMessage {
   created_at?: string
 }
 
-export interface PrivateNote {
-  id: number
-  session_id?: number
-  from_user_id: number
-  from_name: string
-  to_user_id: number
-  to_name: string
-  content: string
-  delivered_to_kp?: boolean
-  created_at?: string
-}
-
 export interface Room {
   sessionId: number | undefined
   userId: number | string | undefined
@@ -100,8 +88,6 @@ export interface Room {
   streams: Record<number, WriterStream>
   ooc: OocMessage[]
   oocUnread: number
-  privateNotes: PrivateNote[]
-  privateNotesUnread: number
   handbookSeq: number
   encounterSeq: number
   floor: { running: boolean; number: number; starting: boolean; startedAt: number }
@@ -109,6 +95,8 @@ export interface Room {
   waiting: Waiting
   me: { submitted: boolean; draft: string }
   kpStatus: string
+  // NOTE: AI 陪玩在后台思考时的状态栏文案（"X 正在思考…"），空串表示没有；与 kpStatus 分开，因为它出现在 KP 周期结束之后、下个周期开始之前
+  companionStatus: string
   status: RoomStatus
 }
 
@@ -148,6 +136,8 @@ export interface ChatStatus {
   submitted_content?: string
   spotlight?: SpotlightSource
   waiting?: WaitingSource
+  // 当前正在显示的 AI 陪玩状态文案，空串表示没有；断线重连后靠它恢复状态栏
+  companion_status?: string
 }
 
 export interface Snapshot {
@@ -205,8 +195,6 @@ export function newRoom(opts?: NewRoomOptions): Room {
     streams: {},
     ooc: [],
     oocUnread: 0,
-    privateNotes: [],
-    privateNotesUnread: 0,
     handbookSeq: 0,
     encounterSeq: 0,
     floor: { running: false, number: 0, starting: false, startedAt: 0 },
@@ -214,6 +202,7 @@ export function newRoom(opts?: NewRoomOptions): Room {
     waiting: { pending: 0, total: 0, submittedNames: [], pendingNames: [] },
     me: { submitted: false, draft: '' },
     kpStatus: '',
+    companionStatus: '',
     status: 'lobby',
   }
 }
@@ -439,28 +428,6 @@ function onOocMessage(room: Room, d: FrameData): void {
   if (!sameId(msg.user_id, room.userId)) room.oocUnread += 1
 }
 
-function onPrivateNote(room: Room, d: FrameData): void {
-  const id = Number(d.id)
-  if (!Number.isFinite(id)) return
-  if (room.privateNotes.some((n) => n.id === id)) return
-  const toId = Number(d.to_user_id) || 0
-  const note: PrivateNote = {
-    id,
-    session_id: d.session_id != null ? Number(d.session_id) : undefined,
-    from_user_id: Number(d.from_user_id) || 0,
-    from_name: typeof d.from_name === 'string' ? d.from_name : '',
-    to_user_id: toId,
-    to_name: typeof d.to_name === 'string' && d.to_name ? d.to_name : toId === 0 ? 'KP' : '',
-    content: typeof d.content === 'string' ? d.content : '',
-    delivered_to_kp: Boolean(d.delivered_to_kp),
-    created_at: typeof d.created_at === 'string' ? d.created_at : undefined,
-  }
-  let i = room.privateNotes.length
-  while (i > 0 && room.privateNotes[i - 1].id > id) i--
-  room.privateNotes.splice(i, 0, note)
-  if (!sameId(note.from_user_id, room.userId)) room.privateNotesUnread += 1
-}
-
 export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined): Effect[] {
   const effects: Effect[] = []
   if (!frame || typeof frame.type !== 'string') return effects
@@ -483,9 +450,6 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
       break
     case 'ooc_message':
       onOocMessage(room, d)
-      break
-    case 'private_note':
-      onPrivateNote(room, d)
       break
     case 'handbook_update':
       room.handbookSeq += 1
@@ -516,6 +480,8 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
       if (d.floor != null) room.floor.number = Number(d.floor) || 0
       // NOTE: 周期一开始，上一轮的等待进度就作废；否则周期结束后的新点名会显示残留的"还差几人"
       setWaiting(room, {})
+      // NOTE: AI 陪玩的回应已经交给 KP，新周期开始后它不再「思考」；清掉避免文案残留到下一次点名
+      room.companionStatus = ''
       break
     case 'floor_end':
       room.floor.running = false
@@ -524,6 +490,10 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
       break
     case 'kp_status':
       room.kpStatus = typeof d.text === 'string' ? d.text : ''
+      break
+    case 'companion_status':
+      // NOTE: 临时事件，text 为空串表示 AI 已经结束思考；floor_end 不清它，因为 AI 是在周期结束、点名之后才开始思考的
+      room.companionStatus = typeof d.text === 'string' ? d.text : ''
       break
     case 'session':
       if (STATUSES.includes(d.status)) room.status = d.status
@@ -560,7 +530,7 @@ function replaceMessages(room: Room, list: Snapshot['messages']): void {
   }
 }
 
-// NOTE: 只覆盖 chat-status 能反映的部分（周期、发言权、等待进度、是否已提交），不碰消息列表和连接游标
+// NOTE: 只覆盖 chat-status 能反映的部分（周期、发言权、等待进度、是否已提交、AI 陪玩状态文案），不碰消息列表和连接游标
 export function applyChatStatus(room: Room, cs: ChatStatus | null | undefined): void {
   const c = cs || {}
   const f = c.floor
@@ -577,6 +547,7 @@ export function applyChatStatus(room: Room, cs: ChatStatus | null | undefined): 
   room.spotlight.askedMe = !!sp.asked_me || askedMe
   setWaiting(room, c.waiting || {})
   room.me.submitted = !!c.submitted
+  room.companionStatus = typeof c.companion_status === 'string' ? c.companion_status : ''
   // NOTE: 刷新或重连后本地没有草稿，用服务器记录的原文回填；已有本地草稿（刚提交的）不覆盖
   if (room.me.submitted && !room.me.draft && typeof c.submitted_content === 'string') room.me.draft = c.submitted_content
 }
@@ -615,6 +586,7 @@ export function applySnapshot(room: Room, snap: Snapshot | null | undefined): Ef
 // NOTE: 断线不动流式正文：重连握手时服务端会从偏移 0 补发全文，之后的增量按偏移继续拼
 export function markDisconnected(room: Room): void {
   room.kpStatus = ''
+  room.companionStatus = ''
   room.conn = 'reconnecting'
 }
 

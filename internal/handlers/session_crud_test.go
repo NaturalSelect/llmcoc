@@ -25,7 +25,6 @@ func sessionCRUDRouter(userID uint, username, role string) *gin.Engine {
 	r.GET("/sessions/:id", auth, GetSession)
 	r.POST("/sessions", auth, CreateSession)
 	r.POST("/sessions/:id/join", auth, JoinSession)
-	r.PUT("/sessions/:id/secret", auth, SetPlayerSecret)
 	r.POST("/sessions/:id/leave", auth, LeaveSession)
 	r.POST("/sessions/:id/start", auth, StartSession)
 	r.POST("/sessions/:id/end", auth, EndSession)
@@ -1005,119 +1004,6 @@ func TestGetMessages_PublicRoomAllowsSpectator(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("want 200, got %d", w.Code)
-	}
-}
-
-func TestJoinSession_SecretBackgroundAndSanitization(t *testing.T) {
-	initTestDB(t)
-	host := seedUser(t, "host", "user", 0, 3)
-	p2 := seedUser(t, "p2", "user", 0, 3)
-	admin := seedUser(t, "admin", "admin", 0, 3)
-	sid := seedScenario(t, "S")
-	cardHost := seedCard(t, host, "甲")
-	cardP2 := seedCard(t, p2, "乙")
-
-	sess := models.GameSession{Name: "HO Room", ScenarioID: sid, Status: models.SessionStatusLobby, MaxPlayers: 4, CreatedBy: host}
-	models.DB.Create(&sess)
-	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: host, CharacterCardID: cardHost, SecretBackground: "房主的秘密"})
-
-	// p2 带 HO 加入房间
-	rP2 := sessionCRUDRouter(p2, "p2", "user")
-	w := httptest.NewRecorder()
-	rP2.ServeHTTP(w, jsonReq("POST", fmt.Sprintf("/sessions/%d/join", sess.ID), map[string]any{
-		"character_card_id": cardP2,
-		"secret_background": "  我是调查局暗桩  ",
-	}))
-	if w.Code != http.StatusOK {
-		t.Fatalf("join want 200, got %d body=%s", w.Code, w.Body.String())
-	}
-
-	// GetSession: p2 只能看到自己的 HO，看不到房主的
-	w = httptest.NewRecorder()
-	rP2.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d", sess.ID), nil))
-	if w.Code != http.StatusOK {
-		t.Fatalf("get want 200, got %d", w.Code)
-	}
-	var got models.GameSession
-	json.NewDecoder(w.Body).Decode(&got)
-	for _, pl := range got.Players {
-		if pl.UserID == p2 && pl.SecretBackground != "我是调查局暗桩" {
-			t.Errorf("p2 should see own secret, got %q", pl.SecretBackground)
-		}
-		if pl.UserID == host && pl.SecretBackground != "" {
-			t.Errorf("p2 must not see host secret, got %q", pl.SecretBackground)
-		}
-	}
-
-	// ListSessions: 列表接口对普通用户不返回任何 HO
-	w = httptest.NewRecorder()
-	rP2.ServeHTTP(w, jsonReq("GET", "/sessions", nil))
-	var listResp PaginatedResponse[models.GameSession]
-	json.NewDecoder(w.Body).Decode(&listResp)
-	for _, s := range listResp.Items {
-		for _, pl := range s.Players {
-			if pl.SecretBackground != "" {
-				t.Errorf("ListSessions leaked secret %q for user %d", pl.SecretBackground, pl.UserID)
-			}
-		}
-	}
-
-	// Admin GetSession: 可见全部 HO
-	rAdmin := sessionCRUDRouter(admin, "admin", "admin")
-	w = httptest.NewRecorder()
-	rAdmin.ServeHTTP(w, jsonReq("GET", fmt.Sprintf("/sessions/%d", sess.ID), nil))
-	var adminGot models.GameSession
-	json.NewDecoder(w.Body).Decode(&adminGot)
-	seen := 0
-	for _, pl := range adminGot.Players {
-		if pl.SecretBackground != "" {
-			seen++
-		}
-	}
-	if seen != 2 {
-		t.Errorf("admin should see both secrets, got %d", seen)
-	}
-}
-
-func TestSetPlayerSecret_Permissions(t *testing.T) {
-	initTestDB(t)
-	host := seedUser(t, "host", "user", 0, 3)
-	p2 := seedUser(t, "p2", "user", 0, 3)
-	sid := seedScenario(t, "S")
-	c1 := seedCard(t, host, "甲")
-	c2 := seedCard(t, p2, "乙")
-
-	sess := models.GameSession{Name: "Secret Edit", ScenarioID: sid, Status: models.SessionStatusLobby, MaxPlayers: 4, CreatedBy: host}
-	models.DB.Create(&sess)
-	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: host, CharacterCardID: c1})
-	models.DB.Create(&models.SessionPlayer{SessionID: sess.ID, UserID: p2, CharacterCardID: c2})
-
-	rP2 := sessionCRUDRouter(p2, "p2", "user")
-	rHost := sessionCRUDRouter(host, "host", "user")
-
-	// 准备阶段玩家可改自己的 HO，但不能改别人的
-	w := httptest.NewRecorder()
-	rP2.ServeHTTP(w, jsonReq("PUT", fmt.Sprintf("/sessions/%d/secret", sess.ID), map[string]any{"secret_background": "我的秘密"}))
-	if w.Code != http.StatusOK {
-		t.Fatalf("p2 edit own in lobby want 200, got %d", w.Code)
-	}
-	w = httptest.NewRecorder()
-	rP2.ServeHTTP(w, jsonReq("PUT", fmt.Sprintf("/sessions/%d/secret", sess.ID), map[string]any{"user_id": host, "secret_background": "篡改"}))
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("p2 edit host want 403, got %d", w.Code)
-	}
-
-	// 开局后普通玩家不能再修改自己的 HO，房主仍可为成员分发 HO
-	models.DB.Model(&sess).Update("status", models.SessionStatusPlaying)
-	w = httptest.NewRecorder()
-	rP2.ServeHTTP(w, jsonReq("PUT", fmt.Sprintf("/sessions/%d/secret", sess.ID), map[string]any{"secret_background": "开局后改"}))
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("p2 edit own in playing want 400, got %d", w.Code)
-	}
-	w = httptest.NewRecorder()
-	rHost.ServeHTTP(w, jsonReq("PUT", fmt.Sprintf("/sessions/%d/secret", sess.ID), map[string]any{"user_id": p2, "secret_background": "房主分发的HO"}))
-	if w.Code != http.StatusOK {
-		t.Fatalf("host edit p2 in playing want 200, got %d", w.Code)
 	}
 }
 

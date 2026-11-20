@@ -672,9 +672,6 @@ func buildCharacterDetail(characterName string, players []models.SessionPlayer) 
 		if code := strings.TrimSpace(p.HandoutCode); code != "" {
 			sb.WriteString(fmt.Sprintf(`<handout code=%q/>`, code))
 		}
-		if secret := strings.TrimSpace(p.SecretBackground); secret != "" {
-			sb.WriteString(fmt.Sprintf("<secret_background>%s</secret_background>", xmlEscape(secret)))
-		}
 		if card.MadnessState != "" && card.MadnessState != "none" {
 			sb.WriteString(fmt.Sprintf(`<mad state=%q symptom=%q/>`, card.MadnessState, card.MadnessSymptom))
 		}
@@ -864,7 +861,6 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 	}
 	hasNotHuman := false
 	hasSessionMemory := false
-	hasSecretBackground := false
 	hasUnderlyingMadness := false
 	s := "【调查员概况(完整人物卡请用 query_character 获取)】\n所有角色均已成年"
 	for _, p := range players {
@@ -893,10 +889,6 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 		}
 		if code := strings.TrimSpace(p.HandoutCode); code != "" {
 			line += fmt.Sprintf("【HO:%s】", code)
-		}
-		if strings.TrimSpace(p.SecretBackground) != "" {
-			line += "【有秘密背景/HO:需query_character查看】"
-			hasSecretBackground = true
 		}
 		switch card.MadnessState {
 		case "temporary":
@@ -927,9 +919,6 @@ func buildPlayerBrief(players []models.SessionPlayer) string {
 	}
 	if hasSessionMemory {
 		s += "\n<attention>有调查员存在Session级特殊状态。若本轮行动涉及该调查员的能力、限制、感知、身份、身体/精神异常或状态变化,先调用 query_character 查看完整人物卡中的 session_memory,不要仅凭概况处理。</attention>\n"
-	}
-	if hasSecretBackground {
-		s += "\n<attention>有调查员设定了秘密背景(HO)。先用 query_character 查看其 secret_background；在公开叙事与 narrate 中严格替其保密，需要传达只属于他的发现或呼应隐藏动机时用 whisper 私密发送。</attention>\n"
 	}
 	if hasUnderlyingMadness {
 		s += "\n<attention>有调查员处于临时性或不定性疯狂（潜伏疯狂期）。你可以适时用 whisper(is_hallucination=true) 向其单独植入逼真幻觉（切勿暗示这是幻觉）；若其怀疑所见非实并要求验证，调用 reality_check 进行现实检定。</attention>\n"

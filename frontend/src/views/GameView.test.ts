@@ -76,15 +76,17 @@ interface Setup {
   players?: Array<Record<string, unknown>>
   status?: string
   asAdmin?: boolean
+  maxPlayers?: number
 }
 
-async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing', asAdmin = false }: Setup = {}) {
+async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing', asAdmin = false, maxPlayers }: Setup = {}) {
   const fetchCalls: Array<{ method: string; path: string }> = []
   const session = {
     id: 7,
     name: '雾港旧宅',
     status,
     created_by: hostId,
+    max_players: maxPlayers,
     scenario: { name: '旧宅疑云' },
     players: players ?? [{ user_id: 2, user: { username: 'alice' }, character_card: { id: 5, name: '爱丽丝', occupation: '记者', stats: { hp: 9, max_hp: 10, san: 40, max_san: 50, mp: 8, max_mp: 8 } } }],
   }
@@ -99,6 +101,9 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
         return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
       }
       if (path === '/api/sessions/7/chat') return json({}, 202)
+      if (path === '/api/sessions/7/companion-cards') {
+        return json({ enabled: true, cards: [{ id: 31, name: '陪玩医生', occupation: '医生', age: 35, gender: '女', portrait_hash: '', hp: 10, max_hp: 10, san: 60, max_san: 60 }] })
+      }
       if (path === '/api/admin/messages/4/direction') return json({ id: 4, call_id: 'call_w1', auto: false, direction: '描述门廊，强调霉味' })
       if (path === '/api/admin/messages/5/direction') return json({ id: 5, call_id: '', auto: true, direction: '' })
       if (path === '/api/characters/5') return json({ id: 5, name: '爱丽丝', occupation: '记者', inventory: [{ name: '最新的怀表', count: 1, type: 'misc' }], stats: { hp: 3, max_hp: 10, san: 20, max_san: 50, mp: 8, max_mp: 8 } })
@@ -322,6 +327,83 @@ describe('GameView', () => {
     const texts = wrapper.findAll('header button').map((b) => b.text())
     expect(texts).not.toContain('带人物卡加入')
     expect(wrapper.findAll('header button').find((b) => b.text() === '开始')!.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  // NOTE: AI 陪玩占一个玩家席位，身份只看 user.role === 'bot'；AI 的卡来自卡池，不是房主自己的卡
+  const AI_PLAYER = {
+    user_id: 9,
+    user: { username: 'AI陪玩', role: 'bot' },
+    character_card: { id: 31, name: '陪玩医生', occupation: '医生', stats: { hp: 10, max_hp: 10, san: 60, max_san: 60, mp: 8, max_mp: 8 } },
+  }
+  const HUMAN_PLAYER = {
+    user_id: 2,
+    user: { username: 'alice', role: 'user' },
+    character_card: { id: 5, name: '爱丽丝', occupation: '记者', stats: { hp: 9, max_hp: 10, san: 40, max_san: 50, mp: 8, max_mp: 8 } },
+  }
+  const sideButton = (wrapper: Awaited<ReturnType<typeof setup>>['wrapper'], text: string) => wrapper.find('aside').findAll('button').find((b) => b.text() === text)
+
+  test('AI 陪玩：房间里只有 AI 时「开始」禁用并写明原因，侧栏 AI 行带徽标，房主能移除', async () => {
+    const { wrapper } = await setup({ hostId: 2, status: 'lobby', players: [AI_PLAYER] })
+    const start = wrapper.findAll('header button').find((b) => b.text() === '开始')!
+    expect(start.attributes('disabled')).toBeDefined()
+    expect(start.attributes('title')).toBe('房间里只有 AI 陪玩，至少需要一名真人玩家才能开始')
+    const side = wrapper.find('aside')
+    expect(side.text()).toContain('陪玩医生')
+    expect(side.find('[title="AI 陪玩"]').exists()).toBe(true)
+    expect(sideButton(wrapper, '移除 AI')).toBeDefined()
+    expect(sideButton(wrapper, '添加 AI 陪玩')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  test('AI 陪玩：有真人时「开始」可点；没有 AI 且未满员时房主能添加，点开后从卡池拉卡', async () => {
+    const { wrapper, fetchCalls } = await setup({ hostId: 2, status: 'lobby', maxPlayers: 4, players: [HUMAN_PLAYER] })
+    expect(wrapper.findAll('header button').find((b) => b.text() === '开始')!.attributes('disabled')).toBeUndefined()
+    expect(sideButton(wrapper, '移除 AI')).toBeUndefined()
+    expect(wrapper.find('aside [title="AI 陪玩"]').exists()).toBe(false)
+    await sideButton(wrapper, '添加 AI 陪玩')!.trigger('click')
+    await flushPromises()
+    expect(fetchCalls).toContainEqual({ method: 'GET', path: '/api/sessions/7/companion-cards' })
+    expect(document.body.textContent).toContain('陪玩医生')
+    wrapper.unmount()
+  })
+
+  test('AI 陪玩：房间已满不能添加；非房主看得到 AI 徽标但没有增删入口', async () => {
+    const full = await setup({ hostId: 2, status: 'lobby', maxPlayers: 1, players: [HUMAN_PLAYER] })
+    expect(sideButton(full.wrapper, '添加 AI 陪玩')).toBeUndefined()
+    full.wrapper.unmount()
+
+    const guest = await setup({ hostId: 1, status: 'lobby', maxPlayers: 4, players: [HUMAN_PLAYER, AI_PLAYER] })
+    expect(guest.wrapper.find('aside [title="AI 陪玩"]').exists()).toBe(true)
+    expect(sideButton(guest.wrapper, '添加 AI 陪玩')).toBeUndefined()
+    expect(sideButton(guest.wrapper, '移除 AI')).toBeUndefined()
+    guest.wrapper.unmount()
+  })
+
+  test('AI 陪玩：游戏开始后不再有增删入口', async () => {
+    const { wrapper } = await setup({ hostId: 2, status: 'playing', maxPlayers: 4, players: [HUMAN_PLAYER, AI_PLAYER] })
+    expect(sideButton(wrapper, '移除 AI')).toBeUndefined()
+    expect(sideButton(wrapper, '添加 AI 陪玩')).toBeUndefined()
+    expect(wrapper.find('aside [title="AI 陪玩"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('AI 陪玩：移除要先确认，取消不请求；确认后 DELETE 并刷新房间', async () => {
+    const { wrapper, fetchCalls } = await setup({ hostId: 2, status: 'lobby', players: [HUMAN_PLAYER, AI_PLAYER] })
+    const ui = useUiStore()
+    await sideButton(wrapper, '移除 AI')!.trigger('click')
+    expect(ui.confirmState).toMatchObject({ danger: true, confirmText: '移除' })
+    ui.resolveConfirm(false)
+    await flushPromises()
+    expect(fetchCalls.some((c) => c.method === 'DELETE')).toBe(false)
+
+    const refreshesBefore = fetchCalls.filter((c) => c.path === '/api/sessions/7').length
+    await sideButton(wrapper, '移除 AI')!.trigger('click')
+    ui.resolveConfirm(true)
+    await flushPromises()
+    expect(fetchCalls).toContainEqual({ method: 'DELETE', path: '/api/sessions/7/companion' })
+    expect(fetchCalls.filter((c) => c.path === '/api/sessions/7').length).toBeGreaterThan(refreshesBefore)
+    expect(ui.toasts.at(-1)?.message).toBe('已移除 AI 陪玩')
     wrapper.unmount()
   })
 

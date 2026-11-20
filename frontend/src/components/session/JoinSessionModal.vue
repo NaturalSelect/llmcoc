@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, Lock, Shuffle, Sparkles } from '@lucide/vue'
+import { Shuffle, Sparkles } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { Scenario } from '@/api/scenarioTypes'
@@ -40,9 +40,7 @@ const chars = useCharactersStore()
 const ui = useUiStore()
 
 const form = ref<JoinSessionForm>(emptyJoinForm())
-const secretInput = ref('')
 const handoutCode = ref('')
-const showSecret = ref(false)
 const joining = ref(false)
 const candidates = computed(() => joinableCharacters(chars.characters))
 const scenario = computed(() => props.session?.scenario ?? null)
@@ -69,9 +67,7 @@ watch(
   (open) => {
     if (!open) return
     form.value = emptyJoinForm()
-    secretInput.value = ''
     handoutCode.value = ''
-    showSecret.value = false
     const only = candidates.value.length === 1 ? candidates.value[0] : undefined
     if (only?.id) form.value.character_card_id = only.id
   },
@@ -81,7 +77,6 @@ watch(
 async function submit() {
   const payload = buildJoinPayload({
     ...form.value,
-    secret_background: secretInput.value,
     handout_code: handoutCode.value,
   })
   if (!props.session || !payload) return
@@ -173,32 +168,6 @@ async function submit() {
             </div>
             <p v-if="h.public_hook" class="mt-1 text-xs leading-relaxed text-fg-muted">{{ h.public_hook }}</p>
           </button>
-        </div>
-      </div>
-
-      <div class="rounded-lg border border-line bg-surface-2/60 px-3 py-2">
-        <button
-          type="button"
-          class="flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-fg-muted transition hover:text-fg"
-          :aria-expanded="showSecret"
-          @click="showSecret = !showSecret"
-        >
-          <span class="inline-flex items-center gap-1.5">
-            <Lock :size="14" :stroke-width="1.75" class="shrink-0 text-info" />
-            {{ handoutCode ? '补充自定义秘密 (可选)' : '秘密背景 / 隐藏任务 (HO，可选)' }}
-          </span>
-          <ChevronDown :size="14" :stroke-width="1.75" class="shrink-0 transition-transform" :class="showSecret ? 'rotate-180' : ''" />
-        </button>
-        <div v-if="showSecret" class="mt-2 space-y-1.5">
-          <textarea
-            v-model="secretInput"
-            rows="3"
-            maxlength="1000"
-            placeholder="仅你与 KP 可见：例如隐藏身份、不可告人的目的或模组 HO 内容…"
-            aria-label="秘密背景或隐藏任务"
-            class="w-full resize-none rounded-lg border border-line bg-surface px-2.5 py-2 text-xs leading-relaxed text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
-          />
-          <p class="text-right text-xs tabular-nums text-fg-subtle">{{ secretInput.length }}/1000</p>
         </div>
       </div>
 

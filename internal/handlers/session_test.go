@@ -54,7 +54,6 @@ func initTestDB(t *testing.T) {
 		&models.SessionOOCMessage{},
 		&models.SessionClue{},
 		&models.SessionNote{},
-		&models.SessionPrivateNote{},
 		&models.Message{},
 		&models.LLMProviderConfig{},
 		&models.AgentConfig{},

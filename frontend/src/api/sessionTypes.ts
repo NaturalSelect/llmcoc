@@ -10,6 +10,8 @@ export type SessionStatus = 'lobby' | 'playing' | 'ended'
 export interface SessionUserRef {
   id?: number
   username?: string
+  // NOTE: 'user' | 'admin' | 'bot'；大厅列表里的玩家不一定带它，缺省就当真人
+  role?: string
   [key: string]: unknown
 }
 
@@ -70,14 +72,12 @@ export interface CreateSessionPayload {
 export interface JoinSessionForm {
   character_card_id: number | ''
   password: string
-  secret_background?: string
   handout_code?: string
 }
 
 export interface JoinSessionPayload {
   character_card_id: number
   password: string
-  secret_background?: string
   handout_code?: string
 }
 

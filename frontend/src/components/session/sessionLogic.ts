@@ -46,13 +46,11 @@ export function emptyJoinForm(): JoinSessionForm {
   return { character_card_id: '', password: '' }
 }
 
-// NOTE: 没选人物卡时不提交（旧前端静默返回，这里由按钮禁用兜底）；秘密背景与预设 HO 仅非空时才附带
+// NOTE: 没选人物卡时不提交（旧前端静默返回，这里由按钮禁用兜底）；预设 HO 编号仅非空时才附带
 export function buildJoinPayload(form: JoinSessionForm): JoinSessionPayload | null {
   if (!form.character_card_id) return null
-  const secret = (form.secret_background ?? '').trim()
   const handoutCode = (form.handout_code ?? '').trim()
   const payload: JoinSessionPayload = { character_card_id: form.character_card_id, password: form.password }
-  if (secret) payload.secret_background = secret
   if (handoutCode) payload.handout_code = handoutCode
   return payload
 }

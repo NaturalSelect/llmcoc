@@ -30,13 +30,13 @@ function row(role: string, over: Partial<AgentConfigRow> = {}): AgentConfigRow {
 }
 
 describe('角色表', () => {
-  test('预期角色共 15 个且不含已下线的 scripter、npc、npc_nsfw', () => {
-    expect(EXPECTED_ROLES).toHaveLength(15)
+  test('预期角色共 16 个且不含已下线的 scripter、npc、npc_nsfw', () => {
+    expect(EXPECTED_ROLES).toHaveLength(16)
     expect(EXPECTED_ROLES).not.toContain('scripter')
     expect(EXPECTED_ROLES).not.toContain('npc')
     expect(EXPECTED_ROLES).not.toContain('npc_nsfw')
     expect(EXPECTED_ROLES[0]).toBe('director')
-    expect(EXPECTED_ROLES.at(-1)).toBe('systemone')
+    expect(EXPECTED_ROLES.at(-1)).toBe('companion')
   })
 
   test('每个预期角色都同时有名称和描述', () => {
@@ -72,6 +72,13 @@ describe('角色表', () => {
     expect(agentDesc('systemone')).toContain('jev-latest')
     expect(agentDesc('systemone')).toContain('gemini-decision-1')
     expect(agentDesc('systemone')).toContain('API Key')
+  })
+
+  test('companion 角色的文案说明 AI 卡池、function calling 和未启用时的行为', () => {
+    expect(agentLabel('companion')).toContain('AI 陪玩')
+    expect(agentDesc('companion')).toContain('AI 卡池')
+    expect(agentDesc('companion')).toContain('function calling')
+    expect(agentDesc('companion')).toContain('未启用')
   })
 
   test('未知角色：名称回落为角色名，描述为空', () => {
@@ -121,14 +128,15 @@ describe('角色表', () => {
       thinking_level: 'none',
       is_active: false,
     })
-    for (const r of ['writer_nsfw', 'painter_nsfw', 'painter_hq', 'dramaturg', 'embedding', 'systemone']) {
+    for (const r of ['writer_nsfw', 'painter_nsfw', 'painter_hq', 'dramaturg', 'embedding', 'systemone', 'companion']) {
       expect(ROLE_DEFAULTS[r]?.is_active, r).toBe(false)
     }
+    expect(ROLE_DEFAULTS.companion).toStrictEqual({ max_tokens: 1500, temperature: 0.7, is_active: false })
   })
 })
 
 describe('buildAgentForms', () => {
-  test('空列表：15 个角色全部按默认值补齐，顺序同角色表', () => {
+  test('空列表：16 个角色全部按默认值补齐，顺序同角色表', () => {
     const forms = buildAgentForms([])
     expect(forms.map((f) => f.role)).toStrictEqual(EXPECTED_ROLES)
     const director = forms[0]!
@@ -150,15 +158,17 @@ describe('buildAgentForms', () => {
     })
     const painter = forms.find((f) => f.role === 'painter')!
     expect(painter).toMatchObject({ model_name: 'dall-e-3', thinking_level: 'none', is_active: false, max_tokens: 0 })
-    const systemone = forms.at(-1)!
+    const companion = forms.at(-1)!
+    expect(companion).toMatchObject({ role: 'companion', max_tokens: 1500, temperature: 0.7, is_active: false })
+    const systemone = forms.at(-2)!
     expect(systemone).toMatchObject({ role: 'systemone', model_name: 'gemini-decision-1', thinking_level: 'none', is_active: false, max_tokens: 0 })
-    const embedding = forms.at(-2)!
+    const embedding = forms.at(-3)!
     expect(embedding).toMatchObject({ role: 'embedding', model_name: 'text-embedding-3-small', thinking_level: 'none', is_active: false, max_tokens: 0 })
   })
 
   test('null / undefined 入参等同空列表', () => {
-    expect(buildAgentForms(null)).toHaveLength(15)
-    expect(buildAgentForms(undefined)).toHaveLength(15)
+    expect(buildAgentForms(null)).toHaveLength(16)
+    expect(buildAgentForms(undefined)).toHaveLength(16)
   })
 
   test('库里已有的行排在前面，缺行的角色补在后面；provider_config_id 为 null 时变空串', () => {
@@ -167,7 +177,7 @@ describe('buildAgentForms', () => {
       ['writer', 7, 3],
       ['director', 2, ''],
     ])
-    expect(forms).toHaveLength(15)
+    expect(forms).toHaveLength(16)
     expect(forms.slice(2).map((f) => f.role)).not.toContain('writer')
     expect(forms[2]!.id).toBe('new-writer_nsfw')
   })
@@ -176,7 +186,7 @@ describe('buildAgentForms', () => {
     const forms = buildAgentForms([row('scripter'), row('lore_researcher', { id: 9 })])
     expect(forms.map((f) => f.role)).not.toContain('scripter')
     expect(forms[0]!.role).toBe('lore_researcher')
-    expect(forms).toHaveLength(16)
+    expect(forms).toHaveLength(17)
   })
 
   test('已下线的 npc / npc_nsfw 旧行被丢弃，不会显示也不会补默认行', () => {
@@ -185,7 +195,7 @@ describe('buildAgentForms', () => {
     expect(roles).not.toContain('npc')
     expect(roles).not.toContain('npc_nsfw')
     expect(roles[0]).toBe('lawyer')
-    expect(forms).toHaveLength(15)
+    expect(forms).toHaveLength(16)
   })
 
   test('同一角色重复时后者覆盖前者，位置保持首次出现处', () => {

@@ -29,6 +29,8 @@ type SessionHandlers struct {
 	Runner agent.AgentRunner
 	// Guard 对玩家输入做越权请求分类，为 nil 时用 agent.ClassifyPlayerInput；测试里替换它避免依赖数据库里的 Provider。
 	Guard func(ctx context.Context, content string) agent.InputVerdict
+	// Companion 驱动 AI 陪玩的回应，为 nil 时用 agent.DefaultCompanion；测试里替换它避免依赖数据库里的 Provider。
+	Companion agent.CompanionRunner
 }
 
 // NewSessionHandlers returns a SessionHandlers wired to the given runner.
@@ -56,33 +58,10 @@ type CreateSessionReq struct {
 }
 
 type JoinSessionReq struct {
-	CharacterCardID  uint   `json:"character_card_id" binding:"required"`
-	Password         string `json:"password"`
-	SecretBackground string `json:"secret_background"`
+	CharacterCardID uint   `json:"character_card_id" binding:"required"`
+	Password        string `json:"password"`
 	// NOTE: 认领模组预设 HO 身份卡：填编号，或 "random" 随机抽签；留空不认领。
 	HandoutCode string `json:"handout_code"`
-}
-
-const maxSecretBackgroundRunes = 1000
-
-// sanitizeSessionPlayerSecrets 按查看者身份裁剪调查员的秘密背景(HO)：
-// 管理员可见全部；allowOwn=true 时玩家仅可见自己的 HO；列表接口统一清空避免泄露。
-func sanitizeSessionPlayerSecrets(session *models.GameSession, viewerID uint, isAdmin bool, allowOwn bool) {
-	if session == nil || isAdmin {
-		return
-	}
-	for i := range session.Players {
-		if allowOwn && viewerID != 0 && session.Players[i].UserID == viewerID {
-			continue
-		}
-		session.Players[i].SecretBackground = ""
-	}
-}
-
-func sanitizeSessionsSecrets(sessions []models.GameSession, viewerID uint, isAdmin bool, allowOwn bool) {
-	for i := range sessions {
-		sanitizeSessionPlayerSecrets(&sessions[i], viewerID, isAdmin, allowOwn)
-	}
 }
 
 type messageResponse struct {
@@ -199,7 +178,6 @@ func ListSessions(c *gin.Context) {
 		populateScenarioPreview(&sessions[i].Scenario)
 		sanitizeScenarioHandouts(&sessions[i].Scenario, admin)
 	}
-	sanitizeSessionsSecrets(sessions, userID, admin, false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 
@@ -241,7 +219,6 @@ func ListMyHistorySessions(c *gin.Context) {
 		populateScenarioPreview(&sessions[i].Scenario)
 		sanitizeScenarioHandouts(&sessions[i].Scenario, historyAdmin)
 	}
-	sanitizeSessionsSecrets(sessions, userID, historyAdmin, false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 
@@ -261,7 +238,6 @@ func GetSession(c *gin.Context) {
 	viewerAdmin := isAdminUser(c, viewerID)
 	populateScenarioPreview(&session.Scenario)
 	sanitizeScenarioHandouts(&session.Scenario, viewerAdmin)
-	sanitizeSessionPlayerSecrets(&session, viewerID, viewerAdmin, true)
 	c.JSON(http.StatusOK, session)
 }
 
@@ -393,48 +369,64 @@ func JoinSession(c *gin.Context) {
 		}
 	}
 
-	// Verify character belongs to user
-	var card models.CharacterCard
-	if err := models.DB.First(&card, req.CharacterCardID).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "人物卡不存在"})
+	handout, terr := joinSessionPlayer(uint(sessionID), userID, req.CharacterCardID, req.HandoutCode, c.GetString("username"))
+	if terr != nil {
+		respondTurnError(c, terr)
 		return
 	}
-	if card.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权使用此人物卡"})
-		return
+
+	c.JSON(http.StatusOK, gin.H{"message": "加入成功", "handout_code": handout})
+}
+
+// joinSessionPlayer 是 JoinSession 在「房间处于 lobby、未满员、未重复加入、密码正确」都已确认之后的核心：
+// 校验人物卡归属和可用性、认领 HO，写入 SessionPlayer，发系统消息并广播 join。
+// 真人处理器和 AI 陪玩共用；上面这些前置检查不在这里，AI 调用方需要自己先做。
+//
+// 锁：本函数自己不取会话锁。现有 JoinSession 本来就不取（HO 重复认领靠事务内重读 claimed 兜底，
+// 卡占用靠 isCardLockedInSession 的读），所以这里与原行为一致。调用方可以持有 getSessionLock(sessionID)，
+// 也可以不持有；本函数内部不会再取，不会死锁。
+//
+// announce 是系统消息里「」中的加入者称呼（真人传用户名，原文案「X」以调查员「Y」的身份加入了房间。里的 X）。
+// 调查员名和 HO 编号只有在本函数里才知道，所以文案的其余部分仍在这里拼。
+// handoutCode 允许带首尾空白，函数内会 trim。成功时返回认领到的 HO 编号（没认领为空串）。
+func joinSessionPlayer(sessionID, ownerID, cardID uint, handoutCode, announce string) (handout string, terr *turnError) {
+	// Verify character belongs to user
+	var card models.CharacterCard
+	if err := models.DB.First(&card, cardID).Error; err != nil {
+		return "", &turnError{status: http.StatusBadRequest, msg: "人物卡不存在"}
+	}
+	if card.UserID != ownerID {
+		return "", &turnError{status: http.StatusForbidden, msg: "无权使用此人物卡"}
 	}
 	hotFixChar(&card)
 	// NOTE: 仅活跃且未死亡且HP>0的人物卡允许加入游戏，死亡卡由商城/复活流程处理
 	if !checkCardCanJoinSession(&card) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该人物卡已死亡或无法继续冒险"})
-		return
+		return "", &turnError{status: http.StatusBadRequest, msg: "该人物卡已死亡或无法继续冒险"}
 	}
 
 	// Lock check: a character card may only participate in one active session at a time.
-	if isCardLockedInSession(models.DB, req.CharacterCardID) {
-		c.JSON(http.StatusConflict, gin.H{"error": "该人物卡正在另一场游戏中使用,副本结束后才能再次使用"})
-		return
+	if isCardLockedInSession(models.DB, cardID) {
+		return "", &turnError{status: http.StatusConflict, msg: "该人物卡正在另一场游戏中使用,副本结束后才能再次使用"}
 	}
 
-	secret := strings.TrimSpace(req.SecretBackground)
-	if utf8.RuneCountInString(secret) > maxSecretBackgroundRunes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("秘密背景最多 %d 字", maxSecretBackgroundRunes)})
-		return
-	}
-
-	handoutCode := strings.TrimSpace(req.HandoutCode)
-	handouts := session.Scenario.Content.Data.Handouts
-	if handoutCode != "" && len(handouts) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该模组没有预设身份卡"})
-		return
+	handoutCode = strings.TrimSpace(handoutCode)
+	var handouts []models.ScenarioHandout
+	if handoutCode != "" {
+		var session models.GameSession
+		if err := models.DB.Preload("Scenario").First(&session, sessionID).Error; err != nil {
+			return "", &turnError{status: http.StatusNotFound, msg: "房间不存在"}
+		}
+		handouts = session.Scenario.Content.Data.Handouts
+		if len(handouts) == 0 {
+			return "", &turnError{status: http.StatusBadRequest, msg: "该模组没有预设身份卡"}
+		}
 	}
 
 	player := models.SessionPlayer{
-		SessionID:        uint(sessionID),
-		UserID:           userID,
-		CharacterCardID:  req.CharacterCardID,
-		SecretBackground: secret,
-		JoinedAt:         time.Now(),
+		SessionID:       sessionID,
+		UserID:          ownerID,
+		CharacterCardID: cardID,
+		JoinedAt:        time.Now(),
 	}
 	var joinErr *handoutJoinError
 	if err := models.DB.Transaction(func(tx *gorm.DB) error {
@@ -452,35 +444,37 @@ func JoinSession(c *gin.Context) {
 				return herr
 			}
 			player.HandoutCode = h.Code
-			player.SecretBackground = composeHandoutSecret(h, secret)
 		}
 		return tx.Create(&player).Error
 	}); err != nil {
 		if joinErr != nil {
-			c.JSON(joinErr.status, gin.H{"error": joinErr.msg})
-			return
+			return "", &turnError{status: joinErr.status, msg: joinErr.msg}
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "加入房间失败"})
-		return
+		return "", &turnError{status: http.StatusInternalServerError, msg: "加入房间失败"}
 	}
 
 	// Announce join
-	username := c.GetString("username")
 	joinMsg := models.Message{
-		SessionID: uint(sessionID),
+		SessionID: sessionID,
 		Role:      models.MessageRoleSystem,
 		Kind:      models.MessageKindSystem,
 		Status:    models.MessageStatusDone,
-		Content:   fmt.Sprintf("「%s」以调查员「%s」的身份加入了房间。", username, card.Name),
+		Content:   fmt.Sprintf("「%s」以调查员「%s」的身份加入了房间。", announce, card.Name),
 		Username:  "系统",
 	}
 	if player.HandoutCode != "" {
-		joinMsg.Content = fmt.Sprintf("「%s」以调查员「%s」的身份加入了房间，认领身份卡 %s。", username, card.Name, player.HandoutCode)
+		joinMsg.Content = fmt.Sprintf("「%s」以调查员「%s」的身份加入了房间，认领身份卡 %s。", announce, card.Name, player.HandoutCode)
 	}
 	models.DB.Create(&joinMsg)
-	publishSessionChanged(uint(sessionID), models.SessionStatusLobby, "join")
+	publishSessionChanged(sessionID, models.SessionStatusLobby, "join")
 
-	c.JSON(http.StatusOK, gin.H{"message": "加入成功", "handout_code": player.HandoutCode})
+	return player.HandoutCode, nil
+}
+
+// joinSessionPlayer 的方法形式，给持有 SessionHandlers 的调用方（AI 陪玩）用。
+// JoinSession 是不带接收者的包级处理器（路由直接引用 handlers.JoinSession），所以它调用上面的包级函数。
+func (h *SessionHandlers) joinSessionPlayer(sessionID, ownerID, cardID uint, handoutCode, announce string) (handout string, terr *turnError) {
+	return joinSessionPlayer(sessionID, ownerID, cardID, handoutCode, announce)
 }
 
 type handoutJoinError struct {
@@ -523,98 +517,6 @@ func pickScenarioHandout(handouts []models.ScenarioHandout, claimed []string, co
 	return models.ScenarioHandout{}, &handoutJoinError{http.StatusBadRequest, fmt.Sprintf("身份卡 %s 不存在", code)}
 }
 
-// composeHandoutSecret 把预设 HO 的秘密正文写进玩家的秘密背景，玩家自填的内容作为补充保留。
-func composeHandoutSecret(h models.ScenarioHandout, custom string) string {
-	title := strings.TrimSpace(h.Title)
-	head := "【" + strings.TrimSpace(h.Code)
-	if title != "" {
-		head += " · " + title
-	}
-	head += "】"
-	out := head
-	if s := strings.TrimSpace(h.Secret); s != "" {
-		out += "\n" + s
-	}
-	if custom != "" {
-		out += "\n\n补充秘密：\n" + custom
-	}
-	return out
-}
-
-type setPlayerSecretReq struct {
-	SecretBackground string `json:"secret_background"`
-	UserID           uint   `json:"user_id"`
-}
-
-// SetPlayerSecret 允许玩家在准备阶段设置或更新自己的秘密背景(HO)，房主或管理员也可在准备/进行中为指定玩家分发 HO。
-func SetPlayerSecret(c *gin.Context) {
-	userID := c.GetUint("user_id")
-	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-
-	var session models.GameSession
-	if err := models.DB.Preload("Players").First(&session, sessionID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
-		return
-	}
-	if session.Status == models.SessionStatusEnded {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏已结束，无法修改秘密背景"})
-		return
-	}
-
-	var req setPlayerSecretReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	secret := strings.TrimSpace(req.SecretBackground)
-	if utf8.RuneCountInString(secret) > maxSecretBackgroundRunes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("秘密背景最多 %d 字", maxSecretBackgroundRunes)})
-		return
-	}
-
-	isAdmin := isAdminUser(c, userID)
-	isHost := session.CreatedBy == userID
-	targetUserID := req.UserID
-	if targetUserID == 0 {
-		targetUserID = userID
-	}
-
-	if targetUserID != userID {
-		if !isHost && !isAdmin {
-			c.JSON(http.StatusForbidden, gin.H{"error": "只有房主或管理员可以为其他玩家设置秘密背景"})
-			return
-		}
-	} else if session.Status != models.SessionStatusLobby && !isHost && !isAdmin {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏开始后仅房主或管理员可修改秘密背景"})
-		return
-	}
-
-	var target *models.SessionPlayer
-	for i := range session.Players {
-		if session.Players[i].UserID == targetUserID {
-			target = &session.Players[i]
-			break
-		}
-	}
-	if target == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "目标玩家不在房间中"})
-		return
-	}
-
-	if err := models.DB.Model(&models.SessionPlayer{}).
-		Where("id = ?", target.ID).
-		Update("secret_background", secret).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存秘密背景失败"})
-		return
-	}
-
-	publishSessionChanged(session.ID, session.Status, "secret")
-	c.JSON(http.StatusOK, gin.H{
-		"message":           "秘密背景已更新",
-		"secret_background": secret,
-	})
-}
-
 func LeaveSession(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -642,10 +544,28 @@ func LeaveSession(c *gin.Context) {
 		return
 	}
 	username := c.GetString("username")
+	// NOTE: 必须在事务外取 bot 用户 ID：SQLite 单连接下事务内再用全局 DB 查询会死锁。
+	botID := models.CompanionUserID()
 	deletedSession := false
 	if err := models.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&player).Error; err != nil {
 			return err
+		}
+
+		// NOTE: 最后一名真人离开后，只剩 AI 陪玩的房间没有意义，连 AI 席位一起清掉，让房间走下面的解散分支。
+		if botID != 0 {
+			var humans int64
+			if err := tx.Model(&models.SessionPlayer{}).
+				Where("session_id = ? AND user_id <> ?", sessionID, botID).
+				Count(&humans).Error; err != nil {
+				return err
+			}
+			if humans == 0 {
+				if err := tx.Where("session_id = ? AND user_id = ?", sessionID, botID).
+					Delete(&models.SessionPlayer{}).Error; err != nil {
+					return err
+				}
+			}
 		}
 
 		var remain int64
@@ -721,6 +641,10 @@ func StartSession(c *gin.Context) {
 	}
 	if len(session.Players) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "房间里还没有调查员，请先携带人物卡加入房间（房主也需要加入）再开始"})
+		return
+	}
+	if !hasHumanPlayer(session.Players) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "至少需要一名真人调查员才能开始游戏"})
 		return
 	}
 
@@ -1049,6 +973,8 @@ type chatStatusResponse struct {
 	Floor             *floorInfo     `json:"floor"`
 	CanKPContinue     bool           `json:"can_kp_continue"`
 	CanKPStop         bool           `json:"can_kp_stop"`
+	// CompanionStatus 是 AI 陪玩正在回应时的状态文案，没有任务在跑为空串；重连后前端靠它补回临时状态。
+	CompanionStatus string `json:"companion_status"`
 }
 
 // spotlightInfo 是 chat-status 里的发言权状态；KPFloor 为 true 表示 KP 持有，Stop 是上一个周期被强制结束的原因。
@@ -1169,9 +1095,10 @@ func (h *SessionHandlers) GetChatStatus(c *gin.Context) {
 			AskedMe:  named[userID],
 			Stop:     stop,
 		},
-		Floor:         floor,
-		CanKPContinue: isHost && !running,
-		CanKPStop:     isHost && running,
+		Floor:           floor,
+		CanKPContinue:   isHost && !running,
+		CanKPStop:       isHost && running,
+		CompanionStatus: companionStatusText(session.ID),
 	})
 }
 
@@ -1210,6 +1137,8 @@ func saveTurnAction(session models.GameSession, userID uint, displayName, conten
 //  2. 声明写入 SessionTurnAction，同一轮重复提交只保留最新一条。
 //  3. 被点名的人没到齐：广播 waiting，返回 floor_started=false。
 //  4. 到齐：开始一个 KP 周期，返回 floor_started=true。
+//
+// 1-4 在 submitTurn 里，真人和 AI 陪玩共用；ChatStream 只保留表单解析、长度校验、输入分类器和响应映射。
 func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID := c.GetUint("user_id")
@@ -1233,18 +1162,33 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		}
 	}
 
-	lock := getSessionLock(uint(sessionID))
+	floorStarted, waiting, terr := h.submitTurn(uint(sessionID), userID, username, content)
+	if terr != nil {
+		respondTurnError(c, terr)
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"floor_started": floorStarted, "waiting": waiting})
+}
+
+// submitTurn 是 ChatStream 去掉表单解析、长度校验和输入分类器之后的核心：真人处理器和 AI 陪玩共用。
+// 它自己拿会话锁（调用方不要先持有，sync.Mutex 不可重入），从校验发言资格一直做到开周期。
+// 输入分类器只在 ChatStream 里调用，AI 路径有意跳过。
+//
+// username 只用于日志和显示名兜底：玩家有人物卡角色名时消息里用角色名；角色名为空时才用 username；
+// username 也为空（AI 路径）时回落到库里的用户名。
+// 返回值：floorStarted 表示这次提交让被点名的人到齐、已开出一个 KP 周期；成功时 waiting 是本轮到齐进度；
+// 失败时 terr 非空，terr.notAsked 表示失败来自点名闸门（此刻没轮到这个人），其余失败为 false。
+func (h *SessionHandlers) submitTurn(sessionID, userID uint, username, content string) (floorStarted bool, waiting waitingPayload, terr *turnError) {
+	lock := getSessionLock(sessionID)
 	lock.Lock()
 	defer lock.Unlock()
 
-	session, err := loadSessionForFloor(uint(sessionID))
+	session, err := loadSessionForFloor(sessionID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
-		return
+		return false, waitingPayload{}, &turnError{status: http.StatusNotFound, msg: "房间不存在"}
 	}
 	if session.Status != models.SessionStatusPlaying {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏尚未开始"})
-		return
+		return false, waitingPayload{}, &turnError{status: http.StatusBadRequest, msg: "游戏尚未开始"}
 	}
 
 	isPlayer := false
@@ -1258,14 +1202,18 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 			break
 		}
 	}
+	if displayName == "" {
+		var u models.User
+		if err := models.DB.Select("username").First(&u, userID).Error; err == nil {
+			displayName = u.Username
+		}
+	}
 	if !isPlayer && session.CreatedBy != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "观战模式下无法发言"})
-		return
+		return false, waitingPayload{}, &turnError{status: http.StatusForbidden, msg: "观战模式下无法发言"}
 	}
 
 	if _, running := getSessionProcessing(session.ID); running {
-		c.JSON(http.StatusConflict, gin.H{"error": "KP 正在发言，请稍候"})
-		return
+		return false, waitingPayload{}, &turnError{status: http.StatusConflict, msg: "KP 正在发言，请稍候"}
 	}
 
 	chatLog.Debug("chat request", "session", sessionID, "user", username, "content_len", len([]rune(content)), "round", session.TurnRound)
@@ -1277,27 +1225,23 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		if len(collect.UserIDs) == 0 {
 			status = http.StatusConflict
 		}
-		c.JSON(status, gin.H{"error": spotlightRejectReason(session, collect)})
-		return
+		return false, waitingPayload{}, &turnError{status: status, msg: spotlightRejectReason(session, collect), notAsked: true}
 	}
 
 	if err := saveTurnAction(session, userID, displayName, content); err != nil {
 		chatLog.Error("chat save turn action failed", "session", sessionID, "user", username, "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存行动失败"})
-		return
+		return false, waitingPayload{}, &turnError{status: http.StatusInternalServerError, msg: "保存行动失败"}
 	}
 
-	waiting, err := buildWaitingPayload(models.DB, session, collect)
+	waiting, err = buildWaitingPayload(models.DB, session, collect)
 	if err != nil {
 		chatLog.Error("chat waiting payload failed", "session", sessionID, "user", username, "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询本轮状态失败"})
-		return
+		return false, waitingPayload{}, &turnError{status: http.StatusInternalServerError, msg: "查询本轮状态失败"}
 	}
 	if waiting.Pending > 0 {
 		chatLog.Debug("chat waiting pending", "session", sessionID, "user", username, "pending", waiting.Pending, "total", waiting.Total)
 		hubFor(session.ID).Publish("waiting", waiting)
-		c.JSON(http.StatusAccepted, gin.H{"floor_started": false, "waiting": waiting})
-		return
+		return false, waiting, nil
 	}
 
 	// NOTE: 读出每个玩家本轮最新、尚未被消费的声明，而不只是被点名的人：跨周期保留下来的战斗/追逐声明
@@ -1305,13 +1249,12 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	seg := buildKPSegment(session, "", loadLatestTurnActions(session.ID, session.TurnRound, session.Players))
 	switch err := h.startFloor(seg); {
 	case errors.Is(err, errFloorBusy):
-		c.JSON(http.StatusConflict, gin.H{"error": "KP 正在发言，请稍候"})
+		return false, waitingPayload{}, &turnError{status: http.StatusConflict, msg: "KP 正在发言，请稍候"}
 	case err != nil:
 		chatLog.Error("chat start floor failed", "session", sessionID, "user", username, "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "启动 KP 失败"})
-	default:
-		c.JSON(http.StatusAccepted, gin.H{"floor_started": true, "waiting": waiting})
+		return false, waitingPayload{}, &turnError{status: http.StatusInternalServerError, msg: "启动 KP 失败"}
 	}
+	return true, waiting, nil
 }
 
 const imageDataURLStartTag = "<image_data_url>"
@@ -1611,10 +1554,14 @@ func EndSession(c *gin.Context) {
 	}
 
 	// NOTE: 结束游戏每人扣费，费率通过 SiteSetting 可配
+	// NOTE: AI 陪玩账号没有金币，也不参与结束游戏的收费。
 	endSessionCost := siteSettingInt("end_session_cost", 200)
 	var brokePlayers []string
 	for i := range session.Players {
 		p := &session.Players[i]
+		if p.User.Role == models.RoleBot {
+			continue
+		}
 		if p.User.Coins < endSessionCost {
 			brokePlayers = append(brokePlayers, p.User.Username)
 		}
@@ -1628,6 +1575,9 @@ func EndSession(c *gin.Context) {
 	}
 	for i := range session.Players {
 		p := &session.Players[i]
+		if p.User.Role == models.RoleBot {
+			continue
+		}
 		newCoins := p.User.Coins - endSessionCost
 		if err := models.DB.Model(&p.User).Update("coins", newCoins).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣费失败: " + p.User.Username})
@@ -1635,6 +1585,7 @@ func EndSession(c *gin.Context) {
 		}
 	}
 
+	cancelCompanion(session.ID, errCompanionSkipped)
 	models.DB.Model(&session).Update("status", models.SessionStatusEnded)
 	publishSessionChanged(session.ID, models.SessionStatusEnded, "end")
 
@@ -1681,6 +1632,7 @@ func AdminEndAllSessions(c *gin.Context) {
 
 	for i := range sessions {
 		session := &sessions[i]
+		cancelCompanion(session.ID, errCompanionSkipped)
 		models.DB.Model(session).Update("status", models.SessionStatusEnded)
 		publishSessionChanged(session.ID, models.SessionStatusEnded, "end")
 
@@ -1738,7 +1690,6 @@ func ListMyFavoriteSessions(c *gin.Context) {
 	for i := range sessions {
 		sanitizeScenarioHandouts(&sessions[i].Scenario, favAdmin)
 	}
-	sanitizeSessionsSecrets(sessions, userID, favAdmin, false)
 	c.JSON(http.StatusOK, newPaginatedResponse(sessions, page, pageSize, total))
 }
 

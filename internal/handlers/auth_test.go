@@ -136,6 +136,23 @@ func TestLogin_Success(t *testing.T) {
 	}
 }
 
+func TestLogin_RejectsBotAccount(t *testing.T) {
+	initTestDB(t)
+	hash, _ := bcrypt.GenerateFromPassword([]byte("secret123"), bcrypt.MinCost)
+	models.DB.Create(&models.User{Username: "bot", Email: "bot@example.com", PasswordHash: string(hash), Role: models.RoleBot})
+
+	r := authRouter()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("POST", "/auth/login", map[string]any{
+		"username": "bot",
+		"password": "secret123",
+	}))
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("want 401 even with a matching password, got %d", w.Code)
+	}
+}
+
 func TestLogin_WrongPassword(t *testing.T) {
 	initTestDB(t)
 	hash, _ := bcrypt.GenerateFromPassword([]byte("correct"), bcrypt.MinCost)

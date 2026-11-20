@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Award, Brain, Dices, Eye, Lock, Mail, ShieldAlert, Timer } from '@lucide/vue'
+import { Award, Brain, Dices, Eye, ShieldAlert, Timer } from '@lucide/vue'
 import { ref, watch } from 'vue'
 import { api } from '@/api/client'
 import type { ScenarioClue, ScenarioEnding } from '@/api/sessionTypes'
@@ -8,9 +8,7 @@ import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import { attitudeTone, clueNatureLabel, clueNatureTone } from '@/components/scenario/scenarioFormat'
 import type { SessionClock } from '@/game/handbookTypes'
-import type { PrivateNote } from '@/game/roomState'
 import { useUiStore } from '@/stores/ui'
-import { fmtTime } from '@/utils/format'
 
 interface DebriefEvalPlayer {
   character_name: string
@@ -38,13 +36,6 @@ interface DebriefNPC {
   description?: string
 }
 
-interface DebriefPlayerSecret {
-  character_name: string
-  username?: string
-  handout_code?: string
-  secret_background: string
-}
-
 interface DebriefHallucination {
   recipient_name: string
   content: string
@@ -66,10 +57,8 @@ interface DebriefResponse {
     endings: ScenarioEnding[]
     clues: ScenarioClue[]
     npcs: DebriefNPC[]
-    player_secrets: DebriefPlayerSecret[]
     clocks?: SessionClock[]
     hallucinations?: DebriefHallucination[]
-    private_notes?: PrivateNote[]
   }
 }
 
@@ -218,7 +207,7 @@ function successRate(st: DebriefDiceStat): string {
       <div v-else class="space-y-5">
         <div v-if="!truthRevealed" class="space-y-3 rounded-xl border border-line bg-surface-2/80 p-5 text-center">
           <ShieldAlert :size="28" :stroke-width="1.75" class="mx-auto text-warning" />
-          <p class="text-sm font-medium text-fg">以下内容包含模组完整真相、全部结局、未发现线索与队友秘密背景 (HO)</p>
+          <p class="text-sm font-medium text-fg">以下内容包含模组完整真相、全部结局与未发现线索</p>
           <p class="text-xs text-fg-subtle">如果你还打算以玩家身份重跑同一模组，请谨慎掀开底牌。</p>
           <div class="pt-1">
             <BaseButton @click="truthRevealed = true">确认揭晓模组真相与全部结局</BaseButton>
@@ -239,51 +228,6 @@ function successRate(st: DebriefDiceStat): string {
             <div v-if="data.truth.antagonist_dossier" class="rounded-lg border border-line bg-surface-2/60 p-3">
               <p class="mb-1 text-xs font-medium text-danger">幕后施动者档案</p>
               <p class="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">{{ data.truth.antagonist_dossier }}</p>
-            </div>
-          </section>
-
-          <section v-if="data.truth.player_secrets.length" class="space-y-2.5">
-            <h3 class="flex items-center gap-1.5 text-sm font-semibold text-fg">
-              <Lock :size="15" :stroke-width="1.75" class="text-info" />
-              全员秘密背景 (HO) 揭晓
-            </h3>
-            <div class="space-y-2">
-              <article
-                v-for="s in data.truth.player_secrets"
-                :key="s.character_name + s.username"
-                class="rounded-lg border border-line bg-surface-2/60 p-3"
-              >
-                <div class="flex flex-wrap items-center gap-2 text-xs font-medium text-info">
-                  <span>
-                    {{ s.character_name }}
-                    <span v-if="s.username" class="text-fg-subtle">（@{{ s.username }}）</span>
-                  </span>
-                  <StampBadge v-if="s.handout_code" tone="ledger">{{ s.handout_code }}</StampBadge>
-                </div>
-                <p v-if="s.secret_background" class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">{{ s.secret_background }}</p>
-              </article>
-            </div>
-          </section>
-
-          <section v-if="data.truth.private_notes?.length" class="space-y-2.5">
-            <h3 class="flex items-center gap-1.5 text-sm font-semibold text-fg">
-              <Mail :size="15" :stroke-width="1.75" class="text-info" />
-              本局桌下纸条揭晓
-            </h3>
-            <div class="space-y-2">
-              <article
-                v-for="n in data.truth.private_notes"
-                :key="n.id"
-                class="rounded-lg border border-info/30 bg-info/10 p-3"
-              >
-                <div class="flex items-baseline justify-between gap-2 text-xs">
-                  <span class="font-medium text-info">
-                    {{ n.from_name || '调查员' }} → {{ n.to_user_id === 0 ? 'KP' : n.to_name || '调查员' }}
-                  </span>
-                  <span v-if="n.created_at" class="shrink-0 tabular-nums text-fg-subtle">{{ fmtTime(n.created_at) }}</span>
-                </div>
-                <p class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">{{ n.content }}</p>
-              </article>
             </div>
           </section>
 

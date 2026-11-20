@@ -20,6 +20,7 @@ const panels: Record<AdminTabKey, ReturnType<typeof defineAsyncComponent>> = {
   announcements: defineAsyncComponent(() => import('./AnnouncementsTab.vue')),
   settings: defineAsyncComponent(() => import('./SettingsTab.vue')),
   cache: defineAsyncComponent(() => import('./CacheTab.vue')),
+  companions: defineAsyncComponent(() => import('@/components/admin/companions/CompanionPoolTab.vue')),
 }
 
 const active = computed<AdminTabKey>({

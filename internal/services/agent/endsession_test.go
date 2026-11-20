@@ -497,6 +497,82 @@ func TestRunEndSession_PersistsEvaluation(t *testing.T) {
 	}
 }
 
+// TestRunEndSession_CompanionSeatGetsNoRewards 验证 AI 陪玩席位不发金币、不成长（POW=0 时真人必增），
+// 但仍恢复 HP，评价记录照写且金币记 0。
+func TestRunEndSession_CompanionSeatGetsNoRewards(t *testing.T) {
+	initEndSessionTestDB(t)
+
+	humanID := newEndSessionUser(t, "human")
+	botID, err := models.EnsureCompanionUser()
+	if err != nil {
+		t.Fatalf("EnsureCompanionUser: %v", err)
+	}
+	stats := models.CharacterStats{POW: 0, MaxHP: 10, HP: 4, MaxMP: 10, MP: 10, MaxSAN: 99, SAN: 50, Luck: 1}
+	humanCard := newEndSessionCard(t, "真人调查员", stats, nil)
+	botCard := newEndSessionCard(t, "陪玩调查员", stats, nil)
+
+	sess := &models.GameSession{
+		ID: 120,
+		Players: []models.SessionPlayer{
+			{UserID: humanID, CharacterCard: *humanCard},
+			{UserID: botID, CharacterCard: *botCard},
+		},
+	}
+	settlement := []PlayerSettlement{
+		{CharacterName: "真人调查员", Score: intPtr(80), Comment: "稳健"},
+		{CharacterName: "陪玩调查员", Score: intPtr(80), Comment: "配合"},
+	}
+	events, err := RunEndSession(context.Background(), sess, nil, true, settlement)
+	if err != nil {
+		t.Fatalf("RunEndSession: %v", err)
+	}
+
+	var human, bot models.User
+	models.DB.First(&human, humanID)
+	models.DB.First(&bot, botID)
+	if human.Coins != 60 || bot.Coins != 0 {
+		t.Errorf("coins human=%d bot=%d, want 60 and 0", human.Coins, bot.Coins)
+	}
+	for _, ev := range events {
+		if ev.Type == "coins" && ev.Character == "陪玩调查员" {
+			t.Errorf("companion seat must not get a coins event: %+v", ev)
+		}
+	}
+
+	var updatedHuman, updatedBot models.CharacterCard
+	models.DB.First(&updatedHuman, humanCard.ID)
+	models.DB.First(&updatedBot, botCard.ID)
+	if updatedHuman.Stats.Data.POW <= 0 {
+		t.Errorf("human POW = %d, want growth from 0", updatedHuman.Stats.Data.POW)
+	}
+	if updatedBot.Stats.Data.POW != 0 {
+		t.Errorf("companion POW = %d, want no growth", updatedBot.Stats.Data.POW)
+	}
+	if updatedBot.Stats.Data.Luck != 1 {
+		t.Errorf("companion Luck = %d, want no luck recovery", updatedBot.Stats.Data.Luck)
+	}
+	if updatedBot.Stats.Data.HP != 10 {
+		t.Errorf("companion HP = %d, want restored to 10", updatedBot.Stats.Data.HP)
+	}
+
+	var eval models.GameEvaluation
+	if err := models.DB.Where("session_id = ?", 120).First(&eval).Error; err != nil {
+		t.Fatalf("evaluation not saved: %v", err)
+	}
+	for _, p := range eval.Content.Data.Players {
+		switch p.CharacterName {
+		case "陪玩调查员":
+			if p.Score != 80 || p.BaseCoins != 0 || p.BonusCoins != 0 {
+				t.Errorf("companion evaluation = %+v, want score 80 with zero coins", p)
+			}
+		case "真人调查员":
+			if p.BaseCoins != 20 || p.BonusCoins != 40 {
+				t.Errorf("human evaluation = %+v, want base 20 bonus 40", p)
+			}
+		}
+	}
+}
+
 // TestRunEndSession_WinFalse_DeadCardDeactivated 验证 win=false 时死亡角色被失活（撕卡）。
 func TestRunEndSession_WinFalse_DeadCardDeactivated(t *testing.T) {
 	initEndSessionTestDB(t)

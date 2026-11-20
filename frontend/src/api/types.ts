@@ -17,9 +17,9 @@ export interface CharacterCard {
 export interface SessionPlayer {
   user_id: number
   handout_code?: string
-  secret_background?: string
   location?: string
-  user?: { username?: string } | null
+  // NOTE: role 为 'bot' 的是 AI 陪玩占的席位，判断见 game/companion.ts 的 isCompanionPlayer
+  user?: { username?: string; role?: string } | null
   character_card?: CharacterCard | null
   [key: string]: unknown
 }

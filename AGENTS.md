@@ -75,6 +75,21 @@ npm run build              # 产物输出到 ../cmd/server/dist/app
 - 「个人经历演变」由房间创建时的 `GameSession.EvolveBackstory`（默认 false，之后不可改）控制：只有开关打开且 `win=true` 时，`RunEndSession` 才通过 `backstoryEvolver`（`backstory.go`，借用 Writer 的 Provider，一次调用覆盖全部存活调查员）改写个人经历，并与关系提升并行。尽力而为：LLM 或 JSON 失败时经历保持不变；`filterBackstories` 丢弃非存活调查员、空串、未变化和超过 300 字的改写；死亡者不参与。测试通过替换 `backstoryEvolver` 绕开数据库里的 Provider。
 - 人物卡生成/重生成、技能调整、结算时的关系提升和 `generate_npc_name` 的中日文取名（Writer 未启用时退回静态姓名池）借用 Writer 角色的 Provider（`loadSingleAgent(AgentRoleWriter)`），不再有单独配置项。
 
+### AI 陪玩
+
+每个房间最多一名额外的 AI 玩家（`companion` 角色），能看到、能做的和网页端真人一样；KP 完全不知道它是 AI（Director 提示词里不能出现「AI玩家」，`director_test.go` 守着）。
+
+- **身份与卡池**：内置 bot 用户（`models/companion.go` 的 `EnsureCompanionUser`，`seedDefaultData` 启动时调用，`role=bot`，密码哈希是不可匹配的 `"!"`）。`Login` 对 bot 返回 401，`AdminSetRole` / `AdminBanUser` 拒绝它。`CompanionUserID()` 每次查库、不缓存（测试会换库），没有 bot 返回 0。不要给它设 `CardSlots`：gorm 的 `default:3` 会把 0 换成 3。AI 的人物卡就是 bot 名下的卡（「AI 卡池」）：管理员经 `handlers/admin_companion.go` 把自己的活跃卡移入（正在未结束房间里的卡 409）或取回（活跃卡要有空卡槽）。
+- **加入与移出**（`handlers/companion_room.go`）：只有大厅阶段、房主或管理员能操作。`AddCompanion` 在会话锁里依次检查 `CompanionAvailable()`（`companion` 配置启用且绑定了可用 Provider，新库播种为未启用，所以 `seedDefaultAgentConfigs` 里 `Create` 后要回写 `is_active=false`）、已有 bot 座位（409，这就是「至多一个」的保证）、房间已满（AI 占 `max_players`）后才调 `joinSessionPlayer`。`StartSession` 要求至少一名真人；`LeaveSession` 里最后一名真人离开时顺带删掉 bot 座位，房间沿用原来的 `remain == 0` 分支解散。`EndSession` 的收费和余额检查跳过 bot。事务回调里不能调 `models.CompanionUserID()`（单连接 SQLite 会死锁），要在事务前取好。
+- **共享核心**：`handlers/session_core.go` 把真人的提交、入座、桌边消息、手册笔记、手册视图抽成不依赖 gin 的函数（`submitTurn`、`joinSessionPlayer`、`postOOC`、`createNote`、`buildHandbook`），HTTP 处理器和 AI 都走它们，所以点名闸门、可见性、广播不另写一套。`submitTurn` 自己拿会话锁，调用方不能持锁；`joinSessionPlayer` 不拿锁，调用方自己查大厅、满员、重复。
+- **触发与调度**（`handlers/companion.go`）：`finishFloor` 在广播发言权之后，如果周期没结束且点名了 bot，就 `startCompanion`，此时处理锁已释放、出站队列已放完，AI 读到的是完整正文，提交不会撞 409。`finishFloor` 里所有查库的事（比如取 bot id）必须在广播 `floor_end` 之前做完，测试以 `floor_end` 为同步点，之后再碰全局 `models.DB` 会和测试清理竞争。任务登记在 `activeCompanions`（仿 `activeFloors`），一个房间同一时刻一个任务；运行期间又被点名只记一次「重跑」标记（`rerun`），跑完再来一遍，不并行也不丢触发（AI 提交后新周期可能比上一次运行退出得还快）。每次运行最长 5 分钟。状态文案经临时事件 `companion_status` 和 `chat-status` 的 `companion_status` 字段暴露；清空状态的广播和移出登记表在同一把锁里，避免盖掉紧接着登记的新任务。
+- **取消与恢复**：`KPTurn`（在会话锁里、`startFloor` 之前）、`EndSession`、`AdminEndAllSessions` 调 `cancelCompanion(…, errCompanionSkipped)`，被取消的运行不兜底；超时（`DeadlineExceeded`）才兜底提交。取消之后 AI 若还在提交，会被点名闸门拒绝，`companionEnv.Submit` 把拒绝和 409 都映射成 `agent.ErrCompanionNotAsked`，agent 把它当作正常收尾。关机时 `StopAllCompanions` 先于 `StopAllFloors` 调用，并且之后不再重跑。进程启动时 `ResumeCompanions` 扫描进行中且没有周期在跑的房间，重新触发仍在等 AI 的那些（内存里的任务重启即丢）。
+- **环境适配**（`companionEnv`）：`Messages` 复用 `canSeeMessage`，另外排除尚未广播的消息（`heldMessageIDs`）、还在写的 writer 和 system 消息，清掉 `Hallucination` 标记和 `WriterDirection`（导演指令可能含模组秘密），为补偿被过滤的密讯按批翻页。`Submit` 走 `submitTurn`，**不经输入分类器**（`systemone` 只在 `ChatStream` 里调用）：AI 的输出来自 LLM 而非玩家，但对抗性的模组文本仍可能诱导它说出越权内容，防线只有 agent 侧对读到内容的 `xmlEscape` 和提示词，这一点没有在真实对局里验证。
+- **agent 侧**（`services/agent/companion*.go`）：`RunCompanion` 先 `View` 确认仍被点名，再拿房间级 `companionLock`（`TryLock`，拿不到返回 `ErrCompanionBusy`），按 `loadSingleAgent(companion)` 现读配置，用 `runToolLoop`（`room=nil`，最多 16 轮）跑 ReAct。工具：`read_messages`、`view_character`、`view_party`、`view_handbook`、`read_ooc`、`write_note`（每次最多 3 条）、`post_ooc`（每次最多 2 条）、`submit_action`（单独一轮；选推荐行动要逐字匹配，多项用换行拼接，上限 2000 字）。没有私密纸条和秘密背景的工具，这个玩法已经删除，不要为 AI 加回来。记忆是有状态的：每个房间一份 `AgentTranscript(agent_key="companion")`，策略 `TrimDropTurns`，已读消息水位 `TranscriptData.CompanionSeen` 和对应单元同一次落库；失败时只 `CommitTail`。LLM 出错、轮数耗尽、没提交或超时，提交一句保守的兜底行动。
+- **结算**（`endsession.go` 的 `RunEndSessionWithEnding`）：AI 席位不发金币（评价记录照写，金币记 0）、不做技能成长和 POW 增长、不恢复幸运、不改写经历、不合并关系；伤亡、HP/MP/SAN 恢复、清疯狂、回收剧情物品照常。
+- **新增角色同步点**已做：`validRoles`、`agentRoles.ts`（默认值、名称、描述）、播种和 `db_agent_seed_test.go`。前端的卡池 tab、大厅里的添加 AI 弹窗、游戏页的 AI 徽标和状态文案都没有在真实浏览器里验证。
+- **测试**：handlers 用 `SessionHandlers.Companion` 注入假的 `CompanionRunner`（和 `Guard` 一样），`newCompanionHandlers` 会在用例结束时取消并等待遗留任务，agent 侧替换 `companionAgentLoader`。
+
 ### Agent 角色配置
 - 角色常量在 `models/models.go`（`AgentRole*`），配置行在表 `agent_configs`，每个角色绑定 Provider + 模型 + 温度 + token 上限 + 思考等级，由后台编辑。
 - `batchLoadAgents`（`orchestrator.go`）加载角色；`director`、`lawyer` 缺失或未绑定可用 Provider 会直接报错，其余为可选，未启用时降级：

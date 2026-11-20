@@ -540,6 +540,27 @@ describe('RoomController', () => {
     expect(gates(h.room()).canSpeak).toBe(false)
   })
 
+  test('AI 陪玩思考：companion_status 经 WebSocket 到达后状态栏显示它，空串后恢复，下个周期开始时清掉', async () => {
+    const h = harness()
+    await h.enter()
+    h.frame(4, 'floor_start', { floor: 2, reason: 'player' })
+    h.frame(5, 'floor_end', { floor: 2, reason: 'ask', messages: 1 })
+    h.frame(6, 'spotlight', { user_ids: [9], names: ['雷蒙'], question: '你呢？', kp_floor: false, stop: '' })
+    expect(roomBanner(h.room()).text).toBe('KP 在等 雷蒙 回应')
+
+    h.frame(0, 'companion_status', { text: '雷蒙 正在思考…' })
+    expect(h.room().companionStatus).toBe('雷蒙 正在思考…')
+    expect(roomBanner(h.room()).text).toBe('雷蒙 正在思考…')
+    expect(h.frames.at(-1)?.type).toBe('companion_status')
+
+    h.frame(0, 'companion_status', { text: '' })
+    expect(roomBanner(h.room()).text).toBe('KP 在等 雷蒙 回应')
+
+    h.frame(0, 'companion_status', { text: '雷蒙 正在思考…' })
+    h.frame(7, 'floor_start', { floor: 3, reason: 'player' })
+    expect(h.room().companionStatus).toBe('')
+  })
+
   test('已提交后的状态栏文案：等待其他人时显示他们的名字', async () => {
     const h = harness({ waiting: { pending: 2, total: 2, submitted_names: [], pending_names: ['爱丽丝', '鲍勃'] } })
     await h.enter()

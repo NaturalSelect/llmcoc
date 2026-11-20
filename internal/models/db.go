@@ -62,7 +62,6 @@ func InitDB() error {
 		&SessionOOCMessage{},
 		&SessionClue{},
 		&SessionNote{},
-		&SessionPrivateNote{},
 		&Message{},
 		&ShopItem{},
 		&Transaction{},
@@ -109,6 +108,9 @@ func purgeRetiredAgentData() {
 }
 
 func seedDefaultData() {
+	if _, err := EnsureCompanionUser(); err != nil {
+		logging.For("models").Error("seed companion user failed", "err", err)
+	}
 	seedDefaultShopItems()
 	seedDefaultAgentConfigs()
 	seedDefaultSiteSettings()
@@ -253,13 +255,15 @@ func seedDefaultAgentConfigs() {
 		// NOTE: dramaturg 默认关闭,需要管理员单独绑定 provider 才会被路由;未启用时该工具不会
 		// 出现在Director工具列表中,Director按自身[ACTIVE-PACING]规则自行判断节奏,不影响主流程。
 		{Role: AgentRoleDramaturg, ProviderConfigID: provID, ModelName: model, MaxTokens: 500, Temperature: 0.5, ThinkingLevel: "low", IsActive: false},
+		// NOTE: companion 默认关闭，需要管理员绑定支持 function calling 的模型；未启用时房间里不能添加 AI 陪玩。
+		{Role: AgentRoleCompanion, ProviderConfigID: provID, ModelName: model, MaxTokens: 1500, Temperature: 0.7, ThinkingLevel: "low", IsActive: false},
 	}
 	for _, ag := range required {
 		var existing AgentConfig
 		if DB.Where("role = ?", ag.Role).First(&existing).Error != nil {
 			DB.Create(&ag)
 			// NOTE: IsActive 带 default:true，Create 会把零值 false 换成 true，需要显式回写才能真正默认关闭。
-			if ag.Role == AgentRolePainterHQ || ag.Role == AgentRoleEmbedding || ag.Role == AgentRoleSystemOne {
+			if ag.Role == AgentRolePainterHQ || ag.Role == AgentRoleEmbedding || ag.Role == AgentRoleSystemOne || ag.Role == AgentRoleCompanion {
 				DB.Model(&ag).Update("is_active", false)
 			}
 		}

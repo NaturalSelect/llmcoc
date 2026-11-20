@@ -175,6 +175,8 @@ func AdminUpdateAgent(c *gin.Context) {
 		// NOTE: dramaturg 是可选的剧情节奏顾问 Agent，由Director按需通过consult_dramaturg工具调用，
 		// 允许管理员配置其 provider/model，不配置即禁用。
 		"dramaturg": true,
+		// NOTE: companion 是 AI 陪玩，被点名时扮演 AI 卡池里的调查员。
+		"companion": true,
 	}
 	if !validRoles[role] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent 角色"})

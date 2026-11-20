@@ -97,6 +97,49 @@ describe('roomBanner', () => {
     expect(roomBanner(room).text).toBe('KP 在等 鲍勃、凯特 回应（1/2 已提交）')
   })
 
+  test('他人（AI 陪玩）被点名且正在思考：状态栏显示它的文案，思考结束后回到等待回应', () => {
+    const room = playingRoom()
+    room.spotlight.userIds = [3]
+    room.spotlight.names = ['雷蒙']
+    room.companionStatus = '雷蒙 正在思考…'
+    expect(roomBanner(room)).toStrictEqual({ text: '雷蒙 正在思考…', tone: 'info', busy: true })
+    // 房主也一样，不会变成「请点击让 KP 继续」
+    room.isHost = true
+    expect(roomBanner(room).text).toBe('雷蒙 正在思考…')
+    room.companionStatus = ''
+    expect(roomBanner(room).text).toBe('KP 在等 雷蒙 回应')
+  })
+
+  test('AI 思考文案不盖掉连接提示、周期运行文案和暂停原因，也不会在轮到我时显示', () => {
+    const room = playingRoom()
+    room.spotlight.userIds = [3]
+    room.companionStatus = '雷蒙 正在思考…'
+
+    room.floor.running = true
+    room.kpStatus = 'KP 正在整理记忆'
+    expect(roomBanner(room).text).toBe('KP 正在整理记忆')
+    room.floor.running = false
+
+    room.spotlight.stop = 'loop'
+    expect(roomBanner(room).text).toContain('KP 已暂停')
+    room.spotlight.stop = ''
+
+    room.spotlight.askedMe = true
+    room.spotlight.userIds = [2, 3]
+    expect(roomBanner(room)).toStrictEqual({ text: 'KP 在等你回应', tone: 'me', busy: false })
+    room.me.submitted = true
+    expect(roomBanner(room).text).toBe('已提交行动，等待 KP')
+
+    room.conn = 'reconnecting'
+    expect(roomBanner(room).text).toBe('连接中断，正在重连…')
+  })
+
+  test('没有人被点名时，残留的 AI 思考文案不会显示', () => {
+    const room = playingRoom()
+    room.companionStatus = '雷蒙 正在思考…'
+    expect(roomBanner(room).text).toBe('等待房主让 KP 开场')
+  })
+
   test('KP 持有发言权时区分开场和继续', () => {
     const room = playingRoom()
     expect(roomBanner(room).text).toBe('等待房主让 KP 开场')

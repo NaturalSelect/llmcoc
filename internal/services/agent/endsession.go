@@ -210,6 +210,9 @@ func RunEndSessionWithEnding(ctx context.Context, session *models.GameSession, m
 
 	endingMatchedName, sanExpr, sanSign, hasEndingSAN := resolveEndingSANReward(&session.Scenario, endingName, endSummary)
 
+	// NOTE: 必须在事务外取 bot 用户 ID：事务占着连接时再用全局 DB 查询，SQLite 单连接下会死锁。
+	companionID := models.CompanionUserID()
+
 	var events []models.GameEvent
 	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
 		var evalContent models.EvaluationContent
@@ -218,35 +221,43 @@ func RunEndSessionWithEnding(ctx context.Context, session *models.GameSession, m
 			card := &player.CharacterCard
 			before := *card
 			hadMadness := card.MadnessState == "temporary" || card.MadnessState == "indefinite"
+			// NOTE: AI 陪玩席位不发金币、不成长、不合并关系、不改写经历，只做状态恢复，让卡池里的卡能反复使用。
+			isAI := companionID != 0 && player.UserID == companionID
 
 			s, hasSettlement := settlementByChar[card.Name]
 			bonus := 0
+			baseCoins := settlementBaseCoins
 			if hasSettlement {
 				bonus = s.score() / 2
+				if isAI {
+					baseCoins, bonus = 0, 0
+				}
 				evalContent.Players = append(evalContent.Players, models.PlayerEvalContent{
 					CharacterName: card.Name,
 					Comment:       s.Comment,
 					Score:         s.score(),
-					BaseCoins:     settlementBaseCoins,
+					BaseCoins:     baseCoins,
 					BonusCoins:    bonus,
 				})
 			}
-			award := settlementBaseCoins + bonus
-			if err := tx.Model(&models.User{}).
-				Where("id = ?", player.UserID).
-				Update("coins", gorm.Expr("coins + ?", award)).Error; err != nil {
-				return err
+			if !isAI {
+				award := settlementBaseCoins + bonus
+				if err := tx.Model(&models.User{}).
+					Where("id = ?", player.UserID).
+					Update("coins", gorm.Expr("coins + ?", award)).Error; err != nil {
+					return err
+				}
+				debugf("award", "player %d (%s) awarded %d coins (base %d + bonus %d)", player.ID, card.Name, award, settlementBaseCoins, bonus)
+				events = append(events, models.GameEvent{
+					Type: "coins", Character: card.Name, Amount: award,
+					Detail: fmt.Sprintf("基础 %d + 评分奖励 %d", settlementBaseCoins, bonus),
+				})
 			}
-			debugf("award", "player %d (%s) awarded %d coins (base %d + bonus %d)", player.ID, card.Name, award, settlementBaseCoins, bonus)
-			events = append(events, models.GameEvent{
-				Type: "coins", Character: card.Name, Amount: award,
-				Detail: fmt.Sprintf("基础 %d + 评分奖励 %d", settlementBaseCoins, bonus),
-			})
 
 			// NOTE: 失败没有角色成长：技能成长和 POW 增长只在 win=true 时执行。
 			powGrowth := false
 			luckGrowth := false
-			if win {
+			if win && !isAI {
 				events = append(events, applySkillGrowth(card, s.Skills)...)
 
 				limit := card.Stats.Data.POW % 100
@@ -270,7 +281,9 @@ func RunEndSessionWithEnding(ctx context.Context, session *models.GameSession, m
 				card.IsActive = false
 			} else {
 				// 已死亡角色不合并关系，卡即将被撕。
-				card.SocialRelations.Data = mergeSessionRelations(card.SocialRelations.Data, player.SessionRelations.Data, relationPromotions[card.Name])
+				if !isAI {
+					card.SocialRelations.Data = mergeSessionRelations(card.SocialRelations.Data, player.SessionRelations.Data, relationPromotions[card.Name])
+				}
 
 				card.Stats.Data.HP = card.Stats.Data.MaxHP
 				card.Stats.Data.MP = card.Stats.Data.MaxMP
@@ -293,7 +306,7 @@ func RunEndSessionWithEnding(ctx context.Context, session *models.GameSession, m
 					}
 				}
 				// NOTE: COC7 通关后幸运恢复检定：d100 大于当前幸运则恢复 1D10（上限 99）。
-				if win && card.Stats.Data.Luck < 99 && game.RollD100() > card.Stats.Data.Luck {
+				if win && !isAI && card.Stats.Data.Luck < 99 && game.RollD100() > card.Stats.Data.Luck {
 					gain, _ := game.Roll(1, 10)
 					card.Stats.Data.Luck = clamp(card.Stats.Data.Luck+gain, 0, 99)
 					luckGrowth = true
@@ -302,8 +315,10 @@ func RunEndSessionWithEnding(ctx context.Context, session *models.GameSession, m
 				card.IsUnconscious = false
 
 				// NOTE: evolved 只在 win 且房间开启开关时才有内容，死亡的调查员不参与。
-				if newBackstory = evolved[card.Name]; newBackstory != "" {
-					card.Backstory = newBackstory
+				if !isAI {
+					if newBackstory = evolved[card.Name]; newBackstory != "" {
+						card.Backstory = newBackstory
+					}
 				}
 			}
 

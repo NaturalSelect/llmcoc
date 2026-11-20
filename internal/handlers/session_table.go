@@ -83,17 +83,45 @@ func PostOOCMessage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	content := strings.TrimSpace(req.Content)
-	if content == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能为空"})
+	msg, terr := saveOOC(session, userID, isAdmin, c.GetString("username"), req.Content)
+	if terr != nil {
+		respondTurnError(c, terr)
 		return
+	}
+	c.JSON(http.StatusCreated, msg)
+}
+
+// userIsAdminByID 只看库里的 role。处理器用的 isAdminUser(c, …) 还认 JWT 里的 role，所以真人路径不走这里；
+// AI 陪玩等没有 gin 上下文的调用方用它。
+func userIsAdminByID(userID uint) bool {
+	var u models.User
+	if err := models.DB.Select("role").First(&u, userID).Error; err != nil {
+		return false
+	}
+	return u.Role == models.RoleAdmin
+}
+
+// postOOC 是没有 gin 上下文的调用方（AI 陪玩）的桌边闲聊入口：管理员身份只认库里的 role，其余与真人完全相同。
+// session 必须带 Players.CharacterCard。
+func postOOC(session models.GameSession, userID uint, username, content string) (models.SessionOOCMessage, *turnError) {
+	return saveOOC(session, userID, userIsAdminByID(userID), username, content)
+}
+
+// saveOOC 是 PostOOCMessage 去掉 gin 之后的核心：成员校验、内容校验、落库、广播 ooc_message。
+// isAdmin 由调用方给出：处理器传 isAdminUser(c, …)（它还认 JWT 里的 role），postOOC 传库里的 role。username 为空时查库。
+// NOTE: 处理器在解析请求体之前就先做了同一个成员校验（非成员发畸形 JSON 仍是 403 而不是 400），这里的校验对它是幂等的。
+func saveOOC(session models.GameSession, userID uint, isAdmin bool, username, content string) (models.SessionOOCMessage, *turnError) {
+	if !isSessionMemberOrHost(&session, userID, isAdmin) {
+		return models.SessionOOCMessage{}, &turnError{status: http.StatusForbidden, msg: "只有房间成员可以发送桌边讨论消息"}
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return models.SessionOOCMessage{}, &turnError{status: http.StatusBadRequest, msg: "消息内容不能为空"}
 	}
 	if utf8.RuneCountInString(content) > maxOOCContentRunes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("桌边消息最多 %d 字", maxOOCContentRunes)})
-		return
+		return models.SessionOOCMessage{}, &turnError{status: http.StatusBadRequest, msg: fmt.Sprintf("桌边消息最多 %d 字", maxOOCContentRunes)}
 	}
 
-	username := c.GetString("username")
 	if username == "" {
 		var u models.User
 		if err := models.DB.Select("username").First(&u, userID).Error; err == nil {
@@ -116,141 +144,11 @@ func PostOOCMessage(c *gin.Context) {
 		Content:       content,
 	}
 	if err := models.DB.Create(&msg).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "发送桌边消息失败"})
-		return
+		return models.SessionOOCMessage{}, &turnError{status: http.StatusInternalServerError, msg: "发送桌边消息失败"}
 	}
 
 	hubFor(session.ID).Publish("ooc_message", msg)
-	c.JSON(http.StatusCreated, msg)
-}
-
-const (
-	maxPrivateNoteRunes     = 500
-	privateNoteHistoryLimit = 200
-)
-
-// GetPrivateNotes 返回当前用户能看到的桌下纸条（按时间升序）。
-// NOTE: 对局中玩家只能看到自己递出或收到的纸条；管理员或已结团时可见全部（复盘揭晓）。
-func GetPrivateNotes(c *gin.Context) {
-	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	userID := c.GetUint("user_id")
-
-	var session models.GameSession
-	if err := models.DB.Preload("Players").First(&session, sessionID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
-		return
-	}
-	if !canViewSession(&session, userID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权查看该房间"})
-		return
-	}
-
-	q := models.DB.Where("session_id = ?", session.ID)
-	if !isAdminUser(c, userID) && session.Status != models.SessionStatusEnded {
-		q = q.Where("from_user_id = ? OR to_user_id = ?", userID, userID)
-	}
-	var notes []models.SessionPrivateNote
-	q.Order("id DESC").Limit(privateNoteHistoryLimit).Find(&notes)
-	slices.Reverse(notes)
-	if notes == nil {
-		notes = []models.SessionPrivateNote{}
-	}
-	c.JSON(http.StatusOK, notes)
-}
-
-type postPrivateNoteReq struct {
-	ToUserID uint   `json:"to_user_id"`
-	Content  string `json:"content"`
-}
-
-// PostPrivateNote 递一张桌下纸条：调查员之间私下传递，或悄悄递给 KP。
-// NOTE: 所有纸条都会在下一个 KP 周期开始时抄送 KP（KP 知情但不得向其他玩家泄露），
-// 实时推送只发给递条人、收条人与管理员。
-func PostPrivateNote(c *gin.Context) {
-	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	userID := c.GetUint("user_id")
-
-	var session models.GameSession
-	if err := models.DB.Preload("Players.CharacterCard").Preload("Players.User").First(&session, sessionID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
-		return
-	}
-	isPlayer := false
-	for _, p := range session.Players {
-		if p.UserID == userID {
-			isPlayer = true
-			break
-		}
-	}
-	if !isPlayer {
-		c.JSON(http.StatusForbidden, gin.H{"error": "只有房间内的调查员可以递纸条"})
-		return
-	}
-	if session.Status == models.SessionStatusEnded {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "游戏已结束，不能再递纸条"})
-		return
-	}
-
-	var req postPrivateNoteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	content := strings.TrimSpace(req.Content)
-	if content == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "纸条内容不能为空"})
-		return
-	}
-	if utf8.RuneCountInString(content) > maxPrivateNoteRunes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("纸条最多 %d 字", maxPrivateNoteRunes)})
-		return
-	}
-	if req.ToUserID == userID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不能给自己递纸条"})
-		return
-	}
-
-	toName := "KP"
-	if req.ToUserID != 0 {
-		toName = ""
-		for _, p := range session.Players {
-			if p.UserID != req.ToUserID {
-				continue
-			}
-			toName = strings.TrimSpace(p.CharacterCard.Name)
-			if toName == "" {
-				toName = p.User.Username
-			}
-			if toName == "" {
-				toName = "调查员"
-			}
-			break
-		}
-		if toName == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "收条人不在本房间"})
-			return
-		}
-	}
-
-	note := models.SessionPrivateNote{
-		SessionID:  session.ID,
-		FromUserID: userID,
-		FromName:   resolveMemberAuthorName(&session, c, userID),
-		ToUserID:   req.ToUserID,
-		ToName:     toName,
-		Content:    content,
-	}
-	if err := models.DB.Create(&note).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "递纸条失败"})
-		return
-	}
-
-	targets := []uint{userID}
-	if req.ToUserID != 0 {
-		targets = append(targets, req.ToUserID)
-	}
-	hubFor(session.ID).PublishTo("private_note", note, targets)
-	c.JSON(http.StatusCreated, note)
+	return msg, nil
 }
 
 const (
@@ -323,14 +221,16 @@ type handbookResponse struct {
 	Chase     *handbookChase        `json:"chase"`
 }
 
-func resolveMemberAuthorName(session *models.GameSession, c *gin.Context, userID uint) string {
+// resolveMemberAuthorName 返回成员在手册里的署名：人物卡角色名优先，其次传入的用户名（空则查库），最后兜底「调查员」。
+// session 需要带 Players.CharacterCard。
+func resolveMemberAuthorName(session *models.GameSession, username string, userID uint) string {
 	for _, p := range session.Players {
 		if p.UserID == userID && strings.TrimSpace(p.CharacterCard.Name) != "" {
 			return p.CharacterCard.Name
 		}
 	}
-	if name := c.GetString("username"); name != "" {
-		return name
+	if username != "" {
+		return username
 	}
 	var u models.User
 	if err := models.DB.Select("username").First(&u, userID).Error; err == nil && u.Username != "" {
@@ -353,8 +253,13 @@ func GetSessionHandbook(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权查看该房间"})
 		return
 	}
-	isAdmin := isAdminUser(c, userID)
+	c.JSON(http.StatusOK, buildHandbook(session, userID, isAdminUser(c, userID)))
+}
 
+// buildHandbook 组装 viewerID 视角的防剧透手册：线索板、笔记（非管理员只看共享笔记和自己的）、已到访地点、
+// 已登场 NPC 公开投影、可见时钟与实时战斗/追逐状态。真人处理器和 AI 陪玩共用，不碰 gin。
+// session 必须带 Players.CharacterCard 和 Players.User（角色名为空时回落到用户名）；查看权限由调用方判断。
+func buildHandbook(session models.GameSession, viewerID uint, isAdmin bool) handbookResponse {
 	var clues []models.SessionClue
 	models.DB.Where("session_id = ?", session.ID).Order("id ASC").Find(&clues)
 	if clues == nil {
@@ -364,7 +269,7 @@ func GetSessionHandbook(c *gin.Context) {
 	var notes []models.SessionNote
 	noteQ := models.DB.Where("session_id = ?", session.ID)
 	if !isAdmin {
-		noteQ = noteQ.Where("is_shared = ? OR user_id = ?", true, userID)
+		noteQ = noteQ.Where("is_shared = ? OR user_id = ?", true, viewerID)
 	}
 	noteQ.Order("id ASC").Find(&notes)
 	if notes == nil {
@@ -527,7 +432,7 @@ func GetSessionHandbook(c *gin.Context) {
 		clocks = append(clocks, clk)
 	}
 
-	c.JSON(http.StatusOK, handbookResponse{
+	return handbookResponse{
 		Clues:     clues,
 		Notes:     notes,
 		Locations: locations,
@@ -535,7 +440,7 @@ func GetSessionHandbook(c *gin.Context) {
 		Clocks:    clocks,
 		Combat:    combat,
 		Chase:     chase,
-	})
+	}
 }
 
 type createClueReq struct {
@@ -591,7 +496,7 @@ func CreateSessionClue(c *gin.Context) {
 		Title:     title,
 		Content:   content,
 		Source:    source,
-		AddedBy:   resolveMemberAuthorName(&session, c, userID),
+		AddedBy:   resolveMemberAuthorName(&session, c.GetString("username"), userID),
 		UserID:    &uid,
 	}
 	if err := models.DB.Create(&clue).Error; err != nil {
@@ -658,34 +563,52 @@ func CreateSessionNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	content := strings.TrimSpace(req.Content)
-	if content == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "笔记内容不能为空"})
-		return
-	}
-	if utf8.RuneCountInString(content) > maxNoteContentRunes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("笔记最多 %d 字", maxNoteContentRunes)})
-		return
-	}
 	shared := true
 	if req.IsShared != nil {
 		shared = *req.IsShared
 	}
+	note, terr := saveNote(session, userID, isAdmin, c.GetString("username"), req.Content, shared)
+	if terr != nil {
+		respondTurnError(c, terr)
+		return
+	}
+	c.JSON(http.StatusCreated, note)
+}
+
+// createNote 是没有 gin 上下文的调用方（AI 陪玩）的手册笔记入口：管理员身份只认库里的 role，
+// 署名取角色名、取不到再查库里的用户名。session 必须带 Players.CharacterCard。
+func createNote(session models.GameSession, userID uint, content string, shared bool) (models.SessionNote, *turnError) {
+	return saveNote(session, userID, userIsAdminByID(userID), "", content, shared)
+}
+
+// saveNote 是 CreateSessionNote 去掉 gin 之后的核心：成员校验、内容校验、落库，共享笔记还广播 handbook_update。
+// isAdmin、username 的含义同 saveOOC；署名取角色名，取不到才用 username，再取不到查库。
+// NOTE: 处理器在解析请求体之前就先做了同一个成员校验，这里的校验对它是幂等的。
+func saveNote(session models.GameSession, userID uint, isAdmin bool, username, content string, shared bool) (models.SessionNote, *turnError) {
+	if !isSessionMemberOrHost(&session, userID, isAdmin) {
+		return models.SessionNote{}, &turnError{status: http.StatusForbidden, msg: "只有房间成员可以添加笔记"}
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return models.SessionNote{}, &turnError{status: http.StatusBadRequest, msg: "笔记内容不能为空"}
+	}
+	if utf8.RuneCountInString(content) > maxNoteContentRunes {
+		return models.SessionNote{}, &turnError{status: http.StatusBadRequest, msg: fmt.Sprintf("笔记最多 %d 字", maxNoteContentRunes)}
+	}
 	note := models.SessionNote{
 		SessionID:  session.ID,
 		UserID:     userID,
-		AuthorName: resolveMemberAuthorName(&session, c, userID),
+		AuthorName: resolveMemberAuthorName(&session, username, userID),
 		Content:    content,
 		IsShared:   shared,
 	}
 	if err := models.DB.Create(&note).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存笔记失败"})
-		return
+		return models.SessionNote{}, &turnError{status: http.StatusInternalServerError, msg: "保存笔记失败"}
 	}
 	if shared {
 		hubFor(session.ID).Publish("handbook_update", gin.H{"reason": "note"})
 	}
-	c.JSON(http.StatusCreated, note)
+	return note, nil
 }
 
 // DeleteSessionNote 删除笔记：仅作者、房主或管理员可删除。
@@ -740,13 +663,6 @@ type debriefNPC struct {
 	Description string `json:"description,omitempty"`
 }
 
-type debriefPlayerSecret struct {
-	CharacterName    string `json:"character_name"`
-	Username         string `json:"username,omitempty"`
-	HandoutCode      string `json:"handout_code,omitempty"`
-	SecretBackground string `json:"secret_background"`
-}
-
 type debriefHallucination struct {
 	RecipientName string    `json:"recipient_name"`
 	Content       string    `json:"content"`
@@ -754,16 +670,14 @@ type debriefHallucination struct {
 }
 
 type debriefTruth struct {
-	CoreTruth         string                      `json:"core_truth,omitempty"`
-	AntagonistDossier string                      `json:"antagonist_dossier,omitempty"`
-	MythosCore        string                      `json:"mythos_core,omitempty"`
-	Endings           []models.EndingData         `json:"endings"`
-	Clues             []models.ClueData           `json:"clues"`
-	NPCs              []debriefNPC                `json:"npcs"`
-	PlayerSecrets     []debriefPlayerSecret       `json:"player_secrets"`
-	Clocks            []models.SessionClock       `json:"clocks"`
-	Hallucinations    []debriefHallucination      `json:"hallucinations"`
-	PrivateNotes      []models.SessionPrivateNote `json:"private_notes"`
+	CoreTruth         string                 `json:"core_truth,omitempty"`
+	AntagonistDossier string                 `json:"antagonist_dossier,omitempty"`
+	MythosCore        string                 `json:"mythos_core,omitempty"`
+	Endings           []models.EndingData    `json:"endings"`
+	Clues             []models.ClueData      `json:"clues"`
+	NPCs              []debriefNPC           `json:"npcs"`
+	Clocks            []models.SessionClock  `json:"clocks"`
+	Hallucinations    []debriefHallucination `json:"hallucinations"`
 }
 
 type debriefResponse struct {
@@ -777,7 +691,7 @@ type debriefResponse struct {
 	Truth        debriefTruth              `json:"truth"`
 }
 
-// GetSessionDebrief 返回已结束房间的结团复盘数据：战绩评估、公开骰运统计、线索收集进度与模组完整真相/全员 HO。
+// GetSessionDebrief 返回已结束房间的结团复盘数据：战绩评估、公开骰运统计、线索收集进度与模组完整真相。
 // NOTE: 严格校验 status == ended，未结团时一律返回 400，防止任何角色在跑团中途提前剧透。
 func GetSessionDebrief(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -786,8 +700,7 @@ func GetSessionDebrief(c *gin.Context) {
 	var session models.GameSession
 	if err := models.DB.
 		Preload("Scenario").
-		Preload("Players.User").
-		Preload("Players.CharacterCard").
+		Preload("Players").
 		First(&session, sessionID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
@@ -833,12 +746,6 @@ func GetSessionDebrief(c *gin.Context) {
 		})
 	}
 
-	var privateNotes []models.SessionPrivateNote
-	models.DB.Where("session_id = ?", session.ID).Order("id ASC").Find(&privateNotes)
-	if privateNotes == nil {
-		privateNotes = []models.SessionPrivateNote{}
-	}
-
 	sc := session.Scenario.Content.Data
 	clocks := append([]models.SessionClock(nil), session.Clocks.Data...)
 	if clocks == nil {
@@ -849,10 +756,8 @@ func GetSessionDebrief(c *gin.Context) {
 		Endings:        sc.Endings,
 		Clues:          sc.Clues,
 		NPCs:           make([]debriefNPC, 0, len(sc.NPCs)),
-		PlayerSecrets:  make([]debriefPlayerSecret, 0),
 		Clocks:         clocks,
 		Hallucinations: hallucinations,
-		PrivateNotes:   privateNotes,
 	}
 	if truth.Endings == nil {
 		truth.Endings = []models.EndingData{}
@@ -870,19 +775,6 @@ func GetSessionDebrief(c *gin.Context) {
 			Occupation:  npc.Occupation,
 			Attitude:    npc.Attitude,
 			Description: npc.Description,
-		})
-	}
-	for _, p := range session.Players {
-		secret := strings.TrimSpace(p.SecretBackground)
-		code := strings.TrimSpace(p.HandoutCode)
-		if secret == "" && code == "" {
-			continue
-		}
-		truth.PlayerSecrets = append(truth.PlayerSecrets, debriefPlayerSecret{
-			CharacterName:    p.CharacterCard.Name,
-			Username:         p.User.Username,
-			HandoutCode:      code,
-			SecretBackground: secret,
 		})
 	}
 
@@ -957,4 +849,3 @@ func aggregateDebriefDiceStats(eventMsgs []models.Message) []debriefDiceStat {
 	})
 	return out
 }
-

@@ -43,6 +43,8 @@ export const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
   embedding: { max_tokens: 0, temperature: 0, model_name: 'text-embedding-3-small', thinking_level: 'none', is_active: false },
   // NOTE: systemone 是玩家输入的越权请求分类器，只走 TypeSafe 的 System One 接口：Provider 只取 Base URL 和 API Key，不用 token 上限、温度和提示词；默认关闭，未启用时输入直接放行。
   systemone: { max_tokens: 0, temperature: 0, model_name: 'gemini-decision-1', thinking_level: 'none', is_active: false },
+  // NOTE: companion 是 AI 陪玩，被点名时扮演 AI 卡池里的调查员，必须绑定支持 function calling 的模型；默认关闭，未启用时房间里不能添加 AI。
+  companion: { max_tokens: 1500, temperature: 0.7, is_active: false },
 }
 
 // NOTE: 已下线的角色，旧库可能还有残留行，界面不显示
@@ -73,6 +75,7 @@ const ROLE_LABELS: Record<string, string> = {
   dramaturg: '🎭 Dramaturg',
   embedding: '🧬 Embedding',
   systemone: '🛡️ System One',
+  companion: '🤝 AI 陪玩',
 }
 
 const ROLE_DESCS: Record<string, string> = {
@@ -93,6 +96,7 @@ const ROLE_DESCS: Record<string, string> = {
   dramaturg: '剧构顾问 — Director按需咨询，输入已脱敏不含玩家数据，给出节奏与走向建议（默认关闭）',
   embedding: '语义检索 — Lawyer 规则缓存的向量检索；只支持 OpenAI 兼容的 /embeddings 接口（Anthropic 类型不支持），如 text-embedding-3-small；未启用时退回标签匹配；换模型后已有缓存向量会在后台重算（默认关闭）',
   systemone: '输入分类 — 玩家提交前由 System One 分类器（TypeSafe 的 Jev，或经 new-api 网关转发的 gemini-decision-1）判断是否在自称作者或管理员、索要谜底或注入提示词，命中则拒收该输入；玩家输入正文会发送给第三方；未启用或调用失败时直接放行（默认关闭）。直连 TypeSafe：API Key 填 TypeSafe 的 Key，Base URL 留空，模型填 jev-latest；经 new-api 网关：API Key 填网关令牌，Base URL 填网关根地址，末尾的 /v1 会被自动去掉，所以可以和聊天角色共用同一个 Provider（http 也可以，但 Key 和玩家输入会明文传输，只应在内网使用），模型填 gemini-decision-1',
+  companion: 'AI 陪玩 — 房主可以从 AI 卡池里挑一张卡加入房间，KP 点到它时由这个角色在 ReAct 循环里查看房间并提交回应；必须绑定支持 function calling 的模型；未启用时房间里不能添加 AI，已在房间里的 AI 则每次自动提交一条兜底行动（默认关闭）',
 }
 
 // NOTE: 用 hasOwn 而不是直接下标，避免 role 恰好是 constructor 之类的原型属性名时取到函数

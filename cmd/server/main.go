@@ -279,8 +279,10 @@ func main() {
 		sessions.POST("", handlers.CreateSession)
 		sessions.GET("/:id", handlers.GetSession)
 		sessions.POST("/:id/join", handlers.JoinSession)
-		sessions.PUT("/:id/secret", handlers.SetPlayerSecret)
 		sessions.POST("/:id/leave", handlers.LeaveSession)
+		sessions.GET("/:id/companion-cards", handlers.GetCompanionCards)
+		sessions.POST("/:id/companion", handlers.AddCompanion)
+		sessions.DELETE("/:id/companion", handlers.RemoveCompanion)
 		sessions.POST("/:id/start", handlers.StartSession)
 		sessions.POST("/:id/end", handlers.EndSession)
 		sessions.POST("/:id/revive", middleware.AdminRequired(), handlers.ReviveSession)
@@ -289,8 +291,6 @@ func main() {
 		sessions.GET("/:id/messages", handlers.GetMessages)
 		sessions.GET("/:id/ooc", handlers.GetOOCMessages)
 		sessions.POST("/:id/ooc", handlers.PostOOCMessage)
-		sessions.GET("/:id/private-notes", handlers.GetPrivateNotes)
-		sessions.POST("/:id/private-notes", handlers.PostPrivateNote)
 		sessions.GET("/:id/handbook", handlers.GetSessionHandbook)
 		sessions.POST("/:id/clues", handlers.CreateSessionClue)
 		sessions.DELETE("/:id/clues/:clueId", handlers.DeleteSessionClue)
@@ -300,7 +300,7 @@ func main() {
 		sessions.GET("/:id/chat-status", sh.GetChatStatus)
 		sessions.POST("/:id/chat", sh.ChatStream)
 		sessions.POST("/:id/kp-turn", sh.KPTurn)
-	sessions.POST("/:id/kp-stop", sh.KPStop)
+		sessions.POST("/:id/kp-stop", sh.KPStop)
 		sessions.GET("/:id/ws", sh.WS)
 	}
 
@@ -332,6 +332,9 @@ func main() {
 	{
 		admin.GET("/users", handlers.AdminListUsers)
 		admin.GET("/users/:id/characters", handlers.AdminListUserCharacters)
+		admin.GET("/companion-cards", handlers.AdminListCompanionCards)
+		admin.POST("/companion-cards", handlers.AdminAddCompanionCard)
+		admin.POST("/companion-cards/:id/return", handlers.AdminReturnCompanionCard)
 		admin.GET("/scenarios", handlers.AdminListScenarios)
 		admin.GET("/scenarios/:id/generation-log", handlers.AdminGetScenarioGenerationLog)
 		// Online modules (cnmods)
@@ -409,6 +412,9 @@ func main() {
 	}
 	signal.Ignore(syscall.SIGPIPE)
 
+	// NOTE: 重启前正在等 AI 陪玩回应的房间，内存里的任务已经丢失，要重新触发一次。
+	sh.ResumeCompanions()
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP)
 	defer stop()
 
@@ -426,6 +432,8 @@ func main() {
 			log.Error("server shutdown failed", "err", err)
 		}
 		// NOTE: 周期跑在后台 goroutine 里，Shutdown 不会等它们；要先取消并等它们落库尾部，再保存缓存和统计。
+		// NOTE: 陪玩任务会往房间里提交回应、启动周期，必须先于周期被取消。
+		handlers.StopAllCompanions()
 		handlers.StopAllFloors()
 		// NOTE: 线上模组任务同样跑在后台协程里：取消它们、等它们把状态写完，并断开管理员的推送连接。
 		handlers.StopOnlineTasks(10 * time.Second)

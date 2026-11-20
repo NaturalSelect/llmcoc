@@ -319,6 +319,8 @@ func (h *SessionHandlers) KPTurn(c *gin.Context) {
 	}
 
 	chatLog.Debug("kp turn", "session", sessionID, "user", userID, "floor", seg.gctx.KPFloor)
+	// NOTE: 房主让 KP 接管时，AI 陪玩正在进行的回应作废；放在会话锁里，AI 之后的提交只会被点名闸门拒绝。
+	cancelCompanion(session.ID, errCompanionSkipped)
 	switch err := h.startFloor(seg); {
 	case errors.Is(err, errFloorBusy):
 		c.JSON(http.StatusConflict, gin.H{"error": "KP 正在发言，请稍候"})
@@ -365,7 +367,6 @@ func (h *SessionHandlers) startFloor(seg kpSegment) error {
 		finishSessionProcessing(sessionID)
 		return err
 	}
-	seg.gctx.PrivateNotes = claimPrivateNotesForKP(sessionID)
 
 	ctx, cancel := context.WithCancelCause(context.Background())
 	af := &activeFloor{sessionID: sessionID, startedAt: time.Now(), cancel: cancel, done: make(chan struct{})}
@@ -411,31 +412,6 @@ func persistFloorStart(sessionID uint, floor int, turnActions []models.SessionTu
 	return msgs, err
 }
 
-// claimPrivateNotesForKP 取出尚未抄送 KP 的桌下纸条并按 id 标记为已抄送：周期进行中新递的纸条留到下一个周期。
-// NOTE: 读取失败或标记失败时返回空，宁可这一周期少看几张纸条，也不能重复或打断周期启动。
-func claimPrivateNotesForKP(sessionID uint) []models.SessionPrivateNote {
-	var notes []models.SessionPrivateNote
-	err := models.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("session_id = ? AND delivered_to_kp = ?", sessionID, false).
-			Order("id ASC").Limit(50).Find(&notes).Error; err != nil {
-			return err
-		}
-		if len(notes) == 0 {
-			return nil
-		}
-		ids := make([]uint, 0, len(notes))
-		for _, n := range notes {
-			ids = append(ids, n.ID)
-		}
-		return tx.Model(&models.SessionPrivateNote{}).Where("id IN ?", ids).Update("delivered_to_kp", true).Error
-	})
-	if err != nil {
-		chatLog.Warn("claim private notes failed", "session", sessionID, "err", err)
-		return nil
-	}
-	return notes
-}
-
 // runFloor 在后台跑一个周期；上下文已满时自动总结后续跑新周期，直到自然结束、被强制结束或续跑没有进展。
 func (h *SessionHandlers) runFloor(ctx context.Context, af *activeFloor, seg kpSegment) {
 	defer close(af.done)
@@ -457,7 +433,6 @@ func (h *SessionHandlers) runFloor(ctx context.Context, af *activeFloor, seg kpS
 			break
 		}
 		seg = buildKPSegment(session, agent.KPFloorResume, loadLatestTurnActions(sessionID, session.TurnRound, session.Players))
-		seg.gctx.PrivateNotes = claimPrivateNotesForKP(sessionID)
 		floor := agent.NextDirectorFloor(sessionID)
 		af.floor.Store(int32(floor))
 		hubFor(sessionID).Publish("floor_start", gin.H{"floor": floor, "reason": seg.reason()})
@@ -526,6 +501,8 @@ func publishSessionChanged(sessionID uint, status models.SessionStatus, reason s
 // 此时 processing 必须已经释放，否则会被 409 拒绝。
 func (h *SessionHandlers) finishFloor(af *activeFloor, out agent.RunOutput) {
 	sessionID := af.sessionID
+	// NOTE: 查库的事都要赶在广播之前做完：floor_end 之后调用方（含测试）就认为这个周期不再碰数据库了。
+	botID := models.CompanionUserID()
 	spot, err := advanceSpotlight(sessionID, out)
 	if err != nil {
 		chatLog.Error("kp spotlight update failed", "session", sessionID, "err", err)
@@ -545,6 +522,11 @@ func (h *SessionHandlers) finishFloor(af *activeFloor, out agent.RunOutput) {
 		status = models.SessionStatusEnded
 	}
 	publishSessionChanged(sessionID, status, "cards")
+
+	// NOTE: 点名了 AI 陪玩就在后台启动它的回应；放在广播之后，AI 看到的是已放完的完整正文，提交也不会撞上处理锁。
+	if spot != nil && !out.Ended && spotlightNamesBot(spot, botID) {
+		h.startCompanion(sessionID)
+	}
 }
 
 // roundItem 是一轮里待落库的一条消息和产生它的 Output(事件消息没有 Output)。

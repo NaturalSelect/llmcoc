@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { ADMIN_TABS, DEFAULT_ADMIN_TAB, resolveAdminTab } from './adminTabs'
 
 describe('adminTabs', () => {
-  test('九个 tab，key 不重复，线上模组紧跟在模组管理后面', () => {
+  test('十个 tab，key 不重复，线上模组紧跟在模组管理后面，AI 卡池排在最后', () => {
     expect(ADMIN_TABS.map((t) => t.label)).toStrictEqual([
       '用户',
       'LLM 提供商',
@@ -14,12 +14,14 @@ describe('adminTabs', () => {
       '公告管理',
       '系统设置',
       '规则缓存',
+      'AI 卡池',
     ])
-    expect(new Set(ADMIN_TABS.map((t) => t.key)).size).toBe(9)
+    expect(new Set(ADMIN_TABS.map((t) => t.key)).size).toBe(10)
   })
 
   test('resolveAdminTab：合法值原样返回，其它回落到默认 tab', () => {
     expect(resolveAdminTab('cache')).toBe('cache')
+    expect(resolveAdminTab('companions')).toBe('companions')
     expect(resolveAdminTab(['shop', 'x'])).toBe('shop')
     expect(resolveAdminTab(undefined)).toBe(DEFAULT_ADMIN_TAB)
     expect(resolveAdminTab('')).toBe(DEFAULT_ADMIN_TAB)

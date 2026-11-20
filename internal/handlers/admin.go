@@ -257,6 +257,10 @@ func AdminSetRole(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
+	if user.Role == models.RoleBot {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "AI 陪玩账号的角色不能修改"})
+		return
+	}
 	models.DB.Model(&user).Update("role", req.Role)
 	adminLog.Info("set role ok", "user_id", id, "role", req.Role)
 	c.JSON(http.StatusOK, gin.H{"message": "角色已更新", "user": user})
@@ -400,6 +404,10 @@ func AdminBanUser(c *gin.Context) {
 	}
 	if user.Role == models.RoleAdmin {
 		c.JSON(http.StatusForbidden, gin.H{"error": "不能封禁管理员"})
+		return
+	}
+	if user.Role == models.RoleBot {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能封禁 AI 陪玩账号"})
 		return
 	}
 	if err := models.DB.Model(&user).Updates(map[string]any{"is_banned": true, "ban_reason": req.Reason}).Error; err != nil {

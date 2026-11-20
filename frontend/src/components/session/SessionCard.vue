@@ -4,6 +4,8 @@ import { computed } from 'vue'
 import type { LobbySession } from '@/api/sessionTypes'
 import PaperCard from '@/components/base/PaperCard.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
+import CompanionBadge from '@/components/game/CompanionBadge.vue'
+import { isCompanionPlayer } from '@/game/companion'
 import { fmtDate } from '@/utils/format'
 import { playerCountLabel, sessionPlayers, statusLabel, statusTone } from './sessionLogic'
 
@@ -42,10 +44,13 @@ const status = computed(() => (props.variant === 'archive' ? 'ended' : props.ses
     </div>
 
     <ul v-if="players.length" class="flex flex-wrap gap-1.5" aria-label="玩家">
-      <li v-for="p in players" :key="p.id ?? p.user_id" class="rounded-full bg-surface-3 px-2.5 py-0.5 text-xs text-fg-muted">
-        <span>{{ p.user?.username }}</span>
-        <span class="text-fg-subtle"> — </span>
-        <span>{{ p.character_card?.name }}</span>
+      <li v-for="p in players" :key="p.id ?? p.user_id" class="inline-flex items-center gap-1.5 rounded-full bg-surface-3 px-2.5 py-0.5 text-xs text-fg-muted">
+        <span>
+          <span>{{ p.user?.username }}</span>
+          <span class="text-fg-subtle"> — </span>
+          <span>{{ p.character_card?.name }}</span>
+        </span>
+        <CompanionBadge v-if="isCompanionPlayer(p)" />
       </li>
     </ul>
 

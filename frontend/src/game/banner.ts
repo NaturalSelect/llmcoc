@@ -86,6 +86,8 @@ export function roomBanner(room: Room | null): Banner {
     }
   }
   if (sp.userIds.length > 0) {
+    // NOTE: 被点名的是别人（轮到我的情况已在上面返回）时，AI 陪玩在后台跑 LLM 循环，状态栏显示它的「正在思考…」；空串表示没有在想
+    if (room.companionStatus) return { text: room.companionStatus, tone: 'info', busy: true }
     const w = room.waiting
     const progress = w.total > 1 ? '（' + (w.total - w.pending) + '/' + w.total + ' 已提交）' : ''
     return { text: 'KP 在等 ' + (names || '玩家') + ' 回应' + progress, tone: 'info', busy: true }

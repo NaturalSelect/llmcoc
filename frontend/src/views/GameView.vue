@@ -3,6 +3,7 @@ import { Hourglass } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, postForm } from '@/api/client'
+import { companionApi } from '@/api/companionApi'
 import { getToken } from '@/api/token'
 import type { CharacterCardFull } from '@/api/characterTypes'
 import type { CharacterCard, Session, SessionPlayer } from '@/api/types'
@@ -21,12 +22,13 @@ import HandbookPanel from '@/components/game/HandbookPanel.vue'
 import ImagePreview from '@/components/game/ImagePreview.vue'
 import InvestigatorListModal from '@/components/game/InvestigatorListModal.vue'
 import MessageItem from '@/components/game/MessageItem.vue'
-import PrivateNotePanel from '@/components/game/PrivateNotePanel.vue'
 import StatusDock from '@/components/game/StatusDock.vue'
 import TableTalkPanel from '@/components/game/TableTalkPanel.vue'
+import AddCompanionModal from '@/components/session/AddCompanionModal.vue'
 import JoinSessionModal from '@/components/session/JoinSessionModal.vue'
 import { askAnchor, askView, createAskDraft, resetAskDraft, resetDraftOnFrame } from '@/game/ask'
 import { showWaiting } from '@/game/banner'
+import { canAddCompanion, canRemoveCompanion } from '@/game/companion'
 import { emptyHandbook, normalizeHandbook } from '@/game/handbookTypes'
 import type { HandbookData } from '@/game/handbookTypes'
 import { diffHud, endSessionMessage, isInSession, myCard, NO_FLASH, ownCardAccess, playerCardAccess } from '@/game/hud'
@@ -53,8 +55,9 @@ const draft = reactive(createAskDraft())
 const chatBox = ref<HTMLElement | null>(null)
 const investigatorsOpen = ref(false)
 const joinOpen = ref(false)
+const companionOpen = ref(false)
+const companionBusy = ref(false)
 const oocOpen = ref(false)
-const notesOpen = ref(false)
 const handbookOpen = ref(false)
 const debriefOpen = ref(false)
 const novelMode = ref(false)
@@ -143,6 +146,10 @@ const waiting = computed(() => showWaiting(room.value))
 const asking = computed(() => askView(room.value, draft))
 const askAt = computed(() => askAnchor(room.value))
 const canJoin = computed(() => session.value?.status === 'lobby' && !isInSession(session.value, auth.user?.id))
+// NOTE: 房主或管理员才能增删 AI 陪玩（后端同样校验）；lobby、有无 AI、是否满员由 game/companion.ts 判断
+const canManageCompanion = computed(() => Boolean(session.value && (session.value.created_by === auth.user?.id || auth.isAdmin)))
+const companionAddable = computed(() => canAddCompanion(session.value, canManageCompanion.value))
+const companionRemovable = computed(() => canRemoveCompanion(session.value, canManageCompanion.value))
 
 async function enter(id: number) {
   resetAskDraft(draft)
@@ -175,9 +182,6 @@ watch(asking, (v) => {
 
 const canPostOoc = computed(() =>
   Boolean(session.value && (isInSession(session.value, auth.user?.id) || session.value.created_by === auth.user?.id || auth.isAdmin)),
-)
-const canSendPrivateNote = computed(() =>
-  Boolean(session.value && session.value.status !== 'ended' && isInSession(session.value, auth.user?.id)),
 )
 
 async function loadHandbook() {
@@ -405,6 +409,28 @@ function openJoinFromList() {
   joinOpen.value = true
 }
 
+function openCompanionPicker() {
+  investigatorsOpen.value = false
+  companionOpen.value = true
+}
+
+async function removeCompanion() {
+  const s = session.value
+  if (!s || companionBusy.value) return
+  if (!(await ui.confirm('确认移除房间里的 AI 陪玩？它占用的人物卡会回到卡池。', { danger: true, confirmText: '移除' }))) return
+  companionBusy.value = true
+  try {
+    await companionApi.remove(s.id)
+    ui.toast('已移除 AI 陪玩')
+  } catch (e) {
+    ui.toast(errMsg(e), 'error')
+  } finally {
+    companionBusy.value = false
+  }
+  // NOTE: 不论成败都重新拉一次房间：失败多半是别的页面已经改过名单，刷新后按钮状态才对得上
+  await controller.refreshSession()
+}
+
 defineExpose({ viewCard })
 </script>
 
@@ -419,12 +445,10 @@ defineExpose({ viewCard })
           :busy="busy"
           :sound-enabled="soundEnabled"
           :ooc-unread="room?.oocUnread ?? 0"
-          :notes-unread="room?.privateNotesUnread ?? 0"
           :novel-mode="novelMode"
           @action="onAction"
           @toggle-sound="toggleSound"
           @open-ooc="oocOpen = true"
-          @open-notes="notesOpen = true"
           @open-handbook="handbookOpen = true"
           @toggle-novel="novelMode = !novelMode"
           @export-replay="exportReplay"
@@ -475,9 +499,13 @@ defineExpose({ viewCard })
         :user-id="auth.user?.id"
         :handbook="handbook"
         :handbook-loading="handbookLoading"
+        :can-add-companion="companionAddable"
+        :can-remove-companion="companionRemovable"
+        :companion-busy="companionBusy"
         @select="onSelectPlayer"
-        @refresh="controller.refreshSession()"
         @refresh-handbook="loadHandbook()"
+        @add-companion="companionOpen = true"
+        @remove-companion="removeCompanion"
       />
     </div>
 
@@ -487,18 +515,18 @@ defineExpose({ viewCard })
       :room="room"
       :user-id="auth.user?.id"
       :can-join="canJoin"
+      :can-add-companion="companionAddable"
+      :can-remove-companion="companionRemovable"
+      :companion-busy="companionBusy"
       @close="investigatorsOpen = false"
       @select="onSelectPlayer"
       @join="openJoinFromList"
+      @add-companion="openCompanionPicker"
+      @remove-companion="removeCompanion"
     />
     <BaseModal :open="oocOpen" title="桌边讨论" max-width="max-w-md" @close="oocOpen = false">
       <div class="-mx-5 -mb-5 flex h-96 flex-col">
         <TableTalkPanel :session="session" :room="room" :user-id="auth.user?.id" :can-post="canPostOoc" :active="oocOpen" />
-      </div>
-    </BaseModal>
-    <BaseModal :open="notesOpen" title="桌下纸条" max-width="max-w-md" @close="notesOpen = false">
-      <div class="-mx-5 -mb-5 flex h-96 flex-col">
-        <PrivateNotePanel :session="session" :room="room" :user-id="auth.user?.id" :can-send="canSendPrivateNote" :active="notesOpen" />
       </div>
     </BaseModal>
     <BaseModal :open="handbookOpen" title="调查手册" max-width="max-w-md" @close="handbookOpen = false">
@@ -553,6 +581,7 @@ defineExpose({ viewCard })
     </BaseModal>
     <DebriefModal :open="debriefOpen" :session-id="session?.id ?? null" @close="debriefOpen = false" />
     <JoinSessionModal :open="joinOpen" :session="session" @close="joinOpen = false" @joined="controller.refreshSession()" />
+    <AddCompanionModal :open="companionOpen" :session="session" @close="companionOpen = false" @changed="controller.refreshSession()" />
     <ImagePreview :src="previewSrc" @close="previewSrc = ''" />
     <CharacterDetailModal :open="viewCard !== null" :card="viewCard" @close="viewCard = null" @portrait="controller.refreshSession()" />
   </div>

@@ -308,10 +308,6 @@ KP 这一个周期结束。
 
 桌边讨论（OOC）的新消息，由 `POST /api/sessions/:id/ooc` 发布，载荷为单条 `SessionOOCMessage`。对房间内所有订阅者广播，不进入 KP 叙事流。
 
-#### `private_note`
-
-桌下纸条（私聊/悄悄给 KP 递纸条），由 `POST /api/sessions/:id/private-notes` 发布，载荷为单条 `SessionPrivateNote`（`to_user_id = 0` 表示发给 KP）。通过 `PublishTo` 仅推送给递条人、收条人与管理员；断线重连回放同样按该权限过滤。历史列表由 `GET /api/sessions/:id/private-notes` 按查看者权限补拉。
-
 #### `handbook_update`
 
 调查手册（线索板、共享笔记、危机时钟等）发生变化的信号，载荷为 `{"reason": "clue" | "note" | "clock"}`。客户端收到后按需重新拉取 `GET /api/sessions/:id/handbook`。
@@ -329,6 +325,17 @@ KP 当前状态的提示文案，用于"KP 正在思考…"这类状态栏。
 ```json
 {"text": "KP 正在思考…"}
 ```
+
+#### `companion_status`
+
+房间里的 AI 陪玩正在回应时的状态提示，用于状态栏的"某某 正在思考…"。`text` 为空串表示这次回应已经结束（提交了行动、被房主接管取消或失败兜底之后都会发一条空串）。同一房间的陪玩任务连续重跑时只在开头发一次文案、全部结束才发空串。
+
+```json
+{"text": "陪玩调查员 正在思考…"}
+```
+
+- 它是临时事件，没有序号也不会补发：重连后以 `GET /api/sessions/:id/chat-status` 的 `companion_status` 字符串字段为准（没有任务在跑时为空串）。
+- 客户端在收到 `floor_start` 时也清空它：房主点继续让 KP 接管，说明 AI 那次回应已被取消。
 
 #### `writer_token`
 

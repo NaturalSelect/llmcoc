@@ -461,6 +461,48 @@ func TestAdminSetRole_InvalidRole(t *testing.T) {
 	}
 }
 
+func TestAdminSetRole_RejectsBotAccount(t *testing.T) {
+	initTestDB(t)
+	botID := seedUser(t, "bot", models.RoleBot, 0, 0)
+	r := gin.New()
+	r.PUT("/admin/users/:id/role", withAuth(1, "admin", "admin"), AdminSetRole)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", fmt.Sprintf("/admin/users/%d/role", botID), map[string]any{
+		"role": "admin",
+	}))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+	var u models.User
+	models.DB.First(&u, botID)
+	if u.Role != models.RoleBot {
+		t.Errorf("role = %q, want the bot role to stay", u.Role)
+	}
+}
+
+func TestAdminBanUser_RejectsBotAccount(t *testing.T) {
+	initTestDB(t)
+	botID := seedUser(t, "bot", models.RoleBot, 0, 0)
+	r := gin.New()
+	r.PUT("/admin/users/:id/ban", withAuth(1, "admin", "admin"), AdminBanUser)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", fmt.Sprintf("/admin/users/%d/ban", botID), map[string]any{
+		"reason": "x",
+	}))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+	var u models.User
+	models.DB.First(&u, botID)
+	if u.IsBanned {
+		t.Error("bot account must not be bannable")
+	}
+}
+
 func TestAdminGetRechargeHistory(t *testing.T) {
 	initTestDB(t)
 	r := adminRouter()

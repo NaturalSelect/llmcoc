@@ -47,6 +47,8 @@ describe('roomState', () => {
     expect(room.status).toBe('lobby')
     expect(room.floor).toStrictEqual({ running: false, number: 0, starting: false, startedAt: 0 })
     expect(room.me).toStrictEqual({ submitted: false, draft: '' })
+    expect(room.kpStatus).toBe('')
+    expect(room.companionStatus).toBe('')
   })
 
   test('首次连接：hello 后补发的 seq 1..5 全部丢弃，快照期间的 6、7 缓冲后依次应用', () => {
@@ -694,6 +696,65 @@ describe('roomState', () => {
     expect(room.kpStatus).toBe('KP 正在思考…')
   })
 
+  test('companion_status：写入文案，空串表示 AI 已结束思考；缺 text 也按空串处理', () => {
+    const room = liveRoom()
+    expect(room.companionStatus).toBe('')
+    expect(feed(room, F(0, 'companion_status', { text: '雷蒙 正在思考…' })).verdict).toBe('apply')
+    expect(room.companionStatus).toBe('雷蒙 正在思考…')
+    // NOTE: 临时事件，不推进游标，也不影响 KP 自己的状态文案
+    expect(room.lastSeq).toBe(10)
+    expect(room.kpStatus).toBe('')
+    feed(room, F(0, 'companion_status', { text: '' }))
+    expect(room.companionStatus).toBe('')
+    feed(room, F(0, 'companion_status', { text: '雷蒙 正在思考…' }))
+    feed(room, F(0, 'companion_status', {}))
+    expect(room.companionStatus).toBe('')
+  })
+
+  test('companion_status：快照期间的临时帧丢弃，状态由 chat-status 的 companion_status 恢复', () => {
+    const room = RS.newRoom({ sessionId: 1, userId: 3 })
+    RS.onHello(room, { epoch: 'e1', seq: 5 })
+    expect(RS.acceptFrame(room, F(0, 'companion_status', { text: '雷蒙 正在思考…' }))).toBe('drop')
+    expect(room.companionStatus).toBe('')
+    RS.applySnapshot(room, snap({ chatStatus: { companion_status: '雷蒙 正在思考…' } }))
+    expect(room.companionStatus).toBe('雷蒙 正在思考…')
+  })
+
+  test('applyChatStatus：读取 companion_status，缺省或非字符串按空串，后一次覆盖前一次', () => {
+    const room = liveRoom()
+    RS.applyChatStatus(room, { companion_status: '雷蒙 正在思考…' })
+    expect(room.companionStatus).toBe('雷蒙 正在思考…')
+    RS.applyChatStatus(room, { companion_status: '' })
+    expect(room.companionStatus).toBe('')
+    RS.applyChatStatus(room, { companion_status: '雷蒙 正在思考…' })
+    RS.applyChatStatus(room, {})
+    expect(room.companionStatus).toBe('')
+    RS.applyChatStatus(room, { companion_status: 7 as unknown as string })
+    expect(room.companionStatus).toBe('')
+    RS.applyChatStatus(room, null)
+    expect(room.companionStatus).toBe('')
+  })
+
+  test('companion_status：floor_start 清空，floor_end 不清（AI 在周期结束、点名之后才开始思考）', () => {
+    const room = liveRoom()
+    feed(room, F(11, 'floor_start', { floor: 3, reason: 'player' }))
+    feed(room, F(12, 'floor_end', { floor: 3, reason: 'ask', messages: 1 }))
+    feed(room, F(0, 'companion_status', { text: '雷蒙 正在思考…' }))
+    expect(room.companionStatus).toBe('雷蒙 正在思考…')
+    feed(room, F(13, 'floor_start', { floor: 4, reason: 'player' }))
+    expect(room.companionStatus).toBe('')
+    feed(room, F(0, 'companion_status', { text: '雷蒙 正在思考…' }))
+    feed(room, F(14, 'floor_end', { floor: 4, reason: 'ask', messages: 1 }))
+    expect(room.companionStatus).toBe('雷蒙 正在思考…')
+  })
+
+  test('companion_status：断线时清空，避免重连后残留过期文案', () => {
+    const room = liveRoom()
+    feed(room, F(0, 'companion_status', { text: '雷蒙 正在思考…' }))
+    RS.markDisconnected(room)
+    expect(room.companionStatus).toBe('')
+  })
+
   test('未知事件被忽略：不报错、不改状态、无副作用', () => {
     const room = liveRoom()
     const before = JSON.parse(JSON.stringify(room))
@@ -1045,16 +1106,6 @@ describe('roomState', () => {
     expect(room.ooc.map((m) => m.id)).toStrictEqual([1, 2])
     expect(room.ooc[1].character_name).toBe('鲍勃')
     expect(room.oocUnread).toBe(1)
-  })
-
-  test('private_note 帧：按 id 排序去重，他人递来的纸条累加未读、自己递的不加未读', () => {
-    const room = liveRoom({ seq: 15, userId: 3 })
-    feed(room, F(16, 'private_note', { id: 5, from_user_id: 4, from_name: '鲍勃', to_user_id: 3, to_name: '艾米', content: '小心管家' }))
-    feed(room, F(17, 'private_note', { id: 2, from_user_id: 3, from_name: '艾米', to_user_id: 0, to_name: 'KP', content: '我摸走钥匙' }))
-    feed(room, F(18, 'private_note', { id: 5, from_user_id: 4, from_name: '鲍勃', to_user_id: 3, to_name: '艾米', content: '重复' }))
-    expect(room.privateNotes.map((n) => n.id)).toStrictEqual([2, 5])
-    expect(room.privateNotes[0].to_name).toBe('KP')
-    expect(room.privateNotesUnread).toBe(1)
   })
 
   test('handbook_update / encounter_update / session(cards) 帧递增刷新序号', () => {

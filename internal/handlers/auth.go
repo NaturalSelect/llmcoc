@@ -148,6 +148,12 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	if user.Role == models.RoleBot {
+		authLog.Warn("login rejected for bot account", "user_id", user.ID)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
+		return
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		authLog.Warn("login wrong password", "user_id", user.ID)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ArrowLeft, Award, BookMarked, BookOpen, Download, Ellipsis, IdCard, LogOut, Mail, MessageCircle, Play, RotateCcw, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
+import { ArrowLeft, Award, BookMarked, BookOpen, Download, Ellipsis, IdCard, LogOut, MessageCircle, Play, RotateCcw, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Session } from '@/api/types'
 import BaseButton from '@/components/base/BaseButton.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
+import { startBlockedReason } from '@/game/companion'
 import { isInSession, statusLabel } from '@/game/hud'
 
 type Action = 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive' | 'debrief'
@@ -15,14 +16,12 @@ const props = defineProps<{
   busy: { leaving: boolean; ending: boolean; reviving: boolean }
   soundEnabled?: boolean
   oocUnread?: number
-  notesUnread?: number
   novelMode?: boolean
 }>()
 const emit = defineEmits<{
   action: [action: Action]
   toggleSound: []
   openOoc: []
-  openNotes: []
   openHandbook: []
   toggleNovel: []
   exportReplay: []
@@ -37,13 +36,17 @@ const scenarioName = computed(() => (props.session.scenario as { name?: string }
 
 const actions = computed(() => {
   const s = props.session
-  const list: Array<{ key: Action; label: string; tone: 'ghost' | 'green' | 'red'; disabled?: boolean }> = [
+  const list: Array<{ key: Action; label: string; tone: 'ghost' | 'green' | 'red'; disabled?: boolean; title?: string }> = [
     { key: 'investigators', label: '调查员', tone: 'ghost' },
     { key: 'myCard', label: '我的角色', tone: 'ghost' },
   ]
   if (s.status === 'lobby' && !isInSession(s, props.user?.id)) list.push({ key: 'join', label: '带人物卡加入', tone: 'green' })
   if (s.status === 'lobby' && isInSession(s, props.user?.id)) list.push({ key: 'leave', label: '退出', tone: 'red', disabled: props.busy.leaving })
-  if (s.status === 'lobby' && isCreator.value) list.push({ key: 'start', label: '开始', tone: 'green', disabled: !s.players?.length })
+  if (s.status === 'lobby' && isCreator.value) {
+    // NOTE: 没有人或只剩 AI 陪玩时不能开始（后端同样返回 400），把原因放进 title，按钮置灰后玩家才知道缺什么
+    const reason = startBlockedReason(s.players)
+    list.push({ key: 'start', label: '开始', tone: 'green', disabled: reason !== '', title: reason || undefined })
+  }
   if (s.status === 'playing' && (isCreator.value || isAdmin.value)) list.push({ key: 'end', label: '结束', tone: 'red', disabled: props.busy.ending })
   if (s.status === 'ended') list.push({ key: 'debrief', label: '复盘与真相', tone: 'ghost' })
   if (s.status === 'ended' && isAdmin.value) list.push({ key: 'revive', label: '复活', tone: 'green', disabled: props.busy.reviving })
@@ -111,21 +114,6 @@ onBeforeUnmount(() => {
     <button
       type="button"
       class="relative inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-fg-subtle transition hover:bg-surface-2 hover:text-fg lg:hidden"
-      aria-label="打开桌下纸条"
-      title="桌下纸条"
-      @click="emit('openNotes')"
-    >
-      <Mail :size="16" :stroke-width="1.75" />
-      <span
-        v-if="(notesUnread ?? 0) > 0"
-        class="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-info"
-        aria-hidden="true"
-      />
-    </button>
-
-    <button
-      type="button"
-      class="relative inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-fg-subtle transition hover:bg-surface-2 hover:text-fg lg:hidden"
       aria-label="打开桌边讨论"
       title="桌边讨论"
       @click="emit('openOoc')"
@@ -173,7 +161,15 @@ onBeforeUnmount(() => {
     </button>
 
     <div class="hidden shrink-0 items-center gap-2 sm:flex">
-      <BaseButton v-for="a in actions" :key="a.key" size="sm" :variant="variantOf[a.tone]" :disabled="a.disabled" @click="run(a.key)">
+      <BaseButton
+        v-for="a in actions"
+        :key="a.key"
+        size="sm"
+        :variant="variantOf[a.tone]"
+        :disabled="a.disabled"
+        :title="a.title"
+        @click="run(a.key)"
+      >
         <component :is="iconOf[a.key]" :size="16" :stroke-width="1.75" />
         {{ a.label }}
       </BaseButton>
@@ -204,10 +200,15 @@ onBeforeUnmount(() => {
           class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50"
           :class="menuToneClass[a.tone]"
           :disabled="a.disabled"
+          :title="a.title"
           @click="run(a.key)"
         >
           <component :is="iconOf[a.key]" :size="16" :stroke-width="1.75" class="shrink-0" />
-          {{ a.label }}
+          <!-- NOTE: 手机上没有悬停提示，置灰的原因直接写在菜单项里 -->
+          <span class="min-w-0">
+            <span class="block">{{ a.label }}</span>
+            <span v-if="a.disabled && a.title" class="block max-w-48 text-xs text-fg-subtle">{{ a.title }}</span>
+          </span>
         </button>
       </div>
     </div>
