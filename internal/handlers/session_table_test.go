@@ -372,6 +372,13 @@ func TestSessionDebrief_BlockedBeforeEndedAndReturnsTruthAfterEnded(t *testing.T
 	models.DB.Create(&models.SessionClue{
 		SessionID: sess.ID, Title: "湖底契约", Content: "证实镇长参与仪式", AddedBy: "KP",
 	})
+	// 玩家自己钉到线索板的条目不能算作已发现的线索
+	models.DB.Create(&models.SessionClue{
+		SessionID: sess.ID, UserID: &p2, Title: "我的猜测", Content: "玩家随手写的", AddedBy: "医生乙",
+	})
+	models.DB.Create(&models.SessionClue{
+		SessionID: sess.ID, UserID: &host, Title: "刷数字", Content: "玩家随手写的", AddedBy: "侦探甲",
+	})
 	models.DB.Create(&models.Message{
 		SessionID: sess.ID, Role: models.MessageRoleAssistant, Kind: models.MessageKindEvent,
 		Meta: models.JSONField[*models.MessageMeta]{Data: &models.MessageMeta{Events: []models.GameEvent{

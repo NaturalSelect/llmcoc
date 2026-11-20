@@ -63,6 +63,9 @@ type CompanionView struct {
 // ErrCompanionNotAsked 表示提交时 AI 已经不在发言权里（房主点了继续、结束游戏、点名已被别的提交收口等）。
 var ErrCompanionNotAsked = errors.New("companion no longer in spotlight")
 
+// ErrCompanionInputBlocked 表示提交的内容被输入分类器判为越权或索要谜底，没有落库；AI 可以改写后重新提交。
+var ErrCompanionInputBlocked = errors.New("companion input blocked by input guard")
+
 // ErrCompanionBusy 表示同一房间已有一次陪玩运行在进行：第二次运行不会开始，也不会兜底，由正在跑的那次收口。
 var ErrCompanionBusy = errors.New("companion already running in this room")
 
@@ -78,7 +81,7 @@ type CompanionEnv interface {
 	Handbook() (string, error)
 	// OOC 返回最新的 limit 条桌边消息，按 id 升序。
 	OOC(limit int) ([]models.SessionOOCMessage, error)
-	// Submit 提交回应；点名已变化时必须返回 ErrCompanionNotAsked。
+	// Submit 提交回应；点名已变化时必须返回 ErrCompanionNotAsked，内容被输入分类器拦下时必须返回 ErrCompanionInputBlocked。
 	Submit(content string) error
 	WriteNote(content string, shared bool) error
 	PostOOC(content string) error

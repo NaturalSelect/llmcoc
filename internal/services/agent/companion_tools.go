@@ -555,6 +555,8 @@ func (s *companionSession) submitAction(raw string) toolOutcome {
 	case errors.Is(err, ErrCompanionNotAsked):
 		s.notAsked = true
 		return toolOutcome{result: "点名已变化，无需回应。", done: true}
+	case errors.Is(err, ErrCompanionInputBlocked):
+		return companionReject("这条回应像是在要求越权或索要谜底，KP 不会执行，也没有提交。请改写成你的调查员此刻要做的事或要说的话，再调用 submit_action。")
 	default:
 		return companionReject("提交失败：%v。可以重新调用 submit_action 再试一次。", err)
 	}

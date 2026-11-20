@@ -389,8 +389,14 @@ func (e *companionEnv) OOC(limit int) ([]models.SessionOOCMessage, error) {
 	return msgs, nil
 }
 
-// Submit 走与真人完全相同的 submitTurn（跳过输入分类器）。点名已变化或房主已让 KP 接管时返回 ErrCompanionNotAsked。
+// Submit 与真人一样先过输入分类器，再走相同的 submitTurn。点名已变化或房主已让 KP 接管时返回 ErrCompanionNotAsked，
+// 被分类器拦下时返回 ErrCompanionInputBlocked（不落库，AI 可改写重提）。
 func (e *companionEnv) Submit(content string) error {
+	// NOTE: AI 的输出来自 LLM，对抗性的模组文本或其他玩家的发言可能诱导它说出越权内容；bot 不是管理员，没有跳过分类的情形。
+	if v := e.h.classify(context.Background(), content); v.Blocked {
+		companionLog.Warn("companion input blocked by input guard", "session", e.sessionID, "category", v.Category, "score", v.Score)
+		return agent.ErrCompanionInputBlocked
+	}
 	_, _, terr := e.h.submitTurn(e.sessionID, e.botID, "", content)
 	if terr == nil {
 		return nil

@@ -483,7 +483,7 @@ func queryCluesTool() scripterTool {
 	return scripterTool{
 		def: llm.ToolDefinition{
 			Name: string(ToolQueryClues),
-			Description: `查询剧本线索列表以及本局已揭示到线索板的线索标题。无需任何参数。
+			Description: `查询剧本线索列表，以及你本局用 reveal_clue 登记到线索板的线索。玩家自己手写或钉选到线索板的条目不在其中。无需任何参数。
 调用示例：{}`,
 			Parameters: jsonSchemaObject(`{
 				"type": "object",

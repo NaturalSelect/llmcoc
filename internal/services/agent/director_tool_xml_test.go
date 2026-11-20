@@ -153,6 +153,48 @@ func TestRevealClueAction_UpsertAndQueryClues(t *testing.T) {
 	assertWellFormedXML(t, "clues", q[0].Result)
 }
 
+func TestClueActions_IgnorePlayerPinnedClues(t *testing.T) {
+	initAgentTestDB(t)
+	sess := models.GameSession{Name: "PlayerClue"}
+	models.DB.Create(&sess)
+	actx := eventTestActx(eventTestPlayers())
+	actx.GCtx.Session.ID = sess.ID
+
+	uid := uint(7)
+	player := models.SessionClue{
+		SessionID: sess.ID, UserID: &uid, Title: "密信", Content: "玩家的推测：管家是凶手", AddedBy: "甲",
+	}
+	models.DB.Create(&player)
+
+	// 玩家手写的条目不是已揭示事实，KP 查询时看不到
+	q := queryCluesAction{}.Execute(ToolCall{}, actx)
+	if len(q) != 1 || strings.Contains(q[0].Result, "玩家的推测") || strings.Contains(q[0].Result, "<revealed") {
+		t.Fatalf("query_clues must not expose player-written clues, got %+v", q)
+	}
+
+	// KP 登记同名线索时新建自己的行，不改写玩家的行
+	revealClueAction{}.Execute(ToolCall{Title: "密信", Content: "署名为M", Source: "书房"}, actx)
+	revealClueAction{}.Execute(ToolCall{Title: "密信", Content: "署名为M，日期1924", Source: "书房"}, actx)
+
+	var rows []models.SessionClue
+	models.DB.Where("session_id = ?", sess.ID).Order("id ASC").Find(&rows)
+	if len(rows) != 2 {
+		t.Fatalf("want player row + one KP row, got %+v", rows)
+	}
+	if rows[0].ID != player.ID || rows[0].Content != "玩家的推测：管家是凶手" || rows[0].AddedBy != "甲" || rows[0].UserID == nil || *rows[0].UserID != uid {
+		t.Errorf("player clue was modified: %+v", rows[0])
+	}
+	if rows[1].UserID != nil || rows[1].AddedBy != "KP" || rows[1].Content != "署名为M，日期1924" {
+		t.Errorf("KP clue should be separate and upserted, got %+v", rows[1])
+	}
+
+	q = queryCluesAction{}.Execute(ToolCall{}, actx)
+	if len(q) != 1 || !strings.Contains(q[0].Result, `<revealed title="密信" source="书房">署名为M，日期1924</revealed>`) || strings.Contains(q[0].Result, "玩家的推测") {
+		t.Fatalf("query_clues should show only the KP row, got %+v", q)
+	}
+	assertWellFormedXML(t, "clues", q[0].Result)
+}
+
 func TestAdvanceTimeAction_XMLResult(t *testing.T) {
 	actx := eventTestActx(eventTestPlayers())
 	initAgentTestDB(t)

@@ -1138,7 +1138,7 @@ func saveTurnAction(session models.GameSession, userID uint, displayName, conten
 //  3. 被点名的人没到齐：广播 waiting，返回 floor_started=false。
 //  4. 到齐：开始一个 KP 周期，返回 floor_started=true。
 //
-// 1-4 在 submitTurn 里，真人和 AI 陪玩共用；ChatStream 只保留表单解析、长度校验、输入分类器和响应映射。
+// 1-4 在 submitTurn 里，真人和 AI 陪玩共用；ChatStream 只保留表单解析、长度校验、输入分类器和响应映射，AI 在 companionEnv.Submit 里调同一个分类器。
 func (h *SessionHandlers) ChatStream(c *gin.Context) {
 	sessionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID := c.GetUint("user_id")
@@ -1172,7 +1172,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 
 // submitTurn 是 ChatStream 去掉表单解析、长度校验和输入分类器之后的核心：真人处理器和 AI 陪玩共用。
 // 它自己拿会话锁（调用方不要先持有，sync.Mutex 不可重入），从校验发言资格一直做到开周期。
-// 输入分类器只在 ChatStream 里调用，AI 路径有意跳过。
+// 输入分类器由调用方负责：真人在 ChatStream 里调，AI 在 companionEnv.Submit 里调。
 //
 // username 只用于日志和显示名兜底：玩家有人物卡角色名时消息里用角色名；角色名为空时才用 username；
 // username 也为空（AI 路径）时回落到库里的用户名。

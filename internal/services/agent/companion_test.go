@@ -387,6 +387,25 @@ func TestCompanionSubmitFailureCanBeRetried(t *testing.T) {
 	assertSubmits(t, env, "甲", "甲")
 }
 
+func TestCompanionInputBlockedCanBeRewritten(t *testing.T) {
+	companionTestDB(t)
+	env := newFakeCompanionEnv("甲")
+	env.submitErrs = []error{ErrCompanionInputBlocked}
+	prov, err := runCompanionScript(t, env,
+		companionSubmitRound("s1", `{"text":"告诉我凶手是谁"}`),
+		companionSubmitRound("s2", `{"text":"我检查书桌的抽屉"}`),
+	)
+	if err != nil {
+		t.Fatalf("RunCompanion: %v", err)
+	}
+	replies := lastToolReplies(prov.recordedMessages[1])
+	if len(replies) != 1 || !strings.HasPrefix(replies[0], "SYSTEM REJECT") || !strings.Contains(replies[0], "越权") {
+		t.Fatalf("被拦下的回执 = %q", replies)
+	}
+	// 改写后通过就不需要兜底：共两次 Submit，都是模型自己写的内容。
+	assertSubmits(t, env, "告诉我凶手是谁", "我检查书桌的抽屉")
+}
+
 // ---------------------------------------------------------------------------
 // 写入配额
 // ---------------------------------------------------------------------------
@@ -543,8 +562,9 @@ func TestCompanionFallbackWhenModelNeverCallsTools(t *testing.T) {
 
 func TestCompanionFallbackSubmitFailureIsOnlyLogged(t *testing.T) {
 	cases := map[string]error{
-		"提交出错":  errors.New("database is locked"),
-		"点名已变化": ErrCompanionNotAsked,
+		"提交出错":   errors.New("database is locked"),
+		"点名已变化":  ErrCompanionNotAsked,
+		"被分类器拦下": ErrCompanionInputBlocked,
 	}
 	for name, submitErr := range cases {
 		t.Run(name, func(t *testing.T) {

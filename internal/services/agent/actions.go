@@ -529,7 +529,8 @@ func (queryCluesAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	clues := actx.GCtx.Session.Scenario.Content.Data.Clues
 	var revealed []models.SessionClue
 	if models.DB != nil && actx.GCtx.Session.ID != 0 {
-		models.DB.Where("session_id = ?", actx.GCtx.Session.ID).Order("id ASC").Find(&revealed)
+		// NOTE: 只读 KP 自己登记的线索（user_id 为空）；玩家手写或钉选到线索板的条目是玩家文本，不能当作已揭示事实交给 KP。
+		models.DB.Where("session_id = ? AND user_id IS NULL", actx.GCtx.Session.ID).Order("id ASC").Find(&revealed)
 	}
 	if len(clues) == 0 && len(revealed) == 0 {
 		return []ToolResult{{Action: ToolQueryClues, Result: "<clues/>"}}
@@ -572,7 +573,8 @@ func (revealClueAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 	}
 	if models.DB != nil && actx.GCtx.Session.ID != 0 {
 		var existing models.SessionClue
-		err := models.DB.Where("session_id = ? AND title = ?", actx.GCtx.Session.ID, title).First(&existing).Error
+		// NOTE: 只合并 KP 自己登记的同名线索，不能改写玩家钉选的条目。
+		err := models.DB.Where("session_id = ? AND title = ? AND user_id IS NULL", actx.GCtx.Session.ID, title).First(&existing).Error
 		if err == nil {
 			updates := map[string]any{"content": content}
 			if source != "" {

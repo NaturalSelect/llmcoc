@@ -722,7 +722,8 @@ func GetSessionDebrief(c *gin.Context) {
 	}
 
 	var cluesFound int64
-	models.DB.Model(&models.SessionClue{}).Where("session_id = ?", session.ID).Count(&cluesFound)
+	// NOTE: 只数 KP 登记的线索（user_id 为空），玩家自己往线索板添加的条目不算已发现，否则可以刷高数字。
+	models.DB.Model(&models.SessionClue{}).Where("session_id = ? AND user_id IS NULL", session.ID).Count(&cluesFound)
 
 	var eventMsgs []models.Message
 	models.DB.Where("session_id = ? AND kind = ?", session.ID, models.MessageKindEvent).
