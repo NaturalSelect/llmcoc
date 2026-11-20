@@ -54,6 +54,15 @@ var gemini3_5FlashLitelJailbreakPrompt = gemini3_6FlashJailbreakPrompt
 //go:embed jailbreaks/gemini-4-argon.md
 var gemini4ArgonJailbreakPrompt string
 
+//go:embed jailbreaks/gemini-4-carbon.md
+var gemini4CarbonJailbreakPrompt string
+
+//go:embed jailbreaks/gemini-4-hydrogen.md
+var gemini4HydrogenJailbreakPrompt string
+
+//go:embed jailbreaks/gemini-4-neon.md
+var gemini4NeonJailbreakPrompt string
+
 func matchLength(left, right string) int {
 	matchLen := 0
 	for i := 0; i < len(left) && i < len(right); i++ {
@@ -141,6 +150,21 @@ func withJailbreakPrompt(prompt string, model string) string {
 		{
 			model:  "gemini-4-argon",
 			header: gemini4ArgonJailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "gemini-4-carbon",
+			header: gemini4CarbonJailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "gemini-4-hydrogen",
+			header: gemini4HydrogenJailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "gemini-4-neon",
+			header: gemini4NeonJailbreakPrompt,
 			tail:   "",
 		},
 	}
