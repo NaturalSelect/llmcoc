@@ -12,6 +12,7 @@ import { useUiStore } from '@/stores/ui'
 import { errMsg } from '../shared/errMsg'
 import {
   buildSavePayload,
+  contextWindowPlaceholder,
   hasContextWindow,
   isPainterRole,
   pingFailureMessage,
@@ -94,7 +95,7 @@ const pinging = () => pingingKey.value === pingLoadingKey(form)
           v-model.number="form.context_window"
           type="number"
           min="0"
-          :placeholder="form.role === 'director' ? '0 = 不整体裁剪历史' : '0 = 使用默认 300000'"
+          :placeholder="contextWindowPlaceholder(form.role)"
         />
       </FormField>
       <FormField label="推理强度">

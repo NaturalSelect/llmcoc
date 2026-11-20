@@ -212,7 +212,7 @@ func AdminUpdateAgent(c *gin.Context) {
 
 	modelName, _ := raw["model_name"].(string)
 	maxTokens := int(toFloat(raw["max_tokens"]))
-	// NOTE: 不同模型的上下文窗口差异很大,0 表示不开启阈值 trim(director)或回落默认值(writer/writer_nsfw)。
+	// NOTE: 不同模型的上下文窗口差异很大,0 表示不开启阈值 trim(director)或回落默认值(companion)。
 	contextWindow := int(toFloat(raw["context_window"]))
 	temperature := float32(toFloat(raw["temperature"]))
 	thinkingLevel, _ := raw["thinking_level"].(string)

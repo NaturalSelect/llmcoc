@@ -3,10 +3,10 @@
 // 取代原来 director_history.go 里 Director 专用、"发送版/归档版"两份内容不一致的实现：
 // 发送版=归档版，历史轮原样持久化(含 reasoning/ReasoningBlocks)，按 (session_id,
 // agent_key) 落在独立的 AgentTranscript 表(具体设计见 models.AgentTranscript 的注释)，
-// 供 Director/Writer/Dramaturg/NPC 共用同一套"按整轮裁剪 + 显式断点标记"逻辑。裁剪
+// 供 Director/Writer/Dramaturg/NPC/AI 陪玩共用同一套"按整轮裁剪 + 显式断点标记"逻辑。裁剪
 // 有两种互斥的策略(见 TrimStrategy)：TrimDropTurns 整轮丢弃(Writer/Dramaturg/NPC，
-// 轮内本就是纯文本，没有需要保留的中间结构)；TrimSummarize 不在这里改动历史(Director，
-// 历史单元原样累积，只有 LLM 总结才会压缩它，见 director_summary.go)。
+// 轮内本就是纯文本，没有需要保留的中间结构)；TrimSummarize 不在这里改动历史(Director、
+// AI 陪玩，历史单元原样累积，只有 LLM 总结才会压缩它，见 director_summary.go)。
 //
 // 消息布局约定(Build 的返回值)：
 //
@@ -197,6 +197,8 @@ func flattenTranscriptTurns(turns []models.TranscriptTurn) []llm.ChatMessage {
 type ContextOptions struct {
 	Window   int64
 	Strategy TrimStrategy
+	// Summary 只在 TrimSummarize 下用，决定怎么切分、渲染和包裹总结；nil 是 Director 的。
+	Summary *summaryFormat
 }
 
 // TrimStrategy 选择 ContextManager 超过用量阈值后的裁剪方式。
@@ -207,9 +209,9 @@ const (
 	// Dramaturg/NPC 使用的默认策略——它们的轮本就是纯文本对话，没有需要单独保留的
 	// 中间结构，丢弃整轮最简单也最省空间。
 	TrimDropTurns TrimStrategy = iota
-	// TrimSummarize 是 Director 的策略：Observe/Commit 不改动历史，只报告上下文是否已满，
-	// 由调用方在拍的边界上调用 compactHistory 做 LLM 总结。Director 的单元里有已经生效的
-	// 结算，确定性地剥离或丢弃它们都会让 KP 忘掉已发生的事。
+	// TrimSummarize 是 Director 和 AI 陪玩的策略：Observe/Commit 不改动历史，只报告上下文是否已满，
+	// 由调用方在单元边界上调用 compactHistory 做 LLM 总结。Director 的单元里有已经生效的
+	// 结算，确定性地剥离或丢弃它们都会让 KP 忘掉已发生的事；陪玩丢掉旧轮同样会忘掉剧情和自己写过的笔记。
 	TrimSummarize
 )
 
@@ -422,6 +424,7 @@ func (c *ContextManager) Commit(round int, finalMsgs []llm.ChatMessage) {
 
 	c.stat.Seq = seq
 	c.stat.Round = round
+	c.stat.LastContextTokens = c.lastUsage.ContextTokens()
 	c.data.Stats = append(c.data.Stats, c.stat)
 	if len(c.data.Stats) > maxTranscriptStats {
 		c.data.Stats = c.data.Stats[len(c.data.Stats)-maxTranscriptStats:]

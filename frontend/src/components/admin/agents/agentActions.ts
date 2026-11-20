@@ -15,9 +15,13 @@ export function isSystemOneRole(role: string): boolean {
   return role === 'systemone'
 }
 
-// NOTE: 只有 Director 按上下文窗口触发总结，其余角色不显示该输入框
+// NOTE: Director 和 companion 都按上下文窗口触发 LLM 总结，其余角色不显示该输入框
 export function hasContextWindow(role: string): boolean {
-  return role === 'director'
+  return role === 'director' || role === 'companion'
+}
+
+export function contextWindowPlaceholder(role: string): string {
+  return role === 'companion' ? '0 = 使用默认 100000' : '0 = 不整体裁剪历史'
 }
 
 export function buildSavePayload(ag: AgentFormState) {

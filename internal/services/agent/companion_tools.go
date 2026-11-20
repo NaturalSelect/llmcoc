@@ -28,6 +28,9 @@ const (
 	companionToolSubmitAction  = "submit_action"
 )
 
+// companionSubmitOK 是 submit_action 提交成功的回执；总结历史时靠它区分「已提交」和「点名已变化」。
+const companionSubmitOK = "已提交。"
+
 const (
 	// 每次运行的写入配额：陪玩不应该刷屏。
 	companionOOCQuota  = 2
@@ -551,7 +554,7 @@ func (s *companionSession) submitAction(raw string) toolOutcome {
 	switch {
 	case err == nil:
 		s.submitted = true
-		return toolOutcome{result: "已提交。", done: true}
+		return toolOutcome{result: companionSubmitOK, done: true}
 	case errors.Is(err, ErrCompanionNotAsked):
 		s.notAsked = true
 		return toolOutcome{result: "点名已变化，无需回应。", done: true}

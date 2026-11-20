@@ -2,6 +2,8 @@
 // 自己的 provider 总结成一个 Kind="summary" 的 turn 放在最前面。历史单元本身从不被确定性地剥离或丢弃，
 // 因为单元里有已经生效的结算。切点只落在"拍"的边界上（两条 kp/ask 消息之间），当前周期的单元永远不被总结。
 // 总结输入是确定性渲染的纯文本，不发送原生工具消息。
+// 总结流程本身（compactHistory / MaybeCompact / CompactInFloor）与角色无关：切点、渲染和包裹标签由
+// summaryFormat 决定，AI 陪玩换了一套（companion_summary.go）。
 package agent
 
 import (
@@ -40,14 +42,46 @@ var (
 // summarizeFunc 把渲染好的纯文本交给 LLM，返回总结正文（已去掉标签）。
 type summarizeFunc func(ctx context.Context, input string) (string, error)
 
+// summaryFormat 决定 compactHistory 怎么切分、渲染和包裹一份总结。
+type summaryFormat struct {
+	// boundary 报告在 turns[:b] 与 turns[b:] 之间切开是否合法（1<=b<=len(turns)）。
+	boundary func(turns []models.TranscriptTurn, b int) bool
+	// render 把要被总结的单元（可能以一个旧总结开头）渲染成交给 LLM 的纯文本。
+	render func(turns []models.TranscriptTurn) string
+	// wrap 把 LLM 返回的总结正文包成历史里那条 user 消息的内容。
+	wrap func(turns []models.TranscriptTurn, text string) string
+}
+
+var directorSummaryFormat = &summaryFormat{
+	boundary: beatBoundaryAt,
+	render:   renderFloorsForSummary,
+	wrap: func(turns []models.TranscriptTurn, text string) string {
+		first, last := summaryFloorRange(turns)
+		return fmt.Sprintf("<story_so_far floors=\"%d-%d\">\n%s\n</story_so_far>", first, last, text)
+	},
+}
+
+// summaryFormat 返回本管理器用的总结格式，没有指定时是 Director 的。
+func (c *ContextManager) summaryFormat() *summaryFormat {
+	if c.opts.Summary != nil {
+		return c.opts.Summary
+	}
+	return directorSummaryFormat
+}
+
 // directorSummarizer 返回用 Director 自己的 provider 做总结的实现。
 func directorSummarizer(h agentHandle, sessionID uint) summarizeFunc {
+	return newSummarizer(h, sessionID, directorSummaryPrompt, "director")
+}
+
+// newSummarizer 返回用 h 自己的 provider、按 prompt 做总结的实现；输出必须带 <summary> 块，缺失时重试。
+func newSummarizer(h agentHandle, sessionID uint, prompt, who string) summarizeFunc {
 	return func(ctx context.Context, input string) (string, error) {
 		if h.provider == nil {
-			return "", errors.New("director provider unavailable")
+			return "", fmt.Errorf("%s provider unavailable", who)
 		}
 		msgs := []llm.ChatMessage{
-			{Role: "system", Content: directorSummaryPrompt},
+			{Role: "system", Content: prompt},
 			{Role: "user", Content: input},
 		}
 		var lastErr error
@@ -243,10 +277,11 @@ func (c *ContextManager) compactHistory(ctx context.Context, summarize summarize
 	}
 	limit = min(limit, len(c.data.Turns))
 	lowWater := float64(c.opts.Window) / 2
+	format := c.summaryFormat()
 
 	cut := 0
 	for b := 1; b <= limit; b++ {
-		if !beatBoundaryAt(c.data.Turns, b) {
+		if !format.boundary(c.data.Turns, b) {
 			continue
 		}
 		cut = b
@@ -262,17 +297,16 @@ func (c *ContextManager) compactHistory(ctx context.Context, summarize summarize
 		return false, nil
 	}
 
-	text, err := summarize(ctx, renderFloorsForSummary(c.data.Turns[:cut]))
+	text, err := summarize(ctx, format.render(c.data.Turns[:cut]))
 	if err != nil {
 		return false, err
 	}
-	first, last := summaryFloorRange(c.data.Turns[:cut])
 	summary := models.TranscriptTurn{
 		Seq:  c.data.Turns[0].Seq,
 		Kind: "summary",
 		Messages: []models.TranscriptMsg{{
 			Role:    "user",
-			Content: fmt.Sprintf("<story_so_far floors=\"%d-%d\">\n%s\n</story_so_far>", first, last, text),
+			Content: format.wrap(c.data.Turns[:cut], text),
 		}},
 		Compacted: true,
 	}
@@ -301,7 +335,7 @@ func (c *ContextManager) MaybeCompact(ctx context.Context, summarize summarizeFu
 	}
 	changed, err := c.compactHistory(ctx, summarize, len(c.data.Turns), tokensPerRune, int64(float64(headRunes)*tokensPerRune))
 	if err != nil {
-		alog.Error("director summary failed", "session", c.sessionID, "err", err)
+		alog.Error("context summary failed", "session", c.sessionID, "agent_key", c.agentKey, "err", err)
 		return false
 	}
 	if changed {
@@ -329,7 +363,7 @@ func (c *ContextManager) CompactInFloor(ctx context.Context, summarize summarize
 
 	changed, err := c.compactHistory(ctx, summarize, c.currentFloorStart(), tokensPerRune, int64(float64(fixedRunes)*tokensPerRune))
 	if err != nil {
-		alog.Error("director in-floor summary failed", "session", c.sessionID, "err", err)
+		alog.Error("context in-floor summary failed", "session", c.sessionID, "agent_key", c.agentKey, "err", err)
 		return msgs, true
 	}
 	if !changed {

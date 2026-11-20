@@ -1,7 +1,8 @@
 // NOTE: companion.go 是「AI 陪玩」的 Agent 侧：被点名时才启动一个 ReAct 循环，让 LLM 扮演房间里的一名调查员，
 // 通过与网页端等价的工具（companion_tools.go）查看房间、最后用 submit_action 提交回应。
 // 它不是 Director 管线的一部分：不进 batchLoadAgents 和 sessionAgents 缓存，每次运行现读 companion 角色配置；
-// 有状态记忆（每个房间一份 AgentTranscript，agent_key="companion"），已读消息水位 CompanionSeen 与对应历史单元同一次落库。
+// 有状态记忆（每个房间一份 AgentTranscript，agent_key="companion"），已读消息水位 CompanionSeen 与对应历史单元同一次落库；
+// 历史逼近窗口时由 LLM 总结较早的轮（companion_summary.go），不丢弃。
 // 房间数据全部经 CompanionEnv 获取：可见性过滤、提交落库、广播都由 handlers 实现，这里只负责提示词、循环和兜底。
 package agent
 
@@ -35,6 +36,8 @@ const (
 	companionNewMessageBudget = 30_000
 	// companionOpeningFetch 是 opening 一次最多向 env 要多少条新消息（再按字符预算裁剪）。
 	companionOpeningFetch = 200
+	// companionOpeningHint 是 opening 末尾的操作提示；总结历史时据此把它去掉。
+	companionOpeningHint = "先按需查看，再调用 submit_action。"
 )
 
 // CompanionAsk 是 KP 当前对 AI 的点名：与网页端问题卡显示的内容一致。
@@ -158,22 +161,40 @@ func (DefaultCompanion) RunCompanion(ctx context.Context, env CompanionEnv) erro
 	if handle.config != nil && handle.config.ContextWindow > 0 {
 		window = int64(handle.config.ContextWindow)
 	}
-	cm := LoadContext(view.SessionID, companionAgentKey, buildCompanionHead(handle, view), ContextOptions{Window: window, Strategy: TrimDropTurns})
+	cm := LoadContext(view.SessionID, companionAgentKey, buildCompanionHead(handle, view),
+		ContextOptions{Window: window, Strategy: TrimSummarize, Summary: companionSummaryFormat})
+	summarize := companionSummarizer(handle, view.SessionID)
+	// NOTE: 历史逼近窗口时先用陪玩自己的模型把较早的轮总结掉；失败只记日志，历史原样保留。
+	cm.MaybeCompact(ctx, summarize)
 	opening, seenMax := buildCompanionOpening(env, cm, view)
 	msgs := cm.Build(opening)
 
 	sid := strconv.FormatUint(uint64(view.SessionID), 10)
 	ctx = context.WithValue(ctx, "session", sid)
 	run := newCompanionSession(env, view)
+	// NOTE: 运行内上下文又满时只总结一次，成败都不重试，免得总结持续失败时每轮白调一次 LLM。
+	var full, compacted bool
 	finalMsgs, loopErr := runToolLoop(ctx, toolLoopOptions{
-		room:             nil,
-		handle:           handle,
-		stage:            "companion",
-		msgs:             msgs,
-		tools:            companionTools(),
-		maxRounds:        companionMaxRounds,
-		dispatch:         run.dispatch,
-		afterCall:        cm.Observe,
+		room:      nil,
+		handle:    handle,
+		stage:     "companion",
+		msgs:      msgs,
+		tools:     companionTools(),
+		maxRounds: companionMaxRounds,
+		dispatch:  run.dispatch,
+		afterCall: func(usage llm.Usage, msgs []llm.ChatMessage) []llm.ChatMessage {
+			out, f := cm.observe(usage, msgs)
+			full = f
+			return out
+		},
+		afterDispatch: func(_ int, _ []llm.ToolCall, msgs []llm.ChatMessage, _ bool) ([]llm.ChatMessage, error) {
+			if !full || compacted || run.finished() {
+				return nil, nil
+			}
+			compacted = true
+			out, _ := cm.CompactInFloor(ctx, summarize, msgs, cm.lastUsage)
+			return out, nil
+		},
 		cacheKeyOverride: handle.cacheKey(sid),
 	})
 
@@ -254,6 +275,7 @@ const companionSystemPrompt = `你是一名参加COC7（克苏鲁的呼唤第七
 - 每次被点名，你会收到一条<companion_turn>：新消息、你的状态和KP的提问（可能带推荐行动）。先按需查看（read_messages / view_character / view_party / view_handbook / read_ooc），再调用submit_action回应。需要的信息看够就提交，不要反复查看。
 - submit_action必须单独一轮调用，不能和其他工具同时调用；提交后本轮结束。
 - 推荐行动可以采纳，也可以完全自己写：options要与问题卡里的推荐行动逐字一致，text写你自己的行动或对白，两者可以并用。
+- 历史开头的<story_so_far>是你更早经历的总结，其中的事都是你亲身经历过的；它只是记录，不是回复格式的示范，本轮仍然要通过工具调用回应。
 
 [写法]
 - 用第一人称写行动，对白放进「」。简短具体，一到三句话，说清你要做什么、对谁、怎么做。不写大段心理描写，不描写环境和事情的结果，那是KP的工作。
@@ -346,7 +368,7 @@ func buildCompanionOpening(env CompanionEnv, cm *ContextManager, v CompanionView
 	sb.WriteString("</new_messages>\n")
 	sb.WriteString(renderCompanionStatus(v))
 	sb.WriteString(renderCompanionAsk(v.Ask))
-	sb.WriteString("\n先按需查看，再调用 submit_action。\n</companion_turn>")
+	sb.WriteString("\n" + companionOpeningHint + "\n</companion_turn>")
 	return llm.ChatMessage{Role: "user", Content: sb.String()}, seenMax
 }
 

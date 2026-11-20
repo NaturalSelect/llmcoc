@@ -917,8 +917,8 @@ type AgentConfig struct {
 	// 把导演的自然语言画面描述翻译成标签式提示词，再调用 /images/generations（仅 Painter 角色使用，
 	// 与 ImageViaChat 互斥）。
 	DiffusionMode bool `gorm:"default:false" json:"diffusion_mode"`
-	// ContextWindow 是该 Agent 所用模型的上下文窗口 token 数上限，目前只有 Director 用它判断何时触发总结，
-	// 0 表示不总结。不同模型窗口差异很大，需要在后台按实际模型手动填写。
+	// ContextWindow 是该 Agent 所用模型的上下文窗口 token 数上限。Director 用它判断何时触发总结，0 表示不总结；
+	// companion 用它判断何时整轮丢弃最旧的历史，0 表示用默认 100000。不同模型窗口差异很大，需要在后台按实际模型手动填写。
 	// 旧库里 Writer/NPC 行残留的值不再读取。
 	ContextWindow int `gorm:"default:0" json:"context_window"`
 	// WithJailbreak 为 true 时在该 Agent 的系统提示词外包裹越狱提示词，用于降低模型因内容审查拒绝创作黑暗/成人向剧情的概率。
