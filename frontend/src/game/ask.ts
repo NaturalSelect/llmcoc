@@ -215,6 +215,17 @@ export function quickCharacterSkills(card: CharacterCard | null | undefined, min
   return list
 }
 
+export function quickCharacterSpells(card: CharacterCard | null | undefined): string[] {
+  const raw = (card as { spells?: unknown } | null | undefined)?.spells
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  for (const entry of raw) {
+    const name = String(entry ?? '').trim()
+    if (name) seen.add(name)
+  }
+  return [...seen]
+}
+
 export function quickCharacterItems(card: CharacterCard | null | undefined): QuickItem[] {
   const raw = (card as { inventory?: unknown } | null | undefined)?.inventory
   if (!Array.isArray(raw)) return []

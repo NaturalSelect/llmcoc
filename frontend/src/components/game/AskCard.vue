@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Backpack, BookOpen, Check, Eye, Flame, Hand, Pencil, Quote, Sparkles } from '@lucide/vue'
+import { Backpack, BookOpen, Check, Eye, Flame, Hand, Pencil, Quote, Sparkles, WandSparkles } from '@lucide/vue'
 import { computed, nextTick, ref } from 'vue'
 import type { CharacterCard } from '@/api/types'
 import BaseButton from '@/components/base/BaseButton.vue'
@@ -20,6 +20,7 @@ import {
   isCharacterMad,
   quickCharacterItems,
   quickCharacterSkills,
+  quickCharacterSpells,
   startEdit,
   toggleOption,
 } from '@/game/ask'
@@ -31,7 +32,7 @@ const props = defineProps<{ room: Room; draft: AskDraft; card?: CharacterCard | 
 const emit = defineEmits<{ submit: [text: string]; shown: [] }>()
 
 const input = ref<HTMLTextAreaElement | null>(null)
-const quickTab = ref<'' | 'skills' | 'items'>('')
+const quickTab = ref<'' | 'skills' | 'spells' | 'items'>('')
 
 const view = computed(() => askView(props.room, props.draft))
 const locked = computed(() => askLocked(props.room))
@@ -44,8 +45,9 @@ const inUnderlyingMadness = computed(() => isCharacterMad(props.card))
 const madnessLabel = computed(() => characterMadnessLabel(props.card))
 const madnessSymptom = computed(() => String((props.card as { madness_symptom?: unknown } | null | undefined)?.madness_symptom || ''))
 const quickSkills = computed(() => quickCharacterSkills(props.card))
+const quickSpells = computed(() => quickCharacterSpells(props.card))
 const quickItems = computed(() => quickCharacterItems(props.card))
-const hasQuickRef = computed(() => quickSkills.value.length > 0 || quickItems.value.length > 0)
+const hasQuickRef = computed(() => quickSkills.value.length > 0 || quickSpells.value.length > 0 || quickItems.value.length > 0)
 
 function submit() {
   if (locked.value || !answer.value || count.value > CHAT_MAX_CHARS) return
@@ -99,12 +101,17 @@ function prefillRealityCheck() {
   void appendText('我深吸一口气，试图对照周围细节向 KP 请求一次现实检定，确认刚才感知到的一切是否为幻觉：')
 }
 
-function toggleQuick(tab: 'skills' | 'items') {
+function toggleQuick(tab: 'skills' | 'spells' | 'items') {
   quickTab.value = quickTab.value === tab ? '' : tab
 }
 
 function insertSkill(name: string) {
   void appendText(`我尝试运用「${name}」`)
+  quickTab.value = ''
+}
+
+function insertSpell(name: string) {
+  void appendText(`我尝试施放「${name}」`)
   quickTab.value = ''
 }
 
@@ -222,6 +229,19 @@ function insertItem(name: string) {
       </button>
     </div>
 
+    <div v-if="quickTab === 'spells' && quickSpells.length" class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-line bg-surface-2 p-2.5">
+      <button
+        v-for="sp in quickSpells"
+        :key="sp"
+        type="button"
+        :disabled="locked"
+        class="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1 text-xs text-fg transition hover:border-accent/60 hover:text-accent"
+        @click="insertSpell(sp)"
+      >
+        {{ sp }}
+      </button>
+    </div>
+
     <div v-if="quickTab === 'items' && quickItems.length" class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-line bg-surface-2 p-2.5">
       <button
         v-for="it in quickItems"
@@ -252,6 +272,17 @@ function insertItem(name: string) {
       >
         <BookOpen :size="15" :stroke-width="1.75" />
         技能
+      </BaseButton>
+      <BaseButton
+        v-if="hasQuickRef && quickSpells.length"
+        variant="ghost"
+        size="sm"
+        :disabled="locked"
+        title="速查已掌握的法术，点击填入行动"
+        @click="toggleQuick('spells')"
+      >
+        <WandSparkles :size="15" :stroke-width="1.75" />
+        法术
       </BaseButton>
       <BaseButton
         v-if="hasQuickRef && quickItems.length"

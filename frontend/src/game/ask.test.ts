@@ -17,6 +17,7 @@ import {
   isCharacterMad,
   quickCharacterItems,
   quickCharacterSkills,
+  quickCharacterSpells,
   resetAskDraft,
   resetDraftOnFrame,
   startEdit,
@@ -250,6 +251,13 @@ describe('ask', () => {
       { name: '手电筒', desc: '电量满', count: 1, equipped: true },
       { name: '绷带', desc: '', count: 3, equipped: false },
     ])
+  })
+
+  test('法术速查：保持卡上顺序，去掉空白和重复，没有法术时为空', () => {
+    expect(quickCharacterSpells({ name: '爱丽丝', spells: ['束缚术', ' 日光咒 ', '', '束缚术'] })).toStrictEqual(['束缚术', '日光咒'])
+    expect(quickCharacterSpells({ name: '爱丽丝', spells: null })).toStrictEqual([])
+    expect(quickCharacterSpells({ name: '爱丽丝' })).toStrictEqual([])
+    expect(quickCharacterSpells(null)).toStrictEqual([])
   })
 
   test('潜伏疯狂期判定仅覆盖 temporary 与 indefinite', () => {
