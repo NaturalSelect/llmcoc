@@ -14,7 +14,7 @@ import CharacterSection from './CharacterSection.vue'
 import CharacterVitals from './CharacterVitals.vue'
 import ChipList from './ChipList.vue'
 import EntryList from './EntryList.vue'
-import ItemDetailTip from './ItemDetailTip.vue'
+import ItemDetailTip, { clearPinnedItemDetail } from './ItemDetailTip.vue'
 import RegenBlock from './RegenBlock.vue'
 import { useConfirmGuard } from './useConfirmGuard'
 import {
@@ -120,6 +120,7 @@ watch(
   () => [props.open, props.card] as const,
   ([open, card]) => {
     previewSrc.value = ''
+    if (!open || card?.id !== current.value?.id) clearPinnedItemDetail()
     if (!open) return
     current.value = card
     guidance.appearance = guidance.backstory = guidance.traits = ''
@@ -396,7 +397,7 @@ function assetEntries(card: CharacterCardFull): Entry[] {
       </CharacterSection>
 
       <CharacterSection title="物品栏">
-        <p class="mb-2 text-xs text-fg-subtle">鼠标放到物品上或点击可查看详情；点击物品右侧按钮可直接装备、丢弃或存入账号仓库。</p>
+        <p class="mb-2 text-xs text-fg-subtle">鼠标放到物品上可查看详情，点击可固定详情（再次点击取消）；点击物品右侧按钮可直接装备、丢弃或存入账号仓库。</p>
         <p v-if="current.in_session" class="mb-2 text-xs text-warning" role="status">该人物卡正在游戏中，无法存取仓库。</p>
         <ChipList :items="split.carried.map((it) => it.name)">
           <template #label="{ index }"><ItemDetailTip :item="split.carried[index]" /></template>

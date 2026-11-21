@@ -271,6 +271,46 @@ describe('DashboardView', () => {
     expect(chips('装备栏')).toEqual(['左轮手枪'])
   })
 
+  test('详情弹窗：点击装备可固定详情，点外部保持显示，再次点击或关闭角色卡取消', async () => {
+    wrapper = mountDashboard()
+    await flushPromises()
+    button('艾米')!.click()
+    await flushPromises()
+
+    const gun = section('装备栏').querySelector('li button') as HTMLButtonElement
+    gun.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    gun.dispatchEvent(new FocusEvent('focus'))
+    gun.click()
+    await nextTick()
+    expect(gun.getAttribute('aria-pressed')).toBe('true')
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain('.38口径')
+
+    gun.dispatchEvent(new MouseEvent('mouseleave'))
+    gun.dispatchEvent(new FocusEvent('blur'))
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await nextTick()
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain('.38口径')
+
+    gun.click()
+    await nextTick()
+    expect(gun.getAttribute('aria-pressed')).toBe('false')
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull()
+
+    gun.click()
+    await nextTick()
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain('.38口径')
+
+    ;(document.body.querySelector('[role="dialog"] button[aria-label="关闭"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull()
+
+    button('艾米')!.click()
+    await flushPromises()
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull()
+    expect(section('装备栏').querySelector('li button')!.getAttribute('aria-pressed')).toBe('false')
+  })
+
   test('详情弹窗里确认框按 Esc 取消，不会把详情弹窗一起关掉', async () => {
     wrapper = mountDashboard()
     await flushPromises()
