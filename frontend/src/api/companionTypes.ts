@@ -52,7 +52,8 @@ export interface CompanionMessageResponse {
 }
 
 // GET /api/admin/companion-cards/generate/ws（WebSocket）推送的事件数据，对应 internal/handlers/admin_companion_generate.go。
-// 请求帧是 { count }；index 从 1 开始，同一张卡的 card_start 与 card_done / card_error 共用同一个 index
+// 请求帧是 { count } 启动任务，或 { attach: true } 接上正在跑（或最近一次）的任务；
+// index 从 1 开始，同一张卡的 card_start 与 card_done / card_error 共用同一个 index
 export interface CompanionGenStart {
   index: number
   name: string
@@ -80,4 +81,10 @@ export interface CompanionGenBatchDone {
   total: number
   succeeded: number
   failed: number
+}
+
+// attach 请求的第一帧：任务是否还在跑，加上已发生的全部事件（at 是毫秒时间戳）。只有 attach 连接会收到
+export interface CompanionGenSnapshot {
+  running: boolean
+  events: { type: string; data: unknown; at?: number }[]
 }

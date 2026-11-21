@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 	"unicode"
 
 	"github.com/gin-gonic/gin"
@@ -290,8 +291,11 @@ func TestAdminGenerateCompanionCardsWS_RejectsBadRequests(t *testing.T) {
 	})
 
 	t.Run("已有任务在运行", func(t *testing.T) {
-		companionGenRunning.Store(true)
-		t.Cleanup(func() { companionGenRunning.Store(false) })
+		resetCompanionGen(t)
+		if !companionGen.tryStart() {
+			t.Fatal("tryStart on an idle state must succeed")
+		}
+		t.Cleanup(companionGen.finish)
 		c, _ := scenarioWSDial(t, srv, "/admin/companion-cards/generate/ws", map[string]any{"count": 1})
 		f := wsRead(t, c)
 		if f.Type != "rejected" || !strings.Contains(wsMessage(t, f), "已有批量生成任务在运行") {
@@ -315,6 +319,7 @@ func TestAdminGenerateCompanionCardsWS_NoBotUserRejected(t *testing.T) {
 
 func TestAdminGenerateCompanionCardsWS_StreamsAndReleasesTheSlot(t *testing.T) {
 	initTestDB(t)
+	resetCompanionGen(t)
 	botID, _ := models.EnsureCompanionUser()
 	stubGenerateCharacterNarrative(t, fakeNarrative)
 	stubCompanionCardName(t, sequentialCompanionNames())
@@ -337,7 +342,177 @@ func TestAdminGenerateCompanionCardsWS_StreamsAndReleasesTheSlot(t *testing.T) {
 	if got := len(botCards(t, botID)); got != 2 {
 		t.Fatalf("bot cards = %d, want 2", got)
 	}
-	if companionGenRunning.Load() {
+	if companionGenIsRunning() {
 		t.Fatal("running flag still set after the job finished")
+	}
+}
+
+func companionGenIsRunning() bool {
+	companionGen.mu.Lock()
+	defer companionGen.mu.Unlock()
+	return companionGen.running
+}
+
+// resetCompanionGen 清空全局任务状态；用例结束时先等遗留任务收尾再清一次，避免记录串到下一个用例。
+// 必须在 initTestDB 之后调用，这样它的清理先于数据库还原。
+func resetCompanionGen(t *testing.T) {
+	t.Helper()
+	wipe := func() {
+		companionGen.mu.Lock()
+		defer companionGen.mu.Unlock()
+		companionGen.running = false
+		companionGen.events = nil
+		companionGen.subs = nil
+	}
+	wipe()
+	t.Cleanup(func() {
+		deadline := time.Now().Add(5 * time.Second)
+		for companionGenIsRunning() && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		wipe()
+	})
+}
+
+type companionGenSnapshotFrame struct {
+	Running bool `json:"running"`
+	Events  []struct {
+		Type string          `json:"type"`
+		Data json.RawMessage `json:"data"`
+		At   int64           `json:"at"`
+	} `json:"events"`
+}
+
+func readCompanionGenSnapshot(t *testing.T, c *wsClient) companionGenSnapshotFrame {
+	t.Helper()
+	f := wsRead(t, c)
+	if f.Type != "snapshot" {
+		t.Fatalf("first frame = %s %s, want snapshot", f.Type, f.Data)
+	}
+	var snap companionGenSnapshotFrame
+	if err := json.Unmarshal(f.Data, &snap); err != nil {
+		t.Fatalf("decode snapshot %s: %v", f.Data, err)
+	}
+	return snap
+}
+
+// 刷新页面 = 起始连接断开 + 新连接 attach：新连接先收到已发生的事件，再接着收后续事件，任务结束后连接正常关闭。
+func TestAdminGenerateCompanionCardsWS_AttachReplaysAndFollowsARunningJob(t *testing.T) {
+	initTestDB(t)
+	resetCompanionGen(t)
+	botID, _ := models.EnsureCompanionUser()
+	stubCompanionCardName(t, sequentialCompanionNames())
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	releaseJob := func() { once.Do(func() { close(release) }) }
+	stubGenerateCharacterNarrative(t, func(ctx context.Context, req agent.GenerateCharacterReq) (*agent.GeneratedCharacter, error) {
+		close(started)
+		<-release
+		return fakeNarrative(ctx, req)
+	})
+	t.Cleanup(releaseJob)
+	srv := companionGenWSServer(t)
+
+	starter, conn := scenarioWSDial(t, srv, "/admin/companion-cards/generate/ws", map[string]any{"count": 1})
+	if f := wsRead(t, starter); f.Type != "card_start" {
+		t.Fatalf("starter first frame = %s, want card_start", f.Type)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("generation did not start")
+	}
+	_ = conn.Close()
+
+	viewer, _ := scenarioWSDial(t, srv, "/admin/companion-cards/generate/ws", map[string]any{"attach": true})
+	snap := readCompanionGenSnapshot(t, viewer)
+	if !snap.Running || len(snap.Events) != 1 || snap.Events[0].Type != "card_start" || snap.Events[0].At == 0 {
+		t.Fatalf("snapshot = %+v, want running with the card_start that already happened", snap)
+	}
+
+	releaseJob()
+	var types []string
+	for f := range viewer.frames {
+		types = append(types, f.Type)
+	}
+	if got := strings.Join(types, ","); got != "card_done,batch_done" {
+		t.Fatalf("live frames after the snapshot = %s, want card_done,batch_done", got)
+	}
+	if got := len(botCards(t, botID)); got != 1 {
+		t.Fatalf("bot cards = %d, want 1: the job must finish although the starter disconnected", got)
+	}
+
+	late, _ := scenarioWSDial(t, srv, "/admin/companion-cards/generate/ws", map[string]any{"attach": true})
+	snap = readCompanionGenSnapshot(t, late)
+	var replay []string
+	for _, e := range snap.Events {
+		replay = append(replay, e.Type)
+	}
+	if snap.Running || strings.Join(replay, ",") != "card_start,card_done,batch_done" {
+		t.Fatalf("snapshot after the job = running %v events %v, want idle with the full record", snap.Running, replay)
+	}
+	wsExpectClosed(t, late)
+}
+
+func TestAdminGenerateCompanionCardsWS_AttachWithoutAnyJobIsIdle(t *testing.T) {
+	initTestDB(t)
+	resetCompanionGen(t)
+	srv := companionGenWSServer(t)
+
+	c, _ := scenarioWSDial(t, srv, "/admin/companion-cards/generate/ws", map[string]any{"attach": true})
+	f := wsRead(t, c)
+	if f.Type != "snapshot" || string(f.Data) != `{"running":false,"events":[]}` {
+		t.Fatalf("frame = %s %s, want an empty idle snapshot", f.Type, f.Data)
+	}
+	wsExpectClosed(t, c)
+}
+
+func TestCompanionGenState_StartingAgainDropsThePreviousRecord(t *testing.T) {
+	resetCompanionGen(t)
+	companionGen.tryStart()
+	companionGen.publish("batch_done", gin.H{"total": 1})
+	companionGen.finish()
+
+	if snap, _, _ := companionGen.subscribe(); snap.Running || len(snap.Events) != 1 {
+		t.Fatalf("snapshot = %+v, want the finished record kept", snap)
+	}
+	if !companionGen.tryStart() {
+		t.Fatal("tryStart after finish must succeed")
+	}
+	if snap, _, cancel := companionGen.subscribe(); !snap.Running || len(snap.Events) != 0 {
+		t.Fatalf("snapshot = %+v, want a fresh running record", snap)
+	} else {
+		cancel()
+	}
+	companionGen.finish()
+}
+
+// 订阅者的队列是有界的：不读帧的订阅者被踢掉（通道关闭），publish 不能被它堵住。
+func TestCompanionGenState_SlowSubscriberIsDroppedWithoutBlocking(t *testing.T) {
+	resetCompanionGen(t)
+	companionGen.tryStart()
+	t.Cleanup(companionGen.finish)
+	_, ch, cancel := companionGen.subscribe()
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range companionGenSubBuffer + 1 {
+			companionGen.publish("card_start", gin.H{})
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("publish blocked on a subscriber that does not read")
+	}
+	n := 0
+	for range ch {
+		n++
+	}
+	if n != companionGenSubBuffer {
+		t.Fatalf("slow subscriber received %d frames before the drop, want %d", n, companionGenSubBuffer)
 	}
 }

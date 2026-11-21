@@ -31,6 +31,10 @@ const (
 // scenarioJob 是校验通过后要在后台跑的任务，通过 emit 推送事件。
 type scenarioJob func(emit scenarioEmit)
 
+// scenarioWatchJob 与 scenarioJob 相同，另外拿到一个连接断开后关闭的通道：
+// 任务本身不依附连接、只是把事件转给这条连接的场景（见 admin_companion_generate.go），靠它在断开时及时退出。
+type scenarioWatchJob func(emit scenarioEmit, gone <-chan struct{})
+
 // GenerateScenarioWS 以 WebSocket 方式运行 AI 模组生成流水线，支持通过 count 批量生成。
 func GenerateScenarioWS(c *gin.Context) {
 	serveScenarioWS(c, func(raw []byte) (scenarioJob, string) {
@@ -67,6 +71,17 @@ func CompileStoryWS(c *gin.Context) {
 
 // serveScenarioWS 升级连接、读取请求帧并把任务的事件转发给客户端。parse 返回 nil 任务时，第二个返回值是拒绝原因。
 func serveScenarioWS(c *gin.Context, parse func(raw []byte) (scenarioJob, string)) {
+	serveScenarioWatchWS(c, func(raw []byte) (scenarioWatchJob, string) {
+		job, reason := parse(raw)
+		if job == nil {
+			return nil, reason
+		}
+		return func(emit scenarioEmit, _ <-chan struct{}) { job(emit) }, ""
+	})
+}
+
+// serveScenarioWatchWS 是 serveScenarioWS 的内核，任务能感知连接断开。
+func serveScenarioWatchWS(c *gin.Context, parse func(raw []byte) (scenarioWatchJob, string)) {
 	conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		wsLog.Debug("scenario ws upgrade failed", "err", err)
@@ -80,7 +95,7 @@ func serveScenarioWS(c *gin.Context, parse func(raw []byte) (scenarioJob, string
 	if err != nil {
 		return
 	}
-	var job scenarioJob
+	var job scenarioWatchJob
 	reason := "请求必须是 JSON 文本帧"
 	if msgType == websocket.TextMessage {
 		job, reason = parse(raw)
@@ -105,7 +120,7 @@ func serveScenarioWS(c *gin.Context, parse func(raw []byte) (scenarioJob, string
 		// NOTE: defer 后进先出：先关 jobDone 再关 events，写协程看到 events 关闭时 jobDone 一定已经关闭。
 		defer close(events)
 		defer close(jobDone)
-		job(emit)
+		job(emit, gone)
 	}()
 
 	readDone := make(chan struct{})

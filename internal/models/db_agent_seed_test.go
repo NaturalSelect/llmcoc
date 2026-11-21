@@ -210,6 +210,20 @@ func TestSeedDefaultAgentConfigs_SeedsCompanionInactive(t *testing.T) {
 	}
 }
 
+func TestSeedDefaultAgentConfigs_SeedsChoreInactive(t *testing.T) {
+	db := openSeedTestDB(t)
+
+	seedDefaultAgentConfigs()
+
+	var cfg AgentConfig
+	if err := db.Where("role = ?", string(AgentRoleChore)).First(&cfg).Error; err != nil {
+		t.Fatalf("chore row not seeded: %v", err)
+	}
+	if cfg.IsActive {
+		t.Error("chore should be inactive by default so character generation and other chores keep using the Writer's model until an admin binds one")
+	}
+}
+
 func TestSeedDefaultSiteSettings_SeedsLawyerSimilarityWithoutOverwriting(t *testing.T) {
 	db := openSeedTestDB(t)
 	if err := db.AutoMigrate(&SiteSetting{}); err != nil {

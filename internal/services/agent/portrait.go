@@ -1,5 +1,5 @@
-// NOTE: portrait.go 负责调查员立绘：Writer 先把外貌和当前穿戴写成画面描述，再由 Painter 出竖版全身图。
-// 立绘不属于任何房间，固定按全年龄渲染，只使用 writer 和 painter_hq，不回落 painter，也不路由到 NSFW 角色。
+// NOTE: portrait.go 负责调查员立绘：Chore（未启用时回落 Writer）先把外貌和当前穿戴写成画面描述，再由 Painter 出竖版全身图。
+// 立绘不属于任何房间，固定按全年龄渲染，只使用 chore（或回落的 writer）和 painter_hq，不回落 painter，也不路由到 NSFW 角色。
 package agent
 
 import (
@@ -27,12 +27,12 @@ const portraitSysPrompt = `
 `
 
 // GeneratePortrait 为人物卡生成立绘，返回图片 data URL。
-// 三个角色句柄先全部加载完再调用 LLM，Painter 不可用时不会白白消耗 Writer 的调用。
+// 三个角色句柄先全部加载完再调用 LLM，Painter 不可用时不会白白消耗 Chore 的调用。
 func GeneratePortrait(ctx context.Context, card *models.CharacterCard) (string, error) {
 	if card == nil {
 		return "", fmt.Errorf("character card is nil")
 	}
-	writer, err := loadSingleAgent(models.AgentRoleWriter)
+	chore, err := loadChoreAgent()
 	if err != nil {
 		return "", err
 	}
@@ -47,17 +47,17 @@ func GeneratePortrait(ctx context.Context, card *models.CharacterCard) (string, 
 			return "", fmt.Errorf("扩散模型模式需要启用 %s agent 翻译提示词: %w", models.AgentRoleDiffusionTranslator, err)
 		}
 	}
-	return generatePortraitWith(ctx, writer, painter, translator, card)
+	return generatePortraitWith(ctx, chore, painter, translator, card)
 }
 
-func generatePortraitWith(ctx context.Context, writer, painter, translator agentHandle, card *models.CharacterCard) (string, error) {
+func generatePortraitWith(ctx context.Context, chore, painter, translator agentHandle, card *models.CharacterCard) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if _, ok := painter.provider.(llm.ImageGenerator); !ok {
 		return "", fmt.Errorf("当前 %s provider 不支持图片生成", models.AgentRolePainterHQ)
 	}
-	desc, err := writeImagePromptCharacterVisualDescription(ctx, writer, "", portraitCacheSession, []models.CharacterCard{*card}, false)
+	desc, err := writeImagePromptCharacterVisualDescription(ctx, chore, "", portraitCacheSession, []models.CharacterCard{*card}, false)
 	if err != nil {
 		return "", fmt.Errorf("生成立绘描述失败: %w", err)
 	}

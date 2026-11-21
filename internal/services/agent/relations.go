@@ -174,7 +174,7 @@ func RunRelationPromotion(ctx context.Context, session *models.GameSession, mess
 		return nil
 	}
 
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadChoreAgent()
 	if err != nil {
 		alog.Warn("relation promotion agent unavailable, skipping", "err", err)
 		return nil

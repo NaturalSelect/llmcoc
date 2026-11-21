@@ -72,12 +72,12 @@ func appearanceRespondTool() scripterTool {
 	}
 }
 
-// RegenerateAppearance uses the Writer agent to produce a fresh appearance description
+// RegenerateAppearance uses the Chore agent (falls back to Writer) to produce a fresh appearance description
 // for an existing character. It queries the rulebook via the Lawyer agent (ask_lawyer tool)
 // so the description is grounded in the actual attribute-value meanings, not guesswork.
 // guidance 为玩家提供的可选外貌指导（如发色、疤痕、穿搭风格等），会拼入 prompt 供 LLM 参考。
 func RegenerateAppearance(ctx context.Context, card *models.CharacterCard, guidance string) (string, error) {
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadChoreAgent()
 	if err != nil {
 		return "", err
 	}
@@ -175,10 +175,10 @@ func RegenerateAppearance(ctx context.Context, card *models.CharacterCard, guida
 	return appearance, nil
 }
 
-// RegenerateBackstory uses the Writer agent to produce a fresh backstory
+// RegenerateBackstory uses the Chore agent (falls back to Writer) to produce a fresh backstory
 // for an existing character. guidance为可选的玩家补充要求。
 func RegenerateBackstory(ctx context.Context, card *models.CharacterCard, guidance string) (string, error) {
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadChoreAgent()
 	if err != nil {
 		return "", err
 	}
@@ -237,10 +237,10 @@ func RegenerateBackstory(ctx context.Context, card *models.CharacterCard, guidan
 	return out.Backstory, nil
 }
 
-// RegenerateTraits uses the Writer agent to produce fresh personality traits
+// RegenerateTraits uses the Chore agent (falls back to Writer) to produce fresh personality traits
 // for an existing character. guidance为可选的玩家补充要求。
 func RegenerateTraits(ctx context.Context, card *models.CharacterCard, guidance string) (string, error) {
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadChoreAgent()
 	if err != nil {
 		return "", err
 	}
@@ -352,12 +352,12 @@ func generateCharacterRespondTool() scripterTool {
 	}
 }
 
-// GenerateCharacter uses the Writer agent to fill in character backstory, appearance,
+// GenerateCharacter uses the Chore agent (falls back to Writer) to fill in character backstory, appearance,
 // traits, and optionally redistributes base stats. It queries the rulebook via the
 // Lawyer agent (ask_lawyer tool) so the appearance is grounded in the actual
 // attribute-value meanings, not guesswork.
 func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*GeneratedCharacter, error) {
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadChoreAgent()
 	if err != nil {
 		return nil, err
 	}
@@ -461,10 +461,10 @@ func GenerateCharacter(ctx context.Context, req GenerateCharacterReq) (*Generate
 	return &out, nil
 }
 
-// AdjustSkills uses the Writer agent to redistribute skill points to fit the
+// AdjustSkills uses the Chore agent (falls back to Writer) to redistribute skill points to fit the
 // character's occupation and background.
 func AdjustSkills(ctx context.Context, req AdjustSkillsReq) (map[string]int, error) {
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadChoreAgent()
 	if err != nil {
 		return nil, err
 	}

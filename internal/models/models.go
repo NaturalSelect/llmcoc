@@ -884,6 +884,9 @@ const (
 	// 查看房间并提交回应。必须绑定支持 function calling 的模型；未启用或未绑定时房间里不能添加 AI，
 	// 已在房间里的 AI 被点名则自动提交兜底行动。它不在 batchLoadAgents 里，每次运行现读配置。
 	AgentRoleCompanion AgentRole = "companion"
+	// NOTE: AgentRoleChore 承接所有借用文本模型的杂活（人物卡生成与调整、NPC/卡池取名、结算关系提升、经历改写、立绘外貌描述），
+	// 让 Writer 只负责剧情正文。未启用、未绑定或没有配置行时回落到 Writer，所以旧库升级后行为不变。它不走 batchLoadAgents 的必需角色。
+	AgentRoleChore AgentRole = "chore"
 )
 
 // LLMProviderConfig stores a named LLM API endpoint configuration.

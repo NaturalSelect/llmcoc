@@ -177,6 +177,8 @@ func AdminUpdateAgent(c *gin.Context) {
 		"dramaturg": true,
 		// NOTE: companion 是 AI 陪玩，被点名时扮演 AI 卡池里的调查员。
 		"companion": true,
+		// NOTE: chore 承接人物卡生成、取名、结算改写、立绘描述等杂活，未启用时回落到 Writer。
+		"chore": true,
 	}
 	if !validRoles[role] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent 角色"})

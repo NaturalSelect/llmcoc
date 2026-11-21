@@ -46,6 +46,55 @@ describe('createCompanionGenHandler', () => {
     ])
     expect(handler.batchDone).toBeNull()
   })
+
+  test('snapshot：先通知页面，再按原时间回放历史事件，并记下汇总', () => {
+    const order: string[] = []
+    const lines: [string, number | undefined][] = []
+    const handler = createCompanionGenHandler(
+      (line, at) => {
+        order.push('log')
+        lines.push([line, at])
+      },
+      { onSnapshot: (snap) => order.push(`snapshot:${snap.running}`) },
+    )
+    handler.onEvent(
+      'snapshot',
+      JSON.stringify({
+        running: false,
+        events: [
+          { type: 'card_start', data: { index: 1, name: '陈守拙', occupation: '记者', gender: '男', age: 31 }, at: 1000 },
+          { type: 'card_error', data: { index: 1, name: '陈守拙', message: '模型超时' }, at: 2000 },
+          { type: 'batch_done', data: { total: 1, succeeded: 0, failed: 1 }, at: 3000 },
+        ],
+      }),
+    )
+    expect(order).toStrictEqual(['snapshot:false', 'log', 'log'])
+    expect(lines).toStrictEqual([
+      ['第 1 张开始生成：陈守拙（男，31 岁，记者）', 1000],
+      ['第 1 张失败：陈守拙，模型超时', 2000],
+    ])
+    expect(handler.batchDone).toStrictEqual({ total: 1, succeeded: 0, failed: 1 })
+    expect(handler.snapshot?.running).toBe(false)
+  })
+
+  test('没有收到 snapshot 时 snapshot 为 null；畸形 snapshot 被忽略', () => {
+    const { handler, lines } = run([['card_done', '{"index":1,"name":"陈守拙","occupation":"记者"}']])
+    expect(handler.snapshot).toBeNull()
+    expect(lines).toHaveLength(1)
+
+    for (const bad of ['oops', 'null', '{"running":true}', '{"running":true,"events":null}']) {
+      handler.onEvent('snapshot', bad)
+    }
+    expect(handler.snapshot).toBeNull()
+    expect(lines).toHaveLength(1)
+  })
+
+  test('snapshot 里嵌套的 snapshot 不会递归处理', () => {
+    const calls: boolean[] = []
+    const handler = createCompanionGenHandler(() => {}, { onSnapshot: (s) => calls.push(s.running) })
+    handler.onEvent('snapshot', JSON.stringify({ running: true, events: [{ type: 'snapshot', data: { running: false, events: [] } }] }))
+    expect(calls).toStrictEqual([true])
+  })
 })
 
 describe('summarizeCompanionGen', () => {

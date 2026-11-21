@@ -72,6 +72,14 @@ beforeEach(() => {
   routes = {}
   vi.unstubAllGlobals()
   stubFetch()
+  // NOTE: 批量生成面板挂载时会 attach 一条 WebSocket；这里的假连接永不打开，免得走到 jsdom 的真实连接
+  vi.stubGlobal(
+    'WebSocket',
+    class {
+      send() {}
+      close() {}
+    },
+  )
 })
 
 describe('CompanionPoolTab', () => {

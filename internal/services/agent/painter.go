@@ -132,7 +132,7 @@ const imagePromptCharacterVisualSystemPrompt = `你是 Writer 代理，负责为
 
 func writeImagePromptCharacterVisualDescription(ctx context.Context, h agentHandle, scenePrompt string, sessionID string, cards []models.CharacterCard, nsfw bool) (string, error) {
 	if !h.isEnabled() {
-		return "", fmt.Errorf("writer agent unavailable")
+		return "", fmt.Errorf("chore agent unavailable")
 	}
 	msgs := []llm.ChatMessage{
 		{Role: "system", Content: h.systemPrompt(renderNSFW(imagePromptCharacterVisualSystemPrompt, nsfw))},

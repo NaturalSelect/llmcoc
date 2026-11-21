@@ -24,6 +24,8 @@ export const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
   writer: { max_tokens: 800, temperature: 0.85 },
   // NOTE: writer_nsfw 仅在房间开启NSFW且本轮被标记为色情内容时启用，默认关闭。
   writer_nsfw: { max_tokens: 800, temperature: 0.85, is_active: false },
+  // NOTE: chore 承接人物卡生成与调整、取名、结算改写、立绘外貌描述等杂活，让 Writer 只写剧情正文；默认关闭，未启用时回落到 Writer。
+  chore: { max_tokens: 2200, temperature: 0.7, is_active: false },
   lawyer: { max_tokens: 800, temperature: 0.3 },
   painter: { max_tokens: 0, temperature: 0, model_name: 'dall-e-3', thinking_level: 'none', is_active: false },
   // NOTE: painter_nsfw 仅在 Writer 把配图标记为 nsfw=true 时启用，默认关闭；未启用时这类配图请求会被拒绝。
@@ -62,6 +64,7 @@ const ROLE_LABELS: Record<string, string> = {
   director: '🎬 Director',
   writer: '✍️ Writer',
   writer_nsfw: '🔞 NSFW Writer',
+  chore: '🧹 Chore',
   lawyer: '⚖️ Lawyer',
   painter: '🎨 Painter',
   painter_nsfw: '🔞 NSFW Painter',
@@ -82,6 +85,7 @@ const ROLE_DESCS: Record<string, string> = {
   director: '场景导演 — 决策工具调用序列',
   writer: '叙事撰写 — 生成面向玩家的克苏鲁叙述（流式输出），并在正文里通过 paint 工具配图；会看到 Director 的完整上下文，需选支持工具调用的模型',
   writer_nsfw: '成人向叙事 — 仅在房间开启NSFW且本轮被标记为色情内容时启用；未配置或关闭时自动回落默认 Writer（默认关闭）；同样需选支持工具调用的模型',
+  chore: '杂活 — 人物卡生成与调整、剧中角色和 AI 卡池取名、结算时的关系提升与个人经历改写、立绘外貌描述，让 Writer 只写剧情正文；人物卡生成和外貌重生成要用工具调用，需选支持 function calling 的模型；未配置、未启用或未绑定 provider 时回落到 Writer（默认关闭）',
   lawyer: '规则顾问 — 查阅规则书提供裁决依据',
   painter: '画图代理 — 按 Writer 写正文时的 paint 调用生成配图，插入正文（默认关闭）',
   painter_nsfw: '成人向画图 — Writer 把配图标记为 nsfw=true 时只路由到它；未启用时这类配图请求会被直接拒绝，不回落默认 Painter（默认关闭）',

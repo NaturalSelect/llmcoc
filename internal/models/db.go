@@ -257,13 +257,16 @@ func seedDefaultAgentConfigs() {
 		{Role: AgentRoleDramaturg, ProviderConfigID: provID, ModelName: model, MaxTokens: 500, Temperature: 0.5, ThinkingLevel: "low", IsActive: false},
 		// NOTE: companion 默认关闭，需要管理员绑定支持 function calling 的模型；未启用时房间里不能添加 AI 陪玩。
 		{Role: AgentRoleCompanion, ProviderConfigID: provID, ModelName: model, MaxTokens: 1500, Temperature: 0.7, ThinkingLevel: "low", IsActive: false},
+		// NOTE: chore 默认关闭：播种出来的行绑的是第一个 provider 加 gpt-4o，直接启用会悄悄换掉人物卡生成等功能原来用的 Writer 模型；
+		// 未启用时这些杂活回落到 Writer，管理员绑定后再启用。
+		{Role: AgentRoleChore, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.7, ThinkingLevel: "low", IsActive: false},
 	}
 	for _, ag := range required {
 		var existing AgentConfig
 		if DB.Where("role = ?", ag.Role).First(&existing).Error != nil {
 			DB.Create(&ag)
 			// NOTE: IsActive 带 default:true，Create 会把零值 false 换成 true，需要显式回写才能真正默认关闭。
-			if ag.Role == AgentRolePainterHQ || ag.Role == AgentRoleEmbedding || ag.Role == AgentRoleSystemOne || ag.Role == AgentRoleCompanion {
+			if ag.Role == AgentRolePainterHQ || ag.Role == AgentRoleEmbedding || ag.Role == AgentRoleSystemOne || ag.Role == AgentRoleCompanion || ag.Role == AgentRoleChore {
 				DB.Model(&ag).Update("is_active", false)
 			}
 		}

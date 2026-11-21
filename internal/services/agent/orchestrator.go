@@ -111,6 +111,23 @@ func loadSingleAgent(role models.AgentRole) (agentHandle, error) {
 	return h, nil
 }
 
+// loadChoreAgent 加载杂活用的句柄：优先 Chore，未配置、未启用或未绑定可用 provider 时回落到 Writer。
+// 两者都不可用时返回 Writer 的错误。
+func loadChoreAgent() (agentHandle, error) {
+	if h, err := loadSingleAgent(models.AgentRoleChore); err == nil {
+		return h, nil
+	}
+	return loadSingleAgent(models.AgentRoleWriter)
+}
+
+// choreHandle 从已批量加载的句柄里取杂活用的句柄，回落规则同 loadChoreAgent；回落后仍可能是未启用的零值句柄。
+func choreHandle(handles map[models.AgentRole]agentHandle) agentHandle {
+	if h := handles[models.AgentRoleChore]; h.isEnabled() {
+		return h
+	}
+	return handles[models.AgentRoleWriter]
+}
+
 // batchLoadAgents fetches all AgentConfigs in a single DB query.
 // Disabled optional agents are returned as disabled handles; disabled required
 // agents still fail fast so the core pipeline does not run with nil providers.
@@ -127,7 +144,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 		models.AgentRoleDirector,
 		models.AgentRoleWriter,
 		models.AgentRoleWriterNSFW,
-		models.AgentRoleLawyer,
+		models.AgentRoleChore,
 		models.AgentRolePainter,
 		models.AgentRolePainterNSFW,
 		models.AgentRoleDiffusionTranslator,

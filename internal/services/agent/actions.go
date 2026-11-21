@@ -214,13 +214,13 @@ func (destroyNPCAction) Execute(call ToolCall, actx ActionContext) []ToolResult 
 }
 
 // NOTE: generate_npc_name 只返回姓名、不落库；已被调查员、临时NPC和模组NPC占用的姓名不会再发放。
-// 中日文姓名由 Writer 角色的模型现场创作，失败时回退静态姓名池。
+// 中日文姓名由 Chore 角色的模型现场创作（未启用时回落 Writer），失败时回退静态姓名池。
 type generateNPCNameAction struct{}
 
 func (generateNPCNameAction) Execute(call ToolCall, actx ActionContext) []ToolResult {
 	args := generateNPCNameArgs{Culture: call.Culture, Gender: call.Gender, Count: call.Count}
 	used := sessionTakenNames(actx.GCtx, *actx.TempNPCs)
-	names, err := pickNPCNames(actx.Ctx, actx.Handles[models.AgentRoleWriter], fmt.Sprint(actx.Sid), args, used)
+	names, err := pickNPCNames(actx.Ctx, choreHandle(actx.Handles), fmt.Sprint(actx.Sid), args, used)
 	if err != nil {
 		return []ToolResult{{Action: ToolGenerateNPCName, Result: "SYSTEM REJECT: " + err.Error()}}
 	}

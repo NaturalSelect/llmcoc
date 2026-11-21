@@ -1,4 +1,4 @@
-// NOTE: backstory.go 实现胜利结算时的「个人经历演变」：房间开启 EvolveBackstory 后，由 Writer 的 Provider
+// NOTE: backstory.go 实现胜利结算时的「个人经历演变」：房间开启 EvolveBackstory 后，由 Chore（未启用时回落 Writer）的 Provider
 // 一次调用为全部存活调查员改写个人经历。尽力而为，任何一步失败都保持原经历不变，不影响结算。
 package agent
 
@@ -42,9 +42,9 @@ type backstoryEvolutionLLMOutput struct {
 var backstoryEvolver = RunBackstoryEvolution
 
 // RunBackstoryEvolution 返回「角色名 → 新个人经历」，只包含确实被改写的存活调查员。
-// Writer agent 未配置、LLM 调用或 JSON 解析失败时返回 nil。
+// Chore agent（未启用时回落 Writer）未配置、LLM 调用或 JSON 解析失败时返回 nil。
 func RunBackstoryEvolution(ctx context.Context, session *models.GameSession, messages []models.Message) map[string]string {
-	handle, err := loadSingleAgent(models.AgentRoleWriter)
+	handle, err := loadChoreAgent()
 	if err != nil {
 		alog.Warn("backstory evolution agent unavailable, skipping", "err", err)
 		return nil

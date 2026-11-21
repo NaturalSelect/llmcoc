@@ -27,8 +27,8 @@ var companionNameGenders = map[string]string{
 // PickCompanionCardName 为 AI 陪玩的人物卡取一个中文姓名；gender 取 models.GenderMale / GenderFemale。
 // used 里的姓名（小写归一化）不会再发放，取到的姓名由调用方登记。
 func PickCompanionCardName(ctx context.Context, gender string, used map[string]bool) (string, error) {
-	// NOTE: Writer 不可用时 handle 是零值，取名自动退回静态姓名池，不算错误。
-	handle, _ := loadSingleAgent(models.AgentRoleWriter)
+	// NOTE: Chore 和 Writer 都不可用时 handle 是零值，取名自动退回静态姓名池，不算错误。
+	handle, _ := loadChoreAgent()
 	return pickCompanionCardName(ctx, handle, gender, used)
 }
 
