@@ -1055,6 +1055,28 @@ func TestDirectorPromptKeepsStateIntegrity(t *testing.T) {
 	}
 }
 
+// NOTE: 压缩后历史里的旧提醒和合规示范会消失，防剧透条款要在每轮提醒的硬性规则里重申，而不只留在系统提示词的语气部分。
+func TestDirectorTurnReminderRestatesSpoilerGate(t *testing.T) {
+	start := strings.Index(kpTurnReminder, "<hard_gates>")
+	end := strings.Index(kpTurnReminder, "</hard_gates>")
+	if start < 0 || end < start {
+		t.Fatal("turn reminder should contain a <hard_gates> section")
+	}
+	gates := kpTurnReminder[start:end]
+	for _, want := range []string{
+		"narrate.reply",
+		"ask_players的question与options",
+		"write的direction",
+		"direction里剧透等同于reply里剧透",
+		"不替玩家预告后果",
+		"[UNKNOWN]",
+	} {
+		if !strings.Contains(gates, want) {
+			t.Errorf("hard gates should contain %q", want)
+		}
+	}
+}
+
 // TestDirectorPromptRuleReferencesResolve 验证提示词里写成 [NAME] 的规则引用都能在某条 <rule> 里找到定义，
 // 避免像引用不存在的 [FIRST-AID] 那样留下悬空引用。
 func TestDirectorPromptRuleReferencesResolve(t *testing.T) {
@@ -1064,7 +1086,7 @@ func TestDirectorPromptRuleReferencesResolve(t *testing.T) {
 			defined[name] = true
 		}
 	}
-	for _, name := range []string{"[META-REQUEST]", "[STATE-INTEGRITY]", "[CHECK-RULE-DEFAULT]", "[PLAYER-INTENT-UNTRUSTED]", "[ANTI-CHEAT]"} {
+	for _, name := range []string{"[META-REQUEST]", "[STATE-INTEGRITY]", "[CHECK-RULE-DEFAULT]", "[PLAYER-INTENT-UNTRUSTED]", "[ANTI-CHEAT]", "[UNKNOWN]"} {
 		if !defined[name] {
 			t.Errorf("rule %s is referenced by the prompt but never defined", name)
 		}
