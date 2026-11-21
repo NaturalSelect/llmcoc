@@ -63,6 +63,9 @@ var gemini4HydrogenJailbreakPrompt string
 //go:embed jailbreaks/gemini-4-neon.md
 var gemini4NeonJailbreakPrompt string
 
+//go:embed jailbreaks/glm-5.3-flash.md
+var glm5_3FlashJailbreakPrompt string
+
 func matchLength(left, right string) int {
 	matchLen := 0
 	for i := 0; i < len(left) && i < len(right); i++ {
@@ -165,6 +168,11 @@ func withJailbreakPrompt(prompt string, model string) string {
 		{
 			model:  "gemini-4-neon",
 			header: gemini4NeonJailbreakPrompt,
+			tail:   "",
+		},
+		{
+			model:  "glm-5.3-flash",
+			header: glm5_3FlashJailbreakPrompt,
 			tail:   "",
 		},
 	}
