@@ -145,6 +145,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 		models.AgentRoleWriter,
 		models.AgentRoleWriterNSFW,
 		models.AgentRoleChore,
+		models.AgentRoleLawyer,
 		models.AgentRolePainter,
 		models.AgentRolePainterNSFW,
 		models.AgentRoleDiffusionTranslator,

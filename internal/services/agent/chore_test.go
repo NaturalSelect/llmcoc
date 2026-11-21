@@ -145,3 +145,47 @@ func TestGenerateNPCNameActionPrefersChore(t *testing.T) {
 		t.Fatalf("Writer 的 provider 被调用了 %d 次，想要 0 次", writerProv.calls)
 	}
 }
+
+func batchLoadTestDB(t *testing.T, roles ...models.AgentRole) {
+	t.Helper()
+	initSiteSettingTestDB(t)
+	if err := models.DB.AutoMigrate(&models.LLMProviderConfig{}, &models.AgentConfig{}); err != nil {
+		t.Fatalf("auto-migrate: %v", err)
+	}
+	prov := models.LLMProviderConfig{Name: "p", Provider: "custom", BaseURL: "http://127.0.0.1:1", IsActive: true}
+	if err := models.DB.Create(&prov).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	for _, role := range roles {
+		cfg := models.AgentConfig{Role: role, ProviderConfigID: &prov.ID, ModelName: "m", IsActive: true}
+		if err := models.DB.Create(&cfg).Error; err != nil {
+			t.Fatalf("create %s: %v", role, err)
+		}
+	}
+}
+
+// TestBatchLoadAgentsLoadsEveryRole 守住批量加载结果里有 Director、Lawyer、Writer 和 Chore：
+// 漏掉 Lawyer 时 check_rule 等规则查询拿到的是空句柄。
+func TestBatchLoadAgentsLoadsEveryRole(t *testing.T) {
+	want := []models.AgentRole{models.AgentRoleDirector, models.AgentRoleLawyer, models.AgentRoleWriter, models.AgentRoleChore}
+	batchLoadTestDB(t, want...)
+
+	handles, err := batchLoadAgents()
+	if err != nil {
+		t.Fatalf("batchLoadAgents: %v", err)
+	}
+	for _, role := range want {
+		if h, ok := handles[role]; !ok || !h.isEnabled() {
+			t.Errorf("handles[%s] enabled = %v (present %v), want enabled", role, h.isEnabled(), ok)
+		}
+	}
+}
+
+// TestBatchLoadAgentsRequiresLawyer 验证缺少 Lawyer 配置时整体加载失败，而不是悄悄返回没有 Lawyer 的结果。
+func TestBatchLoadAgentsRequiresLawyer(t *testing.T) {
+	batchLoadTestDB(t, models.AgentRoleDirector, models.AgentRoleWriter)
+
+	if _, err := batchLoadAgents(); err == nil {
+		t.Fatal("batchLoadAgents() err = nil, want error when lawyer is not configured")
+	}
+}
