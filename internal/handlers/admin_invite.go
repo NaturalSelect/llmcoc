@@ -69,6 +69,15 @@ func AdminUpdateSiteSetting(c *gin.Context) {
 		}
 		body.Value = strings.TrimSpace(body.Value)
 	}
+	if key == "nsfw_route_threshold" {
+		// NOTE: 阈值作用在两项性内容概率之和上，0 以下会让所有输入都改用 NSFW Director、1 以上永不切换；非法值落库后会被运行时静默回落默认值，这里提前拒绝。
+		v, err := strconv.ParseFloat(strings.TrimSpace(body.Value), 64)
+		if err != nil || math.IsNaN(v) || v <= 0 || v > 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "NSFW 路由阈值必须是大于 0 且不超过 1 的数字"})
+			return
+		}
+		body.Value = strings.TrimSpace(body.Value)
+	}
 	if key == "session_retention_days" {
 		// NOTE: 非法值会被运行时静默回落默认值，这里提前拒绝；0 表示关闭自动回收。
 		v, err := strconv.Atoi(strings.TrimSpace(body.Value))

@@ -5,6 +5,7 @@ import CostSettingsCard from '@/components/admin/settings/CostSettingsCard.vue'
 import InputGuardThresholdCard from '@/components/admin/settings/InputGuardThresholdCard.vue'
 import InviteCodesCard from '@/components/admin/settings/InviteCodesCard.vue'
 import LawyerSimilarityCard from '@/components/admin/settings/LawyerSimilarityCard.vue'
+import NSFWRouteThresholdCard from '@/components/admin/settings/NSFWRouteThresholdCard.vue'
 import SessionMaintenanceCard from '@/components/admin/settings/SessionMaintenanceCard.vue'
 import SiteToggleCard from '@/components/admin/settings/SiteToggleCard.vue'
 import { useSiteSettings } from '@/components/admin/settings/useSiteSettings'
@@ -21,6 +22,8 @@ const {
   saveSimilarity,
   setInputGuardThreshold,
   saveInputGuardThreshold,
+  setNSFWRouteThreshold,
+  saveNSFWRouteThreshold,
   saveBalanceRules,
   endAllSessions,
 } = useSiteSettings()
@@ -35,6 +38,7 @@ onMounted(() => run(load))
     <CostSettingsCard :settings="settings" @set="setCost" @save="saveCost" />
     <LawyerSimilarityCard :settings="settings" @set="setSimilarity" @save="saveSimilarity" />
     <InputGuardThresholdCard :settings="settings" @set="setInputGuardThreshold" @save="saveInputGuardThreshold" />
+    <NSFWRouteThresholdCard :settings="settings" @set="setNSFWRouteThreshold" @save="saveNSFWRouteThreshold" />
     <BalanceRulesCard v-model="settings.balance_rules" @save="saveBalanceRules" />
     <InviteCodesCard />
   </div>

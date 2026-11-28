@@ -189,6 +189,25 @@ func flattenTranscriptTurns(turns []models.TranscriptTurn) []llm.ChatMessage {
 	return out
 }
 
+// flattenHistory 在 flattenTranscriptTurns 之上按 StripForeignReasoning 去掉别的 Director 角色单元的推理。
+func (c *ContextManager) flattenHistory(turns []models.TranscriptTurn) []llm.ChatMessage {
+	out := flattenTranscriptTurns(turns)
+	if !c.opts.StripForeignReasoning {
+		return out
+	}
+	i := 0
+	for _, t := range turns {
+		if t.Agent != c.opts.Agent {
+			for j := i; j < i+len(t.Messages); j++ {
+				out[j].Reasoning = ""
+				out[j].ReasoningBlocks = nil
+			}
+		}
+		i += len(t.Messages)
+	}
+	return out
+}
+
 // ContextOptions 配置 ContextManager 的用量阈值与裁剪策略。Window 是模型上下文窗口
 // 的 token 数，Window<=0 表示历史无限增长、永不裁剪。所有 agent 统一按 token 判断：
 // Director 从 ChatWithTools 的返回值拿 Usage，Writer/Dramaturg/NPC 通过
@@ -199,6 +218,11 @@ type ContextOptions struct {
 	Strategy TrimStrategy
 	// Summary 只在 TrimSummarize 下用，决定怎么切分、渲染和包裹总结；nil 是 Director 的。
 	Summary *summaryFormat
+	// Agent 写进本次运行新落库单元的 TranscriptTurn.Agent，空串不打标；只有 Director 的转录使用。
+	Agent string
+	// StripForeignReasoning 打开时，历史里 Agent 标记与本次 Agent 不同的单元展开时去掉推理内容：
+	// 推理签名绑定在产生它的模型上，换了另一个 Director 角色就不能原样回放。
+	StripForeignReasoning bool
 }
 
 // TrimStrategy 选择 ContextManager 超过用量阈值后的裁剪方式。
@@ -260,6 +284,28 @@ func LoadContext(sessionID uint, agentKey string, head []llm.ChatMessage, opts C
 	return cm
 }
 
+// Configure 在 LoadContext 之后设置 head 和选项，必须在 Build / MaybeCompact 之前调用。
+// Director 要先读到转录才知道上个周期由谁执行、本周期该选哪个角色，所以 head 和选项只能延后给。
+func (c *ContextManager) Configure(head []llm.ChatMessage, opts ContextOptions) {
+	c.head = head
+	c.opts = opts
+}
+
+// LastAgent 返回最近一个非总结单元的 Director 角色；没有单元或旧数据没有标记时是 director。
+func (c *ContextManager) LastAgent() models.AgentRole {
+	for i := len(c.data.Turns) - 1; i >= 0; i-- {
+		t := c.data.Turns[i]
+		if t.Kind == "summary" {
+			continue
+		}
+		if t.Agent == "" {
+			break
+		}
+		return models.AgentRole(t.Agent)
+	}
+	return models.AgentRoleDirector
+}
+
 // NextSeq 返回下一次调用应该使用的回合序号，供调用方写进本轮 opening 消息里(如
 // Director 的 <player_turn seq=N>)标识"最新一轮"。不能用 GameSession.TurnRound 代替：
 // 同一个 TurnRound 内可能有多次调用(如战斗/追逐一个回合内多名参与者各自触发一次
@@ -290,7 +336,7 @@ func (c *ContextManager) IsEmpty() bool {
 func (c *ContextManager) Build(opening ...llm.ChatMessage) []llm.ChatMessage {
 	c.headLen = len(c.head)
 	c.historyTurns = len(c.data.Turns)
-	historyMsgs := flattenTranscriptTurns(c.data.Turns)
+	historyMsgs := c.flattenHistory(c.data.Turns)
 	c.historyLen = len(historyMsgs)
 
 	msgs := make([]llm.ChatMessage, 0, c.headLen+c.historyLen+len(opening))
@@ -348,7 +394,7 @@ func (c *ContextManager) trimIfNeeded(msgs []llm.ChatMessage, usage llm.Usage) (
 // historyLen/turnStart。丢弃整轮和总结替换前缀之后轮内消息数都会变，只有整段重建才能保证
 // 正确性，不能像"减去消息数"那样在原 msgs 上做局部拼接。
 func (c *ContextManager) rebuild(msgs []llm.ChatMessage) []llm.ChatMessage {
-	hist := flattenTranscriptTurns(c.data.Turns[:c.historyTurns])
+	hist := c.flattenHistory(c.data.Turns[:c.historyTurns])
 	out := make([]llm.ChatMessage, 0, c.headLen+len(hist)+(len(msgs)-c.turnStart))
 	out = append(out, msgs[:c.headLen]...)
 	out = append(out, hist...)
@@ -512,6 +558,7 @@ func (c *ContextManager) appendUnit(round int, msgs []llm.ChatMessage, cut int, 
 		Floor:    c.floor,
 		Unit:     c.unit,
 		Kind:     kind,
+		Agent:    c.opts.Agent,
 		Messages: llmMsgsToTranscript(msgs[c.turnStart:cut]),
 	})
 	c.historyTurns++

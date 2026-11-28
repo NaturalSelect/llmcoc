@@ -21,6 +21,8 @@ export interface RoleDefaults {
 // NOTE: 键的顺序就是「库里缺行时」追加到界面末尾的顺序，不要随意重排
 export const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
   director: { max_tokens: 1500, temperature: 0.7, context_window: 0 },
+  // NOTE: director_nsfw 与 Director 共用提示词、工具和转录，仅在房间开启NSFW且周期前分类判定可能涉及色情内容时代替 Director，默认关闭；未启用时一律由 Director 执行。
+  director_nsfw: { max_tokens: 1500, temperature: 0.7, context_window: 0, is_active: false },
   writer: { max_tokens: 800, temperature: 0.85 },
   // NOTE: writer_nsfw 仅在房间开启NSFW且本轮被标记为色情内容时启用，默认关闭。
   writer_nsfw: { max_tokens: 800, temperature: 0.85, is_active: false },
@@ -62,6 +64,7 @@ const FALLBACK_DEFAULTS: RoleDefaults = { max_tokens: 1024, temperature: 0.7 }
 
 const ROLE_LABELS: Record<string, string> = {
   director: '🎬 Director',
+  director_nsfw: '🔞 NSFW Director',
   writer: '✍️ Writer',
   writer_nsfw: '🔞 NSFW Writer',
   chore: '🧹 Chore',
@@ -83,6 +86,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 const ROLE_DESCS: Record<string, string> = {
   director: '场景导演 — 决策工具调用序列',
+  director_nsfw: '成人向导演 — 仅在房间开启NSFW，且周期开始前由 System One 分类判定本周期可能涉及色情内容时，代替 Director 执行；与 Director 共用提示词、工具和记忆；需要同时启用 systemone 才会生效；未启用时一律由 Director 执行（默认关闭）；上下文窗口按本角色所绑模型单独填写',
   writer: '叙事撰写 — 生成面向玩家的克苏鲁叙述（流式输出），并在正文里通过 paint 工具配图；会看到 Director 的完整上下文，需选支持工具调用的模型',
   writer_nsfw: '成人向叙事 — 仅在房间开启NSFW且本轮被标记为色情内容时启用；未配置或关闭时自动回落默认 Writer（默认关闭）；同样需选支持工具调用的模型',
   chore: '杂活 — 人物卡生成与调整、剧中角色和 AI 卡池取名、结算时的关系提升与个人经历改写、立绘外貌描述，让 Writer 只写剧情正文；人物卡生成和外貌重生成要用工具调用，需选支持 function calling 的模型；未配置、未启用或未绑定 provider 时回落到 Writer（默认关闭）',
@@ -99,7 +103,7 @@ const ROLE_DESCS: Record<string, string> = {
   // NOTE: dramaturg — 剧构顾问，Director按需咨询，输入经脱敏处理不含玩家原始数据，只给建议不操作游戏状态（默认关闭）
   dramaturg: '剧构顾问 — Director按需咨询，输入已脱敏不含玩家数据，给出节奏与走向建议（默认关闭）',
   embedding: '语义检索 — Lawyer 规则缓存的向量检索；只支持 OpenAI 兼容的 /embeddings 接口（Anthropic 类型不支持），如 text-embedding-3-small；未启用时退回标签匹配；换模型后已有缓存向量会在后台重算（默认关闭）',
-  systemone: '输入分类 — 玩家提交前由 System One 分类器（TypeSafe 的 Jev，或经 new-api 网关转发的 gemini-decision-1）判断是否在自称作者或管理员、索要谜底或注入提示词，命中则拒收该输入；玩家输入正文会发送给第三方；未启用或调用失败时直接放行（默认关闭）。直连 TypeSafe：API Key 填 TypeSafe 的 Key，Base URL 留空，模型填 jev-latest；经 new-api 网关：API Key 填网关令牌，Base URL 填网关根地址，末尾的 /v1 会被自动去掉，所以可以和聊天角色共用同一个 Provider（http 也可以，但 Key 和玩家输入会明文传输，只应在内网使用），模型填 gemini-decision-1',
+  systemone: '输入分类 — 由 System One 分类器（TypeSafe 的 Jev，或经 new-api 网关转发的 gemini-decision-1）承担两项分类：玩家提交前判断是否在自称作者或管理员、索要谜底或注入提示词，命中则拒收该输入；Director 运行前判断本周期是否可能涉及色情内容，用于切换到 director_nsfw；玩家行动、KP 的公开发言和调查员已装备物品会发送给第三方；未启用时不分类，调用失败时输入放行、Director 沿用上个周期的角色（默认关闭）。直连 TypeSafe：API Key 填 TypeSafe 的 Key，Base URL 留空，模型填 jev-latest；经 new-api 网关：API Key 填网关令牌，Base URL 填网关根地址，末尾的 /v1 会被自动去掉，所以可以和聊天角色共用同一个 Provider（http 也可以，但 Key 和玩家输入会明文传输，只应在内网使用），模型填 gemini-decision-1',
   companion: 'AI 陪玩 — 房主可以从 AI 卡池里挑一张卡加入房间，KP 点到它时由这个角色在 ReAct 循环里查看房间并提交回应；必须绑定支持 function calling 的模型；未启用时房间里不能添加 AI，已在房间里的 AI 则每次自动提交一条兜底行动（默认关闭）',
 }
 

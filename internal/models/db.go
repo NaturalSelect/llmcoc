@@ -140,6 +140,8 @@ func seedDefaultSiteSettings() {
 		"lawyer_cache_min_similarity": DefaultLawyerCacheMinSimilarity,
 		// NOTE: 玩家输入越权分类的拦截阈值，仅在启用 systemone 角色后生效；合法范围 (0, 1]。
 		"input_guard_block_threshold": DefaultInputGuardBlockThreshold,
+		// NOTE: director_nsfw 路由的切换阈值，仅在启用 director_nsfw 与 systemone 角色且房间开启 NSFW 后生效；合法范围 (0, 1]。
+		"nsfw_route_threshold": DefaultNSFWRouteThreshold,
 		// NOTE: 已结束房间的保留天数，按结束时间（updated_at）计算，0 表示不自动回收；被收藏的房间永不回收。
 		"session_retention_days": "30",
 	}
@@ -230,6 +232,8 @@ func seedDefaultAgentConfigs() {
 	// Ensure each active agent has a config row (upsert-style: create only if missing).
 	required := []AgentConfig{
 		{Role: AgentRoleDirector, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true, WithJailbreak: true},
+		// NOTE: director_nsfw 默认关闭，需要管理员单独绑定 provider 才会被路由；未启用时一律由 Director 执行。参数与 Director 相同。
+		{Role: AgentRoleDirectorNSFW, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: false, WithJailbreak: true},
 		{Role: AgentRoleArchitect, ProviderConfigID: provID, ModelName: model, MaxTokens: 4000, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleQAGuard, ProviderConfigID: provID, ModelName: model, MaxTokens: 2200, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
 		{Role: AgentRoleWriter, ProviderConfigID: provID, ModelName: model, MaxTokens: 1800, Temperature: 0.5, ThinkingLevel: "low", IsActive: true},
@@ -266,7 +270,7 @@ func seedDefaultAgentConfigs() {
 		if DB.Where("role = ?", ag.Role).First(&existing).Error != nil {
 			DB.Create(&ag)
 			// NOTE: IsActive 带 default:true，Create 会把零值 false 换成 true，需要显式回写才能真正默认关闭。
-			if ag.Role == AgentRolePainterHQ || ag.Role == AgentRoleEmbedding || ag.Role == AgentRoleSystemOne || ag.Role == AgentRoleCompanion || ag.Role == AgentRoleChore {
+			if ag.Role == AgentRolePainterHQ || ag.Role == AgentRoleEmbedding || ag.Role == AgentRoleSystemOne || ag.Role == AgentRoleCompanion || ag.Role == AgentRoleChore || ag.Role == AgentRoleDirectorNSFW {
 				DB.Model(&ag).Update("is_active", false)
 			}
 		}

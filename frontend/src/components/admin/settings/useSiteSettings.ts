@@ -101,6 +101,26 @@ export function useSiteSettings() {
     }
   }
 
+  // NOTE: 同 setInputGuardThreshold：输入框清空时会得到空字符串，非法值由 saveNSFWRouteThreshold 拦住
+  function setNSFWRouteThreshold(v: unknown): void {
+    settings.nsfw_route_threshold = v as number
+  }
+
+  // NOTE: 范围与输入分类拦截阈值相同，直接复用 inputGuardThresholdToSubmit
+  async function saveNSFWRouteThreshold(): Promise<void> {
+    const val = inputGuardThresholdToSubmit(settings.nsfw_route_threshold)
+    if (val === null) {
+      ui.toast(`NSFW 路由阈值需为大于 0 且不超过 ${INPUT_GUARD_THRESHOLD_MAX} 的数字`, 'error')
+      return
+    }
+    try {
+      await put('nsfw_route_threshold', val)
+      ui.toast('NSFW 路由阈值已保存')
+    } catch (e) {
+      ui.toast(errMsg(e), 'error')
+    }
+  }
+
   async function saveBalanceRules(): Promise<void> {
     const val = settings.balance_rules || ''
     if (balanceRulesLength(val) > BALANCE_RULES_MAX) {
@@ -140,6 +160,8 @@ export function useSiteSettings() {
     saveSimilarity,
     setInputGuardThreshold,
     saveInputGuardThreshold,
+    setNSFWRouteThreshold,
+    saveNSFWRouteThreshold,
     saveBalanceRules,
     endAllSessions,
   }

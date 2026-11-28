@@ -135,6 +135,7 @@ export interface SiteSettings {
   balance_rules: string
   lawyer_cache_min_similarity: number
   input_guard_block_threshold: number
+  nsfw_route_threshold: number
 }
 
 export interface InviteCode {

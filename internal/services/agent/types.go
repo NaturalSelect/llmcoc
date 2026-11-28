@@ -43,6 +43,8 @@ type GameContext struct {
 	AskedQuestion string
 	// SkippedNames 只在host_continue时填充:被点名但没有回应、本段被跳过的调查员名。
 	SkippedNames []string
+	// DirectorRole 是本周期实际执行的 Director 角色，由 run() 在 NSFW 分类之后写入，随 snapshotGameContext 带给 Writer；空值按 director。
+	DirectorRole models.AgentRole
 }
 
 // KPFloor 取值。

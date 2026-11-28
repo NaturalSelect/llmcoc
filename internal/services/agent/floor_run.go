@@ -303,13 +303,27 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 	var tempNPCs []models.SessionNPC
 	models.DB.Where("session_id = ?", sid).Find(&tempNPCs)
 
-	director := handles[models.AgentRoleDirector]
+	// NOTE: 要先读到转录才知道上个周期由哪个 Director 执行，所以 head 和选项等角色选定后才通过 Configure 给。
+	cm := LoadContext(sid, "director", nil, ContextOptions{})
+	role := pickDirectorRole(ctx, gctx, handles, cm.LastAgent())
+	gctx.DirectorRole = role
+	director := handles[role]
 	directorWindow := int64(0)
 	if director.config != nil {
 		directorWindow = int64(director.config.ContextWindow)
 	}
 	kpSysPrompt := director.systemPrompt(renderNSFW(kpSystemPrompt, gctx.Session.EnableNSFW))
-	cm := LoadContext(sid, "director", buildKPHead(gctx, kpSysPrompt), ContextOptions{Window: directorWindow, Strategy: TrimSummarize})
+	turnAgent := ""
+	if role != models.AgentRoleDirector {
+		turnAgent = string(role)
+	}
+	cm.Configure(buildKPHead(gctx, kpSysPrompt), ContextOptions{
+		Window:                directorWindow,
+		Strategy:              TrimSummarize,
+		Agent:                 turnAgent,
+		StripForeignReasoning: !sameModelConfig(handles[models.AgentRoleDirector].config, handles[models.AgentRoleDirectorNSFW].config),
+	})
+	debugf("run", "session=%d director_role=%s", sid, role)
 	// 老会话transcript为空但messages表有历史时，用旧的扁平transcript当作seq=0的一轮
 	// 种子先提交进去；它没有任何工具调用，总结时按纯文本原样放进输入。
 	if cm.IsEmpty() && len(gctx.History) > 0 {

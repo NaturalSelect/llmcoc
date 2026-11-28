@@ -58,10 +58,15 @@ type inputGuard struct {
 // inputGuardBlockThreshold 读取站点设置；解析失败或越界（要求 (0, 1]）时用默认值。
 // NOTE: 阈值作用在三项违规概率之和上，不作用在 confidence 上。每次分类都会在 debug 日志里记录各项概率，上线后据此调整。
 func inputGuardBlockThreshold() float64 {
-	raw := strings.TrimSpace(models.GetSiteSetting(inputGuardBlockThresholdKey, models.DefaultInputGuardBlockThreshold))
+	return readProbabilityThreshold(inputGuardBlockThresholdKey, models.DefaultInputGuardBlockThreshold)
+}
+
+// readProbabilityThreshold 读取站点设置里的概率阈值；解析失败或越界（要求 (0, 1]）时用 fallback。
+func readProbabilityThreshold(key, fallback string) float64 {
+	raw := strings.TrimSpace(models.GetSiteSetting(key, fallback))
 	v, err := strconv.ParseFloat(raw, 64)
 	if err != nil || math.IsNaN(v) || v <= 0 || v > 1 {
-		v, _ = strconv.ParseFloat(models.DefaultInputGuardBlockThreshold, 64)
+		v, _ = strconv.ParseFloat(fallback, 64)
 	}
 	return v
 }
@@ -210,14 +215,20 @@ func inputGuardLogLine(m models.Message) string {
 	if isPlayerMessage(m) {
 		body = xmlEscape(body)
 	}
-	body = strings.Join(strings.Fields(body), " ")
-	if r := []rune(body); len(r) > inputGuardLineRunes {
-		body = "…" + string(r[len(r)-inputGuardLineRunes:])
-	}
+	body = foldGuardText(body)
 	if body == "" {
 		return ""
 	}
 	return "[" + messageSpeaker(m) + "]: " + body
+}
+
+// foldGuardText 把正文里的换行折成空格，只保留末尾 inputGuardLineRunes 个字。
+func foldGuardText(body string) string {
+	body = strings.Join(strings.Fields(body), " ")
+	if r := []rune(body); len(r) > inputGuardLineRunes {
+		body = "…" + string(r[len(r)-inputGuardLineRunes:])
+	}
+	return body
 }
 
 // ClassifyPlayerInput 对玩家输入做同步分类。任何失败都返回 Blocked=false。

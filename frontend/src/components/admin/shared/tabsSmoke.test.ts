@@ -158,13 +158,13 @@ describe('ProvidersTab', () => {
 })
 
 describe('AgentsTab', () => {
-  test('库里缺行的角色补默认行（共 17 张卡），保存请求体与旧前端字段一致', async () => {
+  test('库里缺行的角色补默认行（共 18 张卡），保存请求体与旧前端字段一致', async () => {
     routes['GET /api/admin/config/providers'] = [{ id: 2, name: 'prov', provider: 'openai', base_url: '', api_key_set: true, is_active: true }]
     routes['GET /api/admin/config/agents'] = [agentRow('director'), agentRow('scripter'), agentRow('npc'), agentRow('npc_nsfw')]
     routes['PUT /api/admin/config/agents/director'] = {}
     const w = mount(AgentsTab, { attachTo: document.body })
     await flushPromises()
-    expect(w.findAll('article')).toHaveLength(17)
+    expect(w.findAll('article')).toHaveLength(18)
     expect(w.text()).toContain('🎬 Director')
     expect(w.text()).not.toContain('scripter')
     expect(w.text()).not.toContain('npc')

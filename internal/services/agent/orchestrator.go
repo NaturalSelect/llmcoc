@@ -142,6 +142,7 @@ func batchLoadAgents() (map[models.AgentRole]agentHandle, error) {
 
 	roles := []models.AgentRole{
 		models.AgentRoleDirector,
+		models.AgentRoleDirectorNSFW,
 		models.AgentRoleWriter,
 		models.AgentRoleWriterNSFW,
 		models.AgentRoleChore,

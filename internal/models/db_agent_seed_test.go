@@ -224,6 +224,43 @@ func TestSeedDefaultAgentConfigs_SeedsChoreInactive(t *testing.T) {
 	}
 }
 
+func TestSeedDefaultAgentConfigs_SeedsDirectorNSFWInactive(t *testing.T) {
+	db := openSeedTestDB(t)
+
+	seedDefaultAgentConfigs()
+
+	var cfg AgentConfig
+	if err := db.Where("role = ?", string(AgentRoleDirectorNSFW)).First(&cfg).Error; err != nil {
+		t.Fatalf("director_nsfw row not seeded: %v", err)
+	}
+	if cfg.IsActive {
+		t.Error("director_nsfw should be inactive by default so every cycle keeps using the Director until an admin binds one")
+	}
+	if !cfg.WithJailbreak {
+		t.Error("director_nsfw should carry the Director's jailbreak default")
+	}
+}
+
+func TestSeedDefaultSiteSettings_SeedsNSFWRouteThresholdWithoutOverwriting(t *testing.T) {
+	db := openSeedTestDB(t)
+	if err := db.AutoMigrate(&SiteSetting{}); err != nil {
+		t.Fatalf("auto-migrate: %v", err)
+	}
+
+	seedDefaultSiteSettings()
+	if got := GetSiteSetting("nsfw_route_threshold", "MISSING"); got != DefaultNSFWRouteThreshold {
+		t.Fatalf("seeded nsfw_route_threshold = %q, want %q", got, DefaultNSFWRouteThreshold)
+	}
+
+	if err := SetSiteSetting("nsfw_route_threshold", "0.35"); err != nil {
+		t.Fatalf("SetSiteSetting: %v", err)
+	}
+	seedDefaultSiteSettings()
+	if got := GetSiteSetting("nsfw_route_threshold", "MISSING"); got != "0.35" {
+		t.Errorf("re-seeding must not overwrite an admin-set value, got %q", got)
+	}
+}
+
 func TestSeedDefaultSiteSettings_SeedsLawyerSimilarityWithoutOverwriting(t *testing.T) {
 	db := openSeedTestDB(t)
 	if err := db.AutoMigrate(&SiteSetting{}); err != nil {

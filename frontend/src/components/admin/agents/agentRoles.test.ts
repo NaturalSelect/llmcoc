@@ -30,12 +30,13 @@ function row(role: string, over: Partial<AgentConfigRow> = {}): AgentConfigRow {
 }
 
 describe('角色表', () => {
-  test('预期角色共 17 个且不含已下线的 scripter、npc、npc_nsfw', () => {
-    expect(EXPECTED_ROLES).toHaveLength(17)
+  test('预期角色共 18 个且不含已下线的 scripter、npc、npc_nsfw', () => {
+    expect(EXPECTED_ROLES).toHaveLength(18)
     expect(EXPECTED_ROLES).not.toContain('scripter')
     expect(EXPECTED_ROLES).not.toContain('npc')
     expect(EXPECTED_ROLES).not.toContain('npc_nsfw')
     expect(EXPECTED_ROLES[0]).toBe('director')
+    expect(EXPECTED_ROLES[1]).toBe('director_nsfw')
     expect(EXPECTED_ROLES.at(-1)).toBe('companion')
   })
 
@@ -72,6 +73,22 @@ describe('角色表', () => {
     expect(agentDesc('systemone')).toContain('jev-latest')
     expect(agentDesc('systemone')).toContain('gemini-decision-1')
     expect(agentDesc('systemone')).toContain('API Key')
+  })
+
+  test('director_nsfw 角色的文案说明触发条件、共用提示词、依赖 systemone 和未启用时的行为', () => {
+    expect(agentLabel('director_nsfw')).toBe('🔞 NSFW Director')
+    expect(agentDesc('director_nsfw')).toContain('NSFW')
+    expect(agentDesc('director_nsfw')).toContain('代替 Director')
+    expect(agentDesc('director_nsfw')).toContain('共用提示词、工具和记忆')
+    expect(agentDesc('director_nsfw')).toContain('systemone')
+    expect(agentDesc('director_nsfw')).toContain('一律由 Director 执行')
+    expect(agentDesc('director_nsfw')).toContain('上下文窗口')
+  })
+
+  test('systemone 角色的文案同时说明色情分类与发给第三方的内容', () => {
+    expect(agentDesc('systemone')).toContain('director_nsfw')
+    expect(agentDesc('systemone')).toContain('KP 的公开发言')
+    expect(agentDesc('systemone')).toContain('已装备物品')
   })
 
   test('companion 角色的文案说明 AI 卡池、function calling 和未启用时的行为', () => {
@@ -128,7 +145,8 @@ describe('角色表', () => {
       thinking_level: 'none',
       is_active: false,
     })
-    for (const r of ['writer_nsfw', 'chore', 'painter_nsfw', 'painter_hq', 'dramaturg', 'embedding', 'systemone', 'companion']) {
+    expect(ROLE_DEFAULTS.director_nsfw).toStrictEqual({ max_tokens: 1500, temperature: 0.7, context_window: 0, is_active: false })
+    for (const r of ['director_nsfw', 'writer_nsfw', 'chore', 'painter_nsfw', 'painter_hq', 'dramaturg', 'embedding', 'systemone', 'companion']) {
       expect(ROLE_DEFAULTS[r]?.is_active, r).toBe(false)
     }
     expect(ROLE_DEFAULTS.chore).toStrictEqual({ max_tokens: 2200, temperature: 0.7, is_active: false })
@@ -137,7 +155,7 @@ describe('角色表', () => {
 })
 
 describe('buildAgentForms', () => {
-  test('空列表：17 个角色全部按默认值补齐，顺序同角色表', () => {
+  test('空列表：18 个角色全部按默认值补齐，顺序同角色表', () => {
     const forms = buildAgentForms([])
     expect(forms.map((f) => f.role)).toStrictEqual(EXPECTED_ROLES)
     const director = forms[0]!
@@ -168,8 +186,8 @@ describe('buildAgentForms', () => {
   })
 
   test('null / undefined 入参等同空列表', () => {
-    expect(buildAgentForms(null)).toHaveLength(17)
-    expect(buildAgentForms(undefined)).toHaveLength(17)
+    expect(buildAgentForms(null)).toHaveLength(18)
+    expect(buildAgentForms(undefined)).toHaveLength(18)
   })
 
   test('库里已有的行排在前面，缺行的角色补在后面；provider_config_id 为 null 时变空串', () => {
@@ -178,16 +196,16 @@ describe('buildAgentForms', () => {
       ['writer', 7, 3],
       ['director', 2, ''],
     ])
-    expect(forms).toHaveLength(17)
+    expect(forms).toHaveLength(18)
     expect(forms.slice(2).map((f) => f.role)).not.toContain('writer')
-    expect(forms[2]!.id).toBe('new-writer_nsfw')
+    expect(forms[2]!.id).toBe('new-director_nsfw')
   })
 
   test('scripter 行被丢弃，不会为它补默认行；未知角色原样保留', () => {
     const forms = buildAgentForms([row('scripter'), row('lore_researcher', { id: 9 })])
     expect(forms.map((f) => f.role)).not.toContain('scripter')
     expect(forms[0]!.role).toBe('lore_researcher')
-    expect(forms).toHaveLength(18)
+    expect(forms).toHaveLength(19)
   })
 
   test('已下线的 npc / npc_nsfw 旧行被丢弃，不会显示也不会补默认行', () => {
@@ -196,7 +214,7 @@ describe('buildAgentForms', () => {
     expect(roles).not.toContain('npc')
     expect(roles).not.toContain('npc_nsfw')
     expect(roles[0]).toBe('lawyer')
-    expect(forms).toHaveLength(17)
+    expect(forms).toHaveLength(18)
   })
 
   test('同一角色重复时后者覆盖前者，位置保持首次出现处', () => {

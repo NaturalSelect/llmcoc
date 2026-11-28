@@ -15,9 +15,9 @@ export function isSystemOneRole(role: string): boolean {
   return role === 'systemone'
 }
 
-// NOTE: Director 和 companion 都按上下文窗口触发 LLM 总结，其余角色不显示该输入框
+// NOTE: Director、director_nsfw 和 companion 都按上下文窗口触发 LLM 总结，其余角色不显示该输入框
 export function hasContextWindow(role: string): boolean {
-  return role === 'director' || role === 'companion'
+  return role === 'director' || role === 'director_nsfw' || role === 'companion'
 }
 
 export function contextWindowPlaceholder(role: string): string {

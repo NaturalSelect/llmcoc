@@ -86,6 +86,28 @@ describe('parseSiteSettings', () => {
     expect(parse('NaN')).toBe(0.8)
     expect(parse('Infinity')).toBe(0.8)
   })
+
+  test('nsfw_route_threshold：缺失默认 0.5；合法值含上界 1 按浮点解析', () => {
+    const parse = (value: string) => parseSiteSettings([{ key: 'nsfw_route_threshold', value }]).nsfw_route_threshold
+    expect(parseSiteSettings([]).nsfw_route_threshold).toBe(0.5)
+    expect(parse('0.55')).toBe(0.55)
+    expect(parse('0.01')).toBe(0.01)
+    expect(parse('1')).toBe(1)
+  })
+
+  test('nsfw_route_threshold：0、负数、越界、无法解析都回落默认值，不显示成 0，也不与输入分类阈值串值', () => {
+    const parse = (value: string) => parseSiteSettings([{ key: 'nsfw_route_threshold', value }]).nsfw_route_threshold
+    expect(parse('0')).toBe(0.5)
+    expect(parse('-0.1')).toBe(0.5)
+    expect(parse('1.01')).toBe(0.5)
+    expect(parse('')).toBe(0.5)
+    expect(parse('abc')).toBe(0.5)
+    expect(parse('NaN')).toBe(0.5)
+    expect(parse('Infinity')).toBe(0.5)
+    const s = parseSiteSettings([{ key: 'input_guard_block_threshold', value: '0.3' }])
+    expect(s.input_guard_block_threshold).toBe(0.3)
+    expect(s.nsfw_route_threshold).toBe(0.5)
+  })
 })
 
 describe('costValueToSubmit', () => {

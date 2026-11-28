@@ -686,6 +686,48 @@ func TestAdminUpdateAgent_PainterHQRoleAccepted(t *testing.T) {
 	}
 }
 
+// TestAdminUpdateAgent_DirectorNSFWRoleAccepted 覆盖 director_nsfw 是合法角色：创建分支与更新分支都能落库，
+// 包括单独填写的 context_window 和 is_active。
+func TestAdminUpdateAgent_DirectorNSFWRoleAccepted(t *testing.T) {
+	initTestDB(t)
+	r := adminConfigRouter()
+
+	// 创建分支：director_nsfw 行不存在。
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, jsonReq("PUT", "/admin/config/agents/director_nsfw", map[string]any{
+		"model_name":     "gpt-4o",
+		"context_window": 64000,
+		"is_active":      true,
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("create PUT director_nsfw want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var cfg models.AgentConfig
+	if err := models.DB.Where("role = ?", "director_nsfw").First(&cfg).Error; err != nil {
+		t.Fatalf("director_nsfw AgentConfig not found: %v", err)
+	}
+	if cfg.ModelName != "gpt-4o" || cfg.ContextWindow != 64000 || !cfg.IsActive {
+		t.Fatalf("created config = %+v", cfg)
+	}
+
+	// 更新分支：行已存在，关闭启用开关。
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, jsonReq("PUT", "/admin/config/agents/director_nsfw", map[string]any{
+		"model_name":     "gpt-4o-mini",
+		"context_window": 32000,
+		"is_active":      false,
+	}))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("update PUT director_nsfw want 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+	if err := models.DB.Where("role = ?", "director_nsfw").First(&cfg).Error; err != nil {
+		t.Fatalf("director_nsfw AgentConfig not found after update: %v", err)
+	}
+	if cfg.ModelName != "gpt-4o-mini" || cfg.ContextWindow != 32000 || cfg.IsActive {
+		t.Fatalf("updated config = %+v", cfg)
+	}
+}
+
 // TestAdminUpdateAgent_DiffusionTranslatorRoleAccepted 覆盖 diffusion_translator 是合法角色并可落库。
 func TestAdminUpdateAgent_DiffusionTranslatorRoleAccepted(t *testing.T) {
 	initTestDB(t)

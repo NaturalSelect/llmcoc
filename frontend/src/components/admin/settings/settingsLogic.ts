@@ -11,6 +11,9 @@ export const LAWYER_SIMILARITY_DEFAULT = 0.3
 export const INPUT_GUARD_THRESHOLD_MAX = 1
 export const INPUT_GUARD_THRESHOLD_DEFAULT = 0.8
 
+// NOTE: nsfw_route_threshold 的合法范围与 input_guard_block_threshold 相同（0, 1]，校验和上界直接复用 INPUT_GUARD_THRESHOLD_MAX 与 inputGuardThresholdToSubmit
+export const NSFW_ROUTE_THRESHOLD_DEFAULT = 0.5
+
 // NOTE: 每项都有独立的「保存」按钮，顺序与文案跟旧页面保持一致
 export const COST_FIELDS = [
   { key: 'initial_coins', label: '初始金币（新用户注册）', min: 0 },
@@ -45,6 +48,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   balance_rules: '',
   lawyer_cache_min_similarity: LAWYER_SIMILARITY_DEFAULT,
   input_guard_block_threshold: INPUT_GUARD_THRESHOLD_DEFAULT,
+  nsfw_route_threshold: NSFW_ROUTE_THRESHOLD_DEFAULT,
 }
 
 // NOTE: 旧实现写作 parseInt(x) || 默认值，库里存 0 时会被误显示成默认值（如初始金币 0 显示 600），
@@ -88,6 +92,7 @@ export function parseSiteSettings(rows: SiteSettingRow[] | null | undefined): Si
     balance_rules: map.balance_rules !== undefined ? map.balance_rules : '',
     lawyer_cache_min_similarity: similarityOr(map.lawyer_cache_min_similarity, d.lawyer_cache_min_similarity),
     input_guard_block_threshold: thresholdOr(map.input_guard_block_threshold, d.input_guard_block_threshold),
+    nsfw_route_threshold: thresholdOr(map.nsfw_route_threshold, d.nsfw_route_threshold),
   }
 }
 

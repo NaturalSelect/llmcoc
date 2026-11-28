@@ -152,7 +152,7 @@ func RunWriterStream(ctx context.Context, gctx GameContext, req WriterRequest, o
 		}
 	}
 	msgs := buildWriterView(director, writerSystemPromptWithStyle(h, nsfwMode, paintOK, gctx.Session.NarrativeStyle),
-		sameModelConfig(h.config, handles[models.AgentRoleDirector].config), instruction)
+		sameModelConfig(h.config, handles[gctx.directorRole()].config), instruction)
 
 	state := &WriterState{}
 	if paintOK {

@@ -410,7 +410,9 @@ type TranscriptTurn struct {
 	Unit      int             `json:"unit,omitempty"`
 	Kind      string          `json:"kind,omitempty"`
 	Compacted bool            `json:"compacted,omitempty"`
-	Messages  []TranscriptMsg `json:"messages"`
+	// NOTE: Agent 是产生该单元的 Director 角色，空值表示 director（含旧数据），只有 Director 的转录使用。
+	Agent    string          `json:"agent,omitempty"`
+	Messages []TranscriptMsg `json:"messages"`
 }
 
 // TranscriptMsg 字段与 llm.ChatMessage 一一对应；models 不依赖 llm 包，单独定义一份
@@ -846,8 +848,11 @@ type ChaseState struct {
 type AgentRole string
 
 const (
-	AgentRoleDirector  AgentRole = "director"
-	AgentRoleArchitect AgentRole = "architect"
+	AgentRoleDirector AgentRole = "director"
+	// NOTE: AgentRoleDirectorNSFW 是可选的成人向 Director；仅当房间开启 NSFW 且周期前分类判定可能涉及色情内容时代替 Director 执行，
+	// 与 Director 共用提示词、工具和转录；未启用时一律由 Director 执行。
+	AgentRoleDirectorNSFW AgentRole = "director_nsfw"
+	AgentRoleArchitect    AgentRole = "architect"
 	AgentRoleLore      AgentRole = "lore_researcher"
 	AgentRoleEncounter AgentRole = "encounter_designer"
 	AgentRoleQAGuard   AgentRole = "qa_guard"
@@ -865,8 +870,8 @@ const (
 	// NOTE: AgentRoleEmbedding 为 Lawyer 规则缓存提供语义检索的嵌入模型，只支持 OpenAI 兼容的 /embeddings；
 	// 未启用、未绑定或 provider 不支持时，Lawyer 退回标签子串匹配，不影响主流程。它不走聊天，也不在 batchLoadAgents 里。
 	AgentRoleEmbedding AgentRole = "embedding"
-	// NOTE: AgentRoleSystemOne 是玩家输入的越权请求分类器，只走 TypeSafe 的 System One 接口（Provider 只取 BaseURL 和 APIKey，模型名取本行）；
-	// 未启用、未绑定或调用失败时放行输入，不影响主流程。它不走聊天，也不在 batchLoadAgents 里。
+	// NOTE: AgentRoleSystemOne 是玩家输入的越权请求分类器，也是 director_nsfw 路由的 NSFW 分类器，只走 TypeSafe 的 System One 接口（Provider 只取 BaseURL 和 APIKey，模型名取本行）；
+	// 未启用、未绑定或调用失败时放行输入、不做路由，不影响主流程。它不走聊天，也不在 batchLoadAgents 里。
 	AgentRoleSystemOne AgentRole = "systemone"
 	// NOTE: AgentRoleDiffusionTranslator 把 Director 的自然语言画面描述翻译成扩散模型的标签式提示词；
 	// 仅在 Painter/Painter NSFW 开启 diffusion_mode 时被调用，未启用时扩散模式的配图直接失败，不回落 Writer。
@@ -972,6 +977,10 @@ const DefaultLawyerCacheMinSimilarity = "0.3"
 // NOTE: DefaultInputGuardBlockThreshold 是 input_guard_block_threshold 的默认值与运行时回落值。
 // 合法范围 (0, 1]：阈值作用在三项违规概率之和上，0 以下会拦下所有输入，1 以上永远不拦。0.8 没有数据依据，上线后看 debug 日志调。
 const DefaultInputGuardBlockThreshold = "0.8"
+
+// NOTE: DefaultNSFWRouteThreshold 是 nsfw_route_threshold 的默认值与运行时回落值。
+// 合法范围 (0, 1]：阈值作用在两项性内容概率之和上，0 以下会让所有周期都走 director_nsfw，1 以上永远不切换。0.5 没有数据依据，上线后看 debug 日志调。
+const DefaultNSFWRouteThreshold = "0.5"
 
 // SiteSetting is a simple key/value store for site-wide configuration.
 type SiteSetting struct {

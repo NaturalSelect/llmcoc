@@ -41,6 +41,7 @@ describe('角色判定', () => {
     expect(isPainterRole('painter_hq')).toBe(true)
     expect(isPainterRole('writer')).toBe(false)
     expect(hasContextWindow('director')).toBe(true)
+    expect(hasContextWindow('director_nsfw')).toBe(true)
     expect(hasContextWindow('companion')).toBe(true)
     expect(['writer', 'writer_nsfw', 'lawyer'].some(hasContextWindow)).toBe(false)
   })
@@ -48,6 +49,7 @@ describe('角色判定', () => {
   test('上下文窗口占位文案按角色区分默认值', () => {
     expect(contextWindowPlaceholder('companion')).toContain('100000')
     expect(contextWindowPlaceholder('director')).not.toContain('100000')
+    expect(contextWindowPlaceholder('director_nsfw')).toBe(contextWindowPlaceholder('director'))
   })
 
   test('embedding 只匹配自身，不被当成画图角色', () => {
