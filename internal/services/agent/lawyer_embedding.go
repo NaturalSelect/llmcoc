@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/llmcoc/server/internal/models"
@@ -97,7 +97,7 @@ func searchLawyerCache(ctx context.Context, query string, topK int) []CacheMatch
 	if !ok {
 		return lawyerCache.Search(query, topK)
 	}
-	defer ensureLawyerCacheBackfill()
+	defer ensureLawyerCacheBackfillWith(emb)
 
 	qvec, err := emb.embedOne(ctx, query)
 	if err != nil {
@@ -145,31 +145,45 @@ func saveLawyerCacheEntry(ctx context.Context, key, ruling string) {
 }
 
 var (
-	lawyerBackfillRunning atomic.Bool
-	// lawyerBackfillDone 只给测试用：每轮补算结束时关闭并换新，测试据此等待结束。
-	lawyerBackfillDone atomic.Pointer[chan struct{}]
+	lawyerBackfillMu      sync.Mutex
+	lawyerBackfillRunning bool
+	// lawyerBackfillDone 只给测试用：每轮补算结束时关闭，测试据此等待结束。
+	lawyerBackfillDone chan struct{}
 )
 
 // ensureLawyerCacheBackfill 在后台给缺少当前模型向量的条目补算，单飞：已有一轮在跑时直接返回。
 // 某一批失败就记日志并结束本轮，下次触发再补。
 func ensureLawyerCacheBackfill() {
-	if !lawyerBackfillRunning.CompareAndSwap(false, true) {
-		return
-	}
-	done := make(chan struct{})
-	lawyerBackfillDone.Store(&done)
-	go func() {
-		defer close(done)
-		defer lawyerBackfillRunning.Store(false)
-		runLawyerBackfill()
-	}()
-}
-
-func runLawyerBackfill() {
 	emb, ok := lawyerEmbedderLoader()
 	if !ok {
 		return
 	}
+	ensureLawyerCacheBackfillWith(emb)
+}
+
+func ensureLawyerCacheBackfillWith(emb *lawyerEmbedder) {
+	lawyerBackfillMu.Lock()
+	if lawyerBackfillRunning {
+		lawyerBackfillMu.Unlock()
+		return
+	}
+	lawyerBackfillRunning = true
+	done := make(chan struct{})
+	lawyerBackfillDone = done
+	lawyerBackfillMu.Unlock()
+
+	go func() {
+		defer func() {
+			lawyerBackfillMu.Lock()
+			lawyerBackfillRunning = false
+			close(done)
+			lawyerBackfillMu.Unlock()
+		}()
+		runLawyerBackfill(emb)
+	}()
+}
+
+func runLawyerBackfill(emb *lawyerEmbedder) {
 	missing := lawyerCache.MissingVectors(emb.model)
 	if len(missing) == 0 {
 		return
@@ -201,9 +215,16 @@ func runLawyerBackfill() {
 	alog.Info("lawyer cache backfill finished", "filled", filled, "model", emb.model)
 }
 
-// waitLawyerBackfill 等待当前补算结束，仅供测试使用。
-func waitLawyerBackfill() {
-	if p := lawyerBackfillDone.Load(); p != nil {
-		<-*p
+// WaitLawyerBackfill 等待当前规则缓存向量补算结束，仅供测试清理时避免后台协程访问已重置的全局状态。
+func WaitLawyerBackfill() {
+	lawyerBackfillMu.Lock()
+	done := lawyerBackfillDone
+	lawyerBackfillMu.Unlock()
+	if done != nil {
+		<-done
 	}
+}
+
+func waitLawyerBackfill() {
+	WaitLawyerBackfill()
 }

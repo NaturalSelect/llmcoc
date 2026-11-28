@@ -289,6 +289,7 @@ func TestAdminGetCacheEntry_ReturnsEntry(t *testing.T) {
 	initTestDB(t)
 	agent.ClearLawyerCacheAll()
 	t.Cleanup(agent.ClearLawyerCacheAll)
+	t.Cleanup(agent.WaitLawyerBackfill)
 	key := "#手枪 #伤害"
 	value := "手枪伤害为1D10。"
 	hashes := agent.LawyerCacheHashes{RulebookHash: "rule-hash", SpellbookHash: "spell-hash", MonsterbookHash: "monster-hash"}
