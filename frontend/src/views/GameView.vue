@@ -3,16 +3,18 @@ import { Hourglass } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, postForm } from '@/api/client'
+import { classifierApi } from '@/api/classifierApi'
 import { companionApi } from '@/api/companionApi'
 import { getToken } from '@/api/token'
 import type { CharacterCardFull } from '@/api/characterTypes'
+import type { ClassifierLog } from '@/api/classifierTypes'
 import type { CharacterCard, Session, SessionPlayer } from '@/api/types'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import CharacterDetailModal from '@/components/character/CharacterDetailModal.vue'
 import AskCard from '@/components/game/AskCard.vue'
-import ClassifierPanel from '@/components/game/ClassifierPanel.vue'
+import ClassifierOrphanRow from '@/components/game/ClassifierOrphanRow.vue'
 import ClockTracker from '@/components/game/ClockTracker.vue'
 import DebriefModal from '@/components/game/DebriefModal.vue'
 import EncounterTracker from '@/components/game/EncounterTracker.vue'
@@ -29,6 +31,8 @@ import AddCompanionModal from '@/components/session/AddCompanionModal.vue'
 import JoinSessionModal from '@/components/session/JoinSessionModal.vue'
 import { askAnchor, askView, createAskDraft, resetAskDraft, resetDraftOnFrame } from '@/game/ask'
 import { showWaiting } from '@/game/banner'
+import { emptyPlacement, placeClassifierLogs } from '@/game/classifierPlacement'
+import { startHistoryMerge } from '@/game/classifier'
 import { canAddCompanion, canRemoveCompanion } from '@/game/companion'
 import { emptyHandbook, normalizeHandbook } from '@/game/handbookTypes'
 import type { HandbookData } from '@/game/handbookTypes'
@@ -62,8 +66,6 @@ const companionBusy = ref(false)
 const oocOpen = ref(false)
 const handbookOpen = ref(false)
 const debriefOpen = ref(false)
-// NOTE: 分类器面板只对管理员挂载；历史记录在面板打开时才请求，进房时不请求
-const classifierOpen = ref(false)
 const novelMode = ref(false)
 const handbook = ref<HandbookData>(emptyHandbook())
 const hideDarkClocks = ref(loadHideDarkClocksPref())
@@ -92,6 +94,9 @@ let scrollQueued = false
 // NOTE: 是否跟随最新消息只由用户的滚动动作决定，不能在内容增长之后再量：新内容一次长高超过阈值时，贴底的玩家会被误判成在翻历史
 let stickToBottom = true
 let initialScrollPending = true
+// NOTE: 分类器历史只认最近一次请求；失败的提示每个房间只弹一次，重连每次都会重试，不能每次都打扰
+let classifierLoadGen = 0
+let classifierWarned = false
 
 function onChatScroll() {
   const el = chatBox.value
@@ -145,6 +150,7 @@ const controller = createRoomController({
       scrollChat(initialScrollPending)
       initialScrollPending = false
     }),
+  onSynced: () => void loadClassifierLogs(),
 })
 // NOTE: 控制器是 markRaw 的普通对象，模板不会自动解包它的属性，所以把两个 ref 取出来放在顶层
 const { room, session } = controller
@@ -167,6 +173,7 @@ async function enter(id: number) {
   hudFlash.value = NO_FLASH
   stickToBottom = true
   initialScrollPending = true
+  classifierWarned = false
   await controller.enter(id)
   // NOTE: 进房失败（房间不存在或无权限）时 enter 已经弹过提示，回到大厅
   if (!room.value) void router.replace({ name: 'sessions' })
@@ -193,6 +200,29 @@ watch(asking, (v) => {
 const canPostOoc = computed(() =>
   Boolean(session.value && (isInSession(session.value, auth.user?.id) || session.value.created_by === auth.user?.id || auth.isAdmin)),
 )
+
+// NOTE: 管理员专用：进房、重连和快照应用之后拉一次历史并入 room.classifierLogs。classifier_log 是不补发的临时帧，
+// 快照和断线期间到达的都会丢（包括「输入成为玩家行动」时改写 floor 的那一次），靠这次拉取补回；不轮询
+// 请求期间已经被实时事件更新过的记录以实时事件为准（startHistoryMerge）
+async function loadClassifierLogs() {
+  const r = room.value
+  const sid = r?.sessionId
+  if (!auth.isAdmin || !r || !sid) return
+  const gen = ++classifierLoadGen
+  const apply = startHistoryMerge(r.classifierLogs)
+  try {
+    const history = await classifierApi.list(sid)
+    if (gen !== classifierLoadGen || room.value !== r) return
+    apply(history)
+  } catch (e) {
+    if (gen !== classifierLoadGen || room.value !== r) return
+    console.warn('加载分类器记录失败', e)
+    if (!classifierWarned) {
+      classifierWarned = true
+      ui.toast(`分类器记录加载失败：${errMsg(e)}`, 'error')
+    }
+  }
+}
 
 async function loadHandbook() {
   const sid = session.value?.id
@@ -384,6 +414,23 @@ const visibleMessages = computed(() => {
   return novelMode.value ? msgs.filter((m) => msgKind(m) !== 'event') : msgs
 })
 
+// NOTE: 分类器结果只给管理员，小说阅读模式下和骰点事件一样隐藏；非管理员这里恒为空，模板里没有任何分类器内容
+const classifierPlacement = computed(() => {
+  const r = room.value
+  return auth.isAdmin && r && !novelMode.value ? placeClassifierLogs(r.messages, r.classifierLogs) : emptyPlacement()
+})
+// NOTE: 没有点名消息可挂的问题卡放在消息流末尾、紧跟最后一条消息，所以挂在最后一条消息后面的孤儿行要排在它之后
+const tailAsk = computed(() => asking.value !== '' && askAt.value === null)
+const lastMessageId = computed(() => visibleMessages.value[visibleMessages.value.length - 1]?.id ?? null)
+
+function orphansAfter(id: number): ClassifierLog[] | undefined {
+  return tailAsk.value && id === lastMessageId.value ? undefined : classifierPlacement.value.after.get(id)
+}
+
+const tailOrphans = computed(() =>
+  tailAsk.value && lastMessageId.value !== null ? (classifierPlacement.value.after.get(lastMessageId.value) ?? []) : [],
+)
+
 function exportReplay() {
   if (!session.value || !room.value) return
   const md = buildReplayMarkdown(session.value, room.value.messages, {
@@ -402,7 +449,7 @@ function exportReplay() {
   ui.toast(novelMode.value ? '已导出小说版 Markdown 战报' : '已导出 Markdown 战报')
 }
 
-function onAction(action: 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive' | 'debrief' | 'classifier') {
+function onAction(action: 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive' | 'debrief') {
   const s = session.value
   if (!s) return
   if (action === 'investigators') investigatorsOpen.value = true
@@ -412,7 +459,6 @@ function onAction(action: 'investigators' | 'myCard' | 'join' | 'leave' | 'start
   else if (action === 'start') void startSession(s)
   else if (action === 'end') void endSession(s)
   else if (action === 'debrief') debriefOpen.value = true
-  else if (action === 'classifier') classifierOpen.value = auth.isAdmin
   else void reviveSession(s)
 }
 
@@ -476,11 +522,23 @@ defineExpose({ viewCard })
         <div ref="chatBox" class="min-h-0 flex-1 overflow-y-auto" role="log" aria-live="off" @scroll.passive="onChatScroll">
           <div class="mx-auto max-w-3xl space-y-6 px-4 py-6">
             <template v-if="room">
+              <ClassifierOrphanRow v-for="log in classifierPlacement.leading" :key="log.id" :log="log" />
               <template v-for="m in visibleMessages" :key="m.id">
-                <MessageItem :msg="m" :room="room" :can-pin-clue="canPostOoc" @preview="previewSrc = $event" @pin-clue="openPinClue" />
+                <MessageItem
+                  :msg="m"
+                  :room="room"
+                  :can-pin-clue="canPostOoc"
+                  :classifier-logs="classifierPlacement.byMessage.get(m.id)"
+                  @preview="previewSrc = $event"
+                  @pin-clue="openPinClue"
+                />
                 <AskCard v-if="m.id === askAt" :room="room" :draft="draft" :card="card" @submit="submit" />
+                <ClassifierOrphanRow v-for="log in orphansAfter(m.id)" :key="log.id" :log="log" />
               </template>
-              <AskCard v-if="asking && askAt === null" :room="room" :draft="draft" :card="card" show-question @submit="submit" />
+              <template v-if="tailAsk">
+                <AskCard :room="room" :draft="draft" :card="card" show-question @submit="submit" />
+                <ClassifierOrphanRow v-for="log in tailOrphans" :key="log.id" :log="log" />
+              </template>
 
               <div v-if="waiting" class="space-y-2 rounded-xl bg-surface-2 px-4 py-3">
                 <p class="flex items-center gap-2 text-sm text-fg-muted">
@@ -596,7 +654,6 @@ defineExpose({ viewCard })
       </form>
     </BaseModal>
     <DebriefModal :open="debriefOpen" :session-id="session?.id ?? null" @close="debriefOpen = false" />
-    <ClassifierPanel v-if="auth.isAdmin" :open="classifierOpen" :session-id="session?.id ?? null" :room="room" @close="classifierOpen = false" />
     <JoinSessionModal :open="joinOpen" :session="session" @close="joinOpen = false" @joined="controller.refreshSession()" />
     <AddCompanionModal :open="companionOpen" :session="session" @close="companionOpen = false" @changed="controller.refreshSession()" />
     <ImagePreview :src="previewSrc" @close="previewSrc = ''" />

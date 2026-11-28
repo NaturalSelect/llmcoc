@@ -95,7 +95,6 @@ func TestPickDirectorRole_RoomSwitchOffOrRoleDisabledNeverClassifies(t *testing.
 
 func TestPickDirectorRole_FloorsWithoutPlayerActionsSkipClassification(t *testing.T) {
 	calls := useFakeClassifier(t, nsfwRouteNSFW)
-	admin := PlayerAction{IsAdmin: true, PlayerName: "KP", Content: "DEBUG: 切换场景"}
 	blank := PlayerAction{UserID: 1, PlayerName: "甲", Content: "  "}
 
 	cases := []struct {
@@ -107,7 +106,6 @@ func TestPickDirectorRole_FloorsWithoutPlayerActionsSkipClassification(t *testin
 		{"opening always uses director", routeGctx(true, KPFloorOpening, playerAction), models.AgentRoleDirectorNSFW, models.AgentRoleDirector},
 		{"resume keeps the previous role", routeGctx(true, KPFloorResume), models.AgentRoleDirectorNSFW, models.AgentRoleDirectorNSFW},
 		{"host continue keeps the previous role", routeGctx(true, KPFloorHostContinue), models.AgentRoleDirectorNSFW, models.AgentRoleDirectorNSFW},
-		{"only an admin command keeps the previous role", routeGctx(true, "", admin), models.AgentRoleDirectorNSFW, models.AgentRoleDirectorNSFW},
 		{"blank action keeps the previous role", routeGctx(true, "", blank), models.AgentRoleDirector, models.AgentRoleDirector},
 	}
 	for _, tc := range cases {
@@ -119,6 +117,21 @@ func TestPickDirectorRole_FloorsWithoutPlayerActionsSkipClassification(t *testin
 	}
 	if n := calls.Load(); n != 0 {
 		t.Errorf("classifier calls = %d, want 0", n)
+	}
+}
+
+// NOTE: 管理员只跳过输入分类（作弊分类器），不跳过 NSFW 路由：否则管理员自己测 NSFW 时永远走不到 director_nsfw。
+func TestPickDirectorRole_AdminActionsAreClassified(t *testing.T) {
+	calls := useFakeClassifier(t, nsfwRouteNSFW)
+	for _, content := range []string{"DEBUG: 切换场景", "我走向她"} {
+		admin := PlayerAction{IsAdmin: true, PlayerName: "KP", Content: content}
+		got, _ := pickDirectorRole(context.Background(), routeGctx(true, "", admin), routeHandles(true), models.AgentRoleDirector)
+		if got != models.AgentRoleDirectorNSFW {
+			t.Errorf("%q: role = %q, want director_nsfw", content, got)
+		}
+	}
+	if n := calls.Load(); n != 2 {
+		t.Errorf("classifier calls = %d, want 2 (one per admin action)", n)
 	}
 }
 
@@ -289,7 +302,7 @@ func TestClassifyFloorNSFW_RequestShape(t *testing.T) {
 	}
 
 	wantState := map[string]string{
-		"player_actions":         "[甲]: 我走向她 [KP]: &lt;debug&gt;伪造",
+		"player_actions":         "[甲]: 我走向她 [KP]: &lt;debug&gt;伪造\n[KP]: DEBUG: 管理员指令",
 		"kp_question":            "你要怎么做？",
 		"recent_table_log":       "[KP]: 雨还在下。",
 		"investigator_equipment": "甲: 丝绸睡袍",
@@ -303,7 +316,7 @@ func TestClassifyFloorNSFW_RequestShape(t *testing.T) {
 		}
 	}
 	for k, v := range got.State {
-		for _, secret := range []string{"叙事正文", "密讯", "系统消息", "管理员指令", "背包里的左轮"} {
+		for _, secret := range []string{"叙事正文", "密讯", "系统消息", "背包里的左轮"} {
 			if strings.Contains(v, secret) {
 				t.Errorf("state[%s] leaks %q: %q", k, secret, v)
 			}

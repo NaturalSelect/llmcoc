@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import type { ClassifierLog } from '@/api/classifierTypes'
 import {
   barPercent,
-  CLASSIFIER_FILTERS,
+  chipDecisionLabel,
   CLASSIFIER_LOG_LIMIT,
   decisionLabel,
   decisionTone,
@@ -13,16 +13,18 @@ import {
   fmtElapsed,
   fmtPercent,
   fmtScore,
+  inputSummary,
   isHit,
   kindLabel,
   mergeClassifierLogs,
   normalizeClassifierLog,
   normalizeClassifierLogs,
   optionLabel,
+  orphanNote,
   probabilityRows,
   requestEntries,
+  startHistoryMerge,
   verdictText,
-  visibleLogs,
 } from './classifier'
 
 function log(id: number, extra: Partial<ClassifierLog> = {}): ClassifierLog {
@@ -126,12 +128,32 @@ describe('mergeClassifierLogs', () => {
     expect(ids(list)).toStrictEqual([1, 2, 3])
   })
 
-  test('按 id 去重：已有的不被覆盖，同一批里的重复也只留一条', () => {
-    const list = [log(1, { subject: '原来的' }), log(2)]
-    mergeClassifierLogs(list, [log(1, { subject: '重复的' }), log(2), log(3), log(3, { subject: '同批重复' })])
+  test('同 id 以后到的为准：覆盖已有的（服务端改写 floor 后用同一个 id 再推），同一批里的重复也是后面的覆盖前面的', () => {
+    const list = [log(1, { subject: '原来的', floor: 0 }), log(2)]
+    mergeClassifierLogs(list, [log(1, { subject: '更新的', floor: 7 }), log(2), log(3), log(3, { subject: '同批后到' })])
     expect(ids(list)).toStrictEqual([1, 2, 3])
-    expect(list[0].subject).toBe('原来的')
-    expect(list[2].subject).toBe('梅布尔')
+    expect(list[0]).toMatchObject({ subject: '更新的', floor: 7 })
+    expect(list[2].subject).toBe('同批后到')
+  })
+
+  test('覆盖更新不改变列表长度和顺序，也不影响其他记录（包括中间和末尾的 id）', () => {
+    const list = [log(1), log(3), log(5), log(8)]
+    const keep = list[2]
+    mergeClassifierLogs(list, [log(8, { floor: 2 }), log(3, { floor: 4 })])
+    expect(ids(list)).toStrictEqual([1, 3, 5, 8])
+    expect(list.map((l) => l.floor)).toStrictEqual([0, 4, 0, 2])
+    expect(list[2]).toBe(keep)
+  })
+
+  test('幂等：同一批重复合并、乱序、重叠的结果和按顺序只合并一次相同', () => {
+    const batch = [log(4, { floor: 1 }), log(2), log(9), log(2, { floor: 3 }), log(6)]
+    const once: ClassifierLog[] = []
+    mergeClassifierLogs(once, batch)
+    const many: ClassifierLog[] = []
+    for (let i = 0; i < 3; i++) mergeClassifierLogs(many, batch)
+    expect(ids(once)).toStrictEqual([2, 4, 6, 9])
+    expect(many).toStrictEqual(once)
+    expect(once[0].floor).toBe(3)
   })
 
   test('乱序到达也保持 id 升序', () => {
@@ -154,6 +176,13 @@ describe('mergeClassifierLogs', () => {
     expect(ids(list)).toStrictEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
   })
 
+  test('已达上限时覆盖更新不会挤掉别的记录', () => {
+    const list = Array.from({ length: 10 }, (_, i) => log(i + 11))
+    mergeClassifierLogs(list, [log(11, { floor: 5 }), log(20, { floor: 6 })], 10)
+    expect(ids(list)).toStrictEqual([11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+    expect([list[0].floor, list[9].floor]).toStrictEqual([5, 6])
+  })
+
   test('比保留窗口还旧的记录并入后立刻被截掉', () => {
     const list = Array.from({ length: 10 }, (_, i) => log(i + 11))
     mergeClassifierLogs(list, [log(1)], 10)
@@ -170,25 +199,34 @@ describe('mergeClassifierLogs', () => {
   })
 })
 
-describe('visibleLogs', () => {
-  const all = [log(1), log(2, { kind: 'nsfw_route' }), log(3), log(4, { kind: 'nsfw_route' })]
-
-  test('全部：新的在上，不改原数组', () => {
-    expect(ids(visibleLogs(all, 'all'))).toStrictEqual([4, 3, 2, 1])
-    expect(ids(all)).toStrictEqual([1, 2, 3, 4])
+describe('startHistoryMerge', () => {
+  test('请求期间没有实时事件：历史覆盖已有的（补回快照期间丢掉的 floor 改写）并补上缺的', () => {
+    const list = [log(1, { floor: 0 }), log(2)]
+    const apply = startHistoryMerge(list)
+    apply([log(1, { floor: 4 }), log(2), log(3)])
+    expect(ids(list)).toStrictEqual([1, 2, 3])
+    expect(list[0].floor).toBe(4)
   })
 
-  test('按 kind 筛选', () => {
-    expect(ids(visibleLogs(all, 'input_guard'))).toStrictEqual([3, 1])
-    expect(ids(visibleLogs(all, 'nsfw_route'))).toStrictEqual([4, 2])
-  })
-
-  test('筛选项：全部 / 输入分类 / NSFW 路由', () => {
-    expect(CLASSIFIER_FILTERS.map((f) => [f.key, f.label])).toStrictEqual([
-      ['all', '全部'],
-      ['input_guard', '输入分类'],
-      ['nsfw_route', 'NSFW 路由'],
+  test('请求期间被实时事件改写或新增的 id 以实时为准，较旧的历史响应不能把它们改回去', () => {
+    const list = [log(1, { floor: 0 }), log(2, { floor: 0 })]
+    const apply = startHistoryMerge(list)
+    // NOTE: 模拟实时事件：id 1 的 floor 改写成 7，id 3 是请求期间新增的
+    mergeClassifierLogs(list, [log(1, { floor: 7 }), log(3, { floor: 7 })])
+    apply([log(1, { floor: 0 }), log(2, { floor: 6 }), log(3, { floor: 0 }), log(4)])
+    expect(list.map((l) => [l.id, l.floor])).toStrictEqual([
+      [1, 7],
+      [2, 6],
+      [3, 7],
+      [4, 0],
     ])
+  })
+
+  test('响应里的记录比保留窗口还旧时不会挤掉已有的', () => {
+    const list = Array.from({ length: 5 }, (_, i) => log(i + 10))
+    const apply = startHistoryMerge(list)
+    apply([log(1), log(2)])
+    expect(ids(list)).toStrictEqual([1, 2, 10, 11, 12, 13, 14])
   })
 })
 
@@ -227,6 +265,36 @@ describe('标签与色调', () => {
     // NOTE: 出错优先于 decision：输入分类出错时的放行不能显示成平和的绿色
     expect(t('passed', 'error')).toBe('warning')
     expect(t('clean', 'error')).toBe('warning')
+  })
+
+  test('chip 上的判定文案：路由写成「走 xxx Director」，输入分类沿用通用文案；出错的补「（出错）」', () => {
+    const c = (kind: 'input_guard' | 'nsfw_route', decision: string, status: 'ok' | 'error' = 'ok') => chipDecisionLabel({ kind, decision, status })
+    expect(c('nsfw_route', 'nsfw')).toBe('走 NSFW Director')
+    expect(c('nsfw_route', 'clean')).toBe('走 Director')
+    expect(c('nsfw_route', 'failed', 'error')).toBe('失败（沿用上周期）')
+    // NOTE: 路由遇到 HTTP 400 按安全过滤命中处理，decision 仍是 nsfw，status 是 error
+    expect(c('nsfw_route', 'nsfw', 'error')).toBe('走 NSFW Director（出错）')
+    expect(c('nsfw_route', 'mystery')).toBe('mystery')
+    expect(c('input_guard', 'passed')).toBe('放行')
+    expect(c('input_guard', 'blocked')).toBe('已拒收')
+    expect(c('input_guard', 'passed', 'error')).toBe('放行（出错）')
+    // NOTE: input_guard 不会出现路由的取值，出现了按通用文案原样显示
+    expect(c('input_guard', 'nsfw')).toBe('涉及 NSFW')
+  })
+
+  test('孤儿行的输入摘要：折成一行、去首尾空白，没有就是空串', () => {
+    expect(inputSummary({ request: { player_input: '  我推门\n\n进去\t看看  ' } })).toBe('我推门 进去 看看')
+    expect(inputSummary({ request: { player_character: '梅布尔' } })).toBe('')
+    expect(inputSummary({ request: {} })).toBe('')
+  })
+
+  test('孤儿行的说明：拒收 / 放行各一句，只针对 floor 为 0 的输入分类', () => {
+    const n = (extra: Partial<ClassifierLog>) => orphanNote({ kind: 'input_guard', floor: 0, decision: 'passed', ...extra })
+    expect(n({ decision: 'blocked' })).toBe('已拒收，未进入对局')
+    expect(n({ decision: 'passed' })).toBe('尚未成为行动（等待其他玩家，或被后一次提交取代）')
+    expect(n({ decision: 'passed', floor: 3 })).toBe('')
+    expect(n({ decision: 'mystery' })).toBe('')
+    expect(n({ kind: 'nsfw_route', decision: 'clean' })).toBe('')
   })
 
   test('本周期执行的角色：只有 nsfw_route 且有角色才有', () => {

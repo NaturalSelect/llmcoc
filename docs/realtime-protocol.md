@@ -318,7 +318,7 @@ KP 这一个周期结束。
 
 #### `classifier_log`
 
-System One 分类器每调用一次发布一条，供管理员在游戏页的「分类器记录」里排查阈值。它是**临时事件（`seq = 0`）**，只发给管理员连接：非管理员收不到，也不会因此在 `seq` 上出现空洞；不进缓冲、不补发，断线期间的记录要靠历史接口补回。载荷为 `{"log": ClassifierLog}`：
+System One 分类器每调用一次发布一条，供管理员在游戏页的消息流里排查阈值（嵌在对应的玩家消息下面）。它是**临时事件（`seq = 0`）**，只发给管理员连接：非管理员收不到，也不会因此在 `seq` 上出现空洞；不进缓冲、不补发，断线期间的记录要靠历史接口补回。载荷为 `{"log": ClassifierLog}`：
 
 ```json
 {"log": {
@@ -338,7 +338,7 @@ System One 分类器每调用一次发布一条，供管理员在游戏页的「
 | `kind` | `input_guard`（玩家输入分类，命中则拒收）或 `nsfw_route`（KP 周期开始前的 NSFW 路由） |
 | `created_at` | RFC 3339 时间 |
 | `user_id` / `subject` | `input_guard`：提交者的用户 id 和扮演的调查员名；`nsfw_route`：`user_id` 恒为 0，`subject` 是本周期提交行动的调查员名（多个用「、」连接，可为空串） |
-| `floor` | `nsfw_route` 的周期编号；`input_guard` 恒为 0（客户端只在 > 0 时显示） |
+| `floor` | `nsfw_route`：周期编号，等于该周期玩家消息的 `floor`。`input_guard`：提交时为 0；这条输入后来成为玩家行动（周期开始、玩家消息落库）时，服务端把它改成那条消息的 `floor`，并用同一个 `id` 再推一次本事件，客户端按 `id` 覆盖更新。被拦截、被同一玩家后一次提交取代、还在等其他玩家的输入保持 0。管理员的输入不过输入分类，没有 `input_guard` 记录 |
 | `decision` | `input_guard`：`blocked`（已拒收）/ `passed`（放行，含分类器出错时的放行）；`nsfw_route`：`nsfw`（本周期用 `director_nsfw`）/ `clean`（用 `director`）/ `failed`（调用失败或响应异常，沿用上个周期的角色） |
 | `status` / `error` | `ok` 或 `error`；`error` 表示调用失败、超时或响应异常，此时 `choice` 为空串、`probabilities` 为空对象、`score` 为 0，`error` 是人读原因（`ok` 时为空串） |
 | `choice` | 概率最高的选项名 |
@@ -348,9 +348,9 @@ System One 分类器每调用一次发布一条，供管理员在游戏页的「
 | `role` | `nsfw_route`：本周期实际执行的 Director 角色（`director` / `director_nsfw`）；`input_guard` 为空串 |
 | `elapsed_ms` / `request_id` | 分类请求耗时（毫秒）和上游请求 id（可能为空串） |
 
-客户端必须按 `log.id` **幂等**处理：历史接口和实时事件会重叠，同一个 `id` 已存在就忽略；到达顺序不保证与 `id` 一致，要按 `id` 升序插入，并只保留最近 500 条（游戏页的实现在 `frontend/src/game/classifier.ts` 的 `mergeClassifierLogs`，由 `roomState` 的 `classifier_log` 分支调用）。快照期间收到的该事件会被丢弃，面板的刷新或下次打开会从历史接口补回。
+客户端必须按 `log.id` 处理：历史接口和实时事件会重叠，同一个 `id` 再次到达是更新（`input_guard` 的 `floor` 会被改写），要覆盖已有记录；到达顺序不保证与 `id` 一致，要按 `id` 升序插入，并只保留最近 500 条（游戏页的实现在 `frontend/src/game/classifier.ts` 的 `mergeClassifierLogs`，由 `roomState` 的 `classifier_log` 分支调用）。快照期间收到的该事件会被丢弃，所以客户端在进房、每次快照应用之后和无缝重连之后都重新拉一次历史。
 
-历史记录用管理员接口补拉，面板打开时请求一次，不轮询：
+历史记录用管理员接口补拉，不轮询：
 
 - `GET /api/admin/sessions/:id/classifier-logs?limit=N`：仅管理员，`limit` 默认 200、最大 500，返回 `{"logs": [ClassifierLog…]}`，按 `id` 升序（旧到新），是该房间最近的 N 条。
 

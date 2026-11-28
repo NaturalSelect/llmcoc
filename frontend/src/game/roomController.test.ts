@@ -70,6 +70,7 @@ function harness({ isHost = false, spotlight = SPOT_ME, waiting = WAITING_ME, me
     players: [{ user_id: 2, character_card: { name: '爱丽丝', stats: { hp: 10, san: 50 } } }],
   }
 
+  const synced = vi.fn()
   const deps: RoomDeps = {
     api: (async (method: string, path: string) => {
       calls.push(method + ' ' + path)
@@ -96,6 +97,7 @@ function harness({ isHost = false, spotlight = SPOT_ME, waiting = WAITING_ME, me
     onAuthLost: vi.fn(),
     onRoomGone: vi.fn(),
     onFrame: (f) => frames.push(f),
+    onSynced: synced,
     createSocket: (url) => new FakeWS(url, sockets) as unknown as WebSocket,
   }
   const ctl: RoomController = createRoomController(deps)
@@ -109,6 +111,7 @@ function harness({ isHost = false, spotlight = SPOT_ME, waiting = WAITING_ME, me
     toasts,
     posted,
     frames,
+    synced,
     room: () => ctl.room.value as Room,
     ws: () => sockets[sockets.length - 1],
     // 进房并完成 hello -> 快照，使房间进入 live
@@ -290,6 +293,61 @@ describe('RoomController', () => {
     expect(room.epoch).toBe('E2')
     expect(room.conn).toBe('live')
     expect(askLocked(room)).toBe(false)
+  })
+
+  test('onSynced：首次进房在快照应用之后通知一次，此时房间已经 live 且有消息', async () => {
+    const h = harness({ messages: [{ id: 1, kind: 'kp', status: 'done', floor: 1, content: '开场', role: 'assistant' }] })
+    const seen: Array<{ conn: string; messages: number }> = []
+    h.synced.mockImplementation(() => seen.push({ conn: h.room().conn, messages: h.room().messages.length }))
+    await h.ctl.enter(7)
+    h.ws().recv({ seq: 0, type: 'hello', data: { epoch: 'E1', seq: 3 } })
+    expect(h.synced).not.toHaveBeenCalled()
+    await flush()
+    expect(seen).toStrictEqual([{ conn: 'live', messages: 1 }])
+  })
+
+  test('onSynced：不需要快照的无缝重连在 hello 之后通知，且不重拉快照', async () => {
+    const h = harness()
+    await h.enter()
+    expect(h.synced).toHaveBeenCalledTimes(1)
+    const snapshots = h.calls.filter((c) => c.endsWith('/messages')).length
+
+    h.ws().drop()
+    h.reconnect()
+    expect(h.synced).toHaveBeenCalledTimes(1)
+    h.ws().recv({ seq: 0, type: 'hello', data: { epoch: 'E1', seq: 3 } })
+    expect(h.synced).toHaveBeenCalledTimes(2)
+    await flush()
+    expect(h.calls.filter((c) => c.endsWith('/messages')).length).toBe(snapshots)
+    expect(h.synced).toHaveBeenCalledTimes(2)
+  })
+
+  test('onSynced：epoch 变化或序号缺口后要重拉快照，等快照应用之后只通知一次', async () => {
+    const h = harness()
+    await h.enter()
+
+    h.ws().drop()
+    h.reconnect()
+    h.ws().recv({ seq: 0, type: 'hello', data: { epoch: 'E2', seq: 0 } })
+    expect(h.synced).toHaveBeenCalledTimes(1)
+    await flush()
+    expect(h.synced).toHaveBeenCalledTimes(2)
+
+    h.frame(1, 'floor_end', { floor: 1, reason: 'ask', messages: 0 })
+    h.frame(9, 'message_new', { message: { id: 50, kind: 'kp', status: 'done', content: 'gap' } })
+    expect(h.synced).toHaveBeenCalledTimes(2)
+    h.ws().recv({ seq: 0, type: 'hello', data: { epoch: 'E2', seq: 9 } })
+    await flush()
+    expect(h.synced).toHaveBeenCalledTimes(3)
+  })
+
+  test('onSynced：快照拉取失败时不通知', async () => {
+    const h = harness()
+    h.state.override = (_method, path) => (path === '/api/sessions/7/messages' ? Promise.reject(new Error('boom')) : undefined)
+    await h.ctl.enter(7)
+    h.ws().recv({ seq: 0, type: 'hello', data: { epoch: 'E1', seq: 3 } })
+    await flush()
+    expect(h.synced).not.toHaveBeenCalled()
   })
 
   test('重连：断线期间错过的内容被补齐；旧连接的迟到帧被忽略', async () => {

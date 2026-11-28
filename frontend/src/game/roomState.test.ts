@@ -1131,16 +1131,16 @@ describe('roomState', () => {
     expect(room.oocUnread).toBe(1)
   })
 
-  test('classifier_log 帧：并入 room.classifierLogs，按 log.id 去重，乱序到达仍保持 id 升序；临时帧不推进 lastSeq', () => {
+  test('classifier_log 帧：并入 room.classifierLogs，同 id 以后到的为准，乱序到达仍保持 id 升序；临时帧不推进 lastSeq', () => {
     const room = liveRoom({ seq: 10 })
     expect(room.classifierLogs).toStrictEqual([])
     feed(room, F(0, 'classifier_log', { log: clog(5) }))
     feed(room, F(0, 'classifier_log', { log: clog(3, { kind: 'nsfw_route', decision: 'nsfw', floor: 2 }) }))
-    feed(room, F(0, 'classifier_log', { log: clog(5, { subject: '重复的' }) }))
+    feed(room, F(0, 'classifier_log', { log: clog(5, { subject: '更新的' }) }))
     feed(room, F(0, 'classifier_log', { log: clog(8) }))
     feed(room, F(0, 'classifier_log', { log: clog(4) }))
     expect(room.classifierLogs.map((l) => l.id)).toStrictEqual([3, 4, 5, 8])
-    expect(room.classifierLogs[2].subject).toBe('梅布尔')
+    expect(room.classifierLogs[2].subject).toBe('更新的')
     expect(room.classifierLogs[0]).toMatchObject({ kind: 'nsfw_route', decision: 'nsfw', floor: 2 })
     expect(room.lastSeq).toBe(10)
   })
@@ -1154,11 +1154,19 @@ describe('roomState', () => {
     expect(room.classifierLogs.map((l) => l.id)).toStrictEqual([1])
   })
 
-  test('classifier_log 帧：同一个 id 重复到达只保留一条', () => {
+  test('classifier_log 帧：同一个 id 重复到达只保留一条；服务端改写 floor 后用同 id 再推，覆盖原来的', () => {
     const room = liveRoom({ seq: 10 })
     feed(room, F(0, 'classifier_log', { log: clog(1) }))
     feed(room, F(0, 'classifier_log', { log: clog(1) }))
     expect(room.classifierLogs.map((l) => l.id)).toStrictEqual([1])
+    expect(room.classifierLogs[0].floor).toBe(0)
+
+    feed(room, F(0, 'classifier_log', { log: clog(2) }))
+    feed(room, F(0, 'classifier_log', { log: clog(1, { floor: 6 }) }))
+    expect(room.classifierLogs.map((l) => [l.id, l.floor])).toStrictEqual([
+      [1, 6],
+      [2, 0],
+    ])
   })
 
   test('classifier_log 帧：超过 500 条只保留 id 最大的 500 条', () => {
@@ -1190,7 +1198,7 @@ describe('roomState', () => {
     RS.applySnapshot(room, snap())
     expect(room.classifierLogs).toStrictEqual([])
 
-    // NOTE: 分类器面板拉到的历史并进同一个数组，之后重连触发的快照不能把它们清掉
+    // NOTE: 进房和重连后拉到的历史并进同一个数组，之后重连触发的快照不能把它们清掉
     mergeClassifierLogs(room.classifierLogs, [clog(2), clog(3)])
     RS.onHello(room, { epoch: 'e2', seq: 9 })
     RS.applySnapshot(room, snap())

@@ -1,5 +1,5 @@
-// NOTE: 分类器记录（System One 的输入分类与 NSFW 路由）的纯逻辑：入参规整、按 id 合并、筛选排序、中文标签与格式化。
-// 不依赖 DOM、Vue 和网络；roomState 用它归约 classifier_log 事件，分类器面板用它展示。记录里的文本来自玩家和 KP，一律当不可信文本，这里不做任何 HTML 处理
+// NOTE: 分类器记录（System One 的输入分类与 NSFW 路由）的纯逻辑：入参规整、按 id 合并、中文标签与格式化。
+// 不依赖 DOM、Vue 和网络；roomState 用它归约 classifier_log 事件，游戏页里内嵌在玩家消息下的分类器 chip 和详情用它展示。记录里的文本来自玩家和 KP，一律当不可信文本，这里不做任何 HTML 处理
 import type { ClassifierKind, ClassifierLog } from '@/api/classifierTypes'
 import { fmtDuration } from '@/utils/format'
 
@@ -7,14 +7,6 @@ import { fmtDuration } from '@/utils/format'
 export const CLASSIFIER_LOG_LIMIT = 500
 
 const KINDS: readonly string[] = ['input_guard', 'nsfw_route']
-
-export type ClassifierFilter = 'all' | ClassifierKind
-
-export const CLASSIFIER_FILTERS: ReadonlyArray<{ key: ClassifierFilter; label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'input_guard', label: '输入分类' },
-  { key: 'nsfw_route', label: 'NSFW 路由' },
-]
 
 const KIND_LABELS: Record<string, string> = { input_guard: '输入分类', nsfw_route: 'NSFW 路由' }
 
@@ -38,9 +30,12 @@ const DECISION_LABELS: Record<string, string> = {
   failed: '失败',
 }
 
+// NOTE: 路由记录在 chip 上直接说结果落在哪个 Director，比「涉及 NSFW」更直观；failed 是调用失败后沿用了上个周期的角色
+const ROUTE_CHIP_LABELS: Record<string, string> = { nsfw: '走 NSFW Director', clean: '走 Director', failed: '失败（沿用上周期）' }
+
 const ROLE_LABELS: Record<string, string> = { director: 'Director', director_nsfw: 'NSFW Director' }
 
-// NOTE: 取值与 StampBadge 的 tone 一致，面板直接传给徽标
+// NOTE: 取值与 StampBadge 的 tone 一致，chip 直接传给徽标
 export type ClassifierTone = 'danger' | 'seal' | 'warning' | 'moss' | 'faint'
 
 export interface ProbabilityRow {
@@ -135,32 +130,44 @@ export function normalizeClassifierLogs(raw: unknown): ClassifierLog[] {
   return out
 }
 
-// NOTE: 原地并入 list（Vue 的 reactive 数组必须原地改才会触发渲染，所以不返回新数组）：按 id 去重（已有的不覆盖），保持 id 升序，
-// 超过 limit 条时丢掉 id 最小的。历史接口和实时事件会重叠，也可能乱序到达，所以这几种情况都要成立
+// NOTE: 原地并入 list（Vue 的 reactive 数组必须原地改才会触发渲染，所以不返回新数组）：同 id 以 incoming 为准覆盖已有的，
+// 因为服务端会在输入成为玩家行动时改写那条记录的 floor，并用同一个 id 再推一次。保持 id 升序且无重复，超过 limit 条时丢掉 id 最小的。
+// 历史接口和实时事件会重叠、重复、乱序到达，所以怎么交错结果都只取决于每个 id 最后到达的那一份
 export function mergeClassifierLogs(list: ClassifierLog[], incoming: readonly ClassifierLog[], limit = CLASSIFIER_LOG_LIMIT): void {
-  let seen: Set<number> | null = null
   for (const log of incoming) {
     const last = list.length > 0 ? list[list.length - 1].id : 0
     if (log.id > last) {
       list.push(log)
-      seen?.add(log.id)
       continue
     }
-    // NOTE: 慢路径：id 不比末尾新，可能是重复也可能是乱序的旧记录
-    if (seen === null) seen = new Set(list.map((l) => l.id))
-    if (seen.has(log.id)) continue
-    let i = list.length
-    while (i > 0 && list[i - 1].id > log.id) i--
-    list.splice(i, 0, log)
-    seen.add(log.id)
+    // NOTE: 慢路径：id 不比末尾新，要么是已有记录的更新，要么是乱序到达的旧记录；列表按 id 升序，二分找到第一个不小于它的位置
+    let lo = 0
+    let hi = list.length
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1
+      if (list[mid].id < log.id) lo = mid + 1
+      else hi = mid
+    }
+    if (lo < list.length && list[lo].id === log.id) list[lo] = log
+    else list.splice(lo, 0, log)
   }
   if (list.length > limit) list.splice(0, list.length - limit)
 }
 
-// NOTE: 列表展示：按 kind 筛选，新的在上
-export function visibleLogs(logs: readonly ClassifierLog[], filter: string): ClassifierLog[] {
-  const list = filter === 'all' ? logs.slice() : logs.filter((l) => l.kind === filter)
-  return list.sort((a, b) => b.id - a.id)
+// NOTE: 历史接口的响应只是请求发出那一刻的状态，而实时事件在请求期间可能已经把某条记录更新得更新（例如 floor 从 0 变成周期号）。
+// 请求发出前调用本函数记下当时的记录，响应回来后调用返回的函数：请求期间被实时事件新增或改写过的 id 以实时的为准，其余照常并入（覆盖）
+export function startHistoryMerge(list: ClassifierLog[]): (history: readonly ClassifierLog[]) => void {
+  const before = new Map(list.map((l) => [l.id, l]))
+  return (history) => {
+    const now = new Map(list.map((l) => [l.id, l]))
+    mergeClassifierLogs(
+      list,
+      history.filter((h) => {
+        const cur = now.get(h.id)
+        return cur === undefined || cur === before.get(h.id)
+      }),
+    )
+  }
 }
 
 export function kindLabel(kind: string): string {
@@ -175,6 +182,13 @@ export function optionLabel(name: string): string {
 export function decisionLabel(log: Pick<ClassifierLog, 'decision' | 'status'>): string {
   const base = DECISION_LABELS[log.decision] ?? (log.decision || '未知')
   return log.status === 'error' && log.decision !== 'failed' ? `${base}（出错）` : base
+}
+
+// NOTE: 内嵌 chip 上的判定文案：路由记录写成「走 xxx Director」，其余沿用 decisionLabel；出错的同样补「（出错）」
+export function chipDecisionLabel(log: Pick<ClassifierLog, 'kind' | 'decision' | 'status'>): string {
+  const route = log.kind === 'nsfw_route' ? ROUTE_CHIP_LABELS[log.decision] : undefined
+  if (route === undefined) return decisionLabel(log)
+  return log.status === 'error' && log.decision !== 'failed' ? `${route}（出错）` : route
 }
 
 // NOTE: blocked 和 nsfw 醒目；出错和 failed 警示；passed 和 clean 平和
@@ -245,7 +259,21 @@ export function requestEntries(request: Record<string, string> | null | undefine
   return Object.entries(request ?? {}).map(([key, value]) => ({ key, value }))
 }
 
-// NOTE: 只有 nsfw_route 才有「本周期执行的角色」；没有角色时返回空串，面板据此不显示这一行
+// NOTE: 孤儿行（input_guard 且 floor 为 0，不属于任何玩家消息）上的输入摘要：发给分类器的 player_input，折成一行交给 CSS 截断
+export function inputSummary(log: Pick<ClassifierLog, 'request'>): string {
+  return (log.request?.player_input ?? '').replace(/\s+/g, ' ').trim()
+}
+
+// NOTE: 孤儿行的一句说明：被拦截的没有进入对局；放行的还没成为行动（还在等别的玩家，或被同一玩家的后一次提交取代）。
+// 后者之后若成为行动，服务端会改写 floor，记录就会从孤儿行移到玩家消息下面
+export function orphanNote(log: Pick<ClassifierLog, 'kind' | 'floor' | 'decision'>): string {
+  if (log.kind !== 'input_guard' || log.floor !== 0) return ''
+  if (log.decision === 'blocked') return '已拒收，未进入对局'
+  if (log.decision === 'passed') return '尚未成为行动（等待其他玩家，或被后一次提交取代）'
+  return ''
+}
+
+// NOTE: 只有 nsfw_route 才有「本周期执行的角色」；没有角色时返回空串，详情据此不显示这一行
 export function executionNote(log: Pick<ClassifierLog, 'kind' | 'role'>): string {
   if (log.kind !== 'nsfw_route' || !log.role) return ''
   return `本周期执行：${ROLE_LABELS[log.role] ?? log.role}`

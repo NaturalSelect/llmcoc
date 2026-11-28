@@ -33,6 +33,9 @@ export interface RoomDeps {
   onFrame?: (frame: Frame) => void
   // 快照应用之后调用，页面据此强制滚到底部
   onSnapshot?: () => void
+  // NOTE: 房间状态已经与服务端对齐后调用：快照应用之后，或不需要快照的无缝重连在 hello 之后。
+  // 临时事件（如 classifier_log）不补发，快照期间和断线期间的都会丢，页面据此重新拉一次这类数据
+  onSynced?: () => void
   // 测试注入点
   createSocket?: (url: string) => WebSocket
 }
@@ -175,7 +178,10 @@ export class RoomController {
         gotHello = true
         this.backoff = 0
         this.failsBeforeHello = 0
-        this.runEffects(room, RS.onHello(room, frame), gen)
+        const effects = RS.onHello(room, frame)
+        this.runEffects(room, effects, gen)
+        // NOTE: 有快照要拉时等快照应用后再通知（fetchSnapshot）；无缝重连没有快照可等，hello 就是对齐的时刻
+        if (!effects.includes('fetchSnapshot')) this.deps.onSynced?.()
         return
       }
       const verdict = RS.acceptFrame(room, frame)
@@ -271,6 +277,7 @@ export class RoomController {
       const effects = RS.applySnapshot(room, { session, messages: messages || [], chatStatus })
       this.runEffects(room, effects, gen)
       this.deps.onSnapshot?.()
+      this.deps.onSynced?.()
     } catch (e) {
       if (this.room.value !== room || this.gen !== gen) return
       const status = errStatus(e)

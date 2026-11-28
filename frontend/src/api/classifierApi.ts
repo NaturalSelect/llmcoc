@@ -1,10 +1,10 @@
-// NOTE: 分类器记录的类型见 classifierTypes.ts。管理员专用，非管理员调用会得到 403，调用方（分类器面板）只在管理员界面里挂载
+// NOTE: 分类器记录的类型见 classifierTypes.ts。管理员专用，非管理员调用会得到 403，调用方（游戏页）只在管理员身份下请求
 import { normalizeClassifierLogs } from '@/game/classifier'
 import type { ClassifierLog } from './classifierTypes'
 import { api } from './client'
 
-// NOTE: 后端默认 200、最大 500；面板只拉最近一屏，更早的记录用不上，实时事件会补上之后的
-export const CLASSIFIER_HISTORY_LIMIT = 200
+// NOTE: 后端默认 200、最大 500；游戏页进房和重连后拉最大的一批，和房间里保留的条数上限一致
+export const CLASSIFIER_HISTORY_LIMIT = 500
 
 export const classifierApi = {
   // NOTE: Go 的 nil 切片会序列化成 null；每条记录都经过规整，不合法的丢弃，返回按 id 升序的列表（接口本身就是升序）

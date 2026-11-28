@@ -97,21 +97,21 @@ func (g GameContext) recordRouteLog(rec *models.ClassifierLog, role models.Agent
 	g.RecordClassifierLog(rec)
 }
 
-// routeSubject 是本周期提交行动的调查员名，去重后用顿号连接；管理员的指令不算。
+// routeSubject 是本周期提交行动的调查员名，去重后用顿号连接。
 func routeSubject(actions []PlayerAction) string {
 	var names []string
 	for _, a := range actions {
-		if name := strings.TrimSpace(a.PlayerName); !a.IsAdmin && name != "" && !slices.Contains(names, name) {
+		if name := strings.TrimSpace(a.PlayerName); name != "" && !slices.Contains(names, name) {
 			names = append(names, name)
 		}
 	}
 	return strings.Join(names, "、")
 }
 
-// hasPlayerActions 只认玩家提交的非空行动；管理员的 DEBUG 指令不是剧情行动，不触发分类。
+// hasPlayerActions 只认非空行动。NOTE: 管理员的输入（含 DEBUG 指令）和玩家一样要分类，否则管理员测试 NSFW 时永远走不到路由。
 func hasPlayerActions(actions []PlayerAction) bool {
 	return slices.ContainsFunc(actions, func(a PlayerAction) bool {
-		return !a.IsAdmin && strings.TrimSpace(a.Content) != ""
+		return strings.TrimSpace(a.Content) != ""
 	})
 }
 
@@ -211,9 +211,6 @@ func buildNSFWRouteState(gctx GameContext) map[string]string {
 func renderRouteActions(actions []PlayerAction) string {
 	var lines []string
 	for _, a := range actions {
-		if a.IsAdmin {
-			continue
-		}
 		if body := foldGuardText(xmlEscape(a.Content)); body != "" {
 			lines = append(lines, "["+xmlEscape(a.PlayerName)+"]: "+body)
 		}

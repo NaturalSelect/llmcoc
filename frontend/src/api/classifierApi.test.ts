@@ -48,12 +48,13 @@ describe('classifierApi', () => {
   test('list：GET 管理员接口，带 token 和默认的 limit', async () => {
     await classifierApi.list(7)
     expect(lastCall()).toEqual({ path: `/api/admin/sessions/7/classifier-logs?limit=${CLASSIFIER_HISTORY_LIMIT}`, method: 'GET', auth: 'Bearer tok' })
-    expect(CLASSIFIER_HISTORY_LIMIT).toBe(200)
+    // NOTE: 默认就是后端允许的最大值 500，游戏页进房和重连后一次拉满
+    expect(CLASSIFIER_HISTORY_LIMIT).toBe(500)
   })
 
   test('list：可以指定 limit', async () => {
-    await classifierApi.list(7, 500)
-    expect(lastCall().path).toBe('/api/admin/sessions/7/classifier-logs?limit=500')
+    await classifierApi.list(7, 50)
+    expect(lastCall().path).toBe('/api/admin/sessions/7/classifier-logs?limit=50')
   })
 
   test('list：按接口给的顺序（旧到新）返回规整后的记录，不合法的项丢弃', async () => {

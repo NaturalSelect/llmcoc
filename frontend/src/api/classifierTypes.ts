@@ -1,11 +1,12 @@
 // NOTE: System One 分类器记录的结构，按后端契约整理：管理员接口 GET /api/admin/sessions/:id/classifier-logs 返回 { logs }，
-// 房间 WebSocket 的临时事件（seq=0）classifier_log 的 data 为 { log }（只有管理员连接会收到，不补发）。两条路径是同一种记录，按 id 去重合并
+// 房间 WebSocket 的临时事件（seq=0）classifier_log 的 data 为 { log }（只有管理员连接会收到，不补发）。两条路径是同一种记录，按 id 合并：
+// 同 id 以后到的为准，因为服务端会改写记录后用同一个 id 再推一次（见 floor）
 
 // NOTE: input_guard 是玩家提交行动前的越权/索要谜底/提示词注入分类；nsfw_route 是 KP 周期开始前的 NSFW 路由分类
 export type ClassifierKind = 'input_guard' | 'nsfw_route'
 
 export interface ClassifierLog {
-  // NOTE: 房间内全局唯一的自增 id，用来去重和排序
+  // NOTE: 房间内全局唯一的自增 id，用来合并和排序；同一个 id 可能再次到达（floor 被改写），后到的覆盖先前的
   id: number
   kind: ClassifierKind
   // NOTE: RFC 3339
@@ -14,7 +15,9 @@ export interface ClassifierLog {
   user_id: number
   // NOTE: input_guard 是提交者扮演的调查员名；nsfw_route 是本周期提交行动的调查员名（多个用「、」连接），可为空串
   subject: string
-  // NOTE: nsfw_route 的周期编号；input_guard 恒为 0
+  // NOTE: 周期编号，等于那个周期里玩家消息的 floor。nsfw_route 从一开始就是周期号；
+  // input_guard 在提交刚发生时为 0，该输入后来成为玩家行动（周期开始、玩家消息落库）时，服务端把它改成那条玩家消息的 floor，
+  // 并用同一个 id 再推一次 classifier_log。被拦截的、被同一玩家后一次提交取代的、还在等其他玩家的输入 floor 保持 0
   floor: number
   // NOTE: input_guard 只会是 blocked（已拒收）/ passed（放行，含分类器出错时的放行）；
   // nsfw_route 只会是 nsfw（本周期用 director_nsfw）/ clean（用 director）/ failed（调用失败，沿用了上个周期的角色）。

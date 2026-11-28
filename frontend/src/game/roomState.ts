@@ -90,7 +90,7 @@ export interface Room {
   streams: Record<number, WriterStream>
   ooc: OocMessage[]
   oocUnread: number
-  // NOTE: 分类器记录，只有管理员连接才会收到 classifier_log 事件；按 id 升序、去重、最多 500 条，分类器面板打开时拉的历史也并进这里
+  // NOTE: 分类器记录，只有管理员连接才会收到 classifier_log 事件；按 id 升序、同 id 覆盖更新、最多 500 条，进房和重连后拉的历史也并进这里
   classifierLogs: ClassifierLog[]
   handbookSeq: number
   encounterSeq: number
@@ -433,7 +433,8 @@ function onOocMessage(room: Room, d: FrameData): void {
   if (!sameId(msg.user_id, room.userId)) room.oocUnread += 1
 }
 
-// NOTE: 临时事件（seq=0，不补发），历史接口和实时事件会重叠，合并时按 log.id 幂等；字段不合法的记录直接忽略
+// NOTE: 临时事件（seq=0，不补发）；服务端会把同一个 id 的记录改写后再推一次（输入成为玩家行动时改 floor），所以按 log.id 覆盖更新，
+// 历史接口和实时事件重叠、重复、乱序都幂等；字段不合法的记录直接忽略
 function onClassifierLog(room: Room, d: FrameData): void {
   const log = normalizeClassifierLog(d.log)
   if (log) mergeClassifierLogs(room.classifierLogs, [log])

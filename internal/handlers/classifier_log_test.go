@@ -253,6 +253,89 @@ func TestRunOneFloor_RouteLogsReachTheDatabaseAndAdmins(t *testing.T) {
 	}
 }
 
+func TestAttachInputGuardLogs_AttachesTheNewestMatchingLogAndPushesTheUpdate(t *testing.T) {
+	initTestDB(t)
+	const sid = 705
+	hub := hubFor(sid)
+	admin, _, _ := hub.SubscribeFor(0, 9, true)
+	t.Cleanup(func() { hub.Unsubscribe(admin) })
+
+	save := func(user uint, decision, input string) uint {
+		rec := &models.ClassifierLog{
+			Kind: models.ClassifierKindInputGuard, UserID: user, Decision: decision, Status: models.ClassifierStatusOK,
+			Request: models.JSONField[map[string]string]{Data: map[string]string{"player_input": input}},
+		}
+		recordClassifierLog(sid, rec)
+		return rec.ID
+	}
+	superseded := save(3, models.ClassifierDecisionPassed, "我贴着门听")
+	blocked := save(3, models.ClassifierDecisionBlocked, "我贴着门听")
+	accepted := save(3, models.ClassifierDecisionPassed, "我贴着门听")
+	otherUser := save(4, models.ClassifierDecisionPassed, "我贴着门听")
+	otherText := save(3, models.ClassifierDecisionPassed, "我换一句")
+	for len(admin.ch) > 0 {
+		<-admin.ch
+	}
+
+	attachInputGuardLogs(sid, 6, []models.SessionTurnAction{{UserID: 3, ActionSummary: "我贴着门听"}})
+
+	floors := map[uint]int{}
+	for _, row := range classifierLogRows(t, sid) {
+		floors[row.ID] = row.Floor
+	}
+	if floors[accepted] != 6 {
+		t.Errorf("accepted log floor = %d, want 6", floors[accepted])
+	}
+	for name, id := range map[string]uint{"superseded": superseded, "blocked": blocked, "other user": otherUser, "other text": otherText} {
+		if floors[id] != 0 {
+			t.Errorf("%s log floor = %d, want it left at 0", name, floors[id])
+		}
+	}
+	if len(admin.ch) != 1 {
+		t.Fatalf("admin events = %d, want exactly the one update", len(admin.ch))
+	}
+	if got := eventClassifierLog(t, <-admin.ch); got.ID != accepted || got.Floor != 6 {
+		t.Errorf("pushed log = id %d floor %d, want id %d floor 6 (same id, so the client updates in place)", got.ID, got.Floor, accepted)
+	}
+}
+
+func TestChatStream_AttachesTheInputLogToTheFloorItStarted(t *testing.T) {
+	initTestDB(t)
+	sessionID, userID := seedPlayingSession(t)
+	setSpotlight(t, sessionID, &models.SpotlightState{UserIDs: []uint{userID}, Names: []string{"Test Char"}, Question: "你听见了什么？"})
+	runner := &fakeRunner{run: askRun("接下来呢？", []uint{userID}, []string{"Test Char"})}
+	tap := tapRoom(t, sessionID)
+	rec := &models.ClassifierLog{
+		Kind: models.ClassifierKindInputGuard, Decision: models.ClassifierDecisionPassed, Status: models.ClassifierStatusOK,
+		Request: models.JSONField[map[string]string]{Data: map[string]string{"player_input": "我贴着门听"}},
+	}
+	g := &fakeGuard{verdict: agent.InputVerdict{Log: rec}}
+
+	w := postChat(makeTestRouter(guardedHandlers(runner, g), userID, "tester"), sessionID, "我贴着门听")
+	if body := decodeChatAccepted(t, w); !body.FloorStarted {
+		t.Fatalf("floor_started = false, body: %s", w.Body.String())
+	}
+	tap.waitCount("floor_end", 1)
+
+	var playerFloor int
+	for _, m := range loadMessages(t, sessionID) {
+		if m.Kind == models.MessageKindPlayer {
+			playerFloor = m.Floor
+		}
+	}
+	rows := classifierLogRows(t, sessionID)
+	if len(rows) != 1 || playerFloor == 0 || rows[0].Floor != playerFloor {
+		t.Fatalf("rows = %+v, player message floor = %d, want the record's floor to equal the message's", rows, playerFloor)
+	}
+	events := tap.ofType("classifier_log")
+	if len(events) != 2 {
+		t.Fatalf("classifier_log events = %d, want 2: the original (floor 0) and the update", len(events))
+	}
+	if first, last := eventClassifierLog(t, events[0]), eventClassifierLog(t, events[1]); first.ID != last.ID || first.Floor != 0 || last.Floor != playerFloor {
+		t.Errorf("events = %+v then %+v, want the same id going from floor 0 to %d", first, last, playerFloor)
+	}
+}
+
 func classifierLogsRouter() *gin.Engine {
 	r := gin.New()
 	admin := r.Group("/admin", withAuth(1, "admin", "admin"))

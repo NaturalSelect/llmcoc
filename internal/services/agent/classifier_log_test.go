@@ -259,8 +259,8 @@ func TestRecordRouteLog_FillsOwnershipAndHandsItToTheHook(t *testing.T) {
 	if len(got) != 1 || got[0] != rec {
 		t.Fatalf("hook calls = %d, want exactly one with the same record", len(got))
 	}
-	if rec.Role != "director_nsfw" || rec.Floor != 7 || rec.Subject != "甲、乙" {
-		t.Errorf("role/floor/subject = %q/%d/%q, want director_nsfw/7/甲、乙 (deduplicated, no admin)", rec.Role, rec.Floor, rec.Subject)
+	if rec.Role != "director_nsfw" || rec.Floor != 7 || rec.Subject != "甲、乙、KP" {
+		t.Errorf("role/floor/subject = %q/%d/%q, want director_nsfw/7/甲、乙、KP (deduplicated, admin included)", rec.Role, rec.Floor, rec.Subject)
 	}
 
 	gctx.recordRouteLog(nil, models.AgentRoleDirector, 8)

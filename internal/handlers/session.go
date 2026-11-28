@@ -1164,7 +1164,7 @@ func (h *SessionHandlers) ChatStream(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息过长(最多2000字)"})
 		return
 	}
-	// NOTE: 管理员的 DEBUG 指令也走这个接口，必须跳过分类，否则调试指令会被当成越权请求拦掉。
+	// NOTE: 管理员整体跳过输入分类（作弊分类器）：它的 DEBUG 指令也走这个接口，会被当成越权请求拦掉。NSFW 路由不跳过管理员。
 	if !isAdminUser(c, userID) {
 		if v := h.classify(c.Request.Context(), uint(sessionID), userID, content); v.Blocked {
 			chatLog.Warn("chat blocked by input guard", "session", sessionID, "user", username, "category", v.Category, "score", v.Score)

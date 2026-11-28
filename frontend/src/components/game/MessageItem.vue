@@ -31,6 +31,8 @@ import { computed, ref } from 'vue'
 import type { Component } from 'vue'
 import { api } from '@/api/client'
 import type { WriterDirection } from '@/api/adminTypesCore'
+import type { ClassifierLog } from '@/api/classifierTypes'
+import ClassifierChips from '@/components/game/ClassifierChips.vue'
 import { describeEvent, eventsOf } from '@/game/events'
 import type { EventIcon, EventTone } from '@/game/events'
 import {
@@ -52,12 +54,14 @@ import { useAuthStore } from '@/stores/auth'
 import { fmtDuration, fmtStepAvg, fmtTime } from '@/utils/format'
 import { renderProse } from '@/utils/markdown'
 
-const props = defineProps<{ msg: RoomMessage; room: Room; canPinClue?: boolean }>()
+const props = defineProps<{ msg: RoomMessage; room: Room; canPinClue?: boolean; classifierLogs?: readonly ClassifierLog[] }>()
 const emit = defineEmits<{ preview: [src: string]; pinClue: [msg: RoomMessage] }>()
 const auth = useAuthStore()
 
 const kind = computed(() => msgKind(props.msg))
 const mine = computed(() => isMyMessage(props.msg, props.room.userId))
+// NOTE: 分类器结果是管理员的调试信息，只挂在玩家消息下。这里再检查一次角色，非管理员即使被传了记录也不会在 DOM 里出现
+const classifierShown = computed(() => (auth.isAdmin && kind.value === 'player' ? (props.classifierLogs ?? []) : []))
 const time = computed(() => timeOf(props.msg))
 // NOTE: 耗时、步数、平均每步是给调参用的引擎指标，只给管理员看
 const timing = computed(() => (auth.isAdmin ? directorTiming(props.msg) : null))
@@ -333,6 +337,8 @@ const EVENT_TONES: Record<EventTone, string> = {
 
       <p v-else class="whitespace-pre-wrap font-prose text-prose text-fg">{{ stripLegacyTags(msg.content) }}</p>
     </div>
+
+    <ClassifierChips v-if="classifierShown.length" :logs="classifierShown" :end="mine" />
   </article>
 </template>
 

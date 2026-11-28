@@ -378,6 +378,7 @@ func (h *SessionHandlers) startFloor(seg kpSegment) error {
 	for _, m := range players {
 		hub.Publish("message_new", gin.H{"message": newMessageResponse(m)})
 	}
+	attachInputGuardLogs(sessionID, floor, seg.turnActions)
 	hub.Publish("spotlight", spotlightEventPayload(&models.SpotlightState{}))
 	hub.Publish("floor_start", gin.H{"floor": floor, "reason": seg.reason()})
 

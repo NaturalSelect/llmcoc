@@ -28,6 +28,8 @@ class FakeWS {
 }
 
 const SPOT_ME = { user_ids: [2], names: ['爱丽丝'], question: '你要怎么做？', kp_floor: false, asked_me: true, stop: '' }
+// NOTE: KP 持有发言权、没有点名：流里不会出现问题卡，分类器相关用例用它避免问题卡干扰位置断言
+const SPOT_KP = { user_ids: [], names: [], question: '', kp_floor: true, asked_me: false, stop: '' }
 
 const kpMessage = {
   id: 1,
@@ -36,6 +38,7 @@ const kpMessage = {
   status: 'done',
   content: '雨夜里，门廊的灯忽明忽暗。',
   floor: 1,
+  created_at: '2026-11-28T10:00:00',
 }
 
 const askMessage = {
@@ -45,6 +48,7 @@ const askMessage = {
   status: 'done',
   content: '你要怎么做？',
   floor: 1,
+  created_at: '2026-11-28T10:00:20',
   meta: { options: ['推门进去', '绕到后院'], ask: { user_ids: [2], names: ['爱丽丝'] } },
 }
 
@@ -56,6 +60,7 @@ const eventMessage = {
   content: '',
   floor: 1,
   username: 'KP',
+  created_at: '2026-11-28T10:00:30',
   meta: {
     events: [
       { type: 'dice', character: '爱丽丝', skill: '侦查', roll: 45, level: '困难' },
@@ -69,8 +74,8 @@ function json(body: unknown, status = 200) {
   return { ok: status < 400, status, json: async () => body } as Response
 }
 
-// NOTE: 分类器面板打开时请求的历史接口（limit 写在路径里）；只有管理员界面会请求
-const CLASSIFIER_PATH = '/api/admin/sessions/7/classifier-logs?limit=200'
+// NOTE: 管理员进房、重连后请求的分类器历史接口（limit 写在路径里）；非管理员不会请求
+const CLASSIFIER_PATH = '/api/admin/sessions/7/classifier-logs?limit=500'
 
 function classifierLog(id: number, extra: Record<string, unknown> = {}) {
   return {
@@ -95,6 +100,38 @@ function classifierLog(id: number, extra: Record<string, unknown> = {}) {
   }
 }
 
+function routeLog(id: number, extra: Record<string, unknown> = {}) {
+  return classifierLog(id, {
+    kind: 'nsfw_route',
+    user_id: 0,
+    subject: '爱丽丝',
+    decision: 'nsfw',
+    choice: 'nsfw',
+    score: 0.72,
+    threshold: 0.5,
+    role: 'director_nsfw',
+    probabilities: { sexual_explicit: 0.5, sexual_suggestive: 0.22, clean: 0.28 },
+    request: { player_actions: '我推门进去' },
+    ...extra,
+  })
+}
+
+// NOTE: 玩家消息：id 4 起、时间晚于基础消息；floor 对应分类器记录里的 floor
+function playerMessage(id: number, floor: number, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    role: 'user',
+    kind: 'player',
+    status: 'done',
+    content: `行动${id}`,
+    floor,
+    user_id: 2,
+    username: 'alice',
+    created_at: `2026-11-28T10:01:${String(id).padStart(2, '0')}`,
+    ...extra,
+  }
+}
+
 interface Setup {
   hostId?: number
   spotlight?: Record<string, unknown>
@@ -105,10 +142,13 @@ interface Setup {
   maxPlayers?: number
   handbook?: Record<string, unknown>
   classifierLogs?: Array<Record<string, unknown>>
+  // NOTE: 自定义分类器历史接口的响应（可以挂起、失败）；不传就按 classifierLogs 返回，用例中途可以改 setup 返回的 classifier.logs
+  classifierRespond?: () => Promise<Response>
 }
 
-async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing', asAdmin = false, maxPlayers, handbook, classifierLogs }: Setup = {}) {
+async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing', asAdmin = false, maxPlayers, handbook, classifierLogs, classifierRespond }: Setup = {}) {
   const fetchCalls: Array<{ method: string; path: string }> = []
+  const classifier = { logs: classifierLogs ?? [] }
   const session = {
     id: 7,
     name: '雾港旧宅',
@@ -124,8 +164,11 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
       const method = init?.method || 'GET'
       fetchCalls.push({ method, path })
       if (path === '/api/sessions/7') return json(structuredClone(session))
+      // NOTE: 8 号房只给「切换房间」的用例用：能进房、有一条消息
+      if (path === '/api/sessions/8') return json({ ...structuredClone(session), id: 8, name: '另一个房间' })
+      if (path === '/api/sessions/8/messages') return json([kpMessage])
       if (path === '/api/sessions/7/messages') return json([kpMessage, eventMessage, askMessage, ...extraMessages])
-      if (path === '/api/sessions/7/chat-status') {
+      if (path === '/api/sessions/7/chat-status' || path === '/api/sessions/8/chat-status') {
         return json({ kp_running: false, submitted: false, floor: null, spotlight, waiting: { pending: 1, total: 1, submitted_names: [], pending_names: ['爱丽丝'] } })
       }
       if (path === '/api/sessions/7/chat') return json({}, 202)
@@ -135,7 +178,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
       }
       if (path === '/api/admin/messages/4/direction') return json({ id: 4, call_id: 'call_w1', auto: false, direction: '描述门廊，强调霉味' })
       if (path === '/api/admin/messages/5/direction') return json({ id: 5, call_id: '', auto: true, direction: '' })
-      if (path === CLASSIFIER_PATH) return json({ logs: classifierLogs ?? [] })
+      if (path === CLASSIFIER_PATH) return classifierRespond ? classifierRespond() : json({ logs: classifier.logs })
       if (path === '/api/characters/5') return json({ id: 5, name: '爱丽丝', occupation: '记者', inventory: [{ name: '最新的怀表', count: 1, type: 'misc' }], stats: { hp: 3, max_hp: 10, san: 20, max_san: 50, mp: 8, max_mp: 8 } })
       if (path === '/api/characters/5/portrait') return json({ portrait_hash: 'FF00AA' })
       return json({})
@@ -160,7 +203,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
   const ws = FakeWS.all[FakeWS.all.length - 1]
   ws.recv(0, 'hello', { epoch: 'E1', seq: 3 })
   await flushPromises()
-  return { wrapper, ws, router, fetchCalls, session }
+  return { wrapper, ws, router, fetchCalls, session, classifier }
 }
 
 beforeEach(() => {
@@ -641,64 +684,6 @@ describe('GameView', () => {
     player.wrapper.unmount()
   })
 
-  const classifierCalls = (calls: Array<{ method: string; path: string }>) => calls.filter((c) => c.path.startsWith('/api/admin/sessions/'))
-  const classifierRows = () => [...document.body.querySelectorAll('[data-testid="classifier-row"] [data-testid="row-subject"]')].map((n) => n.textContent)
-
-  test('管理员头部有「分类器」入口：进房时不请求，点开才请求一次历史并与实时事件合并去重', async () => {
-    const admin = await setup({ asAdmin: true, classifierLogs: [classifierLog(1), classifierLog(2, { kind: 'nsfw_route', decision: 'nsfw', floor: 3, role: 'director_nsfw' }), classifierLog(3)] })
-    const entry = () => admin.wrapper.findAll('header button').find((b) => b.text() === '分类器')
-    expect(entry()).toBeDefined()
-    expect(classifierCalls(admin.fetchCalls)).toHaveLength(0)
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
-
-    // NOTE: 面板还没打开时到达的实时事件先记在 room 里，打开后与历史合并，id 3 不会重复
-    admin.ws.recv(0, 'classifier_log', { log: classifierLog(3) })
-    await flushPromises()
-    expect(classifierCalls(admin.fetchCalls)).toHaveLength(0)
-
-    await entry()!.trigger('click')
-    await flushPromises()
-    expect(classifierCalls(admin.fetchCalls)).toStrictEqual([{ method: 'GET', path: CLASSIFIER_PATH }])
-    expect(document.body.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('分类器记录')
-    expect(classifierRows()).toStrictEqual(['调查员3', '调查员2', '调查员1'])
-
-    admin.ws.recv(0, 'classifier_log', { log: classifierLog(4, { decision: 'blocked', score: 0.9 }) })
-    admin.ws.recv(0, 'classifier_log', { log: classifierLog(4, { subject: '重复的' }) })
-    admin.ws.recv(0, 'classifier_log', { log: classifierLog(2) })
-    await flushPromises()
-    expect(classifierRows()).toStrictEqual(['调查员4', '调查员3', '调查员2', '调查员1'])
-    expect(classifierCalls(admin.fetchCalls)).toHaveLength(1)
-
-    const close = [...document.body.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭')!
-    close.click()
-    await flushPromises()
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
-    admin.wrapper.unmount()
-  })
-
-  test('管理员在手机的「更多操作」菜单里也有「分类器」', async () => {
-    const admin = await setup({ asAdmin: true })
-    await admin.wrapper.find('button[aria-label="更多操作"]').trigger('click')
-    const item = admin.wrapper.findAll('[role="menuitem"]').find((b) => b.text() === '分类器')
-    expect(item).toBeDefined()
-    await item!.trigger('click')
-    await flushPromises()
-    expect(document.body.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('分类器记录')
-    expect(classifierCalls(admin.fetchCalls)).toHaveLength(1)
-    admin.wrapper.unmount()
-  })
-
-  test('非管理员：头部没有「分类器」入口，页面里没有面板，也不会请求分类器接口', async () => {
-    const player = await setup({ classifierLogs: [classifierLog(1)] })
-    expect(player.wrapper.findAll('header button').some((b) => b.text().includes('分类器'))).toBe(false)
-    await player.wrapper.find('button[aria-label="更多操作"]').trigger('click')
-    expect(player.wrapper.findAll('[role="menuitem"]').some((b) => b.text().includes('分类器'))).toBe(false)
-    expect(player.wrapper.text()).not.toContain('分类器')
-    expect(document.body.textContent).not.toContain('分类器记录')
-    expect(player.fetchCalls.some((c) => c.path.startsWith('/api/admin/'))).toBe(false)
-    player.wrapper.unmount()
-  })
-
   test('流式中的 writer 正文：配图占位显示「配图生成中…」，没写完的图片语法不显示原始标记', async () => {
     const { wrapper, ws } = await setup({
       extraMessages: [{ id: 4, role: 'assistant', kind: 'writer', status: 'pending', floor: 1, content: '', meta: {} }],
@@ -718,6 +703,341 @@ describe('GameView', () => {
     expect(ws.closed).toBe(false)
     wrapper.unmount()
     expect(ws.closed).toBe(true)
+  })
+})
+
+// NOTE: 分类器结果内嵌在消息流里（仅管理员）：玩家消息下是 chip，还没成为玩家消息的输入分类是独立行；非管理员的页面里没有任何相关内容，也不请求
+describe('GameView 分类器内嵌', () => {
+  type Wrapper = Awaited<ReturnType<typeof setup>>['wrapper']
+  type Calls = Array<{ method: string; path: string }>
+
+  const adminCalls = (calls: Calls) => calls.filter((c) => c.path.startsWith('/api/admin/sessions/'))
+  const messageCalls = (calls: Calls) => calls.filter((c) => c.path === '/api/sessions/7/messages').length
+
+  function articleOf(wrapper: Wrapper, text: string) {
+    const found = wrapper.find('[role="log"]').findAll('article').find((a) => a.text().includes(text))
+    if (!found) throw new Error(`消息流里没有包含「${text}」的消息`)
+    return found
+  }
+
+  // NOTE: 按 DOM 顺序列出消息流里的消息、问题卡和孤儿行，用来断言孤儿行落在哪里。
+  // jsdom 的逗号选择器结果按选择器分组、不保证文档顺序，所以要自己按文档位置排序
+  function streamOrder(wrapper: Wrapper): string[] {
+    const log = wrapper.find('[role="log"]').element
+    const nodes = [...log.querySelectorAll('article, section[aria-label="KP 点名"], [data-testid="classifier-orphan"]')]
+    nodes.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+    return nodes.map((el) => {
+      if (el.matches('[data-testid="classifier-orphan"]')) return `orphan:${el.querySelector('[data-testid="orphan-subject"]')?.textContent}`
+      if (el.tagName === 'SECTION') return 'ask-card'
+      if (el.querySelector('ul[aria-label="KP 结算"]')) return 'event'
+      const text = el.textContent ?? ''
+      if (text.includes('雨夜里')) return 'kp'
+      if (text.includes('点名：爱丽丝')) return 'ask'
+      return `player:${/行动(\d+)/.exec(text)?.[1]}`
+    })
+  }
+
+  const chipKinds = (article: ReturnType<typeof articleOf>) => article.findAll('[data-testid="chip-kind"]').map((n) => n.text())
+
+  test('管理员：消息加载后请求一次历史（limit=500），玩家消息下出现 chip，头部不再有「分类器」入口', async () => {
+    const admin = await setup({
+      asAdmin: true,
+      spotlight: SPOT_KP,
+      extraMessages: [playerMessage(4, 2)],
+      classifierLogs: [classifierLog(1, { floor: 2 }), routeLog(2, { floor: 2 })],
+    })
+    expect(adminCalls(admin.fetchCalls)).toStrictEqual([{ method: 'GET', path: CLASSIFIER_PATH }])
+    const paths = admin.fetchCalls.map((c) => c.path)
+    expect(paths.indexOf(CLASSIFIER_PATH)).toBeGreaterThan(paths.indexOf('/api/sessions/7/messages'))
+
+    const article = articleOf(admin.wrapper, '行动4')
+    const chips = article.find('[data-testid="classifier-chips"]')
+    expect(chips.exists()).toBe(true)
+    expect(chips.findAll('[data-testid="chip-kind"]').map((n) => n.text())).toStrictEqual(['输入分类', 'NSFW 路由'])
+    expect(chips.findAll('[data-testid="chip-decision"]').map((n) => n.text())).toStrictEqual(['放行', '走 NSFW Director'])
+    expect(chips.findAll('[data-testid="chip-score"]').map((n) => n.text())).toStrictEqual(['0.10 / 0.80', '0.72 / 0.50'])
+    expect(admin.wrapper.find('[data-testid="classifier-orphan"]').exists()).toBe(false)
+
+    // NOTE: 自己的消息，chip 行靠右对齐，和气泡一致；点开后详情在 chip 下面，末尾有去系统设置的链接
+    expect(chips.find('div.flex').classes()).toContain('ml-auto')
+    const first = chips.findAll('[data-testid="classifier-chip"]')[0]
+    expect(first.attributes('aria-expanded')).toBe('false')
+    expect(article.find('[data-testid="classifier-detail"]').exists()).toBe(false)
+    await first.trigger('click')
+    expect(first.attributes('aria-expanded')).toBe('true')
+    const detail = article.find('[data-testid="classifier-detail"]')
+    expect(detail.exists()).toBe(true)
+    expect(detail.attributes('id')).toBe(first.attributes('aria-controls'))
+    const link = detail.find('a[href="/admin/settings"]')
+    expect(link.attributes('target')).toBe('_blank')
+
+    expect(admin.wrapper.findAll('header button').some((b) => b.text().includes('分类器'))).toBe(false)
+    await admin.wrapper.find('button[aria-label="更多操作"]').trigger('click')
+    expect(admin.wrapper.findAll('[role="menuitem"]').some((b) => b.text().includes('分类器'))).toBe(false)
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    admin.wrapper.unmount()
+  })
+
+  test('管理员：同一周期多名玩家时，输入分类各挂各的消息，路由 chip 只挂在该周期最后一条玩家消息', async () => {
+    const admin = await setup({
+      asAdmin: true,
+      spotlight: SPOT_KP,
+      extraMessages: [playerMessage(4, 2), playerMessage(5, 2, { user_id: 3, username: 'bob' })],
+      classifierLogs: [
+        classifierLog(1, { floor: 2, user_id: 2 }),
+        classifierLog(2, { floor: 2, user_id: 3, subject: '鲍勃' }),
+        routeLog(3, { floor: 2 }),
+        routeLog(4, { floor: 9 }),
+      ],
+    })
+    expect(chipKinds(articleOf(admin.wrapper, '行动4'))).toStrictEqual(['输入分类'])
+    expect(chipKinds(articleOf(admin.wrapper, '行动5'))).toStrictEqual(['输入分类', 'NSFW 路由'])
+    // NOTE: 别人的消息不靠右；没有对应玩家消息的周期（9）不展示
+    expect(articleOf(admin.wrapper, '行动5').find('[data-testid="classifier-chips"] div.flex').classes()).not.toContain('ml-auto')
+    expect(admin.wrapper.findAll('[data-testid="classifier-chip"]')).toHaveLength(3)
+    admin.wrapper.unmount()
+  })
+
+  test('非管理员：不请求分类器接口，页面里没有任何分类器内容，即使收到了实时帧', async () => {
+    const player = await setup({
+      spotlight: SPOT_KP,
+      extraMessages: [playerMessage(4, 2)],
+      classifierLogs: [classifierLog(1, { floor: 2 }), classifierLog(2, { floor: 0 })],
+    })
+    player.ws.recv(0, 'classifier_log', { log: classifierLog(3, { floor: 2 }) })
+    player.ws.recv(0, 'classifier_log', { log: classifierLog(4, { floor: 0 }) })
+    await flushPromises()
+
+    expect(player.fetchCalls.some((c) => c.path.startsWith('/api/admin/'))).toBe(false)
+    expect(articleOf(player.wrapper, '行动4').exists()).toBe(true)
+    expect(player.wrapper.find('[data-testid^="classifier"]').exists()).toBe(false)
+    expect(player.wrapper.html()).not.toContain('classifier')
+    expect(player.wrapper.text()).not.toContain('输入分类')
+    expect(player.wrapper.findAll('header button').some((b) => b.text().includes('分类器'))).toBe(false)
+    player.wrapper.unmount()
+  })
+
+  test('孤儿行（输入分类 floor 为 0）按 created_at 放在紧挨着的前一条消息之后；前一条是点名消息时放在问题卡之后', async () => {
+    const admin = await setup({
+      asAdmin: true,
+      classifierLogs: [
+        classifierLog(1, { subject: '最早', created_at: '2026-11-28T09:59:00' }),
+        classifierLog(2, { subject: '开场后', created_at: '2026-11-28T10:00:10' }),
+        classifierLog(3, { subject: '问题卡后', created_at: '2026-11-28T10:00:25', decision: 'blocked', score: 0.9 }),
+        classifierLog(4, { subject: '结算后', created_at: '2026-11-28T10:00:40' }),
+        classifierLog(5, { subject: '同刻', created_at: '2026-11-28T10:00:10' }),
+      ],
+    })
+    expect(streamOrder(admin.wrapper)).toStrictEqual([
+      'orphan:最早',
+      'kp',
+      'orphan:开场后',
+      'orphan:同刻',
+      'ask',
+      'ask-card',
+      'orphan:问题卡后',
+      'event',
+      'orphan:结算后',
+    ])
+
+    // NOTE: 孤儿行不在任何消息里面；展示提交者、输入摘要、判定 chip 和说明
+    const rows = admin.wrapper.findAll('[data-testid="classifier-orphan"]')
+    expect(rows.every((r) => r.element.closest('article') === null)).toBe(true)
+    const blocked = rows.find((r) => r.text().includes('问题卡后'))!
+    expect(blocked.find('[data-testid="orphan-input"]').text()).toBe('「我推门进去」')
+    expect(blocked.find('[data-testid="chip-decision"]').text()).toBe('已拒收')
+    expect(blocked.find('[data-testid="orphan-note"]').text()).toBe('已拒收，未进入对局')
+    const waiting = rows.find((r) => r.text().includes('结算后'))!
+    expect(waiting.find('[data-testid="chip-decision"]').text()).toBe('放行')
+    expect(waiting.find('[data-testid="orphan-note"]').text()).toBe('尚未成为行动（等待其他玩家，或被后一次提交取代）')
+
+    await waiting.find('[data-testid="classifier-chip"]').trigger('click')
+    expect(waiting.find('[data-testid="classifier-detail"]').exists()).toBe(true)
+    expect(rows.find((r) => r.text().includes('同刻'))!.find('[data-testid="classifier-detail"]').exists()).toBe(false)
+    admin.wrapper.unmount()
+  })
+
+  test('问题卡在消息流末尾时，挂在最后一条消息后面的孤儿行排在问题卡之后', async () => {
+    // NOTE: 点名消息之后已有玩家发言，问题卡找不到锚点，放到消息流末尾（紧跟最后一条消息）
+    const admin = await setup({
+      asAdmin: true,
+      extraMessages: [playerMessage(4, 2)],
+      classifierLogs: [
+        classifierLog(1, { subject: '玩家前', created_at: '2026-11-28T10:00:45' }),
+        classifierLog(2, { subject: '最末', created_at: '2026-11-28T10:30:00' }),
+      ],
+    })
+    expect(streamOrder(admin.wrapper)).toStrictEqual(['kp', 'ask', 'event', 'orphan:玩家前', 'player:4', 'ask-card', 'orphan:最末'])
+    admin.wrapper.unmount()
+  })
+
+  test('小说阅读模式下，孤儿行和 chip 都隐藏，切回来后恢复', async () => {
+    const admin = await setup({
+      asAdmin: true,
+      spotlight: SPOT_KP,
+      extraMessages: [playerMessage(4, 2)],
+      classifierLogs: [classifierLog(1, { floor: 2 }), classifierLog(2, { subject: '孤儿', created_at: '2026-11-28T10:00:25' })],
+    })
+    const rows = () => admin.wrapper.findAll('[data-testid="classifier-orphan"]').length
+    const chips = () => admin.wrapper.findAll('[data-testid="classifier-chip"]').length
+    expect([rows(), chips()]).toStrictEqual([1, 2])
+
+    const toggle = admin.wrapper.find('button[aria-label="小说阅读模式"]')
+    await toggle.trigger('click')
+    expect([rows(), chips()]).toStrictEqual([0, 0])
+    expect(admin.wrapper.find('ul[aria-label="KP 结算"]').exists()).toBe(false)
+    expect(articleOf(admin.wrapper, '行动4').exists()).toBe(true)
+
+    await toggle.trigger('click')
+    expect([rows(), chips()]).toStrictEqual([1, 2])
+    admin.wrapper.unmount()
+  })
+
+  test('实时帧用同一个 id 改写 floor：chip 从孤儿行移到玩家消息下面', async () => {
+    const admin = await setup({
+      asAdmin: true,
+      spotlight: SPOT_KP,
+      extraMessages: [playerMessage(4, 2)],
+      classifierLogs: [classifierLog(1, { subject: '爱丽丝', created_at: '2026-11-28T10:00:50' })],
+    })
+    expect(streamOrder(admin.wrapper)).toStrictEqual(['kp', 'ask', 'event', 'orphan:爱丽丝', 'player:4'])
+    expect(chipKinds(articleOf(admin.wrapper, '行动4'))).toStrictEqual([])
+
+    admin.ws.recv(0, 'classifier_log', { log: classifierLog(1, { subject: '爱丽丝', created_at: '2026-11-28T10:00:50', floor: 2 }) })
+    await flushPromises()
+    expect(streamOrder(admin.wrapper)).toStrictEqual(['kp', 'ask', 'event', 'player:4'])
+    expect(chipKinds(articleOf(admin.wrapper, '行动4'))).toStrictEqual(['输入分类'])
+
+    // NOTE: 同一周期的路由记录随后到达，挂在同一条消息上；重复到达同一帧不会多出 chip
+    admin.ws.recv(0, 'classifier_log', { log: routeLog(2, { floor: 2 }) })
+    admin.ws.recv(0, 'classifier_log', { log: routeLog(2, { floor: 2 }) })
+    await flushPromises()
+    expect(chipKinds(articleOf(admin.wrapper, '行动4'))).toStrictEqual(['输入分类', 'NSFW 路由'])
+    expect(adminCalls(admin.fetchCalls)).toHaveLength(1)
+    admin.wrapper.unmount()
+  })
+
+  test('历史响应晚于实时事件到达时，以实时事件为准，不会把新的 floor 盖回旧值', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const admin = await setup({
+      asAdmin: true,
+      spotlight: SPOT_KP,
+      extraMessages: [playerMessage(4, 2)],
+      classifierRespond: async () => {
+        await gate
+        return json({ logs: [classifierLog(1, { subject: '旧快照', floor: 0, created_at: '2026-11-28T10:00:50' }), classifierLog(2, { subject: '只在历史里', created_at: '2026-11-28T10:00:55' })] })
+      },
+    })
+    // NOTE: 请求还没返回时，实时帧先把 1 号记录改成了周期 2 的行动
+    admin.ws.recv(0, 'classifier_log', { log: classifierLog(1, { subject: '最新', floor: 2, created_at: '2026-11-28T10:00:50' }) })
+    await flushPromises()
+    release()
+    await flushPromises()
+
+    expect(streamOrder(admin.wrapper)).toStrictEqual(['kp', 'ask', 'event', 'orphan:只在历史里', 'player:4'])
+    expect(chipKinds(articleOf(admin.wrapper, '行动4'))).toStrictEqual(['输入分类'])
+    admin.wrapper.unmount()
+  })
+
+  test('重连后重新拉快照时再请求一次历史，补回断线期间丢掉的临时事件', async () => {
+    const admin = await setup({
+      asAdmin: true,
+      spotlight: SPOT_KP,
+      extraMessages: [playerMessage(4, 2)],
+      classifierLogs: [classifierLog(1, { subject: '爱丽丝', created_at: '2026-11-28T10:00:50' })],
+    })
+    expect(adminCalls(admin.fetchCalls)).toHaveLength(1)
+    expect(streamOrder(admin.wrapper)).toContain('orphan:爱丽丝')
+
+    // NOTE: 断线期间服务端把输入记成了周期 2 的行动并写了路由记录，这两个实时帧都丢了
+    admin.classifier.logs = [classifierLog(1, { subject: '爱丽丝', created_at: '2026-11-28T10:00:50', floor: 2 }), routeLog(2, { floor: 2 })]
+    admin.ws.recv(9, 'message_new', { message: playerMessage(9, 3) })
+    const ws2 = FakeWS.all[FakeWS.all.length - 1]
+    expect(ws2).not.toBe(admin.ws)
+    expect(adminCalls(admin.fetchCalls)).toHaveLength(1)
+    ws2.recv(0, 'hello', { epoch: 'E1', seq: 9 })
+    await flushPromises()
+
+    expect(adminCalls(admin.fetchCalls)).toStrictEqual([
+      { method: 'GET', path: CLASSIFIER_PATH },
+      { method: 'GET', path: CLASSIFIER_PATH },
+    ])
+    expect(streamOrder(admin.wrapper)).toStrictEqual(['kp', 'ask', 'event', 'player:4'])
+    expect(chipKinds(articleOf(admin.wrapper, '行动4'))).toStrictEqual(['输入分类', 'NSFW 路由'])
+    admin.wrapper.unmount()
+  })
+
+  test('无缝重连（不需要快照）也会在 hello 之后重拉一次历史', async () => {
+    const admin = await setup({
+      asAdmin: true,
+      spotlight: SPOT_KP,
+      extraMessages: [playerMessage(4, 2)],
+      classifierLogs: [classifierLog(1, { subject: '爱丽丝', created_at: '2026-11-28T10:00:50' })],
+    })
+    const snapshots = messageCalls(admin.fetchCalls)
+    admin.classifier.logs = [classifierLog(1, { subject: '爱丽丝', created_at: '2026-11-28T10:00:50', floor: 2 })]
+
+    // NOTE: 连接断开后立刻重连（页面重新可见），带着游标，服务端不要求快照
+    admin.ws.onclose?.()
+    document.dispatchEvent(new Event('visibilitychange'))
+    const ws2 = FakeWS.all[FakeWS.all.length - 1]
+    expect(ws2).not.toBe(admin.ws)
+    expect(ws2.url).toContain('since=')
+    ws2.recv(0, 'hello', { epoch: 'E1', seq: 3 })
+    await flushPromises()
+
+    expect(messageCalls(admin.fetchCalls)).toBe(snapshots)
+    expect(adminCalls(admin.fetchCalls)).toHaveLength(2)
+    expect(streamOrder(admin.wrapper)).toStrictEqual(['kp', 'ask', 'event', 'player:4'])
+    expect(chipKinds(articleOf(admin.wrapper, '行动4'))).toStrictEqual(['输入分类'])
+    admin.wrapper.unmount()
+  })
+
+  test('历史请求失败只在控制台和轻提示里说明：整页照常，同一个房间只提示一次', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const admin = await setup({
+      asAdmin: true,
+      spotlight: SPOT_KP,
+      extraMessages: [playerMessage(4, 2)],
+      classifierRespond: async () => json({ error: '服务异常' }, 500),
+    })
+    const toasts = () => useUiStore().toasts.map((t) => t.message)
+    expect(toasts()).toHaveLength(1)
+    expect(toasts()[0]).toContain('分类器记录加载失败')
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(articleOf(admin.wrapper, '行动4').exists()).toBe(true)
+
+    admin.ws.recv(9, 'message_new', { message: playerMessage(9, 3) })
+    FakeWS.all[FakeWS.all.length - 1].recv(0, 'hello', { epoch: 'E1', seq: 9 })
+    await flushPromises()
+    expect(adminCalls(admin.fetchCalls)).toHaveLength(2)
+    expect(warn).toHaveBeenCalledTimes(2)
+    expect(toasts()).toHaveLength(1)
+    expect(articleOf(admin.wrapper, '行动4').exists()).toBe(true)
+    admin.wrapper.unmount()
+  })
+
+  test('切换房间后迟到的历史响应被丢弃：失败也不会给新房间弹提示', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const admin = await setup({
+      asAdmin: true,
+      classifierRespond: async () => {
+        await gate
+        return json({ error: '服务异常' }, 500)
+      },
+    })
+    await admin.router.push('/sessions/8')
+    await flushPromises()
+    expect(admin.wrapper.text()).toContain('另一个房间')
+
+    release()
+    await flushPromises()
+    expect(warn).not.toHaveBeenCalled()
+    expect(useUiStore().toasts).toStrictEqual([])
+    admin.wrapper.unmount()
   })
 })
 
