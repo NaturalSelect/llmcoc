@@ -19,6 +19,7 @@ import (
 
 const (
 	writerPaintToolName = "paint"
+	writerResetToolName = "reset_text"
 	// NOTE: 配图数量不设上限，这里只是防止模型无限循环调用工具；每次 paint 之后都要多一轮续写请求。
 	writerMaxToolRounds = 32
 
@@ -33,7 +34,7 @@ const (
 
 const (
 	writerToolRuleOff = `不要调用任何工具`
-	writerToolRuleOn  = `不要调用其中任何一个；你自己唯一可用的工具是 paint(配图)`
+	writerToolRuleOn  = `不要调用其中任何一个；你自己可用的工具只有 paint(配图)和 reset_text(清空已写正文重写)`
 
 	writerImageBanOff = `和图片`
 	writerImageBanOn  = `和外部图片(只有 paint 返回的地址可以写成图片，见 <illustration>)`
@@ -44,15 +45,19 @@ const (
 		<rule>你可以调用 paint 工具为正文配图，画面要求见工具说明。图片只能使用 paint 返回的地址，以单独成段的 ![一句话说明](地址) 写进正文，这是上面“只允许这几种标记”之外唯一允许的标记；不要编造地址，不要引用外部图片。</rule>
 		<rule>配图是正文的一部分：先写完这张图之前的文字，再调用 paint；拿到地址后，下一步先写出图片那一行，再接着往下写，不要重复已写内容。图片与文字互相配合，不能替代叙述。</rule>
 		<rule>地址要等 paint 返回才有，所以调用之前不要写图片行、占位或任何 ![](…) 标记，也不要写“(配图)”之类的提示：正文写到这张图之前就停笔，直接发出 paint 调用，图片行只在拿到地址之后的下一步写。</rule>
-		<rule>调用 paint 不会清除正文：已经写入的内容会被保留，从你离开的位置续写。</rule>
+		<rule>调用 paint 不会清除正文：已经写入的内容会被保留，从你离开的位置续写；要清除正文只能调用 reset_text。</rule>
 		<rule>主动配图，不要等 KP 或玩家要求，也不要吝啬：新地点或场景切换、重要人物首次登场、情绪与氛围的关键转折、发现重要线索或道具、战斗或追逐等高张力瞬间，都应该配一张图；一段有这些时机的正文却一张图都没有，是遗漏。每张图画不同的瞬间，不要为同一个画面重复配图。</rule>
 		<rule>图片的位置就是它所描绘的那一刻在正文里的位置：先把这一刻写成至少一整段文字，再调用 paint，图片紧跟在这段文字之后。新场景、新人物登场的配图，放在介绍它的第一段之后。第一次调用 paint 之前必须已经写出正文，不要一开篇就配图；也不要把图片集中堆在开头或结尾。</rule>
 		<rule>一次只调用一个 paint；写出这张图的图片行、再接着写下去之后，才可以为下一张图调用 paint。相邻两张图之间至少隔一段正文。</rule>
 		<rule>图片说明只用一句话概括画面，不得泄露玩家尚未获知的信息。</rule>
-	</illustration>`
+	</illustration>
+	<revision>
+		<rule>如果写到一半发现不对，可以调用 reset_text 清空这条回复里已经写出的全部正文，然后从头重写。典型情况：该配图的时机已经写过头，或者误写了图片行、占位、编造的地址，或者写偏了导演指令。发现后立刻调用，不要在正文里道歉、解释或补救。</rule>
+		<rule>reset_text 之后玩家只会看到重写后的正文，所以重写时要把必写项完整写一遍，不要写“接上文”。已经启动的配图地址仍然有效，需要时把它们写回正文，不要为同一个画面重复调用 paint。</rule>
+	</revision>`
 
 	writerInstructionToolClauseOff = `不要调用工具`
-	writerInstructionToolClauseOn  = `只有 paint 可以调用(用于配图，遇到新场景、人物登场、关键转折等时机应主动配图；调用前必须先写出这张图所描绘的那段正文，写完直接调用，调用前不要写图片行，图片跟在对应情节之后，不要一上来就配图)，不要调用其它工具`
+	writerInstructionToolClauseOn  = `只有 paint 和 reset_text 可以调用(paint 用于配图，遇到新场景、人物登场、关键转折等时机应主动配图；调用前必须先写出这张图所描绘的那段正文，写完直接调用，调用前不要写图片行，图片跟在对应情节之后，不要一上来就配图；reset_text 用于写到一半发现不对时清空已写正文后重写)，不要调用其它工具`
 )
 
 // renderWriterPaint 按 paintOK 渲染 Writer 提示词里的配图相关片段；关闭时与引入 paint 之前的提示词逐字节一致。
@@ -124,7 +129,7 @@ type writerPaintArgs struct {
 // execWriterPaint 执行 Writer 的一次工具调用，返回回传给模型的结果；成功启动配图时第二个返回值是占位地址。
 func execWriterPaint(call llm.ToolCall, gctx GameContext, handles map[models.AgentRole]agentHandle, start IllustrationStarter) (string, string) {
 	if call.Name != writerPaintToolName {
-		return "SYSTEM REJECT: 你只能调用 paint；记录里的其他工具属于 KP，已经执行完毕。继续写正文。", ""
+		return "SYSTEM REJECT: 你只能调用 paint 和 reset_text；记录里的其他工具属于 KP，已经执行完毕。继续写正文。", ""
 	}
 	var args writerPaintArgs
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
@@ -219,7 +224,7 @@ func (e *writerEmitter) restore(written int, tail string) {
 
 // appendWriterStreamTools 是 Writer 提供 paint 时的续写循环：每轮 tool_choice=auto 流式请求，
 // 模型调用 paint 就立即回传占位地址并开下一轮，直到某一轮不再调用工具。
-// 拒绝判定只作用于第一轮；流中途 EOF 时只丢弃并重发当前轮，已经写出的正文和已启动的配图保持不变。
+// 拒绝判定只作用于还没有任何正文的那一轮(第一轮和 reset_text 之后的一轮)；reset_text 清空已写正文。流中途 EOF 时只丢弃并重发当前轮，已经写出的正文和已启动的配图保持不变。
 func appendWriterStreamTools(ctx context.Context, h agentHandle, streamer llm.ToolStreamer, state *WriterState,
 	msgs []llm.ChatMessage, tools []llm.ToolDefinition, gctx GameContext, handles map[models.AgentRole]agentHandle,
 	start IllustrationStarter, nsfwMode bool, onToken func(string)) error {
@@ -237,12 +242,16 @@ func appendWriterStreamTools(ctx context.Context, h agentHandle, streamer llm.To
 		failures  int
 	)
 	em := &writerEmitter{onToken: onToken}
+	// NOTE: 此前没有任何正文的那一轮(第一轮，以及 reset_text 之后的一轮)才做拒绝判定，后面的轮里空内容是合法的收尾。
+	noTextYet := true
 	finish := func(err error) error {
 		appendWriterBuffer(state, normalizeIllustrationRefs(text, allocated))
 		return err
 	}
 
 	for round := 1; round <= writerMaxToolRounds; round++ {
+		gated := noTextYet
+		noTextYet = false
 		var res llm.ToolChatResult
 		var content string
 		for {
@@ -260,13 +269,13 @@ func appendWriterStreamTools(ctx context.Context, h agentHandle, streamer llm.To
 			}
 			var gate writerRefusalGate
 			onText := forward
-			if round == 1 {
+			if gated {
 				onText = func(chunk string) { forward(gate.feed(chunk)) }
 			}
 
 			var err error
 			res, err = streamer.ChatStreamTools(ctx, cacheKey, msgs, tools, onText)
-			if round == 1 {
+			if gated {
 				forward(gate.eof())
 			}
 			content = stripWriterControlTags(res.Content)
@@ -289,7 +298,7 @@ func appendWriterStreamTools(ctx context.Context, h agentHandle, streamer llm.To
 				text = joinWriterRounds(text, content)
 				return finish(err)
 			}
-			if round == 1 && (hasWriterRefusalPrefix(content) || (content == "" && len(res.ToolCalls) == 0)) {
+			if gated && (hasWriterRefusalPrefix(content) || (content == "" && len(res.ToolCalls) == 0)) {
 				failures++
 				debugf("Writer", "stream response rejected attempt=%d/%d preview=%s", failures, writerMaxGenerateAttempts, truncateRunes(content, 100))
 				if failures >= writerMaxGenerateAttempts {
@@ -315,6 +324,15 @@ func appendWriterStreamTools(ctx context.Context, h agentHandle, streamer llm.To
 			Reasoning: res.Reasoning, ReasoningBlocks: res.ReasoningBlocks,
 		})
 		for _, call := range res.ToolCalls {
+			if call.Name == writerResetToolName {
+				// NOTE: 当前轮的正文已经广播给玩家，这里要连同客户端一起整段清空；已启动的配图收不回，占位地址继续有效。
+				text = ""
+				em.restore(0, "")
+				notifyWriterRestart(ctx, 0)
+				noTextYet = true
+				msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: writerResetResult(allocated)})
+				continue
+			}
 			result, url := execWriterPaint(call, gctx, handles, start)
 			if url != "" {
 				allocated = append(allocated, url)
@@ -323,6 +341,23 @@ func appendWriterStreamTools(ctx context.Context, h agentHandle, streamer llm.To
 		}
 	}
 	return finish(nil)
+}
+
+// writerResetResult 是 reset_text 回传给模型的结果；已经启动的配图地址要告诉模型，否则重写时会把它们丢掉。
+func writerResetResult(allocated []string) string {
+	result := "已清空此前写出的全部正文，玩家只会看到你接下来写的内容。请从头重写，不要提及这次清空。"
+	if len(allocated) > 0 {
+		result += "已经启动的配图地址仍然有效：" + strings.Join(allocated, "、") + "。重写时把它们写回对应位置(各一次)，不要为同一个画面重复调用 paint。"
+	}
+	return result
+}
+
+func writerResetTool() llm.ToolDefinition {
+	return llm.ToolDefinition{
+		Name:        writerResetToolName,
+		Description: "清空这次回复里已经写出的全部正文，从头重写。只在写到一半发现不对时使用：该配图的时机已经写过头、误写了图片行或占位、写偏了导演指令。调用后此前的正文作废，玩家不会看到它；已经启动的配图仍会生成，其图片地址继续有效，重写时要把它们写回正文。正常写作不要调用：调用 paint 不会清除正文，已经写入的内容会被保留，从你离开的位置续写。不需要参数。",
+		Parameters:  jsonSchemaObject(`{"type": "object", "properties": {}, "required": []}`),
+	}
 }
 
 func writerPaintTool() llm.ToolDefinition {

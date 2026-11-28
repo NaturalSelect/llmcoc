@@ -139,8 +139,8 @@ func RunWriterStream(ctx context.Context, gctx GameContext, req WriterRequest, o
 
 	tools, _, _ := buildToolState(directorTools(handles[models.AgentRoleDramaturg].isEnabled()))
 	if paintOK {
-		// NOTE: paint 追加在 Director 工具列表之后，保持前缀稳定。
-		tools = append(tools, writerPaintTool())
+		// NOTE: paint 和 reset_text 追加在 Director 工具列表之后，保持前缀稳定。
+		tools = append(tools, writerPaintTool(), writerResetTool())
 	}
 	instruction := buildWriterInstruction(req, gctx, nsfwMode, paintOK)
 	// NOTE: Director 不等 Writer，快照里没有排在前面、刚写完的 writer 的正文；队列串行保证它们此刻已经结束，

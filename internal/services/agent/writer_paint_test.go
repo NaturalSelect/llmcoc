@@ -80,7 +80,7 @@ func runPaintLoop(t *testing.T, ctx context.Context, prov *writerToolFakeProvide
 	h := newWriterTestHandle(prov)
 	state := &WriterState{}
 	msgs := []llm.ChatMessage{{Role: "system", Content: "test-writer-system"}, {Role: "user", Content: "继续描述"}}
-	tools := []llm.ToolDefinition{writerPaintTool()}
+	tools := []llm.ToolDefinition{writerPaintTool(), writerResetTool()}
 	err := appendWriterStreamTools(ctx, h, prov, state, msgs, tools, gctx, handles, rec.start, false, onToken)
 	return state, err
 }
@@ -277,6 +277,79 @@ func TestWriterPaint_FirstRoundRefusalIsRetried(t *testing.T) {
 	}
 }
 
+func TestWriterPaint_ResetClearsEverythingWritten(t *testing.T) {
+	prov := &writerToolFakeProvider{rounds: []writerToolRound{
+		{text: "写偏了的正文。", calls: []llm.ToolCall{fakeToolCall("c1", writerResetToolName, `{}`)}},
+		{text: "重写的正文。"},
+	}}
+	rec := &startRecorder{}
+	var forwarded string
+	var keeps []int
+	ctx := WithWriterRestart(context.Background(), func(keep int) {
+		keeps = append(keeps, keep)
+		forwarded = forwarded[:keep]
+	})
+	state, err := runPaintLoop(t, ctx, prov, GameContext{}, paintTestHandles(), rec, func(s string) { forwarded += s })
+	if err != nil {
+		t.Fatalf("appendWriterStreamTools: %v", err)
+	}
+
+	if want := "重写的正文。"; state.Buffer != want || forwarded != want {
+		t.Errorf("Buffer = %q, forwarded = %q, want %q", state.Buffer, forwarded, want)
+	}
+	if len(keeps) != 1 || keeps[0] != 0 {
+		t.Errorf("restart keepBytes = %v, want [0]", keeps)
+	}
+	if tm := prov.reqs[1][3]; tm.Role != "tool" || tm.ToolCallID != "c1" || strings.HasPrefix(tm.Content, "SYSTEM REJECT") {
+		t.Errorf("tool message = %+v, want an accepted reset result", tm)
+	}
+	if len(rec.reqs) != 0 {
+		t.Errorf("reset must not start any image, got %+v", rec.reqs)
+	}
+}
+
+func TestWriterPaint_ResetKeepsStartedIllustrations(t *testing.T) {
+	prov := &writerToolFakeProvider{rounds: []writerToolRound{
+		{text: "他推开门。", calls: []llm.ToolCall{paintCall("c1", paintArgs)}},
+		{text: "![门后](illust://1)\n\n写偏了。", calls: []llm.ToolCall{fakeToolCall("c2", writerResetToolName, `{}`)}},
+		{text: "他推开门，门后是走廊。\n\n![门后](illust://1)"},
+	}}
+	rec := &startRecorder{}
+	state, err := runPaintLoop(t, context.Background(), prov, GameContext{}, paintTestHandles(), rec, nil)
+	if err != nil {
+		t.Fatalf("appendWriterStreamTools: %v", err)
+	}
+
+	if want := "他推开门，门后是走廊。\n\n![门后](illust://1)"; state.Buffer != want {
+		t.Errorf("Buffer = %q, want %q", state.Buffer, want)
+	}
+	if len(rec.reqs) != 1 {
+		t.Errorf("the image started before the reset must not be started again, got %d starts", len(rec.reqs))
+	}
+	if tm := prov.reqs[2][5]; tm.ToolCallID != "c2" || !strings.Contains(tm.Content, "illust://1") {
+		t.Errorf("reset result must list the still-valid placeholder, got %+v", tm)
+	}
+}
+
+func TestWriterPaint_EmptyRoundAfterResetIsRetried(t *testing.T) {
+	prov := &writerToolFakeProvider{rounds: []writerToolRound{
+		{text: "写偏了。", calls: []llm.ToolCall{fakeToolCall("c1", writerResetToolName, `{}`)}},
+		{text: ""},
+		{text: "重写。"},
+	}}
+	rec := &startRecorder{}
+	state, err := runPaintLoop(t, context.Background(), prov, GameContext{}, paintTestHandles(), rec, nil)
+	if err != nil {
+		t.Fatalf("appendWriterStreamTools: %v", err)
+	}
+	if state.Buffer != "重写。" {
+		t.Errorf("Buffer = %q, an empty reply right after a reset must be retried, not accepted", state.Buffer)
+	}
+	if got := prov.requestCount(); got != 3 {
+		t.Errorf("requests = %d, want 3", got)
+	}
+}
+
 func TestNormalizeIllustrationRefs(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -314,10 +387,10 @@ func TestRenderWriterPaint(t *testing.T) {
 			t.Errorf("off prompt lost %q", want)
 		}
 	}
-	if strings.Contains(off, "paint") || strings.Contains(off, "<illustration>") {
+	if strings.Contains(off, "paint") || strings.Contains(off, "<illustration>") || strings.Contains(off, "reset_text") {
 		t.Error("off prompt must not mention paint")
 	}
-	for _, want := range []string{"<illustration>", "唯一可用的工具是 paint", "![一句话说明](地址)", "不要一开篇就配图", "一次只调用一个 paint", "主动配图", "调用之前不要写图片行", "已经写入的内容会被保留"} {
+	for _, want := range []string{"<illustration>", "可用的工具只有 paint", "![一句话说明](地址)", "不要一开篇就配图", "一次只调用一个 paint", "主动配图", "调用之前不要写图片行", "已经写入的内容会被保留", "<revision>", "reset_text 之后玩家只会看到重写后的正文"} {
 		if !strings.Contains(on, want) {
 			t.Errorf("on prompt missing %q", want)
 		}
@@ -357,13 +430,13 @@ func TestRunWriterStream_OffersPaintWhenAvailable(t *testing.T) {
 		t.Fatalf("ChatStream calls = %d, ChatStreamTools calls = %d, want 0/1", prov.writerFakeProvider.callCount(), prov.requestCount())
 	}
 	tools := prov.reqTools[0]
-	if len(tools) == 0 || tools[len(tools)-1].Name != writerPaintToolName {
-		t.Errorf("paint must be the last declared tool, got %d tools", len(tools))
+	if len(tools) < 2 || tools[len(tools)-2].Name != writerPaintToolName || tools[len(tools)-1].Name != writerResetToolName {
+		t.Errorf("paint and reset_text must be the last declared tools, got %d tools", len(tools))
 	}
 	if system := prov.reqs[0][0].Content; !strings.Contains(system, "<illustration>") {
 		t.Errorf("system prompt should carry the illustration rules:\n%s", system)
 	}
-	if last := prov.reqs[0][len(prov.reqs[0])-1].Content; !strings.Contains(last, "只有 paint 可以调用") || !strings.Contains(last, "不要一上来就配图") {
+	if last := prov.reqs[0][len(prov.reqs[0])-1].Content; !strings.Contains(last, "只有 paint 和 reset_text 可以调用") || !strings.Contains(last, "不要一上来就配图") {
 		t.Errorf("continuation instruction should allow paint:\n%s", last)
 	}
 }
