@@ -39,12 +39,21 @@ func NewSessionHandlers(r agent.AgentRunner) *SessionHandlers {
 }
 
 // NOTE: classify 对 userID 在 sessionID 里提交的输入做分类，并把房间里的公开背景一起交给分类器（见 loadGuardContext）。
+// 分类器真正被调用过时，把完整记录落库并推给管理员；调用方不需要关心。
 func (h *SessionHandlers) classify(ctx context.Context, sessionID, userID uint, content string) agent.InputVerdict {
 	ic := loadGuardContext(sessionID, userID)
+	var verdict agent.InputVerdict
 	if h.Guard != nil {
-		return h.Guard(ctx, content, ic)
+		verdict = h.Guard(ctx, content, ic)
+	} else {
+		verdict = agent.ClassifyPlayerInput(ctx, content, ic)
 	}
-	return agent.ClassifyPlayerInput(ctx, content, ic)
+	if rec := verdict.Log; rec != nil {
+		rec.UserID = userID
+		rec.Subject = ic.Character
+		recordClassifierLog(sessionID, rec)
+	}
+	return verdict
 }
 
 type CreateSessionReq struct {

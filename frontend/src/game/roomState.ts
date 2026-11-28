@@ -1,4 +1,6 @@
 // NOTE: 纯逻辑模块，不依赖 DOM / Vue 组件 / fetch / WebSocket；所有函数原地修改传入的 room（Vue 的 reactive 代理必须原地改才会触发渲染），副作用以 effects 字符串数组返回由调用方执行
+import type { ClassifierLog } from '@/api/classifierTypes'
+import { mergeClassifierLogs, normalizeClassifierLog } from './classifier'
 
 export type ConnState = 'connecting' | 'snapshot' | 'helloPending' | 'live' | 'reconnecting'
 export type RoomStatus = 'lobby' | 'playing' | 'ended'
@@ -88,6 +90,8 @@ export interface Room {
   streams: Record<number, WriterStream>
   ooc: OocMessage[]
   oocUnread: number
+  // NOTE: 分类器记录，只有管理员连接才会收到 classifier_log 事件；按 id 升序、去重、最多 500 条，分类器面板打开时拉的历史也并进这里
+  classifierLogs: ClassifierLog[]
   handbookSeq: number
   encounterSeq: number
   floor: { running: boolean; number: number; starting: boolean; startedAt: number }
@@ -195,6 +199,7 @@ export function newRoom(opts?: NewRoomOptions): Room {
     streams: {},
     ooc: [],
     oocUnread: 0,
+    classifierLogs: [],
     handbookSeq: 0,
     encounterSeq: 0,
     floor: { running: false, number: 0, starting: false, startedAt: 0 },
@@ -428,6 +433,12 @@ function onOocMessage(room: Room, d: FrameData): void {
   if (!sameId(msg.user_id, room.userId)) room.oocUnread += 1
 }
 
+// NOTE: 临时事件（seq=0，不补发），历史接口和实时事件会重叠，合并时按 log.id 幂等；字段不合法的记录直接忽略
+function onClassifierLog(room: Room, d: FrameData): void {
+  const log = normalizeClassifierLog(d.log)
+  if (log) mergeClassifierLogs(room.classifierLogs, [log])
+}
+
 export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined): Effect[] {
   const effects: Effect[] = []
   if (!frame || typeof frame.type !== 'string') return effects
@@ -450,6 +461,9 @@ export function applyFrame(room: Room, frame: Partial<Frame> | null | undefined)
       break
     case 'ooc_message':
       onOocMessage(room, d)
+      break
+    case 'classifier_log':
+      onClassifierLog(room, d)
       break
     case 'handbook_update':
       room.handbookSeq += 1

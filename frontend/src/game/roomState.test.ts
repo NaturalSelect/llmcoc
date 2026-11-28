@@ -1,5 +1,7 @@
 import { reactive, watchEffect } from 'vue'
 import { describe, expect, test } from 'vitest'
+import type { ClassifierLog } from '@/api/classifierTypes'
+import { mergeClassifierLogs } from './classifier'
 import * as RS from './roomState'
 import type { Frame, FrameData, Gates, Room, RoomMessage, Snapshot } from './roomState'
 
@@ -14,6 +16,26 @@ const msg = (id: number, extra: Partial<RoomMessage> = {}): RoomMessage => ({
 })
 const writer = (id: number, extra: Partial<RoomMessage> = {}): RoomMessage =>
   msg(id, { kind: 'writer', status: 'pending', ...extra })
+const clog = (id: number, extra: Partial<ClassifierLog> = {}): ClassifierLog => ({
+  id,
+  kind: 'input_guard',
+  created_at: '2026-11-28T10:20:30Z',
+  user_id: 3,
+  subject: '梅布尔',
+  floor: 0,
+  decision: 'passed',
+  status: 'ok',
+  error: '',
+  choice: 'in_character',
+  score: 0.1,
+  threshold: 0.8,
+  probabilities: { in_character: 0.9, authority_claim: 0.1 },
+  request: { player_input: '我推门进去' },
+  role: '',
+  elapsed_ms: 412,
+  request_id: 'req_abc',
+  ...extra,
+})
 
 // NOTE: 约定的调用顺序：acceptFrame 只做分类并推进游标，返回 'apply' 时调用方再调 applyFrame
 // NOTE: hello 之后的 resync 帧同样返回 'apply'，由 applyFrame 完成 helloPending -> snapshot 的切换并返回 ['fetchSnapshot']
@@ -49,6 +71,7 @@ describe('roomState', () => {
     expect(room.me).toStrictEqual({ submitted: false, draft: '' })
     expect(room.kpStatus).toBe('')
     expect(room.companionStatus).toBe('')
+    expect(room.classifierLogs).toStrictEqual([])
   })
 
   test('首次连接：hello 后补发的 seq 1..5 全部丢弃，快照期间的 6、7 缓冲后依次应用', () => {
@@ -1106,6 +1129,91 @@ describe('roomState', () => {
     expect(room.ooc.map((m) => m.id)).toStrictEqual([1, 2])
     expect(room.ooc[1].character_name).toBe('鲍勃')
     expect(room.oocUnread).toBe(1)
+  })
+
+  test('classifier_log 帧：并入 room.classifierLogs，按 log.id 去重，乱序到达仍保持 id 升序；临时帧不推进 lastSeq', () => {
+    const room = liveRoom({ seq: 10 })
+    expect(room.classifierLogs).toStrictEqual([])
+    feed(room, F(0, 'classifier_log', { log: clog(5) }))
+    feed(room, F(0, 'classifier_log', { log: clog(3, { kind: 'nsfw_route', decision: 'nsfw', floor: 2 }) }))
+    feed(room, F(0, 'classifier_log', { log: clog(5, { subject: '重复的' }) }))
+    feed(room, F(0, 'classifier_log', { log: clog(8) }))
+    feed(room, F(0, 'classifier_log', { log: clog(4) }))
+    expect(room.classifierLogs.map((l) => l.id)).toStrictEqual([3, 4, 5, 8])
+    expect(room.classifierLogs[2].subject).toBe('梅布尔')
+    expect(room.classifierLogs[0]).toMatchObject({ kind: 'nsfw_route', decision: 'nsfw', floor: 2 })
+    expect(room.lastSeq).toBe(10)
+  })
+
+  test('classifier_log 帧：夹在持久事件中间不造成跳号，也不会触发重连', () => {
+    const room = liveRoom({ seq: 10 })
+    expect(feed(room, F(11, 'floor_start', { floor: 1 })).verdict).toBe('apply')
+    expect(feed(room, F(0, 'classifier_log', { log: clog(1) })).verdict).toBe('apply')
+    expect(feed(room, F(12, 'floor_end', { floor: 1 })).verdict).toBe('apply')
+    expect(room.lastSeq).toBe(12)
+    expect(room.classifierLogs.map((l) => l.id)).toStrictEqual([1])
+  })
+
+  test('classifier_log 帧：同一个 id 重复到达只保留一条', () => {
+    const room = liveRoom({ seq: 10 })
+    feed(room, F(0, 'classifier_log', { log: clog(1) }))
+    feed(room, F(0, 'classifier_log', { log: clog(1) }))
+    expect(room.classifierLogs.map((l) => l.id)).toStrictEqual([1])
+  })
+
+  test('classifier_log 帧：超过 500 条只保留 id 最大的 500 条', () => {
+    const room = liveRoom({ seq: 0 })
+    for (let i = 1; i <= 520; i++) feed(room, F(0, 'classifier_log', { log: clog(i) }))
+    expect(room.classifierLogs).toHaveLength(500)
+    expect(room.classifierLogs[0].id).toBe(21)
+    expect(room.classifierLogs[499].id).toBe(520)
+    // NOTE: 已被截掉的旧记录再到达，不会把新的挤出去
+    feed(room, F(0, 'classifier_log', { log: clog(2) }))
+    expect(room.classifierLogs).toHaveLength(500)
+    expect(room.classifierLogs[0].id).toBe(21)
+  })
+
+  test('classifier_log 帧：缺 log、id 或 kind 不合法的帧忽略，不抛错', () => {
+    const room = liveRoom({ seq: 10 })
+    feed(room, F(0, 'classifier_log', {}))
+    feed(room, F(0, 'classifier_log', { log: null }))
+    feed(room, F(0, 'classifier_log', { log: { ...clog(1), id: 'x' } }))
+    feed(room, F(0, 'classifier_log', { log: { ...clog(2), kind: 'unknown' } }))
+    expect(room.classifierLogs).toStrictEqual([])
+    expect(room.lastSeq).toBe(10)
+  })
+
+  test('classifier_log 帧：快照期间到达的丢弃（靠历史接口补拉）；快照和重连不清掉已有记录', () => {
+    const room = RS.newRoom({ sessionId: 1, userId: 3, isHost: true })
+    RS.onHello(room, { epoch: 'e1', seq: 5 })
+    expect(RS.acceptFrame(room, F(0, 'classifier_log', { log: clog(1) }))).toBe('drop')
+    RS.applySnapshot(room, snap())
+    expect(room.classifierLogs).toStrictEqual([])
+
+    // NOTE: 分类器面板拉到的历史并进同一个数组，之后重连触发的快照不能把它们清掉
+    mergeClassifierLogs(room.classifierLogs, [clog(2), clog(3)])
+    RS.onHello(room, { epoch: 'e2', seq: 9 })
+    RS.applySnapshot(room, snap())
+    expect(room.classifierLogs.map((l) => l.id)).toStrictEqual([2, 3])
+  })
+
+  test('classifier_log 帧：在 reactive 代理上调用时写进原始数组并触发 watchEffect', () => {
+    const target = RS.newRoom({ sessionId: 1, userId: 3, isHost: true })
+    const room = reactive(target) as Room
+    RS.onHello(room, { epoch: 'e1', seq: 0 })
+    RS.applySnapshot(room, snap())
+    let seen: number[] = []
+    const stop = watchEffect(
+      () => {
+        seen = room.classifierLogs.map((l) => l.id)
+      },
+      { flush: 'sync' },
+    )
+    feed(room, F(0, 'classifier_log', { log: clog(2) }))
+    feed(room, F(0, 'classifier_log', { log: clog(1) }))
+    stop()
+    expect(seen).toStrictEqual([1, 2])
+    expect(target.classifierLogs.map((l) => l.id)).toStrictEqual([1, 2])
   })
 
   test('handbook_update / encounter_update / session(cards) 帧递增刷新序号', () => {

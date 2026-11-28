@@ -38,10 +38,12 @@ const (
 var inputGuardViolations = []string{"authority_claim", "spoiler_request", "prompt_injection"}
 
 // InputVerdict 是一次分类的结论。Category 是概率最高的违规类别，Score 是三项违规概率之和。
+// Log 是分类器真正被调用时的完整记录（失败放行时也有），没有可用的分类器时为 nil。
 type InputVerdict struct {
 	Blocked  bool
 	Category string
 	Score    float64
+	Log      *models.ClassifierLog
 }
 
 // NOTE: InputContext 是分类时附带的房间背景，帮分类器判断 player_input 在回应什么（比如一句「告诉我」是在回答 KP 的哪个问题）。
@@ -254,6 +256,10 @@ func ClassifyPlayerInput(ctx context.Context, content string, ic InputContext) I
 		instructions += inputGuardContextNote
 	}
 
+	threshold := inputGuardBlockThreshold()
+	rec := newClassifierLog(models.ClassifierKindInputGuard, state, threshold)
+	rec.Decision = models.ClassifierDecisionPassed
+	start := time.Now()
 	resp, err := g.client.SystemOne(ctx, typesafe.SystemOneRequest{
 		State: state,
 		Questions: map[string]typesafe.Question{
@@ -267,15 +273,19 @@ func ClassifyPlayerInput(ctx context.Context, content string, ic InputContext) I
 		} else {
 			alog.Warn("input guard call failed, letting input through", "err", err)
 		}
-		return InputVerdict{}
+		reason, requestID := describeClassifierError(err)
+		failClassifierLog(rec, reason, requestID, start)
+		return InputVerdict{Log: rec}
 	}
 	ans, ok := resp.Answers[inputGuardQuestionID].(typesafe.ChoiceAnswer)
 	if !ok {
 		alog.Warn("input guard returned an unexpected answer, letting input through", "request_id", resp.RequestID)
-		return InputVerdict{}
+		failClassifierLog(rec, classifierProtocolErrorReason, resp.RequestID, start)
+		return InputVerdict{Log: rec}
 	}
+	answerClassifierLog(rec, ans, resp.RequestID, start)
 
-	var verdict InputVerdict
+	verdict := InputVerdict{Log: rec}
 	var top float64
 	for _, name := range inputGuardViolations {
 		p := ans.Probabilities[name]
@@ -285,8 +295,11 @@ func ClassifyPlayerInput(ctx context.Context, content string, ic InputContext) I
 			verdict.Category = name
 		}
 	}
-	threshold := inputGuardBlockThreshold()
 	verdict.Blocked = verdict.Score >= threshold
+	rec.Score = verdict.Score
+	if verdict.Blocked {
+		rec.Decision = models.ClassifierDecisionBlocked
+	}
 	alog.Debug("input guard verdict",
 		"choice", ans.Choice, "category", verdict.Category, "score", verdict.Score,
 		"threshold", threshold, "blocked", verdict.Blocked, "probabilities", ans.Probabilities,

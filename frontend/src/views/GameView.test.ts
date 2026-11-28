@@ -69,6 +69,32 @@ function json(body: unknown, status = 200) {
   return { ok: status < 400, status, json: async () => body } as Response
 }
 
+// NOTE: 分类器面板打开时请求的历史接口（limit 写在路径里）；只有管理员界面会请求
+const CLASSIFIER_PATH = '/api/admin/sessions/7/classifier-logs?limit=200'
+
+function classifierLog(id: number, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    kind: 'input_guard',
+    created_at: '2026-11-28T10:20:30',
+    user_id: 2,
+    subject: `调查员${id}`,
+    floor: 0,
+    decision: 'passed',
+    status: 'ok',
+    error: '',
+    choice: 'in_character',
+    score: 0.1,
+    threshold: 0.8,
+    probabilities: { in_character: 0.9, authority_claim: 0.1 },
+    request: { player_input: '我推门进去' },
+    role: '',
+    elapsed_ms: 412,
+    request_id: '',
+    ...extra,
+  }
+}
+
 interface Setup {
   hostId?: number
   spotlight?: Record<string, unknown>
@@ -78,9 +104,10 @@ interface Setup {
   asAdmin?: boolean
   maxPlayers?: number
   handbook?: Record<string, unknown>
+  classifierLogs?: Array<Record<string, unknown>>
 }
 
-async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing', asAdmin = false, maxPlayers, handbook }: Setup = {}) {
+async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], players, status = 'playing', asAdmin = false, maxPlayers, handbook, classifierLogs }: Setup = {}) {
   const fetchCalls: Array<{ method: string; path: string }> = []
   const session = {
     id: 7,
@@ -108,6 +135,7 @@ async function setup({ hostId = 1, spotlight = SPOT_ME, extraMessages = [], play
       }
       if (path === '/api/admin/messages/4/direction') return json({ id: 4, call_id: 'call_w1', auto: false, direction: '描述门廊，强调霉味' })
       if (path === '/api/admin/messages/5/direction') return json({ id: 5, call_id: '', auto: true, direction: '' })
+      if (path === CLASSIFIER_PATH) return json({ logs: classifierLogs ?? [] })
       if (path === '/api/characters/5') return json({ id: 5, name: '爱丽丝', occupation: '记者', inventory: [{ name: '最新的怀表', count: 1, type: 'misc' }], stats: { hp: 3, max_hp: 10, san: 20, max_san: 50, mp: 8, max_mp: 8 } })
       if (path === '/api/characters/5/portrait') return json({ portrait_hash: 'FF00AA' })
       return json({})
@@ -609,6 +637,64 @@ describe('GameView', () => {
 
     const player = await setup({ extraMessages: [writer] })
     expect(player.wrapper.findAll('button').some((b) => b.text().includes('指令'))).toBe(false)
+    expect(player.fetchCalls.some((c) => c.path.startsWith('/api/admin/'))).toBe(false)
+    player.wrapper.unmount()
+  })
+
+  const classifierCalls = (calls: Array<{ method: string; path: string }>) => calls.filter((c) => c.path.startsWith('/api/admin/sessions/'))
+  const classifierRows = () => [...document.body.querySelectorAll('[data-testid="classifier-row"] [data-testid="row-subject"]')].map((n) => n.textContent)
+
+  test('管理员头部有「分类器」入口：进房时不请求，点开才请求一次历史并与实时事件合并去重', async () => {
+    const admin = await setup({ asAdmin: true, classifierLogs: [classifierLog(1), classifierLog(2, { kind: 'nsfw_route', decision: 'nsfw', floor: 3, role: 'director_nsfw' }), classifierLog(3)] })
+    const entry = () => admin.wrapper.findAll('header button').find((b) => b.text() === '分类器')
+    expect(entry()).toBeDefined()
+    expect(classifierCalls(admin.fetchCalls)).toHaveLength(0)
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+
+    // NOTE: 面板还没打开时到达的实时事件先记在 room 里，打开后与历史合并，id 3 不会重复
+    admin.ws.recv(0, 'classifier_log', { log: classifierLog(3) })
+    await flushPromises()
+    expect(classifierCalls(admin.fetchCalls)).toHaveLength(0)
+
+    await entry()!.trigger('click')
+    await flushPromises()
+    expect(classifierCalls(admin.fetchCalls)).toStrictEqual([{ method: 'GET', path: CLASSIFIER_PATH }])
+    expect(document.body.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('分类器记录')
+    expect(classifierRows()).toStrictEqual(['调查员3', '调查员2', '调查员1'])
+
+    admin.ws.recv(0, 'classifier_log', { log: classifierLog(4, { decision: 'blocked', score: 0.9 }) })
+    admin.ws.recv(0, 'classifier_log', { log: classifierLog(4, { subject: '重复的' }) })
+    admin.ws.recv(0, 'classifier_log', { log: classifierLog(2) })
+    await flushPromises()
+    expect(classifierRows()).toStrictEqual(['调查员4', '调查员3', '调查员2', '调查员1'])
+    expect(classifierCalls(admin.fetchCalls)).toHaveLength(1)
+
+    const close = [...document.body.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '关闭')!
+    close.click()
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    admin.wrapper.unmount()
+  })
+
+  test('管理员在手机的「更多操作」菜单里也有「分类器」', async () => {
+    const admin = await setup({ asAdmin: true })
+    await admin.wrapper.find('button[aria-label="更多操作"]').trigger('click')
+    const item = admin.wrapper.findAll('[role="menuitem"]').find((b) => b.text() === '分类器')
+    expect(item).toBeDefined()
+    await item!.trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('分类器记录')
+    expect(classifierCalls(admin.fetchCalls)).toHaveLength(1)
+    admin.wrapper.unmount()
+  })
+
+  test('非管理员：头部没有「分类器」入口，页面里没有面板，也不会请求分类器接口', async () => {
+    const player = await setup({ classifierLogs: [classifierLog(1)] })
+    expect(player.wrapper.findAll('header button').some((b) => b.text().includes('分类器'))).toBe(false)
+    await player.wrapper.find('button[aria-label="更多操作"]').trigger('click')
+    expect(player.wrapper.findAll('[role="menuitem"]').some((b) => b.text().includes('分类器'))).toBe(false)
+    expect(player.wrapper.text()).not.toContain('分类器')
+    expect(document.body.textContent).not.toContain('分类器记录')
     expect(player.fetchCalls.some((c) => c.path.startsWith('/api/admin/'))).toBe(false)
     player.wrapper.unmount()
   })

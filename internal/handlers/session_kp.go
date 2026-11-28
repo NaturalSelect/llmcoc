@@ -454,6 +454,7 @@ func (h *SessionHandlers) runOneFloor(ctx context.Context, af *activeFloor, seg 
 		}
 	}
 	gctx.Publish = func(ro agent.RoundOutputs) error { return h.publishRound(af, ro) }
+	gctx.RecordClassifierLog = func(rec *models.ClassifierLog) { recordClassifierLog(sessionID, rec) }
 
 	start := time.Now()
 	out, err := h.Runner.Run(ctx, gctx)

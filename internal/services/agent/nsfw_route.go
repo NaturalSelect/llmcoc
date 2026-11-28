@@ -62,25 +62,50 @@ func nsfwRouteCriteria() map[string]typesafe.Content {
 }
 
 // pickDirectorRole 选出本周期执行的 Director 角色；last 是上个周期的角色，没有可用结论时沿用。
+// 返回的记录是本次分类的完整情况，没有发生分类（或没有分类器可用）时为 nil；它的归属字段由 recordRouteLog 补全。
 // NOTE: 房间开关是总闸：关闭或 director_nsfw 未启用时不分类也不沿用，一律是 director。
-func pickDirectorRole(ctx context.Context, gctx GameContext, handles map[models.AgentRole]agentHandle, last models.AgentRole) models.AgentRole {
+func pickDirectorRole(ctx context.Context, gctx GameContext, handles map[models.AgentRole]agentHandle, last models.AgentRole) (models.AgentRole, *models.ClassifierLog) {
 	if !gctx.Session.EnableNSFW || !handles[models.AgentRoleDirectorNSFW].isEnabled() {
-		return models.AgentRoleDirector
+		return models.AgentRoleDirector, nil
 	}
 	switch {
 	case gctx.KPFloor == KPFloorOpening:
-		return models.AgentRoleDirector
+		return models.AgentRoleDirector, nil
 	case gctx.KPFloor == KPFloorResume || !hasPlayerActions(gctx.PendingActions):
-		return last
+		return last, nil
 	}
-	switch nsfwRouteClassifier(ctx, gctx) {
+	outcome, rec := nsfwRouteClassifier(ctx, gctx)
+	switch outcome {
 	case nsfwRouteNSFW:
-		return models.AgentRoleDirectorNSFW
+		return models.AgentRoleDirectorNSFW, rec
 	case nsfwRouteClean, nsfwRouteUnavailable:
-		return models.AgentRoleDirector
+		return models.AgentRoleDirector, rec
 	default:
-		return last
+		return last, rec
 	}
+}
+
+// recordRouteLog 补全路由记录的归属（周期、行动的调查员、实际执行的角色）后交给 handler 落库；
+// 没有记录或没有注入钩子（测试）时什么都不做。
+func (g GameContext) recordRouteLog(rec *models.ClassifierLog, role models.AgentRole, floor int) {
+	if rec == nil || g.RecordClassifierLog == nil {
+		return
+	}
+	rec.Role = string(role)
+	rec.Floor = floor
+	rec.Subject = routeSubject(g.PendingActions)
+	g.RecordClassifierLog(rec)
+}
+
+// routeSubject 是本周期提交行动的调查员名，去重后用顿号连接；管理员的指令不算。
+func routeSubject(actions []PlayerAction) string {
+	var names []string
+	for _, a := range actions {
+		if name := strings.TrimSpace(a.PlayerName); !a.IsAdmin && name != "" && !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, "、")
 }
 
 // hasPlayerActions 只认玩家提交的非空行动；管理员的 DEBUG 指令不是剧情行动，不触发分类。
@@ -98,17 +123,19 @@ func (g GameContext) directorRole() models.AgentRole {
 	return g.DirectorRole
 }
 
-// classifyFloorNSFW 对本周期做一次同步分类。
+// classifyFloorNSFW 对本周期做一次同步分类，同时返回这次调用的完整记录（没有分类器可用时为 nil）。
 // NOTE: System One 返回 400 多半是 Google 安全过滤命中，按涉及色情处理；其余失败返回 Failed，由调用方沿用上个周期。
-func classifyFloorNSFW(ctx context.Context, gctx GameContext) nsfwRouteOutcome {
+func classifyFloorNSFW(ctx context.Context, gctx GameContext) (nsfwRouteOutcome, *models.ClassifierLog) {
 	g, ok := inputGuardLoader()
 	if !ok {
-		return nsfwRouteUnavailable
+		return nsfwRouteUnavailable, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, nsfwRouteTimeout)
 	defer cancel()
 
 	state := buildNSFWRouteState(gctx)
+	threshold := readProbabilityThreshold(nsfwRouteThresholdKey, models.DefaultNSFWRouteThreshold)
+	rec := newClassifierLog(models.ClassifierKindNSFWRoute, state, threshold)
 	start := time.Now()
 	resp, err := g.client.SystemOne(ctx, typesafe.SystemOneRequest{
 		State: state,
@@ -117,38 +144,48 @@ func classifyFloorNSFW(ctx context.Context, gctx GameContext) nsfwRouteOutcome {
 		},
 	})
 	if err != nil {
+		reason, requestID := describeClassifierError(err)
+		failClassifierLog(rec, reason, requestID, start)
+		rec.Decision = models.ClassifierDecisionFailed
 		var apiErr *typesafe.APIError
 		if !errors.As(err, &apiErr) {
 			alog.Warn("nsfw route call failed, keeping previous director", "err", err)
-			return nsfwRouteFailed
+			return nsfwRouteFailed, rec
 		}
 		if apiErr.StatusCode == http.StatusBadRequest {
 			alog.Warn("nsfw route call rejected with 400, treating as safety filter hit", "request_id", apiErr.RequestID)
-			return nsfwRouteNSFW
+			rec.Decision = models.ClassifierDecisionNSFW
+			rec.Error = reason + "（按安全过滤命中处理）"
+			return nsfwRouteNSFW, rec
 		}
 		alog.Warn("nsfw route call failed, keeping previous director", "status", apiErr.StatusCode, "request_id", apiErr.RequestID)
-		return nsfwRouteFailed
+		return nsfwRouteFailed, rec
 	}
 	ans, ok := resp.Answers[nsfwRouteQuestionID].(typesafe.ChoiceAnswer)
 	if !ok {
 		alog.Warn("nsfw route returned an unexpected answer, keeping previous director", "request_id", resp.RequestID)
-		return nsfwRouteFailed
+		failClassifierLog(rec, classifierProtocolErrorReason, resp.RequestID, start)
+		rec.Decision = models.ClassifierDecisionFailed
+		return nsfwRouteFailed, rec
 	}
+	answerClassifierLog(rec, ans, resp.RequestID, start)
 
 	var score float64
 	for _, name := range nsfwRouteSexualKinds {
 		score += ans.Probabilities[name]
 	}
-	threshold := readProbabilityThreshold(nsfwRouteThresholdKey, models.DefaultNSFWRouteThreshold)
 	outcome := nsfwRouteClean
+	rec.Decision = models.ClassifierDecisionClean
 	if score >= threshold {
 		outcome = nsfwRouteNSFW
+		rec.Decision = models.ClassifierDecisionNSFW
 	}
+	rec.Score = score
 	alog.Debug("nsfw route verdict",
 		"choice", ans.Choice, "score", score, "threshold", threshold, "nsfw", outcome == nsfwRouteNSFW,
-		"probabilities", ans.Probabilities, "elapsed_ms", time.Since(start).Milliseconds(),
+		"probabilities", ans.Probabilities, "elapsed_ms", rec.ElapsedMs,
 		"table_log_runes", utf8.RuneCountInString(state["recent_table_log"]), "request_id", resp.RequestID)
-	return outcome
+	return outcome, rec
 }
 
 // buildNSFWRouteState 取分类要用的背景，键为空的不带。

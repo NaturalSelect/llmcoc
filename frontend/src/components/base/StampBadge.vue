@@ -1,5 +1,5 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ tone?: 'seal' | 'ledger' | 'moss' | 'faint' | 'danger' }>(), { tone: 'faint' })
+withDefaults(defineProps<{ tone?: 'seal' | 'ledger' | 'moss' | 'faint' | 'danger' | 'warning' }>(), { tone: 'faint' })
 </script>
 
 <template>
@@ -10,6 +10,7 @@ withDefaults(defineProps<{ tone?: 'seal' | 'ledger' | 'moss' | 'faint' | 'danger
       'bg-info/15 text-info': tone === 'ledger',
       'bg-success/15 text-success': tone === 'moss',
       'bg-danger/15 text-danger': tone === 'danger',
+      'bg-warning/15 text-warning': tone === 'warning',
       'bg-surface-3 text-fg-muted': tone === 'faint',
     }"
   >

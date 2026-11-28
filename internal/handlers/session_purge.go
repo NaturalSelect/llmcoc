@@ -30,6 +30,7 @@ var sessionChildTables = []any{
 	&models.SessionNote{},
 	&models.AgentTranscript{},
 	&models.GameEvaluation{},
+	&models.ClassifierLog{},
 }
 
 // StartSessionPurge 启动时先回收一次，之后每 interval 回收一次，ctx 取消时退出。
@@ -61,6 +62,14 @@ func purgeOnce(now time.Time) {
 	}
 	if n > 0 {
 		purgeLog.Info("purged expired sessions", "count", n)
+	}
+
+	k, err := purgeExpiredClassifierLogs(now)
+	if err != nil {
+		purgeLog.Error("classifier log purge failed", "err", err)
+	}
+	if k > 0 {
+		purgeLog.Info("purged expired classifier logs", "count", k)
 	}
 
 	m, err := purgeUnusedScenarios()

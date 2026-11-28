@@ -76,6 +76,7 @@ func InitDB() error {
 		&LawyerCacheStats{},
 		&LLMLatencyStat{},
 		&AgentTranscript{},
+		&ClassifierLog{},
 		&OnlineModule{},
 		&OnlineModuleDocument{},
 	); err != nil {

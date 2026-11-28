@@ -44,9 +44,9 @@ func useFakeClassifier(t *testing.T, outcome nsfwRouteOutcome) *atomic.Int32 {
 	t.Helper()
 	var calls atomic.Int32
 	prev := nsfwRouteClassifier
-	nsfwRouteClassifier = func(context.Context, GameContext) nsfwRouteOutcome {
+	nsfwRouteClassifier = func(context.Context, GameContext) (nsfwRouteOutcome, *models.ClassifierLog) {
 		calls.Add(1)
-		return outcome
+		return outcome, nil
 	}
 	t.Cleanup(func() { nsfwRouteClassifier = prev })
 	return &calls
@@ -82,7 +82,7 @@ func TestPickDirectorRole_RoomSwitchOffOrRoleDisabledNeverClassifies(t *testing.
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := pickDirectorRole(context.Background(), routeGctx(tc.room, "", playerAction), routeHandles(tc.enabled), models.AgentRoleDirectorNSFW)
+			got, _ := pickDirectorRole(context.Background(), routeGctx(tc.room, "", playerAction), routeHandles(tc.enabled), models.AgentRoleDirectorNSFW)
 			if got != models.AgentRoleDirector {
 				t.Errorf("role = %q, want director even though the previous cycle used director_nsfw", got)
 			}
@@ -112,7 +112,7 @@ func TestPickDirectorRole_FloorsWithoutPlayerActionsSkipClassification(t *testin
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := pickDirectorRole(context.Background(), tc.gctx, routeHandles(true), tc.last); got != tc.want {
+			if got, _ := pickDirectorRole(context.Background(), tc.gctx, routeHandles(true), tc.last); got != tc.want {
 				t.Errorf("role = %q, want %q", got, tc.want)
 			}
 		})
@@ -138,7 +138,7 @@ func TestPickDirectorRole_FollowsClassifierOutcome(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := useFakeClassifier(t, tc.outcome)
-			got := pickDirectorRole(context.Background(), routeGctx(true, "", playerAction), routeHandles(true), tc.last)
+			got, _ := pickDirectorRole(context.Background(), routeGctx(true, "", playerAction), routeHandles(true), tc.last)
 			if got != tc.want {
 				t.Errorf("role = %q, want %q", got, tc.want)
 			}
@@ -156,14 +156,14 @@ func TestClassifyFloorNSFW_ThresholdOnSexualProbabilityMass(t *testing.T) {
 	})
 	gctx := routeGctx(true, "", playerAction)
 
-	if got := classifyFloorNSFW(context.Background(), gctx); got != nsfwRouteNSFW {
+	if got, _ := classifyFloorNSFW(context.Background(), gctx); got != nsfwRouteNSFW {
 		t.Errorf("0.55 against the default 0.5 = %v, want nsfw", got)
 	}
 
 	if err := models.SetSiteSetting(nsfwRouteThresholdKey, "0.6"); err != nil {
 		t.Fatalf("SetSiteSetting: %v", err)
 	}
-	if got := classifyFloorNSFW(context.Background(), gctx); got != nsfwRouteClean {
+	if got, _ := classifyFloorNSFW(context.Background(), gctx); got != nsfwRouteClean {
 		t.Errorf("0.55 against 0.6 = %v, want clean", got)
 	}
 
@@ -171,7 +171,7 @@ func TestClassifyFloorNSFW_ThresholdOnSexualProbabilityMass(t *testing.T) {
 		if err := models.SetSiteSetting(nsfwRouteThresholdKey, bad); err != nil {
 			t.Fatalf("SetSiteSetting: %v", err)
 		}
-		if got := classifyFloorNSFW(context.Background(), gctx); got != nsfwRouteNSFW {
+		if got, _ := classifyFloorNSFW(context.Background(), gctx); got != nsfwRouteNSFW {
 			t.Errorf("invalid threshold %q should fall back to 0.5, got %v", bad, got)
 		}
 	}
@@ -197,7 +197,7 @@ func TestClassifyFloorNSFW_FailureHandling(t *testing.T) {
 				calls.Add(1)
 				tc.do(w)
 			})
-			if got := classifyFloorNSFW(context.Background(), routeGctx(true, "", playerAction)); got != tc.want {
+			if got, _ := classifyFloorNSFW(context.Background(), routeGctx(true, "", playerAction)); got != tc.want {
 				t.Errorf("outcome = %v, want %v", got, tc.want)
 			}
 			if n := calls.Load(); n != 1 {
@@ -220,7 +220,7 @@ func TestClassifyFloorNSFW_TimeoutKeepsPreviousDirector(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if got := classifyFloorNSFW(ctx, routeGctx(true, "", playerAction)); got != nsfwRouteFailed {
+	if got, _ := classifyFloorNSFW(ctx, routeGctx(true, "", playerAction)); got != nsfwRouteFailed {
 		t.Errorf("outcome = %v, want failed on timeout", got)
 	}
 }
@@ -230,8 +230,12 @@ func TestClassifyFloorNSFW_UnavailableWhenSystemOneNotConfigured(t *testing.T) {
 	inputGuardLoader = func() (*inputGuard, bool) { return nil, false }
 	t.Cleanup(func() { inputGuardLoader = prev })
 
-	if got := classifyFloorNSFW(context.Background(), routeGctx(true, "", playerAction)); got != nsfwRouteUnavailable {
+	got, rec := classifyFloorNSFW(context.Background(), routeGctx(true, "", playerAction))
+	if got != nsfwRouteUnavailable {
 		t.Errorf("outcome = %v, want unavailable", got)
+	}
+	if rec != nil {
+		t.Errorf("record = %+v, want nil when no classifier call was made", rec)
 	}
 }
 

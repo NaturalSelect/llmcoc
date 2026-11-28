@@ -12,6 +12,7 @@ import BaseModal from '@/components/base/BaseModal.vue'
 import StampBadge from '@/components/base/StampBadge.vue'
 import CharacterDetailModal from '@/components/character/CharacterDetailModal.vue'
 import AskCard from '@/components/game/AskCard.vue'
+import ClassifierPanel from '@/components/game/ClassifierPanel.vue'
 import ClockTracker from '@/components/game/ClockTracker.vue'
 import DebriefModal from '@/components/game/DebriefModal.vue'
 import EncounterTracker from '@/components/game/EncounterTracker.vue'
@@ -61,6 +62,8 @@ const companionBusy = ref(false)
 const oocOpen = ref(false)
 const handbookOpen = ref(false)
 const debriefOpen = ref(false)
+// NOTE: 分类器面板只对管理员挂载；历史记录在面板打开时才请求，进房时不请求
+const classifierOpen = ref(false)
 const novelMode = ref(false)
 const handbook = ref<HandbookData>(emptyHandbook())
 const hideDarkClocks = ref(loadHideDarkClocksPref())
@@ -399,7 +402,7 @@ function exportReplay() {
   ui.toast(novelMode.value ? '已导出小说版 Markdown 战报' : '已导出 Markdown 战报')
 }
 
-function onAction(action: 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive' | 'debrief') {
+function onAction(action: 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive' | 'debrief' | 'classifier') {
   const s = session.value
   if (!s) return
   if (action === 'investigators') investigatorsOpen.value = true
@@ -409,6 +412,7 @@ function onAction(action: 'investigators' | 'myCard' | 'join' | 'leave' | 'start
   else if (action === 'start') void startSession(s)
   else if (action === 'end') void endSession(s)
   else if (action === 'debrief') debriefOpen.value = true
+  else if (action === 'classifier') classifierOpen.value = auth.isAdmin
   else void reviveSession(s)
 }
 
@@ -592,6 +596,7 @@ defineExpose({ viewCard })
       </form>
     </BaseModal>
     <DebriefModal :open="debriefOpen" :session-id="session?.id ?? null" @close="debriefOpen = false" />
+    <ClassifierPanel v-if="auth.isAdmin" :open="classifierOpen" :session-id="session?.id ?? null" :room="room" @close="classifierOpen = false" />
     <JoinSessionModal :open="joinOpen" :session="session" @close="joinOpen = false" @joined="controller.refreshSession()" />
     <AddCompanionModal :open="companionOpen" :session="session" @close="companionOpen = false" @changed="controller.refreshSession()" />
     <ImagePreview :src="previewSrc" @close="previewSrc = ''" />

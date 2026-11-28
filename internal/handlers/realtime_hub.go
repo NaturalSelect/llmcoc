@@ -100,9 +100,19 @@ func (h *roomHub) PublishTo(typ string, data any, visibleTo []uint) {
 
 // Ephemeral 发布临时事件：seq=0，不进缓冲，断线期间的临时事件直接丢弃。
 func (h *roomHub) Ephemeral(typ string, data any) {
+	h.EphemeralTo(typ, data, nil)
+}
+
+// EphemeralTo 发布只给 visibleTo 里的用户与管理员的临时事件。
+// NOTE: 不占 seq：持久事件对不可见的订阅者是跳号，客户端会当成丢帧而整体重连；只给少数人看的调试信息不值得这个代价。
+func (h *roomHub) EphemeralTo(typ string, data any, visibleTo []uint) {
+	var targets []uint
+	if len(visibleTo) > 0 {
+		targets = append([]uint(nil), visibleTo...)
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.broadcastLocked(roomEvent{Type: typ, Data: data})
+	h.broadcastLocked(roomEvent{Type: typ, Data: data, visibleTo: targets})
 	h.touch()
 }
 

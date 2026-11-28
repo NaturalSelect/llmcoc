@@ -45,6 +45,9 @@ type GameContext struct {
 	SkippedNames []string
 	// DirectorRole 是本周期实际执行的 Director 角色，由 run() 在 NSFW 分类之后写入，随 snapshotGameContext 带给 Writer；空值按 director。
 	DirectorRole models.AgentRole
+	// RecordClassifierLog 由handler注入:NSFW路由每次真正调用分类器后同步调用,handler 负责落库并推给管理员;
+	// 记录交出去之后不能再被修改。nil 时不记录(测试用)。
+	RecordClassifierLog func(*models.ClassifierLog)
 }
 
 // KPFloor 取值。

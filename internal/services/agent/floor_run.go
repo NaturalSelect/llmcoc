@@ -279,6 +279,7 @@ func snapshotGameContext(g GameContext) GameContext {
 	g.Session.Players = append([]models.SessionPlayer(nil), g.Session.Players...)
 	g.Progress = nil
 	g.Publish = nil
+	g.RecordClassifierLog = nil
 	return g
 }
 
@@ -305,8 +306,9 @@ func run(ctx context.Context, gctx GameContext) (RunOutput, error) {
 
 	// NOTE: 要先读到转录才知道上个周期由哪个 Director 执行，所以 head 和选项等角色选定后才通过 Configure 给。
 	cm := LoadContext(sid, "director", nil, ContextOptions{})
-	role := pickDirectorRole(ctx, gctx, handles, cm.LastAgent())
+	role, routeLog := pickDirectorRole(ctx, gctx, handles, cm.LastAgent())
 	gctx.DirectorRole = role
+	gctx.recordRouteLog(routeLog, role, cm.NextFloor())
 	director := handles[role]
 	directorWindow := int64(0)
 	if director.config != nil {

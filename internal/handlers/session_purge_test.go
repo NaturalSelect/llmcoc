@@ -50,6 +50,7 @@ func (f purgeFixture) seedPurgeSession(t *testing.T, status models.SessionStatus
 		&models.SessionTurnAction{SessionID: s.ID, Round: 1, UserID: f.userID},
 		&models.AgentTranscript{SessionID: s.ID, AgentKey: "director"},
 		&models.GameEvaluation{SessionID: s.ID},
+		&models.ClassifierLog{SessionID: s.ID, Kind: models.ClassifierKindInputGuard},
 	}
 	for _, row := range rows {
 		if err := models.DB.Create(row).Error; err != nil {

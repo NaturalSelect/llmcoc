@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Award, BookMarked, BookOpen, Download, Ellipsis, IdCard, LogOut, MessageCircle, Play, RotateCcw, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
+import { ArrowLeft, Award, BookMarked, BookOpen, Download, Ellipsis, IdCard, LogOut, MessageCircle, Play, RotateCcw, ScanSearch, Square, UserPlus, Users, Volume2, VolumeX } from '@lucide/vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Session } from '@/api/types'
@@ -8,7 +8,7 @@ import StampBadge from '@/components/base/StampBadge.vue'
 import { startBlockedReason } from '@/game/companion'
 import { isInSession, statusLabel } from '@/game/hud'
 
-type Action = 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive' | 'debrief'
+type Action = 'investigators' | 'myCard' | 'join' | 'leave' | 'start' | 'end' | 'revive' | 'debrief' | 'classifier'
 
 const props = defineProps<{
   session: Session
@@ -50,13 +50,15 @@ const actions = computed(() => {
   if (s.status === 'playing' && (isCreator.value || isAdmin.value)) list.push({ key: 'end', label: '结束', tone: 'red', disabled: props.busy.ending })
   if (s.status === 'ended') list.push({ key: 'debrief', label: '复盘与真相', tone: 'ghost' })
   if (s.status === 'ended' && isAdmin.value) list.push({ key: 'revive', label: '复活', tone: 'green', disabled: props.busy.reviving })
+  // NOTE: 分类器记录只有管理员能看（后端同样只给管理员推送和返回），不分房间状态
+  if (isAdmin.value) list.push({ key: 'classifier', label: '分类器', tone: 'ghost' })
   return list
 })
 
 // NOTE: 危险和成功操作用淡色底的 BaseButton 变体，不用实心色块；只有主操作才实心
 const variantOf = { ghost: 'ghost', green: 'success', red: 'danger' } as const
 const menuToneClass = { ghost: 'text-fg', green: 'text-success', red: 'text-danger' }
-const iconOf = { investigators: Users, myCard: IdCard, join: UserPlus, leave: LogOut, start: Play, end: Square, revive: RotateCcw, debrief: Award }
+const iconOf = { investigators: Users, myCard: IdCard, join: UserPlus, leave: LogOut, start: Play, end: Square, revive: RotateCcw, debrief: Award, classifier: ScanSearch }
 
 function run(action: Action) {
   menuOpen.value = false
